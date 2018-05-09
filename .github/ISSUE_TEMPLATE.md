@@ -1,5 +1,5 @@
 ### Policy Template Name
-[This name of the plugin having an issue]
+[This name of the policy template having an issue]
 
 ### Issue Type
 [Bug -or- Feature Request -or- New Policy Template Request]
