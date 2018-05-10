@@ -1,0 +1,82 @@
+name "Reserved Instances Utilization"
+rs_pt_ver 20180301
+type "policy"
+short_description "A policy that sends email notifications when utilization falls below a threshold"
+long_description "Version 1.0"
+severity "medium"
+category "Cost"
+
+permission "optima_aws_ri" do
+  label "Access Optima Resources"
+  resources "rs_optima.aws_reserved_instances"
+  actions "rs_optima.index"
+end
+
+##################
+# User inputs    #
+##################
+
+parameter "org_id" do
+  type "string"
+  label "Organization ID"
+end
+
+parameter "param_utilization" do
+  category "RI"
+  label "Utilization"
+  type "number"
+end
+
+parameter "param_email" do
+  category "Contact"
+  label "Email address to send escalation emails to"
+  type "string"
+end
+
+auth "rs", type: "rightscale"
+
+datasource "reservations" do
+  request do
+    auth $rs
+    host "optima.rightscale.com"
+    path "/api/reco/orgs/2932/aws_reserved_instances"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response,"[*]") do
+      field "utilization_percentage", jmes_path(col_item,"utilization.utilization_percentage")
+      field "end_datetime", jmes_path(col_item,"end_datetime")
+      field "start_datetime", jmes_path(col_item,"start_datetime")
+      field "account_name", jmes_path(col_item,"account_name")
+      field "account_id", jmes_path(col_item,"account_id")
+      field "region", jmes_path(col_item,"region")
+      field "instance_type", jmes_path(col_item,"instance_type")
+      field "instance_count", jmes_path(col_item,"number_of_instances")
+    end
+  end
+end
+
+escalation "alert" do
+  email $param_email
+end
+
+policy "ri_utilization" do
+  validate_each $reservations do
+    summary_template "Reserved Instance Utilization"
+    detail_template <<-EOS
+# Reserved Instance Utilization
+
+<table>
+<tr><td>Account</td><td>Region</td><td>Instance Type</td><td>Instance Count</td><td>Utilization</td></tr>
+{{ range data }}
+<tr><td>{{ .account_name }}({{ .account_id }})<td>{{.region}}</td><td>{{.instance_type}}</td><td>{{.instance_count}}</td><td>{{.utilization_percentage}}</td></tr>
+{{ end }}
+</table>
+
+EOS
+
+    escalate $alert
+    check gt(to_n(val(item,"utilization_percentage")),$param_utilization)
+  end
+end
+
