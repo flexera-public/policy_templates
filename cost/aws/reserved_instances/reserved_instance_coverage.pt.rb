@@ -12,12 +12,6 @@ permission "optima" do
   actions "rs_optima.index"
 end
 
-permission "permissions" do
-  label "Access CM Index/Show/Data"
-  actions "rs_cm.index", "rs_cm.show", "rs_cm.data"
-  resources "rs_cm.instances", "rs_cm.monitoring_metrics"
-end
-
 ##################
 # User inputs    #
 ##################
