@@ -61,16 +61,14 @@ end
 datasource "reservations_coverage" do
   request do
     auth $mykey
-    #host "api.ce.us-east-1.amazonaws.com"
     # https://docs.aws.amazon.com/awsaccountbilling/latest/aboutv2/cost-explorer-api.html
     host "ce.us-east-1.amazonaws.com"
-    query "Service", $param_service
-    query "startDate", "2018-02-01"
-    query "endDate", "2018-03-01"
-    query "X-Amz-Target", "AWSCostExplorerService.GetReservationCoverage"
-    #query "X-Amz-Target", "AWSCostExplorerService.GetReservationCoverage"
-    #path "/api/reco/orgs/2932/aws_reserved_instances"
-
+    verb "POST"
+    https true,
+    href: "/",
+    headers: {"X-Amz-Target":"AWSCostExplorerService.GetReservationCoverage", "Content-Type":"application/x-amz-json-1.1"},
+    body: {"SERVICE":"Amazon Elastic Compute Cloud - Compute"},
+    body: {"Start":"2018-04-01", "End":"2018-04-30"})
   end
   result do
     encoding "json"
