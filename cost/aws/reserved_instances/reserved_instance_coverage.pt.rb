@@ -12,6 +12,11 @@ permission "optima" do
   actions "rs_optima.index"
 end
 
+permission "permissions" do
+  actions   "rs_cm.index","rs_cm.show"
+  resources "rs_cm.instances"
+end 
+
 ##################
 # User inputs    #
 ##################
