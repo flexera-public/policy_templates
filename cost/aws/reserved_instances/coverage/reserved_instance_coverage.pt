@@ -6,17 +6,6 @@ long_description "Version 0.1"
 severity "medium"
 category "Cost"
 
-permission "optima" do
-  label "Access Optima Resources"
-  resources "rs_optima.aws_reserved_instances"
-  actions "rs_optima.index"
-end
-
-permission "permissions" do
-  actions   "rs_cm.index","rs_cm.show"
-  resources "rs_cm.instances"
-end 
-
 ##################
 # User inputs    #
 ##################
@@ -36,7 +25,7 @@ parameter "param_service" do
  default "Amazon Elastic Compute Cloud - Compute"
 end
 
-parameter "historical_number_of_days_in_past" do
+parameter "param_historical_number_of_days_in_past" do
   type "number"
   label "Number of days in the past to view RI Coverage"
   allowed_values "7", "14","30", "90", "180", "365"
@@ -50,35 +39,33 @@ parameter "param_utilization" do
   default "100"
 end
 
-auth "mykey", type: "aws" do
-  version "4"
-  service "ec2"
-  region "us-east-1"
-  access_key cred("AWS_ACCESS_KEY_ID")
-  secret_key cred("AWS_SECRET_ACCESS_KEY")
-end
+auth "aws", type: "aws" 
 
-datasource "reservations_coverage" do
+datasource "ds_reservations_coverage" do
   request do
-    auth $mykey
+    auth $aws
     # https://docs.aws.amazon.com/awsaccountbilling/latest/aboutv2/cost-explorer-api.html
     host "ce.us-east-1.amazonaws.com"
     verb "POST"
     https true,
     href: "/",
-    headers: {"X-Amz-Target":"AWSCostExplorerService.GetReservationCoverage", "Content-Type":"application/x-amz-json-1.1"},
-    body: {"SERVICE":"Amazon Elastic Compute Cloud - Compute"},
-    body: {"Start":"2018-04-01", "End":"2018-04-30"})
+    headers: {
+      "X-Amz-Target":"AWSCostExplorerService.GetReservationCoverage",
+      "Content-Type":"application/x-amz-json-1.1",
+      "content-type": "application/x-amz-json-1.1",
+      "content_type": "application/x-amz-json-1.1"
+    }
+    body: {
+      "Start":"2018-04-01",
+      "End":"2018-04-30"
+    }
   end
   result do
     encoding "json"
     collect jmes_path(response,"[*]") do
       field "total", jmes_path(col_item,"Total")
       field "coveragesbytime", jmes_path(col_item,"CoveragesByTime")
-      #field "account_id", jmes_path(col_item,"account_id")
-      #field "region", jmes_path(col_item,"region")
-      #field "instance_type", jmes_path(col_item,"instance_type")
-      #field "instance_count", jmes_path(col_item,"number_of_instances")
+      field "total_coverage_hours_percentage", jmes_path(col_item, "Total.CoverageHoursPercentage.CoverageHoursPercentage")
     end
   end
 end
@@ -87,23 +74,26 @@ escalation "alert" do
   email $param_email
 end
 
-  policy "ri_coverage" do
-    validate_each $reservations_coverage do
-      summary_template "Reserved instances coverage."
-      detail_template <<-EOS
-  Reserved Instance Coverage
-  {{ range data }}
-  * Account: {{ .account_name }}({{ .account_id }})
-  * Region: {{.region}}
-  * Instance Type: {{.instance_type}}
-  * Instance Count: {{.instance_count}}
-  * End Time: {{.end_datetime}}
-  ----------------------------
-  {{ end }}
-  EOS
+policy "pol_ri_coverage" do
+  validate_each $ds_reservations_coverage do
+    summary_template "Reserved instances coverage."
+    detail_template <<-EOS
+# Reserved Instance Coverage
+
+| Organization Name | CoverageHoursPercentage | OnDemandHours | ReservedHours | TotalRunningHours |
+| ----------------- | ----------------------- | ------------- | ------------- | ----------------- |
+{{ range data }}
+| {{rs_org_name}} | {{
+* Region: {{.region}}
+* Instance Type: {{.instance_type}}
+* Instance Count: {{.instance_count}}
+* End Time: {{.end_datetime}}
+----------------------------
+{{ end }}
+EOS
 
   escalate $alert
   #check lt(to_n(val(item,"utilization_percentage")),$param_utilization)
   check lt($param_utilization,$param_utilization)
- end
+  end
 end
