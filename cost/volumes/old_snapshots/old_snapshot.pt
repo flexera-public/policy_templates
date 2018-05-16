@@ -1,4 +1,4 @@
-name "Old Snapshots Policy"
+name "Old Snapshots Policy - 1"
 rs_pt_ver 20180301
 type "policy"
 short_description "A policy that sends email notifications when a snapshots older then a certain timeframe are fouond"
@@ -7,7 +7,7 @@ severity "high"
 category "Cost"
 
 permission "perm_snapshots_and_tags" do
-  label "Access Optima Resources"
+  label "Access snapshots and tags"
   resources "rs_cm.clouds", "rs_cm.volume_snapshots", "rs_cm.tags"
   actions "rs_cm.index", "rs_cm.by_resource", "rs_cm.show"
 end
@@ -40,6 +40,9 @@ end
 resources "volume_snapshots", type: "rs_cm.volume_snapshots" do
   iterate @clouds
   cloud_href href(iter_item)
+  filter do
+    resource_uid "snap-4f320226"
+  end
 end
 
 datasource "ds_volume_snapshots" do
@@ -97,13 +100,12 @@ for (var i = 0; i < ds_volume_snapshots.length; i++) {
   if (_.intersection(snapshot_tag_list, vol_tags).length != snapshot_tag_list.length) {
     good = false
   }
-  if (!good) {
+  if (good) {
     filtered_snapshots.push(
       {
         resource_uid: vol['resource_uid'],
         name: vol['name'],
         href: vol['href'],
-        instance_type: vol['instance_type'],
         tags: vol_tags,
         updated_at: vol['updated_at']
       }
@@ -118,8 +120,8 @@ escalation "alert" do
 end
 
 policy "pol_snapshots" do
-  validate_each $ds_filtered_snapshots do
-    summary_template "Snapshots that can be deleted"
+  validate_each $ds_volume_snapshots do
+    summary_template "Snapshots that can be deleted - GT"
     detail_template <<-EOS
 # Snapshots that can be deleted
 
@@ -131,6 +133,7 @@ policy "pol_snapshots" do
 EOS
 
     escalate $alert
-    check lt(dec(to_d(val(item, "updated_at")), now), prod($param_age_days, 24*3600))
+    check gt(dec(to_d(val(item, "updated_at")), now), prod($param_age_days, 24*3600))
+    #check logic_not(val(item, "updated_at"))
   end
 end
