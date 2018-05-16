@@ -129,17 +129,13 @@ end
 
 datasource "resources" do
   run_script $merge_resources, $instances_operational,$instances_running,$instances_provisioned,$volumes
-  #run_script $merge_resources, $instances_operational
 end
 
 script "merge_resources", type: "javascript" do
   parameters "instances_operational","instances_running","instances_provisioned", "volumes"
-  #parameters "instances_operational"
   result "resources"
   code <<-EOS
   var resources = []
-  //resources.concat(instances_operational,instances_running,instances_provisioned,volumes)
-   //resources.concat(instances_operational)
     for (i = 0; i < instances_operational.length; i++) {
       resources.push(instances_operational[i])
     }
@@ -207,14 +203,11 @@ for (var i = 0; i < resources.length; i++) {
 
   // Determines whether this resource is properly tagged
   var bad = false;
+  var missing_tags = []
   if ( _.intersection(tag_keys_array, res_tags).length != tag_keys_array.length ) {
     bad = true;
-  }
-
-  if ( res['type'] === 'volumes'){
-    state=res['status']
-  } else {
-    state=res['state']
+    //find the tags missing from the resource
+    missing_tags=_.difference(tag_keys_array, res_tags)
   }
 
   // create cloud_href from resource href
@@ -234,12 +227,12 @@ for (var i = 0; i < resources.length; i++) {
     filtered_resources.push(
     { id: res['id'],
       name: res['name'],
-      state: state,
+      state: res['state'],
       href: res['href'],
       type: res['type'],
       cloud_name: cloud_map[cloud_href]['name'],
       cloud_type: cloud_map[cloud_href]['type'],
-      tags: res_tags,
+      missing_tags: missing_tags,
     }
     )
   }
@@ -248,49 +241,23 @@ for (var i = 0; i < resources.length; i++) {
 end
 
 escalation "escalate_resources" do
-  email $param_email do
-    subject_template "Escalated Untagged Resources" # There will be a default template we use.
-    body_template     <<-EOS
-    There are {{ len data }} resource.
-
-    The following resources are missing tags:
-    | Name | ID | Type | State | Href | Tags |
-    | ---- | -- | ---- | ----- | ---- | ---- |
-    {{ range data }}
-    | {{ .name }} | {{ .id }} | {{ .type }} | {{ .state }} | {{.href}} | {{ range $i, $e := .tags }}{{ if $i }}, {{ end }}{{ $e }}{{ end }} |
-    {{ end }}
-    EOS
-  end
-  #run "tag_checker", data, $param_tag_key, $param_advanced_tag_key
+  email $param_email
 end
 
 
 resolution "resolve_resources" do
-  email $param_email do
-  subject_template "Resolved Untagged Resources"
-  body_template <<-EOS
-      There are {{ len data }} resources resolved
-The resources have been tagged
-| Name | ID | Type | State | Href | Tags |
-| ---- | -- | ---- | ----- | ---- | ---- |
-{{ range data }}
-| {{ .name }} | {{ .id }} | {{ .type }} | {{ .state }} | {{.href}} | {{ range $i, $e := .tags }}{{ if $i }}, {{ end }}{{ $e }}{{ end }} |
-{{ end }}
-EOS
-
-end
-
+  email $param_email
 end
 
 policy "untagged_resources_policy" do
   validate $filtered_resources do
     summary_template "Untagged Resources Summary"
     detail_template <<-EOS
-    Count: {{ len data}} resources: \n
-    | Cloud Name | Cloud Type | Name | ID | Type | State | Href | Tags |
+    There are {{ len data }} resource(s) missing tags: {{ parameters.param_tag_keys }} \n
+    | Cloud Name | Cloud Type | Name | ID | Type | State | Href | Missing Tags |
     | ---------- | ---------- | ---- | -- | ---- | ----- | ---- | ---- |
     {{ range data }}
-    | {{ .cloud_name }} | {{ .cloud_type }} | {{ .name }} | {{ .id }} | {{ .type }} | {{ .state }} | {{.href}} | {{ range $i, $e := .tags }}{{ if $i }}, {{ end }}{{ $e }}{{ end }} |
+    | {{ .cloud_name }} | {{ .cloud_type }} | {{ .name }} | {{ .id }} | {{ .type }} | {{ .state }} | {{.href}} | {{ range $i, $e := .missing_tags }}{{ if $i }}, {{ end }}{{ $e }}{{ end }} |
     {{ end }}
     EOS
     escalate $escalate_resources
