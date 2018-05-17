@@ -1,4 +1,4 @@
-name "Old Snapshots Policy - 1"
+name "Old Snapshots Policy"
 rs_pt_ver 20180301
 type "policy"
 short_description "A policy that sends email notifications when a snapshots older then a certain timeframe are fouond"
@@ -6,12 +6,17 @@ long_description "Version 1.0"
 severity "high"
 category "Cost"
 
-permission "perm_snapshots_and_tags" do
-  label "Access snapshots and tags"
-  resources "rs_cm.clouds", "rs_cm.volume_snapshots", "rs_cm.tags"
-  actions "rs_cm.index", "rs_cm.by_resource", "rs_cm.show"
+permission "perm_snapshots" do
+  label "Access snapshots"
+  resources "rs_cm.clouds", "rs_cm.volume_snapshots"
+  actions "rs_cm.index", "rs_cm.show"
 end
 
+permission "perm_retrieve_tags" do
+  label "Retrieve Tags"
+  actions "rs_cm.by_resource"
+  resources "rs_cm.tags"
+end
 
 parameter "param_age_days" do
   type "number"
@@ -40,9 +45,6 @@ end
 resources "volume_snapshots", type: "rs_cm.volume_snapshots" do
   iterate @clouds
   cloud_href href(iter_item)
-  filter do
-    resource_uid "snap-4f320226"
-  end
 end
 
 datasource "ds_volume_snapshots" do
@@ -118,6 +120,9 @@ end
 escalation "alert" do
   email $param_escalate_to
 end
+resolution "resolution" do
+  email $param_escalate_to
+end
 
 policy "pol_snapshots" do
   validate_each $ds_volume_snapshots do
@@ -127,13 +132,13 @@ policy "pol_snapshots" do
 
 | Resource UID | Name | href | tags | last updated |
 | ------------ | ---- | ---- | ---- | ------------ |
-{{ range data }}
-| {{ .resource_uid }}({{ .name }}) | {{.href}} | {{.tags}} | {{.updated_at}} |
-{{ end }}
+{{ range data -}}
+| {{ .resource_uid }} | {{ .name }} | {{.href}} | {{.tags}} | {{.updated_at}} |
+{{ end -}}
 EOS
 
     escalate $alert
     check gt(dec(to_d(val(item, "updated_at")), now), prod($param_age_days, 24*3600))
-    #check logic_not(val(item, "updated_at"))
+    resolve $resolution
   end
 end
