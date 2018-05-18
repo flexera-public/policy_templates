@@ -1,7 +1,7 @@
-### Open high order ports or specific ports Policy
+### Reserved Instances Utilization
 
 **What it does**
-This Policy Template monitors your security group for any open ports above 1024. It will notify only if a port above 1024 has been opened or any in a specific range, specified in `Port Range` field. 
+This Policy Template leverages the RI report. It will notify only if utilization of a RI falls below the value specified in the `Utilization` field. 
 It will email the user specified in `Email address to send escalation emails to`
 
 
