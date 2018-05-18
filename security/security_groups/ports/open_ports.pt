@@ -9,11 +9,17 @@ category "Security"
 parameter "escalate_to" do
   type "string"
   label "Email address to send escalation emails to"
+  min_length 1
+  allowed_pattern /^.+\@.+\..+$/
+  constraint_description <<-EOS
+  Please enter a valid email user@example.com
+  EOS
 end
 
 parameter "param_port_info" do
-  type "string"
-  label "port 3089 or port range 1025-9000"
+  type "number"
+  label "High Port"
+  default 1024
 end
 
 auth "rs", type: "rightscale"
@@ -116,19 +122,19 @@ end
 
 policy "rule_open_ports" do
   validate_each $ds_munged_security_groups do
-    summary_template "Security Group Rules without Descriptions"
+    summary_template "Security Group Rules with high ports open"
     detail_template <<-EOS
-# Security Rules without Descriptions
+# Security Rules with high ports open
 
-| security_group_name | security_group_href | href | protocol | source_type | network_href | network_name | server_access_link_root |
-| ------------------- | ------------------- | ---- | -------- | ----------- | ------------ | ------------ | ----------------------- |
+| security_group_name | port |  protocol  | network_name | server_access_link_root |
+| ------------------- | ---- | ---------- | ------------ | ----------------------- |  
 {{ range data }}
-| {{ .security_group_name }} | {{ .security_group_href }} | {{.href}} | {{.protocol}} | {{.source_type}} | {{.network_href}} | {{.network_name}} | {{.end_port}} | {{.server_access_link_root}} |
+| {{ .security_group_name }} | {{ .end_port }} |  {{.protocol}} | {{.network_name}} | {{.server_access_link_root}} |
 {{ end }}
 
 EOS
 
     escalate $alert
-    check lt("end_port", 1024)
+      check gt(to_n(val(item,"end_port")), $param_port_info) 
   end
 end

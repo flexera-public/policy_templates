@@ -4,10 +4,11 @@
 This Policy Template leverages the multi cloud RightScale API. It will notify only if a security group has a port higher than  `High Port` field open. 
 It will email the user specified in `Email address to send escalation emails to`
 
-
 ## Supported Clouds
 The following clouds are supported: 
-- AWS, GCE, Azure
+- AWS
+- Azure
+- Google 
 
 **Cost**
 
