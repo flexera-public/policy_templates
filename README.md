@@ -1,8 +1,3 @@
-# These policies are for internal use only
-# Policies will be available soon.
-# Please contact sales@rightscale.com to learn more.
-
-
 # RightScale Policy Templates
 This repo contains a library of open source RightScale Policy Templates
 
