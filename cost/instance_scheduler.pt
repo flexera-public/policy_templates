@@ -1,0 +1,63 @@
+name "Instances Scheduler"
+rs_pt_ver 20180301
+type "policy"
+short_description "A policy that start and stops instances based on a schedule"
+long_description "Version 1.0"
+severity "medium"
+category "Cost"
+
+
+parameter "param_schedule" do
+  type "string"
+  label "Schedule Ex: 07-19:M.T.W.Th.F start_hour-end_hour:days_of_week_to_run "
+end
+
+parameter "escalate_to" do
+  type "string"
+  label "Email address to send escalation emails to"
+end
+
+auth "rs", type: "rightscale"
+
+#all clouds
+resources "clouds", type: "rs_cm.clouds"
+
+#all instances operational or provisioned
+resources "instances", type: "rs_cm.instances" do
+  iterate @clouds  
+  cloud_href href(iter_item)
+  filter do
+    state "operational" , "provisioned"
+  end
+end
+
+#all tags on the instances
+datasource "ds_instances_tags" do
+  request do
+    auth $rs
+    verb "POST"
+    host rs_cm_host
+    path "/api/tags/by_resource"
+    header "X-Api-Version", "1.5"
+    body_field "resource_hrefs", hrefs(@instances)
+  end
+end
+
+
+
+escalation "alert" do
+  email $escalate_to
+end
+
+policy "ri_expiration" do
+  validate_each $reservations do
+    summary_template "Instance Scheduler"
+    detail_template <<-EOS
+# Instance Scheduler
+
+EOS
+
+    escalate $alert
+    check eq(0,1)
+  end
+end
