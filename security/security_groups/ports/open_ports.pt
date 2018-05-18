@@ -13,7 +13,7 @@ end
 
 parameter "param_port_info" do
   type "string"
-  label "port 3089 or port range 1025-9000"
+  label "1024"
 end
 
 auth "rs", type: "rightscale"
@@ -28,6 +28,9 @@ end
 resources "security_groups", type: "rs_cm.security_groups" do
   iterate @clouds
   cloud_href href(iter_item)
+  filter do
+    name "EDWIN-SG"
+  end  
 end
 
 datasource "ds_security_groups" do
@@ -116,19 +119,19 @@ end
 
 policy "rule_open_ports" do
   validate_each $ds_munged_security_groups do
-    summary_template "Security Group Rules without Descriptions"
+    summary_template "Security Group Rules with ports above param_port_info"
     detail_template <<-EOS
 # Security Rules without Descriptions
 
-| security_group_name | security_group_href | href | protocol | source_type | network_href | network_name | server_access_link_root |
-| ------------------- | ------------------- | ---- | -------- | ----------- | ------------ | ------------ | ----------------------- |
+| security_group_name | protocol | source_type | network_name | end_port | server_access_link_root |
+| ------------------- | -------- | ----------- | ------------ | -------- | ----------------------- |
 {{ range data }}
-| {{ .security_group_name }} | {{ .security_group_href }} | {{.href}} | {{.protocol}} | {{.source_type}} | {{.network_href}} | {{.network_name}} | {{.end_port}} | {{.server_access_link_root}} |
+| {{ .security_group_name }} | {{.protocol}} | {{.source_type}} | {{.network_name}} | {{.end_port}} | {{.server_access_link_root}} |
 {{ end }}
 
 EOS
 
     escalate $alert
-    check lt("end_port", 1024)
+    check eq(to_n(val(item,"end_port")), $param_port_info)
   end
 end
