@@ -2,28 +2,6 @@
 #	Add support for deleting old unattached volumes.
 #
 
-### Notes on handling volume type
-# get pgs in extended view
-# create datasource that is simply pg_resource_uid and type and name
-# in javascript create a hash from the pgs array of "pg_resource_uid": { "type" : type, name: name }
-#
-# get volumes in extended view
-# Create volumes datasource that includes placement group resource_uid from volumes
-#   need to figure out what the ds looks like if no placement group in resource
-# and volume type if volume type hash in there
-# 
-# Cycle through volumes
-#  if placement_group attibute
-#		type is unmanaged
-#		use pg hash to find type of storage
-#		use pg hash to find name of storage account
-# else if volume-type 
-#	type is managed
-#	storage type is from the volume info
-#	storage account name is N/A
-# else
-#	all three things are NA
-
 name "Unattached Volumes"
 rs_pt_ver 20180301
 short_description "Finds unattached volumes older than specified number of days and reports them."
@@ -51,6 +29,7 @@ datasource "ds_clouds" do
 	iterate @clouds
 	field "href", href(iter_item)
 	field "cloud_type", val(iter_item, "cloud_type")
+  field "name", val(iter_item,'name')
 end
 
 resources "pgs", type: "rs_cm.placement_groups" do
@@ -72,6 +51,7 @@ end
 
 # Processing volumes in javascript since extended view does not always have a placement_group or volume_type hash in the
 # results and datasource declaration doesn't like that.
+# Feature request made: To just put a null in the field if the given key/value is not present.
 #datasource "ds_volumes" do
 #  iterate @volumes
 #  field "id", val(iter_item, "resource_uid")
@@ -89,13 +69,14 @@ datasource "ds_unattached_volumes" do
   run_script $js_unattached_volumes, $ds_clouds, $ds_pgs, @volumes
 end
 
-# Find unattached volumes and also calculate their age.
-# The age calculation is used to find old ones later on and also to inform the user of the ages of flagged volumes.
+# Find unattached volumes.
+# If Azure volume, deduce the type.
+# Calculate the volume's age.
 script "js_unattached_volumes", type: "javascript" do
   parameters "ds_clouds", "ds_pgs", "volumes"
   result "unattached_volumes"
   code <<-EOS
-// This is the list of unattached volumes.
+// This is the eventual output list of unattached volumes.
 var unattached_volumes = [];
 
 // Used for date math below
@@ -112,9 +93,9 @@ for (var i = 0; i < ds_clouds.length; i++) {
   var ds_cloud = ds_clouds[i]
   var cloud_href = ds_cloud["href"]
   var cloud_type = ds_cloud["cloud_type"]
-  cloud_hash[cloud_href] = cloud_type
+  var cloud_name = ds_cloud["name"]
+  cloud_hash[cloud_href] = { "cloud_type": cloud_type, "cloud_name": cloud_name }
 }
-
 // Build a pg hash that is pg resource id -> { pg type, pg name }
 var pg_hash = {}
 for (var i = 0; i < ds_pgs.length; i++) {
@@ -128,7 +109,7 @@ for (var i = 0; i < ds_pgs.length; i++) {
   pg_hash[pg_id] = { "name": pg_name, "account_type": pg_account_type }
 }
 
-// loop through the volumes and find the unattached ones
+// loop through the volumes and find the unattached ones and deduce storage type if Azure
 for (var i = 0; i < volumes.length; i++) {
   var vol = volumes[i]
   if (vol.status == "available") {
@@ -137,7 +118,9 @@ for (var i = 0; i < volumes.length; i++) {
     my_vol["id"] = vol["resource_uid"]
     my_vol["name"] = vol["name"]
     my_vol["size"] = vol["size"]
+    my_vol["iops"] = vol["iops"]
     my_vol["status"] = vol["status"]
+    my_vol["created_at"] =  vol["created_at"]
     my_vol["updated_at"] =  vol["updated_at"]
     my_vol["pg_id"] = null
     my_vol["volume_type"] = null
@@ -151,53 +134,54 @@ for (var i = 0; i < volumes.length; i++) {
     }
 
     // Include information about azure storage types since it is helpful to know what kind of azure storage is being used when
-    // doing cost optimzation.
-    
-
-      
+    // doing cost optimzation.      
     // We only care about Azure storage types and so first we need to figure out if this volume is in azure.
     // volume href is <<CLOUD_HREF>>/volumes/<<VOLUME_ID>>
     // So extract cloud href from the volument object
+    var vol_href =  ""
     var vol_cloud_href = ""
     vol.links.forEach(function(link) {
       if (link.rel == "cloud") {
         vol_cloud_href = link.href
+      } else if (link.rel == "self" ) {
+        vol_href = link.href
       }
     })
     
+    my_vol["href"] = vol_href
     my_vol["cloud_href"] = vol_cloud_href 
+    my_vol["cloud_name"] = cloud_hash[vol_cloud_href]["cloud_name"]
     
-    // Now use that cloud hash built above to see if we care about this volume
-    if (cloud_hash[vol_cloud_href] == "azure_v2") {  
+    // Now use that cloud hash built above to see if this volume is in Azure/RM
+    if (cloud_hash[vol_cloud_href]["cloud_type"] == "azure_v2") {  
       // AzureRM - we care
       if (my_vol["pg_id"]) {
-        my_vol["arm_disk_type"] = "Unmanaged"
-        my_vol["arm_storage_type"] = pg_hash[my_vol["pg_id"]]["account_type"]
-        my_vol["arm_storage_account_name"] = pg_hash[my_vol["pg_id"]]["name"]
+        my_vol["azure_disk_type"] = "Unmanaged"
+        my_vol["azure_storage_type"] = pg_hash[my_vol["pg_id"]]["account_type"]
+        my_vol["azure_storage_account_name"] = pg_hash[my_vol["pg_id"]]["name"]
       } else if (my_vol["volume_type"]) {
-        my_vol["arm_disk_type"] = "Managed"
-        my_vol["arm_storage_type"] = my_vol["volume_type"]
-        my_vol["arm_storage_account_name"] = "N/A"
+        my_vol["azure_disk_type"] = "Managed"
+        my_vol["azure_storage_type"] = my_vol["volume_type"]
+        my_vol["azure_storage_account_name"] = "N/A"
       } else {
-        my_vol["arm_disk_type"] = "Unknown"
-        my_vol["arm_storage_type"] = "Unknown"
-        my_vol["arm_storage_account_name"] = "Unknown"
+        my_vol["azure_disk_type"] = "Unknown"
+        my_vol["azure_storage_type"] = "Unknown"
+        my_vol["azure_storage_account_name"] = "Unknown"
       }
-    } else if (cloud_hash[vol_cloud_href] == "azure") {   
+    } else if (cloud_hash[vol_cloud_href]["cloud_type"] == "azure") {   
       // old Azure - we also care
-      my_vol["arm_disk_type"] = "Unmanaged"
-      my_vol["arm_storage_type"] = "Classic"
-      my_vol["arm_storage_account_name"] = pg_hash[my_vol["pg_id"]]["name"]
+      my_vol["azure_disk_type"] = "Unmanaged"
+      my_vol["azure_storage_type"] = "Classic"
+      my_vol["azure_storage_account_name"] = pg_hash[my_vol["pg_id"]]["name"]
     } else {
       // Other clouds - we do not care
-      my_vol["arm_disk_type"] = "N/A"
-      my_vol["arm_storage_type"] = "N/A"
-      my_vol["arm_storage_account_name"] = "N/A"
+      my_vol["azure_disk_type"] = "N/A"
+      my_vol["azure_storage_type"] = "N/A"
+      my_vol["azure_storage_account_name"] = "N/A"
     }
     
     // Calculate the age and add the information to the hash for the unattached volume.
     // This is used in the reporting to tell the user the age of the unattachedness.
-    // Doing some date math
     // Get the parts of the updated_at date found in the hash
     var updated_at_parts = vol.updated_at.split(" ")
     // chop up the yyyy/mm/dd into its parts
@@ -213,43 +197,54 @@ for (var i = 0; i < volumes.length; i++) {
     // Add a computed days old item to the hash
     my_vol["age"] = number_of_days_old
 
-    // Push the hash element to the unattach_volumes array
+    // Push the volume hash element to the unattach_volumes array
     unattached_volumes.push(my_vol)  
-
   }
 }
 EOS
 end
 	
 policy "pol_unattached_volumes" do
-    validate_each $ds_unattached_volumes do
+  validate_each $ds_unattached_volumes do
 	# Go through the unattached volumes that were found by the script-based datasource above
 	# and check if not older than specified number of days.
 	# If the check fails, it'll flag the volume
-	#check le(val(item, "age"), $param_days_old)
-	check eq(0,1)
+	check le(val(item, "age"), $param_days_old)
 
 	escalate $esc_unattached_volumes
 
 	summary_template "Unattached Volumes"
 
-    	detail_template <<-EOS
-Unattached Volume Report for Account: {{ rs_project_name }} (ID: {{ rs_project_id }})
-The following unattached volumes have exceeded the specified age of: {{ parameters.param_days_old }} days old
-{{ range data }}
-ID: {{ .id }}
-Cloud HREF: {{ .cloud_href }}
-Name: {{ .name }}
-Size: {{ .size }}
-Status: {{ .status }}
-Azure Disk Type: {{ .arm_disk_type }}
-Azure Storage Type: {{ .arm_storage_type }}
-Azure Storage Account Name: {{ .arm_storage_account_name }}
-Unattached on: {{ .updated_at }}
-Current Age (days): {{ .age}}
-{{ end }}
+#    	detail_template <<-EOS
+#Unattached Volume Report for Account: {{ rs_project_name }} (ID: {{ rs_project_id }})
+#The following unattached volumes have exceeded the specified age of: {{ parameters.param_days_old }} days old
+#{{ range data }}
+#ID: {{ .id }}
+#Cloud HREF: {{ .cloud_href }}
+#Name: {{ .name }}
+#Size: {{ .size }}
+#Status: {{ .status }}
+#Azure Disk Type: {{ .azure_disk_type }}
+#Azure Storage Type: {{ .azure_storage_type }}
+#Azure Storage Account Name: {{ .azure_storage_account_name }}
+#Unattached on: {{ .updated_at }}
+#Current Age (days): {{ .age}}
+#{{ end }}
+#EOS
+
+
+  detail_template <<-EOS
+Unattached Volume Report for Account: {{ rs_project_name }} (ID: {{ rs_project_id }})\n
+
+The following unattached volumes have exceeded the specified age of: {{ parameters.param_days_old }} days old\n
+| Cloud Name | Volume Name | Age | Volume Type | Resource UID | Size | Status | IOPS | Azure Disk Type | Azure Storage Type | Azure Storage Account | Created At | Updated At | Volume HREF |
+| ---------- | ----------- | --- | ----------- | ------------ | ---- | ------ | ---- | --------------- | ------------------ | --------------------- | ---------- | ---------- | ----------- |
+{{ range data -}}
+| {{ .cloud_name }} | {{ .name }} | {{ .age }} | {{ .volume_type }} | {{ .id }} | {{ .size }} | {{ .status }} | {{ .iops }} | {{ .azure_disk_type }} | {{ .azure_storage_type }} | {{ .azure_storage_account_name }} | {{ .created_at }} | {{ .updated_at }} | {{ .href }} |
+{{ end -}}
 EOS
-    end
+
+  end
 end
 
 
