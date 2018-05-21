@@ -4,7 +4,7 @@ rs_pt_ver 20180301
 type "policy"
 short_description "![Tag](https://s3.amazonaws.com/rs-pft/cat-logos/tag.png)\n
 Check for a tag and report which instances and volumes are missing it."
-long_description "Version: 1.0"
+long_description "Version: 1.1"
 category "Compliance"
 severity "medium"
 
@@ -37,7 +37,7 @@ parameter "param_advanced_tag_key" do
   label "Tags' Namespace:Keys Advanced List."
   type "string"
   description "A JSON string or publc HTTP URL to json file."
-  default '{"rs:test": {"validation-type": "regex","validation": "^sp","default-value":"none","prefix-value":"invalid_"}}'
+  default '{"rs:test": {"validation-type": "string","validation": "somevalue","default-value":"none","prefix-value":"invalid_"}}'
   #allow http, {*} or nothing.
   allowed_pattern /^(http|\{.*\}|)/
 end
@@ -171,15 +171,6 @@ datasource "resource_tags" do
   end
 end
 
-# datasource "json_tags" do
-#   request do
-#     host split($param_advanced_tag_key,'/')[0]
-#     verb "GET"
-#     scheme "https"
-#     path join(split($param_advanced_tag_key,'/')[0..-1])
-#   end
-# end
-
 datasource "filtered_resources" do
   run_script $filter_resources, $resources, $resource_tags, $clouds,$param_tag_keys,$param_advanced_tag_key
 end
@@ -197,13 +188,15 @@ if ( param_tag_keys !== '' ){
   tag_keys_array= param_tag_keys.split(',')
 }
 
-var json={}
+var validate_tags_object={}
+// keys from JSON
+var advanced_tag_keys=[]
 // check for param_advanced_tag_key and parse the json
 if ( param_advanced_tag_key !== '') {
-  var json = JSON.parse(param_advanced_tag_key)
-  var keys = _.keys(json)
-  for (var i = 0; i < keys.length; i++) {
-    tag_keys_array.push(keys[i])
+  validate_tags_object = JSON.parse(param_advanced_tag_key)
+  advanced_tag_keys = _.keys(validate_tags_object)
+  for (var i = 0; i < advanced_tag_keys.length; i++) {
+    tag_keys_array.push(advanced_tag_keys[i])
   }
 }
 tag_keys_array = _.uniq(tag_keys_array)
@@ -215,7 +208,7 @@ for (var i = 0; i < clouds.length; i++) {
     cloud_map[cloud['href']]={'type': cloud['type'],'name': cloud['name']}
 }
 
-// This is the map of volume href to its tags.
+// This is the map of resource href to its tags.
 var tags = {};
 for (var i = 0; i < resource_tags.length; i++) {
   rt = resource_tags[i]
@@ -232,14 +225,36 @@ for (var i = 0; i < resource_tags.length; i++) {
 for (var i = 0; i < resources.length; i++) {
   var res = resources[i]
   var res_tags = []
+  var invalid_tags =[]
+  var bad = false
   // Tags is an array of hashes each with just 'name'. Let's convert
   // them to an array of strings.
   for (var j = 0; j < tags[res['href']].length; j++) {
-    res_tags.push(tags[res['href']][j]['name'].split("=")[0])
+    tag_key = tags[res['href']][j]['name'].split("=")[0]
+    tag_value = tags[res['href']][j]['name'].split("=")[1]
+    if ( validate_tags_object[tag_key] && validate_tags_object[tag_key]['validation-type']==='string' ){
+      if ( validate_tags_object[tag_key]['validation'] !== tag_value ){
+        bad=true
+        invalid_tags.push(tag_key)
+      }
+    }
+    if ( validate_tags_object[tag_key] && validate_tags_object[tag_key]['validation-type'] === 'array' ){
+      if ( validate_tags_object[tag_key]['validation'].indexOf(tag_value) === -1 ){
+        bad=true
+        invalid_tags.push(tag_key)
+      }
+    }
+    if ( validate_tags_object[tag_key] && validate_tags_object[tag_key]['validation-type'] === 'regex'){
+      if ( tag_value.search(validate_tags_object[tag_key]['validation']) === -1 ){
+        bad=true
+        invalid_tags.push(tag_key)
+      }
+    }
+
+    res_tags.push(tag_key)
   }
 
   // Determines whether this resource is properly tagged
-  var bad = false;
   var missing_tags = []
   if ( _.intersection(tag_keys_array, res_tags).length != tag_keys_array.length ) {
     bad = true;
@@ -263,6 +278,7 @@ for (var i = 0; i < resources.length; i++) {
       cloud_name: cloud_map[cloud_href]['name'],
       cloud_type: cloud_map[cloud_href]['type'],
       missing_tags: missing_tags,
+      invalid_tags: invalid_tags,
     }
     )
   }
@@ -283,11 +299,11 @@ policy "untagged_resources_policy" do
   validate $filtered_resources do
     summary_template "Untagged Resources Summary"
     detail_template <<-EOS
-    There are {{ len data }} resource(s) missing tags: {{ parameters.param_tag_keys }} \n
-    | Cloud Name | Cloud Type | Name | ID | Type | State | Href | Missing Tags |
-    | ---------- | ---------- | ---- | -- | ---- | ----- | ---- | ------------ |
+    There are {{ len data }} resource(s) missing tags: {{ parameters.param_tag_keys }}
+    | Cloud Name | Cloud Type | Name | ID | Type | State | Href | Missing Tags | Invalid Tags |
+    | ---------- | ---------- | ---- | -- | ---- | ----- | ---- | ------------ | ------------ |
     {{ range data -}}
-    | {{ .cloud_name }} | {{ .cloud_type }} | {{ .name }} | {{ .id }} | {{ .type }} | {{ .state }} | {{ .href }} | {{ range $i, $e := .missing_tags }}{{ if $i }}, {{ end }}{{ $e }}{{ end }} |
+    | {{ .cloud_name }} | {{ .cloud_type }} | {{ .name }} | {{ .id }} | {{ .type }} | {{ .state }} | {{ .href }} | {{ range $i, $e := .missing_tags }}{{ if $i }}, {{ end }}{{ $e }}{{ end }} | {{ range $i, $e := .invalid_tags }}{{ if $i }}, {{ end }}{{ $e }}{{ end }}  |
     {{ end -}}
     EOS
     escalate $escalate_resources
