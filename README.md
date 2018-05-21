@@ -10,7 +10,7 @@ This repo contains a library of open source RightScale Policy Templates
 ### Security
 ### Operational
 ### Compliance
-- [Untagged Resources](./compliance/tags)
+- [Untagged Resources](./compliance/tags/tag_checker)
 
 ## RightScale Policy Template Documentation
 - [Getting Started](http://docs.rightscale.com/policies/getting_started/)
