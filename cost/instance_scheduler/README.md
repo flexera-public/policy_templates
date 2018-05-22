@@ -1,4 +1,4 @@
-### Instance Scheduler
+### Schedule Instances
 
 **What it does**
 This Policy Template allows you to schedule start and stop times for your compute.
@@ -7,7 +7,7 @@ This Policy Template allows you to schedule start and stop times for your comput
 The following clouds are supported: 
 - AWS
 - Azure
-- Google 
+- Google
 
 **Cost**
 

@@ -5,6 +5,7 @@ This repo contains a library of open source RightScale Policy Templates
 ### Cost
 - [AWS Reserved Instance Expiration Policy](./cost/aws/reserved_instances/expiration/)
 - [AWS Reserved Instances Utilization](./cost/aws/reserved_instances/utilization/)
+- [Schedule Instances] (./cost/schedule_instances)
 
 ### Security
 ### Operational
