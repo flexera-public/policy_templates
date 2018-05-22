@@ -1,0 +1,126 @@
+name "Instances Scheduler"
+rs_pt_ver 20180301
+type "policy"
+short_description "A policy that start and stops instances based on a schedule"
+long_description "Version 1.0"
+severity "medium"
+category "Cost"
+
+
+parameter "param_schedule" do
+  type "string"
+  label "Schedule Ex: 07-19:M.T.W.Th.F start_hour-end_hour:days_of_week_to_run "
+  default "instance:schedule:Business Hourse"
+end
+
+parameter "escalate_to" do
+  type "string"
+  label "Email address to send escalation emails to"
+  default "curt@rightscale.com"
+end
+
+auth "rs", type: "rightscale"
+
+#all clouds
+resources "clouds", type: "rs_cm.clouds"
+
+#all instances operational or provisioned
+resources "instances", type: "rs_cm.instances" do
+  iterate @clouds
+  cloud_href href(iter_item)
+  filter do
+    state ["operational" , "provisioned"]
+  end
+end
+
+#all tags on the instances
+datasource "ds_instance_tags" do
+  request do
+    auth $rs
+    verb "POST"
+    host rs_cm_host
+    path "/api/tags/by_tag"
+    header "X-Api-Version", "1.5"
+    body_field "tags", [$param_schedule]
+    body_field "resource_type", "instances"
+  end
+end
+
+datasource "filtered_instances" do
+  run_script $js_instance_tags, @instances, $ds_instance_tags, @clouds
+end
+
+script "js_instance_tags", type: "javascript" do
+  parameters "instances","instance_tags","clouds"
+  result "filtered_instances"
+  code <<-EOS
+  // This is the list of filtered volumes.
+  var filtered_instances = [];
+
+
+  // create a map of clouds with href key to get type and name
+  var cloud_map = {}
+  for (var i = 0; i < clouds.length; i++) {
+      var cloud = clouds[i]
+      cloud_map[cloud['href']]={'type': cloud['type'],'name': cloud['name']}
+  }
+
+  var instance_map = {}
+  for (var i = 0; i < instances.length; i++) {
+      var instance = instances[i]
+      instance_map[instances['href']]={
+        'state': instance['state'],
+        'name': instance['name'],
+        'id':insance['resource_id']
+      }
+  }
+
+  // This is the map of resource href to its tags.
+  var tags = {};
+  var res={};
+  for (var i = 0; i < instance_tags.length; i++) {
+    it = instance_tags[i]
+    for (var j = 0; j < it['links'].length; j++) {
+      link = it['links'][j]
+      if (link['rel'] == 'resource') {
+        //tags[link['href']] = it['tags']
+        // create cloud_href from resource href
+        var split = link['href'].split('/')
+        var index = link['href'].indexOf('/' + split[4])
+        var cloud_href = link['href'].substring(0,index)
+
+        // create object of instances
+          filtered_instances.push(
+          { id: instance_map[link['href']]['id'],
+            name: instance_map[link['href']]['name'],
+            state: instance_map[link['href']]['state'],
+            href: instance_map[link['href']]['href'],
+            cloud_name: cloud_map[cloud_href]['name'],
+            cloud_type: cloud_map[cloud_href]['type'],
+          }
+          )
+      }
+    }
+  }
+  EOS
+end
+
+escalation "escalate_instances" do
+  email $escalate_to
+end
+
+policy "instance_scheduler" do
+  validate $filtered_instances do
+    summary_template "Instance Scheduler"
+    detail_template <<-EOS
+      There are {{ len data }} resource(s) matching  tags: {{ parameters.param_schedule }}
+      | Name | State | Cloud | Href |
+      | ---- | ----- | ----- |---- |
+      {{ range data -}}
+      | {{ .name }} | {{ .state }} | {{ .cloud_type }} | {{ .href }} |
+      {{ end -}}
+      EOS
+    escalate $escalate_instances
+    check eq(size(data), 0)
+  end
+end
