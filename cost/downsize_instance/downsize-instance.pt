@@ -1,0 +1,283 @@
+name "Downsize Instances Policy Template"
+rs_pt_ver 20180301
+type "policy"
+short_description "A policy that downsizes instances based on monitoring metrics"
+long_description "Version: 1.0"
+severity "medium"
+category "Cost"
+
+permission "perm_instance_and_monitoring_metrics" do
+  label "Permissions for instances and monitoring metrics"
+  actions "rs_cm.index", "rs_cm.show", "rs_cm.data"
+  resources "rs_cm.instances", "rs_cm.monitoring_metrics"
+end
+
+parameter "param_avg_free_memory_percent" do
+  type "number"
+  label "Average free memory percent to allow for downsize"
+  default -1
+  min_value -1
+  max_value 100
+end
+
+parameter "param_max_free_memory_percent" do
+  type "number"
+  label "Maximum free memory percent to allow for downsize"
+  default -1
+  min_value -1
+  max_value 100
+end
+
+parameter "param_max_cpu_idle" do
+  type "number"
+  label "Maximum cpu idle percent to allow for downsize"
+  default -1
+  min_value -1
+  max_value 100
+end
+
+parameter "param_avg_cpu_idle" do
+  type "number"
+  label "Average cpu idle percent to allow for downsize"
+  default -1
+  min_value -1
+  max_value 100
+end
+
+parameter "param_instance_tag_list" do
+  type "list"
+  label "instance tags used to filter instances that must validate policy"
+  default ["rs_monitoring:resize=1"]
+end
+
+parameter "param_escalate_to" do
+  type "string"
+  label "Email address to send escalation emails to"
+  default "rshade@rightscale.com"
+end
+
+auth "auth_rs", type: "rightscale"
+
+resources "clouds", type: "rs_cm.clouds"
+
+resources "instances", type: "rs_cm.instances" do
+  iterate @clouds  
+  cloud_href href(iter_item)
+  filter do
+    state "operational"
+  end
+end
+
+datasource "ds_instances" do
+  iterate @instances
+  field "resource_uid", val(iter_item,  "resource_uid")
+  field "name", val(iter_item, "name")
+  field "href", href(iter_item)
+  field "instance_type", val(iter_item, "instance_type")
+end
+
+datasource "ds_instances_tags" do
+  request do
+    auth $auth_rs
+    verb "POST"
+    host rs_cm_host
+    path "/api/tags/by_resource"
+    header "X-Api-Version", "1.5"
+    body_field "resource_hrefs", hrefs(@instances)
+  end
+end
+
+datasource "ds_filtered_instances" do
+  run_script $js_filter_instances, $ds_instances, $ds_instances_tags, $param_instance_tag_list
+end
+
+script "js_filter_instances", type: "javascript" do
+  parameters "instances", "instances_tags", "instance_tag_list"
+  result "filtered_instances"
+  code <<-EOS
+// This is the list of filtered instances.
+var filtered_instances = [];
+
+// This is the map of instance href to its tags.
+var tags = {};
+for (var i = 0; i < instances_tags.length; i++) {
+  vt = instances_tags[i]
+  for (var j = 0; j < vt['links'].length; j++) {
+    link = vt['links'][j]
+    if (link['rel'] == 'resource') {
+      tags[link['href']] = vt['tags']
+    }
+  }
+}
+
+// Go through all the instances and filter the ones that don't
+// comply with the tag rules.
+for (var i = 0; i < instances.length; i++) {
+  vol = instances[i]
+  vol_tags = []
+  // Tags is an array of hashes each with just 'name'. Let's convert
+  // them to an array of strings.
+  for (var j = 0; j < tags[vol['href']].length; j++) {
+    vol_tags.push(tags[vol['href']][j]['name'])
+  }
+
+  // Determines whether this resource is properly tagged
+  var good = true;
+  if (_.intersection(instance_tag_list, vol_tags).length != instance_tag_list.length) {
+    good = false
+  }
+
+  if (good) {
+    filtered_instances.push(
+      {
+        resource_uid: vol['resource_uid'],
+        name: vol['name'],
+        href: vol['href'],
+        instance_type: vol['instance_type'],
+        tags: vol_tags
+      }
+    )
+  }
+};
+  EOS
+end
+
+datasource "ds_instance_metrics_free_memory" do
+  iterate($ds_filtered_instances)
+  request do
+    auth $auth_rs
+    host rs_cm_host
+    path join([val(iter_item,"href"), "/monitoring_metrics/memory:memory-free/data"])
+    query "start", "-300"
+    query "end", "0"
+    header "X-API-Version", "1.5"
+  end
+  result do
+    field "href",        val(iter_item,"href")
+    field "memory_data_points", jmes_path(response, "variables_data[0].points[*]")
+    field "resource_uid",          val(iter_item,"resource_uid")
+    field "instance_type",        val(iter_item,"instance_type")
+    field "name",        val(iter_item,"name")
+  end
+end
+
+datasource "ds_instance_metrics_total_memory" do
+  iterate($ds_filtered_instances)
+  request do
+    auth $auth_rs
+    host rs_cm_host
+    path join([val(iter_item,"href"), "/monitoring_metrics/memory:memory-total/data"])
+    query "start", "-300"
+    query "end", "0"
+    header "X-API-Version", "1.5"
+  end
+  result do
+    field "href",        val(iter_item,"href")
+    field "memory_data_points", jmes_path(response, "variables_data[0].points[*]")
+    field "resource_uid",          val(iter_item,"resource_uid")
+    field "instance_type",        val(iter_item,"instance_type")
+    field "name",        val(iter_item,"name")
+  end
+end
+
+datasource "ds_instance_metrics_cpu" do
+  iterate($ds_filtered_instances)
+  request do
+    auth $auth_rs
+    host rs_cm_host
+    path join([val(iter_item,"href"), "/monitoring_metrics/cpu-0:cpu-idle/data"])
+    query "start", "-300"
+    query "end", "0"
+    header "X-API-Version", "1.5"
+  end
+  result do
+    field "href",        val(iter_item,"href")
+    field "data_points", jmes_path(response, "variables_data[0].points[*]")
+    field "resource_uid",          val(iter_item,"resource_uid")
+    field "instance_type",        val(iter_item,"instance_type")
+    field "name",        val(iter_item,"name")
+  end
+end
+
+datasource "ds_instances_with_calculated_metrics" do
+  run_script $js_calculate_metrics, $ds_instance_metrics_free_memory, $ds_instance_metrics_total_memory, $ds_instance_metrics_cpu
+end
+
+script "js_calculate_metrics", type: "javascript" do
+  parameters "instance_metrics_free_memory","instance_metrics_total_memory", "instance_metrics_cpu"
+  result "calculated_instances"
+  code <<-EOS
+var calculated_instances = [];
+for (var i = 0; i < instance_metrics_free_memory.length; i++) {
+  for (var t = 0; t < instance_metrics_total_memory.length; t++) {
+    if ( instance_metrics_free_memory[i]["href"] == instance_metrics_total_memory[t]["href"] ) {
+      var free_sum = 0;
+      free_memory_data_points = instance_metrics_free_memory[i]["memory_data_points"]
+      var free_avg = free_memory_data_points.reduce(function(acc, val) { return acc + val; })/free_memory_data_points.length;
+      max_free_memory = Math.max.apply(Math,free_memory_data_points)
+
+      var total_sum = 0;
+      total_memory_data_points = instance_metrics_total_memory[t]["memory_data_points"]
+      var total_avg = total_memory_data_points.reduce(function(acc, val) { return acc + val; })/total_memory_data_points.length;
+      max_total_memory = Math.max.apply(Math,total_memory_data_points)
+      avg = parseInt((free_avg/total_avg)*100)
+      max_free_memory_avg = parseInt((max_free_memory/max_total_memory)*100)
+      calculated_instances.push(
+          {
+            resource_uid: instance_metrics_free_memory[i]["resource_uid"],
+            name: instance_metrics_free_memory[i]["name"],
+            href: instance_metrics_free_memory[i]["href"],
+            instance_type: instance_metrics_free_memory[i]["instance_type"],
+            tags: instance_metrics_free_memory[i]["vol_tags"],
+            average_mem_percent: avg,
+            max_free_memory_avg: max_free_memory_avg,
+            free_avg: parseInt((free_avg/1000)/1000),
+            total_avg: parseInt((total_avg/1000)/1000),
+            max_free_memory: parseInt((max_free_memory/1000)/1000),
+            max_total_memory: parseInt((max_total_memory/1000)/1000),
+          }
+        )
+    }
+  }
+};
+for ( var i = 0; i < calculated_instances.length; i++ ) {
+  for ( v = 0; v < instance_metrics_cpu.length; v++ ) {
+    if ( calculated_instances[i]["href"] == instance_metrics_cpu[v]["href"] ) {
+      cpu_data_points = instance_metrics_cpu[v]["data_points"]
+      var max_cpu_idle = 0;
+      var average_cpu_idle = 0;
+      max_cpu_idle = Math.max.apply(Math,cpu_data_points)
+      average_cpu_idle = cpu_data_points.reduce(function(acc, val) { return acc + val; })/cpu_data_points.length;
+      calculated_instances[i]["max_cpu_idle"] = parseInt(max_cpu_idle)
+      calculated_instances[i]["average_cpu_idle"] = parseInt(average_cpu_idle)
+    }
+  }
+};
+EOS
+end
+
+escalation "downsize" do
+  email $param_escalate_to
+end
+
+policy "policy_rightsize" do
+  validate_each $ds_instances_with_calculated_metrics do
+    summary_template "Instances that can be downsized"
+    detail_template <<-EOS
+# Instances that can be downsized
+
+| Account | Instance Name | Resource UID | Average Memory | Free Average Memory | Total Average Memory | Max Free Memory | Max Total Memory | Max CPU Idle | Average CPU Idle |
+| ------- | ------------- | ------------ | -------------- | ------------------- | -------------------- | --------------- | ---------------- | ------------ | ---------------- |
+{{ range data -}}
+| {{rs_project_name}} | {{.name}} | {{.resource_uid}} | {{.average_mem_percent}}% | {{.free_avg }}MB | {{.total_avg }}MB | {{.max_free_memory }}MB | {{.max_total_memory }}MB | {{.max_cpu_idle}}% | {{.average_cpu_idle}}% |
+{{ end -}}
+
+EOS
+
+    escalate $downsize
+    check logic_and(eq($param_avg_free_memory_percent, -1), lt(to_n(val(item,"average_mem_percent")), $param_avg_free_memory_percent))
+    check logic_and(eq($param_max_free_memory_percent, -1), lt(to_n(val(item,"max_free_memory_avg")),$param_max_free_memory_percent))
+    check logic_and(eq($param_avg_cpu_idle, -1), lt(to_n(val(item,"average_cpu_idle")),$param_avg_cpu_idle))
+    check logic_and(eq($param_max_cpu_idle, -1), lt(to_n(val(item,"max_cpu_idle")),$param_max_cpu_idle))
+  end
+end
