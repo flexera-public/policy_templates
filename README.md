@@ -9,6 +9,7 @@ This repo contains a library of open source RightScale Policy Templates.
 - [AWS Reserved Instance Expiration](./cost/aws/reserved_instances/expiration/)
 - [AWS Reserved Instances Utilization](./cost/aws/reserved_instances/utilization/)
 - [Downsize Instances](./cost/downsize_instance/)
+- [Old Snapshots](./cost/volumes/old_snapshots/)
 
 ### Security
 ### Operational
