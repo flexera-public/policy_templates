@@ -37,6 +37,7 @@ parameter "param_advanced_tag_key" do
   label "Tags' Namespace:Keys Advanced List."
   type "string"
   description "A JSON string or publc HTTP URL to json file.  See README for example"
+  default '{"rs:test": {"validation-type": "string", "validation": "testing","default-value":"none","prefix-value":"invalid_"}}'
   #allow valid json, {*} or nothing.
   allowed_pattern /(\{.*\}|)/
 end
@@ -45,6 +46,7 @@ parameter "param_email" do
   category "Contact"
   label "Email addresses (separate with commas)"
   type "string"
+  default 'curt@rightscale.com'
   # allow list of comma seperated email addresses or nothing
   allowed_pattern /^([a-zA-Z0-9-_.]+[@]+[a-zA-Z0-9-_.]+[.]+[a-zA-Z0-9-_]+,*|)+$/
 end
@@ -228,24 +230,25 @@ for (var i = 0; i < resources.length; i++) {
   // Tags is an array of hashes each with just 'name'. Let's convert
   // them to an array of strings.
   for (var j = 0; j < tags[res['href']].length; j++) {
-    tag_key = tags[res['href']][j]['name'].split("=")[0]
-    tag_value = tags[res['href']][j]['name'].split("=")[1]
+    tag = tags[res['href']][j]['name']
+    tag_key = tag.split("=")[0]
+    tag_value = tag.split("=")[1]
     if ( validate_tags_object[tag_key] && validate_tags_object[tag_key]['validation-type']==='string' ){
       if ( validate_tags_object[tag_key]['validation'] !== tag_value ){
         bad=true
-        invalid_tags.push(tag_key)
+        invalid_tags.push(tag)
       }
     }
     if ( validate_tags_object[tag_key] && validate_tags_object[tag_key]['validation-type'] === 'array' ){
       if ( validate_tags_object[tag_key]['validation'].indexOf(tag_value) === -1 ){
         bad=true
-        invalid_tags.push(tag_key)
+        invalid_tags.push(tag)
       }
     }
     if ( validate_tags_object[tag_key] && validate_tags_object[tag_key]['validation-type'] === 'regex'){
       if ( tag_value.search(validate_tags_object[tag_key]['validation']) === -1 ){
         bad=true
-        invalid_tags.push(tag_key)
+        invalid_tags.push(tag)
       }
     }
 
@@ -286,6 +289,7 @@ end
 
 escalation "escalate_resources" do
   email $param_email
+  run "tag_resources", data, $param_advanced_tag_key
 end
 
 
@@ -308,4 +312,58 @@ policy "untagged_resources_policy" do
     check eq(size(data), 0)
     resolve $resolve_resources
   end
+end
+
+# update tags with default values and invalid valus
+define tag_resources($data,$param_advanced_tag_key) do
+  # only proceed if the $param_advanced_tag_key has a value
+  # call sys_log('data',to_s($data))
+  # foreach $item in $data do
+  #   call sys_log('item',to_s($item))
+  #   rs_cm.tags.multi_add(resource_hrefs: [$item['href']], tags:["rs:test=curtwashere"])
+  # end
+  if  $param_advanced_tag_key
+    call sys_log('tag_resources','here')
+    # convert param to an object
+    $validate_tags_object = from_json($param_advanced_tag_key)
+    # get keys from object
+    $advanced_tag_keys = keys($validate_tags_object)
+    # go through each resource with invalid or missing tags
+    foreach $item in $data do
+      call sys_log('item',to_s($item))
+      # add missing tags with default-value
+      foreach $missing in $item['missing_tags'] do
+        call sys_log('missing',to_s($missing))
+        if $validate_tags_object[$missing] && $validate_tags_object[$missing]['default-value']
+          call sys_log('default-value',$validate_tags_object[$missing]['default-value'])
+          $tag = join($validate_tags_object[$missing],"=",$validate_tags_object[$missing]['default-value'])
+          rs_cm.tags.multi_add(resource_hrefs: [$item['href']], tags:[$tag])
+        end
+      end
+      # update taggs with invalid-value
+      foreach $invalid_tag in $item['invalid_tags'] do
+        call sys_log('invalid_tag',to_s($invalid_tag))
+        $invalid_key = split($invalid_tag,'=')[0]
+        $invalid_value = split($invalid_tag,'=')[1]
+        if $validate_tags_object[$invalid_key] && $validate_tags_object[$invalid_key]['prefix-value']
+          call sys_log('prefix-value',$validate_tags_object[$invalid_key]['prefix-value'])
+          if !include?($invalid_tag,$validate_tags_object[$invalid_key]['prefix-value'])
+            $tag = join($invalid_key,"=",$validate_tags_object[$invalid_key]['prefix-value'],$invalid_value)
+            rs_cm.tags.multi_add(resource_hrefs: [$item['href']], tags:[$tag])
+          end
+        end
+      end
+    end
+  end
+end
+
+define sys_log($subject, $detail) do
+  rs_cm.audit_entries.create(
+    notify: "None",
+    audit_entry: {
+      auditee_href: @@account,
+      summary: $subject,
+      detail: $detail
+    }
+  )
 end
