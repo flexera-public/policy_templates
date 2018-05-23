@@ -1,0 +1,132 @@
+name "Security Group Rules without Descriptions"
+rs_pt_ver 20180301
+type "policy"
+short_description "A policy that sends email notifications when a security group has no description"
+long_description "Version 1.0"
+severity "high"
+category "Security"
+
+parameter "param_escalate_to" do
+  type "string"
+  label "Email address to send escalation emails to"
+end
+
+auth "auth_rs", type: "rightscale"
+
+# Filter to clouds that support security groups
+resources "clouds", type: "rs_cm.clouds" do
+  filter do
+    cloud_type ne: ["soft_layer", "cloud_stack","azure","rackspace_next_gen","vscale","blue_skies","open_stack_v2","uca","open_stack_v3"]
+  end
+end
+
+resources "security_groups", type: "rs_cm.security_groups" do
+  iterate @clouds
+  cloud_href href(iter_item)
+end
+
+resources "networks", type: "rs_cm.networks"
+
+datasource "ds_security_groups" do
+  iterate @security_groups
+  field "resource_uid", val(iter_item,  "resource_uid")
+  field "name", val(iter_item, "name")
+  field "href", href(iter_item)
+  field "links", val(iter_item, "links")
+end
+
+datasource "ds_networks" do
+  iterate @networks
+  field "name", val(iter_item, "name")
+  field "href", href(iter_item)
+end
+
+datasource "ds_security_group_rules" do
+  iterate @security_groups
+  request do
+    auth $auth_rs
+    verb "GET"
+    host rs_cm_host
+    path join([href(iter_item),"/security_group_rules"])
+    header "X-Api-Version", "1.5"
+  end
+end
+
+datasource "ds_munged_security_groups" do
+  run_script $js_munge_sec_group, $ds_security_groups, $ds_security_group_rules, $ds_networks, rs_project_id, rs_cm_host
+end
+
+script "js_munge_sec_group", type: "javascript" do
+  parameters "ds_security_groups", "ds_security_group_rules", "ds_networks", "rs_project_id", "rs_cm_host"
+  result "groups_and_rules"
+code <<-EOS
+var groups_and_rules=[];
+var base_url="https://" + rs_cm_host + "/acct/"
+for ( var i = 0; i < ds_security_group_rules.length; i++) {
+  for ( var s = 0; s < ds_security_groups.length; s++) {
+    for ( var h = 0; h < ds_security_group_rules[i]["links"].length; h++) {
+      if ( ds_security_group_rules[i]["links"][h]["href"] == ds_security_groups[s]["href"] ){
+        ds_security_group_rules[i]["security_group_name"] = ds_security_groups[s]["name"]
+        ds_security_group_rules[i]["security_group_href"] = ds_security_groups[s]["href"]
+        for ( var l=0; l < ds_security_groups[s]["links"].length; l++ ){
+          if ( ds_security_groups[s]["links"][l]["rel"] == "network" ) {
+            ds_security_group_rules[i]["network_href"] = ds_security_groups[s]["links"][l]["href"]
+          }
+        }
+      } else if (ds_security_group_rules[i]["links"][h]["rel"] == "self") {
+        ds_security_group_rules[i]["self_href"] = ds_security_group_rules[i]["links"][h]["href"]
+      }
+    }
+    for ( var n = 0; n < ds_networks.length; n++ ){
+      if ( ds_security_group_rules[i]["network_href"] == ds_networks[n]["href"] ){
+        ds_security_group_rules[i]["network_name"] = ds_networks[n]["name"]
+        var network_res=ds_networks[n]["href"].split('/')
+        var sg_res=ds_security_group_rules[i]["security_group_href"].split('/')
+        ds_security_group_rules[i]["security_group_access_link_root"] = base_url.concat(rs_project_id,'/network_manager#networks/',network_res[3],'/security_groups/',sg_res[5])
+      }
+    }
+  }
+  groups_and_rules.push(
+    {
+      security_group_name: ds_security_group_rules[i]["security_group_name"],
+      security_group_href: ds_security_group_rules[i]["security_group_href"],
+      href: ds_security_group_rules[i]["self_href"],
+      protocol: ds_security_group_rules[i]["protocol"],
+      source_type: ds_security_group_rules[i]["source_type"],
+      description: ds_security_group_rules[i]["description"],
+      network_href: ds_security_group_rules[i]["network_href"],
+      network_name: ds_security_group_rules[i]["network_name"],
+      security_group_access_link_root: ds_security_group_rules[i]["security_group_access_link_root"]
+    }
+  )
+};
+
+EOS
+end
+
+escalation "alert" do
+  email $param_escalate_to
+end
+
+resolution "resolution" do
+  email $param_escalate_to
+end
+
+policy "rule_without_description" do
+  validate_each $ds_munged_security_groups do
+    summary_template "Security Group Rules without Descriptions"
+    detail_template <<-EOS
+# Security Rules without Descriptions
+
+| Security Group Name | Security Group Href | Href | Protocol | Source Type | Network Href | Network Name | Security Group Link |
+| ------------------- | ------------------- | ---- | -------- | ----------- | ------------ | ------------ | ------------------- |
+{{ range data -}}
+| {{ .security_group_name }} | {{ .security_group_href }} | {{.href}} | {{.protocol}} | {{.source_type}} | {{.network_href}} | {{.network_name}} | {{.security_group_access_link_root}} |
+{{ end -}}
+EOS
+
+    escalate $alert
+    check val(item, "description")
+    resolve $resolution
+  end
+end
