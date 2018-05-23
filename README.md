@@ -11,6 +11,8 @@ This repo contains a library of open source RightScale Policy Templates.
 - [Downsize Instances](./cost/downsize_instance/)
 
 ### Security
+- [AWS Open Buckets Policy](./security/storage/aws/public_buckets/)
+
 ### Operational
 ### Compliance
 - [Untagged Resources](./compliance/tags)
