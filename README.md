@@ -11,6 +11,8 @@ This repo contains a library of open source RightScale Policy Templates.
 - [Downsize Instances](./cost/downsize_instance/)
 
 ### Security
+- [ICMP Enabled Security Group](./security/security_groups/icmp_enabled/)
+- [Security Group Rules Without Description](./security/security_groups/rules_without_descriptions/)
 - [AWS Open Buckets Policy](./security/storage/aws/public_buckets/)
 
 ### Operational
