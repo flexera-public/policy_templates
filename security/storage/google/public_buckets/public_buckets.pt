@@ -1,0 +1,123 @@
+name "Azure Open Buckets Policy"
+rs_pt_ver 20180301
+type "policy"
+short_description "Checks for buckets that are open to everyone"
+long_description "Version 1.0"
+severity "medium"
+category "Security"
+
+permission "perm_read_creds" do
+  actions   "rs_cm.show_sensitive","rs_cm.index_sensitive"
+  resources "rs_cm.credentials"
+end
+
+parameter "param_escalate_to" do
+  type "string"
+  label "Email address to send escalation emails to"
+  default "rshade@rightscale.com"
+end
+
+parameter "param_azure_tenant_id" do
+  type "string"
+  label "Microsoft Azure AD tenant used for authentication"
+  default "09b8fec1-4b8d-48dd-8afa-5c1a775ea0f2"
+end
+
+parameter "param_azure_subscription_id" do
+  type "string"
+  label "Microsoft Azure Subscription id"
+  default "8beb7791-9302-4ae4-97b4-afd482aadc59"
+end
+
+auth "auth_azure", type: "oauth2" do
+  token_url join(["https://login.microsoftonline.com/", $param_azure_tenant_id, "/oauth2/token"])
+  grant type: "client_credentials" do
+    client_id cred("AZURE_APPLICATION_ID")
+    client_secret cred("AZURE_APPLICATION_KEY")
+    additional_params do {
+      "resource" => "https://management.azure.com/"
+    } end
+  end
+end
+
+auth "auth_azure_storage", type: "oauth2" do
+  token_url join(["https://login.microsoftonline.com/", $param_azure_tenant_id, "/oauth2/token"])
+  grant type: "client_credentials" do
+    client_id cred("AZURE_APPLICATION_ID")
+    client_secret cred("AZURE_APPLICATION_KEY")
+    additional_params do {
+      "resource" => "https://storage.azure.com/"
+    } end
+    additional_headers do {
+      "x-ms-version" => "2017-11-09"
+    } end
+  end
+end
+
+pagination "azure_pagination" do
+  get_page_marker do
+    body_path "//NextMarker"
+  end
+  set_page_marker do
+    query "marker"
+  end
+end
+
+datasource "ds_storage_accounts" do
+  request do
+    auth $auth_azure
+    host "management.azure.com"
+    path join(["/subscriptions/", $param_azure_subscription_id, "/providers/Microsoft.Storage/storageAccounts"])
+    query "api-version", "2017-06-01"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "value") do
+      field "storage_account_name", jmes_path(col_item, "name")
+    end
+  end
+end
+
+# Reference: https://docs.microsoft.com/en-us/rest/api/storageservices/list-containers2
+datasource "ds_azure_containers" do
+  iterate $ds_storage_accounts
+  request do
+    auth $auth_azure_storage
+    pagination $azure_pagination
+    host join([val(iter_item,"storage_account_name"), ".blob.core.windows.net"])
+    host "bksandbox32a8bc748.blob.core.windows.net"
+    path "/"
+    query "comp", "list"
+    query "timeout", "30"
+    header "x-ms-version", "2017-11-09"
+  end
+  result do
+    encoding "xml"
+    collect xpath(response, "EnumerationResults/Containers/Container", "array") do
+      field "storage_account_name", val(iter_item, "storage_account_name")
+      field "name", xpath(col_item, "Name")
+      field "public_access", xpath(col_item, "Properties/PublicAccess")
+    end
+  end
+end
+
+escalation "alert" do
+   email $escalate_to
+end
+
+policy "public_buckets" do
+  validate_each $ds_azure_containers do
+    summary_template "Public Buckets Found in Azure"
+    detail_template <<-EOS
+# Public Buckets Found in Azure
+| Bucket Name | Public Access | Storage Account Name |
+| ----------- | ------------- | -------------------- |
+{{ range data -}}
+| {{.name}} | {{.public_access}} |
+{{ end -}}
+EOS
+    escalate $alert
+    check gt(0,0)
+    #check logic_not(contains(val(item, "grantee_uris"), "http://acs.amazonaws.com/groups/global/AllUsers"))
+  end
+end
