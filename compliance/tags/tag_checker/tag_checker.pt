@@ -1,0 +1,367 @@
+# Required prolog
+name 'Untagged Resources'
+rs_pt_ver 20180301
+type "policy"
+short_description "![Tag](https://s3.amazonaws.com/rs-pft/cat-logos/tag.png)\n
+Check for a tag and report which instances and volumes are missing it."
+long_description "Version: 1.1"
+category "Compliance"
+severity "medium"
+
+permission "retrieve_resources" do
+  label "Retrieve Resources"
+  actions   "rs_cm.index","rs_cm.show"
+  resources "rs_cm.instances","rs_cm.volumes"
+end
+
+permission "retrieve_tags" do
+  label "Retrieve Tags"
+  actions "rs_cm.by_resource"
+  resources "rs_cm.tags"
+end
+
+##################
+# User inputs    #
+##################
+parameter "param_tag_keys" do
+  category "User Inputs"
+  label "Tags' Namespace:Keys List"
+  type "string"
+  description "Comma-separated list of Tags' Namespace:Keys to audit. For example: \"ec2:project_code\" or \"bu:id\"."
+  # allow namespace:key or nothing
+  allowed_pattern /^([a-zA-Z0-9-_]+:[a-zA-Z0-9-_]+,*|)+$/
+end
+
+parameter "param_advanced_tag_key" do
+  category "User Inputs"
+  label "Tags' Namespace:Keys Advanced List."
+  type "string"
+  description "A JSON string or publc HTTP URL to json file.  See README for example"
+  #allow valid json, {*} or nothing.
+  allowed_pattern /(\{.*\}|)/
+end
+
+parameter "param_email" do
+  category "Contact"
+  label "Email addresses (separate with commas)"
+  type "string"
+  # allow list of comma seperated email addresses or nothing
+  allowed_pattern /^([a-zA-Z0-9-_.]+[@]+[a-zA-Z0-9-_.]+[.]+[a-zA-Z0-9-_]+,*|)+$/
+end
+
+# Retrieve all clouds
+resources "clouds", type: "rs_cm.clouds" do
+  filter do
+    cloud_type ne: ["soft_layer", "cloud_stack","azure","rackspace_next_gen",
+      "vscale","blue_skies","open_stack_v2","uca","open_stack_v3"]
+  end
+end
+
+# Retrieve all operational instances across all clouds
+resources "instances_operational", type: "rs_cm.instances" do
+  iterate @clouds
+  cloud_href href(iter_item)
+  filter do
+    state "operational"
+  end
+end
+# Retrieve all provisioned instances across all clouds
+ resources "instances_provisioned", type: "rs_cm.instances" do
+   iterate @clouds
+   cloud_href href(iter_item)
+   filter do
+     state "provisioned"
+   end
+ end
+
+# Retrieve all running instances across all clouds
+ resources "instances_running", type: "rs_cm.instances" do
+   iterate @clouds
+   cloud_href href(iter_item)
+   filter do
+     state "running"
+   end
+ end
+
+# Retrieve all volumes across all clouds
+resources "volumes", type: "rs_cm.volumes" do
+   iterate @clouds
+   cloud_href href(iter_item)
+end
+
+datasource "clouds" do
+  iterate @clouds
+  field "href",         href(iter_item)
+  field "type",         val(iter_item,'cloud_type')
+  field "name",         val(iter_item,'name')
+end
+
+datasource "instances_operational" do
+   iterate @instances_operational
+   field "href",        href(iter_item)
+   field "id",          val(iter_item,'resource_uid')
+   field "name",        val(iter_item,'name')
+   field "state",       val(iter_item,'state')
+   field "type",        "instances"
+end
+datasource "instances_running" do
+  iterate @instances_running
+  field "href",        href(iter_item)
+  field "id",          val(iter_item,'resource_uid')
+  field "name",        val(iter_item,'name')
+  field "state",       val(iter_item,'state')
+  field "type",        "instances"
+end
+datasource "instances_provisioned" do
+  iterate @instances_provisioned
+  field "href",        href(iter_item)
+  field "id",          val(iter_item,'resource_uid')
+  field "name",        val(iter_item,'name')
+  field "state",       val(iter_item,'state')
+  field "type",        "instances"
+end
+
+datasource "volumes" do
+   iterate @volumes
+   field "href",        href(iter_item)
+   field "id",          val(iter_item,'resource_uid')
+   field "name",        val(iter_item,'name')
+   field "state",       val(iter_item,'status')
+   field "type",        "volumes"
+end
+
+
+datasource "resources" do
+  run_script $merge_resources, $instances_operational,$instances_running,$instances_provisioned,$volumes
+end
+
+script "merge_resources", type: "javascript" do
+  parameters "instances_operational","instances_running","instances_provisioned", "volumes"
+  result "resources"
+  code <<-EOS
+    var resources = []
+    for (i = 0; i < instances_operational.length; i++) {
+      resources.push(instances_operational[i])
+    }
+    for (i = 0; i < instances_running.length; i++) {
+      resources.push(instances_running[i])
+    }
+    for (i = 0; i < instances_provisioned.length; i++) {
+      resources.push(instances_provisioned[i])
+    }
+    for (i = 0; i < volumes.length; i++) {
+      resources.push(volumes[i])
+    }
+  EOS
+end
+
+auth "rs", type: "rightscale"
+
+# get a tagset for all resources
+datasource "resource_tags" do
+  request do
+    auth $rs
+    verb "POST"
+    host rs_cm_host
+    path "/api/tags/by_resource"
+    header "X-Api-Version", "1.5"
+    body_field "resource_hrefs", vals($resources,"href")
+  end
+end
+
+datasource "filtered_resources" do
+  run_script $filter_resources, $resources, $resource_tags, $clouds,$param_tag_keys,$param_advanced_tag_key
+end
+
+
+script "filter_resources", type: "javascript" do
+  parameters "resources","resource_tags","clouds","param_tag_keys","param_advanced_tag_key"
+  result "filtered_resources"
+  code <<-EOS
+// This is the list of filtered volumes.
+var filtered_resources = [];
+
+var tag_keys_array = []
+if ( param_tag_keys !== '' ){
+  tag_keys_array= param_tag_keys.split(',')
+}
+
+var validate_tags_object={}
+// keys from JSON
+var advanced_tag_keys=[]
+// check for param_advanced_tag_key and parse the json
+if ( param_advanced_tag_key !== '') {
+  validate_tags_object = JSON.parse(param_advanced_tag_key)
+  advanced_tag_keys = _.keys(validate_tags_object)
+  for (var i = 0; i < advanced_tag_keys.length; i++) {
+    tag_keys_array.push(advanced_tag_keys[i])
+  }
+}
+tag_keys_array = _.uniq(tag_keys_array)
+
+// create a map of clouds with href key to get type and name
+var cloud_map = {}
+for (var i = 0; i < clouds.length; i++) {
+    var cloud = clouds[i]
+    cloud_map[cloud['href']]={'type': cloud['type'],'name': cloud['name']}
+}
+
+// This is the map of resource href to its tags.
+var tags = {};
+for (var i = 0; i < resource_tags.length; i++) {
+  rt = resource_tags[i]
+  for (var j = 0; j < rt['links'].length; j++) {
+    link = rt['links'][j]
+    if (link['rel'] == 'resource') {
+      tags[link['href']] = rt['tags']
+    }
+  }
+}
+
+// Go through all the resources and filter the ones that don't
+// comply with the tag rules.
+for (var i = 0; i < resources.length; i++) {
+  var res = resources[i]
+  var res_tags = []
+  var invalid_tags =[]
+  var bad = false
+  // Tags is an array of hashes each with just 'name'. Let's convert
+  // them to an array of strings.
+  for (var j = 0; j < tags[res['href']].length; j++) {
+    tag = tags[res['href']][j]['name']
+    tag_key = tag.split("=")[0]
+    tag_value = tag.split("=")[1]
+    if ( validate_tags_object[tag_key] && validate_tags_object[tag_key]['validation-type']==='string' ){
+      if ( validate_tags_object[tag_key]['validation'] !== tag_value ){
+        bad=true
+        invalid_tags.push(tag)
+      }
+    }
+    if ( validate_tags_object[tag_key] && validate_tags_object[tag_key]['validation-type'] === 'array' ){
+      if ( validate_tags_object[tag_key]['validation'].indexOf(tag_value) === -1 ){
+        bad=true
+        invalid_tags.push(tag)
+      }
+    }
+    if ( validate_tags_object[tag_key] && validate_tags_object[tag_key]['validation-type'] === 'regex'){
+      if ( tag_value.search(validate_tags_object[tag_key]['validation']) === -1 ){
+        bad=true
+        invalid_tags.push(tag)
+      }
+    }
+
+    res_tags.push(tag_key)
+  }
+
+  // Determines whether this resource is properly tagged
+  var missing_tags = []
+  if ( _.intersection(tag_keys_array, res_tags).length != tag_keys_array.length ) {
+    bad = true;
+    //find the tags missing from the resource
+    missing_tags=_.difference(tag_keys_array, res_tags)
+  }
+
+  // create cloud_href from resource href
+  var split = res['href'].split('/')
+  var index = res['href'].indexOf('/'+split[4])
+  var cloud_href = res['href'].substring(0,index)
+
+  // update resource array with resources that are missing tags
+  if ( bad ) {
+    filtered_resources.push(
+    { id: res['id'],
+      name: res['name'],
+      state: res['state'],
+      href: res['href'],
+      type: res['type'],
+      cloud_name: cloud_map[cloud_href]['name'],
+      cloud_type: cloud_map[cloud_href]['type'],
+      missing_tags: missing_tags,
+      invalid_tags: invalid_tags,
+    }
+    )
+  }
+};
+  EOS
+end
+
+escalation "escalate_resources" do
+  email $param_email
+  run "tag_resources", data, $param_advanced_tag_key
+end
+
+
+resolution "resolve_resources" do
+  email $param_email
+end
+
+policy "untagged_resources_policy" do
+  validate $filtered_resources do
+    summary_template "Untagged Resources Summary"
+    detail_template <<-EOS
+    There are {{ len data }} resource(s) missing tags: {{ parameters.param_tag_keys }}
+    | Cloud Name | Cloud Type | Name | ID | Type | State | Href | Missing Tags | Invalid Tags |
+    | ---------- | ---------- | ---- | -- | ---- | ----- | ---- | ------------ | ------------ |
+    {{ range data -}}
+    | {{ .cloud_name }} | {{ .cloud_type }} | {{ .name }} | {{ .id }} | {{ .type }} | {{ .state }} | {{ .href }} | {{ range $i, $e := .missing_tags }}{{ if $i }}, {{ end }}{{ $e }}{{ end }} | {{ range $i, $e := .invalid_tags }}{{ if $i }}, {{ end }}{{ $e }}{{ end }}  |
+    {{ end -}}
+    EOS
+    escalate $escalate_resources
+    check eq(size(data), 0)
+    resolve $resolve_resources
+  end
+end
+
+# update tags with default values and invalid valus
+define tag_resources($data,$param_advanced_tag_key) do
+  # only proceed if the $param_advanced_tag_key has a value
+  call sys_log('data',to_s($data))
+  foreach $item in $data do
+    call sys_log('item',to_s($item))
+    rs_cm.tags.multi_add(resource_hrefs: [$item['href']], tags:["rs:test=curtwashere"])
+  end
+  if  $param_advanced_tag_key
+    call sys_log('tag_resources','here')
+    # convert param to an object
+    $validate_tags_object = from_json($param_advanced_tag_key)
+    # get keys from object
+    $advanced_tag_keys = keys($validate_tags_object)
+    # go through each resource with invalid or missing tags
+    foreach $item in $data do
+      call sys_log('item',to_s($item))
+      # add missing tags with default-value
+      foreach $missing in $item['missing_tags'] do
+        call sys_log('missing',to_s($missing))
+        if $validate_tags_object[$missing] && $validate_tags_object[$missing]['default-value']
+          call sys_log('default-value',$validate_tags_object[$missing]['default-value'])
+          $tag = join($validate_tags_object[$missing],"=",$validate_tags_object[$missing]['default-value'])
+          rs_cm.tags.multi_add(resource_hrefs: [$item['href']], tags:[$tag])
+        end
+      end
+      # update taggs with invalid-value
+      foreach $invalid_tag in $item['invalid_tags'] do
+        call sys_log('invalid_tag',to_s($invalid_tag))
+        $invalid_key = split($invalid_tag,'=')[0]
+        $invalid_value = split($invalid_tag,'=')[1]
+        if $validate_tags_object[$invalid_key] && $validate_tags_object[$invalid_key]['prefix-value']
+          call sys_log('prefix-value',$validate_tags_object[$invalid_key]['prefix-value'])
+          if !include?($invalid_tag,$validate_tags_object[$invalid_key]['prefix-value'])
+            $tag = join($invalid_key,"=",$validate_tags_object[$invalid_key]['prefix-value'],$invalid_value)
+            rs_cm.tags.multi_add(resource_hrefs: [$item['href']], tags:[$tag])
+          end
+        end
+      end
+    end
+  end
+end
+
+define sys_log($subject, $detail) do
+  rs_cm.audit_entries.create(
+    notify: "None",
+    audit_entry: {
+      auditee_href: @@account,
+      summary: $subject,
+      detail: $detail
+    }
+  )
+end

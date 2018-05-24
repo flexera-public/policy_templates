@@ -1,15 +1,24 @@
+# These policies are for internal use only. Policies will be available soon. Please contact sales@rightscale.com to learn more.
+
 # RightScale Policy Templates
-This repo contains a library of open source RightScale Policy Templates
+This repo contains a library of open source RightScale Policy Templates.
 
 ## Released Policy Templates
+
 ### Cost
-- [AWS Reserved Instance Expiration Policy](./cost/aws/reserved_instances/expiration/)
+- [AWS Reserved Instance Expiration](./cost/aws/reserved_instances/expiration/)
 - [AWS Reserved Instances Utilization](./cost/aws/reserved_instances/utilization/)
+- [Downsize Instances](./cost/downsize_instance/)
 - [Schedule Instances] (./cost/schedule_instances)
 
 ### Security
+- [ICMP Enabled Security Group](./security/security_groups/icmp_enabled/)
+- [Security Group Rules Without Description](./security/security_groups/rules_without_descriptions/)
+- [AWS Open Buckets Policy](./security/storage/aws/public_buckets/)
+
 ### Operational
 ### Compliance
+- [Untagged Resources](./compliance/tags/tag_checker)
 
 ## RightScale Policy Template Documentation
 - [Getting Started](http://docs.rightscale.com/policies/getting_started/)
