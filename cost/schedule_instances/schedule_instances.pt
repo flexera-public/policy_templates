@@ -1,4 +1,4 @@
-name "Instances Scheduler"
+name "Schedule instances"
 rs_pt_ver 20180301
 type "policy"
 short_description "A policy that start and stops instances based on a schedule"
@@ -10,7 +10,7 @@ category "Cost"
 parameter "param_schedule" do
   type "string"
   label "Schedule Ex: 07-19:M.T.W.Th.F start_hour-end_hour:days_of_week_to_run "
-  default "instance:schedule:Business Hourse"
+  default "instance:schedule=Business Hours"
 end
 
 parameter "escalate_to" do
@@ -19,18 +19,73 @@ parameter "escalate_to" do
   default "curt@rightscale.com"
 end
 
+permission "retrieve_resources" do
+  label "Retrieve Resources"
+  actions   "rs_cm.index","rs_cm.show"
+  resources "rs_cm.instances","rs_cm.clouds"
+end
+
+permission "retrieve_tags" do
+  label "Retrieve Tags"
+  actions "rs_cm.by_tag"
+  resources "rs_cm.tags"
+end
+
 auth "rs", type: "rightscale"
 
 #all clouds
 resources "clouds", type: "rs_cm.clouds"
 
 #all instances operational or provisioned
-resources "instances", type: "rs_cm.instances" do
+resources "instances_operational", type: "rs_cm.instances" do
   iterate @clouds
   cloud_href href(iter_item)
   filter do
-    state ["operational" , "provisioned"]
-  end
+     state "operational"
+   end
+end
+resources "instances_provisioned", type: "rs_cm.instances" do
+  iterate @clouds
+  cloud_href href(iter_item)
+  filter do
+     state "provisioned"
+   end
+end
+
+datasource "instances_provisioned" do
+  iterate @instances_provisioned
+  field "href",        href(iter_item)
+  field "id",          val(iter_item,'resource_uid')
+  field "name",        val(iter_item,'name')
+  field "state",       val(iter_item,'state')
+  field "type",        "instances"
+end
+
+datasource "instances_operational" do
+  iterate @instances_operational
+  field "href",        href(iter_item)
+  field "id",          val(iter_item,'resource_uid')
+  field "name",        val(iter_item,'name')
+  field "state",       val(iter_item,'state')
+  field "type",        "instances"
+end
+
+datasource "instances" do
+  run_script $merge_instances, $instances_operational,$instances_provisioned
+end
+
+script "merge_instances", type: "javascript" do
+  parameters "instances_operational","instances_provisioned"
+  result "instances"
+  code <<-EOS
+    var instances = []
+    for (i = 0; i < instances_operational.length; i++) {
+      instances.push(instances_operational[i])
+    }
+    for (i = 0; i < instances_provisioned.length; i++) {
+      instances.push(instances_provisioned[i])
+    }
+  EOS
 end
 
 #all tags on the instances
@@ -46,8 +101,15 @@ datasource "ds_instance_tags" do
   end
 end
 
+datasource "clouds" do
+  iterate @clouds
+  field "href",         href(iter_item)
+  field "type",         val(iter_item,'cloud_type')
+  field "name",         val(iter_item,'name')
+end
+
 datasource "filtered_instances" do
-  run_script $js_instance_tags, @instances, $ds_instance_tags, @clouds
+  run_script $js_instance_tags, $instances, $ds_instance_tags, $clouds
 end
 
 script "js_instance_tags", type: "javascript" do
@@ -68,10 +130,10 @@ script "js_instance_tags", type: "javascript" do
   var instance_map = {}
   for (var i = 0; i < instances.length; i++) {
       var instance = instances[i]
-      instance_map[instances['href']]={
+      instance_map[instance['href']]={
         'state': instance['state'],
         'name': instance['name'],
-        'id':insance['resource_id']
+        'id': instance['id']
       }
   }
 
@@ -83,7 +145,6 @@ script "js_instance_tags", type: "javascript" do
     for (var j = 0; j < it['links'].length; j++) {
       link = it['links'][j]
       if (link['rel'] == 'resource') {
-        //tags[link['href']] = it['tags']
         // create cloud_href from resource href
         var split = link['href'].split('/')
         var index = link['href'].indexOf('/' + split[4])
@@ -91,10 +152,11 @@ script "js_instance_tags", type: "javascript" do
 
         // create object of instances
           filtered_instances.push(
-          { id: instance_map[link['href']]['id'],
+          {
+            id: instance_map[link['href']]['id'],
             name: instance_map[link['href']]['name'],
             state: instance_map[link['href']]['state'],
-            href: instance_map[link['href']]['href'],
+            href: link['href'],
             cloud_name: cloud_map[cloud_href]['name'],
             cloud_type: cloud_map[cloud_href]['type'],
           }
@@ -107,20 +169,30 @@ end
 
 escalation "escalate_instances" do
   email $escalate_to
-end
+    run "schedule_instances", data, $param_schedule
+end 
 
 policy "instance_scheduler" do
   validate $filtered_instances do
-    summary_template "Instance Scheduler"
+    summary_template "Schedule Instance Policy"
     detail_template <<-EOS
-      There are {{ len data }} resource(s) matching  tags: {{ parameters.param_schedule }}
+      There are {{ len data }} resource(s) matching schedule: {{ parameters.param_schedule }}
+
       | Name | State | Cloud | Href |
-      | ---- | ----- | ----- |---- |
+      | ---- | ----- | ----- | ---- |
       {{ range data -}}
-      | {{ .name }} | {{ .state }} | {{ .cloud_type }} | {{ .href }} |
+      | {{ .name }} | {{ .state }} | {{ .cloud_name }} | {{ .href }} |
       {{ end -}}
       EOS
     escalate $escalate_instances
     check eq(size(data), 0)
+  end
+end
+
+define schedule_instances($data, $param_schedule) do
+  call sys_log('schedule_instances','start')
+  foreach $item in $data do
+    call sys_log('item', to_s($item))
+
   end
 end
