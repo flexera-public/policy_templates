@@ -17,67 +17,51 @@ parameter "param_escalate_to" do
   default "rshade@rightscale.com"
 end
 
-parameter "google_project" do
+parameter "param_google_project" do
   type "string"
   label "Google Cloud Project"
-  allowed_pattern "^[0-9a-z:\.-]+$"
+  allowed_pattern /^[0-9a-z:\.-]+$/
 end
 
-auth "my_google_auth", type: "oauth2" do
+auth "auth_google", type: "oauth2" do
   token_url "https://www.googleapis.com/oauth2/v4/token"
   grant type: "jwt_bearer" do
-    iss cred("GOOGLE_STORAGE_ACCOUNT")
+    iss cred("GCE_PLUGIN_ACCOUNT")
     aud "https://www.googleapis.com/oauth2/v4/token"
     additional_claims do {
-      "scope" => "https://www.googleapis.com/auth/devstorage.read_only"
+      "scope" => "https://www.googleapis.com/auth/devstorage.full_control"
     } end
-    signing_key cred("GOOGLE_STORAGE_PRIVATE_KEY")
+    signing_key cred("GCE_PLUGIN_PRIVATE_KEY")
   end
 end
 
-pagination "azure_pagination" do
+pagination "google_pagination" do
   get_page_marker do
-    body_path "//NextMarker"
+    body_path "{{nextPageToken}}"
   end
   set_page_marker do
-    query "marker"
+    query "pageToken"
   end
 end
 
-datasource "ds_storage_accounts" do
+datasource "ds_storage_buckets" do
   request do
-    auth $auth_azure
-    host "management.azure.com"
-    path join(["/subscriptions/", $param_azure_subscription_id, "/providers/Microsoft.Storage/storageAccounts"])
-    query "api-version", "2017-06-01"
+    auth $auth_google
+    host "www.googleapis.com"
+    path "/storage/v1/b"
+    query "projection", "full"
+    query "project", $param_google_project
   end
   result do
     encoding "json"
     collect jmes_path(response, "value") do
-      field "storage_account_name", jmes_path(col_item, "name")
-    end
-  end
-end
-
-# Reference: https://docs.microsoft.com/en-us/rest/api/storageservices/list-containers2
-datasource "ds_azure_containers" do
-  iterate $ds_storage_accounts
-  request do
-    auth $auth_azure_storage
-    pagination $azure_pagination
-    host join([val(iter_item,"storage_account_name"), ".blob.core.windows.net"])
-    host "bksandbox32a8bc748.blob.core.windows.net"
-    path "/"
-    query "comp", "list"
-    query "timeout", "30"
-    header "x-ms-version", "2017-11-09"
-  end
-  result do
-    encoding "xml"
-    collect xpath(response, "EnumerationResults/Containers/Container", "array") do
-      field "storage_account_name", val(iter_item, "storage_account_name")
-      field "name", xpath(col_item, "Name")
-      field "public_access", xpath(col_item, "Properties/PublicAccess")
+      field "name", jmes_path(col_item, "name")
+      field "acl" do
+        collect jmes_path(col_item, "acl") do
+          field "entity", jmes_path(col_item, "entity")
+          field "role", jmes_path(col_item, "role")
+        end
+      end
     end
   end
 end
@@ -87,14 +71,14 @@ escalation "alert" do
 end
 
 policy "public_buckets" do
-  validate_each $ds_azure_containers do
-    summary_template "Public Buckets Found in Azure"
+  validate_each $ds_storage_buckets do
+    summary_template "Public Buckets Found in Google"
     detail_template <<-EOS
-# Public Buckets Found in Azure
-| Bucket Name | Public Access | Storage Account Name |
-| ----------- | ------------- | -------------------- |
+# Public Buckets Found in Google
+| Bucket Name | Entity | Role |
+| ----------- | ------ | ---- |
 {{ range data -}}
-| {{.name}} | {{.public_access}} |
+| {{.name}} | {{.entity}} | {{.role}} |
 {{ end -}}
 EOS
     escalate $alert
