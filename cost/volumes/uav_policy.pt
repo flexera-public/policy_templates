@@ -6,17 +6,32 @@ name "Unattached Volumes"
 rs_pt_ver 20180301
 short_description "Finds unattached volumes older than specified number of days and reports them."
 severity "medium"
-category "Cost Management"
+category "Cost"
+
+permission "general_permissions" do
+  resources "rs_cm.volumes", "rs_cm.audit_entries", "rs_cm.placement_groups", "rs_cm.clouds", "rs_cm.tags", "rs_cm.deployments"
+  actions   "rs_cm.*"
+end
 
 parameter "param_email" do
   type "string"
   label "Email address to send escalation emails to"
+  allowed_pattern /[a-zA-Z0-9_\-\.]+@[a-zA-Z0-9_\-\.]/
+  min_length 1
+  constraint_description "Must be an email address."
 end
 
 parameter "param_days_old" do
   type "number"
   label "Identify volumes that have been unattached for the given number of days."
   default 30
+end
+
+parameter "param_delete" do
+  type "string"
+  label "Enter the word, DELETE (all UPPERCASE), to have identified volumes automatically deleted."
+  allowed_pattern /^$|DELETED/
+  constraint_description "Leave blank to avoid automatic deletion."
 end
 
 resources "clouds", type: "rs_cm.clouds" do
@@ -66,14 +81,14 @@ end
 
 # script-based datasource that applies the logic to return only unattached volumes
 datasource "ds_unattached_volumes" do
-  run_script $js_unattached_volumes, $ds_clouds, $ds_pgs, @volumes
+  run_script $js_unattached_volumes, $ds_clouds, $ds_pgs, @volumes, $param_delete
 end
 
 # Find unattached volumes.
 # If Azure volume, deduce the type.
 # Calculate the volume's age.
 script "js_unattached_volumes", type: "javascript" do
-  parameters "ds_clouds", "ds_pgs", "volumes"
+  parameters "ds_clouds", "ds_pgs", "volumes", "param_delete"
   result "unattached_volumes"
   code <<-EOS
 // This is the eventual output list of unattached volumes.
@@ -120,6 +135,9 @@ for (var i = 0; i < volumes.length; i++) {
     my_vol["size"] = vol["size"]
     my_vol["iops"] = vol["iops"]
     my_vol["status"] = vol["status"]
+    if (param_delete == "DELETE") {  // Then the volume is marked that it was deleted.
+      my_vol["status"] = "DELETED"
+    }
     my_vol["created_at"] =  vol["created_at"]
     my_vol["updated_at"] =  vol["updated_at"]
     my_vol["pg_id"] = null
@@ -250,4 +268,21 @@ end
 
 escalation "esc_unattached_volumes" do
   email $param_email
+  
+  run "delete_volumes", data
+end
+
+define delete_volumes($data) do
+  
+  foreach $item in $data do
+    if $item["status"] == "DELETED"
+      rs_cm.audit_entries.create(notify: "None", audit_entry: { auditee_href: @@account, summary: "Policy Deletion of Volume, "+$item["name"] , detail: to_s($item)})
+      # Find the volume
+      @volume = rs_cm.get(href: $item["href"])
+
+      # Delete the volume 
+      delete(@volume)
+    end
+  end
+
 end
