@@ -28,17 +28,42 @@ end
 parameter "param_historical_number_of_days_in_past" do
   type "string"
   label "Number of days in the past to view RI Coverage"
-  allowed_values "7", "14","30", "90", "180", "365"
+  allowed_values "7","14","30","90","180","365"
   default "7"
 end
 
-#auth "aws", type: "aws"
 auth "aws", type: "aws" do
   version "4"
   service "ce"
   region "us-east-1"
   access_key cred("AWS_ACCESS_KEY_ID")
   secret_key cred("AWS_SECRET_ACCESS_KEY")
+end
+
+# Creating the end_date generally setting it to right now 
+# Expected Result: "2018-05-29T14:15:21.021Z"
+script "create_end_date", type: "javascript" do
+  result "end_dates"
+  code <<-EOS
+  var end_date = new Date();
+  end_date.toISOString();
+  EOS
+end
+
+# Creating the start_date.
+# We are converting param_historical_number_of_days_in_past from string to a number.
+# daysToMove has to be negative
+# Expected result example: "2018-04-29T14:15:21.021Z" 
+script "create_start_date", type: "javascript" do
+  parameters "$param_historical_number_of_days_in_past"
+  result "start_dates"
+  code <<-EOS
+  var end_date = new Date();
+  var start_date = new Date();
+  var daysToMove = parseInt($param_historical_number_of_days_in_past,10);
+  start_date.setDate(end_date.getDate() - daysToMove);
+  start_date.toISOString();
+  EOS
 end
 
 # https://docs.aws.amazon.com/awsaccountbilling/latest/aboutv2/cost-explorer-api.html
@@ -51,8 +76,8 @@ datasource "ds_reservations_coverage" do
     header "X-Amz-Target", "AWSInsightsIndexService.GetReservationCoverage"
     header "Content-Type", "application/x-amz-json-1.1"
     body_field "TimePeriod", {
-      Start: "2018-04-01",
-      End: "2018-04-30"
+    Start: $start_dates,
+    End: $end_dates,
     }
   end
   result do
