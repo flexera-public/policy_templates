@@ -1,0 +1,111 @@
+name "RS CM16 Policy"
+rs_pt_ver 20180301
+type "policy"
+short_description "Checks for Schedules"
+long_description "Version 1.0"
+severity "medium"
+category "Security"
+
+permission "perm_read_creds" do
+  actions   "rs_cm.show_sensitive","rs_cm.index_sensitive"
+  resources "rs_cm.credentials"
+end
+
+parameter "param_escalate_to" do
+  type "string"
+  label "Email address to send escalation emails to"
+  default "rshade@rightscale.com"
+end
+
+auth "auth_rs", type: "rightscale"
+
+resources "clouds", type: "rs_cm.clouds" do
+  filter do
+    cloud_type "amazon"
+  end
+end
+
+resources "instances", type: "rs_cm.instances" do
+  iterate(@clouds)
+  cloud_href href(iter_item)
+  filter do
+    state "operational"
+  end
+end
+
+datasource "ds_instances" do
+  iterate @instances
+  field "resource_uid", val(iter_item,  "resource_uid")
+  field "name", val(iter_item, "name")
+  field "href", href(iter_item)
+  field "instance_type", val(iter_item, "instance_type")
+end
+
+datasource "ds_instances_16" do
+  iterate(@clouds)
+  request do
+    auth $auth_rs
+    verb "GET"
+    host rs_cm_host
+    path join([href(iter_item), "/instances"])
+    header "X-Api-Version", "1.6"
+    header "X-Account", to_s(rs_project_id)
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "[*]") do
+      field "href", jmes_path(col_item, "href")
+      field "name", jmes_path(col_item,"name")
+      field "description", jmes_path(col_item, "description")
+      field "legacy_id", to_n(jmes_path(col_item,"legacy_id"))
+    end
+  end
+end
+
+datasource "ds_combined_instances" do
+  run_script $js_filter_instances, $ds_instances, $ds_instances_16
+end
+
+script "js_filter_instances", type: "javascript" do
+  parameters "instances", "instances16"
+  result "filtered_instances"
+  code <<-EOS
+// This is the list of filtered instances.
+var filtered_instances = [];
+for ( i = 0; i < instances.length; i++ ) {
+  for ( n = 0; n < instances16.length; n++) {
+    if ( instances[i]["href"] == instances16[n]["href"] ) {
+      filtered_instances.push(
+        {
+          resource_uid: instances[i]["resource_uid"],
+          name: instances[i]["name"],
+          href: instances[i]["href"],
+          description: instances[i]["description"],
+          legacy_id: instances16[n]["legacy_id"]
+        }
+      )
+    }
+  }
+}
+EOS
+end
+
+escalation "alert" do
+  email $param_escalate_to
+end
+
+policy "policy_rightsize" do
+  validate_each $ds_combined_instances do
+    summary_template "Instances 16"
+    detail_template <<-EOS
+# Instances
+| Name | Description | Legacy ID | Resource UID | href |
+| ---- | ----------- | --------- | ------------ | ---- |
+{{ range data -}}
+| {{.name}} | {{.description}} | {{.legacy_id}} | {{.resource_uid}} | {{.href}} |
+{{ end -}}
+EOS
+    check gt(0,0)
+    escalate $alert
+  end
+end
