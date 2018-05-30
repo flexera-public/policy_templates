@@ -17,13 +17,13 @@ parameter "param_email" do
   allowed_pattern /^([a-zA-Z0-9-_.]+[@]+[a-zA-Z0-9-_.]+[.]+[a-zA-Z0-9-_]+,*|)+$/
 end
 
-parameter "param_service" do
- category "Service"
- label "AWS Service"
- type "string"
- allowed_values "Amazon Elastic Compute Cloud - Compute", "Amazon ElastiCache", "Amazon Redshift","Amazon Relational Database Service"
- default "Amazon Elastic Compute Cloud - Compute"
-end
+#parameter "param_service" do
+# category "Service"
+# label "AWS Service"
+# type "string"
+# allowed_values "Amazon Elastic Compute Cloud - Compute", "Amazon ElastiCache", "Amazon Redshift","Amazon Relational Database Service"
+# default "Amazon Elastic Compute Cloud - Compute"
+#end
 
 parameter "param_historical_number_of_days_in_past" do
   type "string"
@@ -42,44 +42,44 @@ end
 
 # Creating the end_date generally setting it to right now 
 # Expected Result: "2018-05-29T14:15:21.021Z"
-script "create_end_date", type: "javascript" do
-  result "end_dates"
-  code <<-EOS
-  var end_date = new Date();
-  end_date.toISOString();
-  EOS
-end
-
 # Creating the start_date.
 # We are converting param_historical_number_of_days_in_past from string to a number.
 # daysToMove has to be negative
 # Expected result example: "2018-04-29T14:15:21.021Z" 
-script "create_start_date", type: "javascript" do
-  parameters "$param_historical_number_of_days_in_past"
-  result "start_dates"
+script "aws_reserved_instance_coverage_request", type: "javascript" do
+  parameters "param_number_of_days_in_past"
+  result "results"
   code <<-EOS
   var end_date = new Date();
   var start_date = new Date();
-  var daysToMove = parseInt($param_historical_number_of_days_in_past,10);
+  var daysToMove = parseInt(param_number_of_days_in_past,10);
   start_date.setDate(end_date.getDate() - daysToMove);
-  start_date.toISOString();
+  var end_dates = end_date.toISOString();
+  var start_dates = start_date.toISOString();
+  results = {
+     auth: "aws",
+     host: 'ce.us-east-1.amazonaws.com',
+     path: '/',
+     verb: 'POST',
+     headers: {
+      "X-Amz-Target": "AWSInsightsIndexService.GetReservationCoverage",
+      "Content-Type": "application/x-amz-json-1.1",
+     },
+     body_field: { "TimePeriod": {
+      "Start": start_dates,
+      "End": end_dates,
+     }
+    }
+  }
   EOS
 end
 
 # https://docs.aws.amazon.com/awsaccountbilling/latest/aboutv2/cost-explorer-api.html
 datasource "ds_reservations_coverage" do
   request do
-    auth $aws
-    verb "POST"
-    host "ce.us-east-1.amazonaws.com"
-    path "/"
-    header "X-Amz-Target", "AWSInsightsIndexService.GetReservationCoverage"
-    header "Content-Type", "application/x-amz-json-1.1"
-    body_field "TimePeriod", {
-    Start: $start_dates,
-    End: $end_dates,
-    }
+    run_script $aws_reserved_instance_coverage_request, $param_historical_number_of_days_in_past
   end
+
   result do
     encoding "json"
     field "total_coverage_hours_percentage", jmes_path(response, "Total.CoverageHours.CoverageHoursPercentage")
