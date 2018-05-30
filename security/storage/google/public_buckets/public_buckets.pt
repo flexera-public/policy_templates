@@ -21,7 +21,7 @@ parameter "param_google_project" do
   type "string"
   label "Google Cloud Project"
   allowed_pattern /^[0-9a-z:\.-]+$/
-  default "rightscale:services1"
+  default "rightscale.com:services1"
 end
 
 auth "auth_google", type: "oauth2" do
@@ -51,11 +51,11 @@ datasource "ds_storage_buckets" do
     host "www.googleapis.com"
     path "/storage/v1/b"
     query "projection", "full"
-    query "project", $param_google_project
+    query "project", to_s($param_google_project)
   end
   result do
     encoding "json"
-    collect jmes_path(response, "value[*]") do
+    collect jmes_path(response, "items[*]") do
       field "name", jmes_path(col_item, "name")
       field "acl" do
         collect jmes_path(col_item, "acl") do
@@ -68,7 +68,7 @@ datasource "ds_storage_buckets" do
 end
 
 escalation "alert" do
-   email $escalate_to
+   email $param_escalate_to
 end
 
 policy "public_buckets" do
@@ -79,11 +79,15 @@ policy "public_buckets" do
 | Bucket Name | Entity | Role |
 | ----------- | ------ | ---- |
 {{ range data -}}
-| {{.name}} | {{.entity}} | {{.role}} |
+{{ $name := .name -}}
+{{ range .acl -}}
+{{ if (eq .entity "allUsers") -}}
+| {{$name}} | {{.entity}} | {{.role}} |
+{{ end -}}
+{{ end -}}
 {{ end -}}
 EOS
     escalate $alert
-    check gt(0,0)
-    #check logic_not(contains(val(item, "grantee_uris"), "http://acs.amazonaws.com/groups/global/AllUsers"))
+    check logic_not(contains(jmes_path(item, "acl[*].entity"), "allUsers"))
   end
 end
