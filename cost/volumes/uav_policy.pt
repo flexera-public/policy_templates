@@ -1,10 +1,11 @@
-﻿# TO-DO: 
-#	Add support for deleting old unattached volumes.
+# Unattached Volumes Policy Template
+#
+# This policy reports unattached volumes older than a user-specified age, and optionally deletes the volumes.
 #
 
 name "Unattached Volumes"
 rs_pt_ver 20180301
-short_description "Finds unattached volumes older than specified number of days and reports them."
+short_description "Finds unattached volumes older than specified number of days and, optionally, deletes them."
 severity "medium"
 category "Cost"
 
@@ -30,7 +31,7 @@ end
 parameter "param_delete" do
   type "string"
   label "Enter the word, DELETE (all UPPERCASE), to have identified volumes automatically deleted."
-  allowed_values "ALERT ONLY", "ALERT AND DELETE"
+  allowed_values "EMAIL ONLY", "EMAIL AND DELETE"
   default "ALERT ONLY"
 end
 
@@ -63,21 +64,6 @@ resources "volumes", type: "rs_cm.volumes" do
   cloud_href href(iter_item) 
   view "extended"
 end
-
-# Processing volumes in javascript since extended view does not always have a placement_group or volume_type hash in the
-# results and datasource declaration doesn't like that.
-# Feature request made: To just put a null in the field if the given key/value is not present.
-#datasource "ds_volumes" do
-#  iterate @volumes
-#  field "id", val(iter_item, "resource_uid")
-#  field "href", href(iter_item)
-#  field "name", val(iter_item, "name")
-#  field "size", val(iter_item, "size")
-#  field "status", val(iter_item, "status")
-#  field "updated_at", val(iter_item, "updated_at")
-#  field "pg_id", val(val(iter_item, "placement_group"), "resource_uid")
-#  field "volume_type", val(val(iter_item, "volume_type"), "name")
-#end
 
 # script-based datasource that applies the logic to return only unattached volumes
 datasource "ds_unattached_volumes" do
@@ -135,7 +121,7 @@ for (var i = 0; i < volumes.length; i++) {
     my_vol["size"] = vol["size"]
     my_vol["iops"] = vol["iops"]
     my_vol["status"] = vol["status"]
-    if (param_delete == "ALERT AND DELETE") {  // Then the volume is marked that it was deleted.
+    if (param_delete == "EMAIL AND DELETE") {  // Then the volume is marked that it was deleted.
       my_vol["status"] = "DELETED"
     }
     my_vol["created_at"] =  vol["created_at"]
@@ -233,24 +219,6 @@ policy "pol_unattached_volumes" do
 
 	summary_template "Unattached Volumes"
 
-#    	detail_template <<-EOS
-#Unattached Volume Report for Account: {{ rs_project_name }} (ID: {{ rs_project_id }})
-#The following unattached volumes have exceeded the specified age of: {{ parameters.param_days_old }} days old
-#{{ range data }}
-#ID: {{ .id }}
-#Cloud HREF: {{ .cloud_href }}
-#Name: {{ .name }}
-#Size: {{ .size }}
-#Status: {{ .status }}
-#Azure Disk Type: {{ .azure_disk_type }}
-#Azure Storage Type: {{ .azure_storage_type }}
-#Azure Storage Account Name: {{ .azure_storage_account_name }}
-#Unattached on: {{ .updated_at }}
-#Current Age (days): {{ .age}}
-#{{ end }}
-#EOS
-
-
   detail_template <<-EOS
 Unattached Volume Report for Account: {{ rs_project_name }} (ID: {{ rs_project_id }})\n
 
@@ -273,16 +241,12 @@ escalation "esc_unattached_volumes" do
 end
 
 define delete_volumes($data) do
-  
   foreach $item in $data do
     if $item["status"] == "DELETED"
-      rs_cm.audit_entries.create(notify: "None", audit_entry: { auditee_href: @@account, summary: "Policy Deletion of Volume, "+$item["name"] , detail: to_s($item)})
       # Find the volume
       @volume = rs_cm.get(href: $item["href"])
-
       # Delete the volume 
       delete(@volume)
     end
   end
-
 end
