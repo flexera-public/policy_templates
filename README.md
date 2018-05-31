@@ -9,11 +9,13 @@ This repo contains a library of open source RightScale Policy Templates.
 - [AWS Reserved Instance Expiration](./cost/aws/reserved_instances/expiration/)
 - [AWS Reserved Instances Utilization](./cost/aws/reserved_instances/utilization/)
 - [Downsize Instances](./cost/downsize_instance/)
+- [Unattached Volumes Policy](./cost/volumes/)
 
 ### Security
 - [ICMP Enabled Security Group](./security/security_groups/icmp_enabled/)
 - [Security Group Rules Without Description](./security/security_groups/rules_without_descriptions/)
 - [AWS Open Buckets Policy](./security/storage/aws/public_buckets/)
+- [Google Open Buckets Policy](./security/storage/google/public_buckets/)
 
 ### Operational
 ### Compliance
