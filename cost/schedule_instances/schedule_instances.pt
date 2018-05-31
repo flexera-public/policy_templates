@@ -7,16 +7,15 @@ severity "medium"
 category "Cost"
 
 
-parameter "param_schedule" do
-  type "string"
-  label "Schedule Ex: 07-19:M.T.W.Th.F start_hour-end_hour:days_of_week_to_run "
-  default "instance:schedule=Business Hours"
-end
+# parameter "param_schedule" do
+#   type "string"
+#   label "Schedule Ex: 07-19:M.T.W.Th.F start_hour-end_hour:days_of_week_to_run "
+#   default "instance:schedule=Business Hours"
+# end
 
 parameter "escalate_to" do
-  type "string"
-  label "Email address to send escalation emails to"
-  default "curt@rightscale.com"
+  type "list"
+  label "Email addresses"
 end
 
 permission "retrieve_resources" do
@@ -96,8 +95,9 @@ datasource "ds_instance_tags" do
     host rs_cm_host
     path "/api/tags/by_tag"
     header "X-Api-Version", "1.5"
-    body_field "tags", [$param_schedule]
+    body_field "tags",["instance:schedule=*"]
     body_field "resource_type", "instances"
+    body_field "include_tags_with_prefix", "instance:schedule"
   end
 end
 
@@ -137,9 +137,19 @@ script "js_instance_tags", type: "javascript" do
       }
   }
 
-  // This is the map of resource href to its tags.
+  // create a map of tags with instance href
   var tags = {};
-  var res={};
+  for (var i = 0; i < instance_tags.length; i++) {
+    rt = instance_tags[i]
+    for (var j = 0; j < rt['links'].length; j++) {
+      link = rt['links'][j]
+      if (link['rel'] == 'resource') {
+        tags[link['href']] = rt['tags']
+      }
+    }
+  }
+
+  // This is the map of resource href to its tags.
   for (var i = 0; i < instance_tags.length; i++) {
     it = instance_tags[i]
     for (var j = 0; j < it['links'].length; j++) {
@@ -149,9 +159,15 @@ script "js_instance_tags", type: "javascript" do
         var split = link['href'].split('/')
         var index = link['href'].indexOf('/' + split[4])
         var cloud_href = link['href'].substring(0,index)
-
+        var schedule =[]
+        for (var t = 0; t < tags[link['href']].length; t++) {
+          tag = tags[link['href']][t]['name']
+          tag_key = tag.split("=")[0]
+          tag_value = tag.split("=")[1]
+          schedule = tag_value
+        }
         // create object of instances
-          filtered_instances.push(
+        filtered_instances.push(
           {
             id: instance_map[link['href']]['id'],
             name: instance_map[link['href']]['name'],
@@ -159,6 +175,7 @@ script "js_instance_tags", type: "javascript" do
             href: link['href'],
             cloud_name: cloud_map[cloud_href]['name'],
             cloud_type: cloud_map[cloud_href]['type'],
+            schedule: schedule
           }
           )
       }
@@ -169,30 +186,43 @@ end
 
 escalation "escalate_instances" do
   email $escalate_to
-    run "schedule_instances", data, $param_schedule
-end 
+    run "schedule_instances", data
+end
 
 policy "instance_scheduler" do
   validate $filtered_instances do
     summary_template "Schedule Instance Policy"
     detail_template <<-EOS
-      There are {{ len data }} resource(s) matching schedule: {{ parameters.param_schedule }}
+There are {{ len data }} instance(s)
 
-      | Name | State | Cloud | Href |
-      | ---- | ----- | ----- | ---- |
-      {{ range data -}}
-      | {{ .name }} | {{ .state }} | {{ .cloud_name }} | {{ .href }} |
-      {{ end -}}
-      EOS
+| Name | State | Cloud | Href | schedule |
+| ---- | ----- | ----- | ---- | -------- |
+{{ range data -}}
+| {{ .name }} | {{ .state }} | {{ .cloud_name }} | {{ .href }} | {{ .schedule }}
+{{ end -}}
+EOS
     escalate $escalate_instances
     check eq(size(data), 0)
   end
 end
 
-define schedule_instances($data, $param_schedule) do
+define schedule_instances($data) do
   call sys_log('schedule_instances','start')
   foreach $item in $data do
     call sys_log('item', to_s($item))
 
+  end
+end
+
+define sys_log($subject, $detail) do
+  if $$debug
+    rs_cm.audit_entries.create(
+      notify: "None",
+      audit_entry: {
+        auditee_href: @@account,
+        summary: $subject,
+        detail: $detail
+      }
+    )
   end
 end
