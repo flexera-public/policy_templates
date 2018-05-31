@@ -1,3 +1,7 @@
+v1.3
+-----
+- Updating email from string to list
+
 v1.2
 -----
 - Fixing EU endpoint
