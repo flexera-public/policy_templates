@@ -4,4 +4,4 @@ v1.1
 
 v1.0
 -----
-- Initial Release
+- initial release

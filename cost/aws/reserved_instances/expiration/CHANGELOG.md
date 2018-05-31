@@ -1,3 +1,7 @@
+v1.2
+----
+- Updating email from string to list
+
 v1.1
 -----
 - switching from html tables to markdown tables
