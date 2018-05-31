@@ -27,7 +27,7 @@ end
 
 parameter "param_historical_number_of_days_in_past" do
   type "string"
-  label "Number of days in the past to view RI Coverage"
+  label "Number of days in the past to view Reserved Instance Coverage"
   allowed_values "7","14","30","90","180","365"
   default "7"
 end
@@ -41,11 +41,11 @@ auth "aws", type: "aws" do
 end
 
 # Creating the end_date generally setting it to right now 
-# Expected Result: "2018-05-29T14:15:21.021Z"
+# Expected Result: "2018-05-29"
 # Creating the start_date.
 # We are converting param_historical_number_of_days_in_past from string to a number.
 # daysToMove has to be negative
-# Expected result example: "2018-04-29T14:15:21.021Z" 
+# Expected result example: "2018-04-29" 
 script "aws_reserved_instance_coverage_request", type: "javascript" do
   parameters "param_number_of_days_in_past"
   result "results"
@@ -54,8 +54,8 @@ script "aws_reserved_instance_coverage_request", type: "javascript" do
   var start_date = new Date();
   var daysToMove = parseInt(param_number_of_days_in_past,10);
   start_date.setDate(end_date.getDate() - daysToMove);
-  var end_dates = end_date.toISOString();
-  var start_dates = start_date.toISOString();
+  var end_dates = end_date.toISOString().slice(0, 10);
+  var start_dates = start_date.toISOString().slice(0, 10);
   results = {
      auth: "aws",
      host: 'ce.us-east-1.amazonaws.com',
@@ -65,11 +65,14 @@ script "aws_reserved_instance_coverage_request", type: "javascript" do
       "X-Amz-Target": "AWSInsightsIndexService.GetReservationCoverage",
       "Content-Type": "application/x-amz-json-1.1",
      },
-     body_field: { "TimePeriod": {
+     body_fields: {
+      "TimePeriod": 
+       {
       "Start": start_dates,
       "End": end_dates,
-     }
-    }
+       }
+      },
+    
   }
   EOS
 end
@@ -79,13 +82,14 @@ datasource "ds_reservations_coverage" do
   request do
     run_script $aws_reserved_instance_coverage_request, $param_historical_number_of_days_in_past
   end
-
   result do
     encoding "json"
     field "total_coverage_hours_percentage", jmes_path(response, "Total.CoverageHours.CoverageHoursPercentage")
     field "total_on_demand_hours", jmes_path(response, "Total.CoverageHours.OnDemandHours")
     field "total_reserved_hours", jmes_path(response, "Total.CoverageHours.ReservedHours")
     field "total_running_hours",  jmes_path(response, "Total.CoverageHours.TotalRunningHours")
+    field "timeperiod_start_time", jmes_path(response,"CoveragesByTime.TimePeriod.Start")
+    field "timeperiod_end_time", jmes_path(response,"CoveragesByTime.TimePeriod.End")
   end
 end
 
@@ -95,13 +99,13 @@ end
 
 policy "pol_ri_coverage" do
   validate $ds_reservations_coverage do
-    summary_template "Reserved instances coverage."
+    summary_template "Reserved Instances Coverage."
     detail_template <<-EOS
 # Reserved Instance Coverage
 
-| Organization Name | CoverageHoursPercentage | OnDemandHours | ReservedHours | TotalRunningHours |
-| ----------------- | ----------------------- | ------------- | ------------- | ----------------- |
-| {{rs_org_name}} | {{ data.total_coverage_hours_percentage }} | {{ data.total_on_demand_hours }} | {{ data.total_reserved_hours }} | {{ data.total_running_hours }} |
+| Organization Name | CoverageHoursPercentage | OnDemandHours | ReservedHours | TotalRunningHours | TimePeriod_StartDate | TimePeriod_EndDate |
+| ----------------- | ----------------------- | ------------- | ------------- | ----------------- | ---------- | -------- |
+| {{rs_org_name}} | {{ data.total_coverage_hours_percentage }} | {{ data.total_on_demand_hours }} | {{ data.total_reserved_hours }} | {{ data.total_running_hours }} | {{data.timeperiod_start_time}} | {{data.timeperiod_end_time }} |
 EOS
 
   escalate $alert
