@@ -7,8 +7,6 @@ This Policy Template will check your account for amazon s3 buckets with public p
 ## Supported Clouds
 The following clouds are supported: 
 - AWS
-- Azure
-- Google 
 
 **Cost**
 
