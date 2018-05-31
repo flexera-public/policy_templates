@@ -1,7 +1,8 @@
-# These policies are for internal use only. Policies will be available soon. Please contact sales@rightscale.com to learn more.
+# Please contact sales@rightscale.com to learn more.
 
 # RightScale Policy Templates
-This repo contains a library of open source RightScale Policy Templates. 
+
+This repo contains a library of open source RightScale Policy Templates for various categories. 
 
 ## Released Policy Templates
 
@@ -18,6 +19,8 @@ This repo contains a library of open source RightScale Policy Templates.
 - [Google Open Buckets Policy](./security/storage/google/public_buckets/)
 
 ### Operational
+Coming Soon
+
 ### Compliance
 - [Untagged Resources](./compliance/tags/tag_checker)
 
