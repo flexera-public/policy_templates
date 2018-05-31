@@ -4,7 +4,7 @@ rs_pt_ver 20180301
 type "policy"
 short_description "![Tag](https://s3.amazonaws.com/rs-pft/cat-logos/tag.png)\n
 Check for a tag and report which instances and volumes are missing it."
-long_description "Version: 1.1"
+long_description "Version: 1.3"
 category "Compliance"
 severity "medium"
 
@@ -43,20 +43,12 @@ end
 
 parameter "param_email" do
   category "Contact"
-  label "Email addresses (separate with commas)"
-  type "string"
-  # allow list of comma seperated email addresses or nothing
-  allowed_pattern /^([a-zA-Z0-9-_.]+[@]+[a-zA-Z0-9-_.]+[.]+[a-zA-Z0-9-_]+,*|)+$/
+  label "Email addresses"
+  type "list"
 end
 
 # Retrieve all clouds
-resources "clouds", type: "rs_cm.clouds" do
-  filter do
-    cloud_type ne: ["soft_layer", "cloud_stack","azure","rackspace_next_gen",
-      "vscale","blue_skies","open_stack_v2","uca","open_stack_v3"]
-  end
-end
-
+resources "clouds", type: "rs_cm.clouds"
 # Retrieve all operational instances across all clouds
 resources "instances_operational", type: "rs_cm.instances" do
   iterate @clouds
@@ -299,13 +291,15 @@ policy "untagged_resources_policy" do
   validate $filtered_resources do
     summary_template "Untagged Resources Summary"
     detail_template <<-EOS
-    There are {{ len data }} resource(s) missing tags: {{ parameters.param_tag_keys }}
-    | Cloud Name | Cloud Type | Name | ID | Type | State | Href | Missing Tags | Invalid Tags |
-    | ---------- | ---------- | ---- | -- | ---- | ----- | ---- | ------------ | ------------ |
-    {{ range data -}}
-    | {{ .cloud_name }} | {{ .cloud_type }} | {{ .name }} | {{ .id }} | {{ .type }} | {{ .state }} | {{ .href }} | {{ range $i, $e := .missing_tags }}{{ if $i }}, {{ end }}{{ $e }}{{ end }} | {{ range $i, $e := .invalid_tags }}{{ if $i }}, {{ end }}{{ $e }}{{ end }}  |
-    {{ end -}}
-    EOS
+There are {{ len data }} resource(s) missing tags: {{ parameters.param_tag_keys }}
+
+| Cloud Name | Cloud Type | Name | ID | Type | State | Href | Missing Tags | Invalid Tags |
+| ---------- | ---------- | ---- | --- | ---- | ----- | ---- | ------------ | ------------ |
+{{ range data -}}
+| {{ .cloud_name }} | {{ .cloud_type }} | {{ .name }} | {{ .id }} | {{ .type }} | {{ .state }} | {{ .href }} | {{ range $i, $e := .missing_tags }}{{ if $i }}, {{ end }}{{ $e }}{{ end }} | {{ range $i, $e := .invalid_tags }}{{ if $i }}, {{ end }}{{ $e }}{{ end }}  |
+{{ end -}}
+EOS
+
     escalate $escalate_resources
     check eq(size(data), 0)
     resolve $resolve_resources
@@ -314,14 +308,12 @@ end
 
 # update tags with default values and invalid valus
 define tag_resources($data,$param_advanced_tag_key) do
-  # only proceed if the $param_advanced_tag_key has a value
+
+  # set this to true if you want to see audit entries for debugging
+  $$debug=true
   call sys_log('data',to_s($data))
-  foreach $item in $data do
-    call sys_log('item',to_s($item))
-    rs_cm.tags.multi_add(resource_hrefs: [$item['href']], tags:["rs:test=curtwashere"])
-  end
+  # only proceed if the $param_advanced_tag_key has a value
   if  $param_advanced_tag_key
-    call sys_log('tag_resources','here')
     # convert param to an object
     $validate_tags_object = from_json($param_advanced_tag_key)
     # get keys from object
@@ -334,7 +326,7 @@ define tag_resources($data,$param_advanced_tag_key) do
         call sys_log('missing',to_s($missing))
         if $validate_tags_object[$missing] && $validate_tags_object[$missing]['default-value']
           call sys_log('default-value',$validate_tags_object[$missing]['default-value'])
-          $tag = join($validate_tags_object[$missing],"=",$validate_tags_object[$missing]['default-value'])
+          $tag = join([$missing,"=",$validate_tags_object[$missing]['default-value']])
           rs_cm.tags.multi_add(resource_hrefs: [$item['href']], tags:[$tag])
         end
       end
@@ -356,12 +348,14 @@ define tag_resources($data,$param_advanced_tag_key) do
 end
 
 define sys_log($subject, $detail) do
-  rs_cm.audit_entries.create(
-    notify: "None",
-    audit_entry: {
-      auditee_href: @@account,
-      summary: $subject,
-      detail: $detail
-    }
-  )
+  if $$debug
+    rs_cm.audit_entries.create(
+      notify: "None",
+      audit_entry: {
+        auditee_href: @@account,
+        summary: $subject,
+        detail: $detail
+      }
+    )
+  end
 end
