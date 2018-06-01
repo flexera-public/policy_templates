@@ -777,9 +777,14 @@ script "js_instance_tags", type: "javascript" do
   EOS
 end
 
-escalation "escalate_instances" do
+# only send email, if email is not provided this escalation is skipped
+escalation "send_email" do
   email $escalate_to
-    run "schedule_instances", data, $timezone_override
+end
+
+# run the stop/start action on instances.
+escalation "stop_start_instances" do
+  run "schedule_instances", data, $timezone_override
 end
 
 policy "instance_scheduler" do
@@ -794,7 +799,8 @@ There are {{ len data }} instance(s)
 | {{ .name }} | {{ .state }} | {{ .cloud_name }} | {{ .href }} | {{ .schedule }}
 {{ end -}}
 EOS
-    escalate $escalate_instances
+    escalate $send_email
+    escalate $stop_start_instances
     check eq(size(data), 0)
   end
 end
@@ -802,11 +808,11 @@ end
 define schedule_instances($data,$timezone_override) do
   $$debug = true
   call sys_log('schedule_instances','start')
-  # use user selected timezone of London/UTC as default
+  # use selected timezone or UTC as default
   if size($timezone_override) > 0
     $timezone = $timezone_override
   else
-    $timezone = 'Europe/London' #UTC
+    $timezone = 'UTC'
   end
 
   # set the counters and action stores
@@ -874,13 +880,6 @@ define schedule_instances($data,$timezone_override) do
       end
     end  #if (! $window_active)
   end
-end
-
-define get_my_timezone() return $timezone do
-  $session = rs_cm.sessions.index(view: "whoami")
-  $user_id = select($session[0]["links"], {"rel":"user"})[0]["href"]
-  @user = rs_cm.get(href: $user_id)
-  $timezone = @user.timezone_name
 end
 
 define window_active($start_hour, $start_minute, $start_rule, $stop_hour, $stop_minute, $stop_rule, $tz) return $window_active do
