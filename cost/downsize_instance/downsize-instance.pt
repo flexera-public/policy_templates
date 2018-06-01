@@ -47,11 +47,15 @@ end
 parameter "param_instance_tag_list" do
   type "list"
   label "Instance tags used to filter instances that must validate policy. Example: rs_monitoring:resize=1"
+  min_length 1
+  # allowed_pattern /([\w]?)+\:([\w]?)+\=([\w]?)+/
+  default ["rs_monitoring:resize=1"]
 end
 
 parameter "param_escalate_to" do
   type "list"
   label "Email address to send escalation emails to"
+  default ["rshade@rightscale.com"]
 end
 
 auth "auth_rs", type: "rightscale"
@@ -64,7 +68,7 @@ resources "instances", type: "rs_cm.instances" do
   filter do
     state "operational"
   end
-  tags any($param_instance_tag_list)
+  tags all(any($param_instance_tag_list), "rs_agent:type=right_link_lite")
 end
 
 datasource "ds_instances" do
@@ -104,10 +108,11 @@ datasource "ds_instance_type" do
     verb "GET"
     host "raw.githubusercontent.com"
     path "/rightscale/policy_templates/PSASSET-863/cost/downsize_instance/instance_types.json"
+    header "User-Agent", "RS Policies"
   end
   result do
     encoding "json"
-    field "clouds", jmes_path(response, "*")
+    field "clouds", jmes_path(response, "clouds")
   end
 end
 datasource "ds_filtered_instances" do
@@ -115,7 +120,7 @@ datasource "ds_filtered_instances" do
 end
 
 script "js_filter_instances", type: "javascript" do
-  parameters "instances", "instances16", "instance_type"
+  parameters "instances", "instances16", "instance_types"
   result "filtered_instances"
   code <<-EOS
 // This is the list of filtered instances.
@@ -125,7 +130,7 @@ for ( i = 0; i < instances.length; i++ ) {
     if ( instances[i]["href"] == instances16[n]["href"] ) {
       var cloud_type = instances16[n]["cloud_type"]
       var instance_type = instances16[n]["instance_type"]
-      var next_instance_size = $instance_type["clouds"][cloud_type][instance_type]["down"]
+      var next_instance_size = instance_types["clouds"][cloud_type.toString()][instance_type.toString()]["down"]
       filtered_instances.push(
         {
           resource_uid: instances[i]["resource_uid"],
@@ -136,7 +141,7 @@ for ( i = 0; i < instances.length; i++ ) {
           instance_type: instance_type,
           region: instances16[n]["region"],
           cloud_type: cloud_type,
-          next_instance_size: next_instance_size
+          next_instance_size: instance_types["clouds"]
         }
       )
     }
@@ -156,7 +161,7 @@ datasource "ds_instance_metrics_free_memory" do
     header "X-API-Version", "1.5"
   end
   result do
-    field "href",                val(iter_item,"href")
+    field "href",               val(iter_item,"href")
     field "memory_data_points", jmes_path(response, "variables_data[0].points[*]")
     field "resource_uid",       val(iter_item,"resource_uid")
     field "instance_type",      val(iter_item,"instance_type")
