@@ -1,7 +1,8 @@
-# These policies are for internal use only. Policies will be available soon. Please contact sales@rightscale.com to learn more.
+# Please contact sales@rightscale.com to learn more.
 
 # RightScale Policy Templates
-This repo contains a library of open source RightScale Policy Templates.
+
+This repo contains a library of open source RightScale Policy Templates for various categories.
 
 ## Released Policy Templates
 
@@ -10,7 +11,7 @@ This repo contains a library of open source RightScale Policy Templates.
 - [AWS Reserved Instances Utilization](./cost/aws/reserved_instances/utilization/)
 - [Downsize Instances](./cost/downsize_instance/)
 - [Unattached Volumes Policy](./cost/volumes/)
-- [Schedule Instances] (./cost/schedule_instances)
+- [Schedule Instances](./cost/schedule_instances)
 
 ### Security
 - [ICMP Enabled Security Group](./security/security_groups/icmp_enabled/)
@@ -19,6 +20,8 @@ This repo contains a library of open source RightScale Policy Templates.
 - [Google Open Buckets Policy](./security/storage/google/public_buckets/)
 
 ### Operational
+Coming Soon
+
 ### Compliance
 - [Untagged Resources](./compliance/tags/tag_checker)
 
