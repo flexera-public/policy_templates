@@ -64,6 +64,7 @@ resources "instances", type: "rs_cm.instances" do
   filter do
     state "operational"
   end
+  tags any($param_instance_tag_list)
 end
 
 datasource "ds_instances" do
@@ -74,70 +75,74 @@ datasource "ds_instances" do
   field "instance_type", val(iter_item, "instance_type")
 end
 
-datasource "ds_instances_tags" do
+datasource "ds_instances_16" do
+  iterate(@clouds)
   request do
     auth $auth_rs
-    verb "POST"
+    verb "GET"
     host rs_cm_host
-    path "/api/tags/by_resource"
-    header "X-Api-Version", "1.5"
-    body_field "resource_hrefs", hrefs(@instances)
+    path join([href(iter_item), "/instances"])
+    header "X-Api-Version", "1.6"
+    header "X-Account", to_s(rs_project_id)
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "[*]") do
+      field "href", jmes_path(col_item, "href")
+      field "name", jmes_path(col_item,"name")
+      field "description", jmes_path(col_item, "description")
+      field "legacy_id", to_n(jmes_path(col_item,"legacy_id"))
+      field "instance_type", jmes_path(col_item, "links.instance_type.name")
+      field "region", jmes_path(col_item, "links.cloud.region")
+      field "cloud_type", jmes_path(col_item, "links.cloud.cloud_type")
+    end
   end
 end
 
+datasource "ds_instance_type" do
+  request do
+    verb "GET"
+    host "raw.githubusercontent.com"
+    path "/rightscale/policy_templates/PSASSET-863/cost/downsize_instance/instance_types.json"
+  end
+  result do
+    encoding "json"
+    field "clouds", jmes_path(response, "*")
+  end
+end
 datasource "ds_filtered_instances" do
-  run_script $js_filter_instances, $ds_instances, $ds_instances_tags, $param_instance_tag_list
+  run_script $js_filter_instances, $ds_instances, $ds_instances_16, $ds_instance_type
 end
 
 script "js_filter_instances", type: "javascript" do
-  parameters "instances", "instances_tags", "instance_tag_list"
+  parameters "instances", "instances16", "instance_type"
   result "filtered_instances"
   code <<-EOS
 // This is the list of filtered instances.
 var filtered_instances = [];
-
-// This is the map of instance href to its tags.
-var tags = {};
-for (var i = 0; i < instances_tags.length; i++) {
-  vt = instances_tags[i]
-  for (var j = 0; j < vt['links'].length; j++) {
-    link = vt['links'][j]
-    if (link['rel'] == 'resource') {
-      tags[link['href']] = vt['tags']
+for ( i = 0; i < instances.length; i++ ) {
+  for ( n = 0; n < instances16.length; n++) {
+    if ( instances[i]["href"] == instances16[n]["href"] ) {
+      var cloud_type = instances16[n]["cloud_type"]
+      var instance_type = instances16[n]["instance_type"]
+      var next_instance_size = $instance_type["clouds"][cloud_type][instance_type]["down"]
+      filtered_instances.push(
+        {
+          resource_uid: instances[i]["resource_uid"],
+          name: instances[i]["name"],
+          href: instances[i]["href"],
+          description: instances16[n]["description"],
+          legacy_id: instances16[n]["legacy_id"],
+          instance_type: instance_type,
+          region: instances16[n]["region"],
+          cloud_type: cloud_type,
+          next_instance_size: next_instance_size
+        }
+      )
     }
   }
 }
-
-// Go through all the instances and filter the ones that don't
-// comply with the tag rules.
-for (var i = 0; i < instances.length; i++) {
-  vol = instances[i]
-  vol_tags = []
-  // Tags is an array of hashes each with just 'name'. Let's convert
-  // them to an array of strings.
-  for (var j = 0; j < tags[vol['href']].length; j++) {
-    vol_tags.push(tags[vol['href']][j]['name'])
-  }
-
-  // Determines whether this resource is properly tagged
-  var good = true;
-  if (_.intersection(instance_tag_list, vol_tags).length != instance_tag_list.length) {
-    good = false
-  }
-
-  if (good) {
-    filtered_instances.push(
-      {
-        resource_uid: vol['resource_uid'],
-        name: vol['name'],
-        href: vol['href'],
-        instance_type: vol['instance_type'],
-        tags: vol_tags
-      }
-    )
-  }
-};
-  EOS
+EOS
 end
 
 datasource "ds_instance_metrics_free_memory" do
@@ -151,11 +156,15 @@ datasource "ds_instance_metrics_free_memory" do
     header "X-API-Version", "1.5"
   end
   result do
-    field "href",        val(iter_item,"href")
+    field "href",                val(iter_item,"href")
     field "memory_data_points", jmes_path(response, "variables_data[0].points[*]")
-    field "resource_uid",          val(iter_item,"resource_uid")
-    field "instance_type",        val(iter_item,"instance_type")
-    field "name",        val(iter_item,"name")
+    field "resource_uid",       val(iter_item,"resource_uid")
+    field "instance_type",      val(iter_item,"instance_type")
+    field "name",               val(iter_item,"name")
+    field "legacy_id",          val(iter_item,"legacy_id")
+    field "region",             val(iter_item,"region")
+    field "cloud_type",         val(iter_item,"cloud_type")
+    field "next_instance_size", val(iter_item,"next_instance_size")
   end
 end
 
@@ -233,6 +242,10 @@ for (var i = 0; i < instance_metrics_free_memory.length; i++) {
             total_avg: parseInt((total_avg/1000)/1000),
             max_free_memory: parseInt((max_free_memory/1000)/1000),
             max_total_memory: parseInt((max_total_memory/1000)/1000),
+            legacy_id: instance_metrics_free_memory[i]["legacy_id"],
+            region: instance_metrics_free_memory[i]["region"],
+            cloud_type: instance_metrics_free_memory[i]["cloud_type"],
+            next_instance_size: instance_metrics_free_memory[i]["next_instance_size"]
           }
         )
     }
@@ -264,18 +277,19 @@ policy "policy_rightsize" do
     detail_template <<-EOS
 # Instances that can be downsized
 
-| Account | Instance Name | Resource UID | Average Memory | Free Average Memory | Total Average Memory | Max Free Memory | Max Total Memory | Max CPU Idle | Average CPU Idle |
-| ------- | ------------- | ------------ | -------------- | ------------------- | -------------------- | --------------- | ---------------- | ------------ | ---------------- |
+| Account | Instance Name | Resource UID | Average Memory | Free Average Memory | Total Average Memory | Max Free Memory | Max Total Memory | Max CPU Idle | Average CPU Idle | Next Instance Size |
+| ------- | ------------- | ------------ | -------------- | ------------------- | -------------------- | --------------- | ---------------- | ------------ | ---------------- | ------------------ |
 {{ range data -}}
-| {{rs_project_name}} | {{.name}} | {{.resource_uid}} | {{.average_mem_percent}}% | {{.free_avg }}MB | {{.total_avg }}MB | {{.max_free_memory }}MB | {{.max_total_memory }}MB | {{.max_cpu_idle}}% | {{.average_cpu_idle}}% |
+| {{rs_project_name}} | {{.name}} | {{.resource_uid}} | {{.average_mem_percent}}% | {{.free_avg }}MB | {{.total_avg }}MB | {{.max_free_memory }}MB | {{.max_total_memory }}MB | {{.max_cpu_idle}}% | {{.average_cpu_idle}}% | {{.next_instance_size}} |
 {{ end -}}
 
 EOS
 
     escalate $downsize
-    check logic_and(eq($param_avg_free_memory_percent, -1), lt(to_n(val(item,"average_mem_percent")), $param_avg_free_memory_percent))
-    check logic_and(eq($param_max_free_memory_percent, -1), lt(to_n(val(item,"max_free_memory_avg")),$param_max_free_memory_percent))
-    check logic_and(eq($param_avg_cpu_idle, -1), lt(to_n(val(item,"average_cpu_idle")),$param_avg_cpu_idle))
-    check logic_and(eq($param_max_cpu_idle, -1), lt(to_n(val(item,"max_cpu_idle")),$param_max_cpu_idle))
+    check gt(0,0)
+    #check logic_and(eq($param_avg_free_memory_percent, -1), lt(to_n(val(item,"average_mem_percent")), $param_avg_free_memory_percent))
+    #check logic_and(eq($param_max_free_memory_percent, -1), lt(to_n(val(item,"max_free_memory_avg")),$param_max_free_memory_percent))
+    #check logic_and(eq($param_avg_cpu_idle, -1), lt(to_n(val(item,"average_cpu_idle")),$param_avg_cpu_idle))
+    #check logic_and(eq($param_max_cpu_idle, -1), lt(to_n(val(item,"max_cpu_idle")),$param_max_cpu_idle))
   end
 end
