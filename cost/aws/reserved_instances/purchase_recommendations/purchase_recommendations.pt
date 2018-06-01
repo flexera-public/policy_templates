@@ -1,231 +1,85 @@
-name "Reserved Instances Purchase Recommendations"
+name "Reserved Instances Coverage"
 rs_pt_ver 20180301
 type "policy"
-short_description "A policy that sends email notifications when utilization falls below a threshold"
-long_description "Version 1.0"
-severity "high"
+short_description "A policy that sends email notifications on reserved instance coverage"
+long_description "Version 0.1"
+severity "medium"
 category "Cost"
-
-permission "optima_aws_ri" do
-  label "Access Optima Resources"
-  resources "rs_optima.aws_reserved_instances"
-  actions "rs_optima.index"
-end
 
 ##################
 # User inputs    #
 ##################
-parameter "param_account_number" do
-  category "Contact"
-  label "Account Number"
-  type "string"
-  default "586789346966"
-end
 
 parameter "param_email" do
   category "Contact"
-  label "Email address to send escalation emails to"
+  label "Email addresses (separate with commas)"
   type "string"
-  default "rshade@rightscale.com"
+  allowed_pattern /^([a-zA-Z0-9-_.]+[@]+[a-zA-Z0-9-_.]+[.]+[a-zA-Z0-9-_]+,*|)+$/
+end
+LookbackPeriodInDays
+SEVEN_DAYS | THIRTY_DAYS | SIXTY_DAYS
+PaymentOption
+
+parameter "param_service" do
+ category "Service"
+ label "AWS Service"
+ type "string"
+ allowed_values "Amazon Elastic Compute Cloud - Compute","Amazon Relational Database Service"
+ default "Amazon Elastic Compute Cloud - Compute"
 end
 
-auth "auth_rs", type: "rightscale"
+parameter "param_historical_number_of_days_in_past" do
+  type "string"
+  label "Number of days in the past to view RI Coverage"
+  allowed_values "7","14","30","90","180","365"
+  default "7"
+end
 
-datasource "ds_reservations" do
+auth "auth_aws", type: "aws" do
+  version "4"
+  service "ce"
+  region "us-east-1"
+  access_key cred("AWS_ACCESS_KEY_ID")
+  secret_key cred("AWS_SECRET_ACCESS_KEY")
+end
+
+# https://docs.aws.amazon.com/awsaccountbilling/latest/aboutv2/cost-explorer-api.html
+datasource "ds_reservations_coverage" do
   request do
-    auth $auth_rs
-    host "optima.rightscale.com"
-    path join(["/api/reco/orgs/2932/aws_reserved_instances"])
+     auth  $auth_aws
+     host 'ce.us-east-1.amazonaws.com'
+     path '/'
+     verb 'POST'
+     headers "X-Amz-Target", "AWSInsightsIndexService.GetReservationPurchaseRecommendation"
+     headers "Content-Type", "application/x-amz-json-1.1"
+     body_field
   end
+
   result do
     encoding "json"
-    collect jmes_path(response,"[*]") do
-      field "account_id", jmes_path(col_item,"account_id")
-      field "region", jmes_path(col_item,"region")
-      field "instance_type", jmes_path(col_item,"instance_type")
-      field "instance_count", jmes_path(col_item,"number_of_instances")
-    end
+    field "total_coverage_hours_percentage", jmes_path(response, "Total.CoverageHours.CoverageHoursPercentage")
+    field "total_on_demand_hours", jmes_path(response, "Total.CoverageHours.OnDemandHours")
+    field "total_reserved_hours", jmes_path(response, "Total.CoverageHours.ReservedHours")
+    field "total_running_hours",  jmes_path(response, "Total.CoverageHours.TotalRunningHours")
   end
 end
-
-datasource "ds_filtered_reservations" do
-  run_script $js_filter_reserverations, $ds_reservations, $param_account_number
-end
-
-script "js_filter_reserverations", type: "javascript" do
-  parameters "reservations", "account_number"
-  result "filtered_reservations"
-  code <<-EOS
-  var filtered_reservations = []
-  for ( i = 0; i < reservations.length; i++) {
-    if ( reservations[i]["account_id"] == account_number ){
-      filtered_reservations.push({
-        account_id: reservations[i]["account_id"],
-        region: reservations[i]["region"],
-        instance_type: reservations[i]["instance_type"],
-        instance_count: reservations[i]["instance_count"],
-        region_instance_type: reservations[i]["region"]+':'+reservations[i]["instance_type"]
-      })
-    }
-  }
-EOS
-end
-
-resources "clouds", type: "rs_cm.clouds" do
-  filter do
-    cloud_type "amazon"
-  end
-end
-
-resources "instances", type: "rs_cm.instances" do
-  iterate @clouds  
-  cloud_href href(iter_item)
-  filter do
-    state "operational"
-  end
-end
-
-datasource "ds_instances" do
-  iterate @instances
-  field "resource_uid", val(iter_item,  "resource_uid")
-  field "name", val(iter_item, "name")
-  field "href", href(iter_item)
-end
-
-datasource "ds_instances_16" do
-  iterate(@clouds)
-  request do
-    auth $auth_rs
-    verb "GET"
-    host rs_cm_host
-    path join([href(iter_item), "/instances"])
-    header "X-Api-Version", "1.6"
-    header "X-Account", to_s(rs_project_id)
-  end
-  result do
-    encoding "json"
-    collect jmes_path(response, "[*]") do
-      field "href", jmes_path(col_item, "href")
-      field "name", jmes_path(col_item,"name")
-      field "description", jmes_path(col_item, "description")
-      field "legacy_id", to_n(jmes_path(col_item,"legacy_id"))
-      field "instance_type", jmes_path(col_item, "links.instance_type.name")
-      field "region", jmes_path(col_item, "links.cloud.region")
-    end
-  end
-end
-
-datasource "ds_combined_instances" do
-  run_script $js_filter_instances, $ds_instances, $ds_instances_16
-end
-
-script "js_filter_instances", type: "javascript" do
-  parameters "instances", "instances16"
-  result "region_instance_counts"
-  code <<-EOS
-// This is the list of filtered instances.
-var region_instance_counts = [];
-var filtered_instances = [];
-for ( i = 0; i < instances.length; i++ ) {
-  for ( n = 0; n < instances16.length; n++) {
-    if ( instances[i]["href"] == instances16[n]["href"] ) {
-      filtered_instances.push(
-        {
-          resource_uid: instances[i]["resource_uid"],
-          name: instances[i]["name"],
-          href: instances[i]["href"],
-          description: instances16[n]["description"],
-          legacy_id: instances16[n]["legacy_id"],
-          instance_type: instances16[n]["instance_type"],
-          region: instances16[n]["region"],
-          region_instance_type: instances16[n]["region"]+':'+instances16[n]["instance_type"]
-        }
-      )
-    }
-  }
-}
-var instance_count = _.countBy(filtered_instances, "region_instance_type");
-for (var index in instance_count) {
-  region_instance_counts.push({
-    region: index.split(":")[0],
-    instance_type: index.split(":")[1],
-    count: instance_count[index],
-    region_instance_type: index
-  })
-};
-EOS
-end
-
-datasource "ds_really_merged_data" do
-  run_script $js_merge_ri_instances, $ds_filtered_reservations, $ds_combined_instances
-end
-
-script "js_merge_ri_instances", type: "javascript" do
-  parameters "ri", "instance_types"
-  result "merged_resources"
-  code <<-EOS
-var merged_resources = []
-for (i = 0; i < ri.length; i++) {
-  for (j = 0; j < instance_types.length; j++) {
-    if (ri[i]["region_instance_type"] === instance_types[j]["region_instance_type"]) {
-      merged_resources.push({
-        "region_instance_type": ri[i]["region_instance_type"],
-        "instance_type": ri[i]["instance_type"],
-        "region": ri[i]["region"],
-        "instance_count": ri[i]["instance_count"],
-        "count": instance_types[j]["count"]
-      });
-      instance_types[j]["merged"] = true
-      ri[i]["merged"] = true
-      break;
-    }
-  }
-};
-
-for (j = 0; j < instance_types.length; j++) {
-  if (!instance_types[j]["merged"]) {
-    merged_resources.push({
-      "region_instance_type": instance_types[j]["region_instance_type"],
-      "instance_type": instance_types[j]["instance_type"],
-      "region": instance_types[j]["region"],
-      "instance_count": 0,
-      "count": instance_types[j]["count"]
-    })
-  }
-};
-
-for (j = 0; j < ri.length; j++) {
-  if (!ri[j]["merged"]) {
-    merged_resources.push({
-      "region_instance_type": ri[j]["region_instance_type"],
-      "instance_type": ri[j]["instance_type"],
-      "region": ri[j]["region"],
-      "instance_count": ri[j]["instance_count"],
-      "count": 0
-    })
-  }
-};
-EOS
-end
-
 
 escalation "alert" do
   email $param_email
 end
 
-policy "policy_rightsize" do
-  validate_each $ds_really_merged_data do
-    summary_template "RI Purchase Recommendations"
+policy "pol_ri_coverage" do
+  validate $ds_reservations_coverage do
+    summary_template "Reserved instances coverage."
     detail_template <<-EOS
-# Instances & RI's Purchased in Account Number: {{parameters.param_account_number}}
+# Reserved Instance Coverage
 
-| Instance Type | Region | Purchased RI's | Count of Running Instances |
-| ------------- | ------ | -------------- | -------------------------- |
-{{ range data -}}
-| {{.instance_type}} | {{.region}} | {{.instance_count}} | {{.count}} |
-{{ end -}}
+| Organization Name | CoverageHoursPercentage | OnDemandHours | ReservedHours | TotalRunningHours |
+| ----------------- | ----------------------- | ------------- | ------------- | ----------------- |
+| {{rs_org_name}} | {{ data.total_coverage_hours_percentage }} | {{ data.total_on_demand_hours }} | {{ data.total_reserved_hours }} | {{ data.total_running_hours }} |
 EOS
-    check gt(0,0)
-    escalate $alert
+
+  escalate $alert
+  check gt(0,0)
   end
 end
