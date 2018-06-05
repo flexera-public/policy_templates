@@ -3,6 +3,8 @@
 **What it does**
 This Policy Template uses data from the monitoring api to determine is you can decrease the size of your running instance. 
 
+**Usage**
+
 
 ## Supported Clouds
 The following clouds are supported: 

@@ -1,6 +1,9 @@
 v1.3
 ----
-- Adding in downsize actions and validations
+- Adding in downsize actions
+- Adding tag validations
+- Adding support for RL10 instances only
+- Using tag field now instead of tag datasource
 
 v1.2
 ----
