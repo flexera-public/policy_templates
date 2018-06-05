@@ -1,0 +1,107 @@
+name "Downsize Instances Add Tags Policy Template"
+rs_pt_ver 20180301
+type "policy"
+short_description "A policy that checks cooldown time and adds back in time"
+long_description "Version: 1.0"
+severity "medium"
+category "Cost"
+
+permission "perm_instance_and_monitoring_metrics" do
+  label "Permissions for instances and monitoring metrics"
+  actions "rs_cm.index", "rs_cm.show", "rs_cm.data"
+  resources "rs_cm.instances", "rs_cm.monitoring_metrics"
+end
+
+parameter "param_instance_tag_list" do
+  type "list"
+  label "Instance tags used to filter instances that must validate policy. Example: rs_monitoring:resize=1"
+  min_length 1
+  # allowed_pattern /([\w]?)+\:([\w]?)+\=([\w]?)+/
+  default ["rs_monitoring:resize=1"]
+end
+
+parameter "param_escalate_to" do
+  type "list"
+  label "Email address to send escalation emails to"
+  default ["rshade@rightscale.com"]
+end
+
+auth "auth_rs", type: "rightscale"
+
+resources "clouds", type: "rs_cm.clouds"
+
+resources "instances", type: "rs_cm.instances" do
+  iterate @clouds  
+  cloud_href href(iter_item)
+  filter do
+    state "operational"
+  end
+  tags all("rs_downsize:cooldown=*", "rs_agent:type=right_link_lite")
+end
+
+datasource "ds_instances" do
+  iterate @instances
+  field "resource_uid", val(iter_item,  "resource_uid")
+  field "name", val(iter_item, "name")
+  field "href", href(iter_item)
+  field "tags", val(iter_item, "tags")
+  field "date_tag", jmes_path(iter_item, "tags[?contains(@,'rs_downsize:cooldown')]")
+end
+
+datasource "ds_filtered_instances" do
+  run_script $js_filtered_instances, $ds_instances
+end
+
+script "js_filtered_instances", type: "javascript" do
+  parameters "instances"
+  result "filtered_instances"
+  code <<-EOS
+    var filtered_instances = []
+    for ( i = 0; i < instances.length; i++ ) {
+      var tag_date = instances[i]["date_tag"].split("=")[0]
+      filtered_instances.push({
+        resource_uid: instances[i]["resource_uid"],
+        name: instances[i]["name"],
+        href: instances[i]["href"],
+        tags: instances[i]["tags"],
+        date_tag: instances[i]["date_tag"],
+        check_date: tag_date
+      })
+    };
+EOS
+end
+
+escalation "alert" do
+  email $param_escalate_to
+end
+
+escalation "downsize" do
+  run "downsize_instances", data
+end
+
+define downsize_instances($data) do
+  foreach $item in $data do
+    @instance = rs_cm.get(href: $item["href"])
+    rs_cm.tags.multi_add(resource_hrefs: [@current_instance.href], tags: $param_instance_tag_list)
+    rs_cm.tags.multi_delete(resource_hrefs: [@current_instance.href], tags: $item["date_tag"])
+  end
+end
+
+policy "policy_rightsize" do
+  validate_each $ds_filtered_instances do
+    summary_template "Instances that can be downsized"
+    detail_template <<-EOS
+# Instances that can be downsized
+
+| Account | Instance Name | Resource UID | href | tags | date tag | check date |
+| ------- | ------------- | ------------ | ---- | ---- | -------- | ---------- |
+{{ range data -}}
+| {{rs_project_name}} | {{.name}} | {{.resource_uid}} | {{.href}} | {{.tags}} | {{.date_tag}} | {{.check_date}} |
+{{ end -}}
+
+EOS
+    escalate $alert
+    #escalate $downsize
+    check gt(0,0)
+  end
+end

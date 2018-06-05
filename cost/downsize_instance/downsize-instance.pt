@@ -58,6 +58,18 @@ parameter "param_escalate_to" do
   default ["rshade@rightscale.com"]
 end
 
+parameter "param_alert_options" do
+  type "string"
+  label "Alert Options"
+  allowed_values "Email", "Downsize And Email"
+end
+
+parameter "param_cooldown_days" do
+  type "number"
+  label "Days to cooldown between checks of same machine"
+  default 30
+end
+
 auth "auth_rs", type: "rightscale"
 
 resources "clouds", type: "rs_cm.clouds"
@@ -141,7 +153,7 @@ for ( i = 0; i < instances.length; i++ ) {
           instance_type: instance_type,
           region: instances16[n]["region"],
           cloud_type: cloud_type,
-          next_instance_size: instance_types["clouds"]
+          next_instance_size: next_instance_size
         }
       )
     }
@@ -272,8 +284,37 @@ for ( var i = 0; i < calculated_instances.length; i++ ) {
 EOS
 end
 
-escalation "downsize" do
+escalation "alert" do
   email $param_escalate_to
+end
+
+escalation "downsize" do
+  run "downsize_instances", data, $param_alert_options, $param_instance_tag_list, $param_cooldown_days
+end
+
+define downsize_instances($data,$param_alert_options,$param_instance_tag_list,$param_cooldown_days) do
+  if $param_alert_options != "Email"
+    foreach $item in $data do
+      @instance = rs_cm.get(href: $item["href"])
+      @current_server = @instance.parent()
+      task_label("stopping instance")
+      @instance.stop()
+      task_label("sleeping until instance stopped")
+      sleep_until(@current_server.state == 'provisioned')
+      @current_instance = @current_server.current_instance()
+      @cloud = @current_instance.cloud()
+      @new_instance_type = first(@cloud.instance_types(filter: ["name=="+$item["next_instance_size"]]))
+      @current_instance.update(instance: { instance_type_href: @new_instance_type.href })
+      task_label("sleeping until instance started")
+      @current_instance.start()
+      sleep_until(@current_instance.state == 'operational')
+      $date = now() + (60*60*24)*$param_cooldown_days
+      rs_cm.tags.multi_add(resource_hrefs: [@current_instance.href], tags: ["rs_downsize:cooldown="+$date])
+      rs_cm.tags.multi_delete(resource_hrefs: [@current_instance.href],
+        tags: $param_instance_tag_list)
+      task_label("Instance Started")
+    end
+  end
 end
 
 policy "policy_rightsize" do
@@ -282,19 +323,18 @@ policy "policy_rightsize" do
     detail_template <<-EOS
 # Instances that can be downsized
 
-| Account | Instance Name | Resource UID | Average Memory | Free Average Memory | Total Average Memory | Max Free Memory | Max Total Memory | Max CPU Idle | Average CPU Idle | Next Instance Size |
+| Account | Instance Name | Resource UID | Average Memory | Free Average Memory | Total Average Memory | Max Free Memory | Max Total Memory | Max CPU Idle | Average CPU Idle | New Instance Size |
 | ------- | ------------- | ------------ | -------------- | ------------------- | -------------------- | --------------- | ---------------- | ------------ | ---------------- | ------------------ |
 {{ range data -}}
 | {{rs_project_name}} | {{.name}} | {{.resource_uid}} | {{.average_mem_percent}}% | {{.free_avg }}MB | {{.total_avg }}MB | {{.max_free_memory }}MB | {{.max_total_memory }}MB | {{.max_cpu_idle}}% | {{.average_cpu_idle}}% | {{.next_instance_size}} |
 {{ end -}}
 
 EOS
-
+    escalate $alert
     escalate $downsize
-    check gt(0,0)
-    #check logic_and(eq($param_avg_free_memory_percent, -1), lt(to_n(val(item,"average_mem_percent")), $param_avg_free_memory_percent))
-    #check logic_and(eq($param_max_free_memory_percent, -1), lt(to_n(val(item,"max_free_memory_avg")),$param_max_free_memory_percent))
-    #check logic_and(eq($param_avg_cpu_idle, -1), lt(to_n(val(item,"average_cpu_idle")),$param_avg_cpu_idle))
-    #check logic_and(eq($param_max_cpu_idle, -1), lt(to_n(val(item,"max_cpu_idle")),$param_max_cpu_idle))
+    check logic_and(eq($param_avg_free_memory_percent, -1), lt(to_n(val(item,"average_mem_percent")), $param_avg_free_memory_percent))
+    check logic_and(eq($param_max_free_memory_percent, -1), lt(to_n(val(item,"max_free_memory_avg")),$param_max_free_memory_percent))
+    check logic_and(eq($param_avg_cpu_idle, -1), lt(to_n(val(item,"average_cpu_idle")),$param_avg_cpu_idle))
+    check logic_and(eq($param_max_cpu_idle, -1), lt(to_n(val(item,"max_cpu_idle")),$param_max_cpu_idle))
   end
 end
