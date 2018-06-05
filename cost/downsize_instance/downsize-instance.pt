@@ -48,14 +48,12 @@ parameter "param_instance_tag_list" do
   type "list"
   label "Instance tags used to filter instances that must validate policy. Example: rs_monitoring:resize=1"
   min_length 1
-  # allowed_pattern /([\w]?)+\:([\w]?)+\=([\w]?)+/
-  default ["rs_monitoring:resize=1"]
+  allowed_pattern /([\w]?)+\:([\w]?)+\=([\w]?)+/
 end
 
 parameter "param_escalate_to" do
   type "list"
   label "Email address to send escalation emails to"
-  default ["rshade@rightscale.com"]
 end
 
 parameter "param_alert_options" do
@@ -143,6 +141,7 @@ for ( i = 0; i < instances.length; i++ ) {
       var cloud_type = instances16[n]["cloud_type"]
       var instance_type = instances16[n]["instance_type"]
       var next_instance_size = instance_types["clouds"][cloud_type.toString()][instance_type.toString()]["down"]
+      if (!next_instance_size) { next_instance_size = "N/A" }
       filtered_instances.push(
         {
           resource_uid: instances[i]["resource_uid"],
@@ -295,31 +294,34 @@ end
 define downsize_instances($data,$param_alert_options,$param_instance_tag_list,$param_cooldown_days) do
   if $param_alert_options != "Email"
     foreach $item in $data do
-      @instance = rs_cm.get(href: $item["href"])
-      @current_server = @instance.parent()
-      task_label("stopping instance")
-      @instance.stop()
-      task_label("sleeping until instance stopped")
-      sleep_until(@current_server.state == 'provisioned')
-      @current_instance = @current_server.current_instance()
-      @cloud = @current_instance.cloud()
-      @new_instance_type = first(@cloud.instance_types(filter: ["name=="+$item["next_instance_size"]]))
-      @current_instance.update(instance: { instance_type_href: @new_instance_type.href })
-      task_label("sleeping until instance started")
-      @current_instance.start()
-      sleep_until(@current_instance.state == 'operational')
-      $date = now() + (60*60*24)*$param_cooldown_days
-      rs_cm.tags.multi_add(resource_hrefs: [@current_instance.href], tags: ["rs_downsize:cooldown="+$date])
-      rs_cm.tags.multi_delete(resource_hrefs: [@current_instance.href],
-        tags: $param_instance_tag_list)
-      task_label("Instance Started")
+      if $item["next_instance_size"] != "N/A"
+        @instance = rs_cm.get(href: $item["href"])
+        @current_server = @instance.parent()
+        task_label("stopping instance")
+        @instance.stop()
+        task_label("sleeping until instance stopped")
+        sleep_until(@current_server.state == 'provisioned')
+        @current_instance = @current_server.current_instance()
+        @cloud = @current_instance.cloud()
+        @new_instance_type = first(@cloud.instance_types(filter: ["name=="+$item["next_instance_size"]]))
+        @current_instance.update(instance: { instance_type_href: @new_instance_type.href })
+        task_label("sleeping until instance started")
+        @current_instance.start()
+        sleep_until(@current_instance.state == 'operational')
+        $date = now() + (60*60*24)*$param_cooldown_days
+        $format_string = "%Y/%m/%d %H:%M:%S"
+        $formatted_time = strftime($date, $format_string)
+        rs_cm.tags.multi_add(resource_hrefs: [@current_instance.href], tags: ["rs_downsize:cooldown="+$formatted_time])
+        rs_cm.tags.multi_delete(resource_hrefs: [@current_instance.href], tags: $param_instance_tag_list)
+        task_label("Instance Started")
+      end
     end
   end
 end
 
 policy "policy_rightsize" do
   validate_each $ds_instances_with_calculated_metrics do
-    summary_template "Instances that can be downsized"
+    summary_template "Downsize Policy: Instances that can be downsized"
     detail_template <<-EOS
 # Instances that can be downsized
 

@@ -16,14 +16,12 @@ parameter "param_instance_tag_list" do
   type "list"
   label "Instance tags used to filter instances that must validate policy. Example: rs_monitoring:resize=1"
   min_length 1
-  # allowed_pattern /([\w]?)+\:([\w]?)+\=([\w]?)+/
-  default ["rs_monitoring:resize=1"]
+  allowed_pattern /([\w]?)+\:([\w]?)+\=([\w]?)+/
 end
 
 parameter "param_escalate_to" do
   type "list"
   label "Email address to send escalation emails to"
-  default ["rshade@rightscale.com"]
 end
 
 auth "auth_rs", type: "rightscale"
@@ -58,7 +56,7 @@ script "js_filtered_instances", type: "javascript" do
   code <<-EOS
     var filtered_instances = []
     for ( i = 0; i < instances.length; i++ ) {
-      var tag_date = instances[i]["date_tag"].split("=")[0]
+      var tag_date = instances[i]["date_tag"][0].split("=")[1]
       filtered_instances.push({
         resource_uid: instances[i]["resource_uid"],
         name: instances[i]["name"],
@@ -76,20 +74,20 @@ escalation "alert" do
 end
 
 escalation "downsize" do
-  run "downsize_instances", data
+  run "downsize_instances", data, $param_instance_tag_list
 end
 
-define downsize_instances($data) do
+define downsize_instances($data,$param_instance_tag_list) do
   foreach $item in $data do
     @instance = rs_cm.get(href: $item["href"])
-    rs_cm.tags.multi_add(resource_hrefs: [@current_instance.href], tags: $param_instance_tag_list)
-    rs_cm.tags.multi_delete(resource_hrefs: [@current_instance.href], tags: $item["date_tag"])
+    rs_cm.tags.multi_add(resource_hrefs: [@instance.href], tags: $param_instance_tag_list)
+    rs_cm.tags.multi_delete(resource_hrefs: [@instance.href], tags: $item["date_tag"])
   end
 end
 
 policy "policy_rightsize" do
   validate_each $ds_filtered_instances do
-    summary_template "Instances that can be downsized"
+    summary_template "Downsize Policy: Instances Added"
     detail_template <<-EOS
 # Instances that can be downsized
 
@@ -101,7 +99,7 @@ policy "policy_rightsize" do
 
 EOS
     escalate $alert
-    #escalate $downsize
-    check gt(0,0)
+    escalate $downsize
+    check gt(to_d(val(item,"check_date")), now)
   end
 end

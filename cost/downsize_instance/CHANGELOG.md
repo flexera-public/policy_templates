@@ -1,3 +1,7 @@
+v1.3
+----
+- Adding in downsize actions and validations
+
 v1.2
 ----
 - Updating email from string to list
