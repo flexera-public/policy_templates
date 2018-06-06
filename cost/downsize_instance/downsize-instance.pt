@@ -6,10 +6,16 @@ long_description "Version: 1.2"
 severity "medium"
 category "Cost"
 
-permission "perm_instance_and_monitoring_metrics" do
-  label "Permissions for instances and monitoring metrics"
-  actions "rs_cm.index", "rs_cm.show", "rs_cm.data"
-  resources "rs_cm.instances", "rs_cm.monitoring_metrics"
+permission "perm_instances" do
+  label "Permissions for instances"
+  actions "rs_cm.index", "rs_cm.show"
+  resources "rs_cm.instances"
+end
+
+permission "perm_monitoring_metrics" do
+  label "Permissions for monitoring metrics"
+  actions "rs_cm.data"
+  resources "rs_cm.monitoring_metrics"
 end
 
 parameter "param_avg_free_memory_percent" do
@@ -120,11 +126,8 @@ datasource "ds_instance_type" do
     path "/rightscale/policy_templates/PSASSET-863/cost/downsize_instance/instance_types.json"
     header "User-Agent", "RS Policies"
   end
-  result do
-    encoding "json"
-    field "clouds", jmes_path(response, "clouds")
-  end
 end
+
 datasource "ds_filtered_instances" do
   run_script $js_filter_instances, $ds_instances, $ds_instances_16, $ds_instance_type
 end
@@ -135,28 +138,36 @@ script "js_filter_instances", type: "javascript" do
   code <<-EOS
 // This is the list of filtered instances.
 var filtered_instances = [];
-for ( i = 0; i < instances.length; i++ ) {
-  for ( n = 0; n < instances16.length; n++) {
-    if ( instances[i]["href"] == instances16[n]["href"] ) {
-      var cloud_type = instances16[n]["cloud_type"]
-      var instance_type = instances16[n]["instance_type"]
-      var next_instance_size = instance_types["clouds"][cloud_type.toString()][instance_type.toString()]["down"]
-      if (!next_instance_size) { next_instance_size = "N/A" }
-      filtered_instances.push(
-        {
-          resource_uid: instances[i]["resource_uid"],
-          name: instances[i]["name"],
-          href: instances[i]["href"],
-          description: instances16[n]["description"],
-          legacy_id: instances16[n]["legacy_id"],
-          instance_type: instance_type,
-          region: instances16[n]["region"],
-          cloud_type: cloud_type,
-          next_instance_size: next_instance_size
-        }
-      )
-    }
+var i_type = {};
+for ( n = 0; n < instances16.length; n++) {
+  i_type[instances16[n]["href"]] = {
+    cloud_type: instances16[n]["cloud_type"],
+    instance_type: instances16[n]["instance_type"],
+    legacy_id: instances16[n]["legacy_id"],
+    region: instances16[n]["region"]
   }
+}
+
+for ( i = 0; i < instances.length; i++ ) {
+  var cloud_type = i_type[instances[i]["href"]]["cloud_type"]
+  var instance_type = i_type[instances[i]["href"]]["instance_type"]
+  var legacy_id = i_type[instances[i]["href"]]["legacy_id"]
+  var region = i_type[instances[i]["href"]]["region"]
+  var next_instance_size = instance_types["clouds"][cloud_type.toString()][instance_type.toString()]["down"]
+  if (!next_instance_size) { next_instance_size = "N/A" }
+  filtered_instances.push(
+    {
+      resource_uid: instances[i]["resource_uid"],
+      name: instances[i]["name"],
+      href: instances[i]["href"],
+      description: instances[i]["description"],
+      legacy_id: legacy_id,
+      instance_type: instance_type,
+      region: region,
+      cloud_type: cloud_type,
+      next_instance_size: next_instance_size
+    }
+  )
 }
 EOS
 end
@@ -283,6 +294,10 @@ for ( var i = 0; i < calculated_instances.length; i++ ) {
 EOS
 end
 
+resolution "resolve_resources" do
+  email $param_escalate_to
+end
+
 escalation "alert" do
   email $param_escalate_to
 end
@@ -290,6 +305,7 @@ end
 escalation "downsize" do
   run "downsize_instances", data, $param_alert_options, $param_instance_tag_list, $param_cooldown_days
 end
+
 
 define downsize_instances($data,$param_alert_options,$param_instance_tag_list,$param_cooldown_days) do
   if $param_alert_options != "Email"
@@ -349,6 +365,7 @@ policy "policy_rightsize" do
 EOS
     escalate $alert
     escalate $downsize
+    resolve $resolve_resources
     check logic_and(eq($param_avg_free_memory_percent, -1), lt(to_n(val(item,"average_mem_percent")), $param_avg_free_memory_percent))
     check logic_and(eq($param_max_free_memory_percent, -1), lt(to_n(val(item,"max_free_memory_avg")),$param_max_free_memory_percent))
     check logic_and(eq($param_avg_cpu_idle, -1), lt(to_n(val(item,"average_cpu_idle")),$param_avg_cpu_idle))
