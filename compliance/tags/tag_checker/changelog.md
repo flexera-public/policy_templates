@@ -1,5 +1,8 @@
 Untagged Resource Policy changelog
 
+v1.4
+- updating description
+
 v1.3
 ----
 - Updating email from string to list
