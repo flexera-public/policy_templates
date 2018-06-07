@@ -1,0 +1,59 @@
+name "Self Service Schedule Policy"
+rs_pt_ver 20180301
+type "policy"
+short_description "Checks for Schedules"
+long_description "Version 1.0"
+severity "medium"
+category "Security"
+
+permission "perm_read_creds" do
+  actions   "rs_cm.show_sensitive","rs_cm.index_sensitive"
+  resources "rs_cm.credentials"
+end
+
+parameter "param_escalate_to" do
+  type "string"
+  label "Email address to send escalation emails to"
+  default "rshade@rightscale.com"
+end
+
+auth "auth_rs", type: "rightscale"
+
+datasource "ds_schedules" do
+  request do
+    auth $auth_rs
+    verb "GET"
+    host rs_ss_host
+    path join(["/api/designer/collections/",rs_org_id,"/schedules"])
+    header "X-Api-Version", "1.0"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response,"[*]") do
+      field "name", jmes_path(col_item, "name")
+      field "description", jmes_path(col_item, "description")
+      field "start_recurrence", jmes_path(col_item, "start_recurrence")
+      field "stop_recurrence", jmes_path(col_item, "stop_recurrence")
+    end
+  end
+end
+
+escalation "alert" do
+  email $param_escalate_to
+end
+
+policy "policy_rightsize" do
+  validate_each $ds_schedules do
+    summary_template "Self Service Schedules"
+    detail_template <<-EOS
+# Self Service Schedules
+| Name | Description | start_recurrence | stop_recurrence |
+| ---- | ----------- | ---------------- | --------------- |
+{{ range data -}}
+| {{.name}} | {{.description}} | {{.start_recurrence}} | {{.stop_recurrence}} |
+{{ end -}}
+EOS
+    check gt(0,0)
+    escalate $alert
+  end
+end
