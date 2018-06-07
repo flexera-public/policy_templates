@@ -8,7 +8,7 @@ There are two policy templates required to support this policy, `Downsize Instan
 The Downsize Instances Policy Template is used to actually downsize instances. If you chose `Email` from the `Escalation Options`, it will only email you which instances can be downsized.
 If you chose `Downsize And Email` from the `Escalation Options`, it will email you a list of servers that were downsized and the size to which were changed. This policy will also resize the instance. This required the instance to be **stopped**.
 If a server is marked `N/A`, no action will be taken and only the resize tag will be removed. You will need to manually move that instance to another family type. 
-**_This policy requires RL10 and monitoring to be enabled_**, see [Installation](http://docs.rightscale.com/rl10/getting_started.html)
+**_This policy requires [RightLink 10](http://docs.rightscale.com/rl10/getting_started.html) and monitoring to be enabled_**, see [Installation](http://docs.rightscale.com/rl10/about.html)
 
 
 ### Parameters
