@@ -26,8 +26,8 @@ auth "auth_iam", type: "aws" do
 end
 
 
-# Reference:  
-datasource "aws_iam_policies" do
+# List of policies , extract useful info 
+datasource "ds_iam_policies" do
   # This request is not paginated
   request do
     auth $auth_iam
@@ -40,30 +40,47 @@ datasource "aws_iam_policies" do
   result do
     encoding "xml"
     collect xpath(response, "//ListPoliciesResponse/ListPoliciesResult/Policies/member", "array") do
-     field "policy_name", xpath(col_item,"PolicyName")
-     field "policy_id", xpath(col_item,"PolicyId")
-     field "policy_arn", xpath(col_item,"Arn")
+     field "name", xpath(col_item,"PolicyName")
+     field "id", xpath(col_item,"PolicyId")
+     field "arn", xpath(col_item,"Arn")
+     field "versionid", xpath(col_item,"DefaultVersionId")
     end
  end
 end
 
-datasource "aws_sanitized_polcies" do
-  run_script $review_policies, $aws_iam_policies
+#Retrieve policy definition
+datasource "ds_policy_definition" do
+  run_script $retrieve_policy_definitions, $ds_iam_policies
 end
 
-# script "review_policies", type: "javascript" do
-#   parameters "policies"
-#   result "results"
-#   code <<-EOS
+script "retrieve_policy_definitions", type: "javascript" do
+  parameters "policies"
+  result "results"
+  
+  code <<-EOS
+  results = []
+    _.each(policies, function(policy) {
+      request = {
+        auth: "auth_iam",
+        host: 'iam.amazonaws.com',
+        path: '/',
+        query_params: {
+          Version: "2010-05-08",
+          Action: "GetPolicyVersion",
+          VersionId: policy["versionid"],
+          PolicyArn: policy["arn"],
+        },
+        headers: {
+          "User-Agent": "RS Policies"
+        }
+      }
+    });
+EOS
+end
 
-# _.each(policies, function(policy) {
 
 
 
-
-#  });
-# EOS
-# end
 
 #allow access to everything
 # {
@@ -102,14 +119,14 @@ escalation "alert_aws" do
 end
 
 policy "iam_policies" do
-  validate_each $aws_iam_policies do
+  validate_each $ds_policy_definition do
     summary_template "IAM Policies Found in AWS"
     detail_template <<-EOS
 # Policies Found in AWS
 | Policy Name |  Policy ID |  Policy ARN | 
 | ----------- |
 {{ range data -}}
-| {{.policy_name}} |{{.policy_id}} |{{.policy_arn}} |
+| {{.name}} |{{.id}} |{{.arn}} |
 {{ end -}}
 EOS
     escalate $alert_aws
