@@ -25,11 +25,7 @@ end
 auth "rs", type: "rightscale"
 
 # Filter to clouds that support security groups
-resources "clouds", type: "rs_cm.clouds" do
-  filter do
-    cloud_type ne: ["soft_layer", "cloud_stack","azure","rackspace_next_gen","vscale","blue_skies","open_stack_v2","uca","open_stack_v3"]
-  end
-end
+resources "clouds", type: "rs_cm.clouds"
 
 resources "security_groups", type: "rs_cm.security_groups" do
   iterate @clouds
@@ -42,12 +38,6 @@ resources "security_group_rules", type: "rs_cm.security_group_rules" do
 end
 
 resources "networks", type: "rs_cm.networks"
-
-datasource "ds_networks" do
-  iterate @networks
-  field "name", val(iter_item, "name")
-  field "href", href(iter_item)
-end
 
 datasource "ds_security_groups" do
   iterate @security_groups
@@ -66,11 +56,12 @@ end
 datasource "ds_security_group_rules" do
   iterate @security_group_rules
   field "href", href(iter_item)
-  field "protocol", from(iter_item)
-  field "source_type", from(iter_item)
-  field "description", from(iter_item)
-  field "end_port", from(iter_item)
+  field "protocol", val(iter_item, "protocol")
+  field "source_type", val(iter_item, "source_type")
+  field "description", val(iter_item, "description")
   field "security_group_href", jmes_path(iter_item, "links[?rel=='security_group'].href | [0]")
+  field "end_port", val(iter_item, "end_port")
+  field "start_port", val(iter_item,"start_port")
 end
 
 
@@ -83,16 +74,19 @@ script "js_munge_sec_group", type: "javascript" do
   parameters "ds_security_groups", "ds_security_group_rules", "ds_networks", "rs_project_id", "rs_cm_host"
   result "groups_and_rules"
 code <<-EOS
+
 var security_groups = {};
 for (var index = 0; index < ds_security_groups.length; index++) {
   var security_group = ds_security_groups[index];
   security_groups[security_group.href] = security_group;
 }
+
 var networks = {};
 for (var index = 0; index < ds_networks.length; index++) {
   var network = ds_networks[index];
   networks[network.href] = network;
 }
+
 var groups_and_rules=[];
 var base_url="https://" + rs_cm_host + "/acct/"
 for (var index = 0; index < ds_security_group_rules.length; index++) {
@@ -111,11 +105,13 @@ for (var index = 0; index < ds_security_group_rules.length; index++) {
     protocol: security_group_rule.protocol,
     source_type: security_group_rule.source_type,
     description: security_group_rule.description,
+    start_port: security_group_rule.start_port,
+    end_port: security_group_rule.end_port,
     network_href: network.href,
     network_name: network.name,
     security_group_access_link_root: security_group_access_link_root
-  });
-}
+  })
+};
 EOS
 end
 
@@ -125,18 +121,18 @@ end
 
 policy "rule_open_ports" do
   validate_each $ds_munged_security_groups do
-    summary_template "Security Group Rules with high ports open"
+    summary_template "Security Group Rules With High Open Ports"
     detail_template <<-EOS
-# Security Rules with high ports open
+# Security Group Rules With High Open Ports
 
-| security_group_name | port |  protocol  | network_name | server_access_link_root |
-| ------------------- | ---- | ---------- | ------------ | ----------------------- |  
-{{ range data }}
-| {{ .security_group_name }} | {{ .end_port }} |  {{.protocol}} | {{.network_name}} | {{.server_access_link_root}} |
+| Security Group Name | Start Port | End Port | Protocol | Network Name | Security Group Access Link |
+| ------------------- | ---------- | -------- | -------- | ------------ | -------------------------- |  
+{{ range data -}}
+| {{ .security_group_name }} | {{.start_port }} | {{ .end_port }} | {{.protocol}} | {{.network_name}} | {{.security_group_access_link_root}} |
 {{ end -}}
 EOS
 
     escalate $alert
-      check gt(to_n(val(item,"end_port")), $param_port_info) 
+    check lt(to_n(val(item,"end_port")), $param_port_info) 
   end
 end
