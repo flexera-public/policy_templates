@@ -21,6 +21,7 @@ end
 parameter "param_age_days" do
   type "number"
   label "Number of days old snapshot to delete"
+  description "i.e. 30,60,90,180,365"
 end
 
 parameter "param_escalate_to" do
@@ -31,20 +32,17 @@ end
 parameter "param_snapshot_tag_list" do
   type "list"
   label "Snapshot Tag List"
-  default ["snapshot:keep=true"]
+  description "i.e. snapshot:keep=true"
 end
 
 auth "rs", type: "rightscale"
 
-resources "clouds", type: "rs_cm.clouds" do
-  filter do
-    cloud_type ne: ["soft_layer", "cloud_stack","azure","rackspace_next_gen","vscale","blue_skies","open_stack_v2","uca","open_stack_v3"]
-  end
-end
+resources "clouds", type: "rs_cm.clouds"
 
 resources "volume_snapshots", type: "rs_cm.volume_snapshots" do
   iterate @clouds
   cloud_href href(iter_item)
+  tags none($param_snapshot_tag_list)
 end
 
 datasource "ds_volume_snapshots" do
@@ -55,80 +53,19 @@ datasource "ds_volume_snapshots" do
   field "updated_at", val(iter_item, "updated_at")
 end
 
-datasource "ds_volume_snapshots_tags" do
-  request do
-    auth $rs
-    verb "POST"
-    host rs_cm_host
-    path "/api/tags/by_resource"
-    header "X-Api-Version", "1.5"
-    body_field "resource_hrefs", hrefs(@volume_snapshots)
-  end
-end
-
-datasource "ds_filtered_snapshots" do
-  run_script $js_filter_ds_volume_snapshots, $ds_volume_snapshots, $ds_volume_snapshots_tags, $param_snapshot_tag_list
-end
-
-script "js_filter_ds_volume_snapshots", type: "javascript" do
-  parameters "ds_volume_snapshots", "ds_volume_snapshots_tags", "snapshot_tag_list"
-  result "filtered_snapshots"
-  code <<-EOS
-// This is the list of filtered ds_volume_snapshots.
-var filtered_snapshots = [];
-// This is the map of instance href to its tags.
-var tags = {};
-for (var i = 0; i < ds_volume_snapshots_tags.length; i++) {
-  vt = ds_volume_snapshots_tags[i]
-  for (var j = 0; j < vt['links'].length; j++) {
-    link = vt['links'][j]
-    if (link['rel'] == 'resource') {
-      tags[link['href']] = vt['tags']
-    }
-  }
-}
-// Go through all the ds_volume_snapshots and filter the ones that don't
-// comply with the tag rules.
-for (var i = 0; i < ds_volume_snapshots.length; i++) {
-  vol = ds_volume_snapshots[i]
-  vol_tags = []
-  // Tags is an array of hashes each with just 'name'. Let's convert
-  // them to an array of strings.
-  for (var j = 0; j < tags[vol['href']].length; j++) {
-    vol_tags.push(tags[vol['href']][j]['name'])
-  }
-  // Determines whether this resource is properly tagged
-  var good = true;
-  if (_.intersection(snapshot_tag_list, vol_tags).length != snapshot_tag_list.length) {
-    good = false
-  }
-  if (good) {
-    filtered_snapshots.push(
-      {
-        resource_uid: vol['resource_uid'],
-        name: vol['name'],
-        href: vol['href'],
-        tags: vol_tags,
-        updated_at: vol['updated_at']
-      }
-    )
-  }
-};
-  EOS
-end
-
 escalation "alert" do
   email $param_escalate_to
 end
+
 resolution "resolution" do
   email $param_escalate_to
 end
 
 policy "pol_snapshots" do
   validate_each $ds_volume_snapshots do
-    summary_template "Snapshots that can be deleted - GT"
+    summary_template "{{len data}} Snapshots that can be deleted, that are older than {{parameters.param_age_days}} days. "
     detail_template <<-EOS
-# Snapshots that can be deleted
+# {{len data}} Snapshots that can be deleted, that are older than {{parameters.param_age_days}} days.
 
 | Resource UID | Name | Href | Tags | Last Updated |
 | ------------ | ---- | ---- | ---- | ------------ |
