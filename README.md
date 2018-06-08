@@ -12,6 +12,7 @@ This repo contains a library of open source RightScale Policy Templates for vari
 - [AWS Reserved Instance Reservation Coverage](./cost/aws/reserved_instances/coverage/)
 - [Downsize Instances](./cost/downsize_instance/)
 - [Unattached Volumes Policy](./cost/volumes/)
+- [Old Snapshots](./cost/volumes/old_snapshots/)
 
 ### Security
 - [ICMP Enabled Security Group](./security/security_groups/icmp_enabled/)
