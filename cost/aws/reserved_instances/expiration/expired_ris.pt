@@ -2,7 +2,7 @@ name "Expired Reserved Instances"
 rs_pt_ver 20180301
 type "policy"
 short_description "A policy that sends email notifications before reserved instances expire"
-long_description "Version 1.0"
+long_description "Version 1.2"
 severity "medium"
 category "Cost"
 
@@ -12,28 +12,23 @@ permission "optima" do
   actions "rs_optima.index"
 end
 
-parameter "org_id" do
-  type "string"
-  label "Organization ID"
-end
-
-parameter "heads_up_days" do
+parameter "param_heads_up_days" do
   type "number"
   label "Number of days to prior to expiration date to trigger incident"
 end
 
-parameter "escalate_to" do
-  type "string"
+parameter "param_escalate_to" do
+  type "list"
   label "Email address to send escalation emails to"
 end
 
-auth "rs", type: "rightscale"
+auth "auth_rs", type: "rightscale"
 
-datasource "reservations" do
+datasource "ds_reservations" do
   request do
-    auth $rs
+    auth $auth_rs
     host "optima.rightscale.com"
-    path join(["/api/reco/orgs/",$org_id,"/aws_reserved_instances"])
+    path join(["/api/reco/orgs/",rs_org_id,"/aws_reserved_instances"])
   end
   result do
     encoding "json"
@@ -49,24 +44,24 @@ datasource "reservations" do
 end
 
 escalation "alert" do
-  email $escalate_to
+  email $param_escalate_to
 end
 
 policy "ri_expiration" do
-  validate_each $reservations do
+  validate_each $ds_reservations do
     summary_template "Reserved instances are nearing expiration."
     detail_template <<-EOS
 # Reserved Instance Expiration
 
-<table>
-<tr><td>Account</td><td>Region</td><td>Instance Type</td><td>Instance Count</td><td>End Time</td></tr>
-{{ range data }}
-<tr><td>{{ .account_name }}({{ .account_id }})</td><td>{{.region}}</td><td>{{.instance_type}}</td><td>{{.instance_count}}</td><td>{{.end_datetime}}</td></tr>
-{{ end }}
-</table>
+| Account | Region | Instance Type | Instance Count | End Time |
+| ------- | ------ | ------------- | -------------- | -------- |
+{{ range data -}}
+| {{ .account_name }}({{ .account_id }}) | {{.region}} | {{.instance_type}} | {{.instance_count}} | {{.end_datetime}} |
+{{ end -}}
+
 EOS
 
     escalate $alert
-    check gt(dec(to_d(val(item, "end_datetime")), now), prod($heads_up_days, 24*3600))
+    check gt(dec(to_d(val(item, "end_datetime")), now), prod($param_heads_up_days, 24*3600))
   end
 end
