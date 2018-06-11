@@ -1,8 +1,8 @@
-# Please contact sales@rightscale.com to learn more.
-
 # RightScale Policy Templates
 
-This repo contains a library of open source RightScale Policy Templates for various categories. 
+This repo contains a library of open source RightScale Policy Templates to provide goveranance via automation across Cost, Security, Operational, and Compliance categories. 
+
+Please contact sales@rightscale.com to learn more. 
 
 ## Released Policy Templates
 
@@ -20,11 +20,11 @@ This repo contains a library of open source RightScale Policy Templates for vari
 - [AWS Open Buckets Policy](./security/storage/aws/public_buckets/)
 - [Google Open Buckets Policy](./security/storage/google/public_buckets/)
 
-### Operational
-Coming Soon
-
 ### Compliance
 - [Untagged Resources](./compliance/tags/tag_checker)
+
+### Operational
+  Coming Soon
 
 ## RightScale Policy Template Documentation
 - [Getting Started](http://docs.rightscale.com/policies/getting_started/)
