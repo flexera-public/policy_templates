@@ -1,6 +1,6 @@
 # RightScale Policy Templates
 
-This repo contains a library of open source RightScale Policy Templates to provide goveranance via automation across Cost, Security, Operational and Compliance categories. 
+This repo contains a library of open source RightScale Policy Templates to provide goveranance via automation across Cost, Security, Operational, and Compliance categories. 
 
 Please contact sales@rightscale.com to learn more. 
 
