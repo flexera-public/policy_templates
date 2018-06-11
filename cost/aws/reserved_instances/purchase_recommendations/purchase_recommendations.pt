@@ -1,4 +1,4 @@
-name "Reserved Instances Coverage"
+name "Reserved Instances Purchase Recommendations"
 rs_pt_ver 20180301
 type "policy"
 short_description "A policy that sends email notifications on reserved instance coverage"
@@ -14,20 +14,31 @@ parameter "param_email" do
   category "Contact"
   label "Email addresses (separate with commas)"
   type "string"
+  default "rshade@rightscale.com"
   allowed_pattern /^([a-zA-Z0-9-_.]+[@]+[a-zA-Z0-9-_.]+[.]+[a-zA-Z0-9-_]+,*|)+$/
+end
+
+parameter "param_service" do
+  category "AWS"
+  label "AWS Service"
+  type "string"
+  default "Amazon Elastic Compute Cloud - Compute"
+  allowed_values "Amazon Elastic Compute Cloud - Compute", "Amazon Relational Database Service"
 end
 
 parameter "param_LookbackPeriodInDays" do
   category "AWS"
   label "LookbackPeriodInDays"
   type "string"
+  default "THIRTY_DAYS"
   allowed_values "SEVEN_DAYS","THIRTY_DAYS","SIXTY_DAYS"
 end
 
 parameter "param_PaymentOption" do
   category "AWS"
-  label "Payment Option"
+  label "PaymentOption"
   type "string"
+  default "NO_UPFRONT"
   allowed_values "NO_UPFRONT","PARTIAL_UPFRONT","ALL_UPFRONT"
 end
 
@@ -35,6 +46,7 @@ parameter "param_TermInYears" do
   category "AWS"
   label "TermInYears"
   type "string"
+  default "ONE_YEAR"
   allowed_values "ONE_YEAR","THREE_YEARS"
 end
 
@@ -53,8 +65,12 @@ datasource "ds_reservations_purchase_recommendations" do
      host 'ce.us-east-1.amazonaws.com'
      path '/'
      verb 'POST'
-     headers "X-Amz-Target", "AWSInsightsIndexService.GetReservationPurchaseRecommendation"
-     headers "Content-Type", "application/x-amz-json-1.1"
+     header "X-Amz-Target", "AWSInsightsIndexService.GetReservationPurchaseRecommendation"
+     header "Content-Type", "application/x-amz-json-1.1"
+     body_field "Service", $param_service
+     body_field "LookbackPeriodInDays", $param_LookbackPeriodInDays
+     body_field "PaymentOption", $param_PaymentOption
+     body_field "TermInYears", $param_TermInYears
   end
 end
 
@@ -68,11 +84,15 @@ policy "pol_ri_coverage" do
     detail_template <<-EOS
 # Reserved Instance Purchase Recommendations
 
-{{data}}
+{{range $item := data.Recommendations -}}
+{{ range $k,$v := $item -}}
+| {{ printf "%q" $k }} | 
 
+{{ end -}}
+{{ end -}}
 EOS
 
   escalate $alert
-  check eq(size(data), 0)
+  check eq(1,0)
   end
 end
