@@ -1,0 +1,131 @@
+name "Start Stop Scheduler Policy Template"
+rs_pt_ver 20180301
+type "policy"
+short_description "A policy that sends email notifications on reserved instance purchase recommendations"
+long_description "Version 1.0"
+severity "medium"
+category "Cost"
+
+##################
+# User inputs    #
+##################
+
+parameter "param_email" do
+  category "Contact"
+  label "Email addresses (separate with commas)"
+  type "string"
+  default "rshade@rightscale.com"
+  allowed_pattern /^([a-zA-Z0-9-_.]+[@]+[a-zA-Z0-9-_.]+[.]+[a-zA-Z0-9-_]+,*|)+$/
+end
+
+parameter "param_schedule_tag" do
+  category "Scheduler"
+  label "Schedule Tag"
+  type "string"
+  description "This is the name of the tag for instances that match this schedule"
+  default "rs_pol:schedule=foobar"
+end
+
+parameter "param_start_hour" do
+  category "Scheduler"
+  label "Start Hour 0-24"
+  type "number"
+  description "Hour to start machine at"
+end
+
+parameter "param_start_minute" do
+  category "Scheduler"
+  label "Start Minute 0-59"
+  type "number"
+  description "Hour to start machine at"
+end
+
+parameter "param_stop_hour" do
+  category "Scheduler"
+  label "stop Hour 0-24"
+  type "number"
+  description "Hour to stop machine at"
+end
+
+parameter "param_stop_minute" do
+  category "Scheduler"
+  label "stop Minute 0-59"
+  type "number"
+  description "Hour to stop machine at"
+end
+
+parameter "param_scheduled_days" do
+  category "Scheduler"
+  label "Days Schedule is active: MTWThF"
+  type "list"
+  description "Days Schedule is active: MTWThF"
+end
+
+resource "clouds", type: "rs_cm.clouds"
+
+resources "instances", type: "rs_cm.instances" do
+  iterate @clouds  
+  cloud_href href(iter_item)
+  tags $param_schedule_tag
+end
+
+datasource "ds_instances" do
+  iterate @instances
+  field "resource_uid", val(iter_item,  "resource_uid")
+  field "name", val(iter_item, "name")
+  field "href", href(iter_item)
+  field "instance_type", val(iter_item, "instance_type")
+end
+
+datasource "ds_instance_with_schedule" do
+  run_script $js_do_time_stuff,$ds_instances,$param_scheduled_days,$param_start_hour,$param_start_minute,$param_stop_hour,$param_stop_minute
+end
+
+script "js_do_time_stuff", type: "javascript" do
+  parameters "ds_instances","scheduled_days","start_hour","start_minute","stop_hour","stop_minute"
+  result "filtered_instances"
+  code <<-EOS
+// This is the list of filtered instances.
+var filtered_instances = [];
+EOS
+end
+
+escalation "alert" do
+  email $param_email
+end
+
+escalation "stop_instance" do
+  run "rcl_stop_instance", data
+end
+
+escalation "start_instance" do
+  run "rcl_start_instance", data
+end
+
+define rcl_stop_instance($data) do
+end
+
+define rcl_start_instance($data) do
+end
+
+policy "pol_ri_coverage" do
+  validate_each $ds_instance_with_schedule do
+    summary_template "Stopping Instances"
+    detail_template <<-EOS
+EOS
+
+  escalate $alert
+  escalate $stop_instance
+  check logic_not(val(item, "stop_instance"))
+  end
+
+  validate_each $ds_instance_with_schedule do
+    summary_template "Stopping Instances"
+    detail_template <<-EOS
+EOS
+
+  escalate $alert
+  escalate $start_instance
+  check logic_not(val(item, "start_instance"))
+  end
+end
