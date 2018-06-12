@@ -1,0 +1,81 @@
+name "Old Snapshots Policy"
+rs_pt_ver 20180301
+type "policy"
+short_description "A policy that sends email notifications when a snapshots older then a certain timeframe are fouond"
+long_description "Version 1.0"
+severity "high"
+category "Cost"
+
+permission "perm_snapshots" do
+  label "Access snapshots"
+  resources "rs_cm.clouds", "rs_cm.volume_snapshots"
+  actions "rs_cm.index", "rs_cm.show"
+end
+
+permission "perm_retrieve_tags" do
+  label "Retrieve Tags"
+  actions "rs_cm.by_resource"
+  resources "rs_cm.tags"
+end
+
+parameter "param_age_days" do
+  type "number"
+  label "Number of days old snapshot to delete"
+  description "i.e. 30,60,90,180,365"
+end
+
+parameter "param_escalate_to" do
+  type "string"
+  label "Email address to send escalation emails to"
+end
+
+parameter "param_snapshot_tag_list" do
+  type "list"
+  label "Snapshot Tag List"
+  description "i.e. snapshot:keep=true"
+end
+
+auth "rs", type: "rightscale"
+
+resources "clouds", type: "rs_cm.clouds"
+
+resources "volume_snapshots", type: "rs_cm.volume_snapshots" do
+  iterate @clouds
+  cloud_href href(iter_item)
+  tags none($param_snapshot_tag_list)
+end
+
+datasource "ds_volume_snapshots" do
+  iterate @volume_snapshots
+  field "resource_uid", val(iter_item,  "resource_uid")
+  field "name", val(iter_item, "name")
+  field "href", href(iter_item)
+  field "updated_at", val(iter_item, "updated_at")
+end
+
+escalation "alert" do
+  email $param_escalate_to
+end
+
+resolution "resolution" do
+  email $param_escalate_to
+end
+
+policy "pol_snapshots" do
+  validate_each $ds_volume_snapshots do
+    summary_template "{{len data}} Snapshots that can be deleted, that are older than {{parameters.param_age_days}} days. "
+    detail_template <<-EOS
+# {{len data}} Snapshots that can be deleted, that are older than {{parameters.param_age_days}} days.
+
+| Resource UID | Name | Href | Tags | Last Updated |
+| ------------ | ---- | ---- | ---- | ------------ |
+{{ range data -}}
+| {{ .resource_uid }} | {{ .name }} | {{.href}} | {{.tags}} | {{.updated_at}} |
+{{ end -}}
+EOS
+
+    escalate $alert
+    check gt(dec(to_d(val(item, "updated_at")), now), prod($param_age_days, 24*3600))
+    resolve $resolution
+  end
+end
