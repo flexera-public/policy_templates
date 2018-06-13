@@ -1,0 +1,135 @@
+name "AWS Open IAM Policy"
+rs_pt_ver 20180301
+type "policy"
+short_description "Checks for iam policies that have access to everything."
+long_description "Version 0.1"
+severity "high"
+category "Security"
+
+permission "perm_read_creds" do
+  actions   "rs_cm.show_sensitive","rs_cm.index_sensitive"
+  resources "rs_cm.credentials"
+end
+
+parameter "escalate_to" do
+  type "string"
+  label "Email address to send escalation emails to"
+  default "edwin@rightscale"
+end
+
+auth "auth_iam", type: "aws" do
+  version 4
+  service 'iam'
+  region 'us-east-1'
+  access_key cred('AWS_ACCESS_KEY_ID')
+  secret_key cred('AWS_SECRET_ACCESS_KEY')
+end
+
+
+# List of policies , extract useful info 
+datasource "ds_iam_policies" do
+  # This request is not paginated
+  request do
+    auth $auth_iam
+    host "iam.amazonaws.com"
+    path "/"
+    header "User-Agent", "RS Policies"
+    query "Version", "2010-05-08"
+    query "Action", "ListPolicies"
+  end
+  result do
+    encoding "xml"
+    collect xpath(response, "//ListPoliciesResponse/ListPoliciesResult/Policies/member", "array") do
+     field "name", xpath(col_item,"PolicyName")
+     field "id", xpath(col_item,"PolicyId")
+     field "arn", xpath(col_item,"Arn")
+     field "versionid", xpath(col_item,"DefaultVersionId")
+    end
+ end
+end
+
+#Retrieve policy definition
+datasource "ds_policy_definition" do
+  run_script $retrieve_policy_definitions, $ds_iam_policies
+end
+
+script "retrieve_policy_definitions", type: "javascript" do
+  parameters "policies"
+  result "results"
+  
+  code <<-EOS
+  results = []
+    _.each(policies, function(policy) {
+      request = {
+        auth: "auth_iam",
+        host: 'iam.amazonaws.com',
+        path: '/',
+        query_params: {
+          Version: "2010-05-08",
+          Action: "GetPolicyVersion",
+          VersionId: policy["versionid"],
+          PolicyArn: policy["arn"],
+        },
+        headers: {
+          "User-Agent": "RS Policies"
+        }
+      }
+    });
+EOS
+end
+
+
+
+
+
+#allow access to everything
+# {
+#   "Version": "2012-10-17",
+#   "Statement": [
+#     {
+#       "Sid": "Stmt1528200363631",
+#       "Action": "*",
+#       "Effect": "Allow",
+#       "Resource": "*"
+#     }
+#   ]
+# }
+
+
+# script "aws_bucket_acl_request", type: "javascript" do
+#   parameters "bucket_name", "host", "auth"
+#   result "request"
+#   code <<-EOS
+#   request = {
+#     auth: auth,
+#     host: host,
+#     path: '/' + bucket_name + '/',
+#     query_params: {
+#       acl: ""
+#     },
+#     headers: {
+#       "User-Agent": "RS Policies"
+#     }
+#   }
+#   EOS
+# end
+
+escalation "alert_aws" do
+   email $escalate_to
+end
+
+policy "iam_policies" do
+  validate_each $ds_policy_definition do
+    summary_template "IAM Policies Found in AWS"
+    detail_template <<-EOS
+# Policies Found in AWS
+| Policy Name |  Policy ID |  Policy ARN | 
+| ----------- |
+{{ range data -}}
+| {{.name}} |{{.id}} |{{.arn}} |
+{{ end -}}
+EOS
+    escalate $alert_aws
+    check eq(1,0)
+  end
+end
