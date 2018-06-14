@@ -1,14 +1,16 @@
 ## Security Group High Open Ports Policy Template
 
 ### What it does
+
 This Policy Template leverages the multi cloud RightScale API. It will notify only if a security group has a port higher than `Beginning High Port` field open. 
 
 ### Parameters 
-1. Email address to send escalation emails to - Example: noreply@example.com
+
+1. Email addresses of the recipients you wish to notify - Example: noreply@example.com
 2. Beginning High Port - Any port greater than or equal to this will trigger a report
 
 ### Supported Clouds
-The following clouds are supported: 
+
 - AWS
 - Azure
 - Google 

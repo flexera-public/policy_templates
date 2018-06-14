@@ -1,9 +1,11 @@
 ## Downsize Instances Policy Template
 
 ### What it does
+
 This Policy Template uses data from the monitoring api to determine is you can decrease the size of your running instance.
 
 ### Usage
+
 There are two policy templates required to support this policy, `Downsize Instances Policy Template` and `Downsize Instances Add Tags Policy Template`.
 The Downsize Instances Policy Template is used to actually downsize instances. If you chose `Email` from the `Escalation Options`, it will only email you which instances can be downsized.
 If you chose `Downsize And Email` from the `Escalation Options`, it will email you a list of servers that were downsized and the size to which were changed. This policy will also resize the instance. This required the instance to be **stopped**.
@@ -28,7 +30,7 @@ If a server is marked `N/A`, no action will be taken and only the resize tag wil
 2. Email address to send escalation emails to - Example: noreply@example.com
 
 ### Supported Clouds
-The following clouds are supported:
+
 - AWS
 - Azure
 - Google

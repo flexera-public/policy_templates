@@ -1,14 +1,15 @@
-### Reserved Instances Coverage
+## Reserved Instances Coverage
 
-**What it does**
+### What it does
+
 This Policy Template leverages the Reserved Instance Coverage report. Retrieves the reservation coverage for your account.
-It will email the user specified in `Email address to send escalation emails to`
+It will email the user specified in `Email addresses of the recipients you wish to notify`
 
 
-## Supported Clouds
-The following clouds are supported: 
+### Supported Clouds
+
 - AWS
 
-**Cost**
+### Cost
 
 This Policy Template does not launch any instances, and so does not incur any cloud costs.
