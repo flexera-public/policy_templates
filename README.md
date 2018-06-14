@@ -19,7 +19,7 @@ This repo contains a library of open source RightScale Policy Templates for vari
 - [Google Open Buckets Policy](./security/storage/google/public_buckets/)
 
 ### Operational
-Coming Soon
+- [AWS Cloud Credentials Rotation Policy](./operational/cloud_credentials/aws/)
 
 ### Compliance
 - [Untagged Resources](./compliance/tags/tag_checker)
