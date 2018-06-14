@@ -15,8 +15,9 @@ Please contact sales@rightscale.com to learn more.
 - [Old Snapshots](./cost/volumes/old_snapshots/)
 
 ### Security
-- [ICMP Enabled Security Group](./security/security_groups/icmp_enabled/)
-- [Security Group Rules Without Description](./security/security_groups/rules_without_descriptions/)
+- [Security Group: ICMP Enabled](./security/security_groups/icmp_enabled/)
+- [Security Group: Rules Without Description](./security/security_groups/rules_without_descriptions/)
+- [Security Group: High Open Ports](./security/security_groups/high_open_ports/)
 - [AWS Open Buckets Policy](./security/storage/aws/public_buckets/)
 - [Google Open Buckets Policy](./security/storage/google/public_buckets/)
 
