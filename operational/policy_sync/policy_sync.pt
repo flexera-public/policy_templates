@@ -1,0 +1,65 @@
+name "Policy Template Synchronization Policy Template"
+rs_pt_ver 20180301
+type "policy"
+short_description "A policy to manage policy template. See the [README](https://github.com/rightscale/policy_templates/tree/master/security/security_groups/high_open_ports) and [docs.rightscale.com/policies](http://docs.rightscale.com/policies/) to learn more."
+long_description "Version: 1.0"
+severity "low"
+category "operational"
+
+parameter "escalate_to" do
+  type "list"
+  label "Email addresses of the recipients you wish to notify"
+end
+
+datasource "ds_active_policy_list" do
+  request do
+    verb "GET"
+    host "raw.githubusercontent.com"
+    path "/rightscale/policy_templates/PSASSET-867/active-policy-list.json"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    collect jmes_path(response,"policies") do
+      field "name", jmes_path(col_item, "name")
+      field "version", jmes_path(col_item, "version")
+    end
+  end
+end
+
+escalation "upload" do
+  run "upload_template", data
+end
+
+escalation "alert" do
+  email $escalate_to
+end
+
+define upload_template($data) do
+  foreach $item in $data do
+    $response = http_request(
+      verb: "post",
+      https: true,
+      host: "governance-3.rightscale.com",
+      href: join(["/api/governance/projects/",rs_project_id"/policy_templates"]),
+      body: { "UploadTemplateRequestBody": { "source": join(["https://raw.githubusercontent.com/rightscale/policy_templates/master",$item]) }}
+    )
+  end
+end
+
+policy "upload_policy_templates" do
+  validate_each $ds_active_policy_list do
+    summary_template "Policy Templates Updated"
+    detail_template <<-EOS
+# Policy Templates Updated
+
+| Name | Version |
+| ---- | ------- |
+{{ range data -}}
+| {{ .version }} | {{.name }} |
+{{ end -}}
+EOS
+
+    escalate $alert
+    check lt(to_n(val(item,"end_port")), $param_port_info) 
+  end
+end
