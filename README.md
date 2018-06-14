@@ -25,7 +25,7 @@ Please contact sales@rightscale.com to learn more.
 - [Untagged Resources](./compliance/tags/tag_checker)
 
 ### Operational
-  Coming Soon
+- [AWS Cloud Credentials Rotation Policy](./operational/cloud_credentials/aws)
 
 ## Instructions to upload policy templates to RightScale
 
