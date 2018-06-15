@@ -14,7 +14,7 @@ end
 parameter "escalate_to" do
   type "string"
   label "Email address to send escalation emails to"
-  default "edwin@rightscale"
+  default "edwin@rightscale.com"
 end
 
 auth "auth_iam", type: "aws" do
@@ -43,17 +43,40 @@ datasource "ds_iam_policies" do
      field "name", xpath(col_item,"PolicyName")
      field "id", xpath(col_item,"PolicyId")
      field "arn", xpath(col_item,"Arn")
-     field "versionid", xpath(col_item,"DefaultVersionId")
+     field "version_id", xpath(col_item,"DefaultVersionId")
     end
  end
 end
 
-#Retrieve policy definition
-datasource "ds_policy_definition" do
-  run_script $retrieve_policy_definitions, $ds_iam_policies
+datasource "ds_iam_policy_versions" do
+  iterate $ds_iam_policies
+  request do
+    auth $auth_iam
+    host "iam.amazonaws.com"
+    path "/"
+    header "User-Agent", "RS Policies"
+    query "Version", "2010-05-08"
+    query "Action", "GetPolicyVersion"
+    query "VersionId", val(iter_item, "version_id")
+    query "PolicyArn", val(iter_item, "arn")
+  end
+  result do
+    encoding "xml"
+    collect xpath(response, "//GetPolicyVersionResponse/GetPolicyVersionResult/PolicyVersion", "array") do
+     field "document", xpath(col_item,"Document")
+    end
+ end
 end
 
-script "retrieve_policy_definitions", type: "javascript" do
+
+
+
+#iterate over policies , undecode the document data for inspection.
+datasource "ds_readable_document" do
+  run_script $decode_document, $ds_iam_policy_versions, $ds_iam_policies
+end
+
+script "decode_and_correlate", type: "javascript" do
   parameters "policies"
   result "results"
   
@@ -65,22 +88,19 @@ script "retrieve_policy_definitions", type: "javascript" do
         host: 'iam.amazonaws.com',
         path: '/',
         query_params: {
-          Version: "2010-05-08",
           Action: "GetPolicyVersion",
-          VersionId: policy["versionid"],
-          PolicyArn: policy["arn"],
+          Version: "2010-05-08",
+          VersionId: policy.versionid,
+          PolicyArn: policy.arn",
         },
         headers: {
           "User-Agent": "RS Policies"
         }
       }
     });
+
 EOS
 end
-
-
-
-
 
 #allow access to everything
 # {
@@ -96,37 +116,20 @@ end
 # }
 
 
-# script "aws_bucket_acl_request", type: "javascript" do
-#   parameters "bucket_name", "host", "auth"
-#   result "request"
-#   code <<-EOS
-#   request = {
-#     auth: auth,
-#     host: host,
-#     path: '/' + bucket_name + '/',
-#     query_params: {
-#       acl: ""
-#     },
-#     headers: {
-#       "User-Agent": "RS Policies"
-#     }
-#   }
-#   EOS
-# end
 
 escalation "alert_aws" do
    email $escalate_to
 end
 
 policy "iam_policies" do
-  validate_each $ds_policy_definition do
+  validate_each $ds_iam_policy_versions do
     summary_template "IAM Policies Found in AWS"
     detail_template <<-EOS
 # Policies Found in AWS
-| Policy Name |  Policy ID |  Policy ARN | 
-| ----------- |
+| Policy Name |  
+| ----------- |  
 {{ range data -}}
-| {{.name}} |{{.id}} |{{.arn}} |
+| {{.document}} |  
 {{ end -}}
 EOS
     escalate $alert_aws
