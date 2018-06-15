@@ -73,7 +73,7 @@ end
 
 #iterate over policies , undecode the document data for inspection.
 datasource "ds_readable_document" do
-  run_script $decode_document, $ds_iam_policy_versions, $ds_iam_policies
+  run_script $decode_and_correlate, $ds_iam_policy_versions, $ds_iam_policies
 end
 
 script "decode_and_correlate", type: "javascript" do
@@ -81,9 +81,11 @@ script "decode_and_correlate", type: "javascript" do
   result "name_and_policies"
   
   code <<-EOS
-  results = []
+  var name_and_policies=[]
     _.each(ds_iam_policy_versions, function(policy_doc,index) {
-      var decoded_policy=JSON.Parse(decodeURIComponent(policy_doc))
+      var decoded_policy=JSON.parse(decodeURIComponent(policy_doc))
+
+      
 
       name_and_policies.push({
         name: ds_iam_policies[index].ListPoliciesResponse.ListPoliciesResult.Policies.PolicyName,
@@ -119,14 +121,14 @@ escalation "alert_aws" do
 end
 
 policy "iam_policies" do
-  validate_each $ds_iam_policy_versions do
+  validate_each $ds_readable_document do
     summary_template "IAM Policies Found in AWS"
     detail_template <<-EOS
 # Policies Found in AWS
 | Policy Name |  
 | ----------- |  
 {{ range data -}}
-| {{.document}} |  
+| {{.name}} |  
 {{ end -}}
 EOS
     escalate $alert_aws
