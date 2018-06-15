@@ -8,13 +8,17 @@ task :generate_policy_list do
   Dir['**/*.pt'].each do |file|
     f = File.read(file)
     f.each_line do |line|
+      if line =~ /^name/
+        @name = line.split(' ')[1..-1].join(' ').to_s.chomp('"').reverse.chomp('"').reverse
+        puts @name
+      end
       if line =~ /long_description/
         if line =~ /Version/
-          version = line.split(':').last.strip.chomp("\"")
-          file_list<<{"name": file, "version": version }
+          @version = line.split(':').last.strip.chomp("\"")
         end
       end
     end
+    file_list<<{"name": @name, "file_name": file, "version": @version }
   end
   policies = {"policies": file_list }
   File.open('active-policy-list.json', 'w') { |file| file.write(policies.to_json) }

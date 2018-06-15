@@ -11,6 +11,8 @@ parameter "escalate_to" do
   label "Email addresses of the recipients you wish to notify"
 end
 
+auth "auth_rs", type: "rightscale"
+
 datasource "ds_active_policy_list" do
   request do
     verb "GET"
@@ -21,27 +23,47 @@ datasource "ds_active_policy_list" do
   result do
     collect jmes_path(response,"policies") do
       field "name", jmes_path(col_item, "name")
+      field "file_name", jmes_path(col_item, "file_name")
       field "version", jmes_path(col_item, "version")
     end
   end
 end
 
+datasource "ds_current_policy_template_list" do
+  request do
+    verb "GET"
+    host "governance-3.rightscale.com"
+    path join(["/api/governance/projects/",$project_id,"/policy_templates"])
+    header "Api-Version", "1.0"
+    header "view", "extended"
+  end
+  result do
+    collect jmes_path(response,"items") do
+      field "name", jmes_path(col_item, "name")
+      field "long_description", jmes_path(col_item, "long_description")
+    end
+  end
+end
+
 escalation "upload" do
-  run "upload_template", data
+  run "upload_template", data, rs_project_id
 end
 
 escalation "alert" do
   email $escalate_to
 end
 
-define upload_template($data) do
+define upload_template($data,$project_id) do
   foreach $item in $data do
+    $policy_request = http_get(url: join(["https://raw.githubusercontent.com/rightscale/policy_templates/PSASSET-867/",$item["name"]]))
+    $policy_source = $policy_request["body"]
+    $file_name = last(split($item["name"],'/'))
     $response = http_request(
       verb: "post",
       https: true,
       host: "governance-3.rightscale.com",
-      href: join(["/api/governance/projects/",rs_project_id"/policy_templates"]),
-      body: { "UploadTemplateRequestBody": { "source": join(["https://raw.githubusercontent.com/rightscale/policy_templates/master",$item]) }}
+      href: join(["/api/governance/projects/",$project_id,"/policy_templates"]),
+      body: { "UploadTemplateRequestBody": { "source": $policy_source, filename: $file_name }}
     )
   end
 end
@@ -52,14 +74,14 @@ policy "upload_policy_templates" do
     detail_template <<-EOS
 # Policy Templates Updated
 
-| Name | Version |
-| ---- | ------- |
+| Name | File Name | Repo Version |
+| ---- | --------- | ------------ |
 {{ range data -}}
-| {{ .version }} | {{.name }} |
+| {{ .name }} | {{.file_name}} | {{.version }} |
 {{ end -}}
 EOS
 
     escalate $alert
-    check lt(to_n(val(item,"end_port")), $param_port_info) 
+    check eq(0,1)
   end
 end
