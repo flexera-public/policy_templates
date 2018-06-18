@@ -12,6 +12,12 @@ parameter "escalate_to" do
   default ["rshade@rightscale.com"]
 end
 
+parameter "param_alert_options" do
+  type "string"
+  label "Escalation Options"
+  allowed_values "Email", "Email and Upload"
+end
+
 auth "auth_rs", type: "rightscale"
 
 datasource "ds_active_policy_list" do
@@ -41,6 +47,7 @@ datasource "ds_current_policy_template_list" do
   end
   result do
     collect jmes_path(response,"items") do
+      field "id", jmes_path(col_item, "id")
       field "name", jmes_path(col_item, "name")
       field "long_description", jmes_path(col_item, "long_description")
     end
@@ -66,6 +73,7 @@ script "js_combine_policy_lists", type: "javascript" do
     var active_policy = active_policy_list[i]
     var account_policy_template = old_policy_list[active_policy.name]
     if (account_policy_template){
+      var policy_id = account_policy_template.id
       var account_version = account_policy_template.long_description
       if ( account_version.search(/Version/i) != -1 ) {
         var version_str = account_version.split(' ')
@@ -74,6 +82,7 @@ script "js_combine_policy_lists", type: "javascript" do
         var account_version = "0.0"
       }
     } else {
+      var policy_id = 0
       var account_version = "0.0"
     }
     var a_version = parseFloat(account_version)
@@ -89,32 +98,56 @@ script "js_combine_policy_lists", type: "javascript" do
       repo_version: active_policy.version,
       account_version: account_version,
       account_policy_template: account_policy_template,
-      version_upgradeable: version_upgradeable
+      version_upgradeable: version_upgradeable,
+      policy_id: policy_id
     })
   }
 EOS
 end
 
 escalation "upload" do
-  run "upload_template", data, rs_project_id
+  run "upload_template", data, rs_project_id, $param_alert_options
 end
 
 escalation "alert" do
   email $escalate_to
 end
 
-define upload_template($data,$project_id) do
-  foreach $item in $data do
-    $policy_request = http_get(url: join(["https://raw.githubusercontent.com/rightscale/policy_templates/PSASSET-867/",$item["name"]]))
-    $policy_source = $policy_request["body"]
-    $file_name = last(split($item["name"],'/'))
-    $response = http_request(
-      verb: "post",
-      https: true,
-      host: "governance-3.rightscale.com",
-      href: join(["/api/governance/projects/",$project_id,"/policy_templates"]),
-      body: { "UploadTemplateRequestBody": { "source": $policy_source, filename: $file_name }}
-    )
+define upload_template($data,$project_id,$param_alert_options) return $url_array,$response_array do
+ if $param_alert_options != "Email"
+    $url_array = []
+    $response_array = []
+    foreach $item in $data do
+      $url = "https://raw.githubusercontent.com/rightscale/policy_templates/PSASSET-867/"+to_s($item["file_name"])
+      $url_array << $url
+      $policy_request = http_get(
+       insecure: false,
+       url: $url
+      )
+      $policy_source = $policy_request["body"]
+      $file_name = last(split($item["file_name"],'/'))
+      
+      $create_response = http_request(
+        verb: "post",
+        https: true,
+        host: "governance-3.rightscale.com",
+        href: join(["/api/governance/projects/",$project_id,"/policy_templates"]),
+        headers: { "Api-Version": "1.0" },
+        body: { "source": $policy_source, filename: $file_name }
+      )
+      $response_array << $create_response
+      if $create_response["code"] == 409
+        $update_response = http_request(
+          verb: "put",
+          https: true,
+          host: "governance-3.rightscale.com",
+          href: $create_response["headers"]["Location"],
+          headers: { "Api-Version": "1.0" },
+          body: { "source": $policy_source, filename: $file_name }
+        )
+        $response_array << $update_response
+      end
+    end
   end
 end
 
@@ -125,14 +158,15 @@ policy "upload_policy_templates" do
 
 # Policy Templates Updated
 
-| Name | File Name | Repo Version | Long Description | Version Upgradeable |
-| ---- | --------- | ------------ | ---------------- | ------------------- |
+| Name | File Name | Repo Version | Account Version | Version Upgradeable | Policy ID |
+| ---- | --------- | ------------ | ---------------- | ------------------ | --------- |
 {{ range data -}}
-| {{ .name }} | {{.file_name}} | {{.repo_version}} | {{.account_version}} | {{.version_upgradeable}} |
+| {{ .name }} | {{.file_name}} | {{.repo_version}} | {{.account_version}} | {{.version_upgradeable}} | {{.policy_id}} |
 {{ end -}}
 EOS
 
     escalate $alert
+    escalate $upload
     check eq(0,1)
   end
 end
