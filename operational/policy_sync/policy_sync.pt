@@ -9,6 +9,7 @@ category "operational"
 parameter "escalate_to" do
   type "list"
   label "Email addresses of the recipients you wish to notify"
+  default ["rshade@rightscale.com"]
 end
 
 auth "auth_rs", type: "rightscale"
@@ -31,11 +32,12 @@ end
 
 datasource "ds_current_policy_template_list" do
   request do
+    auth $auth_rs
     verb "GET"
     host "governance-3.rightscale.com"
-    path join(["/api/governance/projects/",$project_id,"/policy_templates"])
+    path join(["/api/governance/projects/",rs_project_id,"/policy_templates"])
     header "Api-Version", "1.0"
-    header "view", "extended"
+    query "view", "extended"
   end
   result do
     collect jmes_path(response,"items") do
@@ -43,6 +45,46 @@ datasource "ds_current_policy_template_list" do
       field "long_description", jmes_path(col_item, "long_description")
     end
   end
+end
+
+datasource "ds_combined_policy_list" do
+  run_script $js_combine_policy_lists, $ds_active_policy_list, $ds_current_policy_template_list
+end
+
+script "js_combine_policy_lists", type: "javascript" do
+  parameters "active_policy_list", "current_policy_list"
+  result "policy_list"
+  code <<-EOS
+  var policy_list = [];
+  var old_policy_list = {};
+  for (var index = 0; index < current_policy_list.length; index++) {
+    var current_policy = current_policy_list[index];
+    old_policy_list[current_policy.name] = current_policy;
+  }
+
+  for ( var i = 0; i < active_policy_list.length; i++) {
+    var active_policy = active_policy_list[i]
+    var account_policy_template = old_policy_list[active_policy.name]
+    if (account_policy_template){
+      var account_version = account_policy_template.long_description
+      if ( account_version.search(/Version/i) != -1 ) {
+        var version_str = account_version.split(' ')
+        var account_version = version_str[version_str.length -1]        
+      } else {
+        var account_version = "0.0"
+      }
+    } else {
+      var account_version = "0.0"
+    }
+    policy_list.push({
+      name: active_policy.name,
+      file_name: active_policy.file_name,
+      repo_version: active_policy.version,
+      account_version: account_version,
+      account_policy_template: account_policy_template
+    })
+  }
+EOS
 end
 
 escalation "upload" do
@@ -69,19 +111,20 @@ define upload_template($data,$project_id) do
 end
 
 policy "upload_policy_templates" do
-  validate_each $ds_active_policy_list do
+  validate_each $ds_combined_policy_list do
     summary_template "Policy Templates Updated"
     detail_template <<-EOS
+
 # Policy Templates Updated
 
-| Name | File Name | Repo Version |
-| ---- | --------- | ------------ |
+| Name | File Name | Repo Version | Long Description | APT |
+| ---- | --------- | ------------ | ---------------- | --- |
 {{ range data -}}
-| {{ .name }} | {{.file_name}} | {{.version }} |
+| {{ .name }} | {{.file_name}} | {{.repo_version}} | {{.account_version}} | {{.account_policy_template}} |
 {{ end -}}
 EOS
 
     escalate $alert
-    check eq(0,1)
+    check gt(to_n(val(item,"account_version")),to_n(val(item,"repo_version")))
   end
 end
