@@ -1,7 +1,7 @@
 name "Policy Template Synchronization Policy Template"
 rs_pt_ver 20180301
 type "policy"
-short_description "A policy to manage policy template. See the [README](https://github.com/rightscale/policy_templates/tree/master/security/security_groups/high_open_ports) and [docs.rightscale.com/policies](http://docs.rightscale.com/policies/) to learn more."
+short_description "A policy to manage policy template. See the [README](https://github.com/rightscale/policy_templates/tree/master/operational/policy_sync/) and [docs.rightscale.com/policies](http://docs.rightscale.com/policies/) to learn more."
 long_description "Version: 1.0"
 severity "low"
 category "operational"
@@ -9,13 +9,20 @@ category "operational"
 parameter "escalate_to" do
   type "list"
   label "Email addresses of the recipients you wish to notify"
-  default ["rshade@rightscale.com"]
 end
 
 parameter "param_alert_options" do
   type "string"
   label "Escalation Options"
   allowed_values "Email", "Email and Upload"
+end
+
+parameter "force_upgrade" do
+  type "number"
+  label "Force Upgrade"
+  description "Force Upgrade, 0:False, 1:True"
+  default 0
+  allowed_values 0,1
 end
 
 auth "auth_rs", type: "rightscale"
@@ -55,11 +62,11 @@ datasource "ds_current_policy_template_list" do
 end
 
 datasource "ds_combined_policy_list" do
-  run_script $js_combine_policy_lists, $ds_active_policy_list, $ds_current_policy_template_list
+  run_script $js_combine_policy_lists, $ds_active_policy_list, $ds_current_policy_template_list, $force_upgrade
 end
 
 script "js_combine_policy_lists", type: "javascript" do
-  parameters "active_policy_list", "current_policy_list"
+  parameters "active_policy_list", "current_policy_list", "force_upgrade"
   result "policy_list"
   code <<-EOS
   var policy_list = [];
@@ -91,6 +98,9 @@ script "js_combine_policy_lists", type: "javascript" do
       var version_upgradeable = true
     } else {
       var version_upgradeable = false
+    }
+    if ((r_version <= a_version) && (force_upgrade == 1 )) {
+      var version_upgradeable = true
     }
     policy_list.push({
       name: active_policy.name,
@@ -167,6 +177,6 @@ EOS
 
     escalate $alert
     escalate $upload
-    check eq(0,1)
+    check logic_not(val(item, "version_upgradeable"))
   end
 end
