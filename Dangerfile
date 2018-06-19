@@ -1,7 +1,8 @@
 # DangerFile
 # https://danger.systems/reference.html
 changed_files = (git.added_files + git.modified_files)
-has_app_changes changed_files.select{ |file| file.end_with? "pt" }
+do_something changed_files.select{ |file| file.end_with? "pt" }
+has_app_changes = changed_files
 # Changelog entries are required for changes to library files.
 no_changelog_entry = !git.modified_files.include?("CHANGELOG.md")
 if has_app_changes && no_changelog_entry
