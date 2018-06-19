@@ -12,11 +12,11 @@ When you choose `Email and Upload`, you will get an alert on the policy template
 
 #### Scenarios
 1. Existing Templates
-  1. Versions are the same: `No Action Taken`
-  2. Versions are different: `Escalate`
-  3. Versions are the same, but Force Upgrade = 1: `Escalate`
+   1. Versions are the same: `No Action Taken`
+   2. Versions are different: `Escalate`
+   3. Versions are the same, but Force Upgrade = 1: `Escalate`
 2. Templates Do Not Existing
-  1. `Escalate`
+   1. `Escalate`
 
 ### Parameters
 
