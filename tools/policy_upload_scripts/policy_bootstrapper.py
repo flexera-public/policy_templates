@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 #
-# 
+# Uploads and applies the "upload policy" policy to all accounts in the user-provided organization.
+# See 
 # 
 import requests,json,argparse,getpass
 import rs_auth
