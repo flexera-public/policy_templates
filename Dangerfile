@@ -9,3 +9,7 @@ missing_doc_changes = git.modified_files.grep(/README.md/).empty?
 if has_app_changes && missing_doc_changes
   warn("Any changes to library code should be reflected in the Changelog. Please consider adding a note there and adhere to the [Changelog Guidelines](https://github.com/Moya/contributors/blob/master/Changelog%20Guidelines.md).")
 end
+
+raise 'Please provide a summary of your Pull Request.' if github.pr_body.length < 10
+
+raise 'Please add labels to this Pull Request' if github.pr_labels.empty?
