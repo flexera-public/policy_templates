@@ -2,15 +2,16 @@
 # https://danger.systems/reference.html
 changed_files = (git.added_files + git.modified_files)
 has_app_changes = changed_files.select{ |file| file.end_with? "pt" }
+message "had total app_changes #{has_app_changes.length}"
 # Changelog entries are required for changes to library files.
 no_changelog_entry = !git.modified_files.include?("CHANGELOG.md")
-if has_app_changes && no_changelog_entry
-  warn("Any changes to library code should be reflected in the Changelog. Please consider adding a note there and adhere to the [Changelog Guidelines](https://github.com/Moya/contributors/blob/master/Changelog%20Guidelines.md).")
+if (has_app_changes.length != 0) && no_changelog_entry
+  warn("No Changelog")
 end
 
 missing_doc_changes = git.modified_files.grep(/README.md/).empty?
-if has_app_changes && missing_doc_changes
-  warn("Any changes to library code should be reflected in the Changelog. Please consider adding a note there and adhere to the [Changelog Guidelines](https://github.com/Moya/contributors/blob/master/Changelog%20Guidelines.md).")
+if (has_app_changes.length != 0) && missing_doc_changes
+  warn("No readme")
 end
 
 raise 'Please provide a summary of your Pull Request.' if github.pr_body.length < 10
