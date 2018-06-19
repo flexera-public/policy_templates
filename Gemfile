@@ -11,3 +11,6 @@ gem "rake", "~> 12.3"
 
 # Added at 2018-06-14 16:08:27 -0500 by rshade:
 gem "json", "~> 2.1"
+
+# Added at 2018-06-19 14:10:27 -0500 by rshade:
+gem "danger", "~> 5.6"
