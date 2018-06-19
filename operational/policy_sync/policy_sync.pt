@@ -17,6 +17,13 @@ parameter "param_alert_options" do
   allowed_values "Email", "Email and Upload"
 end
 
+parameter "param_governance_host" do
+  type "string"
+  label "Governance Host"
+  description "Governance Host, Hostname will match your shard: us-3.rightscale.com = governance-3.rightscale.com"
+  allowed_values "governance-3.rightscale.com", "governance-4.rightscale.com", "governance-10.rightscale.com"
+end
+
 parameter "force_upgrade" do
   type "number"
   label "Force Upgrade"
@@ -31,7 +38,7 @@ datasource "ds_active_policy_list" do
   request do
     verb "GET"
     host "raw.githubusercontent.com"
-    path "/rightscale/policy_templates/PSASSET-867/active-policy-list.json"
+    path "/rightscale/policy_templates/master/active-policy-list.json"
     header "User-Agent", "RS Policies"
   end
   result do
@@ -47,7 +54,7 @@ datasource "ds_current_policy_template_list" do
   request do
     auth $auth_rs
     verb "GET"
-    host "governance-3.rightscale.com"
+    host $param_governance_host
     path join(["/api/governance/projects/",rs_project_id,"/policy_templates"])
     header "Api-Version", "1.0"
     query "view", "extended"
@@ -116,19 +123,19 @@ EOS
 end
 
 escalation "upload" do
-  run "upload_template", data, rs_project_id, $param_alert_options
+  run "upload_template", data, rs_project_id, $param_alert_options, $param_governance_host
 end
 
 escalation "alert" do
   email $escalate_to
 end
 
-define upload_template($data,$project_id,$param_alert_options) return $url_array,$response_array do
+define upload_template($data,$project_id,$param_alert_options,$param_governance_host) return $url_array,$response_array do
  if $param_alert_options != "Email"
     $url_array = []
     $response_array = []
     foreach $item in $data do
-      $url = "https://raw.githubusercontent.com/rightscale/policy_templates/PSASSET-867/"+to_s($item["file_name"])
+      $url = "https://raw.githubusercontent.com/rightscale/policy_templates/master/"+to_s($item["file_name"])
       $url_array << $url
       $policy_request = http_get(
        insecure: false,
@@ -140,7 +147,7 @@ define upload_template($data,$project_id,$param_alert_options) return $url_array
       $create_response = http_request(
         verb: "post",
         https: true,
-        host: "governance-3.rightscale.com",
+        host: $param_governance_host,
         href: join(["/api/governance/projects/",$project_id,"/policy_templates"]),
         headers: { "Api-Version": "1.0" },
         body: { "source": $policy_source, filename: $file_name }
@@ -150,7 +157,7 @@ define upload_template($data,$project_id,$param_alert_options) return $url_array
         $update_response = http_request(
           verb: "put",
           https: true,
-          host: "governance-3.rightscale.com",
+          host: $param_governance_host,
           href: $create_response["headers"]["Location"],
           headers: { "Api-Version": "1.0" },
           body: { "source": $policy_source, filename: $file_name }
