@@ -1,4 +1,7 @@
-has_app_changes = !git.modified_files.grep(/*.pt/).empty?
+# DangerFile
+# https://danger.systems/reference.html
+changed_files = (git.added_files + git.modified_files)
+has_app_changes changed_files.select{ |file| file.end_with? "pt" }
 # Changelog entries are required for changes to library files.
 no_changelog_entry = !git.modified_files.include?("CHANGELOG.md")
 if has_app_changes && no_changelog_entry
