@@ -26,10 +26,8 @@ When you choose `Email and Upload`, you will get an alert on the policy template
 3. Force Upgrade - Allowed Values: 0:False, 1:True - Setting this to 1 will force upgrade all policy templates in your account. 
 4. Governance Host - "Governance Host, Hostname will match your shard: us-3.rightscale.com = governance-3.rightscale.com"
 
-### Required security scopes:
-1. governance:policy_template:index
-2. governance:policy_template:upload
-3. governance:policy_template:update
+### Required Roles
+1. policy_designer
 
 ### Cost
 
