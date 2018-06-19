@@ -23,5 +23,5 @@ task :generate_policy_list do
     end
   end
   policies = {"policies": file_list }
-  File.open('active-policy-list.json', 'w') { |file| file.write(policies.to_json) }
+  File.open('active-policy-list.json', 'w') { |file| file.write(JSON.pretty_generate(policies)) }
 end
