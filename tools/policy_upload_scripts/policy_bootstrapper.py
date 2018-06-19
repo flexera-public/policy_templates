@@ -1,6 +1,6 @@
 #!/usr/bin/env python
-# WORKING VERSION WITH URL READ
 #
+# 
 # 
 import requests,json,argparse,getpass
 import rs_auth
@@ -11,7 +11,6 @@ parser.add_argument('-s', '--shard', required=True)
 parser.add_argument('-r', '--refresh_token')
 parser.add_argument('-u', '--username')
 parser.add_argument('-a', '--account')
-parser.add_argument('-p', '--policy_template')
 args = parser.parse_args()
 
 refresh_token = args.refresh_token
