@@ -27,7 +27,8 @@ When you choose `Email and Upload`, you will get an alert on the policy template
 4. Governance Host - "Governance Host, Hostname will match your shard: us-3.rightscale.com = governance-3.rightscale.com"
 
 ### Required Roles
-1. policy_designer
+1. For `Email` Escalation option, either: `policy_manager` or `policy_designer`
+2. For `Email and Upload` Escalation option: `policy_designer`
 
 ### Cost
 
