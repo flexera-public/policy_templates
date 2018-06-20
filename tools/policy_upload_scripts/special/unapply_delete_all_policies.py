@@ -105,10 +105,3 @@ for account in accounts_json:
     print ""
     print ""
         
-
-    
-        
-            #applied_policies = requests.get(gov_base_url+"/policy_templates", headers=gov_headers) 
-
-        
-        
