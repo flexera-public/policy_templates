@@ -12,7 +12,6 @@ import rs_auth,rs_user_info
 
 ### User inputs and generation of access_token for subsequent API calls ###
 parser = argparse.ArgumentParser()
-parser.add_argument('-s', '--shard', required=True)
 parser.add_argument('-o', '--org', required=True)
 parser.add_argument('-r', '--refresh_token')
 parser.add_argument('-u', '--username')
@@ -20,7 +19,6 @@ parser.add_argument('-a', '--account')
 args = parser.parse_args()
 
 # Gather up the inputs
-shard = args.shard
 org = args.org
 refresh_token = args.refresh_token
 username = args.username
@@ -35,10 +33,15 @@ if refresh_token is None:
             print "For basic authentication, a RightScale account ID needs to be provided to which you have enterprise_manager role."
             exit(1)
         password = getpass.getpass()
-        access_token = rs_auth.rs_basic_auth(shard, account_id, username, password)
+        print "Authenticating to RightScale ..."
+        auth_info = rs_auth.rs_basic_auth(account_id, username, password)
 else:
-    access_token = rs_auth.rs_oauth(shard,refresh_token)
-    
+    print "Authenticating to RightScale ..."
+    auth_info = rs_auth.rs_oauth(refresh_token)
+
+access_token = auth_info["access_token"]
+shard = auth_info["shard"]
+
 # Base URLs for below
 cm_base_url = "https://us-{}.rightscale.com".format(shard)
 gov_host = "governance-{}.rightscale.com".format(shard)
