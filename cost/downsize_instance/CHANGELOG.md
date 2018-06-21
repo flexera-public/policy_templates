@@ -1,3 +1,7 @@
+v1.4
+----
+- Filtering to only look at clouds represented in instance_types.json
+
 v1.3
 ----
 - Adding in downsize actions
