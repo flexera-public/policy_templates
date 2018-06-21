@@ -3,7 +3,6 @@
 changed_files = (git.added_files + git.modified_files)
 has_app_changes = changed_files.select{ |file| file.end_with? "pt" }
 has_new_policy_template = git.added_files.select{ |file| file.end_with? "pt" }
-message "had total app_changes #{has_app_changes.length}"
 
 # Changelog entries are required for changes to library files.
 no_changelog_entry = !git.modified_files.include?("CHANGELOG.md")
