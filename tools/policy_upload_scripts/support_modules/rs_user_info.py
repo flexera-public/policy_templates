@@ -1,12 +1,4 @@
-#!/usr/bin/env python
-#
-# Boostraps the "policy sync" policy to all accounts in the user-provided organization.
-# See https://github.com/rightscale/policy_templates/tree/master/operational/policy_sync
-# 
-# Script Function:
-# - Find all the accounts in the given organization.
-# - Upload and apply the "policy sync" policy to all the accounts.
-# 
+# Helper function to get user email from access_token
 import requests,json
 
 def rs_user_email(shard, access_token):
@@ -31,4 +23,5 @@ def rs_user_email(shard, access_token):
     my_user_info = requests.get(cm_base_url+my_user_href, headers=cm_headers)
     my_user_info_json = json.loads(my_user_info.text)
     user_email = my_user_info_json["email"]
+    return user_email
         
