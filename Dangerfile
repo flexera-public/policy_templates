@@ -5,12 +5,12 @@ has_app_changes = changed_files.select{ |file| file.end_with? "pt" }
 has_new_policy_template = git.added_files.select{ |file| file.end_with? "pt" }
 
 # Changelog entries are required for changes to library files.
-no_changelog_entry = !git.modified_files.include?("CHANGELOG.md")
+no_changelog_entry = changed_files.grep(/CHANGELOG.md/).empty?
 if (has_app_changes.length != 0) && no_changelog_entry
   raise "Please add a changelog"
 end
 
-missing_doc_changes = git.modified_files.grep(/README.md/).empty?
+missing_doc_changes = changed_files.grep(/README.md/).empty?
 if (has_app_changes.length != 0) && missing_doc_changes
   warn("Should this include readme changes")
 end
