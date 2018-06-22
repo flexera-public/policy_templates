@@ -4,6 +4,8 @@
 
 This Policy Template can be used to synchronize (upload, overwrite, or alert) RS built-in policy templates in your account. It uses a json file stored in the github directory to determine a set of RightScale's current policy templates and then compares them with your current account policies (using the version) to take appropriate action.
 
+![policy_sync.png](https://github.com/rightscale/policy_templates/tree/master/operational/policy_sync/policy_sync.png)
+
 ### Usage
 
 - The Policy Template Synchronization Policy Template will need to be uploaded to your account and set active. 
