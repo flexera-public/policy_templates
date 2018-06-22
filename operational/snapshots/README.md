@@ -6,7 +6,7 @@ This Policy Template verifies that you have snapshots on all of your important v
 ### Usage
 **_Warning: This policy will stop your servers to guarantee consistency._**
 This policy template has two options: `Email` and `Snapshot And Email`. If you choose `Email` you will get a report of volumes that have missing snapshots within the timeperiod.
-If you choose `Snapshot And Email` it will email you a report of volumes that have missing snapshots, and then it will take a stop the server wait for completion, take a snapshot and
+If you choose `Snapshot And Email` it will email you a report of volumes that have missing snapshots, and then it will stop the server, wait for completion, take a snapshot and
 start up the server. 
 
 
