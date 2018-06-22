@@ -4,6 +4,8 @@
 
 This Policy Template can be used to synchronize (upload, overwrite, or alert) RS built-in policy templates in your account. It uses a json file stored in the github directory to determine a set of RightScale's current policy templates and then compares them with your current account policies (using the version) to take appropriate action.
 
+![policy_sync.png](https://www.dropbox.com/s/0mb9maqi8dm89y8/policy_sync_do_not_delete.png?dl=0)
+
 ### Usage
 
 - The Policy Template Synchronization Policy Template will need to be uploaded to your account and set active. 
@@ -27,7 +29,7 @@ This Policy Template can be used to synchronize (upload, overwrite, or alert) RS
 1. Email addresses of the recipients you wish to notify - Ex: noreply@example.com
 2. Actions: `Email` and `Email and Upload`
 3. Force Upgrade - Allowed Values: 0:False, 1:True - Setting this to 1 will force upgrade all policy templates in your account. 
-4. Governance Host - "Governance Host, Hostname will match your shard: us-3.rightscale.com = governance-3.rightscale.com"
+4. Governance Host - "Governance Host, Hostname will match your shard: us-3.rightscale.com = governance-3.rightscale.com". Simply navigate to Cloud Management or open browser developer console to see the hostname of the API calls. 
 
 ### Required Roles
 1. For `Email` Escalation option, either: `policy_manager` or `policy_designer`
