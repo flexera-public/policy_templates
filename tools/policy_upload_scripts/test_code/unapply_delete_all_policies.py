@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 #
 # Boostraps the "policy sync" policy to all accounts in the user-provided organization.
-# See https://github.com/rightscale/policy_templates/tree/master/operational/policy_sync
+# See https://github.com/rightscale/policy_templates/tree/master/tools/policy_sync
 # 
 # Script Function:
 # - Find all the accounts in the given organization.
