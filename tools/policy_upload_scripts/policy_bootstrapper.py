@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 #
 # Boostraps the "policy sync" policy to all accounts in the user-provided organization.
-# See https://github.com/rightscale/policy_templates/tree/master/operational/policy_sync
+# See https://github.com/rightscale/policy_templates/tree/master/tools/policy_sync
 # 
 # Script Function:
 # - Find all the accounts in the given organization.
@@ -68,7 +68,7 @@ accounts_json = json.loads(accounts.text)
 accounts_json.sort(key=lambda e: e["legacy"]["account_url"]) 
     
 ### Get the policy template from github
-pol_template_uri = "/operational/policy_sync/policy_sync.pt"
+pol_template_uri = "/tools/policy_sync/policy_sync.pt"
 pol_template_url = git_base_url + pol_template_uri
 git_file = requests.get(pol_template_url)
 git_file = git_file.text
