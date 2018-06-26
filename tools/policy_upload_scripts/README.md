@@ -2,13 +2,9 @@
 
 ## Scripts/Modules
 ### policy_bootstrapper.py
-Provides an easy way to push the official set of RightScale policies to all accounts in an organization.
-When invoked, the script uploads and applies the "Policy Template Synchronization" policy template to 
-ALL accounts in the specified organization.
+Provides an easy way to push the official set of RightScale policies to all accounts in an organization. When invoked, the script uploads and applies the [Policy Template Synchronization](/tools/policy_sync) policy template to ALL accounts in the specified organization.
 
-The "Policy Template Synchronization" policy template is a meta policy that uploads all the offical set of RightScale policies to the account
-it is applied in.
-So the policy_bootstrapper.py script provides an easy way to upload and apply this policy synch policy to all the accounts in the specified organization.
+The [Policy Template Synchronization](/tools/policy_sync) policy template is a meta policy that uploads all the offical set of RightScale policies to the account it is applied in. So the policy_bootstrapper.py script provides an easy way to upload and apply this policy synch policy to all the accounts in the specified organization.
 
 #### How to Use
 * Git clone or copy the python files found here.
