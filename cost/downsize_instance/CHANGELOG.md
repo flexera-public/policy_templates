@@ -1,3 +1,7 @@
+v1.5
+----
+- Adding the count of resources detected in the incident summary and details.
+
 v1.4
 ----
 - Filtering to only look at clouds represented in instance_types.json.
