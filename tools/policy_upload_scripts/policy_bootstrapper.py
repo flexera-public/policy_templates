@@ -17,6 +17,7 @@ parser.add_argument('-o', '--org', required=True)
 parser.add_argument('-r', '--refresh_token', help='RightScale Refresh Token with Enterprise_Manager role. Not used if using username/password authentication.')
 parser.add_argument('-u', '--username', help='RightScale username with Enterprise_Manager role. Not used if using refresh_token authentication. Will prompt for password.')
 parser.add_argument('-a', '--account', help='Only needed if using username/password authentication.')
+parser.add_argument('-t', '--target_accounts', help='OPTIONAL: Comma-separated list of accounts in the specified organization to which the policy should be uploaded. Otherwise, policy is uploaded to all accounts in the org.')
 args = parser.parse_args()
 
 # Gather up the inputs
@@ -24,6 +25,9 @@ org = args.org
 refresh_token = args.refresh_token
 username = args.username
 account_id = args.account
+target_accounts = args.target_accounts
+if (target_accounts):
+    target_accounts = target_accounts.split(",")
 
 # Synch Policy Template info used below
 policy_synch_policy_name = "Policy Template Synchronization Policy Template"
@@ -119,6 +123,12 @@ for account in accounts_json:
     account_id = account["id"]
     account_name = account["name"]
     account_shard = rs_account_info.rs_account_shard(account)
+    
+    # Check if the target accounts were specified and if not, then skip this org's account
+    if ((target_accounts) and (str(account_id) not in target_accounts)):
+        continue
+        
+    # If we get here, then it's an account we need to process.
     print "####### Account, {} ({}) #######".format(account_name, account_id)
     if (shard != account_shard):
         if using_basic_auth:

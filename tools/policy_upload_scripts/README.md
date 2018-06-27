@@ -1,30 +1,45 @@
 # Policy Upload Scripts
 
-## Scripts/Modules
-### policy_bootstrapper.py
-Provides an easy way to push the official set of RightScale policies to all accounts in an organization. When invoked, the script uploads and applies the [Policy Template Synchronization](/tools/policy_sync) policy template to ALL accounts in the specified organization.
+## How to Use
+### Download the necessary files
+#### Git clone method
+* `git clone https://github.com/rightscale/policy_templates.git`
+* `cd policy_templates/tools/policy_upload_scripts`
 
-The [Policy Template Synchronization](/tools/policy_sync) policy template is a meta policy that uploads all the offical set of RightScale policies to the account it is applied in. So the policy_bootstrapper.py script provides an easy way to upload and apply this policy synch policy to all the accounts in the specified organization.
+#### Manually copy the files
+* Open a browser and go to https://github.com/rightscale/policy_templates/tree/master/tools/policy_upload_scripts
+* Click the Download button to download a zipfile of the git repository.
+* Unzip the zip file.
+* `cd policy_templates-master/tools/policy_upload_scripts`
 
-#### How to Use
-* Git clone or copy the python files found here.
-* ./policy_bootstrapper.py -h 
-  * for help and options
-* Example call:
-  * ./policy_bootstrapper.py --refresh_token xxxxxxxx --org 1234
-    * This will upload the policy synch policy to all accounts in org, 1234 and set up email notifications for the user that owns the given refresh token
+### Run the script
+* Execute: `./policy_bootstrapper.py -h` to get help and options.
 
-### rs_auth.py
-A helper module for RightScale authentication. It will cycle through the RightScale shards to authenticate and
-if successful, it retuns the discovered shard and access token.
-
-### rs_user_info.py
-A helper module used to find the RightScale username (i.e. email address) associated with a given authenticated access token.
-This is handy when applying policy templates since it is useful to set up an email recipient.
-
+#### Upload Policy Synchronization Policy to ALL Accounts in a Specified Organization
+* Example to upload synch policy to all accounts in the given organization: 
+  *`./policy_boostrapper.py -u USERNAME -a ACCOUNT_ID -o ORGANIZTION_ID`
+    * Where USERNAME is the RightScale username for a user with enterprise_manager role in the organization.
+    * Where ACCOUNT_ID is the account number for one of the accounts in the organization.
+    * Where ORGANIZATION_ID is the organization ID to which you want to upload the policy.
+   
+#### Upload Policy Synchronization Policy to a SUBSET of Accounts in a Specified Organization
+* Example to upload synch policy to all accounts in the given organization: 
+  *`./policy_boostrapper.py -u USERNAME -a ACCOUNT_ID -o ORGANIZTION_ID -t ACCOUNT_ID1,ACCOUNT_ID2` 
+    * Where USERNAME is the RightScale username for a user with enterprise_manager role in the organization.
+    * Where ACCOUNT_ID is the account number for one of the accounts in the organization.
+    * Where ORGANIZATION_ID is the organization ID to which you want to upload the policy.
+    * Where ACCOUNT_ID1,ACCOUNT_ID2 is a comma-separted list of accounts in the given ORGANIZATION_ID to which you want to limit uploading the policy synchronization policy.
+   
   
 ## Prerequisites
 * Python 2.7 or later
+* Required Python Modules (pip install):
+  * requests
+  * json
+  * argparse
+  * getpass
+  * sys
+  * operator
 
 ## Cost
 This Policy Template does not incur any cloud costs.
