@@ -1,3 +1,7 @@
+v1.3
+----
+- Added support for "exclusion" tags.
+
 v1.2
 ----
 - Adding the count of volumes detected in the incident summary and details.
