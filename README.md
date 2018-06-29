@@ -52,3 +52,6 @@ Github issues contain a template for three types of requests(Bugs, New Features 
 - Bugs: Any issue you are having with an existing policy template not functioning correctly, this does not include missing features, or actions.
 - New Feature Request: Any feature(Field, Action, Link, Output, etc) that are to be added to an existing policy template.
 - New Policy Template Request: Request for a new policy template.
+### Troubleshooting Danger Locally
+- You can test against a pull request via: bundle exec danger pr https://github.com/rightscale/policy_templates/pull/73 --pry
+- http://danger.systems/guides/troubleshooting.html
