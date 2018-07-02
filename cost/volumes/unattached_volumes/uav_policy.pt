@@ -6,8 +6,8 @@
 name "Unattached Volumes"
 rs_pt_ver 20180301
 type "policy"
-short_description "Finds unattached volumes older than specified number of days and, optionally, deletes them."
-long_description "Version: 1.1"
+short_description "Finds unattached volumes older than specified number of days and, optionally, deletes them. See the [README](https://github.com/rightscale/policy_templates/tree/master/cost/volumes/unattached_volumes) and [docs.rightscale.com/policies](http://docs.rightscale.com/policies/) to learn more."
+long_description "Version: 1.3"
 severity "medium"
 category "Cost"
 
@@ -15,23 +15,33 @@ permission "general_permissions" do
   resources "rs_cm.volumes", "rs_cm.audit_entries", "rs_cm.placement_groups", "rs_cm.clouds", "rs_cm.tags", "rs_cm.deployments"
   actions   "rs_cm.*"
 end
-
-parameter "param_email" do
-  type "list"
-  label "List of emails address(es) to receive reports."
+permission "perm_retrieve_tags" do
+  label "Retrieve Tags"
+  actions "rs_cm.by_resource"
+  resources "rs_cm.tags"
 end
 
 parameter "param_days_old" do
   type "number"
-  label "Identify volumes that have been unattached for the given number of days."
+  label "Identify volumes that have been Unattached for the given number of days"
   default 30
+end
+
+parameter "param_exclude_tags" do
+  type "list"
+  label "List of RightScale volume tags to exclude from policy."
 end
 
 parameter "param_delete" do
   type "string"
-  label "Enter the word, DELETE (all UPPERCASE), to have identified volumes automatically deleted."
-  allowed_values "EMAIL ONLY", "EMAIL AND DELETE"
-  default "EMAIL ONLY"
+  label "Choose the appropriate action you wish to take on the Volumes"
+  allowed_values "Email Only", "Email and Delete"
+  default "Email Only"
+end
+
+parameter "param_email" do
+  type "list"
+  label "Email addresses of the recipients you wish to notify"
 end
 
 resources "clouds", type: "rs_cm.clouds" 
@@ -58,6 +68,7 @@ resources "volumes", type: "rs_cm.volumes" do
   iterate @clouds
   cloud_href href(iter_item) 
   view "extended"
+  tags none($param_exclude_tags)  # This, my friend, is a beautiful thing. This bit of policy language magic (i.e. the "tags" directive) makes it so easy to cull a collection based on tags.
 end
 
 # script-based datasource that applies the logic to return only unattached volumes
@@ -212,12 +223,10 @@ policy "pol_unattached_volumes" do
 
 	escalate $esc_unattached_volumes
 
-	summary_template "Unattached Volumes"
+	summary_template "{{ len data }} Unattached Volumes Found"
 
   detail_template <<-EOS
-Unattached Volume Report for Account: {{ rs_project_name }} (ID: {{ rs_project_id }})\n
-
-The following unattached volumes have exceeded the specified age of: {{ parameters.param_days_old }} days old\n
+The following {{ len data }} unattached volumes, for Account: {{ rs_project_name }} (ID: {{ rs_project_id }}), have exceeded the specified age of: {{ parameters.param_days_old }} days old\n
 | Cloud Name | Volume Name | Age (days) | Volume Type | Resource UID | Size (GBs) | Status | IOPS | Azure Disk Type | Azure Storage Type | Azure Storage Account | Created At | Updated At | Volume HREF |
 | ---------- | ----------- | --- | ----------- | ------------ | ---- | ------ | ---- | --------------- | ------------------ | --------------------- | ---------- | ---------- | ----------- |
 {{ range data -}}

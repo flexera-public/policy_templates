@@ -1,6 +1,6 @@
-### Untagged Resources Policy
+## Untagged Resources Policy
 
-**What it does**
+### What it does
 
 This policy will check all instances in state operational, running and provisioned, and all volumes and check for the tags listed in the *Tags' Namespace:Keys List* field.  For each resource that doesn't include the tags in the field they will be included in the policy incident report.   As new resources are added or tags and included on the resource the incident report will be updated to exclude the resource.
 
@@ -36,3 +36,15 @@ Example JSON:
 	}
 }
 ```
+
+### Supported Tags
+
+- AWS
+- Azure
+- Google
+
+### Cost
+
+This Policy Template does not launch any instances, and so does not incur any cloud costs.
+
+

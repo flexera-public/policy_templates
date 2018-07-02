@@ -1,16 +1,16 @@
-### Security Group Rules without Descriptions
+## Security Group Rules without Descriptions
 
-**What it does**
-This Policy Template reviews your security group and alerts if any security group rules do not have descriptions. 
-It currently on takes one parameter: `Email address to send escalation emails to`. It will resolve when all security group rules have descriptions. 
+### What it does
+
+This Policy Template reviews your security group and alerts if any security group rules do not have descriptions. It currently on takes one parameter: `Email addresses of the recipients you wish to notify`. It will resolve when all security group rules have descriptions. 
 
 
-## Supported Clouds
-The following clouds are supported: 
+### Supported Clouds
+
 - AWS
 - Azure
 - Google 
 
-**Cost**
+### Cost
 
 This Policy Template does not launch any instances, and so does not incur any cloud costs.

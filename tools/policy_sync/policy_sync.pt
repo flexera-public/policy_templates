@@ -1,0 +1,190 @@
+name "Policy Template Synchronization Policy Template"
+rs_pt_ver 20180301
+type "policy"
+short_description "A policy to manage policy template. See the [README](https://github.com/rightscale/policy_templates/tree/master/tools/policy_sync/) and [docs.rightscale.com/policies](http://docs.rightscale.com/policies/) to learn more."
+long_description "Version: 1.1"
+severity "low"
+category "Operational"
+
+parameter "escalate_to" do
+  type "list"
+  label "Email addresses of the recipients you wish to notify"
+  min_length 1
+end
+
+parameter "param_alert_options" do
+  type "string"
+  label "Escalation Options"
+  allowed_values "Email", "Email and Upload"
+end
+
+parameter "param_governance_host" do
+  type "string"
+  label "Governance Host"
+  description "Governance Host, Hostname will match your shard: us-3.rightscale.com = governance-3.rightscale.com"
+  allowed_values "governance-3.rightscale.com", "governance-4.rightscale.com", "governance-10.rightscale.com"
+end
+
+parameter "force_upgrade" do
+  type "number"
+  label "Force Upgrade"
+  description "Force Upgrade, 0:False, 1:True"
+  default 0
+  allowed_values 0,1
+end
+
+auth "auth_rs", type: "rightscale"
+
+datasource "ds_active_policy_list" do
+  request do
+    verb "GET"
+    host "raw.githubusercontent.com"
+    path "/rightscale/policy_templates/master/active-policy-list.json"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    collect jmes_path(response,"policies") do
+      field "name", jmes_path(col_item, "name")
+      field "file_name", jmes_path(col_item, "file_name")
+      field "version", jmes_path(col_item, "version")
+    end
+  end
+end
+
+datasource "ds_current_policy_template_list" do
+  request do
+    auth $auth_rs
+    verb "GET"
+    host $param_governance_host
+    path join(["/api/governance/projects/",rs_project_id,"/policy_templates"])
+    header "Api-Version", "1.0"
+    query "view", "extended"
+  end
+  result do
+    collect jmes_path(response,"items") do
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+      field "long_description", jmes_path(col_item, "long_description")
+    end
+  end
+end
+
+datasource "ds_combined_policy_list" do
+  run_script $js_combine_policy_lists, $ds_active_policy_list, $ds_current_policy_template_list, $force_upgrade
+end
+
+script "js_combine_policy_lists", type: "javascript" do
+  parameters "active_policy_list", "current_policy_list", "force_upgrade"
+  result "policy_list"
+  code <<-EOS
+  var policy_list = [];
+  var old_policy_list = {};
+  for (var index = 0; index < current_policy_list.length; index++) {
+    var current_policy = current_policy_list[index];
+    old_policy_list[current_policy.name] = current_policy;
+  }
+
+  for ( var i = 0; i < active_policy_list.length; i++) {
+    var active_policy = active_policy_list[i]
+    var account_policy_template = old_policy_list[active_policy.name]
+    if (account_policy_template){
+      var policy_id = account_policy_template.id
+      var account_version = account_policy_template.long_description
+      if ( account_version.search(/Version/i) != -1 ) {
+        var version_str = account_version.split(' ')
+        var account_version = version_str[version_str.length -1]        
+      } else {
+        var account_version = "0.0"
+      }
+    } else {
+      var policy_id = 0
+      var account_version = "0.0"
+    }
+    var a_version = parseFloat(account_version)
+    var r_version = parseFloat(active_policy.version)
+    if (r_version > a_version) {
+      var version_upgradeable = true
+    } else {
+      var version_upgradeable = false
+    }
+    if ((r_version <= a_version) && (force_upgrade == 1 )) {
+      var version_upgradeable = true
+    }
+    policy_list.push({
+      name: active_policy.name,
+      file_name: active_policy.file_name,
+      repo_version: active_policy.version,
+      account_version: account_version,
+      account_policy_template: account_policy_template,
+      version_upgradeable: version_upgradeable,
+      policy_id: policy_id
+    })
+  }
+EOS
+end
+
+escalation "upload" do
+  run "upload_template", data, rs_project_id, $param_alert_options, $param_governance_host
+end
+
+escalation "alert" do
+  email $escalate_to
+end
+
+define upload_template($data,$project_id,$param_alert_options,$param_governance_host) return $url_array,$response_array do
+ if $param_alert_options != "Email"
+    $url_array = []
+    $response_array = []
+    foreach $item in $data do
+      $url = "https://raw.githubusercontent.com/rightscale/policy_templates/master/"+to_s($item["file_name"])
+      $url_array << $url
+      $policy_request = http_get(
+       insecure: false,
+       url: $url
+      )
+      $policy_source = $policy_request["body"]
+      $file_name = last(split($item["file_name"],'/'))
+      
+      $create_response = http_request(
+        verb: "post",
+        https: true,
+        host: $param_governance_host,
+        href: join(["/api/governance/projects/",$project_id,"/policy_templates"]),
+        headers: { "Api-Version": "1.0" },
+        body: { "source": $policy_source, filename: $file_name }
+      )
+      $response_array << $create_response
+      if $create_response["code"] == 409
+        $update_response = http_request(
+          verb: "put",
+          https: true,
+          host: $param_governance_host,
+          href: $create_response["headers"]["Location"],
+          headers: { "Api-Version": "1.0" },
+          body: { "source": $policy_source, filename: $file_name }
+        )
+        $response_array << $update_response
+      end
+    end
+  end
+end
+
+policy "upload_policy_templates" do
+  validate_each $ds_combined_policy_list do
+    summary_template "Policy Templates Updated"
+    detail_template <<-EOS
+
+# Policy Templates Updated
+
+| Name | File Name | Repo Version | Account Version | Version Upgradeable | Policy ID |
+| ---- | --------- | ------------ | ---------------- | ------------------ | --------- |
+{{ range data -}}
+| {{ .name }} | {{.file_name}} | {{.repo_version}} | {{.account_version}} | {{.version_upgradeable}} | {{.policy_id}} |
+{{ end -}}
+EOS
+
+    escalate $alert
+    escalate $upload
+    check logic_not(val(item, "version_upgradeable"))
+  end
+end

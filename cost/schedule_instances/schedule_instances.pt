@@ -660,6 +660,7 @@ datasource "instances" do
   field "name",        val(iter_item,'name')
   field "state",       val(iter_item,'state')
   field "type",        "instances"
+  tags                 "instance:schedule=*"
 end
 
 # datasource "instances" do
@@ -681,18 +682,18 @@ end
 # end
 
 #all tags on the instances
-datasource "ds_instance_tags" do
-  request do
-    auth $rs
-    verb "POST"
-    host rs_cm_host
-    path "/api/tags/by_tag"
-    header "X-Api-Version", "1.5"
-    body_field "tags",["instance:schedule=*"]
-    body_field "resource_type", "instances"
-    body_field "include_tags_with_prefix", "instance:schedule"
-  end
-end
+# datasource "ds_instance_tags" do
+#   request do
+#     auth $rs
+#     verb "POST"
+#     host rs_cm_host
+#     path "/api/tags/by_tag"
+#     header "X-Api-Version", "1.5"
+#     body_field "tags",["instance:schedule=*"]
+#     body_field "resource_type", "instances"
+#     body_field "include_tags_with_prefix", "instance:schedule"
+#   end
+# end
 
 datasource "clouds" do
   iterate @clouds
@@ -702,7 +703,7 @@ datasource "clouds" do
 end
 
 datasource "filtered_instances" do
-  run_script $js_instance_tags, $instances, $ds_instance_tags, $clouds
+  run_script $js_instance_tags, $instances, $clouds
 end
 
 script "js_instance_tags", type: "javascript" do
@@ -726,39 +727,32 @@ script "js_instance_tags", type: "javascript" do
       instance_map[instance['href']]={
         'state': instance['state'],
         'name': instance['name'],
-        'id': instance['id']
+        'id': instance['id'],
+        'tags': instance['tags']
       }
   }
 
-  // create a map of tags with instance href
-  var tags = {};
-  for (var i = 0; i < instance_tags.length; i++) {
-    rt = instance_tags[i]
-    for (var j = 0; j < rt['links'].length; j++) {
-      link = rt['links'][j]
-      if (link['rel'] == 'resource') {
-        tags[link['href']] = rt['tags']
-      }
-    }
-  }
+  # // create a map of tags with instance href
+  # var tags = {};
+  # for (var i = 0; i < instance_tags.length; i++) {
+  #   rt = instance_tags[i]
+  #   for (var j = 0; j < rt['links'].length; j++) {
+  #     link = rt['links'][j]
+  #     if (link['rel'] == 'resource') {
+  #       tags[link['href']] = rt['tags']
+  #     }
+  #   }
+  # }
 
   // This is the map of resource href to its tags.
-  for (var i = 0; i < instance_tags.length; i++) {
-    it = instance_tags[i]
-    for (var j = 0; j < it['links'].length; j++) {
-      link = it['links'][j]
-      if (link['rel'] == 'resource') {
-        // create cloud_href from resource href
-        var split = link['href'].split('/')
-        var index = link['href'].indexOf('/' + split[4])
-        var cloud_href = link['href'].substring(0,index)
-        var schedule =[]
-        for (var t = 0; t < tags[link['href']].length; t++) {
-          tag = tags[link['href']][t]['name']
-          tag_key = tag.split("=")[0]
-          tag_value = tag.split("=")[1]
-          schedule = tag_value
-        }
+  for (var i = 0; i < instances.length; i++) {
+    var instance = instances[i]
+    for (var t = 0; t < instance['tags'].length; t++) {
+      tag = instance['tags'][t]
+      tag_key = tag.split("=")[0]
+      tag_value = tag.split("=")[1]
+      schedule = tag_value
+    }
         // create object of instances
         filtered_instances.push(
           {
