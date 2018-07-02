@@ -11,7 +11,7 @@ Please contact sales@rightscale.com to learn more.
 - [AWS Reserved Instances Utilization](./cost/aws/reserved_instances/utilization/)
 - [AWS Reserved Instance Reservation Coverage](./cost/aws/reserved_instances/coverage/)
 - [Downsize Instances](./cost/downsize_instance/)
-- [Unattached Volumes Policy](./cost/volumes/unattached_volumes/)
+- [Unattached Volumes Policy](./cost/volumes/)
 - [Old Snapshots](./cost/volumes/old_snapshots/)
 - [Schedule Instances](./cost/schedule_instances)
 
