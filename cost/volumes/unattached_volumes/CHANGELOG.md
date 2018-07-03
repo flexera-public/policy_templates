@@ -1,3 +1,7 @@
+v1.4
+----
+- Use "Email and Delete" instead of "EMAIL AND DELETE" for the parameter and related delete volume logic.
+
 v1.3
 ----
 - Added support for "exclusion" tags.
