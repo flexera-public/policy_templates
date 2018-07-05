@@ -1,3 +1,7 @@
+v1.6
+----
+- Changed total memory calculation to use instance_type memory attribute.
+
 v1.5
 ----
 - Adding the count of resources detected in the incident summary and details.
