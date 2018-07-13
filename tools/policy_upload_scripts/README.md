@@ -44,6 +44,7 @@
   * Enter password when prompted.
 
 ### Step 4: Verify uploaded RightScale pre-built policies
+* It might take up to 5 minutes for the upload process to finish. 
 * Navigate to policy management in Governance and verify you see the Policy Templates in the specified account or organization based on your selection above. 
 
 ## Cost
