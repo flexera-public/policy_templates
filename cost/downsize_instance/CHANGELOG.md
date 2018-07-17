@@ -1,3 +1,7 @@
+v1.6
+----
+- Updating input parameter name for email
+
 v1.5
 ----
 - Adding the count of resources detected in the incident summary and details.

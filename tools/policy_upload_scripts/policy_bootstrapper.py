@@ -100,7 +100,7 @@ apply_body = {
     "frequency" : "daily",
     "options" : [
         {
-            "name" : "escalate_to",
+            "name" : "param_email",
             "value" : [ user_email ]
         },
         {
@@ -140,7 +140,7 @@ for account in accounts_json:
             gov_host = "governance-{}.rightscale.com".format(shard)
             options = [
                 {
-                    "name" : "escalate_to",
+                    "name" : "param_email",
                     "value" : [ user_email ]
                 },
                 {

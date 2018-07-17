@@ -1,3 +1,7 @@
+v1.4
+----
+- Updating input parameter name for email
+
 v1.3
 ----
 - Lowering the severity level of the policy
