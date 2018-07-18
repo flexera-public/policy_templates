@@ -1,3 +1,7 @@
+v1.5
+----
+- Adding permissions required to run the policy
+
 v1.4
 ----
 - Updating input parameter name for email
