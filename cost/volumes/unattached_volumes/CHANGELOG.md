@@ -1,3 +1,7 @@
+v1.5
+----
+- Update email subject with account name and ID, and change actions and/or resolution name to be more descriptive. Issues #75 & #83
+
 v1.4
 ----
 - Use "Email and Delete" instead of "EMAIL AND DELETE" for the parameter and related delete volume logic.

@@ -1,5 +1,9 @@
 ## Untagged Resource Policy Changelog
 
+v1.7
+----
+- Update email subject with account name and ID. Issue #75
+
 v1.5
 ----
 - Fix error when there are no resources in account. Issue #53
