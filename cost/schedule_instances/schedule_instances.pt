@@ -15,7 +15,7 @@ end
 
 permission "retrieve_resources" do
   label "Retrieve Resources"
-  actions   "rs_cm.index","rs_cm.show"
+  actions   "rs_cm.*"
   resources "rs_cm.instances","rs_cm.clouds"
 end
 
@@ -97,6 +97,8 @@ script "js_instance_tags", type: "javascript" do
     var split = instance['href'].split('/')
     var index = instance['href'].indexOf('/' + split[4])
     var cloud_href = instance['href'].substring(0,index)
+    var action='n/a';
+    var now = new Date()
     for (var t = 0; t < instance['tags'].length; t++) {
       tag = instance['tags'][t]
       tag_key = tag.split("=")[0]
@@ -104,20 +106,36 @@ script "js_instance_tags", type: "javascript" do
       if (tag_key === 'instance:schedule'){
         schedule = tag_value
       }
+      if (tag_key === 'instance:next_start'){
+        var next_start = new Date(tag_value)
+      }
+      if (tag_key === 'instance:next_stop'){
+        var next_stop = new Date(tag_value)
+      }
+      // if next start and stop is between current time
+      // it should be starting or Start
+      // otherwise it should be stopped
+      if (now  > next_start && now < next_stop) {
+        action = 'Starting/Started'
+      } else if (next_start > next_stop ) {
+        action = 'Started'
+      } else {
+        action = 'Stopping/Stopped'
+      }
     }
-        // create object of instances
-        filtered_instances.push(
-          {
-            id: instance['id'],
-            name: instance['name'],
-            state: instance['state'],
-            href: instance['href'],
-            cloud_name: cloud_map[cloud_href]['name'],
-            cloud_type: cloud_map[cloud_href]['type'],
-            schedule: schedule,
-            timestamp: timestamp
-          }
-          )
+    // create object of instances
+    filtered_instances.push(
+      {
+        id: instance['id'],
+        name: instance['name'],
+        state: instance['state'],
+        href: instance['href'],
+        cloud_name: cloud_map[cloud_href]['name'],
+        cloud_type: cloud_map[cloud_href]['type'],
+        schedule: schedule,
+        action: action
+      }
+      )
   }
   EOS
 end
@@ -138,10 +156,10 @@ policy "instance_scheduler" do
     detail_template <<-EOS
 There are {{ len data }} instance(s) managed by this policy.
 
-| Name | State | Cloud | Href | schedule |
-| ---- | ----- | ----- | ---- | -------- |
+| Name | State | Cloud | Href | Schedule | Next Action |
+| ---- | ----- | ----- | ---- | -------- | ------ |
 {{ range data -}}
-| {{ .name }} | {{ .state }} | {{ .cloud_name }} | {{ .href }} | {{ .schedule }} |
+| {{ .name }} | {{ .state }} | {{ .cloud_name }} | {{ .href }} | {{ .schedule }} | {{ .action }} |
 {{ end -}}
 EOS
     escalate $send_email
@@ -153,13 +171,7 @@ end
 define schedule_instances($data) do
   $$debug = true
   call sys_log('schedule_instances','start')
-  # use selected timezone or UTC as default
-  # if size($timezone_override) > 0
-  #   $timezone = $timezone_override
-  # else
-  #   $timezone = 'UTC'
-  # end
-
+  call sys_log('data',to_s($data))
   # set the counters and action stores
   $stop_count = 0
   $start_count = 0
@@ -184,9 +196,11 @@ define schedule_instances($data) do
     end
 
     # get state of schedule window
-    call window_active($start_hour, $start_minute, $start_rule, $stop_hour, $stop_minute, $stop_rule, $timezone) retrieve $window_active
+    call window_active($start_hour, $start_minute, $start_rule, $stop_hour, $stop_minute, $stop_rule, $timezone) retrieve $window_active , $next_start, $next_stop
 
     call sys_log('window_active',$window_active)
+    call sys_log('next_start',$next_start)
+    call sys_log('next_stop',$next_stop)
 
     if ($window_active)
       call sys_log($item['schedule'] + ' schedule window is currently active: Instances may be started.', '')
@@ -198,6 +212,10 @@ define schedule_instances($data) do
     $startable = /^(stopped|provisioned)$/
 
     @instance = rs_cm.get(href: $item['href'])
+    #tag the instance with next start/stop times to compare in the javascript datasource
+    $tags=["instance:next_start="+$next_start, "instance:next_stop="+$next_stop]
+    rs_cm.tags.multi_add(resource_hrefs: [$item['href']], tags: $tags)
+
     call sys_log('Fetching instance ' + $item['href'], to_s($item))
     # determine if instance should be stopped or started based on:
     # 1. inside or outside schedule
@@ -233,7 +251,7 @@ define schedule_instances($data) do
   end
 end
 
-define window_active($start_hour, $start_minute, $start_rule, $stop_hour, $stop_minute, $stop_rule, $tz) return $window_active do
+define window_active($start_hour, $start_minute, $start_rule, $stop_hour, $stop_minute, $stop_rule, $tz) return $window_active, $next_start, $next_stop do
   $params = {
     verb: 'post',
     host: 'bjlaftw4kh.execute-api.us-east-1.amazonaws.com',
@@ -259,6 +277,8 @@ define window_active($start_hour, $start_minute, $start_rule, $stop_hour, $stop_
   call sys_log('window active $body', to_s($body))
 
   $window_active = to_b($body['event_active'])
+  $next_start   = $body['next_start']
+  $next_stop    = $body['next_stop']
 end
 
 define sys_log($subject, $detail) do
