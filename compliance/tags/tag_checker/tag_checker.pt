@@ -1,10 +1,10 @@
 # Required prolog
-name 'Untagged Resources'
+name "Untagged Resources"
 rs_pt_ver 20180301
 type "policy"
 short_description "![Tag](https://s3.amazonaws.com/rs-pft/cat-logos/tag.png)\n
-Check resources for missing tags and report on them.  See the [README](https://github.com/rightscale/policy_templates/blob/master/compliance/tags/tag_checker/README.md) for details and example."
-long_description "Version: 1.4"
+Check resources for missing tags and report on them. See the [README](https://github.com/rightscale/policy_templates/tree/master/compliance/tags/tag_checker) and [docs.rightscale.com/policies](http://docs.rightscale.com/policies/) to learn more."
+long_description "Version: 1.6"
 category "Compliance"
 severity "medium"
 
@@ -34,15 +34,14 @@ end
 
 parameter "param_advanced_tag_key" do
   category "User Inputs"
-  label "Tags' Namespace:Keys Advanced List."
+  label "Tags' Namespace:Keys Advanced List"
   type "string"
   description 'A JSON string to describe the tag policy configuration.  See the README for example'
   allowed_pattern /(\{.*\}|)/
 end
 
 parameter "param_email" do
-  category "Contact"
-  label "Email addresses"
+  label "Email addresses of the recipients you wish to notify"
   type "list"
 end
 
@@ -55,6 +54,7 @@ resources "instances_operational", type: "rs_cm.instances" do
   filter do
     state "operational"
   end
+  tags '*'
 end
 # Retrieve all provisioned instances across all clouds
  resources "instances_provisioned", type: "rs_cm.instances" do
@@ -63,6 +63,7 @@ end
    filter do
      state "provisioned"
    end
+  tags '*'
  end
 
 # Retrieve all running instances across all clouds
@@ -72,12 +73,14 @@ end
    filter do
      state "running"
    end
+   tags '*'
  end
 
 # Retrieve all volumes across all clouds
 resources "volumes", type: "rs_cm.volumes" do
    iterate @clouds
    cloud_href href(iter_item)
+   tags '*'
 end
 
 datasource "clouds" do
@@ -93,6 +96,7 @@ datasource "instances_operational" do
    field "id",          val(iter_item,'resource_uid')
    field "name",        val(iter_item,'name')
    field "state",       val(iter_item,'state')
+   field "tags",         val(iter_item,'tags')
    field "type",        "instances"
 end
 datasource "instances_running" do
@@ -101,6 +105,7 @@ datasource "instances_running" do
   field "id",          val(iter_item,'resource_uid')
   field "name",        val(iter_item,'name')
   field "state",       val(iter_item,'state')
+  field "tags",         val(iter_item,'tags')
   field "type",        "instances"
 end
 datasource "instances_provisioned" do
@@ -109,6 +114,7 @@ datasource "instances_provisioned" do
   field "id",          val(iter_item,'resource_uid')
   field "name",        val(iter_item,'name')
   field "state",       val(iter_item,'state')
+  field "tags",        val(iter_item,'tags')
   field "type",        "instances"
 end
 
@@ -118,6 +124,7 @@ datasource "volumes" do
    field "id",          val(iter_item,'resource_uid')
    field "name",        val(iter_item,'name')
    field "state",       val(iter_item,'status')
+   field "tags",        val(iter_item,'tags')
    field "type",        "volumes"
 end
 
@@ -161,12 +168,12 @@ datasource "resource_tags" do
 end
 
 datasource "filtered_resources" do
-  run_script $filter_resources, $resources, $resource_tags, $clouds,$param_tag_keys,$param_advanced_tag_key
+  run_script $filter_resources, $resources, $clouds,$param_tag_keys,$param_advanced_tag_key
 end
 
 
 script "filter_resources", type: "javascript" do
-  parameters "resources","resource_tags","clouds","param_tag_keys","param_advanced_tag_key"
+  parameters "resources","clouds","param_tag_keys","param_advanced_tag_key"
   result "filtered_resources"
   code <<-EOS
 // This is the list of filtered volumes.
@@ -174,7 +181,7 @@ var filtered_resources = [];
 
 var tag_keys_array = []
 if ( param_tag_keys !== '' ){
-  tag_keys_array= param_tag_keys.split(',')
+  tag_keys_array = param_tag_keys.split(',')
 }
 
 var validate_tags_object={}
@@ -197,18 +204,6 @@ for (var i = 0; i < clouds.length; i++) {
     cloud_map[cloud['href']]={'type': cloud['type'],'name': cloud['name']}
 }
 
-// This is the map of resource href to its tags.
-var tags = {};
-for (var i = 0; i < resource_tags.length; i++) {
-  rt = resource_tags[i]
-  for (var j = 0; j < rt['links'].length; j++) {
-    link = rt['links'][j]
-    if (link['rel'] == 'resource') {
-      tags[link['href']] = rt['tags']
-    }
-  }
-}
-
 // Go through all the resources and filter the ones that don't
 // comply with the tag rules.
 for (var i = 0; i < resources.length; i++) {
@@ -218,8 +213,8 @@ for (var i = 0; i < resources.length; i++) {
   var bad = false
   // Tags is an array of hashes each with just 'name'. Let's convert
   // them to an array of strings.
-  for (var j = 0; j < tags[res['href']].length; j++) {
-    tag = tags[res['href']][j]['name']
+  for (var j = 0; j < res['tags'].length; j++) {
+    tag = res['tags'][j]
     tag_key = tag.split("=")[0]
     tag_value = tag.split("=")[1]
     if ( validate_tags_object[tag_key] && validate_tags_object[tag_key]['validation-type']==='string' ){
@@ -288,7 +283,7 @@ end
 
 policy "untagged_resources_policy" do
   validate $filtered_resources do
-    summary_template "Untagged Resources Summary"
+    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} Untagged Resources Found"
     detail_template <<-EOS
 There are {{ len data }} resource(s) missing tags: {{ parameters.param_tag_keys }}
 

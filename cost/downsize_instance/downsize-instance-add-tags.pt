@@ -2,7 +2,7 @@ name "Downsize Instances Add Tags Policy Template"
 rs_pt_ver 20180301
 type "policy"
 short_description "A policy that checks cooldown time and adds back in time"
-long_description "Version: 1.0"
+long_description "Version: 1.2"
 severity "medium"
 category "Cost"
 
@@ -14,14 +14,14 @@ end
 
 parameter "param_instance_tag_list" do
   type "list"
-  label "Instance tags used to filter instances that must validate policy. Example: rs_monitoring:resize=1"
+  label "Instance tags used to filter instances that must validate policy (e.g.: rs_monitoring:resize=1)"
   min_length 1
   allowed_pattern /([\w]?)+\:([\w]?)+\=([\w]?)+/
 end
 
-parameter "param_escalate_to" do
+parameter "param_email" do
   type "list"
-  label "Email address to send escalation emails to"
+  label "Email addresses of the recipients you wish to notify"
 end
 
 auth "auth_rs", type: "rightscale"
@@ -69,11 +69,11 @@ script "js_filtered_instances", type: "javascript" do
 EOS
 end
 
-escalation "alert" do
-  email $param_escalate_to
+escalation "report_downsize_instance_add_tag" do
+  email $param_email
 end
 
-escalation "downsize" do
+escalation "add_downsize_instance_tag" do
   run "downsize_instances", data, $param_instance_tag_list
 end
 
@@ -96,7 +96,7 @@ end
 
 policy "policy_rightsize" do
   validate_each $ds_filtered_instances do
-    summary_template "Downsize Policy: Instances Added"
+    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): Downsize Policy: Instances Added"
     detail_template <<-EOS
 # Instances that can be downsized
 
@@ -107,8 +107,8 @@ policy "policy_rightsize" do
 {{ end -}}
 
 EOS
-    escalate $alert
-    escalate $downsize
+    escalate $report_downsize_instance_add_tag
+    escalate $add_downsize_instance_tag
     check gt(to_d(val(item,"check_date")), now)
   end
 end

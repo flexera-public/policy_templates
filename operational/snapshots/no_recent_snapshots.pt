@@ -1,0 +1,262 @@
+name "No Recent Snapshots Policy Template"
+rs_pt_ver 20180301
+type "policy"
+short_description "No Recent Snapshots Policy \n
+See the [README](https://github.com/rightscale/policy_templates/blob/master/operational/snapshots/) for details and example."
+long_description "Version: 1.1"
+severity "low"
+category "Operational"
+
+##################
+# User inputs    #
+##################
+
+parameter "param_email" do
+  category "Contact"
+  label "Email address to send escalation emails to"
+  type "list"
+  allowed_pattern /^([a-zA-Z0-9-_.]+[@]+[a-zA-Z0-9-_.]+[.]+[a-zA-Z0-9-_]+,*|)+$/
+end
+
+parameter "param_snapshot_days" do
+  type "number"
+  label "Number of days between snapshots"
+  default 7
+end
+
+parameter "param_alert_options" do
+  type "string"
+  label "Escalation Options"
+  allowed_values "Email", "Snapshot And Email"
+end
+
+parameter "param_include_root_device" do
+  type "number"
+  description "Include root devices, 0=false, 1=true"
+  label "Include Root Device"
+  default 0
+  allowed_values 0,1
+end
+
+parameter "param_exclude_tags" do
+  type "list"
+  description "Volume and Server tags to exclude"
+  label "Exclude Tags"
+end
+
+auth "auth_rs", type: "rightscale"
+
+resources "clouds", type: "rs_cm.clouds" do
+  filter do
+    cloud_type ne: ["soft_layer", "cloud_stack","azure","rackspace_next_gen","vscale","blue_skies","open_stack_v2","uca","open_stack_v3"]
+  end
+end
+
+resources "instances", type: "rs_cm.instances" do
+  iterate @clouds  
+  cloud_href href(iter_item)
+  filter do
+    state "operational"
+  end
+  tags none($param_exclude_tags)
+end
+
+datasource "ds_instances" do
+  iterate @instances
+  field "resource_uid", val(iter_item,  "resource_uid")
+  field "name", val(iter_item, "name")
+  field "href", href(iter_item)
+  field "cloud_href", jmes_path(iter_item, "links[?rel=='cloud'].href | [0]")
+end
+
+resources "volume_attachments", type: "rs_cm.volume_attachments" do
+  iterate @instances
+  cloud_href jmes_path(iter_item, "links[?rel=='cloud'].href | [0]")
+  filter do
+    instance_href href(iter_item)
+  end
+end
+
+datasource "ds_volume_attachments" do
+  iterate @volume_attachments
+  field "href", href(iter_item)
+  field "device", val(iter_item, "device")
+  field "volume_href", jmes_path(iter_item, "links[?rel=='volume'].href | [0]")
+  field "instance_href", jmes_path(iter_item, "links[?rel=='instance'].href | [0]")
+end
+
+resources "volumes", type: "rs_cm.volumes" do
+  iterate @clouds  
+  cloud_href href(iter_item)
+  tags none($param_exclude_tags)
+end
+
+datasource "ds_volumes" do
+  iterate(@volumes)
+  field "resource_uid", val(iter_item,  "resource_uid")
+  field "name", val(iter_item, "name")
+  field "href", href(iter_item)
+end
+
+resources "volume_snapshots", type: "rs_cm.volume_snapshots" do
+  iterate @clouds  
+  cloud_href href(iter_item)
+end
+
+datasource "ds_volume_snapshots" do
+  iterate(@volume_snapshots)
+  field "resource_uid", val(iter_item,  "resource_uid")
+  field "name", val(iter_item, "name")
+  field "href", href(iter_item)
+  field "parent_volume_href", jmes_path(iter_item, "links[?rel=='parent_volume'].href | [0]")
+  field "updated_at", val(iter_item, "updated_at")
+end
+
+datasource "ds_volumes_volume_snapshots" do
+  run_script $js_volumes_volume_snapshots, $ds_volume_attachments, $ds_volumes, $ds_volume_snapshots, $ds_instances, $param_include_root_device
+end
+
+script "js_volumes_volume_snapshots", type: "javascript" do
+  parameters "ds_volume_attachments", "ds_volumes", "ds_volume_snapshots", "ds_instances", "include_root_device"
+  result "volumes_volume_snapshots"
+  code <<-EOS
+  var volumes_volume_snapshots = []
+  var volumes = {}
+  for (var index = 0; index < ds_volumes.length; index++) {
+    var volume = ds_volumes[index];
+    volumes[volume.href] = volume;
+  }
+  var snapshots = {}
+  for (var index = 0; index < ds_volume_snapshots.length; index++) {
+    var snapshot = ds_volume_snapshots[index]
+    if (snapshots[snapshot.parent_volume_href]) {
+      snapshots[snapshot.parent_volume_href].push(snapshot)
+    }else {
+      snapshots[snapshot.parent_volume_href] = [snapshot]
+    }
+  }
+
+  var instances = {}
+  for (var index = 0; index < ds_instances.length; index++) {
+    var instance = ds_instances[index]
+    instances[instance.href] = instance
+  }
+
+  for ( i = 0; i < ds_volume_attachments.length; i++) {
+    device = ds_volume_attachments[i].device
+    if ( (device == "/dev/sda1" || device == "osDisk") && include_root_device == 0 ) { continue; }
+    current_instance = instances[ds_volume_attachments[i].instance_href]
+    attached_volume = volumes[ds_volume_attachments[i].volume_href]
+    attached_snapshots = snapshots[attached_volume.href]
+    sorted_snapshots = _.sortBy(attached_snapshots, 'updated_at');
+    newest_snapshot = _.last(sorted_snapshots);
+    if (!current_instance) { throw "No Current Instance"; }
+    if (!attached_volume) { throw "No Attached Volumes"; }
+    if (!newest_snapshot) { newest_snapshot = { name: "No Snapshots", resource_uid: 1, updated_at: "2005/01/01 00:00:01 +0000" } }
+
+    volumes_volume_snapshots.push({
+      instance_name: current_instance.name,
+      instance_href: current_instance.href,
+      volume_href: attached_volume.href,
+      volume_name: attached_volume.name,
+      volume_attachment_href: ds_volume_attachments[i].href,
+      snapshot_name: newest_snapshot.name,
+      snapshot_resource_uid: newest_snapshot.resource_uid,
+      snapshot_updated_at: newest_snapshot.updated_at
+    })
+  };
+EOS
+end
+
+resolution "report_outdated_snapshots_resolution" do
+  email $param_email
+end
+
+escalation "report_outdated_snapshots" do
+  email $param_email
+end
+
+escalation "take_snapshots" do
+  run "take_snapshot", data, $param_alert_options
+end
+
+define sys_log($subject, $detail) do
+  if $$debug
+    rs_cm.audit_entries.create(
+      notify: "None",
+      audit_entry: {
+        auditee_href: @@account,
+        summary: $subject,
+        detail: $detail
+      }
+    )
+  end
+end
+
+define snapshot_error() do
+  call sys_log("Snapshot Policy Error","error:"+$_error["type"] + ": " + $_error["message"]+"\n Errors:"+$_errors)
+  $_error_behavior = "skip"
+end
+
+define take_snapshot($data,$param_alert_options) return $data,$instance_hash,$snapshot_list do
+  $instance_hash = {}
+  $snapshot_list = []
+  if $param_alert_options != "Email"
+    foreach $item in $data do
+      if $instance_hash[$item["instance_href"]]
+        $new_array = []
+        foreach $new_item in $instance_hash[$item["instance_href"]] do
+          $new_array << $new_item
+        end
+        $new_array << $item
+        $instance_hash[$item["instance_href"]] = $new_array
+      else
+        $instance_hash[$item["instance_href"]] = [$item]
+      end
+    end
+    foreach $item in keys($instance_hash) do
+      @instance = rs_cm.get(href: $item)
+      @current_server = @instance.parent()
+      task_label("stopping instance")
+      @instance.stop()
+      task_label("sleeping until instance stopped")
+      sleep_until(@current_server.state == 'provisioned')
+      @current_instance = @current_server.current_instance()
+      @cloud = @current_instance.cloud()
+      $time = now()
+      $api_time = strftime($time, "%Y/%m/%d %H:%M:%S +0000")
+      sub on_error: snapshot_error() do
+        foreach $volume in $instance_hash[$item] do
+          task_label("Creating snapshot")
+          @snapshot = @cloud.volume_snapshots().create(volume_snapshot: {name: $volume["instance_name"]+"-"+$volume["volume_name"]+"-"+$api_time, parent_volume_href: $volume["volume_href"]})
+          sleep_until(@snapshot.state == "pending")
+          $snapshot_list << @snapshot.href
+        end
+      end
+      task_label("Starting Instance")
+      @current_instance.start()
+      sleep_until(@current_instance.state == 'operational')
+      task_label("Instance Started")
+    end
+  end
+end
+
+policy "pol_snapshot_age" do
+  validate_each $ds_volumes_volume_snapshots do
+    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} Outdated Snapshots Found"
+    detail_template <<-EOS
+# Outdated Snapshots
+
+| Instance Name | Volume Name | Snapshot Name | Snapshot ID | Updated At |
+| ------------- | ----------- | ------------- | ----------- | ---------- |
+{{ range data -}}
+| {{.instance_name}} | {{.volume_name}} | {{.snapshot_name}} | {{.snapshot_resource_uid}} | {{.snapshot_updated_at}} |
+{{ end -}}
+EOS
+
+  escalate $report_outdated_snapshots
+  escalate $take_snapshots
+  resolve $report_outdated_snapshots_resolution
+  check lt(dec(now,to_d(val(item, "snapshot_updated_at"))), prod($param_snapshot_days,86400))
+  end
+end

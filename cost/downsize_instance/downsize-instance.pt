@@ -1,8 +1,8 @@
 name "Downsize Instances Policy Template"
 rs_pt_ver 20180301
 type "policy"
-short_description "A policy that downsizes instances based on monitoring metrics"
-long_description "Version: 1.2"
+short_description "A policy that downsizes instances based on monitoring metrics. See the [README](https://github.com/rightscale/policy_templates/tree/master/cost/downsize_instance) and [docs.rightscale.com/policies](http://docs.rightscale.com/policies/) to learn more."
+long_description "Version: 1.7"
 severity "medium"
 category "Cost"
 
@@ -52,20 +52,20 @@ end
 
 parameter "param_instance_tag_list" do
   type "list"
-  label "Instance tags used to filter instances that must validate policy. Example: rs_monitoring:resize=1"
+  label "Instance tags used to filter instances that must validate policy. (e.g.: rs_monitoring:resize=1)"
   min_length 1
   allowed_pattern /([\w]?)+\:([\w]?)+\=([\w]?)+/
 end
 
-parameter "param_escalate_to" do
+parameter "param_email" do
   type "list"
-  label "Email address to send escalation emails to"
+  label "Email addresses of the recipients you wish to notify"
 end
 
 parameter "param_alert_options" do
   type "string"
   label "Escalation Options"
-  allowed_values "Email", "Downsize And Email"
+  allowed_values "Email", "Email and Downsize"
 end
 
 parameter "param_cooldown_days" do
@@ -76,7 +76,11 @@ end
 
 auth "auth_rs", type: "rightscale"
 
-resources "clouds", type: "rs_cm.clouds"
+resources "clouds", type: "rs_cm.clouds" do
+  filter do # ignore clouds that are NOT represented in instance_types.json
+    cloud_type ne: ["vscale", "soft_layer", "cloud_stack", "rackspace_next_gen", "blue_skies","open_stack_v2","uca","open_stack_v3"]
+  end
+end
 
 resources "instances", type: "rs_cm.instances" do
   iterate @clouds  
@@ -294,15 +298,15 @@ for ( var i = 0; i < calculated_instances.length; i++ ) {
 EOS
 end
 
-resolution "resolve_resources" do
-  email $param_escalate_to
+resolution "report_downsize_instances_resolution" do
+  email $param_email
 end
 
-escalation "alert" do
-  email $param_escalate_to
+escalation "report_downsize_instances" do
+  email $param_email
 end
 
-escalation "downsize" do
+escalation "downsize_instances" do
   run "downsize_instances", data, $param_alert_options, $param_instance_tag_list, $param_cooldown_days
 end
 
@@ -352,20 +356,20 @@ end
 
 policy "policy_rightsize" do
   validate_each $ds_instances_with_calculated_metrics do
-    summary_template "Downsize Policy: Instances that can be downsized"
+    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} Instances that can be downsized"
     detail_template <<-EOS
-# Instances that can be downsized
+# {{ len data }} Instances can be downsized
 
-| Account | Instance Name | Resource UID | Average Memory | Free Average Memory | Total Average Memory | Max Free Memory | Max Total Memory | Max CPU Idle | Average CPU Idle | New Instance Size |
-| ------- | ------------- | ------------ | -------------- | ------------------- | -------------------- | --------------- | ---------------- | ------------ | ---------------- | ------------------ |
+| Account | Instance Name | Resource UID | Average Memory | Free Average Memory | Total Average Memory | Max Free Memory | Max Total Memory | Max CPU Idle | Average CPU Idle | Current Instance Size | New Instance Size |
+| ------- | ------------- | ------------ | -------------- | ------------------- | -------------------- | --------------- | ---------------- | ------------ | ---------------- | --------------------- | ----------------- |
 {{ range data -}}
-| {{rs_project_name}} | {{.name}} | {{.resource_uid}} | {{.average_mem_percent}}% | {{.free_avg }}MB | {{.total_avg }}MB | {{.max_free_memory }}MB | {{.max_total_memory }}MB | {{.max_cpu_idle}}% | {{.average_cpu_idle}}% | {{.next_instance_size}} |
+  | {{rs_project_name}} | {{.name}} | {{.resource_uid}} | {{.average_mem_percent}}% | {{.free_avg }}MB | {{.total_avg }}MB | {{.max_free_memory }}MB | {{.max_total_memory }}MB | {{.max_cpu_idle}}% | {{.average_cpu_idle}}% | {{.instance_type}} | {{.next_instance_size}} |
 {{ end -}}
 
 EOS
-    escalate $alert
-    escalate $downsize
-    resolve $resolve_resources
+    escalate $report_downsize_instances
+    escalate $downsize_instances
+    resolve $report_downsize_instances_resolution
     check logic_and(eq($param_avg_free_memory_percent, -1), lt(to_n(val(item,"average_mem_percent")), $param_avg_free_memory_percent))
     check logic_and(eq($param_max_free_memory_percent, -1), lt(to_n(val(item,"max_free_memory_avg")),$param_max_free_memory_percent))
     check logic_and(eq($param_avg_cpu_idle, -1), lt(to_n(val(item,"average_cpu_idle")),$param_avg_cpu_idle))
