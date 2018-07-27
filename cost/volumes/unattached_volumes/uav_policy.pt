@@ -7,7 +7,7 @@ name "Unattached Volumes"
 rs_pt_ver 20180301
 type "policy"
 short_description "Finds unattached volumes older than specified number of days and, optionally, deletes them. See the [README](https://github.com/rightscale/policy_templates/tree/master/cost/volumes/unattached_volumes) and [docs.rightscale.com/policies](http://docs.rightscale.com/policies/) to learn more."
-long_description "Version: 1.5"
+long_description "Version: 1.6"
 severity "medium"
 category "Cost"
 
@@ -72,16 +72,64 @@ resources "volumes", type: "rs_cm.volumes" do
   tags none($param_exclude_tags)  # This, my friend, is a beautiful thing. This bit of policy language magic (i.e. the "tags" directive) makes it so easy to cull a collection based on tags.
 end
 
+# Get the tags for the volumes
+auth "rs", type: "rightscale"
+datasource "resource_tags" do
+  request do
+    auth $rs
+    verb "POST"
+    host rs_cm_host
+    path "/api/tags/by_resource"
+    header "X-Api-Version", "1.5"
+    body_field "resource_hrefs", hrefs(@volumes)
+  end
+end
+
+# process the tags into a datastructure that can be used when looking at the volumes.
+datasource "ds_resource_tags_hash" do
+  run_script $js_resource_tags_hash, $resource_tags
+end
+script "js_resource_tags_hash", type: "javascript" do
+  parameters "resource_tags"
+  result "resource_tags_hash"
+  code <<-EOS
+// This is the eventual output list of unattached volumes.
+  var resource_tags_hash = {};
+
+// The tags datasource is an array of json objects where each object contains an array of links and an array of tags that the 
+// resource hrefs in the links array have.
+  for (var i = 0; i < resource_tags.length; i++) {
+    var tag_object = resource_tags[i]
+    
+    // Build string containing all the tags in this object
+    var tag_list = ""
+    tag_object.tags.forEach(function(tag) {
+      if (tag_list) {
+        tag_list = tag_list + "; " + tag.name
+      } else {
+        tag_list = tag.name
+      }
+    })
+    
+    // Add tags string to the hash indexed by the resource href.
+    tag_object.links.forEach(function(link) {
+      resource_tags_hash[link.href] = tag_list
+    })
+    
+  }
+EOS
+end
+
 # script-based datasource that applies the logic to return only unattached volumes
 datasource "ds_unattached_volumes" do
-  run_script $js_unattached_volumes, $ds_clouds, $ds_pgs, @volumes, $param_delete
+  run_script $js_unattached_volumes, $ds_clouds, $ds_pgs, @volumes, $param_delete, $ds_resource_tags_hash
 end
 
 # Find unattached volumes.
 # If Azure volume, deduce the type.
 # Calculate the volume's age.
 script "js_unattached_volumes", type: "javascript" do
-  parameters "ds_clouds", "ds_pgs", "volumes", "param_delete"
+  parameters "ds_clouds", "ds_pgs", "volumes", "param_delete", "ds_resource_tags_hash"
   result "unattached_volumes"
   code <<-EOS
 // This is the eventual output list of unattached volumes.
@@ -207,6 +255,9 @@ for (var i = 0; i < volumes.length; i++) {
 
     // Add a computed days old item to the hash
     my_vol["age"] = number_of_days_old
+      
+    // Add resource tags if present to the hash
+    my_vol["tags"] = ds_resource_tags_hash[vol_href]
 
     // Push the volume hash element to the unattach_volumes array
     unattached_volumes.push(my_vol)  
@@ -214,6 +265,22 @@ for (var i = 0; i < volumes.length; i++) {
 }
 EOS
 end
+
+#policy "pol_unattached_volumes" do
+#  validate $ds_resource_tags_hash do
+#  # Go through the unattached volumes that were found by the script-based datasource above
+#  # and check if not older than specified number of days.
+#  # If the check fails, it'll flag the volume
+#  check eq(0,1)
+#  
+#  summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} Unattached Volumes Found"
+#
+#  detail_template <<-EOS
+#{{ data }} 
+#EOS
+#
+#  end
+#end
 	
 policy "pol_unattached_volumes" do
   validate_each $ds_unattached_volumes do
@@ -228,10 +295,10 @@ policy "pol_unattached_volumes" do
 
   detail_template <<-EOS
 The following {{ len data }} unattached volumes, for Account: {{ rs_project_name }} (ID: {{ rs_project_id }}), have exceeded the specified age of: {{ parameters.param_days_old }} days old\n
-| Cloud Name | Volume Name | Age (days) | Volume Type | Resource UID | Size (GBs) | Status | IOPS | Azure Disk Type | Azure Storage Type | Azure Storage Account | Created At | Updated At | Volume HREF |
-| ---------- | ----------- | --- | ----------- | ------------ | ---- | ------ | ---- | --------------- | ------------------ | --------------------- | ---------- | ---------- | ----------- |
+| Cloud Name | Volume Name | Age (days) | Volume Type | Resource UID | Size (GBs) | Status | IOPS | Azure Disk Type | Azure Storage Type | Azure Storage Account | Created At | Updated At | Tags | Volume HREF |
+| ---------- | ----------- | -----------| ----------- | ------------ | ---------- | ------ | ---- | --------------- | ------------------ | --------------------- | ---------- | ---------- | ---- | ----------- |
 {{ range data -}}
-| {{ .cloud_name }} | {{ .name }} | {{ .age }} | {{ .volume_type }} | {{ .id }} | {{ .size }} | {{ .status }} | {{ .iops }} | {{ .azure_disk_type }} | {{ .azure_storage_type }} | {{ .azure_storage_account_name }} | {{ .created_at }} | {{ .updated_at }} | {{ .href }} |
+| {{ .cloud_name }} | {{ .name }} | {{ .age }} | {{ .volume_type }} | {{ .id }} | {{ .size }} | {{ .status }} | {{ .iops }} | {{ .azure_disk_type }} | {{ .azure_storage_type }} | {{ .azure_storage_account_name }} | {{ .created_at }} | {{ .updated_at }} | {{ .tags }} | {{ .href }} |
 {{ end -}}
 EOS
 
