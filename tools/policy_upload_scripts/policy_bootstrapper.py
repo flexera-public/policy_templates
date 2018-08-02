@@ -54,7 +54,7 @@ access_token = auth_info["access_token"]
 shard = auth_info["shard"]
 
 # Base URLs for below
-cm_base_url = "https://us-{}.rightscale.com".format(shard)
+cm_base_url = "https://moo-93.test.rightscale.com".format(shard)
 git_base_url = "https://raw.githubusercontent.com/rightscale/policy_templates/master"
 
 # Get the RightScale username (i.e. email address) for the user whose refresh token or creds were used

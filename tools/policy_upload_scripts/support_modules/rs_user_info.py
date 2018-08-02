@@ -2,7 +2,7 @@
 import requests,json
 
 def rs_user_email(shard, access_token):
-    cm_base_url = "https://us-{}.rightscale.com".format(shard)
+    cm_base_url = "https://moo-93.test.rightscale.com".format(shard)
     cm_headers = {
       "X-API-Version" : "1.5",
       "Authorization" : "Bearer {}".format(access_token)

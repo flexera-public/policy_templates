@@ -17,7 +17,7 @@ def rs_oauth(refresh_token):
         shard = shards[shard_idx]
         shard_idx = shard_idx + 1
         try: 
-            uri = "https://us-{}.rightscale.com/api/oauth2".format(shard)
+            uri = "https://moo-93.test.rightscale.com/api/oauth2".format(shard)
             response = requests.post(uri, headers=headers, data=json.dumps(data))
             response_json_obj = json.loads(response.text)
             response_json_obj["access_token"]
@@ -49,7 +49,7 @@ def rs_basic_auth(account_id, username, password):
     while (shard_found == False) and (shard_idx < 3): 
         shard = shards[shard_idx]
         shard_idx = shard_idx + 1
-        uri = "https://us-{}.rightscale.com/api/sessions".format(shard)
+        uri = "https://moo-93.test.rightscale.com/api/sessions".format(shard)
         try:
             response = requests.post(uri, headers=headers, data=json.dumps(data))
         except: 
