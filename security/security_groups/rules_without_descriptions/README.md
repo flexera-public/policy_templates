@@ -1,4 +1,4 @@
-## Security Group Rules without Descriptions
+## Security Group Rules without Descriptions Policy Template
 
 ### What it does
 
