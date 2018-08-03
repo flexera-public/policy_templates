@@ -1,5 +1,6 @@
 v1.4
 ----
+- Updating policy sync to use s3
 - Upating Policy Template Name
 
 v1.3
