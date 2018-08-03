@@ -1,4 +1,6 @@
-AWS Connection Key Rotation Policy changelog
+v1.2
+----
+- Upating Policy Template Name
 
 v1.1
 ----

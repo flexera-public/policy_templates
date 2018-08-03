@@ -1,4 +1,4 @@
-## ICMP Enabled Security Group
+## Security Groups with ICMP Enabled Policy Template
 
 ### What it does
 

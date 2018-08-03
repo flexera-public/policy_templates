@@ -1,4 +1,4 @@
-## Unattached Volumes
+## Unattached Volumes Policy Template
 
 ### What it does
 
