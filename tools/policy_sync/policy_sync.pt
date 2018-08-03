@@ -18,11 +18,12 @@ parameter "param_alert_options" do
   allowed_values "Email", "Email and Upload"
 end
 
-parameter "param_governance_host" do
-  type "string"
-  label "Governance Host"
-  description "Governance Host, Hostname will match your shard: us-3.rightscale.com = governance-3.rightscale.com"
-  allowed_values "governance-3.rightscale.com", "governance-4.rightscale.com", "governance-10.rightscale.com"
+parameter "param_publish" do
+  type "number"
+  label "Publish Template"
+  description "Publish Template, 0:False, 1:True"
+  default 0
+  allowed_values 0,1
 end
 
 parameter "force_upgrade" do
@@ -38,8 +39,8 @@ auth "auth_rs", type: "rightscale"
 datasource "ds_active_policy_list" do
   request do
     verb "GET"
-    host "raw.githubusercontent.com"
-    path "/rightscale/policy_templates/master/active-policy-list.json"
+    host "s3.amazonaws.com"
+    path "/rs-policysync-tool/active-policy-list.json"
     header "User-Agent", "RS Policies"
   end
   result do
@@ -55,7 +56,7 @@ datasource "ds_current_policy_template_list" do
   request do
     auth $auth_rs
     verb "GET"
-    host $param_governance_host
+    host rs_governance_host
     path join(["/api/governance/projects/",rs_project_id,"/policy_templates"])
     header "Api-Version", "1.0"
     query "view", "extended"
@@ -124,14 +125,14 @@ EOS
 end
 
 escalation "upload_new_policy_templates" do
-  run "upload_template", data, rs_project_id, $param_alert_options, $param_governance_host
+  run "upload_template", data, rs_project_id, $param_alert_options, rs_governance_host, $param_publish
 end
 
 escalation "report_policy_templates_update" do
   email $param_email
 end
 
-define upload_template($data,$project_id,$param_alert_options,$param_governance_host) return $url_array,$response_array do
+define upload_template($data,$project_id,$param_alert_options,$param_governance_host,$param_publish) return $url_array,$response_array do
  if $param_alert_options != "Email"
     $url_array = []
     $response_array = []
@@ -154,6 +155,10 @@ define upload_template($data,$project_id,$param_alert_options,$param_governance_
         body: { "source": $policy_source, filename: $file_name }
       )
       $response_array << $create_response
+      $policy_template_href = ""
+      if $create_response["code"] != 409
+        $policy_template_href = $create_response["body"]["href"]
+      end
       if $create_response["code"] == 409
         $update_response = http_request(
           verb: "put",
@@ -164,6 +169,18 @@ define upload_template($data,$project_id,$param_alert_options,$param_governance_
           body: { "source": $policy_source, filename: $file_name }
         )
         $response_array << $update_response
+        $policy_template_href = $update_response["body"]["href"]
+      end
+      if $param_publish == 1
+        $publish_response = http_request(
+          verb: "post",
+          https: true,
+          host: $param_governance_host,
+          href: join(["/api/governance/projects/",$project_id,"/published_templates"]),
+          headers: { "Api-Version": "1.0" },
+          body: { "template_href": $policy_template_href }
+        )
+        $response_array << $publish_response
       end
     end
   end
