@@ -2,7 +2,7 @@ name "Policy Template Synchronization"
 rs_pt_ver 20180301
 type "policy"
 short_description "A policy to manage policy template. See the [README](https://github.com/rightscale/policy_templates/tree/master/tools/policy_sync/) and [docs.rightscale.com/policies](http://docs.rightscale.com/policies/) to learn more."
-long_description "Version: 1.4"
+long_description "Version: 1.5"
 severity "low"
 category "Operational"
 
@@ -139,6 +139,7 @@ define upload_template($data,$project_id,$param_alert_options,$param_governance_
     foreach $item in $data do
       $url = "https://raw.githubusercontent.com/rightscale/policy_templates/master/"+to_s($item["file_name"])
       $url_array << $url
+
       $policy_request = http_get(
        insecure: false,
        url: $url
@@ -156,7 +157,9 @@ define upload_template($data,$project_id,$param_alert_options,$param_governance_
       )
       $response_array << $create_response
       $policy_template_href = ""
+      $policy_template_name = ""
       if $create_response["code"] != 409
+        $policy_template_name = $create_response["body"]["name"]
         $policy_template_href = $create_response["body"]["href"]
       end
       if $create_response["code"] == 409
@@ -170,17 +173,20 @@ define upload_template($data,$project_id,$param_alert_options,$param_governance_
         )
         $response_array << $update_response
         $policy_template_href = $update_response["body"]["href"]
+        $policy_template_name = $update_response["body"]["name"]
       end
       if $param_publish == 1
-        $publish_response = http_request(
-          verb: "post",
-          https: true,
-          host: $param_governance_host,
-          href: join(["/api/governance/projects/",$project_id,"/published_templates"]),
-          headers: { "Api-Version": "1.0" },
-          body: { "template_href": $policy_template_href }
-        )
-        $response_array << $publish_response
+        if $policy_template_name != "Policy Template Synchronization"
+          $publish_response = http_request(
+            verb: "post",
+            https: true,
+            host: $param_governance_host,
+            href: join(["/api/governance/orgs/",$project_id,"/published_templates"]),
+            headers: { "Api-Version": "1.0" },
+            body: { "template_href": $policy_template_href }
+          )
+          $response_array << $publish_response
+        end
       end
     end
   end

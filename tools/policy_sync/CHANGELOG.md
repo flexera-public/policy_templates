@@ -1,3 +1,7 @@
+v1.5
+----
+- Updated policy template to not publish Policy Template Synchronization template
+
 v1.4
 ----
 - Updating policy sync to use s3
