@@ -67,64 +67,80 @@ resources "volumes", type: "rs_cm.volumes" do
   tags none($param_exclude_tags)  # This, my friend, is a beautiful thing. This bit of policy language magic (i.e. the "tags" directive) makes it so easy to cull a collection based on tags.
 end
 
-# Get the tags for the volumes
-auth "rs", type: "rightscale"
-datasource "resource_tags" do
-  request do
-    auth $rs
-    verb "POST"
-    host rs_cm_host
-    path "/api/tags/by_resource"
-    header "X-Api-Version", "1.5"
-    body_field "resource_hrefs", hrefs(@volumes)
-  end
+datasource "ds_volumes" do
+  iterate @volumes
+  field "resource_uid", val(iter_item, "resource_uid")
+  field "name", val(iter_item, "name")
+  field "size", val(iter_item, "size")
+  field "iops", val(iter_item, "iops")
+  field "status", val(iter_item, "status")
+  field "placement_group", val(iter_item, "placement_group") 
+  field "volume_type", val(iter_item, "volume_type")
+  
+  field "created_at", val(iter_item, "created_at")
+  field "updated_at", val(iter_item, "updated_at")
+  field "tags", val(iter_item, "tags")
+  field "links", val(iter_item, "links")
 end
 
-# process the tags into a datastructure that can be used when looking at the volumes.
-datasource "ds_resource_tags_hash" do
-  run_script $js_resource_tags_hash, $resource_tags
-end
-script "js_resource_tags_hash", type: "javascript" do
-  parameters "resource_tags"
-  result "resource_tags_hash"
-  code <<-EOS
-// This is the eventual output list of unattached volumes.
-  var resource_tags_hash = {};
-
-// The tags datasource is an array of json objects where each object contains an array of links and an array of tags that the 
-// resource hrefs in the links array have.
-  for (var i = 0; i < resource_tags.length; i++) {
-    var tag_object = resource_tags[i]
-    
-    // Build string containing all the tags in this object
-    var tag_list = ""
-    tag_object.tags.forEach(function(tag) {
-      if (tag_list) {
-        tag_list = tag_list + "; " + tag.name
-      } else {
-        tag_list = tag.name
-      }
-    })
-    
-    // Add tags string to the hash indexed by the resource href.
-    tag_object.links.forEach(function(link) {
-      resource_tags_hash[link.href] = tag_list
-    })
-    
-  }
-EOS
-end
+## Get the tags for the volumes
+#auth "rs", type: "rightscale"
+#datasource "resource_tags" do
+#  request do
+#    auth $rs
+#    verb "POST"
+#    host rs_cm_host
+#    path "/api/tags/by_resource"
+#    header "X-Api-Version", "1.5"
+#    body_field "resource_hrefs", hrefs(@volumes)
+#  end
+#end
+#
+## process the tags into a datastructure that can be used when looking at the volumes.
+#datasource "ds_resource_tags_hash" do
+#  run_script $js_resource_tags_hash, $resource_tags
+#end
+#script "js_resource_tags_hash", type: "javascript" do
+#  parameters "resource_tags"
+#  result "resource_tags_hash"
+#  code <<-EOS
+#// This is the eventual output list of unattached volumes.
+#  var resource_tags_hash = {};
+#
+#// The tags datasource is an array of json objects where each object contains an array of links and an array of tags that the 
+#// resource hrefs in the links array have.
+#  for (var i = 0; i < resource_tags.length; i++) {
+#    var tag_object = resource_tags[i]
+#    
+#    // Build string containing all the tags in this object
+#    var tag_list = ""
+#    tag_object.tags.forEach(function(tag) {
+#      if (tag_list) {
+#        tag_list = tag_list + "; " + tag.name
+#      } else {
+#        tag_list = tag.name
+#      }
+#    })
+#    
+#    // Add tags string to the hash indexed by the resource href.
+#    tag_object.links.forEach(function(link) {
+#      resource_tags_hash[link.href] = tag_list
+#    })
+#    
+#  }
+#EOS
+#end
 
 # script-based datasource that applies the logic to return only unattached volumes
 datasource "ds_unattached_volumes" do
-  run_script $js_unattached_volumes, $ds_clouds, $ds_pgs, @volumes, $param_delete, $ds_resource_tags_hash
+  run_script $js_unattached_volumes, $ds_clouds, $ds_pgs, $ds_volumes, $param_delete #, $ds_resource_tags_hash
 end
 
 # Find unattached volumes.
 # If Azure volume, deduce the type.
 # Calculate the volume's age.
 script "js_unattached_volumes", type: "javascript" do
-  parameters "ds_clouds", "ds_pgs", "volumes", "param_delete", "ds_resource_tags_hash"
+  parameters "ds_clouds", "ds_pgs", "ds_volumes", "param_delete" #, "ds_resource_tags_hash"
   result "unattached_volumes"
   code <<-EOS
 // This is the eventual output list of unattached volumes.
@@ -161,8 +177,8 @@ for (var i = 0; i < ds_pgs.length; i++) {
 }
 
 // loop through the volumes and find the unattached ones and deduce storage type if Azure
-for (var i = 0; i < volumes.length; i++) {
-  var vol = volumes[i]
+for (var i = 0; i < ds_volumes.length; i++) {
+  var vol = ds_volumes[i]
   if ((vol.status == "available") || (vol.status == "provisioned")) { 
     // build a volume object
     var my_vol = {}
@@ -176,6 +192,8 @@ for (var i = 0; i < volumes.length; i++) {
     }
     my_vol["created_at"] =  vol["created_at"]
     my_vol["updated_at"] =  vol["updated_at"]
+    my_vol["tags"] = vol["tags"]
+      
     my_vol["pg_id"] = null
     my_vol["volume_type"] = null
     
@@ -250,9 +268,6 @@ for (var i = 0; i < volumes.length; i++) {
 
     // Add a computed days old item to the hash
     my_vol["age"] = number_of_days_old
-      
-    // Add resource tags if present to the hash
-    my_vol["tags"] = ds_resource_tags_hash[vol_href]
 
     // Push the volume hash element to the unattach_volumes array
     unattached_volumes.push(my_vol)  
