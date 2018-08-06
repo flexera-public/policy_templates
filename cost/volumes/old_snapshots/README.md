@@ -1,4 +1,4 @@
-## Old Snapshots Policy Template
+## Discover Old Snapshots Policy Template
 
 ### What it does
 

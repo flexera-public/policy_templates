@@ -1,4 +1,4 @@
-## AWS Connection Key Rotation Policy
+## AWS Cloud Credentials Rotation Policy Template
 
 ### What it does
 

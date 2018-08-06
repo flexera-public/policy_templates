@@ -1,9 +1,11 @@
 #rake task to generate file list until we version on each master commit
 require 'rubygems'
 require 'json'
+require 'fileutils'
 
 desc "One line task description"
 task :generate_policy_list do
+  FileUtils.mkdir_p 'dist'
   file_list = []
   Dir['**/*.pt'].each do |file|
     if !file.match(/test_code/)
@@ -23,5 +25,5 @@ task :generate_policy_list do
     end
   end
   policies = {"policies": file_list }
-  File.open('active-policy-list.json', 'w') { |file| file.write(JSON.pretty_generate(policies)) }
+  File.open('dist/active-policy-list.json', 'w') { |file| file.write(JSON.pretty_generate(policies)) }
 end

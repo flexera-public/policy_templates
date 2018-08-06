@@ -1,4 +1,4 @@
-### Schedule Instances
+### Schedule Instances Policy Template
 
 **What it does**
 

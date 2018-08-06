@@ -1,4 +1,4 @@
-## Reserved Instances Utilization
+## Reserved Instances Utilization Policy Template
 
 ### What it does
 

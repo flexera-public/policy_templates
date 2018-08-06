@@ -1,4 +1,4 @@
-## Security Group High Open Ports Policy Template
+## Security Group with High Open Ports Policy Template
 
 ### What it does
 
