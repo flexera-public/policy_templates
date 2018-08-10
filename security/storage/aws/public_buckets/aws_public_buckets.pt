@@ -2,7 +2,7 @@ name "AWS Open Buckets"
 rs_pt_ver 20180301
 type "policy"
 short_description "Checks for buckets that are open to everyone. See the [README](https://github.com/rightscale/policy_templates/tree/master/security/storage/aws/public_buckets) and [docs.rightscale.com/policies](http://docs.rightscale.com/policies/) to learn more."
-long_description "Version: 1.6"
+long_description "Version: 1.7"
 severity "high"
 category "Security"
 
@@ -14,6 +14,18 @@ end
 parameter "param_email" do
   type "list"
   label "Email addresses of the recipients you wish to notify"
+end
+
+parameter "param_slack_channel" do
+  category "Slack Channel Settings (Optional)"
+  type "string"
+  label "(Optional) Slack channel name including the \"#\""
+end
+
+parameter "param_slack_webhook_cred" do
+  category "Slack Channel Settings (Optional)"
+  type "string"
+  label "(Optional) Name of RightScale credential that contains the Slack webhook credential"
 end
 
 auth "s3_us_east_2", type: "aws" do
@@ -277,10 +289,6 @@ script "aws_bucket_acl_request", type: "javascript" do
   EOS
 end
 
-escalation "report_open_buckets" do
-   email $param_email
-end
-
 policy "public_buckets" do
   validate_each $aws_bucket_acls do
     summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} Public Buckets Found in AWS"
@@ -293,6 +301,43 @@ policy "public_buckets" do
 {{ end -}}
 EOS
     escalate $report_open_buckets
+    escalate $slack_open_buckets
     check logic_not(contains(val(item, "grantee_uris"), "http://acs.amazonaws.com/groups/global/AllUsers"))
   end
 end
+
+
+escalation "report_open_buckets" do
+   email $param_email
+end
+
+escalation "slack_open_buckets" do
+  run "send_slack", data, rs_project_name, rs_project_id, $param_slack_channel, $param_slack_webhook_cred
+end
+
+define send_slack($data, $account_name, $account_id, $param_slack_channel, $param_slack_webhook_cred)  do
+  # The slack channel stuff is optional so skip this step if not provided
+  if ($param_slack_channel != "") && ($param_slack_webhook_cred != "") 
+    $channel = $param_slack_channel
+    $slack_channel_hook = cred($param_slack_webhook_cred)
+  
+    # Build slack message from data
+    $bucket_list = ""
+    foreach $item in $data do
+      $bucket_name = $item["bucket_name"]
+      if ($bucket_list != "")
+        $bucket_list = $bucket_list + ", " + $bucket_name
+      else
+        $bucket_list = $bucket_name
+      end
+    end
+    $message = "*** OPEN BUCKETS FOUND ***\nAccount:, " + $account_name + " (ID: " + $account_id + ")\nOpen Buckets: " + $bucket_list
+      
+    # Send the message to slack
+    $response = http_post(
+      url: $slack_channel_hook,
+      body: { channel: $channel, text: $message} )
+  end
+end
+
+
