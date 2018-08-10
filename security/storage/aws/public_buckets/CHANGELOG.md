@@ -1,3 +1,7 @@
+v1.7
+----
+- Added optional Slack notification support.
+
 v1.6
 ----
 - Upating Policy Template Name
