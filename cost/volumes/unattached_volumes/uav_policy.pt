@@ -2,7 +2,7 @@ name "Unattached Volumes"
 rs_pt_ver 20180301
 type "policy"
 short_description "Finds unattached volumes older than specified number of days and, optionally, deletes them. See the [README](https://github.com/rightscale/policy_templates/tree/master/cost/volumes/unattached_volumes) and [docs.rightscale.com/policies](http://docs.rightscale.com/policies/) to learn more."
-long_description "Version: 1.5"
+long_description "Version: 1.6"
 severity "medium"
 category "Cost"
 
@@ -67,16 +67,32 @@ resources "volumes", type: "rs_cm.volumes" do
   tags none($param_exclude_tags)  # This, my friend, is a beautiful thing. This bit of policy language magic (i.e. the "tags" directive) makes it so easy to cull a collection based on tags.
 end
 
+datasource "ds_volumes" do
+  iterate @volumes
+  field "resource_uid", val(iter_item, "resource_uid")
+  field "name", val(iter_item, "name")
+  field "size", val(iter_item, "size")
+  field "iops", val(iter_item, "iops")
+  field "status", val(iter_item, "status")
+  field "placement_group", val(iter_item, "placement_group") 
+  field "volume_type", val(iter_item, "volume_type")
+  
+  field "created_at", val(iter_item, "created_at")
+  field "updated_at", val(iter_item, "updated_at")
+  field "tags", val(iter_item, "tags")
+  field "links", val(iter_item, "links")
+end
+
 # script-based datasource that applies the logic to return only unattached volumes
 datasource "ds_unattached_volumes" do
-  run_script $js_unattached_volumes, $ds_clouds, $ds_pgs, @volumes, $param_delete
+  run_script $js_unattached_volumes, $ds_clouds, $ds_pgs, $ds_volumes, $param_delete #, $ds_resource_tags_hash
 end
 
 # Find unattached volumes.
 # If Azure volume, deduce the type.
 # Calculate the volume's age.
 script "js_unattached_volumes", type: "javascript" do
-  parameters "ds_clouds", "ds_pgs", "volumes", "param_delete"
+  parameters "ds_clouds", "ds_pgs", "ds_volumes", "param_delete" #, "ds_resource_tags_hash"
   result "unattached_volumes"
   code <<-EOS
 // This is the eventual output list of unattached volumes.
@@ -113,8 +129,8 @@ for (var i = 0; i < ds_pgs.length; i++) {
 }
 
 // loop through the volumes and find the unattached ones and deduce storage type if Azure
-for (var i = 0; i < volumes.length; i++) {
-  var vol = volumes[i]
+for (var i = 0; i < ds_volumes.length; i++) {
+  var vol = ds_volumes[i]
   if ((vol.status == "available") || (vol.status == "provisioned")) { 
     // build a volume object
     var my_vol = {}
@@ -128,6 +144,10 @@ for (var i = 0; i < volumes.length; i++) {
     }
     my_vol["created_at"] =  vol["created_at"]
     my_vol["updated_at"] =  vol["updated_at"]
+    var tags_array = vol["tags"]
+    var tags = tags_array.toString()
+    my_vol["tags"] = tags
+      
     my_vol["pg_id"] = null
     my_vol["volume_type"] = null
     
@@ -209,7 +229,7 @@ for (var i = 0; i < volumes.length; i++) {
 }
 EOS
 end
-	
+
 policy "pol_unattached_volumes" do
   validate_each $ds_unattached_volumes do
 	# Go through the unattached volumes that were found by the script-based datasource above
@@ -223,10 +243,10 @@ policy "pol_unattached_volumes" do
 
   detail_template <<-EOS
 The following {{ len data }} unattached volumes, for Account: {{ rs_project_name }} (ID: {{ rs_project_id }}), have exceeded the specified age of: {{ parameters.param_days_old }} days old\n
-| Cloud Name | Volume Name | Age (days) | Volume Type | Resource UID | Size (GBs) | Status | IOPS | Azure Disk Type | Azure Storage Type | Azure Storage Account | Created At | Updated At | Volume HREF |
-| ---------- | ----------- | --- | ----------- | ------------ | ---- | ------ | ---- | --------------- | ------------------ | --------------------- | ---------- | ---------- | ----------- |
+| Cloud Name | Volume Name | Age (days) | Volume Type | Resource UID | Size (GBs) | Status | IOPS | Azure Disk Type | Azure Storage Type | Azure Storage Account | Created At | Updated At | Tags | Volume HREF |
+| ---------- | ----------- | -----------| ----------- | ------------ | ---------- | ------ | ---- | --------------- | ------------------ | --------------------- | ---------- | ---------- | ---- | ----------- |
 {{ range data -}}
-| {{ .cloud_name }} | {{ .name }} | {{ .age }} | {{ .volume_type }} | {{ .id }} | {{ .size }} | {{ .status }} | {{ .iops }} | {{ .azure_disk_type }} | {{ .azure_storage_type }} | {{ .azure_storage_account_name }} | {{ .created_at }} | {{ .updated_at }} | {{ .href }} |
+| {{ .cloud_name }} | {{ .name }} | {{ .age }} | {{ .volume_type }} | {{ .id }} | {{ .size }} | {{ .status }} | {{ .iops }} | {{ .azure_disk_type }} | {{ .azure_storage_type }} | {{ .azure_storage_account_name }} | {{ .created_at }} | {{ .updated_at }} | {{ .tags }} | {{ .href }} |
 {{ end -}}
 EOS
 

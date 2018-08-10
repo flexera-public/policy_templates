@@ -1,6 +1,7 @@
 v1.7
 ----
-- Upating Policy Template Name
+- Updating Policy Template Name
+- Removing security_group_href and cloud restriction
 
 v1.6
 ----
