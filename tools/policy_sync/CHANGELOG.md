@@ -7,10 +7,7 @@ v1.5
 v1.4
 ----
 - Updating policy sync to use s3
-<<<<<<< HEAD
-- Upating Policy Template Name
-=======
->>>>>>> PSASSET-867
+- Updating Policy Template Name
 
 v1.3
 ----
