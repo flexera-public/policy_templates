@@ -1,3 +1,7 @@
+v1.6
+----
+- Fixed email format
+
 v1.4
 ----
 - Updating email from string to list
