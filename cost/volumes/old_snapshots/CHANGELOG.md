@@ -1,3 +1,7 @@
+v1.5
+----
+- Fixing a typo
+
 v1.4
 ----
 - Upating Policy Template Name
