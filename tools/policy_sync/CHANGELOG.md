@@ -2,11 +2,15 @@ v1.5
 ----
 - use the update path if you get a code 409
 - Excluding Policy Sync from publish
+- Updated policy template to not publish Policy Template Synchronization template
 
 v1.4
 ----
 - Updating policy sync to use s3
+<<<<<<< HEAD
 - Upating Policy Template Name
+=======
+>>>>>>> PSASSET-867
 
 v1.3
 ----

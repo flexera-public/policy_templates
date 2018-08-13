@@ -125,20 +125,22 @@ EOS
 end
 
 escalation "upload_new_policy_templates" do
-  run "upload_template", data, rs_project_id, $param_alert_options, rs_governance_host, $param_publish
+  run "upload_template", data, rs_project_id, $param_alert_options, rs_governance_host, $param_publish, rs_org_id
 end
 
 escalation "report_policy_templates_update" do
   email $param_email
 end
 
-define upload_template($data,$project_id,$param_alert_options,$param_governance_host,$param_publish) return $url_array,$response_array do
+define upload_template($data,$project_id,$param_alert_options,$param_governance_host,$param_publish,$rs_org_id) return $url_array,$response_array do
+
  if $param_alert_options != "Email"
     $url_array = []
     $response_array = []
     foreach $item in $data do
       $url = "https://raw.githubusercontent.com/rightscale/policy_templates/master/"+to_s($item["file_name"])
       $url_array << $url
+
       $policy_request = http_get(
        insecure: false,
        url: $url
@@ -156,7 +158,9 @@ define upload_template($data,$project_id,$param_alert_options,$param_governance_
       )
       $response_array << $create_response
       $policy_template_href = ""
+      $policy_template_name = ""
       if $create_response["code"] != 409
+        $policy_template_name = $create_response["body"]["name"]
         $policy_template_href = $create_response["body"]["href"]
       end
       if $create_response["code"] == 409
@@ -170,13 +174,14 @@ define upload_template($data,$project_id,$param_alert_options,$param_governance_
         )
         $response_array << $update_response
         $policy_template_href = $update_response["body"]["href"]
+        $policy_template_name = $update_response["body"]["name"]
       end
       if ( $param_publish == 1 ) && ( $item["name"] != "Policy Template Synchronization" )
         $publish_response = http_request(
           verb: "post",
           https: true,
           host: $param_governance_host,
-          href: join(["/api/governance/projects/",$project_id,"/published_templates"]),
+          href: join(["/api/governance/orgs/",$rs_org_id,"/published_templates"]),
           headers: { "Api-Version": "1.0" },
           body: { "template_href": $policy_template_href }
         )
