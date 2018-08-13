@@ -28,6 +28,7 @@ Please contact sales@rightscale.com to learn more.
 ### Operational
 - [AWS Cloud Credentials Rotation Policy](./operational/cloud_credentials/aws)
 - [No Recent Snapshots](./operational/snapshots/)
+- [AWS RDS Backup Settings](./operational/dbaas/aws/rds_backup)
 
 ## Instructions to upload policy templates to RightScale
 
