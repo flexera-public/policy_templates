@@ -1,3 +1,8 @@
+v1.5
+----
+- use the update path if you get a code 409
+- Excluding Policy Sync from publish
+
 v1.4
 ----
 - Updating policy sync to use s3
