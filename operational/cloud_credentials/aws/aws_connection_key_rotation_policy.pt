@@ -165,6 +165,10 @@ define update_aws_connection($data, $param_rotation_period) do
     end
   end
   
+  # Now deactivate the old key that was being used.
+  # The key is deactivated instead of deleted to allow for a potential rollback use-case.
+  call deactivate_aws_key(cred("AWS_ACCESS_KEY_ID"))
+  
   # Now update the credentials in RightScale to reflect the new keys
   call update_cred("AWS_ACCESS_KEY_ID", $new_access_key_id)
   call update_cred("AWS_SECRET_ACCESS_KEY", $new_secret_access_key)
@@ -287,6 +291,16 @@ end
 define delete_aws_key($access_key_id) do
   call log("AWS Key Rotation Policy: Deleting the following key to make room for a new set of keys: "+$access_key_id, "")
   $iam_api = "https://iam.amazonaws.com/?Version=2010-05-08&Action=DeleteAccessKey&AccessKeyId="+$access_key_id
+  $response = http_get(    
+    url: $iam_api,
+    "signature": { type: "aws" }
+    )
+end
+
+# Deactivate an AWS access key
+define deactivate_aws_key($access_key_id) do
+  call log("AWS Key Rotation Policy: Deactivating the following key: "+$access_key_id, "")
+  $iam_api = "https://iam.amazonaws.com/?Version=2010-05-08&Status=Inactive&Action=UpdateAccessKey&AccessKeyId="+$access_key_id
   $response = http_get(    
     url: $iam_api,
     "signature": { type: "aws" }
