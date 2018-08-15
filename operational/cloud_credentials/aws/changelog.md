@@ -1,3 +1,7 @@
+v1.4
+----
+- Added logic to deactivate the previously used key.
+
 v1.3
 ----
 - Fixed typo in call to "log()" definition.
