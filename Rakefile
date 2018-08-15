@@ -8,6 +8,7 @@ task :generate_policy_list do
   FileUtils.mkdir_p 'dist'
   file_list = []
   Dir['**/*.pt'].each do |file|
+    change_log = ::File.join(file.split('/')[0...-1].join('/'),'CHANGELOG.md')
     if !file.match(/test_code/)
       f = File.read(file)
       f.each_line do |line|
@@ -21,9 +22,9 @@ task :generate_policy_list do
           end
         end
       end
-      file_list<<{"name": @name, "file_name": file, "version": @version }
+      file_list<<{"name": @name, "file_name": file, "version": @version, "change_log": change_log }
     end
   end
   policies = {"policies": file_list }
-  File.open('dist/active-policy-list.json', 'w') { |file| file.write(JSON.pretty_generate(policies)) }
+  File.open('dist/active-policy-list.json', 'w') { |file| file.write(JSON.pretty_generate(policies)+"\n") }
 end
