@@ -1,6 +1,6 @@
 v1.5
 ----
-- Updating check to do math correctly and not generate a negative number
+- using rs_optima_host variable
 
 v1.4
 ----
