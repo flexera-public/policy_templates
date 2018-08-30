@@ -2,6 +2,7 @@ v1.5
 ----
 - Simplified logic such that the policy checks to see if there are already more than one keys for the IAM user and then removes a key before trying to create a new key.
   - This removes the generation of an API error about hitting the key quota when creating the key.
+- User-specifiable rotation period units (days, hours, minutes) option.
   
 v1.4
 ----
