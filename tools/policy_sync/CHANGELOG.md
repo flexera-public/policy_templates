@@ -1,3 +1,7 @@
+v1.6
+----
+- Adding in changelog url
+
 v1.5
 ----
 - use the update path if you get a code 409

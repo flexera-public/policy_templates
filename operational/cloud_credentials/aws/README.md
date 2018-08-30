@@ -10,6 +10,7 @@ When applied, the policy updates the credentials immediately and then updates th
 This policy performs the following actions:
 - Create a new set of security credentials in AWS for the IAM user account connected to RightScale.
 - Update the RightScale AWS cloud connections to use the new keys.
+- Deactivate the previously used IAM key.
 - Update RightScale Credentials, AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY with the new IAM user keys.
 
 ### Caveats and Prerequisites
