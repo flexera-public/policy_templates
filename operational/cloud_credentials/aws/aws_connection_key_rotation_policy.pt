@@ -20,8 +20,17 @@ end
 
 parameter "param_rotation_period" do
   type "number"
-  label "Number of days between key updates"
+  label "Rotation Period"
+  description "See Rotation Units."
   default 90
+end
+
+parameter "param_rotation_units" do
+  type "string"
+  label "Rotation Period Units"
+  description "See Rotation Period."
+  default "Days"
+  allowed_values "Days", "Hours", "Minutes"
 end
 
 # We use a RightScale account tag to keep track of when to rotate the keys.
@@ -68,10 +77,10 @@ end
 
 # Find the RightScale cloud accounts that are connected to AWS regions.
 datasource "ds_aws_cloud_accounts" do
-  run_script $js_aws_cloud_accounts, $ds_aws_clouds, $ds_cloud_accounts, $ds_account_tags, $param_rotation_period
+  run_script $js_aws_cloud_accounts, $ds_aws_clouds, $ds_cloud_accounts, $ds_account_tags
 end
 script "js_aws_cloud_accounts", type: "javascript" do
-  parameters "ds_aws_clouds", "ds_cloud_accounts", "ds_account_tags", "param_rotation_period"
+  parameters "ds_aws_clouds", "ds_cloud_accounts", "ds_account_tags"
   result "aws_cloud_accounts"
   code <<-EOS
 // This is the eventual output list of AWS-specific RightScale cloud accounts.
@@ -141,11 +150,11 @@ end
 
 
 escalation "update_connection" do
-  run "update_aws_connection", data, $param_rotation_period
+  run "update_aws_connection", data, $param_rotation_period, $param_rotation_units
   email $param_email
 end
 
-define update_aws_connection($data, $param_rotation_period) do
+define update_aws_connection($data, $param_rotation_period, $param_rotation_units) do
   
   call generate_new_aws_keys() retrieve $new_access_key_id, $new_secret_access_key, $aws_user_name
   
@@ -174,7 +183,7 @@ define update_aws_connection($data, $param_rotation_period) do
   call update_cred("AWS_SECRET_ACCESS_KEY", $new_secret_access_key)
   
   # Update account tag to indicate next time it should be updated
-  call calculate_next_rotation_date($param_rotation_period) retrieve $next_rotation_date
+  call calculate_next_rotation_date($param_rotation_period, $param_rotation_units) retrieve $next_rotation_date
   call tag_account_next_rotation_date($next_rotation_date)
   
   call log("AWS Key Rotation Policy: Completed AWS cloud account key updates.", "")
@@ -293,11 +302,20 @@ define deactivate_aws_key($access_key_id) do
 end
 
 # calculate the next rotation date which will be $rotation_period days from now.
-define calculate_next_rotation_date($rotation_period) return $next_rotation_date do
+define calculate_next_rotation_date($rotation_period, $param_rotation_units) return $next_rotation_date do
   $now_time = now()
   $now_time = strftime($now_time, "%s") # epoch time in seconds
   $now_time = to_n($now_time)
-  $num_seconds_in_period = (to_n($rotation_period) * 24 * 60 * 60) 
+  
+  # Calculate the period multipler based on user-selected units
+  if $param_rotation_units == "Hours"  # if units is hours then number of seconds in an hour
+    $period_multiplier = 60 * 60
+  elsif $param_rotation_units == "Minutes" # If units is minutes then number of seconds in a minute
+    $period_multiplier = 60
+  else # assume the unit is days
+    $period_multiplier = 24 * 60 * 60
+  end
+  $num_seconds_in_period = (to_n($rotation_period) * $period_multiplier) 
   $next_rotation_date = $now_time + $num_seconds_in_period
 end
 
