@@ -1,6 +1,11 @@
+Change log
+
+v1.3
+- fix issue with stop/start schedule.
+
 v1.2
 ----
-- Upating Policy Template Name
+- Updating Policy Template Name
 
 v1.1
 -----
