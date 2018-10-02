@@ -1,3 +1,7 @@
+v1.7
+----
+- Improved handling of volume delete failures. If a delete volume action is not allowed, say, due to the volume being locked, the volume will be tagged with the cloud exception error message and the policy will continue on to the next volume in the list.
+
 v1.6
 ----
 - Show volume tags in incident report.

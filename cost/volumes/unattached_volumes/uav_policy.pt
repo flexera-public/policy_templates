@@ -2,7 +2,7 @@ name "Unattached Volumes"
 rs_pt_ver 20180301
 type "policy"
 short_description "Finds unattached volumes older than specified number of days and, optionally, deletes them. See the [README](https://github.com/rightscale/policy_templates/tree/master/cost/volumes/unattached_volumes) and [docs.rightscale.com/policies](http://docs.rightscale.com/policies/) to learn more."
-long_description "Version: 1.6"
+long_description "Version: 1.7"
 severity "medium"
 category "Cost"
 
@@ -139,8 +139,8 @@ for (var i = 0; i < ds_volumes.length; i++) {
     my_vol["size"] = vol["size"]
     my_vol["iops"] = vol["iops"]
     my_vol["status"] = vol["status"]
-    if (param_delete == "Email and Delete") {  // Then the volume is marked that it was deleted.
-      my_vol["status"] = "DELETED"
+    if (param_delete == "Email and Delete") {  // Then the volume is marked so that it will be deleted later
+      my_vol["action"] = "DELETE"
     }
     my_vol["created_at"] =  vol["created_at"]
     my_vol["updated_at"] =  vol["updated_at"]
@@ -262,11 +262,30 @@ end
 
 define delete_volumes($data) do
   foreach $item in $data do
-    if $item["status"] == "DELETED"
-      # Find the volume
-      @volume = rs_cm.get(href: $item["href"])
-      # Delete the volume 
-      delete(@volume)
+    if $item["action"] == "DELETE"
+      # If the delete fails, tag the volume with some info about the failure
+      sub on_error: handle_delete_failure(@volume) do
+        # Find the volume
+        @volume = rs_cm.get(href: $item["href"])
+        # Delete the volume 
+        delete(@volume)
+      end
     end
   end
+end
+
+define handle_delete_failure(@volume) do
+  $_error_behavior = "skip"
+  $msg = split($_error["message"], "\n")
+  foreach $item in $msg do
+    if $item =~ "CloudException"
+      $tag = "uav_policy:error="+$item
+      rs_cm.tags.multi_add(tags: [$tag], resource_hrefs: [@volume.href])
+    end
+  end
+end
+
+# create an audit entry 
+define log($summary, $details) do
+  rs_cm.audit_entries.create(notify: "None", audit_entry: { auditee_href: @@account, summary: $summary , detail: $details})
 end
