@@ -1,3 +1,7 @@
+V1.3
+----
+- Fix 'undefined' href error for excluded tagged resources.
+
 v1.2
 ----
 - Upating Policy Template Name
