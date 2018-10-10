@@ -87,7 +87,6 @@ end
 datasource "ds_unattached_volumes" do
   run_script $js_unattached_volumes, $ds_clouds, $ds_pgs, $ds_volumes, $param_delete #, $ds_resource_tags_hash
 end
-
 # Find unattached volumes.
 # If Azure volume, deduce the type.
 # Calculate the volume's age.
@@ -131,8 +130,6 @@ for (var i = 0; i < ds_pgs.length; i++) {
   }
   pg_hash[pg_id] = { "name": pg_name, "account_type": pg_account_type }
 }
-
-
 
 // loop through the volumes and find the unattached ones and deduce storage type if Azure
 for (var i = 0; i < ds_volumes.length; i++) {
@@ -241,6 +238,26 @@ for (var i = 0; i < ds_volumes.length; i++) {
 }
 EOS
 end
+
+# This is a copy of $ds_unattached_volumes but with a current timestamp added.
+# This is leveraged in the policy declaration to force an escalation action to try and delete the volumes (if that option was selected by the user).
+# This way if a volume was not deleted on the last run due to something like it being locked or snapshots existing and then someone removed the lock or snapshots,
+# the subsequent run will try to delete the volumes again and be successful.
+# The run after that will then report the new list of volumes that still exist.
+datasource "ds_unattached_volumes_with_timestamp" do
+  run_script $js_unattached_volumes_with_timestamp, $ds_unattached_volumes
+end
+
+script "js_unattached_volumes_with_timestamp", type: "javascript" do
+  parameters "ds_unattached_volumes"
+  result "unattached_volumes_with_timestamp"
+  code <<-EOS
+// This is the eventual output list of unattached volumes.
+var unattached_volumes_with_timestamp = ds_unattached_volumes;
+
+for (var i = 0; i < unattached_volumes_with_timestamp.length; i++) {
+  unattached_volumes_with_timestamp["timestamp"] = 
+}
 
 policy "pol_unattached_volumes" do
   validate_each $ds_unattached_volumes do
