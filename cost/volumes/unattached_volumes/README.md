@@ -6,6 +6,8 @@ This Policy Template scans all volumes in the given account and identifies any u
 
 If the user specifies that the volumes should be deleted, the policy will delete the volumes. 
 If the volume is not able to be deleted, say, due to it being locked, the volume will be tagged to indicate the CloudException error that was received.
+If the issue causing the delete failure is removed, the next run of the policy will delete the volume. 
+Note: The unattached volumes report will reflect the updated set of unattached volumes on the subsequent run.
 
 Optionally, the user can specify one or more RightScale tags that if found on a volume will exclude the volume from the list.
 Additionally, the user can optionally specify if the aged volumes should be deleted by the policy.
