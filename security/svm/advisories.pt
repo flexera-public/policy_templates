@@ -1,0 +1,87 @@
+name "SVM detect vulnerabilities"
+rs_pt_ver 20180301
+type "policy"
+short_description "A policy which polls SVM and matches advisories vs. instances."
+long_description "Version: 0.1"
+severity "medium"
+category "Security"
+
+permission "general_permissions" do
+  resources "rs_cm.clouds", "rs_cm.security_groups", "rs_cm.security_group_rules"
+  actions   "rs_cm.index","rs_cm.show"
+end
+
+parameter "param_email" do
+  type "list"
+  label "Email addresses of the recipients you wish to notify"
+end
+
+auth "svm", type: "api_key" do
+  key cred("SVM_API_KEY")
+  location "header"
+  field "Authorization"
+  type "Token"
+end
+
+auth "rs", type: "rightscale"
+
+resources "clouds", type: "rs_cm.clouds"
+
+resources "instances", type: "rs_cm.instances" do
+  iterate @clouds
+  cloud_href href(iter_item)
+  tags "svm:host=*"
+end
+
+datasource "svm_hosts" do
+  request do
+    auth $svm
+    verb "GET"
+    host "api.app.flexerasoftware.com"
+    path "/hosts/api/inventory"
+    query "is_insecure" "1"
+  end
+end
+
+datasource "crossref_instances" do
+  run_script $crossref_advisories, @instances, $svm_hosts, rs_project_id, rs_cm_host
+end
+
+
+script "crossref_advisories", type: "javascript" do
+  parameters "instances", "svm_hosts", "rs_project_id", "rs_cm_host"
+  result "advisories"
+code <<-EOS
+var vuln_by_host = {};
+for (var i = 0; i < svm_hosts.length; i++) {
+}
+
+var instance_by_host = {};
+for (var i = 0; i < instances.length; i++) {
+}
+
+var advisories=[];
+EOS
+end
+
+escalation "send_email" do
+  email $param_email
+end
+
+policy "detect_advisories" do
+  validate_each $advisories do
+    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} Instances with advisories"
+    detail_template <<-EOS
+# Instances with advisories software
+
+| Instance ID | Instance Name | TBD | TBD |
+| ----------- | ------------- | --- | --- |   
+{{ range data -}}
+| {{ .resource_uid }} | {{.name }} | | |
+{{ end -}}
+EOS
+
+    escalate $send_email
+    check true
+  end
+end
