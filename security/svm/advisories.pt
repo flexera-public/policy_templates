@@ -1,4 +1,4 @@
-name "SVM detect vulnerabilities"
+name "SVM detect advisories"
 rs_pt_ver 20180301
 type "policy"
 short_description "A policy which polls SVM and matches advisories vs. instances."
@@ -41,6 +41,7 @@ datasource "instances" do
   field "name",        val(iter_item, "name")
   field "state",       val(iter_item, "state")
   field "tags",        val(iter_item, "tags")
+  field "cloud_href",  jmes_path(iter_item, "links[?rel=='cloud'].href | [0]")
 end
 
 datasource "svm_hosts" do
@@ -73,26 +74,31 @@ script "crossref_advisories", type: "javascript" do
   parameters "instances", "svm_hosts", "rs_project_id", "rs_cm_host"
   result "advisories"
 code <<-EOS
-var vuln_by_host = {};
+var advisory_by_host = {};
 for (var i = 0; i < svm_hosts.length; i++) {
   host = svm_hosts[i];
-  vuln_by_host[host.name] = host;
+  advisory_by_host[host.name] = host;
 }
 
-var instance_by_host = {};
+var advisories = [];
 for (var i = 0; i < instances.length; i++) {
   instance = instances[i]
   for (var j = 0; j < instance.tags.length; j++) {
     matches = instance.tags[j].match(/svm:hostname=(.*)/)
     if (matches) {
       host = matches[1]
-      instance_by_host[host] = instance
+      if (advisory_by_host[host]) {
+        el = advisory_by_host[host]
+        el.tags = instance.tags
+        el.instance_id = instance.id
+        el.instance_name = instance.name
+        el.hostname = host
+        el.cloud_href = instance.cloud_href
+        advisories.push(el)
+      }
     }
   }
 }
-
-
-var advisories=[];
 EOS
 end
 
@@ -106,14 +112,14 @@ policy "detect_advisories" do
     detail_template <<-EOS
 # Instances with advisories software
 
-| Instance ID | Instance Name | TBD | TBD |
+| Instance ID | Instance Name | Host ID | EOL Installations | Insecure Installations
 | ----------- | ------------- | --- | --- |   
 {{ range data -}}
-| {{ .resource_uid }} | {{.name }} | | |
+| {{ .instance_id }} | {{ .instance_name }} | {{ .host_id }} | {{ .eol_installations }} | {{ .insecure_installations }} |
 {{ end -}}
 EOS
 
     escalate $send_email
-    check true
+    check logic_and( lt(val(item, "eol_installations"), 1), lt(val(item, "insecure_installations"), 1) )
   end
 end
