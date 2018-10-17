@@ -30,7 +30,17 @@ resources "clouds", type: "rs_cm.clouds"
 resources "instances", type: "rs_cm.instances" do
   iterate @clouds
   cloud_href href(iter_item)
-  tags "svm:host=*"
+  tags "svm:hostname=*"
+end
+
+# include fields in your datasource
+datasource "instances" do
+  iterate @instances
+  field "href",        href(iter_item)
+  field "id",          val(iter_item, "resource_uid")
+  field "name",        val(iter_item, "name")
+  field "state",       val(iter_item, "state")
+  field "tags",        val(iter_item, "tags")
 end
 
 datasource "svm_hosts" do
@@ -56,9 +66,8 @@ datasource "svm_hosts" do
 end
 
 datasource "crossref_instances" do
-  run_script $crossref_advisories, @instances, $svm_hosts, rs_project_id, rs_cm_host
+  run_script $crossref_advisories, $instances, $svm_hosts, rs_project_id, rs_cm_host
 end
-
 
 script "crossref_advisories", type: "javascript" do
   parameters "instances", "svm_hosts", "rs_project_id", "rs_cm_host"
@@ -66,11 +75,22 @@ script "crossref_advisories", type: "javascript" do
 code <<-EOS
 var vuln_by_host = {};
 for (var i = 0; i < svm_hosts.length; i++) {
+  host = svm_hosts[i];
+  vuln_by_host[host.name] = host;
 }
 
 var instance_by_host = {};
 for (var i = 0; i < instances.length; i++) {
+  instance = instances[i]
+  for (var j = 0; j < instance.tags.length; j++) {
+    matches = instance.tags[j].match(/svm:hostname=(.*)/)
+    if (matches) {
+      host = matches[1]
+      instance_by_host[host] = instance
+    }
+  }
 }
+
 
 var advisories=[];
 EOS
