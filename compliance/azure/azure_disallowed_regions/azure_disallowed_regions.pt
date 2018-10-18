@@ -1,0 +1,168 @@
+name "Azure - Disallowed Regions"
+rs_pt_ver 20180301
+type "policy"
+short_description "A policy that discovers all Azure resources that have been provisioned in unapproved regions"
+long_description "Version: 1.0"
+severity "medium"
+category "Compliance"
+
+parameter "param_email" do
+  type "list"
+  label "Email addresses of the recipients you wish to notify"
+end
+
+parameter "param_azure_sub" do
+  type "string"
+  label "Azure Subscription ID"
+  category "Azure"
+end
+
+parameter "param_approved_region" do
+  type "list"
+  label "Approved Azure Region"
+  category "Azure"
+end
+
+auth "azure_auth", type: "oauth2" do
+  token_url "https://login.microsoftonline.com/AZURE_TENANT_ID/oauth2/token"
+  grant type: "client_credentials" do
+    client_id cred("AZURE_APPLICATION_ID")
+    client_secret cred("AZURE_APPLICATION_KEY")
+    additional_params do {
+      "resource" => "https://management.azure.com/"
+    } end
+  end
+end
+
+pagination "azure_pagination" do
+  get_page_marker do
+    body_path "nextLink"
+  end
+  set_page_marker do
+    uri true
+  end
+end
+
+datasource "azure_resources" do
+  request do
+    auth $azure_auth
+    pagination $azure_pagination
+    host "management.azure.com"
+    path join(["/subscriptions/", $param_azure_sub, "/resources"])
+    query "api-version","2018-02-01"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "value[*]") do
+      field "id", jmes_path(col_item,"id")
+      field "region", jmes_path(col_item,"location")
+      field "name", jmes_path(col_item,"name")
+    end
+  end
+end
+
+datasource "filtered_resources" do
+  run_script $js_filter_resources, $azure_resources, $param_approved_region
+end
+
+script "js_filter_resources", type: "javascript" do
+  parameters "azure_resources", "param_approved_region"
+  result "result"
+  code <<-EOS
+    var result = [];
+
+    // Iterate through all resources
+    _.each(azure_resources, function(ar){
+      console.log(ar.name)
+      if (_.contains(param_approved_region, ar.region)) {
+
+      } else {
+        result.push({
+          id: ar["id"],
+          region: ar["region"],
+          name: ar["name"]
+        })
+      }
+    })
+
+EOS
+end
+
+policy "azure_resource_policy" do
+  validate $filtered_resources do
+    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} Azure Resources out of compliance"
+    detail_template <<-EOS
+# Azure Resources out of compliance
+| Resource Name | Azure Region | Resource ID |
+| ----------------------- | ----------------------- | ------------- |
+{{ range data -}}
+| {{.name}} | {{.region}} | {{.id}} |
+{{ end -}}
+EOS
+    escalate $email
+    escalate $delete_resources
+    check eq(size(data), 0)
+  end
+end
+
+escalation "email" do
+   email $param_email
+end
+
+escalation "delete_resources" do
+  request_approval  do
+    label "Approve Resource Deletion"
+    description "Approve escalation to run RightScale Cloud Workflow to destroy Azure resources in disallowed regions"
+    parameter "approval_reason" do
+      type "string"
+      label "Reason for Approval"
+      description "Explain why you are approving the action"
+    end
+  end
+  run "delete_resources", data
+end
+
+define delete_resources($data) return $response do
+  call get_access_token() retrieve $access_token
+
+  foreach $item in $data do
+    #sub on_error: skip do
+      $response = http_request(
+        verb: "delete",
+        host: "management.azure.com",
+        https: true,
+        href: $item["id"],
+        query_strings: {
+          "api-version": "2018-02-01"
+        },
+        headers: {
+          "cache-control": "no-cache",
+          "content-type": "application/json",
+          "authorization": "Bearer " + $access_token
+        }
+      )
+    #end
+  end
+end
+
+define get_access_token() return $access_token do
+
+  $client_id = cred("AZURE_APPLICATION_ID")
+  $client_secret = cred("AZURE_APPLICATION_KEY")
+
+  $body_string = "grant_type=client_credentials&resource=https://management.core.windows.net/&client_id="+$client_id+"&client_secret="+$client_secret
+
+  $auth_response = http_post(
+    url: "https://login.microsoftonline.com/AZURE_TENANT_ID/oauth2/token?api-version=1.0",
+    headers : {
+      "cache-control":"no-cache",
+      "content-type":"application/x-www-form-urlencoded"
+    },
+    body:$body_string
+  )
+
+  $auth_response_body = $auth_response["body"]
+  $access_token = $auth_response_body["access_token"]
+
+end
