@@ -1,13 +1,13 @@
 name "SVM detect advisories"
 rs_pt_ver 20180301
 type "policy"
-short_description "A policy which polls SVM and matches advisories vs. instances."
+short_description "A policy which polls SVM to find instances with insecure and end-of-lifed software.."
 long_description "Version: 0.1"
 severity "medium"
 category "Security"
 
 permission "general_permissions" do
-  resources "rs_cm.clouds", "rs_cm.security_groups", "rs_cm.security_group_rules"
+  resources "rs_cm.clouds", "rs_cm.instances"
   actions   "rs_cm.index","rs_cm.show"
 end
 
@@ -42,6 +42,7 @@ datasource "instances" do
   field "state",       val(iter_item, "state")
   field "tags",        val(iter_item, "tags")
   field "cloud_href",  jmes_path(iter_item, "links[?rel=='cloud'].href | [0]")
+  field "public_ip",   first(val(iter_item,"public_ip_addresses"))
 end
 
 datasource "svm_hosts" do
@@ -50,7 +51,6 @@ datasource "svm_hosts" do
     verb "GET"
     host "api.app.flexerasoftware.com"
     path "/api/inventory/hosts"
-    query "is_insecure", "1"
   end
   result do
     encoding "json"
@@ -67,10 +67,10 @@ datasource "svm_hosts" do
 end
 
 datasource "crossref_instances" do
-  run_script $crossref_advisories, $instances, $svm_hosts, rs_project_id, rs_cm_host
+  run_script $do_crossref, $instances, $svm_hosts, rs_project_id, rs_cm_host
 end
 
-script "crossref_advisories", type: "javascript" do
+script "do_crossref", type: "javascript" do
   parameters "instances", "svm_hosts", "rs_project_id", "rs_cm_host"
   result "advisories"
 code <<-EOS
@@ -92,6 +92,7 @@ for (var i = 0; i < instances.length; i++) {
         el.tags = instance.tags
         el.instance_id = instance.id
         el.instance_name = instance.name
+        el.public_ip = instance.public_ip
         el.hostname = host
         el.cloud_href = instance.cloud_href
         advisories.push(el)
@@ -102,25 +103,93 @@ for (var i = 0; i < instances.length; i++) {
 EOS
 end
 
+datasource "insecure_instances" do
+  iterate $crossref_instances
+  request do
+    auth $svm
+    verb "GET"
+    host "api.app.flexerasoftware.com"
+    path join(["/api/inventory/hosts/", val(iter_item, "host_id"),"/installations"], "")
+    query "is_insecure", "1"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "results") do
+      field "product_names", jmes_path(col_item, "product_full_version.product_version.name")
+      field "instance_id",  val(iter_item, "instance_id")
+      field "host_id",  val(iter_item, "host_id")
+      field "instance_name", val(iter_item, "instance_name")
+      field "unique_id", val(iter_item, "unique_id")
+      field "public_ip", val(iter_item, "public_ip")
+      field "inventory_system", val(iter_item, "inventory_system")
+      field "insecure_installations", val(iter_item, "insecure_installations")
+      field "eol_installations", val(iter_item, "eol_installations")
+    end
+  end
+end
+
+datasource "eol_instances" do
+  iterate $crossref_instances
+  request do
+    auth $svm
+    verb "GET"
+    host "api.app.flexerasoftware.com"
+    path join(["/api/inventory/hosts/", val(iter_item, "host_id"),"/installations"], "")
+    query "is_eol", "1"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "results") do
+      field "product_names", jmes_path(col_item, "product_full_version.product_version.name")
+      field "instance_id",  val(iter_item, "instance_id")
+      field "host_id",  val(iter_item, "host_id")
+      field "instance_name", val(iter_item, "instance_name")
+      field "unique_id", val(iter_item, "unique_id")
+      field "public_ip", val(iter_item, "public_ip")
+      field "inventory_system", val(iter_item, "inventory_system")
+      field "insecure_installations", val(iter_item, "insecure_installations")
+      field "eol_installations", val(iter_item, "eol_installations")
+    end
+  end
+end
+
+
 escalation "send_email" do
   email $param_email
 end
 
 policy "detect_advisories" do
-  validate_each $crossref_instances do
+  validate_each $insecure_instances do
     summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} Instances with advisories"
     detail_template <<-EOS
-# Instances with advisories software
+# Instances with advisories
 
-| Instance ID | Instance Name | Host ID | EOL Installations | Insecure Installations |
-| ----------- | ------------- | ------- | ----------------- | -----------------------|   
+| Instance ID | Instance Name | Public IP | Insecure Products |
+| ----------- | ------------- | --------- | ----------------- |
 {{ range data -}}
-| {{ .instance_id }} | {{ .instance_name }} | {{ .host_id }} | {{ .eol_installations }} | {{ .insecure_installations }} |
+| {{ .instance_id }} | {{ .instance_name }} | {{ .public_ip }} | {{ .product_names }} |
 {{ end -}}
 
 EOS
 
     escalate $send_email
-    check logic_and( lt(val(item, "eol_installations"), 1), lt(val(item, "insecure_installations"), 1) )
+    check lt(val(item, "insecure_installations"), 1)
+  end
+
+  validate_each $eol_instances do
+    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} Instances with advisories"
+    detail_template <<-EOS
+# Instances with advisories
+
+| Instance ID | Instance Name | Public IP | EOL Products |
+| ----------- | ------------- | ----------| -------------|
+{{ range data -}}
+| {{ .instance_id }} | {{ .instance_name }} | {{ .public_ip }} | {{ .product_names }} |
+{{ end -}}
+
+EOS
+
+    escalate $send_email
+    check lt(val(item, "eol_installations"), 1)
   end
 end
