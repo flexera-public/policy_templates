@@ -10,6 +10,7 @@ Please contact sales@rightscale.com to learn more.
 - [AWS Reserved Instance Expiration](./cost/aws/reserved_instances/expiration/)
 - [AWS Reserved Instances Utilization](./cost/aws/reserved_instances/utilization/)
 - [AWS Reserved Instance Reservation Coverage](./cost/aws/reserved_instances/coverage/)
+- [AWS Reserved Instances Report by Billing Center](./cost/aws/reserved_instances/report_by_bc)
 - [Downsize Instances](./cost/downsize_instance/)
 - [Unattached Volumes Policy](./cost/volumes/unattached_volumes/)
 - [Old Snapshots](./cost/volumes/old_snapshots/)
@@ -24,6 +25,7 @@ Please contact sales@rightscale.com to learn more.
 
 ### Compliance
 - [Untagged Resources](./compliance/tags/tag_checker)
+- [Azure Disallowed Regions](./compliance/azure/azure_disallowed_regions)
 
 ### Operational
 - [AWS Cloud Credentials Rotation Policy](./operational/cloud_credentials/aws)
