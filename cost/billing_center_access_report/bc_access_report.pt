@@ -1,0 +1,98 @@
+name "Billing Center Access Report"
+rs_pt_ver 20180301
+type "policy"
+short_description "This policy generates an access report by Billing Center. See the [README]() and [docs.rightscale.com/policies](http://docs.rightscale.com/policies/) to learn more."
+long_description "Version: 1.0"
+severity "low"
+category "Cost"
+
+parameter "param_email" do
+  label "Email addresses of the recipients you wish to notify"
+  type "list"
+end
+
+parameter "param_bc" do
+  label "Billing Center Name"
+  type "string"
+end
+
+auth "auth_rs", type: "rightscale"
+
+datasource "billing_centers" do
+  request do
+    auth $auth_rs
+    host rs_optima_host
+    path join(["/analytics/orgs/",rs_org_id,"/billing_centers"])
+    header "Api-Version", "1.0"
+    header "User-Agent", "RS Policies"
+    query "view", "allocation_table"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response,"[*]") do
+      field "href", jmes_path(col_item,"href")
+      field "id", jmes_path(col_item,"id")
+      field "name", jmes_path(col_item,"name")
+      field "parent_id", jmes_path(col_item,"parent_id")
+      field "ancestor_ids", jmes_path(col_item,"ancestor_ids")
+      field "allocation_table", jmes_path(col_item,"allocation_table")
+    end
+  end
+end
+
+datasource "real_billing_centers" do
+  run_script $remove_unallocated_bcs, $billing_centers
+end
+
+script "remove_unallocated_bcs", type: "javascript" do
+  parameters "billing_centers"
+  result "filtered_billing_centers"
+  code <<-EOS
+  var filtered_billing_centers =
+    _.reject(billing_centers, function(bc){ return bc.name === "Unallocated" });
+EOS
+end
+
+datasource "bc_users" do
+  iterate $real_billing_centers
+  request do
+    auth $auth_rs
+    host rs_optima_host
+    path join(["/analytics/orgs/",rs_org_id,"/billing_centers/",val(iter_item, "id"),"/access_rules/report"])
+    header "Api-Version", "1.0"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response,"[*]") do
+      field "bc_name", val(iter_item, "name")
+      field "inherited", jmes_path(col_item,"access_rules[*].inherited")
+      field "user_href", jmes_path(col_item,"subject.href")
+      field "user_email", jmes_path(col_item,"subject.email")
+      field "user_name", jmes_path(col_item,"subject.name")
+    end
+  end
+end
+
+escalation "report_bc_users" do
+  email $param_email
+end
+
+policy "access_report_by_bc" do
+  validate_each $bc_users do
+    summary_template "Billing Center Access Report"
+    detail_template <<-EOS
+# Billing Center Access Report
+
+| Billing Center Name | User Name | Email | User Href | Inherited? |
+| ------ | ------ | ------ | ------ | ------ |
+{{ range data -}}
+| {{ .bc_name }} | {{.user_name}} | {{ .user_email }} | {{ .user_href }} | {{ .inherited }} |
+{{ end -}}
+
+EOS
+
+    escalate $report_bc_users
+    check ne(val(item, "bc_name"), $param_bc)
+  end
+end
