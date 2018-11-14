@@ -1,0 +1,219 @@
+name "Billing Center Access Report"
+rs_pt_ver 20180301
+type "policy"
+short_description "This policy generates an access report by Billing Center. See the [README](https://github.com/rightscale/policy_templates/tree/master/cost/billing_center_access_report/) and [docs.rightscale.com/policies](http://docs.rightscale.com/policies/) to learn more."
+long_description "Version: 1.0"
+severity "low"
+category "Cost"
+
+parameter "param_email" do
+  label "Email addresses of the recipients you wish to notify"
+  type "list"
+end
+
+parameter "param_all_bcs" do
+  label "All Billing Centers?"
+  type "string"
+  allowed_values "true","false"
+  default "true"
+end
+
+parameter "param_bc" do
+  label "Billing Center Name"
+  description "If not reporting on all Billing Centers, provide the name of a specific Billing Center"
+  type "string"
+end
+
+auth "auth_rs", type: "rightscale"
+
+datasource "billing_centers" do
+  request do
+    auth $auth_rs
+    host rs_optima_host
+    path join(["/analytics/orgs/",rs_org_id,"/billing_centers"])
+    header "Api-Version", "1.0"
+    header "User-Agent", "RS Policies"
+    query "view", "allocation_table"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response,"[*]") do
+      field "href", jmes_path(col_item,"href")
+      field "id", jmes_path(col_item,"id")
+      field "name", jmes_path(col_item,"name")
+      field "parent_id", jmes_path(col_item,"parent_id")
+      field "ancestor_ids", jmes_path(col_item,"ancestor_ids")
+      field "allocation_table", jmes_path(col_item,"allocation_table")
+    end
+  end
+end
+
+datasource "real_billing_centers" do
+  run_script $remove_unallocated_bcs, $billing_centers
+end
+
+script "remove_unallocated_bcs", type: "javascript" do
+  parameters "billing_centers"
+  result "filtered_billing_centers"
+  code <<-EOS
+  var filtered_billing_centers =
+    _.reject(billing_centers, function(bc){ return bc.name === "Unallocated" });
+EOS
+end
+
+datasource "bc_users" do
+  iterate $real_billing_centers
+  request do
+    auth $auth_rs
+    host rs_optima_host
+    path join(["/analytics/orgs/",rs_org_id,"/billing_centers/",val(iter_item, "id"),"/access_rules/report"])
+    header "Api-Version", "1.0"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response,"[*]") do
+      field "bc_name", val(iter_item, "name")
+      field "inherited", jmes_path(col_item,"access_rules[0].inherited")
+      field "user_href", jmes_path(col_item,"subject.href")
+      field "user_email", jmes_path(col_item,"subject.email")
+      field "user_name", jmes_path(col_item,"subject.name")
+    end
+  end
+end
+
+datasource "filtered_bcs" do
+  run_script $filter_bcs, $bc_users, $param_all_bcs, $param_bc
+end
+
+script "filter_bcs", type: "javascript" do
+  parameters "bc_users","param_all_bcs","param_bc"
+  result "filtered_bc_users"
+  code <<-EOS
+  if (param_all_bcs == "true") {
+    var filtered_bc_users = bc_users;
+  } else {
+    var filtered_bc_users =
+      _.reject(bc_users, function(bcu){ return bcu.bc_name != param_bc });
+  }
+EOS
+end
+
+datasource "id_groups" do
+  run_script $identify_groups, $filtered_bcs
+end
+
+script "identify_groups", type: "javascript" do
+  parameters "bcs"
+  result "groups"
+  code <<-EOS
+  var groups = [];
+  // Iterate thru all users & groups
+  _.each(bcs, function(bc){
+    if (bc.user_href.match(/(groups)/g)){
+      groups.push({
+        bc_name: bc["bc_name"],
+        inherited: bc["inherited"],
+        group_name: bc["user_name"],
+        group_href: bc["user_href"]
+      })
+    }
+  })
+EOS
+end
+
+datasource "users_in_groups" do
+  iterate $id_groups
+  request do
+    auth $auth_rs
+    host "governance.rightscale.com"
+    path val(iter_item, "group_href")
+    header "X-Api-Version", "2.0"
+    header "User-Agent", "RS Policies"
+    query "view", "extended"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response,"users[*]") do
+      field "bc_name", val(iter_item, "bc_name")
+      field "inherited", val(iter_item, "inherited")
+      field "user_href", jmes_path(col_item,"href")
+      field "user_email", jmes_path(col_item,"email")
+      field "first_name", jmes_path(col_item,"first_name")
+      field "last_name", jmes_path(col_item,"last_name")
+      field "group_name", val(iter_item, "group_name")
+      field "group_href", val(iter_item, "group_href")
+    end
+  end
+end
+
+datasource "final_users" do
+  run_script $format_users, $users_in_groups, $filtered_bcs, $real_billing_centers
+end
+
+script "format_users", type: "javascript" do
+  parameters "group_users", "all_users","billing_centers"
+  result "users"
+  code <<-EOS
+  var users = [];
+  // Remove Groups from Report
+  var orig_users =
+    _.reject(all_users, function(user){ return user.user_href.match(/(groups)/g)});
+
+  _.each(billing_centers, function(bc){
+    var billing_center_name = bc.name
+
+    _.each(orig_users, function(user){
+      if (user.bc_name == billing_center_name){
+        users.push({
+          bc_name: user["bc_name"],
+          inherited: user["inherited"],
+          group_name: " ",
+          group_href: " ",
+          user_href: user["user_href"],
+          user_email: user["user_email"],
+          user_name: user["user_name"]
+        })
+      }
+    })
+
+    _.each(group_users, function(user){
+      if (user.bc_name == billing_center_name){
+        users.push({
+          bc_name: user["bc_name"],
+          inherited: user["inherited"],
+          group_name: user["group_name"],
+          group_href: user["group_href"],
+          user_href: user["user_href"],
+          user_email: user["user_email"],
+          user_name: user["first_name"] + " " + user["last_name"]
+        })
+      }
+    })
+  })
+
+EOS
+end
+
+escalation "report_bc_users" do
+  email $param_email
+end
+
+policy "access_report_by_bc" do
+  validate_each $final_users do
+    summary_template "Billing Center Access Report"
+    detail_template <<-EOS
+# Billing Center Access Report
+
+| Billing Center Name | User Name | Email | User Href | Inherited? | Group Name | Group Href |
+| ------ | ------ | ------ | ------ | ------ | ------ | ------ |
+{{ range data -}}
+| {{ .bc_name }} | {{.user_name}} | {{ .user_email }} | {{ .user_href }} | {{ .inherited }} | {{ .group_name }} | {{ .group_href }} |
+{{ end -}}
+
+EOS
+
+    escalate $report_bc_users
+    check eq(val(item, "inherited"), "force_incident_flag")
+  end
+end

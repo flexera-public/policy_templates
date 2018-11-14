@@ -15,6 +15,7 @@ Please contact sales@rightscale.com to learn more.
 - [Unattached Volumes Policy](./cost/volumes/unattached_volumes/)
 - [Old Snapshots](./cost/volumes/old_snapshots/)
 - [Schedule Instances](./cost/schedule_instances)
+- [Billing Center Access Report](./cost/billing_center_access_report/)
 
 ### Security
 - [Security Group: ICMP Enabled](./security/security_groups/icmp_enabled/)
