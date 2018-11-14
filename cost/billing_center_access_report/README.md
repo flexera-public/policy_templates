@@ -2,7 +2,7 @@
 
 ### What it does
 
-This Policy Template accepts an input that defines which Azure regions are allowed by your compliance policies. Any Azure resource that exists outside of your approved regions will be raised in an Incident. Incidents will escalate to an email notification and will trigger an approval workflow prior to executing Cloud Workflow to delete the resources.
+This Policy Template can target either all Billing Centers in an Organization or target a specific Billing Center.  Child Billing Centers are supported as well.  The resulting incident is a report of all users that have access to the target Billing Center(s).  If RightScale Groups have been granted access to a Billing Center, the report will indicate which Group has delegated access to a particular user.
 
 ### Pre-reqs
 
