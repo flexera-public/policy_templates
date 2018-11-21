@@ -1,4 +1,4 @@
-## Expired Reserved Instances
+## Expired Reserved Instances Policy Template
 
 ### What it does
 

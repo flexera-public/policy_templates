@@ -1,8 +1,8 @@
-name "Old Snapshots Policy"
+name "Discover Old Snapshots"
 rs_pt_ver 20180301
 type "policy"
-short_description "A policy that sends email notifications when a snapshots older then a certain timeframe are fouond. See the [README](https://github.com/rightscale/policy_templates/tree/master/cost/volumes/old_snapshots) and [docs.rightscale.com/policies](http://docs.rightscale.com/policies/) to learn more."
-long_description "Version: 1.0"
+short_description "A policy that sends email notifications when snapshots older then a certain timeframe are found. See the [README](https://github.com/rightscale/policy_templates/tree/master/cost/volumes/old_snapshots) and [docs.rightscale.com/policies](http://docs.rightscale.com/policies/) to learn more."
+long_description "Version: 1.5"
 severity "high"
 category "Cost"
 
@@ -23,7 +23,7 @@ parameter "param_age_days" do
   label "Number of days old snapshot to delete (e.g.: 30,60,90,180,365)"
 end
 
-parameter "param_escalate_to" do
+parameter "param_email" do
   type "list"
   label "Email addresses of the recipients you wish to notify"
 end
@@ -51,17 +51,17 @@ datasource "ds_volume_snapshots" do
   field "updated_at", val(iter_item, "updated_at")
 end
 
-escalation "alert" do
-  email $param_escalate_to
+escalation "report_old_snapshots" do
+  email $param_email
 end
 
-resolution "resolution" do
-  email $param_escalate_to
+resolution "report_old_snapshots_resolution" do
+  email $param_email
 end
 
 policy "pol_snapshots" do
   validate_each $ds_volume_snapshots do
-    summary_template "{{len data}} Snapshots that can be deleted, that are older than {{parameters.param_age_days}} days. "
+    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{len data}} Snapshots that can be deleted, that are older than {{parameters.param_age_days}} days. "
     detail_template <<-EOS
 # {{len data}} Snapshots that can be deleted, that are older than {{parameters.param_age_days}} days.
 
@@ -72,8 +72,8 @@ policy "pol_snapshots" do
 {{ end -}}
 EOS
 
-    escalate $alert
-    check gt(dec(to_d(val(item, "updated_at")), now), prod($param_age_days, 24*3600))
-    resolve $resolution
+    escalate $report_old_snapshots
+    check lt(dec(now,to_d(val(item, "updated_at"))), prod($param_age_days, 24*3600))
+    resolve $report_old_snapshots_resolution
   end
 end

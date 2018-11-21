@@ -2,7 +2,7 @@ name "Reserved Instances Utilization"
 rs_pt_ver 20180301
 type "policy"
 short_description "A policy that sends email notifications when utilization falls below a threshold. See the [README](https://github.com/rightscale/policy_templates/tree/master/cost/aws/reserved_instances/utilization) and [docs.rightscale.com/policies](http://docs.rightscale.com/policies/) to learn more."
-long_description "Version: 1.4"
+long_description "Version: 1.7"
 severity "high"
 category "Cost"
 
@@ -18,7 +18,7 @@ end
 
 parameter "param_utilization" do
   category "RI"
-  label "RI Utilization threshold"
+  label "Show RI's with utilization below this value"
   type "number"
 end
 
@@ -29,10 +29,10 @@ end
 
 auth "rs", type: "rightscale"
 
-datasource "reservations" do
+datasource "ds_reservations" do
   request do
     auth $rs
-    host "optima.rightscale.com"
+    host rs_optima_host
     path join(["/api/reco/orgs/",rs_org_id,"/aws_reserved_instances"])
   end
   result do
@@ -50,25 +50,52 @@ datasource "reservations" do
   end
 end
 
-escalation "alert" do
+datasource "ds_reservations_rounded" do
+  run_script $js_round_utilization, $ds_reservations
+end
+
+script "js_round_utilization", type: "javascript" do
+  parameters "reservations"
+  result "modified_reservations"
+  code <<-EOS
+  // This is the list of filtered volumes.
+  var modified_reservations = [];
+  for (var i = 0; i < reservations.length; i++) {
+    modified_reservations.push(
+      {
+        utilization_percentage: Math.round(parseFloat(reservations[i]["utilization_percentage"])),
+        end_datetime: reservations[i]["end_datetime"],
+        start_datetime: reservations[i]["start_datetime"],
+        account_name: reservations[i]["account_name"],
+        account_id: reservations[i]["account_id"],
+        region: reservations[i]["region"],
+        instance_type: reservations[i]["instance_type"],
+        instance_count: reservations[i]["instance_count"]
+      }
+    )
+  }
+EOS
+end
+
+escalation "report_reserved_instances_utilization" do
   email $param_email
 end
 
 policy "ri_utilization" do
-  validate_each $reservations do
-    summary_template "Reserved Instance Utilization"
+  validate_each $ds_reservations_rounded do
+    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): Reserved Instance Utilization"
     detail_template <<-EOS
 # Reserved Instance Utilization
 
-| Account | Region | Instance Type | Instance Count | End Time |
-| ------- | ------ | ------------- | -------------- | -------- |
+| Account | Region | Instance Type | Instance Count | Utilization Percentage |
+| ------- | ------ | ------------- | -------------- | ---------------------- |
 {{ range data -}}
-| {{ .account_name }}({{ .account_id }}) | {{.region}} | {{.instance_type}} | {{.instance_count}} | {{.utilization_percentage}} |
+| {{ .account_name }}({{ .account_id }}) | {{.region}} | {{.instance_type}} | {{.instance_count}} | {{ .utilization_percentage }}% |
 {{ end -}}
 
 EOS
 
-    escalate $alert
+    escalate $report_reserved_instances_utilization
     check gt(to_n(val(item,"utilization_percentage")),$param_utilization)
   end
 end

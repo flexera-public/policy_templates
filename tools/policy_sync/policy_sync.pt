@@ -1,12 +1,12 @@
-name "Policy Template Synchronization Policy Template"
+name "Policy Template Synchronization"
 rs_pt_ver 20180301
 type "policy"
 short_description "A policy to manage policy template. See the [README](https://github.com/rightscale/policy_templates/tree/master/tools/policy_sync/) and [docs.rightscale.com/policies](http://docs.rightscale.com/policies/) to learn more."
-long_description "Version: 1.1"
+long_description "Version: 1.6"
 severity "low"
 category "Operational"
 
-parameter "escalate_to" do
+parameter "param_email" do
   type "list"
   label "Email addresses of the recipients you wish to notify"
   min_length 1
@@ -18,11 +18,12 @@ parameter "param_alert_options" do
   allowed_values "Email", "Email and Upload"
 end
 
-parameter "param_governance_host" do
-  type "string"
-  label "Governance Host"
-  description "Governance Host, Hostname will match your shard: us-3.rightscale.com = governance-3.rightscale.com"
-  allowed_values "governance-3.rightscale.com", "governance-4.rightscale.com", "governance-10.rightscale.com"
+parameter "param_publish" do
+  type "number"
+  label "Publish Template"
+  description "Publish Template, 0:False, 1:True"
+  default 0
+  allowed_values 0,1
 end
 
 parameter "force_upgrade" do
@@ -38,8 +39,8 @@ auth "auth_rs", type: "rightscale"
 datasource "ds_active_policy_list" do
   request do
     verb "GET"
-    host "raw.githubusercontent.com"
-    path "/rightscale/policy_templates/master/active-policy-list.json"
+    host "s3.amazonaws.com"
+    path "/rs-policysync-tool/active-policy-list.json"
     header "User-Agent", "RS Policies"
   end
   result do
@@ -47,6 +48,7 @@ datasource "ds_active_policy_list" do
       field "name", jmes_path(col_item, "name")
       field "file_name", jmes_path(col_item, "file_name")
       field "version", jmes_path(col_item, "version")
+      field "change_log", jmes_path(col_item,"change_log")
     end
   end
 end
@@ -55,7 +57,7 @@ datasource "ds_current_policy_template_list" do
   request do
     auth $auth_rs
     verb "GET"
-    host $param_governance_host
+    host rs_governance_host
     path join(["/api/governance/projects/",rs_project_id,"/policy_templates"])
     header "Api-Version", "1.0"
     query "view", "extended"
@@ -79,6 +81,7 @@ script "js_combine_policy_lists", type: "javascript" do
   code <<-EOS
   var policy_list = [];
   var old_policy_list = {};
+  var github_raw_url = 'https://raw.githubusercontent.com/rightscale/policy_templates/master/';
   for (var index = 0; index < current_policy_list.length; index++) {
     var current_policy = current_policy_list[index];
     old_policy_list[current_policy.name] = current_policy;
@@ -117,27 +120,30 @@ script "js_combine_policy_lists", type: "javascript" do
       account_version: account_version,
       account_policy_template: account_policy_template,
       version_upgradeable: version_upgradeable,
-      policy_id: policy_id
+      policy_id: policy_id,
+      change_log: github_raw_url.concat(active_policy.change_log)
     })
   }
 EOS
 end
 
-escalation "upload" do
-  run "upload_template", data, rs_project_id, $param_alert_options, $param_governance_host
+escalation "upload_new_policy_templates" do
+  run "upload_template", data, rs_project_id, $param_alert_options, rs_governance_host, $param_publish, rs_org_id
 end
 
-escalation "alert" do
-  email $escalate_to
+escalation "report_policy_templates_update" do
+  email $param_email
 end
 
-define upload_template($data,$project_id,$param_alert_options,$param_governance_host) return $url_array,$response_array do
+define upload_template($data,$project_id,$param_alert_options,$param_governance_host,$param_publish,$rs_org_id) return $url_array,$response_array do
+
  if $param_alert_options != "Email"
     $url_array = []
     $response_array = []
     foreach $item in $data do
       $url = "https://raw.githubusercontent.com/rightscale/policy_templates/master/"+to_s($item["file_name"])
       $url_array << $url
+
       $policy_request = http_get(
        insecure: false,
        url: $url
@@ -154,6 +160,12 @@ define upload_template($data,$project_id,$param_alert_options,$param_governance_
         body: { "source": $policy_source, filename: $file_name }
       )
       $response_array << $create_response
+      $policy_template_href = ""
+      $policy_template_name = ""
+      if $create_response["code"] != 409
+        $policy_template_name = $create_response["body"]["name"]
+        $policy_template_href = $create_response["body"]["href"]
+      end
       if $create_response["code"] == 409
         $update_response = http_request(
           verb: "put",
@@ -164,6 +176,30 @@ define upload_template($data,$project_id,$param_alert_options,$param_governance_
           body: { "source": $policy_source, filename: $file_name }
         )
         $response_array << $update_response
+        $policy_template_href = $update_response["body"]["href"]
+        $policy_template_name = $update_response["body"]["name"]
+      end
+      if ( $param_publish == 1 ) && ( $item["name"] != "Policy Template Synchronization" )
+        $publish_response = http_request(
+          verb: "post",
+          https: true,
+          host: $param_governance_host,
+          href: join(["/api/governance/orgs/",$rs_org_id,"/published_templates"]),
+          headers: { "Api-Version": "1.0" },
+          body: { "template_href": $policy_template_href }
+        )
+        $response_array << $publish_response
+        if $publish_response["code"] == 409
+          $upublish_response = http_request(
+            verb: "put",
+            https: true,
+            host: $param_governance_host,
+            href: $publish_response["headers"]["Location"],
+            headers: { "Api-Version": "1.0" },
+            body: { "template_href": $policy_template_href }
+          )
+          $response_array << $upublish_response
+        end
       end
     end
   end
@@ -171,20 +207,20 @@ end
 
 policy "upload_policy_templates" do
   validate_each $ds_combined_policy_list do
-    summary_template "Policy Templates Updated"
+    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} Policy Templates Updated"
     detail_template <<-EOS
 
 # Policy Templates Updated
 
-| Name | File Name | Repo Version | Account Version | Version Upgradeable | Policy ID |
-| ---- | --------- | ------------ | ---------------- | ------------------ | --------- |
+| Name | File Name | Repo Version | Account Version | Version Upgradeable | Policy ID | ChangeLog |
+| ---- | --------- | ------------ | ---------------- | ------------------ | --------- | --------- |
 {{ range data -}}
-| {{ .name }} | {{.file_name}} | {{.repo_version}} | {{.account_version}} | {{.version_upgradeable}} | {{.policy_id}} |
+| {{ .name }} | {{.file_name}} | {{.repo_version}} | {{.account_version}} | {{.version_upgradeable}} | {{.policy_id}} | {{ .change_log }} |
 {{ end -}}
 EOS
 
-    escalate $alert
-    escalate $upload
+    escalate $report_policy_templates_update
+    escalate $upload_new_policy_templates
     check logic_not(val(item, "version_upgradeable"))
   end
 end

@@ -1,8 +1,8 @@
 # RightScale Policy Templates
 
-This repo contains a library of open source RightScale Policy Templates to provide goveranance via automation across Cost, Security, Operational, and Compliance categories. 
+This repo contains a library of open source RightScale Policy Templates to provide governance via automation across Cost, Security, Operational, and Compliance categories.  All contributions are shared under the MIT license.
 
-Please contact sales@rightscale.com to learn more. 
+Please contact sales@rightscale.com to learn more.
 
 ## Released Policy Templates
 
@@ -10,9 +10,12 @@ Please contact sales@rightscale.com to learn more.
 - [AWS Reserved Instance Expiration](./cost/aws/reserved_instances/expiration/)
 - [AWS Reserved Instances Utilization](./cost/aws/reserved_instances/utilization/)
 - [AWS Reserved Instance Reservation Coverage](./cost/aws/reserved_instances/coverage/)
+- [AWS Reserved Instances Report by Billing Center](./cost/aws/reserved_instances/report_by_bc)
 - [Downsize Instances](./cost/downsize_instance/)
 - [Unattached Volumes Policy](./cost/volumes/unattached_volumes/)
 - [Old Snapshots](./cost/volumes/old_snapshots/)
+- [Schedule Instances](./cost/schedule_instances)
+- [Billing Center Access Report](./cost/billing_center_access_report/)
 
 ### Security
 - [Security Group: ICMP Enabled](./security/security_groups/icmp_enabled/)
@@ -23,14 +26,16 @@ Please contact sales@rightscale.com to learn more.
 
 ### Compliance
 - [Untagged Resources](./compliance/tags/tag_checker)
+- [Azure Disallowed Regions](./compliance/azure/azure_disallowed_regions)
 
 ### Operational
 - [AWS Cloud Credentials Rotation Policy](./operational/cloud_credentials/aws)
 - [No Recent Snapshots](./operational/snapshots/)
+- [AWS RDS Backup Settings](./operational/dbaas/aws/rds_backup)
 
 ## Instructions to upload policy templates to RightScale
 
-- The policy templates in the repo are the files that have a .pt extension. 
+- The policy templates in the repo are the files that have a .pt extension.
 - Select the desired policy template, click on the “Raw” button, and then right-click and choose “Save As” to save the file to your computer.
 - To upload the template to your account, navigate over to the Templates page in the left nav bar in [Governance](https://governance.rightscale.com). Ensure you have the role to access policy management in RightScale. Learn More about [Policy Access Control](http://docs.rightscale.com/policies/#how-policies-work-access-control).
 - Click the “Upload Policy Template” button in the account you wish to test the policy and follow the instructions to upload the template you just downloaded.

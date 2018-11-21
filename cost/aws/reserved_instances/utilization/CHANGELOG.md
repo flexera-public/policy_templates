@@ -1,3 +1,11 @@
+v1.7
+- Updated percentage to rounded version
+- Updated Label to be more descriptive
+
+v1.6
+----
+- Fixed email format
+
 v1.4
 ----
 - Updating email from string to list

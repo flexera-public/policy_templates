@@ -1,13 +1,8 @@
-# Unattached Volumes Policy Template
-#
-# This policy reports unattached volumes older than a user-specified age, and optionally deletes the volumes.
-#
-
 name "Unattached Volumes"
 rs_pt_ver 20180301
 type "policy"
 short_description "Finds unattached volumes older than specified number of days and, optionally, deletes them. See the [README](https://github.com/rightscale/policy_templates/tree/master/cost/volumes/unattached_volumes) and [docs.rightscale.com/policies](http://docs.rightscale.com/policies/) to learn more."
-long_description "Version: 1.4"
+long_description "Version: 1.7"
 severity "medium"
 category "Cost"
 
@@ -15,6 +10,7 @@ permission "general_permissions" do
   resources "rs_cm.volumes", "rs_cm.audit_entries", "rs_cm.placement_groups", "rs_cm.clouds", "rs_cm.tags", "rs_cm.deployments"
   actions   "rs_cm.*"
 end
+
 permission "perm_retrieve_tags" do
   label "Retrieve Tags"
   actions "rs_cm.by_resource"
@@ -71,16 +67,31 @@ resources "volumes", type: "rs_cm.volumes" do
   tags none($param_exclude_tags)  # This, my friend, is a beautiful thing. This bit of policy language magic (i.e. the "tags" directive) makes it so easy to cull a collection based on tags.
 end
 
-# script-based datasource that applies the logic to return only unattached volumes
-datasource "ds_unattached_volumes" do
-  run_script $js_unattached_volumes, $ds_clouds, $ds_pgs, @volumes, $param_delete
+datasource "ds_volumes" do
+  iterate @volumes
+  field "resource_uid", val(iter_item, "resource_uid")
+  field "name", val(iter_item, "name")
+  field "size", val(iter_item, "size")
+  field "iops", val(iter_item, "iops")
+  field "status", val(iter_item, "status")
+  field "placement_group", val(iter_item, "placement_group") 
+  field "volume_type", val(iter_item, "volume_type")
+  
+  field "created_at", val(iter_item, "created_at")
+  field "updated_at", val(iter_item, "updated_at")
+  field "tags", val(iter_item, "tags")
+  field "links", val(iter_item, "links")
 end
 
+# script-based datasource that applies the logic to return only unattached volumes
+datasource "ds_unattached_volumes" do
+  run_script $js_unattached_volumes, $ds_clouds, $ds_pgs, $ds_volumes, $param_delete #, $ds_resource_tags_hash
+end
 # Find unattached volumes.
 # If Azure volume, deduce the type.
 # Calculate the volume's age.
 script "js_unattached_volumes", type: "javascript" do
-  parameters "ds_clouds", "ds_pgs", "volumes", "param_delete"
+  parameters "ds_clouds", "ds_pgs", "ds_volumes", "param_delete" #, "ds_resource_tags_hash"
   result "unattached_volumes"
   code <<-EOS
 // This is the eventual output list of unattached volumes.
@@ -103,12 +114,16 @@ for (var i = 0; i < ds_clouds.length; i++) {
   var cloud_name = ds_cloud["name"]
   cloud_hash[cloud_href] = { "cloud_type": cloud_type, "cloud_name": cloud_name }
 }
+
 // Build a pg hash that is pg resource id -> { pg type, pg name }
 var pg_hash = {}
 for (var i = 0; i < ds_pgs.length; i++) {
   var ds_pg = ds_pgs[i]
   var pg_id = ds_pg["id"]
-  var pg_name = ds_pg["name"]
+  var pg_name = "unknown"
+  if (ds_pg["name"]) {
+    pg_name = ds_pg["name"]
+  }
   var pg_account_type = "unspecified"
   if (ds_pg["account_type"]) { 
     pg_account_type = ds_pg["account_type"]
@@ -117,8 +132,8 @@ for (var i = 0; i < ds_pgs.length; i++) {
 }
 
 // loop through the volumes and find the unattached ones and deduce storage type if Azure
-for (var i = 0; i < volumes.length; i++) {
-  var vol = volumes[i]
+for (var i = 0; i < ds_volumes.length; i++) {
+  var vol = ds_volumes[i]
   if ((vol.status == "available") || (vol.status == "provisioned")) { 
     // build a volume object
     var my_vol = {}
@@ -127,11 +142,15 @@ for (var i = 0; i < volumes.length; i++) {
     my_vol["size"] = vol["size"]
     my_vol["iops"] = vol["iops"]
     my_vol["status"] = vol["status"]
-    if (param_delete == "Email and Delete") {  // Then the volume is marked that it was deleted.
-      my_vol["status"] = "DELETED"
+    if (param_delete == "Email and Delete") {  // Then the volume is marked so that it will be deleted later
+      my_vol["action"] = "DELETE"
     }
     my_vol["created_at"] =  vol["created_at"]
     my_vol["updated_at"] =  vol["updated_at"]
+    var tags_array = vol["tags"]
+    var tags = tags_array.toString()
+    my_vol["tags"] = tags
+      
     my_vol["pg_id"] = null
     my_vol["volume_type"] = null
     
@@ -182,7 +201,13 @@ for (var i = 0; i < volumes.length; i++) {
       // old Azure - we also care
       my_vol["azure_disk_type"] = "Unmanaged"
       my_vol["azure_storage_type"] = "Classic"
-      my_vol["azure_storage_account_name"] = pg_hash[my_vol["pg_id"]]["name"]
+      my_vol["azure_storage_account_name"] = "Unknown"
+      if (my_vol["pg_id"]) {
+        var vol_pg_id = my_vol["pg_id"]
+        if (pg_hash[vol_pg_id]) {
+          my_vol["azure_storage_account_name"] = pg_hash[vol_pg_id]["name"] 
+        }
+      }
     } else {
       // Other clouds - we do not care
       my_vol["azure_disk_type"] = "N/A"
@@ -213,44 +238,103 @@ for (var i = 0; i < volumes.length; i++) {
 }
 EOS
 end
-	
+
+# This is a copy of $ds_unattached_volumes but with a current timestamp added.
+# This is leveraged in the policy declaration to force an escalation action to try and delete the volumes (if that option was selected by the user).
+# This way if a volume was not deleted on the last run due to something like it being locked or snapshots existing and then someone removed the lock or snapshots,
+# the subsequent run will try to delete the volumes again and be successful.
+# The run after that will then report the new list of volumes that still exist.
+datasource "ds_unattached_volumes_with_timestamp" do
+  run_script $js_unattached_volumes_with_timestamp, $ds_unattached_volumes
+end
+script "js_unattached_volumes_with_timestamp", type: "javascript" do
+  parameters "ds_unattached_volumes"
+  result "unattached_volumes_with_timestamp"
+  code <<-EOS
+// This is the eventual output list of unattached volumes.
+var unattached_volumes_with_timestamp = [];
+
+for (var i = 0; i < ds_unattached_volumes.length; i++) {
+  unattached_volumes_with_timestamp[i] = ds_unattached_volumes[i]
+  unattached_volumes_with_timestamp[i]["timestamp"] = new Date()
+}
+EOS
+end
+
 policy "pol_unattached_volumes" do
+  
+  # REPORT UNATTACHED VOLUMES OLDER THAN GIVEN NUMBER OF DAYS
+  # This first validation produces the report and related email.
+  # It goes through the unattached volumes that were found by the script-based datasource above
+  # and checks if not older than specified number of days.
   validate_each $ds_unattached_volumes do
-	# Go through the unattached volumes that were found by the script-based datasource above
-	# and check if not older than specified number of days.
-	# If the check fails, it'll flag the volume
-	check le(val(item, "age"), $param_days_old)
 
-	escalate $esc_unattached_volumes
+  	check le(val(item, "age"), $param_days_old)
+  
+  	# Send email report
+  	escalate $send_email_report 
+  
+  	summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} Unattached Volumes Found"
 
-	summary_template "{{ len data }} Unattached Volumes Found"
-
-  detail_template <<-EOS
+  	detail_template <<-EOS
 The following {{ len data }} unattached volumes, for Account: {{ rs_project_name }} (ID: {{ rs_project_id }}), have exceeded the specified age of: {{ parameters.param_days_old }} days old\n
-| Cloud Name | Volume Name | Age (days) | Volume Type | Resource UID | Size (GBs) | Status | IOPS | Azure Disk Type | Azure Storage Type | Azure Storage Account | Created At | Updated At | Volume HREF |
-| ---------- | ----------- | --- | ----------- | ------------ | ---- | ------ | ---- | --------------- | ------------------ | --------------------- | ---------- | ---------- | ----------- |
+| Cloud Name | Volume Name | Age (days) | Volume Type | Resource UID | Size (GBs) | Status | IOPS | Azure Disk Type | Azure Storage Type | Azure Storage Account | Created At | Updated At | Tags | Volume HREF |
+| ---------- | ----------- | -----------| ----------- | ------------ | ---------- | ------ | ---- | --------------- | ------------------ | --------------------- | ---------- | ---------- | ---- | ----------- |
 {{ range data -}}
-| {{ .cloud_name }} | {{ .name }} | {{ .age }} | {{ .volume_type }} | {{ .id }} | {{ .size }} | {{ .status }} | {{ .iops }} | {{ .azure_disk_type }} | {{ .azure_storage_type }} | {{ .azure_storage_account_name }} | {{ .created_at }} | {{ .updated_at }} | {{ .href }} |
+| {{ .cloud_name }} | {{ .name }} | {{ .age }} | {{ .volume_type }} | {{ .id }} | {{ .size }} | {{ .status }} | {{ .iops }} | {{ .azure_disk_type }} | {{ .azure_storage_type }} | {{ .azure_storage_account_name }} | {{ .created_at }} | {{ .updated_at }} | {{ .tags }} | {{ .href }} |
 {{ end -}}
 EOS
 
   end
-end
 
+  # TAKE ACTION ON UNATTACHED VOLUMES
+  # This validation is focused on going through the unattached volumes and deleting them if the user selected that option.
+  # It uses a data source that is identical to the one used for the REPORT validation above but this datasource includes a timestamp.
+  # This timestamp changes each time the policy is run and so forces a validation.
+  # This way if a delete of a volume failed the last time the policy ran, this will force another attempt on this run.
+  validate_each $ds_unattached_volumes_with_timestamp do
 
-escalation "esc_unattached_volumes" do
-  email $param_email
+  	check le(val(item, "age"), $param_days_old)
   
-  run "delete_volumes", data
+  	# Delete the volume if user selected the delete option
+  	escalate $process_volumes
+ 	
+    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): Processing {{ len data }} unattached volumes"
+    detail_template "Processing volumes ...."
+  end
 end
 
+escalation "send_email_report" do
+  email $param_email
+end
+  
+escalation "process_volumes" do
+  run "delete_volumes", data
+  # remove the "Processing volumes" incident since it's a done deal at this point.
+  resolve_incident
+end
+  
 define delete_volumes($data) do
   foreach $item in $data do
-    if $item["status"] == "DELETED"
-      # Find the volume
-      @volume = rs_cm.get(href: $item["href"])
-      # Delete the volume 
-      delete(@volume)
+    if $item["action"] == "DELETE"
+      # If the delete fails, tag the volume with some info about the failure
+      sub on_error: handle_delete_failure(@volume) do
+        # Find the volume
+        @volume = rs_cm.get(href: $item["href"])
+        # Delete the volume 
+        delete(@volume)
+      end
+    end
+  end
+end
+
+define handle_delete_failure(@volume) do
+  $_error_behavior = "skip"
+  $msg = split($_error["message"], "\n")
+  foreach $item in $msg do
+    if $item =~ "CloudException"
+      $tag = "uav_policy:error="+$item
+      rs_cm.tags.multi_add(tags: [$tag], resource_hrefs: [@volume.href])
     end
   end
 end

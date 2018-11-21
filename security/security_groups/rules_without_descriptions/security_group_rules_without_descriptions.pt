@@ -2,11 +2,16 @@ name "Security Group Rules without Descriptions"
 rs_pt_ver 20180301
 type "policy"
 short_description "A policy that sends email notifications when a security group has no description. See the [README](https://github.com/rightscale/policy_templates/tree/master/security/security_groups/rules_without_descriptions) and [docs.rightscale.com/policies](http://docs.rightscale.com/policies/) to learn more."
-long_description "Version: 1.2"
-severity "high"
+long_description "Version: 1.7"
+severity "medium"
 category "Security"
 
-parameter "param_escalate_to" do
+permission "general_permissions" do
+  resources "rs_cm.clouds", "rs_cm.security_groups", "rs_cm.security_group_rules","rs_cm.networks"
+  actions   "rs_cm.index","rs_cm.show"
+end
+
+parameter "param_email" do
   type "list"
   label "Email addresses of the recipients you wish to notify"
 end
@@ -14,21 +19,14 @@ end
 auth "auth_rs", type: "rightscale"
 
 # Filter to clouds that support security groups
-resources "clouds", type: "rs_cm.clouds" do
-  filter do
-    cloud_type ne: ["soft_layer", "cloud_stack","azure","rackspace_next_gen","vscale","blue_skies","open_stack_v2","uca","open_stack_v3"]
-  end
-end
+resources "clouds", type: "rs_cm.clouds"
 
 resources "security_groups", type: "rs_cm.security_groups" do
   iterate @clouds
   cloud_href href(iter_item)
 end
 
-resources "security_group_rules", type: "rs_cm.security_group_rules" do
-  iterate @security_groups
-  security_group_href href(iter_item)
-end
+resources "security_group_rules", type: "rs_cm.security_group_rules"
 
 resources "networks", type: "rs_cm.networks"
 
@@ -105,17 +103,17 @@ for (var index = 0; index < ds_security_group_rules.length; index++) {
 EOS
 end
 
-escalation "alert" do
-  email $param_escalate_to
+escalation "report_security_groups_without_description" do
+  email $param_email
 end
 
-resolution "resolution" do
-  email $param_escalate_to
+resolution "report_security_groups_without_description_resolution" do
+  email $param_email
 end
 
 policy "rule_without_description" do
   validate_each $ds_munged_security_groups do
-    summary_template "Security Group Rules without Descriptions"
+    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} Security Group Rules without Descriptions"
     detail_template <<-EOS
 # Security Rules without Descriptions
 
@@ -126,8 +124,8 @@ policy "rule_without_description" do
 {{ end -}}
 EOS
 
-    escalate $alert
+    escalate $report_security_groups_without_description
     check val(item, "description")
-    resolve $resolution
+    resolve $report_security_groups_without_description_resolution
   end
 end
