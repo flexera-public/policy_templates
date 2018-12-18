@@ -1,3 +1,7 @@
+v1.9
+----
+- Changed total memory calculation to use instance_type memory attribute.
+
 v1.8
 ----
 - Upating Policy Template Name
