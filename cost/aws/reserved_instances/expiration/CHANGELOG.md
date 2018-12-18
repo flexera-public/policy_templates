@@ -1,3 +1,7 @@
+v1.5
+----
+- using rs_optima_host variable
+
 v1.4
 ----
 - Update email subject with account name and ID, and change actions and/or resolution name to be more descriptive. Issues #75 & #83
