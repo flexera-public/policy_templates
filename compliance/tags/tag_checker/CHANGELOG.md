@@ -1,4 +1,10 @@
 ## Untagged Resource Policy Changelog
+
+v1.7
+----
+- adding tags.multi_add permission #141
+- update README with permissions statement
+
 v1.6
 ----
 - Update email subject with account name and ID. Issue #75
