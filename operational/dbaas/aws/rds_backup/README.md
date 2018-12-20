@@ -7,6 +7,13 @@ This Policy Template will check your account for Amazon RDS Instances with non-c
 - `Backup Retention Period` - Example value: `7`
 - `Preferred Backup Window` - Example value: `08:00-08:30`
 
+### Required Permissions
+
+This policy requires permissions to access RightScale resources (clouds, and instances and tags).  Before applying this policy add the following roles to the user applying the policy.  The roles should be applied to all Accounts where the policy will run or the Organization. For more information on modifying roles visit the [Governance Docs](https://docs.rightscale.com/cm/ref/user_roles.html)
+
+- Cloud Management - credential_viewer or admin
+- Cloud Management - observer
+
 ### Supported Clouds
 
 - AWS
