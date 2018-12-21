@@ -6,7 +6,7 @@ This policy will check all instances in state operational, running and provision
 
 ### Input Parameters
 
-The policy has the following input parameters required when launching the policy.
+This policy has the following input parameters required when launching the policy.
 
 - *Tags' Namespace:Keys List* - Comma-separated list of Tags' Namespace:Keys to audit. For example: \"ec2:project_code\" or \"bu:id\".
 - *Tags' Namespace:Keys Advanced List.* - A JSON string to describe the tag policy configuration.  See below for an example.
