@@ -2,13 +2,20 @@
 
 ### What it does
 
-This Policy Template will check your account for Google Cloud Storage buckets with public permission. It takes the following parameters: 
+This Policy Template will check your account for Google Cloud Storage buckets with public permission. It takes the following parameters:
 - `Email addresses of the recipients you wish to notify` - Email to alert when it finds google buckets that meet the criteria
-- `Google Cloud Project` - The Google Cloud Project to run this policy against. 
+- `Google Cloud Project` - The Google Cloud Project to run this policy against.
+
+### Required Permissions
+
+This policy requires permissions to access RightScale resources (credentials).  Before applying this policy add the following roles to the user applying the policy.  The roles should be applied to all Accounts where the policy will run or the Organization. For more information on modifying roles visit the [Governance Docs](https://docs.rightscale.com/cm/ref/user_roles.html)
+
+- Cloud Management - credential_viewer or admin
+- Cloud Management - Observer
 
 ### Supported Clouds
 
-- Google 
+- Google
 
 ### Cost
 
