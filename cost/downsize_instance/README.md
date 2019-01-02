@@ -25,9 +25,24 @@ If a server is marked `N/A`, no action will be taken and only the resize tag wil
 7. Escalation Options - Allowed Values: "Email", "Downsize And Email"
 8. Days to cooldown between checks of same machine - Number of days to cooldown between checks of the same instance. This drives the `Downsize Instances Add Tags Policy Template`
 
+#### Policy Actions
+
+The following policy actions are taken on any resources found to be out of compliance.
+
+- Downsize instances
+- Send an email report
+
 #### Downsize Instances Add Tags Policy Template
 1. Instance tags used to filter instances that must validate policy. Example: rs_monitoring:resize=1
 2. Email address to send escalation emails to - Example: noreply@example.com
+
+#### Policy Actions
+
+The following policy actions are taken on any resources found to be out of compliance.
+
+- Add or remove tags for downsizing
+- Send an email report
+
 
 ### Required Permissions
 
