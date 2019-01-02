@@ -2,8 +2,19 @@
 
 ### What it does
 
-This Policy Template will check your account for Amazon S3 buckets with public permission. It takes the following parameter:
-- `Email addresses of the recipients you wish to notify` - Email to alert when it finds S3 buckets that meet the criteria.
+This Policy Template will check your account for Amazon S3 buckets with public permission.
+
+### Input Parameters
+
+This policy has the following input parameters required when launching the policy.
+
+- *Email addresses of the recipients you wish to notify* - Example: noreply@example.co
+
+### Policy Actions
+
+The following policy actions are taken on any resources found to be out of compliance.
+
+- Send an email report
 
 #### Slack Channel Notification Support
 The policy includes optional support to send a notification to a slack channel when an anomaly is detected.

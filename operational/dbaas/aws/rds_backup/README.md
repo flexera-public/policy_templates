@@ -2,10 +2,22 @@
 
 ### What it does
 
-This Policy Template will check your account for Amazon RDS Instances with non-compliant backup settings. It takes the following parameters:
-- `Email addresses of the recipients you wish to notify` - Email to alert when it finds S3 buckets that meet the criteria.
-- `Backup Retention Period` - Example value: `7`
-- `Preferred Backup Window` - Example value: `08:00-08:30`
+This Policy Template will check your account for Amazon RDS Instances with non-compliant backup settings.
+
+
+### Input Parameters
+
+This policy has the following input parameters required when launching the policy.
+
+- *Email addresses of the recipients you wish to notify* - Email to alert when it finds S3 buckets that meet the criteria.
+- *Backup Retention Period* - Example value: `7`
+- *Preferred Backup Window* - Example value: `08:00-08:30`
+
+### Policy Actions
+
+The following policy actions are taken on any resources found to be out of compliance.
+
+- Send an email report
 
 ### Required Permissions
 

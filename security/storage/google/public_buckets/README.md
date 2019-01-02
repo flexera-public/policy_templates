@@ -2,9 +2,20 @@
 
 ### What it does
 
-This Policy Template will check your account for Google Cloud Storage buckets with public permission. It takes the following parameters:
-- `Email addresses of the recipients you wish to notify` - Email to alert when it finds google buckets that meet the criteria
-- `Google Cloud Project` - The Google Cloud Project to run this policy against.
+This Policy Template will check your account for Google Cloud Storage buckets with public permission.
+
+### Input Parameters
+
+This policy has the following input parameters required when launching the policy.
+
+- *Email addresses of the recipients you wish to notify* - Email to alert when it finds google buckets that meet the criteria
+- *Google Cloud Project* - The Google Cloud Project to run this policy against.
+
+### Policy Actions
+
+The following policy actions are taken on any resources found to be out of compliance.
+
+- Send an email report
 
 ### Required Permissions
 

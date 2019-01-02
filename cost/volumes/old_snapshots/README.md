@@ -4,7 +4,6 @@
 
 This Policy Template will create a list old snapshots in the cloud account. The age of snapshots to list is provided in the *Number of days old snapshot to delete* parameter.
 
-
 ### Input Parameters
 
 This policy has the following input parameters required when launching the policy.
