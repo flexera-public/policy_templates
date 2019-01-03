@@ -12,6 +12,22 @@ Note: The unattached volumes report will reflect the updated set of unattached v
 Optionally, the user can specify one or more RightScale tags that if found on a volume will exclude the volume from the list.
 Additionally, the user can optionally specify if the aged volumes should be deleted by the policy.
 
+### Input Parameters
+
+This policy has the following input parameters required when launching the policy.
+
+- *Identify volumes that have been Unattached for the given number of days* - enter the age of volumes for the incident.
+- *Email addresses of the recipients you wish to notify* - A list of email addresses to notify
+- *List of RightScale volume tags to exclude from policy.* - a list of tags used to excluded volumes from the incident.
+- *Choose the appropriate action you wish to take on the Volumes* - selection to choose to email or email and delete volumes.
+
+### Policy Actions
+
+The following policy actions are taken on any resources found to be out of compliance.
+
+- Delete Unattached volumes found in the incident
+- Send an email report
+
 ### Required Permissions
 
 This policy requires permissions to access RightScale resources (clouds, volumes, deployments, placement groups and tags).  Before applying this policy add the following roles to the user applying the policy.  The roles should be applied to all Accounts where the policy will run or the Organization. For more information on modifying roles visit the [Governance Docs](https://docs.rightscale.com/cm/ref/user_roles.html)

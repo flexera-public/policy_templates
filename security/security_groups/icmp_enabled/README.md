@@ -2,7 +2,19 @@
 
 ### What it does
 
-This Policy Template reviews your security group and alerts if any security group have icmp types `0,3,8` enabled. It currently on takes one parameter: `Email addresses of the recipients you wish to notify`.
+This Policy Template reviews your security group and alerts if any security group have ICMP types `0,3,8` enabled.
+
+### Input Parameters
+
+This policy has the following input parameters required when launching the policy.
+
+- *Email addresses of the recipients you wish to notify* - Example: noreply@example.co
+
+### Policy Actions
+
+This policy has the following input parameters required when launching the policy.
+
+- Send an email report
 
 ### Required Permissions
 

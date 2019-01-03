@@ -12,6 +12,22 @@ This policy performs the following actions:
 - Update the RightScale AWS cloud connections to use the new keys.
 - Deactivate the previously used IAM key.
 - Update RightScale Credentials, AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY with the new IAM user keys.
+
+### Input Parameters
+
+This policy has the following input parameters required when launching the policy.
+
+- *See Rotation Period parameter.* - Enter the number to match the Rotation Period Units Parameter.  i.e 90
+- *See Rotation Period Units parameter.* - Select the units, Days, Weeks, Months.
+- *Email addresses of the recipients you wish to notify* - A list of email addresses to notify
+
+### Policy Actions
+
+The following policy actions are taken on any resources found to be out of compliance.
+
+- create new keys and update the RightScale Credentials.
+- Send an email report
+
 ### Required Permissions
 
 This policy requires permissions to access RightScale resources (clouds and credentials).  Before applying this policy add the following roles to the user applying the policy.  The roles should be applied to all Accounts where the policy will run or the Organization. For more information on modifying roles visit the [Governance Docs](https://docs.rightscale.com/cm/ref/user_roles.html)
