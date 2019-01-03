@@ -1,0 +1,155 @@
+name "Unattached IP Addresses"
+rs_pt_ver 20180301
+type "policy"
+short_description "Checks for Unattached IP Addresses and deletes them with approval. See the [README](https://github.com/rightscale/policy_templates/tree/master/cost/addresses/unattached_addresses) and [docs.rightscale.com/policies](http://docs.rightscale.com/policies/) to learn more."
+long_description "Version: 1.0"
+severity "low"
+category "Security"
+
+permission "perm_read_creds" do
+  actions   "rs_cm.show","rs_cm.index"
+  resources "rs_cm.ip_addresses"
+end
+
+parameter "param_email" do
+  type "list"
+  label "Email addresses of the recipients you wish to notify"
+end
+
+parameter "param_whitelist" do
+  type "list"
+  label "White list of IP Addresses to keep"
+end
+
+auth "auth_rs", type: "rightscale"
+
+# Filter to clouds that support security groups
+resources "clouds", type: "rs_cm.clouds" do
+  # filter do # ignore clouds that are NOT represented in instance_types.json
+  #   cloud_type ne: ["google","vscale", "soft_layer", "cloud_stack", "rackspace_next_gen", "blue_skies","open_stack_v2","uca","open_stack_v3"]
+  # end
+end
+
+resources "addresses", type: "rs_cm.ip_addresses" do
+  iterate @clouds
+  cloud_href href(iter_item)
+end
+
+datasource "ds_clouds" do
+  iterate @clouds
+  field "name", val(iter_item,  "name")
+  field "cloud_type", val(iter_item, "cloud_type")
+  field "href", href(iter_item)
+end
+
+datasource "ds_addresses" do
+  iterate @addresses
+  field "href", href(iter_item)
+  field "name", val(iter_item,  "name")
+  field "address", val(iter_item, "address")
+  field "ip_address_bindings_href", jmes_path(iter_item, "links[?rel=='ip_address_bindings'].href | [0]")
+end
+
+datasource "ds_munged_addresses" do
+  run_script $js_munge_addresses, $ds_addresses, $ds_clouds, rs_project_id, rs_cm_host, $param_whitelist
+end
+
+script "js_munge_addresses", type: "javascript" do
+  parameters "ds_addresses","ds_clouds","rs_project_id", "rs_cm_host","param_whitelist"
+  result "addresses"
+  code <<-EOS
+    var addresses = []
+    var clouds = {};
+
+    for (var index = 0; index < ds_clouds.length; index++) {
+      var cloud = ds_clouds[index];
+      clouds[cloud['href']] = {
+        name: cloud['name'],
+        type: cloud['cloud_type']
+      };
+    }
+
+    for (var a = 0; a < ds_addresses.length; a++) {
+      var address = ds_addresses[a]
+
+      // get cloud_href
+      var split = address['href'].split('/')
+      var index = address['href'].indexOf('/' + split[4])
+      var cloud_href = address['href'].substring(0,index)
+
+      // exlcude white listed names
+      // only show which addresses are not attached, no bindings
+    //  if( param_whitelist.indexOf(address['address']) === -1 &&
+    //    !address['ip_address_bindings_href'] ){
+        addresses.push({
+          cloud_name: clouds[cloud_href]['name'],
+          cloud_type: clouds[cloud_href]['type'],
+          address: address['address'],
+          name: address['name'],
+          href: address['href'],
+        })
+    //  }
+    }
+
+EOS
+end
+
+escalation "report_description" do
+  request_approval  do
+    label "Escalation approval"
+    description "Approve delete action"
+    parameter "approval_reason" do
+      type "string"
+      label "Reason for approval"
+      description "Explain why you are approving the action"
+    end
+  end
+
+  run "delete_unattached_addresses", data
+  email $param_email
+end
+
+resolution "report_resolution" do
+  email $param_email
+end
+
+policy "unattached_ip_addresses" do
+  validate_each $ds_munged_addresses do
+    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} Unattached IP Addresses"
+    detail_template <<-EOS
+# Unattached IP Addresses
+
+| Cloud Name | Cloud Type | Address Name | Address | href |
+| ---------  | ---------- | ------------ | ------- | ---- |
+{{ range data -}}
+| {{ .cloud_name }} | {{ .cloud_type }} | {{.name}}| {{.address}} | {{.href }}|
+{{ end -}}
+EOS
+
+    escalate $report_description
+    #check eq(size(data), 0)
+    check contains($param_whitelist,val(item, "address"))
+    resolve $report_resolution
+  end
+end
+
+define delete_unattached_addresses($data) do
+  foreach $item in $data do
+    @ip_address = rs_cm.get(href: $item['href'])
+    #@ip_address.destroy()
+    call sys_log('destroy' ,to_s($item))
+  end
+end
+
+define sys_log($subject, $detail) do
+  if $$debug
+    rs_cm.audit_entries.create(
+      notify: "None",
+      audit_entry: {
+        auditee_href: @@account,
+        summary: "Unattached IP Address: "+$subject,
+        detail: $detail
+      }
+    )
+  end
+end
