@@ -6,6 +6,19 @@ This Policy Template generates a custom Reserved Instances report.  The Policy w
 
 **Note:** For the most reliable data, target Billing Centers that are configured with account-based Allocation Rules only.
 
+### Input Parameters
+
+This policy has the following input parameters required when launching the policy.
+
+- *Billing Center Name* - enter the Billing Center Name to run the report agains
+- *Email addresses of the recipients you wish to notify* - A list of email addresses to notify
+
+### Policy Actions
+
+The following policy actions are taken on any resources found to be out of compliance.
+
+- Send an email report
+
 ### Supported Clouds
 
 - AWS

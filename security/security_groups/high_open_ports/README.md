@@ -4,10 +4,18 @@
 
 This Policy Template leverages the multi cloud RightScale API. It will notify only if a security group has a port higher than `Beginning High Port` field open.
 
-### Parameters
+### Input Parameters
 
-1. Email addresses of the recipients you wish to notify - Example: noreply@example.com
-2. Beginning High Port - Any port greater than or equal to this will trigger a report
+This policy has the following input parameters required when launching the policy.
+
+- *Email addresses of the recipients you wish to notify* - Example: noreply@example.com
+- *Beginning High Port* - Any port greater than or equal to this will trigger a report
+
+### Policy Actions
+
+The following policy actions are taken on any resources found to be out of compliance.
+
+- Send an email report
 
 ### Required Permissions
 

@@ -10,12 +10,22 @@ If you choose `Snapshot And Email` it will email you a report of volumes that ha
 start up the server.
 
 
-### Parameters
-1. Email address to send escalation emails to - Example: noreply@example.com
-2. Number of days between snapshots - The number of days between snapshots that the policy will check against.
-3. Escalation Options - Allowed Values: "Email", "Snapshot And Email"
-4. Include Root Device - This option instructs the policy template whether or not to check root volumes for compliance, anything connected to `/dev/sda1`.
-5. Volume and Server tags to exclude -  Example: snapshot_policy:exclude=1
+### Input Parameters
+
+This policy has the following input parameters required when launching the policy.
+
+- *Email address to send escalation emails to* - Example: noreply@example.com
+- *Number of days between snapshot*s - The number of days between snapshots that the policy will check against.
+- *Escalation Options* - Allowed Values: "Email", "Snapshot And Email"
+- *Include Root Device* - This option instructs the policy template whether or not to check root volumes for compliance, anything connected to `/dev/sda1`.
+- *Volume and Server tags to exclude* -  Example: snapshot_policy:exclude=1
+
+### Policy actions
+
+The following policy actions are taken on any resources found to be out of compliance.
+
+- Stop the server and take snapshot, restart the server.
+- Send an email report
 
 ### Required Permissions
 

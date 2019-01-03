@@ -2,7 +2,23 @@
 
 ### What it does
 
-This policy will check all instances in state operational, running and provisioned, and all volumes and check for the tags listed in the *Tags' Namespace:Keys List* field.  For each resource that doesn't include the tags in the field they will be included in the policy incident report.   As new resources are added or tags and included on the resource the incident report will be updated to exclude the resource.
+This policy will check all instances in state operational, running and provisioned, and all volumes and check for the tags listed in the *Tags' Namespace:Keys List* field.  For each resource that doesn't include the tags in the field they will be included in the policy incident report.   As new resources are added or tags and included on the resource the incident report will be updated to exclude the resource.  For more information on working with tags in RightScale please refer to the [Tagging](/cm/rs101/tagging.html#what-is-a-tag-) page.
+
+### Input Parameters
+
+This policy has the following input parameters required when launching the policy.
+
+- *Tags' Namespace:Keys List* - Comma-separated list of Tags' Namespace:Keys to audit. For example: \"ec2:project_code\" or \"bu:id\".
+- *Tags' Namespace:Keys Advanced List.* - A JSON string to describe the tag policy configuration.  See below for an example.
+- *Email addresses of the recipients you wish to notify* - A list of email addresses to notify
+
+### Policy Actions
+
+The following policy actions are taken on any resources found to be out of compliance.
+
+- An email is sent to the Email lists provided of the resources out of compliance
+- Tags are updated using the advanced list using the JSON payload.
+
 
 **Resource Names**
 
@@ -27,7 +43,7 @@ Example JSON:
 		"validation-type": "string",
 		"validation": "user"
 	},
-	"rs_id: user": {
+	"rs_id:user": {
 		"description":"Validate the tag value using a regex",		
 		"validation-type": "regex",
 		"validation": "^sp",
