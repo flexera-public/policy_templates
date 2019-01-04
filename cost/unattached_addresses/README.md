@@ -9,7 +9,7 @@ This Policy Template will check your account for unattached IP addresses and del
 This policy has the following input parameters required when launching the policy.
 
 - *Email addresses of the recipients you wish to notify* - A list of email addresses to notify
-- *Whitelist of IP Addresses* - Ip addresses will be ignored
+- *Whitelist of IP Addresses* - IP addresses to be ignored
 
 ### Policy Actions
 
@@ -17,8 +17,6 @@ The following policy actions are taken on any resources found to be out of compl
 
 - After approval, Deletes the IP address found to violate the policy
 - Send an email report
-
-
 
 ### Required Permissions
 
