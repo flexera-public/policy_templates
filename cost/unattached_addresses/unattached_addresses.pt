@@ -77,6 +77,11 @@ script "js_munge_addresses", type: "javascript" do
       var index = address['href'].indexOf('/' + split[4])
       var cloud_href = address['href'].substring(0,index)
 
+      var attached = 'false'
+      if (address['ip_address_bindings_href']){
+        attached = 'true'
+      }
+
       // exlcude white listed names
       // only show which addresses are not attached, no bindings
     //  if( param_whitelist.indexOf(address['address']) === -1 &&
@@ -87,6 +92,7 @@ script "js_munge_addresses", type: "javascript" do
           address: address['address'],
           name: address['name'],
           href: address['href'],
+          attached: attached
         })
     //  }
     }
@@ -119,16 +125,17 @@ policy "unattached_ip_addresses" do
     detail_template <<-EOS
 # Unattached IP Addresses
 
-| Cloud Name | Cloud Type | Address Name | Address | href |
-| ---------  | ---------- | ------------ | ------- | ---- |
+| Cloud Name | Cloud Type | Address Name | Address | Attached | href |
+| ---------  | ---------- | ------------ | ------- | -------- | ---- |
 {{ range data -}}
-| {{ .cloud_name }} | {{ .cloud_type }} | {{.name}}| {{.address}} | {{.href }}|
+| {{ .cloud_name }} | {{ .cloud_type }} | {{.name}}| {{.address}} | {{.attached}} | {{.href}}|
 {{ end -}}
 EOS
 
     escalate $report_description
-    #check eq(size(data), 0)
-    check contains($param_whitelist,val(item, "address"))
+    
+    #check contains($param_whitelist,val(item, "address"))
+    #check eq(val(item,'attached'),'true')
     resolve $report_resolution
   end
 end
@@ -142,14 +149,12 @@ define delete_unattached_addresses($data) do
 end
 
 define sys_log($subject, $detail) do
-  if $$debug
-    rs_cm.audit_entries.create(
-      notify: "None",
-      audit_entry: {
-        auditee_href: @@account,
-        summary: "Unattached IP Address: "+$subject,
-        detail: $detail
-      }
-    )
-  end
+  rs_cm.audit_entries.create(
+    notify: "None",
+    audit_entry: {
+      auditee_href: @@account,
+      summary: "Unattached IP Address: "+$subject,
+      detail: $detail
+    }
+  )
 end
