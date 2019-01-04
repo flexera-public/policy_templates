@@ -2,7 +2,7 @@
 
 ### What it does
 
-This Policy Template reviews your security group and alerts if any security group rules are open to the public
+This Policy Template reviews your security group and alerts if any security group rules are open to the public.  Deletion of the Security Group Rules only occur after approval.
 
 ### Input Parameters
 
@@ -15,6 +15,7 @@ This policy has the following input parameters required when launching the polic
 
 The following policy actions are taken on any resources found to be out of compliance.
 
+- Delete the security group rules found after approval.
 - Send an email report
 
 ### Required Permissions
