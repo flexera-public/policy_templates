@@ -2,7 +2,7 @@
 
 ### What it does
 
-This Policy Template will check your account for unattached IP addresses and removes them with approval.
+This Policy Template will check your account for unattached IP addresses and deletes them after approval.
 
 ### Input Parameters
 
@@ -15,7 +15,7 @@ This policy has the following input parameters required when launching the polic
 
 The following policy actions are taken on any resources found to be out of compliance.
 
-- Deletes the IP address with approval
+- After approval, Deletes the IP address found to violate the policy
 - Send an email report
 
 
