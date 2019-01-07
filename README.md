@@ -16,11 +16,13 @@ Please contact sales@rightscale.com to learn more.
 - [Old Snapshots](./cost/volumes/old_snapshots/)
 - [Schedule Instances](./cost/schedule_instances)
 - [Billing Center Access Report](./cost/billing_center_access_report/)
+- [Unattached IP Addresses](./cost/unattached_addresses)
 
 ### Security
 - [Security Group: ICMP Enabled](./security/security_groups/icmp_enabled/)
 - [Security Group: Rules Without Description](./security/security_groups/rules_without_descriptions/)
 - [Security Group: High Open Ports](./security/security_groups/high_open_ports/)
+- [Security Groups With Ports Open To The World](./security/security_groups/world_open_ports)
 - [AWS Open Buckets Policy](./security/storage/aws/public_buckets/)
 - [Google Open Buckets Policy](./security/storage/google/public_buckets/)
 
