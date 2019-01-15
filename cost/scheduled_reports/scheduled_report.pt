@@ -1,0 +1,378 @@
+name "Scheduled Report"
+rs_pt_ver 20180301
+type "policy"
+short_description "
+See [README](https://github.com/rightscale/policy_templates/tree/master/cost/scheduled_report) for more details"
+long_description "Version: 1.0"
+severity "low"
+category "Cost"
+
+parameter "param_email" do
+  type "list"
+  label "Email List"
+  description "Email addresses of the recipients you wish to notify"
+end
+
+parameter "param_billing_centers" do
+  type "list"
+  label "Billing Center ID List"
+  default "unallocated"
+  description "List of billing center id's you want to report on."
+end
+
+parameter "param_cost_metric" do
+  type "string"
+  label "Cost Metric"
+  allowed_values "Unamortized Unblended","Amortized Unblended","Unamortized Blended","Amortized Blended"
+  default "Unamortized Unblended"
+  description "Select the cost metric for your report.  See the README file for more details"
+end
+
+##  the below params are used to pass values to the `costs` datasources
+##  these are temperay until we can pass literal values to the datasource parameters
+parameter "param_weekly_range" do
+  type "string"
+  label "param_weekly_range"
+  description "DO NOT CHANGE"
+  no_echo true
+  default  "daily"
+end
+
+parameter "param_monthly_range" do
+  type "string"
+  label "param_montly_range"
+  description "DO NOT CHANGE"
+  no_echo true
+  default  "monthly"
+end
+parameter "param_scale_current" do
+  type "string"
+  label "param_scale_current"
+  description "DO NOT CHANGE"
+  no_echo true
+  default "current"
+end
+parameter "param_scale_previous" do
+  type "string"
+  label "param_scale_previous"
+  description "DO NOT CHANGE"
+  no_echo true
+  default "previous"
+end
+
+auth "auth_rs", type: "rightscale"
+
+datasource "current_week_costs" do
+  request do
+   run_script $cost_request, $param_billing_centers, $param_cost_metric, rs_org_id, rs_optima_host, $param_weekly_range, $param_scale_current
+  end
+end
+
+datasource "previous_week_costs" do
+  request do
+   run_script $cost_request, $param_billing_centers, $param_cost_metric, rs_org_id, rs_optima_host, $param_weekly_range, $param_scale_previous
+  end
+end
+
+datasource "current_month_costs" do
+  request do
+   run_script $cost_request, $param_billing_centers, $param_cost_metric, rs_org_id, rs_optima_host, $param_monthly_range, $param_scale_current
+  end
+end
+
+datasource "previous_month_costs" do
+  request do
+   run_script $cost_request, $param_billing_centers, $param_cost_metric, rs_org_id, rs_optima_host, $param_monthly_range, $param_scale_previous
+  end
+end
+
+script "cost_request", type: "javascript" do
+  parameters "param_billing_centers","param_cost_metric","rs_org_id", "rs_optima_host", "range", "scale"
+  result "request"
+  code <<-EOS
+    // format the data for the API
+    function getFormattedDate(date) {
+      var year = date.getFullYear();
+
+      var month = (1 + date.getMonth()).toString();
+      month = month.length > 1 ? month : '0' + month;
+
+      var day = date.getDate().toString();
+      day = day.length > 1 ? day : '0' + day;
+
+      return month + '/' + day + '/' + year;
+    }
+    // finds first day of week
+    function getMonday( date ) {
+      var day = date.getDay() || 7;
+      if( day !== 1 )
+          date.setHours(-24 * (day - 1));
+      return date;
+    }
+
+    // create a map to use in the request metric field.
+    var cost_metric = {
+      "Unamortized Unblended":"cost_nonamortized_unblended_adj",
+      "Amortized Unblended":"cost_amortized_unblended_adj",
+      "Unamortized Blended": "cost_nonamortized_blended_adj",
+      "Amortized Blended":"cost_amortized_blended_adj"
+    }
+
+
+    var start_at = new Date()
+    var end_at = new Date()
+    //set the start_at and end_at values for the various reports
+    if (range === "daily" && scale==="previous"){
+      //start_at from beginning of last week
+      start_at = new Date(start_at.setTime(start_at.getTime() - 6 * 24 * 60 * 60 * 1000))
+      //end_at to end of last week
+      end_at = new Date(end_at.setTime(end_at.getTime() - (end_at.getDay() ? end_at.getDay() : 7) * 24 * 60 * 60 * 1000))
+    } else if (range === "daily" && scale==="current") {
+      // start_at now
+      // start_at = new Date()
+      // end_at to beginning of week
+      end_at.setDate(getMonday(end_at))
+    } else if (range === "monthly" && scale==="current"){
+      // start_at from beginning of this month
+      start_at = new Date(start_at.getFullYear(), start_at.getMonth(), 1);
+      // end_at to end of this month
+      end_at = new Date(end_at.getFullYear(), en_at.getMonth() + 1, 0);
+    } else if (range === "monthly" && scale==="previous") {
+      // start_at from beginning of last month
+      start_at = new Date(start_at.getFullYear(), start_at.getMonth() - 1, 1);
+      // end_at to end of last month
+      end_at.setDate(0)
+    }
+
+    var request = {
+      auth:  auth_rs,
+      host:  rs_optima_host,
+      path:  "/bill-analysis/orgs/"+ rs_org_id+ "/costs/" + range + "/aggregated",
+      headers: {"API-Version": "0.1"},
+      body: {
+        "billing_center_ids": param_billing_centers,
+        "dimensions": [
+          "vendor",
+          "category",
+          "service",
+          "instance_type",
+          "billing_center_id"
+        ],
+        "end_at": getFormattedDate(end_at),
+        "metrics": [
+          cost_metric[param_cost_metric]
+        ],
+        "start_at": getFormattedDate(start_at)
+      }
+    }
+  EOS
+end
+
+datasource "ds_report" do
+  run_script $js_report,$current_week_costs,$previous_week_costs,$current_month_costs,$previous_month_costs
+end
+
+script "js_report", type: "javascript" do
+  parameters "current_week_costs","previous_week_costs","current_month_costs","previous_month_costs"
+  result "report"
+  code <<-EOS
+  /*var previous_monthly_costs = {
+    "rows": [
+      {
+        "dimensions": {
+          "billing_center_id": "4DruwQHeCnL4TpzVhkf22s",
+          "category": "compute",
+          "instance_type": "m4.4xlarge",
+          "service": "AmazonEC2",
+          "vendor": "AWS"
+        },
+        "metrics": {
+          "cost_nonamortized_blended_adj": 500.71,
+        },
+        "timestamp": "2017-01-22T00:00:00Z"
+      },{
+        "dimensions": {
+          "billing_center_id": "4DruwQHeCnL4TpzVhkf22s",
+          "category": "compute",
+          "instance_type": "m4.4xlarge",
+          "service": "AmazonEC2",
+          "vendor": "AWS"
+        },
+        "metrics": {
+          "cost_nonamortized_blended_adj": 800.71,
+        },
+        "timestamp": "2017-01-22T00:00:00Z"
+      },
+      {
+        "dimensions": {
+          "billing_center_id": "4DruwQHeCnL4TpzVhkf22s",
+          "category": "compute",
+          "instance_type": "m4.4xlarge",
+          "service": "AmazonEC2",
+          "vendor": "AWS"
+        },
+        "metrics": {
+          "cost_nonamortized_blended_adj": 2000.71,
+        },
+        "timestamp": "2017-01-21T00:00:00Z"
+      }
+    ]
+  }
+  var monthly_costs = {
+    "rows": [
+      {
+        "dimensions": {
+          "billing_center_id": "4DruwQHeCnL4TpzVhkf22s",
+          "category": "compute",
+          "instance_type": "m4.4xlarge",
+          "service": "AmazonEC2",
+          "vendor": "AWS"
+        },
+        "metrics": {
+          "cost_nonamortized_blended_adj": 1000.71,
+        },
+        "timestamp": "2017-01-22T00:00:00Z"
+      },{
+        "dimensions": {
+          "billing_center_id": "4DruwQHeCnL4TpzVhkf22s",
+          "category": "compute",
+          "instance_type": "m4.4xlarge",
+          "service": "AmazonEC2",
+          "vendor": "AWS"
+        },
+        "metrics": {
+          "cost_nonamortized_blended_adj": 3000.71,
+        },
+        "timestamp": "2017-01-22T00:00:00Z"
+      },
+      {
+        "dimensions": {
+          "billing_center_id": "4DruwQHeCnL4TpzVhkf22s",
+          "category": "compute",
+          "instance_type": "m4.4xlarge",
+          "service": "AmazonEC2",
+          "vendor": "AWS"
+        },
+        "metrics": {
+          "cost_nonamortized_blended_adj": 2000.71,
+        },
+        "timestamp": "2017-01-21T00:00:00Z"
+      }
+    ]
+  }
+    var daily_costs = {
+      "rows": [
+        {
+          "dimensions": {
+            "billing_center_id": "4DruwQHeCnL4TpzVhkf22s",
+            "category": "compute",
+            "instance_type": "m4.4xlarge",
+            "service": "AmazonEC2",
+            "vendor": "AWS"
+          },
+          "metrics": {
+            "cost_nonamortized_blended_adj": 100.71,
+          },
+          "timestamp": "2017-01-22T00:00:00Z"
+        },{
+          "dimensions": {
+            "billing_center_id": "4DruwQHeCnL4TpzVhkf22s",
+            "category": "compute",
+            "instance_type": "m4.4xlarge",
+            "service": "AmazonEC2",
+            "vendor": "AWS"
+          },
+          "metrics": {
+            "cost_nonamortized_blended_adj": 300.71,
+          },
+          "timestamp": "2017-01-22T00:00:00Z"
+        },
+        {
+          "dimensions": {
+            "billing_center_id": "4DruwQHeCnL4TpzVhkf22s",
+            "category": "compute",
+            "instance_type": "m4.4xlarge",
+            "service": "AmazonEC2",
+            "vendor": "AWS"
+          },
+          "metrics": {
+            "cost_nonamortized_blended_adj": 200.71,
+          },
+          "timestamp": "2017-01-21T00:00:00Z"
+        }
+      ]
+    }*/
+
+      var metric = cost_metric[param_cost_metric]
+      var weekly_total = 0.00
+      for (var i = 0; i < current_week_costs['rows'].length; i++) {
+        var row =  current_week_costs['rows'][i]
+        weekly_total += row['metrics'][metric]
+
+      }
+      var previous_weekly_total = 0.00
+      for (var i = 0; i < previous_week_costs['rows'].length; i++) {
+        var row =  previous_week_costs['rows'][i]
+        previous_weekly_total += row['metrics'][metric]
+
+      }
+      var previous_monthly_total = 0.00
+      for (var i = 0; i < previous_month_costs['rows'].length; i++) {
+        var row =  previous_month_costs['rows'][i]
+        previous_monthly_total += row['metrics'][metric]
+
+      }
+
+      var monthly_total = 0.00
+      for (var i = 0; i < current_month_costs['rows'].length; i++) {
+        var row =  monthly_costs['rows'][i]
+        current_month_costs += row['metrics'][metric]
+
+      }
+
+      var weekly_avg = weekly_total / daily_costs['rows'].length
+      var monthly_avg = monthly_total / monthly_costs['rows'].length
+      var weekly_change = Number((weekly_total - previous_weekly_total) / previous_weekly_total * 100).toFixed(1)
+      var monthly_change = Number(( monthly_total - previous_monthly_total) / previous_monthly_total * 100).toFixed(1)
+
+      var report = [{
+        range: 'Weekly',
+        current:  weekly_total,
+        previous: previous_weekly_total,
+        avg: weekly_avg,
+        change: weekly_change
+      },
+      {
+        range: 'Monthly',
+        current:  monthly_total,
+        previous: previous_monthly_total,
+        avg: monthly_avg,
+        change: monthly_change
+      },
+      ]
+
+  EOS
+end
+
+
+# send report to email list
+escalation "send_email" do
+  email $param_email
+end
+
+policy "scheduled_report" do
+  validate $ds_report do
+    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): Scheduled Report Policy"
+    detail_template <<-EOS
+Total Costs for {{ rs_project_name }}
+
+| Range | Daily Average | Previous  | Current | Change |
+| ----- | ------------- | --------- | ------- | ------ |
+{{ range data -}}
+  | {{ .range }} | ${{ .avg }} | ${{ .previous}} | ${{ .current }} | {{ .change }}% |
+{{ end -}}
+  EOS
+    escalate $send_email
+    check eq(size(data), 0)
+  end
+end
