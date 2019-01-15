@@ -1,3 +1,6 @@
+v1.10
+----
+- Added cpu and memory datapoint check for instances that are operational, but not sending monitoring data back to the platform.
 v1.9
 ----
 - Changed total memory calculation to use instance_type memory attribute.
