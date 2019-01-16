@@ -16,7 +16,6 @@ end
 parameter "param_billing_centers" do
   type "list"
   label "Billing Center ID List"
-  default "unallocated"
   description "List of billing center id's you want to report on."
 end
 
@@ -90,8 +89,9 @@ script "cost_request", type: "javascript" do
   parameters "param_billing_centers","param_cost_metric","rs_org_id", "rs_optima_host", "range", "scale"
   result "request"
   code <<-EOS
-    // format the data for the API
-    function getFormattedDate(date) {
+    // format the date for the `daily` API
+    // returns date formatted as string: YYYY-mm-dd
+    function getFormattedDailyDate(date) {
       var year = date.getFullYear();
 
       var month = (1 + date.getMonth()).toString();
@@ -100,8 +100,22 @@ script "cost_request", type: "javascript" do
       var day = date.getDate().toString();
       day = day.length > 1 ? day : '0' + day;
 
-      return month + '/' + day + '/' + year;
+      return year + '-' + month + '-' + day;
     }
+    // format the date for the `monthly` API
+    // returns date formatted as string: YYYY-mm
+    function getFormattedMonthlyDate(date) {
+      var year = date.getFullYear();
+
+      var month = (1 + date.getMonth()).toString();
+      month = month.length > 1 ? month : '0' + month;
+
+      var day = date.getDate().toString();
+      day = day.length > 1 ? day : '0' + day;
+
+      return year + '-' + month ;
+    }
+
     // finds first day of week
     function getMonday( date ) {
       var day = date.getDay() || 7;
@@ -119,233 +133,123 @@ script "cost_request", type: "javascript" do
     }
 
 
-    var start_at = new Date()
-    var end_at = new Date()
+    var start_at = "";
+    var end_at = "";
+    var now = new Date();
     //set the start_at and end_at values for the various reports
     if (range === "daily" && scale==="previous"){
       //start_at from beginning of last week
-      start_at = new Date(start_at.setTime(start_at.getTime() - 6 * 24 * 60 * 60 * 1000))
+      start_at = getFormattedDailyDate(new Date(now.setTime(now.getTime() - 6 * 24 * 60 * 60 * 1000)))
       //end_at to end of last week
-      end_at = new Date(end_at.setTime(end_at.getTime() - (end_at.getDay() ? end_at.getDay() : 7) * 24 * 60 * 60 * 1000))
+      console.log('test:')
+      end_at = getFormattedDailyDate(new Date(now.setTime(now.getTime() - (now.getDay() ? now.getDay() : 7) * 24 * 60 * 60 * 1000)))
+
     } else if (range === "daily" && scale==="current") {
-      // start_at now
-      // start_at = new Date()
-      // end_at to beginning of week
-      end_at.setDate(getMonday(end_at))
+      // start_at begining of week
+      start_at = getFormattedDailyDate(getMonday(new Date()))
+      console.log('start_at:'+start_at)
+      // end_at to end of week
+      end_at = getFormattedDailyDate(now)
+      console.log('end_at:'+end_at)
     } else if (range === "monthly" && scale==="current"){
       // start_at from beginning of this month
-      start_at = new Date(start_at.getFullYear(), start_at.getMonth(), 1);
+      start_at = getFormattedMonthlyDate(new Date(now.getFullYear(), now.getMonth(), 1))
       // end_at to end of this month
-      end_at = new Date(end_at.getFullYear(), en_at.getMonth() + 1, 0);
+      end_at = getFormattedMonthlyDate(new Date(now.getFullYear(), now.getMonth() + 1, 0))
     } else if (range === "monthly" && scale==="previous") {
       // start_at from beginning of last month
-      start_at = new Date(start_at.getFullYear(), start_at.getMonth() - 1, 1);
+      start_at = getFormattedMonthlyDate(new Date(now.getFullYear(), now.getMonth() - 1, 1))
       // end_at to end of last month
-      end_at.setDate(0)
+      end_at = getFormattedMonthlyDate(new Date(now.setDate(0)))
     }
 
     var request = {
-      auth:  auth_rs,
-      host:  rs_optima_host,
-      path:  "/bill-analysis/orgs/"+ rs_org_id+ "/costs/" + range + "/aggregated",
-      headers: {"API-Version": "0.1"},
-      body: {
-        "billing_center_ids": param_billing_centers,
-        "dimensions": [
-          "vendor",
-          "category",
-          "service",
-          "instance_type",
-          "billing_center_id"
-        ],
-        "end_at": getFormattedDate(end_at),
-        "metrics": [
-          cost_metric[param_cost_metric]
-        ],
-        "start_at": getFormattedDate(start_at)
-      }
+      auth:  'auth_rs',
+      //host:  rs_optima_host,
+      host: "front-service-b.indigo.rightscale.com",
+      scheme: 'https',
+      verb: 'POST',
+      path:  "/bill-analysis/orgs/"+ 2932 + "/costs/" + range + "/aggregated/billing_centers",
+      headers: {
+        "API-Version": "1.0",
+        "Content-Type":"application/json"
+      },
+      body: '{"dimensions":[],"start_at":"'+start_at +'","end_at":"'+end_at+'","metrics":["'+ cost_metric[param_cost_metric]+'"],"billing_center_ids":["'+param_billing_centers+'"]}'
     }
   EOS
 end
 
 datasource "ds_report" do
-  run_script $js_report,$current_week_costs,$previous_week_costs,$current_month_costs,$previous_month_costs
+  run_script $js_report,$current_week_costs,$previous_week_costs,$current_month_costs,$previous_month_costs,$param_cost_metric
 end
 
 script "js_report", type: "javascript" do
-  parameters "current_week_costs","previous_week_costs","current_month_costs","previous_month_costs"
+  parameters "current_week_costs","previous_week_costs","current_month_costs","previous_month_costs","param_cost_metric"
   result "report"
   code <<-EOS
-  /*var previous_monthly_costs = {
-    "rows": [
-      {
-        "dimensions": {
-          "billing_center_id": "4DruwQHeCnL4TpzVhkf22s",
-          "category": "compute",
-          "instance_type": "m4.4xlarge",
-          "service": "AmazonEC2",
-          "vendor": "AWS"
-        },
-        "metrics": {
-          "cost_nonamortized_blended_adj": 500.71,
-        },
-        "timestamp": "2017-01-22T00:00:00Z"
-      },{
-        "dimensions": {
-          "billing_center_id": "4DruwQHeCnL4TpzVhkf22s",
-          "category": "compute",
-          "instance_type": "m4.4xlarge",
-          "service": "AmazonEC2",
-          "vendor": "AWS"
-        },
-        "metrics": {
-          "cost_nonamortized_blended_adj": 800.71,
-        },
-        "timestamp": "2017-01-22T00:00:00Z"
-      },
-      {
-        "dimensions": {
-          "billing_center_id": "4DruwQHeCnL4TpzVhkf22s",
-          "category": "compute",
-          "instance_type": "m4.4xlarge",
-          "service": "AmazonEC2",
-          "vendor": "AWS"
-        },
-        "metrics": {
-          "cost_nonamortized_blended_adj": 2000.71,
-        },
-        "timestamp": "2017-01-21T00:00:00Z"
+      // create a map to use in the request metric field.
+      var cost_metric = {
+        "Unamortized Unblended":"cost_nonamortized_unblended_adj",
+        "Amortized Unblended":"cost_amortized_unblended_adj",
+        "Unamortized Blended": "cost_nonamortized_blended_adj",
+        "Amortized Blended":"cost_amortized_blended_adj"
       }
-    ]
-  }
-  var monthly_costs = {
-    "rows": [
-      {
-        "dimensions": {
-          "billing_center_id": "4DruwQHeCnL4TpzVhkf22s",
-          "category": "compute",
-          "instance_type": "m4.4xlarge",
-          "service": "AmazonEC2",
-          "vendor": "AWS"
-        },
-        "metrics": {
-          "cost_nonamortized_blended_adj": 1000.71,
-        },
-        "timestamp": "2017-01-22T00:00:00Z"
-      },{
-        "dimensions": {
-          "billing_center_id": "4DruwQHeCnL4TpzVhkf22s",
-          "category": "compute",
-          "instance_type": "m4.4xlarge",
-          "service": "AmazonEC2",
-          "vendor": "AWS"
-        },
-        "metrics": {
-          "cost_nonamortized_blended_adj": 3000.71,
-        },
-        "timestamp": "2017-01-22T00:00:00Z"
-      },
-      {
-        "dimensions": {
-          "billing_center_id": "4DruwQHeCnL4TpzVhkf22s",
-          "category": "compute",
-          "instance_type": "m4.4xlarge",
-          "service": "AmazonEC2",
-          "vendor": "AWS"
-        },
-        "metrics": {
-          "cost_nonamortized_blended_adj": 2000.71,
-        },
-        "timestamp": "2017-01-21T00:00:00Z"
-      }
-    ]
-  }
-    var daily_costs = {
-      "rows": [
-        {
-          "dimensions": {
-            "billing_center_id": "4DruwQHeCnL4TpzVhkf22s",
-            "category": "compute",
-            "instance_type": "m4.4xlarge",
-            "service": "AmazonEC2",
-            "vendor": "AWS"
-          },
-          "metrics": {
-            "cost_nonamortized_blended_adj": 100.71,
-          },
-          "timestamp": "2017-01-22T00:00:00Z"
-        },{
-          "dimensions": {
-            "billing_center_id": "4DruwQHeCnL4TpzVhkf22s",
-            "category": "compute",
-            "instance_type": "m4.4xlarge",
-            "service": "AmazonEC2",
-            "vendor": "AWS"
-          },
-          "metrics": {
-            "cost_nonamortized_blended_adj": 300.71,
-          },
-          "timestamp": "2017-01-22T00:00:00Z"
-        },
-        {
-          "dimensions": {
-            "billing_center_id": "4DruwQHeCnL4TpzVhkf22s",
-            "category": "compute",
-            "instance_type": "m4.4xlarge",
-            "service": "AmazonEC2",
-            "vendor": "AWS"
-          },
-          "metrics": {
-            "cost_nonamortized_blended_adj": 200.71,
-          },
-          "timestamp": "2017-01-21T00:00:00Z"
-        }
-      ]
-    }*/
 
       var metric = cost_metric[param_cost_metric]
-      var weekly_total = 0.00
+      var current_week_total = 0.00
       for (var i = 0; i < current_week_costs['rows'].length; i++) {
         var row =  current_week_costs['rows'][i]
-        weekly_total += row['metrics'][metric]
-
+        current_week_total += row['metrics'][metric]
       }
-      var previous_weekly_total = 0.00
+
+      var previous_week_total = 0.00
       for (var i = 0; i < previous_week_costs['rows'].length; i++) {
         var row =  previous_week_costs['rows'][i]
-        previous_weekly_total += row['metrics'][metric]
-
+        previous_week_total += row['metrics'][metric]
       }
-      var previous_monthly_total = 0.00
+
+      var previous_month_total = 0.00
       for (var i = 0; i < previous_month_costs['rows'].length; i++) {
         var row =  previous_month_costs['rows'][i]
-        previous_monthly_total += row['metrics'][metric]
-
+        previous_month_total += row['metrics'][metric]
       }
 
-      var monthly_total = 0.00
+      var current_month_total = 0.00
       for (var i = 0; i < current_month_costs['rows'].length; i++) {
-        var row =  monthly_costs['rows'][i]
-        current_month_costs += row['metrics'][metric]
-
+        var row =  current_month_costs['rows'][i]
+        current_month_total += row['metrics'][metric]
       }
 
-      var weekly_avg = weekly_total / daily_costs['rows'].length
-      var monthly_avg = monthly_total / monthly_costs['rows'].length
-      var weekly_change = Number((weekly_total - previous_weekly_total) / previous_weekly_total * 100).toFixed(1)
-      var monthly_change = Number(( monthly_total - previous_monthly_total) / previous_monthly_total * 100).toFixed(1)
-
+      var weekly_avg = 'n/a'
+      if (current_week_costs['rows'].length > 0){
+        weekly_avg = current_week_total / current_week_costs['rows'].length
+      }
+      var monthly_avg = 'n/a'
+      if (current_month_costs['rows'].length > 0){
+        monthly_avg = current_month_total / current_month_costs['rows'].length
+      }
+      console.log(current_week_total)
+      console.log(previous_week_total)
+      var weekly_change = 0
+      var weekly_change = 0
+      if (current_week_total > 0){
+        weekly_change = Number((current_week_total - previous_week_total) / previous_week_total * 100).toFixed(1)
+      }
+      var monthly_change = 0
+      if (current_month_total > 0){
+        monthly_change = Number(( current_month_total - previous_month_total) / previous_month_total * 100).toFixed(1)
+      }
       var report = [{
         range: 'Weekly',
-        current:  weekly_total,
-        previous: previous_weekly_total,
+        current:  current_week_total,
+        previous: previous_week_total,
         avg: weekly_avg,
         change: weekly_change
       },
       {
         range: 'Monthly',
-        current:  monthly_total,
-        previous: previous_monthly_total,
+        current:  current_month_total,
+        previous: previous_month_total,
         avg: monthly_avg,
         change: monthly_change
       },
