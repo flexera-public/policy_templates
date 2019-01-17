@@ -29,4 +29,14 @@ The following policy actions are taken on any resources found to be out of compl
 
 This policy requires permissions to access RightScale resources (optima).  Before applying this policy add the following roles to the user applying the policy.  The roles should be applied to all Accounts where the policy will run or the Organization. For more information on modifying roles visit the [Governance Docs](https://docs.rightscale.com/cm/ref/user_roles.html)
 
-- Optima - ?????
+- Optima - billing_center_viewer
+
+## Supported Clouds
+
+- AWS
+- Azure
+- Google
+
+## Cost
+
+This Policy Template does not launch any instances, and so does not incur any cloud costs.
