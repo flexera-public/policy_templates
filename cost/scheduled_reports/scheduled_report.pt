@@ -138,29 +138,25 @@ script "cost_request", type: "javascript" do
     var now = new Date();
     //set the start_at and end_at values for the various reports
     if (range === "daily" && scale==="previous"){
-      //start_at from beginning of last week
-      start_at = getFormattedDailyDate(new Date(now.setTime(now.getTime() - 6 * 24 * 60 * 60 * 1000)))
-      //end_at to end of last week
-      console.log('test:')
-      end_at = getFormattedDailyDate(new Date(now.setTime(now.getTime() - (now.getDay() ? now.getDay() : 7) * 24 * 60 * 60 * 1000)))
-
+      //end_at to end of last week  and set time to sunday
+      end_at = getFormattedDailyDate(new Date(now.setDate(now.getDate() - now.getDay())))
+      // from beginning of last week, get sunday(end_at) and subtract 6
+      start_at = getFormattedDailyDate(new Date(now.setDate(now.getDate() - 6)))
     } else if (range === "daily" && scale==="current") {
       // start_at begining of week
       start_at = getFormattedDailyDate(getMonday(new Date()))
-      console.log('start_at:'+start_at)
       // end_at to end of week
       end_at = getFormattedDailyDate(now)
-      console.log('end_at:'+end_at)
     } else if (range === "monthly" && scale==="current"){
       // start_at from beginning of this month
-      start_at = getFormattedMonthlyDate(new Date(now.getFullYear(), now.getMonth(), 1))
+      start_at = getFormattedDailyDate(new Date(now.getFullYear(), now.getMonth(), 1))
       // end_at to end of this month
-      end_at = getFormattedMonthlyDate(new Date(now.getFullYear(), now.getMonth() + 1, 0))
+      end_at = getFormattedDailyDate(now)
     } else if (range === "monthly" && scale==="previous") {
       // start_at from beginning of last month
-      start_at = getFormattedMonthlyDate(new Date(now.getFullYear(), now.getMonth() - 1, 1))
+      start_at = getFormattedDailyDate(new Date(now.getFullYear(), now.getMonth() - 1, 1))
       // end_at to end of last month
-      end_at = getFormattedMonthlyDate(new Date(now.setDate(0)))
+      end_at = getFormattedDailyDate(new Date(now.setDate(0)))
     }
 
     var request = {
@@ -169,7 +165,7 @@ script "cost_request", type: "javascript" do
       host: "front-service-b.indigo.rightscale.com",
       scheme: 'https',
       verb: 'POST',
-      path:  "/bill-analysis/orgs/"+ 2932 + "/costs/" + range + "/aggregated/billing_centers",
+      path:  "/bill-analysis/orgs/"+ 2932 + "/costs/" + "daily" + "/aggregated/billing_centers",
       headers: {
         "API-Version": "1.0",
         "Content-Type":"application/json"
@@ -220,17 +216,21 @@ script "js_report", type: "javascript" do
         current_month_total += row['metrics'][metric]
       }
 
-      var weekly_avg = 'n/a'
+      var weekly_avg = 0
       if (current_week_costs['rows'].length > 0){
-        weekly_avg = current_week_total / current_week_costs['rows'].length
+        //weekly_avg = current_week_total / current_week_costs['rows'].length
+        var days_this_week = current_week_costs['rows'].length
+        weekly_avg = (current_week_total + previous_week_total) / (7 + days_this_week)
       }
-      var monthly_avg = 'n/a'
+
+      var monthly_avg = 0
       if (current_month_costs['rows'].length > 0){
-        monthly_avg = current_month_total / current_month_costs['rows'].length
+        //monthly_avg = current_month_total / current_month_costs['rows'].length
+        var days_this_month = current_month_costs['rows'].length
+        var days_last_month = previous_month_costs['rows'].length
+        monthly_avg = (current_month_total + previous_month_total) / ( days_last_month + days_this_month)
       }
-      console.log(current_week_total)
-      console.log(previous_week_total)
-      var weekly_change = 0
+
       var weekly_change = 0
       if (current_week_total > 0){
         weekly_change = Number((current_week_total - previous_week_total) / previous_week_total * 100).toFixed(1)
@@ -241,16 +241,16 @@ script "js_report", type: "javascript" do
       }
       var report = [{
         range: 'Weekly',
-        current:  current_week_total,
-        previous: previous_week_total,
-        avg: weekly_avg,
+        current:  Math.round(current_week_total),
+        previous: Math.round(previous_week_total),
+        avg: Math.round(weekly_avg),
         change: weekly_change
       },
       {
         range: 'Monthly',
-        current:  current_month_total,
-        previous: previous_month_total,
-        avg: monthly_avg,
+        current:  Math.round(current_month_total),
+        previous: Math.round(previous_month_total),
+        avg: Math.round(monthly_avg),
         change: monthly_change
       },
       ]
@@ -268,10 +268,14 @@ policy "scheduled_report" do
   validate $ds_report do
     summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): Scheduled Report Policy"
     detail_template <<-EOS
-Total Costs for {{ rs_project_name }}
+# Total Costs for {{ rs_project_name }}
 
-| Range | Daily Average | Previous  | Current | Change |
-| ----- | ------------- | --------- | ------- | ------ |
+## Cost Metric: {{ parameters.param_cost_metric }}
+
+Billing Center Id's: {{ parameters.param_billing_centers }}
+
+| Range | Daily Average | Previous  | Current (incomplete) | Change |
+| ----- | ------------- | --------- | -------------------- | ------ |
 {{ range data -}}
   | {{ .range }} | ${{ .avg }} | ${{ .previous}} | ${{ .current }} | {{ .change }}% |
 {{ end -}}
