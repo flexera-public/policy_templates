@@ -1,6 +1,14 @@
 # Scheduled Report
 
+This policy allows you to set up scheduled reports that will provide summaries of cloud cost across all resources in the billing centers you specify, delivered to any email addresses you specify. The policy will report the following:
 
+Daily average cost across the last week and last month
+Total cost during previous full week (Monday-Sunday) and previous full month
+Total cost during current (incomplete) week and month
+
+Please note that the last 3 days of data in the current week or month will contain incomplete data.
+
+We recommend running this policy on a weekly cadence.
 
 ## Cost Metrics
 
