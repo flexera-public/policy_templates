@@ -1,0 +1,307 @@
+name "Scheduled Report"
+rs_pt_ver 20180301
+type "policy"
+short_description "This policy allows you to set up scheduled reports that will provide summaries of cloud cost across all resources in the billing centers you specify
+See [README](https://github.com/rightscale/policy_templates/tree/master/cost/scheduled_report) for more details"
+long_description "This policy allows you to set up scheduled reports that will provide summaries of cloud cost across all resources in the billing centers you specify, delivered to any email addresses you specify. The policy will report the following:
+
+Daily average cost across the last week and last month
+Total cost during previous full week (Monday-Sunday) and previous full month
+Total cost during current (incomplete) week and month
+
+Please note that the last 3 days of data in the current week or month will contain incomplete data.
+
+We recommend running this policy on a weekly cadence.
+
+Version: 1.0"
+severity "low"
+category "Cost"
+
+## commented out until the optima resource is added to policies.
+# permission "optima" do
+#   label "Access Optima Resources"
+#   resources "rs_optima.costs"
+#   actions "rs_optima.aggregated"
+# end
+
+parameter "param_email" do
+  type "list"
+  label "Email List"
+  description "Email addresses of the recipients you wish to notify"
+end
+
+parameter "param_billing_centers" do
+  type "list"
+  label "Billing Center ID List"
+  description "List of billing center id's you want to report on."
+  min_length 1
+end
+
+parameter "param_cost_metric" do
+  type "string"
+  label "Cost Metric"
+  allowed_values "Unamortized Unblended","Amortized Unblended","Unamortized Blended","Amortized Blended"
+  default "Unamortized Unblended"
+  description "Select the cost metric for your report.  See the README file for more details"
+end
+
+##  the below params are used to pass values to the `costs` datasources
+##  these are temporary until we can pass literal values to the datasource parameters
+parameter "param_daily_range" do
+  type "string"
+  label "param_daily_range"
+  description "DO NOT CHANGE"
+  default  "daily"
+end
+
+parameter "param_monthly_range" do
+  type "string"
+  label "param_monthly_range"
+  description "DO NOT CHANGE"
+  default  "monthly"
+end
+parameter "param_scale_current" do
+  type "string"
+  label "param_scale_current"
+  description "DO NOT CHANGE"
+  default "current"
+end
+parameter "param_scale_previous" do
+  type "string"
+  label "param_scale_previous"
+  description "DO NOT CHANGE"
+  default "previous"
+end
+
+auth "auth_rs", type: "rightscale"
+
+datasource "current_week_costs" do
+  request do
+   run_script $cost_request, $param_billing_centers, $param_cost_metric, rs_org_id, rs_optima_host, $param_daily_range, $param_scale_current
+  end
+end
+
+datasource "previous_week_costs" do
+  request do
+   run_script $cost_request, $param_billing_centers, $param_cost_metric, rs_org_id, rs_optima_host, $param_daily_range, $param_scale_previous
+  end
+end
+
+datasource "current_month_costs" do
+  request do
+   run_script $cost_request, $param_billing_centers, $param_cost_metric, rs_org_id, rs_optima_host, $param_monthly_range, $param_scale_current
+  end
+end
+
+datasource "previous_month_costs" do
+  request do
+   run_script $cost_request, $param_billing_centers, $param_cost_metric, rs_org_id, rs_optima_host, $param_monthly_range, $param_scale_previous
+  end
+end
+
+script "cost_request", type: "javascript" do
+  parameters "param_billing_centers","param_cost_metric","rs_org_id", "rs_optima_host", "range", "scale"
+  result "request"
+  code <<-EOS
+    // format the date for the `daily` API
+    // returns date formatted as string: YYYY-mm-dd
+    function getFormattedDailyDate(date) {
+      var year = date.getFullYear();
+
+      var month = (1 + date.getMonth()).toString();
+      month = month.length > 1 ? month : '0' + month;
+
+      var day = date.getDate().toString();
+      day = day.length > 1 ? day : '0' + day;
+
+      return year + '-' + month + '-' + day;
+    }
+    // format the date for the `monthly` API
+    // returns date formatted as string: YYYY-mm
+    function getFormattedMonthlyDate(date) {
+      var year = date.getFullYear();
+
+      var month = (1 + date.getMonth()).toString();
+      month = month.length > 1 ? month : '0' + month;
+
+      var day = date.getDate().toString();
+      day = day.length > 1 ? day : '0' + day;
+
+      return year + '-' + month ;
+    }
+
+    // finds first day of week
+    function getMonday( date ) {
+      var day = date.getDay() || 7;
+      if( day !== 1 )
+          date.setHours(-24 * (day - 1));
+      return date;
+    }
+
+    // create a map to use in the request metric field.
+    var cost_metric = {
+      "Unamortized Unblended":"cost_nonamortized_unblended_adj",
+      "Amortized Unblended":"cost_amortized_unblended_adj",
+      "Unamortized Blended": "cost_nonamortized_blended_adj",
+      "Amortized Blended":"cost_amortized_blended_adj"
+    }
+
+
+    var start_at = "";
+    var end_at = "";
+    var now = new Date();
+    //set the start_at and end_at values for the various reports
+    if (range === "daily" && scale==="previous"){
+      //end_at to end of last week  and set time to sunday
+      end_at = getFormattedDailyDate(new Date(now.setDate(now.getDate() - now.getDay())))
+      // from beginning of last week, get sunday(end_at) and subtract 6
+      start_at = getFormattedDailyDate(new Date(now.setDate(now.getDate() - 6)))
+    } else if (range === "daily" && scale==="current") {
+      // start_at begining of week
+      start_at = getFormattedDailyDate(getMonday(new Date()))
+      // end_at to end of week
+      end_at = getFormattedDailyDate(now)
+    } else if (range === "monthly" && scale==="current"){
+      // start_at from beginning of this month
+      start_at = getFormattedDailyDate(new Date(now.getFullYear(), now.getMonth(), 1))
+      // end_at to end of this month
+      end_at = getFormattedDailyDate(now)
+    } else if (range === "monthly" && scale==="previous") {
+      // start_at from beginning of last month
+      start_at = getFormattedDailyDate(new Date(now.getFullYear(), now.getMonth() - 1, 1))
+      // end_at to end of last month
+      end_at = getFormattedDailyDate(new Date(now.setDate(0)))
+    }
+
+
+    var body = {
+      "dimensions":[]
+      "granularity":"day",
+      "start_at": start_at ,
+      "end_at": end_at
+      "metrics":[cost_metric[param_cost_metric]],
+      "billing_center_ids":param_billing_centers
+      }
+
+    var request = {
+      auth:  'auth_rs',
+      host:  rs_optima_host,
+      scheme: 'https',
+      verb: 'POST',
+      path:  "/bill-analysis/orgs/"+ rs_org_id + "/costs/aggregated",
+      headers: {
+        "API-Version": "1.0",
+        "Content-Type":"application/json"
+      },
+      body: JSON.stringify(body)
+    }
+  EOS
+end
+
+datasource "ds_report" do
+  run_script $js_report,$current_week_costs,$previous_week_costs,$current_month_costs,$previous_month_costs,$param_cost_metric
+end
+
+script "js_report", type: "javascript" do
+  parameters "current_week_costs","previous_week_costs","current_month_costs","previous_month_costs","param_cost_metric"
+  result "report"
+  code <<-EOS
+      // create a map to use in the request metric field.
+      var cost_metric = {
+        "Unamortized Unblended":"cost_nonamortized_unblended_adj",
+        "Amortized Unblended":"cost_amortized_unblended_adj",
+        "Unamortized Blended": "cost_nonamortized_blended_adj",
+        "Amortized Blended":"cost_amortized_blended_adj"
+      }
+
+      var metric = cost_metric[param_cost_metric]
+      var current_week_total = 0.00
+      for (var i = 0; i < current_week_costs['rows'].length; i++) {
+        var row =  current_week_costs['rows'][i]
+        current_week_total += row['metrics'][metric]
+      }
+
+      var previous_week_total = 0.00
+      for (var i = 0; i < previous_week_costs['rows'].length; i++) {
+        var row =  previous_week_costs['rows'][i]
+        previous_week_total += row['metrics'][metric]
+      }
+
+      var previous_month_total = 0.00
+      for (var i = 0; i < previous_month_costs['rows'].length; i++) {
+        var row =  previous_month_costs['rows'][i]
+        previous_month_total += row['metrics'][metric]
+      }
+
+      var current_month_total = 0.00
+      for (var i = 0; i < current_month_costs['rows'].length; i++) {
+        var row =  current_month_costs['rows'][i]
+        current_month_total += row['metrics'][metric]
+      }
+
+      var weekly_avg = 0
+      if (current_week_costs['rows'].length > 0){
+        var days_this_week = current_week_costs['rows'].length
+        weekly_avg = (current_week_total + previous_week_total) / (7 + days_this_week)
+      }
+
+      var monthly_avg = 0
+      if (current_month_costs['rows'].length > 0){
+        var days_this_month = current_month_costs['rows'].length
+        var days_last_month = previous_month_costs['rows'].length
+        monthly_avg = (current_month_total + previous_month_total) / ( days_last_month + days_this_month)
+      }
+
+      var weekly_change = 0
+      if (current_week_total > 0){
+        weekly_change = Number((current_week_total - previous_week_total) / previous_week_total * 100).toFixed(1)
+      }
+      var monthly_change = 0
+      if (current_month_total > 0){
+        monthly_change = Number(( current_month_total - previous_month_total) / previous_month_total * 100).toFixed(1)
+      }
+      var report = [{
+        range: 'Weekly',
+        current:  Math.round(current_week_total),
+        previous: Math.round(previous_week_total),
+        avg: Math.round(weekly_avg),
+        change: weekly_change
+      },
+      {
+        range: 'Monthly',
+        current:  Math.round(current_month_total),
+        previous: Math.round(previous_month_total),
+        avg: Math.round(monthly_avg),
+        change: monthly_change
+      },
+      ]
+
+  EOS
+end
+
+
+# send report to email list
+escalation "send_email" do
+  email $param_email
+end
+
+policy "scheduled_report" do
+  validate $ds_report do
+    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): Scheduled Report Policy"
+    detail_template <<-EOS
+# Total Costs for {{ rs_project_name }}
+
+## Cost Metric: {{ parameters.param_cost_metric }}
+
+Billing Center Id's: {{ parameters.param_billing_centers }}
+
+| Range | Daily Average | Previous  | Current (incomplete) |
+| ----- | ------------- | --------- | -------------------- |
+{{ range data -}}
+  | {{ .range }} | ${{ .avg }} | ${{ .previous}} | ${{ .current }} |
+{{ end -}}
+  EOS
+    escalate $send_email
+    check eq(size(data), 0)
+  end
+end
