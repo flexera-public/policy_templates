@@ -17,6 +17,7 @@ Please contact sales@rightscale.com to learn more.
 - [Schedule Instances](./cost/schedule_instances)
 - [Billing Center Access Report](./cost/billing_center_access_report/)
 - [Unattached IP Addresses](./cost/unattached_addresses)
+- [Scheduled Report](./cost/scheduled_report)
 
 ### Security
 - [Security Group: ICMP Enabled](./security/security_groups/icmp_enabled/)
