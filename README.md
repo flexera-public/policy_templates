@@ -14,10 +14,10 @@ Please contact sales@rightscale.com to learn more.
 - [Downsize Instances](./cost/downsize_instance/)
 - [Unattached Volumes Policy](./cost/volumes/unattached_volumes/)
 - [Old Snapshots](./cost/volumes/old_snapshots/)
-- [Schedule Instances](./cost/schedule_instances)
-- [Billing Center Access Report](./cost/billing_center_access_report/)
-- [Unattached IP Addresses](./cost/unattached_addresses)
-- [Scheduled Report](./cost/scheduled_report)
+- [Schedule Instances](./cost/schedule_instances/)
+- [Billing Center Access Report](./compliance/billing_center_access_report/)
+- [Unattached IP Addresses](./cost/unattached_addresses/)
+- [Scheduled Report](./cost/scheduled_reports/)
 
 ### Security
 - [Security Group: ICMP Enabled](./security/security_groups/icmp_enabled/)
