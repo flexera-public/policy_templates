@@ -1,0 +1,308 @@
+name "Azure Superseded Instance Types"
+rs_pt_ver 20180301
+type "policy"
+short_description " See the [README](https://github.com/rightscale/policy_templates/tree/master/compliance/azure/azure_disallowed_regions) and [docs.rightscale.com/policies](http://docs.rightscale.com/policies/) to learn more."
+long_description "Version: 1.0"
+severity "medium"
+category "Cost"
+
+parameter "param_azure_tenant_id" do
+  type "string"
+  label "Azure AD Tenant ID"
+  category "Azure"
+end
+
+parameter "param_azure_sub" do
+  type "string"
+  label "Azure Subscription ID"
+  category "Azure"
+end
+
+parameter "param_disallowed_type" do
+  category "User Inputs"
+  label "Disallowed Instance Type"
+  type "string"
+  description "Must match the syntax used on the Azure API. Value is case-sensitive. Example: Standard_D3"
+end
+
+parameter "param_superseded_type" do 
+  category "User Inputs"
+  label "Superseded Instance Type"
+  type "string"
+  description "Must match the syntax used on the Azure API. Value is case-sensitive. Example: Standard_D3_v2"
+end 
+  
+parameter "param_exclusion_tag_key" do
+  category "User Inputs"
+  label "Exclusion Tag Key"
+  description "Azure-native instance tag to ignore instances that match the disallowed instance type. Only supply the tag key. The policy assumes that the tag value is irrelevant."
+  type "string"
+  default "exclude_resize"
+end
+
+parameter "param_email" do
+  type "list"
+  label "Email addresses of the recipients you wish to notify"
+end
+
+auth "azure_auth", type: "oauth2" do
+  token_url join(["https://login.microsoftonline.com/",$param_azure_tenant_id,"/oauth2/token"])
+  grant type: "client_credentials" do
+    client_id cred("AZURE_APPLICATION_ID")
+    client_secret cred("AZURE_APPLICATION_KEY")
+    additional_params do {
+      "resource" => "https://management.azure.com/"
+    } end
+  end
+end
+
+pagination "azure_pagination" do
+  get_page_marker do
+    body_path "nextLink"
+  end
+  set_page_marker do
+    uri true
+  end
+end
+
+datasource "instances" do
+  request do
+    auth $azure_auth
+    pagination $azure_pagination
+    host "management.azure.com"
+    path join(["/subscriptions/", $param_azure_sub, "/providers/Microsoft.Compute/virtualMachines"])
+    query "api-version","2018-06-01"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "value[*]") do
+      field "id", jmes_path(col_item,"id")
+      field "region", jmes_path(col_item,"location")
+      field "name", jmes_path(col_item,"name")
+      field "instance_type", jmes_path(col_item,"properties.hardwareProfile.vmSize")
+      field "availability_set", jmes_path(col_item,"properties.availabilitySet.id")
+      field "tags", jmes_path(col_item,"tags")
+    end
+  end
+end
+
+datasource "filtered_instances" do
+  run_script $js_filter_instances, $instances, $param_exclusion_tag_key
+end
+
+script "js_filter_instances", type: "javascript" do
+  parameters "instances","exclusion_tag"
+  result "result"
+  code <<-EOS
+    var result = [];
+
+    // Iterate through all instances
+    _.each(instances, function(inst){
+      console.log(inst.name)
+      if (_.has(inst.tags, exclusion_tag)) {
+        // skip due to exclusion tag
+      } else {
+        if (inst.availability_set == null) {
+          result.push({
+            id: inst["id"],
+            region: inst["region"],
+            name: inst["name"],
+            instance_type: inst["instance_type"],
+            availability_set: inst["availability_set"]
+          })
+        }
+      }
+    })
+EOS
+end
+
+policy "azure_superseded_instances_policy" do
+  validate_each $filtered_instances do
+    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} Azure Instances with a disallowed instance type"
+    detail_template <<-EOS
+# Azure Instances with a Disallowed Instance Type
+| Instance Name | Instance Type | Region | ID  |
+| ------------- | ------------- | ------ | --- |
+{{ range data -}}
+| {{.name}} | {{.instance_type}} | {{.region}} | {{.id}} |
+{{ end -}}
+EOS
+    escalate $email
+    escalate $resize_instances
+    check ne(val(item,"instance_type"),$param_disallowed_type)
+  end
+end
+
+escalation "email" do
+   email $param_email
+end
+
+escalation "resize_instances" do
+  request_approval  do
+    label "Approve Instance Resizing"
+    description "Approve escalation to run RightScale Cloud Workflow to resize the Azure instances using disallowed instance types"
+    parameter "approval_reason" do
+      type "string"
+      label "Reason for Approval"
+      description "Explain why you are approving the action"
+    end
+  end
+  run "resize_instances", data, $param_azure_tenant_id, $param_superseded_type
+end
+
+define resize_instances($data, $param_azure_tenant_id, $param_superseded_type) return $all_responses do
+  call get_access_token($param_azure_tenant_id) retrieve $access_token
+
+  $all_responses = []
+  foreach $item in $data do
+    sub on_error: skip do
+      $instance_response = http_request(
+        verb: "get",
+        host: "management.azure.com",
+        https: true,
+        href: $item["id"],
+        query_strings: {
+          "api-version": "2018-06-01"
+        },
+        headers: {
+          "cache-control": "no-cache",
+          "content-type": "application/json",
+          "authorization": "Bearer " + $access_token
+        }
+      )
+
+      $all_responses << $instance_response
+
+      $inst_view_response = http_request(
+        verb: "get",
+        host: "management.azure.com",
+        https: true,
+        href: join([$item["id"],"/instanceView"]),
+        query_strings: {
+          "api-version": "2018-06-01"
+        },
+        headers: {
+          "cache-control": "no-cache",
+          "content-type": "application/json",
+          "authorization": "Bearer " + $access_token
+        }
+      )
+
+      $all_responses << $inst_view_response
+      
+      foreach $state in $inst_view_response["body"]["statuses"] do
+        if $state["code"] =~ "PowerState"
+          $$powerstate = $state["displayStatus"]
+        end
+      end
+
+      if $$powerstate == "VM running"
+        $deallocate_inst_response = http_request(
+          verb: "post",
+          host: "management.azure.com",
+          https: true,
+          href: join([$item["id"],"/deallocate"]),
+          query_strings: {
+            "api-version": "2018-06-01"
+          },
+          headers: {
+            "cache-control": "no-cache",
+            "content-type": "application/json",
+            "authorization": "Bearer " + $access_token
+          }
+        )
+
+        $all_responses << $deallocate_inst_response
+
+      end
+      
+      while $$powerstate != "VM deallocated" do
+        sleep(30)
+        $status = http_request(
+          verb: "get",
+          host: "management.azure.com",
+          https: true,
+          href: join([$item["id"],"/instanceView"]),
+          query_strings: {
+            "api-version": "2018-06-01"
+          },
+          headers: {
+            "cache-control": "no-cache",
+            "content-type": "application/json",
+            "authorization": "Bearer " + $access_token
+          }
+        )
+
+        $all_responses << $status
+
+        foreach $state in $status["body"]["statuses"] do
+          if $state["code"] =~ "PowerState"
+            $$powerstate = $state["displayStatus"]
+          end
+        end
+      end
+
+      $new_object = $instance_response["body"]
+      $new_object["properties"]["hardwareProfile"]["vmSize"] = $param_superseded_type
+
+      $update_inst_response = http_request(
+        verb: "patch",
+        host: "management.azure.com",
+        https: true,
+        href: $item["id"],
+        query_strings: {
+          "api-version": "2018-06-01"
+        },
+        headers: {
+          "cache-control": "no-cache",
+          "content-type": "application/json",
+          "authorization": "Bearer " + $access_token
+        },
+        body: $new_object
+      )
+
+      $all_responses << $update_inst_response
+
+      sleep(60)
+      $start_inst_response = http_request(
+        verb: "post",
+        host: "management.azure.com",
+        https: true,
+        href: join([$item["id"],"/start"]),
+        query_strings: {
+          "api-version": "2018-06-01"
+        },
+        headers: {
+          "cache-control": "no-cache",
+          "content-type": "application/json",
+          "authorization": "Bearer " + $access_token
+        }
+      )
+
+      $all_responses << $start_inst_response
+
+    end
+  end  
+end
+
+define get_access_token($param_azure_tenant_id) return $access_token do
+
+  $client_id = cred("AZURE_APPLICATION_ID")
+  $client_secret = cred("AZURE_APPLICATION_KEY")
+
+  $body_string = "grant_type=client_credentials&resource=https://management.core.windows.net/&client_id="+$client_id+"&client_secret="+$client_secret
+
+  $auth_response = http_post(
+    url: join(["https://login.microsoftonline.com/",$param_azure_tenant_id,"/oauth2/token?api-version=1.0"]),
+    headers : {
+      "cache-control":"no-cache",
+      "content-type":"application/x-www-form-urlencoded"
+    },
+    body:$body_string
+  )
+
+  $auth_response_body = $auth_response["body"]
+  $access_token = $auth_response_body["access_token"]
+
+end
