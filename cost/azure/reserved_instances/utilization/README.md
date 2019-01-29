@@ -4,6 +4,11 @@
 
 This Policy Template leverages the [Azure EA API for Reserved Instance Utilization](https://docs.microsoft.com/en-us/rest/api/billing/enterprise/billing-enterprise-api-reserved-instance-usage#request-for--reserved-instance-usage-summary). It will notify only if utilization of a RI falls below the value specified in the `Show RI's with utilization below this value` field. It will email the user specified in `Email addresses of the recipients you wish to notify`
 
+### Prerequesites
+
+- The following RightScale Credentials
+  - `AZURE_EA_KEY` - the Azure EA key for the enrollment being checked
+
 ### Input Parameters
 
 This policy has the following input parameters required when launching the policy.
