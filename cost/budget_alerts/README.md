@@ -7,7 +7,8 @@ This Policy Template is used to determine if a Billing Center or the entire Orga
 ### Functional Details
 
 - This policy supports a single target (ie. 1 specific Billing Center or the entire Organization). In order to apply a budget alert for multiple targets, you will need to apply this policy multiple times.
-- This policy will generate an incident if the target has exceeded its monthly budget.  This is an actual budget alert, not a forecasted budget alert.
+- Actual Spend budget alerts will raise an incident when the target has exceeded the budget for the month
+- Forcasted Spend budget alerts will raise an incident when the target's runrate is on track to exceed the budget for the month
 
 #### Input Parameters
 
@@ -17,6 +18,7 @@ This policy has the following input parameters required when launching the polic
 - *Budget Scope* - Organization or Billing Center
 - *Billing Center Name* - if the scope is "Billing Center", supply the name of the target Billing Center 
 - *Amoritzation & Blending Option* - specify options for amortized vs nonamortized and blended vs unblended costs
+- *Budget Alert Type* - Actual Spend or Forecasted Spend
 - *Email addresses of the recipients you wish to notify* - A list of email addresses to notify
 
 ### Supported Clouds

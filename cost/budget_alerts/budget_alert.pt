@@ -25,6 +25,13 @@ parameter "param_bc_name" do
   default "supply_a_value_for_billing_center_scoped_budgets"
 end 
 
+parameter "param_type" do 
+  label "Budget Alert Type"
+  type "string"
+  allowed_values "Actual Spend","Forecasted Spend"
+  default "Actual Spend"
+end 
+
 parameter "param_cost_amortization_blending" do
   label "Amoritzation & Blending Option"
   type "string"
@@ -228,35 +235,91 @@ EOS
 end
 
 datasource "filtered_target" do 
-  run_script $js_filter_target, $all_costs, $param_budget_scope, $param_bc_name, $param_monthly_budget
+  run_script $js_filter_target, $all_costs, $param_budget_scope, $param_bc_name, $param_monthly_budget, $param_type
 end 
 
 script "js_filter_target", type: "javascript" do 
-  parameters "all_costs", "param_scope", "param_bc_name", "param_monthly_budget"
+  parameters "all_costs", "param_scope", "param_bc_name", "param_monthly_budget", "param_type"
   result "target"
   code <<-EOS
   var target = [] ;
+  var date = new Date();
+  var month = date.getUTCMonth()+1;
+  var day = date.getUTCDate();
+
+  console.log(date)
+  console.log(month)
+  console.log(day)
+
+  if (month == 1){ var numdays = 31 ;}
+  if (month == 2){ var numdays = 31 ;}
+  if (month == 3){ var numdays = 31 ;}
+  if (month == 4){ var numdays = 30 ;}
+  if (month == 5){ var numdays = 31 ;}
+  if (month == 6){ var numdays = 30 ;}
+  if (month == 7){ var numdays = 31 ;}
+  if (month == 8){ var numdays = 31 ;}
+  if (month == 9){ var numdays = 30 ;}
+  if (month == 10){ var numdays = 31 ;}
+  if (month == 11){ var numdays = 30 ;}
+  if (month == 12){ var numdays = 31 ;}
+
+  var monthcomplete = day / numdays ;
+
+  console.log(monthcomplete)
   
   if (param_scope === "Organization"){
     _.each(all_costs, function(bc){
       if (bc.name === "Organization"){
-        target.push({
-          name: bc["name"],
-          total: bc["total"],
-          id: bc["id"],
-          budget: param_monthly_budget
-        })
+        var runrate = bc["total"] / monthcomplete ;
+        if (param_type === "Forecasted Spend"){
+          target.push({
+            name: bc["name"],
+            actual: bc["total"],
+            type: "Forecasted Spend",
+            runrate: runrate,
+            id: bc["id"],
+            budget: param_monthly_budget,
+            total: runrate
+          })
+        } else {
+          target.push({
+            name: bc["name"],
+            actual: bc["total"],
+            type: "Actual Spend",
+            runrate: runrate,
+            id: bc["id"],
+            budget: param_monthly_budget,
+            total: bc["total"]
+          })
+        }
       }
     })
   } else {
     _.each(all_costs, function(bc){
       if (bc.name === param_bc_name){
-        target.push({
-          name: bc["name"],
-          total: bc["total"],
-          id: bc["id"],
-          budget: param_monthly_budget
-        })
+        var runrate = bc["total"] / monthcomplete ;
+        if (param_type === "Forecasted Spend"){
+          target.push({
+            name: bc["name"],
+            actual: bc["total"],
+            type: "Forecasted Spend",
+            runrate: runrate,
+            id: bc["id"],
+            budget: param_monthly_budget,
+            total: runrate
+          })
+        } else {
+          target.push({
+            name: bc["name"],
+            actual: bc["total"],
+            type: "Actual Spend",
+            runrate: runrate,
+            id: bc["id"],
+            budget: param_monthly_budget,
+            total: bc["total"]
+          })
+        }
       }
     })
   }
@@ -274,10 +337,10 @@ policy "budget_alert" do
     detail_template <<-EOS
 # Budget Alert Exceeded
 
-| Billing Center Name | Budget | Current Monthly Spend | Billing Center ID |
-| ------------------- | ------ | --------------------- | ----------------- |
+| Billing Center Name | Budget Alert Type | Budget | Current Monthly Spend | Monthly Runrate | Billing Center ID |
+| ------------------- | ----------------- | ------ | --------------------- | --------------- | ----------------- |
 {{ range data -}}
-| {{ .name }} | {{.budget}} | {{.total}} | {{.id}} | 
+| {{ .name }} | {{.type}} | {{.budget}} | {{.actual}} | {{.runrate}} | {{.id}} | 
 {{ end -}}
 
 EOS
