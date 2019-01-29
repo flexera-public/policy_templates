@@ -1,0 +1,287 @@
+name "Budget Alerts"
+rs_pt_ver 20180301
+type "policy"
+short_description "Create a Monthly Budget Alert for a Billing Center or for the entire Organization. See the [README](https://github.com/rightscale/policy_templates/tree/master/compliance/azure/azure_disallowed_regions) and [docs.rightscale.com/policies](http://docs.rightscale.com/policies/) to learn more."
+long_description "Version: 1.0"
+severity "medium"
+category "Cost"
+
+parameter "param_monthly_budget" do
+  label "Monthly Budget"
+  type "number"
+end 
+
+parameter "param_budget_scope" do 
+  label "Budget Scope"
+  type "string"
+  allowed_values "Organization","Billing Center"
+  default "Organization"
+end
+
+parameter "param_bc_name" do 
+  label "Billing Center Name"
+  description "(Optional) Provide a value if the Budget Scope is 'Billing Center'"
+  type "string"
+  default "supply_a_value_for_billing_center_scoped_budgets"
+end 
+
+parameter "param_cost_amortization_blending" do
+  label "Amoritzation & Blending Option"
+  type "string"
+  allowed_values "amortized_unblended","amortized_blended","nonamortized_unblended","nonamortized_blended"
+  default "amortized_unblended"
+end
+
+parameter "param_email" do
+  label "Email addresses of the recipients you wish to notify"
+  type "list"
+end
+
+auth "auth_rs", type: "rightscale"
+
+datasource "billing_centers" do
+  request do
+    auth $auth_rs
+    host rs_optima_host
+    path join(["/analytics/orgs/",rs_org_id,"/billing_centers"])
+    header "Api-Version", "1.0"
+    header "User-Agent", "RS Policies"
+    query "view", "allocation_table"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response,"[*]") do
+      field "href", jmes_path(col_item,"href")
+      field "id", jmes_path(col_item,"id")
+      field "name", jmes_path(col_item,"name")
+      field "parent_id", jmes_path(col_item,"parent_id")
+      field "ancestor_ids", jmes_path(col_item,"ancestor_ids")
+      field "allocation_table", jmes_path(col_item,"allocation_table")
+    end
+  end
+end
+
+datasource "top_level_billing_centers" do
+  run_script $js_top_level_bc, $billing_centers
+end
+
+script "js_top_level_bc", type: "javascript" do
+  parameters "billing_centers"
+  result "filtered_billing_centers"
+  code <<-EOS
+  var filtered_billing_centers =
+    _.reject(billing_centers, function(bc){ return bc.parent_id != null });
+EOS
+end
+
+datasource "top_bc_costs" do
+  iterate $top_level_billing_centers
+  request do
+    auth $auth_rs
+    host "front-service-b.indigo.rightscale.com"
+    verb "POST"
+    path join(["/bill-analysis/orgs/",rs_org_id,"/costs/billing_centers"])
+    header "Api-Version", "0.1"
+    header "User-Agent", "RS Policies"
+    body_field "dimensions", ["vendor"]
+    body_field "granularity", "month"
+    body_field "start_at", "2019-01-01T00:00:00Z"
+    body_field "end_at", "2022-01-01T00:00:00Z"
+    body_field "cost_types", [$param_cost_amortization_blending]
+    body_field "ids", [val(iter_item, "id")]
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response,"[*]") do
+      field "name", val(iter_item, "name")
+      field "id", jmes_path(col_item,"billing_center_id")
+      field "amortized_unblended_costs", jmes_path(col_item,"costs[*].amortized_unblended_costs[*]")
+      field "amortized_blended_costs", jmes_path(col_item,"costs[*].amortized_blended_costs[*]")
+      field "nonamortized_unblended_costs", jmes_path(col_item,"costs[*].nonamortized_unblended_costs[*]")
+      field "nonamortized_blended_costs", jmes_path(col_item,"costs[*].nonamortized_blended_costs[*]")
+      field "vendor", jmes_path(col_item,"costs[*].dimensions.vendor")
+      field "category", jmes_path(col_item,"costs[*].dimensions.vendor")
+    end
+  end
+end
+
+datasource "top_bc_costs_formatted" do
+  run_script $js_bc_costs, $top_bc_costs, $param_cost_amortization_blending
+end
+
+script "js_bc_costs", type: "javascript" do
+  parameters "billing_centers", "param_cost_amortization_blending"
+  result "costs"
+  code <<-EOS
+  var costs = [];
+  
+  _.each(billing_centers, function(bc){
+    console.log(bc)
+    var bc_costs = [];
+
+    if (param_cost_amortization_blending == "amortized_unblended"){ 
+      var target_costs = bc.amortized_unblended_costs ; 
+    } 
+    if (param_cost_amortization_blending == "amortized_blended"){
+      var target_costs = bc.amortized_blended_costs ;
+    } 
+    if (param_cost_amortization_blending == "nonamortized_unblended"){
+      var target_costs = bc.nonamortized_unblended_costs ;
+    } 
+    if (param_cost_amortization_blending == "nonamortized_blended"){
+      var target_costs = bc.nonamortized_blended_costs ;
+    }
+
+    _.each(target_costs, function(bcc){
+        console.log(bcc)
+        var last = _.last(bcc);
+        bc_costs.push(last)
+    })
+
+    sum = _.reduce(bc_costs, function(memo, num){ return memo + num; }, 0)
+
+    costs.push({
+        name: bc["name"],
+        total: sum,
+        id: bc["id"]       
+    })
+  })
+  console.log(costs)
+EOS
+end 
+
+datasource "org_total" do 
+  run_script $js_org_total, $top_bc_costs_formatted
+end 
+
+script "js_org_total", type: "javascript" do 
+  parameters "billing_centers"
+  result "org_total"
+  code <<-EOS
+  var totals = [] ; 
+   
+  _.each(billing_centers, function(bc_total){ totals.push(bc_total.total)})
+
+  var sum = _.reduce(totals, function(memo, num){ return memo + num; }, 0)
+  console.log(totals)
+  console.log(sum)
+
+  var org_total = {
+    name: "Organization",
+    total: sum,
+    id: null
+  } ;
+EOS
+end
+
+datasource "all_bc_costs" do
+  iterate $billing_centers
+  request do
+    auth $auth_rs
+    host "front-service-b.indigo.rightscale.com"
+    verb "POST"
+    path join(["/bill-analysis/orgs/",rs_org_id,"/costs/billing_centers"])
+    header "Api-Version", "0.1"
+    header "User-Agent", "RS Policies"
+    body_field "dimensions", ["vendor"]
+    body_field "granularity", "month"
+    body_field "start_at", "2019-01-01T00:00:00Z"
+    body_field "end_at", "2022-01-01T00:00:00Z"
+    body_field "cost_types", [$param_cost_amortization_blending]
+    body_field "ids", [val(iter_item, "id")]
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response,"[*]") do
+      field "name", val(iter_item, "name")
+      field "id", jmes_path(col_item,"billing_center_id")
+      field "amortized_unblended_costs", jmes_path(col_item,"costs[*].amortized_unblended_costs[*]")
+      field "amortized_blended_costs", jmes_path(col_item,"costs[*].amortized_blended_costs[*]")
+      field "nonamortized_unblended_costs", jmes_path(col_item,"costs[*].nonamortized_unblended_costs[*]")
+      field "nonamortized_blended_costs", jmes_path(col_item,"costs[*].nonamortized_blended_costs[*]")
+      field "vendor", jmes_path(col_item,"costs[*].dimensions.vendor")
+      field "category", jmes_path(col_item,"costs[*].dimensions.vendor")
+    end
+  end
+end
+
+datasource "all_bc_costs_formatted" do
+  run_script $js_bc_costs, $all_bc_costs, $param_cost_amortization_blending
+end
+
+datasource "all_costs" do 
+  run_script $js_combine_ds, $all_bc_costs_formatted, $org_total
+end 
+
+script "js_combine_ds", type: "javascript" do 
+  parameters "billing_centers","org"
+  result "result"
+  code <<-EOS
+  var result = [] ; 
+   
+  _.each(billing_centers, function(bc){ 
+    result.push(bc)
+  })
+
+  result.push(org)
+EOS
+end
+
+datasource "filtered_target" do 
+  run_script $js_filter_target, $all_costs, $param_budget_scope, $param_bc_name, $param_monthly_budget
+end 
+
+script "js_filter_target", type: "javascript" do 
+  parameters "all_costs", "param_scope", "param_bc_name", "param_monthly_budget"
+  result "target"
+  code <<-EOS
+  var target = [] ;
+  
+  if (param_scope === "Organization"){
+    _.each(all_costs, function(bc){
+      if (bc.name === "Organization"){
+        target.push({
+          name: bc["name"],
+          total: bc["total"],
+          id: bc["id"],
+          budget: param_monthly_budget
+        })
+      }
+    })
+  } else {
+    _.each(all_costs, function(bc){
+      if (bc.name === param_bc_name){
+        target.push({
+          name: bc["name"],
+          total: bc["total"],
+          id: bc["id"],
+          budget: param_monthly_budget
+        })
+      }
+    })
+  }
+  
+EOS
+end 
+
+escalation "esc_budget_alert" do
+  email $param_email
+end
+
+policy "budget_alert" do
+  validate_each $filtered_target do
+    summary_template "Budget Alert Exceeded"
+    detail_template <<-EOS
+# Budget Alert Exceeded
+
+| Billing Center Name | Budget | Current Monthly Spend | Billing Center ID |
+| ------------------- | ------ | --------------------- | ----------------- |
+{{ range data -}}
+| {{ .name }} | {{.budget}} | {{.total}} | {{.id}} | 
+{{ end -}}
+
+EOS
+    escalate $esc_budget_alert
+    check lt(val(item,"total"),$param_monthly_budget)
+  end
+end
