@@ -21,6 +21,11 @@ This policy has the following input parameters required when launching the polic
 - *Budget Alert Type* - Actual Spend or Forecasted Spend
 - *Email addresses of the recipients you wish to notify* - A list of email addresses to notify
 
+### Required RightScale Roles
+
+- policy_manager
+- billing_center_viewer (note: this role must be applied at the Organization level)
+
 ### Supported Clouds
 
 - AWS
