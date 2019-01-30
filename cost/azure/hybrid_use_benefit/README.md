@@ -2,7 +2,7 @@
 
 ### What it does
 
-This Policy Template is used to automatically apply the Azure Hybrid Use Benefit (AHUB) to all eligible VMs in a Azure Subscription.
+This Policy Template is used to automatically apply the Azure Hybrid Use Benefit (AHUB) to all eligible VMs in an Azure Subscription.
 
 ### Prerequesites
 
@@ -22,7 +22,7 @@ This Policy Template is used to automatically apply the Azure Hybrid Use Benefit
 
 ### Functional Details
 
-_ The policy identifies all Windows server instances that are not currently using [Azure Hybrid Use Benefit](https://azure.microsoft.com/en-us/pricing/hybrid-benefit/). It optionally supports enabling the benefit on all instances identified.
+_ The policy identifies all Windows server instances that are not currently using [Azure Hybrid Use Benefit](https://azure.microsoft.com/en-us/pricing/hybrid-benefit/). It raises an incident for all applicable VMs not currently using AHUB, which once approved, will enable AHUB on all identified instances.
 - The Exclusion Tag parameter is a string value.  Supply the Tag Key only.  Tag Values are not analyzed and therefore are not need.  If the exclusion tag key is used on an Instance, that Instance is presumed to be exempt from this policy.
 
 ### Input Parameters
@@ -31,7 +31,6 @@ This policy has the following input parameters required when launching the polic
 
 - *Azure AD Tenant ID* - the Azure AD Tenant ID used for the Azure API Authentication
 - *Azure Subscription ID* - the Azure Subscription ID used for the Azure API Authentication
-- *Escalation Options* - selection to choose to email or email and apply licenses.
 - *Exclusion Tag Key* - an Azure-native instance tag to ignore instances that you don't want AHUB applied to. Only supply the tag key
 - *Email addresses of the recipients you wish to notify* - A list of email addresses to notify
 

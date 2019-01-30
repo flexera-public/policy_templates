@@ -2,7 +2,7 @@ name "Azure Hybrid Use Benefit for Windows Server"
 rs_pt_ver 20180301
 type "policy"
 short_description "Identifies eligible instances not utilizing Azure Hybrid Use Benefit.  See the [README](https://github.com/rightscale/policy_templates/tree/master/cost/azure/hybrid_use_benefit) and [docs.rightscale.com/policies](http://docs.rightscale.com/policies/) to learn more."
-long_description "Version 1.0"
+long_description "Version: 1.0"
 severity "low"
 category "Cost"
 
@@ -16,13 +16,6 @@ parameter "param_azure_sub" do
   type "string"
   label "Azure Subscription ID"
   category "Azure"
-end
-
-parameter "param_alert_options" do
-  type "string"
-  label "Escalation Options"
-  allowed_values "Email", "Email and Apply Licenses"
-  default "Email"
 end
 
 parameter "param_exclusion_tag_key" do
@@ -157,39 +150,46 @@ escalation "email" do
 end
 
 escalation "license_instances" do
-  run "license_instances", data, $param_azure_tenant_id, $param_alert_options
+  request_approval  do
+    label "Approve Hybrid Use Benefit"
+    description "Approve escalation to apply Hybrid Use Benefit to identified instances"
+    parameter "approval_reason" do
+      type "string"
+      label "Reason for Approval"
+      description "Explain why you are approving the action"
+    end
+  end
+  run "license_instances", data, $param_azure_tenant_id
 end
 
-define license_instances($data, $param_azure_tenant_id, $param_alert_options) return $all_responses do
-  if $param_alert_options == "Email and Apply Licenses"
-    call get_access_token($param_azure_tenant_id) retrieve $access_token
+define license_instances($data, $param_azure_tenant_id) return $all_responses do
+  call get_access_token($param_azure_tenant_id) retrieve $access_token
 
-    $all_responses = []
-    foreach $item in $data do
-      sub on_error: skip do
-        $update_inst_response = http_request(
-          verb: "patch",
-          host: "management.azure.com",
-          https: true,
-          href: $item["id"],
-          query_strings: {
-            "api-version": "2018-06-01"
-          },
-          headers: {
-            "cache-control": "no-cache",
-            "content-type": "application/json",
-            "authorization": "Bearer " + $access_token
-          },
-          body: {
-            "properties": {
-              "licenseType": "Windows_Server"
-            }
+  $all_responses = []
+  foreach $item in $data do
+    sub on_error: skip do
+      $update_inst_response = http_request(
+        verb: "patch",
+        host: "management.azure.com",
+        https: true,
+        href: $item["id"],
+        query_strings: {
+          "api-version": "2018-06-01"
+        },
+        headers: {
+          "cache-control": "no-cache",
+          "content-type": "application/json",
+          "authorization": "Bearer " + $access_token
+        },
+        body: {
+          "properties": {
+            "licenseType": "Windows_Server"
           }
-        )
+        }
+      )
 
-        $all_responses << $update_inst_response
+      $all_responses << $update_inst_response
 
-      end
     end
   end
 end
