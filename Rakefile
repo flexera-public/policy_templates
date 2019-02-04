@@ -9,6 +9,7 @@ task :generate_policy_list do
   file_list = []
   Dir['**/*.pt'].each do |file|
     change_log = ::File.join(file.split('/')[0...-1].join('/'),'CHANGELOG.md')
+    readme = ::File.join("https://raw.githubusercontent.com/rightscale/policy_templates/master/",file.split('/')[0...-1].join('/'),'README.md')
     if !file.match(/test_code/)
       f = File.read(file)
       f.each_line do |line|
@@ -21,8 +22,26 @@ task :generate_policy_list do
             @version = line.split(':').last.strip.chomp("\"")
           end
         end
+        if line =~ /short_description/
+          @description = line.split(' ')[1..-1].join(' ').to_s.chomp('"').reverse.chomp('"').reverse
+        end
+        if line =~ /category/
+          @category = line.split(' ')[1..-1].join(' ').to_s.chomp('"').reverse.chomp('"').reverse
+        end
+        if line =~ /severity/
+          @severity = line.split(' ')[1..-1].join(' ').to_s.chomp('"').reverse.chomp('"').reverse
+        end
       end
-      file_list<<{"name": @name, "file_name": file, "version": @version, "change_log": change_log }
+      file_list<<{
+        "name": @name, 
+        "file_name": file, 
+        "version": @version, 
+        "change_log": change_log, 
+        "description": @description, 
+        "category": @category,
+        "severity": @severity,
+        "readme": readme
+      }
     end
   end
   policies = {"policies": file_list }
