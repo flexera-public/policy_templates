@@ -1,5 +1,9 @@
 ## Untagged Resource Policy Changelog
 
+v1.8
+----
+- fixed issue with creating tag for invalid_tag
+
 v1.7
 ----
 - adding tags.multi_add permission #141
