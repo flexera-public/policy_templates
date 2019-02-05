@@ -23,7 +23,7 @@ task :generate_policy_list do
           end
         end
         if line =~ /short_description/
-          @description = line.split(' ')[1..-1].join(' ').to_s.chomp('"').reverse.chomp('"').reverse
+          @description = line.split(' ')[1..-1].join(' ').to_s.chomp('"').reverse.chomp('"').reverse.split('.').first
         end
         if line =~ /category \"((c|C)ompliance|(c|C)ost|(o|O)perational|(s|S)ecurity)\"/
           @category = line.split(' ')[1..-1].join(' ').to_s.chomp('"').reverse.chomp('"').reverse
