@@ -24,7 +24,8 @@ There are four cost metrics to choose from.
 This policy has the following input parameters required when launching the policy.
 
 - *Email list* - Email addresses of the recipients you wish to notify
-- *Billing Center ID List* - List of billing center id's you want to report on.
+- *Billing Center List* - List of top level Billing Center names you want to report on.  Names must be exactly as shown in Optima.  
+Leave the field blank to report on all top level Billing Centers.
 - *Cost Metric* -  See Cost Metrics above for details on selection.
 
 ## Policy Actions
