@@ -31,9 +31,8 @@ end
 
 parameter "param_billing_centers" do
   type "list"
-  label "Billing Center ID List"
-  description "List of billing center id's you want to report on."
-  min_length 1
+  label "Billing Center List"
+  description "List of top level Billing Center names you want to report on.  Leave blank to select all top level Billing Centers."
 end
 
 parameter "param_cost_metric" do
@@ -74,32 +73,54 @@ end
 
 auth "auth_rs", type: "rightscale"
 
+datasource "billing_centers" do
+  request do
+    auth $auth_rs
+    host rs_optima_host
+    path join(["/analytics/orgs/",rs_org_id,"/billing_centers"])
+    header "Api-Version", "1.0"
+    header "User-Agent", "RS Policies"
+    query "view", "allocation_table"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response,"[*]") do
+      field "href", jmes_path(col_item,"href")
+      field "id", jmes_path(col_item,"id")
+      field "name", jmes_path(col_item,"name")
+      field "parent_id", jmes_path(col_item,"parent_id")
+      field "ancestor_ids", jmes_path(col_item,"ancestor_ids")
+      field "allocation_table", jmes_path(col_item,"allocation_table")
+    end
+  end
+end
+
 datasource "current_week_costs" do
   request do
-   run_script $cost_request, $param_billing_centers, $param_cost_metric, rs_org_id, rs_optima_host, $param_daily_range, $param_scale_current
+   run_script $cost_request, $param_billing_centers, $param_cost_metric, rs_org_id, rs_optima_host, $param_daily_range, $param_scale_current,$billing_centers
   end
 end
 
 datasource "previous_week_costs" do
   request do
-   run_script $cost_request, $param_billing_centers, $param_cost_metric, rs_org_id, rs_optima_host, $param_daily_range, $param_scale_previous
+   run_script $cost_request, $param_billing_centers, $param_cost_metric, rs_org_id, rs_optima_host, $param_daily_range, $param_scale_previous,$billing_centers
   end
 end
 
 datasource "current_month_costs" do
   request do
-   run_script $cost_request, $param_billing_centers, $param_cost_metric, rs_org_id, rs_optima_host, $param_monthly_range, $param_scale_current
+   run_script $cost_request, $param_billing_centers, $param_cost_metric, rs_org_id, rs_optima_host, $param_monthly_range, $param_scale_current,$billing_centers
   end
 end
 
 datasource "previous_month_costs" do
   request do
-   run_script $cost_request, $param_billing_centers, $param_cost_metric, rs_org_id, rs_optima_host, $param_monthly_range, $param_scale_previous
+   run_script $cost_request, $param_billing_centers, $param_cost_metric, rs_org_id, rs_optima_host, $param_monthly_range, $param_scale_previous,$billing_centers
   end
 end
 
 script "cost_request", type: "javascript" do
-  parameters "param_billing_centers","param_cost_metric","rs_org_id", "rs_optima_host", "range", "scale"
+  parameters "param_billing_centers","param_cost_metric","rs_org_id", "rs_optima_host", "range", "scale","billing_centers"
   result "request"
   code <<-EOS
     // format the date for the `daily` API
@@ -172,6 +193,18 @@ script "cost_request", type: "javascript" do
       end_at = getFormattedDailyDate(new Date(now.setDate(0)))
     }
 
+    var top_billing_centers = _.reject(billing_centers, function(bc){ return bc.parent_id != null });
+    var billing_center_ids = []
+    if (param_billing_centers.length === 0){
+      billing_center_ids = _.map(top_billing_centers, function(value, key){ return value.id });
+    } else {
+      // get array of billing center id's that match the names in param_billing_centers.
+      billing_center_names = _.map(param_billing_centers, function(name){ return name.toLowerCase(); });
+      billing_center_ids = _.compact(_.map(top_billing_centers, function(value){ if(_.contains(billing_center_names, value.name.toLowerCase())){return value.id} }));
+    }
+    console.log('billing_centers:'+JSON.stringify(billing_centers))
+    console.log('billing_centers_ids:'+ billing_center_ids)
+        console.log('top_billing_centers:'+ JSON.stringify(top_billing_centers))
 
     var body = {
       "dimensions":[]
@@ -179,7 +212,7 @@ script "cost_request", type: "javascript" do
       "start_at": start_at ,
       "end_at": end_at
       "metrics":[cost_metric[param_cost_metric]],
-      "billing_center_ids":param_billing_centers
+      "billing_center_ids": billing_center_ids
       }
 
     var request = {
@@ -292,7 +325,7 @@ policy "scheduled_report" do
 
 ## Cost Metric: {{ parameters.param_cost_metric }}
 
-Billing Center Id's: {{ parameters.param_billing_centers }}
+Billing Center Ids: {{ parameters.param_billing_centers }}
 
 | Range | Daily Average | Previous  | Current (incomplete) |
 | ----- | ------------- | --------- | -------------------- |

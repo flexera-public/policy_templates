@@ -1,4 +1,9 @@
-Change log
+# Change log
+
+v1.2
+----
+- allow user to select all billing centers
+- allow user to enter billing center names
 
 v1.2
 ----
