@@ -32,11 +32,12 @@ parameter "param_type" do
   default "Actual Spend"
 end 
 
-parameter "param_cost_amortization_blending" do
-  label "Amoritzation & Blending Option"
+parameter "param_cost_metric" do
   type "string"
-  allowed_values "amortized_unblended","amortized_blended","nonamortized_unblended","nonamortized_blended"
-  default "amortized_unblended"
+  label "Cost Metric"
+  allowed_values "Unamortized Unblended","Amortized Unblended","Unamortized Blended","Amortized Blended"
+  default "Unamortized Unblended"
+  description "Select the cost metric for your report.  See the README file for more details"
 end
 
 parameter "param_email" do
@@ -82,25 +83,18 @@ EOS
 end
 
 script "costs_request", type: "javascript" do
-  parameters "org","metric","bc"
+  parameters "org","param_cost_metric","bc"
   result "request"
   code <<-EOS
+    var cost_metric = {
+      "Unamortized Unblended":"cost_nonamortized_unblended_adj",
+      "Amortized Unblended":"cost_amortized_unblended_adj",
+      "Unamortized Blended": "cost_nonamortized_blended_adj",
+      "Amortized Blended":"cost_amortized_blended_adj"
+    }
     var date = new Date();
-    var month = date.getUTCMonth()+2;
     var year = date.getUTCFullYear();
-
-    if (month == 1){ var mo = "01" ;}
-    if (month == 2){ var mo = "02" ;}
-    if (month == 3){ var mo = "03" ;}
-    if (month == 4){ var mo = "04" ;}
-    if (month == 5){ var mo = "05" ;}
-    if (month == 6){ var mo = "06" ;}
-    if (month == 7){ var mo = "07" ;}
-    if (month == 8){ var mo = "08" ;}
-    if (month == 9){ var mo = "09" ;}
-    if (month == 10){ var mo = "10" ;}
-    if (month == 11){ var mo = "11" ;}
-    if (month == 12){ var mo = "12" ;}
+    var month = (2 + date.getUTCMonth())
     
     if (month == 1){ 
       var lmonth = 12;
@@ -109,19 +103,10 @@ script "costs_request", type: "javascript" do
       var lmonth = month-1;
       var lyear = year ;
     }
+    
+    mo = month.toString().length > 1 ? month : '0' + month;
+    lmo = lmonth.toString().length > 1 ? lmonth : '0' + lmonth;
 
-    if (lmonth == 1){ var lmo = "01" ;}
-    if (lmonth == 2){ var lmo = "02" ;}
-    if (lmonth == 3){ var lmo = "03" ;}
-    if (lmonth == 4){ var lmo = "04" ;}
-    if (lmonth == 5){ var lmo = "05" ;}
-    if (lmonth == 6){ var lmo = "06" ;}
-    if (lmonth == 7){ var lmo = "07" ;}
-    if (lmonth == 8){ var lmo = "08" ;}
-    if (lmonth == 9){ var lmo = "09" ;}
-    if (lmonth == 10){ var lmo = "10" ;}
-    if (lmonth == 11){ var lmo = "11" ;}
-    if (lmonth == 12){ var lmo = "12" ;}
 
     var next_month = year + "-" + mo
     var current_month = lyear + "-" + lmo
@@ -136,7 +121,7 @@ script "costs_request", type: "javascript" do
         "granularity": "month",
         "start_at": current_month,
         "end_at": next_month,
-        "metrics": ["cost_" + metric + "_adj"],
+        "metrics": [cost_metric[param_cost_metric]],
         "billing_center_ids": [bc]
       },
       headers: {
@@ -150,7 +135,7 @@ end
 datasource "top_bc_costs" do
   iterate $top_level_billing_centers
   request do
-    run_script $costs_request, rs_org_id, $param_cost_amortization_blending, val(iter_item, "id")
+    run_script $costs_request, rs_org_id, $param_cost_metric, val(iter_item, "id")
   end
   result do
     encoding "json"
@@ -166,30 +151,27 @@ datasource "top_bc_costs" do
 end
 
 datasource "top_bc_costs_formatted" do
-  run_script $js_bc_costs, $top_bc_costs, $param_cost_amortization_blending
+  run_script $js_bc_costs, $top_bc_costs, $param_cost_metric
 end
 
 script "js_bc_costs", type: "javascript" do
-  parameters "billing_centers", "param_cost_amortization_blending"
+  parameters "billing_centers", "param_cost_metric"
   result "costs"
   code <<-EOS
   var costs = [];
+
+  var cost_type = {
+      "Unamortized Unblended":"nonamortized_unblended_costs",
+      "Amortized Unblended":"amortized_unblended_costs",
+      "Unamortized Blended": "nonamortized_blended_costs",
+      "Amortized Blended":"amortized_blended_costs"
+  }
+  
   
   _.each(billing_centers, function(bc){
     console.log(bc)
-
-    if (param_cost_amortization_blending == "amortized_unblended"){ 
-      var cost = bc.amortized_unblended_costs ; 
-    } 
-    if (param_cost_amortization_blending == "amortized_blended"){
-      var cost = bc.amortized_blended_costs ;
-    } 
-    if (param_cost_amortization_blending == "nonamortized_unblended"){
-      var cost = bc.nonamortized_unblended_costs ;
-    } 
-    if (param_cost_amortization_blending == "nonamortized_blended"){
-      var cost = bc.nonamortized_blended_costs ;
-    }
+    var type = cost_type[param_cost_metric];
+    var cost = bc[type];
 
     costs.push({
         name: bc["name"],
@@ -228,19 +210,7 @@ end
 datasource "all_bc_costs" do
   iterate $billing_centers
   request do
-#    auth $auth_rs
-#    host "front-service-b.indigo.rightscale.com"
-#    verb "POST"
-#    path join(["/bill-analysis/orgs/",rs_org_id,"/costs/billing_centers"])
-#    header "Api-Version", "0.1"
-#    header "User-Agent", "RS Policies"
-#    body_field "dimensions", ["vendor"]
-#    body_field "granularity", "month"
-#    body_field "start_at", "2019-01-01T00:00:00Z"
-#    body_field "end_at", "2022-01-01T00:00:00Z"
-#    body_field "cost_types", [$param_cost_amortization_blending]
-#    body_field "ids", [val(iter_item, "id")]
-    run_script $costs_request, rs_org_id, $param_cost_amortization_blending, val(iter_item, "id")
+    run_script $costs_request, rs_org_id, $param_cost_metric, val(iter_item, "id")
   end
   result do
     encoding "json"
@@ -256,7 +226,7 @@ datasource "all_bc_costs" do
 end
 
 datasource "all_bc_costs_formatted" do
-  run_script $js_bc_costs, $all_bc_costs, $param_cost_amortization_blending
+  run_script $js_bc_costs, $all_bc_costs, $param_cost_metric
 end
 
 datasource "all_costs" do 
