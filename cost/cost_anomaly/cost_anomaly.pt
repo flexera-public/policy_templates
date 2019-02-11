@@ -1,0 +1,251 @@
+name "Cost Anomalies"
+rs_pt_ver 20180301
+type "policy"
+short_description " . See the [README](https://github.com/rightscale/policy_templates/tree/master/cost/cost_anomaly/) and [docs.rightscale.com/policies](http://docs.rightscale.com/policies/) to learn more."
+long_description "Version: 1.0"
+severity "high"
+category "Cost"
+
+parameter "param_scope" do 
+  label "Scope"
+  type "string"
+  allowed_values "Organization","Billing Center"
+  default "Organization"
+end
+
+parameter "param_bc_name" do 
+  label "Billing Center Name"
+  description "Optional) Provide the name of a Billing Center if the Scope is 'Billing Center'"
+  type "string"
+end 
+
+parameter "param_dimension" do 
+  label "Dimension"
+  type "string"
+  allowed_values "Cloud Vendor","Spend Category","Cloud Service","Instance Type","Billing Center"#"vendor","category","service","instance_type","billing_center_id"
+  default "Cloud Service"
+end 
+
+parameter "param_threshold" do 
+  label "Anomaly Threshold (Percentage)"
+  type "number"
+  default 80
+end 
+
+parameter "param_cost_metric" do
+  type "string"
+  label "Cost Metric"
+  allowed_values "Unamortized Unblended","Amortized Unblended","Unamortized Blended","Amortized Blended"
+  default "Unamortized Unblended"
+  description "Select the cost metric for your report.  See the README file for more details"
+end
+
+
+parameter "param_email" do
+  label "Email addresses of the recipients you wish to notify"
+  type "list"
+end
+
+auth "auth_rs", type: "rightscale"
+
+datasource "billing_centers" do
+  request do
+    auth $auth_rs
+    host rs_optima_host
+    path join(["/analytics/orgs/",rs_org_id,"/billing_centers"])
+    header "Api-Version", "1.0"
+    header "User-Agent", "RS Policies"
+    query "view", "allocation_table"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response,"[*]") do
+      field "href", jmes_path(col_item,"href")
+      field "id", jmes_path(col_item,"id")
+      field "name", jmes_path(col_item,"name")
+      field "parent_id", jmes_path(col_item,"parent_id")
+      field "ancestor_ids", jmes_path(col_item,"ancestor_ids")
+      field "allocation_table", jmes_path(col_item,"allocation_table")
+    end
+  end
+end
+
+datasource "bc_costs" do
+  iterate $billing_centers
+  request do
+    run_script $costs_request,rs_org_id,val(iter_item,"id"),$param_cost_metric,$param_dimension
+  end 
+  result do
+    encoding "json"
+    collect jmes_path(response,"rows[*]") do
+      field "name", val(iter_item, "name")
+      field "id", val(iter_item,"id")
+      field "amortized_unblended_costs", jmes_path(col_item,"metrics.cost_amortized_unblended_adj")
+      field "amortized_blended_costs", jmes_path(col_item,"metrics.cost_amortized_blended_adj")
+      field "nonamortized_unblended_costs", jmes_path(col_item,"metrics.cost_nonamortized_unblended_adj")
+      field "nonamortized_blended_costs", jmes_path(col_item,"metrics.cost_nonamortized_blended_adj")
+      field "service", jmes_path(col_item,"dimensions.service")
+      field "category", jmes_path(col_item,"dimensions.category")
+      field "instance_type", jmes_path(col_item,"dimensions.instance_type")
+      field "vendor", jmes_path(col_item,"dimensions.vendor")
+      field "billing_center_id", jmes_path(col_item,"dimensions.billing_center_id")
+      field "timestamp", jmes_path(col_item,"timestamp")
+    end
+  end
+end
+
+script "costs_request", type: "javascript" do
+  parameters "org_id","bc_id","param_cost_metric","param_dimension"
+  result "request"
+  code <<-EOS
+    var start_at = "";
+    var end_at = "";
+    var cost_metric = {
+      "Unamortized Unblended":"cost_nonamortized_unblended_adj",
+      "Amortized Unblended":"cost_amortized_unblended_adj",
+      "Unamortized Blended": "cost_nonamortized_blended_adj",
+      "Amortized Blended":"cost_amortized_blended_adj"
+    }
+
+    var dimension = {
+      "Cloud Vendor":"vendor",
+      "Spend Category":"category",
+      "Cloud Service": "service",
+      "Instance Type":"instance_type",
+      "Billing Center":"billing_center_id"
+    }
+
+    // format the date for the `daily` API
+    // returns date formatted as string: YYYY-mm-dd
+    function getFormattedDailyDate(date) {
+      var year = date.getFullYear();
+      var month = (1 + date.getMonth()).toString();
+      month = month.length > 1 ? month : '0' + month;
+      var day = date.getDate().toString();
+      day = day.length > 1 ? day : '0' + day;
+      return year + '-' + month + '-' + day;
+    }
+
+    function getStartDate( date ) {
+      date.setHours(-24 * 6);
+      return date;
+    }
+
+    start_at = getFormattedDailyDate(getStartDate(new Date())) 
+    end_at = getFormattedDailyDate(new Date()) 
+
+    var request = {
+      auth: "auth_rs",
+      verb: "POST",
+      host: "optima.rightscale.com",
+      path: "/bill-analysis/orgs/" + org_id + "/costs/aggregated",
+      body_fields: {
+        "dimensions": [dimension[param_dimension]],
+        "granularity": "day",
+        "metrics": [cost_metric[param_cost_metric]],
+        "billing_center_ids": [bc_id],
+        "start_at": start_at,
+        "end_at": end_at
+      },
+      headers: {
+        "Api-Version": "1.0",
+        "User-Agent": "RS Policies",
+      }
+    } 
+  EOS
+end
+
+datasource "format_costs" do
+  run_script $js_format_costs, $bc_costs, $param_dimension, $param_cost_metric
+end
+
+script "js_format_costs", type: "javascript" do
+  parameters "bc_costs","param_dimension","param_cost_metric"
+  result "formatted_data"
+  code <<-EOS
+  var cost_metric = {
+    "Unamortized Unblended":"cost_nonamortized_unblended_adj",
+    "Amortized Unblended":"cost_amortized_unblended_adj",
+    "Unamortized Blended": "cost_nonamortized_blended_adj",
+    "Amortized Blended":"cost_amortized_blended_adj"
+  }
+
+  var dimension = {
+    "Cloud Vendor":"vendor",
+    "Spend Category":"category",
+    "Cloud Service": "service",
+    "Instance Type":"instance_type",
+    "Billing Center":"billing_center_id"
+  }
+
+  var target_dim = dimension[param_dimension];
+  console.log(target_dim)
+  var type = cost_metric[param_cost_metric]; 
+  console.log(type)
+
+  var formatted_data = [];
+  var bcs = [];
+  _.each(bc_costs, function(bc_cost){bcs.push(bc_cost["id"])})
+  console.log(bcs)
+  bcs = _.uniq(bcs) ;
+  console.log(bcs)
+
+  var bc_dims = [];
+  _.each(bc_costs, function(bc_cost){bc_dims.push(bc_cost[target_dim])})
+  console.log(bc_dims)
+  bc_dims = _.uniq(bc_dims) ;
+  console.log(bc_dims)
+
+  _.each(bcs, function(bc){
+    var cost_objs = _.reject(bc_costs, function(bcc){ return bcc.id != bc });
+    console.log(cost_objs)
+    _.each(bc_dims, function(dim){ 
+      cost_objs = _.reject(cost_objs, function (bcd){ return bcd[target_dim] != dim });
+      console.log(cost_objs)
+      costs = []; 
+      _.each(cost_objs, function(cost){
+        costs.push(cost[type])
+      })
+    
+
+      var sum = _.reduce(costs, function(memo, num){ return memo + num; }, 0)
+      console.log(sum)
+
+      //var bc_name = cost_objs[0].name ;
+      //console.log(bc_name)
+
+      formatted_data.push({
+        cost: sum,
+        id: bc,
+        dimension: dim,
+        dim_value: target_dim
+      })
+    })
+  })
+
+EOS
+end
+
+
+
+escalation "esc_budget_alert" do
+  email $param_email
+end
+
+policy "budget_alert" do
+  validate_each $format_costs do
+    summary_template "Cost Anomaly Detected"
+    detail_template <<-EOS
+# Cost Anomaly Detected
+
+| Cost | Dimension | Dimension Value | Billing Center ID |
+| ---- | --------- | --------------- | ----------------- |
+{{ range data -}}
+| {{.cost}} | {{.dimension}} | {{.dim_value}} | {{.id}} | 
+{{ end -}}
+
+EOS
+    escalate $esc_budget_alert
+    check eq(2,1)
+  end 
+end
