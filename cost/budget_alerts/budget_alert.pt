@@ -1,8 +1,8 @@
 name "Budget Alerts"
 rs_pt_ver 20180301
 type "policy"
-short_description "Create a Monthly Budget Alert for a Billing Center or for the entire Organization. See the [README](https://github.com/rightscale/policy_templates/tree/master/cost/budget_alert/) and [docs.rightscale.com/policies](http://docs.rightscale.com/policies/) to learn more."
-long_description "Version: 1.1"
+short_description "Create a Monthly Budget Alert for a Billing Center or for the entire Organization. See the [README](https://github.com/rightscale/policy_templates/tree/master/cost/budget_alerts/) and [docs.rightscale.com/policies](http://docs.rightscale.com/policies/) to learn more."
+long_description "Version: 1.2"
 severity "medium"
 category "Cost"
 
@@ -20,23 +20,24 @@ end
 
 parameter "param_bc_name" do 
   label "Billing Center Name"
-  description "(Optional) Provide a value if the Budget Scope is 'Billing Center'"
+  description "(Optional) Provide the name of a Billing Center if the Budget Scope is 'Billing Center'"
   type "string"
-  default "supply_a_value_for_billing_center_scoped_budgets"
 end 
 
 parameter "param_type" do 
   label "Budget Alert Type"
   type "string"
   allowed_values "Actual Spend","Forecasted Spend"
+  description "Actual Spend alerts are based off incurred costs. Forecasted Spend alerts are based off monthly runrates."
   default "Actual Spend"
 end 
 
-parameter "param_cost_amortization_blending" do
-  label "Amoritzation & Blending Option"
+parameter "param_cost_metric" do
   type "string"
-  allowed_values "amortized_unblended","amortized_blended","nonamortized_unblended","nonamortized_blended"
-  default "amortized_unblended"
+  label "Cost Metric"
+  allowed_values "Unamortized Unblended","Amortized Unblended","Unamortized Blended","Amortized Blended"
+  default "Unamortized Unblended"
+  description "Select the cost metric for your report.  See the README file for more details"
 end
 
 parameter "param_email" do
@@ -81,75 +82,100 @@ script "js_top_level_bc", type: "javascript" do
 EOS
 end
 
+script "costs_request", type: "javascript" do
+  parameters "org","param_cost_metric","bc"
+  result "request"
+  code <<-EOS
+    var cost_metric = {
+      "Unamortized Unblended":"cost_nonamortized_unblended_adj",
+      "Amortized Unblended":"cost_amortized_unblended_adj",
+      "Unamortized Blended": "cost_nonamortized_blended_adj",
+      "Amortized Blended":"cost_amortized_blended_adj"
+    }
+    var date = new Date();
+    var year = date.getUTCFullYear();
+    var month = (2 + date.getUTCMonth())
+    
+    if (month == 1){ 
+      var lmonth = 12;
+      var lyear = year-1 ;
+    } else {
+      var lmonth = month-1;
+      var lyear = year ;
+    }
+    
+    mo = month.toString().length > 1 ? month : '0' + month;
+    lmo = lmonth.toString().length > 1 ? lmonth : '0' + lmonth;
+
+
+    var next_month = year + "-" + mo
+    var current_month = lyear + "-" + lmo
+
+    var request = {
+      auth: "auth_rs",
+      host: "optima.rightscale.com",
+      verb: "POST",
+      path: "/bill-analysis/orgs/" + org + "/costs/aggregated",
+      body_fields: {
+        "dimensions": ["billing_center_id"],
+        "granularity": "month",
+        "start_at": current_month,
+        "end_at": next_month,
+        "metrics": [cost_metric[param_cost_metric]],
+        "billing_center_ids": [bc]
+      },
+      headers: {
+        "User-Agent": "RS Policies",
+        "Api-Version": "1.0"
+      }
+    } 
+  EOS
+end
+
 datasource "top_bc_costs" do
   iterate $top_level_billing_centers
   request do
-    auth $auth_rs
-    host "front-service-b.indigo.rightscale.com"
-    verb "POST"
-    path join(["/bill-analysis/orgs/",rs_org_id,"/costs/billing_centers"])
-    header "Api-Version", "0.1"
-    header "User-Agent", "RS Policies"
-    body_field "dimensions", ["vendor"]
-    body_field "granularity", "month"
-    body_field "start_at", "2019-01-01T00:00:00Z"
-    body_field "end_at", "2022-01-01T00:00:00Z"
-    body_field "cost_types", [$param_cost_amortization_blending]
-    body_field "ids", [val(iter_item, "id")]
+    run_script $costs_request, rs_org_id, $param_cost_metric, val(iter_item, "id")
   end
   result do
     encoding "json"
-    collect jmes_path(response,"[*]") do
+    collect jmes_path(response,"rows[*]") do
       field "name", val(iter_item, "name")
-      field "id", jmes_path(col_item,"billing_center_id")
-      field "amortized_unblended_costs", jmes_path(col_item,"costs[*].amortized_unblended_costs[*]")
-      field "amortized_blended_costs", jmes_path(col_item,"costs[*].amortized_blended_costs[*]")
-      field "nonamortized_unblended_costs", jmes_path(col_item,"costs[*].nonamortized_unblended_costs[*]")
-      field "nonamortized_blended_costs", jmes_path(col_item,"costs[*].nonamortized_blended_costs[*]")
-      field "vendor", jmes_path(col_item,"costs[*].dimensions.vendor")
-      field "category", jmes_path(col_item,"costs[*].dimensions.vendor")
+      field "id", jmes_path(col_item,"dimensions.billing_center_id")
+      field "amortized_unblended_costs", jmes_path(col_item,"metrics.cost_amortized_unblended_adj")
+      field "amortized_blended_costs", jmes_path(col_item,"metrics.cost_amortized_blended_adj")
+      field "nonamortized_unblended_costs", jmes_path(col_item,"metrics.cost_nonamortized_unblended_adj")
+      field "nonamortized_blended_costs", jmes_path(col_item,"metrics.cost_nonamortized_blended_adj")
     end
   end
 end
 
 datasource "top_bc_costs_formatted" do
-  run_script $js_bc_costs, $top_bc_costs, $param_cost_amortization_blending
+  run_script $js_bc_costs, $top_bc_costs, $param_cost_metric
 end
 
 script "js_bc_costs", type: "javascript" do
-  parameters "billing_centers", "param_cost_amortization_blending"
+  parameters "billing_centers", "param_cost_metric"
   result "costs"
   code <<-EOS
   var costs = [];
+
+  var cost_type = {
+      "Unamortized Unblended":"nonamortized_unblended_costs",
+      "Amortized Unblended":"amortized_unblended_costs",
+      "Unamortized Blended": "nonamortized_blended_costs",
+      "Amortized Blended":"amortized_blended_costs"
+  }
+  
   
   _.each(billing_centers, function(bc){
     console.log(bc)
-    var bc_costs = [];
-
-    if (param_cost_amortization_blending == "amortized_unblended"){ 
-      var target_costs = bc.amortized_unblended_costs ; 
-    } 
-    if (param_cost_amortization_blending == "amortized_blended"){
-      var target_costs = bc.amortized_blended_costs ;
-    } 
-    if (param_cost_amortization_blending == "nonamortized_unblended"){
-      var target_costs = bc.nonamortized_unblended_costs ;
-    } 
-    if (param_cost_amortization_blending == "nonamortized_blended"){
-      var target_costs = bc.nonamortized_blended_costs ;
-    }
-
-    _.each(target_costs, function(bcc){
-        console.log(bcc)
-        var last = _.last(bcc);
-        bc_costs.push(last)
-    })
-
-    sum = _.reduce(bc_costs, function(memo, num){ return memo + num; }, 0)
+    var type = cost_type[param_cost_metric];
+    var cost = bc[type];
 
     costs.push({
         name: bc["name"],
-        total: sum,
+        total: cost,
         id: bc["id"]       
     })
   })
@@ -184,36 +210,23 @@ end
 datasource "all_bc_costs" do
   iterate $billing_centers
   request do
-    auth $auth_rs
-    host "front-service-b.indigo.rightscale.com"
-    verb "POST"
-    path join(["/bill-analysis/orgs/",rs_org_id,"/costs/billing_centers"])
-    header "Api-Version", "0.1"
-    header "User-Agent", "RS Policies"
-    body_field "dimensions", ["vendor"]
-    body_field "granularity", "month"
-    body_field "start_at", "2019-01-01T00:00:00Z"
-    body_field "end_at", "2022-01-01T00:00:00Z"
-    body_field "cost_types", [$param_cost_amortization_blending]
-    body_field "ids", [val(iter_item, "id")]
+    run_script $costs_request, rs_org_id, $param_cost_metric, val(iter_item, "id")
   end
   result do
     encoding "json"
-    collect jmes_path(response,"[*]") do
+    collect jmes_path(response,"rows[*]") do
       field "name", val(iter_item, "name")
-      field "id", jmes_path(col_item,"billing_center_id")
-      field "amortized_unblended_costs", jmes_path(col_item,"costs[*].amortized_unblended_costs[*]")
-      field "amortized_blended_costs", jmes_path(col_item,"costs[*].amortized_blended_costs[*]")
-      field "nonamortized_unblended_costs", jmes_path(col_item,"costs[*].nonamortized_unblended_costs[*]")
-      field "nonamortized_blended_costs", jmes_path(col_item,"costs[*].nonamortized_blended_costs[*]")
-      field "vendor", jmes_path(col_item,"costs[*].dimensions.vendor")
-      field "category", jmes_path(col_item,"costs[*].dimensions.vendor")
+      field "id", jmes_path(col_item,"dimensions.billing_center_id")
+      field "amortized_unblended_costs", jmes_path(col_item,"metrics.cost_amortized_unblended_adj")
+      field "amortized_blended_costs", jmes_path(col_item,"metrics.cost_amortized_blended_adj")
+      field "nonamortized_unblended_costs", jmes_path(col_item,"metrics.cost_nonamortized_unblended_adj")
+      field "nonamortized_blended_costs", jmes_path(col_item,"metrics.cost_nonamortized_blended_adj")
     end
   end
 end
 
 datasource "all_bc_costs_formatted" do
-  run_script $js_bc_costs, $all_bc_costs, $param_cost_amortization_blending
+  run_script $js_bc_costs, $all_bc_costs, $param_cost_metric
 end
 
 datasource "all_costs" do 
@@ -333,9 +346,9 @@ end
 
 policy "budget_alert" do
   validate_each $filtered_target do
-    summary_template "Budget Alert Exceeded"
+    summary_template "Budget Exceeded"
     detail_template <<-EOS
-# Budget Alert Exceeded
+# Budget Exceeded
 
 | Billing Center Name | Budget Alert Type | Budget | Current Monthly Spend | Monthly Runrate | Billing Center ID |
 | ------------------- | ----------------- | ------ | --------------------- | --------------- | ----------------- |
