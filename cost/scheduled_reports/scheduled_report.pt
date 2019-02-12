@@ -3,16 +3,18 @@ rs_pt_ver 20180301
 type "policy"
 short_description "This policy allows you to set up scheduled reports that will provide summaries of cloud cost across all resources in the billing centers you specify, delivered to any email addresses you specify. The policy will report the following:
 
-Daily average cost across the last week and last month
-Total cost during previous full week (Monday-Sunday) and previous full month
-Total cost during current (incomplete) week and month
+Chart of the previous 6 months of utilization based on [category](https://docs.rightscale.com/optima/reference/rightscale_dimensions.html#category).  
+Daily average cost across the last week and last month.  
+Total cost during previous full week (Monday-Sunday) and previous full month.  
+Total cost during current (incomplete) week and month.  
 
-Please note that the last 3 days of data in the current week or month will contain incomplete data.
+We recommend running this policy on a weekly cadence and applying it to your master account.
 
-We recommend running this policy on a weekly cadence.
+_Note 1: The last 3 days of data in the current week or month will contain incomplete data._  
+_Note 2: The account you apply the policy to is unimportant as Optima metrics are scoped to the Org._
 
 See [README](https://github.com/rightscale/policy_templates/tree/master/cost/scheduled_reports) for more details"
-long_description "Version: 1.3"
+long_description "Version: 1.4"
 severity "low"
 category "Cost"
 
@@ -51,7 +53,6 @@ parameter "param_daily_range" do
   description "DO NOT CHANGE"
   default  "daily"
 end
-
 parameter "param_monthly_range" do
   type "string"
   label "param_monthly_range"
@@ -136,6 +137,7 @@ script "cost_request", type: "javascript" do
 
       return year + '-' + month + '-' + day;
     }
+
     // format the date for the `monthly` API
     // returns date formatted as string: YYYY-mm
     function getFormattedMonthlyDate(date) {
@@ -165,7 +167,6 @@ script "cost_request", type: "javascript" do
       "Unamortized Blended": "cost_nonamortized_blended_adj",
       "Amortized Blended":"cost_amortized_blended_adj"
     }
-
 
     var start_at = "";
     var end_at = "";
@@ -311,6 +312,204 @@ script "js_report", type: "javascript" do
   EOS
 end
 
+datasource "previous_six_month_costs" do
+  request do
+   run_script $six_month_cost_request, $param_billing_centers, $param_cost_metric, rs_org_id, rs_optima_host, $billing_centers
+  end
+end
+
+script "six_month_cost_request", type: "javascript" do
+  parameters "param_billing_centers", "param_cost_metric", "rs_org_id", "rs_optima_host", "billing_centers"
+  result "request"
+  code <<-EOS
+    // format the date for the `monthly` API
+    // returns date formatted as string: YYYY-mm
+    function getFormattedMonthlyDate(date) {
+      var year = date.getFullYear();
+
+      var month = (1 + date.getMonth()).toString();
+      month = month.length > 1 ? month : '0' + month;
+
+      var day = date.getDate().toString();
+      day = day.length > 1 ? day : '0' + day;
+
+      return year + '-' + month ;
+    }
+
+    // add months to date
+    // returns date object
+    function addMonths(date, months) {
+      date.setMonth(date.getMonth() + months);
+      return date;
+    }
+
+    // create a map to use in the request metric field.
+    var cost_metric = {
+      "Unamortized Unblended":"cost_nonamortized_unblended_adj",
+      "Amortized Unblended":"cost_amortized_unblended_adj",
+      "Unamortized Blended": "cost_nonamortized_blended_adj",
+      "Amortized Blended":"cost_amortized_blended_adj"
+    }
+
+    var now = new Date();
+    var end_at = getFormattedMonthlyDate(addMonths(now, +1));
+    var start_at = getFormattedMonthlyDate(addMonths(now, -6));
+    var top_billing_centers = _.reject(billing_centers, function(bc){ return bc.parent_id != null });
+    var billing_center_ids = []
+    
+    if (param_billing_centers.length === 0){
+      billing_center_ids = _.map(top_billing_centers, function(value, key){ return value.id });
+    } else {
+      // get array of billing center id's that match the names in param_billing_centers.
+      billing_center_names = _.map(param_billing_centers, function(name){ return name.toLowerCase(); });
+      billing_center_ids = _.compact(_.map(top_billing_centers, function(value){ if(_.contains(billing_center_names, value.name.toLowerCase())){return value.id} }));
+    }
+    console.log('billing_centers:' + JSON.stringify(billing_centers))
+    console.log('billing_centers_ids:' + billing_center_ids)
+    console.log('top_billing_centers:' + JSON.stringify(top_billing_centers))
+
+    var body = {
+      "dimensions":["category"]
+      "granularity":"month",
+      "start_at": start_at ,
+      "end_at": end_at
+      "metrics":[cost_metric[param_cost_metric]],
+      "billing_center_ids": billing_center_ids
+      }
+
+    var request = {
+      auth:  'auth_rs',
+      host:  rs_optima_host,
+      scheme: 'https',
+      verb: 'POST',
+      path:  "/bill-analysis/orgs/"+ rs_org_id + "/costs/aggregated",
+      headers: {
+        "API-Version": "1.0",
+        "Content-Type":"application/json"
+      },
+      body: JSON.stringify(body)
+    }
+  EOS
+end
+
+
+datasource "ds_generated_report" do
+  run_script $js_generate_report,$previous_six_month_costs,$param_cost_metric,$param_billing_centers, $ds_report
+end
+
+script "js_generate_report", type: "javascript" do
+  parameters "previous_six_month_costs","param_cost_metric","param_billing_centers","ds_report"
+  result "report"
+  code <<-EOS
+    // format the date for the `monthly` API
+    // returns date formatted as string: YYYY-mm
+    function getFormattedMonthlyDate(date) {
+      var year = date.getFullYear();
+
+      var month = (1 + date.getMonth()).toString();
+      month = month.length > 1 ? month : '0' + month;
+
+      var day = date.getDate().toString();
+      day = day.length > 1 ? day : '0' + day;
+
+      return year + '-' + month ;
+    }
+
+    // create a map to use in the request metric field.
+    var cost_metric = {
+      "Unamortized Unblended":"cost_nonamortized_unblended_adj",
+      "Amortized Unblended":"cost_amortized_unblended_adj",
+      "Unamortized Blended": "cost_nonamortized_blended_adj",
+      "Amortized Blended":"cost_amortized_blended_adj"
+    };
+
+    var now = new Date();
+    var report = {};
+    var collated_data = [];
+    var current_month_totals = [];
+    var metric = cost_metric[param_cost_metric];
+
+    var colorArray = ['D05A5A','F78741','FCC419','007D76','37AA77','92DA71','0F77B3','7BACD1','BCC7E1','B80C83','E06C96','FBB3BB','5F3DC4','00A2F3','99E9F2','5C940D','8EBF45','C0EB75'];
+    var longMonthNames = ["None","January","February","March","April","May","June","July","August","September","October","November","December"];
+    var shortMonthNames = ["None","Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+    var currentMonth = getFormattedMonthlyDate(now);
+    var currentMonthName = longMonthNames[parseInt(currentMonth.split('-')[1])];
+    
+    _.each(previous_six_month_costs["rows"], function(row){
+      var yearMonth = row['timestamp'].split('-')[0] + '-' + row['timestamp'].split('-')[1]
+      var numberMonth = row['timestamp'].split('-')[1]
+      var stringMonth = shortMonthNames[parseInt(numberMonth)]
+
+      collated_data.push({
+        stringMonth: stringMonth,
+        yearMonth: yearMonth,
+        category: row['dimensions']['category'],
+        cost: row['metrics'][metric]
+      })
+    })
+
+    console.log('collated_data:', collated_data)
+
+    // get unique categories
+    var categories = _.unique(_.chain(collated_data).map(function(line) {return line.category}).value());
+    console.log('categories: ' + categories)
+
+    // get unique dates
+    var previousMonths = _.unique(_.chain(collated_data).map(function(line) {return line.yearMonth}).value());
+    var stringMonths = _.unique(_.chain(collated_data).map(function(line) {return line.stringMonth}).value());
+
+    // get current month data
+    var current_month_costs = (_.where(collated_data, {yearMonth: currentMonth}));
+    
+    _.each(current_month_costs, function(line){ current_month_totals.push(line.cost)})
+    
+    var current_month_total = _.reduce(current_month_totals, function(memo, num){ return memo + num; }, 0);
+
+    // build out the chart data
+    var chartDataArray = [];
+    _.each(categories, function(category){
+      var seriesData = [];
+      _.each(previousMonths, function(month){
+        var tempTotal = _.where(collated_data, {yearMonth: month, category: category});
+        if ( tempTotal.length === 0 ) {
+          seriesData.push("_")
+        } else {
+          seriesData.push(Math.round(tempTotal[0].cost))
+        }
+      })
+      chartDataArray.push(seriesData.join())
+    })
+
+    var chartData = "chd=a:" + chartDataArray.join('|')
+    var encodedCategories = encodeURIComponent(categories.join('|'))//.replace(/%7C/gi,'|');
+    var chartCategories = "chdl=" + encodedCategories
+    var chartColors = "chco=" + colorArray.slice(0,categories.length).join();
+    var chartXAxis = "chxl=0:|" + stringMonths.join('|')
+    
+    if (param_billing_centers.length === 0){
+      var billingCenters = "All";
+    } else {
+      var billingCenters = param_billing_centers.join()
+    }
+
+    report = {
+      currentMonthName: currentMonthName,
+      billingCenters: billingCenters,
+      chartType: "cht=bvs",
+      chartSize: "chs=700x400",
+      chartTitle: "chtt=Spending+Overview",
+      chartAxis: "chxt=x,y",
+      chartXAxis: chartXAxis,
+      chartData: chartData,
+      chartCategories: chartCategories,
+      chartColors: chartColors,
+      chartExtension: "chof=.png",
+      currentSpend:  Math.round(current_month_total),
+      reportData: ds_report
+    };
+  EOS
+end
+
 
 # send report to email list
 escalation "send_email" do
@@ -318,24 +517,26 @@ escalation "send_email" do
 end
 
 policy "scheduled_report" do
-  validate $ds_report do
-    summary_template "{{ rs_org_name }} (Org ID: {{ rs_org_id }}): Scheduled Report Policy"
+  validate $ds_generated_report do
+    summary_template "{{ rs_org_name }} (Org ID: {{ rs_org_id }}): Full Cost Scheduled Report"
     detail_template <<-EOS
-# Total Costs for {{ rs_org_name }}
+# Full Cost Report for {{ rs_org_name }} - {{ data.currentMonthName }}
 
-## Cost Metric: {{ parameters.param_cost_metric }}
+## Billing Centers: {{ data.billingCenters }}
+### Cost Metric: {{ parameters.param_cost_metric }}
 
-Billing Center Ids: {{ parameters.param_billing_centers }}
+![Spending Overview Chart](https://image-charts.com/chart?{{ data.chartType }}&{{ data.chartSize }}&{{ data.chartTitle }}&{{ data.chartAxis }}&{{ data.chartXAxis }}&{{ data.chartData }}&{{ data.chartCategories }}&{{ data.chartColors }}&{{ data.chartExtension }} "Spending Overview Chart")
 
-| Range | Daily Average | Previous  | Current (incomplete) |
-| ----- | ------------- | --------- | -------------------- |
-{{ range data -}}
-  | {{ .range }} | ${{ .avg }} | ${{ .previous}} | ${{ .current }} |
+|Range|Daily Average|Previous|Current (incomplete)|
+|:---:|------------:|-------:|-------------------:|
+{{ range data.reportData -}}
+  | {{ .range }} | {{ .avg }} | {{ .previous}} | {{ .current }} |
 {{ end -}}
 
-Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }})
-  EOS
+___
+###### Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }})
+EOS
     escalate $send_email
-    check eq(size(data), 0)
+    check eq(0,1)
   end
 end
