@@ -10,7 +10,7 @@ The Cost Anomaly Policy will analyze the spend of all Billing Centers in an Orga
 
 #### Input Parameters
 
-- *Time Period* - Number of days to analyze in each period. For example, if `6` days is set, then the latest time period will be 8 days ago to 2 days ago (to account for cloud provider bill delays) and the previous time period will be 14 days ago to 9 days ago.
+- *Time Period* - Number of days to analyze in each period. For example, if `6` days is set, then the latest time period will be 8 days ago to 3 days ago (to account for cloud provider bill delays) and the previous time period will be 14 days ago to 9 days ago.
 - *Anomaly Threshold* - Percentage change threshold.  If the percentage change of Billing Center spend from the latest time period compared to the previous time period exceeds this value, then an Incident will be raised.
 - *Cost Metric* - Specify options for amortized vs nonamortized and blended vs unblended costs.
 - *Email addresses of the recipients you wish to notify* - A list of email addresses to notify
