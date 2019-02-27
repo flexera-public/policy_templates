@@ -2,7 +2,7 @@
 
 This policy allows you to set up scheduled reports that will provide summaries of cloud cost across all resources in the billing centers you specify, delivered to any email addresses you specify. The policy will report the following:
 
-Chart of the previous 6 months of utilization based on [category](https://docs.rightscale.com/optima/reference/rightscale_dimensions.html#category).  
+Chart of the previous 6 months of utilization based on whichever [Reporting Dimension](https://docs.rightscale.com/optima/reference/rightscale_dimensions.html) you select (only bill data and RightScale-generated dimensions are supported).  
 Daily average cost across the last week and last month.  
 Total cost during previous full week (Monday-Sunday) and previous full month.  
 Total cost during current (incomplete) week and month.  
@@ -29,6 +29,7 @@ This policy has the following input parameters required when launching the polic
 - *Billing Center List* - List of top level Billing Center names you want to report on.  Names must be exactly as shown in Optima.  
 Leave the field blank to report on all top level Billing Centers.
 - *Cost Metric* -  See Cost Metrics above for details on selection.
+- *Graph Dimension* - The cost dimension to break out the cost data in the embedded bar chart image
 
 ## Policy Actions
 
