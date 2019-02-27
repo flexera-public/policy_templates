@@ -21,7 +21,7 @@ Please contact sales@rightscale.com to learn more.
 - [Unattached IP Addresses](./cost/unattached_addresses/)
 - [Scheduled Report](./cost/scheduled_reports/)
 - [Azure Hybrid Use Benefit](./cost/azure/hybrid_use_benefit/)
-- [Azure Reserved Instance Utilization](.cost/azure/reserved_instances/utilization/)
+- [Azure Reserved Instance Utilization](./cost/azure/reserved_instances/utilization/)
 - [Billing Center Cost Anomaly](./cost/billing_center_cost_anomaly/)
 
 ### Security
