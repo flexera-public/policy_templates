@@ -1,5 +1,10 @@
 # Change log
 
+v1.5
+----
+- added the ability to select any "common" dimension for the chart image
+- changed the chart image to only show the "top 10" values for the current month, and group the rest of the data into "Other"
+
 v1.4
 ----
 - added chart with previous 6 months utilization, based on [category](https://docs.rightscale.com/optima/reference/rightscale_dimensions.html#category)
