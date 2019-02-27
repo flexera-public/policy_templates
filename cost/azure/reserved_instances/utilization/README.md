@@ -1,5 +1,7 @@
 ## Azure Reserved Instances Utilization Policy Template
 
+**As a best practice, this policy should only be applied to the Master Account, and not to each individual RightScale Account.**
+
 ### What it does
 
 This Policy Template leverages the [Azure EA API for Reserved Instance Utilization](https://docs.microsoft.com/en-us/rest/api/billing/enterprise/billing-enterprise-api-reserved-instance-usage#request-for--reserved-instance-usage-summary). It will notify only if utilization of a RI falls below the value specified in the `Show RI's with utilization below this value` field. It examines the RI utilization for the prior 7 days (starting from 2 days ago) in making this determination.
