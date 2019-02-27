@@ -1,5 +1,7 @@
 ## Budget Alerts Policy
 
+**As a best practice, this policy should only be applied to the Master Account, and not to each individual RightScale Account.**
+
 ### What it does
 
 This Policy Template is used to determine if a Billing Center or the entire Organization has exceeded its monthly cost budget.  
