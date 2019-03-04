@@ -23,3 +23,10 @@ Uses the GCP API to get a list of all CUDs and report on them.
 ### Cost
  
 This Policy Template does not incur any cloud costs.
+
+### Prerequisite to apply this policy
+
+- Add New credentials (GC_SA_CLIENT_EMAIL and GC_SA_PRIVATE_KEY) *if doesnot exists* under Rightscale cloud managemant Desing/Credentials. 
+- The value for credentials can be found in IAM & admin\service accounts under Google-cloud platform.
+
+Note: The Service Account in GCP should have *owner role*
