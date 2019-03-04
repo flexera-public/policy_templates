@@ -6,6 +6,10 @@ long_description "Version: 1.0"
 category "Cost"
 severity "low"
 
+##################
+# User inputs    #
+##################
+
 parameter "param_email" do
   type "list"
   label "Email addresses of the recipients you wish to notify"
@@ -17,22 +21,23 @@ parameter "param_google_project" do
   allowed_pattern /^[0-9a-z:\.-]+$/
 end
 
-parameter "param_google_status" do
+parameter "param_cud_status" do
  label "CUD status"
  type "string"
- allowed_values "ALL","ACTIVE","EXPIRED"
- default "ALL"
+ allowed_values "All","Active","Expired"
+ default "All"
 end
 
+#auth type: Oauth2, using JWT token.
 auth "auth_google", type: "oauth2" do
   token_url "https://oauth2.googleapis.com/token"
   grant type: "jwt_bearer" do
-  iss cred("GCE_PLUGIN_ACCOUNT")
+  iss cred("GC_SA_CLIENT_EMAIL")
   aud "https://oauth2.googleapis.com/token"
   additional_claims do {
       "scope" => "https://www.googleapis.com/auth/compute"
     } end
-  signing_key cred("GCE_PLUGIN_PRIVATE_KEY")
+  signing_key cred("GC_SA_PRIVATE_KEY")
   end
 end
 
@@ -45,7 +50,7 @@ pagination "google_pagination" do
   end
 end
 
-
+#https://cloud.google.com/compute/docs/instances/signing-up-committed-use-discounts#viewing_active_commitments
 datasource "ds_committed_use_discount" do
   request do
     auth $auth_google
@@ -53,7 +58,6 @@ datasource "ds_committed_use_discount" do
   header "Content-Type", "application/json"
     path join(["/compute/v1/projects/",$param_google_project,"/aggregated/commitments"])
     query "accept" , "application/json"
-
   end
 
   result do
@@ -71,28 +75,33 @@ datasource "ds_committed_use_discount" do
 end
 
 datasource "ds_committed_use_discount_map" do
-  run_script $js_committed_use_discount_map, $ds_committed_use_discount, $param_google_status
+  run_script $js_committed_use_discount_map, $ds_committed_use_discount, $param_cud_status
 end
 
-#parse the json files
+#Filter the JSON, based on user selection for param 'param_cud_status' and formating Date.
 script "js_committed_use_discount_map", type: "javascript" do
-  parameters "commitments","param_google_status"
+  parameters "commitments","param_cud_status"
   result "content"
   code <<-EOS
   console.log(commitments)
-  var content=[]
+  var content=[];
   for(var i=0; i < commitments.length ; i++){
   commitment = commitments[i]
+
+  var start_date = (new Date(commitment['startTimestamp'])).toISOString().slice(0, 10);
+  var end_date = (new Date(commitment['endTimestamp'])).toISOString().slice(0, 10);
+
   commitmentDetails={cud_id: commitment['cud_id'],
             name: commitment['name'],
             region: commitment['region'],
             status: commitment['status'],
-            startTimestamp: commitment['startTimestamp'],
+            startTimestamp: start_date,
             plan: commitment['plan'],
-            endTimestamp: commitment['endTimestamp']
+            endTimestamp: end_date
           }
-  if(param_google_status != 'ALL'){
-    if(commitments[i].status === param_google_status){
+
+  if(param_cud_status != 'All'){
+    if(commitments[i].status === param_cud_status.toUpperCase()){
     content.push(commitmentDetails)
     }
   }else{
@@ -107,13 +116,13 @@ escalation "report_list_of_CUDs" do
    email $param_email
 end
 
-policy "public_committed_use_discount" do
+policy "policy_committed_use_discount" do
   validate $ds_committed_use_discount_map do
     summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} List of Committed Use Discounts in Google cloud"
     detail_template <<-EOS
 # List of Committed Use Discounts in Google cloud
-| CUD Id | Name | Region | Status | Plan | StartTimestamp | EndTimestamp |
-| ------ | ---- | ------ | ------ | ---- | -------------- | ------------ |
+| CUD Id |  Name  | Region | Status | Plan | StartTimestamp | EndTimestamp |
+| ------ | ------ | ------ | ------ | ---- | -------------- | ------------ |
 {{ range data -}}
 | {{.cud_id}} | {{.name}} | {{.region}} | {{.status}} | {{.plan}} | {{.startTimestamp}} | {{.endTimestamp}} |
 {{ end -}}
