@@ -1,0 +1,192 @@
+name "Reserved Instance Report by Billing Center"
+rs_pt_ver 20180301
+type "policy"
+short_description "This policy generates a Reserved Instances report by Billing Center. See the [README](https://github.com/rightscale/policy_templates/tree/master/cost/aws/reserved_instances/report_by_bc) and [docs.rightscale.com/policies](http://docs.rightscale.com/policies/) to learn more."
+long_description "Version: 1.0"
+severity "low"
+category "Cost"
+
+parameter "param_email" do
+  label "Email addresses of the recipients you wish to notify"
+  type "list"
+end
+
+parameter "param_bc" do
+  label "Billing Center Name"
+  type "string"
+end
+
+auth "auth_rs", type: "rightscale"
+
+datasource "reserved_instances" do
+  request do
+    auth $auth_rs
+    host "optima.rightscale.com"
+    path join(["/api/reco/orgs/",rs_org_id,"/aws_reserved_instances"])
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response,"[*]") do
+      field "account_id", jmes_path(col_item,"account_id")
+      field "account_name", jmes_path(col_item,"account_name")
+      field "availability_zone", jmes_path(col_item,"availability_zone")
+      field "cancellation_datetime", jmes_path(col_item,"cancellation_datetime")
+      field "end_datetime", jmes_path(col_item,"end_datetime")
+      field "instance_type", jmes_path(col_item,"instance_type")
+      field "lease_id", jmes_path(col_item,"lease_id")
+      field "number_of_instances", jmes_path(col_item,"number_of_instances")
+      field "offering_type", jmes_path(col_item,"offering_type")
+      field "payer_account_id", jmes_path(col_item,"payer_account_id")
+      field "platform", jmes_path(col_item,"platform")
+      field "region", jmes_path(col_item,"region")
+      field "scope", jmes_path(col_item,"scope")
+      field "start_datetime", jmes_path(col_item,"start_datetime")
+      field "subscription_id", jmes_path(col_item,"subscription_id")
+      field "subscription_status", jmes_path(col_item,"subscription_status")
+      field "subscription_type", jmes_path(col_item,"subscription_type")
+      field "tenancy", jmes_path(col_item,"tenancy")
+      field "purchased_hours", jmes_path(col_item,"utilization.purchased_hours")
+      field "total_actual_hours", jmes_path(col_item,"utilization.total_actual_hours")
+      field "unused_hours", jmes_path(col_item,"utilization.unused_hours")
+      field "utilization_percentage", jmes_path(col_item,"utilization.utilization_percentage")
+    end
+  end
+end
+
+datasource "billing_centers" do
+  request do
+    auth $auth_rs
+    host rs_optima_host
+    path join(["/analytics/orgs/",rs_org_id,"/billing_centers"])
+    header "Api-Version", "1.0"
+    header "User-Agent", "RS Policies"
+    query "view", "allocation_table"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response,"[*]") do
+      field "href", jmes_path(col_item,"href")
+      field "id", jmes_path(col_item,"id")
+      field "name", jmes_path(col_item,"name")
+      field "parent_id", jmes_path(col_item,"parent_id")
+      field "ancestor_ids", jmes_path(col_item,"ancestor_ids")
+      field "allocation_table", jmes_path(col_item,"allocation_table")
+    end
+  end
+end
+
+datasource "real_billing_centers" do
+  run_script $remove_unallocated_bcs, $billing_centers
+end
+
+script "remove_unallocated_bcs", type: "javascript" do
+  parameters "billing_centers"
+  result "filtered_billing_centers"
+  code <<-EOS
+  var filtered_billing_centers =
+    _.reject(billing_centers, function(bc){ return bc.name === "Unallocated" });
+
+EOS
+end
+
+datasource "org_allocation_table" do
+  request do
+    auth $auth_rs
+    host rs_optima_host
+    path join(["/analytics/orgs/",rs_org_id,"/allocation_table"])
+    header "Api-Version", "1.0"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+    field "href", jmes_path(response,"href")
+    field "allocation_rules", jmes_path(response,"allocation_rules")
+  end
+end
+
+datasource "mapped_result" do
+  run_script $map_ri_bcs, $real_billing_centers, $org_allocation_table, $reserved_instances, $param_bc
+end
+
+script "map_ri_bcs", type: "javascript" do
+  parameters "billing_centers", "org_allocation_table", "reserved_instances", "param_bc"
+  result "result"
+  code <<-EOS
+  var result = [];
+
+  // Iterate through all RIs
+  _.each(reserved_instances, function(ri){
+    ri_account_id = ri.account_id
+
+    // Iterate through allocation rules
+    _.each(org_allocation_table.allocation_rules, function(ar){
+
+      // Iterate through cloud IDs
+      _.each(ar.cloud_vendor_account_ids, function(cva){
+
+        if (cva == ri_account_id) {
+          bc_href = ar.billing_center.href;
+
+          _.each(billing_centers, function(bc){
+            if (bc.href == bc_href) {
+              result.push({
+                bc_name: bc["name"],
+                account_id: ri["account_id"],
+                account_name: ri["account_name"]
+                availability_zone: ri["availability_zone"],
+                cancellation_datetime: ri["cancellation_datetime"],
+                end_datetime: ri["end_datetime"],
+                instance_type: ri["instance_type"],
+                lease_id: ri["lease_id"],
+                number_of_instances: ri["number_of_instances"],
+                offering_type: ri["offering_type"],
+                payer_account_id: ri["payer_account_id"],
+                platform: ri["platform"],
+                region: ri["region"],
+                scope: ri["scope"],
+                start_datetime: ri["start_datetime"],
+                subscription_id: ri["subscription_id"],
+                subscription_status: ri["subscription_status"],
+                subscription_type: ri["subscription_type"],
+                tenancy: ri["tenancy"],
+                purchased_hours: ri["purchased_hours"],
+                total_actual_hours: ri["total_actual_hours"],
+                unused_hours: ri["unused_hours"],
+                utilization_percentage: ri["utilization_percentage"]
+              })
+            }
+
+          })
+
+        }
+
+      })
+
+    })
+  })
+
+EOS
+end
+
+escalation "report_ri_bcs" do
+  email $param_email
+end
+
+policy "ri_report_by_bc" do
+  validate_each $mapped_result do
+    summary_template "Reserved Instances Report By Billing Center"
+    detail_template <<-EOS
+# Reserved Instances Report By Billing Center
+
+| Billing Center Name | Cloud Account ID | Cloud Account Name | Region | Availability Zone | Instance Type | Number of Instances | Scope | Offering Type | Platform | Tenancy| Payer Account ID | Lease ID | Purchased Hours | Total Actual Hours | Unused Hours | Utilization Percentage | Subscription ID | Subscription Status | Subscription Type | Start DateTime | Cancellation DateTime | End DateTime |
+| ------- | ------ | ------ |------ | ------ | ------ | ------ | ------ | ------ | ------ | ------ | ------ | ------ | ------ | ------ | ------ | ------ | ------ | ------ | ------ | ------ | ------ | ------ |
+{{ range data -}}
+| {{ .bc_name }} | {{.account_id}} | {{ .account_name }} | {{ .region }} | {{ .availability_zone }} | {{ .instance_type }} | {{ .number_of_instances }} | {{ .scope }} | {{ .offering_type }} | {{ .platform }} | {{ .tenancy }} | {{ .payer_account_id }} | {{ .lease_id }} | {{ .purchased_hours }} | {{ .total_actual_hours }} | {{ .unused_hours }} | {{ .utilization_percentage }} | {{ .subscription_id }} | {{ .subscription_status }} | {{ .subscription_type }} | {{ .start_datetime }} | {{ .cancellation_datetime }} | {{ .end_datetime }} |
+{{ end -}}
+
+EOS
+
+    escalate $report_ri_bcs
+    check ne(val(item, "bc_name"), $param_bc)
+  end
+end
