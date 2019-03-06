@@ -1,5 +1,7 @@
 ## Google Committed Use Discount (CUD) Report
  
+####  As a best practice, this policy should only be applied to the Master Account, and not to each individual RightScale Account.
+ 
 ### What it does
 This policy identifies all CUDs that exist in a given GCP project and provides a report listing them all. It can optionally report on all CUDs or only those that are active or expired.
  
