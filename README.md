@@ -36,6 +36,7 @@ Please contact sales@rightscale.com to learn more.
 ### Compliance
 - [Untagged Resources](./compliance/tags/tag_checker)
 - [Azure Disallowed Regions](./compliance/azure/azure_disallowed_regions)
+- [GitHub.com Available Seats](./compliance/github/available_seats/)
 
 ### Operational
 - [AWS Cloud Credentials Rotation Policy](./operational/cloud_credentials/aws)
