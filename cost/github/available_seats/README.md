@@ -26,7 +26,7 @@ This policy requires permissions to access GitHub.com API as the Owner of the Or
 This policy requires permissions to access RightScale resources (credentials). Before applying this policy add the following roles to the user applying the policy.  For more information on modifying roles visit the [Governance Docs](https://docs.rightscale.com/cm/ref/user_roles.html)
 
 - Cloud Management - credential_viewer or admin
-- Cloud Mabagement - observer
+- Cloud Management - observer
 
 
 ### Cost
