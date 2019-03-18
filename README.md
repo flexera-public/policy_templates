@@ -24,6 +24,7 @@ Please contact sales@rightscale.com to learn more.
 - [Azure Reserved Instance Utilization](./cost/azure/reserved_instances/utilization/)
 - [Billing Center Cost Anomaly](./cost/billing_center_cost_anomaly/)
 - [Google Committed Use Discount (CUD) Report](./cost/google/cud_report/)
+- [GitHub.com Available Seats](./cost/github/available_seats/)
 
 ### Security
 - [Security Group: ICMP Enabled](./security/security_groups/icmp_enabled/)
