@@ -17,7 +17,6 @@ Please contact sales@rightscale.com to learn more.
 - [Unattached Volumes Policy](./cost/volumes/unattached_volumes/)
 - [Old Snapshots](./cost/volumes/old_snapshots/)
 - [Schedule Instances](./cost/schedule_instances/)
-- [Billing Center Access Report](./compliance/billing_center_access_report/)
 - [Unattached IP Addresses](./cost/unattached_addresses/)
 - [Scheduled Report](./cost/scheduled_reports/)
 - [Azure Hybrid Use Benefit](./cost/azure/hybrid_use_benefit/)
@@ -36,6 +35,8 @@ Please contact sales@rightscale.com to learn more.
 ### Compliance
 - [Untagged Resources](./compliance/tags/tag_checker)
 - [Azure Disallowed Regions](./compliance/azure/azure_disallowed_regions)
+- [Azure: Tag Resources with Resource Group Name](./compliance/tags/azure_rg_tags)
+- [Billing Center Access Report](./compliance/billing_center_access_report/)
 - [GitHub.com Available Seats](./compliance/github/available_seats/)
 
 ### Operational
