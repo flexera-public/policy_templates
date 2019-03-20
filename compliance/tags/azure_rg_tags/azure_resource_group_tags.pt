@@ -1,7 +1,7 @@
 name "Azure: Tag Resources with Resource Group Name"
 rs_pt_ver 20180301
 type "policy"
-short_description "Scan all resources in an Azure Subscription and tag each resource with the name of its Resource Group. \n See the [README](https://github.com/rightscale/policy_templates/tree/master/compliance/tags/tag_checker) and [docs.rightscale.com/policies](http://docs.rightscale.com/policies/) to learn more."
+short_description "Scan all resources in an Azure Subscription, raise an incident if any resources are not tagged with the name of their Resource Group, and remediate by tagging the resource. \n See the [README](https://github.com/rightscale/policy_templates/tree/master/compliance/tags/azure_rg_tags) and [docs.rightscale.com/policies](http://docs.rightscale.com/policies/) to learn more."
 long_description "Version: 1.0"
 severity "medium"
 category "Compliance"
@@ -49,7 +49,7 @@ pagination "azure_pagination" do
   end
 end
 
-datasource "azure_resources" do
+datasource "ds_azure_resources" do
   request do
     auth $azure_auth
     pagination $azure_pagination
@@ -69,18 +69,18 @@ datasource "azure_resources" do
   end
 end
 
-datasource "filtered_resources" do
-  run_script $js_filter_resources, $azure_resources, $param_tag_key
+datasource "ds_filtered_resources" do
+  run_script $js_filter_resources, $ds_azure_resources, $param_tag_key
 end
 
 script "js_filter_resources", type: "javascript" do
-  parameters "azure_resources", "param_tag_key"
+  parameters "ds_azure_resources", "param_tag_key"
   result "result"
   code <<-EOS
     var result = [];
 
     // Iterate through all resources
-    _.each(azure_resources, function(ar){
+    _.each(ds_azure_resources, function(ar){
       console.log('Resource Name: '+ar.name)
       var id = ar.id ;
       var rg_split = id.split('/') ;
@@ -88,9 +88,10 @@ script "js_filter_resources", type: "javascript" do
       var namespace = rg_split[6] ;
       var resource_type = rg_split[7] ; 
       console.log('Resource Group Name: '+resource_group_name)
+      console.log('Namespace: '+namespace)
+      console.log('Resource Type: '+resource_type)
 
       var resource_tags = ar.tags ;
-      console.log('Tags: '+resource_tags)
       if (namespace.match(/(Classic)/g)) {
         // Skip Azure Classic
         console.log('Skipping Azure Classic resource. ID: '+id)
@@ -110,30 +111,15 @@ script "js_filter_resources", type: "javascript" do
             var rg_tag_value = resource_tags[param_tag_key] ;
             console.log('TAG KEY FOUND')
             console.log('Tag Value: '+rg_tag_value)
-
-            if (resource_group_name == rg_tag_value) {
-              console.log('Tag Value matches Resource Group Name')
-              result.push({
-                id: ar["id"],
-                region: ar["region"],
-                name: ar["name"],
-                resource_group: resource_group_name,
-                namespace: namespace,
-                resource_type: resource_type,
-                tag: rg_tag_value
-              })
-            } else {
-              console.log('Tag Value differs from Resource Group Name. Adding to Incident..')
-              result.push({
-                id: ar["id"],
-                region: ar["region"],
-                name: ar["name"],
-                resource_group: resource_group_name,
-                namespace: namespace,
-                resource_type: resource_type,
-                tag: rg_tag_value
-              })
-            }
+            result.push({
+              id: ar["id"],
+              region: ar["region"],
+              name: ar["name"],
+              resource_group: resource_group_name,
+              namespace: namespace,
+              resource_type: resource_type,
+              tag: rg_tag_value
+            })
           } else {
             console.log('Tag Key Not Found')
             result.push({
@@ -153,8 +139,8 @@ script "js_filter_resources", type: "javascript" do
 EOS
 end
 
-policy "azure_resource_policy" do
-  validate_each $filtered_resources do
+policy "policy_azure_resource" do
+  validate_each $ds_filtered_resources do
     summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} Azure Resources out of compliance"
     detail_template <<-EOS
 # Azure Resources Incorrectly Tagged
