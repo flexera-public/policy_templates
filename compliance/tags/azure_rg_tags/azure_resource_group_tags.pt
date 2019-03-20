@@ -192,23 +192,47 @@ define tag_resources($data, $param_azure_tenant_id, $param_azure_sub, $param_tag
     $$log << "ID: "+$item["id"]
     $namespace = $item["namespace"]
     $$log << "Namespace: "+$namespace
-    if $namespace =~ "Classic"
-      # Skip
-      $$log << "Skipping due to Azure Classic"
-    else
-      $resource_type = $item["resource_type"]
-      $$log << "Resource Type: "+$resource_type
-      $namespace_obj = select($providers_array, {"namespace": $namespace})
-      if $namespace_obj == []
-        $namespace_obj = select($providers_array, {"namespace": downcase($namespace)})
-      end 
-      $resource_type_obj = select($namespace_obj[0]["resourceTypes"], {"resourceType": $resource_type})
-      $api_versions = $resource_type_obj[0]["apiVersions"]
-      $api_version = first($api_versions)
-      $$log << "API Version: "+$api_version
+    $resource_type = $item["resource_type"]
+    $$log << "Resource Type: "+$resource_type
+    $namespace_obj = select($providers_array, {"namespace": $namespace})
+    if $namespace_obj == []
+      $namespace_obj = select($providers_array, {"namespace": downcase($namespace)})
+    end 
+    $resource_type_obj = select($namespace_obj[0]["resourceTypes"], {"resourceType": $resource_type})
+    $api_versions = $resource_type_obj[0]["apiVersions"]
+    $api_version = first($api_versions)
+    $$log << "API Version: "+$api_version
 
-      $resource_response = http_request(
-        verb: "get",
+    $resource_response = http_request(
+      verb: "get",
+      host: "management.azure.com",
+      https: true,
+      href: $item["id"],
+      query_strings: {
+        "api-version": $api_version
+      },
+      headers: {
+        "cache-control": "no-cache",
+        "content-type": "application/json",
+        "authorization": "Bearer " + $access_token
+      }
+    )
+
+    $all_responses << $resource_response
+
+    $new_object = $resource_response["body"]
+    $new_tags = {}
+    if $item["tag"] == "none"
+      $new_object["tags"] = {}
+    else
+      $new_tags = $resource_response["body"]["tags"]
+    end 
+    $new_object["tags"][$param_tag_key] = $item["resource_group"]
+    $new_tags[$param_tag_key] = $item["resource_group"]
+    sub on_error: handle_error($update_resource_response) do 
+      $update_resource_response = http_request(
+        #verb: "put",
+        verb: "patch",
         host: "management.azure.com",
         https: true,
         href: $item["id"],
@@ -219,41 +243,13 @@ define tag_resources($data, $param_azure_tenant_id, $param_azure_sub, $param_tag
           "cache-control": "no-cache",
           "content-type": "application/json",
           "authorization": "Bearer " + $access_token
-        }
+        },
+        #body: $new_object
+        body: {"tags": $new_tags}
       )
+    end 
+    $all_responses << $update_resource_response
 
-      $all_responses << $resource_response
-
-      $new_object = $resource_response["body"]
-      $new_tags = {}
-      if $item["tag"] == "none"
-        $new_object["tags"] = {}
-      else
-        $new_tags = $resource_response["body"]["tags"]
-      end 
-      $new_object["tags"][$param_tag_key] = $item["resource_group"]
-      $new_tags[$param_tag_key] = $item["resource_group"]
-      sub on_error: handle_error($update_resource_response) do 
-        $update_resource_response = http_request(
-          #verb: "put",
-          verb: "patch",
-          host: "management.azure.com",
-          https: true,
-          href: $item["id"],
-          query_strings: {
-            "api-version": $api_version
-          },
-          headers: {
-            "cache-control": "no-cache",
-            "content-type": "application/json",
-            "authorization": "Bearer " + $access_token
-          },
-          #body: $new_object
-          body: {"tags": $new_tags}
-        )
-      end 
-      $all_responses << $update_resource_response
-    end
   end
 
 end
