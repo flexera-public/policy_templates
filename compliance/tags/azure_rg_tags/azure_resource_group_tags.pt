@@ -104,7 +104,8 @@ script "js_filter_resources", type: "javascript" do
             resource_group: resource_group_name,
             namespace: namespace,
             resource_type: resource_type,
-            tag: 'none'
+            tag: 'none',
+            all_tags: 'none'
           })
         } else {
           if (_.has(resource_tags, param_tag_key)) {
@@ -118,7 +119,8 @@ script "js_filter_resources", type: "javascript" do
               resource_group: resource_group_name,
               namespace: namespace,
               resource_type: resource_type,
-              tag: rg_tag_value
+              tag: rg_tag_value,
+              all_tags: resource_tags
             })
           } else {
             console.log('Tag Key Not Found')
@@ -129,7 +131,8 @@ script "js_filter_resources", type: "javascript" do
               resource_group: resource_group_name,
               namespace: namespace,
               resource_type: resource_type,
-              tag: 'N/A'
+              tag: 'N/A',
+              all_tags: resource_tags
             })
           }
         }
@@ -203,35 +206,15 @@ define tag_resources($data, $param_azure_tenant_id, $param_azure_sub, $param_tag
     $api_version = first($api_versions)
     $$log << "API Version: "+$api_version
 
-    $resource_response = http_request(
-      verb: "get",
-      host: "management.azure.com",
-      https: true,
-      href: $item["id"],
-      query_strings: {
-        "api-version": $api_version
-      },
-      headers: {
-        "cache-control": "no-cache",
-        "content-type": "application/json",
-        "authorization": "Bearer " + $access_token
-      }
-    )
-
-    $all_responses << $resource_response
-
-    $new_object = $resource_response["body"]
     $new_tags = {}
     if $item["tag"] == "none"
-      $new_object["tags"] = {}
+      #skip
     else
-      $new_tags = $resource_response["body"]["tags"]
+      $new_tags = $item["all_tags"]
     end 
-    $new_object["tags"][$param_tag_key] = $item["resource_group"]
     $new_tags[$param_tag_key] = $item["resource_group"]
     sub on_error: handle_error($update_resource_response) do 
       $update_resource_response = http_request(
-        #verb: "put",
         verb: "patch",
         host: "management.azure.com",
         https: true,
@@ -244,7 +227,6 @@ define tag_resources($data, $param_azure_tenant_id, $param_azure_sub, $param_tag
           "content-type": "application/json",
           "authorization": "Bearer " + $access_token
         },
-        #body: $new_object
         body: {"tags": $new_tags}
       )
     end 
