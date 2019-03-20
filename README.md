@@ -22,6 +22,7 @@ Please contact sales@rightscale.com to learn more.
 - [Azure Hybrid Use Benefit](./cost/azure/hybrid_use_benefit/)
 - [Azure Reserved Instance Utilization](./cost/azure/reserved_instances/utilization/)
 - [Billing Center Cost Anomaly](./cost/billing_center_cost_anomaly/)
+- [Google Committed Use Discount (CUD) Report](./cost/google/cud_report/)
 
 ### Security
 - [Security Group: ICMP Enabled](./security/security_groups/icmp_enabled/)
@@ -36,6 +37,7 @@ Please contact sales@rightscale.com to learn more.
 - [Azure Disallowed Regions](./compliance/azure/azure_disallowed_regions)
 - [Azure: Tag Resources with Resource Group Name](./compliance/tags/azure_rg_tags)
 - [Billing Center Access Report](./compliance/billing_center_access_report/)
+- [GitHub.com Available Seats](./compliance/github/available_seats/)
 
 ### Operational
 - [AWS Cloud Credentials Rotation Policy](./operational/cloud_credentials/aws)
