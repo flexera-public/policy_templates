@@ -2,7 +2,7 @@
 
 v1.1
 ----
-- removing icons from short description as icons are bad
+- removing icons from short description as icons break automated documentation
 
 v1.0
 -----
