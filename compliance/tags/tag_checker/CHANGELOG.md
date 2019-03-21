@@ -1,5 +1,9 @@
 ## Untagged Resource Policy Changelog
 
+v1.9
+----
+- removing icons from short description as icons break automated documentation
+
 v1.8
 ----
 - fixed issue with creating tag for invalid_tag
