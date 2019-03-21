@@ -1,6 +1,7 @@
 body='{
   "request": {
-  "branch":"master"
+    "branch":"master",
+    "message": "Build triggered by rightscale/policy_templates"
 }}'
 
 curl -s -X POST \
