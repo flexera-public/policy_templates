@@ -13,12 +13,14 @@ This policy performs the following action:
 ### Input Parameters
 
 This policy has the following input parameter required when launching the policy.
+
 - *Email addresses of the recipients you wish to notify* - A list of email addresses to notify
 
 ### Policy Actions
 
 The following policy actions are taken on any resources found to be out of compliance.
-- Subnet name in CLoud Management updated to match Subnet name in AWS
+
+- Subnet name in Cloud Management updated to match Subnet name in AWS
 
 ### Cloud Management Required Permissions
 
@@ -30,7 +32,7 @@ This policy requires permissions to access Cloud Management resources; Clouds an
 
 ### AWS Required Permissions
 
-This policy requires permissions to describe AWS VPCs and Subnets.
+This policy requires permissions to describe AWS Subnets and tags.
 The Cloud Management Platform automatically creates two Credentials when connecting AWS to Cloud Management; AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY. The IAM user credentials contained in those credentials will require the following permissions:
 
 ```javascript
@@ -45,7 +47,6 @@ The Cloud Management Platform automatically creates two Credentials when connect
   ]
 }
 ```
-
 
 ### Supported Clouds
 
