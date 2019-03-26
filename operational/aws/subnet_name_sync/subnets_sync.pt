@@ -153,6 +153,14 @@ auth "auth_ec2_sa_east_1", type: "aws" do
   secret_key cred('AWS_SECRET_ACCESS_KEY')
 end
 
+auth "auth_ec2_eu_north_1", type: "aws" do
+  version 4
+  service 'ec2'
+  region 'eu-north-1'
+  access_key cred('AWS_ACCESS_KEY_ID')
+  secret_key cred('AWS_SECRET_ACCESS_KEY')
+end
+
 auth "rs", type: "rightscale"
 
 ###############################################################################
@@ -523,6 +531,29 @@ datasource "ds_sa_east_1_subnets" do
   end
 end
 
+datasource "ds_eu_north_1_subnets" do
+  request do
+    auth $auth_ec2_eu_north_1
+    host "ec2.eu-north-1.amazonaws.com"
+    path "/"
+    query "Action", "DescribeSubnets"
+    query "Version", "2016-11-15"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "xml"
+    collect xpath(response, "//DescribeSubnetsResponse/subnetSet/item", "array") do
+      field "tag_set" do
+        collect xpath(col_item, "tagSet/item") do
+          field "key", xpath(col_item, "key")
+          field "value", xpath(col_item, "value")
+        end
+      end
+      field "subnet_id", xpath(col_item, "subnetId")
+    end
+  end
+end
+
 datasource "ds_subnets" do
   iterate @subnets
   field "name", val(iter_item, "name")
@@ -532,7 +563,7 @@ datasource "ds_subnets" do
 end
 
 datasource "ds_rs_updates" do
-  run_script $script_subnets, $ds_us_east_2_subnets, $ds_us_east_1_subnets, $ds_us_west_1_subnets, $ds_us_west_2_subnets, $ds_ap_south_1_subnets, $ds_ap_northeast_2_subnets, $ds_ap_southeast_1_subnets, $ds_ap_southeast_2_subnets, $ds_ap_northeast_1_subnets, $ds_ca_central_1_subnets, $ds_eu_central_1_subnets, $ds_eu_west_1_subnets, $ds_eu_west_2_subnets, $ds_eu_west_3_subnets, $ds_sa_east_1_subnets, $ds_subnets
+  run_script $script_subnets, $ds_us_east_2_subnets, $ds_us_east_1_subnets, $ds_us_west_1_subnets, $ds_us_west_2_subnets, $ds_ap_south_1_subnets, $ds_ap_northeast_2_subnets, $ds_ap_southeast_1_subnets, $ds_ap_southeast_2_subnets, $ds_ap_northeast_1_subnets, $ds_ca_central_1_subnets, $ds_eu_central_1_subnets, $ds_eu_west_1_subnets, $ds_eu_west_2_subnets, $ds_eu_west_3_subnets, $ds_sa_east_1_subnets, $ds_eu_north_1_subnets, $ds_subnets
 end
 
 ###############################################################################
@@ -540,7 +571,7 @@ end
 ###############################################################################
 
 script "script_subnets", type: "javascript" do
-  parameters "ds_us_east_2_subnets","ds_us_east_1_subnets","ds_us_west_1_subnets","ds_us_west_2_subnets","ds_ap_south_1_subnets","ds_ap_northeast_2_subnets","ds_ap_southeast_1_subnets","ds_ap_southeast_2_subnets","ds_ap_northeast_1_subnets","ds_ca_central_1_subnets","ds_eu_central_1_subnets","ds_eu_west_1_subnets","ds_eu_west_2_subnets","ds_eu_west_3_subnets","ds_sa_east_1_subnets","ds_subnets"
+  parameters "ds_us_east_2_subnets","ds_us_east_1_subnets","ds_us_west_1_subnets","ds_us_west_2_subnets","ds_ap_south_1_subnets","ds_ap_northeast_2_subnets","ds_ap_southeast_1_subnets","ds_ap_southeast_2_subnets","ds_ap_northeast_1_subnets","ds_ca_central_1_subnets","ds_eu_central_1_subnets","ds_eu_west_1_subnets","ds_eu_west_2_subnets","ds_eu_west_3_subnets","ds_sa_east_1_subnets","ds_eu_north_1_subnets","ds_subnets"
   result "updates"
   code <<-EOS
     results = [];
@@ -781,6 +812,22 @@ script "script_subnets", type: "javascript" do
       };
       results.push({
         "subnetid": ds_sa_east_1_subnets[i]["subnet_id"],
+        "name": name,
+        "region": "sa-east-1"
+      });
+    };
+
+    for( i = 0; i <= ds_eu_north_1_subnets.length - 1; i++) {
+      var tags = ds_eu_north_1_subnets[i]["tag_set"];
+
+      var name = "";
+      for( x = 0; x <= tags.length - 1; x++){
+        if(tags[x]["key"] === "Name") {
+          name = tags[x]["value"];
+        }
+      };
+      results.push({
+        "subnetid": ds_eu_north_1_subnets[i]["subnet_id"],
         "name": name,
         "region": "sa-east-1"
       });
