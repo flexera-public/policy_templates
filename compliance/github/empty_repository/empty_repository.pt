@@ -1,0 +1,138 @@
+name "GitHub.com Empty Repository Report"
+rs_pt_ver 20180301
+short_description "Gets the repositories under a GitHub.com Organization and creates incidents for any that do have any commits within a certain number of days.  See the [README](https://github.com/rightscale/policy_templates/tree/master/compliance/github/empty_repository) and [docs.rightscale.com/policies](http://docs.rightscale.com/policies/) to learn more."
+long_description "Version: 1.0"
+severity "low"
+category "Compliance"
+
+permission "read_creds" do
+  actions   "rs_cm.show_sensitive","rs_cm.index_sensitive"
+  resources "rs_cm.credentials"
+end
+
+parameter "param_email" do
+  label "Email addresses of the recipients you wish to notify"
+  type "list"
+end
+
+parameter "param_orgs" do
+  type "list"
+  label "Organizations on GitHub.com to scan"
+end
+
+parameter "param_repo_age" do
+  type "string"
+  label "Required minimum age of repository in bytes"
+  default "7"
+end
+
+parameter "param_repo_size" do
+  type "string"
+  label "Required minimum size of repository in bytes"
+  default "1"
+end
+
+auth "auth_github", type: "api_key" do
+  location "header"
+  field "Authorization"
+  type "token"
+  key cred("GITHUB_API_EMPTY_REPO_PERSONAL_ACCESS_TOKEN")
+end
+
+pagination "github_pagination" do
+  get_page_marker do
+    header "Link"
+  end
+  set_page_marker do
+    uri true
+  end
+end
+
+datasource "ds_orgs_array" do
+  run_script $js_orgs_array, $param_orgs
+end
+
+script "js_orgs_array", type: "javascript" do
+  parameters "param_orgs"
+  result "orgs_array"
+  code <<-EOS
+var orgs_array = param_orgs;
+EOS
+end
+
+datasource "org_repos" do
+  iterate $ds_orgs_array
+  request do
+    auth $auth_github
+    host "api.github.com"
+    path join(["/orgs/",iter_item,"/repos"])
+    #pagination $github_pagination
+    query "limit", "100"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "[*]") do
+      field "name", jmes_path(col_item, "name")
+      field "repo_name", jmes_path(col_item, "name")
+      field "repo_org", jmes_path(col_item, "owner.login")
+      field "repo_size", jmes_path(col_item, "size")
+      field "repo_created_at", jmes_path(col_item, "created_at")
+      field "repo_updated_at", jmes_path(col_item, "updated_at")
+      field "repo_pushed_at", jmes_path(col_item, "pushed_at")
+      end
+  end
+end
+
+datasource "invalid_repos" do
+    run_script $js_invalid_repos, $org_repos, $param_repo_size, $param_repo_age
+end
+  
+script "js_invalid_repos", type: "javascript" do
+    parameters "org_repos","param_repo_size","param_repo_age"
+    result "invalid_org_repos"
+    code <<-EOS
+var invalid_org_repos = [];
+for (var index = 0; index < org_repos.length; index++) {
+  var repo = org_repos[index];
+  repo_age = (new Date().getTime()) - (new Date(repo.repo_created_at).getTime());
+  param_repo_age_ms =  (param_repo_age * 60*60*24 * 1000);
+  // exclude repos that are younger than number of days specified in param_repo_age
+  if (repo_age >= param_repo_age_ms && repo.repo_size <= param_repo_size) {
+    invalid_org_repos.push(repo);
+  }
+}
+EOS
+end
+
+policy "invalid_repos" do
+  validate $invalid_repos do
+    summary_template "GitHub.com Empty Repository Report"
+    detail_template <<-EOS
+# GitHub.com Empty Repository Report
+
+The following repositories are older than {{  parameters.param_repo_age }} day(s) and size not larger than {{  parameters.param_repo_size }} byte(s), which is out of compliance for this applied policy.
+
+| Organization | Repository | Repository Size | Repository Created At | Audit Log Link |
+| ------------ | ---------- | --------------- | --------------------- | -------------- |
+{{ range data -}}
+  | {{.repo_org}} | [{{.repo_name}}](https://github.com/{{.repo_org}}/{{.repo_name}}) | {{.repo_size}} byte(s) | {{.repo_created_at}} | [Audit Log](https://github.com/organizations/{{.repo_org}}/settings/audit-log?utf8=%E2%9C%93&q=repo%3A{{.repo_org}}%2F{{.repo_name}}) |
+{{ end -}}
+
+#### Policy Organization(s): {{  parameters.param_orgs }}
+
+#### Policy Minimum Repository Age: {{  parameters.param_repo_age }} day(s)
+
+#### Policy Minimum Repository Size: {{  parameters.param_repo_size }} byte(s)
+
+___
+###### Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }})
+
+EOS
+    check eq(size(data), 0)
+    escalate $report_repositories
+  end
+end
+
+escalation "report_repositories" do
+    email $param_email
+end
