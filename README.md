@@ -17,7 +17,6 @@ Please contact sales@rightscale.com to learn more.
 - [Unattached Volumes Policy](./cost/volumes/unattached_volumes/)
 - [Old Snapshots](./cost/volumes/old_snapshots/)
 - [Schedule Instances](./cost/schedule_instances/)
-- [Billing Center Access Report](./compliance/billing_center_access_report/)
 - [Unattached IP Addresses](./cost/unattached_addresses/)
 - [Scheduled Report](./cost/scheduled_reports/)
 - [Azure Hybrid Use Benefit](./cost/azure/hybrid_use_benefit/)
@@ -36,12 +35,21 @@ Please contact sales@rightscale.com to learn more.
 ### Compliance
 - [Untagged Resources](./compliance/tags/tag_checker)
 - [Azure Disallowed Regions](./compliance/azure/azure_disallowed_regions)
+- [Azure: Tag Resources with Resource Group Name](./compliance/tags/azure_rg_tags)
+- [Billing Center Access Report](./compliance/billing_center_access_report/)
 - [GitHub.com Available Seats](./compliance/github/available_seats/)
+- [GitHub.com Outside Collaborators](./compliance/github/outside_collaborators/)
+- [GitHub.com Repository Naming](./compliance/github/repository_naming/)
+- [GitHub.com Repository Ownership](./compliance/github/repository_ownership/)
+- [GitHub.com Top-Level Teams](./compliance/github/toplevel_teams/)
+- [GitHub.com Unprotected Branches](./compliance/github/unprotected_branches/)
 
 ### Operational
 - [AWS Cloud Credentials Rotation Policy](./operational/cloud_credentials/aws)
 - [No Recent Snapshots](./operational/snapshots/)
 - [AWS RDS Backup Settings](./operational/dbaas/aws/rds_backup)
+- [AWS VPC Name Tag Sync](./operational/aws/vpc_name_sync)
+- [AWS Subnet Name Tag Sync](./operational/aws/subnet_name_sync)
 
 ## Instructions to upload policy templates to RightScale
 
