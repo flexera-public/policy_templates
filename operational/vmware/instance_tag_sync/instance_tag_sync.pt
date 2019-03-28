@@ -1,7 +1,7 @@
 name "VMWare Instance Tag Sync"
 rs_pt_ver 20180301
 type "policy"
-short_description "Ensures a Subnet name in Cloud Management reflect the value of the Subnet name tag in AWS. See the [README](https://github.com/rightscale/policy_templates/tree/master/operational/aws/subnet_name_sync) and [docs.rightscale.com/policies](http://docs.rightscale.com/policies/) to learn more."
+short_description "Ensures a instance name in Cloud Management reflect the value of the instance name tag in AWS. See the [README](https://github.com/rightscale/policy_templates/tree/master/operational/aws/instance_name_sync) and [docs.rightscale.com/policies](http://docs.rightscale.com/policies/) to learn more."
 long_description "Version: 1.0"
 severity "medium"
 category "Operational"
@@ -43,6 +43,9 @@ parameter "param_vsphere_username" do
 end
 
 parameter "param_vsphere_password" do
+end
+
+parameter "param_tag_category" do
 end
 
 ###############################################################################
@@ -89,18 +92,18 @@ end
 # Policy
 ###############################################################################
 
-policy "policy_subnet_sync" do
-  validate_each $ds_rs_updates do
-    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} Subnet Names Out of Sync"
+policy "policy_instance_sync" do
+  validate_each $ds_instances_and_tags do
+    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} instance Names Out of Sync"
     detail_template <<-EOS
-# Subnet Name Validation between AWS and Cloud Management
-| SubnetId | Region | RS Name | AWS Name | Href | Network Href |
+# instance Name Validation between AWS and Cloud Management
+| instanceId | Region | RS Name | AWS Name | Href | Network Href |
 | -------- | ------ | ------- | -------- | ---- | -------------|
 {{ range data -}}
-  | {{.resource_uid}} | {{.region}} | {{.rs_name}} | {{.aws_name}} | {{.href}} | {{.network_href}} |
+  | {{.id}} | {{.name}} | {{.state}} | {{ range $i, $e := .tags }}{{ if $i }}, {{ end }}{{ $e }}{{ end }} |
 {{ end -}}
 EOS
-    check equals?(val(item, "rs_name"), val(item, "aws_name"))
+    check equals?(1,0)
     escalate $escalate_resources
   end
 end
@@ -111,7 +114,7 @@ end
 
 escalation "escalate_resources" do
   email $param_email
-  run "update_subnets", data
+  run "update_instances", data
 end
 
 ###############################################################################
@@ -120,11 +123,9 @@ end
 
 define update_tags($data, $wstunnel_token, $username, $password) do
   $$debug=false
-  call sys_log('AWS Subnet Name Sync Policy: Affected Subnets',to_s($data))
-  foreach $subnet in $data do
-    call sys_log('AWS Subnet Name Sync Policy: Updating Subnet',to_s($subnet))
-    @subnet = rs_cm.get(href: $subnet["href"])
-    @subnet.update(subnet: {"name": $subnet["aws_name"]})
+  call sys_log('VMWare Instance Tag Sync',to_s($data))
+  foreach $instance in $data do
+    call sys_log('VMWare Instance sync: ',to_s($instance))
     call generate_session_token($wstunnel_token, $username, $password) retrieve $session_token
     call sys_log("session_token:"+$session_token)
     # $category_id = "urn:vmomi:InventoryServiceCategory:f9c8236f-7320-47f0-8daa-1d7c83a673ab:GLOBAL"
