@@ -36,6 +36,15 @@ parameter "param_email" do
   label "Email addresses of the recipients you wish to notify"
 end
 
+parameter "param_tunnel_token" do
+end
+
+parameter "param_vsphere_username" do
+end
+
+parameter "param_vsphere_password" do
+end
+
 ###############################################################################
 # Authentication
 ###############################################################################
@@ -61,6 +70,15 @@ end
 # Datasources
 ###############################################################################
 
+datasource "ds_instances_and_tags" do
+   iterate @instances
+   field "href",        href(iter_item)
+   field "id",          val(iter_item,'resource_uid')
+   field "name",        val(iter_item,'name')
+   field "state",       val(iter_item,'state')
+   field "tags",         val(iter_item,'tags')
+   field "type",        "instances"
+end
 
 ###############################################################################
 # Scripts
@@ -100,13 +118,36 @@ end
 # Cloud Workflow
 ###############################################################################
 
-define update_tags($data) do
+define update_tags($data, $wstunnel_token, $username, $password) do
   $$debug=false
   call sys_log('AWS Subnet Name Sync Policy: Affected Subnets',to_s($data))
   foreach $subnet in $data do
     call sys_log('AWS Subnet Name Sync Policy: Updating Subnet',to_s($subnet))
     @subnet = rs_cm.get(href: $subnet["href"])
     @subnet.update(subnet: {"name": $subnet["aws_name"]})
+    call generate_session_token($wstunnel_token, $username, $password) retrieve $session_token
+    call sys_log("session_token:"+$session_token)
+    # $category_id = "urn:vmomi:InventoryServiceCategory:f9c8236f-7320-47f0-8daa-1d7c83a673ab:GLOBAL"
+    call create_category($tunnel_token, $session_token,"MULTIPLE", $description, $name) return $category_id
+    call list_tags($wstunnel_token, $session_token) retrieve $tag_ids
+    call sys_log("tag_ids:" + to_s($tag_ids))
+    $$tag_array = []
+    foreach $tag_id in $tag_ids do
+      call get_tag($wstunnel_token, $session_token, $tag_id) retrieve $spec
+      $$tag_array << $spec
+      $$matching_tag = []
+      if $spec["name"] == $tag
+        call sys_log("matched tag:"+$tag)
+        $$matching_tag << $spec
+        $$matching_id = $tag_id
+      end
+    end
+    if $$matching_id == null
+      call create_tag($wstunnel_token, $session_token, $category_id, $tag_description, $tag) retrieve $tag_id
+    else
+      $tag_id = $$matching_id
+    end
+    call attach_tag($wstunnel_token, $session_token, $tag_id, $resource_id) retrieve $response
   end
 end
 
