@@ -1,0 +1,342 @@
+name "VMWare Instance Tag Sync"
+rs_pt_ver 20180301
+type "policy"
+short_description "Ensures a Subnet name in Cloud Management reflect the value of the Subnet name tag in AWS. See the [README](https://github.com/rightscale/policy_templates/tree/master/operational/aws/subnet_name_sync) and [docs.rightscale.com/policies](http://docs.rightscale.com/policies/) to learn more."
+long_description "Version: 1.0"
+severity "medium"
+category "Operational"
+
+###############################################################################
+# Permissions
+###############################################################################
+
+permission "perm_read_creds" do
+  actions   "rs_cm.show_sensitive","rs_cm.index_sensitive"
+  resources "rs_cm.credentials"
+end
+
+permission "perm_retrieve_resources" do
+  label "Retrieve Resources"
+  actions   "rs_cm.index","rs_cm.show"
+  resources "rs_cm.instances","rs_cm.volumes","rs_cm.clouds"
+end
+
+permission "perm_tags" do
+  label "Retrieve and add Tags"
+  actions "rs_cm.by_resource","rs_cm.multi_add"
+  resources "rs_cm.tags"
+end
+
+###############################################################################
+# Parameters
+###############################################################################
+
+parameter "param_email" do
+  type "list"
+  label "Email addresses of the recipients you wish to notify"
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+auth "auth_rs", type: "rightscale"
+
+###############################################################################
+# Resources
+###############################################################################
+resources "clouds", type: "rs_cm.clouds" do
+  filter do
+    cloud_type "vscale"
+  end
+end
+
+resources "instances", type: "rs_cm.instances" do
+  iterate @clouds
+  cloud_href href(iter_item)
+  tags '*'
+end
+
+###############################################################################
+# Datasources
+###############################################################################
+
+
+###############################################################################
+# Scripts
+###############################################################################
+
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "policy_subnet_sync" do
+  validate_each $ds_rs_updates do
+    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} Subnet Names Out of Sync"
+    detail_template <<-EOS
+# Subnet Name Validation between AWS and Cloud Management
+| SubnetId | Region | RS Name | AWS Name | Href | Network Href |
+| -------- | ------ | ------- | -------- | ---- | -------------|
+{{ range data -}}
+  | {{.resource_uid}} | {{.region}} | {{.rs_name}} | {{.aws_name}} | {{.href}} | {{.network_href}} |
+{{ end -}}
+EOS
+    check equals?(val(item, "rs_name"), val(item, "aws_name"))
+    escalate $escalate_resources
+  end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "escalate_resources" do
+  email $param_email
+  run "update_subnets", data
+end
+
+###############################################################################
+# Cloud Workflow
+###############################################################################
+
+define update_tags($data) do
+  $$debug=false
+  call sys_log('AWS Subnet Name Sync Policy: Affected Subnets',to_s($data))
+  foreach $subnet in $data do
+    call sys_log('AWS Subnet Name Sync Policy: Updating Subnet',to_s($subnet))
+    @subnet = rs_cm.get(href: $subnet["href"])
+    @subnet.update(subnet: {"name": $subnet["aws_name"]})
+  end
+end
+
+# https://vdc-repo.vmware.com/vmwb-repository/dcr-public/1cd28284-3b72-4885-9e31-d1c6d9e26686/71ef7304-a6c9-43b3-a3cd-868b2c236c81/doc/operations/com/vmware/cis/session.create-operation.html
+define generate_session_token($tunnel_token, $username, $password) return $token do
+  $$str = $username + ":" + $password
+  $$encoded_auth = to_base64($$str)
+  $response = http_post(
+    insecure: true,
+    url: "https://wstunnel10-1.rightscale.com/_token/"+$tunnel_token+"/rest/com/vmware/cis/session",
+    headers: {
+      "Accept": "application/json",
+      "Authorization": "Basic " + $$encoded_auth
+    }
+  )
+  $token = $response["body"]["value"]
+end
+
+# https://vdc-repo.vmware.com/vmwb-repository/dcr-public/1cd28284-3b72-4885-9e31-d1c6d9e26686/71ef7304-a6c9-43b3-a3cd-868b2c236c81/doc/operations/com/vmware/cis/tagging/category.create-operation.html
+define create_category($tunnel_token, $session_token, $cardinality, $description, $name) return $category_id do
+  $response = http_post(
+    insecure: true,
+    url: "https://wstunnel10-1.rightscale.com/_token/"+$tunnel_token+"/rest/com/vmware/cis/tagging/category",
+    headers: {
+      "Accept": "application/json",
+      "Content-Type": "application/json",
+      "vmware-api-session-id": $session_token
+    },
+    body: {
+      "create_spec": {
+        "associable_types": ["VirtualMachine"],
+        "cardinality": $cardinality,
+        "description": $description,
+        "name": $name
+      }
+    }
+  )
+  $category_id = $response["body"]["value"]
+end
+
+# https://vdc-repo.vmware.com/vmwb-repository/dcr-public/1cd28284-3b72-4885-9e31-d1c6d9e26686/71ef7304-a6c9-43b3-a3cd-868b2c236c81/doc/operations/com/vmware/cis/tagging/category.list-operation.html
+define list_categories($tunnel_token, $session_token) return $category_ids do
+  $response = http_get(
+    insecure: true,
+    url: "https://wstunnel10-1.rightscale.com/_token/"+$tunnel_token+"/rest/com/vmware/cis/tagging/category",
+    headers: {
+      "Accept": "application/json",
+      "Content-Type": "application/json",
+      "vmware-api-session-id": $session_token
+    }
+  )
+  $category_ids = $response["body"]["value"]
+end
+
+# https://vdc-repo.vmware.com/vmwb-repository/dcr-public/1cd28284-3b72-4885-9e31-d1c6d9e26686/71ef7304-a6c9-43b3-a3cd-868b2c236c81/doc/operations/com/vmware/cis/tagging/category.get-operation.html
+define get_category($tunnel_token, $session_token, $category_id) return $spec do
+  $response = http_get(
+    insecure: true,
+    url: "https://wstunnel10-1.rightscale.com/_token/"+$tunnel_token+"/rest/com/vmware/cis/tagging/category/id:"+$category_id,
+    headers: {
+      "Accept": "application/json",
+      "Content-Type": "application/json",
+      "vmware-api-session-id": $session_token
+    }
+  )
+  $spec = $response["body"]["value"]
+end
+
+# https://vdc-repo.vmware.com/vmwb-repository/dcr-public/1cd28284-3b72-4885-9e31-d1c6d9e26686/71ef7304-a6c9-43b3-a3cd-868b2c236c81/doc/operations/com/vmware/cis/tagging/category.update-operation.html
+define update_category($tunnel_token, $session_token, $category_id, $cardinality, $description, $name) return $response do
+  $response = http_patch(
+    insecure: true,
+    url: "https://wstunnel10-1.rightscale.com/_token/"+$tunnel_token+"/rest/com/vmware/cis/tagging/category/id:"+$category_id,
+    headers: {
+      "Accept": "application/json",
+      "Content-Type": "application/json",
+      "vmware-api-session-id": $session_token
+    },
+    body: {
+      "update_spec": {
+        "associable_types": ["VirtualMachine"],
+        "cardinality": $cardinality,
+        "description": $description,
+        "name": $name
+      }
+    }
+  )
+end
+
+# https://vdc-repo.vmware.com/vmwb-repository/dcr-public/1cd28284-3b72-4885-9e31-d1c6d9e26686/71ef7304-a6c9-43b3-a3cd-868b2c236c81/doc/operations/com/vmware/cis/tagging/category.delete-operation.html
+define delete_category($tunnel_token, $session_token, $category_id) return $response do
+  $response = http_delete(
+    insecure: true,
+    url: "https://wstunnel10-1.rightscale.com/_token/"+$tunnel_token+"/rest/com/vmware/cis/tagging/category/id:"+$category_id,
+    headers: {
+      "Accept": "application/json",
+      "Content-Type": "application/json",
+      "vmware-api-session-id": $session_token
+    }
+  )
+end
+
+# https://vdc-repo.vmware.com/vmwb-repository/dcr-public/1cd28284-3b72-4885-9e31-d1c6d9e26686/71ef7304-a6c9-43b3-a3cd-868b2c236c81/doc/operations/com/vmware/cis/tagging/tag.create-operation.html
+define create_tag($tunnel_token, $session_token, $category_id, $description, $name) return $tag_id do
+  $response = http_post(
+    insecure: true,
+    url: "https://wstunnel10-1.rightscale.com/_token/"+$tunnel_token+"/rest/com/vmware/cis/tagging/tag",
+    headers: {
+      "Accept": "application/json",
+      "Content-Type": "application/json",
+      "vmware-api-session-id": $session_token
+    },
+    body: {
+      "create_spec": {
+        "category_id": $category_id,
+        "description": $description,
+        "name": $name
+      }
+    }
+  )
+  $tag_id = $response["body"]["value"]
+end
+
+# https://vdc-repo.vmware.com/vmwb-repository/dcr-public/1cd28284-3b72-4885-9e31-d1c6d9e26686/71ef7304-a6c9-43b3-a3cd-868b2c236c81/doc/operations/com/vmware/cis/tagging/tag.list-operation.html
+define list_tags($tunnel_token, $session_token) return $tag_ids do
+  $response = http_get(
+    insecure: true,
+    url: "https://wstunnel10-1.rightscale.com/_token/"+$tunnel_token+"/rest/com/vmware/cis/tagging/tag",
+    headers: {
+      "Accept": "application/json",
+      "Content-Type": "application/json",
+      "vmware-api-session-id": $session_token
+    }
+  )
+  $tag_ids = $response["body"]["value"]
+end
+
+# https://vdc-repo.vmware.com/vmwb-repository/dcr-public/1cd28284-3b72-4885-9e31-d1c6d9e26686/71ef7304-a6c9-43b3-a3cd-868b2c236c81/doc/operations/com/vmware/cis/tagging/tag.get-operation.html
+define get_tag($tunnel_token, $session_token, $tag_id) return $spec do
+  $response = http_get(
+    insecure: true,
+    url: "https://wstunnel10-1.rightscale.com/_token/"+$tunnel_token+"/rest/com/vmware/cis/tagging/tag/id:"+$tag_id,
+    headers: {
+      "Accept": "application/json",
+      "Content-Type": "application/json",
+      "vmware-api-session-id": $session_token
+    }
+  )
+  $spec = $response["body"]["value"]
+end
+
+# https://vdc-repo.vmware.com/vmwb-repository/dcr-public/1cd28284-3b72-4885-9e31-d1c6d9e26686/71ef7304-a6c9-43b3-a3cd-868b2c236c81/doc/operations/com/vmware/cis/tagging/tag.update-operation.html
+define update_tag($tunnel_token, $session_token, $tag_id, $description, $name) return $response do
+  $response = http_post(
+    insecure: true,
+    url: "https://wstunnel10-1.rightscale.com/_token/"+$tunnel_token+"/rest/com/vmware/cis/tagging/tag/id:"+$tag_id,
+    headers: {
+      "Accept": "application/json",
+      "Content-Type": "application/json",
+      "vmware-api-session-id": $session_token
+    },
+    body: {
+      "update_spec": {
+        "description": $description,
+        "name": $name
+      }
+    }
+  )
+end
+
+# https://vdc-repo.vmware.com/vmwb-repository/dcr-public/1cd28284-3b72-4885-9e31-d1c6d9e26686/71ef7304-a6c9-43b3-a3cd-868b2c236c81/doc/operations/com/vmware/cis/tagging/tag.delete-operation.html
+define delete_tag($tunnel_token, $session_token, $tag_id) return $response do
+  $response = http_delete(
+    insecure: true,
+    url: "https://wstunnel10-1.rightscale.com/_token/"+$tunnel_token+"/rest/com/vmware/cis/tagging/tag/id:"+$tag_id,
+    headers: {
+      "Accept": "application/json",
+      "Content-Type": "application/json",
+      "vmware-api-session-id": $session_token
+    }
+  )
+end
+
+# https://vdc-repo.vmware.com/vmwb-repository/dcr-public/1cd28284-3b72-4885-9e31-d1c6d9e26686/71ef7304-a6c9-43b3-a3cd-868b2c236c81/doc/operations/com/vmware/cis/tagging/tag_association.attach-operation.html
+define attach_tag($tunnel_token, $session_token, $tag_id, $resource_id) return $response do
+  $response = http_post(
+    insecure: true,
+    url: "https://wstunnel10-1.rightscale.com/_token/"+$tunnel_token+"/rest/com/vmware/cis/tagging/tag-association/id:"+$tag_id+"?~action=attach",
+    headers: {
+      "Accept": "application/json",
+      "Content-Type": "application/json",
+      "vmware-api-session-id": $session_token
+    },
+    body: {
+      "object_id": {
+        "id": $resource_id,
+        "type": "VirtualMachine"
+      }
+    }
+  )
+end
+
+# https://vdc-repo.vmware.com/vmwb-repository/dcr-public/1cd28284-3b72-4885-9e31-d1c6d9e26686/71ef7304-a6c9-43b3-a3cd-868b2c236c81/doc/operations/com/vmware/cis/tagging/tag_association.detach-operation.html
+define detach_tag($tunnel_token, $session_token, $tag_id, $resource_id) return $response do
+  $response = http_post(
+    insecure: true,
+    url: "https://wstunnel10-1.rightscale.com/_token/"+$tunnel_token+"/rest/com/vmware/cis/tagging/tag-association/id:"+$tag_id+"?~action=detach",
+    headers: {
+      "Accept": "application/json",
+      "Content-Type": "application/json",
+      "vmware-api-session-id": $session_token
+    },
+    body: {
+      "object_id": {
+        "id": $resource_id,
+        "type": "VirtualMachine"
+      }
+    }
+  )
+end
+
+define sys_log($subject, $detail) do
+  if $$debug
+    rs_cm.audit_entries.create(
+      notify: "None",
+      audit_entry: {
+        auditee_href: @@account,
+        summary: $subject,
+        detail: $detail
+      }
+    )
+  end
+end
