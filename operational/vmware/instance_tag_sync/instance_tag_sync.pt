@@ -36,16 +36,34 @@ parameter "param_email" do
   label "Email addresses of the recipients you wish to notify"
 end
 
-parameter "param_tunnel_token" do
+parameter "param_cloud_name" do
+  type "string"
+  label "Cloud Name"
+  default "QAD-VMC-TEST"
+end
+
+parameter "param_wstunnel_token" do
+  type "string"
+  label "wstunnel token"
+  default "vmc-qad-test-policy_i0rH2zvnzkh5oJhu1usRVw=="
 end
 
 parameter "param_vsphere_username" do
+  type "string"
+  label "vsphere username"
+  default "cloudadmin@vmc.local"
 end
 
 parameter "param_vsphere_password" do
+  type "string"
+  label "vsphere password"
+  default "9cBuI*P1g+aoJUR"
 end
 
 parameter "param_tag_category" do
+  type "string"
+  label "tag category"
+  default "RightScale"
 end
 
 ###############################################################################
@@ -60,12 +78,16 @@ auth "auth_rs", type: "rightscale"
 resources "clouds", type: "rs_cm.clouds" do
   filter do
     cloud_type "vscale"
+    name $param_cloud_name
   end
 end
 
 resources "instances", type: "rs_cm.instances" do
   iterate @clouds
   cloud_href href(iter_item)
+  filter do
+    state ne: ['inactive', 'terminated']
+  end
   tags '*'
 end
 
@@ -97,8 +119,8 @@ policy "policy_instance_sync" do
     summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} instance Names Out of Sync"
     detail_template <<-EOS
 # instance Name Validation between AWS and Cloud Management
-| instanceId | Region | RS Name | AWS Name | Href | Network Href |
-| -------- | ------ | ------- | -------- | ---- | -------------|
+| instanceId | name | state | tags |
+| -------- | ------ | ------- | -------- |
 {{ range data -}}
   | {{.id}} | {{.name}} | {{.state}} | {{ range $i, $e := .tags }}{{ if $i }}, {{ end }}{{ $e }}{{ end }} |
 {{ end -}}
@@ -114,41 +136,54 @@ end
 
 escalation "escalate_resources" do
   email $param_email
-  run "update_instances", data
+  run "update_tags", data, $param_wstunnel_token, $param_vsphere_username, $param_vsphere_password, $param_tag_category
 end
 
 ###############################################################################
 # Cloud Workflow
 ###############################################################################
 
-define update_tags($data, $wstunnel_token, $username, $password) do
+define update_tags($data, $param_wstunnel_token, $param_vsphere_username, $param_vsphere_password, $param_tag_category) do
   $$debug=false
   call sys_log('VMWare Instance Tag Sync',to_s($data))
+  call generate_session_token($param_wstunnel_token, $param_vsphere_username, $param_vsphere_password) retrieve $session_token
+  call sys_log("session_token:",$session_token)
+  # $category_id = "urn:vmomi:InventoryServiceCategory:f9c8236f-7320-47f0-8daa-1d7c83a673ab:GLOBAL"
+  call list_categories($param_wstunnel_token, $session_token) retrieve $category_ids
+  $category_id = null
+  foreach $category in $category_ids do
+    call get_category($param_wstunnel_token, $session_token, $category) retrieve $spec
+    if $spec["name"] == $param_tag_category
+      $category_id = $category
+    end
+  end
+  if $category_id == null
+    call create_category($param_wstunnel_token, $session_token,"MULTIPLE", "rightscale tag category", $param_tag_category) retrieve $category_id
+  end
   foreach $instance in $data do
     call sys_log('VMWare Instance sync: ',to_s($instance))
-    call generate_session_token($wstunnel_token, $username, $password) retrieve $session_token
-    call sys_log("session_token:"+$session_token)
-    # $category_id = "urn:vmomi:InventoryServiceCategory:f9c8236f-7320-47f0-8daa-1d7c83a673ab:GLOBAL"
-    call create_category($tunnel_token, $session_token,"MULTIPLE", $description, $name) return $category_id
-    call list_tags($wstunnel_token, $session_token) retrieve $tag_ids
-    call sys_log("tag_ids:" + to_s($tag_ids))
-    $$tag_array = []
-    foreach $tag_id in $tag_ids do
-      call get_tag($wstunnel_token, $session_token, $tag_id) retrieve $spec
-      $$tag_array << $spec
-      $$matching_tag = []
-      if $spec["name"] == $tag
-        call sys_log("matched tag:"+$tag)
-        $$matching_tag << $spec
-        $$matching_id = $tag_id
+    $data_tags = $instance["tags"]
+    foreach $tag in $data_tags do
+      call list_tags($param_wstunnel_token, $session_token) retrieve $tag_ids
+      call sys_log("tag_ids:", to_s($tag_ids))
+      $$tag_array = []
+      foreach $tag_id in $tag_ids do
+        call get_tag($param_wstunnel_token, $session_token, $tag_id) retrieve $spec
+        $$tag_array << $spec
+        $$matching_tag = []
+        if $spec["name"] == $tag
+          call sys_log("matched tag:",$tag)
+          $$matching_tag << $spec
+          $$matching_id = $tag_id
+        end
       end
+      if $$matching_id == null
+        call create_tag($param_wstunnel_token, $session_token, $category_id, "rightscale synced tag", $tag) retrieve $tag_id
+      else
+        $tag_id = $$matching_id
+      end
+      call attach_tag($param_wstunnel_token, $session_token, $tag_id, $instance["id"]) retrieve $response
     end
-    if $$matching_id == null
-      call create_tag($wstunnel_token, $session_token, $category_id, $tag_description, $tag) retrieve $tag_id
-    else
-      $tag_id = $$matching_id
-    end
-    call attach_tag($wstunnel_token, $session_token, $tag_id, $resource_id) retrieve $response
   end
 end
 
