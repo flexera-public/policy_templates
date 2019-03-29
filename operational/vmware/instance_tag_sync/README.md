@@ -1,14 +1,16 @@
-## AWS Subnet Name Sync
+## VMWare Instance Tag Sync
 
 ### What it does
 
-This Policy Template is used to automatically synchronize the AWS Subnet names to Cloud Management.
-When applied, the policy will iterate through all VPCs in all AWS regions and ensure the matching subnet reference in Cloud Management has the correct name.
+This Policy Template is used to automatically synchronize the CMP Tags to VMWare. 
 
 ### Functional Details
+This policy has the following requirements to function properly. You will need to setup a wstunnel to the vsphere server. 
+1. [WS-Tunnel](https://github.com/rightscale/wstunnel)
+1. `/usr/local/bin/wstunnel cli -token $WSTUNNEL_TOKEN -tunnel wss://wstunnel10-1.rightscale.com -server $VSPHERE_HTTPS -logfile /var/log/wstuncli-policy.log -pidfile /var/run/wstunnel-policy.pid`
 
 This policy performs the following action:
-- Synchronizes AWS Subnet names to Subnets in Cloud Management
+- Synchronizes Instance Tags from RightScale to VMware
 
 ### Input Parameters
 
@@ -20,7 +22,7 @@ This policy has the following input parameter required when launching the policy
 
 The following policy actions are taken on any resources found to be out of compliance.
 
-- Subnet name in Cloud Management updated to match Subnet name in AWS
+- VMware instances are tagged
 
 ### Cloud Management Required Permissions
 
@@ -30,27 +32,17 @@ This policy requires permissions to access Cloud Management resources; Clouds an
 - Cloud Management - admin or credential_viewer
 - Cloud Management - security_manager
 
-### AWS Required Permissions
+### VMWare Required Permissions
 
 This policy requires permissions to describe AWS Subnets and tags.
 The Cloud Management Platform automatically creates two Credentials when connecting AWS to Cloud Management; AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY. The IAM user credentials contained in those credentials will require the following permissions:
 
 ```javascript
-{
-    "Version": "2012-10-17",
-    "Statement":[{
-    "Effect":"Allow",
-    "Action":["ec2:DescribeSubnets",
-              "ec2:DescribeTags"],
-    "Resource":"*"
-    }
-  ]
-}
 ```
 
 ### Supported Clouds
 
-- AWS
+- VMWare
 
 ### Cost
 
