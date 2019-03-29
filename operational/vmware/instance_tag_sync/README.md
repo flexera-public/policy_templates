@@ -17,6 +17,11 @@ This policy performs the following action:
 This policy has the following input parameter required when launching the policy.
 
 - *Email addresses of the recipients you wish to notify* - A list of email addresses to notify
+- *Cloud Name* - Name of VMWare Cloud to run the policy against
+- *wstunnel token* - Token for Tunnel to VSphere Server
+- *vsphere username* - VSphere Username
+- *vsphere password* - VSphere Password
+- *tag category* - VMware Category for Tag Association
 
 ### Policy Actions
 
