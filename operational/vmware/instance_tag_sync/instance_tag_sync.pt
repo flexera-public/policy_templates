@@ -157,25 +157,37 @@ define update_tags($data, $param_wstunnel_token, $param_vsphere_username, $param
       $category_id = $category
     end
   end
+
   if $category_id == null
     call create_category($param_wstunnel_token, $session_token,"MULTIPLE", "rightscale tag category", $param_tag_category) retrieve $category_id
   end
+
+  $$tag_array = []
   foreach $instance in $data do
     call sys_log('VMWare Instance sync: ',to_s($instance))
     $data_tags = $instance["tags"]
-    foreach $tag in $data_tags do
-      call list_tags($param_wstunnel_token, $session_token) retrieve $tag_ids
-      call sys_log("tag_ids:", to_s($tag_ids))
-      $$tag_array = []
-      foreach $tag_id in $tag_ids do
+
+    call list_tags($param_wstunnel_token, $session_token) retrieve $tag_ids
+    call sys_log("tag_ids:", to_s($tag_ids))
+    task_label('populating tags list')
+    foreach $tag_id in $tag_ids do
+      $match_tag = first(select($$tag_array, { "id": $tag_id }))
+      if $match_tag == null
         call get_tag($param_wstunnel_token, $session_token, $tag_id) retrieve $spec
-        $$tag_array << $spec
-        $$matching_tag = []
-        if $spec["name"] == $tag
-          call sys_log("matched tag:",$tag)
-          $$matching_tag << $spec
-          $$matching_id = $tag_id
-        end
+        $$tag_array << { "name": $spec["name"], "id": $spec["id"] }
+      end
+    end
+    
+    foreach $tag in $data_tags do
+      task_label('instance:' + $instance["name"] + ', tag: '+ $tag)
+      $$matching_tag = []
+      $match_tag = first(select($$tag_array, { "name": $tag }))
+      if $match_tag == null
+        $$matching_id = null
+      else
+        call sys_log("matched tag:",$tag)
+        $$matching_tag << $match_tag
+        $$matching_id = $match_tag["id"]
       end
       if $$matching_id == null
         call create_tag($param_wstunnel_token, $session_token, $category_id, "rightscale synced tag", $tag) retrieve $tag_id
@@ -214,7 +226,7 @@ define create_category($tunnel_token, $session_token, $cardinality, $description
     },
     body: {
       "create_spec": {
-        "associable_types": ["VirtualMachine"],
+        "associable_types": [],
         "cardinality": $cardinality,
         "description": $description,
         "name": $name
@@ -264,7 +276,7 @@ define update_category($tunnel_token, $session_token, $category_id, $cardinality
     },
     body: {
       "update_spec": {
-        "associable_types": ["VirtualMachine"],
+        "associable_types": [],
         "cardinality": $cardinality,
         "description": $description,
         "name": $name
