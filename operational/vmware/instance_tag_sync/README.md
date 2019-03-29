@@ -34,11 +34,16 @@ This policy requires permissions to access Cloud Management resources; Clouds an
 
 ### VMWare Required Permissions
 
-This policy requires permissions to describe AWS Subnets and tags.
-The Cloud Management Platform automatically creates two Credentials when connecting AWS to Cloud Management; AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY. The IAM user credentials contained in those credentials will require the following permissions:
-
-```javascript
-```
+  1. Assign or Unassign vSphere Tag
+  1. Assign or Unassign vSphere Tag on Object
+  1. Create vSphere Tag
+  1. Create vSphere Tag Category
+  1. Delete vSphere Tag
+  1. Delete vSphere Tag Category
+  1. Edit vSphere Tag
+  1. Edit vSphere Tag Category
+  1. Modify UsedBy Field For Category
+  1. Modify UsedBy Field For Tag
 
 ### Supported Clouds
 
