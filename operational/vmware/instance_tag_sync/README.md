@@ -5,7 +5,9 @@
 This Policy Template is used to automatically synchronize the CMP Tags to VMWare. 
 
 ### Functional Details
-This policy has the following requirements to function properly. You will need to setup a wstunnel to the vsphere server. 
+This policy has the following requirements to function properly. You will need to setup a wstunnel to the vsphere server. There is a 1:1 relationship between RCAV's and this policy.
+1. RCAV
+1. The cloud configured inside of CMP 
 1. [WS-Tunnel](https://github.com/rightscale/wstunnel)
 1. `/usr/local/bin/wstunnel cli -token $WSTUNNEL_TOKEN -tunnel wss://wstunnel10-1.rightscale.com -server $VSPHERE_HTTPS -logfile /var/log/wstuncli-policy.log -pidfile /var/run/wstunnel-policy.pid`
 
