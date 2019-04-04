@@ -33,8 +33,8 @@ The Cloud Management Platform automatically creates two Credentials when connect
     "Effect":"Allow",
     "Action":["elasticloadbalancing:DescribeLoadBalancers",
               "elasticloadbalancing:DescribeInstanceHealth",
-			  "elasticloadbalancing:DescribeTags",
-			  "elasticloadbalancing:DeleteLoadBalancer"],
+	      "elasticloadbalancing:DescribeTags",
+	      "elasticloadbalancing:DeleteLoadBalancer"],
     "Resource":"*"
     }
   ]
