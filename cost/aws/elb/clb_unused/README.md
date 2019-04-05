@@ -1,9 +1,9 @@
 ## AWS Unused Classic Load Balancers (CLB) 
  
 ### What it does
-This policy checks all CLB to determine if any are unused (have no healthy instances) and allows them to be deleted by the user after approval.
+This policy checks all Classic Load Balancers (CLB) to determine if any are unused (have no healthy instances) and allows them to be deleted by the user after approval.
 
-Note:Elastic Load Balancing (ELB) supports three types of load balancers: Application Load Balancers, Network Load Balancers, and Classic Load Balancers.
+Note:Elastic Load Balancing (ELB) supports three types of load balancers: Application Load Balancers, Network Load Balancers and Classic Load Balancers.
 
 ### Functional Details
  
@@ -23,7 +23,7 @@ When an unused CLB is detected, an email action is triggered automatically to no
 
 ### AWS Required Permissions
 
-This policy requires permissions to describe AWS LoadBalancers,InstanceHealth, tags and DeleteLoadBalancer. 
+This policy requires permissions to describe AWS LoadBalancers, InstanceHealth, tags and DeleteLoadBalancer.
 The Cloud Management Platform automatically creates two Credentials when connecting AWS to Cloud Management; AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY. The IAM user credentials contained in those credentials will require the following permissions:
 
 ```javascript
