@@ -1,0 +1,136 @@
+name "Long Running Instances"
+rs_pt_ver 20180301
+type "policy"
+short_description ". \n See the [README](https://github.com/rightscale/policy_templates/tree/master/operational/long_running_instances) and [docs.rightscale.com/policies](http://docs.rightscale.com/policies/) to learn more."
+long_description "Version: 1.0"
+severity "medium"
+category "Operational"
+
+permission "perm_instances" do
+  label "Permissions for instances"
+  actions "rs_cm.index", "rs_cm.show"
+  resources "rs_cm.instances", "rs_cm.clouds"
+end
+
+parameter "param_num_days" do 
+  label "Number of Days"
+  type "number"
+  description "Number of days that an instance has been running to raise an incident"
+end 
+
+parameter "param_exclusion_tag" do
+  type "list"
+  label "Exclusion Tag"
+  description "Instance tag used to exclude instances from raising incidents in policy. (e.g.: ec2:environment=production)"
+  min_length 1
+  allowed_pattern /([\w]?)+\:([\w]?)+\=([\w]?)+/
+end
+
+parameter "param_email" do
+  type "list"
+  label "Email addresses of the recipients you wish to notify"
+end
+
+auth "auth_rs", type: "rightscale"
+
+resources "clouds", type: "rs_cm.clouds" do
+  filter do 
+    cloud_type ne: ["soft_layer","cloud_stack","rackspace_next_gen", "blue_skies","open_stack_v2","uca","open_stack_v3"]
+  end
+end
+
+resources "instances", type: "rs_cm.instances" do
+  iterate @clouds  
+  cloud_href href(iter_item)
+  filter do
+    state "operational"
+  end
+  tags none($param_exclusion_tag)
+end
+
+datasource "formatted_instances", type: "javascript" do
+  run_script $js_format_instances, @instances
+end
+  
+script "js_format_instances", type: "javascript" do
+  parameters "instances"
+  result "result"
+  code <<-EOS
+  var result = [];
+
+  // Used for date math below
+  // The number of milliseconds in one day
+  var ONE_DAY = 1000 * 60 * 60 * 24
+  var today = new Date()
+  // Get today in epoch time in UTC time
+  var today_ms = new Date(today.getTime() + today.getTimezoneOffset() * 60000);
+
+  _.each(instances, function(inst){
+    var updated_at_parts = inst.updated_at.split(" ")
+    // chop up the yyyy/mm/dd into its parts
+    var date_parts = updated_at_parts[0].split("/")
+
+    // Create a Date object based on the yyyy, mm, dd
+    // NOTE: months in javascript goes 0-11 so subtract one from the mm bit 
+    var updated_at_date = new Date(date_parts[0], (Number(date_parts[1]) - 1), date_parts[2])
+    var updated_at_ms = updated_at_date.getTime()
+    var difference_ms = Math.abs(today_ms - updated_at_ms)
+    var number_of_days_old = Math.round(difference_ms/ONE_DAY)
+
+    console.log("Runtime: "+number_of_days_old)
+
+    result.push({
+      runtime: number_of_days_old,
+      name: inst["name"],
+      state: inst["state"],
+      href: inst["links"][0]["href"]
+    })
+  })
+
+EOS
+end
+
+policy "policy_long_running_instances" do
+  validate_each $formatted_instances do
+    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} Long Running Instances"
+    detail_template <<-EOS
+# {{ len data }} Long Running Instances found in {{ rs_project_name }}
+
+| Instance Name | Runtime | State | Href |
+| ------------- | ------- | ----- | ---- | 
+{{ range data -}}
+  | {{.name}} | {{.runtime}} | {{.state}} | {{.href }} |
+{{ end -}}
+
+EOS
+    escalate $report_instances
+    escalate $stop_instances
+    check lt(val(item, "runtime"), $param_num_days)
+  end
+end
+
+escalation "report_instances" do 
+  email $param_email
+end 
+
+escalation "stop_instances" do 
+  request_approval  do
+    label "Approve: Stop Instances"
+    description "Approve escalation to run RightScale Cloud Workflow to stop the long running instances"
+    parameter "approval_reason" do
+      type "string"
+      label "Reason for Approval"
+      description "Explain why you are approving the action"
+    end
+  end
+  run "stop", data
+end 
+
+define stop($data) do
+  foreach $instance in $data do 
+    sub on_error: skip do 
+      @instance = rs_cm.get(href: $instance["href"])
+      @instance.stop()
+    end 
+  end 
+end 
