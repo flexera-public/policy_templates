@@ -1,0 +1,193 @@
+name "Azure Cheaper Regions"
+rs_pt_ver 20180301
+type "policy"
+short_description "Specify which regions have cheaper alternatives by specifying the expensive region name and the cheaper region name for analysis. See the [README](https://github.com/rightscale/policy_templates/tree/master/operational/vmware/instance_name_sync) and [docs.rightscale.com/policies](http://docs.rightscale.com/policies/) to learn more."
+long_description "Version: 1.0"
+severity "medium"
+category "Operational"
+
+###############################################################################
+# Permissions
+###############################################################################
+
+permission "perm_read_creds" do
+  actions   "rs_cm.show_sensitive","rs_cm.index_sensitive"
+  resources "rs_cm.credentials"
+end
+
+permission "perm_retrieve_resources" do
+  label "Retrieve Resources"
+  actions   "rs_cm.index","rs_cm.show"
+  resources "rs_cm.instances","rs_cm.volumes","rs_cm.clouds"
+end
+
+permission "perm_tags" do
+  label "Retrieve and add Tags"
+  actions "rs_cm.by_resource","rs_cm.multi_add"
+  resources "rs_cm.tags"
+end
+
+###############################################################################
+# Parameters
+###############################################################################
+
+parameter "param_email" do
+  type "list"
+  label "Email addresses of the recipients you wish to notify"
+end
+
+parameter "param_billing_center" do
+  label "Billing Center Name"
+  type "string"
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+auth "auth_rs", type: "rightscale"
+
+###############################################################################
+# Resources
+###############################################################################
+
+###############################################################################
+# Datasources
+###############################################################################
+datasource "billing_centers" do
+  request do
+    auth $auth_rs
+    host rs_optima_host
+    path join(["/analytics/orgs/",rs_org_id,"/billing_centers"])
+    header "Api-Version", "1.0"
+    header "User-Agent", "RS Policies"
+    query "view", "allocation_table"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response,"[*]") do
+      field "href", jmes_path(col_item,"href")
+      field "id", jmes_path(col_item,"id")
+      field "name", jmes_path(col_item,"name")
+      field "parent_id", jmes_path(col_item,"parent_id")
+      field "ancestor_ids", jmes_path(col_item,"ancestor_ids")
+      field "allocation_table", jmes_path(col_item,"allocation_table")
+    end
+  end
+end
+
+datasource "new_bc_costs" do
+  iterate $billing_centers
+  request do
+    run_script $new_costs_request,rs_org_id,val(iter_item,"id"),$param_cost_metric,$param_days
+  end 
+  result do
+    encoding "json"
+    collect jmes_path(response,"rows[*]") do
+      field "billing_center_id", val(iter_item, "billing_center_id")
+      field "region", val(iter_item, "region")
+    end
+  end
+end
+
+###############################################################################
+# Scripts
+###############################################################################
+script "new_costs_request", type: "javascript" do
+  parameters "org_id","bc_id","param_cost_metric","param_days"
+  result "request"
+  code <<-EOS
+    var start_at = "";
+    var end_at = "";
+    var cost_metric = {
+      "Unamortized Unblended":"cost_nonamortized_unblended_adj",
+      "Amortized Unblended":"cost_amortized_unblended_adj",
+      "Unamortized Blended": "cost_nonamortized_blended_adj",
+      "Amortized Blended":"cost_amortized_blended_adj"
+    }
+    // format the date for the `daily` API
+    // returns date formatted as string: YYYY-mm-dd
+    function getFormattedDailyDate(date) {
+      var year = date.getFullYear();
+      var month = (1 + date.getMonth()).toString();
+      month = month.length > 1 ? month : '0' + month;
+      var day = date.getDate().toString();
+      day = day.length > 1 ? day : '0' + day;
+      return year + '-' + month + '-' + day;
+    }
+    function getStartDate( date ) {
+      var days = 2 + param_days ;
+      date.setHours(-24 * days);
+      return date;
+    }
+    function getEndDate( date ) {
+      date.setHours(-48);
+      return date;
+    }
+    start_at = getFormattedDailyDate(getStartDate(new Date())) 
+    end_at = getFormattedDailyDate(getEndDate(new Date())) 
+    var request = {
+      auth: "auth_rs",
+      verb: "POST",
+      host: "optima.rightscale.com",
+      path: "/bill-analysis/orgs/" + org_id + "/costs/aggregated",
+      body_fields: {
+        "dimensions": ["region","billing_center_id"],
+        "granularity": "month",
+        "metrics": ["cost_amortized_unblended_adj"],
+        "billing_center_ids": [bc_id],
+        "start_at": start_at,
+        "end_at": end_at
+      },
+      headers: {
+        "Api-Version": "1.0",
+        "User-Agent": "RS Policies",
+      }
+    } 
+  EOS
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "azure_cheaper_regions" do
+  validate_each $ds_instances_and_tags do
+    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} rows with cheaper data"
+    detail_template <<-EOS
+# Cheaper Regions
+| Billing Center ID | Region |
+| -------- | ------ |
+{{ range data -}}
+  | .billing_center_id | .region |
+{{ end -}}
+EOS
+    check equals?(1,0)
+    escalate $email
+  end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "email" do
+  email $param_email
+end
+
+###############################################################################
+# Cloud Workflow
+###############################################################################
+
+define sys_log($subject, $detail) do
+  if $$debug
+    rs_cm.audit_entries.create(
+      notify: "None",
+      audit_entry: {
+        auditee_href: @@account,
+        summary: $subject,
+        detail: $detail
+      }
+    )
+  end
+end
