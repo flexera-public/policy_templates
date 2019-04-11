@@ -10,11 +10,6 @@ category "Operational"
 # Permissions
 ###############################################################################
 
-permission "perm_read_creds" do
-  actions   "rs_cm.show_sensitive","rs_cm.index_sensitive"
-  resources "rs_cm.credentials"
-end
-
 permission "perm_retrieve_resources" do
   label "Retrieve Resources"
   actions   "rs_cm.index","rs_cm.show"
@@ -36,9 +31,10 @@ parameter "param_email" do
   label "Email addresses of the recipients you wish to notify"
 end
 
-parameter "param_billing_center" do
+parameter "param_billing_centers" do
   label "Billing Center Name"
-  type "string"
+  type "list"
+  default ["Telefonica AZURE"]
 end
 
 ###############################################################################
@@ -55,7 +51,7 @@ auth "auth_rs", type: "rightscale"
 # Datasources
 ###############################################################################
 
-datasource "ds_active_policy_list" do
+datasource "ds_cheaper_regions" do
   request do
     verb "GET"
     host "raw.githubusercontent.com"
@@ -90,15 +86,15 @@ datasource "billing_centers" do
 end
 
 datasource "new_bc_costs" do
-  iterate $billing_centers
   request do
-    run_script $new_costs_request,rs_org_id,val(iter_item,"id"),$param_cost_metric,$param_days
+    run_script $new_costs_request,rs_org_id,$billing_centers,$param_billing_centers
   end 
   result do
     encoding "json"
     collect jmes_path(response,"rows[*]") do
-      field "billing_center_id", val(iter_item, "billing_center_id")
-      field "region", val(iter_item, "region")
+      field "billing_center_name", val(iter_item,"name")
+      field "billing_center_id", jmes_path(col_item, "dimensions.billing_center_id")
+      field "region", jmes_path(col_item, "dimensions.region")
     end
   end
 end
@@ -107,7 +103,7 @@ end
 # Scripts
 ###############################################################################
 script "new_costs_request", type: "javascript" do
-  parameters "org_id","bc_id","param_cost_metric","param_days"
+  parameters "org_id","billing_centers","param_billing_centers"
   result "request"
   code <<-EOS
     var start_at = "";
@@ -126,19 +122,36 @@ script "new_costs_request", type: "javascript" do
       month = month.length > 1 ? month : '0' + month;
       var day = date.getDate().toString();
       day = day.length > 1 ? day : '0' + day;
-      return year + '-' + month + '-' + day;
+      return year + '-' + month;
     }
     function getStartDate( date ) {
-      var days = 2 + param_days ;
-      date.setHours(-24 * days);
-      return date;
+      y = date.getFullYear()
+      m = date.getMonth();
+      start_date = new Date(y, m, 1);
+      return start_date;
     }
     function getEndDate( date ) {
-      date.setHours(-48);
-      return date;
+      y = date.getFullYear()
+      m = date.getMonth();
+      end_date = new Date(y, m + 1, 1);
+      return end_date;
     }
     start_at = getFormattedDailyDate(getStartDate(new Date())) 
-    end_at = getFormattedDailyDate(getEndDate(new Date())) 
+    end_at = getFormattedDailyDate(getEndDate(new Date()))
+
+    var top_billing_centers = _.reject(billing_centers, function(bc){ return bc.parent_id != null });
+    var billing_center_ids = []
+    if (param_billing_centers.length === 0){
+      billing_center_ids = _.map(top_billing_centers, function(value, key){ return value.id });
+    } else {
+      // get array of billing center id's that match the names in param_billing_centers.
+      billing_center_names = _.map(param_billing_centers, function(name){ return name.toLowerCase(); });
+      billing_center_ids = _.compact(_.map(top_billing_centers, function(value){ if(_.contains(billing_center_names, value.name.toLowerCase())){return value.id} }));
+    }
+    console.log('billing_centers:'+JSON.stringify(billing_centers))
+    console.log('billing_centers_ids:'+ billing_center_ids)
+        console.log('top_billing_centers:'+ JSON.stringify(top_billing_centers))
+
     var request = {
       auth: "auth_rs",
       verb: "POST",
@@ -148,7 +161,7 @@ script "new_costs_request", type: "javascript" do
         "dimensions": ["region","billing_center_id"],
         "granularity": "month",
         "metrics": ["cost_amortized_unblended_adj"],
-        "billing_center_ids": [bc_id],
+        "billing_center_ids": billing_center_ids,
         "start_at": start_at,
         "end_at": end_at
       },
@@ -156,7 +169,7 @@ script "new_costs_request", type: "javascript" do
         "Api-Version": "1.0",
         "User-Agent": "RS Policies",
       }
-    } 
+    }
   EOS
 end
 
@@ -165,14 +178,14 @@ end
 ###############################################################################
 
 policy "azure_cheaper_regions" do
-  validate_each $ds_instances_and_tags do
+  validate_each $new_bc_costs do
     summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} rows with cheaper data"
     detail_template <<-EOS
 # Cheaper Regions
-| Billing Center ID | Region |
-| -------- | ------ |
+| Billing Center Name | Billing Center ID | Region |
+| ------------------- | ----------------- | ------ |
 {{ range data -}}
-  | .billing_center_id | .region |
+| {{ .name }}  | {{ .billing_center_id }} | {{ .region }} |
 {{ end -}}
 EOS
     check equals?(1,0)
