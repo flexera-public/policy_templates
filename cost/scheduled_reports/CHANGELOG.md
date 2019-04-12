@@ -1,5 +1,12 @@
 # Change log
 
+v1.6
+----
+- added "Resource Group" as a dimension
+- added support to report on child Billing Centers
+- forced chart legend to bottom of chart
+- fixed the billing data api call that was leaving off a days worth of costs
+
 v1.5
 ----
 - added the ability to select any "common" dimension for the chart image
