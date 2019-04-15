@@ -1,8 +1,8 @@
-## Azure Cheaper Regions Policy
+## Azure CSP Cheaper Regions Policy
 
 ### What it does
 
-This Policy Template determines regions have cheaper alternatives by specifying the expensive region name and the cheaper region name for analysis
+This Policy Template determines which regions have cheaper alternatives by specifying the expensive region name and the cheaper region name for analysis
 
 ### Prerequesites
 - The `billing_center_viewer` role
