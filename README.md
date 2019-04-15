@@ -24,6 +24,7 @@ Please contact sales@rightscale.com to learn more.
 - [Billing Center Cost Anomaly](./cost/billing_center_cost_anomaly/)
 - [Google Committed Use Discount (CUD) Report](./cost/google/cud_report/)
 - [AWS Delete Unused Elastic Load Balancers (CLB)](./cost/aws/elb/clb_unused/)
+- [Azure CSP Cheaper Regions](./cost/cost/azure/csp/cheaper_regions/)
 
 ### Security
 - [Security Group: ICMP Enabled](./security/security_groups/icmp_enabled/)

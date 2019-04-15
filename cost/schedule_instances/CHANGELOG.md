@@ -1,5 +1,9 @@
 Change log
 
+v1.5
+----
+- update email template.
+
 v1.4
 ----
 - update permission declaration.
