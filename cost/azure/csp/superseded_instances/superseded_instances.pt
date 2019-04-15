@@ -1,4 +1,4 @@
-name "Azure Cheaper Regions"
+name "Azure CSP Superseded Instances"
 rs_pt_ver 20180301
 type "policy"
 short_description "Specify which regions have cheaper alternatives by specifying the expensive region name and the cheaper region name for analysis. See the [README](https://github.com/rightscale/policy_templates/tree/master/cost/azure/cheaper_regions/) and [docs.rightscale.com/policies](http://docs.rightscale.com/policies/) to learn more."
@@ -70,8 +70,8 @@ datasource "ds_new_bc_costs" do
     encoding "json"
     collect jmes_path(response,"rows[*]") do
       field "billing_center_id", jmes_path(col_item, "dimensions.billing_center_id")
-      field "region", jmes_path(col_item, "dimensions.region")
-      field "service", jmes_path(col_item, "dimensions.service")
+      field "instance_type", jmes_path(col_item,"dimensions.instance_type")
+      field "region", jmes_path(col_item,"dimensions.region")
     end
   end
 end
@@ -139,7 +139,7 @@ script "js_new_costs_request", type: "javascript" do
       host: "optima.rightscale.com",
       path: "/bill-analysis/orgs/" + org_id + "/costs/aggregated",
       body_fields: {
-        "dimensions": ["region","billing_center_id","service"],
+        "dimensions": ["instance_type","billing_center_id"],
         "granularity": "month",
         "metrics": ["cost_amortized_unblended_adj"],
         "billing_center_ids": billing_center_ids,
@@ -159,34 +159,65 @@ script "js_merge_bc_name", type: "javascript" do
   result "results"
   code <<-EOS
     var results = []
-    var ds_cheaper_regions = {
-      "regions": {
-        "US West":    "US West 2",
-        "US East":    "US East 2",
-        "KR Central": "KR South",
-        "US Central": "US West 2",
-        "CA Central": "CA East",
-        "EU West":    "UK South",
-        "EU North":   "UK West",
-        "JA East":    "KR South",
-        "JA West":    "KR South"
-        }
+    var ds_newer_instance_types = {
+      "instance_types": {
+        "Standard_F*_v1": "Standard_F*_v2",
+        "Standard_A1":           "Standard_A1_v2",
+        "Standard_A2":           "Standard_A2_v2",
+        "Standard_A3":           "Standard_A4_v2",
+        "Standard_A4":           "Standard_A8_v2",
+        "Standard_A5":           "Standard_A2m_v2",
+        "Standard_A6":           "Standard_A4m_v2",
+        "Standard_A7":           "Standard_A8m_v2",
+        "Standard_A10":          "Standard_H8",
+        "Standard_A11":          "Standard_H16",
+        "Standard_D2":           "Standard_D2_v3",
+        "Standard_D3":           "Standard_D4_v3",
+        "Standard_D4":           "Standard_D8_v3",
+        "Standard_D11":          "Standard_E2_v3",
+        "Standard_D12":          "Standard_E4_v3",
+        "Standard_D13":          "Standard_E8_v3",
+        "Standard_D14":          "Standard_E16_v3",
+        "Standard_D2_v2":        "Standard_D2_v3",
+        "Standard_D3_v2":        "Standard_D4_v3",
+        "Standard_D4_v2":        "Standard_D8_v3",
+        "Standard_D5_v2":        "Standard_D16_v3",
+        "Standard_D11_v2":       "Standard_E2_v3",
+        "Standard_D12_v2":       "Standard_E4_v3",
+        "Standard_D13_v2":       "Standard_E8_v3",
+        "Standard_D14_v2":       "Standard_E16_v3",
+        "Standard_DS2_v2":       "Standard_D2s_v3",
+        "Standard_DS3_v2":       "Standard_D4s_v3",
+        "Standard_DS4_v2":       "Standard_D8s_v3",
+        "Standard_DS5_v2":       "Standard_D16s_v3",
+        "Standard_DS11_v2":      "Standard_E2s_v3",
+        "Standard_DS12_v2":      "Standard_E4s_v3",
+        "Standard_DS13_v2":      "Standard_E8s_v3",
+        "Standard_DS14_v2":      "Standard_E16s_v3",
+        "Standard_D2_v2_Promo":  "Standard_D2_v3",
+        "Standard_D3_v2_Promo":  "Standard_D4_v3",
+        "Standard_D4_v2_Promo":  "Standard_D8_v3",
+        "Standard_D5_v2_Promo":  "Standard_D16_v3",
+        "Standard_D11_v2_Promo": "Standard_E2_v3",
+        "Standard_D12_v2_Promo": "Standard_E4_v3",
+        "Standard_D13_v2_Promo": "Standard_E8_v3",
+        "Standard_D14_v2_Promo": "Standard_E16_v3"
+      }
     }
     for (var i = 0; i < new_bc_costs.length; i++) {
       console.log(new_bc_costs[i])
       console.log(new_bc_costs[i].billing_center_id)
       var arr_bc_name = _.reject(billing_centers, function(bc){ return bc.id != new_bc_costs[i].billing_center_id });
       var bc_name = arr_bc_name[0].name
-      var new_region = ds_cheaper_regions["regions"][new_bc_costs[i].region]
-      console.log(new_region)
+      var new_instance_type = ds_newer_instance_types["instance_types"][new_bc_costs[i].instance_type]
+      console.log(new_instance_type)
       console.log(bc_name)
-      if (new_region != null && new_region !== undefined ) {
+      if (new_instance_type != null && new_instance_type !== undefined ) {
         results.push({
           billing_center_name: bc_name,
           billing_center_id: new_bc_costs[i].billing_center_id,
-          region: new_bc_costs[i].region,
-          new_region: new_region,
-          service: new_bc_costs[i].service
+          old_instance_type: new_bc_costs[i].instance_type,
+          new_instance_type: new_instance_type
         })
       }else{
         continue
@@ -204,10 +235,10 @@ policy "azure_cheaper_regions" do
     summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} rows with cheaper data"
     detail_template <<-EOS
 # Cheaper Regions
-| Billing Center Name | Billing Center ID | Region | New Region | Service |
-| ------------------- | ----------------- | ------ | ---------- | ------- |
+| Billing Center Name | Billing Center ID | Region | Old Instance Type | New Instance Type |
+| ------------------- | ----------------- | ------ | ----------------- | ----------------- |
 {{ range data -}}
-| {{ .billing_center_name }} | {{ .billing_center_id }} | {{ .region }} | {{ .new_region }} | {{.service}} |
+| {{ .billing_center_name }} | {{ .billing_center_id }} | {{ .region }} | {{.old_instance_type}} | {{ .new_instance_type }} |
 {{ end -}}
 EOS
     check eq(0,1)
@@ -238,34 +269,4 @@ define sys_log($subject, $detail) do
       }
     )
   end
-endv1.0
-----
-- initial release## Azure Cheaper Regions Policy
-
-### What it does
-
-This Policy Template determines regions have cheaper alternatives by specifying the expensive region name and the cheaper region name for analysis
-
-### Prerequesites
-- The `billing_center_viewer` role
-- The `policy_designer`, `policy_manager` & `policy_publisher` roles
-
-### Functional Details
-
-- This policy uses a hash to determine existing regions and newer compatible cheaper regions. It checks the billing center and reports on cheaper regions. 
-
-#### Input Parameters
-
-This policy has the following input parameters required when launching the policy.
-
-- *Billing Center Name* - The list of Billing centers to check against
-- *Email addresses of the recipients you wish to notify* - A list of email addresses to notify
-
-### Supported Clouds
-
-- Azure Resource Manager
-
-### Cost
-
-This Policy Template does not incur any cloud costs.
-
+end
