@@ -23,6 +23,7 @@ end
 parameter "param_billing_centers" do
   label "Billing Center Name"
   type "list"
+  min_length 1
 end
 
 ###############################################################################
@@ -70,6 +71,7 @@ datasource "ds_new_bc_costs" do
     collect jmes_path(response,"rows[*]") do
       field "billing_center_id", jmes_path(col_item, "dimensions.billing_center_id")
       field "region", jmes_path(col_item, "dimensions.region")
+      field "service", jmes_path(col_item, "dimensions.service")
     end
   end
 end
@@ -137,7 +139,7 @@ script "js_new_costs_request", type: "javascript" do
       host: "optima.rightscale.com",
       path: "/bill-analysis/orgs/" + org_id + "/costs/aggregated",
       body_fields: {
-        "dimensions": ["region","billing_center_id"],
+        "dimensions": ["region","billing_center_id","service"],
         "granularity": "month",
         "metrics": ["cost_amortized_unblended_adj"],
         "billing_center_ids": billing_center_ids,
@@ -183,7 +185,8 @@ script "js_merge_bc_name", type: "javascript" do
           billing_center_name: bc_name,
           billing_center_id: new_bc_costs[i].billing_center_id,
           region: new_bc_costs[i].region,
-          new_region: new_region
+          new_region: new_region,
+          service: new_bc_costs[i].service
         })
       }else{
         continue
@@ -201,10 +204,10 @@ policy "azure_cheaper_regions" do
     summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} rows with cheaper data"
     detail_template <<-EOS
 # Cheaper Regions
-| Billing Center Name | Billing Center ID | Region | New Region |
-| ------------------- | ----------------- | ------ | ---------- |
+| Billing Center Name | Billing Center ID | Region | New Region | Service |
+| ------------------- | ----------------- | ------ | ---------- | ------- |
 {{ range data -}}
-| {{ .billing_center_name }} | {{ .billing_center_id }} | {{ .region }} | {{ .new_region }} |
+| {{ .billing_center_name }} | {{ .billing_center_id }} | {{ .region }} | {{ .new_region }} | {{.service}} |
 {{ end -}}
 EOS
     check eq(0,1)
