@@ -48,12 +48,27 @@ end
 parameter "param_graph_dimension" do
   type "string"
   label "Graph Dimension"
-  allowed_values "Billing Center","Category","Instance Type","Region","Resource Group","Resource Type","Service","Usage Type","Usage Unit","Cloud Vendor","Cloud Vendor Account","Cloud Vendor Account Name"
+  allowed_values "Category","Instance Type","Region","Resource Group","Resource Type","Service","Usage Type","Usage Unit","Cloud Vendor","Cloud Vendor Account","Cloud Vendor Account Name"
   default "Category"
   description "Select which dimension you'd like to be broken out on the graph in the report."
 end
 
 auth "auth_rs", type: "rightscale"
+
+datasource "ds_currency_code" do
+  request do
+    auth $auth_rs
+    host rs_optima_host
+    path join(["/bill-analysis/orgs/",rs_org_id,"/settings/currency_code"])
+    header "Api-Version", "0.1"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+    field "id", jmes_path(response,"id")
+    field "value", jmes_path(response,"value")
+  end
+end
 
 datasource "ds_billing_centers" do
   request do
@@ -79,11 +94,11 @@ end
 
 datasource "ds_current_week_costs" do
   request do
-    run_script $script_current_week_cost_request, $param_billing_centers, $param_cost_metric, rs_org_id, rs_optima_host, $ds_billing_centers
+    run_script $js_current_week_cost_request, $param_billing_centers, $param_cost_metric, rs_org_id, rs_optima_host, $ds_billing_centers
   end
 end
 
-script "script_current_week_cost_request", type: "javascript" do
+script "js_current_week_cost_request", type: "javascript" do
   parameters "param_billing_centers", "param_cost_metric", "rs_org_id", "rs_optima_host", "ds_billing_centers"
   result "request"
   code <<-EOS
@@ -170,11 +185,11 @@ end
 
 datasource "ds_previous_week_costs" do
   request do
-    run_script $script_previous_week_cost_request, $param_billing_centers, $param_cost_metric, rs_org_id, rs_optima_host, $ds_billing_centers
+    run_script $js_previous_week_cost_request, $param_billing_centers, $param_cost_metric, rs_org_id, rs_optima_host, $ds_billing_centers
   end
 end
 
-script "script_previous_week_cost_request", type: "javascript" do
+script "js_previous_week_cost_request", type: "javascript" do
   parameters "param_billing_centers", "param_cost_metric", "rs_org_id", "rs_optima_host", "ds_billing_centers"
   result "request"
   code <<-EOS
@@ -261,11 +276,11 @@ end
 
 datasource "ds_current_month_costs" do
   request do
-    run_script $script_current_month_cost_request, $param_billing_centers, $param_cost_metric, rs_org_id, rs_optima_host, $ds_billing_centers
+    run_script $js_current_month_cost_request, $param_billing_centers, $param_cost_metric, rs_org_id, rs_optima_host, $ds_billing_centers
   end
 end
 
-script "script_current_month_cost_request", type: "javascript" do
+script "js_current_month_cost_request", type: "javascript" do
   parameters "param_billing_centers", "param_cost_metric", "rs_org_id", "rs_optima_host", "ds_billing_centers"
   result "request"
   code <<-EOS
@@ -351,11 +366,11 @@ end
 
 datasource "ds_previous_month_costs" do
   request do
-    run_script $script_previous_month_cost_request, $param_billing_centers, $param_cost_metric, rs_org_id, rs_optima_host, $ds_billing_centers
+    run_script $js_previous_month_cost_request, $param_billing_centers, $param_cost_metric, rs_org_id, rs_optima_host, $ds_billing_centers
   end
 end
 
-script "script_previous_month_cost_request", type: "javascript" do
+script "js_previous_month_cost_request", type: "javascript" do
   parameters "param_billing_centers", "param_cost_metric", "rs_org_id", "rs_optima_host", "ds_billing_centers"
   result "request"
   code <<-EOS
@@ -440,11 +455,11 @@ script "script_previous_month_cost_request", type: "javascript" do
 end
 
 datasource "ds_report" do
-  run_script $script_report, $ds_current_week_costs, $ds_previous_week_costs, $ds_current_month_costs, $ds_previous_month_costs, $param_cost_metric
+  run_script $js_report, $ds_current_week_costs, $ds_previous_week_costs, $ds_current_month_costs, $ds_previous_month_costs, $param_cost_metric, $ds_currency_code
 end
 
-script "script_report", type: "javascript" do
-  parameters "ds_current_week_costs","ds_previous_week_costs","ds_current_month_costs","ds_previous_month_costs","param_cost_metric"
+script "js_report", type: "javascript" do
+  parameters "ds_current_week_costs","ds_previous_week_costs","ds_current_month_costs","ds_previous_month_costs","param_cost_metric","ds_currency_code"
   result "report"
   code <<-EOS
     // create a map to use in the request metric field.
@@ -454,6 +469,15 @@ script "script_report", type: "javascript" do
       "Unamortized Blended": "cost_nonamortized_blended_adj",
       "Amortized Blended":"cost_amortized_blended_adj"
     }
+
+    var currency_code = ds_currency_code['value']
+    console.log("Currency Symbol: " + currency_code)
+
+    var currency_symbol = {
+      "USD":"$",
+    }
+
+    var cur = currency_symbol[ds_currency_code['value']]
 
     var metric = cost_metric[param_cost_metric]
     var current_week_total = 0.00
@@ -504,16 +528,16 @@ script "script_report", type: "javascript" do
     var report = [
       {
         range: 'Weekly',
-        current:  Math.round(current_week_total),
-        previous: Math.round(previous_week_total),
-        avg: Math.round(weekly_avg),
+        current: cur + (Math.round(current_week_total)).toString(),
+        previous: cur + (Math.round(previous_week_total)).toString(),
+        avg: cur + (Math.round(weekly_avg)).toString(),
         change: weekly_change
       },
       {
         range: 'Monthly',
-        current:  Math.round(current_month_total),
-        previous: Math.round(previous_month_total),
-        avg: Math.round(monthly_avg),
+        current:   cur + (Math.round(current_month_total)).toString(),
+        previous:  cur + (Math.round(previous_month_total)).toString(),
+        avg:  cur + (Math.round(monthly_avg)).toString(),
         change: monthly_change
       }
     ]
@@ -522,11 +546,11 @@ end
 
 datasource "ds_previous_six_month_costs" do
   request do
-    run_script $script_six_month_cost_request, $param_billing_centers, $param_cost_metric, rs_org_id, rs_optima_host, $ds_billing_centers, $param_graph_dimension
+    run_script $js_six_month_cost_request, $param_billing_centers, $param_cost_metric, rs_org_id, rs_optima_host, $ds_billing_centers, $param_graph_dimension
   end
 end
 
-script "script_six_month_cost_request", type: "javascript" do
+script "js_six_month_cost_request", type: "javascript" do
   parameters "param_billing_centers", "param_cost_metric", "rs_org_id", "rs_optima_host", "ds_billing_centers", "param_graph_dimension"
   result "request"
   code <<-EOS
@@ -560,7 +584,6 @@ script "script_six_month_cost_request", type: "javascript" do
     }
 
     var graph_dimension = {
-      "Billing Center": "billing_center_id",
       "Category": "category",
       "Instance Type": "instance_type",
       "Region": "region",
@@ -613,11 +636,11 @@ script "script_six_month_cost_request", type: "javascript" do
 end
 
 datasource "ds_generated_report" do
-  run_script $script_generate_report, $ds_previous_six_month_costs, $param_cost_metric, $param_billing_centers, $ds_report, $param_graph_dimension, $ds_billing_centers
+  run_script $js_generate_report, $ds_previous_six_month_costs, $param_cost_metric, $param_billing_centers, $ds_report, $param_graph_dimension, $ds_currency_code
 end
 
-script "script_generate_report", type: "javascript" do
-  parameters "ds_previous_six_month_costs","param_cost_metric","param_billing_centers","ds_report","param_graph_dimension","ds_billing_centers"
+script "js_generate_report", type: "javascript" do
+  parameters "ds_previous_six_month_costs","param_cost_metric","param_billing_centers","ds_report","param_graph_dimension","ds_currency_code"
   result "report"
   code <<-EOS
     // format the date for the `monthly` API
@@ -643,7 +666,6 @@ script "script_generate_report", type: "javascript" do
     };
 
     var graph_dimension = {
-      "Billing Center": "billing_center_id",
       "Category": "category",
       "Instance Type": "instance_type",
       "Region": "region",
@@ -738,19 +760,6 @@ script "script_generate_report", type: "javascript" do
       chartDataArray.push(seriesData.join())
     }
 
-    if ( dimension == "billing_center_id" ) {
-      var billing_center_names = [];
-      _.each(categories, function(category){
-        if ( category == "Other" ) {
-          billing_center_names.push("Other")
-        } else {
-          billing_center_names.push(_.findWhere(ds_billing_centers, {"id": category}).name)
-        }
-      })
-      //billing_center_ids = _.compact(_.map(ds_billing_centers, function(value){ if(_.contains(billing_center_names, value.name.toLowerCase())){return value.id} }));
-      categories = billing_center_names
-    }
-
     var chartData = "chd=a:" + chartDataArray.join('|')
     var encodedCategories = encodeURIComponent(categories.join('|')).replace(/[(]/gi,'%28').replace(/[)]/gi,'%29');
     if ( encodedCategories.length < 1) {
@@ -771,7 +780,7 @@ script "script_generate_report", type: "javascript" do
       currentMonthName: currentMonthName,
       billingCenters: billingCenters,
       chartType: "cht=bvs",
-      chartSize: "chs=700x400",
+      chartSize: "chs=800x500",
       chartTitle: "chtt=Spending+Overview",
       chartAxis: "chxt=x,y",
       chartXAxis: chartXAxis,
@@ -781,10 +790,13 @@ script "script_generate_report", type: "javascript" do
       chartExtension: "chof=.png",
       chartKeyLocation: "chdlp=b",
       currentSpend:  Math.round(current_month_total),
+      currencyCode: ds_currency_code['value'],
       reportData: ds_report
     }
   EOS
 end
+
+
 
 escalation "escalation_send_email" do
   email $param_email
@@ -798,7 +810,8 @@ policy "policy_scheduled_report" do
 
 ## Billing Centers: {{ data.billingCenters }}
 ### Cost Metric: {{ parameters.param_cost_metric }}
-### Dimension: {{ parameters.param_graph_dimension }}
+### Chart Dimension: {{ parameters.param_graph_dimension }}
+### Bill Currency: {{ data.currencyCode }}
 
 ![Spending Overview Chart](https://image-charts.com/chart?{{ data.chartType }}&{{ data.chartSize }}&{{ data.chartTitle }}&{{ data.chartAxis }}&{{ data.chartXAxis }}&{{ data.chartData }}&{{ data.chartCategories }}&{{ data.chartColors }}&{{ data.chartKeyLocation }}&{{ data.chartExtension }} "Spending Overview Chart")
 
@@ -806,7 +819,18 @@ policy "policy_scheduled_report" do
 |:---:|------------:|-------:|-------------------:|
 {{ range data.reportData -}}
   | {{ .range }} | {{ .avg }} | {{ .previous}} | {{ .current }} |
-{{ end -}}
+{{ end -}}  
+  
+### For more detailed information, visit [Optima](https://analytics.rightscale.com/orgs/{{ rs_org_id }}/dashboard).
+  
+Report Metric Definitions:  <br>
+Chart: Previous 6 months of utilization based on the dimension selected: {{ parameters.param_graph_dimension }}  <br>
+Daily Average - Weekly: Daily average costs beginning from this past Monday.  <br>
+Daily Average - Monthly: Daily average costs beginning at the 1st of this month.  <br>
+Previous - Weekly: Total costs during previous full week (Monday-Sunday).  <br>
+Previous - Monthly: Total costs during previous full month.  <br>
+Current - Weekly: Total costs during current (incomplete) week.  <br>
+Current - Monthly: Total costs during current (incomplete) month.  <br>
 
 ___
 ###### Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }}) within Org: {{ rs_org_name }} (Org ID: {{ rs_org_id }})
