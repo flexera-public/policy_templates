@@ -55,6 +55,15 @@ end
 
 auth "auth_rs", type: "rightscale"
 
+datasource "ds_currency_reference" do
+  request do
+    host "github.com"
+    #path "/rightscale/policy_templates/tree/master/cost/scheduled_reports/currency_reference.json"
+    path "/rightscale/policy_templates/tree/sch_rpt_rg_child/cost/scheduled_reports/currency_reference.json"
+    header "User-Agent", "RS Policies"
+  end
+end
+
 datasource "ds_currency_code" do
   request do
     auth $auth_rs
@@ -455,20 +464,13 @@ script "js_previous_month_cost_request", type: "javascript" do
 end
 
 datasource "ds_report" do
-  run_script $js_report, $ds_current_week_costs, $ds_previous_week_costs, $ds_current_month_costs, $ds_previous_month_costs, $param_cost_metric, $ds_currency_code
+  run_script $js_report, $ds_current_week_costs, $ds_previous_week_costs, $ds_current_month_costs, $ds_previous_month_costs, $param_cost_metric, $ds_currency_code, $ds_currency_reference
 end
 
 script "js_report", type: "javascript" do
-  parameters "ds_current_week_costs","ds_previous_week_costs","ds_current_month_costs","ds_previous_month_costs","param_cost_metric","ds_currency_code"
+  parameters "ds_current_week_costs","ds_previous_week_costs","ds_current_month_costs","ds_previous_month_costs","param_cost_metric","ds_currency_code","ds_currency_reference"
   result "report"
-  code <<-EOS
-    var currency_symbol = {
-      "USD": "$"
-      // We need to build a map of currency codes and their relevant display symbols
-    }
-
-    var cur = currency_symbol[ds_currency_code['value']]
-  
+  code <<-EOS 
     // create a map to use in the request metric field.
     var cost_metric = {
       "Unamortized Unblended":"cost_nonamortized_unblended_adj",
@@ -526,37 +528,33 @@ script "js_report", type: "javascript" do
 
     function formatNumber(number)
     {
-        var numString = number.toString()
-        var result = ''
+      var numString = number.toString()
+      var result = ''
 
-        while (numString.length > 3)
-        {
-            var chunk = numString.substr(-3)
-            numString = numString.substr(0, numString.length - 3)
-            result = ',' + chunk + result
-        }
+      while (numString.length > 3)
+      {
+        var chunk = numString.substr(-3)
+        numString = numString.substr(0, numString.length - 3)
+        result = ',' + chunk + result
+      }
 
-        if (numString.length > 0)
-        {
-            result = numString + result
-        }
+      if (numString.length > 0)
+      {
+        result = numString + result
+      }
 
-        return result
+      return result
     }
     
+    //var cur = ds_currency_reference[ds_currency_code['value']]['symbol']
+    var cur = ds_currency_reference['CNY']['symbol']
+
     var cw_total = cur + formatNumber(Math.round(current_week_total));
     var pw_total = cur + formatNumber(Math.round(previous_week_total));
     var week_avg = cur + formatNumber(Math.round(weekly_avg));
     var cm_total = cur + formatNumber(Math.round(current_month_total));
     var pm_total = cur + formatNumber(Math.round(previous_month_total));
     var month_avg = cur + formatNumber(Math.round(monthly_avg));
-
-    //var cw_total = Math.round(current_week_total).toString();
-    //var pw_total = Math.round(previous_week_total).toString();
-    //var week_avg = Math.round(weekly_avg).toString();
-    //var cm_total = Math.round(current_month_total).toString();
-    //var pm_total = Math.round(previous_month_total).toString();
-    //var month_avg = Math.round(monthly_avg).toString();
     
     var report = [
       {
@@ -824,6 +822,7 @@ script "js_generate_report", type: "javascript" do
       chartKeyLocation: "chdlp=b",
       currentSpend:  Math.round(current_month_total),
       currencyCode: ds_currency_code['value'],
+      //currencyCode: String.fromCharCode(8364)
       reportData: ds_report
     }
   EOS
