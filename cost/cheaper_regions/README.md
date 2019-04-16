@@ -1,4 +1,4 @@
-## Cheaper Regions Recommendation Policy
+## Cheaper Regions Policy
 
 ### What it does
 
@@ -22,6 +22,9 @@ This policy has the following input parameters required when launching the polic
 ### Supported Clouds
 
 - Azure Resource Manager
+- Azure CSP
+- Google
+- Amazon
 
 ### Cost
 
