@@ -6,6 +6,7 @@ v1.6
 - added support to report on child Billing Centers
 - forced chart legend to bottom of chart
 - fixed the billing data api call that was leaving off a days worth of costs
+- Added currency symbol support
 
 v1.5
 ----
