@@ -1,4 +1,4 @@
-## Azure CSP Cheaper Regions Policy
+## Cheaper Regions Recommendation Policy
 
 ### What it does
 
