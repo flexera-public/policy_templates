@@ -462,6 +462,13 @@ script "js_report", type: "javascript" do
   parameters "ds_current_week_costs","ds_previous_week_costs","ds_current_month_costs","ds_previous_month_costs","param_cost_metric","ds_currency_code"
   result "report"
   code <<-EOS
+    var currency_symbol = {
+      "USD": "$"
+      // We need to build a map of currency codes and their relevant display symbols
+    }
+
+    var cur = currency_symbol[ds_currency_code['value']]
+  
     // create a map to use in the request metric field.
     var cost_metric = {
       "Unamortized Unblended":"cost_nonamortized_unblended_adj",
@@ -469,15 +476,6 @@ script "js_report", type: "javascript" do
       "Unamortized Blended": "cost_nonamortized_blended_adj",
       "Amortized Blended":"cost_amortized_blended_adj"
     }
-
-    var currency_code = ds_currency_code['value']
-    console.log("Currency Symbol: " + currency_code)
-
-    var currency_symbol = {
-      "USD":"$",
-    }
-
-    var cur = currency_symbol[ds_currency_code['value']]
 
     var metric = cost_metric[param_cost_metric]
     var current_week_total = 0.00
@@ -525,19 +523,34 @@ script "js_report", type: "javascript" do
     if (current_month_total > 0){
       monthly_change = Number(( current_month_total - previous_month_total) / previous_month_total * 100).toFixed(1)
     }
+    
+    var cw_total = cur + Math.round(current_week_total).toString();
+    var pw_total = cur + Math.round(previous_week_total).toString();
+    var week_avg = cur + Math.round(weekly_avg).toString();
+    var cm_total = cur + Math.round(current_month_total).toString();
+    var pm_total = cur + Math.round(previous_month_total).toString();
+    var month_avg = cur + Math.round(monthly_avg).toString();
+
+    //var cw_total = Math.round(current_week_total).toString();
+    //var pw_total = Math.round(previous_week_total).toString();
+    //var week_avg = Math.round(weekly_avg).toString();
+    //var cm_total = Math.round(current_month_total).toString();
+    //var pm_total = Math.round(previous_month_total).toString();
+    //var month_avg = Math.round(monthly_avg).toString();
+    
     var report = [
       {
         range: 'Weekly',
-        current: cur + (Math.round(current_week_total)).toString(),
-        previous: cur + (Math.round(previous_week_total)).toString(),
-        avg: cur + (Math.round(weekly_avg)).toString(),
+        current: cw_total,
+        previous: pw_total,
+        avg: week_avg,
         change: weekly_change
       },
       {
         range: 'Monthly',
-        current:   cur + (Math.round(current_month_total)).toString(),
-        previous:  cur + (Math.round(previous_month_total)).toString(),
-        avg:  cur + (Math.round(monthly_avg)).toString(),
+        current: cm_total,
+        previous: pm_total,
+        avg: month_avg,
         change: monthly_change
       }
     ]
@@ -796,8 +809,6 @@ script "js_generate_report", type: "javascript" do
   EOS
 end
 
-
-
 escalation "escalation_send_email" do
   email $param_email
 end
@@ -824,7 +835,6 @@ policy "policy_scheduled_report" do
 ### For more detailed cost information, visit [Optima](https://analytics.rightscale.com/orgs/{{ rs_org_id }}/dashboard).
   
 For more information on this report, please view the [README](https://github.com/rightscale/policy_templates/tree/master/cost/scheduled_reports).
-
 ___
 ###### Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }}) within Org: {{ rs_org_name }} (Org ID: {{ rs_org_id }})
 EOS
