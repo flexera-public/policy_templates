@@ -7,6 +7,7 @@ v1.6
 - forced chart legend to bottom of chart
 - fixed the billing data api call that was leaving off a days worth of costs
 - Added currency symbol support
+- Added thousands separator support based on currency
 
 v1.5
 ----
