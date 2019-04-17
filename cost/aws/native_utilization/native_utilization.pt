@@ -36,36 +36,62 @@ auth "monitoring_us_west_2", type: "aws" do
   secret_key cred('AWS_SECRET_ACCESS_KEY')
 end
 
+resources "clouds", type: "rs_cm.clouds" do
+  filter do
+    name "EC2 us-west-2"
+  end
+end
+
+resources "instances", type: "rs_cm.instances" do
+  iterate @clouds
+  cloud_href href(iter_item)
+  filter do
+    state ne:["inactive"]
+  end
+end
 ###############################################################################
 # Datasources
 ###############################################################################
 
+datasource "ds_instances" do
+  iterate @instances
+  field "id", val(iter_item, "resource_uid")
+  field "name", val(iter_item, "name")
+end
+
 datasource "ds_cloudwatch_cpu_maximum" do
-  # This request is not paginated
+  iterate $ds_instances
   request do
     auth $monitoring_us_west_2
     host "monitoring.us-west-2.amazonaws.com"
-    verb "POST"
+    verb "GET"
     path "/"
-    # header "User-Agent", "RS Policies"
+    header "User-Agent", "RS Policies"
     header "Content-Type", "application/json"
     header "x-amz-target", "GraniteServiceVersion20100801.GetMetricStatistics"
     header "Accept", "application/json"
     header "Content-Encoding", "amz-1.0"
-    body_field 'Namespace', 'AWS/EC2'
-    body_field 'MetricName', 'CPUUtilization'
-    body_field 'Dimensions.member.1.Name', 'InstanceId'
-    body_field 'Dimensions.member.1.Value', 'i-0343fe43efdba1197'
-    body_field 'StartTime', "2019-04-15T00:00:00Z"
-    body_field 'EndTime', "2019-04-15T23:59:A59Z"
-    body_field 'Period', 300
-    body_field 'Statistics.member.1', 'Maximum'
+    query 'Action', 'GetMetricStatistics'
+    query 'Version', '2010-08-01'
+    query 'Namespace', 'AWS/EC2'
+    query 'MetricName', 'CPUUtilization'
+    query 'Dimensions.member.1.Name', 'InstanceId'
+    query 'Dimensions.member.1.Value', val(iter_item,"id")
+    query 'StartTime', "2019-04-15T00:00:00.000Z"
+    query 'EndTime', "2019-04-15T23:59:59.999Z"
+    query 'Period', "86400"
+    query 'Statistics.member.1', 'Maximum'
+    query 'Statistics.member.2', 'Average'
+    query 'Statistics.member.3', 'Minimum'
   end
   result do
-    encoding "xml"
-    collect xpath(response, "//GetMetricStatisticsResult/Datapoints", "array") do
-      field "unit", xpath(col_item,"Unit")
-      field "maximum", xpath(col_item, "Maximum")
+    encoding "json"
+    collect jmes_path(response, "GetMetricStatisticsResponse.GetMetricStatisticsResult.Datapoints[*]") do
+      field "name",  val(iter_item,"name")
+      field "unit", jmes_path(col_item,"Unit")
+      field "maximum", jmes_path(col_item, "Maximum")
+      field "minimum", jmes_path(col_item, "Minimum")
+      field "average", jmes_path(col_item, "Average")
     end
   end
 end
@@ -79,10 +105,10 @@ policy "pol_utilization" do
     summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} rows with cheaper data"
     detail_template <<-EOS
 # AWS CPU Utilization
-| Unit | Maximum |
-| ---- | ------- |
+| Name | Unit | Maximum | Minimum | Average |
+| ---- | ---- | ------- | ------- | ------- |
 {{ range data -}}
-| {{ .unit }} | {{ .maximum }} |
+| {{.name}} | {{ .unit }} | {{ .maximum }} | {{.minimum}} | {{ .average }} |
 {{ end -}}
 ___
 ###### Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }}) within Org: {{ rs_org_name }} (Org ID: {{ rs_org_id }})
