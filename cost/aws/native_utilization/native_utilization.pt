@@ -1,0 +1,118 @@
+name "AWS Native Utilization"
+rs_pt_ver 20180301
+type "policy"
+short_description "Checks for buckets that are open to everyone. See the [README](https://github.com/rightscale/policy_templates/tree/master/security/storage/aws/public_buckets) and [docs.rightscale.com/policies](http://docs.rightscale.com/policies/) to learn more."
+long_description "Version: 1.0"
+severity "low"
+category "Cost"
+
+###############################################################################
+# Permissions
+###############################################################################
+
+permission "perm_read_creds" do
+  actions   "rs_cm.show_sensitive","rs_cm.index_sensitive"
+  resources "rs_cm.credentials"
+end
+
+###############################################################################
+# Parameters
+###############################################################################
+
+parameter "param_email" do
+  type "list"
+  label "Email addresses of the recipients you wish to notify"
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+auth "monitoring_us_west_2", type: "aws" do
+  version 4
+  service 'monitoring'
+  region 'us-west-2'
+  access_key cred('AWS_ACCESS_KEY_ID')
+  secret_key cred('AWS_SECRET_ACCESS_KEY')
+end
+
+###############################################################################
+# Datasources
+###############################################################################
+
+datasource "ds_cloudwatch_cpu_maximum" do
+  # This request is not paginated
+  request do
+    auth $monitoring_us_west_2
+    host "monitoring.us-west-2.amazonaws.com"
+    verb "POST"
+    path "/"
+    # header "User-Agent", "RS Policies"
+    header "Content-Type", "application/json"
+    header "x-amz-target", "GraniteServiceVersion20100801.GetMetricStatistics"
+    header "Accept", "application/json"
+    header "Content-Encoding", "amz-1.0"
+    body_field 'Namespace', 'AWS/EC2'
+    body_field 'MetricName', 'CPUUtilization'
+    body_field 'Dimensions.member.1.Name', 'InstanceId'
+    body_field 'Dimensions.member.1.Value', 'i-0343fe43efdba1197'
+    body_field 'StartTime', "2019-04-15T00:00:00Z"
+    body_field 'EndTime', "2019-04-15T23:59:A59Z"
+    body_field 'Period', 300
+    body_field 'Statistics.member.1', 'Maximum'
+  end
+  result do
+    encoding "xml"
+    collect xpath(response, "//GetMetricStatisticsResult/Datapoints", "array") do
+      field "unit", xpath(col_item,"Unit")
+      field "maximum", xpath(col_item, "Maximum")
+    end
+  end
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "pol_utilization" do
+  validate_each $ds_cloudwatch_cpu_maximum do
+    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} rows with cheaper data"
+    detail_template <<-EOS
+# AWS CPU Utilization
+| Unit | Maximum |
+| ---- | ------- |
+{{ range data -}}
+| {{ .unit }} | {{ .maximum }} |
+{{ end -}}
+___
+###### Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }}) within Org: {{ rs_org_name }} (Org ID: {{ rs_org_id }})
+EOS
+    check eq(0,1)
+    escalate $email
+  end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "email" do
+  email $param_email
+end
+
+###############################################################################
+# Cloud Workflow
+###############################################################################
+
+define sys_log($subject, $detail) do
+  if $$debug
+    rs_cm.audit_entries.create(
+      notify: "None",
+      audit_entry: {
+        auditee_href: @@account,
+        summary: $subject,
+        detail: $detail
+      }
+    )
+  end
+end
