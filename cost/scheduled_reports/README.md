@@ -5,8 +5,8 @@
 This policy allows you to set up scheduled reports that will provide summaries of cloud cost across all resources in the billing centers you specify, delivered to any email addresses you specify. The policy will report the following:
 
 Chart of the previous 6 months of utilization based on whichever [Reporting Dimension](https://docs.rightscale.com/optima/reference/rightscale_dimensions.html) you select (only bill data and RightScale-generated dimensions are supported).  
-Daily Average - Weekly: Daily average costs beginning from this past Monday.  
-Daily Average - Monthly: Daily average costs beginning at the 1st of this month.  
+Daily Average - Weekly: Daily average costs calculated from Monday of the previous week through today.
+Daily Average - Monthly: Daily average costs calculated from the 1st of the previous month through today.
 Previous - Weekly: Total costs during previous full week (Monday-Sunday).  
 Previous - Monthly: Total costs during previous full month.  
 Current - Weekly: Total costs during current (incomplete) week.  
