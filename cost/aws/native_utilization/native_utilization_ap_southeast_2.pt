@@ -1,0 +1,396 @@
+name "AWS Native Utilization"
+rs_pt_ver 20180301
+type "policy"
+short_description "Checks for buckets that are open to everyone. See the [README](https://github.com/rightscale/policy_templates/tree/master/security/storage/aws/public_buckets) and [docs.rightscale.com/policies](http://docs.rightscale.com/policies/) to learn more."
+long_description "Version: 1.0"
+severity "low"
+category "Cost"
+
+###############################################################################
+# Permissions
+###############################################################################
+
+permission "perm_read_creds" do
+  actions   "rs_cm.show_sensitive","rs_cm.index_sensitive"
+  resources "rs_cm.credentials"
+end
+
+###############################################################################
+# Parameters
+###############################################################################
+
+parameter "param_email" do
+  type "list"
+  label "Email addresses of the recipients you wish to notify"
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+auth "auth_ap_southeast_2", type: "aws" do
+  version 4
+  service "monitoring"
+  region 'ap-southeast-2'
+  access_key cred('AWS_ACCESS_KEY_ID')
+  secret_key cred('AWS_SECRET_ACCESS_KEY')
+end
+
+auth "auth_ap_northeast_1", type: "aws" do
+  version 4
+  service "monitoring"
+  region 'ap-northeast-1'
+  access_key cred('AWS_ACCESS_KEY_ID')
+  secret_key cred('AWS_SECRET_ACCESS_KEY')
+end
+
+auth "auth_ca_central_1", type: "aws" do
+  version 4
+  service "monitoring"
+  region 'ca-central-1'
+  access_key cred('AWS_ACCESS_KEY_ID')
+  secret_key cred('AWS_SECRET_ACCESS_KEY')
+end
+
+auth "auth_eu_central_1", type: "aws" do
+  version 4
+  service "monitoring"
+  region 'eu-central-1'
+  access_key cred('AWS_ACCESS_KEY_ID')
+  secret_key cred('AWS_SECRET_ACCESS_KEY')
+end
+
+auth "auth_eu_west_1", type: "aws" do
+  version 4
+  service "monitoring"
+  region 'eu-west-1'
+  access_key cred('AWS_ACCESS_KEY_ID')
+  secret_key cred('AWS_SECRET_ACCESS_KEY')
+end
+
+auth "auth_eu_west_2", type: "aws" do
+  version 4
+  service "monitoring"
+  region 'eu-west-2'
+  access_key cred('AWS_ACCESS_KEY_ID')
+  secret_key cred('AWS_SECRET_ACCESS_KEY')
+end
+
+auth "auth_eu_west_3", type: "aws" do
+  version 4
+  service "monitoring"
+  region 'eu-west-3'
+  access_key cred('AWS_ACCESS_KEY_ID')
+  secret_key cred('AWS_SECRET_ACCESS_KEY')
+end
+
+auth "auth_sa_east_1", type: "aws" do
+  version 4
+  service "monitoring"
+  region 'sa-east-1'
+  access_key cred('AWS_ACCESS_KEY_ID')
+  secret_key cred('AWS_SECRET_ACCESS_KEY')
+end
+
+auth "auth_eu_north_1", type: "aws" do
+  version 4
+  service "monitoring"
+  region 'eu-north-1'
+  access_key cred('AWS_ACCESS_KEY_ID')
+  secret_key cred('AWS_SECRET_ACCESS_KEY')
+end
+
+###############################################################################
+# Datasources
+###############################################################################
+
+resources "cloud_ap_southeast_2", type: "rs_cm.clouds" do
+  filter do
+    name "EC2 ap-southeast-2"
+  end
+end
+
+resources "instances_ap_southeast_2", type: "rs_cm.instances" do
+  iterate @cloud_ap_southeast_2
+  cloud_href href(iter_item)
+  filter do
+    state ne:["inactive"]
+  end
+end
+###############################################################################
+# Datasources
+###############################################################################
+
+datasource "ds_clouds_ap_southeast_2" do
+  iterate @cloud_ap_southeast_2
+  field "display_name", val(iter_item,"display_name")
+end
+
+datasource "ds_instances_ap_southeast_2" do
+  iterate @instances_ap_southeast_2
+  field "id", val(iter_item, "resource_uid")
+  field "name", val(iter_item, "name")
+  field "ips", val(iter_item, "private_ip_addresses")
+end
+
+datasource "ds_cloudwatch_cpu_maximum_ap_southeast_2" do
+  iterate $ds_instances_ap_southeast_2
+  request do
+    auth $auth_ap_southeast_2
+    host "monitoring.ap-southeast-2.amazonaws.com"
+    verb "GET"
+    path "/"
+    header "User-Agent", "RS Policies"
+    header "Content-Type", "application/json"
+    header "x-amz-target", "GraniteServiceVersion20100801.GetMetricStatistics"
+    header "Accept", "application/json"
+    header "Content-Encoding", "amz-1.0"
+    query 'Action', 'GetMetricStatistics'
+    query 'Version', '2010-08-01'
+    query 'Namespace', 'AWS/EC2'
+    query 'MetricName', 'CPUUtilization'
+    query 'Dimensions.member.1.Name', 'InstanceId'
+    query 'Dimensions.member.1.Value', val(iter_item,"id")
+    query 'StartTime', "2019-04-22T00:00:00.000Z"
+    query 'EndTime', "2019-04-22T23:59:59.999Z"
+    query 'Period', "86400"
+    query 'Statistics.member.1', 'Maximum'
+    query 'Statistics.member.2', 'Average'
+    query 'Statistics.member.3', 'Minimum'
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "GetMetricStatisticsResponse.GetMetricStatisticsResult.Datapoints[*]") do
+      field "name",  val(iter_item,"name")
+      field "id", val(iter_item, "id")
+      field "ips", val(iter_item,"ips")
+      field "cpu_unit", jmes_path(col_item,"Unit")
+      field "cpu_maximum", jmes_path(col_item, "Maximum")
+      field "cpu_minimum", jmes_path(col_item, "Minimum")
+      field "cpu_average", jmes_path(col_item, "Average")
+    end
+  end
+end
+
+datasource "ds_cloudwatch_disk_usage_ap_southeast_2" do
+  iterate $ds_instances_ap_southeast_2
+  request do
+    run_script $js_cloudwatch_disk_usage_ap_southeast_2, val(iter_item, "ips")
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response,"GetMetricStatisticsResponse.GetMetricStatisticsResult.Datapoints[*]") do
+      field "name",  val(iter_item,"name")
+      field "id", val(iter_item, "id")
+      field "ips", val(iter_item,"ips")
+      field "disk_unit", jmes_path(col_item,"Unit")
+      field "disk_maximum", jmes_path(col_item, "Maximum")
+      field "disk_minimum", jmes_path(col_item, "Minimum")
+      field "disk_average", jmes_path(col_item, "Average")
+    end
+  end
+end
+
+script "js_cloudwatch_disk_usage_ap_southeast_2", type: "javascript" do
+  result "results"
+  parameters "ips"
+  code <<-EOS
+  if ( ips.length > 0 ) {
+    var hostname = "ip-" + ips[0].replace('.',"-").replace('.',"-").replace('.',"-").replace('.',"-")
+  } else {
+    var hostname = "ip-127-0-0-1"
+  }
+  console.log(hostname)
+  results = {
+    "auth": "auth_ap_southeast_2",
+    "host": "monitoring.ap-southeast-2.amazonaws.com",
+    "verb": "GET",
+    "path": "/",
+    "headers": {
+      "User-Agent": "RS Policies",
+      "Content-Type": "application/json",
+      "x-amz-target": "GraniteServiceVersion20100801.GetMetricStatistics",
+      "Accept": "application/json",
+      "Content-Encoding": "amz-1.0"
+    }
+    "query_params": {
+      'Action': 'GetMetricStatistics',
+      'Version': '2010-08-01',
+      'Namespace': 'CWAgent',
+      'MetricName': 'disk_used_percent',
+      'Dimensions.member.1.Name': 'host',
+      'Dimensions.member.1.Value': hostname,
+      'Dimensions.member.2.Name': 'device',
+      'Dimensions.member.2.Value': 'xvda1',
+      'Dimensions.member.3.Name': 'fstype',
+      'Dimensions.member.3.Value': 'ext4',
+      'Dimensions.member.4.Name': 'path',
+      'Dimensions.member.4.Value': '/',
+      'StartTime': "2019-04-22T00:00:00.000Z",
+      'EndTime': "2019-04-22T23:59:59.999Z",
+      'Period': "86400",
+      'Statistics.member.1': 'Maximum',
+      'Statistics.member.2': 'Average',
+      'Statistics.member.3': 'Minimum'
+    }
+  }
+EOS
+end
+
+datasource "ds_cloudwatch_mem_usage_ap_southeast_2" do
+  iterate $ds_instances_ap_southeast_2
+  request do
+    run_script $js_cloudwatch_mem_usage_ap_southeast_2, val(iter_item, "ips")
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response,"GetMetricStatisticsResponse.GetMetricStatisticsResult.Datapoints[*]") do
+      field "name",  val(iter_item,"name")
+      field "id", val(iter_item, "id")
+      field "ips", val(iter_item,"ips")
+      field "mem_unit", jmes_path(col_item,"Unit")
+      field "mem_maximum", jmes_path(col_item, "Maximum")
+      field "mem_minimum", jmes_path(col_item, "Minimum")
+      field "mem_average", jmes_path(col_item, "Average")
+    end
+  end
+end
+
+script "js_cloudwatch_mem_usage_ap_southeast_2", type: "javascript" do
+  result "results"
+  parameters "ips"
+  code <<-EOS
+  if ( ips.length > 0 ) {
+    var hostname = "ip-" + ips[0].replace('.',"-").replace('.',"-").replace('.',"-").replace('.',"-")
+  } else {
+    var hostname = "ip-127-0-0-1"
+  }
+  console.log(hostname)
+  results = {
+    "auth": "auth_ap_southeast_2",
+    "host": "monitoring.ap-southeast-2.amazonaws.com",
+    "verb": "GET",
+    "path": "/",
+    "headers": {
+      "User-Agent": "RS Policies",
+      "Content-Type": "application/json",
+      "x-amz-target": "GraniteServiceVersion20100801.GetMetricStatistics",
+      "Accept": "application/json",
+      "Content-Encoding": "amz-1.0"
+    }
+    "query_params": {
+      'Action': 'GetMetricStatistics',
+      'Version': '2010-08-01',
+      'Namespace': 'CWAgent',
+      'MetricName': 'mem_used_percent',
+      'Dimensions.member.1.Name': 'host',
+      'Dimensions.member.1.Value': hostname,
+      'StartTime': "2019-04-22T00:00:00.000Z",
+      'EndTime': "2019-04-22T23:59:59.999Z",
+      'Period': "86400",
+      'Statistics.member.1': 'Maximum',
+      'Statistics.member.2': 'Average',
+      'Statistics.member.3': 'Minimum'
+    }
+  }
+EOS
+end
+
+datasource "ds_merged_metrics_ap_southeast_2" do
+  run_script $js_merged_metrics_ap_southeast_2, $ds_cloudwatch_cpu_maximum_ap_southeast_2, $ds_cloudwatch_disk_usage_ap_southeast_2, $ds_cloudwatch_mem_usage_ap_southeast_2, $ds_clouds_ap_southeast_2
+end
+
+script "js_merged_metrics_ap_southeast_2", type: "javascript" do
+  parameters "ds_cloudwatch_cpu_maximum", "ds_cloudwatch_disk_usage", "ds_cloudwatch_mem_usage", "ds_clouds_ap_southeast_2"
+  result "merged_results"
+code <<-EOS
+  var merged_results = []
+  for ( i = 0; i < ds_cloudwatch_cpu_maximum.length; i++){
+    var instance_id = ds_cloudwatch_cpu_maximum[i].id
+    console.log(instance_id)
+    var disk_usage_record = _.find(ds_cloudwatch_disk_usage, function(record) { return record.id == instance_id; })
+    console.log(disk_usage_record)
+    if (disk_usage_record != null && disk_usage_record !== undefined) {
+      var disk_maximum = parseFloat(disk_usage_record.disk_maximum).toFixed(2)
+      var disk_average = parseFloat(disk_usage_record.disk_average).toFixed(2)
+      var disk_minimum = parseFloat(disk_usage_record.disk_minimum).toFixed(2)
+    } else {
+      var disk_maximum = "N/A"
+      var disk_average = "N/A"
+      var disk_minimum = "N/A"
+    }
+    var mem_usage_record = _.find(ds_cloudwatch_mem_usage, function(record) { return record.id == instance_id; })
+    console.log(mem_usage_record)
+    if (mem_usage_record != null && mem_usage_record !== undefined) {
+      var mem_maximum = parseFloat(mem_usage_record.mem_maximum).toFixed(2)
+      var mem_average = parseFloat(mem_usage_record.mem_average).toFixed(2)
+      var mem_minimum = parseFloat(mem_usage_record.mem_minimum).toFixed(2)
+    } else {
+      var mem_maximum = "N/A"
+      var mem_average = "N/A"
+      var mem_minimum = "N/A"
+    }
+    merged_results.push(
+      {
+        "cloud": ds_clouds_ap_southeast_2[0].display_name,
+        "name": ds_cloudwatch_cpu_maximum[i].name,
+        "id": instance_id,
+        "cpu_minimum": parseFloat(ds_cloudwatch_cpu_maximum[i].cpu_minimum).toFixed(2),
+        "cpu_maximum": parseFloat(ds_cloudwatch_cpu_maximum[i].cpu_maximum).toFixed(2),
+        "cpu_average": parseFloat(ds_cloudwatch_cpu_maximum[i].cpu_average).toFixed(2),
+        "disk_maximum": disk_maximum,
+        "disk_average": disk_average,
+        "disk_minimum": disk_minimum,
+        "mem_maximum": mem_maximum,
+        "mem_minimum": mem_minimum,
+        "mem_average": mem_average
+      }
+    )
+  }
+EOS
+end
+###############################################################################
+# Policy
+###############################################################################
+policy "pol_utilization" do
+  validate_each $ds_merged_metrics_ap_southeast_2 do
+    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} rows"
+    detail_template <<-EOS
+# AWS Utilization
+| Cloud | Name | Resource ID | CPU Maximum  | CPU Minimum  | CPU Average | Disk Maximum | Disk Minimum | Disk Average | Memory Minimum | Memory Maximum | Memory Average |
+| ----- | ---- | ----------- | ------------ | ------------ | ----------- | ------------ | ------------ | ------------ | -------------- | -------------- | -------------- |
+{{ range data -}}
+| {{.cloud}} | {{ .name }} | {{ .id }} | {{ .cpu_maximum }} | {{.cpu_minimum}} | {{ .cpu_average }} | {{.disk_maximum}} | {{.disk_minimum}} | {{.disk_average}} | {{.mem_minimum}} | {{.mem_maximum}} | {{.mem_average}} |
+{{ end -}}
+___
+###### Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }}) within Org: {{ rs_org_name }} (Org ID: {{ rs_org_id }})
+EOS
+    check eq(0,1)
+    escalate $email
+  end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "email" do
+  email $param_email
+end
+
+###############################################################################
+# Cloud Workflow
+###############################################################################
+
+define sys_log($subject, $detail) do
+  if $$debug
+    rs_cm.audit_entries.create(
+      notify: "None",
+      audit_entry: {
+        auditee_href: @@account,
+        summary: $subject,
+        detail: $detail
+      }
+    )
+  end
+end
