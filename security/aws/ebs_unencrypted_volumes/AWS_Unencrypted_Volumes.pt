@@ -1,0 +1,1428 @@
+name "AWS Unencrypted Volumes"
+rs_pt_ver 20180301
+type "policy"
+short_description "Report and remediate any Elastic Block Store (EBS) volumes in AWS that are unencrypted. \n See the [README](https://github.com/rightscale/policy_templates/tree/master/security/aws/ebs_unencrypted_volumes) and [docs.rightscale.com/policies](http://docs.rightscale.com/policies/) to learn more."
+long_description "Version: 1.0"
+category "Security"
+severity "low"
+
+###############################################################################
+# Permissions
+###############################################################################
+
+permission "perm_read_creds" do
+  actions   "rs_cm.show_sensitive","rs_cm.index_sensitive"
+  resources "rs_cm.credentials"
+end
+
+###############################################################################
+# User inputs
+###############################################################################
+
+parameter "param_email" do
+  type "list"
+  label "Email addresses of the recipients you wish to notify"
+end
+
+parameter "param_exclude_tags" do
+  type "list"
+  label "List of one or more Tags that will exclude Unencrypted Volumes from actions being taken. Format: Key=Value"
+  allowed_pattern /([\w]?)+\=([\w]?)+/
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+auth "auth_us_east_1", type: "aws" do
+  version "4"
+  service "ec2"
+  region 'us-east-1'
+  access_key cred("AWS_ACCESS_KEY_ID")
+  secret_key cred("AWS_SECRET_ACCESS_KEY")
+end
+
+auth "auth_us_east_2", type: "aws" do
+  version "4"
+  service "ec2"
+  region 'us-east-2'
+  access_key cred("AWS_ACCESS_KEY_ID")
+  secret_key cred("AWS_SECRET_ACCESS_KEY")
+end
+
+auth "auth_us_west_1", type: "aws" do
+  version "4"
+  service "ec2"
+  region 'us-west-1'
+  access_key cred("AWS_ACCESS_KEY_ID")
+  secret_key cred("AWS_SECRET_ACCESS_KEY")
+end
+
+auth "auth_us_west_2", type: "aws" do
+  version "4"
+  service "ec2"
+  region 'us-west-2'
+  access_key cred("AWS_ACCESS_KEY_ID")
+  secret_key cred("AWS_SECRET_ACCESS_KEY")
+end
+
+auth "auth_ap_south_1", type: "aws" do
+  version 4
+  service "ec2"
+  region 'ap-south-1'
+  access_key cred('AWS_ACCESS_KEY_ID')
+  secret_key cred('AWS_SECRET_ACCESS_KEY')
+end
+
+auth "auth_ap_northeast_2", type: "aws" do
+  version 4
+  service "ec2"
+  region 'ap-northeast-2'
+  access_key cred('AWS_ACCESS_KEY_ID')
+  secret_key cred('AWS_SECRET_ACCESS_KEY')
+end
+
+auth "auth_ap_southeast_1", type: "aws" do
+  version 4
+  service "ec2"
+  region 'ap-southeast-1'
+  access_key cred('AWS_ACCESS_KEY_ID')
+  secret_key cred('AWS_SECRET_ACCESS_KEY')
+end
+
+auth "auth_ap_southeast_2", type: "aws" do
+  version 4
+  service "ec2"
+  region 'ap-southeast-2'
+  access_key cred('AWS_ACCESS_KEY_ID')
+  secret_key cred('AWS_SECRET_ACCESS_KEY')
+end
+
+auth "auth_ap_northeast_1", type: "aws" do
+  version 4
+  service "ec2"
+  region 'ap-northeast-1'
+  access_key cred('AWS_ACCESS_KEY_ID')
+  secret_key cred('AWS_SECRET_ACCESS_KEY')
+end
+
+auth "auth_ca_central_1", type: "aws" do
+  version 4
+  service "ec2"
+  region 'ca-central-1'
+  access_key cred('AWS_ACCESS_KEY_ID')
+  secret_key cred('AWS_SECRET_ACCESS_KEY')
+end
+
+auth "auth_eu_central_1", type: "aws" do
+  version 4
+  service "ec2"
+  region 'eu-central-1'
+  access_key cred('AWS_ACCESS_KEY_ID')
+  secret_key cred('AWS_SECRET_ACCESS_KEY')
+end
+
+auth "auth_eu_west_1", type: "aws" do
+  version 4
+  service "ec2"
+  region 'eu-west-1'
+  access_key cred('AWS_ACCESS_KEY_ID')
+  secret_key cred('AWS_SECRET_ACCESS_KEY')
+end
+
+auth "auth_eu_west_2", type: "aws" do
+  version 4
+  service "ec2"
+  region 'eu-west-2'
+  access_key cred('AWS_ACCESS_KEY_ID')
+  secret_key cred('AWS_SECRET_ACCESS_KEY')
+end
+
+auth "auth_eu_west_3", type: "aws" do
+  version 4
+  service "ec2"
+  region 'eu-west-3'
+  access_key cred('AWS_ACCESS_KEY_ID')
+  secret_key cred('AWS_SECRET_ACCESS_KEY')
+end
+
+auth "auth_sa_east_1", type: "aws" do
+  version 4
+  service "ec2"
+  region 'sa-east-1'
+  access_key cred('AWS_ACCESS_KEY_ID')
+  secret_key cred('AWS_SECRET_ACCESS_KEY')
+end
+
+auth "auth_eu_north_1", type: "aws" do
+  version 4
+  service "ec2"
+  region 'eu-north-1'
+  access_key cred('AWS_ACCESS_KEY_ID')
+  secret_key cred('AWS_SECRET_ACCESS_KEY')
+end
+
+###############################################################################
+# Pagination
+###############################################################################
+
+pagination "aws_pagination_xml" do
+  get_page_marker do
+    body_path "//DescribeVolumesResponse/nextToken"
+  end
+  set_page_marker do
+    query "NextToken"
+  end
+end
+
+###############################################################################
+# Datasource
+###############################################################################
+
+#https://docs.aws.amazon.com/AWSEC2/latest/APIReference/API_DescribeVolumes.html
+datasource "ds_unencrypted_vol_us_east_1" do
+  request do
+    auth $auth_us_east_1
+    pagination $aws_pagination_xml
+    host "ec2.us-east-1.amazonaws.com"
+    path "/"
+    verb "GET"
+    query "Action", "DescribeVolumes"    
+    query "Filter.1.Name", "encrypted"   
+    query "Filter.1.Value.1", "false"
+    query "Version", "2016-11-15"
+  end
+  result do
+    encoding "xml"
+    collect xpath(response, "//DescribeVolumesResponse/volumeSet/item", "array") do
+      field "tags" do
+        collect xpath(col_item, "tagSet/item") do
+          field "tagKey", xpath(col_item, "key")
+          field "tagValue", xpath(col_item, "value")
+        end
+      end
+      field "attachments" do
+        collect xpath(col_item, "attachmentSet/item") do
+          field "instance_Id", xpath(col_item, "instanceId")         
+        end
+      end
+      field "volume_id", xpath(col_item, "volumeId")
+      field "availability_zone", xpath(col_item, "availabilityZone")
+      field "snapshot_id", xpath(col_item, "snapshotId")
+      field "encrypted", xpath(col_item, "encrypted")
+      field "vol_status", xpath(col_item, "status")
+      field "vol_type", xpath(col_item, "volumeType")
+    end
+  end
+end
+
+datasource "ds_unencrypted_vol_us_east_2" do
+  request do
+    auth $auth_us_east_2
+    pagination $aws_pagination_xml
+    host "ec2.us-east-2.amazonaws.com"
+    path "/"
+    verb "GET"
+    query "Action", "DescribeVolumes"
+    query "Filter.1.Name", "encrypted"   
+    query "Filter.1.Value.1", "false"
+    query "Version", "2016-11-15"
+  end
+  result do
+    encoding "xml"
+    collect xpath(response, "//DescribeVolumesResponse/volumeSet/item", "array") do
+      field "tags" do
+        collect xpath(col_item, "tagSet/item") do
+          field "tagKey", xpath(col_item, "key")
+          field "tagValue", xpath(col_item, "value")
+        end
+      end
+      field "attachments" do
+        collect xpath(col_item, "attachmentSet/item") do
+          field "instance_Id", xpath(col_item, "instanceId")        
+        end
+      end
+      field "volume_id", xpath(col_item, "volumeId")
+      field "availability_zone", xpath(col_item, "availabilityZone")
+      field "snapshot_id", xpath(col_item, "snapshotId")
+      field "encrypted", xpath(col_item, "encrypted")
+      field "vol_status", xpath(col_item, "status")
+      field "vol_type", xpath(col_item, "volumeType")
+    end
+  end
+end
+
+datasource "ds_unencrypted_vol_us_west_1" do
+  request do
+    auth $auth_us_west_1
+    pagination $aws_pagination_xml
+    host "ec2.us-west-1.amazonaws.com"
+    path "/"
+    verb "GET"
+    query "Action", "DescribeVolumes"
+    query "Filter.1.Name", "encrypted"   
+    query "Filter.1.Value.1", "false"
+    query "Version", "2016-11-15"
+  end
+  result do
+    encoding "xml"
+    collect xpath(response, "//DescribeVolumesResponse/volumeSet/item", "array") do
+      field "tags" do
+        collect xpath(col_item, "tagSet/item") do
+          field "tagKey", xpath(col_item, "key")
+          field "tagValue", xpath(col_item, "value")
+        end
+      end
+      field "attachments" do
+        collect xpath(col_item, "attachmentSet/item") do
+          field "instance_Id", xpath(col_item, "instanceId")         
+        end
+      end
+      field "volume_id", xpath(col_item, "volumeId")
+      field "availability_zone", xpath(col_item, "availabilityZone")
+      field "snapshot_id", xpath(col_item, "snapshotId")
+      field "encrypted", xpath(col_item, "encrypted")
+      field "vol_status", xpath(col_item, "status")
+      field "vol_type", xpath(col_item, "volumeType")
+    end
+  end
+end
+
+datasource "ds_unencrypted_vol_us_west_2" do
+  request do
+    auth $auth_us_west_2
+    pagination $aws_pagination_xml
+    host "ec2.us-west-2.amazonaws.com"
+    path "/"
+    verb "GET"
+    query "Action", "DescribeVolumes"
+    query "Filter.1.Name", "encrypted"   
+    query "Filter.1.Value.1", "false"
+    query "Version", "2016-11-15"
+  end
+  result do
+    encoding "xml"
+    collect xpath(response, "//DescribeVolumesResponse/volumeSet/item", "array") do
+      field "tags" do
+        collect xpath(col_item, "tagSet/item") do
+          field "tagKey", xpath(col_item, "key")
+          field "tagValue", xpath(col_item, "value")
+        end
+      end
+      field "attachments" do
+        collect xpath(col_item, "attachmentSet/item") do
+          field "instance_Id", xpath(col_item, "instanceId")          
+        end
+      end
+      field "volume_id", xpath(col_item, "volumeId")
+      field "availability_zone", xpath(col_item, "availabilityZone")
+      field "snapshot_id", xpath(col_item, "snapshotId")
+      field "encrypted", xpath(col_item, "encrypted")
+      field "vol_status", xpath(col_item, "status")
+      field "vol_type", xpath(col_item, "volumeType")
+    end
+  end
+end
+
+datasource "ds_unencrypted_vol_ap_south_1" do
+  request do
+    auth $auth_ap_south_1
+    pagination $aws_pagination_xml
+    host "ec2.ap-south-1.amazonaws.com"
+    path "/"
+    verb "GET"
+    query "Action", "DescribeVolumes"
+    query "Filter.1.Name", "encrypted"   
+    query "Filter.1.Value.1", "false"
+    query "Version", "2016-11-15"
+  end
+  result do
+    encoding "xml"
+    collect xpath(response, "//DescribeVolumesResponse/volumeSet/item", "array") do
+      field "tags" do
+        collect xpath(col_item, "tagSet/item") do
+          field "tagKey", xpath(col_item, "key")
+          field "tagValue", xpath(col_item, "value")
+        end
+      end
+      field "attachments" do
+        collect xpath(col_item, "attachmentSet/item") do
+          field "instance_Id", xpath(col_item, "instanceId")         
+        end
+      end
+      field "volume_id", xpath(col_item, "volumeId")
+      field "availability_zone", xpath(col_item, "availabilityZone")
+      field "snapshot_id", xpath(col_item, "snapshotId")
+      field "encrypted", xpath(col_item, "encrypted")
+      field "vol_status", xpath(col_item, "status")
+      field "vol_type", xpath(col_item, "volumeType")
+    end
+  end
+end
+
+datasource "ds_unencrypted_vol_ap_northeast_2" do
+  request do
+    auth $auth_ap_northeast_2
+    pagination $aws_pagination_xml
+    host "ec2.ap-northeast-2.amazonaws.com"
+    path "/"
+    verb "GET"
+    query "Action", "DescribeVolumes"
+    query "Filter.1.Name", "encrypted"   
+    query "Filter.1.Value.1", "false"
+    query "Version", "2016-11-15"
+  end
+  result do
+    encoding "xml"
+    collect xpath(response, "//DescribeVolumesResponse/volumeSet/item", "array") do
+      field "tags" do
+        collect xpath(col_item, "tagSet/item") do
+          field "tagKey", xpath(col_item, "key")
+          field "tagValue", xpath(col_item, "value")
+        end
+      end
+      field "attachments" do
+        collect xpath(col_item, "attachmentSet/item") do
+          field "instance_Id", xpath(col_item, "instanceId")         
+        end
+      end
+      field "volume_id", xpath(col_item, "volumeId")
+      field "availability_zone", xpath(col_item, "availabilityZone")
+      field "snapshot_id", xpath(col_item, "snapshotId")
+      field "encrypted", xpath(col_item, "encrypted")
+      field "vol_status", xpath(col_item, "status")
+      field "vol_type", xpath(col_item, "volumeType")
+    end
+  end
+end
+
+datasource "ds_unencrypted_vol_ap_southeast_1" do
+  request do
+    auth $auth_ap_southeast_1
+    pagination $aws_pagination_xml
+    host "ec2.ap-southeast-1.amazonaws.com"
+    path "/"
+    verb "GET"
+    query "Action", "DescribeVolumes"
+    query "Filter.1.Name", "encrypted"   
+    query "Filter.1.Value.1", "false"
+    query "Version", "2016-11-15"
+  end
+  result do
+    encoding "xml"
+    collect xpath(response, "//DescribeVolumesResponse/volumeSet/item", "array") do
+      field "tags" do
+        collect xpath(col_item, "tagSet/item") do
+          field "tagKey", xpath(col_item, "key")
+          field "tagValue", xpath(col_item, "value")
+        end
+      end
+      field "attachments" do
+        collect xpath(col_item, "attachmentSet/item") do
+          field "instance_Id", xpath(col_item, "instanceId")        
+        end
+      end
+      field "volume_id", xpath(col_item, "volumeId")
+      field "availability_zone", xpath(col_item, "availabilityZone")
+      field "snapshot_id", xpath(col_item, "snapshotId")
+      field "encrypted", xpath(col_item, "encrypted")
+      field "vol_status", xpath(col_item, "status")
+      field "vol_type", xpath(col_item, "volumeType")
+    end
+  end
+end
+
+datasource "ds_unencrypted_vol_ap_southeast_2" do
+  request do
+    auth $auth_ap_southeast_2
+    pagination $aws_pagination_xml
+    host "ec2.ap-southeast-2.amazonaws.com"
+    path "/"
+    verb "GET"
+    query "Action", "DescribeVolumes"
+    query "Filter.1.Name", "encrypted"   
+    query "Filter.1.Value.1", "false"
+    query "Version", "2016-11-15"
+  end
+  result do
+    encoding "xml"
+    collect xpath(response, "//DescribeVolumesResponse/volumeSet/item", "array") do
+      field "tags" do
+        collect xpath(col_item, "tagSet/item") do
+          field "tagKey", xpath(col_item, "key")
+          field "tagValue", xpath(col_item, "value")
+        end
+      end
+      field "attachments" do
+        collect xpath(col_item, "attachmentSet/item") do
+          field "instance_Id", xpath(col_item, "instanceId")         
+        end
+      end
+      field "volume_id", xpath(col_item, "volumeId")
+      field "availability_zone", xpath(col_item, "availabilityZone")
+      field "snapshot_id", xpath(col_item, "snapshotId")
+      field "encrypted", xpath(col_item, "encrypted")
+      field "vol_status", xpath(col_item, "status")
+      field "vol_type", xpath(col_item, "volumeType")
+    end
+  end
+end
+
+datasource "ds_unencrypted_vol_ap_northeast_1" do
+  request do
+    auth $auth_ap_northeast_1
+    pagination $aws_pagination_xml
+    host "ec2.ap-northeast-1.amazonaws.com"
+    path "/"
+    verb "GET"
+    query "Action", "DescribeVolumes"
+    query "Filter.1.Name", "encrypted"   
+    query "Filter.1.Value.1", "false"
+    query "Version", "2016-11-15"
+  end
+  result do
+    encoding "xml"
+    collect xpath(response, "//DescribeVolumesResponse/volumeSet/item", "array") do
+      field "tags" do
+        collect xpath(col_item, "tagSet/item") do
+          field "tagKey", xpath(col_item, "key")
+          field "tagValue", xpath(col_item, "value")
+        end
+      end
+      field "attachments" do
+        collect xpath(col_item, "attachmentSet/item") do
+          field "instance_Id", xpath(col_item, "instanceId")          
+        end
+      end
+      field "volume_id", xpath(col_item, "volumeId")
+      field "availability_zone", xpath(col_item, "availabilityZone")
+      field "snapshot_id", xpath(col_item, "snapshotId")
+      field "encrypted", xpath(col_item, "encrypted")
+      field "vol_status", xpath(col_item, "status")
+      field "vol_type", xpath(col_item, "volumeType")
+    end
+  end
+end
+
+datasource "ds_unencrypted_vol_ca_central_1" do
+  request do
+    auth $auth_ca_central_1
+    pagination $aws_pagination_xml
+    host "ec2.ca-central-1.amazonaws.com"
+    path "/"
+    verb "GET"
+    query "Action", "DescribeVolumes"
+    query "Filter.1.Name", "encrypted"   
+    query "Filter.1.Value.1", "false"
+    query "Version", "2016-11-15"
+  end
+  result do
+    encoding "xml"
+    collect xpath(response, "//DescribeVolumesResponse/volumeSet/item", "array") do
+      field "tags" do
+        collect xpath(col_item, "tagSet/item") do
+          field "tagKey", xpath(col_item, "key")
+          field "tagValue", xpath(col_item, "value")
+        end
+      end
+      field "attachments" do
+        collect xpath(col_item, "attachmentSet/item") do
+          field "instance_Id", xpath(col_item, "instanceId")          
+        end
+      end
+      field "volume_id", xpath(col_item, "volumeId")
+      field "availability_zone", xpath(col_item, "availabilityZone")
+      field "snapshot_id", xpath(col_item, "snapshotId")
+      field "encrypted", xpath(col_item, "encrypted")
+      field "vol_status", xpath(col_item, "status")
+      field "vol_type", xpath(col_item, "volumeType")
+    end
+  end
+end
+
+datasource "ds_unencrypted_vol_eu_central_1" do
+  request do
+    auth $auth_eu_central_1
+    pagination $aws_pagination_xml
+    host "ec2.eu-central-1.amazonaws.com"
+    path "/"
+    verb "GET"
+    query "Action", "DescribeVolumes"
+    query "Filter.1.Name", "encrypted"   
+    query "Filter.1.Value.1", "false"
+    query "Version", "2016-11-15"
+  end
+  result do
+    encoding "xml"
+    collect xpath(response, "//DescribeVolumesResponse/volumeSet/item", "array") do
+      field "tags" do
+        collect xpath(col_item, "tagSet/item") do
+          field "tagKey", xpath(col_item, "key")
+          field "tagValue", xpath(col_item, "value")
+        end
+      end
+      field "attachments" do
+        collect xpath(col_item, "attachmentSet/item") do
+          field "instance_Id", xpath(col_item, "instanceId")          
+        end
+      end
+      field "volume_id", xpath(col_item, "volumeId")
+      field "availability_zone", xpath(col_item, "availabilityZone")
+      field "snapshot_id", xpath(col_item, "snapshotId")
+      field "encrypted", xpath(col_item, "encrypted")
+      field "vol_status", xpath(col_item, "status")
+      field "vol_type", xpath(col_item, "volumeType")
+    end
+  end
+end
+
+datasource "ds_unencrypted_vol_eu_west_1" do
+  request do
+    auth $auth_eu_west_1
+    pagination $aws_pagination_xml
+    host "ec2.eu-west-1.amazonaws.com"
+    path "/"
+    verb "GET"
+    query "Action", "DescribeVolumes"
+    query "Filter.1.Name", "encrypted"   
+    query "Filter.1.Value.1", "false"
+    query "Version", "2016-11-15"
+  end
+  result do
+    encoding "xml"
+    collect xpath(response, "//DescribeVolumesResponse/volumeSet/item", "array") do
+      field "tags" do
+        collect xpath(col_item, "tagSet/item") do
+          field "tagKey", xpath(col_item, "key")
+          field "tagValue", xpath(col_item, "value")
+        end
+      end
+      field "attachments" do
+        collect xpath(col_item, "attachmentSet/item") do
+          field "instance_Id", xpath(col_item, "instanceId")          
+        end
+      end
+      field "volume_id", xpath(col_item, "volumeId")
+      field "availability_zone", xpath(col_item, "availabilityZone")
+      field "snapshot_id", xpath(col_item, "snapshotId")
+      field "encrypted", xpath(col_item, "encrypted")
+      field "vol_status", xpath(col_item, "status")
+      field "vol_type", xpath(col_item, "volumeType")
+    end
+  end
+end
+
+datasource "ds_unencrypted_vol_eu_west_2" do
+  request do
+    auth $auth_eu_west_2
+    pagination $aws_pagination_xml
+    host "ec2.eu-west-2.amazonaws.com"
+    path "/"
+    verb "GET"
+    query "Action", "DescribeVolumes"
+    query "Filter.1.Name", "encrypted"   
+    query "Filter.1.Value.1", "false"
+    query "Version", "2016-11-15"
+  end
+  result do
+    encoding "xml"
+    collect xpath(response, "//DescribeVolumesResponse/volumeSet/item", "array") do
+      field "tags" do
+        collect xpath(col_item, "tagSet/item") do
+          field "tagKey", xpath(col_item, "key")
+          field "tagValue", xpath(col_item, "value")
+        end
+      end
+      field "attachments" do
+        collect xpath(col_item, "attachmentSet/item") do
+          field "instance_Id", xpath(col_item, "instanceId")
+        end
+      end
+      field "volume_id", xpath(col_item, "volumeId")
+      field "availability_zone", xpath(col_item, "availabilityZone")
+      field "snapshot_id", xpath(col_item, "snapshotId")
+      field "encrypted", xpath(col_item, "encrypted")
+      field "vol_status", xpath(col_item, "status")
+      field "vol_type", xpath(col_item, "volumeType")
+    end
+  end
+end
+
+datasource "ds_unencrypted_vol_eu_west_3" do
+  request do
+    auth $auth_eu_west_3
+    pagination $aws_pagination_xml
+    host "ec2.eu-west-3.amazonaws.com"
+    path "/"
+    verb "GET"
+    query "Action", "DescribeVolumes"
+    query "Filter.1.Name", "encrypted"   
+    query "Filter.1.Value.1", "false"
+    query "Version", "2016-11-15"
+  end
+  result do
+    encoding "xml"
+    collect xpath(response, "//DescribeVolumesResponse/volumeSet/item", "array") do
+      field "tags" do
+        collect xpath(col_item, "tagSet/item") do
+          field "tagKey", xpath(col_item, "key")
+          field "tagValue", xpath(col_item, "value")
+        end
+      end
+      field "attachments" do
+        collect xpath(col_item, "attachmentSet/item") do
+          field "instance_Id", xpath(col_item, "instanceId")         
+        end
+      end
+      field "volume_id", xpath(col_item, "volumeId")
+      field "availability_zone", xpath(col_item, "availabilityZone")
+      field "snapshot_id", xpath(col_item, "snapshotId")
+      field "encrypted", xpath(col_item, "encrypted")
+      field "vol_status", xpath(col_item, "status")
+      field "vol_type", xpath(col_item, "volumeType")
+    end
+  end
+end
+
+datasource "ds_unencrypted_vol_sa_east_1" do
+  request do
+    auth $auth_sa_east_1
+    pagination $aws_pagination_xml
+    host "ec2.sa-east-1.amazonaws.com"
+    path "/"
+    verb "GET"
+    query "Action", "DescribeVolumes"
+    query "Filter.1.Name", "encrypted"   
+    query "Filter.1.Value.1", "false"
+    query "Version", "2016-11-15"
+  end
+  result do
+    encoding "xml"
+    collect xpath(response, "//DescribeVolumesResponse/volumeSet/item", "array") do
+      field "tags" do
+        collect xpath(col_item, "tagSet/item") do
+          field "tagKey", xpath(col_item, "key")
+          field "tagValue", xpath(col_item, "value")
+        end
+      end
+      field "attachments" do
+        collect xpath(col_item, "attachmentSet/item") do
+          field "instance_Id", xpath(col_item, "instanceId")          
+        end
+      end
+      field "volume_id", xpath(col_item, "volumeId")
+      field "availability_zone", xpath(col_item, "availabilityZone")
+      field "snapshot_id", xpath(col_item, "snapshotId")
+      field "encrypted", xpath(col_item, "encrypted")
+      field "vol_status", xpath(col_item, "status")
+      field "vol_type", xpath(col_item, "volumeType")
+    end
+  end
+end
+
+datasource "ds_unencrypted_vol_eu_north_1" do
+  request do
+    auth $auth_eu_north_1
+    pagination $aws_pagination_xml
+    host "ec2.eu-north-1.amazonaws.com"
+    path "/"
+    verb "GET"
+    query "Action", "DescribeVolumes"
+    query "Filter.1.Name", "encrypted"   
+    query "Filter.1.Value.1", "false"
+    query "Version", "2016-11-15"
+  end
+  result do
+    encoding "xml"
+    collect xpath(response, "//DescribeVolumesResponse/volumeSet/item", "array") do
+      field "tags" do
+        collect xpath(col_item, "tagSet/item") do
+          field "tagKey", xpath(col_item, "key")
+          field "tagValue", xpath(col_item, "value")
+        end
+      end
+      field "attachments" do
+        collect xpath(col_item, "attachmentSet/item") do
+          field "instance_Id", xpath(col_item, "instanceId")         
+        end
+      end
+      field "volume_id", xpath(col_item, "volumeId")
+      field "availability_zone", xpath(col_item, "availabilityZone")
+      field "snapshot_id", xpath(col_item, "snapshotId")
+      field "encrypted", xpath(col_item, "encrypted")
+      field "vol_status", xpath(col_item, "status")
+      field "vol_type", xpath(col_item, "volumeType")
+    end
+  end
+end
+
+datasource "ds_unencrypted_volumes_map" do
+  run_script $js_unencrypted_vol_filter_map, $ds_unencrypted_vol_us_east_1, $ds_unencrypted_vol_us_east_2, $ds_unencrypted_vol_us_west_1, $ds_unencrypted_vol_us_west_2, $ds_unencrypted_vol_ap_south_1, $ds_unencrypted_vol_ap_northeast_2, $ds_unencrypted_vol_ap_southeast_1, $ds_unencrypted_vol_ap_southeast_2, $ds_unencrypted_vol_ap_northeast_1, $ds_unencrypted_vol_ca_central_1, $ds_unencrypted_vol_eu_central_1, $ds_unencrypted_vol_eu_west_1, $ds_unencrypted_vol_eu_west_2, $ds_unencrypted_vol_eu_west_3, $ds_unencrypted_vol_sa_east_1, $ds_unencrypted_vol_eu_north_1, $param_exclude_tags
+end
+
+###############################################################################
+# Script
+###############################################################################
+
+#https://www.cloudconformity.com/conformity-rules/EBS/ebs-encrypted.html
+script "js_unencrypted_vol_filter_map", type: "javascript" do
+  parameters "ds_unencrypted_vol_us_east_1","ds_unencrypted_vol_us_east_2","ds_unencrypted_vol_us_west_1","ds_unencrypted_vol_us_west_2","ds_unencrypted_vol_ap_south_1","ds_unencrypted_vol_ap_northeast_2","ds_unencrypted_vol_ap_southeast_1","ds_unencrypted_vol_ap_southeast_2","ds_unencrypted_vol_ap_northeast_1","ds_unencrypted_vol_ca_central_1","ds_unencrypted_vol_eu_central_1","ds_unencrypted_vol_eu_west_1","ds_unencrypted_vol_eu_west_2","ds_unencrypted_vol_eu_west_3","ds_unencrypted_vol_sa_east_1","ds_unencrypted_vol_eu_north_1","param_exclude_tags"
+  result "content"
+  code <<-EOS
+    var param_exclude_tags_lower=[];
+    for(var j=0; j < param_exclude_tags.length; j++){
+      param_exclude_tags_lower[j]=param_exclude_tags[j].toString().toLowerCase();
+    }
+
+    var content=[]
+    for(var i=0; i<ds_unencrypted_vol_us_east_1.length; i++){
+      vol=ds_unencrypted_vol_us_east_1[i]  
+	
+      // Constructing IntanceIds with comma separated to display in detail_template
+      var instancesList = vol['attachments']
+      var instanceId=""
+      for(var j=0; j < instancesList.length; j++){
+        instanceId = instancesList[j]['instance_Id']			   
+      }
+
+      //Constructing Tags of individual volume into key=value format. Check, if the tag present in entered param_exclude_tags, ignore the volume if the tag matches/present.
+      var tags = vol['tags']
+      var isTagMatched=false
+      var tagKeyValue=""
+      for(var j=0; j < tags.length; j++){
+        tag = tags[j]
+        if(param_exclude_tags_lower.indexOf((tag['tagKey']+'='+tag['tagValue']).toLowerCase()) !== -1){
+          isTagMatched = true;
+        }
+        // Constructing tags with comma separated to display in detail_template
+        tagKeyValue = tagKeyValue + ', '+ tag['tagKey']+'='+tag['tagValue']
+      }
+ 
+      //If the volume tag does not match with entered param_exclude_tags
+      if(!(isTagMatched)){
+          content.push({
+          instanceId:instanceId,
+          tagKeyValue:(tagKeyValue.slice(2)),
+          volume_id:vol['volume_id'],
+          availability_zone:vol['availability_zone'],
+          snapshot_id:vol['snapshot_id'],
+          encrypted:vol['encrypted'],
+          vol_status:vol['vol_status'],
+          vol_type:vol['vol_type'],
+          region:("us-east-1")
+         })
+      }
+    }
+
+    for(var i=0; i<ds_unencrypted_vol_us_east_2.length; i++){
+      vol=ds_unencrypted_vol_us_east_2[i]  
+	
+      // Constructing IntanceIds with comma separated to display in detail_template
+      var instancesList = vol['attachments']
+      var instanceId=""
+      for(var j=0; j < instancesList.length; j++){
+        instanceId = instancesList[j]['instance_Id']			   
+      }
+
+      //Constructing Tags of individual volume into key=value format. Check, if the tag present in entered param_exclude_tags, ignore the volume if the tag matches/present.
+      var tags = vol['tags']
+      var isTagMatched=false
+      var tagKeyValue=""
+      for(var j=0; j < tags.length; j++){
+        tag = tags[j]
+        if(param_exclude_tags_lower.indexOf((tag['tagKey']+'='+tag['tagValue']).toLowerCase()) !== -1){
+          isTagMatched = true;
+        }
+        // Constructing tags with comma separated to display in detail_template
+        tagKeyValue = tagKeyValue + ', '+ tag['tagKey']+'='+tag['tagValue']
+      }
+ 
+      //If the volume tag does not match with entered param_exclude_tags
+      if(!(isTagMatched)){
+          content.push({
+          instanceId:instanceId,
+          tagKeyValue:(tagKeyValue.slice(2)),
+          volume_id:vol['volume_id'],
+          availability_zone:vol['availability_zone'],
+          snapshot_id:vol['snapshot_id'],
+          encrypted:vol['encrypted'],
+          vol_status:vol['vol_status'],
+          vol_type:vol['vol_type'],
+          region:("us-east-2")
+         })
+      }
+    }	  
+
+    for(var i=0; i<ds_unencrypted_vol_us_west_1.length; i++){
+      vol=ds_unencrypted_vol_us_west_1[i]  
+	
+      // Constructing IntanceIds with comma separated to display in detail_template
+      var instancesList = vol['attachments']
+      var instanceId=""
+      for(var j=0; j < instancesList.length; j++){
+        instanceId = instancesList[j]['instance_Id']			   
+      }
+
+      //Constructing Tags of individual volume into key=value format. Check, if the tag present in entered param_exclude_tags, ignore the volume if the tag matches/present.
+      var tags = vol['tags']
+      var isTagMatched=false
+      var tagKeyValue=""
+      for(var j=0; j < tags.length; j++){
+        tag = tags[j]
+        if(param_exclude_tags_lower.indexOf((tag['tagKey']+'='+tag['tagValue']).toLowerCase()) !== -1){
+          isTagMatched = true;
+        }
+        // Constructing tags with comma separated to display in detail_template
+        tagKeyValue = tagKeyValue + ', '+ tag['tagKey']+'='+tag['tagValue']
+      }
+ 
+      //If the volume tag does not match with entered param_exclude_tags
+      if(!(isTagMatched)){
+          content.push({
+          instanceId:instanceId,
+          tagKeyValue:(tagKeyValue.slice(2)),
+          volume_id:vol['volume_id'],
+          availability_zone:vol['availability_zone'],
+          snapshot_id:vol['snapshot_id'],
+          encrypted:vol['encrypted'],
+          vol_status:vol['vol_status'],
+          vol_type:vol['vol_type'],
+          region:("us-west-1")
+         })
+      }
+    }	  
+
+    for(var i=0; i<ds_unencrypted_vol_us_west_2.length; i++){
+      vol=ds_unencrypted_vol_us_west_2[i]  
+	
+      // Constructing IntanceIds with comma separated to display in detail_template
+      var instancesList = vol['attachments']
+      var instanceId=""
+      for(var j=0; j < instancesList.length; j++){
+        instanceId = instancesList[j]['instance_Id']			   
+      }
+
+      //Constructing Tags of individual volume into key=value format. Check, if the tag present in entered param_exclude_tags, ignore the volume if the tag matches/present.
+      var tags = vol['tags']
+      var isTagMatched=false
+      var tagKeyValue=""
+      for(var j=0; j < tags.length; j++){
+        tag = tags[j]
+        if(param_exclude_tags_lower.indexOf((tag['tagKey']+'='+tag['tagValue']).toLowerCase()) !== -1){
+          isTagMatched = true;
+        }
+        // Constructing tags with comma separated to display in detail_template
+        tagKeyValue = tagKeyValue + ', '+ tag['tagKey']+'='+tag['tagValue']
+      }
+ 
+      //If the volume tag does not match with entered param_exclude_tags
+      if(!(isTagMatched)){
+          content.push({
+          instanceId:instanceId,
+          tagKeyValue:(tagKeyValue.slice(2)),
+          volume_id:vol['volume_id'],
+          availability_zone:vol['availability_zone'],
+          snapshot_id:vol['snapshot_id'],
+          encrypted:vol['encrypted'],
+          vol_status:vol['vol_status'],
+          vol_type:vol['vol_type'],
+          region:("us-west-2")
+         })
+      }
+    }	  
+
+    for(var i=0; i<ds_unencrypted_vol_ap_south_1.length; i++){
+      vol=ds_unencrypted_vol_ap_south_1[i]  
+	
+      // Constructing IntanceIds with comma separated to display in detail_template
+      var instancesList = vol['attachments']
+      var instanceId=""
+      for(var j=0; j < instancesList.length; j++){
+        instanceId = instancesList[j]['instance_Id']			   
+      }
+
+      //Constructing Tags of individual volume into key=value format. Check, if the tag present in entered param_exclude_tags, ignore the volume if the tag matches/present.
+      var tags = vol['tags']
+      var isTagMatched=false
+      var tagKeyValue=""
+      for(var j=0; j < tags.length; j++){
+        tag = tags[j]
+        if(param_exclude_tags_lower.indexOf((tag['tagKey']+'='+tag['tagValue']).toLowerCase()) !== -1){
+          isTagMatched = true;
+        }
+        // Constructing tags with comma separated to display in detail_template
+        tagKeyValue = tagKeyValue + ', '+ tag['tagKey']+'='+tag['tagValue']
+      }
+ 
+      //If the volume tag does not match with entered param_exclude_tags
+      if(!(isTagMatched)){
+          content.push({
+          instanceId:instanceId,
+          tagKeyValue:(tagKeyValue.slice(2)),
+          volume_id:vol['volume_id'],
+          availability_zone:vol['availability_zone'],
+          snapshot_id:vol['snapshot_id'],
+          encrypted:vol['encrypted'],
+          vol_status:vol['vol_status'],
+          vol_type:vol['vol_type'],
+          region:("ap-south-1")
+         })
+      }
+    }	  
+
+    for(var i=0; i<ds_unencrypted_vol_ap_northeast_2.length; i++){
+      vol=ds_unencrypted_vol_ap_northeast_2[i]  
+	
+      // Constructing IntanceIds with comma separated to display in detail_template
+      var instancesList = vol['attachments']
+      var instanceId=""
+      for(var j=0; j < instancesList.length; j++){
+        instanceId = instancesList[j]['instance_Id']			   
+      }
+
+      //Constructing Tags of individual volume into key=value format. Check, if the tag present in entered param_exclude_tags, ignore the volume if the tag matches/present.
+      var tags = vol['tags']
+      var isTagMatched=false
+      var tagKeyValue=""
+      for(var j=0; j < tags.length; j++){
+        tag = tags[j]
+        if(param_exclude_tags_lower.indexOf((tag['tagKey']+'='+tag['tagValue']).toLowerCase()) !== -1){
+          isTagMatched = true;
+        }
+        // Constructing tags with comma separated to display in detail_template
+        tagKeyValue = tagKeyValue + ', '+ tag['tagKey']+'='+tag['tagValue']
+      }
+ 
+      //If the volume tag does not match with entered param_exclude_tags
+      if(!(isTagMatched)){
+          content.push({
+          instanceId:instanceId,
+          tagKeyValue:(tagKeyValue.slice(2)),
+          volume_id:vol['volume_id'],
+          availability_zone:vol['availability_zone'],
+          snapshot_id:vol['snapshot_id'],
+          encrypted:vol['encrypted'],
+          vol_status:vol['vol_status'],
+          vol_type:vol['vol_type'],
+          region:("ap-northeast-2")
+         })
+      }
+    }	  
+
+    for(var i=0; i<ds_unencrypted_vol_ap_southeast_1.length; i++){
+      vol=ds_unencrypted_vol_ap_southeast_1[i]  
+	
+      // Constructing IntanceIds with comma separated to display in detail_template
+      var instancesList = vol['attachments']
+      var instanceId=""
+      for(var j=0; j < instancesList.length; j++){
+        instanceId = instancesList[j]['instance_Id']			   
+      }
+
+      //Constructing Tags of individual volume into key=value format. Check, if the tag present in entered param_exclude_tags, ignore the volume if the tag matches/present.
+      var tags = vol['tags']
+      var isTagMatched=false
+      var tagKeyValue=""
+      for(var j=0; j < tags.length; j++){
+        tag = tags[j]
+        if(param_exclude_tags_lower.indexOf((tag['tagKey']+'='+tag['tagValue']).toLowerCase()) !== -1){
+          isTagMatched = true;
+        }
+        // Constructing tags with comma separated to display in detail_template
+        tagKeyValue = tagKeyValue + ', '+ tag['tagKey']+'='+tag['tagValue']
+      }
+ 
+      //If the volume tag does not match with entered param_exclude_tags
+      if(!(isTagMatched)){
+          content.push({
+          instanceId:instanceId,
+          tagKeyValue:(tagKeyValue.slice(2)),
+          volume_id:vol['volume_id'],
+          availability_zone:vol['availability_zone'],
+          snapshot_id:vol['snapshot_id'],
+          encrypted:vol['encrypted'],
+          vol_status:vol['vol_status'],
+          vol_type:vol['vol_type'],
+          region:("ap-southeast-1")
+         })
+      }
+    }	  
+
+    for(var i=0; i<ds_unencrypted_vol_ap_southeast_2.length; i++){
+      vol=ds_unencrypted_vol_ap_southeast_2[i]  
+	
+      // Constructing IntanceIds with comma separated to display in detail_template
+      var instancesList = vol['attachments']
+      var instanceId=""
+      for(var j=0; j < instancesList.length; j++){
+        instanceId = instancesList[j]['instance_Id']			   
+      }
+
+      //Constructing Tags of individual volume into key=value format. Check, if the tag present in entered param_exclude_tags, ignore the volume if the tag matches/present.
+      var tags = vol['tags']
+      var isTagMatched=false
+      var tagKeyValue=""
+      for(var j=0; j < tags.length; j++){
+        tag = tags[j]
+        if(param_exclude_tags_lower.indexOf((tag['tagKey']+'='+tag['tagValue']).toLowerCase()) !== -1){
+          isTagMatched = true;
+        }
+        // Constructing tags with comma separated to display in detail_template
+        tagKeyValue = tagKeyValue + ', '+ tag['tagKey']+'='+tag['tagValue']
+      }
+ 
+      //If the volume tag does not match with entered param_exclude_tags
+      if(!(isTagMatched)){
+          content.push({
+          instanceId:instanceId,
+          tagKeyValue:(tagKeyValue.slice(2)),
+          volume_id:vol['volume_id'],
+          availability_zone:vol['availability_zone'],
+          snapshot_id:vol['snapshot_id'],
+          encrypted:vol['encrypted'],
+          vol_status:vol['vol_status'],
+          vol_type:vol['vol_type'],
+          region:("ap-southeast-2")
+         })
+      }
+    }	  
+
+    for(var i=0; i<ds_unencrypted_vol_ap_northeast_1.length; i++){
+      vol=ds_unencrypted_vol_ap_northeast_1[i]  
+	
+      // Constructing IntanceIds with comma separated to display in detail_template
+      var instancesList = vol['attachments']
+      var instanceId=""
+      for(var j=0; j < instancesList.length; j++){
+        instanceId = instancesList[j]['instance_Id']			   
+      }
+
+      //Constructing Tags of individual volume into key=value format. Check, if the tag present in entered param_exclude_tags, ignore the volume if the tag matches/present.
+      var tags = vol['tags']
+      var isTagMatched=false
+      var tagKeyValue=""
+      for(var j=0; j < tags.length; j++){
+        tag = tags[j]
+        if(param_exclude_tags_lower.indexOf((tag['tagKey']+'='+tag['tagValue']).toLowerCase()) !== -1){
+          isTagMatched = true;
+        }
+        // Constructing tags with comma separated to display in detail_template
+        tagKeyValue = tagKeyValue + ', '+ tag['tagKey']+'='+tag['tagValue']
+      }
+ 
+      //If the volume tag does not match with entered param_exclude_tags
+      if(!(isTagMatched)){
+          content.push({
+          instanceId:instanceId,
+          tagKeyValue:(tagKeyValue.slice(2)),
+          volume_id:vol['volume_id'],
+          availability_zone:vol['availability_zone'],
+          snapshot_id:vol['snapshot_id'],
+          encrypted:vol['encrypted'],
+          vol_status:vol['vol_status'],
+          vol_type:vol['vol_type'],
+          region:("ap-northeast-1")
+         })
+      }
+    }	  
+
+    for(var i=0; i<ds_unencrypted_vol_ca_central_1.length; i++){
+      vol=ds_unencrypted_vol_ca_central_1[i]  
+	
+      // Constructing IntanceIds with comma separated to display in detail_template
+      var instancesList = vol['attachments']
+      var instanceId=""
+      for(var j=0; j < instancesList.length; j++){
+        instanceId = instancesList[j]['instance_Id']			   
+      }
+
+      //Constructing Tags of individual volume into key=value format. Check, if the tag present in entered param_exclude_tags, ignore the volume if the tag matches/present.
+      var tags = vol['tags']
+      var isTagMatched=false
+      var tagKeyValue=""
+      for(var j=0; j < tags.length; j++){
+        tag = tags[j]
+        if(param_exclude_tags_lower.indexOf((tag['tagKey']+'='+tag['tagValue']).toLowerCase()) !== -1){
+          isTagMatched = true;
+        }
+        // Constructing tags with comma separated to display in detail_template
+        tagKeyValue = tagKeyValue + ', '+ tag['tagKey']+'='+tag['tagValue']
+      }
+ 
+      //If the volume tag does not match with entered param_exclude_tags
+      if(!(isTagMatched)){
+          content.push({
+          instanceId:instanceId,
+          tagKeyValue:(tagKeyValue.slice(2)),
+          volume_id:vol['volume_id'],
+          availability_zone:vol['availability_zone'],
+          snapshot_id:vol['snapshot_id'],
+          encrypted:vol['encrypted'],
+          vol_status:vol['vol_status'],
+          vol_type:vol['vol_type'],
+          region:("ca-central-1")
+         })
+      }
+    }	  
+
+    for(var i=0; i<ds_unencrypted_vol_eu_central_1.length; i++){
+      vol=ds_unencrypted_vol_eu_central_1[i]  
+	
+      // Constructing IntanceIds with comma separated to display in detail_template
+      var instancesList = vol['attachments']
+      var instanceId=""
+      for(var j=0; j < instancesList.length; j++){
+        instanceId = instancesList[j]['instance_Id']			   
+      }
+
+      //Constructing Tags of individual volume into key=value format. Check, if the tag present in entered param_exclude_tags, ignore the volume if the tag matches/present.
+      var tags = vol['tags']
+      var isTagMatched=false
+      var tagKeyValue=""
+      for(var j=0; j < tags.length; j++){
+        tag = tags[j]
+        if(param_exclude_tags_lower.indexOf((tag['tagKey']+'='+tag['tagValue']).toLowerCase()) !== -1){
+          isTagMatched = true;
+        }
+        // Constructing tags with comma separated to display in detail_template
+        tagKeyValue = tagKeyValue + ', '+ tag['tagKey']+'='+tag['tagValue']
+      }
+ 
+      //If the volume tag does not match with entered param_exclude_tags
+      if(!(isTagMatched)){
+          content.push({
+          instanceId:instanceId,
+          tagKeyValue:(tagKeyValue.slice(2)),
+          volume_id:vol['volume_id'],
+          availability_zone:vol['availability_zone'],
+          snapshot_id:vol['snapshot_id'],
+          encrypted:vol['encrypted'],
+          vol_status:vol['vol_status'],
+          vol_type:vol['vol_type'],
+          region:("eu-central-1")
+         })
+      }
+    }	  
+
+    for(var i=0; i<ds_unencrypted_vol_eu_west_1.length; i++){
+      vol=ds_unencrypted_vol_eu_west_1[i]  
+	
+      // Constructing IntanceIds with comma separated to display in detail_template
+      var instancesList = vol['attachments']
+      var instanceId=""
+      for(var j=0; j < instancesList.length; j++){
+        instanceId = instancesList[j]['instance_Id']			   
+      }
+
+      //Constructing Tags of individual volume into key=value format. Check, if the tag present in entered param_exclude_tags, ignore the volume if the tag matches/present.
+      var tags = vol['tags']
+      var isTagMatched=false
+      var tagKeyValue=""
+      for(var j=0; j < tags.length; j++){
+        tag = tags[j]
+        if(param_exclude_tags_lower.indexOf((tag['tagKey']+'='+tag['tagValue']).toLowerCase()) !== -1){
+          isTagMatched = true;
+        }
+        // Constructing tags with comma separated to display in detail_template
+        tagKeyValue = tagKeyValue + ', '+ tag['tagKey']+'='+tag['tagValue']
+      }
+ 
+      //If the volume tag does not match with entered param_exclude_tags
+      if(!(isTagMatched)){
+          content.push({
+          instanceId:instanceId,
+          tagKeyValue:(tagKeyValue.slice(2)),
+          volume_id:vol['volume_id'],
+          availability_zone:vol['availability_zone'],
+          snapshot_id:vol['snapshot_id'],
+          encrypted:vol['encrypted'],
+          vol_status:vol['vol_status'],
+          vol_type:vol['vol_type'],
+          region:("eu-west-1")
+         })
+      }
+    }	  
+
+    for(var i=0; i<ds_unencrypted_vol_eu_west_2.length; i++){
+      vol=ds_unencrypted_vol_eu_west_2[i]  
+	
+      // Constructing IntanceIds with comma separated to display in detail_template
+      var instancesList = vol['attachments']
+      var instanceId=""
+      for(var j=0; j < instancesList.length; j++){
+        instanceId = instancesList[j]['instance_Id']			   
+      }
+
+      //Constructing Tags of individual volume into key=value format. Check, if the tag present in entered param_exclude_tags, ignore the volume if the tag matches/present.
+      var tags = vol['tags']
+      var isTagMatched=false
+      var tagKeyValue=""
+      for(var j=0; j < tags.length; j++){
+        tag = tags[j]
+        if(param_exclude_tags_lower.indexOf((tag['tagKey']+'='+tag['tagValue']).toLowerCase()) !== -1){
+          isTagMatched = true;
+        }
+        // Constructing tags with comma separated to display in detail_template
+        tagKeyValue = tagKeyValue + ', '+ tag['tagKey']+'='+tag['tagValue']
+      }
+ 
+      //If the volume tag does not match with entered param_exclude_tags
+      if(!(isTagMatched)){
+          content.push({
+          instanceId:instanceId,
+          tagKeyValue:(tagKeyValue.slice(2)),
+          volume_id:vol['volume_id'],
+          availability_zone:vol['availability_zone'],
+          snapshot_id:vol['snapshot_id'],
+          encrypted:vol['encrypted'],
+          vol_status:vol['vol_status'],
+          vol_type:vol['vol_type'],
+          region:("eu-west-2")
+         })
+      }
+    }	  
+
+    for(var i=0; i<ds_unencrypted_vol_eu_west_3.length; i++){
+      vol=ds_unencrypted_vol_eu_west_3[i]  
+	
+      // Constructing IntanceIds with comma separated to display in detail_template
+      var instancesList = vol['attachments']
+      var instanceId=""
+      for(var j=0; j < instancesList.length; j++){
+        instanceId = instancesList[j]['instance_Id']			   
+      }
+
+      //Constructing Tags of individual volume into key=value format. Check, if the tag present in entered param_exclude_tags, ignore the volume if the tag matches/present.
+      var tags = vol['tags']
+      var isTagMatched=false
+      var tagKeyValue=""
+      for(var j=0; j < tags.length; j++){
+        tag = tags[j]
+        if(param_exclude_tags_lower.indexOf((tag['tagKey']+'='+tag['tagValue']).toLowerCase()) !== -1){
+          isTagMatched = true;
+        }
+        // Constructing tags with comma separated to display in detail_template
+        tagKeyValue = tagKeyValue + ', '+ tag['tagKey']+'='+tag['tagValue']
+      }
+ 
+      //If the volume tag does not match with entered param_exclude_tags
+      if(!(isTagMatched)){
+          content.push({
+          instanceId:instanceId,
+          tagKeyValue:(tagKeyValue.slice(2)),
+          volume_id:vol['volume_id'],
+          availability_zone:vol['availability_zone'],
+          snapshot_id:vol['snapshot_id'],
+          encrypted:vol['encrypted'],
+          vol_status:vol['vol_status'],
+          vol_type:vol['vol_type'],
+          region:("eu-west-3")
+         })
+      }
+    }	  
+
+    for(var i=0; i<ds_unencrypted_vol_sa_east_1.length; i++){
+      vol=ds_unencrypted_vol_sa_east_1[i]  
+	
+      // Constructing IntanceIds with comma separated to display in detail_template
+      var instancesList = vol['attachments']
+      var instanceId=""
+      for(var j=0; j < instancesList.length; j++){
+        instanceId = instancesList[j]['instance_Id']			   
+      }
+
+      //Constructing Tags of individual volume into key=value format. Check, if the tag present in entered param_exclude_tags, ignore the volume if the tag matches/present.
+      var tags = vol['tags']
+      var isTagMatched=false
+      var tagKeyValue=""
+      for(var j=0; j < tags.length; j++){
+        tag = tags[j]
+        if(param_exclude_tags_lower.indexOf((tag['tagKey']+'='+tag['tagValue']).toLowerCase()) !== -1){
+          isTagMatched = true;
+        }
+        // Constructing tags with comma separated to display in detail_template
+        tagKeyValue = tagKeyValue + ', '+ tag['tagKey']+'='+tag['tagValue']
+      }
+ 
+      //If the volume tag does not match with entered param_exclude_tags
+      if(!(isTagMatched)){
+          content.push({
+          instanceId:instanceId,
+          tagKeyValue:(tagKeyValue.slice(2)),
+          volume_id:vol['volume_id'],
+          availability_zone:vol['availability_zone'],
+          snapshot_id:vol['snapshot_id'],
+          encrypted:vol['encrypted'],
+          vol_status:vol['vol_status'],
+          vol_type:vol['vol_type'],
+          region:("sa-east-1")
+         })
+      }
+    }	  
+
+    for(var i=0; i<ds_unencrypted_vol_eu_north_1.length; i++){
+      vol=ds_unencrypted_vol_eu_north_1[i]  
+	
+      // Constructing IntanceIds with comma separated to display in detail_template
+      var instancesList = vol['attachments']
+      var instanceId=""
+      for(var j=0; j < instancesList.length; j++){
+        instanceId = instancesList[j]['instance_Id']			   
+      }
+
+      //Constructing Tags of individual volume into key=value format. Check, if the tag present in entered param_exclude_tags, ignore the volume if the tag matches/present.
+      var tags = vol['tags']
+      var isTagMatched=false
+      var tagKeyValue=""
+      for(var j=0; j < tags.length; j++){
+        tag = tags[j]
+        if(param_exclude_tags_lower.indexOf((tag['tagKey']+'='+tag['tagValue']).toLowerCase()) !== -1){
+          isTagMatched = true;
+        }
+        // Constructing tags with comma separated to display in detail_template
+        tagKeyValue = tagKeyValue + ', '+ tag['tagKey']+'='+tag['tagValue']
+      }
+ 
+      //If the volume tag does not match with entered param_exclude_tags
+      if(!(isTagMatched)){
+          content.push({
+          instanceId:instanceId,
+          tagKeyValue:(tagKeyValue.slice(2)),
+          volume_id:vol['volume_id'],
+          availability_zone:vol['availability_zone'],
+          snapshot_id:vol['snapshot_id'],
+          encrypted:vol['encrypted'],
+          vol_status:vol['vol_status'],
+          vol_type:vol['vol_type'],
+          region:("eu-north-1")
+         })
+      }
+    }	  
+  EOS
+end
+
+###############################################################################
+# Policy
+###############################################################################
+policy "policy_unencrypted_volumes_list" do
+  validate $ds_unencrypted_volumes_map do
+    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} Unencrypted Volumes Found in AWS"
+    detail_template <<-EOS
+# List of Unencrypted Volumes
+| Volume_ID | Region | Availability_Zones | Instance_ID | Snapshot_ID | Encrypted | Volume_Status | Volume_Type | TAG_Value |
+| --------- | ------ | ------------------ | ----------- | ----------- | ----------| ------------- | ----------- | --------- |
+{{ range data -}}
+| {{.volume_id}} | {{ .region }} | {{ .availability_zone }} | {{ .instanceId }} | {{ .snapshot_id }} | {{ .encrypted }} | {{.vol_status}} | {{.vol_type}} | {{.tagKeyValue}} |
+{{ end -}}
+    EOS
+    escalate $report_unencrypted_volumes
+    check eq(size(data),0)
+  end
+end
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "report_unencrypted_volumes" do
+  email $param_email
+end
