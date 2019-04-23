@@ -27,8 +27,7 @@ The Cloud Management Platform automatically creates two Credentials when connect
     "Version": "2016-11-15",
     "Statement":[{
     "Effect":"Allow",
-    "Action":["ec2:DescribeVolumes",
-             ],
+    "Action":["ec2:DescribeVolumes"],
     "Resource":"*"
     }
   ]
