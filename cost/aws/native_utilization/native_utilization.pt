@@ -57,6 +57,7 @@ datasource "ds_instances" do
   iterate @instances
   field "id", val(iter_item, "resource_uid")
   field "name", val(iter_item, "name")
+  field "ips", val(iter_item, "private_ip_addresses")
 end
 
 datasource "ds_cloudwatch_cpu_maximum" do
@@ -77,8 +78,8 @@ datasource "ds_cloudwatch_cpu_maximum" do
     query 'MetricName', 'CPUUtilization'
     query 'Dimensions.member.1.Name', 'InstanceId'
     query 'Dimensions.member.1.Value', val(iter_item,"id")
-    query 'StartTime', "2019-04-15T00:00:00.000Z"
-    query 'EndTime', "2019-04-15T23:59:59.999Z"
+    query 'StartTime', "2019-04-22T00:00:00.000Z"
+    query 'EndTime', "2019-04-22T23:59:59.999Z"
     query 'Period', "86400"
     query 'Statistics.member.1', 'Maximum'
     query 'Statistics.member.2', 'Average'
@@ -89,6 +90,7 @@ datasource "ds_cloudwatch_cpu_maximum" do
     collect jmes_path(response, "GetMetricStatisticsResponse.GetMetricStatisticsResult.Datapoints[*]") do
       field "name",  val(iter_item,"name")
       field "id", val(iter_item, "id")
+      field "ips", val(iter_item,"ips")
       field "unit", jmes_path(col_item,"Unit")
       field "maximum", jmes_path(col_item, "Maximum")
       field "minimum", jmes_path(col_item, "Minimum")
@@ -97,12 +99,62 @@ datasource "ds_cloudwatch_cpu_maximum" do
   end
 end
 
+datasource "ds_cloudwatch_disk_usage" do
+  iterate $ds_cloudwatch_cpu_maximum
+  request do
+    run_script $js_cloudwatch_disk_usage
+  end
+  result do
+  end
+end
+
+script "js_cloudwatch_disk_usage", type: "javascript" do
+  result "results"
+  parameters "iter_item"
+  code <<-EOS
+  var host_name = iter_item["ips"][0]
+  console.log(host_name)
+  results = {
+    "auth": "monitoring_us_west_2",
+    "host": "monitoring.us-west-2.amazonaws.com",
+    "verb": "GET",
+    "path": "/",
+    "headers": {
+      "User-Agent": "RS Policies",
+      "Content-Type": "application/json",
+      "x-amz-target": "GraniteServiceVersion20100801.GetMetricStatistics",
+      "Accept": "application/json",
+      "Content-Encoding": "amz-1.0"
+    }
+    query_strings: {
+      'Action': 'GetMetricStatistics',
+      'Version': '2010-08-01',
+      'Namespace': 'CWAgent',
+      'MetricName': 'disk_used_percent',
+      'Dimensions.member.1.Name': 'host',
+      'Dimensions.member.1.Value': 'ip-10-42-98-139',
+      'Dimensions.member.2.Name': 'device',
+      'Dimensions.member.2.Value': 'xvda1',
+      'Dimensions.member.3.Name': 'fstype',
+      'Dimensions.member.3.Value': 'ext4',
+      'Dimensions.member.4.Name': 'path',
+      'Dimensions.member.4.Value': '/',
+      'StartTime': "2019-04-22T00:00:00.000Z",
+      'EndTime': "2019-04-22T23:59:59.999Z",
+      'Period': "86400",
+      'Statistics.member.1': 'Maximum',
+      'Statistics.member.2': 'Average',
+      'Statistics.member.3': 'Minimum'
+    }
+  }
+EOS
+end
 ###############################################################################
 # Policy
 ###############################################################################
 
 policy "pol_utilization" do
-  validate_each $ds_cloudwatch_cpu_maximum do
+  validate_each $ds_cloudwatch_disk_usage do
     summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} rows with cheaper data"
     detail_template <<-EOS
 # AWS CPU Utilization
