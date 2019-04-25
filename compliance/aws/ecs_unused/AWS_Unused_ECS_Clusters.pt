@@ -1,0 +1,399 @@
+name "AWS Unused ECS Clusters"
+rs_pt_ver 20180301
+type "policy"
+short_description "Report and remediate any ECS clusters that are not currently in use. \n See the [README](https://github.com/rightscale/policy_templates/tree/master/Compliance/aws/ecs_unused) and [docs.rightscale.com/policies](http://docs.rightscale.com/policies/) to learn more."
+long_description "Version: 1.0"
+category "Compliance"
+severity "low"
+
+###############################################################################
+# Permissions
+###############################################################################
+
+permission "perm_read_creds" do
+  actions "rs_cm.show_sensitive","rs_cm.index_sensitive"
+  resources "rs_cm.credentials"
+end
+
+###############################################################################
+# User inputs
+###############################################################################
+
+parameter "param_email" do
+  type "list"
+  label "Email addresses of the recipients you wish to notify"
+end
+
+parameter "param_exclude_tags" do
+  type "list"
+  label "List of one or more Tags that will exclude cluster from actions being taken. Format: Key=Value"
+  allowed_pattern /([\w]?)+\=([\w]?)+/
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+auth "auth_us_east_1", type: "aws" do
+  version "4"
+  service "ecs"
+  region "us-east-1"
+  access_key cred("AWS_ACCESS_KEY_ID")
+  secret_key cred("AWS_SECRET_ACCESS_KEY")
+end
+
+auth "auth_us_east_2", type: "aws" do
+  version 4
+  service "ecs"
+  region 'us-east-2'
+  access_key cred('AWS_ACCESS_KEY_ID')
+  secret_key cred('AWS_SECRET_ACCESS_KEY')
+end
+
+auth "auth_us_west_1", type: "aws" do
+  version 4
+  service "ecs"
+  region 'us-west-1'
+  access_key cred('AWS_ACCESS_KEY_ID')
+  secret_key cred('AWS_SECRET_ACCESS_KEY')
+end
+
+auth "auth_us_west_2", type: "aws" do
+  version 4
+  service "ecs"
+  region 'us-west-2'
+  access_key cred('AWS_ACCESS_KEY_ID')
+  secret_key cred('AWS_SECRET_ACCESS_KEY')
+end
+
+auth "auth_ap_south_1", type: "aws" do
+  version 4
+  service "ecs"
+  region 'ap-south-1'
+  access_key cred('AWS_ACCESS_KEY_ID')
+  secret_key cred('AWS_SECRET_ACCESS_KEY')
+end
+
+auth "auth_ap_northeast_2", type: "aws" do
+  version 4
+  service "ecs"
+  region 'ap-northeast-2'
+  access_key cred('AWS_ACCESS_KEY_ID')
+  secret_key cred('AWS_SECRET_ACCESS_KEY')
+end
+
+auth "auth_ap_southeast_1", type: "aws" do
+  version 4
+  service "ecs"
+  region 'ap-southeast-1'
+  access_key cred('AWS_ACCESS_KEY_ID')
+  secret_key cred('AWS_SECRET_ACCESS_KEY')
+end
+
+auth "auth_ap_southeast_2", type: "aws" do
+  version 4
+  service "ecs"
+  region 'ap-southeast-2'
+  access_key cred('AWS_ACCESS_KEY_ID')
+  secret_key cred('AWS_SECRET_ACCESS_KEY')
+end
+
+auth "auth_ap_northeast_1", type: "aws" do
+  version 4
+  service "ecs"
+  region 'ap-northeast-1'
+  access_key cred('AWS_ACCESS_KEY_ID')
+  secret_key cred('AWS_SECRET_ACCESS_KEY')
+end
+
+auth "auth_ca_central_1", type: "aws" do
+  version 4
+  service "ecs"
+  region 'ca-central-1'
+  access_key cred('AWS_ACCESS_KEY_ID')
+  secret_key cred('AWS_SECRET_ACCESS_KEY')
+end
+
+auth "auth_eu_central_1", type: "aws" do
+  version 4
+  service "ecs"
+  region 'eu-central-1'
+  access_key cred('AWS_ACCESS_KEY_ID')
+  secret_key cred('AWS_SECRET_ACCESS_KEY')
+end
+
+auth "auth_eu_west_1", type: "aws" do
+  version 4
+  service "ecs"
+  region 'eu-west-1'
+  access_key cred('AWS_ACCESS_KEY_ID')
+  secret_key cred('AWS_SECRET_ACCESS_KEY')
+end
+
+auth "auth_eu_west_2", type: "aws" do
+  version 4
+  service "ecs"
+  region 'eu-west-2'
+  access_key cred('AWS_ACCESS_KEY_ID')
+  secret_key cred('AWS_SECRET_ACCESS_KEY')
+end
+
+auth "auth_eu_west_3", type: "aws" do
+  version 4
+  service "ecs"
+  region 'eu-west-3'
+  access_key cred('AWS_ACCESS_KEY_ID')
+  secret_key cred('AWS_SECRET_ACCESS_KEY')
+end
+
+auth "auth_sa_east_1", type: "aws" do
+  version 4
+  service "ecs"
+  region 'sa-east-1'
+  access_key cred('AWS_ACCESS_KEY_ID')
+  secret_key cred('AWS_SECRET_ACCESS_KEY')
+end
+
+auth "auth_eu_north_1", type: "aws" do
+  version 4
+  service "ecs"
+  region 'eu-north-1'
+  access_key cred('AWS_ACCESS_KEY_ID')
+  secret_key cred('AWS_SECRET_ACCESS_KEY')
+end
+
+###############################################################################
+# Datasources
+###############################################################################
+
+#Generates list of Regions.
+datasource "ds_regions_list" do
+  run_script $js_regions_map
+end
+
+#To get list of All ESC Clusters.
+datasource "ds_aws_ecs_cluster_list" do
+  iterate $ds_regions_list
+  request do
+    run_script $js_aws_ecs_cluster_list, val(iter_item,"region")
+  end
+  result do
+    encoding "json"
+    field "region", val(iter_item,"region")
+	field "clusterArns", jmes_path(response, "clusterArns")
+  end
+end
+
+#To get description of all clusters by passing array of cluster_name as input. 
+datasource "ds_aws_ecs_cluster_description" do
+  iterate $ds_regions_list
+  request do
+    run_script $js_aws_ecs_cluster_description, $ds_aws_ecs_cluster_list, val(iter_item,"region")
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "clusters[*]") do
+      field "cluster_Name", jmes_path(col_item, "clusterName")
+      field "active_Services_Count", jmes_path(col_item, "activeServicesCount")
+      field "running_Tasks_Count",  jmes_path(col_item, "runningTasksCount")
+      field "pending_Tasks_Count",  jmes_path(col_item, "pendingTasksCount")
+      field "registered_Container_Instances_Count", jmes_path(col_item, "registeredContainerInstancesCount")
+      field "status", jmes_path(col_item,"status")
+      field "region", val(iter_item,"region")
+      field "tags" do
+        collect jmes_path(col_item,"tags") do
+          field "tagKey", jmes_path(col_item,"key")
+          field "tagValue", jmes_path(col_item,"value")
+        end
+      end
+    end
+  end
+end
+
+datasource "ds_unused_ecs_cluster_map" do
+  run_script $js_aws_ecs_cluster_filter_map, $ds_aws_ecs_cluster_description, $param_exclude_tags
+end
+
+###############################################################################
+# Scripts
+###############################################################################
+
+script "js_regions_map", type: "javascript" do
+  result "regions_map"
+  code <<-EOS
+    var regions_map=[]
+    regions_map.push({"region": "us-east-1"}, {"region": "us-east-2"}, {"region": "us-west-1"}, {"region": "us-west-2"}, {"region": "ap-south-1"}, {"region": "ap-northeast-2"}, {"region": "ap-southeast-1"}, {"region": "ap-southeast-2"}, {"region": "ap-northeast-1"}, {"region": "ca-central-1"}, {"region": "eu-central-1"}, {"region": "eu-west-1"}, {"region": "eu-west-2"}, {"region": "eu-west-3"}, {"region": "sa-east-1"}, {"region": "eu-north-1"})
+  EOS
+end
+
+#https://docs.aws.amazon.com/AmazonECS/latest/APIReference/API_ListClusters.html
+script "js_aws_ecs_cluster_list", type: "javascript" do
+  parameters "region"
+  result "results"
+  code <<-EOS
+    results = {
+      auth: "auth_"+region.replace(/-/g,"_"),
+      host: 'ecs.'+region+'.amazonaws.com',
+      path: '/',
+      verb: 'POST',
+      headers: {
+        "X-Amz-Target": "AmazonEC2ContainerServiceV20141113.ListClusters",
+        "Content-Type": "application/x-amz-json-1.1",
+      },
+      body_fields: {"empty": "empty"}
+    }
+  EOS
+end
+
+#https://docs.aws.amazon.com/AmazonECS/latest/APIReference/API_DescribeClusters.html
+script "js_aws_ecs_cluster_description", type: "javascript" do
+  parameters "ds_aws_ecs_cluster_list", "region"
+  result "results"
+  code <<-EOS
+    var clusterArns_map={}
+    for(var i=0; i<ds_aws_ecs_cluster_list.length; i++){
+      clusterArns_map[ds_aws_ecs_cluster_list[i].region] = ds_aws_ecs_cluster_list[i].clusterArns
+    }
+    results = {
+      auth: "auth_"+region.replace(/-/g,"_"),
+      host: 'ecs.'+region+'.amazonaws.com',
+      path: '/',
+      verb: 'POST',
+      headers: {
+        "X-Amz-Target": "AmazonEC2ContainerServiceV20141113.DescribeClusters",
+        "Content-Type": "application/x-amz-json-1.1",
+      },
+      body_fields: {
+        "clusters": clusterArns_map[region],
+        "include": ["TAGS"]
+      }
+    }
+  EOS
+end
+
+#Process the response data and check for the tags and unused clusters
+script "js_aws_ecs_cluster_filter_map", type: "javascript" do
+  parameters "ds_aws_ecs_cluster_description", "param_exclude_tags"
+  result "content"
+  code <<-EOS
+    var content=[]
+    var param_exclude_tags_lower=[];
+    for(var j=0; j < param_exclude_tags.length; j++){
+      param_exclude_tags_lower[j]=param_exclude_tags[j].toString().toLowerCase();
+    }
+
+    for(var i=0; i < ds_aws_ecs_cluster_description.length ; i++){
+      cluster=ds_aws_ecs_cluster_description[i]
+
+      var tags = cluster['tags']
+      var isTagMatched=false
+      var tagKeyValue=""
+      for(var j=0; j < tags.length; j++){
+        tag = tags[j]
+        //Check, if the tag present in entered param_exclude_tags, ignore the Cluster if the tag matches/present.
+        if(param_exclude_tags_lower.indexOf((tag['tagKey']+'='+tag['tagValue']).toLowerCase()) !== -1){
+          isTagMatched = true;
+        }
+        // Constructing Tags of individual Cluster into key=value format and comma separated to display in detail_template
+        tagKeyValue = tagKeyValue + ', '+ tag['tagKey']+'='+tag['tagValue']
+      }
+
+      if(!(isTagMatched) && (Number(cluster['active_Services_Count']) == 0 && Number(cluster['running_Tasks_Count']) == 0 && Number(cluster['pending_Tasks_Count']) == 0 && Number(cluster['registered_Container_Instances_Count']) == 0)){
+        content.push({
+          cluster_Name: cluster['cluster_Name'],
+          region: cluster['region'],
+          active_Services_Count: cluster['active_Services_Count'],
+          running_Tasks_Count: cluster['running_Tasks_Count'],
+          pending_Tasks_Count: cluster['pending_Tasks_Count'],
+          registered_Container_Instances_Count: cluster['registered_Container_Instances_Count'],
+          status: cluster['status']
+          tagKeyValue:(tagKeyValue.slice(2))
+        })
+      }
+    }
+  EOS
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "pol_ri_coverage" do
+  validate $ds_unused_ecs_cluster_map do
+    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} Unused ECS Clusters found in AWS."
+    detail_template <<-EOS
+# Unused ECS Clusters
+| Cluster Name | Region | status | Tags |
+| ------------ | ------ | ------ | ---- |
+{{ range data -}}
+| {{ .cluster_Name}} | {{.region}} | {{.status}} | {{.tagKeyValue}} |
+{{ end -}}
+    EOS
+    escalate $report_unused_ECS_clusters
+    escalate $delete_clusters
+    check eq(size(data),0)
+  end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "report_unused_ECS_clusters" do
+  email $param_email
+end
+
+escalation "delete_clusters" do
+  request_approval  do
+    label "Approve Resource Deletion"
+    description "Approve escalation to run RightScale Cloud Workflow to delete unused clusters"
+    parameter "approval_reason" do
+      type "string"
+      label "Reason for Approval"
+      description "Explain why you are approving the action"
+    end
+  end
+  run "delete_clusters", data
+end
+
+###############################################################################
+# Cloud Workflow
+###############################################################################
+
+#https://docs.aws.amazon.com/AmazonECS/latest/APIReference/API_DeleteCluster.html
+define delete_clusters($data) return $all_responses do
+  $$debug = "true"
+  $all_responses = []
+  foreach $item in $data do
+    sub on_error: skip do
+      $response = http_request(
+        verb: "post",
+        host: "ecs."+$item["region"]+".amazonaws.com",
+        https: true,
+        headers: {
+          "x-amz-target": "AmazonEC2ContainerServiceV20141113.DeleteCluster",
+          "content-type": "application/x-amz-json-1.1"
+        },
+        body: {
+          "cluster": $item["cluster_Name"]
+        },
+        "signature": { type: "aws" }
+      )
+      $all_responses << $response
+      call sys_log('all_responses', to_s($all_responses))
+	end
+  end
+end
+
+define sys_log($subject, $detail) do
+  if $$debug
+    rs_cm.audit_entries.create(
+      notify: "None",
+      audit_entry: {
+        auditee_href: @@account,
+        summary: "AWS Unused ECS Clusters Policy "+ $subject,
+        detail: $detail
+      }
+    )
+  end
+end
