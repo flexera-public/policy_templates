@@ -43,6 +43,7 @@ Please contact sales@rightscale.com to learn more.
 - [GitHub.com Repository Ownership](./compliance/github/repository_ownership/)
 - [GitHub.com Top-Level Teams](./compliance/github/toplevel_teams/)
 - [GitHub.com Unprotected Branches](./compliance/github/unprotected_branches/)
+- [GitHub.com Empty Repository](./compliance/github/empty_repository/)
 
 ### Operational
 - [AWS Cloud Credentials Rotation Policy](./operational/cloud_credentials/aws)
