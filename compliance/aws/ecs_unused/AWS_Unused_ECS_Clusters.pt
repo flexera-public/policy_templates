@@ -21,13 +21,14 @@ end
 
 parameter "param_email" do
   type "list"
-  label "Email addresses of the recipients you wish to notify"
+  label "Email addresses to notify"
+  description "Email addresses of the recipients you wish to notify when new incidents are created"
 end
 
 parameter "param_exclude_tags" do
   type "list"
-  label "List of one or more Tags that will exclude cluster from actions being taken. Format: Key=Value"
-  allowed_pattern /([\w]?)+\=([\w]?)+/
+  label "Tags to ignore"
+  description "List of tags that will exclude ECS Clusters from being evaluated by this policy. Multiple tags are evaluated as an 'OR' condition. Tag keys or key/value pairs can be listed. Example: 'test,env=dev'"
 end
 
 ###############################################################################
@@ -180,11 +181,11 @@ datasource "ds_aws_ecs_cluster_list" do
   result do
     encoding "json"
     field "region", val(iter_item,"region")
-	field "clusterArns", jmes_path(response, "clusterArns")
+    field "clusterArns", jmes_path(response, "clusterArns")
   end
 end
 
-#To get description of all clusters by passing array of cluster_name as input. 
+#To get description of all clusters by passing array of cluster_name as input.
 datasource "ds_aws_ecs_cluster_description" do
   iterate $ds_regions_list
   request do
@@ -291,11 +292,15 @@ script "js_aws_ecs_cluster_filter_map", type: "javascript" do
       for(var j=0; j < tags.length; j++){
         tag = tags[j]
         //Check, if the tag present in entered param_exclude_tags, ignore the Cluster if the tag matches/present.
-        if(param_exclude_tags_lower.indexOf((tag['tagKey']+'='+tag['tagValue']).toLowerCase()) !== -1){
+        if((param_exclude_tags_lower.indexOf((tag['tagKey']).toLowerCase()) !== -1) || (param_exclude_tags_lower.indexOf((tag['tagKey']+'='+tag['tagValue']).toLowerCase()) !== -1)){
           isTagMatched = true;
         }
         // Constructing Tags of individual Cluster into key=value format and comma separated to display in detail_template
-        tagKeyValue = tagKeyValue + ', '+ tag['tagKey']+'='+tag['tagValue']
+        if((tag['tagValue']).length > 0){
+          tagKeyValue = tagKeyValue + ', '+ tag['tagKey']+'='+tag['tagValue']
+        }else{
+          tagKeyValue = tagKeyValue + ', '+ tag['tagKey']
+        }
       }
 
       if(!(isTagMatched) && (Number(cluster['active_Services_Count']) == 0 && Number(cluster['running_Tasks_Count']) == 0 && Number(cluster['pending_Tasks_Count']) == 0 && Number(cluster['registered_Container_Instances_Count']) == 0)){
@@ -381,7 +386,7 @@ define delete_clusters($data) return $all_responses do
       )
       $all_responses << $response
       call sys_log('all_responses', to_s($all_responses))
-	end
+    end
   end
 end
 
