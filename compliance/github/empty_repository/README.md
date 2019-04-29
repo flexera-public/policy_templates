@@ -20,7 +20,7 @@ The following policy actions are taken on any resources found to be out of compl
 
 ### Required Permissions
 
-This policy requires permissions to access GitHub.com API as the Owner of the Organization(s).  Before applying this policy, create a GitHub.com Personal Access Token with `repo` scope, and save the token in the project on Cloud Management as credential named `GITHUB_API_EMPTY_REPO_PERSONAL_ACCESS_TOKEN`
+This policy requires permissions to access GitHub.com API as the Owner of the Organization(s).  Before applying this policy, create a GitHub.com Personal Access Token under the user with Owner role -- adding the `repo` scopes at minimum, and save the token in the project on Cloud Management as credential named `GITHUB_ORG_ADMIN_ACCESS_TOKEN`.  If you are using other Governance Policies for GitHub.com, you may need to include additional roles to sate the need of all policies which use the same credential.  Optionally, you can generate a token with full permission and avoid any issues.
 
 This policy requires permissions to access RightScale resources (credentials). Before applying this policy add the following roles to the user applying the policy.  For more information on modifying roles visit the [Governance Docs](https://docs.rightscale.com/cm/ref/user_roles.html)
 
