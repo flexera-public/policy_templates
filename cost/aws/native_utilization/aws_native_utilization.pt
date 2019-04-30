@@ -1,4 +1,4 @@
-name "AWS Totally Native Utilization"
+name "AWS Native Utilization"
 rs_pt_ver 20180301
 type "policy"
 short_description "Checks AWS Regions configured in RightScale and gets cloudwatch data for instances. See the [README](https://github.com/rightscale/policy_templates/tree/master/cost/native_utilization/) and [docs.rightscale.com/policies](http://docs.rightscale.com/policies/) to learn more."
@@ -20,9 +20,9 @@ end
 ###############################################################################
 
 parameter "param_email" do
-  type "list"
-  label "Email addresses to notify"
-  description "Email addresses of the recipients you wish to notify when new incidents are created"
+  type "list"
+  label "Email addresses to notify"
+  description "Email addresses of the recipients you wish to notify when new incidents are created"
 end
 
 ###############################################################################
@@ -286,33 +286,17 @@ auth "monitoring_auth_eu_north_1", type: "aws" do
   secret_key cred('AWS_SECRET_ACCESS_KEY')
 end
 
+###############################################################################
+# Datasources
+###############################################################################
+
+#Generates list of Regions with Load Balancer type and API version.
 datasource "ds_regions_list" do
   run_script $js_regions_map
 end
 
 datasource "ds_instances" do 
   run_script $js_instances, $ds_instances_set
-end
-
-script "js_instances", type: "javascript" do
-  result "results"
-  parameters "ds_instance_set"
-  code <<-EOS
-  var results = []
-  for ( n=0; n < ds_instance_set.length; n++) {
-    var instance_set = ds_instance_set[n].instances_set
-    console.log(instance_set)
-    for ( i=0; i < instance_set.length; i++) {
-      var instance = instance_set[i]
-      results.push({
-        "region": instance.region,
-        "instanceId": instance.instanceId,
-        "privateDnsName": instance.privateDnsName,
-        "tag_set": instance.tag_set
-      })
-    }
-  }
-EOS
 end
 
 datasource "ds_instances_set" do
@@ -340,6 +324,74 @@ datasource "ds_instances_set" do
   end
 end
 
+datasource "ds_cloudwatch_cpu_maximum" do
+  iterate $ds_instances
+  request do
+    run_script $js_cloudwatch_cpu_maximum, val(iter_item, "region"), val(iter_item, "instanceId")
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "GetMetricStatisticsResponse.GetMetricStatisticsResult.Datapoints[*]") do
+      field "region", val(iter_item, "region")
+      field "instanceId", val(iter_item, "instanceId")
+      field "privateDnsName", val(iter_item, "privateDnsName")
+      field "tag_set", val(iter_item, "tag_set")
+      field "cpu_unit", jmes_path(col_item,"Unit")
+      field "cpu_maximum", jmes_path(col_item, "Maximum")
+      field "cpu_minimum", jmes_path(col_item, "Minimum")
+      field "cpu_average", jmes_path(col_item, "Average")
+    end
+  end
+end
+
+datasource "ds_cloudwatch_disk_usage" do
+  iterate $ds_instances
+  request do
+    run_script $js_cloudwatch_disk_usage, val(iter_item, "region"), val(iter_item, "instanceId"), val(iter_item,"privateDnsName")
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response,"GetMetricStatisticsResponse.GetMetricStatisticsResult.Datapoints[*]") do
+      field "region", val(iter_item, "region")
+      field "instanceId", val(iter_item, "instanceId")
+      field "privateDnsName", val(iter_item, "privateDnsName")
+      field "tag_set", val(iter_item, "tag_set")
+      field "disk_unit", jmes_path(col_item,"Unit")
+      field "disk_maximum", jmes_path(col_item, "Maximum")
+      field "disk_minimum", jmes_path(col_item, "Minimum")
+      field "disk_average", jmes_path(col_item, "Average")
+    end
+  end
+end
+
+datasource "ds_cloudwatch_mem_usage" do
+  iterate $ds_instances
+  request do
+    run_script $js_cloudwatch_mem_usage, val(iter_item, "region"), val(iter_item, "instanceId"), val(iter_item,"privateDnsName")
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response,"GetMetricStatisticsResponse.GetMetricStatisticsResult.Datapoints[*]") do
+      field "region", val(iter_item, "region")
+      field "instanceId", val(iter_item, "instanceId")
+      field "privateDnsName", val(iter_item, "privateDnsName")
+      field "tag_set", val(iter_item, "tag_set")
+      field "mem_unit", jmes_path(col_item,"Unit")
+      field "mem_maximum", jmes_path(col_item, "Maximum")
+      field "mem_minimum", jmes_path(col_item, "Minimum")
+      field "mem_average", jmes_path(col_item, "Average")
+    end
+  end
+end
+
+datasource "ds_merged_metrics" do
+  run_script $js_merged_metrics, $ds_cloudwatch_cpu_maximum, $ds_cloudwatch_disk_usage, $ds_cloudwatch_mem_usage
+end
+
+###############################################################################
+# Scripts
+###############################################################################
+
 script "js_regions_map", type: "javascript" do
   result "regions_map"
   code <<-EOS
@@ -365,6 +417,27 @@ script "js_regions_map", type: "javascript" do
   EOS
 end
 
+script "js_instances", type: "javascript" do
+  result "results"
+  parameters "ds_instance_set"
+  code <<-EOS
+  var results = []
+  for ( n=0; n < ds_instance_set.length; n++) {
+    var instance_set = ds_instance_set[n].instances_set
+    console.log(instance_set)
+    for ( i=0; i < instance_set.length; i++) {
+      var instance = instance_set[i]
+      results.push({
+        "region": instance.region,
+        "instanceId": instance.instanceId,
+        "privateDnsName": instance.privateDnsName,
+        "tag_set": instance.tag_set
+      })
+    }
+  }
+EOS
+end
+
 script "js_instances_set", type: "javascript" do
   result "results"
   parameters "region"
@@ -386,26 +459,6 @@ script "js_instances_set", type: "javascript" do
     }
   }
 EOS
-end
-
-datasource "ds_cloudwatch_cpu_maximum" do
-  iterate $ds_instances
-  request do
-    run_script $js_cloudwatch_cpu_maximum, val(iter_item, "region"), val(iter_item, "instanceId")
-  end
-  result do
-    encoding "json"
-    collect jmes_path(response, "GetMetricStatisticsResponse.GetMetricStatisticsResult.Datapoints[*]") do
-      field "region", val(iter_item, "region")
-      field "instanceId", val(iter_item, "instanceId")
-      field "privateDnsName", val(iter_item, "privateDnsName")
-      field "tag_set", val(iter_item, "tag_set")
-      field "cpu_unit", jmes_path(col_item,"Unit")
-      field "cpu_maximum", jmes_path(col_item, "Maximum")
-      field "cpu_minimum", jmes_path(col_item, "Minimum")
-      field "cpu_average", jmes_path(col_item, "Average")
-    end
-  end
 end
 
 script "js_cloudwatch_cpu_maximum", type: "javascript" do
@@ -442,26 +495,6 @@ script "js_cloudwatch_cpu_maximum", type: "javascript" do
     }
   }
 EOS
-end
-
-datasource "ds_cloudwatch_disk_usage" do
-  iterate $ds_instances
-  request do
-    run_script $js_cloudwatch_disk_usage, val(iter_item, "region"), val(iter_item, "instanceId"), val(iter_item,"privateDnsName")
-  end
-  result do
-    encoding "json"
-    collect jmes_path(response,"GetMetricStatisticsResponse.GetMetricStatisticsResult.Datapoints[*]") do
-      field "region", val(iter_item, "region")
-      field "instanceId", val(iter_item, "instanceId")
-      field "privateDnsName", val(iter_item, "privateDnsName")
-      field "tag_set", val(iter_item, "tag_set")
-      field "disk_unit", jmes_path(col_item,"Unit")
-      field "disk_maximum", jmes_path(col_item, "Maximum")
-      field "disk_minimum", jmes_path(col_item, "Minimum")
-      field "disk_average", jmes_path(col_item, "Average")
-    end
-  end
 end
 
 script "js_cloudwatch_disk_usage", type: "javascript" do
@@ -514,26 +547,6 @@ script "js_cloudwatch_disk_usage", type: "javascript" do
 EOS
 end
 
-datasource "ds_cloudwatch_mem_usage" do
-  iterate $ds_instances
-  request do
-    run_script $js_cloudwatch_mem_usage, val(iter_item, "region"), val(iter_item, "instanceId"), val(iter_item,"privateDnsName")
-  end
-  result do
-    encoding "json"
-    collect jmes_path(response,"GetMetricStatisticsResponse.GetMetricStatisticsResult.Datapoints[*]") do
-      field "region", val(iter_item, "region")
-      field "instanceId", val(iter_item, "instanceId")
-      field "privateDnsName", val(iter_item, "privateDnsName")
-      field "tag_set", val(iter_item, "tag_set")
-      field "mem_unit", jmes_path(col_item,"Unit")
-      field "mem_maximum", jmes_path(col_item, "Maximum")
-      field "mem_minimum", jmes_path(col_item, "Minimum")
-      field "mem_average", jmes_path(col_item, "Average")
-    end
-  end
-end
-
 script "js_cloudwatch_mem_usage", type: "javascript" do
   result "results"
   parameters "region","instance_id","privateDnsName"
@@ -576,10 +589,6 @@ script "js_cloudwatch_mem_usage", type: "javascript" do
     }
   }
 EOS
-end
-
-datasource "ds_merged_metrics" do
-  run_script $js_merged_metrics, $ds_cloudwatch_cpu_maximum, $ds_cloudwatch_disk_usage, $ds_cloudwatch_mem_usage
 end
 
 script "js_merged_metrics", type: "javascript" do
@@ -638,6 +647,7 @@ end
 ###############################################################################
 # Policy
 ###############################################################################
+
 policy "pol_utilization" do
   validate_each $ds_merged_metrics do
     summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} rows"
