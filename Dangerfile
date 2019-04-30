@@ -19,6 +19,15 @@ if (has_new_policy_template.length != 0) && missing_doc_changes
   fail "A README.md is required for new templates"
 end
 
+# check for param_email and param
+if (has_app_changes.length != 0)
+  has_app_changes.each do |file|
+    if !File.readlines(file).grep(/parameter "param_email" do/).any?
+      fail "should contain param_email to notify users"
+    end
+  end
+end
+
 fail 'Please provide a summary of your Pull Request.' if github.pr_body.length < 10
 
 fail 'Please add labels to this Pull Request' if github.pr_labels.empty?
