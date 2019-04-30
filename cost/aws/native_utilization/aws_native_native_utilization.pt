@@ -289,27 +289,31 @@ datasource "ds_regions_list" do
   run_script $js_regions_map
 end
 
-datasource "ds_instances" do
-  iterate $ds_instances_set
-  run_script $js_instances, val(iter_item, "instances_set")
+datasource "ds_instances" do 
+  run_script $js_instances, $ds_instances_set
 end
 
 script "js_instances", type: "javascript" do
   result "results"
-  parameters "instance_set"
+  parameters "ds_instance_set"
   code <<-EOS
   var results = []
-  for ( i=0; i < instance_set.length; i++) {
-    instance = instance_set[i]
-    results.push({
-      "region": instance.region,
-      "instanceId": instance.instanceId,
-      "privateDnsName": instance.privateDnsName,
-      "tag_set": instance.tag_set
-    })
+  for ( n=0; n < ds_instance_set.length; n++) {
+    var instance_set = ds_instance_set[n].instances_set
+    console.log(instance_set)
+    for ( i=0; i < instance_set.length; i++) {
+      var instance = instance_set[i]
+      results.push({
+        "region": instance.region,
+        "instanceId": instance.instanceId,
+        "privateDnsName": instance.privateDnsName,
+        "tag_set": instance.tag_set
+      })
+    }
   }
 EOS
 end
+
 datasource "ds_instances_set" do
   iterate $ds_regions_list
   request do
@@ -439,20 +443,209 @@ script "js_cloudwatch_cpu_maximum", type: "javascript" do
 EOS
 end
 
+datasource "ds_cloudwatch_disk_usage" do
+  iterate $ds_instances
+  request do
+    run_script $js_cloudwatch_disk_usage, val(iter_item, "region"), val(iter_item, "instanceId"), val(iter_item,"privateDnsName")
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response,"GetMetricStatisticsResponse.GetMetricStatisticsResult.Datapoints[*]") do
+      field "region", val(iter_item, "region")
+      field "instanceId", val(iter_item, "instanceId")
+      field "privateDnsName", val(iter_item, "privateDnsName")
+      field "tag_set", val(iter_item, "tag_set")
+      field "disk_unit", jmes_path(col_item,"Unit")
+      field "disk_maximum", jmes_path(col_item, "Maximum")
+      field "disk_minimum", jmes_path(col_item, "Minimum")
+      field "disk_average", jmes_path(col_item, "Average")
+    end
+  end
+end
+
+script "js_cloudwatch_disk_usage", type: "javascript" do
+  result "results"
+  parameters "region","instance_id","privateDnsName"
+  code <<-EOS
+  var end_date = new Date().toISOString()
+  var start_date = new Date(new Date().setDate(new Date().getDate() - 30)).toISOString();
+  console.log(privateDnsName)
+  console.log(privateDnsName.length)
+  if (privateDnsName != null && privateDnsName !== undefined && privateDnsName.length != 0) {
+    var hostname = privateDnsName.split('.')[0]
+  } else {
+    var hostname = "ip-127-0-0-1"
+  }
+  console.log(hostname)
+  results = {
+    "auth": "monitoring_auth_"+region.replace(/-/g,"_"),
+    "host": 'monitoring.'+region+'.amazonaws.com',
+    "verb": "GET",
+    "path": "/",
+    "headers": {
+      "User-Agent": "RS Policies",
+      "Content-Type": "application/json",
+      "x-amz-target": "GraniteServiceVersion20100801.GetMetricStatistics",
+      "Accept": "application/json",
+      "Content-Encoding": "amz-1.0"
+    }
+    "query_params": {
+      'Action': 'GetMetricStatistics',
+      'Version': '2010-08-01',
+      'Namespace': 'CWAgent',
+      'MetricName': 'disk_used_percent',
+      'Dimensions.member.1.Name': 'host',
+      'Dimensions.member.1.Value': hostname,
+      'Dimensions.member.2.Name': 'device',
+      'Dimensions.member.2.Value': 'xvda1',
+      'Dimensions.member.3.Name': 'fstype',
+      'Dimensions.member.3.Value': 'ext4',
+      'Dimensions.member.4.Name': 'path',
+      'Dimensions.member.4.Value': '/',
+      'StartTime': start_date,
+      'EndTime': end_date,
+      'Period': "2592000",
+      'Statistics.member.1': 'Maximum',
+      'Statistics.member.2': 'Average',
+      'Statistics.member.3': 'Minimum'
+    }
+  }
+EOS
+end
+
+datasource "ds_cloudwatch_mem_usage" do
+  iterate $ds_instances
+  request do
+    run_script $js_cloudwatch_mem_usage, val(iter_item, "region"), val(iter_item, "instanceId"), val(iter_item,"privateDnsName")
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response,"GetMetricStatisticsResponse.GetMetricStatisticsResult.Datapoints[*]") do
+      field "region", val(iter_item, "region")
+      field "instanceId", val(iter_item, "instanceId")
+      field "privateDnsName", val(iter_item, "privateDnsName")
+      field "tag_set", val(iter_item, "tag_set")
+      field "mem_unit", jmes_path(col_item,"Unit")
+      field "mem_maximum", jmes_path(col_item, "Maximum")
+      field "mem_minimum", jmes_path(col_item, "Minimum")
+      field "mem_average", jmes_path(col_item, "Average")
+    end
+  end
+end
+
+script "js_cloudwatch_mem_usage", type: "javascript" do
+  result "results"
+  parameters "region","instance_id","privateDnsName"
+  code <<-EOS
+  console.log(privateDnsName)
+  console.log(privateDnsName.length)
+  if (privateDnsName != null && privateDnsName !== undefined && privateDnsName.length != 0) {
+    var hostname = privateDnsName.split('.')[0]
+  } else {
+    var hostname = "ip-127-0-0-1"
+  }
+  console.log(hostname)
+  var end_date = new Date().toISOString()
+  var start_date = new Date(new Date().setDate(new Date().getDate() - 30)).toISOString();
+  results = {
+    "auth": "monitoring_auth_"+region.replace(/-/g,"_"),
+    "host": 'monitoring.'+region+'.amazonaws.com',
+    "verb": "GET",
+    "path": "/",
+    "headers": {
+      "User-Agent": "RS Policies",
+      "Content-Type": "application/json",
+      "x-amz-target": "GraniteServiceVersion20100801.GetMetricStatistics",
+      "Accept": "application/json",
+      "Content-Encoding": "amz-1.0"
+    }
+    "query_params": {
+      'Action': 'GetMetricStatistics',
+      'Version': '2010-08-01',
+      'Namespace': 'CWAgent',
+      'MetricName': 'mem_used_percent',
+      'Dimensions.member.1.Name': 'host',
+      'Dimensions.member.1.Value': hostname,
+      'StartTime': start_date,
+      'EndTime': end_date,
+      'Period': "2592000",
+      'Statistics.member.1': 'Maximum',
+      'Statistics.member.2': 'Average',
+      'Statistics.member.3': 'Minimum'
+    }
+  }
+EOS
+end
+
+datasource "ds_merged_metrics" do
+  run_script $js_merged_metrics, $ds_cloudwatch_cpu_maximum, $ds_cloudwatch_disk_usage, $ds_cloudwatch_mem_usage
+end
+
+script "js_merged_metrics", type: "javascript" do
+  parameters "ds_cloudwatch_cpu_maximum", "ds_cloudwatch_disk_usage", "ds_cloudwatch_mem_usage"
+  result "merged_results"
+code <<-EOS
+  var merged_results = []
+  for ( i = 0; i < ds_cloudwatch_cpu_maximum.length; i++){
+    var instance_id = ds_cloudwatch_cpu_maximum[i].instanceId
+    console.log(instance_id)
+    var disk_usage_record = _.find(ds_cloudwatch_disk_usage, function(record) { return record.instanceId == instance_id; })
+    console.log(disk_usage_record)
+    if (disk_usage_record != null && disk_usage_record !== undefined) {
+      var disk_maximum = parseFloat(disk_usage_record.disk_maximum).toFixed(2)
+      var disk_average = parseFloat(disk_usage_record.disk_average).toFixed(2)
+      var disk_minimum = parseFloat(disk_usage_record.disk_minimum).toFixed(2)
+    } else {
+      var disk_maximum = "N/A"
+      var disk_average = "N/A"
+      var disk_minimum = "N/A"
+    }
+    var mem_usage_record = _.find(ds_cloudwatch_mem_usage, function(record) { return record.instanceId == instance_id; })
+    console.log(mem_usage_record)
+    if (mem_usage_record != null && mem_usage_record !== undefined) {
+      var mem_maximum = parseFloat(mem_usage_record.mem_maximum).toFixed(2)
+      var mem_average = parseFloat(mem_usage_record.mem_average).toFixed(2)
+      var mem_minimum = parseFloat(mem_usage_record.mem_minimum).toFixed(2)
+    } else {
+      var mem_maximum = "N/A"
+      var mem_average = "N/A"
+      var mem_minimum = "N/A"
+    }
+    merged_results.push(
+      {
+        "region": ds_cloudwatch_cpu_maximum[i].region,
+        "instanceId": ds_cloudwatch_cpu_maximum[i].instanceId,
+        "privateDnsName": ds_cloudwatch_cpu_maximum[i].privateDnsName,
+        "hostname": ds_cloudwatch_cpu_maximum[i].privateDnsName.split('.')[0],
+        "tag_set": ds_cloudwatch_cpu_maximum[i].tag_set,
+        "cpu_minimum": parseFloat(ds_cloudwatch_cpu_maximum[i].cpu_minimum).toFixed(2),
+        "cpu_maximum": parseFloat(ds_cloudwatch_cpu_maximum[i].cpu_maximum).toFixed(2),
+        "cpu_average": parseFloat(ds_cloudwatch_cpu_maximum[i].cpu_average).toFixed(2),
+        "disk_maximum": disk_maximum,
+        "disk_average": disk_average,
+        "disk_minimum": disk_minimum,
+        "mem_maximum": mem_maximum,
+        "mem_minimum": mem_minimum,
+        "mem_average": mem_average
+      }
+    )
+  }
+EOS
+end
+
+
 ###############################################################################
 # Policy
 ###############################################################################
 policy "pol_utilization" do
-  validate_each $ds_cloudwatch_cpu_maximum do
+  validate_each $ds_merged_metrics do
     summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} rows"
     detail_template <<-EOS
 # AWS Utilization
-| Region | instanceID | CPU Maximum  | CPU Minimum  | CPU Average |
-| ------ | ---------- | ------------ | ------------ | ----------- |
+| Region | instanceID | Hostname | Private DNS Name | CPU Maximum  | CPU Minimum  | CPU Average | Disk Maximum | Disk Minimum | Disk Average | Memory Minimum | Memory Maximum | Memory Average |
+| ------ | ---------- | -------- | ---------------- | ------------ | ------------ | ----------- | ------------ | ------------ | ------------ | -------------- | -------------- | -------------- |
 {{ range data -}}
-{{ range .instances_set -}}
-| {{.region}} | {{.instanceId}} | {{ .cpu_maximum }} | {{.cpu_minimum}} | {{ .cpu_average }} |
-{{ end -}}
+| {{.region}} | {{.instanceId}} | {{.hostname}} |  {{.privateDnsName }} | {{ .cpu_maximum }} | {{.cpu_minimum}} | {{ .cpu_average }} | {{.disk_maximum}} | {{.disk_minimum}} | {{.disk_average}} | {{.mem_minimum}} | {{.mem_maximum}} | {{.mem_average}} |
 {{ end -}}
 ___
 ###### Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }}) within Org: {{ rs_org_name }} (Org ID: {{ rs_org_id }})
