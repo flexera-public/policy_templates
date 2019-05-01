@@ -1,14 +1,12 @@
-## GitHub.com Unprotected Branches
+## GitHub.com Repositories without Admin Team
 
 ### What it does
 
-This Policy Template gets the top-level / parent Teams for a GitHub.com Org and creates an incident if any do not match the whitelisted values.
+This Policy Template gets all the repositories under GitHub.com Organization(s) and creates an incident if any do not have at least 1 Team assigned with `admin` role.  When this requirement is in place, it's easy to identify the responsible owners / team for any given repository.
 
 ### Parameters
 1. GitHub.com Organizations to check - Example: `flexera`
-2. Branches that should be protected - Example: `master`
-3. Repositories that are whitelisted from the policy - Example: `flexera/repository-name`
-4. Email address to send escalation emails to - Example: `noreply@example.com`
+2. Email address to send escalation emails to - Example: `noreply@example.com`
 
 
 ### Policy Actions

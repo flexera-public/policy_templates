@@ -1,4 +1,4 @@
-## GitHub.com Repository Naming
+## GitHub.com Unpermitted Repository Names
 
 ### What it does
 
