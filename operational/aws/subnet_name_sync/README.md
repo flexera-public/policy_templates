@@ -1,4 +1,4 @@
-## AWS Subnet Name Sync
+## AWS Subnet Name Tag Sync Policy Template
 
 ### What it does
 

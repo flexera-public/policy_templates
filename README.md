@@ -23,6 +23,8 @@ Please contact sales@rightscale.com to learn more.
 - [Azure Reserved Instance Utilization](./cost/azure/reserved_instances/utilization/)
 - [Billing Center Cost Anomaly](./cost/billing_center_cost_anomaly/)
 - [Google Committed Use Discount (CUD) Report](./cost/google/cud_report/)
+- [AWS Delete Unused Elastic Load Balancers (CLB)](./cost/aws/elb/clb_unused/)
+- [Cheaper Regions](./cost/cheaper_regions/)
 
 ### Security
 - [Security Group: ICMP Enabled](./security/security_groups/icmp_enabled/)
@@ -44,6 +46,7 @@ Please contact sales@rightscale.com to learn more.
 - [GitHub.com Unpermitted Sized Repositories](./compliance/github/repository_size/)
 - [GitHub.com Repository Branches without Protection](./compliance/github/repository_branch_protection/)
 - [GitHub.com Repositories without Admin Team](./compliance/github/repository_admin_team/)
+- [AWS Unused ECS Clusters](./compliance/aws/ecs_unused/)
 
 ### Operational
 - [AWS Cloud Credentials Rotation Policy](./operational/cloud_credentials/aws)
