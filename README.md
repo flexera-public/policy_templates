@@ -24,6 +24,7 @@ Please contact sales@rightscale.com to learn more.
 - [Billing Center Cost Anomaly](./cost/billing_center_cost_anomaly/)
 - [Google Committed Use Discount (CUD) Report](./cost/google/cud_report/)
 - [Cheaper Regions](./cost/cheaper_regions/)
+- [AWS Instance CloudWatch Utilization](./cost/aws/instance_cloudwatch_utilization/)
 
 ### Security
 - [Security Group: ICMP Enabled](./security/security_groups/icmp_enabled/)
