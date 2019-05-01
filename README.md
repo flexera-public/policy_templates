@@ -43,7 +43,7 @@ Please contact sales@rightscale.com to learn more.
 - [GitHub.com Unpermitted Top-Level Teams](./compliance/github/toplevel_teams/)
 - [GitHub.com Unpermitted Sized Repositories](./compliance/github/repository_size/)
 - [GitHub.com Repository Branches without Protection](./compliance/github/repository_branch_protection/)
-- [GitHub.com Repositories without Admin Team"](./compliance/github/repository_admin_team/)
+- [GitHub.com Repositories without Admin Team](./compliance/github/repository_admin_team/)
 
 ### Operational
 - [AWS Cloud Credentials Rotation Policy](./operational/cloud_credentials/aws)
