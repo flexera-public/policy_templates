@@ -1,0 +1,117 @@
+name "Google Instance StackDriver Utilization"
+rs_pt_ver 20180301
+type "policy"
+short_description "Checks Google Regions and reports on StackDriver Utilization. See the [README](https://github.com/rightscale/policy_templates/tree/master/cost/google/instance_stackdriver_utilization/) and [docs.rightscale.com/policies](http://docs.rightscale.com/policies/) to learn more."
+long_description "Version: 1.0"
+severity "low"
+category "Cost"
+
+###############################################################################
+# Permissions
+###############################################################################
+
+permission "perm_read_creds" do
+  actions   "rs_cm.show_sensitive","rs_cm.index_sensitive"
+  resources "rs_cm.credentials"
+end
+
+###############################################################################
+# Parameters
+###############################################################################
+
+parameter "param_email" do
+  type "list"
+  label "Email addresses to notify"
+  description "Email addresses of the recipients you wish to notify when new incidents are created"
+end
+
+parameter "param_google_project" do
+  type "string"
+  label "Google Cloud Project"
+  allowed_pattern /^[0-9a-z:\.-]+$/
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+auth "auth_google", type: "oauth2" do
+  token_url "https://www.googleapis.com/oauth2/v4/token"
+  grant type: "jwt_bearer" do
+    iss cred("GCE_PLUGIN_ACCOUNT")
+    aud "https://www.googleapis.com/oauth2/v4/token"
+    additional_claims do {
+      "scope" => "https://www.googleapis.com/auth/monitoring.write https://www.googleapis.com/auth/cloud-platform https://www.googleapis.com/auth/monitoring.read https://www.googleapis.com/auth/monitoring"
+    } end
+    signing_key cred("GCE_PLUGIN_PRIVATE_KEY")
+  end
+end
+
+###############################################################################
+# Pagination
+###############################################################################
+pagination "google_pagination" do
+  get_page_marker do
+    body_path "{{nextPageToken}}"
+  end
+  set_page_marker do
+    query "pageToken"
+  end
+end
+
+###############################################################################
+# Datasources
+###############################################################################
+
+datasource "ds_compute_utilization" do
+  request do
+    auth $auth_google
+    host "monitoring.googleapis.com"
+    path join(["/v3/projects/",to_s($param_google_project),"/timeSeries/"])
+    query "filter", "metric.type=\"compute.googleapis.com/instance/cpu/utilization\""
+    query "interval.endTime", "2019-05-01T00:00:00.000000Z"
+    query "interval.startTime", "2019-01-01T00:00:00.000000Z"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "timeSeries[*]") do
+      field "instance_id", jmes_path(col_item, "resource.labels.instance_id")
+      field "zone", jmes_path(col_item, "resource.labels.zone")
+    end
+  end
+end
+
+###############################################################################
+# Scripts
+###############################################################################
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "pol_utilization" do
+  validate_each $ds_compute_utilization do
+    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} rows containing AWS instance CloudWatch utilization data"
+    detail_template <<-EOS
+# AWS Instance Utilization
+| Region | instanceID | Hostname | Private DNS Name | CPU Maximum % | CPU Minimum % | CPU Average % | Disk Maximum % | Disk Minimum % | Disk Average % | Memory Minimum % | Memory Maximum % | Memory Average % |
+| ------ | ---------- | -------- | ---------------- | ------------- | ------------- | ------------- | -------------- | -------------- | -------------- | ---------------- | ---------------- | ---------------- |
+{{ range data -}}
+| {{.zone}} | {{.instance_id}} | {{.hostname}} |  {{.privateDnsName }} | {{ .cpu_maximum }} | {{.cpu_minimum}} | {{ .cpu_average }} | {{.disk_maximum}} | {{.disk_minimum}} | {{.disk_average}} | {{.mem_minimum}} | {{.mem_maximum}} | {{.mem_average}} |
+{{ end -}}
+___
+###### Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }}) within Org: {{ rs_org_name }} (Org ID: {{ rs_org_id }})
+EOS
+    check eq(0,1)
+    escalate $email
+  end
+end
+
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "email" do
+  email $param_email
+end
