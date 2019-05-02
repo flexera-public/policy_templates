@@ -41,6 +41,7 @@ Please contact sales@rightscale.com to learn more.
 - [Azure: Tag Resources with Resource Group Name](./compliance/tags/azure_rg_tags)
 - [Billing Center Access Report](./compliance/billing_center_access_report/)
 - [GitHub.com Available Seats](./compliance/github/available_seats/)
+- [AWS Unused ECS Clusters](./compliance/aws/ecs_unused/)
 
 ### Operational
 - [AWS Cloud Credentials Rotation Policy](./operational/cloud_credentials/aws)
