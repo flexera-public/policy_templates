@@ -85,7 +85,7 @@ datasource "ds_compute_utilization" do
 end
 
 datasource "ds_calculated_utilization" do
-  run_script $js_calculated_utilization, $ds_compute_utilization, $ds_memory_utilization
+  run_script $js_calculated_utilization, $ds_compute_utilization, $ds_memory_utilization, $ds_disk_utilization
 end
 
 datasource "ds_add_instance_data" do
@@ -97,7 +97,7 @@ datasource "ds_add_instance_data" do
     encoding "json"
     collect jmes_path(response,"items[*]") do
       field "instance_id", val(iter_item, "instance_id")
-      field "hostname", jmes_path(col_item,"name")
+      field "hostname", jmes_path(col_item,"name || instance_id")
       field "selfLink", jmes_path(col_item, "selfLink")
       field "label_instance_name",val(iter_item, "label_instance_name")
       field "zone", val(iter_item, "zone")
@@ -108,6 +108,9 @@ datasource "ds_add_instance_data" do
       field "mem_average", val(iter_item, "mem_average")
       field "mem_maximum", val(iter_item, "mem_maximum")
       field "mem_minimum", val(iter_item, "mem_minimum")
+      field "disk_average", val(iter_item, "disk_average")
+      field "disk_maximum", val(iter_item, "disk_maximum")
+      field "disk_minimum", val(iter_item, "disk_minimum")
     end
   end
 end
@@ -133,13 +136,35 @@ datasource "ds_memory_utilization" do
   end
 end
 
+datasource "ds_disk_utilization" do
+  request do
+    auth $auth_google
+    host "monitoring.googleapis.com"
+    path join(["/v3/projects/",to_s($param_google_project),"/timeSeries/"])
+    query "filter", "metric.type=\"agent.googleapis.com/disk/percent_used\" AND metric.label.state=used"
+    query "interval.endTime", "2019-05-03T00:00:00.000000Z"
+    query "interval.startTime", "2019-05-01T00:00:00.000000Z"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "timeSeries[*]") do
+      field "label_instance_name", jmes_path(col_item, "metric.labels.instance_name")
+      field "instance_id", jmes_path(col_item, "resource.labels.instance_id")
+      field "zone", jmes_path(col_item, "resource.labels.zone")
+      # field "avg_points", jmes_path(col_item,"points[].[avg(@),value.doubleValue]")
+      field "points", jmes_path(col_item,"points[*].value.doubleValue")
+    end
+  end
+end
+
+
 ###############################################################################
 # Scripts
 ###############################################################################
 
 script "js_calculated_utilization", type: "javascript" do
   result "results"
-  parameters "ds_compute_utilization", "ds_memory_utilization"
+  parameters "ds_compute_utilization", "ds_memory_utilization", "ds_disk_utilization"
   code <<-EOS
      results = []
      for ( i =0; i < ds_compute_utilization.length; i++ ){
@@ -151,13 +176,24 @@ script "js_calculated_utilization", type: "javascript" do
        var memory_record = _.find(ds_memory_utilization, function(record) { return record.instance_id == instance_id; })
        if (memory_record != null && memory_record !== undefined) {
         var memory_points = memory_record.points
-        var memory_average = memory_points.reduce(function(acc, val) { return acc + val; })/memory_points.length;
-        var memory_maximum = Math.max.apply(Math,memory_points)
-        var memory_minimum = Math.min.apply(Math,memory_points)
+        var memory_average = parseFloat(memory_points.reduce(function(acc, val) { return acc + val; })/memory_points.length).toFixed(2);
+        var memory_maximum = parseFloat(Math.max.apply(Math,memory_points)).toFixed(2)
+        var memory_minimum = parseFloat(Math.min.apply(Math,memory_points)).toFixed(2)
        } else {
-        var mem_maximum = "N/A"
-        var mem_average = "N/A"
-        var mem_minimum = "N/A"
+        var memory_maximum = "N/A"
+        var memory_average = "N/A"
+        var memory_minimum = "N/A"
+       }
+       var disk_record = _.find(ds_disk_utilization, function(record) { return record.instance_id == instance_id; })
+       if (disk_record != null && disk_record !== undefined) {
+        var disk_points = disk_record.points
+        var disk_average = parseFloat(disk_points.reduce(function(acc, val) { return acc + val; })/disk_points.length).toFixed(2);
+        var disk_maximum = parseFloat(Math.max.apply(Math,disk_points)).toFixed(2)
+        var disk_minimum = parseFloat(Math.min.apply(Math,disk_points)).toFixed(2)
+       } else {
+        var disk_maximum = "N/A"
+        var disk_average = "N/A"
+        var disk_minimum = "N/A"
        }
        results.push(
          {
@@ -168,9 +204,12 @@ script "js_calculated_utilization", type: "javascript" do
            cpu_average: parseFloat(cpu_average).toFixed(2),
            cpu_maximum: parseFloat(cpu_maximum).toFixed(2),
            cpu_minimum: parseFloat(cpu_minimum).toFixed(2),
-           mem_average: parseFloat(memory_average).toFixed(2),
-           mem_maximum: parseFloat(memory_maximum).toFixed(2),
-           mem_minimum: parseFloat(memory_minimum).toFixed(2)
+           mem_average: memory_average,
+           mem_maximum: memory_maximum,
+           mem_minimum: memory_minimum,
+           disk_average: disk_average,
+           disk_maximum: disk_maximum,
+           disk_minimum: disk_minimum
          }
        )
      }
@@ -208,7 +247,7 @@ policy "pol_utilization" do
 | Region | instanceID | Hostname | CPU Maximum % | CPU Minimum % | CPU Average % | Disk Maximum % | Disk Minimum % | Disk Average % | Memory Minimum % | Memory Maximum % | Memory Average % |
 | ------ | ---------- | -------- | ------------- | ------------- | ------------- | -------------- | -------------- | -------------- | ---------------- | ---------------- | ---------------- |
 {{ range data -}}
-| {{.zone}} | {{.instance_id}} | {{.hostname}} | {{ .cpu_maximum }} | {{.cpu_minimum}} | {{ .cpu_average }} | {{.disk_maximum}} | {{.disk_minimum}} | {{.disk_average}} | {{.mem_minimum}} | {{.mem_maximum}} | {{.mem_average}} |
+| {{.zone}} | {{.instance_id}} | {{if .hostname}} {{.hostname}} {{ else }} {{.instance_id}} {{end}} | {{ .cpu_maximum }} | {{.cpu_minimum}} | {{ .cpu_average }} | {{.disk_maximum}} | {{.disk_minimum}} | {{.disk_average}} | {{.mem_minimum}} | {{.mem_maximum}} | {{.mem_average}} |
 {{ end -}}
 ___
 ###### Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }}) within Org: {{ rs_org_name }} (Org ID: {{ rs_org_id }})
