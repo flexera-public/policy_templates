@@ -2,7 +2,7 @@
 
 ### What it does
 
-This Policy Template gathers Google StackDriver utilization for instances on 30 day intervals
+This Policy Template gathers Google StackDriver utilization for instances on 30 day intervals. This is meant to be run as a monthly policy. 
 
 ### Cloud Management Required Permissions/Google Required Permissions
 - Cloud Management - The `credential_viewer`,`observer` roles
