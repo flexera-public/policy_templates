@@ -1,7 +1,7 @@
-name "Google Instance StackDriver Utilization"
+name "Google Instances StackDriver Utilization"
 rs_pt_ver 20180301
 type "policy"
-short_description "Checks Google Regions and reports on StackDriver Utilization. See the [README](https://github.com/rightscale/policy_templates/tree/master/cost/google/instance_stackdriver_utilization/) and [docs.rightscale.com/policies](http://docs.rightscale.com/policies/) to learn more."
+short_description "Gathers Google StackDriver utilization for instances on 30 day intervals. See the [README](https://github.com/rightscale/policy_templates/tree/master/cost/google/instance_stackdriver_utilization/) and [docs.rightscale.com/policies](http://docs.rightscale.com/policies/) to learn more."
 long_description "Version: 1.0"
 severity "low"
 category "Cost"
@@ -115,12 +115,7 @@ end
 
 datasource "ds_memory_utilization" do
   request do
-    auth $auth_google
-    host "monitoring.googleapis.com"
-    path join(["/v3/projects/",to_s($param_google_project),"/timeSeries/"])
-    query "filter", "metric.type=\"agent.googleapis.com/memory/percent_used\" AND metric.label.state=used"
-    query "interval.endTime", "2019-05-03T00:00:00.000000Z"
-    query "interval.startTime", "2019-05-01T00:00:00.000000Z"
+    run_script $js_request_memory_utilization, $param_google_project
   end
   result do
     encoding "json"
@@ -138,12 +133,7 @@ end
 
 datasource "ds_disk_utilization" do
   request do
-    auth $auth_google
-    host "monitoring.googleapis.com"
-    path join(["/v3/projects/",to_s($param_google_project),"/timeSeries/"])
-    query "filter", "metric.type=\"agent.googleapis.com/disk/percent_used\" AND metric.label.state=used"
-    query "interval.endTime", "2019-05-03T00:00:00.000000Z"
-    query "interval.startTime", "2019-05-01T00:00:00.000000Z"
+    run_script $js_request_disk_utilization, $param_google_project
   end
   result do
     encoding "json"
@@ -182,6 +172,44 @@ script "js_request_compute_utilization", type: "javascript" do
 EOF
 end
 
+script "js_request_memory_utilization", type: "javascript" do
+  result "request"
+  parameters "param_google_project"
+  code <<-EOF
+  var end_date = new Date().toISOString()
+  var start_date = new Date(new Date().setDate(new Date().getDate() - 30)).toISOString()
+  request = {
+    "auth": "auth_google",
+    "host": "monitoring.googleapis.com",
+    "path": "/v3/projects/"+param_google_project+"/timeSeries/",
+    "query_params": {
+      "filter": 'metric.type="agent.googleapis.com/memory/percent_used" AND metric.label.state=used',
+      "interval.endTime": end_date,
+      "interval.startTime": start_date,
+    }
+  }
+EOF
+end
+
+script "js_request_disk_utilization", type: "javascript" do
+  result "request"
+  parameters "param_google_project"
+  code <<-EOF
+  var end_date = new Date().toISOString()
+  var start_date = new Date(new Date().setDate(new Date().getDate() - 30)).toISOString()
+  request = {
+    "auth": "auth_google",
+    "host": "monitoring.googleapis.com",
+    "path": "/v3/projects/"+param_google_project+"/timeSeries/",
+    "query_params": {
+      "filter": 'metric.type="agent.googleapis.com/disk/percent_used" AND metric.label.state=used',
+      "interval.endTime": end_date,
+      "interval.startTime": start_date,
+    }
+  }
+EOF
+end
+
 script "js_calculated_utilization", type: "javascript" do
   result "results"
   parameters "ds_compute_utilization", "ds_memory_utilization", "ds_disk_utilization"
@@ -190,9 +218,6 @@ script "js_calculated_utilization", type: "javascript" do
      for ( i =0; i < ds_compute_utilization.length; i++ ){
        var instance_id = ds_compute_utilization[i].instance_id
        var points = ds_compute_utilization[i].points
-       var cpu_average = points.reduce(function(acc, val) { return acc + val; })/points.length;
-       var cpu_maximum = Math.max.apply(Math,points)
-       var cpu_minimum = Math.min.apply(Math,points)
        var memory_record = _.find(ds_memory_utilization, function(record) { return record.instance_id == instance_id; })
        if (memory_record != null && memory_record !== undefined) {
         var memory_points = memory_record.points
@@ -221,9 +246,9 @@ script "js_calculated_utilization", type: "javascript" do
            instance_id: instance_id,
            points: points,
            label_instance_name: ds_compute_utilization[i].label_instance_name,
-           cpu_average: parseFloat(cpu_average).toFixed(2),
-           cpu_maximum: parseFloat(cpu_maximum).toFixed(2),
-           cpu_minimum: parseFloat(cpu_minimum).toFixed(2),
+           cpu_average: parseFloat(ds_compute_utilization[i].avg_cpu_points).toFixed(2),
+           cpu_maximum: parseFloat(ds_compute_utilization[i].max_cpu_points).toFixed(2),
+           cpu_minimum: parseFloat(ds_compute_utilization[i].min_cpu_points).toFixed(2),
            mem_average: memory_average,
            mem_maximum: memory_maximum,
            mem_minimum: memory_minimum,

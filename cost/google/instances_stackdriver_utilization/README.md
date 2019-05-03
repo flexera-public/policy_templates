@@ -2,16 +2,16 @@
 
 ### What it does
 
-This Policy Template gets StackDriver data for instances in google cloud
+This Policy Template gathers Google StackDriver utilization for instances on 30 day intervals
 
-### Cloud Management Required Permissions/AWS Required Permissions
+### Cloud Management Required Permissions/Google Required Permissions
 - Cloud Management - The `credential_viewer`,`observer` roles
 - Cloud Management - The `policy_designer`, `policy_manager` & `policy_publisher` roles
 - Google - The `Monitoring Viewer ` Role
 
 ### Functional Details
 
-- This policy uses RightScale to get a list of instances, it then polls google StackDriver for metrics for instance performance and delivers a report. If you get an **N/A** in a field you will need to install the [StackDriver Agent](https://cloud.google.com/monitoring/agent/install-agent) on the instance to get those metrics. 
+- This policy uses RightScale to get a list of instances, it then polls Google StackDriver for metrics for instance performance and delivers a report. If you get an **N/A** in a field you will need to install the [StackDriver Agent](https://cloud.google.com/monitoring/agent/install-agent) on the instance to get those metrics. 
 
 #### Input Parameters
 
