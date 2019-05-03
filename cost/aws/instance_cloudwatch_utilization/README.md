@@ -2,7 +2,7 @@
 
 ### What it does
 
-This Policy Template checks aws regions configured in RightScale and gets CloudWatch data for instances on 30 day intervals. This is meant to be run as a monthly policy. 
+This Policy Template gathers AWS CloudWatch data for instances on 30 day intervals. This is meant to be run as a monthly policy. 
 
 ### Cloud Management Required Permissions/AWS Required Permissions
 - Cloud Management - The `credential_viewer`,`observer` roles
