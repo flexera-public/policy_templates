@@ -1,0 +1,314 @@
+name "Schedule Instances"
+rs_pt_ver 20180301
+type "policy"
+short_description "A policy that start and stops instances based on a schedule. \n See [README](https://github.com/rightscale/policy_templates/tree/master/cost/schedule_instances) for more details"
+long_description "Version: 1.5"
+severity "medium"
+category "Cost"
+
+parameter "param_email" do
+  type "list"
+  label "Email addresses of the recipients you wish to notify"
+end
+
+permission "retrieve_resources" do
+  label "Retrieve Resources"
+  actions   "rs_cm.*"
+  resources "rs_cm.instances","rs_cm.clouds"
+end
+
+permission "tags" do
+  label "Manage Tags"
+  actions   "rs_cm.multi_add"
+  resources "rs_cm.tags"
+end
+
+auth "rs", type: "rightscale"
+
+#all clouds
+resources "clouds", type: "rs_cm.clouds"
+
+#all instances operational or provisioned
+resources "instances", type: "rs_cm.instances" do
+  iterate @clouds
+  cloud_href            href(iter_item)
+  tags                  "instance:schedule=*"
+end
+
+datasource "instances" do
+  iterate @instances
+  field "href",        href(iter_item)
+  field "id",          val(iter_item,'resource_uid')
+  field "name",        val(iter_item,'name')
+  field "state",       val(iter_item,'state')
+  field "type",        "instances"
+  field "tags",        val(iter_item,'tags')
+end
+
+datasource "clouds" do
+  iterate @clouds
+  field "href",         href(iter_item)
+  field "type",         val(iter_item,'cloud_type')
+  field "name",         val(iter_item,'name')
+end
+
+datasource "filtered_instances" do
+  run_script $js_instance_tags, $instances, $clouds
+end
+
+script "js_instance_tags", type: "javascript" do
+  parameters "instances","clouds"
+  result "filtered_instances"
+  code <<-EOS
+  // This is the list of filtered volumes.
+  var filtered_instances = [];
+  var date = new Date();
+  var timestamp = date.getTime();
+
+  // create a map of clouds with href key to get type and name
+  var cloud_map = {}
+  for (var i = 0; i < clouds.length; i++) {
+      var cloud = clouds[i]
+      cloud_map[cloud['href']]={'type': cloud['type'],'name': cloud['name']}
+  }
+
+/*  var instance_map = {}
+  for (var i = 0; i < instances.length; i++) {
+      var instance = instances[i]
+      instance_map[instance['href']]={
+        'state': instance['state'],
+        'name': instance['name'],
+        'id': instance['id'],
+        'tags': instance['tags']
+      }
+  } */
+
+  // create a map of tags with instance href
+  /* var tags = {};
+  for (var i = 0; i < instance_tags.length; i++) {
+    rt = instance_tags[i]
+    for (var j = 0; j < rt['links'].length; j++) {
+      link = rt['links'][j]
+      if (link['rel'] == 'resource') {
+        tags[link['href']] = rt['tags']
+      }
+    }
+  } */
+
+  // This is the map of resource href to its tags.
+  for (var i = 0; i < instances.length; i++) {
+    var instance = instances[i]
+    var split = instance['href'].split('/')
+    var index = instance['href'].indexOf('/' + split[4])
+    var cloud_href = instance['href'].substring(0,index)
+    var action='n/a';
+    var state = instance['state'];
+    var now = new Date()
+    var active = false
+    var next_start = null
+    var next_stop = null
+
+    for (var t = 0; t < instance['tags'].length; t++) {
+      tag = instance['tags'][t]
+      tag_key = tag.split("=")[0]
+      tag_value = tag.split("=")[1]
+      if (tag_key === 'instance:schedule'){
+        schedule = tag_value
+      }
+      if (tag_key === 'instance:next_start'){
+        var next_start = new Date(tag_value)
+      }
+      if (tag_key === 'instance:next_stop'){
+        var next_stop = new Date(tag_value)
+      }
+    }
+
+    // force active to intialized the next_stop and next_start tags
+    if ( next_stop == null || next_start == null  ){
+      active = true
+    }
+    // test if it's time to start or stop
+    if (now > next_stop || now > next_start) {
+      active = true
+    }
+
+    // create object of instances
+    if (active) {
+      filtered_instances.push({
+          id: instance['id'],
+          name: instance['name'],
+          state: instance['state'],
+          href: instance['href'],
+          cloud_name: cloud_map[cloud_href]['name'],
+          cloud_type: cloud_map[cloud_href]['type'],
+          schedule: schedule
+        })
+    }
+  }
+  EOS
+end
+
+# only send email, if email is not provided this escalation is skipped
+escalation "send_email" do
+  email $param_email
+end
+
+# run the stop/start action on instances.
+escalation "stop_start_instances" do
+  run "schedule_instances", data
+end
+
+policy "instance_scheduler" do
+  validate $filtered_instances do
+    summary_template "Schedule Instance Policy"
+    detail_template <<-EOS
+There are {{ len data }} instance(s) managed by this policy.
+
+| Name | State | Cloud | Href | Schedule | 
+| ---- | ----- | ----- | ---- | -------- | 
+{{ range data -}}
+| {{ .name }} | {{ .state }} | {{ .cloud_name }} | {{ .href }} | {{ .schedule }} |
+{{ end -}}
+EOS
+    escalate $send_email
+    escalate $stop_start_instances
+    check eq(size(data), 0)
+  end
+end
+
+define schedule_instances($data) do
+  $$debug = true
+  call sys_log('schedule_instances','start')
+  call sys_log('data',to_s($data))
+  # set the counters and action stores
+  $stop_count = 0
+  $start_count = 0
+  $locked_count = 0
+  $$unstoppable_count = 0
+  $instances_started = []
+  $instances_stopped = []
+  foreach $item in $data do
+    call sys_log('item', to_s($item))
+
+    $rule = split($item['schedule'],';')[1]
+    $time_range = split($item['schedule'],';')[0]
+    $start_hour = split($time_range,'-')[0]
+    $stop_hour = split($time_range,'-')[1]
+    $start_rule = join(["FREQ=WEEKLY;BYDAY=",$rule])
+    $start_minute = '00'
+    $stop_rule = join(["FREQ=WEEKLY;BYDAY=",$rule])
+    $stop_minute = '00'
+    $timezone = split($item['schedule'],';')[2]
+    if ! $timezone
+      $timezone = "UTC"
+    end
+
+    # get state of schedule window
+    call window_active($start_hour, $start_minute, $start_rule, $stop_hour, $stop_minute, $stop_rule, $timezone) retrieve $window_active , $next_start, $next_stop
+
+    call sys_log('window_active',$window_active)
+    call sys_log('next_start',$next_start)
+    call sys_log('next_stop',$next_stop)
+
+    if ($window_active)
+      call sys_log($item['schedule'] + ' schedule window is currently active: Instances may be started.', '')
+    else
+      call sys_log($item['schedule'] + ' schedule window is currently in-active: Instances may be stopped.', '')
+    end
+
+    $stoppable = /^(running|operational|stranded)$/
+    $startable = /^(stopped|provisioned)$/
+
+    @instance = rs_cm.get(href: $item['href'])
+    #tag the instance with next start/stop times to compare in the javascript datasource
+    $tags=["instance:next_start="+$next_start, "instance:next_stop="+$next_stop]
+    rs_cm.tags.multi_add(resource_hrefs: [$item['href']], tags: $tags)
+
+    call sys_log('Fetching instance ' + $item['href'], to_s($item))
+    # determine if instance should be stopped or started based on:
+    # 1. inside or outside schedule
+    # 2. current operational state
+    if (! $window_active)
+
+      if ($item['state'] =~ $stoppable)
+      # stop the instance
+          call sys_log('> ' + $item['name'] + ': Stopping ...', to_s($item))
+          sub on_error: error_server_stop() do
+            if @instance.locked == false
+              @instance.stop()
+            else
+              $locked_count = $locked_count + 1
+            end
+          end
+          $stop_count = $stop_count + 1
+          $instances_stopped << { href: $item['href'], name: $item['name'] }
+      else
+        call sys_log('> ' + $item['name'] + ': No action - Instance state is ' + $item['state'], '')
+      end
+    else
+      if ($item['state'] =~ $startable)
+      # start the instance
+        call sys_log('> ' + $item['name'] + ': Starting ...', to_s($item))
+        @instance.start()
+        $start_count = $start_count + 1
+        $instances_started << { href: $item['href'], name: $item['name'] }
+      else
+        call sys_log('> ' + $item['name'] + ': No action - Instance state is ' + $item['state'], '')
+      end
+    end  #if (! $window_active)
+  end
+end
+
+define window_active($start_hour, $start_minute, $start_rule, $stop_hour, $stop_minute, $stop_rule, $tz) return $window_active, $next_start, $next_stop do
+  $params = {
+    verb: 'post',
+    host: 'bjlaftw4kh.execute-api.us-east-1.amazonaws.com',
+    https: true,
+    href: '/production',
+    headers:{
+      'content-type': 'application/json'
+    },
+    body: {
+      'start_hour': $start_hour,
+      'start_minute': $start_minute,
+      'start_rule': $start_rule,
+      'stop_minute': $stop_minute,
+      'stop_hour': $stop_hour,
+      'stop_rule': $stop_rule,
+      'tz': $tz
+    }
+  }
+  call sys_log('window active $params', to_s($params))
+  $response = http_request($params)
+  call sys_log('window active $response', to_s($response))
+  $body = $response['body']
+  call sys_log('window active $body', to_s($body))
+
+  $window_active = to_b($body['event_active'])
+  $next_start   = $body['next_start']
+  $next_stop    = $body['next_stop']
+end
+
+define sys_log($subject, $detail) do
+  if $$debug
+    rs_cm.audit_entries.create(
+      notify: "None",
+      audit_entry: {
+        auditee_href: @@account,
+        summary: $subject,
+        detail: $detail
+      }
+    )
+  end
+end
+
+define error_server_stop() do
+  $_error_behavior = "skip"
+  foreach $e in $_errors do
+    if $e["error_details"]["summary"] !~ /The instance is not stoppable/
+      $_error_behavior = "raise"
+    else
+      $$unstoppable_count = $$unstoppable_count + 1
+    end
+  end
+end
