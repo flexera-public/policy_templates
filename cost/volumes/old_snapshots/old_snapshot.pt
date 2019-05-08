@@ -40,7 +40,7 @@ resources "clouds", type: "rs_cm.clouds"
 resources "volume_snapshots", type: "rs_cm.volume_snapshots" do
   iterate @clouds
   cloud_href href(iter_item)
-  tags none($param_snapshot_tag_list)
+  tags none($param_snapshot_tag_list,"policy:delete=error")
 end
 
 datasource "ds_volume_snapshots" do
@@ -92,9 +92,17 @@ end
 define delete_old_snapshots($data) do
   foreach $item in $data do
     @snapshot = rs_cm.get(href: $item['href'])
-    @snapshot.destroy()
+    sub on_error: snapshot_error($item,@snapshot) do
+      @snapshot.destroy()
+    end
     call sys_log('destroy' ,to_s($item))
   end
+end
+
+define snapshot_error($item,@snapshot) do
+  rs_cm.tags.multi_add(resource_hrefs: [@snapshot.href], tags: ["policy:delete=error"])
+  call sys_log('destroy-failed' ,to_s($item))
+  $_error_behavior = "skip"
 end
 
 define sys_log($subject, $detail) do
@@ -102,7 +110,7 @@ define sys_log($subject, $detail) do
     notify: "None",
     audit_entry: {
       auditee_href: @@account,
-      summary: "Unattached IP Address: "+$subject,
+      summary: "Old Snapshot: "+$subject,
       detail: $detail
     }
   )
