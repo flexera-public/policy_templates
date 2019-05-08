@@ -1,10 +1,8 @@
-# Required prolog
-name 'Untagged Resources'
+name "Untagged Resources"
 rs_pt_ver 20180301
 type "policy"
-short_description "![Tag](https://s3.amazonaws.com/rs-pft/cat-logos/tag.png)\n
-Check for a tag and report which instances and volumes are missing it."
-long_description "Version: 1.1"
+short_description "Check resources for missing tags and report on them. \n See the [README](https://github.com/rightscale/policy_templates/tree/master/compliance/tags/tag_checker) and [docs.rightscale.com/policies](http://docs.rightscale.com/policies/) to learn more."
+long_description "Version: 1.9"
 category "Compliance"
 severity "medium"
 
@@ -14,9 +12,9 @@ permission "retrieve_resources" do
   resources "rs_cm.instances","rs_cm.volumes"
 end
 
-permission "retrieve_tags" do
-  label "Retrieve Tags"
-  actions "rs_cm.by_resource"
+permission "tags" do
+  label "Retrieve and add Tags"
+  actions "rs_cm.by_resource","rs_cm.multi_add"
   resources "rs_cm.tags"
 end
 
@@ -34,29 +32,19 @@ end
 
 parameter "param_advanced_tag_key" do
   category "User Inputs"
-  label "Tags' Namespace:Keys Advanced List."
+  label "Tags' Namespace:Keys Advanced List"
   type "string"
-  description "A JSON string or publc HTTP URL to json file.  See README for example"
-  #allow valid json, {*} or nothing.
+  description 'A JSON string to describe the tag policy configuration.  See the README for example'
   allowed_pattern /(\{.*\}|)/
 end
 
 parameter "param_email" do
-  category "Contact"
-  label "Email addresses (separate with commas)"
-  type "string"
-  # allow list of comma seperated email addresses or nothing
-  allowed_pattern /^([a-zA-Z0-9-_.]+[@]+[a-zA-Z0-9-_.]+[.]+[a-zA-Z0-9-_]+,*|)+$/
+  label "Email addresses of the recipients you wish to notify"
+  type "list"
 end
 
 # Retrieve all clouds
-resources "clouds", type: "rs_cm.clouds" do
-  filter do
-    cloud_type ne: ["soft_layer", "cloud_stack","azure","rackspace_next_gen",
-      "vscale","blue_skies","open_stack_v2","uca","open_stack_v3"]
-  end
-end
-
+resources "clouds", type: "rs_cm.clouds"
 # Retrieve all operational instances across all clouds
 resources "instances_operational", type: "rs_cm.instances" do
   iterate @clouds
@@ -64,6 +52,7 @@ resources "instances_operational", type: "rs_cm.instances" do
   filter do
     state "operational"
   end
+  tags '*'
 end
 # Retrieve all provisioned instances across all clouds
  resources "instances_provisioned", type: "rs_cm.instances" do
@@ -72,6 +61,7 @@ end
    filter do
      state "provisioned"
    end
+  tags '*'
  end
 
 # Retrieve all running instances across all clouds
@@ -81,12 +71,14 @@ end
    filter do
      state "running"
    end
+   tags '*'
  end
 
 # Retrieve all volumes across all clouds
 resources "volumes", type: "rs_cm.volumes" do
    iterate @clouds
    cloud_href href(iter_item)
+   tags '*'
 end
 
 datasource "clouds" do
@@ -102,6 +94,7 @@ datasource "instances_operational" do
    field "id",          val(iter_item,'resource_uid')
    field "name",        val(iter_item,'name')
    field "state",       val(iter_item,'state')
+   field "tags",         val(iter_item,'tags')
    field "type",        "instances"
 end
 datasource "instances_running" do
@@ -110,6 +103,7 @@ datasource "instances_running" do
   field "id",          val(iter_item,'resource_uid')
   field "name",        val(iter_item,'name')
   field "state",       val(iter_item,'state')
+  field "tags",         val(iter_item,'tags')
   field "type",        "instances"
 end
 datasource "instances_provisioned" do
@@ -118,6 +112,7 @@ datasource "instances_provisioned" do
   field "id",          val(iter_item,'resource_uid')
   field "name",        val(iter_item,'name')
   field "state",       val(iter_item,'state')
+  field "tags",        val(iter_item,'tags')
   field "type",        "instances"
 end
 
@@ -127,6 +122,7 @@ datasource "volumes" do
    field "id",          val(iter_item,'resource_uid')
    field "name",        val(iter_item,'name')
    field "state",       val(iter_item,'status')
+   field "tags",        val(iter_item,'tags')
    field "type",        "volumes"
 end
 
@@ -170,12 +166,12 @@ datasource "resource_tags" do
 end
 
 datasource "filtered_resources" do
-  run_script $filter_resources, $resources, $resource_tags, $clouds,$param_tag_keys,$param_advanced_tag_key
+  run_script $filter_resources, $resources, $clouds,$param_tag_keys,$param_advanced_tag_key
 end
 
 
 script "filter_resources", type: "javascript" do
-  parameters "resources","resource_tags","clouds","param_tag_keys","param_advanced_tag_key"
+  parameters "resources","clouds","param_tag_keys","param_advanced_tag_key"
   result "filtered_resources"
   code <<-EOS
 // This is the list of filtered volumes.
@@ -183,7 +179,7 @@ var filtered_resources = [];
 
 var tag_keys_array = []
 if ( param_tag_keys !== '' ){
-  tag_keys_array= param_tag_keys.split(',')
+  tag_keys_array = param_tag_keys.split(',')
 }
 
 var validate_tags_object={}
@@ -206,18 +202,6 @@ for (var i = 0; i < clouds.length; i++) {
     cloud_map[cloud['href']]={'type': cloud['type'],'name': cloud['name']}
 }
 
-// This is the map of resource href to its tags.
-var tags = {};
-for (var i = 0; i < resource_tags.length; i++) {
-  rt = resource_tags[i]
-  for (var j = 0; j < rt['links'].length; j++) {
-    link = rt['links'][j]
-    if (link['rel'] == 'resource') {
-      tags[link['href']] = rt['tags']
-    }
-  }
-}
-
 // Go through all the resources and filter the ones that don't
 // comply with the tag rules.
 for (var i = 0; i < resources.length; i++) {
@@ -227,8 +211,8 @@ for (var i = 0; i < resources.length; i++) {
   var bad = false
   // Tags is an array of hashes each with just 'name'. Let's convert
   // them to an array of strings.
-  for (var j = 0; j < tags[res['href']].length; j++) {
-    tag = tags[res['href']][j]['name']
+  for (var j = 0; j < res['tags'].length; j++) {
+    tag = res['tags'][j]
     tag_key = tag.split("=")[0]
     tag_value = tag.split("=")[1]
     if ( validate_tags_object[tag_key] && validate_tags_object[tag_key]['validation-type']==='string' ){
@@ -297,15 +281,17 @@ end
 
 policy "untagged_resources_policy" do
   validate $filtered_resources do
-    summary_template "Untagged Resources Summary"
+    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} Untagged Resources Found"
     detail_template <<-EOS
-    There are {{ len data }} resource(s) missing tags: {{ parameters.param_tag_keys }}
-    | Cloud Name | Cloud Type | Name | ID | Type | State | Href | Missing Tags | Invalid Tags |
-    | ---------- | ---------- | ---- | -- | ---- | ----- | ---- | ------------ | ------------ |
-    {{ range data -}}
-    | {{ .cloud_name }} | {{ .cloud_type }} | {{ .name }} | {{ .id }} | {{ .type }} | {{ .state }} | {{ .href }} | {{ range $i, $e := .missing_tags }}{{ if $i }}, {{ end }}{{ $e }}{{ end }} | {{ range $i, $e := .invalid_tags }}{{ if $i }}, {{ end }}{{ $e }}{{ end }}  |
-    {{ end -}}
-    EOS
+There are {{ len data }} resource(s) missing tags: {{ parameters.param_tag_keys }}
+
+| Cloud Name | Cloud Type | Name | ID | Type | State | Href | Missing Tags | Invalid Tags |
+| ---------- | ---------- | ---- | --- | ---- | ----- | ---- | ------------ | ------------ |
+{{ range data -}}
+| {{ .cloud_name }} | {{ .cloud_type }} | {{ .name }} | {{ .id }} | {{ .type }} | {{ .state }} | {{ .href }} | {{ range $i, $e := .missing_tags }}{{ if $i }}, {{ end }}{{ $e }}{{ end }} | {{ range $i, $e := .invalid_tags }}{{ if $i }}, {{ end }}{{ $e }}{{ end }}  |
+{{ end -}}
+EOS
+
     escalate $escalate_resources
     check eq(size(data), 0)
     resolve $resolve_resources
@@ -314,14 +300,12 @@ end
 
 # update tags with default values and invalid valus
 define tag_resources($data,$param_advanced_tag_key) do
-  # only proceed if the $param_advanced_tag_key has a value
+
+  # set this to true if you want to see audit entries for debugging
+  $$debug=false
   call sys_log('data',to_s($data))
-  foreach $item in $data do
-    call sys_log('item',to_s($item))
-    rs_cm.tags.multi_add(resource_hrefs: [$item['href']], tags:["rs:test=curtwashere"])
-  end
+  # only proceed if the $param_advanced_tag_key has a value
   if  $param_advanced_tag_key
-    call sys_log('tag_resources','here')
     # convert param to an object
     $validate_tags_object = from_json($param_advanced_tag_key)
     # get keys from object
@@ -334,7 +318,7 @@ define tag_resources($data,$param_advanced_tag_key) do
         call sys_log('missing',to_s($missing))
         if $validate_tags_object[$missing] && $validate_tags_object[$missing]['default-value']
           call sys_log('default-value',$validate_tags_object[$missing]['default-value'])
-          $tag = join($validate_tags_object[$missing],"=",$validate_tags_object[$missing]['default-value'])
+          $tag = join([$missing,"=",$validate_tags_object[$missing]['default-value']])
           rs_cm.tags.multi_add(resource_hrefs: [$item['href']], tags:[$tag])
         end
       end
@@ -346,7 +330,7 @@ define tag_resources($data,$param_advanced_tag_key) do
         if $validate_tags_object[$invalid_key] && $validate_tags_object[$invalid_key]['prefix-value']
           call sys_log('prefix-value',$validate_tags_object[$invalid_key]['prefix-value'])
           if !include?($invalid_tag,$validate_tags_object[$invalid_key]['prefix-value'])
-            $tag = join($invalid_key,"=",$validate_tags_object[$invalid_key]['prefix-value'],$invalid_value)
+            $tag = join([$invalid_key,"=",$validate_tags_object[$invalid_key]['prefix-value'],$invalid_value])
             rs_cm.tags.multi_add(resource_hrefs: [$item['href']], tags:[$tag])
           end
         end
@@ -356,12 +340,14 @@ define tag_resources($data,$param_advanced_tag_key) do
 end
 
 define sys_log($subject, $detail) do
-  rs_cm.audit_entries.create(
-    notify: "None",
-    audit_entry: {
-      auditee_href: @@account,
-      summary: $subject,
-      detail: $detail
-    }
-  )
+  if $$debug
+    rs_cm.audit_entries.create(
+      notify: "None",
+      audit_entry: {
+        auditee_href: @@account,
+        summary: "Untagged Resources Policy "+ $subject,
+        detail: $detail
+      }
+    )
+  end
 end

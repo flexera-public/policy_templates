@@ -1,0 +1,116 @@
+name "GitHub.com Available Seats Report"
+rs_pt_ver 20180301
+short_description "Gets the number of available seats for a licensed GitHub Org and creates an incident if they are out of the policy range.  See the [README](https://github.com/rightscale/policy_templates/tree/master/compliance/github/available_seats) and [docs.rightscale.com/policies](http://docs.rightscale.com/policies/) to learn more."
+long_description "Version: 1.2"
+severity "medium"
+category "Compliance"
+
+permission "read_creds" do
+  actions   "rs_cm.show_sensitive","rs_cm.index_sensitive"
+  resources "rs_cm.credentials"
+end
+
+parameter "param_email" do
+  label "Email addresses of the recipients you wish to notify"
+  type "list"
+end
+
+parameter "param_orgs" do
+  type "list"
+  label "GitHub.com Organizations to check"
+end
+
+parameter "param_min_seats" do
+  type "string"
+  label "Allowed Minimum Available Seats"
+  default "10"
+end
+
+parameter "param_max_seats" do
+  type "string"
+  label "Allowed Maximum Available Seats"
+  default "50"
+end
+
+auth "auth_github", type: "api_key" do
+  location "header"
+  field "Authorization"
+  type "token"
+  key cred("GITHUB_API_AVAILABLE_SEATS_PERSONAL_ACCESS_TOKEN")
+end
+
+datasource "ds_orgs_array" do
+  run_script $js_orgs_array, $param_orgs
+end
+
+script "js_orgs_array", type: "javascript" do
+  parameters "param_orgs"
+  result "orgs_array"
+  code <<-EOS
+var orgs_array = param_orgs;
+EOS
+end
+
+datasource "ds_github_orgs" do
+  iterate $ds_orgs_array
+  request do
+    auth $auth_github
+    host "api.github.com"
+    # https://developer.github.com/v3/orgs/#get-an-organization
+    path join(["/orgs/",iter_item])
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "[@]") do
+      field "org", jmes_path(col_item, "login")
+      field "total_seats", jmes_path(col_item, "plan.seats")
+      field "used_seats", jmes_path(col_item, "plan.filled_seats")
+      field "available_seats", dec( to_n(jmes_path(col_item, "plan.seats")) , to_n(jmes_path(col_item, "plan.filled_seats")) )
+    end
+  end
+end
+
+policy "policy_available_seats" do
+  validate_each $ds_github_orgs do
+    summary_template "GitHub Orgs with low available seats"
+    detail_template <<-EOS
+# GitHub Orgs with Low Seats
+| Org Name | Available Seats | Used Seats | Total Seats | 
+| --------- | --------------- | --------- | ------------ |
+{{ range data -}}
+| {{.org}} | {{.available_seats}} | {{.used_seats}} | {{.total_seats}} |
+{{ end -}}
+
+#### Policy Min Seat Count: {{parameters.param_min_seats}}
+
+___
+###### Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }})
+
+EOS
+    check gt(to_n(val(item,"available_seats")),to_n($param_min_seats))
+    escalate $email_report
+  end
+  validate_each $ds_github_orgs do
+    summary_template "GitHub Orgs with too many available seats"
+    detail_template <<-EOS
+# GitHub Orgs with Too Many Available Seats
+| Org Name | Available Seats | Used Seats | Total Seats | 
+| --------- | --------------- | --------- | ------------ |
+{{ range data -}}
+| {{.org}} | {{.available_seats}} | {{.used_seats}} | {{.total_seats}} |
+{{ end -}}
+
+#### Policy Max Seat Count: {{parameters.param_max_seats}}
+
+___
+###### Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }})
+
+EOS
+    check lt(to_n(val(item,"available_seats")),to_n($param_max_seats))
+    escalate $email_report
+  end
+end
+
+escalation "email_report" do
+    email $param_email
+end
