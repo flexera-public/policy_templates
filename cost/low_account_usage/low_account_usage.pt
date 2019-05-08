@@ -40,7 +40,7 @@ end
 
 auth "auth_rs", type: "rightscale"
 
-datasource "billing_centers" do
+datasource "ds_billing_centers" do
   request do
     auth $auth_rs
     host rs_optima_host
@@ -81,10 +81,10 @@ datasource "ds_cloud_vendor_accounts" do
   end
 end
 
-datasource "new_bc_costs" do
-  iterate $billing_centers
+datasource "ds_new_bc_costs" do
+  iterate $ds_billing_centers
   request do
-    run_script $new_costs_request,rs_org_id,val(iter_item,"id"),$param_days
+    run_script $js_new_costs_request, rs_org_id, val(iter_item,"id"), $param_days
   end
   result do
     encoding "json"
@@ -99,8 +99,8 @@ datasource "new_bc_costs" do
   end
 end
 
-script "new_costs_request", type: "javascript" do
-  parameters "org_id","bc_id","param_days"
+script "js_new_costs_request", type: "javascript" do
+  parameters "org_id", "bc_id", "param_days"
   result "request"
   code <<-EOS
     var start_at = "";
@@ -152,8 +152,8 @@ script "new_costs_request", type: "javascript" do
   EOS
 end
 
-datasource "format_costs" do
-  run_script $js_format_costs, $new_bc_costs, $ds_cloud_vendor_accounts, $param_include_unallocated
+datasource "ds_format_costs" do
+  run_script $js_format_costs, $ds_new_bc_costs, $ds_cloud_vendor_accounts, $param_include_unallocated
 end
 
 script "js_format_costs", type: "javascript" do
@@ -171,9 +171,6 @@ script "js_format_costs", type: "javascript" do
 
   _.each(bcs, function(bc_id){
     var new_bc_cost_objs = _.reject(new_bc_costs, function(new_bc_cost){ return new_bc_cost.id != bc_id });
-    // var new_costs = [];
-    // _.each(new_bc_cost_objs, function(cost){new_costs.push(cost[type])})
-    //var new_sum = _.reduce(new_costs, function(memo, num){ return memo + num; }, 0)
     if ( bc_id != 'unallocated' ){
       _.each(new_bc_cost_objs, function(new_bc_cost_obj){
         if (new_bc_cost_obj.vendor == "AWS" ) {
@@ -220,9 +217,9 @@ escalation "esc_budget_alert" do
   email $param_email
 end
 
-policy "budget_alert" do
-  validate_each $format_costs do
-    summary_template "Low Account Usage Detected"
+policy "policy_budget_alert" do
+  validate_each $ds_format_costs do
+    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): Low Account Usage Detected"
     detail_template <<-EOS
 # Low Account Usage Detected
 
@@ -232,9 +229,9 @@ policy "budget_alert" do
 | {{.name}} | {{.vendor}} | {{.vendor_account_name}} | {{.new_sum}} | 
 {{ end -}}
 
+###### Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }}) within Org: {{ rs_org_name }} (Org ID: {{ rs_org_id }})
 EOS
     escalate $esc_budget_alert
-
     check gt(to_n(val(item,"new_sum")),$param_threshold)
   end
 end
