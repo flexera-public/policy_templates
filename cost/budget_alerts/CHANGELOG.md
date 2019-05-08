@@ -1,3 +1,7 @@
+v1.3
+----
+- ignore changing amounts when creating incidents so that emails are sent less frequently
+
 v1.2
 ----
 - update policy to latest version of bill-analysis API
