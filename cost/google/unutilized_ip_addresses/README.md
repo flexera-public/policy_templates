@@ -5,7 +5,7 @@
 Checks Google for Unutilized IP Addresses.
 
 ### Cloud Management Required Permissions/Google Required Permissions
-- Cloud Management - The `credential_viewer`,`observer` roles
+- Cloud Management - The `credential_viewer`, `observer` roles
 - Cloud Management - The `policy_designer`, `policy_manager` & `policy_publisher` roles
 - Google - The `compute.addresses.list`, `compute.addresses.get` IAM Permissions
 
