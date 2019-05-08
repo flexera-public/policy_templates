@@ -34,6 +34,7 @@ Please contact sales@rightscale.com to learn more.
 - [AWS Open Buckets Policy](./security/storage/aws/public_buckets/)
 - [Google Open Buckets Policy](./security/storage/google/public_buckets/)
 - [AWS Unencrypted Volumes Policy](./security/aws/ebs_unencrypted_volumes/)
+- [AWS Internet-facing ELBs & ALBs](./security/aws/loadbalancer_internet_facing/)
 
 ### Compliance
 - [Untagged Resources](./compliance/tags/tag_checker)
