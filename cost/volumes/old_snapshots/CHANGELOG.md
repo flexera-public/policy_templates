@@ -1,3 +1,7 @@
+v1.6
+----
+- Adding delete function
+
 v1.5
 ----
 - Fixing a typo
