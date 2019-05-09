@@ -1,8 +1,8 @@
 name "Discover Old Snapshots"
 rs_pt_ver 20180301
 type "policy"
-short_description "A policy that sends email notifications when snapshots older then a certain timeframe are found. See the [README](https://github.com/rightscale/policy_templates/tree/master/cost/volumes/old_snapshots) and [docs.rightscale.com/policies](http://docs.rightscale.com/policies/) to learn more."
-long_description "Version: 1.5"
+short_description "A policy that sends email and requests deletion when snapshots older then a certain timeframe are found. See the [README](https://github.com/rightscale/policy_templates/tree/master/cost/volumes/old_snapshots) and [docs.rightscale.com/policies](http://docs.rightscale.com/policies/) to learn more."
+long_description "Version: 1.6"
 severity "high"
 category "Cost"
 
@@ -40,7 +40,7 @@ resources "clouds", type: "rs_cm.clouds"
 resources "volume_snapshots", type: "rs_cm.volume_snapshots" do
   iterate @clouds
   cloud_href href(iter_item)
-  tags none($param_snapshot_tag_list)
+  tags none($param_snapshot_tag_list,"policy:delete=error")
 end
 
 datasource "ds_volume_snapshots" do
@@ -52,8 +52,19 @@ datasource "ds_volume_snapshots" do
 end
 
 escalation "report_old_snapshots" do
-  email $param_email
-end
+    request_approval  do
+      label "Escalation approval"
+      description "Approve delete action"
+      parameter "approval_reason" do
+        type "string"
+        label "Reason for approval"
+        description "Explain why you are approving the action"
+      end
+    end
+  
+    run "delete_old_snapshots", data
+    email $param_email
+  end
 
 resolution "report_old_snapshots_resolution" do
   email $param_email
@@ -76,4 +87,33 @@ EOS
     check lt(dec(now,to_d(val(item, "updated_at"))), prod($param_age_days, 24*3600))
     resolve $report_old_snapshots_resolution
   end
+end
+
+define delete_old_snapshots($data) do
+  foreach $item in $data do
+    sub on_error: snapshot_error($item) do
+      @snapshot = rs_cm.get(href: $item['href'])
+      @snapshot.destroy()
+    end
+    call sys_log('destroy' ,to_s($item))
+  end
+end
+
+define snapshot_error($item) do
+  sub on_error: skip do
+    rs_cm.tags.multi_add(resource_hrefs: [$item['href']], tags: ["policy:delete=error"])
+  end
+  call sys_log('destroy-failed' ,to_s($item))
+  $_error_behavior = "skip"
+end
+
+define sys_log($subject, $detail) do
+  rs_cm.audit_entries.create(
+    notify: "None",
+    audit_entry: {
+      auditee_href: @@account,
+      summary: "Old Snapshot: "+$subject,
+      detail: $detail
+    }
+  )
 end
