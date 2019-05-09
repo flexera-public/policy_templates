@@ -1,0 +1,237 @@
+name "Low Account Usage"
+rs_pt_ver 20180301
+type "policy"
+short_description "Analyze all account usage and determines recommend consolidation or deletion. See the [README](https://github.com/rightscale/policy_templates/tree/master/cost/low_account_usage/) and [docs.rightscale.com/policies](http://docs.rightscale.com/policies/) to learn more."
+long_description "Version: 1.0"
+severity "low"
+category "Cost"
+
+
+parameter "param_days" do
+  label "Time Period"
+  description "Number of days to analyze"
+  type "number"
+  default 7
+  min_value 1
+  max_value 31
+end
+
+parameter "param_threshold" do
+  label "Cost Threshold"
+  description "All accounts below this budget will trigger an incident"
+  type "number"
+  default 1000
+  min_value 1
+  max_value 1000000
+end
+
+parameter "param_email" do
+  label "Email addresses"
+  description "Email addresses of the recipients you wish to notify"
+  type "list"
+end
+
+parameter "param_include_unallocated" do
+  label "Include Unallocated"
+  type "string"
+  default "true"
+  allowed_values "true","false"
+end
+
+auth "auth_rs", type: "rightscale"
+
+datasource "ds_billing_centers" do
+  request do
+    auth $auth_rs
+    host rs_optima_host
+    path join(["/analytics/orgs/",rs_org_id,"/billing_centers"])
+    header "Api-Version", "1.0"
+    header "User-Agent", "RS Policies"
+    query "view", "allocation_table"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response,"[*]") do
+      field "href", jmes_path(col_item,"href")
+      field "id", jmes_path(col_item,"id")
+      field "name", jmes_path(col_item,"name")
+      field "parent_id", jmes_path(col_item,"parent_id")
+      field "ancestor_ids", jmes_path(col_item,"ancestor_ids")
+      field "allocation_table", jmes_path(col_item,"allocation_table")
+    end
+  end
+end
+
+datasource "ds_cloud_vendor_accounts" do
+  request do
+    auth $auth_rs
+    host rs_optima_host
+    path join(["/analytics/orgs/",rs_org_id,"/cloud_vendor_accounts"])
+    header "Api-Version", "1.0"
+    header "User-Agent", "RS Policies"
+    query "cloud_vendor", "aws"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response,"[*]") do
+      field "id", jmes_path(col_item,"id")
+      field "name", jmes_path(col_item,"name")
+      field "vendor_name", jmes_path(col_item,"vendor_name")
+    end
+  end
+end
+
+datasource "ds_new_bc_costs" do
+  iterate $ds_billing_centers
+  request do
+    run_script $js_new_costs_request, rs_org_id, val(iter_item,"id"), $param_days
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response,"rows[*]") do
+      field "name", val(iter_item, "name")
+      field "vendor", jmes_path(col_item, "dimensions.vendor")
+      field "vendor_account_name", jmes_path(col_item,"dimensions.vendor_account_name")
+      field "cost_amortized_unblended_adj", jmes_path(col_item,"metrics.cost_amortized_unblended_adj")
+      field "id", jmes_path(col_item,"dimensions.billing_center_id")
+      field "timestamp", jmes_path(col_item,"timestamp")
+    end
+  end
+end
+
+script "js_new_costs_request", type: "javascript" do
+  parameters "org_id", "bc_id", "param_days"
+  result "request"
+  code <<-EOS
+    var start_at = "";
+    var end_at = "";
+
+    // format the date for the `daily` API
+    // returns date formatted as string: YYYY-mm-dd
+    function getFormattedDailyDate(date) {
+      var year = date.getFullYear();
+      var month = (1 + date.getMonth()).toString();
+      month = month.length > 1 ? month : '0' + month;
+      var day = date.getDate().toString();
+      day = day.length > 1 ? day : '0' + day;
+      return year + '-' + month + '-' + day;
+    }
+
+    function getStartDate( date ) {
+      var days = 2 + param_days ;
+      date.setHours(-24 * days);
+      return date;
+    }
+
+    function getEndDate( date ) {
+      date.setHours(-48);
+      return date;
+    }
+
+    start_at = getFormattedDailyDate(getStartDate(new Date()))
+    end_at = getFormattedDailyDate(getEndDate(new Date()))
+
+    var request = {
+      auth: "auth_rs",
+      verb: "POST",
+      host: "optima.rightscale.com",
+      path: "/bill-analysis/orgs/" + org_id + "/costs/aggregated",
+      body_fields: {
+        "dimensions": ["billing_center_id","vendor","vendor_account_name"],
+        "granularity": "day",
+        "metrics": ['cost_amortized_unblended_adj'],
+        "billing_center_ids": [bc_id],
+        "start_at": start_at,
+        "end_at": end_at
+      },
+      headers: {
+        "Api-Version": "1.0",
+        "User-Agent": "RS Policies",
+      }
+    }
+  EOS
+end
+
+datasource "ds_format_costs" do
+  run_script $js_format_costs, $ds_new_bc_costs, $ds_cloud_vendor_accounts, $param_include_unallocated
+end
+
+script "js_format_costs", type: "javascript" do
+  parameters "new_bc_costs", "ds_cloud_vendor_accounts", "include_unallocated"
+  result "formatted_data"
+  code <<-EOS
+
+  var type = 'cost_amortized_unblended_adj';
+
+  var formatted_data = [];
+  var bcs = [];
+
+  _.each(new_bc_costs, function(bcc){bcs.push(bcc.id)})
+  bcs = _.uniq(bcs) ;
+
+  _.each(bcs, function(bc_id){
+    var new_bc_cost_objs = _.reject(new_bc_costs, function(new_bc_cost){ return new_bc_cost.id != bc_id });
+    if ( bc_id != 'unallocated' ){
+      _.each(new_bc_cost_objs, function(new_bc_cost_obj){
+        if (new_bc_cost_obj.vendor == "AWS" ) {
+          var account = _.reject(ds_cloud_vendor_accounts, function(ds_cloud_vendor_account){ return ds_cloud_vendor_account.id != new_bc_cost_obj.vendor_account_name });
+          var vendor_account_name = account[0].name
+        } else {
+          var vendor_account_name = new_bc_cost_obj.vendor_account_name
+        }
+
+        formatted_data.push({
+          name: new_bc_cost_obj.name,
+          id: bc_id,
+          new_sum: parseFloat(new_bc_cost_obj.cost_amortized_unblended_adj).toFixed(2),
+          vendor: new_bc_cost_obj.vendor,
+          vendor_account_name: vendor_account_name
+        })
+      })
+    }
+    if ((bc_id == 'unallocated') && (include_unallocated == "false")) {
+      return
+    } else {
+      _.each(new_bc_cost_objs, function(new_bc_cost_obj){
+        if (new_bc_cost_obj.vendor == "AWS" ) {
+          var account = _.reject(ds_cloud_vendor_accounts, function(ds_cloud_vendor_account){ return ds_cloud_vendor_account.id != new_bc_cost_obj.vendor_account_name });
+          var vendor_account_name = account[0].name
+        } else {
+          var vendor_account_name = new_bc_cost_obj.vendor_account_name
+        }
+
+        formatted_data.push({
+          name: new_bc_cost_obj.name,
+          id: bc_id,
+          new_sum: parseFloat(new_bc_cost_obj.cost_amortized_unblended_adj).toFixed(2),
+          vendor: new_bc_cost_obj.vendor,
+          vendor_account_name: vendor_account_name
+        })
+      })
+    }
+  })
+EOS
+end
+
+escalation "esc_budget_alert" do
+  email $param_email
+end
+
+policy "policy_budget_alert" do
+  validate_each $ds_format_costs do
+    summary_template "{{ rs_org_name }} (Org ID: {{ rs_org_id }}): Low Account Usage Detected"
+    detail_template <<-EOS
+# Low Account Usage Detected
+
+| Billing Center Name | Vendor | Account Name | Savings |
+| ------------------- | ------ | ------------ | ------- |
+{{ range data -}}
+| {{.name}} | {{.vendor}} | {{.vendor_account_name}} | {{.new_sum}} | 
+{{ end -}}
+
+###### Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }}) within Org: {{ rs_org_name }} (Org ID: {{ rs_org_id }})
+EOS
+    escalate $esc_budget_alert
+    check gt(to_n(val(item,"new_sum")),$param_threshold)
+  end
+end
