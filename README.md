@@ -26,6 +26,7 @@ Please contact sales@rightscale.com to learn more.
 - [AWS Delete Unused Elastic Load Balancers (CLB)](./cost/aws/elb/clb_unused/)
 - [Cheaper Regions](./cost/cheaper_regions/)
 - [Low Account Usage](./cost/low_account_usage/)
+- [Low Service Usage](./cost/low_service_usage/)
 
 ### Security
 - [Security Group: ICMP Enabled](./security/security_groups/icmp_enabled/)
