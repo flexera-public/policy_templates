@@ -25,6 +25,8 @@ Please contact sales@rightscale.com to learn more.
 - [Google Committed Use Discount (CUD) Report](./cost/google/cud_report/)
 - [AWS Delete Unused Elastic Load Balancers (CLB)](./cost/aws/elb/clb_unused/)
 - [Cheaper Regions](./cost/cheaper_regions/)
+- [Low Account Usage](./cost/low_account_usage/)
+- [Low Service Usage](./cost/low_service_usage/)
 
 ### Security
 - [Security Group: ICMP Enabled](./security/security_groups/icmp_enabled/)
@@ -33,6 +35,7 @@ Please contact sales@rightscale.com to learn more.
 - [Security Groups With Ports Open To The World](./security/security_groups/world_open_ports)
 - [AWS Open Buckets Policy](./security/storage/aws/public_buckets/)
 - [Google Open Buckets Policy](./security/storage/google/public_buckets/)
+- [AWS Unencrypted Volumes Policy](./security/aws/ebs_unencrypted_volumes/)
 - [AWS Internet-facing ELBs & ALBs](./security/aws/loadbalancer_internet_facing/)
 
 ### Compliance
