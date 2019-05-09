@@ -1,0 +1,193 @@
+name "Google Unutilized IP Addresses"
+rs_pt_ver 20180301
+type "policy"
+short_description "Checks Google for Unutilized IP Addresses. See the [README](https://github.com/rightscale/policy_templates/tree/master/cost/google/unutilized_ip_addresses/) and [docs.rightscale.com/policies](http://docs.rightscale.com/policies/) to learn more."
+long_description "Version: 1.0"
+severity "low"
+category "Cost"
+
+###############################################################################
+# Permissions
+###############################################################################
+
+permission "perm_read_creds" do
+  actions   "rs_cm.show_sensitive","rs_cm.index_sensitive"
+  resources "rs_cm.credentials"
+end
+
+###############################################################################
+# Parameters
+###############################################################################
+
+parameter "param_email" do
+  type "list"
+  label "Email addresses to notify"
+  description "Email addresses of the recipients you wish to notify when new incidents are created"
+end
+
+parameter "param_google_project" do
+  type "string"
+  label "Google Cloud Project"
+  description "Google Cloud Project"
+  allowed_pattern /^[0-9a-z:\.-]+$/
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+auth "auth_google", type: "oauth2" do
+  token_url "https://www.googleapis.com/oauth2/v4/token"
+  grant type: "jwt_bearer" do
+    iss cred("GCE_PLUGIN_ACCOUNT")
+    aud "https://www.googleapis.com/oauth2/v4/token"
+    additional_claims do {
+      "scope" => "https://www.googleapis.com/auth/cloud-platform https://www.googleapis.com/auth/compute https://www.googleapis.com/auth/compute.readonly"
+    } end
+    signing_key cred("GCE_PLUGIN_PRIVATE_KEY")
+  end
+end
+
+###############################################################################
+# Pagination
+###############################################################################
+pagination "google_pagination" do
+  get_page_marker do
+    body_path "{{nextPageToken}}"
+  end
+  set_page_marker do
+    query "pageToken"
+  end
+end
+
+###############################################################################
+# Datasources
+###############################################################################
+
+#Generates list of Regions
+datasource "ds_regions_list" do
+  run_script $js_regions_map
+end
+
+datasource "ds_addresses" do
+  iterate $ds_regions_list
+  request do
+    run_script $js_get_addresses, $param_google_project, val(iter_item, "region")
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response,"items[*]") do
+      field "address", jmes_path(col_item,"address")
+      field "addressType", jmes_path(col_item,"addressType")
+      field "creationTimestamp", jmes_path(col_item,"creationTimestamp")
+      field "description", jmes_path(col_item,"description")
+      field "id", jmes_path(col_item,"id")
+      field "name", jmes_path(col_item,"name")
+      field "purpose", jmes_path(col_item,"purpose")
+      field "selfLink", jmes_path(col_item,"selfLink")
+      field "status", jmes_path(col_item,"status")
+      field "subnetwork", jmes_path(col_item,"subnetwork")
+    end
+  end
+end
+
+datasource "ds_sanitize_data" do
+  run_script $js_sanitize_data, $ds_addresses
+end
+
+###############################################################################
+# Scripts
+###############################################################################
+
+script "js_regions_map", type: "javascript" do
+  result "regions_map"
+  code <<-EOS
+    var regions_map=[]
+    regions_map.push(
+      {"region": "asia-east1"},
+      {"region": "asia-east2"},
+      {"region": "asia-northeast1"},
+      {"region": "asia-northeast2"},
+      {"region": "asia-south1"},
+      {"region": "asia-southeast1"},
+      {"region": "australia-southeast1"},
+      {"region": "europe-north1"},
+      {"region": "europe-west1"},
+      {"region": "europe-west2"},
+      {"region": "europe-west3"},
+      {"region": "europe-west4"},
+      {"region": "europe-west6"},
+      {"region": "northamerica-northeast1"},
+      {"region": "southamerica-east1"},
+      {"region": "us-central1"},
+      {"region": "us-east1"},
+      {"region": "us-east4"},
+      {"region": "us-west1"},
+      {"region": "us-west2"}
+    )
+  EOS
+end
+
+script "js_get_addresses", type: "javascript" do
+  result "request"
+  parameters "project","region"
+  code <<-EOS
+    request = {
+      "auth": "auth_google",
+      "host": "www.googleapis.com",
+      "verb": "GET",
+      "path": "/compute/v1/projects/"+project+"/regions/"+region+"/addresses",
+      "headers": {
+        "User-Agent": "RS Policies",
+        "Content-Type": "application/json"
+      }
+      "query_params": {
+        "filter": 'status!="IN_USE"'
+      }
+    }
+  EOS
+end
+
+script "js_sanitize_data", type: "javascript" do
+  result "data"
+  parameters "ds_addresses"
+  code <<-EOS
+    data = []
+    for (i = 0; i < ds_addresses.length; i++) {
+      if (ds_addresses[i].address != null){
+        data.push(ds_addresses[i])
+      }
+    }
+  EOS
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "pol_unutilized_addresses" do
+  validate_each $ds_sanitize_data do
+    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} Google Unutilized IP Addresses Discovered"
+    detail_template <<-EOS
+# Google Ununtilized Addresses
+| Address | Name | ID   | Description | Address Type | Creation Timestamp | Purpose | Status | Subnetwork |
+| ------ | ----- | ---- | ----------- | ------------ | ------------------ | ------- | ------ | ---------- |
+{{ range data -}}
+| {{.address}} | {{.name}} | {{.id}} | {{.description}} | {{.addressType}} | {{.creationTimestamp}} | {{.purpose}} | {{.status}} | {{.subnetwork}} |
+{{ end -}}
+___
+###### Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }}) within Org: {{ rs_org_name }} (Org ID: {{ rs_org_id }})
+EOS
+    check eq(0,1)
+    escalate $email
+  end
+end
+
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "email" do
+  email $param_email
+end
