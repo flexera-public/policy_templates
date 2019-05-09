@@ -25,6 +25,8 @@ Please contact sales@rightscale.com to learn more.
 - [Google Committed Use Discount (CUD) Report](./cost/google/cud_report/)
 - [AWS Delete Unused Elastic Load Balancers (CLB)](./cost/aws/elb/clb_unused/)
 - [Cheaper Regions](./cost/cheaper_regions/)
+- [Low Account Usage](./cost/low_account_usage/)
+- [Low Service Usage](./cost/low_service_usage/)
 - [Google StackDriver Utilization](./cost/google/instance_stackdriver_utilization/)
 
 ### Security
