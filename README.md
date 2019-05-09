@@ -27,6 +27,7 @@ Please contact sales@rightscale.com to learn more.
 - [Cheaper Regions](./cost/cheaper_regions/)
 - [Low Account Usage](./cost/low_account_usage/)
 - [Low Service Usage](./cost/low_service_usage/)
+- [Google Unutilized IP Addresses](./cost/google/unutilized_ip_addresses/)
 
 ### Security
 - [Security Group: ICMP Enabled](./security/security_groups/icmp_enabled/)
