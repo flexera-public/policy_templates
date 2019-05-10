@@ -1,0 +1,205 @@
+name "AWS Superseded Instance"
+rs_pt_ver 20180301
+type "policy"
+short_description "This Policy Template is used to automatically resize AWS Instances based on user-defined standards. \n See the [README](https://github.com/rightscale/policy_templates/tree/master/cost/aws/aws_superseded_instance) and [docs.rightscale.com/policies](http://docs.rightscale.com/policies/) to learn more."
+long_description "Version: 1.0"
+category "Cost"
+severity "low"
+
+###############################################################################
+# Permissions
+###############################################################################
+
+permission "perm_instances" do
+  label "Permissions for instances"
+  actions "rs_cm.index", "rs_cm.show"
+  resources "rs_cm.instances"
+end
+
+###############################################################################
+# Parameters
+###############################################################################
+
+parameter "param_email" do
+  type "list"
+  label "Email addresses"
+  description "Email addresses of the recipients you wish to notify"
+end
+
+parameter "param_exclude_tags" do
+  label "Billing Center Name"
+  description "list of excluded servers"
+  type "list"
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+auth "auth_rs", type: "rightscale"
+
+###############################################################################
+# Resources
+###############################################################################
+
+resources "clouds", type: "rs_cm.clouds" do
+  filter do
+    cloud_type "amazon"
+  end
+end
+
+resources "instances", type: "rs_cm.instances" do
+  iterate @clouds  
+  cloud_href href(iter_item)
+  tags none($param_exclude_tags)
+  view 'extended'
+end
+
+resources "instance_types", type: "rs_cm.instance_types" do
+  iterate @clouds  
+  cloud_href href(iter_item)
+end
+
+###############################################################################
+# Datasources
+###############################################################################
+datasource "ds_clouds" do
+  iterate @clouds
+  field "href", href(iter_item)
+  field "name", val(iter_item, "display_name")
+end
+
+datasource "ds_instances" do
+  iterate @instances
+  field "resource_uid", val(iter_item,  "resource_uid")
+  field "name", val(iter_item, "name")
+  field "href", href(iter_item)
+  field "cloud_href", jmes_path(iter_item, "links[?rel=='cloud'].href | [0]")
+  field "instance_type_href", jmes_path(iter_item, "links[?rel=='instance_type'].href | [0]")
+end
+
+datasource "ds_instance_types" do
+  iterate @instance_types
+  field "resource_uid", val(iter_item,  "resource_uid")
+  field "cloud_href", jmes_path(iter_item, "links[?rel=='cloud'].href | [0]")
+  field "instance_type_href", jmes_path(iter_item, "links[?rel=='self'].href | [0]")
+end
+
+datasource "ds_combined_instance_data" do
+  run_script $js_merge_instance_data, $ds_instances, $ds_instance_types, $ds_clouds
+end
+
+###############################################################################
+# Scripts
+###############################################################################
+
+script "js_merge_instance_data", type: "javascript" do
+  parameters "ds_instances", "ds_instance_types", "ds_clouds"
+  result "results"
+  code <<-EOS
+    var results = []
+    var ec2NewInstanceTypes = {
+      "t1":       "t2",
+      "cr1":      "r3",
+      "hs1":      "d2",
+      "hi1":      "i3",
+      "i2":       "i3",
+      "m2.xlarge":  "r3.large",
+      "m2.2xlarge": "r3.xlarge",
+      "m2.4xlarge": "r3.2xlarge",
+      "c1.medium":  "c5.large",
+      "c1.xlarge":  "c5.xlarge",
+      "c3":       "c5",
+      "c4":       "c5",
+      "c3.8xlarge": "c5.9xlarge",
+      "c4.8xlarge": "c5.9xlarge",
+      "m1.medium":  "m3.medium",
+      "m1.large":   "m5.large",
+      "m1.xlarge":  "m5.xlarge",
+      "m3":       "m5",
+      "m4": "m5"
+    }
+    for ( i=0; i < ds_instances.length; i++){
+      console.log(ds_instances[i])
+      var instance = ds_instances[i]
+      var ds_instance_type_href = instance.instance_type_href
+      var cloud_href = instance.cloud_href
+      console.log(cloud_href)
+      var instance_types = _.reject(ds_instance_types, function(ds_instance_type){ return ds_instance_type.instance_type_href != ds_instance_type_href });
+      var cloud = _.reject(ds_clouds, function(ds_cloud){ return ds_cloud.href != cloud_href })
+      console.log(cloud)
+      var instance_type = instance_types[0].resource_uid
+      var series = instance_type.split('.')[0]
+      var model  = instance_type.split('.')[1]
+      var first_pass = ec2NewInstanceTypes[instance_type]
+      var second_pass = ec2NewInstanceTypes[series]
+      var new_instance_type = "none"
+      if (first_pass != undefined) {
+        new_instance_type = first_pass
+      } else if ( second_pass != undefined) {
+    
+        new_instance_type = second_pass+'.'+model
+      }
+      console.log(new_instance_type)
+      results.push(
+        {
+          resource_uid: instance["resource_uid"],
+          name: instance["name"],
+          href: instance["href"],
+          cloud_href: instance["cloud_href"],
+          cloud: cloud[0].name,
+          instance_type_href: instance["instance_type_href"],
+          instance_type: instance_type,
+          new_instance_type: new_instance_type
+        }
+      )
+    }
+  EOS
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "pol_aws_superseded_instance" do
+  validate_each $ds_combined_instance_data do
+    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} rows with cheaper data"
+    detail_template <<-EOS
+# Cheaper Regions
+| Resource_uid | Name | Href | Cloud | Current Instance Type | New Instance Type |
+| ------------ | ---- | ---- | ----- | --------------------- | ----------------- |
+{{ range data -}}
+| {{ .resource_uid }} | {{ .name }} | {{ .href }} | {{ .cloud}} | {{.instance_type}} | {{.new_instance_type}} |
+{{ end -}}
+___
+###### Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }}) within Org: {{ rs_org_name }} (Org ID: {{ rs_org_id }})
+EOS
+    check eq(val(item, "new_instance_type"), "none")
+    escalate $email
+  end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "email" do
+  email $param_email
+end
+
+###############################################################################
+# Cloud Workflow
+###############################################################################
+
+define sys_log($subject, $detail) do
+  if $$debug
+    rs_cm.audit_entries.create(
+      notify: "None",
+      audit_entry: {
+        auditee_href: @@account,
+        summary: $subject,
+        detail: $detail
+      }
+    )
+  end
+end
