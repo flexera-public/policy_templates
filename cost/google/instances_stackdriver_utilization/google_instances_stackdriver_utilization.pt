@@ -63,6 +63,9 @@ end
 ###############################################################################
 # Datasources
 ###############################################################################
+datasource "ds_time" do
+  run_script $js_time
+end
 
 datasource "ds_compute_utilization" do
   request do
@@ -150,6 +153,16 @@ end
 ###############################################################################
 # Scripts
 ###############################################################################
+script "js_time", type: "javascript" do
+  result "time"
+  code <<-EOF
+    var time = [{
+      "end_date":  new Date().toISOString(),
+      "start_date": new Date(new Date().setDate(new Date().getDate() - 30)).toISOString()
+    }]
+EOF
+end
+
 script "js_request_compute_utilization", type: "javascript" do
   result "request"
   parameters "param_google_project"
@@ -211,41 +224,49 @@ script "js_calculated_utilization", type: "javascript" do
   result "results"
   parameters "ds_compute_utilization", "ds_memory_utilization", "ds_disk_utilization"
   code <<-EOS
-     results = []
-     for ( i =0; i < ds_compute_utilization.length; i++ ){
-       var instance_id = ds_compute_utilization[i].instance_id
-       var points = ds_compute_utilization[i].points
-       var memory_record = _.find(ds_memory_utilization, function(record) { return record.instance_id == instance_id; })
-       if (memory_record == null || memory_record === undefined) {
+    results = []
+    for ( i =0; i < ds_compute_utilization.length; i++ ){
+      var instance_id = ds_compute_utilization[i].instance_id
+      var points = ds_compute_utilization[i].points
+      var memory_record = _.find(ds_memory_utilization, function(record) { return record.instance_id == instance_id; })
+      if (memory_record != null && memory_record !== undefined ) {
+        var memory_maximum = parseFloat(memory_record.max_mem_points).toFixed(2)
+        var memory_average = parseFloat(memory_record.avg_mem_points).toFixed(2)
+        var memory_minimum = parseFloat(memory_record.min_mem_points).toFixed(2)
+      } else {
         var memory_maximum = "N/A"
         var memory_average = "N/A"
         var memory_minimum = "N/A"
-       }
+      }
 
-       var disk_record = _.find(ds_disk_utilization, function(record) { return record.instance_id == instance_id; })
-       if (disk_record == null || disk_record === undefined) {
+      var disk_record = _.find(ds_disk_utilization, function(record) { return record.instance_id == instance_id; })
+      if (disk_record != null && disk_record !== undefined) {
+        var disk_average = parseFloat(disk_record.avg_disk_points).toFixed(2)
+        var disk_maximum = parseFloat(disk_record.max_disk_points).toFixed(2)
+        var disk_minimum = parseFloat(disk_record.min_disk_points).toFixed(2)
+      } else {
         var disk_maximum = "N/A"
         var disk_average = "N/A"
         var disk_minimum = "N/A"
-       }
-       results.push(
-         {
-           zone: ds_compute_utilization[i].zone,
-           instance_id: instance_id,
-           points: points,
-           label_instance_name: ds_compute_utilization[i].label_instance_name,
-           cpu_average: parseFloat(ds_compute_utilization[i].avg_cpu_points).toFixed(2),
-           cpu_maximum: parseFloat(ds_compute_utilization[i].max_cpu_points).toFixed(2),
-           cpu_minimum: parseFloat(ds_compute_utilization[i].min_cpu_points).toFixed(2),
-           mem_average: memory_average,
-           mem_maximum: memory_maximum,
-           mem_minimum: memory_minimum,
-           disk_average: disk_average,
-           disk_maximum: disk_maximum,
-           disk_minimum: disk_minimum
-         }
-       )
-     }
+      }
+      results.push(
+        {
+          zone: ds_compute_utilization[i].zone,
+          instance_id: instance_id,
+          points: points,
+          label_instance_name: ds_compute_utilization[i].label_instance_name,
+          cpu_average: parseFloat(ds_compute_utilization[i].avg_cpu_points).toFixed(2),
+          cpu_maximum: parseFloat(ds_compute_utilization[i].max_cpu_points).toFixed(2),
+          cpu_minimum: parseFloat(ds_compute_utilization[i].min_cpu_points).toFixed(2),
+          mem_average: memory_average,
+          mem_maximum: memory_maximum,
+          mem_minimum: memory_minimum,
+          disk_average: disk_average,
+          disk_maximum: disk_maximum,
+          disk_minimum: disk_minimum
+        }
+      )
+    }
   EOS
 end
 
