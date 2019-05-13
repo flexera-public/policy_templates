@@ -32,6 +32,13 @@ parameter "param_exclude_tags" do
   type "list"
 end
 
+parameter "param_new_instancetype_category" do
+  label "Instance Type Category"
+  type "string"
+  description "Instance Type Category to pick from, see docs for details"
+  allowed_values "regular", "burstable", "amd"
+end
+
 ###############################################################################
 # Authentication
 ###############################################################################
@@ -109,13 +116,13 @@ datasource "ds_instance_size_map" do
   request do
     verb "GET"
     host "raw.githubusercontent.com"
-    path "/rightscale/policy_templates/aws_superseded_instances/cost/aws/superseded_instances/superseded_instance_types.json"
+    path "/rightscale/policy_templates/aws_superseded_instances/cost/aws/superseded_instance/superseded_instance_types.json"
     header "User-Agent", "RS Policies"
   end
 end
 
 datasource "ds_combined_instance_data" do
-  run_script $js_merge_instance_data, $ds_instances, $ds_instance_types, $ds_clouds, $ds_networks, $ds_instance_size_map
+  run_script $js_merge_instance_data, $ds_instances, $ds_instance_types, $ds_clouds, $ds_networks, $ds_instance_size_map, $param_new_instancetype_category
 end
 
 ###############################################################################
@@ -123,7 +130,7 @@ end
 ###############################################################################
 
 script "js_merge_instance_data", type: "javascript" do
-  parameters "ds_instances", "ds_instance_types", "ds_clouds", "ds_networks", "ds_instance_size_map"
+  parameters "ds_instances", "ds_instance_types", "ds_clouds", "ds_networks", "ds_instance_size_map", "param_new_instancetype_category"
   result "results"
   code <<-EOS
     var results = []
@@ -152,17 +159,19 @@ script "js_merge_instance_data", type: "javascript" do
       var instance_type = instance_types[0].resource_uid
       var series = instance_type.split('.')[0]
       var model  = instance_type.split('.')[1]
-      var first_pass = ec2NewInstanceTypes[instance_type]["regular"]
-      var second_pass = ec2NewInstanceTypes[series]["regular"]
+      var first_pass = ec2NewInstanceTypes[instance_type]
+      var second_pass = ec2NewInstanceTypes[series]
       var new_instance_type = "none"
       if (first_pass != undefined) {
-        new_instance_type = first_pass
+        new_instance_type = first_pass[param_new_instancetype_category] ? first_pass[param_new_instancetype_category] : first_pass["regular"]
       } else if ( second_pass != undefined) {
-        new_instance_type = second_pass+'.'+model
+        new_instance_type = second_pass[param_new_instancetype_category] ? second_pass[param_new_instancetype_category]+'.'+model : second_pass["regular"]+'.'+model
       }
 
       if (new_instance_type != "none") {
         console.log(series)
+        console.log(new_instance_type)
+        
         if ( _.contains(ec2ClassicInstances,series) ) {
           var old_instance_vpc = false
           console.log(series + "false")
