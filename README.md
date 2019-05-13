@@ -28,6 +28,7 @@ Please contact sales@rightscale.com to learn more.
 - [Low Account Usage](./cost/low_account_usage/)
 - [Low Service Usage](./cost/low_service_usage/)
 - [Google Unutilized IP Addresses](./cost/google/unutilized_ip_addresses/)
+- [Google StackDriver Utilization](./cost/google/instance_stackdriver_utilization/)
 
 ### Security
 - [Security Group: ICMP Enabled](./security/security_groups/icmp_enabled/)
