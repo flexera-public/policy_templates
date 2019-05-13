@@ -46,6 +46,12 @@ Please contact sales@rightscale.com to learn more.
 - [Azure: Tag Resources with Resource Group Name](./compliance/tags/azure_rg_tags)
 - [Billing Center Access Report](./compliance/billing_center_access_report/)
 - [GitHub.com Available Seats](./compliance/github/available_seats/)
+- [GitHub.com Unpermitted Outside Collaborators](./compliance/github/outside_collaborators/)
+- [GitHub.com Unpermitted Repository Names](./compliance/github/repository_naming/)
+- [GitHub.com Unpermitted Top-Level Teams](./compliance/github/toplevel_teams/)
+- [GitHub.com Unpermitted Sized Repositories](./compliance/github/repository_size/)
+- [GitHub.com Repository Branches without Protection](./compliance/github/repository_branch_protection/)
+- [GitHub.com Repositories without Admin Team](./compliance/github/repository_admin_team/)
 - [AWS Unused ECS Clusters](./compliance/aws/ecs_unused/)
 
 ### Operational
