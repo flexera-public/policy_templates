@@ -83,6 +83,7 @@ datasource "ds_instances" do
   field "href", href(iter_item)
   field "cloud_href", jmes_path(iter_item, "links[?rel=='cloud'].href | [0]")
   field "instance_type_href", jmes_path(iter_item, "links[?rel=='instance_type'].href | [0]")
+  field "locked", jmes_path(iter_item,"locked")
 end
 
 datasource "ds_instance_types" do
@@ -104,8 +105,17 @@ datasource "ds_networks" do
   field "name", val(iter_item, "name")
 end
 
+datasource "ds_instance_size_map" do
+  request do
+    verb "GET"
+    host "raw.githubusercontent.com"
+    path "/rightscale/policy_templates/aws_superseded_instances/cost/aws/superseded_instances/superseded_instance_types.json"
+    header "User-Agent", "RS Policies"
+  end
+end
+
 datasource "ds_combined_instance_data" do
-  run_script $js_merge_instance_data, $ds_instances, $ds_instance_types, $ds_clouds, $ds_networks
+  run_script $js_merge_instance_data, $ds_instances, $ds_instance_types, $ds_clouds, $ds_networks, $ds_instance_size_map
 end
 
 ###############################################################################
@@ -113,32 +123,11 @@ end
 ###############################################################################
 
 script "js_merge_instance_data", type: "javascript" do
-  parameters "ds_instances", "ds_instance_types", "ds_clouds", "ds_networks"
+  parameters "ds_instances", "ds_instance_types", "ds_clouds", "ds_networks", "ds_instance_size_map"
   result "results"
   code <<-EOS
     var results = []
-    var ec2NewInstanceTypes = {
-      "t1":       "t2",
-      "cr1":      "r3",
-      "hs1":      "d2",
-      "hi1":      "i3",
-      "i2":       "i3",
-      "m2.xlarge":  "r3.large",
-      "m2.2xlarge": "r3.xlarge",
-      "m2.4xlarge": "r3.2xlarge",
-      "c1.medium":  "c5.large",
-      "c1.xlarge":  "c5.xlarge",
-      "c3":       "c5",
-      "c4":       "c5",
-      "c3.8xlarge": "c5.9xlarge",
-      "c4.8xlarge": "c5.9xlarge",
-      "m1.medium":  "m3.medium",
-      "m1.large":   "m5.large",
-      "m1.xlarge":  "m5.xlarge",
-      "m3.medium": "m5.large",
-      "m3":       "m5",
-      "m4": "m5"
-    }
+    var ec2NewInstanceTypes = ds_instance_size_map
     var ec2ClassicInstances = [
       "m1",
       "m3",
@@ -163,8 +152,8 @@ script "js_merge_instance_data", type: "javascript" do
       var instance_type = instance_types[0].resource_uid
       var series = instance_type.split('.')[0]
       var model  = instance_type.split('.')[1]
-      var first_pass = ec2NewInstanceTypes[instance_type]
-      var second_pass = ec2NewInstanceTypes[series]
+      var first_pass = ec2NewInstanceTypes[instance_type]["regular"]
+      var second_pass = ec2NewInstanceTypes[series]["regular"]
       var new_instance_type = "none"
       if (first_pass != undefined) {
         new_instance_type = first_pass
@@ -201,7 +190,7 @@ script "js_merge_instance_data", type: "javascript" do
         var warn = false
         var old_instance_type_stats_disk_count = old_instance_type_stats[0].local_disks
         var new_instance_type_stats_disk_count = new_instance_type_stats[0].local_disks
-        if ( old_instance_type_stats_disk_count > new_instance_type_stats_disk_count ) {
+        if ( (old_instance_type_stats_disk_count > new_instance_type_stats_disk_count) || vpc_incompatible_move ) {
           warn = true
         }
         results.push(
@@ -213,6 +202,7 @@ script "js_merge_instance_data", type: "javascript" do
             cloud: cloud[0].name,
             instance_type_href: instance["instance_type_href"],
             instance_type: instance_type,
+            locked: instance["locked"],
             old_instance_type_stats_cpu_count: old_instance_type_stats[0].cpu_count,
             old_instance_type_stats_memory: old_instance_type_stats[0].memory,
             old_instance_type_stats_disk_count: old_instance_type_stats_disk_count,
@@ -238,10 +228,10 @@ policy "pol_aws_superseded_instance" do
     summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} rows with cheaper data"
     detail_template <<-EOS
 # Cheaper Regions
-| Resource_uid | Name | Href | Cloud | Current Instance Type | New Instance Type | Old Instance Type Stats | New Instance Type Stats | VPC Required |
-| ------------ | ---- | ---- | ----- | --------------------- | ----------------- | ----------------------- | ----------------------- | ------------ |
+| Locked | Resource_uid | Name | Cloud | Current Instance Type | New Instance Type | Old Instance Type Stats | New Instance Type Stats | VPC Required |
+| ------ | ------------ | ---- | ----- | --------------------- | ----------------- | ----------------------- | ----------------------- | ------------ |
 {{ range data -}}
-|{{ if .warn }}**_{{ end -}}{{ .resource_uid }}{{ if .warn }}_**{{ end -}} | {{ .name }} | {{ .href }} | {{ .cloud}} | {{.instance_type}} | {{.new_instance_type}} | CPU Count: {{ .old_instance_type_stats_cpu_count }}, Memory: {{.old_instance_type_stats_memory}},  Disks: {{.old_instance_type_stats_disk_count}} | CPU Count: {{ .new_instance_type_stats_cpu_count }}, Memory: {{.new_instance_type_stats_memory}},  Disks: {{.new_instance_type_stats_disk_count}} | {{ if .vpc_incompatible_move }} **_true_** {{else}} false {{end}} |
+|{{if .locked}} ![Locked](https://{{rs_cm_host}}/images/svg/padlock-closed.svg) {{ else }} ![Unlocked](https://{{rs_cm_host}}/images/svg/padlock-open.svg) {{ end }} | {{ if .warn }}**_{{ end -}}{{ .resource_uid }}{{ if .warn }}_**{{ end -}} | {{ .name }} | {{ .cloud}} | {{.instance_type}} | {{.new_instance_type}} | CPU Count: {{ .old_instance_type_stats_cpu_count }}, Memory: {{.old_instance_type_stats_memory}},  Disks: {{.old_instance_type_stats_disk_count}} | CPU Count: {{ .new_instance_type_stats_cpu_count }}, Memory: {{.new_instance_type_stats_memory}},  Disks: {{.new_instance_type_stats_disk_count}} | {{ if .vpc_incompatible_move }} **_TRUE_** {{else}} false {{end}} |
 {{ end -}}
 ___
 ###### Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }}) within Org: {{ rs_org_name }} (Org ID: {{ rs_org_id }})
