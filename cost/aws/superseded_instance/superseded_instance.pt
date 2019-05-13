@@ -27,7 +27,7 @@ parameter "param_email" do
 end
 
 parameter "param_exclude_tags" do
-  label "Billing Center Name"
+  label "Exclude Tags"
   description "list of excluded servers"
   type "list"
 end
@@ -60,6 +60,13 @@ resources "instance_types", type: "rs_cm.instance_types" do
   cloud_href href(iter_item)
 end
 
+resources "networks", type: "rs_cm.networks" do
+  iterate @clouds
+  filter do
+    cloud_href href(iter_item)
+  end
+end
+
 ###############################################################################
 # Datasources
 ###############################################################################
@@ -83,10 +90,22 @@ datasource "ds_instance_types" do
   field "resource_uid", val(iter_item,  "resource_uid")
   field "cloud_href", jmes_path(iter_item, "links[?rel=='cloud'].href | [0]")
   field "instance_type_href", jmes_path(iter_item, "links[?rel=='self'].href | [0]")
+  field "memory", jmes_path(iter_item,"memory")
+  field "cpu_count", jmes_path(iter_item,"cpu_count")
+  field "local_disks", jmes_path(iter_item, "local_disks")
+  field "local_disk_size", jmes_path(iter_item, "local_disk_size")
+end
+
+datasource "ds_networks" do
+  iterate @networks
+  field "resource_uid", val(iter_item, "resource_uid")
+  field "cloud_href", jmes_path(iter_item, "links[?rel=='cloud'].href | [0]")
+  field "network_href", jmes_path(iter_item, "links[?rel=='self'].href | [0]")
+  field "name", val(iter_item, "name")
 end
 
 datasource "ds_combined_instance_data" do
-  run_script $js_merge_instance_data, $ds_instances, $ds_instance_types, $ds_clouds
+  run_script $js_merge_instance_data, $ds_instances, $ds_instance_types, $ds_clouds, $ds_networks
 end
 
 ###############################################################################
@@ -94,7 +113,7 @@ end
 ###############################################################################
 
 script "js_merge_instance_data", type: "javascript" do
-  parameters "ds_instances", "ds_instance_types", "ds_clouds"
+  parameters "ds_instances", "ds_instance_types", "ds_clouds", "ds_networks"
   result "results"
   code <<-EOS
     var results = []
@@ -116,18 +135,31 @@ script "js_merge_instance_data", type: "javascript" do
       "m1.medium":  "m3.medium",
       "m1.large":   "m5.large",
       "m1.xlarge":  "m5.xlarge",
+      "m3.medium": "m5.large",
       "m3":       "m5",
       "m4": "m5"
     }
+    var ec2ClassicInstances = [
+      "m1",
+      "m3",
+      "t1",
+      "c1",
+      "c3",
+      "cc2",
+      "cr1",
+      "m2",
+      "r3",
+      "d2",
+      "hs1",
+      "i2",
+      "g2"
+    ]
     for ( i=0; i < ds_instances.length; i++){
-      console.log(ds_instances[i])
       var instance = ds_instances[i]
       var ds_instance_type_href = instance.instance_type_href
       var cloud_href = instance.cloud_href
-      console.log(cloud_href)
       var instance_types = _.reject(ds_instance_types, function(ds_instance_type){ return ds_instance_type.instance_type_href != ds_instance_type_href });
       var cloud = _.reject(ds_clouds, function(ds_cloud){ return ds_cloud.href != cloud_href })
-      console.log(cloud)
       var instance_type = instance_types[0].resource_uid
       var series = instance_type.split('.')[0]
       var model  = instance_type.split('.')[1]
@@ -137,22 +169,62 @@ script "js_merge_instance_data", type: "javascript" do
       if (first_pass != undefined) {
         new_instance_type = first_pass
       } else if ( second_pass != undefined) {
-    
         new_instance_type = second_pass+'.'+model
       }
-      console.log(new_instance_type)
-      results.push(
-        {
-          resource_uid: instance["resource_uid"],
-          name: instance["name"],
-          href: instance["href"],
-          cloud_href: instance["cloud_href"],
-          cloud: cloud[0].name,
-          instance_type_href: instance["instance_type_href"],
-          instance_type: instance_type,
-          new_instance_type: new_instance_type
+
+      if (new_instance_type != "none") {
+        console.log(series)
+        if ( _.contains(ec2ClassicInstances,series) ) {
+          var old_instance_vpc = false
+          console.log(series + "false")
+        } else {
+          var old_instance_vpc = true
+          console.log(series + "true")
         }
-      )
+        if ( _.contains(ec2ClassicInstances,new_instance_type.split('.')[0]) ) {
+          var new_instance_vpc = false
+          console.log(new_instance_type.split('.')[0] + "new-false")
+        } else  {
+          var new_instance_vpc = true
+          console.log(new_instance_type.split('.')[0] + "new-true")
+        }
+
+        if ((!old_instance_vpc) && (new_instance_vpc)) {
+          console.log(old_instance_vpc+'-'+new_instance_vpc+'-true')
+          var vpc_incompatible_move = true
+        } else {
+          console.log(old_instance_vpc+'-'+new_instance_vpc-false+'-false')
+          var vpc_incompatible_move = false
+        }
+        var old_instance_type_stats = _.reject(ds_instance_types, function(ds_instance_type) { return ds_instance_type.resource_uid != instance_type})
+        var new_instance_type_stats = _.reject(ds_instance_types, function(ds_instance_type) { return ds_instance_type.resource_uid != new_instance_type})
+        var warn = false
+        var old_instance_type_stats_disk_count = old_instance_type_stats[0].local_disks
+        var new_instance_type_stats_disk_count = new_instance_type_stats[0].local_disks
+        if ( old_instance_type_stats_disk_count > new_instance_type_stats_disk_count ) {
+          warn = true
+        }
+        results.push(
+          {
+            resource_uid: instance["resource_uid"],
+            name: instance["name"],
+            href: instance["href"],
+            cloud_href: instance["cloud_href"],
+            cloud: cloud[0].name,
+            instance_type_href: instance["instance_type_href"],
+            instance_type: instance_type,
+            old_instance_type_stats_cpu_count: old_instance_type_stats[0].cpu_count,
+            old_instance_type_stats_memory: old_instance_type_stats[0].memory,
+            old_instance_type_stats_disk_count: old_instance_type_stats_disk_count,
+            new_instance_type: new_instance_type,
+            new_instance_type_stats_cpu_count: new_instance_type_stats[0].cpu_count,
+            new_instance_type_stats_memory: new_instance_type_stats[0].memory,
+            new_instance_type_stats_disk_count: new_instance_type_stats_disk_count,
+            vpc_incompatible_move: vpc_incompatible_move,
+            warn: warn
+          }
+        )
+      }
     }
   EOS
 end
@@ -166,10 +238,10 @@ policy "pol_aws_superseded_instance" do
     summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} rows with cheaper data"
     detail_template <<-EOS
 # Cheaper Regions
-| Resource_uid | Name | Href | Cloud | Current Instance Type | New Instance Type |
-| ------------ | ---- | ---- | ----- | --------------------- | ----------------- |
+| Resource_uid | Name | Href | Cloud | Current Instance Type | New Instance Type | Old Instance Type Stats | New Instance Type Stats | VPC Required |
+| ------------ | ---- | ---- | ----- | --------------------- | ----------------- | ----------------------- | ----------------------- | ------------ |
 {{ range data -}}
-| {{ .resource_uid }} | {{ .name }} | {{ .href }} | {{ .cloud}} | {{.instance_type}} | {{.new_instance_type}} |
+|{{ if .warn }}**_{{ end -}}{{ .resource_uid }}{{ if .warn }}_**{{ end -}} | {{ .name }} | {{ .href }} | {{ .cloud}} | {{.instance_type}} | {{.new_instance_type}} | CPU Count: {{ .old_instance_type_stats_cpu_count }}, Memory: {{.old_instance_type_stats_memory}},  Disks: {{.old_instance_type_stats_disk_count}} | CPU Count: {{ .new_instance_type_stats_cpu_count }}, Memory: {{.new_instance_type_stats_memory}},  Disks: {{.new_instance_type_stats_disk_count}} | {{ if .vpc_incompatible_move }} **_true_** {{else}} false {{end}} |
 {{ end -}}
 ___
 ###### Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }}) within Org: {{ rs_org_name }} (Org ID: {{ rs_org_id }})
