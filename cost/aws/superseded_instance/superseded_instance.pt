@@ -91,6 +91,7 @@ datasource "ds_instances" do
   field "cloud_href", jmes_path(iter_item, "links[?rel=='cloud'].href | [0]")
   field "instance_type_href", jmes_path(iter_item, "links[?rel=='instance_type'].href | [0]")
   field "locked", jmes_path(iter_item,"locked")
+  field "state", jmes_path(iter_item,"state")
 end
 
 datasource "ds_instance_types" do
@@ -150,79 +151,72 @@ script "js_merge_instance_data", type: "javascript" do
       "i2",
       "g2"
     ]
-    for ( i=0; i < ds_instances.length; i++){
+
+    for ( i=0; i < ds_instances.length; i++) {
       var instance = ds_instances[i]
-      var ds_instance_type_href = instance.instance_type_href
-      var cloud_href = instance.cloud_href
-      var instance_types = _.reject(ds_instance_types, function(ds_instance_type){ return ds_instance_type.instance_type_href != ds_instance_type_href });
-      var cloud = _.reject(ds_clouds, function(ds_cloud){ return ds_cloud.href != cloud_href })
-      var instance_type = instance_types[0].resource_uid
-      var series = instance_type.split('.')[0]
-      var model  = instance_type.split('.')[1]
-      var first_pass = ec2NewInstanceTypes[instance_type]
-      var second_pass = ec2NewInstanceTypes[series]
-      var new_instance_type = "none"
-      if (first_pass != undefined) {
-        new_instance_type = first_pass[param_new_instancetype_category] ? first_pass[param_new_instancetype_category] : first_pass["regular"]
-      } else if ( second_pass != undefined) {
-        new_instance_type = second_pass[param_new_instancetype_category] ? second_pass[param_new_instancetype_category]+'.'+model : second_pass["regular"]+'.'+model
-      }
-
-      if (new_instance_type != "none") {
-        console.log(series)
-        console.log(new_instance_type)
-        
-        if ( _.contains(ec2ClassicInstances,series) ) {
-          var old_instance_vpc = false
-          console.log(series + "false")
-        } else {
-          var old_instance_vpc = true
-          console.log(series + "true")
-        }
-        if ( _.contains(ec2ClassicInstances,new_instance_type.split('.')[0]) ) {
-          var new_instance_vpc = false
-          console.log(new_instance_type.split('.')[0] + "new-false")
-        } else  {
-          var new_instance_vpc = true
-          console.log(new_instance_type.split('.')[0] + "new-true")
+      if ( _.contains(['provisioned','operational'],instance["state"]) ) {
+        var ds_instance_type_href = instance.instance_type_href
+        var cloud_href = instance.cloud_href
+        var instance_types = _.reject(ds_instance_types, function(ds_instance_type){ return ds_instance_type.instance_type_href != ds_instance_type_href });
+        var cloud = _.reject(ds_clouds, function(ds_cloud){ return ds_cloud.href != cloud_href })
+        var instance_type = instance_types[0].resource_uid
+        var series = instance_type.split('.')[0]
+        var model  = instance_type.split('.')[1]
+        var first_pass = ec2NewInstanceTypes[instance_type]
+        var second_pass = ec2NewInstanceTypes[series]
+        var new_instance_type = "none"
+        if (first_pass != undefined) {
+          new_instance_type = first_pass[param_new_instancetype_category] ? first_pass[param_new_instancetype_category] : first_pass["regular"]
+        } else if ( second_pass != undefined) {
+          new_instance_type = second_pass[param_new_instancetype_category] ? second_pass[param_new_instancetype_category]+'.'+model : second_pass["regular"]+'.'+model
         }
 
-        if ((!old_instance_vpc) && (new_instance_vpc)) {
-          console.log(old_instance_vpc+'-'+new_instance_vpc+'-true')
-          var vpc_incompatible_move = true
-        } else {
-          console.log(old_instance_vpc+'-'+new_instance_vpc-false+'-false')
-          var vpc_incompatible_move = false
-        }
-        var old_instance_type_stats = _.reject(ds_instance_types, function(ds_instance_type) { return ds_instance_type.resource_uid != instance_type})
-        var new_instance_type_stats = _.reject(ds_instance_types, function(ds_instance_type) { return ds_instance_type.resource_uid != new_instance_type})
-        var warn = false
-        var old_instance_type_stats_disk_count = old_instance_type_stats[0].local_disks
-        var new_instance_type_stats_disk_count = new_instance_type_stats[0].local_disks
-        if ( (old_instance_type_stats_disk_count > new_instance_type_stats_disk_count) || vpc_incompatible_move ) {
-          warn = true
-        }
-        results.push(
-          {
-            resource_uid: instance["resource_uid"],
-            name: instance["name"],
-            href: instance["href"],
-            cloud_href: instance["cloud_href"],
-            cloud: cloud[0].name,
-            instance_type_href: instance["instance_type_href"],
-            instance_type: instance_type,
-            locked: instance["locked"],
-            old_instance_type_stats_cpu_count: old_instance_type_stats[0].cpu_count,
-            old_instance_type_stats_memory: old_instance_type_stats[0].memory,
-            old_instance_type_stats_disk_count: old_instance_type_stats_disk_count,
-            new_instance_type: new_instance_type,
-            new_instance_type_stats_cpu_count: new_instance_type_stats[0].cpu_count,
-            new_instance_type_stats_memory: new_instance_type_stats[0].memory,
-            new_instance_type_stats_disk_count: new_instance_type_stats_disk_count,
-            vpc_incompatible_move: vpc_incompatible_move,
-            warn: warn
+        if (new_instance_type != "none") {
+          if ( _.contains(ec2ClassicInstances,series) ) {
+            var old_instance_vpc = false
+          } else {
+            var old_instance_vpc = true
           }
-        )
+          if ( _.contains(ec2ClassicInstances,new_instance_type.split('.')[0]) ) {
+            var new_instance_vpc = false
+          } else  {
+            var new_instance_vpc = true
+          }
+          if ((!old_instance_vpc) && (new_instance_vpc)) {
+            var vpc_incompatible_move = true
+          } else {
+            var vpc_incompatible_move = false
+          }
+          var old_instance_type_stats = _.reject(ds_instance_types, function(ds_instance_type) { return ds_instance_type.resource_uid != instance_type})
+          var new_instance_type_stats = _.reject(ds_instance_types, function(ds_instance_type) { return ds_instance_type.resource_uid != new_instance_type})
+          var warn = false
+          var old_instance_type_stats_disk_count = old_instance_type_stats[0].local_disks
+          var new_instance_type_stats_disk_count = new_instance_type_stats[0].local_disks
+          if ( (old_instance_type_stats_disk_count > new_instance_type_stats_disk_count) || vpc_incompatible_move ) {
+            warn = true
+          }
+          results.push(
+            {
+              resource_uid: instance["resource_uid"],
+              name: instance["name"],
+              href: instance["href"],
+              cloud_href: instance["cloud_href"],
+              cloud: cloud[0].name,
+              instance_type_href: instance["instance_type_href"],
+              instance_type: instance_type,
+              locked: instance["locked"],
+              old_instance_type_stats_cpu_count: old_instance_type_stats[0].cpu_count,
+              old_instance_type_stats_memory: old_instance_type_stats[0].memory,
+              old_instance_type_stats_disk_count: old_instance_type_stats_disk_count,
+              new_instance_type: new_instance_type,
+              new_instance_type_stats_cpu_count: new_instance_type_stats[0].cpu_count,
+              new_instance_type_stats_memory: new_instance_type_stats[0].memory,
+              new_instance_type_stats_disk_count: new_instance_type_stats_disk_count,
+              vpc_incompatible_move: vpc_incompatible_move,
+              warn: warn
+            }
+          )
+        }
       }
     }
   EOS
@@ -236,7 +230,7 @@ policy "pol_aws_superseded_instance" do
   validate_each $ds_combined_instance_data do
     summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} rows with cheaper data"
     detail_template <<-EOS
-# Cheaper Regions
+# AWS Superseded Instances
 | Locked | Resource_uid | Name | Cloud | Current Instance Type | New Instance Type | Old Instance Type Stats | New Instance Type Stats | VPC Required |
 | ------ | ------------ | ---- | ----- | --------------------- | ----------------- | ----------------------- | ----------------------- | ------------ |
 {{ range data -}}
