@@ -28,6 +28,7 @@ Please contact sales@rightscale.com to learn more.
 - [Low Account Usage](./cost/low_account_usage/)
 - [Low Service Usage](./cost/low_service_usage/)
 - [Google Unutilized IP Addresses](./cost/google/unutilized_ip_addresses/)
+- [AWS Instance CloudWatch Utilization](./cost/aws/instance_cloudwatch_utilization/)
 - [Google StackDriver Utilization](./cost/google/instance_stackdriver_utilization/)
 
 ### Security
