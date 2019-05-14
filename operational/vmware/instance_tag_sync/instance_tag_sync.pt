@@ -10,11 +10,6 @@ category "Operational"
 # Permissions
 ###############################################################################
 
-permission "perm_read_creds" do
-  actions   "rs_cm.show_sensitive","rs_cm.index_sensitive"
-  resources "rs_cm.credentials"
-end
-
 permission "perm_retrieve_resources" do
   label "Retrieve Resources"
   actions   "rs_cm.index","rs_cm.show"
@@ -39,6 +34,12 @@ end
 parameter "param_cloud_name" do
   type "string"
   label "Cloud Name"
+end
+
+parameter "param_wstunnel_host" do
+  type "string"
+  label "wstunnel host"
+  default "wstunnel10-1.rightscale.com"
 end
 
 parameter "param_wstunnel_token" do
@@ -115,7 +116,7 @@ end
 
 policy "policy_instance_sync" do
   validate_each $ds_instances_and_tags do
-    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} tags synced on {{ parameters.param_cloud_name }}"
+    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} tags will be synced on {{ parameters.param_cloud_name }}"
     detail_template <<-EOS
 # tags synced on {{ parameters.param_cloud_name }}
 | instanceId | name | state | tags |
@@ -134,30 +135,30 @@ end
 ###############################################################################
 
 escalation "escalate_resources" do
-  run "update_tags", data, $param_wstunnel_token, $param_vsphere_username, $param_vsphere_password, $param_tag_category
+  run "update_tags", data, $param_wstunnel_host, $param_wstunnel_token, $param_vsphere_username, $param_vsphere_password, $param_tag_category
 end
 
 ###############################################################################
 # Cloud Workflow
 ###############################################################################
 
-define update_tags($data, $param_wstunnel_token, $param_vsphere_username, $param_vsphere_password, $param_tag_category) do
+define update_tags($data, $param_wstunnel_host, $param_wstunnel_token, $param_vsphere_username, $param_vsphere_password, $param_tag_category) do
   $$debug=false
   call sys_log('VMWare Instance Tag Sync',to_s($data))
-  call generate_session_token($param_wstunnel_token, $param_vsphere_username, $param_vsphere_password) retrieve $session_token
+  call generate_session_token($param_wstunnel_host, $param_wstunnel_token, $param_vsphere_username, $param_vsphere_password) retrieve $session_token
   call sys_log("session_token:",$session_token)
   # $category_id = "urn:vmomi:InventoryServiceCategory:f9c8236f-7320-47f0-8daa-1d7c83a673ab:GLOBAL"
-  call list_categories($param_wstunnel_token, $session_token) retrieve $category_ids
+  call list_categories($param_wstunnel_host, $param_wstunnel_token, $session_token) retrieve $category_ids
   $category_id = null
   foreach $category in $category_ids do
-    call get_category($param_wstunnel_token, $session_token, $category) retrieve $spec
+    call get_category($param_wstunnel_host, $param_wstunnel_token, $session_token, $category) retrieve $spec
     if $spec["name"] == $param_tag_category
       $category_id = $category
     end
   end
 
   if $category_id == null
-    call create_category($param_wstunnel_token, $session_token,"MULTIPLE", "rightscale tag category", $param_tag_category) retrieve $category_id
+    call create_category($param_wstunnel_host, $param_wstunnel_token, $session_token,"MULTIPLE", "rightscale tag category", $param_tag_category) retrieve $category_id
   end
 
   $$tag_array = []
@@ -165,22 +166,22 @@ define update_tags($data, $param_wstunnel_token, $param_vsphere_username, $param
     call sys_log('VMWare Instance sync: ',to_s($instance))
     $data_tags = $instance["tags"]
     $$c_tag_ids = []
-    call list_tags_by_category($param_wstunnel_token, $session_token, $category_id) retrieve $tag_ids
+    call list_tags_by_category($param_wstunnel_host, $param_wstunnel_token, $session_token, $category_id) retrieve $tag_ids
     $$c_tag_ids = $tag_ids
     $$detach_response = []
     if size($tag_ids) > 0
       foreach $tag_id in $tag_ids do
-        call detach_tag($param_wstunnel_token, $session_token, $tag_id, $instance["id"]) retrieve $response
+        call detach_tag($param_wstunnel_host,$param_wstunnel_token, $session_token, $tag_id, $instance["id"]) retrieve $response
         $$detach_response << $response
       end
     end
-    call list_tags($param_wstunnel_token, $session_token) retrieve $tag_ids
+    call list_tags($param_wstunnel_host, $param_wstunnel_token, $session_token) retrieve $tag_ids
     call sys_log("tag_ids:", to_s($tag_ids))
     task_label('populating tags list')
     foreach $tag_id in $tag_ids do
       $match_tag = first(select($$tag_array, { "id": $tag_id }))
       if $match_tag == null
-        call get_tag($param_wstunnel_token, $session_token, $tag_id) retrieve $spec
+        call get_tag($param_wstunnel_host, $param_wstunnel_token, $session_token, $tag_id) retrieve $spec
         $$tag_array << { "name": $spec["name"], "id": $spec["id"] }
       end
     end
@@ -197,22 +198,22 @@ define update_tags($data, $param_wstunnel_token, $param_vsphere_username, $param
         $$matching_id = $match_tag["id"]
       end
       if $$matching_id == null
-        call create_tag($param_wstunnel_token, $session_token, $category_id, "rightscale synced tag", $tag) retrieve $tag_id
+        call create_tag($param_wstunnel_host, $param_wstunnel_token, $session_token, $category_id, "rightscale synced tag", $tag) retrieve $tag_id
       else
         $tag_id = $$matching_id
       end
-      call attach_tag($param_wstunnel_token, $session_token, $tag_id, $instance["id"]) retrieve $response
+      call attach_tag($param_wstunnel_host, $param_wstunnel_token, $session_token, $tag_id, $instance["id"]) retrieve $response
     end
   end
 end
 
 # https://vdc-repo.vmware.com/vmwb-repository/dcr-public/1cd28284-3b72-4885-9e31-d1c6d9e26686/71ef7304-a6c9-43b3-a3cd-868b2c236c81/doc/operations/com/vmware/cis/session.create-operation.html
-define generate_session_token($tunnel_token, $username, $password) return $token do
+define generate_session_token($param_wstunnel_host, $tunnel_token, $username, $password) return $token do
   $$str = $username + ":" + $password
   $$encoded_auth = to_base64($$str)
   $response = http_post(
     insecure: true,
-    url: "https://wstunnel10-1.rightscale.com/_token/"+$tunnel_token+"/rest/com/vmware/cis/session",
+    url: "https://"+$param_wstunnel_host+"/_token/"+$tunnel_token+"/rest/com/vmware/cis/session",
     headers: {
       "Accept": "application/json",
       "Authorization": "Basic " + $$encoded_auth
@@ -222,10 +223,10 @@ define generate_session_token($tunnel_token, $username, $password) return $token
 end
 
 # https://vdc-repo.vmware.com/vmwb-repository/dcr-public/1cd28284-3b72-4885-9e31-d1c6d9e26686/71ef7304-a6c9-43b3-a3cd-868b2c236c81/doc/operations/com/vmware/cis/tagging/category.create-operation.html
-define create_category($tunnel_token, $session_token, $cardinality, $description, $name) return $category_id do
+define create_category($param_wstunnel_host, $tunnel_token, $session_token, $cardinality, $description, $name) return $category_id do
   $response = http_post(
     insecure: true,
-    url: "https://wstunnel10-1.rightscale.com/_token/"+$tunnel_token+"/rest/com/vmware/cis/tagging/category",
+    url: "https://"+$param_wstunnel_host+"/_token/"+$tunnel_token+"/rest/com/vmware/cis/tagging/category",
     headers: {
       "Accept": "application/json",
       "Content-Type": "application/json",
@@ -244,10 +245,10 @@ define create_category($tunnel_token, $session_token, $cardinality, $description
 end
 
 # https://vdc-repo.vmware.com/vmwb-repository/dcr-public/1cd28284-3b72-4885-9e31-d1c6d9e26686/71ef7304-a6c9-43b3-a3cd-868b2c236c81/doc/operations/com/vmware/cis/tagging/category.list-operation.html
-define list_categories($tunnel_token, $session_token) return $category_ids do
+define list_categories($param_wstunnel_host, $tunnel_token, $session_token) return $category_ids do
   $response = http_get(
     insecure: true,
-    url: "https://wstunnel10-1.rightscale.com/_token/"+$tunnel_token+"/rest/com/vmware/cis/tagging/category",
+    url: "https://"+$param_wstunnel_host+"/_token/"+$tunnel_token+"/rest/com/vmware/cis/tagging/category",
     headers: {
       "Accept": "application/json",
       "Content-Type": "application/json",
@@ -258,10 +259,10 @@ define list_categories($tunnel_token, $session_token) return $category_ids do
 end
 
 # https://vdc-repo.vmware.com/vmwb-repository/dcr-public/1cd28284-3b72-4885-9e31-d1c6d9e26686/71ef7304-a6c9-43b3-a3cd-868b2c236c81/doc/operations/com/vmware/cis/tagging/category.get-operation.html
-define get_category($tunnel_token, $session_token, $category_id) return $spec do
+define get_category($param_wstunnel_host, $tunnel_token, $session_token, $category_id) return $spec do
   $response = http_get(
     insecure: true,
-    url: "https://wstunnel10-1.rightscale.com/_token/"+$tunnel_token+"/rest/com/vmware/cis/tagging/category/id:"+$category_id,
+    url: "https://"+$param_wstunnel_host+"/_token/"+$tunnel_token+"/rest/com/vmware/cis/tagging/category/id:"+$category_id,
     headers: {
       "Accept": "application/json",
       "Content-Type": "application/json",
@@ -272,10 +273,10 @@ define get_category($tunnel_token, $session_token, $category_id) return $spec do
 end
 
 # https://vdc-repo.vmware.com/vmwb-repository/dcr-public/1cd28284-3b72-4885-9e31-d1c6d9e26686/71ef7304-a6c9-43b3-a3cd-868b2c236c81/doc/operations/com/vmware/cis/tagging/category.update-operation.html
-define update_category($tunnel_token, $session_token, $category_id, $cardinality, $description, $name) return $response do
+define update_category($param_wstunnel_host, $tunnel_token, $session_token, $category_id, $cardinality, $description, $name) return $response do
   $response = http_patch(
     insecure: true,
-    url: "https://wstunnel10-1.rightscale.com/_token/"+$tunnel_token+"/rest/com/vmware/cis/tagging/category/id:"+$category_id,
+    url: "https://"+$param_wstunnel_host+"/_token/"+$tunnel_token+"/rest/com/vmware/cis/tagging/category/id:"+$category_id,
     headers: {
       "Accept": "application/json",
       "Content-Type": "application/json",
@@ -293,10 +294,10 @@ define update_category($tunnel_token, $session_token, $category_id, $cardinality
 end
 
 # https://vdc-repo.vmware.com/vmwb-repository/dcr-public/1cd28284-3b72-4885-9e31-d1c6d9e26686/71ef7304-a6c9-43b3-a3cd-868b2c236c81/doc/operations/com/vmware/cis/tagging/category.delete-operation.html
-define delete_category($tunnel_token, $session_token, $category_id) return $response do
+define delete_category($param_wstunnel_host, $tunnel_token, $session_token, $category_id) return $response do
   $response = http_delete(
     insecure: true,
-    url: "https://wstunnel10-1.rightscale.com/_token/"+$tunnel_token+"/rest/com/vmware/cis/tagging/category/id:"+$category_id,
+    url: "https://"+$param_wstunnel_host+"/_token/"+$tunnel_token+"/rest/com/vmware/cis/tagging/category/id:"+$category_id,
     headers: {
       "Accept": "application/json",
       "Content-Type": "application/json",
@@ -306,10 +307,10 @@ define delete_category($tunnel_token, $session_token, $category_id) return $resp
 end
 
 # https://vdc-repo.vmware.com/vmwb-repository/dcr-public/1cd28284-3b72-4885-9e31-d1c6d9e26686/71ef7304-a6c9-43b3-a3cd-868b2c236c81/doc/operations/com/vmware/cis/tagging/tag.create-operation.html
-define create_tag($tunnel_token, $session_token, $category_id, $description, $name) return $tag_id do
+define create_tag($param_wstunnel_host, $tunnel_token, $session_token, $category_id, $description, $name) return $tag_id do
   $response = http_post(
     insecure: true,
-    url: "https://wstunnel10-1.rightscale.com/_token/"+$tunnel_token+"/rest/com/vmware/cis/tagging/tag",
+    url: "https://"+$param_wstunnel_host+"/_token/"+$tunnel_token+"/rest/com/vmware/cis/tagging/tag",
     headers: {
       "Accept": "application/json",
       "Content-Type": "application/json",
@@ -327,10 +328,10 @@ define create_tag($tunnel_token, $session_token, $category_id, $description, $na
 end
 
 # https://vdc-repo.vmware.com/vmwb-repository/dcr-public/1cd28284-3b72-4885-9e31-d1c6d9e26686/71ef7304-a6c9-43b3-a3cd-868b2c236c81/doc/operations/com/vmware/cis/tagging/tag.list-operation.html
-define list_tags($tunnel_token, $session_token) return $tag_ids do
+define list_tags($param_wstunnel_host, $tunnel_token, $session_token) return $tag_ids do
   $response = http_get(
     insecure: true,
-    url: "https://wstunnel10-1.rightscale.com/_token/"+$tunnel_token+"/rest/com/vmware/cis/tagging/tag",
+    url: "https://"+$param_wstunnel_host+"/_token/"+$tunnel_token+"/rest/com/vmware/cis/tagging/tag",
     headers: {
       "Accept": "application/json",
       "Content-Type": "application/json",
@@ -341,10 +342,10 @@ define list_tags($tunnel_token, $session_token) return $tag_ids do
 end
 
 # https://vdc-repo.vmware.com/vmwb-repository/dcr-public/1cd28284-3b72-4885-9e31-d1c6d9e26686/71ef7304-a6c9-43b3-a3cd-868b2c236c81/doc/operations/com/vmware/cis/tagging/tag.list-operation.html
-define list_tags_by_category($tunnel_token, $session_token, $category_id) return $tag_ids do
+define list_tags_by_category($param_wstunnel_host, $tunnel_token, $session_token, $category_id) return $tag_ids do
   $response = http_post(
     insecure: true,
-    url: "https://wstunnel10-1.rightscale.com/_token/"+$tunnel_token+"/rest/com/vmware/cis/tagging/tag/id:"+$category_id+"?~action=list-tags-for-category",
+    url: "https://"+$param_wstunnel_host+"/_token/"+$tunnel_token+"/rest/com/vmware/cis/tagging/tag/id:"+$category_id+"?~action=list-tags-for-category",
     headers: {
       "Accept": "application/json",
       "Content-Type": "application/json",
@@ -355,10 +356,10 @@ define list_tags_by_category($tunnel_token, $session_token, $category_id) return
 end
 
 # https://vdc-repo.vmware.com/vmwb-repository/dcr-public/1cd28284-3b72-4885-9e31-d1c6d9e26686/71ef7304-a6c9-43b3-a3cd-868b2c236c81/doc/operations/com/vmware/cis/tagging/tag.get-operation.html
-define get_tag($tunnel_token, $session_token, $tag_id) return $spec do
+define get_tag($param_wstunnel_host, $tunnel_token, $session_token, $tag_id) return $spec do
   $response = http_get(
     insecure: true,
-    url: "https://wstunnel10-1.rightscale.com/_token/"+$tunnel_token+"/rest/com/vmware/cis/tagging/tag/id:"+$tag_id,
+    url: "https://"+$param_wstunnel_host+"/_token/"+$tunnel_token+"/rest/com/vmware/cis/tagging/tag/id:"+$tag_id,
     headers: {
       "Accept": "application/json",
       "Content-Type": "application/json",
@@ -369,10 +370,10 @@ define get_tag($tunnel_token, $session_token, $tag_id) return $spec do
 end
 
 # https://vdc-repo.vmware.com/vmwb-repository/dcr-public/1cd28284-3b72-4885-9e31-d1c6d9e26686/71ef7304-a6c9-43b3-a3cd-868b2c236c81/doc/operations/com/vmware/cis/tagging/tag.update-operation.html
-define update_tag($tunnel_token, $session_token, $tag_id, $description, $name) return $response do
+define update_tag($param_wstunnel_host, $tunnel_token, $session_token, $tag_id, $description, $name) return $response do
   $response = http_post(
     insecure: true,
-    url: "https://wstunnel10-1.rightscale.com/_token/"+$tunnel_token+"/rest/com/vmware/cis/tagging/tag/id:"+$tag_id,
+    url: "https://"+$param_wstunnel_host+"/_token/"+$tunnel_token+"/rest/com/vmware/cis/tagging/tag/id:"+$tag_id,
     headers: {
       "Accept": "application/json",
       "Content-Type": "application/json",
@@ -388,10 +389,10 @@ define update_tag($tunnel_token, $session_token, $tag_id, $description, $name) r
 end
 
 # https://vdc-repo.vmware.com/vmwb-repository/dcr-public/1cd28284-3b72-4885-9e31-d1c6d9e26686/71ef7304-a6c9-43b3-a3cd-868b2c236c81/doc/operations/com/vmware/cis/tagging/tag.delete-operation.html
-define delete_tag($tunnel_token, $session_token, $tag_id) return $response do
+define delete_tag($param_wstunnel_host, $tunnel_token, $session_token, $tag_id) return $response do
   $response = http_delete(
     insecure: true,
-    url: "https://wstunnel10-1.rightscale.com/_token/"+$tunnel_token+"/rest/com/vmware/cis/tagging/tag/id:"+$tag_id,
+    url: "https://"+$param_wstunnel_host+"/_token/"+$tunnel_token+"/rest/com/vmware/cis/tagging/tag/id:"+$tag_id,
     headers: {
       "Accept": "application/json",
       "Content-Type": "application/json",
@@ -401,10 +402,10 @@ define delete_tag($tunnel_token, $session_token, $tag_id) return $response do
 end
 
 # https://vdc-repo.vmware.com/vmwb-repository/dcr-public/1cd28284-3b72-4885-9e31-d1c6d9e26686/71ef7304-a6c9-43b3-a3cd-868b2c236c81/doc/operations/com/vmware/cis/tagging/tag_association.attach-operation.html
-define attach_tag($tunnel_token, $session_token, $tag_id, $resource_id) return $response do
+define attach_tag($param_wstunnel_host, $tunnel_token, $session_token, $tag_id, $resource_id) return $response do
   $response = http_post(
     insecure: true,
-    url: "https://wstunnel10-1.rightscale.com/_token/"+$tunnel_token+"/rest/com/vmware/cis/tagging/tag-association/id:"+$tag_id+"?~action=attach",
+    url: "https://"+$param_wstunnel_host+"/_token/"+$tunnel_token+"/rest/com/vmware/cis/tagging/tag-association/id:"+$tag_id+"?~action=attach",
     headers: {
       "Accept": "application/json",
       "Content-Type": "application/json",
@@ -420,10 +421,10 @@ define attach_tag($tunnel_token, $session_token, $tag_id, $resource_id) return $
 end
 
 # https://vdc-repo.vmware.com/vmwb-repository/dcr-public/1cd28284-3b72-4885-9e31-d1c6d9e26686/71ef7304-a6c9-43b3-a3cd-868b2c236c81/doc/operations/com/vmware/cis/tagging/tag_association.detach-operation.html
-define detach_tag($tunnel_token, $session_token, $tag_id, $resource_id) return $response do
+define detach_tag($param_wstunnel_host, $tunnel_token, $session_token, $tag_id, $resource_id) return $response do
   $response = http_post(
     insecure: true,
-    url: "https://wstunnel10-1.rightscale.com/_token/"+$tunnel_token+"/rest/com/vmware/cis/tagging/tag-association/id:"+$tag_id+"?~action=detach",
+    url: "https://"+$param_wstunnel_host+"/_token/"+$tunnel_token+"/rest/com/vmware/cis/tagging/tag-association/id:"+$tag_id+"?~action=detach",
     headers: {
       "Accept": "application/json",
       "Content-Type": "application/json",
