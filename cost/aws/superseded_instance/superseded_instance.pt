@@ -223,6 +223,28 @@ script "js_merge_instance_data", type: "javascript" do
 end
 
 ###############################################################################
+# Escalations
+###############################################################################
+escalation "report_and_resize_instances" do
+  request_approval  do
+    label "Escalation approval"
+    description "Approve delete action"
+    parameter "approval_reason" do
+      type "string"
+      label "Reason for approval"
+      description "Explain why you are approving the action"
+    end
+  end
+
+  run "resize_instances", data
+  email $param_email
+end
+
+resolution "report_and_resize_instances_resolution" do
+  email $param_email
+end
+
+###############################################################################
 # Policy
 ###############################################################################
 
@@ -240,21 +262,35 @@ ___
 ###### Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }}) within Org: {{ rs_org_name }} (Org ID: {{ rs_org_id }})
 EOS
     check eq(val(item, "new_instance_type"), "none")
-    escalate $email
+    escalate $report_and_resize_instances
   end
-end
-
-###############################################################################
-# Escalations
-###############################################################################
-
-escalation "email" do
-  email $param_email
 end
 
 ###############################################################################
 # Cloud Workflow
 ###############################################################################
+
+define resize_instances($data) do
+  foreach $item in $data do
+    if !$item["locked"]
+      call sys_log("resizing instance"+$item["resource_uid"], $item)
+      @instance = rs_cm.get(href: $item["href"])
+      @current_server = @instance.parent()
+      task_label("stopping instance")
+      @instance.stop()
+      task_label("sleeping until instance stopped")
+      sleep_until(@current_server.state == 'provisioned')
+      @current_instance = @current_server.current_instance()
+      @cloud = @current_instance.cloud()
+      @new_instance_type = first(@cloud.instance_types(filter: ["name=="+$item["new_instance_type"]]))
+      @current_instance.update(instance: { instance_type_href: @new_instance_type.href })
+      task_label("sleeping until instance started")
+      @current_instance.start()
+      sleep_until(@current_instance.state == 'operational')
+      task_label("Instance Started")
+    end
+  end
+end
 
 define sys_log($subject, $detail) do
   if $$debug
