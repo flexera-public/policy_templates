@@ -8,7 +8,7 @@ This policy checks all Relational Database Service (RDS) instances and reports o
 When a publicly accessible RDS instance is detected, an email action is triggered automatically to notify the specified users of the incident. Users then have an option to modify configuration after manual approval, and even Users can perform delete action if required. 
 - *remove public access rule* - modifies the configuration of the RDS instance by disabling the public access rule
  
-#### Input Parameters
+### Input Parameters
  
 - *Email addresses of the recipients you wish to notify* - A list of email addresses to notify
 - *Ignore tags* - RDS instances with any of these tags will be ignored 
@@ -53,7 +53,7 @@ This Policy Template does not incur any cloud costs.
 
 Perform below steps to enable delete action.
 
-- Edit the file [AWS_Publicly_Accessible_RDS_Instances] (https://github.com/rightscale/policy_templates/tree/master/security/aws/rds_publicly_accessible/AWS_Publicly_Accessible_RDS_Instances.pt)
+- Edit the file [AWS_Publicly_Accessible_RDS_Instances](https://github.com/rightscale/policy_templates/tree/master/security/aws/rds_publicly_accessible/AWS_Publicly_Accessible_RDS_Instances.pt)
 - uncomment the line which contains 'escalate $delete_publicly_accessible_RDS_instances_approval' and save the changes.
 - upload the modified file and apply the policy.
 
