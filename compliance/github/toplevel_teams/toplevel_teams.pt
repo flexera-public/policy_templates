@@ -1,0 +1,132 @@
+name "GitHub.com Unpermitted Top-Level Teams"
+rs_pt_ver 20180301
+short_description "Gets the top-level / parent Teams for a GitHub.com Org and creates an incident if any do not match the whitelisted values.  See the [README](https://github.com/rightscale/policy_templates/tree/master/compliance/github/toplevel_teams) and [docs.rightscale.com/policies](http://docs.rightscale.com/policies/) to learn more."
+long_description "Version: 1.0"
+severity "low"
+category "Compliance"
+
+permission "read_creds" do
+  actions   "rs_cm.show_sensitive","rs_cm.index_sensitive"
+  resources "rs_cm.credentials"
+end
+
+parameter "param_email" do
+  label "Email addresses of the recipients you wish to notify"
+  type "list"
+end
+
+parameter "param_orgs" do
+  type "list"
+  label "GitHub.com Organization to check"
+end
+
+parameter "param_whitelist" do
+  type "list"
+  label "Team names that are whitelisted to be at the top-level"
+end
+
+auth "auth_github", type: "api_key" do
+  location "header"
+  field "Authorization"
+  type "token"
+  key cred("GITHUB_ORG_ADMIN_ACCESS_TOKEN")
+end
+
+pagination "github_pagination" do
+  get_page_marker do
+    header "Link"
+  end
+  set_page_marker do
+    uri true
+  end
+end
+
+datasource "ds_orgs_array" do
+  run_script $js_orgs_array, $param_orgs
+end
+
+script "js_orgs_array", type: "javascript" do
+  parameters "param_orgs"
+  result "orgs_array"
+  code <<-EOS
+var orgs_array = param_orgs;
+EOS
+end
+
+datasource "ds_github_org_teams" do
+  iterate $ds_orgs_array
+  request do
+    auth $auth_github
+    pagination $github_pagination
+    host "api.github.com"
+    path join(["/orgs/",iter_item,"/teams"])
+    header "Accept", "application/vnd.github.hellcat-preview+json"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "[*]") do
+      field "id", jmes_path(col_item, "id")
+      field "members_url", jmes_path(col_item, "members_url")
+      field "name", jmes_path(col_item, "name")
+      field "slug", jmes_path(col_item, "slug")
+      field "description", jmes_path(col_item, "description")
+      field "privacy", jmes_path(col_item, "privacy")
+      field "parent", jmes_path(col_item, "parent")
+      field "org", iter_item
+    end
+  end
+end
+
+
+datasource "ds_invalid_teams" do
+  run_script $js_invalid_teams, $ds_github_org_teams, $param_whitelist
+end
+
+script "js_invalid_teams", type: "javascript" do
+    parameters "teams","param_whitelist"
+    result "invalid_teams"
+    code <<-EOS
+var invalid_teams=[];
+for (var index = 0; index < teams.length; index++) {
+    var team = teams[index];
+    // top-level teams only
+    if( typeof team.parent == "undefined" ) {
+        // exclude white listed names
+        if( !_.contains(param_whitelist, team.name) ){
+            invalid_teams.push(team);
+        }
+    }
+}
+EOS
+end
+
+policy "policy_toplevel_teams" do
+  validate_each $ds_invalid_teams do
+    summary_template "GitHub.com Top-Level Teams Report"
+    detail_template <<-EOS
+# GitHub.com Top-Level Teams Report
+
+The following top-level Teams do not match any of the Team names that have been whitelisted.
+
+| Organization | Team Name | Team Description | Team Privacy | 
+| ------------ | ---- | ------------ | ------ | 
+{{ range data -}}
+  | {{.org}} | [{{.name}}](https://github.com/orgs/{{.org}}/teams/{{.slug}}/members) | {{.description}} | {{.privacy}} |
+{{ end -}}
+
+#### Policy Organization(s): {{  parameters.param_orgs }}
+
+#### Policy Whitelisted Teams: {{  parameters.param_whitelist }}
+
+___
+###### Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }})
+
+EOS
+    check lt(size($ds_invalid_teams),0)
+    escalate $email_report
+  end
+end
+
+escalation "email_report" do
+    email $param_email
+end
