@@ -151,6 +151,37 @@ script "js_merge_instance_data", type: "javascript" do
       "i2",
       "g2"
     ]
+    var ec2EnhancedNetworkInstances = [
+      "a1",
+      "c5",
+      "c5d",
+      "c5n",
+      "f1",
+      "g3",
+      "h1",
+      "i3",
+      "i3en",
+      "m4.16xlarge",
+      "m5",
+      "m5a",
+      "m5ad",
+      "m5d",
+      "p2",
+      "p3",
+      "r4",
+      "r5",
+      "5a",
+      "r5ad",
+      "r5d",
+      "t3",
+      "t3a",
+      "u-6tb1.metal",
+      "u-9tb1.metal",
+      "u-12tb1.metal",
+      "x1",
+      "x1e",
+      "z1d"
+    ]
 
     for ( i=0; i < ds_instances.length; i++) {
       var instance = ds_instances[i]
@@ -170,6 +201,10 @@ script "js_merge_instance_data", type: "javascript" do
         } else if ( second_pass != undefined) {
           new_instance_type = second_pass[param_new_instancetype_category] ? second_pass[param_new_instancetype_category]+'.'+model : second_pass["regular"]+'.'+model
         }
+        var old_instance_ena = false
+        if (  _.contains(ec2EnhancedNetworkInstances,series)  || _.contains(ec2EnhancedNetworkInstances,instance_type) ){
+          old_instance_ena = true
+        }
 
         if (new_instance_type != "none") {
           if ( _.contains(ec2ClassicInstances,series) ) {
@@ -187,12 +222,21 @@ script "js_merge_instance_data", type: "javascript" do
           } else {
             var vpc_incompatible_move = false
           }
+          var new_instance_ena = false
+          if (  _.contains(ec2EnhancedNetworkInstances,new_instance_type.split('.')[0])  || _.contains(ec2EnhancedNetworkInstances,new_instance_type) ) {
+            new_instance_ena = true
+          }
+          if ( !old_instance_ena && new_instance_ena ) { 
+            var ena_incompatible = true
+          } else {
+            var ena_incompatible = false
+          }
           var old_instance_type_stats = _.reject(ds_instance_types, function(ds_instance_type) { return ds_instance_type.resource_uid != instance_type})
           var new_instance_type_stats = _.reject(ds_instance_types, function(ds_instance_type) { return ds_instance_type.resource_uid != new_instance_type})
           var warn = false
           var old_instance_type_stats_disk_count = old_instance_type_stats[0].local_disks
           var new_instance_type_stats_disk_count = new_instance_type_stats[0].local_disks
-          if ( (old_instance_type_stats_disk_count > new_instance_type_stats_disk_count) || vpc_incompatible_move ) {
+          if ( (old_instance_type_stats_disk_count > new_instance_type_stats_disk_count) || vpc_incompatible_move || ena_incompatible ) {
             warn = true
           }
           results.push(
@@ -213,6 +257,7 @@ script "js_merge_instance_data", type: "javascript" do
               new_instance_type_stats_memory: new_instance_type_stats[0].memory,
               new_instance_type_stats_disk_count: new_instance_type_stats_disk_count,
               vpc_incompatible_move: vpc_incompatible_move,
+              ena_incompatible: ena_incompatible,
               warn: warn
             }
           )
@@ -253,10 +298,10 @@ policy "pol_aws_superseded_instance" do
     summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} rows with cheaper data"
     detail_template <<-EOS
 # AWS Superseded Instances
-| Locked | Resource_uid | Name | Cloud | Current Instance Type | New Instance Type | Old Instance Type Stats | New Instance Type Stats | VPC Required |
-| ------ | ------------ | ---- | ----- | --------------------- | ----------------- | ----------------------- | ----------------------- | ------------ |
+| Locked | Resource_uid | Name | Cloud | Current Instance Type | New Instance Type | Old Instance Type Stats | New Instance Type Stats | VPC Required | ENA Required |
+| ------ | ------------ | ---- | ----- | --------------------- | ----------------- | ----------------------- | ----------------------- | ------------ | ------------ |
 {{ range data -}}
-|{{if .locked}} ![Locked](https://{{rs_cm_host}}/images/svg/padlock-closed.svg) {{ else }} ![Unlocked](https://{{rs_cm_host}}/images/svg/padlock-open.svg) {{ end }} | {{ if .warn }}**_{{ end -}}{{ .resource_uid }}{{ if .warn }}_**{{ end -}} | {{ .name }} | {{ .cloud}} | {{.instance_type}} | {{.new_instance_type}} | CPU Count: {{ .old_instance_type_stats_cpu_count }}, Memory: {{.old_instance_type_stats_memory}},  Disks: {{.old_instance_type_stats_disk_count}} | CPU Count: {{ .new_instance_type_stats_cpu_count }}, Memory: {{.new_instance_type_stats_memory}},  Disks: {{.new_instance_type_stats_disk_count}} | {{ if .vpc_incompatible_move }} **_TRUE_** {{else}} false {{end}} |
+|{{if .locked}} ![Locked](https://{{rs_cm_host}}/images/svg/padlock-closed.svg) {{ else }} ![Unlocked](https://{{rs_cm_host}}/images/svg/padlock-open.svg) {{ end }} | {{ if .warn }}**_{{ end -}}{{ .resource_uid }}{{ if .warn }}_**{{ end -}} | {{ .name }} | {{ .cloud}} | {{.instance_type}} | {{.new_instance_type}} | CPU Count: {{ .old_instance_type_stats_cpu_count }}, Memory: {{.old_instance_type_stats_memory}},  Disks: {{.old_instance_type_stats_disk_count}} | CPU Count: {{ .new_instance_type_stats_cpu_count }}, Memory: {{.new_instance_type_stats_memory}},  Disks: {{.new_instance_type_stats_disk_count}} | {{ if .vpc_incompatible_move }} **_TRUE_** {{else}} false {{end}} |  {{ if .ena_incompatible }} **_TRUE_** {{else}} false {{end}} |
 {{ end -}}
 ___
 ###### Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }}) within Org: {{ rs_org_name }} (Org ID: {{ rs_org_id }})
@@ -272,8 +317,8 @@ end
 
 define resize_instances($data) do
   foreach $item in $data do
-    if !$item["locked"]
-      call sys_log("resizing instance"+$item["resource_uid"], $item)
+    if !$item["locked"] || $item["warn"]
+      call sys_log("resizing instance", $item)
       @instance = rs_cm.get(href: $item["href"])
       @current_server = @instance.parent()
       task_label("stopping instance")
