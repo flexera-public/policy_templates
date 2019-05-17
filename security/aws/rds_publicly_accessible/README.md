@@ -20,7 +20,7 @@ When a publicly accessible RDS instance is detected, an email action is triggere
 
 ### AWS Required Permissions
 
-This policy requires permissions to describe AWS RDS instances, tags, modify and delete instances.
+This policy requires permissions to describe AWS RDS instances, list RDS tags, modify RDS instances and delete RDS instances.
 The Cloud Management Platform automatically creates two Credentials when connecting AWS to Cloud Management; AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY. The IAM user credentials contained in those credentials will require the following permissions:
 
 ```javascript
@@ -54,15 +54,22 @@ This Policy Template does not incur any cloud costs.
 Perform below steps to enable delete action.
 
 - Edit the file [AWS_Publicly_Accessible_RDS_Instances](https://github.com/rightscale/policy_templates/tree/master/security/aws/rds_publicly_accessible/AWS_Publicly_Accessible_RDS_Instances.pt)
-- uncomment the line which contains 'escalate $delete_publicly_accessible_RDS_instances_approval' and save the changes.
+- uncomment below mentioned lines
+```javascript
+   escalate $delete_publicly_accessible_RDS_instances_approval
+	check logic_or(
+      eq(val(item, "delete_protection"), "YES"),
+      ne(val(item, "db_instance_status"), "available")
+    )
+```	
+- And comment the line which contains 'check eq(val(item, "publicly_accessible"), "false")', save the changes.
 - upload the modified file and apply the policy.
 
 Note: 
-- RDS Instances with 'DB Instance Status' other than 'Available' and RDS instances with 'delete Protection enabled' cannot be deleted
+- RDS Instances with 'DB Instance Status' other than 'Available' and RDS instances with 'Delete Protection Enabled' cannot be deleted
 - RDS instances with 'DB Instance Status' other than 'Available' can not be modified.
-- When delete action is performed, DB snapshot gets created with name '<--DB_Instance_Identifier-->-finalSnapshot' Ex mySQL-DBinstance-finalSnapshot before deleting DB instance.
+- When delete action is performed, DB snapshot gets created with name '<--RDS Instance Name-->-finalSnapshot' Ex mySQL-DBinstance-finalSnapshot before deleting DB instance.
 - For Aurora instance, policy creates Cluster snapshot Since DB instance snapshot cannot be created directly.
-
 
 
 
