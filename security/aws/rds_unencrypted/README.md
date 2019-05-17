@@ -8,7 +8,7 @@ This policy checks all Relational Database Service (RDS) instances and reports o
  
 When a Unencrypted RDS instance is detected, an email action is triggered automatically to notify the specified users of the incident. Users then have the option to delete the RDS instance after manual approval if needed. 
  
-#### Input Parameters
+### Input Parameters
  
 - *Email addresses of the recipients you wish to notify* - A list of email addresses to notify
 - *Ignore tags* - RDS instances with any of these tags will be ignored 
@@ -24,11 +24,13 @@ Perform below steps to enable delete action.
 
 - Edit the file [AWS_Unencrypted_RDS_Instances](https://github.com/rightscale/policy_templates/tree/master/security/aws/rds_unencrypted/AWS_Unencrypted_RDS_Instances.pt)
 - uncomment below mentioned lines
-    escalate $delete_unencrypted_RDS_instances_approval
+```javascript
+   escalate $delete_unencrypted_RDS_instances_approval
 	check logic_or(
       eq(val(item, "delete_protection"), "YES"),
       ne(val(item, "db_instance_status"), "available")
     )
+```
 - And comment the line which contains 'check eq(val(item, "storage_encrypted"), "false")', save the changes.
 - Upload the modified file and apply the policy.
 
