@@ -1,0 +1,45 @@
+### Terminate Instances with End Date Policy
+
+**What it does**
+
+This Policy allows you to set a tag with a timestamp and terminate an instance at a specific time. 
+
+**How to Use**
+
+This policy relies on a RightScale tag 'instance:terminate' to terminate instances based on a schedule.  The tag value is in a timestamp notation.
+
+***instance:terminate Tag Example***
+`instance:terminate=2019-05-20T13:48:21Z`
+
+
+### Input Parameters
+
+This policy has the following input parameters required when launching the policy.
+
+- *Email addresses* - AEmail addresses of the recipients you wish to notify
+
+### Policy Actions
+
+The following policy actions are taken on any resources found to be out of compliance.
+
+- Terminate the instances. 
+- Send an email report
+
+### Required Permissions
+
+This policy requires permissions to access RightScale resources (clouds, instances and tags).  Before applying this policy add the following roles to the user applying the policy.  The roles should be applied to all Accounts where the policy will run or the Organization. For more information on modifying roles visit the [Governance Docs](https://docs.rightscale.com/cm/ref/user_roles.html)
+
+- Cloud Management - Actor
+- Cloud Management - Observer
+
+## Supported Clouds
+
+The following clouds are supported:
+- AWS
+- Azure
+- Google
+- vSphere
+
+**Cost**
+
+This Policy Template does not incur any cloud costs.
