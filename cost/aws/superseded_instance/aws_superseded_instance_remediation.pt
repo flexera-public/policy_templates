@@ -60,86 +60,73 @@ resources "clouds", type: "rs_cm.clouds" do
   end
 end
 
-resources "instances", type: "rs_cm.instances" do
-  iterate @clouds  
-  cloud_href href(iter_item)
-  tags none($param_exclude_tags)
-  view 'extended'
-end
-
-resources "instance_types", type: "rs_cm.instance_types" do
-  iterate @clouds  
-  cloud_href href(iter_item)
-end
-
 ###############################################################################
 # Datasources
 ###############################################################################
-datasource "ds_clouds" do
-  iterate @clouds
-  field "href", href(iter_item)
-  field "name", val(iter_item, "display_name")
-end
 
-datasource "ds_instances" do
-  iterate @instances
-  field "resource_uid", val(iter_item,  "resource_uid")
-  field "name", val(iter_item, "name")
-  field "href", href(iter_item)
-  field "cloud_href", jmes_path(iter_item, "links[?rel=='cloud'].href | [0]")
-  field "instance_type_href", jmes_path(iter_item, "links[?rel=='instance_type'].href | [0]")
-  field "locked", jmes_path(iter_item,"locked")
-  field "state", jmes_path(iter_item,"state")
+datasource "ds_instances_16" do
+  iterate(@clouds)
+  request do
+    run_script $js_instances_16, rs_cm_host, href(iter_item), rs_project_id, $param_exclude_tags
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "[*]") do
+      field "href", jmes_path(col_item, "href")
+      field "name", jmes_path(col_item, "name")
+      field "description", jmes_path(col_item, "description")
+      field "legacy_id", to_n(jmes_path(col_item, "legacy_id"))
+      field "resource_uid", jmes_path(col_item, "resource_uid")
+      field "instance_type", jmes_path(col_item, "links.instance_type.name")
+      field "region", jmes_path(col_item, "links.cloud.region")
+      field "cloud_name", val(iter_item, "display_name")
+      field "locked", jmes_path(col_item, "locked")
+      field "state", jmes_path(col_item, "state")
+    end
+  end
 end
-
-datasource "ds_instance_types" do
-  iterate @instance_types
-  field "resource_uid", val(iter_item,  "resource_uid")
-  field "cloud_href", jmes_path(iter_item, "links[?rel=='cloud'].href | [0]")
-  field "instance_type_href", jmes_path(iter_item, "links[?rel=='self'].href | [0]")
-  field "memory", jmes_path(iter_item,"memory")
-  field "cpu_count", jmes_path(iter_item,"cpu_count")
-  field "local_disks", jmes_path(iter_item, "local_disks")
-  field "local_disk_size", jmes_path(iter_item, "local_disk_size")
-end
-
 
 datasource "ds_combined_instance_data" do
-  run_script $js_merge_instance_data, $ds_instances, $ds_instance_types, $ds_clouds, $param_old_instance_type
+  run_script $js_merge_instance_data, $ds_instances_16, $param_old_instance_type
 end
 
 ###############################################################################
 # Scripts
 ###############################################################################
 
+script "js_instances_16", type: "javascript" do
+  result "request"
+  parameters "rs_cm_host","cloud_href","rs_project_id","param_exclude_tags"
+  code <<-EOS
+    var filtered_tags = "&tag!=" + param_exclude_tags.join(",");
+    console.log(filtered_tags)
+    request = {
+      "auth": "auth_rs",
+      "verb": "GET",
+      "host": rs_cm_host,
+      "path": cloud_href + "/instances",
+      "headers": {
+        "X-Api-Version": "1.6",
+        "X-Account": \""+rs_project_id+\""
+      },
+      "query_params": {
+        "view": "full",
+        "filter": "state=provisioned,operational" + filtered_tags
+      }
+    }
+    console.log(request)
+  EOS
+end
+
 script "js_merge_instance_data", type: "javascript" do
-  parameters "ds_instances", "ds_instance_types", "ds_clouds", "param_old_instance_type"
+  parameters "ds_instances", "param_old_instance_type"
   result "results"
   code <<-EOS
     var results = []
     for ( i=0; i < ds_instances.length; i++) {
       var instance = ds_instances[i]
-      if ( _.contains(['provisioned','operational'],instance["state"]) ) {
-        var ds_instance_type_href = instance.instance_type_href
-        var cloud_href = instance.cloud_href
-        var instance_types = _.reject(ds_instance_types, function(ds_instance_type){ return ds_instance_type.instance_type_href != ds_instance_type_href });
-        var cloud = _.reject(ds_clouds, function(ds_cloud){ return ds_cloud.href != cloud_href })
-        var instance_type = instance_types[0].resource_uid
-        var locked = 0
-        if ( instance["locked"] ) { var locked = 1}
-
-        if ( instance_type == param_old_instance_type ) {
-          results.push(
-            {
-              resource_uid: instance["resource_uid"],
-              name: instance["name"],
-              href: instance["href"],
-              cloud_href: instance["cloud_href"],
-              cloud: cloud[0].name,
-              locked: locked
-            }
-          )
-        }
+      if ( instance.instance_type == param_old_instance_type ){
+        results.push(instance)
       }
     }
   EOS
@@ -179,12 +166,12 @@ policy "pol_aws_superseded_instance" do
 | Resource_uid | Name | Cloud |
 | ------------ | ---- | ----- |
 {{ range data -}}
-| {{ .resource_uid }} | {{ .name }} | {{ .cloud}} |
+| {{ .resource_uid }} | {{ .name }} | {{ .cloud_name}} |
 {{ end -}}
 ___
 ###### Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }}) within Org: {{ rs_org_name }} (Org ID: {{ rs_org_id }})
 EOS
-    check eq(to_n(val(item,"locked")),1)
+    check val(item,"locked")
     escalate $report_and_resize_instances
   end
 end
