@@ -35,9 +35,7 @@ The following policy actions are taken on any resources found to be out of compl
 
 This policy requires permissions to access Cloud Management resources; Clouds and Subnets.  Before applying this policy add the following roles to the user applying the policy.  The roles should be applied to all Accounts where the policy will run or at the Organization level. For more information on modifying roles visit the [Governance Docs](https://docs.rightscale.com/cm/ref/user_roles.html)
 
-- Cloud Management - observer
-- Cloud Management - admin or credential_viewer
-- Cloud Management - security_manager
+- Cloud Management - observer, actor
 
 ### VMWare Required Permissions
 
