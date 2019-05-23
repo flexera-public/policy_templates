@@ -124,17 +124,18 @@ datasource "ds_instance_size_map" do
   request do
     verb "GET"
     host "raw.githubusercontent.com"
+    #path "/rightscale/policy_templates/master/data/aws/instance_types.json"
     path "/rightscale/policy_templates/master/cost/downsize_instance/instance_types.json"
     header "User-Agent", "RS Policies"
   end
 end
 
 datasource "ds_filtered_instances" do
-  run_script $js_filter_instances, $ds_instances, $ds_instances_16, $ds_instance_size_map, $ds_instance_type_memory
+  run_script $js_filter_instances, $ds_instances, $ds_instances_16, $ds_instance_size_map
 end
 
 script "js_filter_instances", type: "javascript" do
-  parameters "instances", "instances16", "instance_size_map", "instance_type_memory"
+  parameters "instances", "instances16", "instance_size_map"
   result "filtered_instances"
   code <<-EOS
 // This is the list of filtered instances.
@@ -152,7 +153,6 @@ for ( n = 0; n < instances16.length; n++) {
 for ( i = 0; i < instances.length; i++ ) {
   var cloud_type = i_type[instances[i]["href"]]["cloud_type"]
   var instance_type = i_type[instances[i]["href"]]["instance_type"]
-  var instance_type_mem = instance_type_memory[instance_type]
   var legacy_id = i_type[instances[i]["href"]]["legacy_id"]
   var region = i_type[instances[i]["href"]]["region"]
   var next_instance_size = instance_size_map["clouds"][cloud_type.toString()][instance_type.toString()]["down"]
@@ -165,120 +165,11 @@ for ( i = 0; i < instances.length; i++ ) {
       description: instances[i]["description"],
       legacy_id: legacy_id,
       instance_type: instance_type,
-      total_memory: instance_type_mem,
       region: region,
       cloud_type: cloud_type,
       next_instance_size: next_instance_size
     }
   )
-};
-EOS
-end
-
-datasource "ds_instance_metrics_free_memory" do
-  iterate($ds_filtered_instances)
-  request do
-    auth $auth_rs
-    host rs_cm_host
-    path join([val(iter_item,"href"), "/monitoring_metrics/memory:memory-free/data"])
-    query "start", "-300"
-    query "end", "0"
-    header "X-API-Version", "1.5"
-  end
-  result do
-    field "href",               val(iter_item,"href")
-    field "memory_data_points", jmes_path(response, "variables_data[0].points[*]")
-    field "resource_uid",       val(iter_item,"resource_uid")
-    field "instance_type",      val(iter_item,"instance_type")
-    field "total_memory",       val(iter_item, "total_memory")
-    field "name",               val(iter_item,"name")
-    field "legacy_id",          val(iter_item,"legacy_id")
-    field "region",             val(iter_item,"region")
-    field "cloud_type",         val(iter_item,"cloud_type")
-    field "next_instance_size", val(iter_item,"next_instance_size")
-  end
-end
-
-datasource "ds_instance_metrics_cpu" do
-  iterate($ds_filtered_instances)
-  request do
-    auth $auth_rs
-    host rs_cm_host
-    path join([val(iter_item,"href"), "/monitoring_metrics/cpu-0:cpu-idle/data"])
-    query "start", "-300"
-    query "end", "0"
-    header "X-API-Version", "1.5"
-  end
-  result do
-    field "href",        val(iter_item,"href")
-    field "data_points", jmes_path(response, "variables_data[0].points[*]")
-    field "resource_uid",          val(iter_item,"resource_uid")
-    field "instance_type",        val(iter_item,"instance_type")
-    field "name",        val(iter_item,"name")
-  end
-end
-
-datasource "ds_instances_with_calculated_metrics" do
-  run_script $js_calculate_metrics, $ds_instance_metrics_free_memory, $ds_instance_metrics_cpu
-end
-
-script "js_calculate_metrics", type: "javascript" do
-  parameters "instance_metrics_free_memory", "instance_metrics_cpu"
-  result "calculated_instances"
-  code <<-EOS
-var calculated_instances = [];
-for (var i = 0; i < instance_metrics_free_memory.length; i++) {
-      var free_sum = 0;
-      free_memory_data_points = instance_metrics_free_memory[i]["memory_data_points"]
-      //skip if no memory data point are available
-      if (free_memory_data_points < 1 ) {
-        continue;
-      }
-      var free_avg = free_memory_data_points.reduce(function(acc, val) { return acc + val; })/free_memory_data_points.length;
-      max_free_memory = Math.max.apply(Math,free_memory_data_points)
-
-      // Total memory does not change and so average and max total memory equals the total memory for the instance type
-      var total_avg = instance_metrics_free_memory[i]["total_memory"]
-      max_total_memory = instance_metrics_free_memory[i]["total_memory"]
-
-      avg = parseInt((free_avg/total_avg)*100)
-      max_free_memory_avg = parseInt((max_free_memory/max_total_memory)*100)
-      calculated_instances.push(
-          {
-            resource_uid: instance_metrics_free_memory[i]["resource_uid"],
-            name: instance_metrics_free_memory[i]["name"],
-            href: instance_metrics_free_memory[i]["href"],
-            instance_type: instance_metrics_free_memory[i]["instance_type"],
-            tags: instance_metrics_free_memory[i]["vol_tags"],
-            average_mem_percent: avg,
-            max_free_memory_avg: max_free_memory_avg,
-            free_avg: parseInt((free_avg/1000)/1000),
-            total_avg: parseInt((total_avg/1000)/1000),
-            max_free_memory: parseInt((max_free_memory/1000)/1000),
-            max_total_memory: parseInt((max_total_memory/1000)/1000),
-            legacy_id: instance_metrics_free_memory[i]["legacy_id"],
-            region: instance_metrics_free_memory[i]["region"],
-            cloud_type: instance_metrics_free_memory[i]["cloud_type"],
-            next_instance_size: instance_metrics_free_memory[i]["next_instance_size"]
-          }
-        )
-};
-for ( var i = 0; i < calculated_instances.length; i++ ) {
-  for ( v = 0; v < instance_metrics_cpu.length; v++ ) {
-    if ( calculated_instances[i]["href"] == instance_metrics_cpu[v]["href"] ) {
-      cpu_data_points = instance_metrics_cpu[v]["data_points"]
-      //skip if no cpu data points are available
-      if (cpu_data_points < 1 ) {
-        continue;
-      }
-      var max_cpu_idle = 0;
-      var average_cpu_idle = 0;
-      max_cpu_idle = Math.max.apply(Math,cpu_data_points)
-      average_cpu_idle = cpu_data_points.reduce(function(acc, val) { return acc + val; })/cpu_data_points.length;
-      calculated_instances[i]["max_cpu_idle"] = parseInt(max_cpu_idle)
-      calculated_instances[i]["average_cpu_idle"] = parseInt(average_cpu_idle)
-    }
-  }
 };
 EOS
 end
