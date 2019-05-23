@@ -1,8 +1,8 @@
-name "Downsize Instances based on CPU and Memory"
+name "Downsize Instances (RightLink CPU and Memory)"
 rs_pt_ver 20180301
 type "policy"
-short_description "A policy that downsizes instances based on monitoring metrics. \n See the [README](https://github.com/rightscale/policy_templates/tree/master/cost/downsize_instance) and [docs.rightscale.com/policies](http://docs.rightscale.com/policies/) to learn more."
-long_description "Version: 1.11"
+short_description "A policy that downsizes instances based on the RightLink monitoring metrics. \n See the [README](https://github.com/rightscale/policy_templates/tree/master/cost/downsize_instance) and [docs.rightscale.com/policies](http://docs.rightscale.com/policies/) to learn more."
+long_description "Version: 1.12"
 severity "medium"
 category "Cost"
 
@@ -12,60 +12,16 @@ permission "perm_instances" do
   resources "rs_cm.instances", "rs_cm.clouds", "rs_cm.instance_types"
 end
 
-permission "perm_monitoring_metrics" do
-  label "Permissions for monitoring metrics"
-  actions "rs_cm.data"
-  resources "rs_cm.monitoring_metrics"
-end
-
-parameter "param_avg_free_memory_percent" do
-  type "number"
-  label "Average free memory percent to allow for downsize"
-  default -1
-  min_value -1
-  max_value 100
-end
-
-parameter "param_max_free_memory_percent" do
-  type "number"
-  label "Maximum free memory percent to allow for downsize"
-  default -1
-  min_value -1
-  max_value 100
-end
-
-parameter "param_avg_cpu_idle" do
-  type "number"
-  label "Average cpu idle percent to allow for downsize"
-  default -1
-  min_value -1
-  max_value 100
-end
-
-parameter "param_max_cpu_idle" do
-  type "number"
-  label "Maximum cpu idle percent to allow for downsize"
-  default -1
-  min_value -1
-  max_value 100
-end
-
-parameter "param_instance_tag_list" do
-  type "list"
-  label "Instance tags used to filter instances that must validate policy. (e.g.: rs_monitoring:resize=1)"
-  min_length 1
-  allowed_pattern /([\w]?)+\:([\w]?)+\=([\w]?)+/
-end
-
 parameter "param_email" do
   type "list"
-  label "Email addresses of the recipients you wish to notify"
+  label "Email List"
+  description "Email addresses of the recipients you wish to notify"
 end
 
-parameter "param_alert_options" do
-  type "string"
-  label "Escalation Options"
-  allowed_values "Email", "Email and Downsize"
+parameter "param_exclude_tags" do
+  type "list"
+  label "Tags to ignore"
+  description "List of tags that will exclude instances from being evaluated by this policy. Multiple tags are evaluated as an 'OR' condition. Tag keys or key/value pairs can be listed. Example: 'test,env=dev'"
 end
 
 parameter "param_cooldown_days" do
@@ -83,7 +39,7 @@ resources "clouds", type: "rs_cm.clouds" do
 end
 
 resources "instances", type: "rs_cm.instances" do
-  iterate @clouds  
+  iterate @clouds
   cloud_href href(iter_item)
   filter do
     state "operational"
@@ -99,13 +55,13 @@ end
 datasource "ds_instance_type_memory", type: "javascript" do
   run_script $js_instance_type_memory, @instance_types
 end
-  
+
 script "js_instance_type_memory", type: "javascript" do
   parameters "instance_types"
   result "instance_type_memory_mapping"
   code <<-EOS
   var instance_type_memory_mapping = {};
-  var mb_bytes = 1000000 
+  var mb_bytes = 1000000
   var gb_bytes = 1000000000
 for (m = 0; m < instance_types.length; m++) {
   instance_type_name = instance_types[m]["name"]
@@ -277,7 +233,7 @@ for (var i = 0; i < instance_metrics_free_memory.length; i++) {
       // Total memory does not change and so average and max total memory equals the total memory for the instance type
       var total_avg = instance_metrics_free_memory[i]["total_memory"]
       max_total_memory = instance_metrics_free_memory[i]["total_memory"]
-        
+
       avg = parseInt((free_avg/total_avg)*100)
       max_free_memory_avg = parseInt((max_free_memory/max_total_memory)*100)
       calculated_instances.push(
