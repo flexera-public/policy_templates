@@ -43,14 +43,7 @@ auth "auth_rs", type: "rightscale"
 
 datasource "ds_list_stranded_instances" do
   request do
-    auth $auth_rs
-    verb "GET"
-    host "my.rightscale.com"
-    path "/api/instances"
-    header "X-Api-Version", "1.6"
-    header "X-Account", to_s(rs_project_id)
-    query "view", "full"
-    query "filter", "state=stranded in booting"
+    run_script $js_list_stranded_instances, rs_cm_host, rs_project_id, $param_exclude_tags
   end
   result do
     encoding "json"
@@ -60,7 +53,7 @@ datasource "ds_list_stranded_instances" do
       field "name", jmes_path(col_item, "name")
       field "resource_uid", jmes_path(col_item, "resource_uid")
       field "updated_at", jmes_path(col_item, "links.deployment.timestamps.updated_at")
-	  field "locked", jmes_path(col_item, "locked")
+      field "locked", jmes_path(col_item, "locked")
       field "href", jmes_path(col_item, "href")
       field "tags", jmes_path(col_item, "tags")
       field "state", jmes_path(col_item, "state")
@@ -76,51 +69,68 @@ end
 # Script
 ###############################################################################
 
+script "js_list_stranded_instances", type: "javascript" do
+  result "request"
+  parameters "rs_cm_host","rs_project_id","param_exclude_tags"
+  code <<-EOS
+    var filtered_tags = ""
+    if ( param_exclude_tags.length > 0 ){
+      var filtered_tags = "&tag!=" + param_exclude_tags.join(",");
+    }
+
+    request = {
+      "auth": "auth_rs",
+      "verb": "GET",
+      "host": rs_cm_host,
+      "path": "/api/instances",
+      "headers": {
+        "X-Api-Version": "1.6",
+        "X-Account": \""+rs_project_id+\""
+      },
+      "query_params": {
+        "view": "full",
+        "filter": "state=stranded in booting" + filtered_tags
+      }
+    }
+
+  EOS
+end
+
 script "js_get_stranded_instance", type: "javascript" do
   parameters "ds_list_stranded_instances","param_exclude_tags"
   result "content"
   code <<-EOS
     var content=[]
-    var param_exclude_tags_lower=[];
-    for(var j=0; j < param_exclude_tags.length; j++){
-      param_exclude_tags_lower[j]=param_exclude_tags[j].toString().toLowerCase();
-    }
 
     for(var i=0;i<ds_list_stranded_instances.length;i++){
       instance=ds_list_stranded_instances[i]
-      //Check if the tag present in entered param_exclude_tags. Ignore the instance if the tag matches/present.
-	  var tags = instance['tags']
+	  
+	  // Constructing tags with comma separated to display in detail_template
+      var tags = instance['tags']
       var dis_tags=""
-      var isTagMatched=false
       for(var j=0;j<tags.length;j++){
         var tag=tags[j];
-        if(param_exclude_tags_lower.indexOf(tag.toLowerCase())!== -1){
-          isTagMatched = true;
-        }   
-        // Constructing tags with comma separated to display in detail_template		  
         dis_tags=dis_tags+", "+tag;
       }
-	  
-	  var locked = instance['locked'];
+
+      var locked = instance['locked'];
       if(locked === true){
         locked = 'Yes';
       }else{
         locked = 'No';
       }
-	  
-      if(!isTagMatched){
-        var date=instance['updated_at'].slice(0,10)
-        content.push({
-          cloud_name:instance['cloud_name']
-          cloud_type:instance['cloud_type']
-          name:instance['name']
-		  resource_uid:instance['resource_uid']
-          updated_at:date
-          locked:locked
-          href:instance['href']
-          tags:(dis_tags.slice(2))
-        })
-      }
+
+      var date=(instance['updated_at'].toString()).slice(0,10)
+      content.push({
+        cloud_name:instance['cloud_name']
+        cloud_type:instance['cloud_type']
+        name:instance['name']
+        resource_uid:instance['resource_uid']
+        updated_at:date
+        locked:locked
+        href:instance['href']
+        tags:(dis_tags.slice(2))
+      })
     }
   EOS
 end
@@ -174,8 +184,8 @@ end
 define terminate_instance($data) do
   foreach $item in $data do
     sub on_error: skip do
-	  @instance=rs_cm.get(href:$item["href"])
+      @instance=rs_cm.get(href:$item["href"])
       @instance.terminate()
-	end 
+    end
   end
 end
