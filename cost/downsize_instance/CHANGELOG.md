@@ -19,7 +19,7 @@ v1.9
 
 v1.8
 ----
-- Upating Policy Template Name
+- Updating Policy Template Name
 
 v1.7
 ----
