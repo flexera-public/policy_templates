@@ -30,6 +30,7 @@ Please contact sales@rightscale.com to learn more.
 - [Google Unutilized IP Addresses](./cost/google/unutilized_ip_addresses/)
 - [AWS Instance CloudWatch Utilization](./cost/aws/instance_cloudwatch_utilization/)
 - [Google StackDriver Utilization](./cost/google/instance_stackdriver_utilization/)
+- [Instance Utilization (RightLink))](./cost/rightlink_utilization/)
 
 ### Security
 - [Security Group: ICMP Enabled](./security/security_groups/icmp_enabled/)
