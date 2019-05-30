@@ -7,6 +7,8 @@ This policy checks all Servers in Cloud Management and reports on any that have 
 ### Functional Details
  
 The policy leverages Cloud Management APIs to identify servers that have not successfully completed their boot sequence (i.e. have "stranded in booting"). Servers can optionally be terminated after approval.
+
+Note: Locked instances will not be terminated.
  
 ### Input Parameters
  
