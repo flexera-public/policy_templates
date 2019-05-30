@@ -64,6 +64,7 @@ Please contact sales@rightscale.com to learn more.
 - [AWS RDS Backup Settings](./operational/dbaas/aws/rds_backup)
 - [AWS VPC Name Tag Sync](./operational/aws/vpc_name_sync)
 - [AWS Subnet Name Tag Sync](./operational/aws/subnet_name_sync)
+- [VMWare Instance Tag Sync](./operational/vmware/instance_tag_sync)
 
 ## Instructions to upload policy templates to RightScale
 
