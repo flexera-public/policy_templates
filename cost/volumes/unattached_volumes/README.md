@@ -20,6 +20,7 @@ This policy has the following input parameters required when launching the polic
 - *Email addresses of the recipients you wish to notify* - A list of email addresses to notify
 - *List of RightScale volume tags to exclude from policy.* - a list of tags used to excluded volumes from the incident.
 - *Choose the appropriate action you wish to take on the Volumes* - selection to choose to email or email and delete volumes.
+- *Create Final Snapshot* - Boolean for whether or not to take a final snapshot before deleting
 
 ### Policy Actions
 
