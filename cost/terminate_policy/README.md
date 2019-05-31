@@ -16,7 +16,7 @@ This policy relies on a RightScale tag 'instance:terminate' to terminate instanc
 
 This policy has the following input parameters required when launching the policy.
 
-- *Email addresses* - AEmail addresses of the recipients you wish to notify
+- *Email addresses* - Email addresses of the recipients you wish to notify
 
 ### Policy Actions
 
@@ -35,10 +35,7 @@ This policy requires permissions to access RightScale resources (clouds, instanc
 ## Supported Clouds
 
 The following clouds are supported:
-- AWS
-- Azure
-- Google
-- vSphere
+- All RightScale enabled clouds
 
 **Cost**
 

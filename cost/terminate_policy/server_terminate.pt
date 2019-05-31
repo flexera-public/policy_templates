@@ -1,7 +1,7 @@
 name "Terminate Instances with End Date"
 rs_pt_ver 20180301
 type "policy"
-short_description "This Policy Template is used to automatically resize AWS Instances based on user-defined standards. \n See the [README](https://github.com/rightscale/policy_templates/tree/master/cost/aws/aws_superseded_instance) and [docs.rightscale.com/policies](http://docs.rightscale.com/policies/) to learn more."
+short_description "This Policy Template is used to terminate instances based on tag. \n See the [README](https://github.com/rightscale/policy_templates/tree/master/cost/aws/aws_superseded_instance) and [docs.rightscale.com/policies](http://docs.rightscale.com/policies/) to learn more."
 long_description "Version: 1.0"
 category "Cost"
 severity "low"
@@ -42,9 +42,6 @@ resources "instances", type: "rs_cm.instances" do
   iterate @clouds  
   cloud_href href(iter_item)
   tags 'instance:terminate=*'
-  filter do
-    state "operational"
-  end
   view 'extended'
 end
 
@@ -89,12 +86,9 @@ script "js_instances_with_timestamp", type: "javascript" do
       if ( !instance.locked ){
         var instance_timestamp = instance.tags.split("=")[1];
         var instance_terminate_date = new Date(instance_timestamp);
-        console.log(typeof(instance_terminate_date))
         var instance_terminate_date_iso = instance_terminate_date
-        console.log(instance_terminate_date+"-"+iso_date)
         var should_terminate = false
         if (  instance_terminate_date <= iso_date ) {
-          console.log("true")
           var should_terminate = true
         }
         
@@ -107,6 +101,7 @@ script "js_instances_with_timestamp", type: "javascript" do
           locked: instance.locked,
           state: instance.state,
           tags: instance.tags,
+          terminate_date: instance.tags.split('=')[1],
           run_time: iso_date.toISOString(),
           terminate: should_terminate
         })
@@ -146,10 +141,10 @@ policy "pol_instances" do
     summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} Terminable Servers"
     detail_template <<-EOS
 # Unattached IP Addresses
-| Name | Terminate_Tag | Current Time |
+| Name | Terminate Date | Current Time |
 | ---- | ------------- | ------------ |
 {{ range data -}}
-| {{ .name }} | {{.tags}} | {{.run_time}} |
+| {{ .name }} | {{.terminate_date}} | {{.run_time}} |
 {{ end -}}
 EOS
 
@@ -180,7 +175,7 @@ define sys_log($subject, $detail) do
       notify: "None",
       audit_entry: {
         auditee_href: @@account,
-        summary: $subject,
+        summary: join(["Terminate Policy - ", $subject]),
         detail: $detail
       }
     )
