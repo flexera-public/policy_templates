@@ -29,7 +29,7 @@ Please contact sales@rightscale.com to learn more.
 - [Low Service Usage](./cost/low_service_usage/)
 - [Google Unutilized IP Addresses](./cost/google/unutilized_ip_addresses/)
 - [AWS Instance CloudWatch Utilization](./cost/aws/instance_cloudwatch_utilization/)
-- [Google StackDriver Utilization](./cost/google/instance_stackdriver_utilization/)
+- [Google StackDriver Utilization](./cost/google/instances_stackdriver_utilization/)
 
 ### Security
 - [Security Group: ICMP Enabled](./security/security_groups/icmp_enabled/)
@@ -63,6 +63,7 @@ Please contact sales@rightscale.com to learn more.
 - [AWS RDS Backup Settings](./operational/dbaas/aws/rds_backup)
 - [AWS VPC Name Tag Sync](./operational/aws/vpc_name_sync)
 - [AWS Subnet Name Tag Sync](./operational/aws/subnet_name_sync)
+- [Stranded Servers](./operational/stranded_servers/)
 - [VMWare Instance Tag Sync](./operational/vmware/instance_tag_sync)
 
 ## Instructions to upload policy templates to RightScale
