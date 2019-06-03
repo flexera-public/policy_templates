@@ -26,10 +26,16 @@ parameter "param_email" do
   description "Email addresses of the recipients you wish to notify"
 end
 
+parameter "param_terminate_tags" do
+  type "list"
+  label "Tag of servers to terminate"
+  description "Tags of servers to terminate in timestamp format, instance:terminate=2019-05-20T13:48:21Z"
+end
+
 parameter "param_exclude_tags" do
   type "list"
   label "Tags to ignore"
-  description "List of tags that will exclude Servers from being evaluated by this policy. Multiple tags are evaluated as an 'OR' condition. Tag must be of the format 'namespace:predicate=value'. Example: 'rs_agent:type=right_link_lite,rs_monitoring:state=auth'"
+  description "List of tags that will exclude Servers from being evaluated by this policy. Multiple tags are evaluated as an 'OR' condition. Tag must be of the format 'namespace:predicate=value'."
 end
 
 ###############################################################################
@@ -47,7 +53,7 @@ resources "clouds", type: "rs_cm.clouds"
 resources "instances", type: "rs_cm.instances" do
   iterate @clouds  
   cloud_href href(iter_item)
-  tags all(any('rs:terminate=*','ec2:terminate=*','gce:terminate=*','azure:terminate=*'),none($param_exclude_tags))
+  tags all(any($param_terminate_tags),none($param_exclude_tags))
   view 'extended'
 end
 
@@ -69,11 +75,11 @@ datasource "ds_instances" do
   field "instance_type_href", jmes_path(iter_item, "links[?rel=='instance_type'].href | [0]")
   field "locked", jmes_path(iter_item,"locked")
   field "state", jmes_path(iter_item,"state")
-  field "tags", jmes_path(iter_item,"tags[?contains(@, 'instance:terminate') == `true`] | [0]")
+  field "tags", jmes_path(iter_item,"tags")
 end
 
 datasource "ds_instances_with_timestamp" do
-  run_script $js_instances_with_timestamp, $ds_instances
+  run_script $js_instances_with_timestamp, $ds_instances, $param_terminate_tags
 end
 
 ###############################################################################
@@ -81,7 +87,7 @@ end
 ###############################################################################
 
 script "js_instances_with_timestamp", type: "javascript" do
-  parameters "ds_instances"
+  parameters "ds_instances", "param_terminate_tags"
   result "results"
   code <<-EOF
     var results = []
@@ -89,29 +95,28 @@ script "js_instances_with_timestamp", type: "javascript" do
     var iso_date = date
     for ( i = 0; i < ds_instances.length; i++ ) {
       var instance = ds_instances[i]
-      if ( !instance.locked ){
-        var instance_timestamp = instance.tags.split("=")[1];
-        var instance_terminate_date = new Date(instance_timestamp);
-        var instance_terminate_date_iso = instance_terminate_date
-        var should_terminate = false
-        if (  instance_terminate_date <= iso_date ) {
-          var should_terminate = true
-        }
-        
-        results.push({
-          resource_uid: instance.resource_uid,
-          name: instance.name,
-          href: instance.href
-          cloud_href: instance.cloud_href,
-          instance_type_href: instance.instance_type_href,
-          locked: instance.locked,
-          state: instance.state,
-          tags: instance.tags,
-          terminate_date: instance.tags.split('=')[1],
-          run_time: iso_date.toISOString(),
-          terminate: should_terminate
-        })
+      var terminate_tags = _.intersection(instance.tags,param_terminate_tags)
+      var instance_timestamp = terminate_tags[0].split("=")[1];
+      var instance_terminate_date = new Date(instance_timestamp);
+      var instance_terminate_date_iso = instance_terminate_date
+      var should_terminate = false
+      if (  instance_terminate_date <= iso_date ) {
+        var should_terminate = true
       }
+      
+      results.push({
+        resource_uid: instance.resource_uid,
+        name: instance.name,
+        href: instance.href
+        cloud_href: instance.cloud_href,
+        instance_type_href: instance.instance_type_href,
+        locked: instance.locked,
+        state: instance.state,
+        tags: instance.tags,
+        terminate_date: terminate_tags[0].split('=')[1],
+        run_time: iso_date.toISOString(),
+        terminate: should_terminate
+      })
     }
 EOF
 end
@@ -147,10 +152,10 @@ policy "pol_instances" do
     summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} Terminable Servers"
     detail_template <<-EOS
 # Unattached IP Addresses
-| Name | Terminate Date | Current Time |
-| ---- | ------------- | ------------ |
+| Name | Terminate Date | Current Time | Locked |
+| ---- | -------------- | ------------ | ------ |
 {{ range data -}}
-| {{ .name }} | {{.terminate_date}} | {{.run_time}} |
+| {{ .name }} | {{.terminate_date}} | {{.run_time}} | {{.locked}} |
 {{ end -}}
 EOS
 
