@@ -1,14 +1,16 @@
-## AWS Superseded Instance Types Remediation Policy
+## Superseded Instance Types Remediation Policy
 
 ### What it does
 
-This Policy Template is used to automatically resize Amazon Resource Manager Instances (VMs) based on user-defined standards.  For example, the Policy allows for a Disallowed Instance Type and its corresponding Superseded Instance Type.  If any Instances are found using the Disallowed type, they will be included in the corresponing Policy Incident.  Upon approval, Cloud Workflow will resize the Instance to the Superseded type. 
+This Policy Template is used to automatically resize instances based on user-defined standards.  For example, the Policy allows for a Disallowed Instance Type and its corresponding Superseded Instance Type.  If any Instances are found using the Disallowed type, they will be included in the corresponing Policy Incident.  Upon approval, Cloud Workflow will resize the Instance to the Superseded type. 
 
 ### Prerequesites
 - The following RightScale Credentials
   - Cloud Management - `Actor`
   - Cloud Management - `Observer`
-  - The `policy_designer`, `policy_manager` & `policy_publisher` roles
+  - Governance -  `policy_designer`
+  - Governance - `policy_manager`
+  - Governance - `policy_publisher`
 
 ### Functional Details
 

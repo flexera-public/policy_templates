@@ -1,7 +1,7 @@
-name "AWS Superseded Instance Remediation"
+name "Superseded Instance Remediation"
 rs_pt_ver 20180301
 type "policy"
-short_description "This Policy Template is used to automatically resize AWS Instances based on user-defined standards. \n See the [README](https://github.com/rightscale/policy_templates/tree/master/cost/aws/aws_superseded_instance) and [docs.rightscale.com/policies](http://docs.rightscale.com/policies/) to learn more."
+short_description "This Policy Template is used to automatically resize Instances based on user-defined standards. \n See the [README](https://github.com/rightscale/policy_templates/tree/master/cost/aws/aws_superseded_instance) and [docs.rightscale.com/policies](http://docs.rightscale.com/policies/) to learn more."
 long_description "Version: 1.0"
 category "Cost"
 severity "low"
@@ -54,20 +54,15 @@ auth "auth_rs", type: "rightscale"
 # Resources
 ###############################################################################
 
-resources "clouds", type: "rs_cm.clouds" do
-  filter do
-    cloud_type "amazon"
-  end
-end
+resources "clouds", type: "rs_cm.clouds"
 
 ###############################################################################
 # Datasources
 ###############################################################################
 
 datasource "ds_instances_16" do
-  iterate(@clouds)
   request do
-    run_script $js_instances_16, rs_cm_host, href(iter_item), rs_project_id, $param_exclude_tags
+    run_script $js_instances_16, rs_cm_host, rs_project_id, $param_exclude_tags
   end
   result do
     encoding "json"
@@ -79,7 +74,7 @@ datasource "ds_instances_16" do
       field "resource_uid", jmes_path(col_item, "resource_uid")
       field "instance_type", jmes_path(col_item, "links.instance_type.name")
       field "region", jmes_path(col_item, "links.cloud.region")
-      field "cloud_name", val(iter_item, "display_name")
+      field "cloud_name", jmes_path(col_item, "links.cloud.name")
       field "locked", jmes_path(col_item, "locked")
       field "state", jmes_path(col_item, "state")
     end
@@ -96,7 +91,7 @@ end
 
 script "js_instances_16", type: "javascript" do
   result "request"
-  parameters "rs_cm_host","cloud_href","rs_project_id","param_exclude_tags"
+  parameters "rs_cm_host","rs_project_id","param_exclude_tags"
   code <<-EOS
     var filtered_tags = ""
     if ( param_exclude_tags.length > 0 ){
@@ -107,7 +102,7 @@ script "js_instances_16", type: "javascript" do
       "auth": "auth_rs",
       "verb": "GET",
       "host": rs_cm_host,
-      "path": cloud_href + "/instances",
+      "path": "/api/instances",
       "headers": {
         "X-Api-Version": "1.6",
         "X-Account": \""+rs_project_id+\""
@@ -209,7 +204,7 @@ define sys_log($subject, $detail) do
       notify: "None",
       audit_entry: {
         auditee_href: @@account,
-        summary: $subject,
+        summary: join(["AWS Superseded Instance Remediation - ",$subject]),
         detail: $detail
       }
     )
