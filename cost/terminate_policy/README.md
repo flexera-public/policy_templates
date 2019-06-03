@@ -8,7 +8,9 @@ This Policy allows you to set a tag with a timestamp and terminate an instance a
 
 This policy relies on a RightScale tag 'instance:terminate' to terminate instances based on a schedule.  The tag value is in a timestamp notation.
 
-***Terminate Tag Example***
+You can follow the following example when tagging your instances. If you tag in the cloud natively you can ignore `ec2`,`gce`,`azure`, Flexera CMP will automatically add that on discovery.
+
+***Instance Terminate Tag Example***
 * `instance:terminate=2019-05-20T13:48:21Z`
 * `ec2:terminate=2019-05-20T13:48:21Z`
 * `gce:terminate=2019-05-20T13:48:21Z`
@@ -19,7 +21,7 @@ This policy relies on a RightScale tag 'instance:terminate' to terminate instanc
 This policy has the following input parameters required when launching the policy.
 
 - *Email addresses* - Email addresses of the recipients you wish to notify
-- *Tag of servers to terminate* - Tags of servers to terminate in timestamp format, instance:terminate=2019-05-20T13:48:21Z
+- *Tag of servers to terminate* - Tags of servers to terminate in timestamp format, Eg: `instance:terminate=*`, `ec2:terminate=*`, `gce:terminate=*`, `azure:terminate=*`
 - *Tags to ignore* - List of tags that will exclude Servers from being evaluated by this policy. Multiple tags are evaluated as an 'OR' condition. Tag must be of the format 'namespace:predicate=value'.
 
 ### Policy Actions
