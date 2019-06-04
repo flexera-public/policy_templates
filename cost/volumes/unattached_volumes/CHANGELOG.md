@@ -1,3 +1,7 @@
+v1.8
+----
+- Adds option to snapshot on volume delete
+
 v1.7
 ----
 - Improved handling of volume delete failures. If a delete volume action is not allowed, say, due to the volume being locked, the volume will be tagged with the cloud exception error message and the policy will continue on to the next volume in the list.
