@@ -30,6 +30,8 @@ This policy has the following input parameters required when launching the polic
 ### Supported Clouds
 
 - Amazon
+- Google
+- Azure
 
 ### Cost
 
