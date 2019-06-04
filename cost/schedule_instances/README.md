@@ -21,6 +21,26 @@ Times are UTC unless the Timezone field is provided.
 
 Use the (Untagged Resource Policy)[https://github.com/rightscale/policy_templates/tree/master/compliance/tags/tag_checker] to automate creating the instance:schedule tag.
 
+### Input Parameters
+
+This policy has the following input parameters required when launching the policy.
+
+- *Email addresses of the recipients you wish to notify* - A list of email addresses to notify
+
+### Policy Actions
+
+The following policy actions are taken on any resources found to be out of compliance.
+
+- Stop and Start the instances with the schedule tag.
+- Send an email report
+
+### Required Permissions
+
+This policy requires permissions to access RightScale resources (clouds, instances and tags).  Before applying this policy add the following roles to the user applying the policy.  The roles should be applied to all Accounts where the policy will run or the Organization. For more information on modifying roles visit the [Governance Docs](https://docs.rightscale.com/cm/ref/user_roles.html)
+
+- Cloud Management - Actor
+- Cloud Management - Observer
+
 ## Supported Clouds
 
 The following clouds are supported:

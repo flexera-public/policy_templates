@@ -1,0 +1,270 @@
+name "Google Instances StackDriver Utilization"
+rs_pt_ver 20180301
+type "policy"
+short_description "Gathers Google StackDriver utilization for instances on 30 day intervals. See the [README](https://github.com/rightscale/policy_templates/tree/master/cost/google/instance_stackdriver_utilization/) and [docs.rightscale.com/policies](http://docs.rightscale.com/policies/) to learn more."
+long_description "Version: 1.0"
+severity "low"
+category "Cost"
+
+###############################################################################
+# Permissions
+###############################################################################
+
+permission "perm_read_creds" do
+  actions   "rs_cm.show_sensitive","rs_cm.index_sensitive"
+  resources "rs_cm.credentials"
+end
+
+###############################################################################
+# Parameters
+###############################################################################
+
+parameter "param_email" do
+  type "list"
+  label "Email addresses to notify"
+  description "Email addresses of the recipients you wish to notify when new incidents are created"
+end
+
+parameter "param_google_project" do
+  type "string"
+  label "Google Cloud Project"
+  description "Google Cloud Project"
+  allowed_pattern /^[0-9a-z:\.-]+$/
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+auth "auth_google", type: "oauth2" do
+  token_url "https://www.googleapis.com/oauth2/v4/token"
+  grant type: "jwt_bearer" do
+    iss cred("GCE_PLUGIN_ACCOUNT")
+    aud "https://www.googleapis.com/oauth2/v4/token"
+    additional_claims do {
+      "scope" => "https://www.googleapis.com/auth/monitoring.write https://www.googleapis.com/auth/cloud-platform https://www.googleapis.com/auth/monitoring.read https://www.googleapis.com/auth/monitoring https://www.googleapis.com/auth/compute https://www.googleapis.com/auth/compute.readonly"
+    } end
+    signing_key cred("GCE_PLUGIN_PRIVATE_KEY")
+  end
+end
+
+###############################################################################
+# Datasources
+###############################################################################
+datasource "ds_time" do
+  run_script $js_time
+end
+
+datasource "ds_compute_utilization" do
+  iterate $ds_time
+  request do
+    auth $auth_google
+    host "monitoring.googleapis.com"
+    path join(["/v3/projects/",$param_google_project,"/timeSeries/"])
+    query "filter", 'metric.type="compute.googleapis.com/instance/cpu/utilization"'
+    query "interval.endTime", val(iter_item,"end_date")
+    query "interval.startTime", val(iter_item,"start_date")
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "timeSeries[*]") do
+      field "label_instance_name", jmes_path(col_item, "metric.labels.instance_name")
+      field "instance_id", jmes_path(col_item, "resource.labels.instance_id")
+      field "zone", jmes_path(col_item, "resource.labels.zone")
+      field "avg_cpu_points", jmes_path(col_item, "points[*].value.doubleValue | avg(@)")
+      field "max_cpu_points", jmes_path(col_item, "points[*].value.doubleValue | max(@)")
+      field "min_cpu_points", jmes_path(col_item, "points[*].value.doubleValue | min(@)")
+    end
+  end
+end
+
+datasource "ds_calculated_utilization" do
+  run_script $js_calculated_utilization, $ds_compute_utilization, $ds_memory_utilization, $ds_disk_utilization
+end
+
+datasource "ds_add_instance_data" do
+  iterate $ds_calculated_utilization
+  request do
+    run_script $js_add_instance_data, $param_google_project, val(iter_item,"zone"), val(iter_item,"instance_id")
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response,"items[*]") do
+      field "instance_id", val(iter_item, "instance_id")
+      field "hostname", jmes_path(col_item,"name || instance_id")
+      field "selfLink", jmes_path(col_item, "selfLink")
+      field "label_instance_name",val(iter_item, "label_instance_name")
+      field "zone", val(iter_item, "zone")
+      field "points", val(iter_item, "points")
+      field "cpu_average", val(iter_item, "cpu_average")
+      field "cpu_maximum", val(iter_item, "cpu_maximum")
+      field "cpu_minimum", val(iter_item, "cpu_minimum")
+      field "mem_average", val(iter_item, "mem_average")
+      field "mem_maximum", val(iter_item, "mem_maximum")
+      field "mem_minimum", val(iter_item, "mem_minimum")
+      field "disk_average", val(iter_item, "disk_average")
+      field "disk_maximum", val(iter_item, "disk_maximum")
+      field "disk_minimum", val(iter_item, "disk_minimum")
+    end
+  end
+end
+
+datasource "ds_memory_utilization" do
+  iterate $ds_time
+  request do
+    auth $auth_google
+    host "monitoring.googleapis.com"
+    path join(["/v3/projects/",$param_google_project,"/timeSeries/"])
+    query "filter", 'metric.type="agent.googleapis.com/memory/percent_used" AND metric.label.state=used'
+    query "interval.endTime", val(iter_item,"end_date")
+    query "interval.startTime", val(iter_item,"start_date")
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "timeSeries[*]") do
+      field "label_instance_name", jmes_path(col_item, "metric.labels.instance_name")
+      field "instance_id", jmes_path(col_item, "resource.labels.instance_id")
+      field "zone", jmes_path(col_item, "resource.labels.zone")
+      field "avg_mem_points", jmes_path(col_item, "points[*].value.doubleValue | avg(@)")
+      field "max_mem_points", jmes_path(col_item, "points[*].value.doubleValue | max(@)")
+      field "min_mem_points", jmes_path(col_item, "points[*].value.doubleValue | min(@)")
+    end
+  end
+end
+
+datasource "ds_disk_utilization" do
+  iterate $ds_time
+  request do
+    auth $auth_google
+    host "monitoring.googleapis.com"
+    path join(["/v3/projects/",$param_google_project,"/timeSeries/"])
+    query "filter", 'metric.type="agent.googleapis.com/disk/percent_used" AND metric.label.state=used'
+    query "interval.endTime", val(iter_item,"end_date")
+    query "interval.startTime", val(iter_item,"start_date")
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "timeSeries[*]") do
+      field "label_instance_name", jmes_path(col_item, "metric.labels.instance_name")
+      field "instance_id", jmes_path(col_item, "resource.labels.instance_id")
+      field "zone", jmes_path(col_item, "resource.labels.zone")
+      field "avg_disk_points", jmes_path(col_item, "points[*].value.doubleValue | avg(@)")
+      field "max_disk_points", jmes_path(col_item, "points[*].value.doubleValue | max(@)")
+      field "min_disk_points", jmes_path(col_item, "points[*].value.doubleValue | min(@)")
+    end
+  end
+end
+
+
+###############################################################################
+# Scripts
+###############################################################################
+script "js_time", type: "javascript" do
+  result "time"
+  code <<-EOF
+    var time = [{
+      "end_date":  new Date().toISOString(),
+      "start_date": new Date(new Date().setDate(new Date().getDate() - 30)).toISOString()
+    }]
+EOF
+end
+
+script "js_calculated_utilization", type: "javascript" do
+  result "results"
+  parameters "ds_compute_utilization", "ds_memory_utilization", "ds_disk_utilization"
+  code <<-EOS
+    results = []
+    for ( i =0; i < ds_compute_utilization.length; i++ ){
+      var instance_id = ds_compute_utilization[i].instance_id
+      var points = ds_compute_utilization[i].points
+      var memory_record = _.find(ds_memory_utilization, function(record) { return record.instance_id == instance_id; })
+      if (memory_record != null && memory_record !== undefined ) {
+        var memory_maximum = parseFloat(memory_record.max_mem_points).toFixed(2)
+        var memory_average = parseFloat(memory_record.avg_mem_points).toFixed(2)
+        var memory_minimum = parseFloat(memory_record.min_mem_points).toFixed(2)
+      } else {
+        var memory_maximum = "N/A"
+        var memory_average = "N/A"
+        var memory_minimum = "N/A"
+      }
+
+      var disk_record = _.find(ds_disk_utilization, function(record) { return record.instance_id == instance_id; })
+      if (disk_record != null && disk_record !== undefined) {
+        var disk_average = parseFloat(disk_record.avg_disk_points).toFixed(2)
+        var disk_maximum = parseFloat(disk_record.max_disk_points).toFixed(2)
+        var disk_minimum = parseFloat(disk_record.min_disk_points).toFixed(2)
+      } else {
+        var disk_maximum = "N/A"
+        var disk_average = "N/A"
+        var disk_minimum = "N/A"
+      }
+      results.push(
+        {
+          zone: ds_compute_utilization[i].zone,
+          instance_id: instance_id,
+          points: points,
+          label_instance_name: ds_compute_utilization[i].label_instance_name,
+          cpu_average: parseFloat(ds_compute_utilization[i].avg_cpu_points).toFixed(2),
+          cpu_maximum: parseFloat(ds_compute_utilization[i].max_cpu_points).toFixed(2),
+          cpu_minimum: parseFloat(ds_compute_utilization[i].min_cpu_points).toFixed(2),
+          mem_average: memory_average,
+          mem_maximum: memory_maximum,
+          mem_minimum: memory_minimum,
+          disk_average: disk_average,
+          disk_maximum: disk_maximum,
+          disk_minimum: disk_minimum
+        }
+      )
+    }
+  EOS
+end
+
+script "js_add_instance_data", type: "javascript" do
+  result "request"
+  parameters "project","zone", "instance_id"
+  code <<-EOS
+    request = {
+      "auth": "auth_google",
+      "host": "www.googleapis.com",
+      "verb": "GET",
+      "path": "/compute/v1/projects/"+project+"/zones/"+zone+"/instances",
+      "headers": {
+        "User-Agent": "RS Policies",
+        "Content-Type": "application/json"
+      },
+      "query_params": {
+        "filter": "id="+instance_id
+      }
+    }
+  EOS
+end
+###############################################################################
+# Policy
+###############################################################################
+
+policy "pol_utilization" do
+  validate_each $ds_add_instance_data do
+    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} rows containing Google instance StackDriver Utilization data"
+    detail_template <<-EOS
+# Google Instance StackDriver Utilization
+| Region | instanceID | Hostname | CPU Maximum % | CPU Minimum % | CPU Average % | Disk Maximum % | Disk Minimum % | Disk Average % | Memory Minimum % | Memory Maximum % | Memory Average % |
+| ------ | ---------- | -------- | ------------- | ------------- | ------------- | -------------- | -------------- | -------------- | ---------------- | ---------------- | ---------------- |
+{{ range data -}}
+| {{.zone}} | {{.instance_id}} | {{if .hostname}} {{.hostname}} {{ else }} {{.instance_id}} {{end}} | {{ .cpu_maximum }} | {{.cpu_minimum}} | {{ .cpu_average }} | {{.disk_maximum}} | {{.disk_minimum}} | {{.disk_average}} | {{.mem_minimum}} | {{.mem_maximum}} | {{.mem_average}} |
+{{ end -}}
+___
+###### Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }}) within Org: {{ rs_org_name }} (Org ID: {{ rs_org_id }})
+EOS
+    check eq(0,1)
+    escalate $email
+  end
+end
+
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "email" do
+  email $param_email
+end

@@ -1,0 +1,143 @@
+name "GitHub.com Repositories without Admin Team"
+rs_pt_ver 20180301
+short_description "Gets the repositories under a GitHub.com Organization and creates incidents for any that do not have at least 1 Team assigned with `admin` role.  See the [README](https://github.com/rightscale/policy_templates/tree/master/compliance/github/repository_ownership) and [docs.rightscale.com/policies](http://docs.rightscale.com/policies/) to learn more."
+long_description "Version: 1.0"
+severity "medium"
+category "Compliance"
+
+permission "read_creds" do
+  actions   "rs_cm.show_sensitive","rs_cm.index_sensitive"
+  resources "rs_cm.credentials"
+end
+
+parameter "param_email" do
+  label "Email addresses of the recipients you wish to notify"
+  type "list"
+end
+
+parameter "param_orgs" do
+  type "list"
+  label "Organization on GitHub.com to scan"
+end
+
+auth "auth_github", type: "api_key" do
+  location "header"
+  field "Authorization"
+  type "token"
+  key cred("GITHUB_ORG_ADMIN_ACCESS_TOKEN")
+end
+
+pagination "github_pagination" do
+  get_page_marker do
+    header "Link"
+  end
+  set_page_marker do
+    uri true
+  end
+end
+
+datasource "ds_orgs_array" do
+  run_script $js_orgs_array, $param_orgs
+end
+
+script "js_orgs_array", type: "javascript" do
+  parameters "param_orgs"
+  result "orgs_array"
+  code <<-EOS
+var orgs_array = param_orgs;
+EOS
+end
+
+datasource "org_repos" do
+  iterate $ds_orgs_array
+  request do
+    auth $auth_github
+    pagination $github_pagination
+    host "api.github.com"
+    path join(["/orgs/",iter_item,"/repos"])
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "[*]") do
+      field "repo_name", jmes_path(col_item, "name")
+      field "repo_org", jmes_path(col_item, "owner.login")
+      end
+  end
+end
+
+datasource "org_repos_teams" do
+  iterate $org_repos
+  request do
+    auth $auth_github
+    pagination $github_pagination
+    host "api.github.com"
+    path join(["/repos/",val(iter_item,"repo_org"),"/",val(iter_item,"repo_name"),"/teams"])
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response,"[@]") do
+      field "repo_name", jmes_path(iter_item, "repo_name")
+      field "repo_org", jmes_path(iter_item, "repo_org")
+      field "teams", col_item
+      end
+  end
+end
+
+datasource "invalid_repos" do
+    run_script $js_invalid_repos, $org_repos_teams
+end
+  
+script "js_invalid_repos", type: "javascript" do
+    parameters "org_repos_teams"
+    result "invalid_org_repos"
+    code <<-EOS
+var invalid_org_repos = [];
+for (var index = 0; index < org_repos_teams.length; index++) {
+    admin_count = 0;
+    var repo = org_repos_teams[index];
+    if( repo.teams.length == 0 ){
+      repo.failure_reason = "No Team(s) added on repo";
+      invalid_org_repos.push(repo);
+    } else {
+      for (var t_index = 0; t_index < repo.teams.length; t_index++) {
+        var team = repo.teams[t_index];
+        if (team.permission == "admin") {
+          admin_count++;
+        }
+      }
+      if (admin_count == 0) {
+        repo.failure_reason = "No Team(s) have the Admin role on repo";
+        invalid_org_repos.push(repo);
+      }
+    }
+}
+EOS
+end
+
+policy "invalid_repos" do
+  validate $invalid_repos do
+    summary_template "GitHub.com Repository Ownership Report"
+    detail_template <<-EOS
+# GitHub.com Repository Ownership Report
+
+The following repositories are out of compliance and do not have a Team with "Admin" role on the repository which is considered the repository owner.
+
+| Organization/Repository | Audit Log Link | Reason for non-compliance |
+| ----------------------- | -------------- | ------------------------- |
+{{ range data -}}
+| [{{.repo_org}}/{{.repo_name}}](https://github.com/{{.repo_org}}/{{.repo_name}}/settings/collaboration) | [Audit Log](https://github.com/organizations/{{.repo_org}}/settings/audit-log?utf8=%E2%9C%93&q=repo%3A{{.repo_org}}%2F{{.repo_name}}) | {{.failure_reason}} |
+{{ end -}}
+
+#### Policy Organization(s): {{  parameters.param_orgs }}
+___
+###### Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }})
+
+EOS
+    check eq(size(data), 0)
+    escalate $email_report
+  end
+end
+
+escalation "email_report" do
+    email $param_email
+end

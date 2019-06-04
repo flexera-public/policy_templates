@@ -1,15 +1,15 @@
 name "Downsize Instances based on CPU and Memory"
 rs_pt_ver 20180301
 type "policy"
-short_description "A policy that downsizes instances based on monitoring metrics. See the [README](https://github.com/rightscale/policy_templates/tree/master/cost/downsize_instance) and [docs.rightscale.com/policies](http://docs.rightscale.com/policies/) to learn more."
-long_description "Version: 1.8"
+short_description "A policy that downsizes instances based on monitoring metrics. \n See the [README](https://github.com/rightscale/policy_templates/tree/master/cost/downsize_instance) and [docs.rightscale.com/policies](http://docs.rightscale.com/policies/) to learn more."
+long_description "Version: 1.11"
 severity "medium"
 category "Cost"
 
 permission "perm_instances" do
   label "Permissions for instances"
   actions "rs_cm.index", "rs_cm.show"
-  resources "rs_cm.instances"
+  resources "rs_cm.instances", "rs_cm.clouds", "rs_cm.instance_types"
 end
 
 permission "perm_monitoring_metrics" do
@@ -34,17 +34,17 @@ parameter "param_max_free_memory_percent" do
   max_value 100
 end
 
-parameter "param_max_cpu_idle" do
+parameter "param_avg_cpu_idle" do
   type "number"
-  label "Maximum cpu idle percent to allow for downsize"
+  label "Average cpu idle percent to allow for downsize"
   default -1
   min_value -1
   max_value 100
 end
 
-parameter "param_avg_cpu_idle" do
+parameter "param_max_cpu_idle" do
   type "number"
-  label "Average cpu idle percent to allow for downsize"
+  label "Maximum cpu idle percent to allow for downsize"
   default -1
   min_value -1
   max_value 100
@@ -91,6 +91,40 @@ resources "instances", type: "rs_cm.instances" do
   tags all(any($param_instance_tag_list), "rs_agent:type=right_link_lite",none("rs_downsize:cooldown=*"))
 end
 
+resources "instance_types", type: "rs_cm.instance_types" do
+  iterate @clouds
+  cloud_href href(iter_item)
+end
+
+datasource "ds_instance_type_memory", type: "javascript" do
+  run_script $js_instance_type_memory, @instance_types
+end
+  
+script "js_instance_type_memory", type: "javascript" do
+  parameters "instance_types"
+  result "instance_type_memory_mapping"
+  code <<-EOS
+  var instance_type_memory_mapping = {};
+  var mb_bytes = 1000000 
+  var gb_bytes = 1000000000
+for (m = 0; m < instance_types.length; m++) {
+  instance_type_name = instance_types[m]["name"]
+  instance_type_memory = instance_types[m]["memory"]
+  if (instance_type_memory.match(/GB/)) {
+    mem_gb = Number(instance_type_memory.split("GB")[0])
+    mem = mem_gb * gb_bytes
+  } else if (instance_type_memory.match(/MB/)) {
+    mem_mb = Number(instance_type_memory.split("MB")[0])
+    mem = mem_mb * mb_bytes
+  } else { // assume MB without the units
+    mem_mb = Number(instance_type_memory)
+    mem = mem_mb * mb_bytes
+  }
+  instance_type_memory_mapping[instance_type_name] = mem
+};
+EOS
+end
+
 datasource "ds_instances" do
   iterate @instances
   field "resource_uid", val(iter_item,  "resource_uid")
@@ -123,7 +157,7 @@ datasource "ds_instances_16" do
   end
 end
 
-datasource "ds_instance_type" do
+datasource "ds_instance_size_map" do
   request do
     verb "GET"
     host "raw.githubusercontent.com"
@@ -133,11 +167,11 @@ datasource "ds_instance_type" do
 end
 
 datasource "ds_filtered_instances" do
-  run_script $js_filter_instances, $ds_instances, $ds_instances_16, $ds_instance_type
+  run_script $js_filter_instances, $ds_instances, $ds_instances_16, $ds_instance_size_map, $ds_instance_type_memory
 end
 
 script "js_filter_instances", type: "javascript" do
-  parameters "instances", "instances16", "instance_types"
+  parameters "instances", "instances16", "instance_size_map", "instance_type_memory"
   result "filtered_instances"
   code <<-EOS
 // This is the list of filtered instances.
@@ -155,9 +189,10 @@ for ( n = 0; n < instances16.length; n++) {
 for ( i = 0; i < instances.length; i++ ) {
   var cloud_type = i_type[instances[i]["href"]]["cloud_type"]
   var instance_type = i_type[instances[i]["href"]]["instance_type"]
+  var instance_type_mem = instance_type_memory[instance_type]
   var legacy_id = i_type[instances[i]["href"]]["legacy_id"]
   var region = i_type[instances[i]["href"]]["region"]
-  var next_instance_size = instance_types["clouds"][cloud_type.toString()][instance_type.toString()]["down"]
+  var next_instance_size = instance_size_map["clouds"][cloud_type.toString()][instance_type.toString()]["down"]
   if (!next_instance_size) { next_instance_size = "N/A" }
   filtered_instances.push(
     {
@@ -167,12 +202,13 @@ for ( i = 0; i < instances.length; i++ ) {
       description: instances[i]["description"],
       legacy_id: legacy_id,
       instance_type: instance_type,
+      total_memory: instance_type_mem,
       region: region,
       cloud_type: cloud_type,
       next_instance_size: next_instance_size
     }
   )
-}
+};
 EOS
 end
 
@@ -191,30 +227,12 @@ datasource "ds_instance_metrics_free_memory" do
     field "memory_data_points", jmes_path(response, "variables_data[0].points[*]")
     field "resource_uid",       val(iter_item,"resource_uid")
     field "instance_type",      val(iter_item,"instance_type")
+    field "total_memory",       val(iter_item, "total_memory")
     field "name",               val(iter_item,"name")
     field "legacy_id",          val(iter_item,"legacy_id")
     field "region",             val(iter_item,"region")
     field "cloud_type",         val(iter_item,"cloud_type")
     field "next_instance_size", val(iter_item,"next_instance_size")
-  end
-end
-
-datasource "ds_instance_metrics_total_memory" do
-  iterate($ds_filtered_instances)
-  request do
-    auth $auth_rs
-    host rs_cm_host
-    path join([val(iter_item,"href"), "/monitoring_metrics/memory:memory-total/data"])
-    query "start", "-300"
-    query "end", "0"
-    header "X-API-Version", "1.5"
-  end
-  result do
-    field "href",        val(iter_item,"href")
-    field "memory_data_points", jmes_path(response, "variables_data[0].points[*]")
-    field "resource_uid",          val(iter_item,"resource_uid")
-    field "instance_type",        val(iter_item,"instance_type")
-    field "name",        val(iter_item,"name")
   end
 end
 
@@ -238,26 +256,28 @@ datasource "ds_instance_metrics_cpu" do
 end
 
 datasource "ds_instances_with_calculated_metrics" do
-  run_script $js_calculate_metrics, $ds_instance_metrics_free_memory, $ds_instance_metrics_total_memory, $ds_instance_metrics_cpu
+  run_script $js_calculate_metrics, $ds_instance_metrics_free_memory, $ds_instance_metrics_cpu
 end
 
 script "js_calculate_metrics", type: "javascript" do
-  parameters "instance_metrics_free_memory","instance_metrics_total_memory", "instance_metrics_cpu"
+  parameters "instance_metrics_free_memory", "instance_metrics_cpu"
   result "calculated_instances"
   code <<-EOS
 var calculated_instances = [];
 for (var i = 0; i < instance_metrics_free_memory.length; i++) {
-  for (var t = 0; t < instance_metrics_total_memory.length; t++) {
-    if ( instance_metrics_free_memory[i]["href"] == instance_metrics_total_memory[t]["href"] ) {
       var free_sum = 0;
       free_memory_data_points = instance_metrics_free_memory[i]["memory_data_points"]
+      //skip if no memory data point are available
+      if (free_memory_data_points < 1 ) {
+        continue;
+      }
       var free_avg = free_memory_data_points.reduce(function(acc, val) { return acc + val; })/free_memory_data_points.length;
       max_free_memory = Math.max.apply(Math,free_memory_data_points)
 
-      var total_sum = 0;
-      total_memory_data_points = instance_metrics_total_memory[t]["memory_data_points"]
-      var total_avg = total_memory_data_points.reduce(function(acc, val) { return acc + val; })/total_memory_data_points.length;
-      max_total_memory = Math.max.apply(Math,total_memory_data_points)
+      // Total memory does not change and so average and max total memory equals the total memory for the instance type
+      var total_avg = instance_metrics_free_memory[i]["total_memory"]
+      max_total_memory = instance_metrics_free_memory[i]["total_memory"]
+        
       avg = parseInt((free_avg/total_avg)*100)
       max_free_memory_avg = parseInt((max_free_memory/max_total_memory)*100)
       calculated_instances.push(
@@ -279,13 +299,15 @@ for (var i = 0; i < instance_metrics_free_memory.length; i++) {
             next_instance_size: instance_metrics_free_memory[i]["next_instance_size"]
           }
         )
-    }
-  }
 };
 for ( var i = 0; i < calculated_instances.length; i++ ) {
   for ( v = 0; v < instance_metrics_cpu.length; v++ ) {
     if ( calculated_instances[i]["href"] == instance_metrics_cpu[v]["href"] ) {
       cpu_data_points = instance_metrics_cpu[v]["data_points"]
+      //skip if no cpu data points are available
+      if (cpu_data_points < 1 ) {
+        continue;
+      }
       var max_cpu_idle = 0;
       var average_cpu_idle = 0;
       max_cpu_idle = Math.max.apply(Math,cpu_data_points)
@@ -360,10 +382,10 @@ policy "policy_rightsize" do
     detail_template <<-EOS
 # {{ len data }} Instances can be downsized
 
-| Account | Instance Name | Resource UID | Average Memory | Free Average Memory | Total Average Memory | Max Free Memory | Max Total Memory | Max CPU Idle | Average CPU Idle | Current Instance Size | New Instance Size |
+| Instance Name | Resource UID | Average Memory | Free Average Memory | Total Average Memory | Max Free Memory | Max Total Memory | Max CPU Idle | Average CPU Idle | Current Instance Size | New Instance Size |
 | ------- | ------------- | ------------ | -------------- | ------------------- | -------------------- | --------------- | ---------------- | ------------ | ---------------- | --------------------- | ----------------- |
 {{ range data -}}
-  | {{rs_project_name}} | {{.name}} | {{.resource_uid}} | {{.average_mem_percent}}% | {{.free_avg }}MB | {{.total_avg }}MB | {{.max_free_memory }}MB | {{.max_total_memory }}MB | {{.max_cpu_idle}}% | {{.average_cpu_idle}}% | {{.instance_type}} | {{.next_instance_size}} |
+  | {{.name}} | {{.resource_uid}} | {{.average_mem_percent}}% | {{.free_avg }}MB | {{.total_avg }}MB | {{.max_free_memory }}MB | {{.max_total_memory }}MB | {{.max_cpu_idle}}% | {{.average_cpu_idle}}% | {{.instance_type}} | {{.next_instance_size}} |
 {{ end -}}
 
 EOS

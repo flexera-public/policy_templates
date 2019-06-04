@@ -10,33 +10,74 @@ Please contact sales@rightscale.com to learn more.
 - [AWS Reserved Instance Expiration](./cost/aws/reserved_instances/expiration/)
 - [AWS Reserved Instances Utilization](./cost/aws/reserved_instances/utilization/)
 - [AWS Reserved Instance Reservation Coverage](./cost/aws/reserved_instances/coverage/)
+- [AWS Reserved Instances Report by Billing Center](./cost/aws/reserved_instances/report_by_bc)
+- [Azure Superseded Instance Types](./cost/azure/superseded_instance_types/)
+- [Budget Alerts](./cost/budget_alerts/)
 - [Downsize Instances](./cost/downsize_instance/)
 - [Unattached Volumes Policy](./cost/volumes/unattached_volumes/)
 - [Old Snapshots](./cost/volumes/old_snapshots/)
-- [Schedule Instances](./cost/schedule_instances)
+- [Schedule Instances](./cost/schedule_instances/)
+- [Unattached IP Addresses](./cost/unattached_addresses/)
+- [Scheduled Report](./cost/scheduled_reports/)
+- [Azure Hybrid Use Benefit](./cost/azure/hybrid_use_benefit/)
+- [Azure Reserved Instance Utilization](./cost/azure/reserved_instances/utilization/)
+- [Billing Center Cost Anomaly](./cost/billing_center_cost_anomaly/)
+- [Google Committed Use Discount (CUD) Report](./cost/google/cud_report/)
+- [AWS Delete Unused Elastic Load Balancers (CLB)](./cost/aws/elb/clb_unused/)
+- [Cheaper Regions](./cost/cheaper_regions/)
+- [Low Account Usage](./cost/low_account_usage/)
+- [Low Service Usage](./cost/low_service_usage/)
+- [Google Unutilized IP Addresses](./cost/google/unutilized_ip_addresses/)
+- [AWS Instance CloudWatch Utilization](./cost/aws/instance_cloudwatch_utilization/)
+- [Google StackDriver Utilization](./cost/google/instances_stackdriver_utilization/)
 
 ### Security
 - [Security Group: ICMP Enabled](./security/security_groups/icmp_enabled/)
 - [Security Group: Rules Without Description](./security/security_groups/rules_without_descriptions/)
 - [Security Group: High Open Ports](./security/security_groups/high_open_ports/)
+- [Security Groups With Ports Open To The World](./security/security_groups/world_open_ports)
 - [AWS Open Buckets Policy](./security/storage/aws/public_buckets/)
 - [Google Open Buckets Policy](./security/storage/google/public_buckets/)
+- [AWS Unencrypted Volumes Policy](./security/aws/ebs_unencrypted_volumes/)
+- [AWS Internet-facing ELBs & ALBs](./security/aws/loadbalancer_internet_facing/)
+- [AWS Unencrypted RDS Instances](./security/aws/rds_unencrypted/)
+- [AWS Publicly Accessible RDS Instances](./security/aws/rds_publicly_accessible/)
 
 ### Compliance
 - [Untagged Resources](./compliance/tags/tag_checker)
+- [Azure Disallowed Regions](./compliance/azure/azure_disallowed_regions)
+- [Azure: Tag Resources with Resource Group Name](./compliance/tags/azure_rg_tags)
+- [Billing Center Access Report](./compliance/billing_center_access_report/)
+- [GitHub.com Available Seats](./compliance/github/available_seats/)
+- [GitHub.com Unpermitted Outside Collaborators](./compliance/github/outside_collaborators/)
+- [GitHub.com Unpermitted Repository Names](./compliance/github/repository_naming/)
+- [GitHub.com Unpermitted Top-Level Teams](./compliance/github/toplevel_teams/)
+- [GitHub.com Unpermitted Sized Repositories](./compliance/github/repository_size/)
+- [GitHub.com Repository Branches without Protection](./compliance/github/repository_branch_protection/)
+- [GitHub.com Repositories without Admin Team](./compliance/github/repository_admin_team/)
+- [AWS Unused ECS Clusters](./compliance/aws/ecs_unused/)
 
 ### Operational
 - [AWS Cloud Credentials Rotation Policy](./operational/cloud_credentials/aws)
 - [No Recent Snapshots](./operational/snapshots/)
 - [AWS RDS Backup Settings](./operational/dbaas/aws/rds_backup)
+- [AWS VPC Name Tag Sync](./operational/aws/vpc_name_sync)
+- [AWS Subnet Name Tag Sync](./operational/aws/subnet_name_sync)
+- [Stranded Servers](./operational/stranded_servers/)
+- [VMWare Instance Tag Sync](./operational/vmware/instance_tag_sync)
+
+### Policy Data Sets
+ - [AWS Regions](./data/aws/regions.json)
+ - [AWS Instance Types](./data/aws/instance_types.json)
+ - [Azure Instance Types](./data/azure/instance_types.json)
+ - [Google Instance Types](./data/google/instance_types.json)
+ - [Currency Reference](./cost/scheduled_reports/currency_reference.json)
 
 ## Instructions to upload policy templates to RightScale
-
 - The policy templates in the repo are the files that have a .pt extension.
 - Select the desired policy template, click on the “Raw” button, and then right-click and choose “Save As” to save the file to your computer.
 - To upload the template to your account, navigate over to the Templates page in the left nav bar in [Governance](https://governance.rightscale.com). Ensure you have the role to access policy management in RightScale. Learn More about [Policy Access Control](http://docs.rightscale.com/policies/#how-policies-work-access-control).
 - Click the “Upload Policy Template” button in the account you wish to test the policy and follow the instructions to upload the template you just downloaded.
-
 
 ## RightScale Policy Template Documentation
 - [Getting Started](http://docs.rightscale.com/policies/getting_started/)
@@ -54,6 +95,7 @@ Github issues contain a template for three types of requests(Bugs, New Features 
 - Bugs: Any issue you are having with an existing policy template not functioning correctly, this does not include missing features, or actions.
 - New Feature Request: Any feature(Field, Action, Link, Output, etc) that are to be added to an existing policy template.
 - New Policy Template Request: Request for a new policy template.
+
 ### Troubleshooting Danger Locally
 - You can test against a pull request via: bundle exec danger pr https://github.com/rightscale/policy_templates/pull/73 --pry
 - http://danger.systems/guides/troubleshooting.html

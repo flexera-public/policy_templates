@@ -1,5 +1,13 @@
 Change log
 
+v1.5
+----
+- update email template.
+
+v1.4
+----
+- update permission declaration.
+
 v1.3
 - fix issue with stop/start schedule.
 
