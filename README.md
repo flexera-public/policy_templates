@@ -66,13 +66,18 @@ Please contact sales@rightscale.com to learn more.
 - [Stranded Servers](./operational/stranded_servers/)
 - [VMWare Instance Tag Sync](./operational/vmware/instance_tag_sync)
 
-## Instructions to upload policy templates to RightScale
+### Policy Data Sets
+ - [AWS Regions](./data/aws/regions.json)
+ - [AWS Instance Types](./data/aws/instance_types.json)
+ - [Azure Instance Types](./data/azure/instance_types.json)
+ - [Google Instance Types](./data/google/instance_types.json)
+ - [Currency Reference](./cost/scheduled_reports/currency_reference.json)
 
+## Instructions to upload policy templates to RightScale
 - The policy templates in the repo are the files that have a .pt extension.
 - Select the desired policy template, click on the “Raw” button, and then right-click and choose “Save As” to save the file to your computer.
 - To upload the template to your account, navigate over to the Templates page in the left nav bar in [Governance](https://governance.rightscale.com). Ensure you have the role to access policy management in RightScale. Learn More about [Policy Access Control](http://docs.rightscale.com/policies/#how-policies-work-access-control).
 - Click the “Upload Policy Template” button in the account you wish to test the policy and follow the instructions to upload the template you just downloaded.
-
 
 ## RightScale Policy Template Documentation
 - [Getting Started](http://docs.rightscale.com/policies/getting_started/)
@@ -90,6 +95,7 @@ Github issues contain a template for three types of requests(Bugs, New Features 
 - Bugs: Any issue you are having with an existing policy template not functioning correctly, this does not include missing features, or actions.
 - New Feature Request: Any feature(Field, Action, Link, Output, etc) that are to be added to an existing policy template.
 - New Policy Template Request: Request for a new policy template.
+
 ### Troubleshooting Danger Locally
 - You can test against a pull request via: bundle exec danger pr https://github.com/rightscale/policy_templates/pull/73 --pry
 - http://danger.systems/guides/troubleshooting.html
