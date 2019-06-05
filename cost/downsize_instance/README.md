@@ -39,7 +39,6 @@ This policy requires permissions to access RightScale resources (clouds, instanc
 - AWS
 - Azure
 - Google
-- VMware
 
 ### Cost
 
