@@ -17,8 +17,8 @@ parameter "param_instance_tag_list" do
   label "Tags to find instances"
   description "List of tags used to filter instances that must validate policy. (e.g.: ec2:downsize=true)"
   min_length 1
-  default ["ec2:downsize=true", "azure:downsize=true", "gce:downsize=true"]
-  allowed_pattern /([\w]?)+\:([\w]?)+\=([\w]?)+/
+  default ["ec2:downsize=true", "azure:downsize=true", "gce:downsize"]
+  allowed_pattern /([\w]?)+\:([\w]?)+\=([\w]?)+|gce:([\w]?)+/
 end
 
 parameter "param_email" do
@@ -52,7 +52,7 @@ resources "instances", type: "rs_cm.instances" do
   iterate @clouds
   cloud_href href(iter_item)
   filter do
-    state "operational"
+    state ne: ["stopped", "provisioned", "terminated"]
   end
   tags all(any($param_instance_tag_list),none($param_exclude_tags))
 end
@@ -96,8 +96,8 @@ datasource "ds_instances" do
   field "resource_uid", val(iter_item,  "resource_uid")
   field "name", val(iter_item, "name")
   field "href", href(iter_item)
-  field "instance_type", val(iter_item, "instance_type")
   field "tags", val(iter_item, "tags")
+  field 'cloud_specific_attributes', val(iter_item,'cloud_specific_attributes')
 end
 
 datasource "ds_instances_16" do
@@ -120,11 +120,13 @@ datasource "ds_instances_16" do
       field "instance_type", jmes_path(col_item, "links.instance_type.name")
       field "region", jmes_path(col_item, "links.cloud.region")
       field "cloud_type", jmes_path(col_item, "links.cloud.cloud_type")
+      field 'availability_set', jmes_path(col_item,'cloud_specific_attributes.availability_set')
     end
   end
 end
 
-datasource "ds_instance_size_map" do
+# get AWS instance size map
+datasource "ds_aws_instance_size_map" do
   request do
     verb "GET"
     host "raw.githubusercontent.com"
@@ -133,12 +135,32 @@ datasource "ds_instance_size_map" do
   end
 end
 
+# get azure instance size map
+datasource "ds_azure_instance_size_map" do
+  request do
+    verb "GET"
+    host "raw.githubusercontent.com"
+    path "/rightscale/policy_templates/master/data/azure/instance_types.json"
+    header "User-Agent", "RS Policies"
+  end
+end
+
+# get google instance size map
+datasource "ds_google_instance_size_map" do
+  request do
+    verb "GET"
+    host "raw.githubusercontent.com"
+    path "/rightscale/policy_templates/master/data/google/instance_types.json"
+    header "User-Agent", "RS Policies"
+  end
+end
+
 datasource "ds_filtered_instances" do
-  run_script $js_filter_instances, $ds_instances, $ds_instances_16, $ds_instance_size_map
+  run_script $js_filter_instances, $ds_instances, $ds_instances_16, $ds_aws_instance_size_map, $ds_azure_instance_size_map, $ds_google_instance_size_map
 end
 
 script "js_filter_instances", type: "javascript" do
-  parameters "instances", "instances16", "instance_size_map"
+  parameters "instances", "instances16", "aws_instance_size_map","azure_instance_size_map","google_instance_size_map"
   result "details"
   code <<-EOS
 // This is the list of filtered instances.
@@ -146,6 +168,10 @@ var details = {}
 var downsize_instances = []
 var cooldown_instances = []
 var i_type = {};
+
+// merge multicloud instance type map
+var instance_size_map = _.extend(aws_instance_size_map,azure_instance_size_map,google_instance_size_map )
+
 for ( n = 0; n < instances16.length; n++) {
   i_type[instances16[n]["href"]] = {
     cloud_type: instances16[n]["cloud_type"],
@@ -167,11 +193,11 @@ for ( i = 0; i < instances.length; i++ ) {
       this.push(tag.split('=')[0])
   }, tag_keys )
 
-
   if (!next_instance_size) { next_instance_size = "N/A" }
-    if ( tag_keys.indexOf('rs_downsize:cooldown') === -1 ){
-      downsize_instances.push(
-      {
+
+  if ( tag_keys.indexOf('rs_downsize:cooldown') === -1 ){
+    if ( !instances[i]['cloud_specific_attributes']['availability_set']) {
+      downsize_instances.push({
         resource_uid: instances[i]["resource_uid"],
         name: instances[i]["name"],
         href: instances[i]["href"],
@@ -182,8 +208,8 @@ for ( i = 0; i < instances.length; i++ ) {
         region: region,
         cloud_type: cloud_type,
         next_instance_size: next_instance_size
-      }
-    )
+      })
+    }
   } else {
     // get the cooldown date for report
     var cooldown_tag = _.find(instances[i]['tags'], function(tag){
@@ -193,8 +219,7 @@ for ( i = 0; i < instances.length; i++ ) {
       }
     })
     var cooldown_date = cooldown_tag.split('=')[1]
-    cooldown_instances.push(
-    {
+    cooldown_instances.push({
       resource_uid: instances[i]["resource_uid"],
       name: instances[i]["name"],
       href: instances[i]["href"],
@@ -205,8 +230,7 @@ for ( i = 0; i < instances.length; i++ ) {
       region: region,
       cloud_type: cloud_type,
       next_instance_size: next_instance_size
-    }
-    )
+    })
   }
 };
 details = {
