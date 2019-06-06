@@ -1,7 +1,7 @@
 name "Superseded Instance Remediation"
 rs_pt_ver 20180301
 type "policy"
-short_description "This Policy Template is used to automatically supersede instances based on user-defined standards. \n See the [README](https://github.com/rightscale/policy_templates/tree/master/cost/aws/aws_superseded_instance) and [docs.rightscale.com/policies](http://docs.rightscale.com/policies/) to learn more."
+short_description "This Policy Template is used to automatically supersede instances based on user-defined standards. \n See the [README](https://github.com/rightscale/policy_templates/tree/master/cost/superseded_instance_remediation/) and [docs.rightscale.com/policies](http://docs.rightscale.com/policies/) to learn more."
 long_description "Version: 1.0"
 category "Cost"
 severity "low"
@@ -99,7 +99,6 @@ script "js_instances_16", type: "javascript" do
   parameters "rs_cm_host","cloud_href","rs_project_id","param_exclude_tags"
   code <<-EOS
     var filtered_tags = ""
-    console.log(param_exclude_tags)
     if ( param_exclude_tags.length > 0 ) {
       var filtered_tags = '&tag!=' + param_exclude_tags.join(",");
     }
@@ -163,7 +162,7 @@ end
 ###############################################################################
 
 policy "pol_superseded_instance" do
-  validate_each $ds_combined_instance_data do
+  validate $ds_combined_instance_data do
     summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} Instances will be resized from {{ parameters.param_old_instance_type }} to {{ parameters.param_new_instance_type }}"
     detail_template <<-EOS
 # Superseded Instances
@@ -175,7 +174,7 @@ policy "pol_superseded_instance" do
 ___
 ###### Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }}) within Org: {{ rs_org_name }} (Org ID: {{ rs_org_id }})
 EOS
-    check val(item,"locked")
+    check eq(size(data), 0)
     escalate $report_and_resize_instances
   end
 end
@@ -186,21 +185,23 @@ end
 
 define resize_instances($data,$param_new_instance_type) do
   foreach $item in $data do
-    call sys_log("resizing instance", $item)
-    @instance = rs_cm.get(href: $item["href"])
-    @current_server = @instance.parent()
-    task_label("stopping instance")
-    @instance.stop()
-    task_label("sleeping until instance stopped")
-    sleep_until(@current_server.state == 'provisioned')
-    @current_instance = @current_server.current_instance()
-    @cloud = @current_instance.cloud()
-    @new_instance_type = first(@cloud.instance_types(filter: ["name=="+$param_new_instance_type]))
-    @current_instance.update(instance: { instance_type_href: @new_instance_type.href })
-    task_label("sleeping until instance started")
-    @current_instance.start()
-    sleep_until(@current_instance.state == 'operational')
-    task_label("Instance Started")
+    if !$item["locked"]
+      call sys_log("resizing instance", $item)
+      @instance = rs_cm.get(href: $item["href"])
+      @current_server = @instance.parent()
+      task_label("stopping instance")
+      @instance.stop()
+      task_label("sleeping until instance stopped")
+      sleep_until(@current_server.state == 'provisioned')
+      @current_instance = @current_server.current_instance()
+      @cloud = @current_instance.cloud()
+      @new_instance_type = first(@cloud.instance_types(filter: ["name=="+$param_new_instance_type]))
+      @current_instance.update(instance: { instance_type_href: @new_instance_type.href })
+      task_label("sleeping until instance started")
+      @current_instance.start()
+      sleep_until(@current_instance.state == 'operational')
+      task_label("Instance Started")
+    end
   end
 end
 

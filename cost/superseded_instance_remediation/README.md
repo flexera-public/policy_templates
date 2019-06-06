@@ -15,15 +15,15 @@ This Policy Template is used to automatically resize instances based on user-def
 ### Functional Details
 
 - This policy supports a single old-to-new instance type mapping.  To apply this policy for multiple old-to-new instance type scenarios, the policy will need to be applied multiple times.  This will allow for flexibility in managing applied policies.
-- The Exclude Tag parameter is a string value.  Supply the Tag Key only.  Tag Values are not analyzed and therefore are not need.  If the exclusion tag key is used on an Instance, that Instance is presumed to be exempt from this policy.
+- The Exclude Tag parameter is a list value. Supply tags for instances you want excluded from the policy
 - Upon Approval, the Instances that appear in the Incident will be immediately stopped, resized, and started via Cloud Workflow. 
 
 #### Input Parameters
 
 This policy has the following input parameters required when launching the policy.
 
-- *Disallowed Instance Type* - a single Amazon instance type that should be resized
-- *Superseded Instance Type* - the new Amazon instance type that instances should be resized to
+- *Disallowed Instance Type* - a single instance type that should be resized
+- *Superseded Instance Type* - the new instance type that instances should be resized to
 - *Exclude Tags* - A list of tags to filter out instances from being checked 
 - *Email addresses* - A list of email addresses to notify
 
