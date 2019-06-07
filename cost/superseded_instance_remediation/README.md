@@ -8,9 +8,6 @@ This Policy Template is used to automatically resize instances based on user-def
 - The following RightScale Credentials
   - Cloud Management - `Actor`
   - Cloud Management - `Observer`
-  - Governance -  `policy_designer`
-  - Governance - `policy_manager`
-  - Governance - `policy_publisher`
 
 ### Functional Details
 
