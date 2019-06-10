@@ -1,0 +1,276 @@
+name "Bill Analysis Instance Costs"
+rs_pt_ver 20180301
+type "policy"
+short_description "This Policy Template is used to return all tags on instances. \n See the [README](https://github.com/rightscale/policy_templates/tree/master/cost/all_instance_tags/) and [docs.rightscale.com/policies](http://docs.rightscale.com/policies/) to learn more."
+long_description "Version: 1.0"
+category "Compliance"
+severity "low"
+
+###############################################################################
+# Permissions
+###############################################################################
+
+permission "perm_instances" do
+  label "Permissions for instances"
+  actions "rs_cm.index", "rs_cm.show"
+  resources "rs_cm.instances"
+end
+
+###############################################################################
+# Parameters
+###############################################################################
+
+parameter "param_email" do
+  type "list"
+  label "Email addresses"
+  description "Email addresses of the recipients you wish to notify"
+end
+
+parameter "param_billing_centers" do
+  label "Billing Center Name"
+  type "list"
+  min_length 1
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+auth "auth_rs", type: "rightscale"
+
+###############################################################################
+# Resources
+###############################################################################
+
+resources "clouds", type: "rs_cm.clouds"
+
+###############################################################################
+# Datasources
+###############################################################################
+datasource "ds_instances_16" do
+  iterate(@clouds)
+  request do
+    auth $auth_rs
+    verb "GET"
+    host rs_cm_host
+    path join([href(iter_item), "/instances"])
+    header "X-Api-Version", "1.6"
+    header "X-Account", to_s(rs_project_id)
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "[*]") do
+      field "href", jmes_path(col_item, "href")
+      field "name", jmes_path(col_item,"name")
+      field "description", jmes_path(col_item, "description")
+      field "legacy_id", to_n(jmes_path(col_item,"legacy_id"))
+      field "instance_type", jmes_path(col_item, "links.instance_type.name")
+    end
+  end
+end
+
+datasource "ds_dimensions" do
+  request do
+    auth $auth_rs
+    host rs_optima_host
+    path join(["/bill-analysis/orgs/",rs_org_id,"/costs/dimensions"])
+    header "Api-Version", "1.0"
+    header "User-Agent", "RS Policies"
+  end
+end
+
+datasource "ds_billing_centers" do
+  request do
+    auth $auth_rs
+    host rs_optima_host
+    path join(["/analytics/orgs/",rs_org_id,"/billing_centers"])
+    header "Api-Version", "1.0"
+    header "User-Agent", "RS Policies"
+    query "view", "allocation_table"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response,"[*]") do
+      field "href", jmes_path(col_item,"href")
+      field "id", jmes_path(col_item,"id")
+      field "name", jmes_path(col_item,"name")
+      field "parent_id", jmes_path(col_item,"parent_id")
+      field "ancestor_ids", jmes_path(col_item,"ancestor_ids")
+      field "allocation_table", jmes_path(col_item,"allocation_table")
+    end
+  end
+end
+
+datasource "ds_cloud_vendor_accounts" do
+  request do
+    auth $auth_rs
+    host rs_optima_host
+    path join(["/analytics/orgs/",rs_org_id,"/cloud_vendor_accounts"])
+    header "Api-Version", "1.0"
+    header "User-Agent", "RS Policies"
+    query "cloud_vendor", "aws"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response,"[*]") do
+      field "id", jmes_path(col_item,"id")
+      field "name", jmes_path(col_item,"name")
+      field "vendor_name", jmes_path(col_item,"vendor_name")
+    end
+  end
+end
+
+datasource "ds_instance_type_pricing" do
+  iterate $ds_billing_centers
+  request do
+    run_script $js_optima_request, rs_org_id, val(iter_item,"id")
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response,"rows[*]") do
+      field "instance_type", jmes_path(col_item, "dimensions.instance_type")
+      field "region", jmes_path(col_item, "dimensions.region")
+      field "usage_unit", jmes_path(col_item, "dimensions.usage_unit")
+      field "vendor", jmes_path(col_item, "dimensions.vendor")
+      field "cost", jmes_path(col_item, "metrics.cost_amortized_blended_adj")
+      field "usage_amount", jmes_path(col_item,"metrics.usage_amount")
+    end
+  end
+end
+
+datasource "ds_instance_price_calculated" do
+  run_script $js_instance_price_calculated, $ds_instance_type_pricing
+end
+
+script "js_optima_request", type: "javascript" do
+  parameters "org","bc"
+  result "request"
+  code <<-EOS
+    var date = new Date();
+    var year = date.getUTCFullYear();
+    var month = (1 + date.getUTCMonth())
+
+    if (month == 1){
+      var lmonth = 12;
+      var lyear = year-1 ;
+    } else {
+      var lmonth = month-2;
+      var lyear = year ;
+    }
+
+    mo = month.toString().length > 1 ? month : '0' + month;
+    lmo = lmonth.toString().length > 1 ? lmonth : '0' + lmonth;
+
+    var next_month = year + "-" + mo
+    var current_month = lyear + "-" + lmo
+
+    var request = {
+      auth: "auth_rs",
+      host: "optima.rightscale.com",
+      verb: "POST",
+      path: "/bill-analysis/orgs/" + org + "/costs/select",
+      body_fields: {
+        "dimensions": ["vendor","vendor_account","category","instance_type","region","resource_type","service","usage_type","usage_unit","resource_id"],
+        "granularity": "month",
+        "start_at": current_month,
+        "end_at": next_month,
+        "billing_center_ids": [bc]
+        "limit" : 10000,
+        "metrics" : ["cost_amortized_blended_adj", "usage_amount"],
+        "filter" : {
+            "type" : "and",
+            "expressions" : [
+                {"type" : "or", "expressions" : [{"dimension":"vendor","type":"equal","value":"Azure"},
+                                                 {"dimension":"vendor","type":"equal","value":"AzureCSP"},
+                                                 {"dimension":"vendor","type":"equal","value":"AWS"}
+                                               ]
+                },
+                {"dimension":"category","type":"equal","value":"Compute"},
+                {"dimension":"resource_type","type":"equal","value":"Compute Instance"}
+              ]
+           }
+      },
+      headers: {
+        "User-Agent": "RS Policies",
+        "Api-Version": "1.0"
+      }
+    }
+  EOS
+end
+
+script "js_instance_price_calculated", type: "javascript" do
+  parameters "ds_instance_type_pricing"
+  result "results"
+  code <<-EOS
+  var results = []
+  var arr_results = []
+  function getAvg(num_array) {
+    var total = _.reduce(num_array, function(memo, num){ return memo + num; }, 0)
+    return total / num_array.length;
+  }
+  for (i =0; i < ds_instance_type_pricing.length; i++ ){
+    var pricing = ds_instance_type_pricing[i]
+    if ( pricing.usage_amount != 0 ) {
+      var cost_per_unit = pricing.cost/pricing.usage_amount
+    } else { 
+      var cost_per_unit = 0
+    }
+    arr_results.push({
+      instance_type: pricing.instance_type,
+      region: pricing.region,
+      usage_unit: pricing.usage_unit,
+      vendor: pricing.vendor,
+      cost: pricing.cost,
+      usage_amount: pricing.usage_amount,
+      cost_per_unit: cost_per_unit
+    })
+  }
+  var sorted_results = _.sortBy(arr_results, function(item){ return item.region; });
+  var groups = _.groupBy(sorted_results, function(value){
+    return value.instance_type + '#' + value.region;
+  });
+  var results = _.map(groups, function(group){
+    var arr_cost_per_unit = _.pluck(group, 'cost_per_unit')
+    return {
+        instance_type: group[0].instance_type,
+        region: group[0].region,
+        usage_unit: group[0].usage_unit,
+        vendor: group[0].vendor,
+        cost_per_unit: getAvg(arr_cost_per_unit),
+        arr_cost_per_unit: arr_cost_per_unit
+    }
+});
+
+EOS
+end
+###############################################################################
+# Escalations
+###############################################################################
+escalation "esc_report" do
+  email $param_email
+end
+resolution "report_resolution" do
+  email $param_email
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "pol_instances" do
+  validate_each $ds_instance_price_calculated do
+    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}):  {{ len data }} Instances found with tags"
+    detail_template <<-EOS
+There are {{ len data }} resource(s) that were found.
+
+| Instance Type | Region | Usage Unit | Vendor | Average Cost Per Unit | Cost Per Unit Array |
+| ------------- | ------ | ---------- | ------ | --------------------- | ------------------- |
+{{ range data -}}
+| {{ .instance_type }} | {{.region}} | {{.usage_unit}} | {{.vendor}} | {{.cost_per_unit}} | {{.arr_cost_per_unit}} |
+{{ end -}}
+EOS
+    check eq(0,1)
+    escalate $esc_report
+    resolve $report_resolution
+  end
+end
