@@ -200,7 +200,7 @@ script "js_optima_request", type: "javascript" do
                                                 {"dimension": "service", "type":"equal","value":"Virtual Machines"}
                                               ]
                 },
-                {"dimension":"resource_type","type":"equal","value":"Compute Instance"}
+
               ]
            }
       },
@@ -224,26 +224,28 @@ script "js_instance_price_calculated", type: "javascript" do
   }
   for (i =0; i < ds_instance_type_pricing.length; i++ ){
     var pricing = ds_instance_type_pricing[i]
-    if ( pricing.usage_amount != 0 ) {
-      var cost_per_unit = pricing.cost/pricing.usage_amount
-    } else { 
-      var cost_per_unit = 0
+    if ( pricing.instance_type != "None") {
+      if ( pricing.usage_amount != 0 ) {
+        var cost_per_unit = pricing.cost/pricing.usage_amount
+      } else {
+        var cost_per_unit = 0
+      }
+      arr_results.push({
+        instance_type: pricing.instance_type,
+        region: pricing.region,
+        usage_unit: pricing.usage_unit,
+        vendor: pricing.vendor,
+        cost: pricing.cost,
+        usage_amount: pricing.usage_amount,
+        cost_per_unit: cost_per_unit
+      })
     }
-    arr_results.push({
-      instance_type: pricing.instance_type,
-      region: pricing.region,
-      usage_unit: pricing.usage_unit,
-      vendor: pricing.vendor,
-      cost: pricing.cost,
-      usage_amount: pricing.usage_amount,
-      cost_per_unit: cost_per_unit
-    })
   }
-  var sorted_results = _.sortBy(arr_results, function(item){ return item.region; });
-  var groups = _.groupBy(sorted_results, function(value){
+  
+  var groups = _.groupBy(arr_results, function(value){
     return value.instance_type + '#' + value.region;
   });
-  var results = _.map(groups, function(group){
+  var unsorted_results = _.map(groups, function(group){
     var arr_cost_per_unit = _.pluck(group, 'cost_per_unit')
     return {
         instance_type: group[0].instance_type,
@@ -253,8 +255,12 @@ script "js_instance_price_calculated", type: "javascript" do
         cost_per_unit: getAvg(arr_cost_per_unit),
         arr_cost_per_unit: arr_cost_per_unit
     }
-});
-
+  });
+  var results = _(unsorted_results).chain().sortBy(function(result) {
+      return result.region;
+  }).sortBy(function(result) {
+      return result.vendor;
+  }).value();
 EOS
 end
 ###############################################################################
