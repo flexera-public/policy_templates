@@ -113,6 +113,7 @@ datasource "ds_new_bc_costs" do
     collect jmes_path(response,"rows[*]") do
       field "vendor", jmes_path(col_item, "dimensions.vendor")
       field "vendor_account_name", jmes_path(col_item,"dimensions.vendor_account_name")
+      field "service", jmes_path(col_item, "dimensions.service")
       field "cost_amortized_unblended_adj", jmes_path(col_item,"metrics.cost_amortized_unblended_adj")
       field "id", jmes_path(col_item,"dimensions.billing_center_id")
       field "timestamp", jmes_path(col_item,"timestamp")
@@ -210,7 +211,6 @@ script "js_format_costs", type: "javascript" do
     if ( bc_id != 'unallocated' ){
       _.each(new_bc_cost_objs, function(new_bc_cost_obj){
         var billing_center = _.reject(ds_billing_centers, function(bc){ return bc.id != new_bc_cost_obj.id })[0];
-        console.log(billing_center)
         if (new_bc_cost_obj.vendor == "AWS" ) {
           var account = _.reject(ds_cloud_vendor_accounts, function(ds_cloud_vendor_account){ return ds_cloud_vendor_account.id != new_bc_cost_obj.vendor_account_name });
           var vendor_account_name = account[0].name
@@ -222,6 +222,7 @@ script "js_format_costs", type: "javascript" do
           name: billing_center.name,
           id: bc_id,
           new_sum: new_bc_cost_obj.cost_amortized_unblended_adj,
+          service: new_bc_cost_obj.service,
           vendor: new_bc_cost_obj.vendor,
           vendor_account_name: vendor_account_name
         })
@@ -243,6 +244,7 @@ script "js_format_costs", type: "javascript" do
           name: billing_center.name,
           id: bc_id,
           new_sum: new_bc_cost_obj.cost_amortized_unblended_adj,
+          service: new_bc_cost_obj.service,
           vendor: new_bc_cost_obj.vendor,
           vendor_account_name: vendor_account_name
         })
@@ -252,16 +254,19 @@ script "js_format_costs", type: "javascript" do
   var groups = _.groupBy(arr_results, function(value){
     return value.bc_id + '#' + value.vendor + '#' + value.vendor_account_name;
   });
-
+  console.log(groups)
   var unsorted_results = _.map(groups, function(group){
     var arr_new_sum = _.pluck(group, 'new_sum')
     var summed = _.reduce(arr_new_sum, function(memo, num){ return memo + num; }, 0)
+    console.log(group)
+    var service_cost = _.each(group, function(item) { return {service_name: item.service, service_cost: item.new_sum}})
     return {
         name: group[0].name,
         id: group[0].id,
         vendor: group[0].vendor,
         vendor_account_name: group[0].vendor_account_name,
         new_sum: parseFloat(summed).toFixed(2),
+        service_cost: service_cost,
         arr_new_sum: arr_new_sum
     }
   });
