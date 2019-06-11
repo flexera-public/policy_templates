@@ -38,7 +38,30 @@ parameter "param_include_unallocated" do
   allowed_values "true","false"
 end
 
+parameter "param_billing_centers" do
+  label "Billing Center Name"
+  type "list"
+  min_length 1
+end
+
+parameter "param_minimum_savings_threshold" do
+  label "Minimum Savings Threshold"
+  type "number"
+  default 1
+end
+
 auth "auth_rs", type: "rightscale"
+
+
+datasource "ds_dimensions" do
+  request do
+    auth $auth_rs
+    host rs_optima_host
+    path join(["/bill-analysis/orgs/",rs_org_id,"/costs/dimensions"])
+    header "Api-Version", "1.0"
+    header "User-Agent", "RS Policies"
+  end
+end
 
 datasource "ds_billing_centers" do
   request do
@@ -82,14 +105,12 @@ datasource "ds_cloud_vendor_accounts" do
 end
 
 datasource "ds_new_bc_costs" do
-  iterate $ds_billing_centers
   request do
-    run_script $js_new_costs_request, rs_org_id, val(iter_item,"id"), $param_days
+    run_script $js_new_costs_request, rs_org_id, $ds_billing_centers, $param_billing_centers, $param_days, $param_include_unallocated
   end
   result do
     encoding "json"
     collect jmes_path(response,"rows[*]") do
-      field "name", val(iter_item, "name")
       field "vendor", jmes_path(col_item, "dimensions.vendor")
       field "vendor_account_name", jmes_path(col_item,"dimensions.vendor_account_name")
       field "cost_amortized_unblended_adj", jmes_path(col_item,"metrics.cost_amortized_unblended_adj")
@@ -100,7 +121,7 @@ datasource "ds_new_bc_costs" do
 end
 
 script "js_new_costs_request", type: "javascript" do
-  parameters "org_id", "bc_id", "param_days"
+  parameters "org_id","ds_billing_centers", "param_billing_centers", "param_days", "param_include_unallocated"
   result "request"
   code <<-EOS
     var start_at = "";
@@ -131,16 +152,29 @@ script "js_new_costs_request", type: "javascript" do
     start_at = getFormattedDailyDate(getStartDate(new Date()))
     end_at = getFormattedDailyDate(getEndDate(new Date()))
 
+    var billing_center_ids = []
+    if (param_billing_centers.length === 0){
+      var top_billing_centers = _.reject(ds_billing_centers, function(bc){ return bc.parent_id != null });
+      billing_center_ids = _.map(top_billing_centers, function(value, key){ return value.id });
+    } else {
+      // get array of billing center id's that match the names in param_billing_centers.
+      billing_center_names = _.map(param_billing_centers, function(name){ return name.toLowerCase(); });
+      billing_center_ids = _.compact(_.map(ds_billing_centers, function(value){ if(_.contains(billing_center_names, value.name.toLowerCase())){return value.id} }));
+    }
+    if ( param_include_unallocated == "true" ){
+      billing_center_ids.push('unallocated')
+    }
+
     var request = {
       auth: "auth_rs",
       verb: "POST",
       host: "optima.rightscale.com",
       path: "/bill-analysis/orgs/" + org_id + "/costs/aggregated",
       body_fields: {
-        "dimensions": ["billing_center_id","vendor","vendor_account_name"],
+        "dimensions": ["billing_center_id","vendor","vendor_account_name", "service"],
         "granularity": "day",
         "metrics": ['cost_amortized_unblended_adj'],
-        "billing_center_ids": [bc_id],
+        "billing_center_ids": billing_center_ids,
         "start_at": start_at,
         "end_at": end_at
       },
@@ -153,17 +187,19 @@ script "js_new_costs_request", type: "javascript" do
 end
 
 datasource "ds_format_costs" do
-  run_script $js_format_costs, $ds_new_bc_costs, $ds_cloud_vendor_accounts, $param_include_unallocated
+  run_script $js_format_costs, $ds_new_bc_costs, $ds_cloud_vendor_accounts, $param_include_unallocated, $ds_billing_centers
 end
 
 script "js_format_costs", type: "javascript" do
-  parameters "new_bc_costs", "ds_cloud_vendor_accounts", "include_unallocated"
+  parameters "new_bc_costs", "ds_cloud_vendor_accounts", "include_unallocated", "ds_billing_centers"
   result "formatted_data"
   code <<-EOS
 
   var type = 'cost_amortized_unblended_adj';
 
   var formatted_data = [];
+  var unsorted_results = [];
+  var arr_results = [];
   var bcs = [];
 
   _.each(new_bc_costs, function(bcc){bcs.push(bcc.id)})
@@ -173,6 +209,8 @@ script "js_format_costs", type: "javascript" do
     var new_bc_cost_objs = _.reject(new_bc_costs, function(new_bc_cost){ return new_bc_cost.id != bc_id });
     if ( bc_id != 'unallocated' ){
       _.each(new_bc_cost_objs, function(new_bc_cost_obj){
+        var billing_center = _.reject(ds_billing_centers, function(bc){ return bc.id != new_bc_cost_obj.id })[0];
+        console.log(billing_center)
         if (new_bc_cost_obj.vendor == "AWS" ) {
           var account = _.reject(ds_cloud_vendor_accounts, function(ds_cloud_vendor_account){ return ds_cloud_vendor_account.id != new_bc_cost_obj.vendor_account_name });
           var vendor_account_name = account[0].name
@@ -180,10 +218,10 @@ script "js_format_costs", type: "javascript" do
           var vendor_account_name = new_bc_cost_obj.vendor_account_name
         }
 
-        formatted_data.push({
-          name: new_bc_cost_obj.name,
+        arr_results.push({
+          name: billing_center.name,
           id: bc_id,
-          new_sum: parseFloat(new_bc_cost_obj.cost_amortized_unblended_adj).toFixed(2),
+          new_sum: new_bc_cost_obj.cost_amortized_unblended_adj,
           vendor: new_bc_cost_obj.vendor,
           vendor_account_name: vendor_account_name
         })
@@ -193,6 +231,7 @@ script "js_format_costs", type: "javascript" do
       return
     } else {
       _.each(new_bc_cost_objs, function(new_bc_cost_obj){
+        var billing_center = _.reject(ds_billing_centers, function(bc){ return bc.id != new_bc_cost_obj.id })[0];
         if (new_bc_cost_obj.vendor == "AWS" ) {
           var account = _.reject(ds_cloud_vendor_accounts, function(ds_cloud_vendor_account){ return ds_cloud_vendor_account.id != new_bc_cost_obj.vendor_account_name });
           var vendor_account_name = account[0].name
@@ -200,16 +239,38 @@ script "js_format_costs", type: "javascript" do
           var vendor_account_name = new_bc_cost_obj.vendor_account_name
         }
 
-        formatted_data.push({
-          name: new_bc_cost_obj.name,
+        arr_results.push({
+          name: billing_center.name,
           id: bc_id,
-          new_sum: parseFloat(new_bc_cost_obj.cost_amortized_unblended_adj).toFixed(2),
+          new_sum: new_bc_cost_obj.cost_amortized_unblended_adj,
           vendor: new_bc_cost_obj.vendor,
           vendor_account_name: vendor_account_name
         })
       })
     }
   })
+  var groups = _.groupBy(arr_results, function(value){
+    return value.bc_id + '#' + value.vendor + '#' + value.vendor_account_name;
+  });
+
+  var unsorted_results = _.map(groups, function(group){
+    var arr_new_sum = _.pluck(group, 'new_sum')
+    var summed = _.reduce(arr_new_sum, function(memo, num){ return memo + num; }, 0)
+    return {
+        name: group[0].name,
+        id: group[0].id,
+        vendor: group[0].vendor,
+        vendor_account_name: group[0].vendor_account_name,
+        new_sum: parseFloat(summed).toFixed(2),
+        arr_new_sum: arr_new_sum
+    }
+  });
+
+  var formatted_data = _(unsorted_results).chain().sortBy(function(result) {
+    return result.vendor_account_name;
+  }).sortBy(function(result) {
+    return result.vendor;
+  }).value();
 EOS
 end
 
@@ -232,6 +293,7 @@ policy "policy_budget_alert" do
 ###### Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }}) within Org: {{ rs_org_name }} (Org ID: {{ rs_org_id }})
 EOS
     escalate $esc_budget_alert
-    check gt(to_n(val(item,"new_sum")),$param_threshold)
+    #check gt(to_n(val(item,"new_sum")),$param_threshold)
+    check eq(0,1)
   end
 end
