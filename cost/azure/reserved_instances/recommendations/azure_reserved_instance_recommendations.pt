@@ -1,0 +1,150 @@
+name "Azure Reserved Instances Recommendations"
+rs_pt_ver 20180301
+type "policy"
+short_description "A policy that sends email notifications when Azure RI Recommendations are identified. See the [README](https://github.com/rightscale/policy_templates/tree/master/cost/azure/reserved_instances/recommendations) and [docs.rightscale.com/policies](http://docs.rightscale.com/policies/) to learn more."
+long_description "Version: 1.0"
+severity "medium"
+category "Cost"
+
+permission "perm_read_creds" do
+  actions   "rs_cm.show_sensitive","rs_cm.index_sensitive"
+  resources "rs_cm.credentials"
+end
+
+parameter "param_enrollment" do
+  type "string"
+  label "Azure Enrollment ID"
+end
+
+parameter "param_days" do 
+  category "RI"
+  label "Look Back Period"
+  default "Last 7 Days"
+  allowed_values "Last 7 Days","Last 30 Days","Last 60 Days"
+  type "string"
+end 
+
+parameter "param_savings_threshold" do
+  category "RI"
+  label "Net Savings"
+  description "Specify the minimum net savings that should result in a recommendation"
+  default 100
+  type "number"
+end
+
+parameter "param_email" do
+  type "list"
+  label "Email addresses of the recipients you wish to notify"
+end
+
+auth "azure_ea_auth", type: "api_key" do
+  location "header"
+  field "Authorization"
+  type "Bearer"
+  key cred("AZURE_EA_KEY")
+end
+
+pagination "azure_pagination" do
+  get_page_marker do
+    body_path "nextLink"
+  end
+  set_page_marker do
+    uri true
+  end
+end
+
+script "js_ri_request", type: "javascript" do
+  parameters "enrollment","param_days"
+  result "request"
+  code <<-EOS
+
+    var period = {
+      "Last 7 Days":"last7days",
+      "Last 30 Days":"last30days",
+      "Last 60 Days":"last60days"
+    }
+    var request = {
+      auth: "azure_ea_auth",
+      pagination: "azure_pagination",
+      host: "consumption.azure.com",
+      path: "/v2/enrollments/" + enrollment + "/SharedReservationRecommendations",
+      query_params: {
+        "lookBackPeriod": period[param_days]
+      },
+      headers: {
+        "User-Agent": "RS Policies"
+      }
+    } 
+  EOS
+end
+
+datasource "ds_ri_recommendations" do
+  request do
+    run_script $js_ri_request, $param_enrollment, $param_days
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "[*]") do
+      field "meterId", jmes_path(col_item,"meterId")
+      field "skuName", jmes_path(col_item,"skuName")
+      field "term", jmes_path(col_item,"term")
+      field "region", jmes_path(col_item,"region")
+      field "costWithNoRI", jmes_path(col_item,"costWithNoRI")
+      field "recommendedQuantity", jmes_path(col_item,"recommendedQuantity")
+      field "totalCostWithRI", jmes_path(col_item,"totalCostWithRI")
+      field "netSavings", jmes_path(col_item,"netSavings")
+      field "firstUsageDate", jmes_path(col_item,"firstUsageDate")
+    end
+  end
+end
+
+datasource "ds_ri_normalization" do 
+  run_script $js_ri_cleanup, $ds_ri_recommendations
+end
+
+script "js_ri_cleanup", type: "javascript" do
+  parameters "ri_recos"
+  result "result"
+  code <<-EOS
+    var result = [];
+    _.each(ri_recos, function(reco){
+      if (reco.term === "P1Y"){
+        var term = "1 Year";
+      } 
+      if (reco.term === "P3Y"){
+        var term = "3 Year";
+      }
+      result.push({
+        meterId: reco["meterId"],
+        skuName: reco["skuName"],
+        term: term,
+        region: reco["region"],
+        costWithNoRI: (Math.round(reco["costWithNoRI"] * 100) / 100).toString(10),
+        recommendedQuantity: reco["recommendedQuantity"],
+        totalCostWithRI: (Math.round(reco["totalCostWithRI"] * 100) / 100).toString(10),
+        netSavings: (Math.round(reco["netSavings"] * 100) / 100).toString(10),
+        firstUsageDate: reco["firstUsageDate"]
+      })
+    }) 
+  EOS
+end
+
+policy "azure_ri_recommendations" do
+  validate_each $ds_ri_normalization do
+    summary_template "(Enrollment ID: {{parameters.param_enrollment}}): {{ len data }} Azure Reserved Instances Purchase Recommendations"
+    detail_template <<-EOS
+# Azure Reserved Instances Purchase Recommendations
+| SKU Name | Term | Region | Net Savings | Total RI Quantity to Purchase | Total Current Cost (without RI) | Total Cost if RI was purchased | First Usage Date | Resource MeterID |
+| -------- | ---- | ------ | ----------- | ----------------------------- | ------------------------------- | ------------------------------ | ---------------- | ---------------- |
+{{ range data -}}
+| {{.skuName}} | {{.term}} | {{.region}} | {{.netSavings}} | {{.recommendedQuantity}} | {{.costWithNoRI}} | {{.totalCostWithRI}} | {{.firstUsageDate}} | {{.meterId}} |
+{{ end -}}
+EOS
+    escalate $email
+    check lt(to_n(val(item,"netSavings")),$param_savings_threshold)
+  end
+end
+
+escalation "email" do
+   email $param_email
+end
