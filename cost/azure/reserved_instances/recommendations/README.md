@@ -3,7 +3,9 @@
 **As a best practice, this policy should only be applied to the Master Account, and not to each individual RightScale Account.**
 
 ### What it does
+This Policy Template leverages the [Azure EA API](https://docs.microsoft.com/en-us/rest/api/billing/enterprise/billing-enterprise-api-reserved-instance-recommendation). It will raise incidents if Azure has any RI Purchase Recommendations, whose net savings exceeds the *Net Savings Threshold* parameter in the Policy.
 
+It will email the user specified in `Email addresses of the recipients you wish to notify`
 
 ### Prerequesites
 
@@ -14,6 +16,10 @@
 
 This policy has the following input parameters required when launching the policy.
 
+- *Enrollment ID* - the Azure EA enrollment ID
+- *Look Back Period* - Specify the number of days of past usage to analyze.
+- *Net Savings Threshold* - Specify the minimum Net Savings that should result in an RI purchase recommendation
+- *Email addresses of the recipients you wish to notify* - A list of email addresses to notify
 
 ### Policy Actions
 
