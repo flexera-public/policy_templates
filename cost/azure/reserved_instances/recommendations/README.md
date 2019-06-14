@@ -21,7 +21,7 @@ This policy has the following input parameters required when launching the polic
 - *Enrollment ID* - the Azure EA enrollment ID
 - *Look Back Period* - Specify the number of days of past usage to analyze.
 - *Net Savings Threshold* - Specify the minimum Net Savings that should result in an RI purchase recommendation
-- *Email addresses of the recipients you wish to notify* - A list of email addresses to notify
+- *Email addresses to notify* - A list of email addresses to notify
 
 ### Policy Actions
 
