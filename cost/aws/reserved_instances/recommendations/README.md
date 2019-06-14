@@ -25,7 +25,7 @@ This policy has the following input parameters required when launching the polic
 - *RI Term* - Specify he Term length for the RI.
 - *Payment Option* - Optionally, specify the payment option for this RI.
 - *Net Savings Threshold* - Specify the minimum Net Savings that should result in an RI purchase recommendation
-- *Email addresses of the recipients you wish to notify* - A list of email addresses to notify
+- *Email addresses to notify* - A list of email addresses to notify
 
 ### Policy Actions
 
