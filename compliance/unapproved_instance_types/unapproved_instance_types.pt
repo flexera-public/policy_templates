@@ -1,0 +1,191 @@
+name "Unapproved instance types"
+rs_pt_ver 20180301
+type "policy"
+short_description "Report on any instances that are running using instance types that are not approved. \n See the [README](https://github.com/rightscale/policy_templates/tree/master/compliance/approved_instance_types) and [docs.rightscale.com/policies](http://docs.rightscale.com/policies/) to learn more."
+long_description "Version: 1.0"
+category "Compliance"
+severity "medium"
+
+###############################################################################
+# User inputs
+###############################################################################
+
+parameter "param_email" do
+  type "list"
+  label "Email addresses to notify"
+  description "Email addresses of the recipients you wish to notify when new incidents are created"
+end
+
+parameter "param_exclude_tags" do
+  type "list"
+  label "Tags to ignore"
+  description "List of tags that will exclude Servers from being evaluated by this policy. Multiple tags are evaluated as an 'OR' condition. Tag must be of the format 'namespace:predicate=value'. Example: 'rs_agent:type=right_link_lite,rs_monitoring:state=auth'"
+end
+
+parameter "param_approved_instance_types" do
+  type "list"
+  label "Approved Instance Types"
+  description "List of approved instance types of AWS, Azure and Google cloud, separated by comma. Example: 'a1.medium,a1.large,a1.xlarge,Standard_A0,Standard_A6,f1-micro,n1-highcpu-2 etc..'"
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+auth "auth_rs", type: "rightscale"
+
+###############################################################################
+# Datasources
+###############################################################################
+
+datasource "ds_instances_list" do
+  request do
+    run_script $js_instances_list, rs_cm_host, rs_project_id, $param_exclude_tags
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "[*]") do
+      field "cloud_name", jmes_path(col_item, "links.cloud.name")
+      field "cloud_type", jmes_path(col_item, "links.cloud.cloud_type")
+      field "name", jmes_path(col_item, "name")
+      field "resource_uid", jmes_path(col_item, "resource_uid")
+      field "updated_at", jmes_path(col_item, "timestamps.updated_at")
+      field "instance_type", jmes_path(col_item, "links.instance_type.name")
+      field "href", jmes_path(col_item, "href")
+      field "tags", jmes_path(col_item, "tags")
+      field "state", jmes_path(col_item, "state")
+    end
+  end
+end
+
+datasource "ds_get_unapproved_instances" do
+  run_script $js_get_unapproved_instances, $ds_instances_list, $param_exclude_tags, $param_approved_instance_types
+end
+
+###############################################################################
+# Script
+###############################################################################
+
+script "js_instances_list", type: "javascript" do
+  result "request"
+  parameters "rs_cm_host","rs_project_id","param_exclude_tags"
+  code <<-EOS
+    var filtered_tags = ""
+    if ( param_exclude_tags.length > 0 ){
+      var filtered_tags = "&tag!=" + param_exclude_tags.join(",");
+    }
+
+    request = {
+      "auth": "auth_rs",
+      "verb": "GET",
+      "host": rs_cm_host,
+      "path": "/api/instances",
+      "headers": {
+        "X-Api-Version": "1.6",
+        "X-Account": \""+rs_project_id+\"",
+      "accept": "application/json"
+      },
+      "query_params": {
+        "view": "full",
+        "filter": "state==running" + filtered_tags
+      }
+    }
+
+  EOS
+end
+
+script "js_get_unapproved_instances", type: "javascript" do
+  parameters "ds_instances_list","param_exclude_tags", "param_approved_instance_types"
+  result "content"
+  code <<-EOS
+    var content=[]
+
+    for(var i=0;i<ds_instances_list.length;i++){
+      instance=ds_instances_list[i]
+
+    // Constructing tags with comma separated to display in detail_template
+      var tags = instance['tags']
+      var dis_tags=""
+      for(var j=0;j<tags.length;j++){
+        var tag=tags[j];
+        dis_tags=dis_tags+", "+tag;
+      }
+
+      var instance_type = instance['instance_type']
+      var is_instance_type_matched=false
+      if((param_approved_instance_types.indexOf(instance_type) !== -1) || (param_approved_instance_types.join()).match(instance_type)){
+        is_instance_type_matched = true;
+      }
+
+      var cloud_type = instance['cloud_type'];
+      var date=(instance['updated_at'].toString()).slice(0,10)
+      if((! is_instance_type_matched) && (cloud_type === 'amazon' || cloud_type === 'google' || cloud_type === 'azure' || cloud_type === 'azure_v2')){
+        content.push({
+          cloud_name:instance['cloud_name']
+          cloud_type:cloud_type
+          name:instance['name']
+          resource_uid:instance['resource_uid']
+          updated_at:date
+          instance_type:instance['instance_type']
+          href:instance['href']
+          tags:(dis_tags.slice(2))
+        })
+      }
+    }
+  EOS
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "pol_unapproved_instances" do
+  validate $ds_get_unapproved_instances do
+    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} Instances with unapproved instance type."
+    detail_template <<-EOS
+# Instances with unapproved instance type details.
+| Cloud Name | Cloud Type | Instance Name | Resource UID | Updated On | Instance Type | Href | Tags |
+| ---------- | ---------- | ------------- | ------------ | ---------- | ------------- | ---- | ---- |
+{{ range data -}}
+| {{.cloud_name}} | {{.cloud_type}} | {{.name}} | {{.resource_uid}} | {{.updated_at}} | {{.instance_type}} | {{.href}} | {{.tags}} |
+{{ end -}}
+    EOS
+    escalate $report_approved_instances
+    escalate $approve_stop_instances
+    check eq(size(data),0)
+  end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "report_approved_instances" do
+  email $param_email
+end
+
+escalation "approve_stop_instances" do
+  request_approval  do
+  label "Approve Instance Stop"
+    description "Approve escalation to run RightScale Cloud Workflow to stop running instance."
+    parameter "approval_reason" do
+      type "string"
+      label "Reason for Approval"
+      description "Explain why you are approving the action."
+    end
+  end
+  run "stop_instance", data
+end
+
+###############################################################################
+# Cloud Workflow
+###############################################################################
+
+define stop_instance($data) do
+  foreach $item in $data do
+    sub on_error: skip do
+      @instance=rs_cm.get(href:$item["href"])
+      @instance.stop()
+    end
+  end
+end

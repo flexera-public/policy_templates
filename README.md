@@ -57,6 +57,7 @@ Please contact sales@rightscale.com to learn more.
 - [GitHub.com Repository Branches without Protection](./compliance/github/repository_branch_protection/)
 - [GitHub.com Repositories without Admin Team](./compliance/github/repository_admin_team/)
 - [AWS Unused ECS Clusters](./compliance/aws/ecs_unused/)
+- [Unapproved Instance Types](./compliance/unapproved_instance_types/)
 
 ### Operational
 - [AWS Cloud Credentials Rotation Policy](./operational/cloud_credentials/aws)
