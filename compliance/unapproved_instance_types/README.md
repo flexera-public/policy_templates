@@ -2,7 +2,7 @@
  
 ### What it does
 
-This policy Report on any instances that are running using instance types that are not approved. \n See the [README](https://github.com/rightscale/policy_templates/tree/master/compliance/approved_instance_types) and [docs.rightscale.com/policies](http://docs.rightscale.com/policies/) to learn more.
+This policy Report on any instances that are running using instance types that are not approved. \n See the [README](https://github.com/rightscale/policy_templates/tree/master/compliance/unapproved_instance_types) and [docs.rightscale.com/policies](http://docs.rightscale.com/policies/) to learn more.
 
 ### Functional Details
  
@@ -11,10 +11,10 @@ The policy leverages the RightScale APIs to check instances across all supported
  
 ### Input Parameters
  
-- *Email addresses of the recipients you wish to notify* - A list of email addresses to notify
-- *Ignore tags* - Instances with any of these tags will be ignored 
-- *param_approved_instance_types* - List of approved instance types of AWS, Azure and Google cloud, separated by comma. Example: 'a1.medium,a1.large,a1.xlarge,Standard_A0,Standard_A6,f1-micro,n1-highcpu-2 etc..' 
-Note: You can find Instance Types of all Supported Clouds under 'Policy Data Sets' section of root README.md file(https://github.com/rightscale/policy_templates/blob/master/README.md)
+- *Email addresses to notify* - Email addresses of the recipients you wish to notify when new incidents are created
+- *Approved Instance Types* - List of approved instance types of AWS, Azure and Google cloud, separated by comma. Example: 'a1.medium,a1.large,a1.xlarge,Standard_A0,Standard_A6,f1-micro,n1-highcpu-2 etc..' 
+#####Note: You can find Instance Types of all Supported Clouds under 'Policy Data Sets' section of root README.md file(https://github.com/rightscale/policy_templates/blob/master/README.md)
+- *Tags to ignore* - List of tags that will exclude Servers from being evaluated by this policy. Multiple tags are evaluated as an 'OR' condition. Tag must be of the format 'namespace:predicate=value'. Example: 'rs_agent:type=right_link_lite,rs_monitoring:state=auth'
 
 ### Resource Names
 
