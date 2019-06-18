@@ -120,6 +120,7 @@ datasource "ds_instances_16" do
       field "instance_type", jmes_path(col_item, "links.instance_type.name")
       field "region", jmes_path(col_item, "links.cloud.region")
       field "cloud_type", jmes_path(col_item, "links.cloud.cloud_type")
+      field "cloud_href", jmes_path(col_item, "links.cloud.href")
       field 'availability_set', jmes_path(col_item,'cloud_specific_attributes.availability_set')
     end
   end
@@ -175,6 +176,7 @@ var instance_size_map = _.extend(aws_instance_size_map,azure_instance_size_map,g
 for ( n = 0; n < instances16.length; n++) {
   i_type[instances16[n]["href"]] = {
     cloud_type: instances16[n]["cloud_type"],
+    cloud_href: instances16[n]["cloud_href"],
     instance_type: instances16[n]["instance_type"],
     legacy_id: instances16[n]["legacy_id"],
     region: instances16[n]["region"]
@@ -183,6 +185,7 @@ for ( n = 0; n < instances16.length; n++) {
 
 for ( i = 0; i < instances.length; i++ ) {
   var cloud_type = i_type[instances[i]["href"]]["cloud_type"]
+  var cloud_href = i_type[instances[i]["href"]]["cloud_href"]
   var instance_type = i_type[instances[i]["href"]]["instance_type"]
   var legacy_id = i_type[instances[i]["href"]]["legacy_id"]
   var region = i_type[instances[i]["href"]]["region"]
@@ -207,6 +210,7 @@ for ( i = 0; i < instances.length; i++ ) {
         instance_type: instance_type,
         region: region,
         cloud_type: cloud_type,
+        cloud_href: cloud_href,
         next_instance_size: next_instance_size
       })
     }
@@ -229,6 +233,7 @@ for ( i = 0; i < instances.length; i++ ) {
       instance_type: instance_type,
       region: region,
       cloud_type: cloud_type,
+      cloud_href: cloud_href,
       next_instance_size: next_instance_size
     })
   }
@@ -261,50 +266,67 @@ define downsize_instances($data,$param_instance_tag_list,$param_cooldown_days) d
   foreach $item in $data['downsize_instances'] do
     @current_instance = rs_cm.instances.empty()
     if $item["next_instance_size"] != "N/A"
-      call sys_log('Instance Resizing','')
       @instance = rs_cm.get(href: $item["href"])
-      $resource_uid = @instance.resource_uid
-      call sys_log('instance',to_s(to_object(@instance)))
-      task_label("stopping instance")
+      call sys_log('Instance Resizing',$item['name'])
+      task_label("stopping instance "+$item['name'])
       @instance.stop()
       @cloud = @instance.cloud()
-      @current_instance = first(@cloud.instances(filter: ['resource_uid=='+$resource_uid]))
-      task_label("sleeping until instance stopped")
-      call sys_log('current_instance',to_s(to_object(@current_instance)))
-      sub timeout: 10m, on_timeout: skip do
-         while @current_instance.state == 'provisioned' do
-           @current_instance = first(@cloud.instances(filter: ['resource_uid=='+$resource_uid]))
-         end
-       end
-      call sys_log('Instance Stopped','')
+      @next_instance = first(@cloud.instances(filter: ['resource_uid=='+$item['resource_uid'] ]))
+      task_label("sleeping until instance stopped " + $item['name'])
+
+      $state = ''
+      while $state != 'provisioned' do
+        sub on_error: retry do
+          @next_instance = first(@cloud.instances(filter: ['resource_uid=='+$item['resource_uid']]))
+          call sys_log('waiting for instance stop state',to_s(to_object(@next_instance)))
+          $state = @next_instance.state
+          call sys_log('Instance stop state',$state)
+        end
+      end
+
+      call sys_log('Instance Stopped',$item['name'])
+      @next_instance = first(@cloud.instances(filter: ['resource_uid=='+$item['resource_uid']]))
       @new_instance_type = first(@cloud.instance_types(filter: ["name=="+$item["next_instance_size"]]))
-      @current_instance.update(instance: { instance_type_href: @new_instance_type.href })
+      @next_instance.update(instance: { instance_type_href: @new_instance_type.href })
       call sys_log('Instance Resized', @new_instance_type.name)
-      task_label("sleeping until instance started")
-      @current_instance.start()
-      sleep_until(@current_instance.state == 'operational')
-      task_label("Instance Started")
-      call sys_log('Instance Started','')
+      task_label("sleeping until instance started " + @next_instance.name)
+      @next_instance.start()
+
+      $state = ''
+      while $state != 'operational' do
+        sub on_error: retry do
+          # find the resource by resource_uid because the href may have changed after resize.
+          @next_instance = first(@cloud.instances(filter: ['resource_uid=='+$item['resource_uid']]))
+          call sys_log('waiting for instance start state',to_s(to_object(@next_instance)))
+          $state = @next_instance.state
+          call sys_log('Instance stop state',$state)
+        end
+      end
+
+      task_label("Instance Started " + $item['name'])
+      call sys_log('Instance Started',$item['name'])
       $date = now() + (60*60*24)*$param_cooldown_days
       $format_string = "%Y/%m/%d %H:%M:%S"
       $formatted_time = strftime($date, $format_string)
       # add the cooldown tag, but
       # dont add/modify the cooldown tag if it already exists
-      $cooldown_tag = tag_value(@current_instance,'rs_downsize:cooldown')
+      $cooldown_tag = tag_value(@next_instance,'rs_downsize:cooldown')
       call sys_log('cooldown_tag',$cooldown_tag)
       if !$cooldown_tag
-        task_label("Adding CoolDown Tag")
-        rs_cm.tags.multi_add(resource_hrefs: [@current_instance.href], tags: ["rs_downsize:cooldown="+$formatted_time])
+        task_label("Adding CoolDown Tag " + $item['name'])
+        rs_cm.tags.multi_add(resource_hrefs: [@next_instance.href], tags: ["rs_downsize:cooldown="+$formatted_time])
         call sys_log('Adding Cooldown Tag',$formatted_time)
       end
+      @current_instance = @next_instance
     end
+
     if empty?(@current_instance)
-      @current_instance = rs_cm.get(href: $item["href"])
+      @cloud = rs_cm.get(href: $item['cloud_href'])
+      # find the resource by resource_uid because the href may have changed after resize.
+      @current_instance = first(@cloud.instances(filter: ['resource_uid=='+$item['resource_uid'] ]))
     end
-    # deleted the downsize tag(s) provided by the user
-    #
-    # ??? should we be doing this or is the cooldown tag enough to bypass the downsizing?
-    #
+
+    # delete the downsize tag(s) provided by the user
     $delete_tags = []
     foreach $tag in $param_instance_tag_list do
       # if tag exists include in the delete_tags array
@@ -314,7 +336,7 @@ define downsize_instances($data,$param_instance_tag_list,$param_cooldown_days) d
       end
     end
     if size($delete_tags) > 0
-      task_label("Deleting Tags")
+      task_label("Deleting Tags " + @current_instance.name)
       call sys_log('delete_tags',to_s($delete_tags))
       rs_cm.tags.multi_delete(resource_hrefs: [@current_instance.href], tags: $delete_tags)
     end
@@ -360,8 +382,10 @@ end
 # remove the cooldown tag if the $param_cooldown_days has exceeded
 define delete_cooldown_tag($data,$param_cooldown_days) do
   foreach $item in $data['cooldown_instances'] do
-    @instance = rs_cm.get(href: $item["href"])
-    $cooldown_tag = tag_value(@current_instance,'rs_downsize:cooldown')
+    @cloud = rs_cm.get(href: $item['cloud_href'])
+    # find the resource by resource_uid because the href may have changed after resize.
+    @instance = first(@cloud.instances(filter: ['resource_uid=='+$item['resource_uid'] ]))
+    $cooldown_tag = tag_value(@instance,'rs_downsize:cooldown')
     call sys_log('cooldown_tag',$cooldown_tag)
     $cooldown_time = to_d($cooldown_tag)
     call sys_log('cooldown_time',to_s($cooldown_time))
