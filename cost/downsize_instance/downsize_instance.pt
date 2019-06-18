@@ -263,14 +263,20 @@ define downsize_instances($data,$param_instance_tag_list,$param_cooldown_days) d
     if $item["next_instance_size"] != "N/A"
       call sys_log('Instance Resizing','')
       @instance = rs_cm.get(href: $item["href"])
-      @current_server = @instance.parent()
+      $resource_uid = @instance.resource_uid
+      call sys_log('instance',to_s(to_object(@instance)))
       task_label("stopping instance")
       @instance.stop()
+      @cloud = @instance.cloud()
+      @current_instance = first(@cloud.instances(filter: ['resource_uid=='+$resource_uid]))
       task_label("sleeping until instance stopped")
-      sleep_until(@current_server.state == 'provisioned')
+      call sys_log('current_instance',to_s(to_object(@current_instance)))
+      sub timeout: 10m, on_timeout: skip do
+         while @current_instance.state == 'provisioned' do
+           @current_instance = first(@cloud.instances(filter: ['resource_uid=='+$resource_uid]))
+         end
+       end
       call sys_log('Instance Stopped','')
-      @current_instance = @current_server.current_instance()
-      @cloud = @current_instance.cloud()
       @new_instance_type = first(@cloud.instance_types(filter: ["name=="+$item["next_instance_size"]]))
       @current_instance.update(instance: { instance_type_href: @new_instance_type.href })
       call sys_log('Instance Resized', @new_instance_type.name)
@@ -303,7 +309,7 @@ define downsize_instances($data,$param_instance_tag_list,$param_cooldown_days) d
     foreach $tag in $param_instance_tag_list do
       # if tag exists include in the delete_tags array
       $tag_key=split($tag,'=')[0]
-      if tag_value(@current_instance,$tag_key)
+      if contains?($item['tags'],[$tag_key])
         $delete_tags << $tag
       end
     end
