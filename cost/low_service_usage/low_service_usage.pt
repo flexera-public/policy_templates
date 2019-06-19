@@ -2,19 +2,9 @@ name "Low Service Usage"
 rs_pt_ver 20180301
 type "policy"
 short_description "Analyze all service usage and determines recommend consolidation or deletion. See the [README](https://github.com/rightscale/policy_templates/tree/master/cost/low_service_usage/) and [docs.rightscale.com/policies](http://docs.rightscale.com/policies/) to learn more."
-long_description "Version: 1.0"
+long_description "Version: 1.1"
 severity "low"
 category "Cost"
-
-
-parameter "param_days" do
-  label "Time Period"
-  description "Number of days to analyze"
-  type "number"
-  default 7
-  min_value 1
-  max_value 31
-end
 
 parameter "param_threshold" do
   label "Cost Threshold"
@@ -31,11 +21,16 @@ parameter "param_email" do
   type "list"
 end
 
-parameter "param_include_unallocated" do
-  label "Include Unallocated"
-  type "string"
-  default "true"
-  allowed_values "true","false"
+parameter "param_billing_centers" do
+  label "Billing Center Name"
+  type "list"
+  min_length 1
+end
+
+parameter "param_minimum_savings_threshold" do
+  label "Minimum Savings Threshold"
+  type "number"
+  default 1
 end
 
 auth "auth_rs", type: "rightscale"
@@ -92,14 +87,12 @@ datasource "ds_cloud_vendor_accounts" do
 end
 
 datasource "ds_new_bc_costs" do
-  iterate $ds_billing_centers
   request do
-    run_script $js_new_costs_request, rs_org_id, val(iter_item,"id"), $param_days
+    run_script $js_new_costs_request, rs_org_id, $ds_billing_centers, $param_billing_centers
   end
   result do
     encoding "json"
     collect jmes_path(response,"rows[*]") do
-      field "name", val(iter_item, "name")
       field "vendor", jmes_path(col_item, "dimensions.vendor")
       field "vendor_account_name", jmes_path(col_item,"dimensions.vendor_account_name")
       field "cost_amortized_unblended_adj", jmes_path(col_item,"metrics.cost_amortized_unblended_adj")
@@ -111,36 +104,34 @@ datasource "ds_new_bc_costs" do
 end
 
 script "js_new_costs_request", type: "javascript" do
-  parameters "org_id","bc_id","param_days"
+  parameters "org_id","ds_billing_centers", "param_billing_centers"
   result "request"
   code <<-EOS
-    var start_at = "";
-    var end_at = "";
-
-    // format the date for the `daily` API
-    // returns date formatted as string: YYYY-mm-dd
-    function getFormattedDailyDate(date) {
-      var year = date.getFullYear();
-      var month = (1 + date.getMonth()).toString();
-      month = month.length > 1 ? month : '0' + month;
-      var day = date.getDate().toString();
-      day = day.length > 1 ? day : '0' + day;
-      return year + '-' + month + '-' + day;
+    var date = new Date();
+    var year = date.getUTCFullYear();
+    var month = (2 + date.getUTCMonth())
+    
+    if (month == 1){ 
+      var lmonth = 12;
+      var lyear = year-1 ;
+    } else {
+      var lmonth = month-1;
+      var lyear = year ;
     }
-
-    function getStartDate( date ) {
-      var days = 2 + param_days ;
-      date.setHours(-24 * days);
-      return date;
+    
+    mo = month.toString().length > 1 ? month : '0' + month;
+    lmo = lmonth.toString().length > 1 ? lmonth : '0' + lmonth;
+    var next_month = year + "-" + mo
+    var current_month = lyear + "-" + lmo
+    var billing_center_ids = []
+    if (param_billing_centers.length === 0){
+      var top_billing_centers = _.reject(ds_billing_centers, function(bc){ return bc.parent_id != null });
+      billing_center_ids = _.map(top_billing_centers, function(value, key){ return value.id });
+    } else {
+      // get array of billing center id's that match the names in param_billing_centers.
+      billing_center_names = _.map(param_billing_centers, function(name){ return name.toLowerCase(); });
+      billing_center_ids = _.compact(_.map(ds_billing_centers, function(value){ if(_.contains(billing_center_names, value.name.toLowerCase())){return value.id} }));
     }
-
-    function getEndDate( date ) {
-      date.setHours(-48);
-      return date;
-    }
-
-    start_at = getFormattedDailyDate(getStartDate(new Date()))
-    end_at = getFormattedDailyDate(getEndDate(new Date()))
 
     var request = {
       auth: "auth_rs",
@@ -149,11 +140,11 @@ script "js_new_costs_request", type: "javascript" do
       path: "/bill-analysis/orgs/" + org_id + "/costs/aggregated",
       body_fields: {
         "dimensions": ["billing_center_id", "vendor", "vendor_account_name", "service"],
-        "granularity": "day",
+        "granularity": "month",
         "metrics": ['cost_amortized_unblended_adj'],
-        "billing_center_ids": [bc_id],
-        "start_at": start_at,
-        "end_at": end_at
+        "billing_center_ids": billing_center_ids,
+        "start_at": current_month,
+        "end_at": next_month
       },
       headers: {
         "Api-Version": "1.0",
@@ -164,14 +155,28 @@ script "js_new_costs_request", type: "javascript" do
 end
 
 datasource "ds_format_costs" do
-  run_script $js_format_costs, $ds_new_bc_costs, $ds_cloud_vendor_accounts, $param_include_unallocated
+  run_script $js_format_costs, $ds_new_bc_costs, $ds_cloud_vendor_accounts, $ds_billing_centers
 end
 
 script "js_format_costs", type: "javascript" do
-  parameters "new_bc_costs", "ds_cloud_vendor_accounts", "include_unallocated"
+  parameters "new_bc_costs", "ds_cloud_vendor_accounts", "ds_billing_centers"
   result "formatted_data"
   code <<-EOS
-
+  //https://www.w3resource.com/javascript-exercises/javascript-date-exercise-3.php
+  var getDaysInMonth = function(month,year) {
+    // Here January is 1 based
+    //Day 0 is the last day in the previous month
+    return new Date(year, month, 0).getDate();
+  // Here January is 0 based
+  // return new Date(year, month+1, 0).getDate();
+  };
+  var date = new Date()
+  var today = date.getDate()
+  console.log("Today:" + today)
+  var numdays = getDaysInMonth(date.getUTCMonth(),date.getUTCFullYear())
+  console.log("NumberOfDays:"+numdays)
+  var monthcomplete = today / numdays ;
+  console.log("PercentMonthComplete:" + monthcomplete)
   var type = 'cost_amortized_unblended_adj';
 
   var formatted_data = [];
@@ -181,52 +186,29 @@ script "js_format_costs", type: "javascript" do
   bcs = _.uniq(bcs) ;
 
   _.each(bcs, function(bc_id){
-    var new_bc_cost_objs = _.reject(new_bc_costs, function(new_bc_cost){ return new_bc_cost.id != bc_id });
-    if ( bc_id != 'unallocated' ){
-      _.each(new_bc_cost_objs, function(new_bc_cost_obj){
-        if (new_bc_cost_obj.vendor == "AWS" ) {
-          var account = _.reject(ds_cloud_vendor_accounts, function(ds_cloud_vendor_account){ return ds_cloud_vendor_account.id != new_bc_cost_obj.vendor_account_name });
-          var vendor_account_name = account[0].name
-        } else {
-          var vendor_account_name = new_bc_cost_obj.vendor_account_name
-        }
-        var new_sum = parseFloat(Math.round(new_bc_cost_obj.cost_amortized_unblended_adj*100)/100)
-        if ( new_sum != 0 ) {
-          formatted_data.push({
-            name: new_bc_cost_obj.name,
-            id: bc_id,
-            service: new_bc_cost_obj.service,
-            new_sum: new_sum,
-            vendor: new_bc_cost_obj.vendor,
-            vendor_account_name: vendor_account_name
-          })
-        }
-      })
-    }
-    if ((bc_id == 'unallocated') && (include_unallocated == "false")) {
-      return
-    } else {
-      _.each(new_bc_cost_objs, function(new_bc_cost_obj){
-        if (new_bc_cost_obj.vendor == "AWS" ) {
-          var account = _.reject(ds_cloud_vendor_accounts, function(ds_cloud_vendor_account){ return ds_cloud_vendor_account.id != new_bc_cost_obj.vendor_account_name });
-          var vendor_account_name = account[0].name
-        } else {
-          var vendor_account_name = new_bc_cost_obj.vendor_account_name
-        }
-
-        var new_sum = parseFloat(Math.round(new_bc_cost_obj.cost_amortized_unblended_adj*100)/100)
-        if ( new_sum != 0 ) {
-          formatted_data.push({
-            name: new_bc_cost_obj.name,
-            id: bc_id,
-            service: new_bc_cost_obj.service,
-            new_sum: new_sum,
-            vendor: new_bc_cost_obj.vendor,
-            vendor_account_name: vendor_account_name
-          })
-        }
-      })
-    }
+  var new_bc_cost_objs = _.reject(new_bc_costs, function(new_bc_cost){ return new_bc_cost.id != bc_id });
+    _.each(new_bc_cost_objs, function(new_bc_cost_obj){
+      var billing_center = _.reject(ds_billing_centers, function(bc){ return bc.id != new_bc_cost_obj.id })[0];
+      if (new_bc_cost_obj.vendor == "AWS" ) {
+        var account = _.reject(ds_cloud_vendor_accounts, function(ds_cloud_vendor_account){ return ds_cloud_vendor_account.id != new_bc_cost_obj.vendor_account_name });
+        var vendor_account_name = account[0].name
+      } else {
+        var vendor_account_name = new_bc_cost_obj.vendor_account_name
+      }
+      var new_sum = parseFloat(Math.round(new_bc_cost_obj.cost_amortized_unblended_adj*100)/100)
+      if ( new_sum != 0 ) {
+        var runrate = new_sum / monthcomplete
+        formatted_data.push({
+          name: billing_center.name,
+          id: bc_id,
+          service: new_bc_cost_obj.service,
+          new_sum: new_sum,
+          run_rate: parseFloat(runrate).toFixed(2),
+          vendor: new_bc_cost_obj.vendor,
+          vendor_account_name: vendor_account_name
+        })
+      }
+    })
   })
 EOS
 end
@@ -244,12 +226,12 @@ policy "policy_budget_alert" do
 | Billing Center Name | Vendor | Account Name | Service | Savings |
 | ------------------- | ------ | ------------ | ------- | ------- |
 {{ range data -}}
-| {{.name}} | {{.vendor}} | {{.vendor_account_name}} | {{.service}} | {{.new_sum}} | 
+| {{.name}} | {{.vendor}} | {{.vendor_account_name}} | {{.service}} | {{.run_rate}} | 
 {{ end -}}
 
 ###### Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }}) within Org: {{ rs_org_name }} (Org ID: {{ rs_org_id }})
 EOS
     escalate $esc_budget_alert
-    check gt(to_n(val(item,"new_sum")),$param_threshold)
+    check logic_or(gt(to_n(val(item,"run_rate")),$param_threshold), lt(to_n(val(item,"run_rate")),$param_minimum_savings_threshold))
   end
 end
