@@ -165,7 +165,19 @@ script "js_format_costs", type: "javascript" do
   parameters "new_bc_costs", "ds_cloud_vendor_accounts", "ds_billing_centers"
   result "formatted_data"
   code <<-EOS
-
+  //https://www.w3resource.com/javascript-exercises/javascript-date-exercise-3.php
+  var getDaysInMonth = function(month,year) {
+    // Here January is 1 based
+    //Day 0 is the last day in the previous month
+    return new Date(year, month, 0).getDate();
+  // Here January is 0 based
+  // return new Date(year, month+1, 0).getDate();
+  };
+  var date = new Date()
+  var today = date.getUTCDay()
+  var numdays = getDaysInMonth(date.getUTCMonth(),date.getUTCFullYear())
+  var monthcomplete = today / numdays ;
+  console.log(monthcomplete)
   var type = 'cost_amortized_unblended_adj';
 
   var formatted_data = [];
@@ -205,6 +217,7 @@ script "js_format_costs", type: "javascript" do
   var unsorted_results = _.map(groups, function(group){
     var arr_new_sum = _.pluck(group, 'new_sum')
     var summed = _.reduce(arr_new_sum, function(memo, num){ return memo + num; }, 0)
+    var runrate = summed / monthcomplete
     console.log("group: "+ JSON.stringify(group))
     var service_cost = _.map(group, function(item) { return {service_name: item.service, service_cost: item.new_sum}})
     console.log(service_cost)
@@ -214,6 +227,7 @@ script "js_format_costs", type: "javascript" do
         vendor: group[0].vendor,
         vendor_account_name: group[0].vendor_account_name,
         new_sum: parseFloat(summed).toFixed(2),
+        run_rate: runrate,
         service_cost: service_cost,
         arr_new_sum: arr_new_sum
     }
@@ -237,10 +251,10 @@ policy "policy_budget_alert" do
     detail_template <<-EOS
 # Low Account Usage Detected
 
-| Billing Center Name | Vendor | Account Name | Savings |
-| ------------------- | ------ | ------------ | ------- |
+| Billing Center Name | Vendor | Account Name | Savings | Run Rate |
+| ------------------- | ------ | ------------ | ------- | -------- |
 {{ range data -}}
-| {{.name}} | {{.vendor}} | {{.vendor_account_name}} | {{.new_sum}} |
+| {{.name}} | {{.vendor}} | {{.vendor_account_name}} | {{.new_sum}} | {{.run_rate}} |
 {{ end -}}
 
 ###### Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }}) within Org: {{ rs_org_name }} (Org ID: {{ rs_org_id }})
