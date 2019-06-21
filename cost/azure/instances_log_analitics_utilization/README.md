@@ -2,16 +2,16 @@
 
 ### What it does
 
-This Policy Template uses monitoring metrics from Log Analytics for the last 30 days to identify underutilized instances. This is meant to be run as a monthly policy. 
+This Policy Template uses performance metrics from Log Analytics from the last 30 days to identify underutilized instances. This is meant to be run as a monthly policy. 
 
 ### Prerequisites
 
-- Azure Service Principal (AKA Azure Active Directory Application) with the appropriate permissions to manage resources in the target subscription
-  - In addition, the Service Principal will need the `Log Analytics Reader` role on any Log Analytics Workspaces the VMs in the subscription are sending metrics to.
-- The following RightScale Credentials
+- Azure Service Principal (AKA Azure Active Directory Application) with the appropriate permissions to manage resources in the target subscription.
+  - In addition, the Service Principal will need the `Log Analytics Reader` role on all Log Analytics Workspaces the VMs in the subscription are sending performance metrics to.
+- The following RightScale Credentials:
   - `AZURE_APPLICATION_ID`
   - `AZURE_APPLICATION_KEY`
-- Virtual Machines sending performance metrics to a Log analytics workspace
+- Virtual Machines sending performance metrics to a Azure Log Analytics workspace.
 
 ### Installation
 
@@ -23,9 +23,9 @@ This Policy Template uses monitoring metrics from Log Analytics for the last 30 
 
 ### Functional Details
 
-- This policy identifies all servers reporting metrics to Log Analytics whose CPU or Memory utilization is below the thresholds set in the *Average used memory percentage* and *Average cpu percentage* parameters.
-- The Exclusion Tag parameter is a string value.  Supply the Tag Key only.  Tag Values are not analyzed and therefore are not need.  If the exclusion tag key is used on an Instance, that Instance is presumed to be exempt from this policy.
-- This policy sets the tag passed in from *Action Tag Key:Value* on the underutilized instances that were identified in the incident.
+- This policy identifies all servers reporting performance metrics to Log Analytics whose CPU or Memory utilization is below the thresholds set in the **Average used memory percentage** and **Average used CPU percentage** parameters.
+- The **Exclusion Tag Key** parameter is a string value.  Supply the Tag Key only.  Tag Values are not analyzed and therefore are not need.  If the exclusion tag key is used on an Instance, that Instance is presumed to be exempt from this policy.
+- This policy sets the tag defined in the **Action Tag Key:Value** parameter on the underutilized instances that were identified.
 
 ### Input Parameters
 
