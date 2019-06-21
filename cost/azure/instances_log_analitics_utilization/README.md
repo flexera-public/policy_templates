@@ -2,7 +2,7 @@
 
 ### What it does
 
-This Policy Template is used to collect monitoring metrics for VMs from Log Analytics to identify underutilized instances.
+This Policy Template uses monitoring metrics from Log Analytics for the last 30 days to identify underutilized instances. This is meant to be run as a monthly policy. 
 
 ### Prerequisites
 
@@ -11,6 +11,7 @@ This Policy Template is used to collect monitoring metrics for VMs from Log Anal
 - The following RightScale Credentials
   - `AZURE_APPLICATION_ID`
   - `AZURE_APPLICATION_KEY`
+- Virtual Machines sending performance metrics to a Log analytics workspace
 
 ### Installation
 
@@ -22,9 +23,9 @@ This Policy Template is used to collect monitoring metrics for VMs from Log Anal
 
 ### Functional Details
 
-- This policy identifies all servers reporting metrics to Log Analytics whose CPU or Memory utilization is below the thresholds set in the *Average used memory percent to allow for downsize* and *Average cpu percent to allow for downsize* parameters.
+- This policy identifies all servers reporting metrics to Log Analytics whose CPU or Memory utilization is below the thresholds set in the *Average used memory percentage* and *Average cpu percentage* parameters.
 - The Exclusion Tag parameter is a string value.  Supply the Tag Key only.  Tag Values are not analyzed and therefore are not need.  If the exclusion tag key is used on an Instance, that Instance is presumed to be exempt from this policy.
-- This policy does not resize underutilized instances. It tags them so they can be resized by the [Downsize Policy Template](https://github.com/rightscale/policy_templates/tree/master/cost/downsize_instance/README.md)
+- This policy sets the tag passed in from *Action Tag Key:Value* on the underutilized instances that were identified in the incident.
 
 ### Input Parameters
 
@@ -32,10 +33,10 @@ This policy has the following input parameters required when launching the polic
 
 - *Azure AD Tenant ID* - the Azure AD Tenant ID used for the Azure API Authentication
 - *Azure Subscription ID* - the Azure Subscription ID used for the Azure API Authentication
-- *Average used memory percent to allow for downsize* - Utilization below this percentage will raise an incident to downsize the instance. Providing -1 will turn off this metric for consideration.
-- *Average cpu percent to allow for downsize* - Utilization below this percentage will raise an incident to downsize the instance. Providing -1 will turn off this metric for consideration.
+- *Average used memory percentage* - Utilization below this percentage will raise an incident to tag the instance. Providing -1 will turn off this metric for consideration.
+- *Average used CPU percentage* - Utilization below this percentage will raise an incident to tag the instance. Providing -1 will turn off this metric for consideration.
 - *Exclusion Tag Key* - An Azure-native instance tag to ignore instances that you don't want to consider for downsizing. Only supply the tag key
-- *Downsize Tag Key:Value* - The tag key:value pair to set on an instance that is underutilized.
+- *Action Tag Key:Value* - The tag key:value pair to set on an instance that is underutilized.
 - *Email addresses of the recipients you wish to notify* - A list of email addresses to notify
 
 ### Supported Clouds
