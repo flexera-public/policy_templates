@@ -2,7 +2,7 @@
 
 ### What it does
 
-This Policy Template uses performance metrics from Log Analytics from the last 30 days to identify underutilized instances. This is meant to be run as a monthly policy. 
+This Policy Template uses performance metrics from Log Analytics from the last 30 days to identify underutilized instances. This is meant to be run as a weekly policy. 
 
 ### Prerequisites
 
@@ -11,7 +11,7 @@ This Policy Template uses performance metrics from Log Analytics from the last 3
 - The following RightScale Credentials:
   - `AZURE_APPLICATION_ID`
   - `AZURE_APPLICATION_KEY`
-- Virtual Machines sending performance metrics to a Azure Log Analytics workspace.
+- Virtual Machines with the Log Analytics/OMS Agent installed and sending performance metrics to a Azure Log Analytics workspace.
 
 ### Installation
 
