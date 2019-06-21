@@ -33,6 +33,7 @@ Please contact sales@rightscale.com to learn more.
 - [AWS Instance CloudWatch Utilization](./cost/aws/instance_cloudwatch_utilization/)
 - [Google StackDriver Utilization](./cost/google/instances_stackdriver_utilization/)
 - [Terminate Instances with End Date](./cost/terminate_policy/)
+- [Azure Instances Utilization from Log Analytics](./cost/azure/instances_log_analitics_utilization/)
 
 ### Security
 - [Security Group: ICMP Enabled](./security/security_groups/icmp_enabled/)

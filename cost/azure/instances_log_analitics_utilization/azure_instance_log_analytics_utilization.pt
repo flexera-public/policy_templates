@@ -6,6 +6,19 @@ long_description "Version: 1.0"
 severity "low"
 category "Cost"
 
+###############################################################################
+# Permissions
+###############################################################################
+
+permission "perm_read_creds" do
+  actions   "rs_cm.show_sensitive","rs_cm.index_sensitive"
+  resources "rs_cm.credentials"
+end
+
+###############################################################################
+# Parameters
+###############################################################################
+
 parameter "param_azure_tenant_id" do
   type "string"
   label "Azure AD Tenant ID"
@@ -56,6 +69,10 @@ parameter "param_email" do
   description "Email addresses of the recipients you wish to notify"
 end
 
+###############################################################################
+# Authentication
+###############################################################################
+
 auth "azure_auth", type: "oauth2" do
   token_url join(["https://login.microsoftonline.com/",$param_azure_tenant_id,"/oauth2/token"])
   grant type: "client_credentials" do
@@ -78,6 +95,10 @@ auth "log_analytics_auth", type: "oauth2" do
   end
 end
 
+###############################################################################
+# Pagination
+###############################################################################
+
 pagination "azure_pagination" do
   get_page_marker do
     body_path "nextLink"
@@ -86,6 +107,10 @@ pagination "azure_pagination" do
     uri true
   end
 end
+
+###############################################################################
+# Datasources
+###############################################################################
 
 datasource "ds_azure_skus" do
   request do
@@ -111,6 +136,85 @@ end
 datasource "ds_azure_vm_sizes" do
   run_script $js_azure_vm_sizes, $ds_azure_skus
 end
+
+datasource "ds_azure_instances" do
+  request do
+    auth $azure_auth
+    pagination $azure_pagination
+    host "management.azure.com"
+    path join(["/subscriptions/", $param_azure_sub, "/providers/Microsoft.Compute/virtualMachines"])
+    query "api-version","2018-10-01"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+      collect jmes_path(response, "value") do
+        field "id", jmes_path(col_item,"id")
+      end
+  end
+end
+
+datasource "ds_azure_instances_view" do
+  iterate $ds_azure_instances
+  request do
+    auth $azure_auth
+    pagination $azure_pagination
+    host "management.azure.com"
+    path val(iter_item, "id")
+    query "api-version","2018-10-01"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+        field "id", jmes_path(response,"id")
+        field "name", jmes_path(response,"name")
+        field "location", jmes_path(response,"location")
+        field "osType", jmes_path(response,"properties.storageProfile.osDisk.osType")
+        field "vmSize", jmes_path(response,"properties.hardwareProfile.vmSize")
+        field "resources", jmes_path(response,"resources")
+        field "tags", jmes_path(response,"tags")
+        field "availabilitySet", jmes_path(response,"properties.availabilitySet.id")
+  end
+end
+
+datasource "ds_oms_resources" do
+  run_script $js_oms_resources, $ds_azure_instances_view, $param_exclusion_tag_key
+end
+
+datasource "ds_la_instances_utilization" do
+  iterate $ds_oms_resources
+  request do
+    auth $log_analytics_auth
+    verb "POST"
+    host "api.loganalytics.io"
+    path join(["/v1/workspaces/", val(iter_item,"workspaceId"), "/query"])
+    query "timespan","P30D"
+    header "User-Agent", "RS Policies"
+    body_field "query", join(['Perf | where _ResourceId == tolower("',val(iter_item,"id"),'") | where CounterName == "% Processor Time" or CounterName == "Available MBytes Memory" or CounterName == "% Committed Bytes In Use" | summarize ["avg"] = avg(CounterValue), ["max"] = max(CounterValue), ["min"] = min(CounterValue) by _ResourceId,CounterName'])
+  end
+  result do
+    encoding "json"
+      collect jmes_path(response, "tables") do
+        field "resourceid", jmes_path(col_item, "rows[0][0]")
+        field "results" do
+          collect jmes_path(col_item, "rows") do
+            field "counter", jmes_path(col_item, "[1]")
+            field "avg", jmes_path(col_item, "[2]")
+            field "max", jmes_path(col_item, "[3]")
+            field "min", jmes_path(col_item, "[4]")
+          end
+        end
+      end
+  end
+end
+
+datasource "ds_merged_metrics" do
+  run_script $js_merged_metrics, $ds_oms_resources, $ds_la_instances_utilization, $ds_azure_vm_sizes, $param_exclusion_tag_key
+end
+
+###############################################################################
+# Scripts
+###############################################################################
 
 script "js_azure_vm_sizes", type: "javascript" do
   parameters "ds_azure_skus"
@@ -164,50 +268,6 @@ script "js_azure_vm_sizes", type: "javascript" do
   EOS
 end
 
-datasource "ds_azure_instances" do
-  request do
-    auth $azure_auth
-    pagination $azure_pagination
-    host "management.azure.com"
-    path join(["/subscriptions/", $param_azure_sub, "/providers/Microsoft.Compute/virtualMachines"])
-    query "api-version","2018-10-01"
-    header "User-Agent", "RS Policies"
-  end
-  result do
-    encoding "json"
-      collect jmes_path(response, "value") do
-        field "id", jmes_path(col_item,"id")
-      end
-  end
-end
-
-datasource "ds_azure_instances_view" do
-  iterate $ds_azure_instances
-  request do
-    auth $azure_auth
-    pagination $azure_pagination
-    host "management.azure.com"
-    path val(iter_item, "id")
-    query "api-version","2018-10-01"
-    header "User-Agent", "RS Policies"
-  end
-  result do
-    encoding "json"
-        field "id", jmes_path(response,"id")
-        field "name", jmes_path(response,"name")
-        field "location", jmes_path(response,"location")
-        field "osType", jmes_path(response,"properties.storageProfile.osDisk.osType")
-        field "vmSize", jmes_path(response,"properties.hardwareProfile.vmSize")
-        field "resources", jmes_path(response,"resources")
-        field "tags", jmes_path(response,"tags")
-        field "availabilitySet", jmes_path(response,"properties.availabilitySet.id")
-  end
-end
-
-datasource "ds_oms_resources" do
-  run_script $js_oms_resources, $ds_azure_instances_view, $param_exclusion_tag_key
-end
-
 script "js_oms_resources", type: "javascript" do
   parameters "azure_instances","exclusion_tag"
   result "result"
@@ -255,37 +315,6 @@ script "js_oms_resources", type: "javascript" do
       }
     })
   EOS
-end
-
-datasource "ds_la_instances_utilization" do
-  iterate $ds_oms_resources
-  request do
-    auth $log_analytics_auth
-    verb "POST"
-    host "api.loganalytics.io"
-    path join(["/v1/workspaces/", val(iter_item,"workspaceId"), "/query"])
-    query "timespan","P30D"
-    header "User-Agent", "RS Policies"
-    body_field "query", join(['Perf | where _ResourceId == tolower("',val(iter_item,"id"),'") | where CounterName == "% Processor Time" or CounterName == "Available MBytes Memory" or CounterName == "% Committed Bytes In Use" | summarize ["avg"] = avg(CounterValue), ["max"] = max(CounterValue), ["min"] = min(CounterValue) by _ResourceId,CounterName'])
-  end
-  result do
-    encoding "json"
-      collect jmes_path(response, "tables") do
-        field "resourceid", jmes_path(col_item, "rows[0][0]")
-        field "results" do
-          collect jmes_path(col_item, "rows") do
-            field "counter", jmes_path(col_item, "[1]")
-            field "avg", jmes_path(col_item, "[2]")
-            field "max", jmes_path(col_item, "[3]")
-            field "min", jmes_path(col_item, "[4]")
-          end
-        end
-      end
-  end
-end
-
-datasource "ds_merged_metrics" do
-  run_script $js_merged_metrics, $ds_oms_resources, $ds_la_instances_utilization, $ds_azure_vm_sizes, $param_exclusion_tag_key
 end
 
 script "js_merged_metrics", type: "javascript" do
@@ -343,6 +372,10 @@ script "js_merged_metrics", type: "javascript" do
   EOS
 end
 
+###############################################################################
+# Policy
+###############################################################################
+
 policy 'policy_azure_utilization' do
   validate_each $ds_merged_metrics do
     summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} Underutilized Instances Reporting to Azure Log Analytics"
@@ -369,6 +402,10 @@ EOS
   end
 end
 
+###############################################################################
+# Escalations
+###############################################################################
+
 escalation "email" do
   email $param_email
 end
@@ -376,6 +413,10 @@ end
 escalation "tag_resources" do
   run "tag_resources", data, $param_azure_tenant_id, $param_azure_sub, $param_take_action_tag
 end
+
+###############################################################################
+# Cloud Workflow
+###############################################################################
 
 define tag_resources($data, $param_azure_tenant_id, $param_azure_sub, $param_take_action_tag) return $all_responses do
   $$debug=false
