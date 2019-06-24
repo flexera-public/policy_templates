@@ -1,7 +1,7 @@
-name "AWS Superseded Instance"
+name "Superseded Instances"
 rs_pt_ver 20180301
 type "policy"
-short_description "This Policy Template is used to automatically resize AWS Instances based on user-defined standards. \n See the [README](https://github.com/rightscale/policy_templates/tree/master/cost/aws/aws_superseded_instance) and [docs.rightscale.com/policies](http://docs.rightscale.com/policies/) to learn more."
+short_description "This Policy Template is used to automatically resize instances based on user-defined standards. \n See the [README](https://github.com/rightscale/policy_templates/tree/master/cost/aws/aws_superseded_instance) and [docs.rightscale.com/policies](http://docs.rightscale.com/policies/) to learn more."
 long_description "Version: 1.0"
 category "Cost"
 severity "low"
@@ -132,7 +132,7 @@ datasource "ds_azure_instance_size_map" do
 end
 
 datasource "ds_combined_instance_data" do
-  run_script $js_merge_instance_data, $ds_instances, $ds_instance_types, $ds_clouds, $ds_networks, $ds_instance_size_map, $param_new_instancetype_category
+  run_script $js_merge_instance_data, $ds_instances, $ds_instance_types, $ds_clouds, $ds_networks, $ds_aws_instance_size_map, $ds_azure_instance_size_map, $param_new_instancetype_category
 end
 
 ###############################################################################
@@ -140,13 +140,13 @@ end
 ###############################################################################
 
 script "js_merge_instance_data", type: "javascript" do
-  parameters "ds_instances", "ds_instance_types", "ds_clouds", "ds_networks", "ds_instance_size_map", "param_new_instancetype_category"
+  parameters "ds_instances", "ds_instance_types", "ds_clouds", "ds_networks", "ds_aws_instance_size_map", "ds_azure_instance_size_map", "param_new_instancetype_category"
   result "results"
   code <<-EOS
     var results = []
-    var ec2NewInstanceTypes = ds_instance_size_map
-    var ec2ClassicInstances = []
-    var ec2EnhancedNetworkInstances = []
+    console.log(typeof ds_aws_instance_size_map)
+    var superseded_instance_map = _.extend(ds_aws_instance_size_map,ds_azure_instance_size_map)
+    console.log(JSON.stringify(superseded_instance_map))
 
     for ( i=0; i < ds_instances.length; i++) {
       var instance = ds_instances[i]
@@ -156,46 +156,32 @@ script "js_merge_instance_data", type: "javascript" do
         var instance_types = _.reject(ds_instance_types, function(ds_instance_type){ return ds_instance_type.instance_type_href != ds_instance_type_href });
         var cloud = _.reject(ds_clouds, function(ds_cloud){ return ds_cloud.href != cloud_href })
         var instance_type = instance_types[0].resource_uid
-        var series = instance_type.split('.')[0]
-        var model  = instance_type.split('.')[1]
-        var first_pass = ec2NewInstanceTypes[instance_type]
-        var second_pass = ec2NewInstanceTypes[series]
-        var new_instance_type = "none"
-        if (first_pass != undefined) {
-          new_instance_type = first_pass[param_new_instancetype_category] ? first_pass[param_new_instancetype_category] : first_pass["regular"]
-        } else if ( second_pass != undefined) {
-          new_instance_type = second_pass[param_new_instancetype_category] ? second_pass[param_new_instancetype_category]+'.'+model : second_pass["regular"]+'.'+model
-        }
-        var old_instance_ena = false
-        if (  _.contains(ec2EnhancedNetworkInstances,series)  || _.contains(ec2EnhancedNetworkInstances,instance_type) ){
-          old_instance_ena = true
-        }
+        var found_instance_type = superseded_instance_map[instance_type]
+        var superseded = found_instance_type["superseded"] 
+        console.log("superseded: " +JSON.stringify(superseded))
+        if ( superseded === null ){
+          continue
+        } else {
+          var new_instance_type = superseded[param_new_instancetype_category]
+          console.log("nit: "+ new_instance_type)
+          var new_instance_type_info = superseded_instance_map[new_instance_type]
+          old_instance_ena = found_instance_type.enhanced_networking || false
+          new_instance_ena = new_instance_type_info.enhanced_networking || false
+          old_instance_vpc = !found_instance_type.ec2_classic || false
+          new_instance_vpc = !new_instance_type_info.ec2_classic || false
 
-        if (new_instance_type != "none") {
-          if ( _.contains(ec2ClassicInstances,series) ) {
-            var old_instance_vpc = false
-          } else {
-            var old_instance_vpc = true
-          }
-          if ( _.contains(ec2ClassicInstances,new_instance_type.split('.')[0]) ) {
-            var new_instance_vpc = false
-          } else  {
-            var new_instance_vpc = true
-          }
-          if ((!old_instance_vpc) && (new_instance_vpc)) {
-            var vpc_incompatible_move = true
-          } else {
-            var vpc_incompatible_move = false
-          }
-          var new_instance_ena = false
-          if (  _.contains(ec2EnhancedNetworkInstances,new_instance_type.split('.')[0])  || _.contains(ec2EnhancedNetworkInstances,new_instance_type) ) {
-            new_instance_ena = true
-          }
           if ( !old_instance_ena && new_instance_ena ) { 
             var ena_incompatible = true
           } else {
             var ena_incompatible = false
           }
+
+          if ((!old_instance_vpc) && (new_instance_vpc)) {
+            var vpc_incompatible_move = true
+          } else {
+            var vpc_incompatible_move = false
+          }
+
           var old_instance_type_stats = _.reject(ds_instance_types, function(ds_instance_type) { return ds_instance_type.resource_uid != instance_type})
           var new_instance_type_stats = _.reject(ds_instance_types, function(ds_instance_type) { return ds_instance_type.resource_uid != new_instance_type})
           var warn = false
