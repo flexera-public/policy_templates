@@ -132,6 +132,7 @@ datasource "ds_new_bc_costs" do
       field "usage_amount", jmes_path(col_item, "metrics.usage_amount")
       field "instance_type", jmes_path(col_item, "dimensions.instance_type")
       field "service", jmes_path(col_item, "dimensions.service")
+      field "resource_type", jmes_path(col_item, "dimensions.resource_type")
       field "id", jmes_path(col_item,"dimensions.billing_center_id")
       field "resource_id", jmes_path(col_item, "dimensions.resource_id")
       field "timestamp", jmes_path(col_item,"timestamp")
@@ -174,12 +175,14 @@ script "js_new_costs_request", type: "javascript" do
       {"type" : "and", "expressions" : [
         {"dimension":"category","type":"equal","value":"Compute"},
         {"dimension":"vendor","type":"equal","value":"Azure"},
-        {"dimension":"resource_type","type":"equal","value":"Compute Instance"}
+        {"dimension":"service", "type":"equal", value:"Microsoft.Compute"},
+        {"dimension":"resource_type","type":"substring","substring":"Virtual Machines"}
       ]},
       {"type" : "and", "expressions" : [
         {"dimension":"category","type":"equal","value":"Compute"},
         {"dimension":"vendor","type":"equal","value":"AzureCSP"},
-        {"dimension":"resource_type","type":"equal","value":"Compute Instance"}
+        {"dimension":"service", "type":"equal", value:"Microsoft.Compute"},
+        {"dimension":"resource_type","type":"substring","substring":"Virtual Machines"}
       ]},
       {"type" : "and", "expressions" : [
         {"dimension":"category","type":"equal","value":"Compute"},
@@ -263,6 +266,7 @@ script "js_format_costs", type: "javascript" do
           usage_amount: new_bc_cost_obj.usage_amount,
           instance_type: new_bc_cost_obj.instance_type,
           resource_id: new_bc_cost_obj.resource_id,
+          resource_type: new_bc_cost_obj.resource_type,
           timestamp: new_bc_cost_obj.timestamp,
           run_rate: parseFloat(run_rate).toFixed(2),
           run_rate_for_calc: run_rate
@@ -315,12 +319,14 @@ script "js_merge_instance_data", type: "javascript" do
     for ( i=0; i < ds_instances.length; i++) {
       var instance = ds_instances[i]
       var instance_type = instance.instance_type
+      console.log(instance_type)
+      if (instance_type == "None" ) {continue;}
       var found_instance_type = superseded_instance_map[instance_type]
       var superseded = found_instance_type["superseded"] 
-      console.log("superseded: " +JSON.stringify(superseded))
       if ( typeof(superseded) === "undefined" || superseded == null ){
         continue
       } else {
+        console.log("superseded: " +JSON.stringify(superseded))
         var new_instance_type = superseded[param_new_instancetype_category]
         console.log("nit: "+ new_instance_type)
         var new_instance_type_info = superseded_instance_map[new_instance_type]
@@ -388,7 +394,7 @@ end
 
 policy "pol_aws_superseded_instance" do
   validate_each $ds_combined_instance_data do
-    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} rows with cheaper data"
+    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} rows with superseded_instances"
     detail_template <<-EOS
 # AWS Superseded Instances
 | Resource_uid | Name | Current Instance Type | New Instance Type | VPC Required | ENA Required | Run Rate |
@@ -399,7 +405,7 @@ policy "pol_aws_superseded_instance" do
 ___
 ###### Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }}) within Org: {{ rs_org_name }} (Org ID: {{ rs_org_id }})
 EOS
-    check logic_or(lt(to_n(val(item,"total")),$param_threshold), lt(to_n(val(item,"run_rate")),$param_minimum_savings_threshold))
+    check logic_or(lt(to_n(val(item,"run_rate")),$param_threshold), lt(to_n(val(item,"run_rate")),$param_minimum_savings_threshold))
     escalate $report_instances
   end
 end
