@@ -19,17 +19,32 @@ end
 ###############################################################################
 # Parameters
 ###############################################################################
-
 parameter "param_email" do
-  type "list"
   label "Email addresses"
   description "Email addresses of the recipients you wish to notify"
+  type "list"
 end
 
-parameter "param_exclude_tags" do
-  label "Exclude Tags"
-  description "list of excluded servers"
+parameter "param_billing_centers" do
+  label "Billing Center Name"
   type "list"
+  min_length 1
+end
+
+parameter "param_threshold" do
+  label "Minimum Instance Savings Threshold"
+  description "The recommended action for some recommendations may require an instance relaunch. Specify the minimum monthly savings value required for a recommendation of this nature to be issued, on a per instance basis. Note: this setting applies to multiple recommendations. Example: 100.00"
+  type "number"
+  default 10
+  min_value 1
+  max_value 1000000
+end
+
+parameter "param_minimum_savings_threshold" do
+  label "Minimum Savings Threshold"
+  description "Specify the minimum monthly savings value required for a recommendation to be issued, on a per resource basis. Note: this setting applies to all recommendations. Example: 1.00"
+  type "number"
+  default 1
 end
 
 parameter "param_new_instancetype_category" do
@@ -49,68 +64,218 @@ auth "auth_rs", type: "rightscale"
 # Resources
 ###############################################################################
 
-resources "clouds", type: "rs_cm.clouds" do
-  filter do
-    cloud_type "amazon"
-  end
-end
-
-resources "instances", type: "rs_cm.instances" do
-  iterate @clouds  
-  cloud_href href(iter_item)
-  tags none($param_exclude_tags)
-  view 'extended'
-end
-
-resources "instance_types", type: "rs_cm.instance_types" do
-  iterate @clouds  
-  cloud_href href(iter_item)
-end
-
-resources "networks", type: "rs_cm.networks" do
-  iterate @clouds
-  filter do
-    cloud_href href(iter_item)
-  end
-end
-
 ###############################################################################
 # Datasources
 ###############################################################################
-datasource "ds_clouds" do
-  iterate @clouds
-  field "href", href(iter_item)
-  field "name", val(iter_item, "display_name")
+datasource "ds_dimensions" do
+  request do
+    auth $auth_rs
+    host rs_optima_host
+    path join(["/bill-analysis/orgs/",rs_org_id,"/costs/dimensions"])
+    header "Api-Version", "1.0"
+    header "User-Agent", "RS Policies"
+  end
 end
 
-datasource "ds_instances" do
-  iterate @instances
-  field "resource_uid", val(iter_item,  "resource_uid")
-  field "name", val(iter_item, "name")
-  field "href", href(iter_item)
-  field "cloud_href", jmes_path(iter_item, "links[?rel=='cloud'].href | [0]")
-  field "instance_type_href", jmes_path(iter_item, "links[?rel=='instance_type'].href | [0]")
-  field "locked", jmes_path(iter_item,"locked")
-  field "state", jmes_path(iter_item,"state")
+datasource "ds_billing_centers" do
+  request do
+    auth $auth_rs
+    host rs_optima_host
+    path join(["/analytics/orgs/",rs_org_id,"/billing_centers"])
+    header "Api-Version", "1.0"
+    header "User-Agent", "RS Policies"
+    query "view", "allocation_table"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response,"[*]") do
+      field "href", jmes_path(col_item,"href")
+      field "id", jmes_path(col_item,"id")
+      field "name", jmes_path(col_item,"name")
+      field "parent_id", jmes_path(col_item,"parent_id")
+      field "ancestor_ids", jmes_path(col_item,"ancestor_ids")
+      field "allocation_table", jmes_path(col_item,"allocation_table")
+    end
+  end
 end
 
-datasource "ds_instance_types" do
-  iterate @instance_types
-  field "resource_uid", val(iter_item,  "resource_uid")
-  field "cloud_href", jmes_path(iter_item, "links[?rel=='cloud'].href | [0]")
-  field "instance_type_href", jmes_path(iter_item, "links[?rel=='self'].href | [0]")
-  field "memory", jmes_path(iter_item,"memory")
-  field "cpu_count", jmes_path(iter_item,"cpu_count")
-  field "local_disks", jmes_path(iter_item, "local_disks")
-  field "local_disk_size", jmes_path(iter_item, "local_disk_size")
+datasource "ds_cloud_vendor_accounts" do
+  request do
+    auth $auth_rs
+    host rs_optima_host
+    path join(["/analytics/orgs/",rs_org_id,"/cloud_vendor_accounts"])
+    header "Api-Version", "1.0"
+    header "User-Agent", "RS Policies"
+    query "cloud_vendor", "aws"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response,"[*]") do
+      field "id", jmes_path(col_item,"id")
+      field "name", jmes_path(col_item,"name")
+      field "vendor_name", jmes_path(col_item,"vendor_name")
+    end
+  end
 end
 
-datasource "ds_networks" do
-  iterate @networks
-  field "resource_uid", val(iter_item, "resource_uid")
-  field "cloud_href", jmes_path(iter_item, "links[?rel=='cloud'].href | [0]")
-  field "network_href", jmes_path(iter_item, "links[?rel=='self'].href | [0]")
-  field "name", val(iter_item, "name")
+datasource "ds_new_bc_costs" do
+  request do
+    run_script $js_new_costs_request, rs_org_id, $ds_billing_centers, $param_billing_centers
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response,"rows[*]") do
+      field "vendor", jmes_path(col_item, "dimensions.vendor")
+      field "vendor_account", jmes_path(col_item,"dimensions.vendor_account")
+      field "vendor_account_name", jmes_path(col_item,"dimensions.vendor_account_name")
+      field "cost_amortized_unblended_adj", jmes_path(col_item,"metrics.cost_amortized_unblended_adj")
+      field "usage_amount", jmes_path(col_item, "metrics.usage_amount")
+      field "instance_type", jmes_path(col_item, "dimensions.instance_type")
+      field "service", jmes_path(col_item, "dimensions.service")
+      field "id", jmes_path(col_item,"dimensions.billing_center_id")
+      field "resource_id", jmes_path(col_item, "dimensions.resource_id")
+      field "timestamp", jmes_path(col_item,"timestamp")
+    end
+  end
+end
+
+script "js_new_costs_request", type: "javascript" do
+  parameters "org_id","ds_billing_centers", "param_billing_centers"
+  result "request"
+  code <<-EOS
+    var date = new Date();
+    var year = date.getUTCFullYear();
+    var month = (2 + date.getUTCMonth())
+    
+    if (month == 1){ 
+      var lmonth = 12;
+      var lyear = year-1 ;
+    } else {
+      var lmonth = month-1;
+      var lyear = year ;
+    }
+    
+    mo = month.toString().length > 1 ? month : '0' + month;
+    lmo = lmonth.toString().length > 1 ? lmonth : '0' + lmonth;
+    var next_month = year + "-" + mo
+    var current_month = lyear + "-" + lmo
+    var billing_center_ids = []
+    if (param_billing_centers.length === 0){
+      var top_billing_centers = _.reject(ds_billing_centers, function(bc){ return bc.parent_id != null });
+      billing_center_ids = _.map(top_billing_centers, function(value, key){ return value.id });
+    } else {
+      // get array of billing center id's that match the names in param_billing_centers.
+      billing_center_names = _.map(param_billing_centers, function(name){ return name.toLowerCase(); });
+      billing_center_ids = _.compact(_.map(ds_billing_centers, function(value){ if(_.contains(billing_center_names, value.name.toLowerCase())){return value.id} }));
+    }
+
+    var dimensions = ["billing_center_id","vendor","vendor_account","vendor_account_name", "category","instance_type","region","resource_type","service","usage_type","usage_unit","resource_id"]
+    var expression = [
+      {"type" : "and", "expressions" : [
+        {"dimension":"category","type":"equal","value":"Compute"},
+        {"dimension":"vendor","type":"equal","value":"Azure"},
+        {"dimension":"resource_type","type":"equal","value":"Compute Instance"}
+      ]},
+      {"type" : "and", "expressions" : [
+        {"dimension":"category","type":"equal","value":"Compute"},
+        {"dimension":"vendor","type":"equal","value":"AzureCSP"},
+        {"dimension":"resource_type","type":"equal","value":"Compute Instance"}
+      ]},
+      {"type" : "and", "expressions" : [
+        {"dimension":"category","type":"equal","value":"Compute"},
+        {"dimension":"resource_type","type":"equal","value":"Compute Instance"},
+        {"dimension":"vendor","type":"equal","value":"AWS"}
+      ]}
+    ]
+
+    var request = {
+      auth: "auth_rs",
+      host: "optima.rightscale.com",
+      verb: "POST",
+      path: "/bill-analysis/orgs/" + org_id + "/costs/select",
+      body_fields: {
+        "billing_center_ids": billing_center_ids,
+        "dimensions": dimensions,
+        "metrics": ["usage_amount", "cost_amortized_unblended_adj"],
+        "granularity": "month",
+        "start_at": current_month,
+        "end_at": next_month,
+        "limit": 100000,
+        "filter": {
+          "type":"or",
+          "expressions": expression
+        }
+      },
+      headers: {
+        "Api-Version": "1.0",
+        "User-Agent": "RS Policies",
+      }
+    }
+EOS
+end
+datasource "ds_format_costs" do
+  run_script $js_format_costs, $ds_new_bc_costs, $ds_cloud_vendor_accounts, $ds_billing_centers
+end
+
+script "js_format_costs", type: "javascript" do
+  parameters "new_bc_costs", "ds_cloud_vendor_accounts", "ds_billing_centers"
+  result "formatted_data"
+  code <<-EOS
+  //https://www.w3resource.com/javascript-exercises/javascript-date-exercise-3.php
+  var getDaysInMonth = function(month,year) {
+    // Here January is 1 based
+    //Day 0 is the last day in the previous month
+    return new Date(year, month, 0).getDate();
+  // Here January is 0 based
+  // return new Date(year, month+1, 0).getDate();
+  };
+  var date = new Date()
+  var today = date.getDate()
+  var numdays = getDaysInMonth(date.getUTCMonth(),date.getUTCFullYear())
+  var monthcomplete = today / numdays ;
+
+  var formatted_data = [];
+  var unsorted_results = [];
+  var arr_results = [];
+  var bcs = [];
+  _.each(new_bc_costs, function(bcc){bcs.push(bcc.id)})
+  bcs = _.uniq(bcs) ;
+  _.each(bcs, function(bc_id){
+    var new_bc_cost_objs = _.reject(new_bc_costs, function(new_bc_cost){ return new_bc_cost.id != bc_id });
+    _.each(new_bc_cost_objs, function(new_bc_cost_obj){
+      var billing_center = _.reject(ds_billing_centers, function(bc){ return bc.id != new_bc_cost_obj.id })[0];
+      if (new_bc_cost_obj.vendor == "AWS" ) {
+        var account = _.reject(ds_cloud_vendor_accounts, function(ds_cloud_vendor_account){ return ds_cloud_vendor_account.id != new_bc_cost_obj.vendor_account_name });
+        var vendor_account_name = account[0].name
+      } else {
+        var vendor_account_name = new_bc_cost_obj.vendor_account_name
+      }
+      cost = new_bc_cost_obj.cost_amortized_unblended_adj
+      run_rate = cost / monthcomplete
+      if (new_bc_cost_obj.cost_amortized_unblended_adj != 0){
+        arr_results.push({
+          name: billing_center.name,
+          id: bc_id,
+          new_sum: new_bc_cost_obj.cost_amortized_unblended_adj,
+          service: new_bc_cost_obj.service,
+          vendor: new_bc_cost_obj.vendor,
+          vendor_account_name: vendor_account_name,
+          usage_amount: new_bc_cost_obj.usage_amount,
+          instance_type: new_bc_cost_obj.instance_type,
+          resource_id: new_bc_cost_obj.resource_id,
+          timestamp: new_bc_cost_obj.timestamp,
+          run_rate: parseFloat(run_rate).toFixed(2),
+          run_rate_for_calc: run_rate
+        })
+      }
+    })
+  })
+  var total =  parseFloat(_.reduce(_.pluck(arr_results, "run_rate_for_calc"), function(memo, num){ return memo + num; }, 0)).toFixed(2);
+  _.each(arr_results, function(result){ 
+    result["total"] = total
+    formatted_data.push(result)
+  })
+EOS
 end
 
 datasource "ds_aws_instance_size_map" do
@@ -132,7 +297,7 @@ datasource "ds_azure_instance_size_map" do
 end
 
 datasource "ds_combined_instance_data" do
-  run_script $js_merge_instance_data, $ds_instances, $ds_instance_types, $ds_clouds, $ds_networks, $ds_aws_instance_size_map, $ds_azure_instance_size_map, $param_new_instancetype_category
+  run_script $js_merge_instance_data, $ds_format_costs, $ds_aws_instance_size_map, $ds_azure_instance_size_map, $param_new_instancetype_category
 end
 
 ###############################################################################
@@ -140,79 +305,67 @@ end
 ###############################################################################
 
 script "js_merge_instance_data", type: "javascript" do
-  parameters "ds_instances", "ds_instance_types", "ds_clouds", "ds_networks", "ds_aws_instance_size_map", "ds_azure_instance_size_map", "param_new_instancetype_category"
+  parameters "ds_format_costs", "ds_aws_instance_size_map", "ds_azure_instance_size_map", "param_new_instancetype_category"
   result "results"
   code <<-EOS
     var results = []
-    console.log(typeof ds_aws_instance_size_map)
     var superseded_instance_map = _.extend(ds_aws_instance_size_map,ds_azure_instance_size_map)
-    console.log(JSON.stringify(superseded_instance_map))
+    var ds_instances = ds_format_costs
 
     for ( i=0; i < ds_instances.length; i++) {
       var instance = ds_instances[i]
-      if ( _.contains(['provisioned','operational'],instance["state"]) ) {
-        var ds_instance_type_href = instance.instance_type_href
-        var cloud_href = instance.cloud_href
-        var instance_types = _.reject(ds_instance_types, function(ds_instance_type){ return ds_instance_type.instance_type_href != ds_instance_type_href });
-        var cloud = _.reject(ds_clouds, function(ds_cloud){ return ds_cloud.href != cloud_href })
-        var instance_type = instance_types[0].resource_uid
-        var found_instance_type = superseded_instance_map[instance_type]
-        var superseded = found_instance_type["superseded"] 
-        console.log("superseded: " +JSON.stringify(superseded))
-        if ( superseded === null ){
-          continue
+      var instance_type = instance.instance_type
+      var found_instance_type = superseded_instance_map[instance_type]
+      var superseded = found_instance_type["superseded"] 
+      console.log("superseded: " +JSON.stringify(superseded))
+      if ( typeof(superseded) === "undefined" || superseded == null ){
+        continue
+      } else {
+        var new_instance_type = superseded[param_new_instancetype_category]
+        console.log("nit: "+ new_instance_type)
+        var new_instance_type_info = superseded_instance_map[new_instance_type]
+        old_instance_ena = found_instance_type.enhanced_networking || false
+        new_instance_ena = new_instance_type_info.enhanced_networking || false
+        old_instance_vpc = !found_instance_type.ec2_classic || false
+        new_instance_vpc = !new_instance_type_info.ec2_classic || false
+
+        if ( !old_instance_ena && new_instance_ena ) { 
+          var ena_incompatible = true
         } else {
-          var new_instance_type = superseded[param_new_instancetype_category]
-          console.log("nit: "+ new_instance_type)
-          var new_instance_type_info = superseded_instance_map[new_instance_type]
-          old_instance_ena = found_instance_type.enhanced_networking || false
-          new_instance_ena = new_instance_type_info.enhanced_networking || false
-          old_instance_vpc = !found_instance_type.ec2_classic || false
-          new_instance_vpc = !new_instance_type_info.ec2_classic || false
-
-          if ( !old_instance_ena && new_instance_ena ) { 
-            var ena_incompatible = true
-          } else {
-            var ena_incompatible = false
-          }
-
-          if ((!old_instance_vpc) && (new_instance_vpc)) {
-            var vpc_incompatible_move = true
-          } else {
-            var vpc_incompatible_move = false
-          }
-
-          var old_instance_type_stats = _.reject(ds_instance_types, function(ds_instance_type) { return ds_instance_type.resource_uid != instance_type})
-          var new_instance_type_stats = _.reject(ds_instance_types, function(ds_instance_type) { return ds_instance_type.resource_uid != new_instance_type})
-          var warn = false
-          var old_instance_type_stats_disk_count = old_instance_type_stats[0].local_disks
-          var new_instance_type_stats_disk_count = new_instance_type_stats[0].local_disks
-          if ( (old_instance_type_stats_disk_count > new_instance_type_stats_disk_count) || vpc_incompatible_move || ena_incompatible ) {
-            warn = true
-          }
-          results.push(
-            {
-              resource_uid: instance["resource_uid"],
-              name: instance["name"],
-              href: instance["href"],
-              cloud_href: instance["cloud_href"],
-              cloud: cloud[0].name,
-              instance_type_href: instance["instance_type_href"],
-              instance_type: instance_type,
-              locked: instance["locked"],
-              old_instance_type_stats_cpu_count: old_instance_type_stats[0].cpu_count,
-              old_instance_type_stats_memory: old_instance_type_stats[0].memory,
-              old_instance_type_stats_disk_count: old_instance_type_stats_disk_count,
-              new_instance_type: new_instance_type,
-              new_instance_type_stats_cpu_count: new_instance_type_stats[0].cpu_count,
-              new_instance_type_stats_memory: new_instance_type_stats[0].memory,
-              new_instance_type_stats_disk_count: new_instance_type_stats_disk_count,
-              vpc_incompatible_move: vpc_incompatible_move,
-              ena_incompatible: ena_incompatible,
-              warn: warn
-            }
-          )
+          var ena_incompatible = false
         }
+
+        if ((!old_instance_vpc) && (new_instance_vpc)) {
+          var vpc_incompatible_move = true
+        } else {
+          var vpc_incompatible_move = false
+        }
+
+        var warn = false
+        if ( vpc_incompatible_move || ena_incompatible ) {
+          warn = true
+        }
+        results.push(
+          {
+            name: instance.name,
+            id: instance.id,
+            new_sum: instance.new_sum,
+            service: instance.service,
+            vendor: instance.vendor,
+            vendor_account_name: instance.vendor_account_name,
+            usage_amount: instance.usage_amount,
+            instance_type: instance.instance_type,
+            new_instance_type: new_instance_type,
+            resource_id: instance.resource_id,
+            timestamp: instance.timestamp,
+            run_rate: instance.run_rate,
+            run_rate_for_calc: instance.run_rate_for_calc,
+            vpc_incompatible_move: vpc_incompatible_move,
+            ena_incompatible: ena_incompatible,
+            warn: warn,
+            total: instance.total
+          }
+        )
       }
     }
   EOS
@@ -221,18 +374,7 @@ end
 ###############################################################################
 # Escalations
 ###############################################################################
-escalation "report_and_resize_instances" do
-  request_approval  do
-    label "Escalation approval"
-    description "Approve delete action"
-    parameter "approval_reason" do
-      type "string"
-      label "Reason for approval"
-      description "Explain why you are approving the action"
-    end
-  end
-
-  run "resize_instances", data
+escalation "report_instances" do
   email $param_email
 end
 
@@ -249,44 +391,22 @@ policy "pol_aws_superseded_instance" do
     summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} rows with cheaper data"
     detail_template <<-EOS
 # AWS Superseded Instances
-| Locked | Resource_uid | Name | Cloud | Current Instance Type | New Instance Type | Old Instance Type Stats | New Instance Type Stats | VPC Required | ENA Required |
-| ------ | ------------ | ---- | ----- | --------------------- | ----------------- | ----------------------- | ----------------------- | ------------ | ------------ |
+| Resource_uid | Name | Current Instance Type | New Instance Type | VPC Required | ENA Required | Run Rate |
+| ------------ | ---- | --------------------- | ----------------- | ------------ | ------------ | -------- |
 {{ range data -}}
-|{{if .locked}} ![Locked](https://{{rs_cm_host}}/images/svg/padlock-closed.svg) {{ else }} ![Unlocked](https://{{rs_cm_host}}/images/svg/padlock-open.svg) {{ end }} | {{ if .warn }}**_{{ end -}}{{ .resource_uid }}{{ if .warn }}_**{{ end -}} | {{ .name }} | {{ .cloud}} | {{.instance_type}} | {{.new_instance_type}} | CPU Count: {{ .old_instance_type_stats_cpu_count }}, Memory: {{.old_instance_type_stats_memory}},  Disks: {{.old_instance_type_stats_disk_count}} | CPU Count: {{ .new_instance_type_stats_cpu_count }}, Memory: {{.new_instance_type_stats_memory}},  Disks: {{.new_instance_type_stats_disk_count}} | {{ if .vpc_incompatible_move }} **_TRUE_** {{else}} false {{end}} |  {{ if .ena_incompatible }} **_TRUE_** {{else}} false {{end}} |
+| {{ if .warn }}**_{{ end -}}{{ .resource_id }}{{ if .warn }}_**{{ end -}} | {{ .name }} | {{.instance_type}} | {{.new_instance_type}} | {{ if .vpc_incompatible_move }} **_TRUE_** {{else}} false {{end}} |  {{ if .ena_incompatible }} **_TRUE_** {{else}} false {{end}} | {{.run_rate}} |
 {{ end -}}
 ___
 ###### Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }}) within Org: {{ rs_org_name }} (Org ID: {{ rs_org_id }})
 EOS
-    check eq(val(item, "new_instance_type"), "none")
-    escalate $report_and_resize_instances
+    check logic_or(lt(to_n(val(item,"total")),$param_threshold), lt(to_n(val(item,"run_rate")),$param_minimum_savings_threshold))
+    escalate $report_instances
   end
 end
 
 ###############################################################################
 # Cloud Workflow
 ###############################################################################
-
-define resize_instances($data) do
-  foreach $item in $data do
-    if !$item["locked"] || $item["warn"]
-      call sys_log("resizing instance", $item)
-      @instance = rs_cm.get(href: $item["href"])
-      @current_server = @instance.parent()
-      task_label("stopping instance")
-      @instance.stop()
-      task_label("sleeping until instance stopped")
-      sleep_until(@current_server.state == 'provisioned')
-      @current_instance = @current_server.current_instance()
-      @cloud = @current_instance.cloud()
-      @new_instance_type = first(@cloud.instance_types(filter: ["name=="+$item["new_instance_type"]]))
-      @current_instance.update(instance: { instance_type_href: @new_instance_type.href })
-      task_label("sleeping until instance started")
-      @current_instance.start()
-      sleep_until(@current_instance.state == 'operational')
-      task_label("Instance Started")
-    end
-  end
-end
 
 define sys_log($subject, $detail) do
   if $$debug
