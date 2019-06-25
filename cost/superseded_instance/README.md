@@ -2,37 +2,28 @@
 
 ### What it does
 
-This Policy Template uses user defined to determine if you can decrease the size of your running instance.  
+This Policy Template uses data in [Policies Data](https://github.com/rightscale/policy_templates/tree/master/data) to determine if an instance type has been superseded, it will then list all the instances that have been superseded and their types. 
 
 ### Usage
 
-The Downsize Instances Policy Template is used to actually downsize instances user defined tags on the instances.  The policy will use the *Tags to find instances* list to find the instances with provided tags and downsize them.  The tags must be inform of a [RightScale Tag](https://docs.rightscale.com/cm/ref/list_of_rightscale_tags.html#overview)
-To downsize the instance it must be **stopped**.  If you don't want to stop and resize the instance you can add an additional tag and include that tag in the *Tags to ignore instances* input.
-If a server is marked `N/A`, no action will be taken and only the resize tag will be removed. You will need to manually move that instance to another family type.
-When an instance is downsized a new tag *rs_downsize:cooldown* is added which value is the date and time of the number of days from the Downsize to the Cooldown Days parameter.  This tag is then deleted after the Cooldown Days has exceeded
+The Superseded Instances Policy Template is used to monitor an account a generate a list of superseded instances. It uses optima bill analysis data to get a list of instances used in the month and their possible new types. It will then report on them, it will also warn you by *bolding* them in the list if they may need additional manual intervention to upgrade them, for example, they might need to be put in a vpc, or use a enhanced networking enabled image.
 
+### Prerequesites
+- The `billing_center_viewer` role
 
-### Parameters
+#### Input Parameters
 
-#### Downsize Instances Policy Template
-1. Email list - List of email addresses to send incident report to
-2. Tags to find instances - List of tags used to filter instances that must validate policy. (e.g.: ec2:downsize:true, azure:downsize:true, gce:downsize=true)
-3. Tags to ignore instances - List of tags that will exclude instances from being evaluated by this policy. Multiple tags are evaluated as an 'OR' condition. Tag keys or key/value pairs can be listed. Example: 'test,env=dev'
-4. Cooldown Days - Days to cooldown between checks of same instance.  
+This policy has the following input parameters required when launching the policy.
 
-#### Policy Actions
-
-The following policy actions are taken on any resources found to be out of compliance.
-
-- Downsize instances
-- Delete Cooldown tag after cooldown days has exceeded
-- Send an email report
-
-### Required Permissions
-
-This policy requires permissions to access RightScale resources (clouds, instances and tags).  Before applying this policy add the following roles to the user applying the policy.  The roles should be applied to all Accounts where the policy will run or the Organization. For more information on modifying roles visit the [Governance Docs](https://docs.rightscale.com/cm/ref/user_roles.html)
-
-- Cloud Management - Observer
+- *Email addresses* - A list of email addresses to notify
+- *Billing Center Name* - List of Billing Center Names to check
+- *Minimum Savings Threshold* - Specify the minimum monthly savings value required for a recommendation to be issued, on a per resource basis. Note: this setting applies to all recommendations. Example: 1.00
+- *Minimum Instance Savings Threshold* - The recommended action for some recommendations may require an instance relaunch. Specify the minimum monthly savings value required for a recommendation of this nature to be issued, on a per instance basis. Note: this setting applies to multiple recommendations. Example: 100.00
+- *Instance Type Category* - Instance Type Category to pick from. 
+  1. regular: AWS/Azure - Matches Optima Recommendation data
+  1. next_gen: AWS - Latest generation upgrade
+  1. burstable: AWS - If an instance can be replaced by a burstable type this will be recommended
+  1. amd: AWS - next_gen + a series to allow you to use amd types for even more savings. 
 
 ### Supported Clouds
 
