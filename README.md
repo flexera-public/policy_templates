@@ -11,6 +11,7 @@ Please contact sales@rightscale.com to learn more.
 - [AWS Reserved Instances Utilization](./cost/aws/reserved_instances/utilization/)
 - [AWS Reserved Instance Reservation Coverage](./cost/aws/reserved_instances/coverage/)
 - [AWS Reserved Instances Report by Billing Center](./cost/aws/reserved_instances/report_by_bc)
+- [AWS Reserved Instance Recommendations](./cost/aws/reserved_instances/recommendations)
 - [Azure Superseded Instance Types](./cost/azure/superseded_instance_types/)
 - [Budget Alerts](./cost/budget_alerts/)
 - [Downsize Instances](./cost/downsize_instance/)
@@ -21,6 +22,7 @@ Please contact sales@rightscale.com to learn more.
 - [Scheduled Report](./cost/scheduled_reports/)
 - [Azure Hybrid Use Benefit](./cost/azure/hybrid_use_benefit/)
 - [Azure Reserved Instance Utilization](./cost/azure/reserved_instances/utilization/)
+- [Azure Reserved Instance Recommendations](./cost/azure/reserved_instances/recommendations)
 - [Billing Center Cost Anomaly](./cost/billing_center_cost_anomaly/)
 - [Google Committed Use Discount (CUD) Report](./cost/google/cud_report/)
 - [AWS Delete Unused Elastic Load Balancers (CLB)](./cost/aws/elb/clb_unused/)
@@ -29,7 +31,9 @@ Please contact sales@rightscale.com to learn more.
 - [Low Service Usage](./cost/low_service_usage/)
 - [Google Unutilized IP Addresses](./cost/google/unutilized_ip_addresses/)
 - [AWS Instance CloudWatch Utilization](./cost/aws/instance_cloudwatch_utilization/)
-- [Google StackDriver Utilization](./cost/google/instance_stackdriver_utilization/)
+- [Google StackDriver Utilization](./cost/google/instances_stackdriver_utilization/)
+- [Terminate Instances with End Date](./cost/terminate_policy/)
+- [Azure Instances Utilization from Log Analytics](./cost/azure/instances_log_analitics_utilization/)
 
 ### Security
 - [Security Group: ICMP Enabled](./security/security_groups/icmp_enabled/)
@@ -56,6 +60,7 @@ Please contact sales@rightscale.com to learn more.
 - [GitHub.com Repository Branches without Protection](./compliance/github/repository_branch_protection/)
 - [GitHub.com Repositories without Admin Team](./compliance/github/repository_admin_team/)
 - [AWS Unused ECS Clusters](./compliance/aws/ecs_unused/)
+- [Unapproved Instance Types](./compliance/unapproved_instance_types/)
 
 ### Operational
 - [AWS Cloud Credentials Rotation Policy](./operational/cloud_credentials/aws)
@@ -63,15 +68,21 @@ Please contact sales@rightscale.com to learn more.
 - [AWS RDS Backup Settings](./operational/dbaas/aws/rds_backup)
 - [AWS VPC Name Tag Sync](./operational/aws/vpc_name_sync)
 - [AWS Subnet Name Tag Sync](./operational/aws/subnet_name_sync)
+- [Stranded Servers](./operational/stranded_servers/)
 - [VMWare Instance Tag Sync](./operational/vmware/instance_tag_sync)
 
-## Instructions to upload policy templates to RightScale
+### Policy Data Sets
+ - [AWS Regions](./data/aws/regions.json)
+ - [AWS Instance Types](./data/aws/instance_types.json)
+ - [Azure Instance Types](./data/azure/instance_types.json)
+ - [Google Instance Types](./data/google/instance_types.json)
+ - [Currency Reference](./cost/scheduled_reports/currency_reference.json)
 
+## Instructions to upload policy templates to RightScale
 - The policy templates in the repo are the files that have a .pt extension.
 - Select the desired policy template, click on the “Raw” button, and then right-click and choose “Save As” to save the file to your computer.
 - To upload the template to your account, navigate over to the Templates page in the left nav bar in [Governance](https://governance.rightscale.com). Ensure you have the role to access policy management in RightScale. Learn More about [Policy Access Control](http://docs.rightscale.com/policies/#how-policies-work-access-control).
 - Click the “Upload Policy Template” button in the account you wish to test the policy and follow the instructions to upload the template you just downloaded.
-
 
 ## RightScale Policy Template Documentation
 - [Getting Started](http://docs.rightscale.com/policies/getting_started/)
@@ -89,6 +100,7 @@ Github issues contain a template for three types of requests(Bugs, New Features 
 - Bugs: Any issue you are having with an existing policy template not functioning correctly, this does not include missing features, or actions.
 - New Feature Request: Any feature(Field, Action, Link, Output, etc) that are to be added to an existing policy template.
 - New Policy Template Request: Request for a new policy template.
+
 ### Troubleshooting Danger Locally
 - You can test against a pull request via: bundle exec danger pr https://github.com/rightscale/policy_templates/pull/73 --pry
 - http://danger.systems/guides/troubleshooting.html
