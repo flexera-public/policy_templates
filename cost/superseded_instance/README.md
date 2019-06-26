@@ -2,13 +2,13 @@
 
 ### What it does
 
-This Policy Template uses data in [Policies Data](https://github.com/rightscale/policy_templates/tree/master/data) to determine if an instance type has been superseded, it will then list all the instances that have been superseded and their types. 
+This Policy Template uses data in [Policies Data](https://github.com/rightscale/policy_templates/tree/master/data) to determine if an instance type has been superseded, it will then list all the instances that have been superseded and their types. This policy supports AWS, Azure, and AzureCSP. It also allows use of AMD, and Burstable types as replacement. There are fundamental differences between this and Optima Superseded Instances recommendations. 
 
 ### Usage
 
-The Superseded Instances Policy Template is used to monitor an account a generate a list of superseded instances. It uses optima bill analysis data to get a list of instances used in the month and their possible new types. It will then report on them, it will also warn you by *bolding* them in the list if they may need additional manual intervention to upgrade them, for example, they might need to be put in a vpc, or use a enhanced networking enabled image.
+The Superseded Instances Policy Template is used to monitor an account a generate a list of superseded instances. It uses optima bill analysis data to get a list of instances used in the month and their possible new types. It will then report on them, it will also warn you by *bolding* them in the list if they may need additional functionality to upgrade them, for example, they might need to be put in a vpc, or use a enhanced networking enabled image.
 
-### Prerequesites
+### Permissions
 - The `billing_center_viewer` role
 
 #### Input Parameters
