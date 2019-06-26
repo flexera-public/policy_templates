@@ -6,11 +6,19 @@ long_description "Version: 1.12"
 severity "medium"
 category "Cost"
 
+###############################################################################
+# Permissions
+###############################################################################
+
 permission "perm_instances" do
   label "Permissions for instances"
   actions "rs_cm.index", "rs_cm.show"
   resources "rs_cm.instances", "rs_cm.clouds", "rs_cm.instance_types"
 end
+
+###############################################################################
+# Parameters
+###############################################################################
 
 parameter "param_instance_tag_list" do
   type "list"
@@ -40,7 +48,15 @@ parameter "param_cooldown_days" do
   default 30
 end
 
+###############################################################################
+# Authentication
+###############################################################################
+
 auth "auth_rs", type: "rightscale"
+
+###############################################################################
+# Resources
+###############################################################################
 
 resources "clouds", type: "rs_cm.clouds" do
   filter do # ignore clouds that are NOT represented in instance_types.json
@@ -62,33 +78,12 @@ resources "instance_types", type: "rs_cm.instance_types" do
   cloud_href href(iter_item)
 end
 
+###############################################################################
+# Datasources
+###############################################################################
+
 datasource "ds_instance_type_memory", type: "javascript" do
   run_script $js_instance_type_memory, @instance_types
-end
-
-script "js_instance_type_memory", type: "javascript" do
-  parameters "instance_types"
-  result "instance_type_memory_mapping"
-  code <<-EOS
-  var instance_type_memory_mapping = {};
-  var mb_bytes = 1000000
-  var gb_bytes = 1000000000
-for (m = 0; m < instance_types.length; m++) {
-  instance_type_name = instance_types[m]["name"]
-  instance_type_memory = instance_types[m]["memory"]
-  if (instance_type_memory.match(/GB/)) {
-    mem_gb = Number(instance_type_memory.split("GB")[0])
-    mem = mem_gb * gb_bytes
-  } else if (instance_type_memory.match(/MB/)) {
-    mem_mb = Number(instance_type_memory.split("MB")[0])
-    mem = mem_mb * mb_bytes
-  } else { // assume MB without the units
-    mem_mb = Number(instance_type_memory)
-    mem = mem_mb * mb_bytes
-  }
-  instance_type_memory_mapping[instance_type_name] = mem
-};
-EOS
 end
 
 datasource "ds_instances" do
@@ -158,6 +153,35 @@ end
 
 datasource "ds_filtered_instances" do
   run_script $js_filter_instances, $ds_instances, $ds_instances_16, $ds_aws_instance_size_map, $ds_azure_instance_size_map, $ds_google_instance_size_map
+end
+
+###############################################################################
+# Scripts
+###############################################################################
+
+script "js_instance_type_memory", type: "javascript" do
+  parameters "instance_types"
+  result "instance_type_memory_mapping"
+  code <<-EOS
+  var instance_type_memory_mapping = {};
+  var mb_bytes = 1000000
+  var gb_bytes = 1000000000
+for (m = 0; m < instance_types.length; m++) {
+  instance_type_name = instance_types[m]["name"]
+  instance_type_memory = instance_types[m]["memory"]
+  if (instance_type_memory.match(/GB/)) {
+    mem_gb = Number(instance_type_memory.split("GB")[0])
+    mem = mem_gb * gb_bytes
+  } else if (instance_type_memory.match(/MB/)) {
+    mem_mb = Number(instance_type_memory.split("MB")[0])
+    mem = mem_mb * mb_bytes
+  } else { // assume MB without the units
+    mem_mb = Number(instance_type_memory)
+    mem = mem_mb * mb_bytes
+  }
+  instance_type_memory_mapping[instance_type_name] = mem
+};
+EOS
 end
 
 script "js_filter_instances", type: "javascript" do
@@ -245,9 +269,17 @@ details = {
 EOS
 end
 
+###############################################################################
+# Resolutions
+###############################################################################
+
 resolution "report_downsize_instances_resolution" do
   email $param_email
 end
+
+###############################################################################
+# Escalations
+###############################################################################
 
 escalation "report_downsize_instances" do
   email $param_email
@@ -260,6 +292,50 @@ end
 escalation "cooldown_instances" do
   run "delete_cooldown_tag", data,  $param_cooldown_days
 end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "policy_downsize" do
+  validate $ds_filtered_instances do
+    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data.downsize_instances }} Instances that can be downsized"
+    detail_template <<-EOS
+# {{ len data.downsize_instances }} Instances can be downsized
+
+| Instance Name | Resource UID | Current Instance Type | New Instance Type |
+| ------------- | ------------ | --------------------- | ----------------- |
+{{ range data.downsize_instances -}}
+  | {{.name}} | {{.resource_uid}} | {{.instance_type}} | {{.next_instance_size}} |
+{{ end -}}
+
+EOS
+    escalate $report_downsize_instances
+    escalate $downsize_instances
+    resolve $report_downsize_instances_resolution
+    check eq(size(val(data, "downsize_instances")), 0)
+  end
+
+  validate $ds_filtered_instances do
+    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data.cooldown_instances }} Instances are in cooldown"
+    detail_template <<-EOS
+  # {{ len data.cooldown_instances }} Instances are in cooldown
+
+  | Instance Name | Resource UID | Current Instance Type | New Instance Type | Cooldown Date |
+  | ------------- | ------------ | --------------------- | ----------------- | ------------- |
+  {{ range data.cooldown_instances -}}
+  | {{.name}} | {{.resource_uid}} | {{.instance_type}} | {{.next_instance_size}} | {{.cooldown_date}} |
+  {{ end -}}
+
+  EOS
+    escalate $cooldown_instances
+    check eq(size(val(data, "cooldown_instances")), 0)
+  end
+end
+
+###############################################################################
+# Cloud Workflow
+###############################################################################
 
 
 define downsize_instances($data,$param_instance_tag_list,$param_cooldown_days) do
@@ -342,42 +418,6 @@ define downsize_instances($data,$param_instance_tag_list,$param_cooldown_days) d
       call sys_log('delete_tags',to_s($delete_tags))
       rs_cm.tags.multi_delete(resource_hrefs: [@current_instance.href], tags: $delete_tags)
     end
-  end
-end
-
-policy "policy_downsize" do
-  validate $ds_filtered_instances do
-    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data.downsize_instances }} Instances that can be downsized"
-    detail_template <<-EOS
-# {{ len data.downsize_instances }} Instances can be downsized
-
-| Instance Name | Resource UID | Current Instance Type | New Instance Type |
-| ------------- | ------------ | --------------------- | ----------------- |
-{{ range data.downsize_instances -}}
-  | {{.name}} | {{.resource_uid}} | {{.instance_type}} | {{.next_instance_size}} |
-{{ end -}}
-
-EOS
-    escalate $report_downsize_instances
-    escalate $downsize_instances
-    resolve $report_downsize_instances_resolution
-    check eq(size(val(data, "downsize_instances")), 0)
-  end
-
-  validate $ds_filtered_instances do
-    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data.cooldown_instances }} Instances are in cooldown"
-    detail_template <<-EOS
-  # {{ len data.cooldown_instances }} Instances are in cooldown
-
-  | Instance Name | Resource UID | Current Instance Type | New Instance Type | Cooldown Date |
-  | ------------- | ------------ | --------------------- | ----------------- | ------------- |
-  {{ range data.cooldown_instances -}}
-  | {{.name}} | {{.resource_uid}} | {{.instance_type}} | {{.next_instance_size}} | {{.cooldown_date}} |
-  {{ end -}}
-
-  EOS
-    escalate $cooldown_instances
-    check eq(size(val(data, "cooldown_instances")), 0)
   end
 end
 
