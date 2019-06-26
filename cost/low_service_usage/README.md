@@ -15,11 +15,10 @@ This Policy Template reports on services with low usage. Low usage of a specific
 #### Input Parameters
 
 This policy has the following input parameters required when launching the policy.
-
-- *Time Period* - Number of days to analyze
-- *Cost Threshold* - All accounts below this budget will trigger an incident
+- *Low Service Spend Threshold* - Estimated run-rate below which a service should be reviewed for wasted usage. Example: 100.0
 - *Email addresses* - A list of email addresses to notify
-- *Include Unallocated* - Boolean to include unallocated billing center. 
+- *Billing Center Name* - List of Billing Center Names to check
+- *Minimum Savings Threshold* - Specify the minimum monthly savings value required for a recommendation to be issued, on a per resource basis. Note: this setting applies to all recommendations. Example: 1.00
 
 ### Supported Clouds
 
