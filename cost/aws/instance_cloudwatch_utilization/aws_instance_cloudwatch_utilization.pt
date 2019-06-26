@@ -375,9 +375,9 @@ code <<-EOS
       var disk_average = parseFloat(disk_usage_record.disk_average).toFixed(2)
       var disk_minimum = parseFloat(disk_usage_record.disk_minimum).toFixed(2)
     } else {
-      var disk_maximum = "N/A"
-      var disk_average = "N/A"
-      var disk_minimum = "N/A"
+      var disk_maximum = "101"
+      var disk_average = "101"
+      var disk_minimum = "101"
     }
     var mem_usage_record = _.find(ds_cloudwatch_mem_usage, function(record) { return record.instanceId == instance_id; })
     if (mem_usage_record != null && mem_usage_record !== undefined) {
@@ -385,9 +385,9 @@ code <<-EOS
       var mem_average = parseFloat(mem_usage_record.mem_average).toFixed(2)
       var mem_minimum = parseFloat(mem_usage_record.mem_minimum).toFixed(2)
     } else {
-      var mem_maximum = "N/A"
-      var mem_average = "N/A"
-      var mem_minimum = "N/A"
+      var mem_maximum = "101"
+      var mem_average = "101"
+      var mem_minimum = "101"
     }
     merged_results.push(
       {
@@ -424,12 +424,11 @@ policy "pol_utilization" do
 | Region | instanceID | Hostname | Private DNS Name | CPU Maximum % | CPU Minimum % | CPU Average % | Disk Maximum % | Disk Minimum % | Disk Average % | Memory Minimum % | Memory Maximum % | Memory Average % |
 | ------ | ---------- | -------- | ---------------- | ------------- | ------------- | ------------- | -------------- | -------------- | -------------- | ---------------- | ---------------- | ---------------- |
 {{ range data -}}
-| {{.region}} | {{.instanceId}} | {{.hostname}} |  {{.privateDnsName }} | {{ .cpu_maximum }} | {{.cpu_minimum}} | {{ .cpu_average }} | {{.disk_maximum}} | {{.disk_minimum}} | {{.disk_average}} | {{.mem_minimum}} | {{.mem_maximum}} | {{.mem_average}} |
+| {{.region}} | {{.instanceId}} | {{.hostname}} |  {{.privateDnsName }} | {{ .cpu_maximum }} | {{.cpu_minimum}} | {{ .cpu_average }} | {{if eq .disk_maximum "101"}}N/A{{else}}{{.disk_maximum}}{{end}} | {{if eq .disk_minimum "101"}}N/A{{else}}{{.disk_minimum}}{{end}} | {{if eq .disk_average "101"}}N/A{{else}}{{.disk_average}}{{end}} | {{if eq .mem_minimum "101"}}N/A{{else}}{{.mem_minimum}}{{end}} | {{if eq .mem_maximum "101"}}N/A{{else}}{{.mem_maximum}}{{end}} | {{if eq .mem_average "101"}}N/A{{else}}{{.mem_average}}{{end}} |
 {{ end -}}
 ___
 ###### Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }}) within Org: {{ rs_org_name }} (Org ID: {{ rs_org_id }})
 EOS
-    check eq(0,1)
     escalate $email
     escalate $tag_resources
     check logic_or(eq($param_avg_used_memory, -1), gt(to_n(val(item,"mem_average")), $param_avg_used_memory))
@@ -455,13 +454,13 @@ end
 ###############################################################################
 
 define tag_resources($data, $param_take_action_tag) return $all_responses do
-  $$debug=false
+  $$debug=true
   $$log = []
   $all_responses = []
   $key = first(split($param_take_action_tag,':'))
   $value = last(split($param_take_action_tag,':'))
 
-  $syslog_subject = "Azure Instance Utilization with Log Analytics Policy: "
+  $syslog_subject = "AWS Instance Utilization with CloudWatch: "
   call sys_log(join([$syslog_subject, "Identified Instances"]),to_s($data))
   foreach $item in $data do
     $response = http_request(
@@ -470,12 +469,16 @@ define tag_resources($data, $param_take_action_tag) return $all_responses do
       host: "ec2."+$item["region"]+".amazonaws.com",
       signature: { "type": "aws" },
       query_strings: {
+        "Action": "CreateTags",
+        "Version": "2012-06-01",
         "ResourceId.1": $item["instanceId"],
         "Tag.1.Key": $key,
         "Tag.1.Value": $value
       }
     )
+    $all_responses << $response
   end
+  call sys_log(join([$syslog_subject, "Responses"]),to_s($all_responses))
 end
 
 define handle_error($response) do 
