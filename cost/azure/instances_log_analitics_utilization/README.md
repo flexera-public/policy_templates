@@ -23,7 +23,7 @@ This Policy Template uses performance metrics from Log Analytics from the last 3
 
 ### Functional Details
 
-- This policy identifies all servers reporting performance metrics to Log Analytics whose CPU or Memory utilization is below the thresholds set in the **Average used memory percentage** and **Average used CPU percentage** parameters.
+- This policy identifies all instances reporting performance metrics to Log Analytics whose CPU or Memory utilization is below the thresholds set in the **Average used memory percentage** and **Average used CPU percentage** parameters.
 - The **Exclusion Tag Key** parameter is a string value.  Supply the Tag Key only.  Tag Values are not analyzed and therefore are not need.  If the exclusion tag key is used on an Instance, that Instance is presumed to be exempt from this policy.
 - This policy sets the tag defined in the **Action Tag Key:Value** parameter on the underutilized instances that were identified.
 
