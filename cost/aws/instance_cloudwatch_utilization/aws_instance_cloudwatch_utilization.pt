@@ -2,7 +2,7 @@ name "AWS Instance CloudWatch Utilization"
 rs_pt_ver 20180301
 type "policy"
 short_description "Gathers AWS CloudWatch data for instances on 30 day intervals. See the [README](https://github.com/rightscale/policy_templates/tree/master/cost/native_utilization/) and [docs.rightscale.com/policies](http://docs.rightscale.com/policies/) to learn more."
-long_description "Version: 1.0"
+long_description "Version: 1.1"
 severity "low"
 category "Cost"
 
@@ -23,6 +23,40 @@ parameter "param_email" do
   type "list"
   label "Email addresses to notify"
   description "Email addresses of the recipients you wish to notify when new incidents are created"
+end
+
+parameter "param_avg_used_memory" do
+  type "number"
+  label "Average used memory percentage"
+  description "Set to -1 to ignore memory utilization"
+  default 60
+  min_value -1
+  max_value 100
+end
+
+parameter "param_avg_cpu" do
+  type "number"
+  label "Average used CPU percentage"
+  description "Set to -1 to ignore CPU utilization"
+  default 60
+  min_value -1
+  max_value 100
+end
+
+parameter "param_exclusion_tag_key" do
+  category "User Inputs"
+  label "Exclusion Tag Key"
+  description "Cloud native tag key to ignore instances. Format: Key:Value"
+  type "string"
+  allowed_pattern /([\w]?)+\:([\w]?)+/
+end
+
+parameter "param_take_action_tag" do
+  category "User Inputs"
+  label "Action Tag Key=Value"
+  description "Cloud native instance tag key and value that will be added to an instance identified for action. Example: downsize:true"
+  type "string"
+  allowed_pattern /([\w]?)+\:([\w]?)+/
 end
 
 ###############################################################################
@@ -58,7 +92,7 @@ datasource "ds_regions_list" do
 end
 
 datasource "ds_instances" do 
-  run_script $js_instances, $ds_instances_set
+  run_script $js_instances, $ds_instances_set, $param_exclusion_tag_key
 end
 
 datasource "ds_instances_set" do
@@ -156,19 +190,26 @@ end
 
 script "js_instances", type: "javascript" do
   result "results"
-  parameters "ds_instance_set"
+  parameters "ds_instance_set", "param_exclusion_tag_key"
   code <<-EOS
+  var tag_key = param_exclusion_tag_key.split(':')[0]
+  var tag_value = param_exclusion_tag_key.split(':')[1]
   var results = []
   for ( n=0; n < ds_instance_set.length; n++) {
     var instance_set = ds_instance_set[n].instances_set
     for ( i=0; i < instance_set.length; i++) {
       var instance = instance_set[i]
-      results.push({
-        "region": instance.region,
-        "instanceId": instance.instanceId,
-        "privateDnsName": instance.privateDnsName,
-        "tag_set": instance.tag_set
-      })
+      var tags = instance.tag_set
+      if (_.contains(_.pluck(tags,'key'), tag_key) && _.contains(_.pluck(tags,'value'), tag_value)){
+        continue
+      } else {
+        results.push({
+          "region": instance.region,
+          "instanceId": instance.instanceId,
+          "privateDnsName": instance.privateDnsName,
+          "tag_set": instance.tag_set
+        })
+      }
     }
   }
 EOS
@@ -390,6 +431,9 @@ ___
 EOS
     check eq(0,1)
     escalate $email
+    escalate $tag_resources
+    check logic_or(eq($param_avg_used_memory, -1), gt(to_n(val(item,"mem_average")), $param_avg_used_memory))
+    check logic_or(eq($param_avg_cpu, -1), gt(to_n(val(item,"cpu_average")),$param_avg_cpu))
   end
 end
 
@@ -400,4 +444,58 @@ end
 
 escalation "email" do
   email $param_email
+end
+
+escalation "tag_resources" do
+  run "tag_resources", data, $param_take_action_tag
+end
+
+###############################################################################
+# Cloud Workflow
+###############################################################################
+
+define tag_resources($data, $param_take_action_tag) return $all_responses do
+  $$debug=false
+  $$log = []
+  $all_responses = []
+  $key = first(split($param_take_action_tag,':'))
+  $value = last(split($param_take_action_tag,':'))
+
+  $syslog_subject = "Azure Instance Utilization with Log Analytics Policy: "
+  call sys_log(join([$syslog_subject, "Identified Instances"]),to_s($data))
+  foreach $item in $data do
+    $response = http_request(
+      https: true,
+      verb: "post",
+      host: "ec2."+$item["region"]+".amazonaws.com",
+      signature: { "type": "aws" },
+      query_strings: {
+        "ResourceId.1": $item["instanceId"],
+        "Tag.1.Key": $key,
+        "Tag.1.Value": $value
+      }
+    )
+  end
+end
+
+define handle_error($response) do 
+  $status_code = $response["code"]
+  if $status_code == 404
+    $_error_behavior = "skip"
+  else 
+    $_error_behavior = "raise"
+  end 
+end 
+
+define sys_log($subject, $detail) do
+  if $$debug
+    rs_cm.audit_entries.create(
+      notify: "None",
+      audit_entry: {
+        auditee_href: @@account,
+        summary: $subject,
+        detail: $detail
+      }
+    )
+  end
 end
