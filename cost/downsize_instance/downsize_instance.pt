@@ -349,7 +349,7 @@ define downsize_instances($data,$param_instance_tag_list,$param_cooldown_days) d
     if $item["next_instance_size"] != "N/A"
       sub on_error: rollback($item, @next_instance, @cloud) do
         call sys_log('Instance Resizing',$item['name'])
-        call stop_instance(@instance, @cloud, $item) return @next_instance
+        call stop_instance(@instance, @cloud, $item) retrieve @next_instance
 
         @next_instance = first(@cloud.instances(filter: ['resource_uid=='+$item['resource_uid']]))
         @new_instance_type = first(@cloud.instance_types(filter: ["name=="+$item["next_instance_size"]]))
@@ -378,7 +378,6 @@ define downsize_instances($data,$param_instance_tag_list,$param_cooldown_days) d
     end
 
     sub task_label:"Removing Downsize Tag" do
-      
       if empty?(@current_instance)
         @cloud = rs_cm.get(href: $item['cloud_href'])
         # find the resource by resource_uid because the href may have changed after resize.
@@ -408,10 +407,23 @@ end
 define rollback($item, @instance, @cloud) do
   sub task_label:"Rolling Back to Original Instance Type" do
     ## Logic to revert the instance back to its original instance type
+    call sys_log('Instance Rollingback', $item['name'])
     @instance = first(@cloud.instances(filter: ['resource_uid=='+$item['resource_uid'] ]))
+    
+    sub task_label:"Setting Error Tag" do
+      $msg = split($_error["message"], "\n")
+      foreach $i in $msg do
+        if $i =~ "CloudException"
+          $tag = "rs_policy_action:downsize_error_info=" + $i
+          rs_cm.tags.multi_add(tags: [$tag], resource_hrefs: [@instance.href])
+        end
+      end
+      call sys_log(join(["Resize Error: ",@instance.name]), to_s($msg))
+    end
+
     $state = @instance.state
     $current_instance_type = @instance.instance_type().name
-
+    $started_condition = "/^(stranded|stranded in booting|error|operational|running)$/"
     if $current_instance_type == $item["instance_type"]
       # Instance is still the original size, just make sure it's running
       if $state =~ $started_condition
@@ -433,6 +445,7 @@ define rollback($item, @instance, @cloud) do
       call start_instance(@instance, @cloud, $item) retrieve @instance
     end
   end
+  $_error_behavior = "skip"
 end 
 
 define stop_instance(@instance, @cloud, $item) return @instance do
