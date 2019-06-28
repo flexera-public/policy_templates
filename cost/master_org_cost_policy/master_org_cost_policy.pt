@@ -27,6 +27,12 @@ parameter "param_email" do
   description "Email addresses of the recipients you wish to notify"
 end
 
+parameter "param_exclude_organizations" do
+  type "list"
+  label "Excluded Organizations"
+  description "Names of organizations to exclude"
+end
+
 parameter "param_cost_metric" do
   type "string"
   label "Cost Metric"
@@ -85,6 +91,10 @@ datasource "ds_current_user_organizations" do
   end
 end
 
+datasource "ds_filtered_user_organizations" do
+  run_script $js_filter_organizations, $ds_current_user_organizations, $param_exclude_organizations
+end
+
 datasource "ds_currency_reference" do
   request do
     host "raw.githubusercontent.com"
@@ -94,7 +104,7 @@ datasource "ds_currency_reference" do
 end
 
 datasource "ds_currency_code" do
-  iterate $ds_current_user_organizations
+  iterate $ds_filtered_user_organizations
   request do
     auth $auth_rs
     host rs_optima_host
@@ -113,7 +123,7 @@ datasource "ds_currency_code" do
 end
 
 datasource "ds_billing_centers" do
-  iterate $ds_current_user_organizations
+  iterate $ds_filtered_user_organizations
   request do
     auth $auth_rs
     host rs_optima_host
@@ -139,28 +149,28 @@ datasource "ds_billing_centers" do
 end
 
 datasource "ds_current_week_costs" do
-  iterate $ds_current_user_organizations
+  iterate $ds_filtered_user_organizations
   request do
     run_script $js_current_week_cost_request, $param_cost_metric, val(iter_item,"org_id"), rs_optima_host, $ds_billing_centers
   end
 end
 
 datasource "ds_previous_week_costs" do
-  iterate $ds_current_user_organizations
+  iterate $ds_filtered_user_organizations
   request do
     run_script $js_previous_week_cost_request, $param_cost_metric, val(iter_item,"org_id"), rs_optima_host, $ds_billing_centers
   end
 end
 
 datasource "ds_current_month_costs" do
-  iterate $ds_current_user_organizations
+  iterate $ds_filtered_user_organizations
   request do
     run_script $js_current_month_cost_request, $param_cost_metric, val(iter_item,"org_id"), rs_optima_host, $ds_billing_centers
   end
 end
 
 datasource "ds_previous_month_costs" do
-  iterate $ds_current_user_organizations
+  iterate $ds_filtered_user_organizations
   request do
     run_script $js_previous_month_cost_request, $param_cost_metric, val(iter_item,"org_id"), rs_optima_host, $ds_billing_centers
   end
@@ -171,7 +181,7 @@ datasource "ds_report" do
 end
 
 datasource "ds_previous_six_month_costs" do
-  iterate $ds_current_user_organizations
+  iterate $ds_filtered_user_organizations
   request do
     run_script $js_six_month_cost_request, $param_cost_metric, val(iter_item,"org_id"), rs_optima_host, $ds_billing_centers, $param_graph_dimension
   end
@@ -197,6 +207,16 @@ script "js_current_user_organizations", type: "javascript" do
       "headers": {"X-Api-Version": "2.0" },
       "query_params":{"view":"extended"}
     }
+  EOF
+end
+
+script "js_filter_organizations", type: "javascript" do
+  parameters "ds_current_user_organizations", "param_exclude_organizations"
+  result "results"
+  code <<-EOF
+    var results = _.reject(ds_current_user_organizations, function(org){
+       return _.contains(param_exclude_organizations, org["name"])
+    })
   EOF
 end
 
