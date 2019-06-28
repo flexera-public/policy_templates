@@ -31,7 +31,7 @@ There are four cost metrics to choose from.
 This policy has the following input parameters required when launching the policy.
 
 - *Email list* - Email addresses of the recipients you wish to notify
-Leave the field blank to report on all top level Billing Centers.
+- *Excluded Organizations* - Names of organizations to exclude
 - *Cost Metric* -  See Cost Metrics above for details on selection.
 - *Graph Dimension* - The cost dimension to break out the cost data in the embedded bar chart image
 
