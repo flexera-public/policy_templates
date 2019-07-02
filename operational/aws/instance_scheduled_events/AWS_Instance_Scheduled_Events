@@ -1,0 +1,261 @@
+name "AWS Instance Scheduled Events"
+rs_pt_ver 20180301
+type "policy"
+short_description "Report on any AWS scheduled event that will impact instance availability. \n See the [README](https://github.com/rightscale/policy_templates/tree/master/operational/aws/instance_scheduled_events) and [docs.rightscale.com/policies](http://docs.rightscale.com/policies/) to learn more."
+long_description "Version: 1.0"
+category "Operational"
+severity "medium"
+
+###############################################################################
+# Permissions
+###############################################################################
+
+permission "perm_read_creds" do
+  actions   "rs_cm.show_sensitive","rs_cm.index_sensitive"
+  resources "rs_cm.credentials"
+end
+
+###############################################################################
+# User inputs
+###############################################################################
+
+parameter "param_email" do
+  type "list"
+  label "Email addresses to notify"
+  description "Email addresses of the recipients you wish to notify when new incidents are created"
+end
+
+parameter "param_exclude_tags" do
+  type "list"
+  label "Tags to ignore"
+  description "List of tags that will exclude resources from being evaluated by this policy. Multiple tags are evaluated as an 'OR' condition. Tag keys or key/value pairs can be listed. Example: 'test,env=dev'"
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+auth "auth_aws", type: "aws" do
+  version "4"
+  service "ec2"
+  access_key cred("AWS_ACCESS_KEY_ID")
+  secret_key cred("AWS_SECRET_ACCESS_KEY")
+end
+
+###############################################################################
+# Pagination
+###############################################################################
+
+pagination "ec2_pagination" do
+  get_page_marker do
+    body_path "//DescribeInstanceStatusResponse/nextToken"
+  end
+  set_page_marker do
+    query "NextToken"
+  end
+end
+
+###############################################################################
+# Datasources
+###############################################################################
+
+#Generates list of Regions.
+datasource "ec2_regions_list" do
+  run_script $js_regions_map
+end
+
+#To get list of All Scheduled EC2 Instances.
+datasource "ds_ec2_scheduled_instances_list" do
+  iterate $ec2_regions_list
+  request do
+    run_script $js_ec2_status_list, val(iter_item,"region")
+  end
+  result do
+   encoding "xml"
+    collect xpath(response, "//DescribeInstanceStatusResponse/instanceStatusSet/item", "array") do		  
+      field "instance_id", xpath(col_item, "instanceId")
+      field "availability_zone", xpath(col_item, "availabilityZone")
+      field "instance_state", xpath(col_item, "instanceState/name")
+      field "scheduled_event_type", xpath(col_item, "eventsSet/item/code")
+      field "scheduledevent_start_time", xpath(col_item, "eventsSet/item/notBefore")
+      field "scheduledevent_end_time", xpath(col_item, "eventsSet/item/notAfter")
+      field "region", val(iter_item,"region")
+    end
+  end
+end
+
+#Get respective tags for all EC2 instances
+datasource "ds_ec2_list_with_tags" do
+  iterate $ds_ec2_scheduled_instances_list
+  request do
+    run_script $js_ec2_list_with_tags, val(iter_item,"region"), val(iter_item, "instance_id")
+  end
+  result do
+    encoding "xml"
+    collect xpath(response, "//DescribeTagsResponse/tagSet",  "array") do
+      field "tags" do
+        collect xpath(col_item, "item") do
+          field "tagKey", xpath(col_item, "key")
+          field "tagValue", xpath(col_item, "value")
+        end
+      end
+      field "instance_id", val(iter_item, "instance_id")
+      field "instance_state", val(iter_item, "instance_state")
+      field "scheduled_event_type", val(iter_item, "scheduled_event_type")
+      field "scheduledevent_start_time", val(iter_item, "scheduledevent_start_time")
+      field "region", val(iter_item,"region")
+      field "scheduledevent_end_time", val(iter_item,"scheduledevent_end_time")
+      field "availability_zone", val(iter_item, "availability_zone")
+    end
+  end
+end
+
+datasource "ds_ec2_scheduled_instance_map" do
+  run_script $js_ec2_filter_map, $ds_ec2_list_with_tags, $param_exclude_tags
+end
+
+###############################################################################
+# Scripts
+###############################################################################
+
+script "js_regions_map", type: "javascript" do
+  result "regions_map"
+  code <<-EOS
+    var regions_map=[]
+    regions_map.push(
+      {"region": "us-east-1"},
+      {"region": "us-east-2"},
+      {"region": "us-west-1"},
+      {"region": "us-west-2"},
+      {"region": "ap-south-1"},
+      {"region": "ap-northeast-2"},
+      {"region": "ap-southeast-1"},
+      {"region": "ap-southeast-2"},
+      {"region": "ap-northeast-1"},
+      {"region": "ca-central-1"},
+      {"region": "eu-central-1"},
+      {"region": "eu-west-1"},
+      {"region": "eu-west-2"},
+      {"region": "eu-west-3"},
+      {"region": "sa-east-1"},
+      {"region": "eu-north-1"}
+    )
+  EOS
+end
+
+#https://docs.aws.amazon.com/AWSEC2/latest/APIReference/API_DescribeInstanceStatus.html
+script "js_ec2_status_list", type: "javascript" do
+  parameters "region"
+  result "results"
+  code <<-EOS
+    results = {
+      auth: 'auth_aws',
+      host: 'ec2.'+region+'.amazonaws.com',
+      path: '/',
+      pagination: "ec2_pagination",
+      query_params: {
+        "Action": "DescribeInstanceStatus",
+        "Version": "2016-11-15",
+        "IncludeAllInstances": "true",
+      },     
+    }
+  EOS
+end
+
+#https://docs.aws.amazon.com/AWSEC2/latest/APIReference/API_DescribeTags.html
+script "js_ec2_list_with_tags", type: "javascript" do
+  parameters "region", "instance_id"
+  result "request"
+  code <<-EOS
+    request = {
+      auth: 'auth_aws',
+      host: 'ec2.'+region+'.amazonaws.com',
+      path: '/',
+      verb: 'GET',
+      query_params: {
+        "Action": "DescribeTags",
+        "Version": "2016-11-15",
+        "Filter.1.Name": "resource-id",
+        "Filter.1.Value.1": instance_id
+      },    
+    }
+  EOS
+end
+
+#Process the response data, check for the tags and generate a list of scheduled EC2 instances
+script "js_ec2_filter_map", type: "javascript" do
+  parameters "ds_ec2_list_with_tags", "param_exclude_tags"
+  result "content"
+  code <<-EOS
+    var param_exclude_tags_lower=[];
+    for(var j=0; j < param_exclude_tags.length; j++){
+      param_exclude_tags_lower[j]=param_exclude_tags[j].toString().toLowerCase();
+    }
+
+    var content=[]
+    for(var i=0; i<ds_ec2_list_with_tags.length; i++){
+      ec2=ds_ec2_list_with_tags[i]
+
+      //Check, if the tag present in entered param_exclude_tags, ignore the EC2 instance if the tag matches/present.
+      var tags = ec2['tags']
+      var isTagMatched=false
+      var tagKeyValue=""
+      for(var j=0; j < tags.length; j++){
+        tag = tags[j]
+        if((param_exclude_tags_lower.indexOf((tag['tagKey']).toLowerCase()) !== -1) || (param_exclude_tags_lower.indexOf((tag['tagKey']+'='+tag['tagValue']).toLowerCase()) !== -1)){
+          isTagMatched = true;
+        }
+        // Constructing tags with comma separated to display in detail_template
+        if((tag['tagValue']).length > 0){
+          tagKeyValue = tagKeyValue + ', '+ tag['tagKey']+'='+tag['tagValue']
+        }else{
+          tagKeyValue = tagKeyValue + ', '+ tag['tagKey']
+        }
+      }
+
+      //If EC2 instance tag does not match with entered param_exclude_tags and then check if any of the scheduled event type exists  
+      var scheduled_event_type_array = ["instance-retirement","instance-reboot","instance-stop","system-reboot","system-maintenance"]
+      var event_set_type = ec2['scheduled_event_type']	  
+      if(!(isTagMatched)  && scheduled_event_type_array.indexOf(event_set_type) !== -1){
+        content.push({
+          instance_id: ec2['instance_id'],
+          region: ec2['region'],
+          availability_zone: ec2['availability_zone'],
+          instance_state: ec2['instance_state'],
+          tagKeyValue:(tagKeyValue.slice(2)),
+          scheduled_event_type: ec2['scheduled_event_type'],
+          scheduledevent_start_time: ec2['scheduledevent_start_time'],
+          scheduledevent_end_time: ec2['scheduledevent_end_time'],          
+        })
+      }
+    }
+  EOS
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "policy_ec2_scheduled_instance_list" do
+  validate $ds_ec2_scheduled_instance_map do
+    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} Scheduled Events on EC2 Instances Found in AWS"
+    detail_template <<-EOS
+# List of Scheduled Events on EC2 Instances
+| Instance_Id| Region | Availability_Zone | Instance_State | Scheduled_Event_Type  | Scheduled_Event_StartTime | Scheduled_Event_EndTime |  TAG_Value |
+| ---------- | ------ | ----------------- | ---------------| --------------------- | --------------------------| ------------------------| -----------|
+{{ range data -}}
+| {{.instance_id}} | {{ .region }} | {{ .availability_zone }} |  {{ .instance_state }} |{{ .scheduled_event_type }} | {{ .scheduledevent_start_time }} | {{ .scheduledevent_end_time }} | {{.tagKeyValue}} |
+{{ end -}}
+    EOS
+    escalate $report_ec2_scheduled_instances
+    check eq(size(data),0)    
+  end
+end
+
+###############################################################################
+# Escalation
+###############################################################################
+
+escalation "report_ec2_scheduled_instances" do
+  email $param_email
+end
