@@ -166,7 +166,7 @@ policy "policy_superseded_instance" do
     summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} Instances will be resized from {{ parameters.param_old_instance_type }} to {{ parameters.param_new_instance_type }}"
     detail_template <<-EOS
 # Superseded Instances
-| Resource_uid | Name | Cloud |
+| Resource UID | Name | Cloud |
 | ------------ | ---- | ----- |
 {{ range data -}}
 | {{ .resource_uid }} | {{ .name }} | {{ .cloud_name}} |
@@ -187,33 +187,117 @@ define resize_instances($data,$param_new_instance_type) do
   foreach $item in $data do
     if !$item["locked"]
       call sys_log("resizing instance", $item)
+      @current_instance = rs_cm.instances.empty()
       @instance = rs_cm.get(href: $item["href"])
-      @current_server = @instance.parent()
-      task_label("stopping instance")
-      @instance.stop()
-      task_label("sleeping until instance stopped")
-      sleep_until(@current_server.state == 'provisioned')
-      @current_instance = @current_server.current_instance()
-      @cloud = @current_instance.cloud()
-      @new_instance_type = first(@cloud.instance_types(filter: ["name=="+$param_new_instance_type]))
-      @current_instance.update(instance: { instance_type_href: @new_instance_type.href })
-      task_label("sleeping until instance started")
-      @current_instance.start()
-      sleep_until(@current_instance.state == 'operational')
-      task_label("Instance Started")
+      @cloud = @instance.cloud()
+      @next_instance = @instance
+
+      sub on_error: rollback($item, @next_instance, @cloud) do
+        call sys_log('Instance Resizing',$item['name'])
+        call stop_instance(@instance, @cloud, $item) retrieve @next_instance
+
+        @next_instance = first(@cloud.instances(filter: ['resource_uid=='+$item['resource_uid']]))
+        @new_instance_type = first(@cloud.instance_types(filter: ["name=="+$param_new_instance_type]))
+        @next_instance.update(instance: { instance_type_href: @new_instance_type.href })
+
+        call sys_log('Instance Resized', @new_instance_type.name)
+        call start_instance(@next_instance, @cloud, $item) retrieve @next_instance
+      end
+      @current_instance = @next_instance
     end
   end
 end
 
-define sys_log($subject, $detail) do
-  if $$debug
-    rs_cm.audit_entries.create(
-      notify: "None",
-      audit_entry: {
-        auditee_href: @@account,
-        summary: join(["Superseded Instance Remediation - ",$subject]),
-        detail: $detail
-      }
-    )
+define rollback($item, @instance, @cloud) do
+  sub task_label:"Rolling Back to Original Instance Type" do
+    ## Logic to revert the instance back to its original instance type
+    call sys_log('Instance Rollingback', $item['name'])
+    @instance = first(@cloud.instances(filter: ['resource_uid=='+$item['resource_uid'] ]))
+
+    sub task_label:"Setting Error Tag" do
+      $msg = split($_error["message"], "\n")
+      foreach $i in $msg do
+        if $i =~ "CloudException"
+          $tag = "rs_policy_action:downsize_error_info=" + $i
+          rs_cm.tags.multi_add(tags: [$tag], resource_hrefs: [@instance.href])
+        end
+      end
+      call sys_log(join(["Resize Error: ",@instance.name]), to_s($msg))
+    end
+
+    $state = @instance.state
+    $current_instance_type = @instance.instance_type().name
+    $started_condition = "/^(stranded|stranded in booting|error|operational|running)$/"
+    if $current_instance_type == $item["instance_type"]
+      # Instance is still the original size, just make sure it's running
+      if $state =~ $started_condition
+        # instance is running nothing to do
+      else
+        # instance is not running, start it
+        call start_instance(@instance, @cloud, $item) retrieve @instance
+      end
+    else
+      # Instance is the new size, roll back
+      call sys_log('Instance Resizing', $item['name'])
+      call stop_instance(@instance, @cloud, $item) retrieve @instance
+
+      @instance = first(@cloud.instances(filter: ['resource_uid=='+$item['resource_uid']]))
+      @new_instance_type = first(@cloud.instance_types(filter: ["name=="+$item["instance_type"]]))
+      @instance.update(instance: { instance_type_href: @new_instance_type.href })
+
+      call sys_log('Instance Resized', @new_instance_type.name)
+      call start_instance(@instance, @cloud, $item) retrieve @instance
+    end
   end
+  $_error_behavior = "skip"
+end
+
+define stop_instance(@instance, @cloud, $item) return @instance do
+  task_label("Stopping instance " + $item['name'])
+  @instance.stop()
+  task_label("Sleeping until instance stopped " + $item['name'])
+  $wake_condition = "/^(stopped|terminated|inactive|error|provisioned)$/"
+  $state = ''
+  while $state !~ $wake_condition do
+    sub on_error: retry, timeout: 20m, on_timeout: skip do
+      # find the resource by resource_uid because the href may have changed after resize.
+      @instance = first(@cloud.instances(filter: ['resource_uid=='+$item['resource_uid']]))
+      call sys_log('Waiting for instance stop state: ' + @instance.name,to_s(to_object(@instance)))
+      $state = @instance.state
+      call sys_log('Instance stop state',$state)
+    end
+  end
+  task_label("Instance Stopped " + $item['name'])
+  call sys_log('Instance Stopped', $item['name'])
+end
+
+define start_instance(@instance, @cloud, $item) return @instance do
+  task_label("Starting instance " + $item['name'])
+  @instance.start()
+  $wake_condition = "/^(stranded|stranded in booting|error|operational|running)$/"
+  $state = ''
+  task_label("Sleeping until instance started " + @next_instance.name)
+  while $state !~ $wake_condition do
+    sub on_error: retry, timeout: 20m, on_timeout: skip do
+      # find the resource by resource_uid because the href may have changed after resize.
+      @instance = first(@cloud.instances(filter: ['resource_uid=='+$item['resource_uid']]))
+      call sys_log('waiting for instance start state', to_s(to_object(@instance)))
+      $state = @instance.state
+      call sys_log('Instance start state', $state)
+    end
+  end
+  task_label("Instance Started " + $item['name'])
+  call sys_log('Instance Started', $item['name'])
+end
+
+# logging to the Accounts Audit Entries
+define sys_log($subject, $detail) do
+  rs_cm.audit_entries.create(
+    notify: "None",
+    audit_entry: {
+      auditee_href: @@account,
+      summary: "Downsize Instance: "+ $subject,
+      detail: $detail
+    }
+  )
 end
