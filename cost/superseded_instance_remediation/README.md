@@ -22,7 +22,7 @@ This Policy Template is used to automatically resize instances based on user-def
 
 This policy has the following input parameters required when launching the policy.
 
-- *Disallowed Instance Type* - a single instance type that should be resized
+- *Old Instance Type* - a single instance type that should be resized
 - *Superseded Instance Type* - the new instance type that instances should be resized to
 - *Exclude Tags* - A list of tags to filter out instances from being checked 
 - *Email addresses* - A list of email addresses to notify
