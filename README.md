@@ -34,6 +34,8 @@ Please contact sales@rightscale.com to learn more.
 - [Google StackDriver Utilization](./cost/google/instances_stackdriver_utilization/)
 - [Terminate Instances with End Date](./cost/terminate_policy/)
 - [Azure Instances Utilization from Log Analytics](./cost/azure/instances_log_analitics_utilization/)
+- [Superseded Instances](./cost/superseded_instance/)
+- [Superseded Instance Remediation](./cost/superseded_instance_remediation/)
 
 ### Security
 - [Security Group: ICMP Enabled](./security/security_groups/icmp_enabled/)

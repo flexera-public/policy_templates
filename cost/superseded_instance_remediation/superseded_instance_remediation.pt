@@ -1,0 +1,309 @@
+name "Superseded Instance Remediation"
+rs_pt_ver 20180301
+type "policy"
+short_description "This Policy Template is used to automatically supersede instances based on user-defined standards. \n See the [README](https://github.com/rightscale/policy_templates/tree/master/cost/superseded_instance_remediation/) and [docs.rightscale.com/policies](http://docs.rightscale.com/policies/) to learn more."
+long_description "Version: 1.0"
+category "Cost"
+severity "low"
+
+###############################################################################
+# Permissions
+###############################################################################
+
+permission "perm_instances" do
+  label "Permissions for instances"
+  actions "rs_cm.index", "rs_cm.show", "rs_cm.stop", "rs_cm.start", "rs_cm.update"
+  resources "rs_cm.instances"
+end
+
+permission "perm_clouds" do
+  label "Permissions for instances"
+  actions "rs_cm.index", "rs_cm.show"
+  resources "rs_cm.clouds"
+end
+
+###############################################################################
+# Parameters
+###############################################################################
+
+parameter "param_email" do
+  type "list"
+  label "Email addresses"
+  description "Email addresses of the recipients you wish to notify"
+end
+
+parameter "param_old_instance_type" do
+  label "Old Instance Type"
+  type "string"
+  description "a single instance type that should be resized"
+end
+
+parameter "param_new_instance_type" do
+  label "Superseded Instance Type"
+  type "string"
+  description "the new instance type that instances should be resized to"
+end
+
+parameter "param_exclude_tags" do
+  label "Exclude Tags"
+  description "list of tags to filter out instances from being checked"
+  type "list"
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+auth "auth_rs", type: "rightscale"
+
+###############################################################################
+# Resources
+###############################################################################
+
+resources "clouds", type: "rs_cm.clouds" do
+  filter do
+    cloud_type ne: ["soft_layer", "cloud_stack","azure","rackspace_next_gen","vscale","blue_skies","open_stack_v2","uca","open_stack_v3"]
+  end
+end
+
+###############################################################################
+# Datasources
+###############################################################################
+
+datasource "ds_instances_16" do
+  iterate(@clouds)
+  request do
+    run_script $js_instances_16, rs_cm_host, href(iter_item), rs_project_id, $param_exclude_tags
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "[*]") do
+      field "href", jmes_path(col_item, "href")
+      field "name", jmes_path(col_item, "name")
+      field "description", jmes_path(col_item, "description")
+      field "legacy_id", to_n(jmes_path(col_item, "legacy_id"))
+      field "resource_uid", jmes_path(col_item, "resource_uid")
+      field "instance_type", jmes_path(col_item, "links.instance_type.name")
+      field "region", jmes_path(col_item, "links.cloud.region")
+      field "cloud_name", val(iter_item, "display_name")
+      field "locked", jmes_path(col_item, "locked")
+      field "state", jmes_path(col_item, "state")
+    end
+  end
+end
+
+datasource "ds_combined_instance_data" do
+  run_script $js_merge_instance_data, $ds_instances_16, $param_old_instance_type
+end
+
+###############################################################################
+# Scripts
+###############################################################################
+
+script "js_instances_16", type: "javascript" do
+  result "request"
+  parameters "rs_cm_host","cloud_href","rs_project_id","param_exclude_tags"
+  code <<-EOS
+    var filtered_tags = ""
+    if ( param_exclude_tags.length > 0 && param_exclude_tags[0] != "" ) {
+      var filtered_tags = '&tag!=' + param_exclude_tags.join(",");
+    }
+
+    request = {
+      "auth": "auth_rs",
+      "verb": "GET",
+      "host": rs_cm_host,
+      "path": cloud_href + "/instances",
+      "headers": {
+        "X-Api-Version": "1.6",
+        "X-Account": \""+rs_project_id+\""
+      },
+      "query_params": {
+        "view": "full",
+        "filter": 'state=provisioned,operational,running' + filtered_tags
+      }
+    }
+
+  EOS
+end
+
+script "js_merge_instance_data", type: "javascript" do
+  parameters "ds_instances", "param_old_instance_type"
+  result "results"
+  code <<-EOS
+    var results = []
+    for ( i=0; i < ds_instances.length; i++) {
+      var instance = ds_instances[i]
+      if ( instance.instance_type == param_old_instance_type ){
+        results.push(instance)
+      }
+    }
+  EOS
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+escalation "esc_resize_instances" do
+  request_approval  do
+    label "Escalation approval"
+    description "Approve resize action"
+    parameter "approval_reason" do
+      type "string"
+      label "Reason for approval"
+      description "Explain why you are approving the action"
+    end
+  end
+
+  run "resize_instances", data, $param_new_instance_type
+  email $param_email
+end
+
+resolution "res_resize_instances" do
+  email $param_email
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "policy_superseded_instance" do
+  validate $ds_combined_instance_data do
+    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} Instances will be resized from {{ parameters.param_old_instance_type }} to {{ parameters.param_new_instance_type }}"
+    detail_template <<-EOS
+# Superseded Instances
+| Resource UID | Name | Cloud | Old Instance Type | New Instance Type |
+| ------------ | ---- | ----- | ----------------- | ----------------- |
+{{ range data -}}
+| {{ .resource_uid }} | {{ .name }} | {{ .cloud_name }} | {{ parameters.param_old_instance_type }} | {{ parameters.param_new_instance_type }} |
+{{ end -}}
+___
+###### Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }}) within Org: {{ rs_org_name }} (Org ID: {{ rs_org_id }})
+EOS
+    check eq(size(data), 0)
+    escalate $esc_resize_instances
+  end
+end
+
+###############################################################################
+# Cloud Workflow
+###############################################################################
+
+define resize_instances($data,$param_new_instance_type) do
+  foreach $item in $data do
+    if !$item["locked"]
+      call sys_log("resizing instance", to_s($item))
+      @current_instance = rs_cm.instances.empty()
+      @instance = rs_cm.get(href: $item["href"])
+      @cloud = @instance.cloud()
+      @next_instance = @instance
+
+      sub on_error: rollback($item, @next_instance, @cloud) do
+        call sys_log('Instance Resizing',$item['name'])
+        call stop_instance(@instance, @cloud, $item) retrieve @next_instance
+
+        @next_instance = first(@cloud.instances(filter: ['resource_uid=='+$item['resource_uid']]))
+        @new_instance_type = first(@cloud.instance_types(filter: ["name=="+$param_new_instance_type]))
+        @next_instance.update(instance: { instance_type_href: @new_instance_type.href })
+
+        call sys_log('Instance Resized', @new_instance_type.name)
+        call start_instance(@next_instance, @cloud, $item) retrieve @next_instance
+      end
+      @current_instance = @next_instance
+    end
+  end
+end
+
+define rollback($item, @instance, @cloud) do
+  sub task_label:"Rolling Back to Original Instance Type" do
+    ## Logic to revert the instance back to its original instance type
+    call sys_log('Instance Rollingback', $item['name'])
+    @instance = first(@cloud.instances(filter: ['resource_uid=='+$item['resource_uid'] ]))
+
+    sub task_label:"Setting Error Tag" do
+      $msg = split($_error["message"], "\n")
+      foreach $i in $msg do
+        if $i =~ "CloudException"
+          $tag = "rs_policy_action:downsize_error_info=" + $i
+          rs_cm.tags.multi_add(tags: [$tag], resource_hrefs: [@instance.href])
+        end
+      end
+      call sys_log(join(["Resize Error: ",@instance.name]), to_s($msg))
+    end
+
+    $state = @instance.state
+    $current_instance_type = @instance.instance_type().name
+    $started_condition = "/^(stranded|stranded in booting|error|operational|running)$/"
+    if $current_instance_type == $item["instance_type"]
+      # Instance is still the original size, just make sure it's running
+      if $state =~ $started_condition
+        # instance is running nothing to do
+      else
+        # instance is not running, start it
+        call start_instance(@instance, @cloud, $item) retrieve @instance
+      end
+    else
+      # Instance is the new size, roll back
+      call sys_log('Instance Resizing', $item['name'])
+      call stop_instance(@instance, @cloud, $item) retrieve @instance
+
+      @instance = first(@cloud.instances(filter: ['resource_uid=='+$item['resource_uid']]))
+      @new_instance_type = first(@cloud.instance_types(filter: ["name=="+$item["instance_type"]]))
+      @instance.update(instance: { instance_type_href: @new_instance_type.href })
+
+      call sys_log('Instance Resized', @new_instance_type.name)
+      call start_instance(@instance, @cloud, $item) retrieve @instance
+    end
+  end
+  $_error_behavior = "skip"
+end
+
+define stop_instance(@instance, @cloud, $item) return @instance do
+  task_label("Stopping instance " + $item['name'])
+  @instance.stop()
+  task_label("Sleeping until instance stopped " + $item['name'])
+  $wake_condition = "/^(stopped|terminated|inactive|error|provisioned)$/"
+  $state = ''
+  while $state !~ $wake_condition do
+    sub on_error: retry, timeout: 20m, on_timeout: skip do
+      # find the resource by resource_uid because the href may have changed after resize.
+      @instance = first(@cloud.instances(filter: ['resource_uid=='+$item['resource_uid']]))
+      call sys_log('Waiting for instance stop state: ' + @instance.name,to_s(to_object(@instance)))
+      $state = @instance.state
+      call sys_log('Instance stop state',$state)
+    end
+  end
+  task_label("Instance Stopped " + $item['name'])
+  call sys_log('Instance Stopped', $item['name'])
+end
+
+define start_instance(@instance, @cloud, $item) return @instance do
+  task_label("Starting instance " + $item['name'])
+  @instance.start()
+  $wake_condition = "/^(stranded|stranded in booting|error|operational|running)$/"
+  $state = ''
+  task_label("Sleeping until instance started " + @next_instance.name)
+  while $state !~ $wake_condition do
+    sub on_error: retry, timeout: 20m, on_timeout: skip do
+      # find the resource by resource_uid because the href may have changed after resize.
+      @instance = first(@cloud.instances(filter: ['resource_uid=='+$item['resource_uid']]))
+      call sys_log('waiting for instance start state', to_s(to_object(@instance)))
+      $state = @instance.state
+      call sys_log('Instance start state', $state)
+    end
+  end
+  task_label("Instance Started " + $item['name'])
+  call sys_log('Instance Started', $item['name'])
+end
+
+# logging to the Accounts Audit Entries
+define sys_log($subject, $detail) do
+  rs_cm.audit_entries.create(
+    notify: "None",
+    audit_entry: {
+      auditee_href: @@account,
+      summary: "Superseded Instance: "+ $subject,
+      detail: $detail
+    }
+  )
+end
