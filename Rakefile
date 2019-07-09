@@ -7,7 +7,7 @@ desc "One line task description"
 task :generate_policy_list do
   FileUtils.mkdir_p 'dist'
   file_list = []
-  Dir['**/*.pt'].each do |file|
+  Dir['**/*.pt'].reject{ |f| f['/msp'] }.each do |file|
     change_log = ::File.join(file.split('/')[0...-1].join('/'),'CHANGELOG.md')
     readme = ::File.join(file.split('/')[0...-1].join('/'),'README.md')
     if !file.match(/test_code/)
