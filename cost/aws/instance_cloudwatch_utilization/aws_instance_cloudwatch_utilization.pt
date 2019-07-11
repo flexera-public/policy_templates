@@ -107,6 +107,7 @@ datasource "ds_instances_set" do
         collect xpath(col_item,"instancesSet/item","array") do
           field "region",val(iter_item, "region")
           field "instanceId", xpath(col_item,"instanceId")
+          field "instanceType", xpath(col_item,"instanceType")
           field "privateDnsName", xpath(col_item, "privateDnsName")
           field "tag_set" do
             collect xpath(col_item,"tagSet/item","array") do
@@ -130,6 +131,7 @@ datasource "ds_cloudwatch_cpu_usage" do
     collect jmes_path(response, "GetMetricStatisticsResponse.GetMetricStatisticsResult.Datapoints[*]") do
       field "region", val(iter_item, "region")
       field "instanceId", val(iter_item, "instanceId")
+      field "instanceType", val(iter_item, "instanceType")
       field "privateDnsName", val(iter_item, "privateDnsName")
       field "tag_set", val(iter_item, "tag_set")
       field "cpu_unit", jmes_path(col_item,"Unit")
@@ -246,6 +248,7 @@ script "js_instances", type: "javascript" do
         results.push({
           "region": instance.region,
           "instanceId": instance.instanceId,
+          "instanceType": instance.instanceType,
           "privateDnsName": instance.privateDnsName,
           "tag_set": instance.tag_set
         })
@@ -519,6 +522,7 @@ code <<-EOS
       {
         "region": ds_cloudwatch_cpu_usage[i].region,
         "instanceId": ds_cloudwatch_cpu_usage[i].instanceId,
+        "instanceType": ds_cloudwatch_cpu_usage[i].instanceType,
         "privateDnsName": ds_cloudwatch_cpu_usage[i].privateDnsName,
         "hostname": ds_cloudwatch_cpu_usage[i].privateDnsName.split('.')[0],
         "tag_set": ds_cloudwatch_cpu_usage[i].tag_set,
@@ -553,10 +557,10 @@ policy "pol_utilization" do
     summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} rows containing AWS instance CloudWatch utilization data"
     detail_template <<-EOS
 # AWS Instance Utilization
-| Region | instanceID | Hostname | Private DNS Name | CPU Maximum % | CPU Average % | Memory Maximum % | Memory Average % |
-| ------ | ---------- | -------- | ---------------- | ------------- | ------------- | ---------------- | ---------------- |
+| Region | instanceID | Instance Type | Hostname | Private DNS Name | CPU Maximum % | CPU Average % | Memory Maximum % | Memory Average % | CPU Credit Balance Average | CPU Credit Balance Maximum | CPU Credit Balance Minimum | CPU Surplus Credit Balance Average | CPU Surplus Credit Balance Maximum | CPU Surplus Credit Balance Minimum | CPU Surplus Credits Charged Average | CPU Surplus Credits Charged Maximum | CPU Surplus Credits Charged Minimum |
+| ------ | ---------- | ------------- | -------- | ---------------- | ------------- | ------------- | ---------------- | ---------------- | -------------------------- | -------------------------- | -------------------------- | ---------------------------------- | ---------------------------------- | ---------------------------------- | ----------------------------------- | ----------------------------------- | ----------------------------------- |
 {{ range data -}}
-| {{.region}} | {{.instanceId}} | {{.hostname}} |  {{.privateDnsName }} | {{ .cpu_maximum }} | {{ .cpu_average }} | {{if eq .mem_maximum "101"}}N/A{{else}}{{.mem_maximum}}{{end}} | {{if eq .mem_average "101"}}N/A{{else}}{{.mem_average}}{{end}} |
+| {{.region}} | {{.instanceId}} | {{.instanceType}} | {{.hostname}} |  {{.privateDnsName }} | {{ .cpu_maximum }} | {{ .cpu_average }} | {{if eq .mem_maximum "101"}}N/A{{else}}{{.mem_maximum}}{{end}} | {{if eq .mem_average "101"}}N/A{{else}}{{.mem_average}}{{end}} | {{.cloudwatch_cpu_credit_balance_avg}} | {{.cloudwatch_cpu_credit_balance_max}} | {{.cloudwatch_cpu_credit_balance_min}} | {{.cloudwatch_cpu_surplus_credit_balance_avg}} | {{.cloudwatch_cpu_surplus_credit_balance_max}} | {{.cloudwatch_cpu_surplus_credit_balance_min}} | {{.cloudwatch_cpu_surplus_credits_charged_avg}} | {{.cloudwatch_cpu_surplus_credits_charged_max}} | {{.cloudwatch_cpu_surplus_credits_charged_min}} |
 {{ end -}}
 ___
 ###### Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }}) within Org: {{ rs_org_name }} (Org ID: {{ rs_org_id }})
