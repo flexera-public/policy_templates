@@ -153,9 +153,49 @@ datasource "ds_cloudwatch_cpu_credit_balance" do
       field "privateDnsName", val(iter_item, "privateDnsName")
       field "tag_set", val(iter_item, "tag_set")
       field "cpu_credit_balance_unit", jmes_path(col_item,"Unit")
-      field "cpu_credit_balance_maximum", jmes_path(col_item, "Maximum")
-      field "cpu_credit_balance_minimum", jmes_path(col_item, "Minimum")
-      field "cpu_credit_balance_average", jmes_path(col_item, "Average")
+      field "max", jmes_path(col_item, "Maximum")
+      field "min", jmes_path(col_item, "Minimum")
+      field "avg", jmes_path(col_item, "Average")
+    end
+  end
+end
+
+datasource "ds_cloudwatch_cpu_surplus_credit_balance" do
+  iterate $ds_instances
+  request do
+    run_script $js_cloudwatch_cpu_surplus_credit_balance, val(iter_item, "region"), val(iter_item, "instanceId")
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "GetMetricStatisticsResponse.GetMetricStatisticsResult.Datapoints[*]") do
+      field "region", val(iter_item, "region")
+      field "instanceId", val(iter_item, "instanceId")
+      field "privateDnsName", val(iter_item, "privateDnsName")
+      field "tag_set", val(iter_item, "tag_set")
+      field "cpu_credit_balance_unit", jmes_path(col_item,"Unit")
+      field "max", jmes_path(col_item, "Maximum")
+      field "min", jmes_path(col_item, "Minimum")
+      field "avg", jmes_path(col_item, "Average")
+    end
+  end
+end
+
+datasource "ds_cloudwatch_cpu_surplus_credits_charged" do
+  iterate $ds_instances
+  request do
+    run_script $js_cloudwatch_cpu_surplus_credits_charged, val(iter_item, "region"), val(iter_item, "instanceId")
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "GetMetricStatisticsResponse.GetMetricStatisticsResult.Datapoints[*]") do
+      field "region", val(iter_item, "region")
+      field "instanceId", val(iter_item, "instanceId")
+      field "privateDnsName", val(iter_item, "privateDnsName")
+      field "tag_set", val(iter_item, "tag_set")
+      field "cpu_credit_balance_unit", jmes_path(col_item,"Unit")
+      field "max", jmes_path(col_item, "Maximum")
+      field "min", jmes_path(col_item, "Minimum")
+      field "avg", jmes_path(col_item, "Average")
     end
   end
 end
@@ -181,7 +221,7 @@ datasource "ds_cloudwatch_mem_usage" do
 end
 
 datasource "ds_merged_metrics" do
-  run_script $js_merged_metrics, $ds_cloudwatch_cpu_usage, $ds_cloudwatch_mem_usage
+  run_script $js_merged_metrics, $ds_cloudwatch_cpu_usage, $ds_cloudwatch_mem_usage, $ds_cloudwatch_cpu_credit_balance, $ds_cloudwatch_cpu_surplus_credit_balance, $ds_cloudwatch_cpu_surplus_credits_charged
 end
 
 ###############################################################################
@@ -310,6 +350,78 @@ script "js_cloudwatch_cpu_credit_balance", type: "javascript" do
 EOS
 end
 
+script "js_cloudwatch_cpu_surplus_credit_balance", type: "javascript" do
+  result "results"
+  parameters "region","instance_id"
+  code <<-EOS
+  var end_date = new Date().toISOString()
+  var start_date = new Date(new Date().setDate(new Date().getDate() - 30)).toISOString();
+  results = {
+    "auth": "monitoring_auth_aws",
+    "host": 'monitoring.'+region+'.amazonaws.com',
+    "verb": "GET",
+    "path": "/",
+    "headers": {
+      "User-Agent": "RS Policies",
+      "Content-Type": "application/json",
+      "x-amz-target": "GraniteServiceVersion20100801.GetMetricStatistics",
+      "Accept": "application/json",
+      "Content-Encoding": "amz-1.0"
+    }
+    "query_params": {
+      'Action': 'GetMetricStatistics',
+      'Version': '2010-08-01',
+      'Namespace': 'AWS/EC2',
+      'MetricName': 'CPUSurplusCreditBalance',
+      'Dimensions.member.1.Name': 'InstanceId',
+      'Dimensions.member.1.Value': instance_id,
+      'StartTime': start_date,
+      'EndTime': end_date,
+      'Period': "2592000",
+      'Statistics.member.1': 'Maximum',
+      'Statistics.member.2': 'Average',
+      'Statistics.member.3': 'Minimum'
+    }
+  }
+EOS
+end
+
+script "js_cloudwatch_cpu_surplus_credits_charged", type: "javascript" do
+  result "results"
+  parameters "region","instance_id"
+  code <<-EOS
+  var end_date = new Date().toISOString()
+  var start_date = new Date(new Date().setDate(new Date().getDate() - 30)).toISOString();
+  results = {
+    "auth": "monitoring_auth_aws",
+    "host": 'monitoring.'+region+'.amazonaws.com',
+    "verb": "GET",
+    "path": "/",
+    "headers": {
+      "User-Agent": "RS Policies",
+      "Content-Type": "application/json",
+      "x-amz-target": "GraniteServiceVersion20100801.GetMetricStatistics",
+      "Accept": "application/json",
+      "Content-Encoding": "amz-1.0"
+    }
+    "query_params": {
+      'Action': 'GetMetricStatistics',
+      'Version': '2010-08-01',
+      'Namespace': 'AWS/EC2',
+      'MetricName': 'CPUSurplusCreditsCharged',
+      'Dimensions.member.1.Name': 'InstanceId',
+      'Dimensions.member.1.Value': instance_id,
+      'StartTime': start_date,
+      'EndTime': end_date,
+      'Period': "2592000",
+      'Statistics.member.1': 'Maximum',
+      'Statistics.member.2': 'Average',
+      'Statistics.member.3': 'Minimum'
+    }
+  }
+EOS
+end
+
 script "js_cloudwatch_mem_usage", type: "javascript" do
   result "results"
   parameters "region","instance_id","privateDnsName"
@@ -352,13 +464,17 @@ EOS
 end
 
 script "js_merged_metrics", type: "javascript" do
-  parameters "ds_cloudwatch_cpu_usage", "ds_cloudwatch_mem_usage"
+  parameters "ds_cloudwatch_cpu_usage", "ds_cloudwatch_mem_usage", "ds_cloudwatch_cpu_credit_balance", "ds_cloudwatch_cpu_surplus_credit_balance", "ds_cloudwatch_cpu_surplus_credits_charged"
   result "merged_results"
 code <<-EOS
   var merged_results = []
   for ( i = 0; i < ds_cloudwatch_cpu_usage.length; i++){
     var instance_id = ds_cloudwatch_cpu_usage[i].instanceId
     var mem_usage_record = _.find(ds_cloudwatch_mem_usage, function(record) { return record.instanceId == instance_id; })
+    var cloudwatch_cpu_credit_balance = _.find(ds_cloudwatch_cpu_credit_balance, function(record) { return record.instanceId == instance_id; })
+    var cloudwatch_cpu_surplus_credit_balance = _.find(ds_cloudwatch_cpu_surplus_credit_balance, function(record) { return record.instanceId == instance_id; })
+    var cloudwatch_cpu_surplus_credits_charged = _.find(ds_cloudwatch_cpu_surplus_credits_charged, function(record) { return record.instanceId == instance_id; })
+
     if (mem_usage_record != null && mem_usage_record !== undefined) {
       var mem_maximum = parseFloat(mem_usage_record.mem_maximum).toFixed(2)
       var mem_average = parseFloat(mem_usage_record.mem_average).toFixed(2)
@@ -368,6 +484,37 @@ code <<-EOS
       var mem_average = "101"
       var mem_minimum = "101"
     }
+
+    if (cloudwatch_cpu_credit_balance != null && cloudwatch_cpu_credit_balance !== undefined) {
+      var cloudwatch_cpu_credit_balance_avg = cloudwatch_cpu_credit_balance.avg
+      var cloudwatch_cpu_credit_balance_min = cloudwatch_cpu_credit_balance.min
+      var cloudwatch_cpu_credit_balance_max = cloudwatch_cpu_credit_balance.max
+    } else {
+      var cloudwatch_cpu_credit_balance_avg = 10000
+      var cloudwatch_cpu_credit_balance_min = 10000
+      var cloudwatch_cpu_credit_balance_max = 10000
+    }
+
+    if (cloudwatch_cpu_surplus_credit_balance != null && cloudwatch_cpu_surplus_credit_balance !== undefined) {
+      var cloudwatch_cpu_surplus_credit_balance_avg = cloudwatch_cpu_surplus_credit_balance.avg
+      var cloudwatch_cpu_surplus_credit_balance_min = cloudwatch_cpu_surplus_credit_balance.min
+      var cloudwatch_cpu_surplus_credit_balance_max = cloudwatch_cpu_surplus_credit_balance.max
+    } else {
+      var cloudwatch_cpu_surplus_credit_balance_avg = 10000
+      var cloudwatch_cpu_surplus_credit_balance_min = 10000
+      var cloudwatch_cpu_surplus_credit_balance_max = 10000
+    }
+
+    if (cloudwatch_cpu_surplus_credits_charged != null && cloudwatch_cpu_surplus_credits_charged !== undefined) {
+      var cloudwatch_cpu_surplus_credits_charged_avg = cloudwatch_cpu_surplus_credits_charged.avg
+      var cloudwatch_cpu_surplus_credits_charged_min = cloudwatch_cpu_surplus_credits_charged.min
+      var cloudwatch_cpu_surplus_credits_charged_max = cloudwatch_cpu_surplus_credits_charged.max
+    } else {
+      var cloudwatch_cpu_surplus_credits_charged_avg = 10000
+      var cloudwatch_cpu_surplus_credits_charged_min = 10000
+      var cloudwatch_cpu_surplus_credits_charged_max = 10000
+    }
+
     merged_results.push(
       {
         "region": ds_cloudwatch_cpu_usage[i].region,
@@ -380,7 +527,16 @@ code <<-EOS
         "cpu_average": parseFloat(ds_cloudwatch_cpu_usage[i].cpu_average).toFixed(2),
         "mem_maximum": mem_maximum,
         "mem_minimum": mem_minimum,
-        "mem_average": mem_average
+        "mem_average": mem_average,
+        "cloudwatch_cpu_credit_balance_avg": cloudwatch_cpu_credit_balance_avg,
+        "cloudwatch_cpu_credit_balance_max": cloudwatch_cpu_credit_balance_max,
+        "cloudwatch_cpu_credit_balance_min": cloudwatch_cpu_credit_balance_min,
+        "cloudwatch_cpu_surplus_credit_balance_avg": cloudwatch_cpu_surplus_credit_balance_avg,
+        "cloudwatch_cpu_surplus_credit_balance_max": cloudwatch_cpu_surplus_credit_balance_max,
+        "cloudwatch_cpu_surplus_credit_balance_min": cloudwatch_cpu_surplus_credit_balance_min,
+        "cloudwatch_cpu_surplus_credits_charged_avg": cloudwatch_cpu_surplus_credits_charged_avg,
+        "cloudwatch_cpu_surplus_credits_charged_min": cloudwatch_cpu_surplus_credits_charged_min,
+        "cloudwatch_cpu_surplus_credits_charged_max": cloudwatch_cpu_surplus_credits_charged_max
       }
     )
   }
