@@ -1,6 +1,6 @@
 # RightScale Policy Templates Libraries and Examples
 
-This folder contains a set of libraries and examples that can be used to aid in the building of policy templates.  All contributions are shared under the MIT license.
+This folder contains a set of libraries and examples that can be used to aid in the building of policy templates. You will need to add this code to your policy template to use it. All contributions are shared under the MIT license.
 
 ## JavaScript
 ## Data Sources
