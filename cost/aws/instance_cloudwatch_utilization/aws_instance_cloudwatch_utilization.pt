@@ -91,8 +91,17 @@ datasource "ds_regions_list" do
   end
 end
 
+datasource "ds_instance_types" do
+  request do
+    verb "GET"
+    host "raw.githubusercontent.com"
+    path "/rightscale/policy_templates/POL-62-63/data/aws/instance_types.json"
+    header "User-Agent", "RS Policies"
+  end
+end
+
 datasource "ds_instances" do 
-  run_script $js_instances, $ds_instances_set, $param_exclusion_tag_key
+  run_script $js_instances, $ds_instances_set, $param_exclusion_tag_key, $ds_instance_types
 end
 
 datasource "ds_instances_set" do
@@ -172,6 +181,7 @@ datasource "ds_cloudwatch_cpu_surplus_credit_balance" do
     collect jmes_path(response, "GetMetricStatisticsResponse.GetMetricStatisticsResult.Datapoints[*]") do
       field "region", val(iter_item, "region")
       field "instanceId", val(iter_item, "instanceId")
+      field "instance_type_info", val(iter_item,"instance_type_info")
       field "privateDnsName", val(iter_item, "privateDnsName")
       field "tag_set", val(iter_item, "tag_set")
       field "cpu_credit_balance_unit", jmes_path(col_item,"Unit")
@@ -232,7 +242,7 @@ end
 
 script "js_instances", type: "javascript" do
   result "results"
-  parameters "ds_instance_set", "param_exclusion_tag_key"
+  parameters "ds_instance_set", "param_exclusion_tag_key", "ds_instance_types"
   code <<-EOS
   var tag_key = param_exclusion_tag_key.split(':')[0]
   var tag_value = param_exclusion_tag_key.split(':')[1]
@@ -242,6 +252,7 @@ script "js_instances", type: "javascript" do
     for ( i=0; i < instance_set.length; i++) {
       var instance = instance_set[i]
       var tags = instance.tag_set
+      var instance_type_info = ds_instance_types[instance.instanceType]
       if (_.contains(_.pluck(tags,'key'), tag_key) && _.contains(_.pluck(tags,'value'), tag_value)){
         continue
       } else {
@@ -250,7 +261,8 @@ script "js_instances", type: "javascript" do
           "instanceId": instance.instanceId,
           "instanceType": instance.instanceType,
           "privateDnsName": instance.privateDnsName,
-          "tag_set": instance.tag_set
+          "tag_set": instance.tag_set,
+          "instance_type_info": instance_type_info
         })
       }
     }
