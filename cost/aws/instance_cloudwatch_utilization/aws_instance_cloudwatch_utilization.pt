@@ -43,6 +43,22 @@ parameter "param_avg_cpu" do
   max_value 100
 end
 
+parameter "param_num_cpu_surplus_credits" do
+  type "number"
+  label "Number of Surplus Credits to alert on"
+  description "Set to -1 to ignore cpu burst credits"
+  default -1
+  min_value -1
+end
+
+parameter "param_num_cpu_burst_credit_balance" do
+  type "string"
+  label "Enable checking burst credit balance against max"
+  description "checks burst credit balance against max_earnable_credits"
+  default "false"
+  allowed_values "true", "false"
+end
+
 parameter "param_exclusion_tag_key" do
   category "User Inputs"
   label "Exclusion Tag Key"
@@ -141,6 +157,7 @@ datasource "ds_cloudwatch_cpu_usage" do
       field "region", val(iter_item, "region")
       field "instanceId", val(iter_item, "instanceId")
       field "instanceType", val(iter_item, "instanceType")
+      field "instance_type_info", val(iter_item,"instance_type_info")
       field "privateDnsName", val(iter_item, "privateDnsName")
       field "tag_set", val(iter_item, "tag_set")
       field "cpu_unit", jmes_path(col_item,"Unit")
@@ -181,7 +198,6 @@ datasource "ds_cloudwatch_cpu_surplus_credit_balance" do
     collect jmes_path(response, "GetMetricStatisticsResponse.GetMetricStatisticsResult.Datapoints[*]") do
       field "region", val(iter_item, "region")
       field "instanceId", val(iter_item, "instanceId")
-      field "instance_type_info", val(iter_item,"instance_type_info")
       field "privateDnsName", val(iter_item, "privateDnsName")
       field "tag_set", val(iter_item, "tag_set")
       field "cpu_credit_balance_unit", jmes_path(col_item,"Unit")
@@ -535,6 +551,7 @@ code <<-EOS
         "region": ds_cloudwatch_cpu_usage[i].region,
         "instanceId": ds_cloudwatch_cpu_usage[i].instanceId,
         "instanceType": ds_cloudwatch_cpu_usage[i].instanceType,
+        "instance_type_info": ds_cloudwatch_cpu_usage[i].instance_type_info,
         "privateDnsName": ds_cloudwatch_cpu_usage[i].privateDnsName,
         "hostname": ds_cloudwatch_cpu_usage[i].privateDnsName.split('.')[0],
         "tag_set": ds_cloudwatch_cpu_usage[i].tag_set,
@@ -569,10 +586,10 @@ policy "pol_utilization" do
     summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} rows containing AWS instance CloudWatch utilization data"
     detail_template <<-EOS
 # AWS Instance Utilization
-| Region | instanceID | Instance Type | Hostname | Private DNS Name | CPU Maximum % | CPU Average % | Memory Maximum % | Memory Average % | CPU Credit Balance Average | CPU Credit Balance Maximum | CPU Credit Balance Minimum | CPU Surplus Credit Balance Average | CPU Surplus Credit Balance Maximum | CPU Surplus Credit Balance Minimum | CPU Surplus Credits Charged Average | CPU Surplus Credits Charged Maximum | CPU Surplus Credits Charged Minimum |
-| ------ | ---------- | ------------- | -------- | ---------------- | ------------- | ------------- | ---------------- | ---------------- | -------------------------- | -------------------------- | -------------------------- | ---------------------------------- | ---------------------------------- | ---------------------------------- | ----------------------------------- | ----------------------------------- | ----------------------------------- |
+| Region | instanceID | Instance Type | Hostname | Private DNS Name | CPU Maximum % | CPU Average % | Memory Maximum % | Memory Average % | CPU Credit Balance Average | CPU Credit Balance Maximum | CPU Credit Balance Minimum | CPU Surplus Credit Balance Average | CPU Surplus Credit Balance Maximum | CPU Surplus Credit Balance Minimum | CPU Surplus Credits Charged Average | CPU Surplus Credits Charged Maximum | CPU Surplus Credits Charged Minimum | Max Earnable Credits |
+| ------ | ---------- | ------------- | -------- | ---------------- | ------------- | ------------- | ---------------- | ---------------- | -------------------------- | -------------------------- | -------------------------- | ---------------------------------- | ---------------------------------- | ---------------------------------- | ----------------------------------- | ----------------------------------- | ----------------------------------- | -------------------- |
 {{ range data -}}
-| {{.region}} | {{.instanceId}} | {{.instanceType}} | {{.hostname}} |  {{.privateDnsName }} | {{ .cpu_maximum }} | {{ .cpu_average }} | {{if eq .mem_maximum "101"}}N/A{{else}}{{.mem_maximum}}{{end}} | {{if eq .mem_average "101"}}N/A{{else}}{{.mem_average}}{{end}} | {{.cloudwatch_cpu_credit_balance_avg}} | {{.cloudwatch_cpu_credit_balance_max}} | {{.cloudwatch_cpu_credit_balance_min}} | {{.cloudwatch_cpu_surplus_credit_balance_avg}} | {{.cloudwatch_cpu_surplus_credit_balance_max}} | {{.cloudwatch_cpu_surplus_credit_balance_min}} | {{.cloudwatch_cpu_surplus_credits_charged_avg}} | {{.cloudwatch_cpu_surplus_credits_charged_max}} | {{.cloudwatch_cpu_surplus_credits_charged_min}} |
+| {{.region}} | {{.instanceId}} | {{.instanceType}} | {{.hostname}} |  {{.privateDnsName }} | {{ .cpu_maximum }} | {{ .cpu_average }} | {{if eq .mem_maximum "101"}}N/A{{else}}{{.mem_maximum}}{{end}} | {{if eq .mem_average "101"}}N/A{{else}}{{.mem_average}}{{end}} | {{.cloudwatch_cpu_credit_balance_avg}} | {{.cloudwatch_cpu_credit_balance_max}} | {{.cloudwatch_cpu_credit_balance_min}} | {{.cloudwatch_cpu_surplus_credit_balance_avg}} | {{.cloudwatch_cpu_surplus_credit_balance_max}} | {{.cloudwatch_cpu_surplus_credit_balance_min}} | {{.cloudwatch_cpu_surplus_credits_charged_avg}} | {{.cloudwatch_cpu_surplus_credits_charged_max}} | {{.cloudwatch_cpu_surplus_credits_charged_min}} | {{.instance_type_info.burst_info.max_earnable_credits}} |
 {{ end -}}
 ___
 ###### Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }}) within Org: {{ rs_org_name }} (Org ID: {{ rs_org_id }})
@@ -581,6 +598,8 @@ EOS
     escalate $tag_resources
     check logic_or(eq($param_avg_used_memory, -1), gt(to_n(val(item,"mem_average")), $param_avg_used_memory))
     check logic_or(eq($param_avg_cpu, -1), gt(to_n(val(item,"cpu_average")),$param_avg_cpu))
+    check logic_or(eq($param_num_cpu_surplus_credits,-1),lt(to_n(val(item,"cloudwatch_cpu_surplus_credit_balance_min")),$param_num_cpu_surplus_credits))
+    check logic_or(eq($param_num_cpu_burst_credit_balance,"false"), eq(to_n(val(item,"cloudwatch_cpu_credit_balance_min")),to_n(val(item,"instance_type_info.burst_info.max_earnable_credits"))))
   end
 end
 
