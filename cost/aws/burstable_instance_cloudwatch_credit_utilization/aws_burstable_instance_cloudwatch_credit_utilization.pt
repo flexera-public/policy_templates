@@ -1,8 +1,8 @@
 name "AWS Burstable Instance CloudWatch Utilization"
 rs_pt_ver 20180301
 type "policy"
-short_description "Gathers AWS CloudWatch data for instances on 30 day intervals. See the [README](https://github.com/rightscale/policy_templates/tree/master/cost/native_utilization/) and [docs.rightscale.com/policies](http://docs.rightscale.com/policies/) to learn more."
-long_description "Version: 1.1"
+short_description "Gathers AWS CloudWatch CPU and Burst Credit data for instances on 30 day intervals. See the [README](https://github.com/rightscale/policy_templates/tree/master/cost/aws/burstable_instance_cloudwatch_credit_utilization/) and [docs.rightscale.com/policies](http://docs.rightscale.com/policies/) to learn more."
+long_description "Version: 1.0"
 severity "low"
 category "Cost"
 
@@ -28,12 +28,12 @@ end
 parameter "param_num_cpu_surplus_credits" do
   type "number"
   label "Number of Surplus Credits to alert on"
-  description "Set to -1 to ignore cpu burst credits"
+  description "Number of CPU Surplus Credits to report on, Set to -1 to ignore cpu burst credits"
   default -1
   min_value -1
 end
 
-parameter "param_num_cpu_burst_credit_balance" do
+parameter "param_bool_cpu_burst_credit_balance" do
   type "string"
   label "Enable checking burst credit balance against max"
   description "checks burst credit balance against max_earnable_credits"
@@ -46,15 +46,21 @@ parameter "param_exclusion_tag_key" do
   label "Exclusion Tag Key"
   description "Cloud native tag key to ignore instances. Format: Key:Value"
   type "string"
-  allowed_pattern /([\w]?)+\:([\w]?)+/
 end
 
-parameter "param_take_action_tag" do
+parameter "param_take_action" do
   category "User Inputs"
-  label "Action Tag Key=Value"
-  description "Cloud native instance tag key and value that will be added to an instance identified for action. Example: downsize:true"
+  label "Action Direction"
+  description "Should this policy upsize or downsize"
   type "string"
-  allowed_pattern /([\w]?)+\:([\w]?)+/
+  allowed_values "up","down"
+end
+
+parameter "param_cooldown_days" do
+  type "number"
+  label "Cooldown Days"
+  description "Days to cooldown between checks of same instance"
+  default 30
 end
 
 ###############################################################################
@@ -99,7 +105,7 @@ datasource "ds_instance_types" do
 end
 
 datasource "ds_instances" do 
-  run_script $js_instances, $ds_instances_set, $param_exclusion_tag_key, $ds_instance_types
+  run_script $js_instances, $ds_instances_set, $param_exclusion_tag_key, $ds_instance_types, $param_take_action
 end
 
 datasource "ds_instances_set" do
@@ -140,6 +146,7 @@ datasource "ds_cloudwatch_cpu_usage" do
       field "instanceId", val(iter_item, "instanceId")
       field "instanceType", val(iter_item, "instanceType")
       field "instance_type_info", val(iter_item,"instance_type_info")
+      field "next_instance", val(iter_item, "next_instance")
       field "privateDnsName", val(iter_item, "privateDnsName")
       field "tag_set", val(iter_item, "tag_set")
       field "cpu_unit", jmes_path(col_item,"Unit")
@@ -220,7 +227,7 @@ end
 
 script "js_instances", type: "javascript" do
   result "results"
-  parameters "ds_instance_set", "param_exclusion_tag_key", "ds_instance_types"
+  parameters "ds_instance_set", "param_exclusion_tag_key", "ds_instance_types", "param_take_action"
   code <<-EOS
   var tag_key = param_exclusion_tag_key.split(':')[0]
   var tag_value = param_exclusion_tag_key.split(':')[1]
@@ -231,6 +238,11 @@ script "js_instances", type: "javascript" do
       var instance = instance_set[i]
       var tags = instance.tag_set
       var instance_type_info = ds_instance_types[instance.instanceType]
+      var next_instance = instance_type_info[param_take_action]
+      if (next_instance == null || next_instance === undefined) {
+        next_instance = "N/A"
+      }
+
       if (_.contains(_.pluck(tags,'key'), tag_key) && _.contains(_.pluck(tags,'value'), tag_value)){
         continue
       } else {
@@ -240,7 +252,8 @@ script "js_instances", type: "javascript" do
           "instanceType": instance.instanceType,
           "privateDnsName": instance.privateDnsName,
           "tag_set": instance.tag_set,
-          "instance_type_info": instance_type_info
+          "instance_type_info": instance_type_info,
+          "next_instance": next_instance
         })
       }
     }
@@ -418,7 +431,7 @@ end
 script "js_merged_metrics", type: "javascript" do
   parameters "ds_cloudwatch_cpu_usage", "ds_cloudwatch_cpu_credit_balance", "ds_cloudwatch_cpu_surplus_credit_balance", "ds_cloudwatch_cpu_surplus_credits_charged"
   result "merged_results"
-code <<-EOS
+  code <<-EOS
   var merged_results = []
   for ( i = 0; i < ds_cloudwatch_cpu_usage.length; i++){
     var instance_id = ds_cloudwatch_cpu_usage[i].instanceId
@@ -462,6 +475,7 @@ code <<-EOS
         "instanceId": ds_cloudwatch_cpu_usage[i].instanceId,
         "instanceType": ds_cloudwatch_cpu_usage[i].instanceType,
         "instance_type_info": ds_cloudwatch_cpu_usage[i].instance_type_info,
+        "next_instance_size": ds_cloudwatch_cpu_usage[i].next_instance,
         "privateDnsName": ds_cloudwatch_cpu_usage[i].privateDnsName,
         "hostname": ds_cloudwatch_cpu_usage[i].privateDnsName.split('.')[0],
         "tag_set": ds_cloudwatch_cpu_usage[i].tag_set,
@@ -493,19 +507,18 @@ policy "pol_utilization" do
     summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} rows containing AWS instance CloudWatch utilization data"
     detail_template <<-EOS
 # AWS Instance Utilization
-| Region | instanceID | Instance Type | Hostname | Private DNS Name | CPU Maximum % | CPU Average % | CPU Credit Balance Minimum | CPU Surplus Credit Balance Minimum | CPU Surplus Credit Charged Maximum | Max Earnable Credits |
-| ------ | ---------- | ------------- | -------- | ---------------- | ------------- | ------------- | -------------------------- | ---------------------------------- | ---------------------------------- | -------------------- |
+| Region | instanceID | Instance Type | Hostname | Private DNS Name | CPU Maximum % | CPU Average % | CPU Credit Balance Minimum | CPU Surplus Credit Balance Minimum | CPU Surplus Credit Charged Maximum | Max Earnable Credits | Next Instance |
+| ------ | ---------- | ------------- | -------- | ---------------- | ------------- | ------------- | -------------------------- | ---------------------------------- | ---------------------------------- | -------------------- |-------------- |
 {{ range data -}}
-| {{.region}} | {{.instanceId}} | {{.instanceType}} | {{.hostname}} |  {{.privateDnsName }} | {{ .cpu_maximum }} | {{ .cpu_average }} | {{if eq .cloudwatch_cpu_credit_balance_min "10000"}}N/A{{else}}{{.cloudwatch_cpu_credit_balance_min}}{{end}} | {{if eq .cloudwatch_cpu_surplus_credit_balance_min "10000"}}N/A{{else}}{{.cloudwatch_cpu_surplus_credit_balance_min}}{{end}} | {{if eq .cloudwatch_cpu_surplus_credits_charged_max "10000"}}N/A{{else}}{{.cloudwatch_cpu_surplus_credits_charged_max}}{{end}} | {{.instance_type_info.burst_info.max_earnable_credits}} |
+| {{.region}} | {{.instanceId}} | {{.instanceType}} | {{.hostname}} |  {{.privateDnsName }} | {{ .cpu_maximum }} | {{ .cpu_average }} | {{if eq .cloudwatch_cpu_credit_balance_min "10000"}}N/A{{else}}{{.cloudwatch_cpu_credit_balance_min}}{{end}} | {{if eq .cloudwatch_cpu_surplus_credit_balance_min "10000"}}N/A{{else}}{{.cloudwatch_cpu_surplus_credit_balance_min}}{{end}} | {{if eq .cloudwatch_cpu_surplus_credits_charged_max "10000"}}N/A{{else}}{{.cloudwatch_cpu_surplus_credits_charged_max}}{{end}} | {{.instance_type_info.burst_info.max_earnable_credits}} | {{.next_instance_size}} |
 {{ end -}}
 ___
 ###### Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }}) within Org: {{ rs_org_name }} (Org ID: {{ rs_org_id }})
 EOS
     escalate $email
-    escalate $tag_resources
-
+    escalate $resize_instance
     check logic_or(logic_or(eq($param_num_cpu_surplus_credits,-1),lt(to_n(val(item,"cloudwatch_cpu_surplus_credit_balance_min")),$param_num_cpu_surplus_credits)),eq(val(item,"cloudwatch_cpu_surplus_credit_balance_min"),"10000"))
-    check logic_or(eq($param_num_cpu_burst_credit_balance,"false"), eq(to_n(val(item,"cloudwatch_cpu_credit_balance_min")),to_n(val(item,"instance_type_info.burst_info.max_earnable_credits"))))
+    check logic_or(logic_or(eq($param_bool_cpu_burst_credit_balance,"false"), eq(to_n(val(item,"cloudwatch_cpu_credit_balance_min")),to_n(val(item,"instance_type_info.burst_info.max_earnable_credits")))),eq(val(item,"cloudwatch_cpu_credit_balance_min"),"10000"))
   end
 end
 
@@ -518,69 +531,172 @@ escalation "email" do
   email $param_email
 end
 
-escalation "tag_resources" do
+escalation "resize_instance" do
   request_approval  do
-    label "Approve Resource Deletion"
-    description "Approve escalation to run RightScale Cloud Workflow to tag matching servers"
+    label "Approve Resource Resource"
+    description "Approve escalation to run RightScale Cloud Workflow to resize instances"
     parameter "approval_reason" do
       type "string"
       label "Reason for Approval"
       description "Explain why you are approving the action"
     end
   end
-  run "tag_resources", data, $param_take_action_tag
+  run "resize_instances", data, $param_cooldown_days
 end
 
 ###############################################################################
 # Cloud Workflow
 ###############################################################################
 
-define tag_resources($data, $param_take_action_tag) return $all_responses do
-  $$debug=true
-  $$log = []
-  $all_responses = []
-  $key = first(split($param_take_action_tag,':'))
-  $value = last(split($param_take_action_tag,':'))
-
-  $syslog_subject = "AWS Instance Utilization with CloudWatch: "
-  call sys_log(join([$syslog_subject, "Identified Instances"]),to_s($data))
+define resize_instances($data,$param_cooldown_days) do
   foreach $item in $data do
-    $response = http_request(
-      https: true,
-      verb: "post",
-      host: "ec2."+$item["region"]+".amazonaws.com",
-      signature: { "type": "aws" },
-      query_strings: {
-        "Action": "CreateTags",
-        "Version": "2012-06-01",
-        "ResourceId.1": $item["instanceId"],
-        "Tag.1.Key": $key,
-        "Tag.1.Value": $value
-      }
-    )
-    $all_responses << $response
+
+    @current_instance = rs_cm.instances.empty()
+    @instance = rs_cm.instances.index(filter: ["resource_uid=="+$item["instanceId"]])
+    @cloud = @instance.cloud()
+    @next_instance = @instance
+
+    if $item["next_instance_size"] != "N/A"
+      sub on_error: rollback($item, @next_instance, @cloud) do
+        call sys_log('Instance Resizing',$item['instanceId'])
+        call stop_instance(@instance, @cloud, $item) retrieve @next_instance
+
+        @next_instance = first(@cloud.instances(filter: ['resource_uid=='+$item['instanceId']]))
+        @new_instance_type = first(@cloud.instance_types(filter: ["name=="+$item["next_instance_size"]]))
+        @next_instance.update(instance: { instance_type_href: @new_instance_type.href })
+
+        call sys_log('Instance Resized', @new_instance_type.name)
+        call start_instance(@next_instance, @cloud, $item) retrieve @next_instance
+      end
+
+      sub task_label:"Adding Cooldown Tag" do
+        $date = now() + (60*60*24)*$param_cooldown_days
+        $format_string = "%Y/%m/%d %H:%M:%S"
+        $formatted_time = strftime($date, $format_string)
+        # add the cooldown tag, but
+        # dont add/modify the cooldown tag if it already exists
+        $cooldown_tag = tag_value(@next_instance,'rs_downsize:cooldown')
+        call sys_log('cooldown_tag',$cooldown_tag)
+
+        if !$cooldown_tag
+          task_label("Adding Cooldown Tag " + $item['instanceId'])
+          rs_cm.tags.multi_add(resource_hrefs: [@next_instance.href], tags: ["rs_downsize:cooldown="+$formatted_time])
+          call sys_log('Adding Cooldown Tag',$formatted_time)
+        end
+        @current_instance = @next_instance
+      end
+    end
   end
-  call sys_log(join([$syslog_subject, "Responses"]),to_s($all_responses))
 end
 
-define handle_error($response) do 
-  $status_code = $response["code"]
-  if $status_code == 404
-    $_error_behavior = "skip"
-  else 
-    $_error_behavior = "raise"
-  end 
-end 
+define rollback($item, @instance, @cloud) do
+  sub task_label:"Rolling Back to Original Instance Type" do
+    ## Logic to revert the instance back to its original instance type
+    call sys_log('Instance Rollingback', $item['instanceId'])
+    @instance = first(@cloud.instances(filter: ['resource_uid=='+$item['instanceId'] ]))
 
-define sys_log($subject, $detail) do
-  if $$debug
-    rs_cm.audit_entries.create(
-      notify: "None",
-      audit_entry: {
-        auditee_href: @@account,
-        summary: $subject,
-        detail: $detail
-      }
-    )
+    sub task_label:"Setting Error Tag" do
+      $msg = split($_error["message"], "\n")
+      foreach $i in $msg do
+        if $i =~ "CloudException"
+          $tag = "rs_policy_action:downsize_error_info=" + $i
+          rs_cm.tags.multi_add(tags: [$tag], resource_hrefs: [@instance.href])
+        end
+      end
+      call sys_log(join(["Resize Error: ",@instance.name]), to_s($msg))
+    end
+
+    $state = @instance.state
+    $current_instance_type = @instance.instance_type().name
+    $started_condition = "/^(stranded|stranded in booting|error|operational|running)$/"
+    if $current_instance_type == $item["instance_type"]
+      # Instance is still the original size, just make sure it's running
+      if $state =~ $started_condition
+        # instance is running nothing to do
+      else
+        # instance is not running, start it
+        call start_instance(@instance, @cloud, $item) retrieve @instance
+      end
+    else
+      # Instance is the new size, roll back
+      call sys_log('Instance Resizing', $item['instanceId'])
+      call stop_instance(@instance, @cloud, $item) retrieve @instance
+
+      @instance = first(@cloud.instances(filter: ['resource_uid=='+$item['instanceId']]))
+      @new_instance_type = first(@cloud.instance_types(filter: ["name=="+$item["instance_type"]]))
+      @instance.update(instance: { instance_type_href: @new_instance_type.href })
+
+      call sys_log('Instance Resized', @new_instance_type.name)
+      call start_instance(@instance, @cloud, $item) retrieve @instance
+    end
   end
+  $_error_behavior = "skip"
+end
+
+define stop_instance(@instance, @cloud, $item) return @instance do
+  task_label("Stopping instance " + $item['instanceId'])
+  @instance.stop()
+  task_label("Sleeping until instance stopped " + $item['instanceId'])
+  $wake_condition = "/^(stopped|terminated|inactive|error|provisioned)$/"
+  $state = ''
+  while $state !~ $wake_condition do
+    sub on_error: retry, timeout: 20m, on_timeout: skip do
+      # find the resource by resource_uid because the href may have changed after resize.
+      @instance = first(@cloud.instances(filter: ['resource_uid=='+$item['instanceId']]))
+      call sys_log('Waiting for instance stop state: ' + @instance.name,to_s(to_object(@instance)))
+      $state = @instance.state
+      call sys_log('Instance stop state',$state)
+    end
+  end
+  task_label("Instance Stopped " + $item['instanceId'])
+  call sys_log('Instance Stopped', $item['instanceId'])
+end
+
+define start_instance(@instance, @cloud, $item) return @instance do
+  task_label("Starting instance " + $item['instanceId'])
+  @instance.start()
+  $wake_condition = "/^(stranded|stranded in booting|error|operational|running)$/"
+  $state = ''
+  task_label("Sleeping until instance started " + @next_instance.name)
+  while $state !~ $wake_condition do
+    sub on_error: retry, timeout: 20m, on_timeout: skip do
+      # find the resource by resource_uid because the href may have changed after resize.
+      @instance = first(@cloud.instances(filter: ['resource_uid=='+$item['instanceId']]))
+      call sys_log('waiting for instance start state', to_s(to_object(@instance)))
+      $state = @instance.state
+      call sys_log('Instance start state', $state)
+    end
+  end
+  task_label("Instance Started " + $item['instanceId'])
+  call sys_log('Instance Started', $item['instanceId'])
+end
+
+# remove the cooldown tag if the $param_cooldown_days has exceeded
+define delete_cooldown_tag($data,$param_cooldown_days) do
+  foreach $item in $data['cooldown_instances'] do
+    @cloud = rs_cm.get(href: $item['cloud_href'])
+    # find the resource by resource_uid because the href may have changed after resize.
+    @instance = first(@cloud.instances(filter: ['resource_uid=='+$item['instanceId'] ]))
+    $cooldown_tag = tag_value(@instance,'rs_downsize:cooldown')
+    call sys_log('cooldown_tag',$cooldown_tag)
+    $cooldown_time = to_d($cooldown_tag)
+    call sys_log('cooldown_time',to_s($cooldown_time))
+    # if the cooldown_time has passed delete the cooldown tag
+    if ($cooldown_time - now()) / 86400 >= $param_cooldown_days
+      rs_cm.tags.multi_delete(resource_hrefs: [@instance.href], tags: 'rs_downsize:cooldown')
+      call sys_log('deleted cooldown tag',$cooldown_value)
+    end
+  end
+end
+
+# logging to the Accounts Audit Entries
+define sys_log($subject, $detail) do
+  rs_cm.audit_entries.create(
+    notify: "None",
+    audit_entry: {
+      auditee_href: @@account,
+      summary: "Downsize Instance: "+ $subject,
+      detail: $detail
+    }
+  )
 end
