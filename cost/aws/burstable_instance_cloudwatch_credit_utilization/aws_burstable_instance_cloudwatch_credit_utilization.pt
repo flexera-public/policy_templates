@@ -1,4 +1,4 @@
-name "AWS Instance CloudWatch Utilization"
+name "AWS Burstable Instance CloudWatch Utilization"
 rs_pt_ver 20180301
 type "policy"
 short_description "Gathers AWS CloudWatch data for instances on 30 day intervals. See the [README](https://github.com/rightscale/policy_templates/tree/master/cost/native_utilization/) and [docs.rightscale.com/policies](http://docs.rightscale.com/policies/) to learn more."
@@ -23,24 +23,6 @@ parameter "param_email" do
   type "list"
   label "Email addresses to notify"
   description "Email addresses of the recipients you wish to notify when new incidents are created"
-end
-
-parameter "param_avg_used_memory" do
-  type "number"
-  label "Average used memory percentage"
-  description "Set to -1 to ignore memory utilization"
-  default 60
-  min_value -1
-  max_value 100
-end
-
-parameter "param_avg_cpu" do
-  type "number"
-  label "Average used CPU percentage"
-  description "Set to -1 to ignore CPU utilization"
-  default 60
-  min_value -1
-  max_value 100
 end
 
 parameter "param_num_cpu_surplus_credits" do
@@ -228,28 +210,8 @@ datasource "ds_cloudwatch_cpu_surplus_credits_charged" do
   end
 end
 
-datasource "ds_cloudwatch_mem_usage" do
-  iterate $ds_instances
-  request do
-    run_script $js_cloudwatch_mem_usage, val(iter_item, "region"), val(iter_item, "instanceId"), val(iter_item,"privateDnsName")
-  end
-  result do
-    encoding "json"
-    collect jmes_path(response,"GetMetricStatisticsResponse.GetMetricStatisticsResult.Datapoints[*]") do
-      field "region", val(iter_item, "region")
-      field "instanceId", val(iter_item, "instanceId")
-      field "privateDnsName", val(iter_item, "privateDnsName")
-      field "tag_set", val(iter_item, "tag_set")
-      field "mem_unit", jmes_path(col_item,"Unit")
-      field "mem_maximum", jmes_path(col_item, "Maximum")
-      field "mem_minimum", jmes_path(col_item, "Minimum")
-      field "mem_average", jmes_path(col_item, "Average")
-    end
-  end
-end
-
 datasource "ds_merged_metrics" do
-  run_script $js_merged_metrics, $ds_cloudwatch_cpu_usage, $ds_cloudwatch_mem_usage, $ds_cloudwatch_cpu_credit_balance, $ds_cloudwatch_cpu_surplus_credit_balance, $ds_cloudwatch_cpu_surplus_credits_charged
+  run_script $js_merged_metrics, $ds_cloudwatch_cpu_usage, $ds_cloudwatch_cpu_credit_balance, $ds_cloudwatch_cpu_surplus_credit_balance, $ds_cloudwatch_cpu_surplus_credits_charged
 end
 
 ###############################################################################
@@ -453,68 +415,16 @@ script "js_cloudwatch_cpu_surplus_credits_charged", type: "javascript" do
 EOS
 end
 
-script "js_cloudwatch_mem_usage", type: "javascript" do
-  result "results"
-  parameters "region","instance_id","privateDnsName"
-  code <<-EOS
-  if (privateDnsName != null && privateDnsName !== undefined && privateDnsName.length != 0) {
-    var hostname = privateDnsName.split('.')[0]
-  } else {
-    var hostname = "ip-127-0-0-1"
-  }
-  var end_date = new Date().toISOString()
-  var start_date = new Date(new Date().setDate(new Date().getDate() - 30)).toISOString();
-  results = {
-    "auth": "monitoring_auth_aws",
-    "host": 'monitoring.'+region+'.amazonaws.com',
-    "verb": "GET",
-    "path": "/",
-    "headers": {
-      "User-Agent": "RS Policies",
-      "Content-Type": "application/json",
-      "x-amz-target": "GraniteServiceVersion20100801.GetMetricStatistics",
-      "Accept": "application/json",
-      "Content-Encoding": "amz-1.0"
-    }
-    "query_params": {
-      'Action': 'GetMetricStatistics',
-      'Version': '2010-08-01',
-      'Namespace': 'CWAgent',
-      'MetricName': 'mem_used_percent',
-      'Dimensions.member.1.Name': 'host',
-      'Dimensions.member.1.Value': hostname,
-      'StartTime': start_date,
-      'EndTime': end_date,
-      'Period': "2592000",
-      'Statistics.member.1': 'Maximum',
-      'Statistics.member.2': 'Average',
-      'Statistics.member.3': 'Minimum'
-    }
-  }
-EOS
-end
-
 script "js_merged_metrics", type: "javascript" do
-  parameters "ds_cloudwatch_cpu_usage", "ds_cloudwatch_mem_usage", "ds_cloudwatch_cpu_credit_balance", "ds_cloudwatch_cpu_surplus_credit_balance", "ds_cloudwatch_cpu_surplus_credits_charged"
+  parameters "ds_cloudwatch_cpu_usage", "ds_cloudwatch_cpu_credit_balance", "ds_cloudwatch_cpu_surplus_credit_balance", "ds_cloudwatch_cpu_surplus_credits_charged"
   result "merged_results"
 code <<-EOS
   var merged_results = []
   for ( i = 0; i < ds_cloudwatch_cpu_usage.length; i++){
     var instance_id = ds_cloudwatch_cpu_usage[i].instanceId
-    var mem_usage_record = _.find(ds_cloudwatch_mem_usage, function(record) { return record.instanceId == instance_id; })
     var cloudwatch_cpu_credit_balance = _.find(ds_cloudwatch_cpu_credit_balance, function(record) { return record.instanceId == instance_id; })
     var cloudwatch_cpu_surplus_credit_balance = _.find(ds_cloudwatch_cpu_surplus_credit_balance, function(record) { return record.instanceId == instance_id; })
     var cloudwatch_cpu_surplus_credits_charged = _.find(ds_cloudwatch_cpu_surplus_credits_charged, function(record) { return record.instanceId == instance_id; })
-
-    if (mem_usage_record != null && mem_usage_record !== undefined) {
-      var mem_maximum = parseFloat(mem_usage_record.mem_maximum).toFixed(2)
-      var mem_average = parseFloat(mem_usage_record.mem_average).toFixed(2)
-      var mem_minimum = parseFloat(mem_usage_record.mem_minimum).toFixed(2)
-    } else {
-      var mem_maximum = "101"
-      var mem_average = "101"
-      var mem_minimum = "101"
-    }
 
     if (cloudwatch_cpu_credit_balance != null && cloudwatch_cpu_credit_balance !== undefined) {
       var cloudwatch_cpu_credit_balance_avg = parseFloat(cloudwatch_cpu_credit_balance.avg).toFixed(2)
@@ -558,9 +468,6 @@ code <<-EOS
         "cpu_minimum": parseFloat(ds_cloudwatch_cpu_usage[i].cpu_minimum).toFixed(2),
         "cpu_maximum": parseFloat(ds_cloudwatch_cpu_usage[i].cpu_maximum).toFixed(2),
         "cpu_average": parseFloat(ds_cloudwatch_cpu_usage[i].cpu_average).toFixed(2),
-        "mem_maximum": mem_maximum,
-        "mem_minimum": mem_minimum,
-        "mem_average": mem_average,
         "cloudwatch_cpu_credit_balance_avg": cloudwatch_cpu_credit_balance_avg,
         "cloudwatch_cpu_credit_balance_max": cloudwatch_cpu_credit_balance_max,
         "cloudwatch_cpu_credit_balance_min": cloudwatch_cpu_credit_balance_min,
@@ -586,19 +493,18 @@ policy "pol_utilization" do
     summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} rows containing AWS instance CloudWatch utilization data"
     detail_template <<-EOS
 # AWS Instance Utilization
-| Region | instanceID | Instance Type | Hostname | Private DNS Name | CPU Maximum % | CPU Average % | Memory Maximum % | Memory Average % | CPU Credit Balance Average | CPU Credit Balance Maximum | CPU Credit Balance Minimum | CPU Surplus Credit Balance Average | CPU Surplus Credit Balance Maximum | CPU Surplus Credit Balance Minimum | CPU Surplus Credits Charged Average | CPU Surplus Credits Charged Maximum | CPU Surplus Credits Charged Minimum | Max Earnable Credits |
-| ------ | ---------- | ------------- | -------- | ---------------- | ------------- | ------------- | ---------------- | ---------------- | -------------------------- | -------------------------- | -------------------------- | ---------------------------------- | ---------------------------------- | ---------------------------------- | ----------------------------------- | ----------------------------------- | ----------------------------------- | -------------------- |
+| Region | instanceID | Instance Type | Hostname | Private DNS Name | CPU Maximum % | CPU Average % | CPU Credit Balance Minimum | CPU Surplus Credit Balance Minimum | CPU Surplus Credit Charged Maximum | Max Earnable Credits |
+| ------ | ---------- | ------------- | -------- | ---------------- | ------------- | ------------- | -------------------------- | ---------------------------------- | ---------------------------------- | -------------------- |
 {{ range data -}}
-| {{.region}} | {{.instanceId}} | {{.instanceType}} | {{.hostname}} |  {{.privateDnsName }} | {{ .cpu_maximum }} | {{ .cpu_average }} | {{if eq .mem_maximum "101"}}N/A{{else}}{{.mem_maximum}}{{end}} | {{if eq .mem_average "101"}}N/A{{else}}{{.mem_average}}{{end}} | {{if eq .cloudwatch_cpu_credit_balance_avg "10000"}}N/A{{else}}{{.cloudwatch_cpu_credit_balance_avg}}{{end}} | {{if eq .cloudwatch_cpu_credit_balance_max "10000"}}N/A{{else}}{{.cloudwatch_cpu_credit_balance_max}}{{end}} | {{if eq .cloudwatch_cpu_credit_balance_min "10000"}}N/A{{else}}{{.cloudwatch_cpu_credit_balance_min}}{{end}} | {{if eq .cloudwatch_cpu_surplus_credit_balance_avg "10000"}}N/A{{else}}{{.cloudwatch_cpu_surplus_credit_balance_avg}}{{end}} | {{if eq .cloudwatch_cpu_surplus_credit_balance_max "10000"}}N/A{{else}}{{.cloudwatch_cpu_surplus_credit_balance_max}}{{end}} | {{if eq .cloudwatch_cpu_surplus_credit_balance_min "10000"}}N/A{{else}}{{.cloudwatch_cpu_surplus_credit_balance_min}}{{end}} | {{if eq .cloudwatch_cpu_surplus_credits_charged_avg "10000"}}N/A{{else}}{{.cloudwatch_cpu_surplus_credits_charged_avg}}{{end}} | {{if eq .cloudwatch_cpu_surplus_credits_charged_max "10000"}}N/A{{else}}{{.cloudwatch_cpu_surplus_credits_charged_max}}{{end}} | {{if eq .cloudwatch_cpu_surplus_credits_charged_min "10000"}}N/A{{else}}{{.cloudwatch_cpu_surplus_credits_charged_min}}{{end}} | {{.instance_type_info.burst_info.max_earnable_credits}} |
+| {{.region}} | {{.instanceId}} | {{.instanceType}} | {{.hostname}} |  {{.privateDnsName }} | {{ .cpu_maximum }} | {{ .cpu_average }} | {{if eq .cloudwatch_cpu_credit_balance_min "10000"}}N/A{{else}}{{.cloudwatch_cpu_credit_balance_min}}{{end}} | {{if eq .cloudwatch_cpu_surplus_credit_balance_min "10000"}}N/A{{else}}{{.cloudwatch_cpu_surplus_credit_balance_min}}{{end}} | {{if eq .cloudwatch_cpu_surplus_credits_charged_max "10000"}}N/A{{else}}{{.cloudwatch_cpu_surplus_credits_charged_max}}{{end}} | {{.instance_type_info.burst_info.max_earnable_credits}} |
 {{ end -}}
 ___
 ###### Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }}) within Org: {{ rs_org_name }} (Org ID: {{ rs_org_id }})
 EOS
     escalate $email
     escalate $tag_resources
-    check logic_or(eq($param_avg_used_memory, -1), gt(to_n(val(item,"mem_average")), $param_avg_used_memory))
-    check logic_or(eq($param_avg_cpu, -1), gt(to_n(val(item,"cpu_average")),$param_avg_cpu))
-    check logic_or(eq($param_num_cpu_surplus_credits,-1),lt(to_n(val(item,"cloudwatch_cpu_surplus_credit_balance_min")),$param_num_cpu_surplus_credits))
+
+    check logic_or(logic_or(eq($param_num_cpu_surplus_credits,-1),lt(to_n(val(item,"cloudwatch_cpu_surplus_credit_balance_min")),$param_num_cpu_surplus_credits)),eq(val(item,"cloudwatch_cpu_surplus_credit_balance_min"),"10000"))
     check logic_or(eq($param_num_cpu_burst_credit_balance,"false"), eq(to_n(val(item,"cloudwatch_cpu_credit_balance_min")),to_n(val(item,"instance_type_info.burst_info.max_earnable_credits"))))
   end
 end
