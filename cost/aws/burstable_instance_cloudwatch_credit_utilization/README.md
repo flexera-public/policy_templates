@@ -24,7 +24,6 @@ This policy has the following input parameters required when launching the polic
 - *Number of Surplus Credits to alert on* - Number of CPU Surplus Credits to report on, Set to -1 to ignore cpu burst credits
 - *Enable checking burst credit balance against max* - checks burst credit balance against max_earnable_credits, if they are equal it will report. 
 - *Exclusion Tag Key* - An Azure-native instance tag to ignore instances that you don't want to consider for downsizing. Only supply the tag key
-- *Action Direction* - Should this policy upsize or downsize
 - *Cooldown Days* - Days to cooldown between checks of same instance
 
 ### Supported Clouds
