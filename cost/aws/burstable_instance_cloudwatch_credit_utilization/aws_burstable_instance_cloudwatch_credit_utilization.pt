@@ -48,14 +48,6 @@ parameter "param_exclusion_tag_key" do
   type "string"
 end
 
-parameter "param_take_action" do
-  category "User Inputs"
-  label "Action Direction"
-  description "Should this policy upsize or downsize"
-  type "string"
-  allowed_values "up","down"
-end
-
 parameter "param_cooldown_days" do
   type "number"
   label "Cooldown Days"
@@ -105,7 +97,7 @@ datasource "ds_instance_types" do
 end
 
 datasource "ds_instances" do 
-  run_script $js_instances, $ds_instances_set, $param_exclusion_tag_key, $ds_instance_types, $param_take_action
+  run_script $js_instances, $ds_instances_set, $param_exclusion_tag_key, $ds_instance_types
 end
 
 datasource "ds_instances_set" do
@@ -146,7 +138,6 @@ datasource "ds_cloudwatch_cpu_usage" do
       field "instanceId", val(iter_item, "instanceId")
       field "instanceType", val(iter_item, "instanceType")
       field "instance_type_info", val(iter_item,"instance_type_info")
-      field "next_instance", val(iter_item, "next_instance")
       field "privateDnsName", val(iter_item, "privateDnsName")
       field "tag_set", val(iter_item, "tag_set")
       field "cpu_unit", jmes_path(col_item,"Unit")
@@ -221,13 +212,17 @@ datasource "ds_merged_metrics" do
   run_script $js_merged_metrics, $ds_cloudwatch_cpu_usage, $ds_cloudwatch_cpu_credit_balance, $ds_cloudwatch_cpu_surplus_credit_balance, $ds_cloudwatch_cpu_surplus_credits_charged
 end
 
+datasource "ds_check_merged_metrics" do
+  run_script $js_check_merged_metrics, $ds_merged_metrics, $param_bool_cpu_burst_credit_balance, $param_num_cpu_surplus_credits
+end
+
 ###############################################################################
 # Scripts
 ###############################################################################
 
 script "js_instances", type: "javascript" do
   result "results"
-  parameters "ds_instance_set", "param_exclusion_tag_key", "ds_instance_types", "param_take_action"
+  parameters "ds_instance_set", "param_exclusion_tag_key", "ds_instance_types"
   code <<-EOS
   var tag_key = param_exclusion_tag_key.split(':')[0]
   var tag_value = param_exclusion_tag_key.split(':')[1]
@@ -238,10 +233,6 @@ script "js_instances", type: "javascript" do
       var instance = instance_set[i]
       var tags = instance.tag_set
       var instance_type_info = ds_instance_types[instance.instanceType]
-      var next_instance = instance_type_info[param_take_action]
-      if (next_instance == null || next_instance === undefined) {
-        next_instance = "N/A"
-      }
 
       if (_.contains(_.pluck(tags,'key'), tag_key) && _.contains(_.pluck(tags,'value'), tag_value)){
         continue
@@ -252,8 +243,7 @@ script "js_instances", type: "javascript" do
           "instanceType": instance.instanceType,
           "privateDnsName": instance.privateDnsName,
           "tag_set": instance.tag_set,
-          "instance_type_info": instance_type_info,
-          "next_instance": next_instance
+          "instance_type_info": instance_type_info
         })
       }
     }
@@ -475,7 +465,6 @@ script "js_merged_metrics", type: "javascript" do
         "instanceId": ds_cloudwatch_cpu_usage[i].instanceId,
         "instanceType": ds_cloudwatch_cpu_usage[i].instanceType,
         "instance_type_info": ds_cloudwatch_cpu_usage[i].instance_type_info,
-        "next_instance_size": ds_cloudwatch_cpu_usage[i].next_instance,
         "privateDnsName": ds_cloudwatch_cpu_usage[i].privateDnsName,
         "hostname": ds_cloudwatch_cpu_usage[i].privateDnsName.split('.')[0],
         "tag_set": ds_cloudwatch_cpu_usage[i].tag_set,
@@ -497,13 +486,76 @@ script "js_merged_metrics", type: "javascript" do
 EOS
 end
 
+script "js_check_merged_metrics", type: "javascript" do
+  parameters "ds_merged_metrics", "param_bool_cpu_burst_credit_balance", "param_num_cpu_surplus_credits"
+  result "merged_results"
+  code <<-EOS
+    var merged_results = []
+    _.each(ds_merged_metrics,function(result) {
+      if ( param_bool_cpu_burst_credit_balance == "true" && (result.cloudwatch_cpu_credit_balance_min != "10000") && (result.cloudwatch_cpu_credit_balance_min == result.instance_type_info.burst_info.max_earnable_credits)){
+        merged_results.push(
+          {
+            "region": result.region,
+            "instanceId": result.instanceId,
+            "instanceType": result.instanceType,
+            "instance_type_info": result.instance_type_info,
+            "privateDnsName": result.privateDnsName,
+            "hostname": result.hostname,
+            "tag_set": result.tag_set,
+            "cpu_minimum": result.cpu_minimum,
+            "cpu_maximum": result.cpu_maximum,
+            "cpu_average": result.cpu_average,
+            "cloudwatch_cpu_credit_balance_avg": result.cloudwatch_cpu_credit_balance_avg,
+            "cloudwatch_cpu_credit_balance_max": result.cloudwatch_cpu_credit_balance_max,
+            "cloudwatch_cpu_credit_balance_min": result.cloudwatch_cpu_credit_balance_min,
+            "cloudwatch_cpu_surplus_credit_balance_avg": result.cloudwatch_cpu_surplus_credit_balance_avg,
+            "cloudwatch_cpu_surplus_credit_balance_max": result.cloudwatch_cpu_surplus_credit_balance_max,
+            "cloudwatch_cpu_surplus_credit_balance_min": result.cloudwatch_cpu_surplus_credit_balance_min,
+            "cloudwatch_cpu_surplus_credits_charged_avg": result.cloudwatch_cpu_surplus_credits_charged_avg,
+            "cloudwatch_cpu_surplus_credits_charged_min": result.cloudwatch_cpu_surplus_credits_charged_min,
+            "cloudwatch_cpu_surplus_credits_charged_max": result.cloudwatch_cpu_surplus_credits_charged_max,
+            "next_instance_size": result.instance_type_info["down"]
+          }
+        )
+      }
+
+      if ( param_num_cpu_surplus_credits != -1 && (result.cloudwatch_cpu_surplus_credit_balance_min != "10000") && (result.cloudwatch_cpu_surplus_credit_balance_min >= param_num_cpu_surplus_credits)){
+        merged_results.push(
+          {
+            "region": result.region,
+            "instanceId": result.instanceId,
+            "instanceType": result.instanceType,
+            "instance_type_info": result.instance_type_info,
+            "privateDnsName": result.privateDnsName,
+            "hostname": result.hostname,
+            "tag_set": result.tag_set,
+            "cpu_minimum": result.cpu_minimum,
+            "cpu_maximum": result.cpu_maximum,
+            "cpu_average": result.cpu_average,
+            "cloudwatch_cpu_credit_balance_avg": result.cloudwatch_cpu_credit_balance_avg,
+            "cloudwatch_cpu_credit_balance_max": result.cloudwatch_cpu_credit_balance_max,
+            "cloudwatch_cpu_credit_balance_min": result.cloudwatch_cpu_credit_balance_min,
+            "cloudwatch_cpu_surplus_credit_balance_avg": result.cloudwatch_cpu_surplus_credit_balance_avg,
+            "cloudwatch_cpu_surplus_credit_balance_max": result.cloudwatch_cpu_surplus_credit_balance_max,
+            "cloudwatch_cpu_surplus_credit_balance_min": result.cloudwatch_cpu_surplus_credit_balance_min,
+            "cloudwatch_cpu_surplus_credits_charged_avg": result.cloudwatch_cpu_surplus_credits_charged_avg,
+            "cloudwatch_cpu_surplus_credits_charged_min": result.cloudwatch_cpu_surplus_credits_charged_min,
+            "cloudwatch_cpu_surplus_credits_charged_max": result.cloudwatch_cpu_surplus_credits_charged_max,
+            "next_instance_size": result.instance_type_info["up"]
+          }
+        )
+      }
+    })
+  EOS
+end
+
 
 ###############################################################################
 # Policy
 ###############################################################################
 
 policy "pol_utilization" do
-  validate_each $ds_merged_metrics do
+  validate_each $ds_check_merged_metrics do
     summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} rows containing AWS instance CloudWatch utilization data"
     detail_template <<-EOS
 # AWS Instance Utilization
@@ -517,8 +569,9 @@ ___
 EOS
     escalate $email
     escalate $resize_instance
-    check logic_or(logic_or(eq($param_num_cpu_surplus_credits,-1),lt(to_n(val(item,"cloudwatch_cpu_surplus_credit_balance_min")),$param_num_cpu_surplus_credits)),eq(val(item,"cloudwatch_cpu_surplus_credit_balance_min"),"10000"))
-    check logic_or(logic_or(eq($param_bool_cpu_burst_credit_balance,"false"), ne(to_n(val(item,"cloudwatch_cpu_credit_balance_min")),to_n(val(item,"instance_type_info.burst_info.max_earnable_credits")))),eq(val(item,"cloudwatch_cpu_credit_balance_min"),"10000"))
+    check eq(0,1)
+    #check logic_or(logic_or(eq($param_num_cpu_surplus_credits,-1),lt(to_n(val(item,"cloudwatch_cpu_surplus_credit_balance_min")),$param_num_cpu_surplus_credits)),eq(val(item,"cloudwatch_cpu_surplus_credit_balance_min"),"10000"))
+    #check logic_or(logic_or(eq($param_bool_cpu_burst_credit_balance,"false"), ne(to_n(val(item,"cloudwatch_cpu_credit_balance_min")),to_n(val(item,"instance_type_info.burst_info.max_earnable_credits")))),eq(val(item,"cloudwatch_cpu_credit_balance_min"),"10000"))
   end
 end
 
