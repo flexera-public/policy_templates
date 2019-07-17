@@ -18,6 +18,29 @@ The policy leverages the AWS S3 API to find all buckets and check for any that d
 ### Required RightScale Roles
 - policy_manager
 
+### AWS Required Permissions
+
+This policy requires permissions to describe AWS Buckets, and to Get/Put bucket logging options.
+The Cloud Management Platform automatically creates two Credentials when connecting AWS to Cloud Management; AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY. The IAM user credentials contained in those credentials will require the following permissions:
+
+```javascript
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "s3:ListAllMyBuckets",
+        "s3:PutBucketLogging",
+        "s3:GetBucketLogging",
+        "s3:ListBucket"
+      ],
+      "Resource": "*"
+    }
+  ]
+}
+```
+
 ### Supported Clouds
 - AWS
 
