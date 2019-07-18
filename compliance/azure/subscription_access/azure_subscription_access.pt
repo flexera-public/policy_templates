@@ -95,7 +95,7 @@ datasource "ds_filtered_azure_role_definitions" do
   run_script $js_filtered_azure_role_definitions, $ds_azure_role_definitions, $param_azure_roles
 end
 
-datasource "azure_resources" do
+datasource "ds_azure_role_assignments" do
   request do
     auth $azure_auth
     pagination $azure_pagination
@@ -116,7 +116,7 @@ datasource "azure_resources" do
 end
 
 datasource "filtered_resources" do
-  run_script $js_filter_resources, $azure_resources, $param_azure_roles
+  run_script $js_filter_resources, $ds_azure_role_assignments, $ds_filtered_azure_role_definitions
 end
 
 ###############################################################################
@@ -137,23 +137,15 @@ EOS
 end
 
 script "js_filter_resources", type: "javascript" do
-  parameters "azure_resources", "param_approved_region"
-  result "result"
+  parameters "ds_azure_role_assignments", "ds_filtered_azure_role_definitions"
+  result "results"
   code <<-EOS
-    var result = [];
+    var results = [];
 
     // Iterate through all resources
-    _.each(azure_resources, function(ar){
-      console.log(ar.name)
-      if (_.contains(param_approved_region, ar.region)) {
-
-      } else {
-        result.push({
-          id: ar["id"],
-          region: ar["region"],
-          name: ar["name"]
-        })
-      }
+    _.each(ds_filtered_azure_role_definitions, function(definition){
+      var result = _.find(ds_azure_role_assignments, function(ra) { return ra.properties.roleDefinitionId == definition.id})
+      results.push(result)
     })
 
 EOS
@@ -164,7 +156,7 @@ end
 ###############################################################################
 
 policy "azure_resource_policy" do
-  validate $azure_resources do
+  validate $filtered_resources do
     summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} Azure Resources out of compliance"
     detail_template <<-EOS
 # Azure Resources out of compliance
