@@ -71,21 +71,46 @@ end
 # Datasources
 ###############################################################################
 
-datasource "azure_resources" do
+datasource "ds_azure_role_definitions" do
   request do
     auth $azure_auth
     pagination $azure_pagination
     host "management.azure.com"
-    path join(["/subscriptions/", $param_azure_sub, "/resources"])
-    query "api-version","2018-02-01"
+    path join(["/subscriptions/", $param_azure_sub, "/providers/Microsoft.Authorization/roleDefinitions"])
+    query "api-version","2015-07-01"
     header "User-Agent", "RS Policies"
   end
   result do
     encoding "json"
     collect jmes_path(response, "value[*]") do
       field "id", jmes_path(col_item,"id")
-      field "region", jmes_path(col_item,"location")
+      field "type", jmes_path(col_item,"type")
       field "name", jmes_path(col_item,"name")
+      field "properties", jmes_path(col_item,"properties")
+    end
+  end
+end
+
+datasource "ds_filtered_azure_role_definitions" do
+  run_script $js_filtered_azure_role_definitions, $ds_azure_role_definitions, $param_azure_roles
+end
+
+datasource "azure_resources" do
+  request do
+    auth $azure_auth
+    pagination $azure_pagination
+    host "management.azure.com"
+    path join(["/subscriptions/", $param_azure_sub, "/providers/Microsoft.Authorization/roleAssignments"])
+    query "api-version","2015-07-01"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "value[*]") do
+      field "id", jmes_path(col_item,"id")
+      field "type", jmes_path(col_item,"type")
+      field "name", jmes_path(col_item,"name")
+      field "properties", jmes_path(col_item,"properties")
     end
   end
 end
@@ -97,6 +122,19 @@ end
 ###############################################################################
 # Scripts
 ###############################################################################
+
+script "js_filtered_azure_role_definitions", type: "javascript" do
+  parameters "ds_azure_role_definitions", "param_azure_roles"
+  result "results"
+  code <<-EOS
+    var results = [];
+    _.each(param_azure_roles,function(role) {
+      console.log(role)
+      var result = _.find(ds_azure_role_definitions, function(definition){ return definition.properties.roleName == role})
+      results.push(result)
+    })
+EOS
+end
 
 script "js_filter_resources", type: "javascript" do
   parameters "azure_resources", "param_approved_region"
@@ -126,7 +164,7 @@ end
 ###############################################################################
 
 policy "azure_resource_policy" do
-  validate $filtered_resources do
+  validate $azure_resources do
     summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} Azure Resources out of compliance"
     detail_template <<-EOS
 # Azure Resources out of compliance
@@ -138,7 +176,7 @@ policy "azure_resource_policy" do
 EOS
     escalate $email
     escalate $delete_resources
-    check eq(size(data), 0)
+    check eq(0,1)
   end
 end
 
