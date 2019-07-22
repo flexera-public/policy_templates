@@ -92,6 +92,7 @@ Please contact sales@rightscale.com to learn more.
 - [Reference Documentation](http://docs.rightscale.com/policies/reference/)
 - [Policy Template Language](http://docs.rightscale.com/policies/reference/policy_template_language.html)
 - [Markdown Editor](https://jbt.github.io/markdown-editor/) - Use this to test Markdown Syntax
+- [Libraries](./libraries/README.md)
 
 ## Getting Help
 Support for these policy templates will be provided though GitHub Issues and the RightScale public slack channel #policies.
