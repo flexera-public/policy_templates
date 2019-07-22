@@ -14,6 +14,11 @@ When the list of users that match the criteria changes, an incident is created a
 ### Required RightScale Roles
 - policy_manager
 
+
+### Azure Required Permissions
+- Microsoft Graph > Directory.Read.All
+- (Application)[https://docs.microsoft.com/en-us/graph/api/user-get?view=graph-rest-1.0&tabs=http#permissions] > User.Read.All, User.ReadWrite.All, Directory.Read.All, Directory.ReadWrite.All
+
 ### Supported Clouds
 - Azure
 

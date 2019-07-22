@@ -63,6 +63,7 @@ Please contact sales@rightscale.com to learn more.
 - [GitHub.com Repositories without Admin Team](./compliance/github/repository_admin_team/)
 - [AWS Unused ECS Clusters](./compliance/aws/ecs_unused/)
 - [Unapproved Instance Types](./compliance/unapproved_instance_types/)
+- [Azure Subscription Access](./compliance/azure/subscription_access/)
 
 ### Operational
 - [AWS Cloud Credentials Rotation Policy](./operational/cloud_credentials/aws)
