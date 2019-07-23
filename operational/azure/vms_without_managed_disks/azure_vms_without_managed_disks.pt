@@ -30,6 +30,13 @@ parameter "param_azure_sub" do
   category "Azure"
 end
 
+parameter "param_exclusion_tag_key" do
+  category "User Inputs"
+  label "Exclusion Tag Key"
+  description "Azure-native instance tag to ignore instances that match the disallowed instance type. Only supply the tag key. The policy assumes that the tag value is irrelevant."
+  type "string"
+end
+
 ###############################################################################
 # Authentication
 ###############################################################################
@@ -74,29 +81,34 @@ datasource "ds_azure_virtual_machines" do
   result do
     encoding "json"
     collect jmes_path(response, "value[*]") do
-      field "id", jmes_path(col_item,"id")
-      field "type", jmes_path(col_item,"type")
-      field "name", jmes_path(col_item,"name")
-      field "osDisk", jmes_path(col_item,"properties.storageProfile.osDisk")
+      field "id", jmes_path(col_item, "id")
+      field "type", jmes_path(col_item, "type")
+      field "name", jmes_path(col_item, "name")
+      field "osDisk", jmes_path(col_item, "properties.storageProfile.osDisk")
+      field "tags", jmes_path(col_item, "tags")
     end
   end
 end
 
 datasource "ds_filtered_virtual_machines" do
-  run_script $js_filter_virtual_machines, $ds_azure_virtual_machines
+  run_script $js_filter_virtual_machines, $ds_azure_virtual_machines, $param_exclusion_tag_key
 end
 
 ###############################################################################
 # Scripts
 ###############################################################################
 script "js_filter_virtual_machines", type: "javascript" do
-  parameters "ds_azure_virtual_machines"
+  parameters "ds_azure_virtual_machines", "param_exclusion_tag_key"
   result "results"
   code <<-EOS
     var results = [];
     _.each(ds_azure_virtual_machines, function(vm){
       if (vm.osDisk.vhd != null && vm.osDisk.vhd !== undefined){
-        results.push(vm)
+        if (_.has(vm.tags, param_exclusion_tag_key)){
+          // skip due to exclusion tag
+        }else{
+          results.push(vm)
+        }
       }
     })
 EOS
