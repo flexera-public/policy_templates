@@ -18,7 +18,6 @@ When an unencrypted bucket is detected, an email action is triggered automatical
  
 ### Required RightScale Roles
  
-- policy_manager
 - admin or credential_viewer
  
 ### AWS Required Permissions
