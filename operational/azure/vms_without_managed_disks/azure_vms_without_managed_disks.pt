@@ -68,6 +68,16 @@ end
 ###############################################################################
 # Datasources
 ###############################################################################
+datasource "all_ds_azure_virtual_machines" do
+  request do
+    auth $azure_auth
+    pagination $azure_pagination
+    host "management.azure.com"
+    path join(["/subscriptions/", $param_azure_sub, "/providers/Microsoft.Compute/virtualMachines"])
+    query "api-version","2018-06-01"
+    header "User-Agent", "RS Policies"
+  end
+end
 
 datasource "ds_azure_virtual_machines" do
   request do
@@ -83,6 +93,7 @@ datasource "ds_azure_virtual_machines" do
     collect jmes_path(response, "value[*]") do
       field "id", jmes_path(col_item, "id")
       field "type", jmes_path(col_item, "type")
+      field "location", jmes_path(col_item, "location")
       field "name", jmes_path(col_item, "name")
       field "osDisk", jmes_path(col_item, "properties.storageProfile.osDisk")
       field "tags", jmes_path(col_item, "tags")
@@ -108,7 +119,15 @@ script "js_filter_virtual_machines", type: "javascript" do
         if (_.has(vm.tags, param_exclusion_tag_key)){
           // skip due to exclusion tag
         }else{
-          results.push(vm)
+          var resourceGroup = vm.id.split('/')[4]
+          var storageAccount = vm.osDisk.vhd.uri.split('/')[2].split('.')[0]
+          results.push({
+            name: vm.name,
+            resourceGroup: resourceGroup,
+            location: vm.location,
+            storageAccount: storageAccount,
+            osDisk: vm.osDisk
+          })
         }
       }
     })
@@ -123,10 +142,10 @@ policy "azure_resource_policy" do
     summary_template "{{ len data }} Azure Resources out of compliance"
     detail_template <<-EOS
 # Azure Resources out of compliance
-| Resource ID | osDisk VHD |
-| ----------- | ---------- |
+| Instance Name | Resource Group | Location | Storage Account | osDisk VHD |
+| ------------- | -------------- | -------- | --------------- | ---------- |
 {{ range data -}}
-| {{.id}} | {{.osDisk.vhd.uri}} |
+| {{.name}} | {{.resourceGroup}} | {{.location}} | {{.storageAccount}} | {{.osDisk.vhd.uri}} |
 {{ end -}}
 
 ###### Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }}) within Org: {{ rs_org_name }} (Org ID: {{ rs_org_id }})
