@@ -11,7 +11,7 @@ When a VM that is using unmanaged disks is detected, all details of the VM are r
 - *Exclude tags* - VMs with any of these tags are excluded from the list
 
 ### Required RightScale Roles
-- policy_manager
+- credential_viewer or admin
 
 ### Supported Clouds
 - Azure Resource Manager
