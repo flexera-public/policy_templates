@@ -18,7 +18,7 @@ This Policy Template gathers AWS CloudWatch data for instances on 30 day interva
 
 #### Windows Support
 
-To enable windows support you will need to add the following to your cloudwatch config.json and restart
+To enable windows support you will need to add the following to your cloudwatch config.json and restart cloudwatch agent
 ```json
 	"metrics": {
 		"append_dimensions": {
@@ -46,12 +46,3 @@ This policy has the following input parameters required when launching the polic
 ### Cost
 
 This Policy Template does not incur any cloud costs.
-```json
-	"metrics": {
-		"append_dimensions": {
-			"AutoScalingGroupName": "${aws:AutoScalingGroupName}",
-			"ImageId": "${aws:ImageId}",
-			"InstanceId": "${aws:InstanceId}",
-			"InstanceType": "${aws:InstanceType}"
-    }
-```
