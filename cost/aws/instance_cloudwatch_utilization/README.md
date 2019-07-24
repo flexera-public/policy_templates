@@ -33,3 +33,12 @@ This policy has the following input parameters required when launching the polic
 ### Cost
 
 This Policy Template does not incur any cloud costs.
+```json
+	"metrics": {
+		"append_dimensions": {
+			"AutoScalingGroupName": "${aws:AutoScalingGroupName}",
+			"ImageId": "${aws:ImageId}",
+			"InstanceId": "${aws:InstanceId}",
+			"InstanceType": "${aws:InstanceType}"
+    }
+```

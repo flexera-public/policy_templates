@@ -160,8 +160,28 @@ datasource "ds_cloudwatch_mem_usage" do
   end
 end
 
+datasource "ds_cloudwatch_windows_mem_usage" do
+  iterate $ds_instances
+  request do
+    run_script $js_cloudwatch_windows_memory_usage, val(iter_item, "region"), val(iter_item, "instanceId")
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response,"GetMetricStatisticsResponse.GetMetricStatisticsResult.Datapoints[*]") do
+      field "region", val(iter_item, "region")
+      field "instanceId", val(iter_item, "instanceId")
+      field "privateDnsName", val(iter_item, "privateDnsName")
+      field "tag_set", val(iter_item, "tag_set")
+      field "mem_unit", jmes_path(col_item,"Unit")
+      field "mem_maximum", jmes_path(col_item, "Maximum")
+      field "mem_minimum", jmes_path(col_item, "Minimum")
+      field "mem_average", jmes_path(col_item, "Average")
+    end
+  end
+end
+
 datasource "ds_merged_metrics" do
-  run_script $js_merged_metrics, $ds_cloudwatch_cpu_usage, $ds_cloudwatch_mem_usage
+  run_script $js_merged_metrics, $ds_cloudwatch_cpu_usage, $ds_cloudwatch_mem_usage, $ds_cloudwatch_windows_mem_usage
 end
 
 ###############################################################################
@@ -295,8 +315,50 @@ script "js_cloudwatch_mem_usage", type: "javascript" do
 EOS
 end
 
+script "js_cloudwatch_windows_memory_usage", type: "javascript" do
+  result "results"
+  parameters "region","instance_id"
+  code <<-EOS
+  var end_date = new Date().toISOString()
+  var start_date = new Date(new Date().setDate(new Date().getDate() - 30)).toISOString();
+  results = {
+    "auth": "monitoring_auth_aws",
+    "host": 'monitoring.'+region+'.amazonaws.com',
+    "verb": "GET",
+    "path": "/",
+    "headers": {
+      "User-Agent": "RS Policies",
+      "Content-Type": "application/json",
+      "x-amz-target": "GraniteServiceVersion20100801.GetMetricStatistics",
+      "Accept": "application/json",
+      "Content-Encoding": "amz-1.0"
+    }
+    "query_params": {
+      'Action': 'GetMetricStatistics',
+      'Version': '2010-08-01',
+      'Namespace': 'CWAgent',
+      'MetricName': 'Memory % Committed Bytes In Use',
+      'Dimensions.member.1.Name': 'ImageId',
+      'Dimensions.member.1.Value': '*',
+      'Dimensions.member.2.Name': 'InstanceId',
+      'Dimensions.member.2.Value': instance_id,
+      'Dimensions.member.3.Name': 'InstanceType',
+      'Dimensions.member.3.Value': '*',
+      'Dimensions.member.4.Name': 'objectname',
+      'Dimensions.member.4.Value': 'Memory',
+      'StartTime': start_date,
+      'EndTime': end_date,
+      'Period': "2592000",
+      'Statistics.member.1': 'Maximum',
+      'Statistics.member.2': 'Average',
+      'Statistics.member.3': 'Minimum'
+    }
+  }
+EOS
+end
+
 script "js_merged_metrics", type: "javascript" do
-  parameters "ds_cloudwatch_cpu_usage", "ds_cloudwatch_mem_usage"
+  parameters "ds_cloudwatch_cpu_usage", "ds_cloudwatch_mem_usage", "ds_cloudwatch_windows_mem_usage"
   result "merged_results"
 code <<-EOS
   var merged_results = []
