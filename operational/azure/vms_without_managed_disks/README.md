@@ -1,4 +1,4 @@
-## Azure VMs not using managed disks
+## Azure VMs Not Using Managed Disks
 
 ### What it does
 This policy checks all Azure VMs and reports on any that are not using Managed Disks, which are the latest offering from Azure and are much easier to manage.
