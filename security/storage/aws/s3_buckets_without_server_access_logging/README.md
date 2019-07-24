@@ -16,7 +16,7 @@ The policy leverages the AWS S3 API to find all buckets and check for any that d
 - *Exclude Target Bucket* - Exclude target bucket as additional fees may incur. 
 
 ### Required RightScale Roles
-- policy_manager
+- credential_viewer or admin
 
 ### AWS Required Permissions
 
