@@ -107,6 +107,9 @@ datasource "ds_instances_set" do
         collect xpath(col_item,"instancesSet/item","array") do
           field "region",val(iter_item, "region")
           field "instanceId", xpath(col_item,"instanceId")
+          field "imageId", xpath(col_item,"imageId")
+          field "instanceType", xpath(col_item, "instanceType")
+          field "platform", xpath(col_item, "platform")
           field "privateDnsName", xpath(col_item, "privateDnsName")
           field "tag_set" do
             collect xpath(col_item,"tagSet/item","array") do
@@ -130,6 +133,7 @@ datasource "ds_cloudwatch_cpu_usage" do
     collect jmes_path(response, "GetMetricStatisticsResponse.GetMetricStatisticsResult.Datapoints[*]") do
       field "region", val(iter_item, "region")
       field "instanceId", val(iter_item, "instanceId")
+      field "platform", val(iter_item, "platform")
       field "privateDnsName", val(iter_item, "privateDnsName")
       field "tag_set", val(iter_item, "tag_set")
       field "cpu_unit", jmes_path(col_item,"Unit")
@@ -163,7 +167,7 @@ end
 datasource "ds_cloudwatch_windows_mem_usage" do
   iterate $ds_instances
   request do
-    run_script $js_cloudwatch_windows_memory_usage, val(iter_item, "region"), val(iter_item, "instanceId")
+    run_script $js_cloudwatch_windows_memory_usage, val(iter_item, "region"), val(iter_item, "instanceId"), val(iter_item, "imageId"), val(iter_item, "instanceType")
   end
   result do
     encoding "json"
@@ -206,6 +210,9 @@ script "js_instances", type: "javascript" do
         results.push({
           "region": instance.region,
           "instanceId": instance.instanceId,
+          "imageId": instance.imageId,
+          "instanceType": instance.instanceType,
+          "platform": instance.platform,
           "privateDnsName": instance.privateDnsName,
           "tag_set": instance.tag_set
         })
@@ -317,7 +324,7 @@ end
 
 script "js_cloudwatch_windows_memory_usage", type: "javascript" do
   result "results"
-  parameters "region","instance_id"
+  parameters "region","instance_id", "image_id", "instance_type"
   code <<-EOS
   var end_date = new Date().toISOString()
   var start_date = new Date(new Date().setDate(new Date().getDate() - 30)).toISOString();
@@ -339,11 +346,11 @@ script "js_cloudwatch_windows_memory_usage", type: "javascript" do
       'Namespace': 'CWAgent',
       'MetricName': 'Memory % Committed Bytes In Use',
       'Dimensions.member.1.Name': 'ImageId',
-      'Dimensions.member.1.Value': '*',
+      'Dimensions.member.1.Value': image_id,
       'Dimensions.member.2.Name': 'InstanceId',
       'Dimensions.member.2.Value': instance_id,
       'Dimensions.member.3.Name': 'InstanceType',
-      'Dimensions.member.3.Value': '*',
+      'Dimensions.member.3.Value': instance_type,
       'Dimensions.member.4.Name': 'objectname',
       'Dimensions.member.4.Value': 'Memory',
       'StartTime': start_date,
@@ -363,27 +370,45 @@ script "js_merged_metrics", type: "javascript" do
 code <<-EOS
   var merged_results = []
   for ( i = 0; i < ds_cloudwatch_cpu_usage.length; i++){
-    var instance_id = ds_cloudwatch_cpu_usage[i].instanceId
-    var mem_usage_record = _.find(ds_cloudwatch_mem_usage, function(record) { return record.instanceId == instance_id; })
-    if (mem_usage_record != null && mem_usage_record !== undefined) {
-      var mem_maximum = parseFloat(mem_usage_record.mem_maximum).toFixed(2)
-      var mem_average = parseFloat(mem_usage_record.mem_average).toFixed(2)
-      var mem_minimum = parseFloat(mem_usage_record.mem_minimum).toFixed(2)
+    var instance = ds_cloudwatch_cpu_usage[i]
+    var instance_id = instance.instanceId
+    if (instance.platform == 'windows'){
+      var mem_usage_record = _.find(ds_cloudwatch_windows_mem_usage, function(record) { return record.instanceId == instance_id; })
+      
+      if (mem_usage_record != null && mem_usage_record !== undefined) {
+        var mem_maximum = parseFloat(mem_usage_record.mem_maximum).toFixed(2)
+        var mem_average = parseFloat(mem_usage_record.mem_average).toFixed(2)
+        var mem_minimum = parseFloat(mem_usage_record.mem_minimum).toFixed(2)
+      } else {
+        var mem_maximum = "101"
+        var mem_average = "101"
+        var mem_minimum = "101"
+      }
     } else {
-      var mem_maximum = "101"
-      var mem_average = "101"
-      var mem_minimum = "101"
+      instance.platform = 'linux'
+      var mem_usage_record = _.find(ds_cloudwatch_mem_usage, function(record) { return record.instanceId == instance_id; })
+      
+      if (mem_usage_record != null && mem_usage_record !== undefined) {
+        var mem_maximum = parseFloat(mem_usage_record.mem_maximum).toFixed(2)
+        var mem_average = parseFloat(mem_usage_record.mem_average).toFixed(2)
+        var mem_minimum = parseFloat(mem_usage_record.mem_minimum).toFixed(2)
+      } else {
+        var mem_maximum = "101"
+        var mem_average = "101"
+        var mem_minimum = "101"
+      }
     }
     merged_results.push(
       {
-        "region": ds_cloudwatch_cpu_usage[i].region,
-        "instanceId": ds_cloudwatch_cpu_usage[i].instanceId,
-        "privateDnsName": ds_cloudwatch_cpu_usage[i].privateDnsName,
-        "hostname": ds_cloudwatch_cpu_usage[i].privateDnsName.split('.')[0],
-        "tag_set": ds_cloudwatch_cpu_usage[i].tag_set,
-        "cpu_minimum": parseFloat(ds_cloudwatch_cpu_usage[i].cpu_minimum).toFixed(2),
-        "cpu_maximum": parseFloat(ds_cloudwatch_cpu_usage[i].cpu_maximum).toFixed(2),
-        "cpu_average": parseFloat(ds_cloudwatch_cpu_usage[i].cpu_average).toFixed(2),
+        "region": instance.region,
+        "instanceId": instance.instanceId,
+        "platform": instance.platform,
+        "privateDnsName": instance.privateDnsName,
+        "hostname": instance.privateDnsName.split('.')[0],
+        "tag_set": instance.tag_set,
+        "cpu_minimum": parseFloat(instance.cpu_minimum).toFixed(2),
+        "cpu_maximum": parseFloat(instance.cpu_maximum).toFixed(2),
+        "cpu_average": parseFloat(instance.cpu_average).toFixed(2),
         "mem_maximum": mem_maximum,
         "mem_minimum": mem_minimum,
         "mem_average": mem_average
@@ -403,10 +428,10 @@ policy "pol_utilization" do
     summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} rows containing AWS instance CloudWatch utilization data"
     detail_template <<-EOS
 # AWS Instance Utilization
-| Region | instanceID | Hostname | Private DNS Name | CPU Maximum % | CPU Average % | Memory Maximum % | Memory Average % |
-| ------ | ---------- | -------- | ---------------- | ------------- | ------------- | ---------------- | ---------------- |
+| Region | instanceID | Platform | Hostname | Private DNS Name | CPU Maximum % | CPU Average % | Memory Maximum % | Memory Average % |
+| ------ | ---------- | -------- | -------- | ---------------- | ------------- | ------------- | ---------------- | ---------------- |
 {{ range data -}}
-| {{.region}} | {{.instanceId}} | {{.hostname}} |  {{.privateDnsName }} | {{ .cpu_maximum }} | {{ .cpu_average }} | {{if eq .mem_maximum "101"}}N/A{{else}}{{.mem_maximum}}{{end}} | {{if eq .mem_average "101"}}N/A{{else}}{{.mem_average}}{{end}} |
+| {{.region}} | {{.instanceId}} | {{.platform}} | {{.hostname}} |  {{.privateDnsName }} | {{ .cpu_maximum }} | {{ .cpu_average }} | {{if eq .mem_maximum "101"}}N/A{{else}}{{.mem_maximum}}{{end}} | {{if eq .mem_average "101"}}N/A{{else}}{{.mem_average}}{{end}} |
 {{ end -}}
 ___
 ###### Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }}) within Org: {{ rs_org_name }} (Org ID: {{ rs_org_id }})

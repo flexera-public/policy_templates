@@ -16,6 +16,19 @@ This Policy Template gathers AWS CloudWatch data for instances on 30 day interva
 - This policy sets the tag defined in the **Action Tag Key:Value** parameter on the underutilized instances that were identified.
 -  If you get an **N/A** in a field you will need to install the [CloudWatch Agent](https://docs.aws.amazon.com/AmazonCloudWatch/latest/monitoring/Install-CloudWatch-Agent.html) on the instance to get those metrics. 
 
+#### Windows Support
+
+To enable windows support you will need to add the following to your cloudwatch config.json and restart
+```json
+	"metrics": {
+		"append_dimensions": {
+			"AutoScalingGroupName": "${aws:AutoScalingGroupName}",
+			"ImageId": "${aws:ImageId}",
+			"InstanceId": "${aws:InstanceId}",
+			"InstanceType": "${aws:InstanceType}"
+    }
+  }
+```
 #### Input Parameters
 
 This policy has the following input parameters required when launching the policy.
