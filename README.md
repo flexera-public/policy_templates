@@ -72,7 +72,7 @@ Please contact sales@rightscale.com to learn more.
 - [AWS Subnet Name Tag Sync](./operational/aws/subnet_name_sync)
 - [Stranded Servers](./operational/stranded_servers/)
 - [VMWare Instance Tag Sync](./operational/vmware/instance_tag_sync)
-- [Azure VMs not using managed disks](./operational/azure/vms_without_managed_disks/)
+- [Azure VMs Not Using Managed Disks](./operational/azure/vms_without_managed_disks/)
 
 ### Policy Data Sets
  - [AWS Regions](./data/aws/regions.json)
