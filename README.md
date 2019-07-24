@@ -36,6 +36,7 @@ Please contact sales@rightscale.com to learn more.
 - [Azure Instances Utilization from Log Analytics](./cost/azure/instances_log_analitics_utilization/)
 - [Superseded Instances](./cost/superseded_instance/)
 - [Superseded Instance Remediation](./cost/superseded_instance_remediation/)
+- [AWS S3 Buckets without Server Access Logging](./security/storage/aws/s3_buckets_without_server_access_logging/)
 
 ### Security
 - [Security Group: ICMP Enabled](./security/security_groups/icmp_enabled/)
@@ -63,6 +64,7 @@ Please contact sales@rightscale.com to learn more.
 - [GitHub.com Repositories without Admin Team](./compliance/github/repository_admin_team/)
 - [AWS Unused ECS Clusters](./compliance/aws/ecs_unused/)
 - [Unapproved Instance Types](./compliance/unapproved_instance_types/)
+- [Azure Subscription Access](./compliance/azure/subscription_access/)
 
 ### Operational
 - [AWS Cloud Credentials Rotation Policy](./operational/cloud_credentials/aws)
@@ -72,6 +74,7 @@ Please contact sales@rightscale.com to learn more.
 - [AWS Subnet Name Tag Sync](./operational/aws/subnet_name_sync)
 - [Stranded Servers](./operational/stranded_servers/)
 - [VMWare Instance Tag Sync](./operational/vmware/instance_tag_sync)
+- [Azure VMs Not Using Managed Disks](./operational/azure/vms_without_managed_disks/)
 
 ### Policy Data Sets
  - [AWS Regions](./data/aws/regions.json)
