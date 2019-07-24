@@ -36,6 +36,7 @@ Please contact sales@rightscale.com to learn more.
 - [Azure Instances Utilization from Log Analytics](./cost/azure/instances_log_analitics_utilization/)
 - [Superseded Instances](./cost/superseded_instance/)
 - [Superseded Instance Remediation](./cost/superseded_instance_remediation/)
+- [AWS S3 Buckets without Server Access Logging](./security/storage/aws/s3_buckets_without_server_access_logging/)
 
 ### Security
 - [Security Group: ICMP Enabled](./security/security_groups/icmp_enabled/)
