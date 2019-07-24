@@ -14,6 +14,14 @@ When the list of users that match the criteria changes, an incident is created a
   - `AZURE_APPLICATION_ID`
   - `AZURE_APPLICATION_KEY`
 
+### Installation
+
+1. Follow steps to [Create an Azure Active Directory Application](https://docs.microsoft.com/en-us/azure/azure-resource-manager/resource-group-create-service-principal-portal#create-an-azure-active-directory-application)
+1. Grant the Azure AD Application access to the necessary subscription(s)
+1. [Retrieve the Application ID & Authentication Key](https://docs.microsoft.com/en-us/azure/azure-resource-manager/resource-group-create-service-principal-portal#get-application-id-and-authentication-key)
+1. Create RightScale Credentials with values that match the Application ID (Credential name: `AZURE_APPLICATION_ID`) & Authentication Key (Credential name: `AZURE_APPLICATION_KEY`)
+1. [Retrieve your Tenant ID](https://docs.microsoft.com/en-us/azure/azure-resource-manager/resource-group-create-service-principal-portal#get-tenant-id)
+
 #### Input Parameters
 - *Email addresses of the recipients you wish to notify* - A list of email addresses to notify
 - *Roles to report on* - Can choose to report on Owner, Contributor, or Both
@@ -23,11 +31,9 @@ When the list of users that match the criteria changes, an incident is created a
 ### Required RightScale Roles
 - credential_viewer
 
-
 ### Azure Required Permissions
-- Microsoft Graph > Directory.Read.All
+- Tenant > Microsoft Graph > Directory.Read.all
 - Subscription > Reader
-- Tenant > Directory.Read.all
 
 ### Supported Clouds
 - Azure
