@@ -1,0 +1,161 @@
+name "Office 365 Security Alerts"
+rs_pt_ver 20180301
+type "policy"
+short_description "This policy will identify Security Alerts that have been raised in Office 365. Policy Managers can minimize the notifications by choosing to only be alerted by certain severity level(s). See the [README](https://github.com/rightscale/policy_templates/tree/master/fsm/office_365/security_alerts/) and [docs.rightscale.com/policies](http://docs.rightscale.com/policies/) to learn more."
+long_description "Version: 1.0"
+severity "medium"
+category "SaaS Management"
+
+parameter "param_azure_tenant_id" do
+  type "string"
+  label "Azure AD Tenant ID"
+  category "Azure"
+end
+
+parameter "param_alert_severity" do
+  label "Alert Severity"
+  type "string"
+  description "Specify the alert severity levels that should raise an incident"
+  allowed_values "Low,Medium,High","Medium,High","High"
+end
+
+parameter "param_email" do
+  type "list"
+  label "Email addresses to notify"
+  description "Email addresses of the recipients you wish to notify when new incidents are created"
+end
+
+auth "azure_auth", type: "oauth2" do
+  token_url join(["https://login.microsoftonline.com/",$param_azure_tenant_id,"/oauth2/v2.0/token"])
+  grant type: "client_credentials" do
+    client_id cred("O365_AAD_APPLICATION_ID")
+    client_secret cred("O365_AAD_APPLICATION_KEY")
+    additional_params do {
+      "scope" => "https://graph.microsoft.com/.default"
+    } end
+  end
+end
+
+datasource "ds_o365_alerts" do
+  request do
+    run_script $js_alerts_request,$param_alert_severity
+  end 
+  result do
+    encoding "json"
+    collect jmes_path(response,"value[*]") do
+      field "id", jmes_path(col_item,"id")
+      field "category", jmes_path(col_item,"category")
+      field "createdDateTime", jmes_path(col_item,"createdDateTime")
+      field "description", jmes_path(col_item,"description")
+      field "eventDateTime", jmes_path(col_item,"eventDateTime")
+      field "severity", jmes_path(col_item,"severity")
+      field "status", jmes_path(col_item,"status")
+      field "title", jmes_path(col_item,"title")
+    end
+  end
+end
+
+script "js_alerts_request", type: "javascript" do
+  parameters "param_alert_severity"
+  result "request"
+  code <<-EOS
+    if (param_alert_severity === "Low,Medium,High"){
+      var request_filter = "Severity eq 'High' or Severity eq 'Medium' or Severity eq 'Low'"
+    }
+
+    if (param_alert_severity === "Medium,High"){
+      var request_filter = "Severity eq 'High' or Severity eq 'Medium'"
+    }
+
+    if (param_alert_severity === "High"){
+      var request_filter = "Severity eq 'High'"
+    }
+
+    var request = {
+      auth: "azure_auth",
+      verb: "GET",
+      host: "graph.microsoft.com",
+      path: "/beta/security/alerts",
+      query_params: {
+        "filter": request_filter
+      },
+      headers: {
+        "User-Agent": "RS Policies"
+      }
+    } 
+  EOS
+end
+
+datasource "ds_filter_alerts" do
+  run_script $js_filter_alerts,$ds_o365_alerts
+end 
+
+script "js_filter_alerts", type: "javascript" do
+  parameters "alerts"
+  result "result"
+  code <<-EOS
+    var result = [];
+
+    _.each(alerts, function(alert){
+      if (alert["severity"] === "high"){
+        result.push(alert)
+      }
+    })
+
+    _.each(alerts, function(alert){
+      if (alert["severity"] === "medium"){
+        result.push(alert)
+      }
+    })
+
+    _.each(alerts, function(alert){
+      if (alert["severity"] === "low"){
+        result.push(alert)
+      }
+    })
+  EOS
+end
+
+
+escalation "esc_email" do
+  email $param_email
+end
+
+policy "policy_o365_alerts" do
+  validate $ds_filter_alerts do
+    summary_template "Office 365 Security Alerts"
+    detail_template <<-EOS
+# Office 365 Security Alerts
+
+### Azure AD Tenant ID: {{ parameters.param_azure_tenant_id }}
+### Included Alert Severity: {{ parameters.param_alert_severity }}
+
+| Alert Title | Category | Severity | Description | Event DateTime | Status |
+| ----------- | -------- | -------- | ----------- | -------------- | ------ |
+{{ range data -}}
+| {{ .title }} | {{.category}} | {{.severity}} | {{.description}} | {{.eventDateTime}} | {{.status}} |
+{{ end -}}
+
+EOS
+    escalate $esc_email
+    check eq(size(data), 0)
+  end
+end
+
+define deactivate_users($data, $param_okta_org_name) do 
+
+  foreach $user in $data do 
+    http_request(
+      verb: "post",
+      host: join([$param_okta_org_name,".okta.com"]),
+      https: true,
+      href: join(["api/v1/users/",$user["id"],"/lifecycle/deactivate"]),
+      headers: {
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+        "Authorization": "SSWS " + cred("OKTA_API_KEY")
+      }
+    )
+  end 
+
+end
