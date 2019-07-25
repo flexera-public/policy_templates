@@ -25,8 +25,7 @@ This policy has the following input parameters required when launching the polic
 
 ### Required RightScale Roles
 
-- policy_manager
-- policy_approver - to approve the escalation to deactivate the inactive Okta users
+- credential_manager
 
 ### Supported Services
 
