@@ -4,7 +4,7 @@
 This policy checks all Azure VMs and reports on any that are not using Managed Disks, which are the latest offering from Azure and are much easier to manage.
 
 ### Functional Details
-When a VM that is using unmanaged disks is detected, all details of the VM are reported to the specified users.
+When a VM that is using unmanaged disks is detected, VM location information as well as unmanaged disk information is reported to the specified users.
 
 ### Pre-reqs
 - Azure Service Principal (AKA Azure Active Directory Application) with the appropriate permissions to manage resources in the target subscription
