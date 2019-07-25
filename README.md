@@ -73,6 +73,9 @@ Please contact sales@rightscale.com to learn more.
 - [Stranded Servers](./operational/stranded_servers/)
 - [VMWare Instance Tag Sync](./operational/vmware/instance_tag_sync)
 
+### SaaS Management
+- [Okta Inactive Users](./fsm/okta/inactive_users)
+
 ### Policy Data Sets
  - [AWS Regions](./data/aws/regions.json)
  - [AWS Instance Types](./data/aws/instance_types.json)
