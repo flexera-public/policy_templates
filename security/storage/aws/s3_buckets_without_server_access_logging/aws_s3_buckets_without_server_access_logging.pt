@@ -1,0 +1,261 @@
+name "AWS S3 Buckets without Server Access Logging"
+rs_pt_ver 20180301
+type "policy"
+short_description "Checks for buckets that do not have server_access_logging enabled. See the [README](https://github.com/rightscale/policy_templates/tree/master/security/storage/aws/s3_buckets_without_server_access_logging) and [docs.rightscale.com/policies](http://docs.rightscale.com/policies/) to learn more."
+long_description "Version: 1.0"
+severity "high"
+category "Security"
+
+###############################################################################
+# Permissions
+###############################################################################
+
+permission "perm_read_creds" do
+  actions   "rs_cm.show_sensitive","rs_cm.index_sensitive"
+  resources "rs_cm.credentials"
+end
+
+###############################################################################
+# Parameters
+###############################################################################
+
+parameter "param_email" do
+  type "list"
+  label "Email addresses of the recipients you wish to notify"
+end
+
+parameter "param_target_bucket" do
+  type "string"
+  label "Target Bucket"
+  description "An existing bucket in same reason as source to be used for logging."
+end
+
+parameter "param_target_prefix" do
+  type "string"
+  label "Target Bucket Prefix"
+  description "If using a Target Bucket, this element lets you specify a prefix for the keys that the log files will be stored under."
+end
+
+parameter "param_exclude_target_bucket" do
+  type "string"
+  label "Exclude Target Bucket"
+  description "Exclude target bucket as additional fees may incur. "
+  allowed_values "true","false"
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+auth "auth_aws", type: "aws" do
+  version 4
+  service "s3"
+  access_key cred('AWS_ACCESS_KEY_ID')
+  secret_key cred('AWS_SECRET_ACCESS_KEY')
+end
+
+###############################################################################
+# Datasources
+###############################################################################
+
+#Generates list of Regions
+datasource "ds_regions_list" do
+  request do
+    verb "GET"
+    host "raw.githubusercontent.com"
+    path "/rightscale/policy_templates/master/data/aws/regions.json"
+    header "User-Agent", "RS Policies"
+  end
+end
+
+# Reference: https://docs.aws.amazon.com/AmazonS3/latest/API/RESTServiceGET.html
+datasource "aws_buckets" do
+  # This request is not paginated
+  request do
+    auth $auth_aws
+    host "s3.amazonaws.com"
+    path "/"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "xml"
+    collect xpath(response, "//ListAllMyBucketsResult/Buckets/Bucket", "array") do
+      field "bucket_name", xpath(col_item,"Name")
+      field "creation_date", xpath(col_item, "CreationDate")
+    end
+  end
+end
+
+datasource "aws_buckets_with_region" do
+  iterate $aws_buckets
+  request do
+    auth $auth_aws
+    host "s3-external-1.amazonaws.com"
+    path join(["/", val(iter_item, "bucket_name")])
+    query "location", ""
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "xml"
+    field "bucket_name", val(iter_item, "bucket_name")
+    field "creation_date", val(iter_item, "creation_date")
+    field "region", xpath(response, "//LocationConstraint")
+  end
+end
+
+datasource "aws_sanitized_buckets" do
+  run_script $parse_buckets, $aws_buckets_with_region
+end
+
+script "parse_buckets", type: "javascript" do
+  parameters "buckets"
+  result "results"
+  code <<-EOS
+// This is the list of filtered buckets.
+results = []
+for ( i = 0; i < buckets.length; i++ ) {
+  if ( !buckets[i]["region"] ){
+    results.push(
+    {
+      "bucket_name": buckets[i]["bucket_name"],
+      "creation_date": buckets[i]["creation_date"],
+      "region": "us-east-1",
+      "host": "s3-external-1.amazonaws.com",
+      "auth": "auth_aws"
+    }
+    )
+  } else {
+    if ( buckets[i]["region"] == "EU" ) { buckets[i]["region"] = "eu-west-1" }
+    results.push(
+    {
+      "bucket_name": buckets[i]["bucket_name"],
+      "creation_date": buckets[i]["creation_date"],
+      "region": buckets[i]["region"],
+      "host": "s3-" + buckets[i]["region"] + ".amazonaws.com",
+      "auth": "auth_aws"
+    }
+    )
+  }
+};
+EOS
+end
+
+# Reference: https://docs.aws.amazon.com/AmazonS3/latest/API/RESTBucketGETacl.html
+datasource "aws_bucket_logging" do
+  iterate $aws_sanitized_buckets
+  request do
+    run_script $aws_bucket_logging_request, val(iter_item, "bucket_name"), val(iter_item, "host")
+  end
+  result do
+    encoding "xml"
+    field "bucket_name", val(iter_item, "bucket_name")
+    field "creation_date", val(iter_item,"creation_date")
+    field "region", val(iter_item,"region")
+    field "target_bucket", xpath(response,"//TargetBucket")
+  end
+end
+
+###############################################################################
+# Scripts
+###############################################################################
+
+script "aws_bucket_logging_request", type: "javascript" do
+  parameters "bucket_name", "host"
+  result "request"
+  code <<-EOS
+  request = {
+    auth: "auth_aws",
+    host: host,
+    path: '/' + bucket_name + '/',
+    query_params: {
+      logging: ""
+    },
+    headers: {
+      "User-Agent": "RS Policies"
+    }
+  }
+  EOS
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "public_buckets" do
+  validate_each $aws_bucket_logging do
+    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} Public Buckets Found in AWS"
+    detail_template <<-EOS
+# Public Buckets Found in AWS
+| Bucket Name | CreationDate | Region |
+| ----------- | ------------ | ------ |
+{{ range data -}}
+| {{.bucket_name}} | {{.creation_date}} | {{.region}} |
+{{ end -}}
+EOS
+    escalate $report_open_buckets
+    check logic_or(logic_not(eq(val(item, "target_bucket"), "")),logic_and(eq($param_exclude_target_bucket,"true"),eq(val(item,"bucket_name"),$param_target_bucket)))
+  end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "report_open_buckets" do
+   email $param_email
+   request_approval  do
+    label "Approve Enable Bucket Logging"
+    description "Approve escalation to run RightScale Cloud Workflow to enable bucket logging"
+    parameter "approval_reason" do
+      type "string"
+      label "Reason for Approval"
+      description "Explain why you are approving the action"
+    end
+  end
+  run "enable_logging", data, $param_target_bucket, $param_target_prefix
+end
+
+###############################################################################
+# Cloud Workflow
+###############################################################################
+
+define enable_logging($data, $param_target_bucket, $param_target_prefix) return $all_responses do
+  $$debug = "false"
+  $all_responses = []
+  
+  foreach $item in $data do
+    if $param_target_prefix == ""
+      $target_prefix = $item["bucket_name"] + "-logging"
+    else
+      $target_prefix = $param_target_prefix
+    end
+    sub on_error: skip do
+      $response = http_request(
+        verb: "post",
+        host: $item["bucket_name"]+".s3.amazonaws.com",
+        https: true,
+        signature: { type: "aws", version: 4 },
+        headers: {
+          "content-type": "application/xml"
+        },
+        query_strings: { "logging": ""},
+        body: "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<BucketLoggingStatus xmlns=\"http://doc.s3.amazonaws.com/2006-03-01\"><LoggingEnabled><TargetBucket>"+$param_target_bucket+"</TargetBucket><TargetPrefix>"+$target_prefix+"</TargetPrefix></LoggingEnabled></BucketLoggingStatus>"
+      )
+      $all_responses << $response
+      call sys_log('all_responses', to_s($all_responses))
+    end
+  end
+end
+
+define sys_log($subject, $detail) do
+  if $$debug
+    rs_cm.audit_entries.create(
+      notify: "None",
+      audit_entry: {
+        auditee_href: @@account,
+        summary: "AWS S3 Buckets without Server Access Logging Policy "+ $subject,
+        detail: $detail
+      }
+    )
+  end
+end
