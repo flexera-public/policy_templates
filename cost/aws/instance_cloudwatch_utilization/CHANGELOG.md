@@ -1,3 +1,7 @@
+v1.2
+-----
+- Adding windows support
+
 v1.1
 -----
 - Adding Tag Exclusion
