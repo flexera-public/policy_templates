@@ -157,11 +157,11 @@ script "js_new_costs_request", type: "javascript" do
 end
 
 datasource "ds_format_costs" do
-  run_script $js_format_costs, $ds_new_bc_costs, $ds_cloud_vendor_accounts, $ds_billing_centers
+  run_script $js_format_costs, $ds_new_bc_costs, $ds_cloud_vendor_accounts, $ds_billing_centers, $param_threshold, $param_minimum_savings_threshold
 end
 
 script "js_format_costs", type: "javascript" do
-  parameters "new_bc_costs", "ds_cloud_vendor_accounts", "ds_billing_centers"
+  parameters "new_bc_costs", "ds_cloud_vendor_accounts", "ds_billing_centers", "param_threshold", "param_minimum_savings_threshold"
   result "formatted_data"
   code <<-EOS
   //https://www.w3resource.com/javascript-exercises/javascript-date-exercise-3.php
@@ -200,18 +200,24 @@ script "js_format_costs", type: "javascript" do
       var new_sum = parseFloat(Math.round(new_bc_cost_obj.cost_amortized_unblended_adj*100)/100)
       if ( new_sum != 0 ) {
         var runrate = new_sum / monthcomplete
-        formatted_data.push({
-          name: billing_center.name,
-          id: bc_id,
-          service: new_bc_cost_obj.service,
-          new_sum: new_sum,
-          run_rate: parseFloat(runrate).toFixed(2),
-          vendor: new_bc_cost_obj.vendor,
-          vendor_account_name: vendor_account_name
-        })
+        if (runrate <= param_threshold && runrate >= param_minimum_savings_threshold) {
+          formatted_data.push({
+            name: billing_center.name,
+            id: bc_id,
+            service: new_bc_cost_obj.service,
+            new_sum: new_sum,
+            run_rate: parseFloat(runrate).toFixed(2),
+            vendor: new_bc_cost_obj.vendor,
+            vendor_account_name: vendor_account_name
+          })
+        }
       }
     })
   })
+  var total_sum = _.chain(formatted_data)
+  .pluck('new_sum')
+  .reduce(function(memo, num){ return memo + num; }, 0).value();
+  _.each(formatted_data, function(data){ return data["total_sum"] = total_sum })
 EOS
 end
 
@@ -223,7 +229,7 @@ policy "policy_budget_alert" do
   validate_each $ds_format_costs do
     summary_template "{{ rs_org_name }} (Org ID: {{ rs_org_id }}): Low Service Usage Detected Below {{parameters.param_threshold}}"
     detail_template <<-EOS
-# Low Service Usage Detected
+# Low Service Usage Detected - Total Savings: {{with(index data 0)}}{{.total_sum}}{{end}}
 
 | Billing Center Name | Vendor | Account Name | Service | Savings |
 | ------------------- | ------ | ------------ | ------- | ------- |
@@ -234,6 +240,7 @@ policy "policy_budget_alert" do
 ###### Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }}) within Org: {{ rs_org_name }} (Org ID: {{ rs_org_id }})
 EOS
     escalate $esc_budget_alert
-    check logic_or(gt(to_n(val(item,"run_rate")),$param_threshold), lt(to_n(val(item,"run_rate")),$param_minimum_savings_threshold))
+    #check logic_or(gt(to_n(val(item,"run_rate")),$param_threshold), lt(to_n(val(item,"run_rate")),$param_minimum_savings_threshold))
+    check eq(0,1)
   end
 end
