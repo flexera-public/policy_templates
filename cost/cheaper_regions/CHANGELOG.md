@@ -1,3 +1,7 @@
+v1.3
+----
+- Adding in Estimated Savings to Summarty
+
 v1.2
 ----
 - Using instance data only to calculate cheaper regions to get closer to matching recommendations.
