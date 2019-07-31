@@ -2,7 +2,7 @@ name "Low Account Usage"
 rs_pt_ver 20180301
 type "policy"
 short_description "Analyze all account usage and determines recommend consolidation or deletion. See the [README](https://github.com/rightscale/policy_templates/tree/master/cost/low_account_usage/) and [docs.rightscale.com/policies](http://docs.rightscale.com/policies/) to learn more."
-long_description "Version: 1.1"
+long_description "Version: 1.2"
 severity "low"
 category "Cost"
 
@@ -159,11 +159,11 @@ script "js_new_costs_request", type: "javascript" do
 end
 
 datasource "ds_format_costs" do
-  run_script $js_format_costs, $ds_new_bc_costs, $ds_cloud_vendor_accounts, $ds_billing_centers
+  run_script $js_format_costs, $ds_new_bc_costs, $ds_cloud_vendor_accounts, $ds_billing_centers, $param_threshold, $param_minimum_savings_threshold
 end
 
 script "js_format_costs", type: "javascript" do
-  parameters "new_bc_costs", "ds_cloud_vendor_accounts", "ds_billing_centers"
+  parameters "new_bc_costs", "ds_cloud_vendor_accounts", "ds_billing_centers", "param_threshold", "param_minimum_savings_threshold"
   result "formatted_data"
   code <<-EOS
   //https://www.w3resource.com/javascript-exercises/javascript-date-exercise-3.php
@@ -221,9 +221,7 @@ script "js_format_costs", type: "javascript" do
     var arr_new_sum = _.pluck(group, 'new_sum')
     var summed = _.reduce(arr_new_sum, function(memo, num){ return memo + num; }, 0)
     var runrate = summed / monthcomplete
-    console.log("group: "+ JSON.stringify(group))
     var service_cost = _.map(group, function(item) { return {service_name: item.service, service_cost: item.new_sum}})
-    console.log(service_cost)
     return {
         name: group[0].name,
         id: group[0].id,
@@ -236,11 +234,22 @@ script "js_format_costs", type: "javascript" do
     }
   });
 
-  var formatted_data = _(unsorted_results).chain().sortBy(function(result) {
+  var checked_results = _.filter(unsorted_results, function(result){
+    if (parseFloat(result.run_rate) <= param_threshold && parseFloat(result.run_rate) >= param_minimum_savings_threshold) {
+      return result;
+    }
+  })
+
+  var formatted_data = _(checked_results).chain().sortBy(function(result) {
     return result.vendor_account_name;
   }).sortBy(function(result) {
     return result.vendor;
   }).value();
+
+  var total_sum = _.chain(formatted_data)
+  .pluck('run_rate')
+  .reduce(function(memo, num){ return memo + parseFloat(num); }, 0).value();
+  _.each(formatted_data, function(data){ return data["total_sum"] = total_sum.toFixed(2) })
 EOS
 end
 
@@ -250,9 +259,9 @@ end
 
 policy "policy_budget_alert" do
   validate_each $ds_format_costs do
-    summary_template "{{ rs_org_name }} (Org ID: {{ rs_org_id }}): Low Account Usage Detected Below {{parameters.param_threshold}}"
+    summary_template "{{ rs_org_name }} (Org ID: {{ rs_org_id }}): Low Account Usage Detected Below {{parameters.param_threshold}} - Total Savings: {{with(index data 0)}}{{.total_sum}}{{end}}"
     detail_template <<-EOS
-# Low Account Usage Detected
+# Low Account Usage Detected - Total Savings: {{with(index data 0)}}{{.total_sum}}{{end}}
 
 | Billing Center Name | Vendor | Account Name | Savings |
 | ------------------- | ------ | ------------ | ------- |
@@ -263,6 +272,6 @@ policy "policy_budget_alert" do
 ###### Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }}) within Org: {{ rs_org_name }} (Org ID: {{ rs_org_id }})
 EOS
     escalate $esc_budget_alert
-    check logic_or(gt(to_n(val(item,"run_rate")),$param_threshold), lt(to_n(val(item,"run_rate")),$param_minimum_savings_threshold))
+    check eq(0,1)
   end
 end
