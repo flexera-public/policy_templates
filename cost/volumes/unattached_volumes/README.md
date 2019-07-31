@@ -12,6 +12,8 @@ Note: The unattached volumes report will reflect the updated set of unattached v
 Optionally, the user can specify one or more RightScale tags that if found on a volume will exclude the volume from the list.
 Additionally, the user can optionally specify if the aged volumes should be deleted by the policy.
 
+- *Estimated Savings* - is not a reflection of what you will actually save by moving the instance. It is the total cost of the instances in the current region. You will need to take into account any RI Purchases and the cost of running the instance in the new region. *You have been warned!!!*
+
 ### Input Parameters
 
 This policy has the following input parameters required when launching the policy.

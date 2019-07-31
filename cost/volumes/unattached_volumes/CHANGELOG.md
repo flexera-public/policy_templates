@@ -1,3 +1,7 @@
+v1.9
+----
+- Adding in cost summary
+
 v1.8
 ----
 - Adds option to snapshot on volume delete

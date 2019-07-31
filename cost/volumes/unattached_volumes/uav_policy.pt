@@ -2,7 +2,7 @@ name "Unattached Volumes"
 rs_pt_ver 20180301
 type "policy"
 short_description "Finds unattached volumes older than specified number of days and, optionally, deletes them. See the [README](https://github.com/rightscale/policy_templates/tree/master/cost/volumes/unattached_volumes) and [docs.rightscale.com/policies](http://docs.rightscale.com/policies/) to learn more."
-long_description "Version: 1.8"
+long_description "Version: 1.9"
 severity "medium"
 category "Cost"
 
@@ -113,13 +113,13 @@ end
 
 # script-based datasource that applies the logic to return only unattached volumes
 datasource "ds_unattached_volumes" do
-  run_script $js_unattached_volumes, $ds_clouds, $ds_pgs, $ds_volumes, $param_delete #, $ds_resource_tags_hash
+  run_script $js_unattached_volumes, $ds_clouds, $ds_pgs, $ds_volumes, $param_delete, $param_days_old
 end
 # Find unattached volumes.
 # If Azure volume, deduce the type.
 # Calculate the volume's age.
 script "js_unattached_volumes", type: "javascript" do
-  parameters "ds_clouds", "ds_pgs", "ds_volumes", "param_delete" #, "ds_resource_tags_hash"
+  parameters "ds_clouds", "ds_pgs", "ds_volumes", "param_delete", "param_days_old"
   result "unattached_volumes"
   code <<-EOS
 // This is the eventual output list of unattached volumes.
@@ -168,6 +168,7 @@ for (var i = 0; i < ds_volumes.length; i++) {
     my_vol["id"] = vol["resource_uid"]
     my_vol["name"] = vol["name"]
     my_vol["size"] = vol["size"]
+    my_vol["cost"] = vol["size"]*.1
     my_vol["iops"] = vol["iops"]
     my_vol["status"] = vol["status"]
     if (param_delete == "Email and Delete") {  // Then the volume is marked so that it will be deleted later
@@ -261,9 +262,15 @@ for (var i = 0; i < ds_volumes.length; i++) {
     my_vol["age"] = number_of_days_old
 
     // Push the volume hash element to the unattach_volumes array
-    unattached_volumes.push(my_vol)  
+    if (number_of_days_old > param_days_old) {
+      unattached_volumes.push(my_vol)
+    }
   }
 }
+var total_sum = _.chain(unattached_volumes)
+  .pluck('cost')
+  .reduce(function(memo, num){ return memo + parseFloat(num); }, 0).value();
+  _.each(unattached_volumes, function(data){ return data["total_sum"] = total_sum.toFixed(2) })
 EOS
 end
 
@@ -303,14 +310,15 @@ policy "pol_unattached_volumes" do
   	# Send email report
   	escalate $send_email_report 
   
-  	summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} Unattached Volumes Found"
+  	summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} Unattached Volumes Found  - Estimated Savings: {{with(index data 0)}}{{.total_sum}}{{end}}"
 
   	detail_template <<-EOS
 The following {{ len data }} unattached volumes, for Account: {{ rs_project_name }} (ID: {{ rs_project_id }}), have exceeded the specified age of: {{ parameters.param_days_old }} days old\n
-| Cloud Name | Volume Name | Age (days) | Volume Type | Resource UID | Size (GBs) | Status | IOPS | Azure Disk Type | Azure Storage Type | Azure Storage Account | Created At | Updated At | Tags | Volume HREF |
-| ---------- | ----------- | -----------| ----------- | ------------ | ---------- | ------ | ---- | --------------- | ------------------ | --------------------- | ---------- | ---------- | ---- | ----------- |
+
+| Cloud Name | Volume Name | Age (days) | Volume Type | Resource UID | Size (GBs) | Cost | Status | IOPS | Azure Disk Type | Azure Storage Type | Azure Storage Account | Created At | Updated At | Tags | Volume HREF |
+| ---------- | ----------- | -----------| ----------- | ------------ | ---------- | ---- | ------ | ---- | --------------- | ------------------ | --------------------- | ---------- | ---------- | ---- | ----------- |
 {{ range data -}}
-| {{ .cloud_name }} | {{ .name }} | {{ .age }} | {{ .volume_type }} | {{ .id }} | {{ .size }} | {{ .status }} | {{ .iops }} | {{ .azure_disk_type }} | {{ .azure_storage_type }} | {{ .azure_storage_account_name }} | {{ .created_at }} | {{ .updated_at }} | {{ .tags }} | {{ .href }} |
+| {{ .cloud_name }} | {{ .name }} | {{ .age }} | {{ .volume_type }} | {{ .id }} | {{ .size }} | {{.cost}} | {{ .status }} | {{ .iops }} | {{ .azure_disk_type }} | {{ .azure_storage_type }} | {{ .azure_storage_account_name }} | {{ .created_at }} | {{ .updated_at }} | {{ .tags }} | {{ .href }} |
 {{ end -}}
 EOS
 
