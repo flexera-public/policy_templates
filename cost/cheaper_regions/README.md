@@ -10,7 +10,8 @@ This Policy Template determines which regions have cheaper alternatives by speci
 
 ### Functional Details
 
-- This policy uses a hash to determine existing regions and newer compatible cheaper regions. It checks the billing center and reports on cheaper regions. 
+- This policy uses a hash to determine existing regions and newer compatible cheaper regions. It checks the billing center and reports on cheaper regions.
+- Approximate Savings is not a reflection of what you will actually save by moving the instance. It is the total cost of the instances in the current region. You will need to take into account any RI Purchases and the cost of running the instance in the new region. 
 
 #### Input Parameters
 
