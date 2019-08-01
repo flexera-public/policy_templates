@@ -1,0 +1,100 @@
+name "Oracle Unattached Volumes"
+rs_pt_ver 20180301
+type "policy"
+short_description "Finds unattached volumes older than specified number of days and, optionally, deletes them. See the [README](https://github.com/rightscale/policy_templates/tree/master/cost/volumes/unattached_volumes) and [docs.rightscale.com/policies](http://docs.rightscale.com/policies/) to learn more."
+long_description "Version: 1.0"
+severity "medium"
+category "Cost"
+
+###############################################################################
+# Permissions
+###############################################################################
+
+###############################################################################
+# Authentication
+###############################################################################
+# I can not figure out how to sign this
+auth "oracle_auth", type: "api_key" do
+  location "header"
+  field "Authorization"
+  type "Bearer"
+  key cred("MY_API_KEY")
+end
+
+###############################################################################
+# Pagination
+###############################################################################
+pagination "oracle_pagination" do
+  get_page_marker do
+    header "opc-next-page"
+  end
+  set_page_marker do
+    query "page"
+  end
+end
+
+###############################################################################
+# Datasources
+###############################################################################
+
+datasource "ds_oracle_volumes" do
+  request do
+    auth $oracle_auth
+    host "iaas.us-ashburn-1.oraclecloud.com"
+    path "/20160918/volumes"
+    pagination $oracle_pagination
+    query "compartmentId", "ocid1.tenancy.oc1..aaaaaaaat6vgzfzrmpihvg6htrpzxmruhiljylpamokw7w2suoly4cep672q"
+    header "User-Agent", "RS Policies"
+    header "content-type", "application/json"
+  end
+end
+
+###############################################################################
+# Scripts
+###############################################################################
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "policy_vpc_sync" do
+  validate_each $ds_rs_updates do
+    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} VPC Names Out of Sync"
+    detail_template <<-EOS
+# VPC Name Validation between AWS and Cloud Managament
+| VpcId | Region | RS Name | AWS Name | Href |
+| ----- | ------ | ------- | -------- | ---- |
+{{ range data -}}
+  | {{.resource_uid}} | {{.region}} | {{.rs_name}} | {{.aws_name}} | {{.href}} |
+{{ end -}}
+EOS
+    check equals?(val(item, "rs_name"), val(item, "aws_name"))
+    escalate $escalate_resources
+  end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "escalate_resources" do
+  email $param_email
+  run "update_vpcs", data
+end
+
+###############################################################################
+# Cloud Workflow
+###############################################################################
+
+define sys_log($subject, $detail) do
+  if $$debug
+    rs_cm.audit_entries.create(
+      notify: "None",
+      audit_entry: {
+        auditee_href: @@account,
+        summary: $subject,
+        detail: $detail
+      }
+    )
+  end
+end
