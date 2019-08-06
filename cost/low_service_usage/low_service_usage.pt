@@ -97,7 +97,7 @@ datasource "ds_new_bc_costs" do
     collect jmes_path(response,"rows[*]") do
       field "vendor", jmes_path(col_item, "dimensions.vendor")
       field "vendor_account_name", jmes_path(col_item,"dimensions.vendor_account_name")
-      field "cost_amortized_unblended_adj", jmes_path(col_item,"metrics.cost_amortized_unblended_adj")
+      field "cost_amortized_unblended_adj", jmes_path(col_item,"metrics.cost_amortized_blended_adj")
       field "service", jmes_path(col_item, "dimensions.service")
       field "id", jmes_path(col_item,"dimensions.billing_center_id")
       field "timestamp", jmes_path(col_item,"timestamp")
@@ -109,6 +109,8 @@ script "js_new_costs_request", type: "javascript" do
   parameters "org_id","ds_billing_centers", "param_billing_centers"
   result "request"
   code <<-EOS
+    //https://stackoverflow.com/questions/3605214/javascript-add-leading-zeroes-to-date 
+    function pad(n){return n<10 ? '0'+n : n}
     var date = new Date();
     var year = date.getUTCFullYear();
     var month = (2 + date.getUTCMonth())
@@ -123,8 +125,9 @@ script "js_new_costs_request", type: "javascript" do
     
     mo = month.toString().length > 1 ? month : '0' + month;
     lmo = lmonth.toString().length > 1 ? lmonth : '0' + lmonth;
-    var next_month = year + "-" + mo
-    var current_month = lyear + "-" + lmo
+    var yesterday = new Date(new Date().setDate(new Date().getDate()-1)).getDate()
+    var next_month = lyear + "-" + lmo + "-" + pad(yesterday)
+    var current_month = lyear + "-" + lmo + '-01'
     var billing_center_ids = []
     if (param_billing_centers.length === 0){
       var top_billing_centers = _.reject(ds_billing_centers, function(bc){ return bc.parent_id != null });
@@ -142,8 +145,8 @@ script "js_new_costs_request", type: "javascript" do
       path: "/bill-analysis/orgs/" + org_id + "/costs/aggregated",
       body_fields: {
         "dimensions": ["billing_center_id", "vendor", "vendor_account_name", "service"],
-        "granularity": "month",
-        "metrics": ['cost_amortized_unblended_adj'],
+        "granularity": "day",
+        "metrics": ['cost_amortized_blended_adj'],
         "billing_center_ids": billing_center_ids,
         "start_at": current_month,
         "end_at": next_month
@@ -153,6 +156,7 @@ script "js_new_costs_request", type: "javascript" do
         "User-Agent": "RS Policies",
       }
     }
+    console.log(request)
   EOS
 end
 
@@ -174,9 +178,7 @@ script "js_format_costs", type: "javascript" do
   };
   var date = new Date()
   var today = date.getDate()
-  console.log("Today:" + today)
   var numdays = getDaysInMonth(date.getUTCMonth(),date.getUTCFullYear())
-  console.log("NumberOfDays:"+numdays)
   var monthcomplete = today / numdays ;
   console.log("PercentMonthComplete:" + monthcomplete)
   var type = 'cost_amortized_unblended_adj';
