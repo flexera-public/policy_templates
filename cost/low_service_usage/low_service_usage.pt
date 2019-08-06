@@ -99,6 +99,7 @@ datasource "ds_new_bc_costs" do
       field "vendor_account_name", jmes_path(col_item,"dimensions.vendor_account_name")
       field "cost_amortized_unblended_adj", jmes_path(col_item,"metrics.cost_amortized_blended_adj")
       field "service", jmes_path(col_item, "dimensions.service")
+      field "region", jmes_path(col_item, "dimensions.region")
       field "id", jmes_path(col_item,"dimensions.billing_center_id")
       field "timestamp", jmes_path(col_item,"timestamp")
     end
@@ -144,7 +145,7 @@ script "js_new_costs_request", type: "javascript" do
       host: "optima.rightscale.com",
       path: "/bill-analysis/orgs/" + org_id + "/costs/aggregated",
       body_fields: {
-        "dimensions": ["billing_center_id", "vendor", "vendor_account_name", "service"],
+        "dimensions": ["billing_center_id", "vendor", "vendor_account_name", "service", "region"],
         "granularity": "day",
         "metrics": ['cost_amortized_blended_adj'],
         "billing_center_ids": billing_center_ids,
@@ -180,10 +181,11 @@ script "js_format_costs", type: "javascript" do
   var today = date.getDate()
   var numdays = getDaysInMonth(date.getUTCMonth(),date.getUTCFullYear())
   var monthcomplete = today / numdays ;
-  console.log("PercentMonthComplete:" + monthcomplete)
+
   var type = 'cost_amortized_unblended_adj';
 
   var formatted_data = [];
+  var arr_results = [];
   var bcs = [];
 
   _.each(new_bc_costs, function(bcc){bcs.push(bcc.id)})
@@ -201,24 +203,57 @@ script "js_format_costs", type: "javascript" do
       }
       var new_sum = parseFloat(Math.round(new_bc_cost_obj.cost_amortized_unblended_adj*100)/100)
       if ( new_sum != 0 ) {
-        var runrate = new_sum / monthcomplete
-        if (runrate <= param_threshold && runrate >= param_minimum_savings_threshold) {
-          formatted_data.push({
-            name: billing_center.name,
-            id: bc_id,
-            service: new_bc_cost_obj.service,
-            new_sum: new_sum,
-            run_rate: parseFloat(runrate).toFixed(2),
-            vendor: new_bc_cost_obj.vendor,
-            vendor_account_name: vendor_account_name
-          })
-        }
+        arr_results.push({
+          name: billing_center.name,
+          id: bc_id,
+          service: new_bc_cost_obj.service,
+          region: new_bc_cost_obj.region,
+          new_sum: new_sum,
+          vendor: new_bc_cost_obj.vendor,
+          vendor_account_name: vendor_account_name
+        })
       }
     })
   })
+
+  var groups = _.groupBy(arr_results, function(value){
+    return value.bc_id + '#' + value.vendor + '#' + value.vendor_account_name + '#' + value.service + '#' + value.region
+  });
+
+  var unsorted_results = _.map(groups, function(group){
+    var arr_new_sum = _.pluck(group, 'new_sum')
+    var summed = _.reduce(arr_new_sum, function(memo, num){ return memo + num; }, 0)
+    var runrate = summed / monthcomplete
+    return {
+        name: group[0].name,
+        id: group[0].id,
+        vendor: group[0].vendor,
+        vendor_account_name: group[0].vendor_account_name,
+        service: group[0].service,
+        region: group[0].region,
+        run_rate: parseFloat(runrate).toFixed(2),
+        arr_new_sum: arr_new_sum
+    }
+  });
+
+  var checked_results = _.filter(unsorted_results, function(result){
+    if (parseFloat(result.run_rate) <= param_threshold && parseFloat(result.run_rate) >= param_minimum_savings_threshold) {
+      return result;
+    }
+  })
+
+  var formatted_data = _(checked_results).chain()
+  .sortBy(function(result){
+    return result.region;
+  }).sortBy(function(result) {
+    return result.vendor_account_name;
+  }).sortBy(function(result) {
+    return result.vendor;
+  }).value();
+
   var total_sum = _.chain(formatted_data)
-  .pluck('new_sum')
-  .reduce(function(memo, num){ return memo + num; }, 0).value();
+  .pluck('run_rate')
+  .reduce(function(memo, num){ return memo + parseFloat(num); }, 0).value();
   _.each(formatted_data, function(data){ return data["total_sum"] = total_sum })
 EOS
 end
@@ -233,10 +268,10 @@ policy "policy_budget_alert" do
     detail_template <<-EOS
 # Low Service Usage Detected - Total Savings: {{with(index data 0)}}{{.total_sum}}{{end}}
 
-| Billing Center Name | Vendor | Account Name | Service | Savings |
-| ------------------- | ------ | ------------ | ------- | ------- |
+| Billing Center Name | Vendor | Account Name | Region | Service | Savings |
+| ------------------- | ------ | ------------ | ------ | ------- | ------- |
 {{ range data -}}
-| {{.name}} | {{.vendor}} | {{.vendor_account_name}} | {{.service}} | {{.run_rate}} | 
+| {{.name}} | {{.vendor}} | {{.vendor_account_name}} | {{.region}} | {{.service}} | {{.run_rate}} | 
 {{ end -}}
 
 ###### Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }}) within Org: {{ rs_org_name }} (Org ID: {{ rs_org_id }})
