@@ -2,6 +2,7 @@ v1.2
 ----
 - removing check statement, and checking javascript
 - summing up violations and modifying templates
+- grouping and recalculating run_rate
 
 v1.1
 ----
