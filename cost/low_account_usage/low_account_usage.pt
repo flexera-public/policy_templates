@@ -108,6 +108,26 @@ datasource "ds_new_bc_costs" do
   end
 end
 
+datasource "ds_new_bc_costs_select" do
+  request do
+    run_script $js_new_costs_select_request, rs_org_id, $ds_billing_centers, $param_billing_centers
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response,"rows[*]") do
+      field "vendor", jmes_path(col_item, "dimensions.vendor")
+      field "vendor_account_name", jmes_path(col_item,"dimensions.vendor_account_name")
+      field "service", jmes_path(col_item, "dimensions.service")
+      field "region", jmes_path(col_item, "dimensions.region")
+      field "cost_amortized_unblended_adj", jmes_path(col_item,"metrics.cost_nonamortized_blended_adj")
+      field "id", jmes_path(col_item,"dimensions.billing_center_id")
+      field "timestamp", jmes_path(col_item,"timestamp")
+      field "usage_type", jmes_path(col_item, "dimensions.usage_type")
+      field "line_item_type", jmes_path(col_item, "dimensions.line_item_type")
+    end
+  end
+end
+
 script "js_new_costs_request", type: "javascript" do
   parameters "org_id","ds_billing_centers", "param_billing_centers"
   result "request"
@@ -163,12 +183,76 @@ script "js_new_costs_request", type: "javascript" do
   EOS
 end
 
+script "js_new_costs_select_request", type: "javascript" do
+  parameters "org_id","ds_billing_centers", "param_billing_centers"
+  result "request"
+  code <<-EOS
+    //https://stackoverflow.com/questions/3605214/javascript-add-leading-zeroes-to-date 
+    function pad(n){return n<10 ? '0'+n : n}
+    var date = new Date();
+    var year = date.getUTCFullYear();
+    var month = (2 + date.getUTCMonth())
+    
+    if (month == 1){ 
+      var lmonth = 12;
+      var lyear = year-1 ;
+    } else {
+      var lmonth = month-1;
+      var lyear = year ;
+    }
+    
+    mo = month.toString().length > 1 ? month : '0' + month;
+    lmo = lmonth.toString().length > 1 ? lmonth : '0' + lmonth;
+    var yesterday = new Date(new Date().setDate(new Date().getDate()-1)).getDate()
+    var next_month = lyear + "-" + lmo + "-" + pad(yesterday)
+    var current_month = lyear + "-" + lmo + '-01'
+
+    var billing_center_ids = []
+    if (param_billing_centers.length === 0){
+      var top_billing_centers = _.reject(ds_billing_centers, function(bc){ return bc.parent_id != null });
+      billing_center_ids = _.map(top_billing_centers, function(value, key){ return value.id });
+    } else {
+      // get array of billing center id's that match the names in param_billing_centers.
+      billing_center_names = _.map(param_billing_centers, function(name){ return name.toLowerCase(); });
+      billing_center_ids = _.compact(_.map(ds_billing_centers, function(value){ if(_.contains(billing_center_names, value.name.toLowerCase())){return value.id} }));
+    }
+
+    var request = {
+      auth: "auth_rs",
+      verb: "POST",
+      host: "optima.rightscale.com",
+      path: "/bill-analysis/orgs/" + org_id + "/costs/select",
+      body_fields: {
+        "dimensions": ["billing_center_id","vendor","vendor_account_name", "service", "region", "usage_type", "line_item_type"],
+        "granularity": "day",
+        "metrics": ['cost_nonamortized_blended_adj'],
+        "billing_center_ids": billing_center_ids,
+        "start_at": current_month,
+        "end_at": next_month,
+        "filter": { "type":"or", "expressions":[
+          { "dimension": "usage_type","type": "substring","substring": "APN"},
+          { "dimension": "usage_type","type": "substring","substring": "fee"},
+          { "dimension": "usage_type","type": "substring","substring": "Fee"},
+          { "dimension": "usage_type","type": "substring","substring": "Tax"},
+          { "dimension": "usage_type","type": "substring","substring": "tax"}
+        ]},
+        "limit":1000
+      },
+      headers: {
+        "Api-Version": "1.0",
+        "User-Agent": "RS Policies",
+      }
+    }
+  EOS
+end
+
+
 datasource "ds_format_costs" do
-  run_script $js_format_costs, $ds_new_bc_costs, $ds_cloud_vendor_accounts, $ds_billing_centers, $param_threshold, $param_minimum_savings_threshold
+  run_script $js_format_costs, $ds_new_bc_costs, $ds_cloud_vendor_accounts, $ds_billing_centers, $param_threshold, $param_minimum_savings_threshold, $ds_new_bc_costs_select
 end
 
 script "js_format_costs", type: "javascript" do
-  parameters "new_bc_costs", "ds_cloud_vendor_accounts", "ds_billing_centers", "param_threshold", "param_minimum_savings_threshold"
+  parameters "new_bc_costs", "ds_cloud_vendor_accounts", "ds_billing_centers", "param_threshold", "param_minimum_savings_threshold", "ds_new_bc_costs_select"
   result "formatted_data"
   code <<-EOS
   //https://www.w3resource.com/javascript-exercises/javascript-date-exercise-3.php
