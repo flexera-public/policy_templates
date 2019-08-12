@@ -1,3 +1,7 @@
+v1.2
+----
+- Changing run rate to monthly estimated cost. 
+
 v1.1
 ----
 - Fixing Table
