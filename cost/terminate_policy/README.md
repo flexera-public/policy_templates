@@ -14,8 +14,10 @@ You can follow the following example when tagging your instances. If you tag in 
 
 ***Rightscale***
   * `instance:terminate=2019-05-20T13:48:21Z`
+
 ***Tag to set in cloud provider***
   * `terminate=2019-05-20T13:48:21Z`
+
 ***Tag discovered by CMP***
   * `ec2:terminate=2019-05-20T13:48:21Z`
   * `gce:terminate=2019-05-20T13:48:21Z`
