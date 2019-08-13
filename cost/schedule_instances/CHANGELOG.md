@@ -1,9 +1,5 @@
 Change log
 
-v1.6
-----
-- include timezone list in the README
-
 v1.5
 ----
 - update email template.
