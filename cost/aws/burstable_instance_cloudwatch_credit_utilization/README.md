@@ -22,7 +22,7 @@ This policy has the following input parameters required when launching the polic
 - *Email addresses of the recipients you wish to notify* - A list of email addresses to notify
 - *Number of Surplus Credits to alert on* - Number of CPU Surplus Credits to report on, Set to -1 to ignore cpu burst credits
 - *Enable checking burst credit balance against max* - checks burst credit balance against max_earnable_credits, if they are equal it will report. 
-- *Exclusion Tag* - An AWS native instance tag to ignore instances that you don't want to consider for downsizing. Only supply the tag key
+- *Exclusion Tag* - An AWS native instance tag to ignore instances that you don't want to consider for resizing. 
 - *Cooldown Days* - Days to cooldown between checks of same instance
 
 ### Supported Clouds
