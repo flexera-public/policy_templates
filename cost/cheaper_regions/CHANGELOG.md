@@ -1,3 +1,7 @@
+v1.4
+----
+- Adding in resource_id so it easy to find resource
+
 v1.3
 ----
 - Fixing cheaper region billing center
