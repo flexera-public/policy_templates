@@ -1,3 +1,8 @@
+v1.3
+-----
+- Adding in better regex
+- Updating inputs
+
 v1.2
 -----
 - Adding windows support

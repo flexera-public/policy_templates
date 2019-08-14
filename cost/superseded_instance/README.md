@@ -6,7 +6,7 @@ The Superseded Instances Policy Template is used to monitor an account a generat
 
 ### Usage
 
-This policy used Optima data to get a list of instances used in the month and their possible new types, as well it uses data in [Policies Data](https://github.com/rightscale/policy_templates/tree/master/data) to determine if an instance type has been superseded.  It will then list all the instances that have been superseded and their types. It will then report on them, it will also warn you by *bolding* them in the list if they may need additional functionality to upgrade them, for example, they might need to be put in a vpc, or use a enhanced networking enabled image.
+This policy used Optima data to get a list of instances used in the month and their possible new types, as well it uses data in [Policies Data](https://github.com/rightscale/policy_templates/tree/master/data) to determine if an instance type has been superseded.  It will then list all the instances that have been superseded and their types. It will then report on them, it will also warn you by *bolding* them in the list if they may need additional functionality to upgrade them, for example, they might need to be put in a vpc, or use a enhanced networking enabled image. The `Monthly Estimated Cost` is an estimated cost for the instances with the current configuration, you will save a portion of that by moving to the instance type, the new instance types should be more performant as well. 
 
 ### Permissions
 - The `billing_center_viewer` role
