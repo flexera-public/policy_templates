@@ -15,6 +15,7 @@ This Policy Template gathers AWS CloudWatch data for instances on 30 day interva
 - The **Exclusion Tag Key** parameter is a string value.  Supply the Tag Key only.  Tag Values are not analyzed and therefore are not need.  If the exclusion tag key is used on an Instance, that Instance is presumed to be exempt from this policy.
 - This policy sets the tag defined in the **Action Tag Key:Value** parameter on the underutilized instances that were identified.
 -  If you get an **N/A** in a field you will need to install the [CloudWatch Agent](https://docs.aws.amazon.com/AmazonCloudWatch/latest/monitoring/Install-CloudWatch-Agent.html) on the instance to get those metrics. 
+- This policy only pulls running instances, as it is unable to get correct monitoring metrics from instances in other states.
 
 #### Windows Support
 

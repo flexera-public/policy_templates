@@ -2,7 +2,7 @@ name "Cheaper Regions"
 rs_pt_ver 20180301
 type "policy"
 short_description "Specify which regions have cheaper alternatives by specifying the expensive region name and the cheaper region name for analysis. See the [README](https://github.com/rightscale/policy_templates/tree/master/cost/azure/cheaper_regions/) and [docs.rightscale.com/policies](http://docs.rightscale.com/policies/) to learn more."
-long_description "Version: 1.2"
+long_description "Version: 1.4"
 severity "medium"
 category "Cost"
 
@@ -104,6 +104,7 @@ datasource "ds_new_bc_costs" do
       field "vendor", jmes_path(col_item, "dimensions.vendor")
       field "instance_type", jmes_path(col_item, "dimensions.instance_type")
       field "vendor_account_name", jmes_path(col_item, "dimensions.vendor_account_name")
+      field "resource_id", jmes_path(col_item, "dimensions.resource_id")
     end
   end
 end
@@ -116,14 +117,14 @@ end
 # Scripts
 ###############################################################################
 script "js_new_costs_request", type: "javascript" do
-  parameters "org_id","billing_centers","param_billing_centers"
+  parameters "org_id","ds_billing_centers","param_billing_centers"
   result "request"
   code <<-EOS
     var start_at = "";
     var end_at = "";
     var cost_metric = {
       "Unamortized Unblended":"cost_nonamortized_unblended_adj",
-      "Amortized Unblended":"cost_amortized_unblended_adj",
+      "Amortized Unblended":"cost_nonamortized_blended_adj",
       "Unamortized Blended": "cost_nonamortized_blended_adj",
       "Amortized Blended":"cost_amortized_blended_adj"
     }
@@ -152,28 +153,59 @@ script "js_new_costs_request", type: "javascript" do
     start_at = getFormattedDailyDate(getStartDate(new Date())) 
     end_at = getFormattedDailyDate(getEndDate(new Date()))
 
-    var top_billing_centers = billing_centers
     var billing_center_ids = []
     if (param_billing_centers.length === 0){
+      var top_billing_centers = _.reject(ds_billing_centers, function(bc){ return bc.parent_id != null });
       billing_center_ids = _.map(top_billing_centers, function(value, key){ return value.id });
     } else {
       // get array of billing center id's that match the names in param_billing_centers.
       billing_center_names = _.map(param_billing_centers, function(name){ return name.toLowerCase(); });
-      billing_center_ids = _.compact(_.map(top_billing_centers, function(value){ if(_.contains(billing_center_names, value.name.toLowerCase())){return value.id} }));
+      billing_center_ids = _.compact(_.map(ds_billing_centers, function(value){ if(_.contains(billing_center_names, value.name.toLowerCase())){return value.id} }));
     }
 
     var request = {
       auth: "auth_rs",
       verb: "POST",
       host: "optima.rightscale.com",
-      path: "/bill-analysis/orgs/" + org_id + "/costs/aggregated",
+      path: "/bill-analysis/orgs/" + org_id + "/costs/select",
       body_fields: {
-        "dimensions": ["region","billing_center_id","service","vendor","vendor_account_name","instance_type"],
-        "granularity": "month",
-        "metrics": ["cost_amortized_unblended_adj"],
-        "billing_center_ids": billing_center_ids,
-        "start_at": start_at,
-        "end_at": end_at
+      "dimensions": [
+        "vendor",
+        "vendor_account",
+        "vendor_account_name",
+        "instance_type",
+        "region", 
+        "resource_group",
+        "resource_type",
+        "tag_instance_name",
+        "billing_center_id",
+        "service",
+        "resource_id"
+      ],
+      "granularity": "month",
+      "limit": 100000,
+      "metrics": ["cost_nonamortized_blended_adj"],
+      "billing_center_ids": billing_center_ids,
+      "start_at": start_at,
+      "end_at": end_at,
+      "filter":  
+        {"type": "or", 
+          "expressions": [
+            {"type" : "and", "expressions" : [
+              {"dimension":"vendor","type":"equal","value":"Azure"},
+              {"dimension":"resource_type","type":"substring","substring":"Virtual Machines"}
+            ]},
+            {"type" : "and", "expressions" : [
+              {"dimension":"category","type":"equal","value":"Compute"},
+              {"dimension":"vendor","type":"equal","value":"AzureCSP"},
+              {"dimension":"resource_type","type":"substring","substring":"Virtual Machines"}
+            ]},
+            {"type" : "and", "expressions" : [
+              {"dimension":"category","type":"equal","value":"Compute"},
+              {"dimension":"vendor","type":"equal","value":"AWS"}
+            ]}
+          ]
+        }
       },
       headers: {
         "Api-Version": "1.0",
@@ -248,7 +280,8 @@ script "js_merge_bc_name", type: "javascript" do
           new_region: new_region,
           service: new_bc_costs[i].service,
           instance_type:new_bc_costs[i].instance_type,
-          vendor: vendor
+          vendor: vendor,
+          resource_id: new_bc_costs[i].resource_id
         })
       }else{
         continue
@@ -267,10 +300,10 @@ policy "policy_cheaper_regions" do
     summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} rows with cheaper data"
     detail_template <<-EOS
 # Cheaper Regions
-| Billing Center Name | Account Name | Region In Use | Suggested Region | Service | Vendor | Instance Type |
-| ------------------- | ------------ | ------------- | ---------------- | ------- | ------ | ------------- |
+| Billing Center Name | Account Name | Region In Use | Suggested Region | Service | Vendor | Instance Type | Resource ID |
+| ------------------- | ------------ | ------------- | ---------------- | ------- | ------ | ------------- | ----------- |
 {{ range data -}}
-| {{ .billing_center_name }} | {{.vendor_account_name}} | {{ .region }} | {{ .new_region }} | {{.service}} | {{.vendor}} | {{.instance_type}} |
+| {{ .billing_center_name }} | {{.vendor_account_name}} | {{ .region }} | {{ .new_region }} | {{.service}} | {{.vendor}} | {{.instance_type}} | {{.resource_id}} |
 {{ end -}}
 ___
 ###### Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }}) within Org: {{ rs_org_name }} (Org ID: {{ rs_org_id }})

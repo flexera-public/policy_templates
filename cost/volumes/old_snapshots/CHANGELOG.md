@@ -1,3 +1,7 @@
+v1.7
+----
+- Emailing always, adding approval for only delete
+
 v1.6
 ----
 - Adding delete function
