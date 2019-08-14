@@ -1,6 +1,14 @@
-v1.3
+v1.5
 ----
 - Adding in Estimated Savings to Summarty
+
+v1.4
+----
+- Adding in resource_id so it easy to find resource
+
+v1.3
+----
+- Fixing cheaper region billing center
 
 v1.2
 ----

@@ -11,15 +11,17 @@ This policy relies on a RightScale tag 'instance:schedule' to stop and start ins
 ***instance:schedule Tag Example***
 
 Start and Stop hours are 24 hour format: for example 8-17 is start at 8am, and stop at 5pm.
+
 Days of the week: SU,MO,TU,WE,TH,FR,SA
-Timezone: Use the TZ designator from the timezone list.  For Eastern time use America/New_York
+
+Timezone: Use the TZ database name from the [timezone list](https://en.wikipedia.org/wiki/List_of_tz_database_time_zones). For example use *America/New_York* for Eastern time.
 
 Example: instance:schedule=8-17;MO,TU,WE,TH,FR;America/New_York. Stops instances at 5pm, starts instance at 8am, Monday - Friday, Eastern Time.  
 
 Instances are off during the weekend and start back up on Monday morning and are off at 5p every weekday.
 Times are UTC unless the Timezone field is provided.
 
-Use the (Untagged Resource Policy)[https://github.com/rightscale/policy_templates/tree/master/compliance/tags/tag_checker] to automate creating the instance:schedule tag.
+Use the [Untagged Resource Policy](https://github.com/rightscale/policy_templates/tree/master/compliance/tags/tag_checker) to automate creating the instance:schedule tag.
 
 ### Input Parameters
 
