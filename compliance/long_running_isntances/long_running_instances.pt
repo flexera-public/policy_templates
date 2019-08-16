@@ -1,0 +1,141 @@
+name "Long Running Instances Termination"
+rs_pt_ver 20180301
+type "policy"
+short_description "Terminate all instances older than the number of days specified"
+long_description "Version: 1.0"
+severity "medium"
+category "Compliance"
+
+parameter "param_numberofdays" do
+  type "string"
+  label "Days"
+  description "Threshold of days to consider an instance long running."
+end
+
+parameter "param_tagstoignore" do
+  type "string"
+  label "Tags to Ignore"
+  description "Comma-seperated list of tags to exclude instances from consideration"
+  allowed_pattern /^([a-zA-Z0-9-_=]+:[a-zA-Z0-9-_=]+,*|)+$/
+end
+
+auth "rs", type: "rightscale"
+
+#get the timestamps and HREF's for those instances
+datasource "ds_instances" do
+ request do
+    auth $rs
+   verb "GET"
+   path  "/api/instances"
+    host rs_cm_host
+   header "X-Api-Version", "1.6"
+    header "X-Account", to_s(rs_project_id)
+    query "view","full"
+  end
+result do
+  encoding "json"
+  collect jmes_path(response,"[*]") do
+
+        field "href", jmes_path(col_item,"href")
+        field "name", jmes_path(col_item,"name")
+        field "timestamps",jmes_path(col_item,"timestamps")
+        field "tags", jmes_path(col_item,"tags")
+   end
+  end
+end
+
+
+#datasource for script
+datasource "js_sortedlist" do
+  run_script $filterinstances,$param_numberofdays,$ds_instances,$param_tagstoignore
+end
+
+#processed datasource containing only instances greater than the param
+script "filterinstances", type: "javascript" do
+  parameters "param_numberofdays","ds_instances","param_tagstoignore"
+  result "final_result"
+  code <<-EOS
+  final_result = []
+  
+  //Process the instances list.
+  for (var i = 0; i < ds_instances.length; i++) {
+      var instance = ds_instances[i]
+      var timestamp = []
+      timestamp = instance["timestamps"]
+      var href = instance["href"]
+      var name = instance["name"]
+      var tags = []
+      var tags = instance["tags"]
+      var tagstoignore = param_tagstoignore.split(',')
+      var bootedtimestamp = new Date(timestamp["booted_at"])
+      var today = Date.now()
+      var res = Math.abs(bootedtimestamp.valueOf() - today.valueOf())
+      var dayselapsed = Math.ceil(res / (1000 * 3600 * 24))
+      //sometimes we dont have a date... ignore
+      if (!isNaN(dayselapsed)) {
+          //did we exceed the number of days?
+          if (dayselapsed > param_numberofdays) {
+              var skip = "go"
+              //do we want to ignore a tag?
+              if (tagstoignore != "") {
+                  //loop through and check tags
+                  for (var y = 0; y < tags.length; y++) {
+                      for (var z = 0; z < tagstoignore.length; z++) {
+                        if (tags[y] == tagstoignore[z]) {
+                              skip = "stop"
+                          }
+                      }
+                  }
+              }
+              if (skip == "go") {
+                  //no tag issues, and running to long... push it on the stack
+                  server_json = { "href": href, "days_elapsed": dayselapsed, "name": name, "bootedtimestamp": bootedtimestamp }
+                  final_result.push(server_json)
+              }
+          }
+      }
+  }
+EOS
+end
+
+define termianteinstancesapproved() do
+  foreach $instance in $filterinstances do
+    @instance = rs_cm.get(href: $instance['href'])
+    @instance.terminate()
+  end
+end
+
+# escalation to terminate instances over the limit of days
+escalation "terminateinstances" do
+  request_approval do
+    label "Escalation approval"
+    description "Do you wish to terminate the volumes that are long running?"
+    parameter "approval_reason" do
+      type "string"
+      label "Reason for approval"
+      description "Explain why this is approved"
+    end
+  
+end
+run "termianteinstancesapproved"
+end
+
+
+policy "instances_provisioned" do
+  validate $js_sortedlist do
+    summary_template "Instances Provisioned By Flexera"
+    detail_template <<-EOS
+There are {{ len data }} instance(s) discovered by this policy.
+
+| Name |                  HREF |         Days Elapsed | 
+| ---- | ----------------------|----------------------| 
+{{ range data -}}
+| {{.name}} | {{ .href }} | {{.days_elapsed}} | 
+{{ end -}}
+EOS
+  
+  escalate $terminateinstances
+  #check if empty
+  check eq(size(data), 0)
+  end
+end
