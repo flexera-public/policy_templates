@@ -1,7 +1,7 @@
 v1.8
 ----
 - Adding additional messaging around errors. 
-- Removing items via CreateImage
+- Remove snapshots created for images
 
 v1.7
 ----
