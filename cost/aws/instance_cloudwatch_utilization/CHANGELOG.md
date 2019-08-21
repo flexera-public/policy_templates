@@ -1,3 +1,7 @@
+v1.4
+----
+- Fixing Readme
+
 v1.3
 -----
 - Adding in better regex
