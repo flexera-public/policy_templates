@@ -1,3 +1,8 @@
+v1.8
+----
+- Adding additional messaging around errors. 
+- Removing items via CreateImage
+
 v1.7
 ----
 - Emailing always, adding approval for only delete
