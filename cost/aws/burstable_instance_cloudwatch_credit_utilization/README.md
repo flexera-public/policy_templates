@@ -25,6 +25,50 @@ This policy has the following input parameters required when launching the polic
 - *Exclusion Tag* - An AWS native instance tag to ignore instances that you don't want to consider for resizing. 
 - *Cooldown Days* - Days to cooldown between checks of same instance
 
+### AWS Required Permissions
+
+This policy requires permissions to list Metrics and Get Metric Statistics from the AWS Cloudwatch API.
+The Cloud Management Platform automatically creates two Credentials when connecting AWS to Cloud Management; AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY. The IAM user credentials contained in those credentials will require the following permissions:
+
+```javascript
+{
+  "Version": "2012-10-17",
+  "Statement":[{
+      "Effect":"Allow",
+      "Action":["cloudwatch:GetMetricStatistics","cloudwatch:ListMetrics"],
+      "Resource":"*",
+      "Condition":{
+         "Bool":{
+            "aws:SecureTransport":"true"
+            }
+         }
+      }
+   ]
+}
+```
+
+```javascript
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Effect": "Allow",
+            "Action": [
+                "ec2:StartInstances",
+                "ec2:StopInstances"
+            ],
+            "Resource": "arn:aws:ec2:*:*:instance/*",
+        },
+        {
+            "Effect": "Allow",
+            "Action": "ec2:DescribeInstances",
+            "Resource": "*"
+        }
+    ]
+}
+```
+
+
 ### Supported Clouds
 
 - Amazon
