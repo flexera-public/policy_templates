@@ -1,3 +1,7 @@
+v1.9
+----
+- Fixing undefined when descriptions don't exist
+
 v1.8
 ----
 - Adding additional messaging around errors. 
