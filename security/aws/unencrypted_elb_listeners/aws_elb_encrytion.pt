@@ -1,0 +1,196 @@
+name "AWS Elastic Load Balancer Encryption Check"
+rs_pt_ver 20180301
+type "policy"
+short_description "Checks for unecrypted listeners on Classic, Network, and Application ELBs. See the [README](UPDATE WITH URL) and [docs.rightscale.com/policies](http://docs.rightscale.com/policies/) to learn more."
+long_description "Version: 1.0"
+severity "medium"
+category "Security"
+
+permission "perm_read_creds" do
+  actions "rs_cm.show_sensitive", "rs_cm.index_sensitive"
+  resources "rs_cm.credentials"
+end
+
+parameter "param_email" do
+  type "list"
+  label "Email addresses of the recipients you wish to notify"
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+auth "auth_aws", type: "aws" do
+  version 4
+  service "elasticloadbalancing"
+  access_key cred("AWS_ACCESS_KEY_ID")
+  secret_key cred("AWS_SECRET_ACCESS_KEY")
+end
+
+# THIS IS FOR CLASSIC LOAD BALANCERS
+# Reference: https://docs.aws.amazon.com/elasticloadbalancing/2012-06-01/APIReference/API_DescribeLoadBalancers.html
+datasource "aws_classic_elbs" do
+  request do
+    auth $auth_aws
+    host "elasticloadbalancing.amazonaws.com"
+    path "/"
+    query "Action", "DescribeLoadBalancers"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "xml"
+    collect xpath(response, "//DescribeLoadBalancersResponse/DescribeLoadBalancersResult/LoadBalancerDescriptions/member", "array") do
+      field "elb_classic_name", xpath(col_item, "LoadBalancerName")
+      field "elb_classic_listeners" do
+        collect xpath(col_item, "Listeners/member") do
+          field "protocol", xpath(col_item, "Protocol")
+          field "port", xpath(col_item, "LoadBalancerPort")
+        end
+      end
+    end
+  end
+end
+
+datasource "aws_elbs" do
+  request do
+    auth $auth_aws
+    host "elasticloadbalancing.amazonaws.com"
+    path "/"
+    query "Action", "DescribeLoadBalancers"
+    query "Version", "2015-12-01"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "xml"
+    collect xpath(response, "//DescribeLoadBalancersResponse/DescribeLoadBalancersResult/LoadBalancers/member", "array") do
+      field "elb_name", xpath(col_item, "LoadBalancerName")
+      field "elb_arn", xpath(col_item, "LoadBalancerArn")
+      field "elb_type", xpath(col_item, "Type")
+    end
+  end
+end
+
+datasource "aws_elb_listener_descriptions" do
+  iterate $aws_elbs
+  request do
+    auth $auth_aws
+    host "elasticloadbalancing.amazonaws.com"
+    path "/"
+    query "Action", "DescribeListeners"
+    query "LoadBalancerArn", val(iter_item, "elb_arn")
+    query "Version", "2015-12-01"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "xml"
+    collect xpath(response, "//DescribeListenersResponse/DescribeListenersResult/Listeners/member", "array") do
+      field "elb_arn", xpath(col_item, "LoadBalancerArn")
+      field "listener_arn", xpath(col_item, "ListenerArn")
+      field "listener_protocol", xpath(col_item, "Protocol")
+      field "listener_port", xpath(col_item, "Port")
+    end
+  end
+end
+
+datasource "aws_unencrypted_elb_listeners" do
+  run_script $check_for_unencrypted_elb_listeners, $aws_elb_listener_descriptions, $aws_elbs, $aws_classic_elbs
+end
+
+script "check_for_unencrypted_elb_listeners", type: "javascript" do
+  parameters "elb_listener_desc", "aws_elbs", "aws_classic_elbs"
+  result "results"
+  code <<-EOS
+  
+  results = []
+
+  //Check for unencrypted classic elb listeners
+  for(var i = 0; i < aws_classic_elbs.length; i++) {
+    var classic_elb = aws_classic_elbs[i]
+    var classic_elb_name = classic_elb["elb_classic_name"]
+    var classic_elb_listeners = classic_elb["elb_classic_listeners"]
+    //console.log ("classic_elb_name is " + classic_elb_name)
+     
+    for(var x = 0; x < classic_elb_listeners.length; x++) {
+      var classic_elb_listener=classic_elb_listeners[x]
+      switch (classic_elb_listener.protocol) {
+        case "HTTPS":
+          break
+        case "SSL":
+          break
+        default:
+          //console.log("protocol for element " + x + " is " + classic_elb_listener.protocol)
+          //console.log("port for element " + x + " is " + classic_elb_listener.port)
+          results.push (
+            {
+              "elb_name": classic_elb_name,
+              "elb_type": "classic",
+              "listener_arn": "Not Applicable",
+              "listener_protocol": classic_elb_listener.protocol,
+              "listener_port": classic_elb_listener.port,
+            }
+          )
+      }
+    }
+  }
+
+  //Check for unencrypted application / network elb listeners
+  for(var i = 0; i < elb_listener_desc.length; i++) {
+    var listener = elb_listener_desc[i]
+    var listener_arn = listener["listener_arn"]
+	  var listener_protocol = listener["listener_protocol"]
+	  var listener_port = listener["listener_port"]
+    var listener_elb_arn = listener["elb_arn"]
+    
+    //fetch elb_name from aws_elbs array by matching on elb_arn
+    for(var x = 0; x < aws_elbs.length; x++) {
+      var elb = aws_elbs[x]
+      var elb_arn = elb["elb_arn"]
+      if (elb_arn == listener_elb_arn) {
+        var elb_name = elb["elb_name"]
+        var elb_type = elb["elb_type"]
+      }
+    }
+
+    switch (listener_protocol) {
+      case "HTTPS":
+        break
+      case "TLS":
+        break
+      default:
+        results.push (
+          {
+            "elb_name": elb_name,
+            "elb_type": elb_type,
+            "listener_arn": listener_arn,
+            "listener_protocol": listener_protocol,
+            "listener_port": listener_port,
+	        }
+        )
+    }
+  }
+  //console.log("filteredelblisteners", results)
+EOS
+end
+
+policy "aws_elbs" do
+  validate $aws_unencrypted_elb_listeners do
+    escalate $send_email_report
+
+    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} Unencrypted Elastic Load Balancer Listener(s) Found in AWS"
+    detail_template <<-EOF
+# Unencrypted Elastic Load Balancer Listener(s) Found in AWS
+| ELB Name | ELB Type | Listener ARN | Protocol | Port |
+| -------- | -------- | ------------ | -------- | ---- |
+{{ range data -}}
+| {{.elb_name}} | {{.elb_type}} | {{.listener_arn}} | {{.listener_protocol}} | {{.listener_port}} |
+{{ end -}}
+EOF
+
+    #check if empty
+    check eq(size(data), 0)
+  end
+end
+
+escalation "send_email_report" do
+  email $param_email
+end
