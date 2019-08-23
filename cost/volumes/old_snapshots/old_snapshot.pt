@@ -2,7 +2,7 @@ name "Discover Old Snapshots"
 rs_pt_ver 20180301
 type "policy"
 short_description "A policy that sends email and requests deletion when snapshots older then a certain timeframe are found. See the [README](https://github.com/rightscale/policy_templates/tree/master/cost/volumes/old_snapshots) and [docs.rightscale.com/policies](http://docs.rightscale.com/policies/) to learn more."
-long_description "Version: 1.6"
+long_description "Version: 1.9"
 severity "high"
 category "Cost"
 
@@ -37,53 +37,95 @@ auth "rs", type: "rightscale"
 
 resources "clouds", type: "rs_cm.clouds"
 
+resources "images", type: "rs_cm.images" do
+  iterate @clouds
+  cloud_href href(iter_item)
+end
+
 resources "volume_snapshots", type: "rs_cm.volume_snapshots" do
   iterate @clouds
   cloud_href href(iter_item)
   tags none($param_snapshot_tag_list,"policy:delete=error")
 end
 
+datasource "ds_images" do
+  iterate @images
+  field "resource_uid", val(iter_item,  "resource_uid")
+end
+
 datasource "ds_volume_snapshots" do
   iterate @volume_snapshots
   field "resource_uid", val(iter_item,  "resource_uid")
+  field "description", val(iter_item, "description")
   field "name", val(iter_item, "name")
   field "href", href(iter_item)
   field "updated_at", val(iter_item, "updated_at")
 end
 
-escalation "report_old_snapshots" do
-    request_approval  do
-      label "Escalation approval"
-      description "Approve delete action"
-      parameter "approval_reason" do
-        type "string"
-        label "Reason for approval"
-        description "Explain why you are approving the action"
-      end
+datasource "ds_snapshots_pruned" do
+  run_script $js_snapshots_pruned, $ds_volume_snapshots, $ds_images
+end
+
+script "js_snapshots_pruned", type: "javascript" do
+  parameters "ds_volume_snapshots", "ds_images"
+  result "results"
+  code <<-EOF
+  var ami_array = _.pluck(ds_images, "resource_uid")
+  results = _.filter(ds_volume_snapshots, function(snapshot) {
+    if ( snapshot['description'] != null && snapshot['description'] !== undefined ){
+      if ( snapshot['description'].indexOf('CreateImage') === -1 ){
+        return snapshot;
+      } else {
+        var snapshot_description = snapshot['description']
+        var snap_id = _.find(snapshot_description.split(" "), function(word) { return word.indexOf('ami') !== -1 })
+        if ( !_.contains(ami_array,snap_id) ){
+          return snapshot;
+        }
+      }
+    } else {
+      return snapshot;
+    }
+  })
+  EOF
+end
+
+escalation "esc_report_old_snaphsots" do
+  email $param_email
+end
+
+escalation "esc_delete_old_snapshots" do
+  request_approval  do
+    label "Escalation approval"
+    description "Approve delete action"
+    parameter "approval_reason" do
+      type "string"
+      label "Reason for approval"
+      description "Explain why you are approving the action"
     end
-  
-    run "delete_old_snapshots", data
-    email $param_email
   end
+
+  run "delete_old_snapshots", data
+end
 
 resolution "report_old_snapshots_resolution" do
   email $param_email
 end
 
 policy "pol_snapshots" do
-  validate_each $ds_volume_snapshots do
+  validate_each $ds_snapshots_pruned do
     summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{len data}} Snapshots that can be deleted, that are older than {{parameters.param_age_days}} days. "
     detail_template <<-EOS
 # {{len data}} Snapshots that can be deleted, that are older than {{parameters.param_age_days}} days.
 
-| Resource UID | Name | Href | Tags | Last Updated |
-| ------------ | ---- | ---- | ---- | ------------ |
+| Resource UID | Name | Description | Href | Tags | Last Updated |
+| ------------ | ---- | ----------- | ---- | ---- | ------------ |
 {{ range data -}}
-| {{ .resource_uid }} | {{ .name }} | {{.href}} | {{.tags}} | {{.updated_at}} |
+| {{ .resource_uid }} | {{ .name }} | {{.description}} | {{.href}} | {{.tags}} | {{.updated_at}} |
 {{ end -}}
 EOS
 
-    escalate $report_old_snapshots
+    escalate $esc_report_old_snaphsots
+    escalate $esc_delete_old_snapshots
     check lt(dec(now,to_d(val(item, "updated_at"))), prod($param_age_days, 24*3600))
     resolve $report_old_snapshots_resolution
   end
@@ -100,10 +142,12 @@ define delete_old_snapshots($data) do
 end
 
 define snapshot_error($item) do
+  $msg = split($_error["message"], "\n")
+  $msg_tag = join(["policy:error_msg=",$msg])
   sub on_error: skip do
-    rs_cm.tags.multi_add(resource_hrefs: [$item['href']], tags: ["policy:delete=error"])
+    rs_cm.tags.multi_add(resource_hrefs: [$item['href']], tags: ["policy:delete=error",$msg_tag])
   end
-  call sys_log('destroy-failed' ,to_s($item))
+  call sys_log('destroy-failed' ,join([to_s($item),"-",$msg]))
   $_error_behavior = "skip"
 end
 

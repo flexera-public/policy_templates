@@ -15,6 +15,7 @@ This Policy Template gathers AWS CloudWatch data for instances on 30 day interva
 - The **Exclusion Tag Key** parameter is a string value.  Supply the Tag Key only.  Tag Values are not analyzed and therefore are not need.  If the exclusion tag key is used on an Instance, that Instance is presumed to be exempt from this policy.
 - This policy sets the tag defined in the **Action Tag Key:Value** parameter on the underutilized instances that were identified.
 -  If you get an **N/A** in a field you will need to install the [CloudWatch Agent](https://docs.aws.amazon.com/AmazonCloudWatch/latest/monitoring/Install-CloudWatch-Agent.html) on the instance to get those metrics. 
+- This policy only pulls running instances, as it is unable to get correct monitoring metrics from instances in other states.
 
 #### Windows Support
 
@@ -38,6 +39,28 @@ This policy has the following input parameters required when launching the polic
 - *Average used CPU percentage* - Utilization below this percentage will raise an incident to tag the instance. Providing -1 will turn off this metric for consideration.
 - *Exclusion Tag Key* - An Azure-native instance tag to ignore instances that you don't want to consider for downsizing. Only supply the tag key
 - *Action Tag Key:Value* - The tag key:value pair to set on an instance that is underutilized.
+
+### AWS Required Permissions
+
+This policy requires permissions to list Metrics and Get Metric Statistics from the AWS Cloudwatch API.
+The Cloud Management Platform automatically creates two Credentials when connecting AWS to Cloud Management; AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY. The IAM user credentials contained in those credentials will require the following permissions:
+
+```javascript
+{
+  "Version": "2012-10-17",
+  "Statement":[{
+      "Effect":"Allow",
+      "Action":["cloudwatch:GetMetricStatistics","cloudwatch:ListMetrics"],
+      "Resource":"*",
+      "Condition":{
+         "Bool":{
+            "aws:SecureTransport":"true"
+            }
+         }
+      }
+   ]
+}
+```
 
 ### Supported Clouds
 
