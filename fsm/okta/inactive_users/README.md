@@ -4,7 +4,7 @@
 
 ### What it does
 
-This Policy Template leverages the [Okta Users API](https://developer.okta.com/docs/reference/api/users/#list-users) to identify users that have no logged in for an extended period of time, and optionally will deactivate those users upon approval.  
+This Policy Template leverages the [Okta Users API](https://developer.okta.com/docs/reference/api/users/#list-users) to identify users that have not logged in for an extended period of time, and optionally will deactivate those users upon approval.  
 
 ### Prerequesites
 
