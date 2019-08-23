@@ -1,14 +1,19 @@
 # Schedule FNMS report
-This policy will run a FNMS report and send the result via email.
-The policy is a report only policy, no action is taken during the Policy Escalation
+This policy will run a FNMS report (Custom view) and send the result via email.
+The policy is a report only policy, no action is taken during the Policy Escalation.
 
 The report / Mail output looks like this:
 ![Alt text][emailoutput]
 
+Current limitations:
+- This only works with the FNMS Cloud
+- Output is limited to max 100.000 rows.
+
+
 # How to setup FNMS Report for this policy:
 
-1. Create a report in FlexNet manager that could look like this:
-![Alt text][FNMSCloudInstanceReport]
+1. Create a custom view in FlexNet manager that could look like this:
+![Alt text][FNMSReport]
 Once saved note the report number in thr URL field :
 ![Alt text][ReportNumber] you need it when activating the Policy
 
@@ -28,10 +33,10 @@ Once saved note the report number in thr URL field :
 
 
 <!-- Image referances -->
-[emailoutput]: images/MailOutput_FNMSLicense.png "email output"
+[emailoutput]: images/email_output.png "email output"
 [APIToken]: images/APIToken.png "APIToken"
 [CreateServeceAccount]: images/CreateServeceAccount.png "Create Service Account"
-[FNMSCloudInstanceReport]: images/FNMSCloudInstanceReport.png "FNMS Cloud Instance Report"
+[FNMSReport]: images/FNMS_cv_Report.png "FNMS Cloud Instance Report"
 [ReportNumber]: images/ReportNumber.png "ReportNumber"
 [WebServiceRole]: images/WebServiceRole.png "WebServiceRole"
 [CMPToken]: images/CMP_NewToken.png "CMP Token"
