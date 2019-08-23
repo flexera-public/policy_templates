@@ -37,10 +37,20 @@ auth "rs", type: "rightscale"
 
 resources "clouds", type: "rs_cm.clouds"
 
+resources "images", type: "rs_cm.images" do
+  iterate @clouds
+  cloud_href href(iter_item)
+end
+
 resources "volume_snapshots", type: "rs_cm.volume_snapshots" do
   iterate @clouds
   cloud_href href(iter_item)
   tags none($param_snapshot_tag_list,"policy:delete=error")
+end
+
+datasource "ds_images" do
+  iterate @images
+  field "resource_uid", val(iter_item,  "resource_uid")
 end
 
 datasource "ds_volume_snapshots" do
@@ -53,17 +63,29 @@ datasource "ds_volume_snapshots" do
 end
 
 datasource "ds_snapshots_pruned" do
-  run_script $js_snapshots_pruned, $ds_volume_snapshots
+  run_script $js_snapshots_pruned, $ds_volume_snapshots, $ds_images
 end
 
 script "js_snapshots_pruned", type: "javascript" do
-  parameters "ds_volume_snapshots"
+  parameters "ds_volume_snapshots", "ds_images"
   result "results"
   code <<-EOF
+  var ami_array = _.pluck(ds_images, "resource_uid")
+  console.log(ami_array)
   results = _.filter(ds_volume_snapshots, function(snapshot) {
     if ( snapshot['description'] != null && snapshot['description'] !== undefined ){
       if ( snapshot['description'].indexOf('CreateImage') === -1 ){
         return snapshot;
+      } else {
+        var re = new RegExp(/\bami-\w+\b/)
+        var snapshot_description = snapshot['description']
+        var snap_id = _.find(snapshot_description.split(" "), function(word) { return word.indexOf('ami') !== -1 })
+        console.log("SnapID:" + snap_id)
+        var snapshot_ami_id = snapshot_description.match(re)
+        console.log("SNAID:" + snapshot_ami_id)
+        if ( !_.contains(ami_array,snap_id) ){
+          return snapshot;
+        }
       }
     } else {
       return snapshot;
