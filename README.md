@@ -79,6 +79,9 @@ Please contact sales@rightscale.com to learn more.
 - [VMWare Instance Tag Sync](./operational/vmware/instance_tag_sync)
 - [Azure VMs Not Using Managed Disks](./operational/azure/vms_without_managed_disks/)
 
+### SaaS Management
+- [Okta Inactive Users](./fsm/okta/inactive_users)
+
 ### Policy Data Sets
  - [AWS Regions](./data/aws/regions.json)
  - [AWS Instance Types](./data/aws/instance_types.json)
