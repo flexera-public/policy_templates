@@ -10,7 +10,7 @@ This Policy Template reports on accounts with low usage. Accounts with very low 
 
 ### Functional Details
 
-- This policy queries optima data to determine low account usage. 
+- This policy queries optima data to determine low account usage. Because AWS `APNFee` is not a usage item, we have removed it from this policy. This will cause some of the recommendations to not match optima recommendations. 
 
 #### Input Parameters
 
