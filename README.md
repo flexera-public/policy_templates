@@ -1,4 +1,4 @@
-# RightScale Policy Templates
+﻿# RightScale Policy Templates
 
 This repo contains a library of open source RightScale Policy Templates to provide governance via automation across Cost, Security, Operational, and Compliance categories.  All contributions are shared under the MIT license.
 
@@ -57,6 +57,7 @@ Please contact sales@rightscale.com to learn more.
 - [Untagged Resources](./compliance/tags/tag_checker)
 - [Azure Disallowed Regions](./compliance/azure/azure_disallowed_regions)
 - [Azure: Tag Resources with Resource Group Name](./compliance/tags/azure_rg_tags)
+- [Azure: Long Stopped Instances](./compliance/azure/azure_long_stopped_instances)
 - [Billing Center Access Report](./compliance/billing_center_access_report/)
 - [GitHub.com Available Seats](./compliance/github/available_seats/)
 - [GitHub.com Unpermitted Outside Collaborators](./compliance/github/outside_collaborators/)
@@ -78,6 +79,9 @@ Please contact sales@rightscale.com to learn more.
 - [Stranded Servers](./operational/stranded_servers/)
 - [VMWare Instance Tag Sync](./operational/vmware/instance_tag_sync)
 - [Azure VMs Not Using Managed Disks](./operational/azure/vms_without_managed_disks/)
+
+### SaaS Management
+- [Okta Inactive Users](./fsm/okta/inactive_users)
 
 ### Policy Data Sets
  - [AWS Regions](./data/aws/regions.json)
