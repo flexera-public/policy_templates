@@ -2,7 +2,7 @@ name "Superseded Instances"
 rs_pt_ver 20180301
 type "policy"
 short_description "This Policy Template is used to automatically resize instances based on user-defined standards. \n See the [README](https://github.com/rightscale/policy_templates/tree/master/cost/superseded_instance) and [docs.rightscale.com/policies](http://docs.rightscale.com/policies/) to learn more."
-long_description "Version: 1.2"
+long_description "Version: 1.3"
 category "Cost"
 severity "low"
 
@@ -124,6 +124,7 @@ datasource "ds_new_bc_costs" do
       field "vendor_account_name", jmes_path(col_item,"dimensions.vendor_account_name")
       field "cost_amortized_unblended_adj", jmes_path(col_item,"metrics.cost_amortized_unblended_adj")
       field "usage_amount", jmes_path(col_item, "metrics.usage_amount")
+      field "region", jmes_path(col_item, "dimensions.region")
       field "instance_type", jmes_path(col_item, "dimensions.instance_type")
       field "service", jmes_path(col_item, "dimensions.service")
       field "resource_type", jmes_path(col_item, "dimensions.resource_type")
@@ -210,6 +211,7 @@ script "js_new_costs_request", type: "javascript" do
     }
 EOS
 end
+
 datasource "ds_format_costs" do
   run_script $js_format_costs, $ds_new_bc_costs, $ds_cloud_vendor_accounts, $ds_billing_centers
 end
@@ -258,6 +260,7 @@ script "js_format_costs", type: "javascript" do
           vendor: new_bc_cost_obj.vendor,
           vendor_account_name: vendor_account_name,
           usage_amount: new_bc_cost_obj.usage_amount,
+          region: new_bc_cost_obj.region,
           instance_type: new_bc_cost_obj.instance_type,
           resource_id: new_bc_cost_obj.resource_id,
           resource_type: new_bc_cost_obj.resource_type,
@@ -356,6 +359,7 @@ script "js_merge_instance_data", type: "javascript" do
             vendor: instance.vendor,
             vendor_account_name: instance.vendor_account_name,
             usage_amount: instance.usage_amount,
+            region: instance.region,
             instance_type: instance.instance_type,
             new_instance_type: new_instance_type,
             resource_id: instance.resource_id,
@@ -394,10 +398,10 @@ policy "pol_aws_superseded_instance" do
     detail_template <<-EOS
 # Superseded Instances
 
-| Resource UID | Name | Current Instance Type | New Instance Type | VPC Required | ENA Required | Monthly Estimated Cost |
-| ------------ | ---- | --------------------- | ----------------- | ------------ | ------------ | ---------------------- |
+| Resource UID | Name | Current Instance Type | Region | New Instance Type | VPC Required | ENA Required | Monthly Estimated Cost |
+| ------------ | ---- | --------------------- | ------ | ----------------- | ------------ | ------------ | ---------------------- |
 {{ range data -}}
-| {{ if .warn }}**_{{ end -}}{{ .resource_id }}{{ if .warn }}_**{{ end -}} | {{ .name }} | {{.instance_type}} | {{.new_instance_type}} | {{ if .vpc_incompatible_move }} **_TRUE_** {{else}} false {{end}} |  {{ if .ena_incompatible }} **_TRUE_** {{else}} false {{end}} | {{.run_rate}} |
+| {{ if .warn }}**_{{ end -}}{{ .resource_id }}{{ if .warn }}_**{{ end -}} | {{ .name }} | {{.instance_type}} | {{.region}} | {{.new_instance_type}} | {{ if .vpc_incompatible_move }} **_TRUE_** {{else}} false {{end}} |  {{ if .ena_incompatible }} **_TRUE_** {{else}} false {{end}} | {{.run_rate}} |
 {{ end -}}
 
 ___
