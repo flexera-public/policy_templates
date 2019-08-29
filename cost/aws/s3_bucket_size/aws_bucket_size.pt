@@ -1,24 +1,21 @@
 name "AWS Bucket Size Check"
 rs_pt_ver 20180301
 type "policy"
-short_description "Checks for buckets that exceed a specified byte size. See the [README](UPDATE WITH URL) and [docs.rightscale.com/policies](http://docs.rightscale.com/policies/) to learn more."
+short_description "This Policy Template scans all S3 buckets in the given account and checks if the bucket exceeds a specified byte size. See the [README](https://github.com/rightscale/policy_templates/tree/master/cost/aws/s3_bucket_size) and [docs.rightscale.com/policies] (http://docs.rightscale.com/policies/) to learn more."
 long_description "Version: 1.0"
 severity "medium"
 category "Cost"
 
-permission "perm_read_creds" do
-  actions   "rs_cm.show_sensitive","rs_cm.index_sensitive"
-  resources "rs_cm.credentials"
-end
-
 parameter "param_email" do
   type "list"
-  label "Email addresses of the recipients you wish to notify"
+  label "Email Address"
+  short_description "Email addresses of the recipients you wish to notify"
 end
 
 parameter "param_size" do
   type "string"
-  label "Byte size to check (eg: 1000000000 = 1GB)"
+  label "Byte Size Threshold"
+  short_description "Byte size to check (eg: 1000000000 = 1GB)"
 end
 
 ###############################################################################
@@ -28,15 +25,15 @@ end
 auth "auth_aws", type: "aws" do
   version 4
   service "s3"
-  access_key cred('AWS_ACCESS_KEY_ID')
-  secret_key cred('AWS_SECRET_ACCESS_KEY')
+  access_key cred("AWS_ACCESS_KEY_ID")
+  secret_key cred("AWS_SECRET_ACCESS_KEY")
 end
 
 auth "monitoring_auth_aws", type: "aws" do
   version 4
   service "monitoring"
-  access_key cred('AWS_ACCESS_KEY_ID')
-  secret_key cred('AWS_SECRET_ACCESS_KEY')
+  access_key cred("AWS_ACCESS_KEY_ID")
+  secret_key cred("AWS_SECRET_ACCESS_KEY")
 end
 
 # Reference: https://docs.aws.amazon.com/AmazonS3/latest/API/RESTServiceGET.html
@@ -51,7 +48,7 @@ datasource "aws_buckets" do
   result do
     encoding "xml"
     collect xpath(response, "//ListAllMyBucketsResult/Buckets/Bucket", "array") do
-      field "bucket_name", xpath(col_item,"Name")
+      field "bucket_name", xpath(col_item, "Name")
       field "creation_date", xpath(col_item, "CreationDate")
     end
   end
@@ -115,7 +112,7 @@ end
 datasource "aws_bucket_sizes" do
   iterate $aws_sanitized_buckets
   request do
-    run_script $aws_bucket_sizes_request, val(iter_item, "bucket_name"), val(iter_item,"region")
+    run_script $aws_bucket_sizes_request, val(iter_item, "bucket_name"), val(iter_item, "region")
   end
   result do
     encoding "json"
@@ -170,21 +167,19 @@ script "aws_bucket_sizes_request", type: "javascript" do
 end
 
 datasource "aws_oversized_buckets" do
-    run_script $check_for_oversized_buckets, $aws_bucket_sizes, $param_size
+  run_script $check_for_oversized_buckets, $aws_bucket_sizes, $param_size
 end
 
 script "check_for_oversized_buckets", type: "javascript" do
-  parameters "buckets","paramsize2check"
+  parameters "buckets", "paramsize2check"
   result "results"
   code <<-EOS
 
   // convert bytes to Human Readable
   // based on https://gist.github.com/lanqy/5193417
   function bytesToSize(bytes) {
-    // const sizes = ["Bytes", "KB", "MB", "GB", "TB"]
     var sizes = ["Bytes", "KB", "MB", "GB", "TB"]
     if (bytes === 0) return 'n/a'
-    // const i = parseInt(Math.floor(Math.log(bytes) / Math.log(1024)), 10)
     var i = parseInt(Math.floor(Math.log(bytes) / Math.log(1000)), 10)
 	// account for input larger than TB
 	if (i >= 4) {
@@ -194,11 +189,9 @@ script "check_for_oversized_buckets", type: "javascript" do
 	}
 	
 	// console.log("i is " + i);
-    // console.log("size is " + size);
+  // console.log("size is " + size);
     
-	// if (i === 0) return `${bytes} ${sizes[i]}`
     if (i === 0) return bytes + " " + sizes[size]
-    // return `${(bytes / (1024 ** i)).toFixed(1)} ${sizes[i]}`
     return ( bytes / Math.pow(1000, i) ).toFixed(1) + " " + sizes[size]
   }
 
@@ -226,11 +219,10 @@ end
 
 policy "aws_oversized_buckets" do
   validate $aws_oversized_buckets do
-  
-  escalate $send_email_report
-  
-  summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} Oversized Buckets Found in AWS"
-  detail_template <<-EOF
+    escalate $send_email_report
+
+    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} Oversized Buckets Found in AWS"
+    detail_template <<-EOF
 # Oversized Buckets Found in AWS
 | Bucket Name | Bucket Size Average |
 | ----------- | ------------------- |
@@ -238,10 +230,9 @@ policy "aws_oversized_buckets" do
 | {{.bucket_name}} | {{.average}} |
 {{ end -}}
 EOF
-  
-  #check if empty
-  check eq(size(data), 0)
-  
+
+    #check if empty
+    check eq(size(data), 0)
   end
 end
 
