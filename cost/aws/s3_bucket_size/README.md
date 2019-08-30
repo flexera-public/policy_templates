@@ -19,7 +19,40 @@ The following policy actions are taken on any resources found to be out of compl
 
 ### Required Permissions
 
-This policy requires permissions to access RightScale resources (clouds, volumes, deployments, placement groups and tags).  Before applying this policy add the following roles to the user applying the policy.  The roles should be applied to all Accounts where the policy will run or the Organization. For more information on modifying roles visit the [Governance Docs](https://docs.rightscale.com/cm/ref/user_roles.html)
+This policy requires permissions to list of AWS S3 Buckets, the location of S3 Buckets as well as permissions to list Metrics and Get Metric Statistics from the AWS Cloudwatch API.
+
+The Cloud Management Platform automatically creates two Credentials when connecting AWS to Cloud Management; AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY. The IAM user credentials contained in those credentials will require the following permissions:
+
+```javascript
+{
+  "Version": "2012-10-17",
+  "Statement":[{
+      "Effect":"Allow",
+      "Action":["cloudwatch:GetMetricStatistics","cloudwatch:ListMetrics"],
+      "Resource":"*",
+      "Condition":{
+         "Bool":{
+            "aws:SecureTransport":"true"
+            }
+         }
+      }
+   ]
+}
+
+{
+  "Version": "2006-03-01",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "s3:ListAllMyBuckets",
+        "s3:GETBucketlocation",
+      ],
+      "Resource": "*"
+    }
+  ]
+}
+```
 
 ### Supported Clouds
 
