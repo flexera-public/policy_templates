@@ -104,8 +104,8 @@ Please contact sales@rightscale.com to learn more.
 - [Libraries](./libraries/README.md)
 
 ## Getting Help
-Support for these policy templates will be provided though GitHub Issues and the RightScale public slack channel #policies.
-Visit http://chat.rightscale.com/ to join!
+Support for these policy templates will be provided though GitHub Issues and the Flexera Community.
+Visit https://community.flexera.com to join!
 
 ### Opening an Issue
 Github issues contain a template for three types of requests(Bugs, New Features to an existing Policy Template, New Policy Template Request)
@@ -115,5 +115,5 @@ Github issues contain a template for three types of requests(Bugs, New Features 
 - New Policy Template Request: Request for a new policy template.
 
 ### Troubleshooting Danger Locally
-- You can test against a pull request via: bundle exec danger pr https://github.com/rightscale/policy_templates/pull/73 --pry
+- You can test against a pull request via: bundle exec danger pr https://github.com/flexera/policy_templates/pull/73 --pry
 - http://danger.systems/guides/troubleshooting.html
