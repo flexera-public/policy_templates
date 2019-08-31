@@ -1,4 +1,4 @@
-## AWS AWS Elastic Load Balancer Encryption Check Policy Template
+## AWS Elastic Load Balancer Encryption Check Policy Template
 
 ### What it does
 
@@ -18,7 +18,37 @@ The following policy actions are taken on any resources found to be out of compl
 
 ### Required Permissions
 
-This policy requires permissions to access RightScale resources (clouds, volumes, deployments, placement groups and tags).  Before applying this policy add the following roles to the user applying the policy.  The roles should be applied to all Accounts where the policy will run or the Organization. For more information on modifying roles visit the [Governance Docs](https://docs.rightscale.com/cm/ref/user_roles.html)
+This policy requires permissions to describe Classic, Network, and Appplication Elastic Load Balancers.
+The Cloud Management Platform automatically creates two Credentials when connecting AWS to Cloud Management; AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY. The IAM user credentials contained in those credentials will require the following permissions:
+
+```javascript
+{
+  "Version": "2012-06-01",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "elasticloadbalancing:DescribeLoadBalancers"
+      ],
+      "Resource": "*"
+    }
+  ]
+}
+
+{
+  "Version": "2015-12-01",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "elasticloadbalancing:DescribeLoadBalancers",
+		"elasticloadbalancing:DescribeListeners"
+      ],
+      "Resource": "*"
+    }
+  ]
+}
+```
 
 ### Supported Clouds
 
