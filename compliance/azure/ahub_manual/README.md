@@ -47,6 +47,6 @@ This policy has the following input parameters required when launching the polic
 
 ### Cost
 
-If the policy is used to remove AHUB on instances, those instances will be charged the on-demand rate for the given license.
+This policy does not incur any cloud costs.
 
 
