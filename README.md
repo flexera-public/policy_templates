@@ -78,6 +78,7 @@ Please contact sales@rightscale.com to learn more.
 - [Stranded Servers](./operational/stranded_servers/)
 - [VMWare Instance Tag Sync](./operational/vmware/instance_tag_sync)
 - [Azure VMs Not Using Managed Disks](./operational/azure/vms_without_managed_disks/)
+- [Schedule FlexNet Manager report](./operational/fnms/schedule_fnms_reports)
 
 ### Policy Data Sets
  - [AWS Regions](./data/aws/regions.json)
