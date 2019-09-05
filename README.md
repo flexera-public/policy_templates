@@ -39,6 +39,7 @@ Please contact sales@rightscale.com to learn more.
 - [AWS S3 Buckets without Server Access Logging](./security/storage/aws/s3_buckets_without_server_access_logging/)
 - [AWS Burstable Instance CloudWatch Utilization](./cost/aws/burstable_instance_cloudwatch_credit_utilization/)
 - [AWS Bucket Size Check] (/.cost/aws/s3_bucket_size/)
+- [Actual v. Budgeted Spend Report] (/cost/budget_v_actual/budget_v_actual.pt/)
 
 ### Security
 - [Security Group: ICMP Enabled](./security/security_groups/icmp_enabled/)
