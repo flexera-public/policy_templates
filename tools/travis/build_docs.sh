@@ -1,7 +1,7 @@
 body='{
   "request": {
     "branch":"master",
-    "message": "Build triggered by rightscale/policy_templates"
+    "message": "Build triggered by flexera/policy_templates"
 }}'
 
 curl -s -X POST \
