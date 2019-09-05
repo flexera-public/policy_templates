@@ -70,6 +70,8 @@ Please contact sales@rightscale.com to learn more.
 - [AWS Unused ECS Clusters](./compliance/aws/ecs_unused/)
 - [Unapproved Instance Types](./compliance/unapproved_instance_types/)
 - [Azure Subscription Access](./compliance/azure/subscription_access/)
+- [Azure AHUB Utilization with Manual Entry](./compliance/azure/ahub_manual/)
+
 
 ### Operational
 - [AWS Cloud Credentials Rotation Policy](./operational/cloud_credentials/aws)
