@@ -1,4 +1,4 @@
-# RightScale Policy Templates
+﻿# RightScale Policy Templates
 
 This repo contains a library of open source RightScale Policy Templates to provide governance via automation across Cost, Security, Operational, and Compliance categories.  All contributions are shared under the MIT license.
 
@@ -38,6 +38,7 @@ Please contact sales@rightscale.com to learn more.
 - [Superseded Instance Remediation](./cost/superseded_instance_remediation/)
 - [AWS S3 Buckets without Server Access Logging](./security/storage/aws/s3_buckets_without_server_access_logging/)
 - [AWS Burstable Instance CloudWatch Utilization](./cost/aws/burstable_instance_cloudwatch_credit_utilization/)
+- [AWS Bucket Size Check] (/.cost/aws/s3_bucket_size/)
 
 ### Security
 - [Security Group: ICMP Enabled](./security/security_groups/icmp_enabled/)
@@ -57,6 +58,7 @@ Please contact sales@rightscale.com to learn more.
 - [Untagged Resources](./compliance/tags/tag_checker)
 - [Azure Disallowed Regions](./compliance/azure/azure_disallowed_regions)
 - [Azure: Tag Resources with Resource Group Name](./compliance/tags/azure_rg_tags)
+- [Azure: Long Stopped Instances](./compliance/azure/azure_long_stopped_instances)
 - [Billing Center Access Report](./compliance/billing_center_access_report/)
 - [GitHub.com Available Seats](./compliance/github/available_seats/)
 - [GitHub.com Unpermitted Outside Collaborators](./compliance/github/outside_collaborators/)
@@ -68,6 +70,8 @@ Please contact sales@rightscale.com to learn more.
 - [AWS Unused ECS Clusters](./compliance/aws/ecs_unused/)
 - [Unapproved Instance Types](./compliance/unapproved_instance_types/)
 - [Azure Subscription Access](./compliance/azure/subscription_access/)
+- [Azure AHUB Utilization with Manual Entry](./compliance/azure/ahub_manual/)
+
 
 ### Operational
 - [AWS Cloud Credentials Rotation Policy](./operational/cloud_credentials/aws)
@@ -79,6 +83,9 @@ Please contact sales@rightscale.com to learn more.
 - [VMWare Instance Tag Sync](./operational/vmware/instance_tag_sync)
 - [Azure VMs Not Using Managed Disks](./operational/azure/vms_without_managed_disks/)
 - [Schedule FlexNet Manager report](./operational/fnms/schedule_fnms_reports)
+
+### SaaS Management
+- [Okta Inactive Users](./fsm/okta/inactive_users)
 
 ### Policy Data Sets
  - [AWS Regions](./data/aws/regions.json)
@@ -101,8 +108,8 @@ Please contact sales@rightscale.com to learn more.
 - [Libraries](./libraries/README.md)
 
 ## Getting Help
-Support for these policy templates will be provided though GitHub Issues and the RightScale public slack channel #policies.
-Visit http://chat.rightscale.com/ to join!
+Support for these policy templates will be provided though GitHub Issues and the Flexera Community.
+Visit https://community.flexera.com to join!
 
 ### Opening an Issue
 Github issues contain a template for three types of requests(Bugs, New Features to an existing Policy Template, New Policy Template Request)
@@ -112,5 +119,5 @@ Github issues contain a template for three types of requests(Bugs, New Features 
 - New Policy Template Request: Request for a new policy template.
 
 ### Troubleshooting Danger Locally
-- You can test against a pull request via: bundle exec danger pr https://github.com/rightscale/policy_templates/pull/73 --pry
+- You can test against a pull request via: bundle exec danger pr https://github.com/flexera/policy_templates/pull/73 --pry
 - http://danger.systems/guides/troubleshooting.html

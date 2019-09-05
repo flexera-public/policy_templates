@@ -1,3 +1,8 @@
+v1.9
+----
+- Fixing undefined when descriptions don't exist
+- Excluding snapshots if ami is found
+
 v1.8
 ----
 - Adding additional messaging around errors. 
