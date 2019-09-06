@@ -1,3 +1,7 @@
+v1.6
+---
+- fix link to README
+
 v1.5
 ----
 - removed tag_instance_name
