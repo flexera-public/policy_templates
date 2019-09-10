@@ -38,7 +38,7 @@ Once saved note the report number in thr URL field :
 
 #### Cloud manager
 
-1. Create RightScale Credentials with values that match the FlexNet Manager API Token (Credential name: `FNMS_APF_Token`) 
+1. Create RightScale Credentials with values that match the FlexNet Manager API Token (Credential name: `FNMS_API_Token`) 
 
 ### Input Parameters
 
