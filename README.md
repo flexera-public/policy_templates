@@ -38,6 +38,7 @@ Please contact sales@rightscale.com to learn more.
 - [Superseded Instance Remediation](./cost/superseded_instance_remediation/)
 - [AWS S3 Buckets without Server Access Logging](./security/storage/aws/s3_buckets_without_server_access_logging/)
 - [AWS Burstable Instance CloudWatch Utilization](./cost/aws/burstable_instance_cloudwatch_credit_utilization/)
+- [AWS Bucket Size Check] (/.cost/aws/s3_bucket_size/)
 
 ### Security
 - [Security Group: ICMP Enabled](./security/security_groups/icmp_enabled/)
@@ -69,6 +70,8 @@ Please contact sales@rightscale.com to learn more.
 - [AWS Unused ECS Clusters](./compliance/aws/ecs_unused/)
 - [Unapproved Instance Types](./compliance/unapproved_instance_types/)
 - [Azure Subscription Access](./compliance/azure/subscription_access/)
+- [Azure AHUB Utilization with Manual Entry](./compliance/azure/ahub_manual/)
+
 
 ### Operational
 - [AWS Cloud Credentials Rotation Policy](./operational/cloud_credentials/aws)
@@ -79,6 +82,7 @@ Please contact sales@rightscale.com to learn more.
 - [Stranded Servers](./operational/stranded_servers/)
 - [VMWare Instance Tag Sync](./operational/vmware/instance_tag_sync)
 - [Azure VMs Not Using Managed Disks](./operational/azure/vms_without_managed_disks/)
+- [Schedule FlexNet Manager report](./operational/fnms/schedule_fnms_reports)
 
 ### SaaS Management
 - [Okta Inactive Users](./fsm/okta/inactive_users)
