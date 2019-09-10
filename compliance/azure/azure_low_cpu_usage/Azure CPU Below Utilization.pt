@@ -1,0 +1,222 @@
+name "Azure instances with low cpu average"
+rs_pt_ver 20180301
+type "policy"
+short_description "Report on any instances that have lower than specified average CPU utilization"
+long_description "Version: 1.0"
+category "Compliance"
+severity "low"
+
+#pass in the email address to notify
+parameter "param_email" do
+  type "list"
+  label "Email address"
+  description "Please enter the email address to use for the escalation"
+end
+
+#pass in tenant ID
+parameter "param_azure_tenant_id" do
+  type "string"
+  label "Azure AD Tenant ID"
+  category "Azure"
+  description "Please enter your Azure tenant ID.  You can find it by following this guide: https://docs.microsoft.com/en-us/onedrive/find-your-office-365-tenant-id"
+end
+
+#pass in Sub ID
+parameter "param_azure_sub" do
+  type "string"
+  label "Azure Subscription ID"
+  category "Azure"
+  description "Please enter your Azure Subscription ID.  You can find it by following this guide: https://docs.bitnami.com/azure/faq/administration/find-subscription-id/"
+end
+
+#pass in the CPU in percentage
+parameter "param_cpuaveragepercentage" do
+  type "string"
+  label "CPU Threshold"
+  description "Average CPU threshold at which to trigger a decomission"
+  default "60"
+  allowed_pattern /^[0-9]$|^[1-9][0-9]$|^(100)$/
+end
+
+#authenticate with Azure
+auth "azure_auth", type: "oauth2" do
+  token_url join(["https://login.microsoftonline.com/",$param_azure_tenant_id,"/oauth2/token"])
+  grant type: "client_credentials" do
+    client_id cred("AZURE_APPLICATION_ID")
+    client_secret cred("AZURE_APPLICATION_KEY")
+    additional_params do {
+      "resource" => "https://management.azure.com/"
+    } end
+  end
+end
+
+#pagination support
+pagination "azure_pagination" do
+  get_page_marker do
+    body_path "nextLink"
+  end
+  set_page_marker do
+    uri true
+  end
+end
+
+#get all virtual machines 
+datasource "ds_azure_virtualmachines" do
+  request do
+    auth $azure_auth
+    pagination $azure_pagination
+    host "management.azure.com"
+    path join(["/subscriptions/", $param_azure_sub, "/providers/Microsoft.Compute/virtualMachines"])
+    query "api-version","2018-06-01"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "value[*]") do
+      field "id", jmes_path(col_item,"id")
+      field "rg", jmes_path(col_item,"tags.rg")
+      field "name", jmes_path(col_item,"name")
+    end
+  end
+end
+
+#get cpu performance stats
+datasource "ds_azure_instance_performance" do
+  iterate $ds_azure_virtualmachines
+  request do
+    auth $azure_auth
+    pagination $azure_pagination
+    host "management.azure.com"
+    path join(["/subscriptions/", $param_azure_sub, "/resourceGroups/", val(iter_item,"rg"), "/providers/Microsoft.Compute/virtualMachines/",val(iter_item,"name"),"/providers/microsoft.insights/metrics"])
+    query "api-version","2016-09-01"
+    header "User-Agent", "RS Policies"
+  end 
+  result do
+    encoding "json"
+        field "vmname", val(iter_item,"name") 
+        field "rg", val(iter_item, "rg")
+        field "averages" do
+          collect jmes_path(response,"value[].data[]") do
+            field "average", jmes_path(col_item,"average")
+         end
+         end
+  end
+end
+
+datasource "ds_combineddata" do
+  run_script $js_combineddata,$param_cpuaveragepercentage,$ds_azure_instance_performance
+end
+
+#This is to get the average cpu over time for the machine and return the dataset of machines with issues
+script "js_combineddata", type: "javascript" do
+parameters "param_cpuaveragepercentage","ds_azure_instance_performance"
+result "result"
+code <<-EOS
+var result = []
+for (var i = 0; i < ds_azure_instance_performance.length; i++) {
+  
+  var machinename = ds_azure_instance_performance[i].vmname
+  var rg = ds_azure_instance_performance[i].rg
+  var averages = ds_azure_instance_performance[i].averages
+  var averagecpu 
+  for (var z = 0; z < averages.length; z++){
+    var averagenumber =averages[z]
+    averagecpu=0
+    flagtrip=0
+    if (!isNaN(averagenumber["average"]))
+      {
+    averagecpu = averagenumber["average"] + averagecpu
+    flagtrip=1
+  }
+  }
+
+ finalaverage = averagecpu / (averages.length + 1)
+ if((finalaverage < param_cpuaveragepercentage) && (flagtrip==1)){
+    server_json = { "vmname": machinename, "averagecpu": finalaverage, "rg": rg}
+    result.push(server_json)
+ }
+}
+EOS
+
+end
+
+
+policy "azure_resource_policy" do
+  validate $ds_combineddata do
+    summary_template "Azure Resources out of compliance"
+    detail_template <<-EOS
+# Azure Resources out of compliance
+| Name | CPU Average | Resource Group
+| ----------------------- | -----------------------  | -------------------- 
+{{ range data -}}
+{{.vmname}} | {{.averagecpu}} | {{.rg}}
+{{ end -}}
+EOS
+    check eq(size(data), 0)
+    escalate $email
+    escalate $delete_resources
+  end
+end
+
+escalation "email" do
+   email $param_email
+end
+
+
+define delete_resources($data, $param_azure_tenant_id,$param_azure_sub) return $all_responses do
+  call get_access_token($param_azure_tenant_id) retrieve $access_token
+  $all_responses = []
+  foreach $item in $data do
+   sub on_error: skip do
+      $response = http_request(
+        verb: "delete",
+        host: "management.azure.com",
+        href: join(["/subscriptions/", $param_azure_sub, "/resourceGroups/", $item["rg"], "/providers/Microsoft.Compute/virtualMachines/",$item["vmname"]]),
+        https: true,
+        query_strings: {
+          "api-version": "2018-06-01"
+        },
+        headers: {
+          "cache-control": "no-cache",
+          "content-type": "application/json",
+          "authorization": "Bearer " + $access_token
+        }
+      )
+      $all_responses << $response
+    end
+  end
+end
+
+escalation "delete_resources" do
+  request_approval  do
+    label "Approve Resource Deletion"
+    description "Approve escalation to terminate the instance(s)"
+    parameter "approval_reason" do
+    type "string"
+      label "Reason for Approval"
+     description "Explain why you are approving the action"
+    end
+  end
+ run "delete_resources", data, $param_azure_tenant_id,$param_azure_sub
+end
+
+define get_access_token($param_azure_tenant_id) return $access_token do
+
+  $client_id = cred("AZURE_APPLICATION_ID")
+  $client_secret = cred("AZURE_APPLICATION_KEY")
+
+  $body_string = "grant_type=client_credentials&resource=https://management.core.windows.net/&client_id="+$client_id+"&client_secret="+$client_secret
+
+  $auth_response = http_post(
+    url: join(["https://login.microsoftonline.com/",$param_azure_tenant_id,"/oauth2/token?api-version=1.0"]),
+    headers : {
+      "cache-control":"no-cache",
+      "content-type":"application/x-www-form-urlencoded"
+    },
+    body:$body_string
+  )
+
+  $auth_response_body = $auth_response["body"]
+  $access_token = $auth_response_body["access_token"]
+
+end
