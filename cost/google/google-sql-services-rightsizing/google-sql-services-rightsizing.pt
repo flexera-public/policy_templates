@@ -1,0 +1,256 @@
+name "Google Cloud SQL Services RightSizing"
+rs_pt_ver 20180301
+type "policy"
+short_description "Software Infrastructure Services Rightsizing Policy - provides rightsizing recommendations for SQL services based on observed performance demand. Recommendations do not just provide a list of underutilized services but include the service allocation size that best matches the observed demand."
+long_description "Version: 0.1"
+severity "medium"
+category "Cost"
+
+###############################################################################
+# Parameters
+###############################################################################
+
+parameter "param_email" do
+  type "list"
+  label "Email addresses to notify"
+  description "Email addresses of the recipients you wish to notify when new incidents are created"
+end
+
+parameter "param_google_project" do
+  type "string"
+  label "Google Cloud Project"
+  description "Google Cloud Project"
+  allowed_pattern /^[0-9a-z:\.-]+$/
+end
+
+###############################################################################
+# Permissions
+###############################################################################
+
+permission "perm_read_creds" do
+    actions   "rs_cm.show_sensitive","rs_cm.index_sensitive"
+    resources "rs_cm.credentials"
+  end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+auth "auth_google", type: "oauth2" do
+  token_url "https://www.googleapis.com/oauth2/v4/token"
+  grant type: "jwt_bearer" do
+    iss cred("GCE_PLUGIN_ACCOUNT")
+    aud "https://www.googleapis.com/oauth2/v4/token"
+    additional_claims do {
+      "scope" => "https://www.googleapis.com/auth/monitoring.write https://www.googleapis.com/auth/cloud-platform https://www.googleapis.com/auth/monitoring.read https://www.googleapis.com/auth/monitoring https://www.googleapis.com/auth/compute https://www.googleapis.com/auth/compute.readonly"
+    } end
+    signing_key cred("GCE_PLUGIN_PRIVATE_KEY")
+  end
+end
+
+auth "auth_google_sql", type: "oauth2" do
+    token_url "https://www.googleapis.com/oauth2/v4/token"
+    grant type: "jwt_bearer" do
+      iss cred("GOOGLE_SQL_PLUGIN_ACCOUNT")
+      aud "https://www.googleapis.com/oauth2/v4/token"
+      additional_claims do {
+        "scope" => "https://www.googleapis.com/auth/monitoring.write https://www.googleapis.com/auth/cloud-platform https://www.googleapis.com/auth/monitoring.read https://www.googleapis.com/auth/monitoring https://www.googleapis.com/auth/compute https://www.googleapis.com/auth/compute.readonly"
+      } end
+      signing_key cred("GOOGLE_SQL_PLUGIN_PRIVATE_KEY")
+    end
+  end
+
+###############################################################################
+# Datasources
+###############################################################################
+
+datasource "ds_time" do
+    run_script $js_time
+  end
+
+datasource "ds_cloudsql_tiers" do
+    request do
+        auth $auth_google_sql
+        host "www.googleapis.com"
+        path join(["/sql/v1beta4/projects/",$param_google_project,"/tiers/"])
+    end
+    result do
+        encoding "json"
+        collect jmes_path(response, "items[*]") do
+            field "tier", jmes_path(col_item, "tier")
+            field "ram", jmes_path(col_item, "RAM")
+            field "diskQuota", jmes_path(col_item, "DiskQuota")
+        end
+    end
+end
+
+datasource "ds_cloudsql_instances" do
+    iterate $ds_time
+    request do
+        auth $auth_google_sql
+        host "www.googleapis.com"
+        path join(["/sql/v1beta4/projects/",$param_google_project,"/instances/"])
+    end
+    result do
+        encoding "json"
+        collect jmes_path(response, "items[*]") do
+            field "database_id", join([jmes_path(col_item, "project"), ":", jmes_path(col_item, "name")])
+            field "tier", jmes_path(col_item, "settings.tier")
+            field "pricingPlan", jmes_path(col_item, "settings.pricingPlan")
+            field "gceZone", jmes_path(col_item, "gceZone")
+            field "region", jmes_path(col_item, "region")
+            field "dataDiskSizeGb", jmes_path(col_item, "settings.dataDiskSizeGb")
+        end
+    end
+ end
+
+datasource "ds_cloudsql_utilization" do
+  iterate $ds_time
+  request do
+    auth $auth_google
+    host "monitoring.googleapis.com"
+    path join(["/v3/projects/",$param_google_project,"/timeSeries/"])
+    query "filter", 'metric.type="cloudsql.googleapis.com/database/cpu/utilization"'
+    query "interval.endTime", val(iter_item,"end_date")
+    query "interval.startTime", val(iter_item,"start_date")
+    query "aggregation.alignmentPeriod", "+10800s"
+    query "aggregation.perSeriesAligner", "ALIGN_MEAN"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "timeSeries[*]") do
+      field "database_id", jmes_path(col_item, "resource.labels.database_id")
+      field "region", jmes_path(col_item, "resource.labels.region")
+      field "avg_cpu_points", jmes_path(col_item, "points[*].value.doubleValue | avg(@)")
+      field "max_cpu_points", jmes_path(col_item, "points[*].value.doubleValue | max(@)")
+      field "min_cpu_points", jmes_path(col_item, "points[*].value.doubleValue | min(@)")
+    end
+  end
+end
+
+datasource "ds_calculated_utilization" do
+  run_script $js_calculated_utilization, $ds_cloudsql_utilization, $ds_memory_utilization, $ds_disk_utilization, $ds_cloudsql_instances
+end
+
+datasource "ds_memory_utilization" do
+  iterate $ds_time
+  request do
+    auth $auth_google
+    host "monitoring.googleapis.com"
+    path join(["/v3/projects/",$param_google_project,"/timeSeries/"])
+    query "filter", 'metric.type="cloudsql.googleapis.com/database/memory/usage"'
+    query "interval.endTime", val(iter_item,"end_date")
+    query "interval.startTime", val(iter_item,"start_date")
+    query "aggregation.alignmentPeriod", "+10800s"
+    query "aggregation.perSeriesAligner", "ALIGN_MEAN"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "timeSeries[*]") do
+      field "database_id", jmes_path(col_item, "resource.labels.database_id")
+      field "region", jmes_path(col_item, "resource.labels.region")
+      field "avg_mem_points", jmes_path(col_item, "points[*].value.doubleValue | avg(@)")
+      field "max_mem_points", jmes_path(col_item, "points[*].value.doubleValue | max(@)")
+      field "min_mem_points", jmes_path(col_item, "points[*].value.doubleValue | min(@)")
+    end
+  end
+end
+
+datasource "ds_disk_utilization" do
+  iterate $ds_time
+  request do
+    auth $auth_google
+    host "monitoring.googleapis.com"
+    path join(["/v3/projects/",$param_google_project,"/timeSeries/"])
+    query "filter", 'metric.type="cloudsql.googleapis.com/database/disk/bytes_used"'
+    query "interval.endTime", val(iter_item,"end_date")
+    query "interval.startTime", val(iter_item,"start_date")
+    query "aggregation.alignmentPeriod", "+10800s"
+    query "aggregation.perSeriesAligner", "ALIGN_MEAN"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "timeSeries[*]") do
+      field "database_id", jmes_path(col_item, "resource.labels.database_id")
+      field "region", jmes_path(col_item, "resource.labels.region")
+      field "avg_disk_points", jmes_path(col_item, "points[*].value.doubleValue | avg(@)")
+      field "max_disk_points", jmes_path(col_item, "points[*].value.doubleValue | max(@)")
+      field "min_disk_points", jmes_path(col_item, "points[*].value.doubleValue | min(@)")
+    end
+  end
+end
+
+
+###############################################################################
+# Scripts
+###############################################################################
+script "js_time", type: "javascript" do
+  result "time"
+  code <<-EOF
+    var time = [{
+      "end_date":  new Date().toISOString(),
+      "start_date": new Date(new Date().setDate(new Date().getDate() - 30)).toISOString()
+    }]
+EOF
+end
+
+script "js_calculated_utilization", type: "javascript" do
+  result "results"
+  parameters "ds_cloudsql_utilization", "ds_memory_utilization", "ds_disk_utilization", "ds_cloudsql_instances"
+  code <<-EOS
+    results = []
+    for ( i =0; i < ds_cloudsql_utilization.length; i++ ){
+      var database_id = ds_cloudsql_utilization[i].database_id
+      var points = ds_cloudsql_utilization[i].points
+      results.push(
+        {
+          region: ds_cloudsql_utilization[i].region,
+          zone: ds_cloudsql_instances[i].gceZone,
+          tier: ds_cloudsql_instances[i].tier,
+          pricingPlan: ds_cloudsql_instances[i].pricingPlan,
+          database_id: database_id,
+          cpu_average: parseFloat(ds_cloudsql_utilization[i].avg_cpu_points).toFixed(2)*100,
+          cpu_maximum: parseFloat(ds_cloudsql_utilization[i].max_cpu_points).toFixed(2)*100,
+          cpu_minimum: parseFloat(ds_cloudsql_utilization[i].min_cpu_points).toFixed(2)*100,
+          mem_average: Math.round(parseFloat(ds_memory_utilization[i].avg_mem_points).toFixed(2)/1000000),
+          mem_maximum: Math.round(parseFloat(ds_memory_utilization[i].max_mem_points).toFixed(2)/1000000),
+          mem_minimum: Math.round(parseFloat(ds_memory_utilization[i].avg_mem_points).toFixed(2)/1000000),
+          disk_average: Math.round(parseFloat(ds_disk_utilization[i].avg_disk_points/1000000000).toFixed(2)/ds_cloudsql_instances[i].dataDiskSizeGb*100),
+          disk_maximum: Math.round(parseFloat(ds_disk_utilization[i].max_disk_points/1000000000).toFixed(2)/ds_cloudsql_instances[i].dataDiskSizeGb*100),
+          disk_minimum: Math.round(parseFloat(ds_disk_utilization[i].min_disk_points/1000000000).toFixed(2)/ds_cloudsql_instances[i].dataDiskSizeGb*100),
+        }
+      )
+    }
+  EOS
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "pol_utilization" do
+  validate_each $ds_calculated_utilization do
+    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} rows containing Google SQL Cloud Utilization data"
+    detail_template <<-EOS
+# Google SQL Cloud Utilization
+| Database ID | Region | Zone | Pricing Plan | Tier | CPU Maximum % | CPU Minimum % | CPU Average % | Disk Maximum % | Disk Minimum % | Disk Average % | Memory Minimum MB | Memory Maximum MB | Memory Average MB |
+| ----------- | ------ | ---- | ------------ | ---- | ------------- | ------------- | ------------- | -------------- | -------------- | -------------- | ----------------- | ----------------- | ----------------- |
+{{ range data -}}
+| {{.database_id}} | {{.region}} | {{.zone}} | {{.pricingPlan}} | {{.tier}} | {{ .cpu_maximum }} | {{.cpu_minimum}} | {{ .cpu_average }} | {{.disk_maximum}} | {{.disk_minimum}} | {{.disk_average}} | {{.mem_minimum}} | {{.mem_maximum}} | {{.mem_average}} |
+{{ end -}}
+___
+###### Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }}) within Org: {{ rs_org_name }} (Org ID: {{ rs_org_id }})
+EOS
+    check eq(0,1)
+    escalate $email
+  end
+end
+
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "email" do
+  email $param_email
+end
