@@ -6,6 +6,11 @@ long_description "Version: 1.0"
 category "Compliance"
 severity "low"
 
+
+###############################################################################
+# Parameters
+###############################################################################
+
 #pass in the email address to notify
 parameter "param_email" do
   type "list"
@@ -38,6 +43,10 @@ parameter "param_cpuaveragepercentage" do
   allowed_pattern /^[0-9]$|^[1-9][0-9]$|^(100)$/
 end
 
+###############################################################################
+# Authentication
+###############################################################################
+
 #authenticate with Azure
 auth "azure_auth", type: "oauth2" do
   token_url join(["https://login.microsoftonline.com/",$param_azure_tenant_id,"/oauth2/token"])
@@ -50,6 +59,10 @@ auth "azure_auth", type: "oauth2" do
   end
 end
 
+###############################################################################
+# Pagination
+###############################################################################
+
 #pagination support
 pagination "azure_pagination" do
   get_page_marker do
@@ -59,6 +72,10 @@ pagination "azure_pagination" do
     uri true
   end
 end
+
+###############################################################################
+# Datasources
+###############################################################################
 
 #get all virtual machines 
 datasource "ds_azure_virtualmachines" do
@@ -107,6 +124,10 @@ datasource "ds_combineddata" do
   run_script $js_combineddata,$param_cpuaveragepercentage,$ds_azure_instance_performance
 end
 
+###############################################################################
+# Scripts
+###############################################################################
+
 #This is to get the average cpu over time for the machine and return the dataset of machines with issues
 script "js_combineddata", type: "javascript" do
 parameters "param_cpuaveragepercentage","ds_azure_instance_performance"
@@ -141,6 +162,10 @@ EOS
 end
 
 
+###############################################################################
+# Policy
+###############################################################################
+
 policy "azure_resource_policy" do
   validate $ds_combineddata do
     summary_template "Azure Resources out of compliance"
@@ -158,10 +183,30 @@ EOS
   end
 end
 
+###############################################################################
+# Escalations
+###############################################################################
+
 escalation "email" do
    email $param_email
 end
 
+escalation "delete_resources" do
+  request_approval  do
+    label "Approve Resource Deletion"
+    description "Approve escalation to terminate the instance(s)"
+    parameter "approval_reason" do
+    type "string"
+      label "Reason for Approval"
+     description "Explain why you are approving the action"
+    end
+  end
+ run "delete_resources", data, $param_azure_tenant_id,$param_azure_sub
+end
+
+###############################################################################
+# Cloud Workflow
+###############################################################################
 
 define delete_resources($data, $param_azure_tenant_id,$param_azure_sub) return $all_responses do
   call get_access_token($param_azure_tenant_id) retrieve $access_token
@@ -187,18 +232,7 @@ define delete_resources($data, $param_azure_tenant_id,$param_azure_sub) return $
   end
 end
 
-escalation "delete_resources" do
-  request_approval  do
-    label "Approve Resource Deletion"
-    description "Approve escalation to terminate the instance(s)"
-    parameter "approval_reason" do
-    type "string"
-      label "Reason for Approval"
-     description "Explain why you are approving the action"
-    end
-  end
- run "delete_resources", data, $param_azure_tenant_id,$param_azure_sub
-end
+
 
 define get_access_token($param_azure_tenant_id) return $access_token do
 
