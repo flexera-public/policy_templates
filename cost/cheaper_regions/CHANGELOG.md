@@ -1,3 +1,11 @@
+v1.6
+---
+- fix link to README
+
+v1.5
+----
+- removed tag_instance_name
+
 v1.4
 ----
 - Adding in resource_id so it easy to find resource
