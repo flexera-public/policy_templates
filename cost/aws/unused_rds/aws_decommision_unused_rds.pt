@@ -1,0 +1,525 @@
+name "AWS Decommision Unused RDS Instance"
+rs_pt_ver 20180301
+type "policy"
+short_description "Gathers AWS CloudWatch data for instances on 30 day intervals. See the [README](https://github.com/rightscale/policy_templates/tree/master/cost/aws/instance_cloudwatch_utilization/) and [docs.rightscale.com/policies](http://docs.rightscale.com/policies/) to learn more."
+long_description "Version: 1.4"
+severity "low"
+category "Cost"
+
+###############################################################################
+# Permissions
+###############################################################################
+
+permission "perm_read_creds" do
+  actions   "rs_cm.show_sensitive","rs_cm.index_sensitive"
+  resources "rs_cm.credentials"
+end
+
+###############################################################################
+# Parameters
+###############################################################################
+
+parameter "param_email" do
+  type "list"
+  label "Email addresses to notify"
+  description "Email addresses of the recipients you wish to notify when new incidents are created"
+end
+
+parameter "param_days" do
+  type "number"
+  label "Days"
+  description "Number of days of inactivity before decommision"
+  default 30
+  min_value 0
+end
+
+parameter "param_exclusion_tag_key" do
+  category "User Inputs"
+  label "Exclusion Tag Key:Value"
+  description "Cloud native tag key to ignore instances. Format: Key:Value"
+  type "string"
+  allowed_pattern /([\w]?)+\:([\w]?)+/
+end
+
+
+###############################################################################
+# Authentication
+###############################################################################
+
+auth "auth_aws", type: "aws" do
+  version 4
+  service "rds"
+  access_key cred('AWS_ACCESS_KEY_ID')
+  secret_key cred('AWS_SECRET_ACCESS_KEY')
+end
+
+auth "monitoring_auth_aws", type: "aws" do
+  version 4
+  service "monitoring"
+  access_key cred('AWS_ACCESS_KEY_ID')
+  secret_key cred('AWS_SECRET_ACCESS_KEY')
+end
+
+###############################################################################
+# Datasources
+###############################################################################
+
+#Generates list of Regions
+datasource "ds_regions_list" do
+  request do
+    verb "GET"
+    host "raw.githubusercontent.com"
+    path "/rightscale/policy_templates/master/data/aws/regions.json"
+    header "User-Agent", "RS Policies"
+  end
+end
+
+datasource "ds_rds_instances" do
+  run_script $js_rds_instances, $ds_rds_instance_set, $ds_list_tags_for_resource $param_exclusion_tag_key
+end
+
+datasource "ds_rds_instances_set" do
+  iterate $ds_regions_list
+  request do
+    run_script $js_rds_instances_set, val(iter_item,"region")
+  end
+  result do
+    encoding "xml"
+    collect xpath(response, "//DescribeDBInstancesResponse/DescribeDBInstancesResult/DBInstances/DBInstance[*]", "array") do
+          field "region",val(iter_item,"region")
+          field "instanceId", xpath(col_item,"DbiResourceId")
+          field "instanceArn", xpath(col_item, "DBInstanceArn")
+          field "instanceType", xpath(col_item, "DBInstanceClass")
+          field "name", xpath(col_item,"DBInstanceIdentifier")
+          field "status", xpath(col_item,"DBInstanceStatus")
+          field "privateDnsName", xpath(col_item, "Endpoint/Address")
+
+    end
+  end
+end
+
+datasource "ds_list_tags_for_resource"
+  iterate $ds_rds_instance_set
+  request do
+    run_script $js_list_tags_for_resource, val(iter_item,"instanceArn"), val(iter_item,"region")
+  end
+  result do
+  encoding "xml"
+  collect xpath(response, "//ListTagsForResourceResponse/ListTagsForResourceResult/TagList[*]", "array") do
+      field "instanceId" val(iter_item,"instanceId")
+      field "key",val(col_item,"Tag/Key")
+      field "value", xpath(col_item,"Tag/Value")
+    end
+  end
+end
+
+datasource "ds_cloudwatch_cpu_usage" do
+  iterate $ds_rds_instances
+  request do
+    run_script $js_cloudwatch_cpu_usage, val(iter_item, "region"), val(iter_item, "instanceId")
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "GetMetricStatisticsResponse.GetMetricStatisticsResult.Datapoints[*]") do
+      field "region", val(iter_item, "region")
+      field "instanceId", val(iter_item, "instanceId")
+      field "platform", val(iter_item, "platform")
+      field "privateDnsName", val(iter_item, "privateDnsName")
+      field "tag_set", val(iter_item, "tag_set")
+      field "cpu_unit", jmes_path(col_item,"Unit")
+      field "cpu_maximum", jmes_path(col_item, "Maximum")
+      field "cpu_minimum", jmes_path(col_item, "Minimum")
+      field "cpu_average", jmes_path(col_item, "Average")
+    end
+  end
+end
+
+datasource "ds_cloudwatch_mem_usage" do
+  iterate $ds_rds_instances
+  request do
+    run_script $js_cloudwatch_mem_usage, val(iter_item, "region"), val(iter_item, "instanceId"), val(iter_item,"privateDnsName")
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response,"GetMetricStatisticsResponse.GetMetricStatisticsResult.Datapoints[*]") do
+      field "region", val(iter_item, "region")
+      field "instanceId", val(iter_item, "instanceId")
+      field "privateDnsName", val(iter_item, "privateDnsName")
+      field "tag_set", val(iter_item, "tag_set")
+      field "mem_unit", jmes_path(col_item,"Unit")
+      field "mem_maximum", jmes_path(col_item, "Maximum")
+      field "mem_minimum", jmes_path(col_item, "Minimum")
+      field "mem_average", jmes_path(col_item, "Average")
+    end
+  end
+end
+
+datasource "ds_cloudwatch_windows_mem_usage" do
+  iterate $ds_rds_instances
+  request do
+    run_script $js_cloudwatch_windows_memory_usage, val(iter_item, "region"), val(iter_item, "instanceId"), val(iter_item, "imageId"), val(iter_item, "instanceType")
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response,"GetMetricStatisticsResponse.GetMetricStatisticsResult.Datapoints[*]") do
+      field "region", val(iter_item, "region")
+      field "instanceId", val(iter_item, "instanceId")
+      field "privateDnsName", val(iter_item, "privateDnsName")
+      field "tag_set", val(iter_item, "tag_set")
+      field "mem_unit", jmes_path(col_item,"Unit")
+      field "mem_maximum", jmes_path(col_item, "Maximum")
+      field "mem_minimum", jmes_path(col_item, "Minimum")
+      field "mem_average", jmes_path(col_item, "Average")
+    end
+  end
+end
+
+datasource "ds_merged_metrics" do
+  run_script $js_merged_metrics, $ds_cloudwatch_cpu_usage, $ds_cloudwatch_mem_usage, $ds_cloudwatch_windows_mem_usage
+end
+
+###############################################################################
+# Scripts
+###############################################################################
+
+# merge the instances and tags and remove instances that have the exclusion tag
+script "js_rds_instances", type: "javascript" do
+  result "results"
+  parameters "ds_rds_instance_set", "ds_list_tags_for_resource" "param_exclusion_tag_key"
+  code <<-EOS
+  var tag_key = param_exclusion_tag_key.split(':')[0]
+  var tag_value = param_exclusion_tag_key.split(':')[1]
+  var results = []
+  for ( n=0; n < ds_rds_instance_set.length; n++) {
+    var instance = ds_rds_instance_set[n]
+    for ( i=0; i < instance.length; i++) {
+      var tags = instance.tag_set
+      if (_.contains(_.pluck(tags,'key'), tag_key) && _.contains(_.pluck(tags,'value'), tag_value)){
+        continue
+      } else {
+        results.push({
+          "region": instance.region,
+          "instanceId": instance.instanceId,
+          "imageId": instance.imageId,
+          "instanceType": instance.instanceType,
+          "platform": instance.platform,
+          "privateDnsName": instance.privateDnsName,
+          "tag_set": instance.tag_set
+        })
+      }
+    }
+  }
+EOS
+end
+
+#get list of the rds instances thier properties
+script "js_rds_instances_set", type: "javascript" do
+  result "results"
+  parameters "region"
+  code <<-EOS
+  var end_date = new Date().toISOString()
+  var start_date = new Date(new Date().setDate(new Date().getDate() - 30)).toISOString();
+  results = {
+    "auth": "auth_aws",
+    "host": 'rds.'+region+'.amazonaws.com',
+    "verb": "GET",
+    "path": "/",
+    "headers": {
+      "User-Agent": "RS Policies",
+      "Content-Type": "text/xml"
+    }
+    "query_params": {
+      'Action': 'DescribeDBInstances',
+      'Version': '2014-10-31'
+    }
+  }
+EOS
+end
+
+#get list of the rds tags for instances
+script "js_list_tags_for_resource", type: "javascript" do
+  result "results"
+  parameters "instanceArn","region"
+  code <<-EOS
+  var end_date = new Date().toISOString()
+  var start_date = new Date(new Date().setDate(new Date().getDate() - 30)).toISOString();
+  results = {
+    "auth": "auth_aws",
+    "host": 'rds.'+region+'.amazonaws.com',
+    "verb": "GET",
+    "path": "/?Action=ListTagsForResource&ResourceName="+instanceArn,
+    "headers": {
+      "User-Agent": "RS Policies",
+      "Content-Type": "text/xml"
+    }
+    "query_params": {
+      'Action': 'DescribeDBInstances',
+      'Version': '2014-10-31'
+    }
+  }
+EOS
+end
+
+script "js_cloudwatch_cpu_usage", type: "javascript" do
+  result "results"
+  parameters "region","instance_id"
+  code <<-EOS
+  var end_date = new Date().toISOString()
+  var start_date = new Date(new Date().setDate(new Date().getDate() - 30)).toISOString();
+  results = {
+    "auth": "monitoring_auth_aws",
+    "host": 'monitoring.'+region+'.amazonaws.com',
+    "verb": "GET",
+    "path": "/",
+    "headers": {
+      "User-Agent": "RS Policies",
+      "Content-Type": "application/json",
+      "x-amz-target": "GraniteServiceVersion20100801.GetMetricStatistics",
+      "Accept": "application/json",
+      "Content-Encoding": "amz-1.0"
+    }
+    "query_params": {
+      'Action': 'GetMetricStatistics',
+      'Version': '2010-08-01',
+      'Namespace': 'AWS/EC2',
+      'MetricName': 'CPUUtilization',
+      'Dimensions.member.1.Name': 'InstanceId',
+      'Dimensions.member.1.Value': instance_id,
+      'StartTime': start_date,
+      'EndTime': end_date,
+      'Period': "2592000",
+      'Statistics.member.1': 'Maximum',
+      'Statistics.member.2': 'Average',
+      'Statistics.member.3': 'Minimum'
+    }
+  }
+EOS
+end
+
+script "js_cloudwatch_mem_usage", type: "javascript" do
+  result "results"
+  parameters "region","instance_id","privateDnsName"
+  code <<-EOS
+  if (privateDnsName != null && privateDnsName !== undefined && privateDnsName.length != 0) {
+    var hostname = privateDnsName.split('.')[0]
+  } else {
+    var hostname = "ip-127-0-0-1"
+  }
+  var end_date = new Date().toISOString()
+  var start_date = new Date(new Date().setDate(new Date().getDate() - 30)).toISOString();
+  results = {
+    "auth": "monitoring_auth_aws",
+    "host": 'monitoring.'+region+'.amazonaws.com',
+    "verb": "GET",
+    "path": "/",
+    "headers": {
+      "User-Agent": "RS Policies",
+      "Content-Type": "application/json",
+      "x-amz-target": "GraniteServiceVersion20100801.GetMetricStatistics",
+      "Accept": "application/json",
+      "Content-Encoding": "amz-1.0"
+    }
+    "query_params": {
+      'Action': 'GetMetricStatistics',
+      'Version': '2010-08-01',
+      'Namespace': 'CWAgent',
+      'MetricName': 'mem_used_percent',
+      'Dimensions.member.1.Name': 'host',
+      'Dimensions.member.1.Value': hostname,
+      'StartTime': start_date,
+      'EndTime': end_date,
+      'Period': "2592000",
+      'Statistics.member.1': 'Maximum',
+      'Statistics.member.2': 'Average',
+      'Statistics.member.3': 'Minimum'
+    }
+  }
+EOS
+end
+
+script "js_cloudwatch_windows_memory_usage", type: "javascript" do
+  result "results"
+  parameters "region","instance_id", "image_id", "instance_type"
+  code <<-EOS
+  var end_date = new Date().toISOString()
+  var start_date = new Date(new Date().setDate(new Date().getDate() - 30)).toISOString();
+  results = {
+    "auth": "monitoring_auth_aws",
+    "host": 'monitoring.'+region+'.amazonaws.com',
+    "verb": "GET",
+    "path": "/",
+    "headers": {
+      "User-Agent": "RS Policies",
+      "Content-Type": "application/json",
+      "x-amz-target": "GraniteServiceVersion20100801.GetMetricStatistics",
+      "Accept": "application/json",
+      "Content-Encoding": "amz-1.0"
+    }
+    "query_params": {
+      'Action': 'GetMetricStatistics',
+      'Version': '2010-08-01',
+      'Namespace': 'CWAgent',
+      'MetricName': 'Memory % Committed Bytes In Use',
+      'Dimensions.member.1.Name': 'ImageId',
+      'Dimensions.member.1.Value': image_id,
+      'Dimensions.member.2.Name': 'InstanceId',
+      'Dimensions.member.2.Value': instance_id,
+      'Dimensions.member.3.Name': 'InstanceType',
+      'Dimensions.member.3.Value': instance_type,
+      'Dimensions.member.4.Name': 'objectname',
+      'Dimensions.member.4.Value': 'Memory',
+      'StartTime': start_date,
+      'EndTime': end_date,
+      'Period': "2592000",
+      'Statistics.member.1': 'Maximum',
+      'Statistics.member.2': 'Average',
+      'Statistics.member.3': 'Minimum'
+    }
+  }
+EOS
+end
+
+script "js_merged_metrics", type: "javascript" do
+  parameters "ds_cloudwatch_cpu_usage", "ds_cloudwatch_mem_usage", "ds_cloudwatch_windows_mem_usage"
+  result "merged_results"
+code <<-EOS
+  var merged_results = []
+  for ( i = 0; i < ds_cloudwatch_cpu_usage.length; i++){
+    var instance = ds_cloudwatch_cpu_usage[i]
+    var instance_id = instance.instanceId
+    if (instance.platform == 'windows'){
+      var mem_usage_record = _.find(ds_cloudwatch_windows_mem_usage, function(record) { return record.instanceId == instance_id; })
+
+      if (mem_usage_record != null && mem_usage_record !== undefined) {
+        var mem_maximum = parseFloat(mem_usage_record.mem_maximum).toFixed(2)
+        var mem_average = parseFloat(mem_usage_record.mem_average).toFixed(2)
+        var mem_minimum = parseFloat(mem_usage_record.mem_minimum).toFixed(2)
+      } else {
+        var mem_maximum = "101"
+        var mem_average = "101"
+        var mem_minimum = "101"
+      }
+    } else {
+      instance.platform = 'linux'
+      var mem_usage_record = _.find(ds_cloudwatch_mem_usage, function(record) { return record.instanceId == instance_id; })
+
+      if (mem_usage_record != null && mem_usage_record !== undefined) {
+        var mem_maximum = parseFloat(mem_usage_record.mem_maximum).toFixed(2)
+        var mem_average = parseFloat(mem_usage_record.mem_average).toFixed(2)
+        var mem_minimum = parseFloat(mem_usage_record.mem_minimum).toFixed(2)
+      } else {
+        var mem_maximum = "101"
+        var mem_average = "101"
+        var mem_minimum = "101"
+      }
+    }
+    merged_results.push(
+      {
+        "region": instance.region,
+        "instanceId": instance.instanceId,
+        "platform": instance.platform,
+        "privateDnsName": instance.privateDnsName,
+        "hostname": instance.privateDnsName.split('.')[0],
+        "tag_set": instance.tag_set,
+        "cpu_minimum": parseFloat(instance.cpu_minimum).toFixed(2),
+        "cpu_maximum": parseFloat(instance.cpu_maximum).toFixed(2),
+        "cpu_average": parseFloat(instance.cpu_average).toFixed(2),
+        "mem_maximum": mem_maximum,
+        "mem_minimum": mem_minimum,
+        "mem_average": mem_average
+      }
+    )
+  }
+EOS
+end
+
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "pol_unused_rds" do
+  validate $ds_rds_instances do
+    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} rows containing AWS Used RDS Instances"
+    detail_template <<-EOS
+# AWS Instance Utilization
+| Region | Name | instanceID | Private DNS Name | Instance Type | Connections |
+| ------ | ---- | ---------- | ---------------- | ------------- | ----------- |
+{{ range data -}}
+| {{.region}} | {{.name}} | {{.instanceId}} | {{.privateDnsName }} | {{.instanceType}} | xxx
+{{ end -}}
+___
+###### Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }}) within Org: {{ rs_org_name }} (Org ID: {{ rs_org_id }})
+EOS
+    #escalate $email
+    #escalate $decommision_rds
+    check false
+  end
+end
+
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "email" do
+  email $param_email
+end
+
+escalation "decommision_rds" do
+  run "decommision_rds", data
+end
+
+###############################################################################
+# Cloud Workflow
+###############################################################################
+
+define decommision_rds($data) return $all_responses do
+  $$debug=true
+  $$log = []
+  $all_responses = []
+  $key = first(split($param_take_action_tag,':'))
+  $value = last(split($param_take_action_tag,':'))
+
+  $syslog_subject = "AWS Instance Utilization with CloudWatch: "
+  call sys_log(join([$syslog_subject, "Identified Instances"]),to_s($data))
+  foreach $item in $data do
+    $response = http_request(
+      https: true,
+      verb: "post",
+      host: "ec2."+$item["region"]+".amazonaws.com",
+      signature: { "type": "aws" },
+      query_strings: {
+        "Action": "CreateTags",
+        "Version": "2012-06-01",
+        "ResourceId.1": $item["instanceId"],
+        "Tag.1.Key": $key,
+        "Tag.1.Value": $value
+      }
+    )
+    $all_responses << $response
+  end
+  call sys_log(join([$syslog_subject, "Responses"]),to_s($all_responses))
+end
+
+define handle_error($response) do
+  $status_code = $response["code"]
+  if $status_code == 404
+    $_error_behavior = "skip"
+  else
+    $_error_behavior = "raise"
+  end
+end
+
+define sys_log($subject, $detail) do
+  if $$debug
+    rs_cm.audit_entries.create(
+      notify: "None",
+      audit_entry: {
+        auditee_href: @@account,
+        summary: $subject,
+        detail: $detail
+      }
+    )
+  end
+end
