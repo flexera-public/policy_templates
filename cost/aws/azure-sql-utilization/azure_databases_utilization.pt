@@ -1,0 +1,233 @@
+name "Azure SQL Utilization"
+rs_pt_ver 20180301
+type "policy"
+short_description "Gathers database utilization data from Azure Log Analytics and tags underutilized instances.  See the [README](https://github.com/rightscale/policy_templates/tree/master/cost/azure/azure-sql-utilization) and [docs.rightscale.com/policies](http://docs.rightscale.com/policies/) to learn more."
+long_description "Version: 1.0"
+severity "low"
+category "Cost"
+
+###############################################################################
+# Permissions
+###############################################################################
+
+permission "perm_read_creds" do
+  actions   "rs_cm.show_sensitive","rs_cm.index_sensitive"
+  resources "rs_cm.credentials"
+end
+
+###############################################################################
+# Parameters
+###############################################################################
+
+parameter "param_azure_tenant_id" do
+  type "string"
+  label "Azure AD Tenant ID"
+  category "Azure"
+end
+
+parameter "param_azure_sub" do
+  type "string"
+  label "Azure Subscription ID"
+  category "Azure"
+end
+
+parameter "param_avg_cpu" do
+  type "number"
+  label "Average used CPU percentage"
+  description "Set to -1 to ignore CPU utilization"
+  default 60
+  min_value -1
+  max_value 100
+end
+
+parameter "param_exclusion_tag_key" do
+  category "User Inputs"
+  label "Exclusion Tag Key"
+  description "Cloud native tag key to ignore instances. Example: exclude_utilization"
+  type "string"
+end
+
+parameter "param_email" do
+  type "list"
+  label "Email addresses"
+  description "Email addresses of the recipients you wish to notify"
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+auth "azure_auth", type: "oauth2" do
+  token_url join(["https://login.microsoftonline.com/",$param_azure_tenant_id,"/oauth2/token"])
+  grant type: "client_credentials" do
+    client_id cred("AZURE_APPLICATION_ID")
+    client_secret cred("AZURE_APPLICATION_KEY")
+    additional_params do {
+      "resource" => "https://management.azure.com/"
+    } end
+  end
+end
+
+###############################################################################
+# Pagination
+###############################################################################
+pagination "azure_pagination" do
+  get_page_marker do
+    body_path "nextLink"
+  end
+  set_page_marker do
+    uri true
+  end
+end
+
+###############################################################################
+# Datasources
+###############################################################################
+datasource "ds_azure_databases" do
+  request do
+    auth $azure_auth
+    pagination $azure_pagination
+    host "management.azure.com"
+    path join(["/subscriptions/", $param_azure_sub, "/resources"])
+
+    query "api-version","2019-08-01"
+#    query "$filter", "resourceType eq 'Microsoft.Sql/servers/databases' or resourceType eq 'Microsoft.DocumentDb/databaseAccounts'"
+    query "$filter", "resourceType eq 'Microsoft.Sql/servers/databases'"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+      collect jmes_path(response, "value") do
+        field "id", jmes_path(col_item,"id")
+        field "name", jmes_path(col_item,"name")
+        field "location", jmes_path(col_item,"location")
+        field "type", jmes_path(col_item,"type")
+        field "kind", jmes_path(col_item,"kind") 
+        field "sku" , jmes_path(col_item,"sku")
+        field "tags", jmes_path(col_item,"tags")
+      end
+  end
+end
+
+# Build the API request object dynamically
+script "utilization_request", type: "javascript" do
+  parameters "resource_id"
+  result "request"
+  code <<-EOS
+    var end_date_tmp = new Date()
+    end_date_tmp.setMilliseconds(0)
+    end_date_tmp.setSeconds(0)
+    end_date_tmp.setMinutes(0)
+    var end_date = new Date(end_date_tmp).toISOString()
+    
+    var start_date_tmp = new Date(new Date().setDate(new Date().getDate() - 30))
+    start_date_tmp.setMilliseconds(0)
+    start_date_tmp.setSeconds(0)
+    start_date_tmp.setMinutes(0)
+    var start_date = new Date(start_date_tmp).toISOString()
+
+    var sTimespan = start_date  + "/" + end_date;
+
+    var request = {
+      auth: "azure_auth",
+      verb : "GET",
+      scheme : "https",
+      host : "management.azure.com",
+      path : "" + resource_id + "/providers/microsoft.insights/metrics",
+      query_params: {
+        "api-version" : "2018-01-01",
+        "timespan" : sTimespan,
+        "metricnames" : "cpu_percent"
+        "aggregation" : "Average,count",
+        "interval" :  "P1D"                    //Dailey
+      },
+      headers: {
+        "User-Agent" : "RS Policies"
+      }
+    } 
+  EOS
+end
+
+datasource "ds_azure_databases_metrics" do
+  iterate $ds_azure_databases
+  request do
+    run_script $utilization_request, val(iter_item,"id")
+  end
+  result do
+    encoding "json"
+      collect jmes_path(response, "value") do
+        field "id", jmes_path(col_item,"id")
+        field "name", jmes_path(col_item,"name")
+        field "unit", jmes_path(col_item,"unit")
+        field "timeseries", jmes_path(col_item,"timeseries")
+      end
+  end
+end
+
+datasource "ds_merged_metrics" do
+  run_script $js_merged_metrics, $ds_azure_databases, $ds_azure_databases_metrics
+end
+
+###############################################################################
+# Scripts
+###############################################################################
+
+script "js_merged_metrics", type: "javascript" do
+  parameters "db_resources", "databases_metrics"
+  result "result"
+  code <<-EOS
+    var result = [];
+    result = db_resources;
+
+    //now find the metrics for the devices
+    for (i=0; i< db_resources.length; i++) {
+      var objMetric = _.findWhere(databases_metrics, { id : db_resources[i].id + "/providers/Microsoft.Insights/metrics/cpu_percent" } );
+      if (typeof objMetric == "object" && typeof objMetric.timeseries[0].data == "object" ) {
+        var total = 0.0;
+        var ts_data =  objMetric.timeseries[0].data;
+        for (x=0; x < ts_data.length; x++) {
+          total += ts_data[x].average; 
+        } 
+        var average_cpu = total / ts_data.length;
+        db_resources[i].average_cpu = average_cpu.toFixed(2) + " %";
+      }  else {
+        db_resources[i].average_cpu = "n/a";
+      }
+    }
+  EOS
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy 'policy_azure_db_uttialization' do
+  validate_each $ds_merged_metrics do
+    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} Underutilized Instances Reporting to Azure Log Analytics"
+    detail_template <<-EOS
+# Azure Dababase Utilization
+
+### Thresholds for Consideration
+  - Average CPU Used %: {{ parameters.param_avg_cpu }}
+
+| Region | Name | Kind | Type | SKU - Name | SKU - family | SKU - Tier | SKU - Capacity | CPU Average % |
+| ------ | ---- | ---- | ---- | -----------| ------------ | ---------- | -------------- | ------------- |
+{{ range data -}}
+| {{.location}} | {{.name}} | {{.kind}} | {{.type}} | {{.sku.name}} | {{.sku.family}} | {{.sku.tier}} | {{.sku.tier}} | {{ .average_cpu }} |
+{{ end -}}
+
+___
+###### Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }}) within Org: {{ rs_org_name }} (Org ID: {{ rs_org_id }})
+EOS
+    escalate $email
+##    check logic_or(eq($param_avg_cpu, -1), gt(to_n(val(item,"cpu_average")),$param_avg_cpu))
+check eq(1,2)
+  end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "email" do
+  email $param_email
+end
