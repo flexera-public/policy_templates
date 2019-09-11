@@ -7,11 +7,12 @@ Checks Google for Unutilized IP Addresses.
 ### Cloud Management Required Permissions/Google Required Permissions
 - Cloud Management - The `credential_viewer`, `observer` roles
 - Cloud Management - The `policy_designer`, `policy_manager` & `policy_publisher` roles
-- Google - The `compute.addresses.list`, `compute.addresses.get` IAM Permissions
+- Google - The `compute.addresses.list`, `compute.addresses.get`, and `compute.addresses.delete` IAM Permissions
 
 ### Functional Details
 
-- This policy uses Google Cloud to get a list of addresses not in use. 
+- This policy uses Google Cloud to get a list of IP addresses, internal and external, that are not in use. 
+- Create a service account (if not exists) with the necessary permissions under Google-cloud platform (IAM & admin -> service accounts). Generate key, a JSON file will get downloaded in which you can find 'client email' and 'private key' which has to be added as credentials in RightScale cloud management Design -> Credentials with name 'GCE_PLUGIN_ACCOUNT' and 'GCE_PLUGIN_PRIVATE_KEY' respectively.  
 
 #### Input Parameters
 

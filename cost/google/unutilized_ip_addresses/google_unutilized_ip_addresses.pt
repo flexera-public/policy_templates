@@ -32,6 +32,13 @@ parameter "param_google_project" do
   allowed_pattern /^[0-9a-z:\.-]+$/
 end
 
+parameter "param_exclusion_label" do
+  category "User Inputs"
+  label "Exclusion Label"
+  description "Cloud native label to ignore IP addresses. Format: Key:Value"
+  type "string"
+end
+
 ###############################################################################
 # Authentication
 ###############################################################################
@@ -72,7 +79,7 @@ end
 datasource "ds_addresses" do
   iterate $ds_regions_list
   request do
-    run_script $js_get_addresses, $param_google_project, val(iter_item, "region")
+    run_script $js_get_addresses, $param_google_project, val(iter_item, "region"), $param_exclusion_label
   end
   result do
     encoding "json"
@@ -130,8 +137,11 @@ end
 
 script "js_get_addresses", type: "javascript" do
   result "request"
-  parameters "project","region"
+  parameters "project","region", "param_exclusion_label"
   code <<-EOS
+    var tag_key = param_exclusion_label.split(':')[0]
+    var tag_value = param_exclusion_label.split(':')[1]
+    var tag_filter = '(labels.' + tag_key + '!=' + tag_value + ')'
     request = {
       "auth": "auth_google",
       "host": "www.googleapis.com",
@@ -142,7 +152,8 @@ script "js_get_addresses", type: "javascript" do
         "Content-Type": "application/json"
       }
       "query_params": {
-        "filter": 'status!="IN_USE"'
+        "filter": '(status!="IN_USE")AND'+tag_filter,
+        //"filter": tag_filter
       }
     }
   EOS
@@ -180,6 +191,7 @@ ___
 EOS
     check eq(0,1)
     escalate $email
+    #escalate $approve_delete_addresses
   end
 end
 
@@ -190,4 +202,82 @@ end
 
 escalation "email" do
   email $param_email
+end
+
+escalation "approve_delete_addresses" do
+  request_approval  do
+    label "Approve Resource Deletion"
+    description "Approve escalation to run RightScale Cloud Workflow to delete unused IP addresses"
+    parameter "approval_reason" do
+      type "string"
+      label "Reason for Approval"
+      description "Explain why you are approving the action"
+    end
+  end
+  run "delete_addresses", data
+end
+
+###############################################################################
+# Cloud Workflow
+###############################################################################
+
+# https://cloud.google.com/compute/docs/reference/rest/v1/addresses/delete
+define delete_addresses($data) return $all_responses do
+  $$debug=true
+  call google_authenticate() retrieve $access_token
+  $all_responses = []
+  foreach $item in $data do
+    sub on_error: skip do
+      $response = http_delete(
+        url: $item["selfLink"],
+        headers: {
+          "cache-control": "no-cache",
+          "content-type": "application/json",
+          "authorization": "Bearer " + $access_token
+        }
+      )
+      $all_responses << $response
+      call sys_log('IP Address delete response',to_s($response))
+    end
+  end
+end
+
+define google_authenticate() return $access_token do
+  $jwt = {
+    iss: cred("GCE_PLUGIN_ACCOUNT"),
+    aud:"https://oauth2.googleapis.com/token",
+    exp: to_n(strftime(now()+3600, "%s")),
+    iat:to_n(strftime(now(), "%s")),
+    scope: "https://www.googleapis.com/auth/cloud-platform https://www.googleapis.com/auth/compute"
+  }
+
+  #$signed_signature = jwt_encode("RS256", $jwt, cred("GCE_PLUGIN_PRIVATE_KEY"),{typ:"JWT"})
+
+  $response = http_request({
+    verb: 'post',
+    href: '/token',
+    host: 'oauth2.googleapis.com',
+    https: true,
+    headers: {
+      "content-type": "application/json"
+    },
+    body:{
+      "grant_type": "urn:ietf:params:oauth:grant-type:jwt-bearer",
+      "assertion": $signed_signature
+    }
+  })
+  $access_token = $response["body"]["access_token"]
+end
+
+define sys_log($subject, $detail) do
+  if $$debug
+    rs_cm.audit_entries.create(
+      notify: "None",
+      audit_entry: {
+        auditee_href: @@account,
+        summary: "Google Unutilized IP Addresses Policy: "+ $subject,
+        detail: $detail
+      }
+    )
+  end
 end
