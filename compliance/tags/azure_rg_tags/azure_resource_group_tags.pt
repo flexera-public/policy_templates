@@ -1,0 +1,290 @@
+name "Azure: Tag Resources with Resource Group Name"
+rs_pt_ver 20180301
+type "policy"
+short_description "Scan all resources in an Azure Subscription, raise an incident if any resources are not tagged with the name of their Resource Group, and remediate by tagging the resource. \n See the [README](https://github.com/rightscale/policy_templates/tree/master/compliance/tags/azure_rg_tags) and [docs.rightscale.com/policies](http://docs.rightscale.com/policies/) to learn more."
+long_description "Version: 1.1"
+severity "medium"
+category "Compliance"
+
+parameter "param_email" do
+  type "list"
+  label "Email addresses of the recipients you wish to notify"
+end
+
+parameter "param_azure_tenant_id" do
+  type "string"
+  label "Azure AD Tenant ID"
+  category "Azure"
+end
+
+parameter "param_azure_sub" do
+  type "string"
+  label "Azure Subscription ID"
+  category "Azure"
+end
+
+parameter "param_tag_key" do
+  type "string"
+  label "Tag Key"
+  category "Azure"
+end 
+
+auth "azure_auth", type: "oauth2" do
+  token_url join(["https://login.microsoftonline.com/",$param_azure_tenant_id,"/oauth2/token"])
+  grant type: "client_credentials" do
+    client_id cred("AZURE_APPLICATION_ID")
+    client_secret cred("AZURE_APPLICATION_KEY")
+    additional_params do {
+      "resource" => "https://management.azure.com/"
+    } end
+  end
+end
+
+pagination "azure_pagination" do
+  get_page_marker do
+    body_path "nextLink"
+  end
+  set_page_marker do
+    uri true
+  end
+end
+
+datasource "ds_azure_resources" do
+  request do
+    auth $azure_auth
+    pagination $azure_pagination
+    host "management.azure.com"
+    path join(["/subscriptions/", $param_azure_sub, "/resources"])
+    query "api-version","2018-02-01"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "value[*]") do
+      field "id", jmes_path(col_item,"id")
+      field "region", jmes_path(col_item,"location")
+      field "name", jmes_path(col_item,"name")
+      field "tags", jmes_path(col_item,"tags")
+    end
+  end
+end
+
+datasource "ds_filtered_resources" do
+  run_script $js_filter_resources, $ds_azure_resources, $param_tag_key
+end
+
+script "js_filter_resources", type: "javascript" do
+  parameters "ds_azure_resources", "param_tag_key"
+  result "result"
+  code <<-EOS
+    var result = [];
+
+    // Iterate through all resources
+    _.each(ds_azure_resources, function(ar){
+      console.log('Resource Name: '+ar.name)
+      var id = ar.id ;
+      var rg_split = id.split('/') ;
+      var resource_group_name = rg_split[4] ;
+      var namespace = rg_split[6] ;
+      var resource_type = rg_split[7] ; 
+      console.log('Resource Group Name: '+resource_group_name)
+      console.log('Namespace: '+namespace)
+      console.log('Resource Type: '+resource_type)
+
+      var resource_tags = ar.tags ;
+      if (namespace.match(/(Classic)/g)) {
+        // Skip Azure Classic
+        console.log('Skipping Azure Classic resource. ID: '+id)
+      } else {
+        if (_.isEmpty(resource_tags)) {
+          result.push({
+            id: ar["id"],
+            region: ar["region"],
+            name: ar["name"],
+            resource_group: resource_group_name,
+            namespace: namespace,
+            resource_type: resource_type,
+            tag: 'none',
+            all_tags: 'none'
+          })
+        } else {
+          if (_.has(resource_tags, param_tag_key)) {
+            var rg_tag_value = resource_tags[param_tag_key] ;
+            console.log('TAG KEY FOUND')
+            console.log('Tag Value: '+rg_tag_value)
+            result.push({
+              id: ar["id"],
+              region: ar["region"],
+              name: ar["name"],
+              resource_group: resource_group_name,
+              namespace: namespace,
+              resource_type: resource_type,
+              tag: rg_tag_value,
+              all_tags: resource_tags
+            })
+          } else {
+            console.log('Tag Key Not Found')
+            result.push({
+              id: ar["id"],
+              region: ar["region"],
+              name: ar["name"],
+              resource_group: resource_group_name,
+              namespace: namespace,
+              resource_type: resource_type,
+              tag: 'N/A',
+              all_tags: resource_tags
+            })
+          }
+        }
+      }
+    })
+
+EOS
+end
+
+policy "policy_azure_resource" do
+  validate_each $ds_filtered_resources do
+    summary_template "{{ len data }} Azure Resources out of compliance. Azure Subscription ID: {{parameters.param_azure_sub}}"
+    detail_template <<-EOS
+# Azure Resources Incorrectly Tagged
+| Resource Name | Resource Group | Azure Region | Resource ID | Tag Value | 
+| ------------- | -------------- | ------------ | ----------- | --------- |
+{{ range data -}}
+| {{.name}} | {{.resource_group}} | {{.region}} | {{.id}} | {{.tag}}
+{{ end -}}
+
+___
+###### Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }})
+EOS
+    escalate $email
+    escalate $tag_resources
+    check eq(val(item, "resource_group"), val(item, "tag"))
+  end
+end
+
+escalation "email" do
+   email $param_email
+end
+
+escalation "tag_resources" do
+  run "tag_resources", data, $param_azure_tenant_id, $param_azure_sub, $param_tag_key
+end
+
+define tag_resources($data, $param_azure_tenant_id, $param_azure_sub, $param_tag_key) return $all_responses do
+
+  call get_access_token($param_azure_tenant_id) retrieve $access_token
+
+  $providers_response = http_request(
+    verb: "get",
+    host: "management.azure.com",
+    https: true,
+    href: "/subscriptions/"+$param_azure_sub+"/providers",
+    query_strings: {
+      "api-version": "2018-05-01"
+    },
+    headers: {
+      "cache-control": "no-cache",
+      "content-type": "application/json",
+      "authorization": "Bearer " + $access_token
+    }
+  )
+  $providers_array = $providers_response["body"]["value"]
+  $$log = []
+  $all_responses = []
+  foreach $item in $data do
+    $$log << "ID: "+$item["id"]
+    $namespace = $item["namespace"]
+    $$log << "Namespace: "+$namespace
+    $resource_type = $item["resource_type"]
+    $$log << "Resource Type: "+$resource_type
+    $namespace_obj = select($providers_array, {"namespace": $namespace})
+    if $namespace_obj == []
+      $namespace_obj = select($providers_array, {"namespace": downcase($namespace)})
+    end 
+    $resource_type_obj = select($namespace_obj[0]["resourceTypes"], {"resourceType": $resource_type})
+    $api_versions = $resource_type_obj[0]["apiVersions"]
+    $api_version = first($api_versions)
+    $$log << "API Version: "+$api_version
+
+    $new_tags = {}
+    if $item["tag"] == "none"
+      #skip
+    else
+      $new_tags = $item["all_tags"]
+    end 
+    $new_tags[$param_tag_key] = $item["resource_group"]
+    sub on_error: handle_error($update_resource_response) do 
+      $update_resource_response = http_request(
+        verb: "patch",
+        host: "management.azure.com",
+        https: true,
+        href: $item["id"],
+        query_strings: {
+          "api-version": $api_version
+        },
+        headers: {
+          "cache-control": "no-cache",
+          "content-type": "application/json",
+          "authorization": "Bearer " + $access_token
+        },
+        body: {"tags": $new_tags}
+      )
+    end 
+    $all_responses << $update_resource_response
+
+  end
+
+end
+
+define handle_error($response) do 
+  $status_code = $response["code"]
+  if $status_code == 404
+    $_error_behavior = "skip"
+  else 
+    $_error_behavior = "raise"
+  end 
+end 
+
+define get_access_token($param_azure_tenant_id) return $access_token do
+
+  $client_id = cred("AZURE_APPLICATION_ID")
+  call url_encode(cred("AZURE_APPLICATION_KEY")) retrieve $client_secret
+
+  $body_string = "grant_type=client_credentials&resource=https://management.core.windows.net/&client_id="+$client_id+"&client_secret="+$client_secret
+
+  $auth_response = http_post(
+    url: join(["https://login.microsoftonline.com/",$param_azure_tenant_id,"/oauth2/token?api-version=1.0"]),
+    headers : {
+      "cache-control":"no-cache",
+      "content-type":"application/x-www-form-urlencoded"
+    },
+    body:$body_string
+  )
+
+  $auth_response_body = $auth_response["body"]
+  $access_token = $auth_response_body["access_token"]
+
+end
+
+define url_encode($string) return $encoded_string do
+  $encoded_string = $string
+  $encoded_string = gsub($encoded_string, " ", "%20")
+  $encoded_string = gsub($encoded_string, "!", "%21")
+  $encoded_string = gsub($encoded_string, "#", "%23")
+  $encoded_string = gsub($encoded_string, "$", "%24")
+  $encoded_string = gsub($encoded_string, "&", "%26")
+  $encoded_string = gsub($encoded_string, "'", "%27")
+  $encoded_string = gsub($encoded_string, "(", "%28")
+  $encoded_string = gsub($encoded_string, ")", "%29")
+  $encoded_string = gsub($encoded_string, "*", "%2A")
+  $encoded_string = gsub($encoded_string, "+", "%2B")
+  $encoded_string = gsub($encoded_string, ",", "%2C")
+  $encoded_string = gsub($encoded_string, "/", "%2F")
+  $encoded_string = gsub($encoded_string, ":", "%3A")
+  $encoded_string = gsub($encoded_string, ";", "%3B")
+  $encoded_string = gsub($encoded_string, "=", "%3D")
+  $encoded_string = gsub($encoded_string, "?", "%3F")
+  $encoded_string = gsub($encoded_string, "@", "%40")
+  $encoded_string = gsub($encoded_string, "[", "%5B")
+  $encoded_string = gsub($encoded_string, "]", "%5D")
+end

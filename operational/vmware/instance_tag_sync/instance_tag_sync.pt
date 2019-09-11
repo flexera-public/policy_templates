@@ -1,0 +1,453 @@
+name "VMWare Instance Tag Sync"
+rs_pt_ver 20180301
+type "policy"
+short_description "Adds tags to vmware instances from CMP. See the [README](https://github.com/rightscale/policy_templates/tree/master/operational/vmware/instance_tag_sync) and [docs.rightscale.com/policies](http://docs.rightscale.com/policies/) to learn more."
+long_description "Version: 1.1"
+severity "medium"
+category "Operational"
+
+###############################################################################
+# Permissions
+###############################################################################
+
+permission "perm_retrieve_resources" do
+  label "Retrieve Resources"
+  actions   "rs_cm.index","rs_cm.show"
+  resources "rs_cm.instances","rs_cm.volumes","rs_cm.clouds"
+end
+
+permission "perm_tags" do
+  label "Retrieve and add Tags"
+  actions "rs_cm.by_resource","rs_cm.multi_add"
+  resources "rs_cm.tags"
+end
+
+###############################################################################
+# Parameters
+###############################################################################
+
+parameter "param_email" do
+  type "list"
+  label "Email addresses of the recipients you wish to notify"
+end
+
+parameter "param_cloud_name" do
+  type "string"
+  label "Cloud Name"
+end
+
+parameter "param_wstunnel_host" do
+  type "string"
+  label "wstunnel host"
+  default "wstunnel10-1.rightscale.com"
+end
+
+parameter "param_wstunnel_token" do
+  type "string"
+  label "wstunnel token"
+  no_echo true
+end
+
+parameter "param_vsphere_username" do
+  type "string"
+  label "vsphere username"
+    no_echo true
+end
+
+parameter "param_vsphere_password" do
+  type "string"
+  label "vsphere password"
+  no_echo true
+end
+
+parameter "param_tag_category" do
+  type "string"
+  label "tag category"
+  default "RightScale"
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+auth "auth_rs", type: "rightscale"
+
+###############################################################################
+# Resources
+###############################################################################
+resources "clouds", type: "rs_cm.clouds" do
+  filter do
+    cloud_type "vscale"
+    name $param_cloud_name
+  end
+end
+
+resources "instances", type: "rs_cm.instances" do
+  iterate @clouds
+  cloud_href href(iter_item)
+  filter do
+    state ne: ['inactive', 'terminated']
+  end
+  tags '*'
+end
+
+###############################################################################
+# Datasources
+###############################################################################
+
+datasource "ds_instances_and_tags" do
+   iterate @instances
+   field "href",        href(iter_item)
+   field "id",          val(iter_item,'resource_uid')
+   field "name",        val(iter_item,'name')
+   field "state",       val(iter_item,'state')
+   field "tags",        val(iter_item,'tags')
+   field "type",        "instances"
+end
+
+###############################################################################
+# Scripts
+###############################################################################
+
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "policy_instance_sync" do
+  validate_each $ds_instances_and_tags do
+    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} tags will be synced on {{ parameters.param_cloud_name }}"
+    detail_template <<-EOS
+# tags synced on {{ parameters.param_cloud_name }}
+| instanceId | name | state | tags |
+| -------- | ------ | ------- | -------- |
+{{ range data -}}
+  | {{.id}} | {{.name}} | {{.state}} | {{ range $i, $e := .tags }}{{ if $i }}, {{ end }}{{ $e }}{{ end }} |
+{{ end -}}
+EOS
+    check equals?(1,0)
+    escalate $escalate_resources
+  end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "escalate_resources" do
+  run "update_tags", data, $param_wstunnel_host, $param_wstunnel_token, $param_vsphere_username, $param_vsphere_password, $param_tag_category
+end
+
+###############################################################################
+# Cloud Workflow
+###############################################################################
+
+define update_tags($data, $param_wstunnel_host, $param_wstunnel_token, $param_vsphere_username, $param_vsphere_password, $param_tag_category) do
+  $$debug=false
+  call sys_log('VMWare Instance Tag Sync',to_s($data))
+  call generate_session_token($param_wstunnel_host, $param_wstunnel_token, $param_vsphere_username, $param_vsphere_password) retrieve $session_token
+  call sys_log("session_token:",$session_token)
+  # $category_id = "urn:vmomi:InventoryServiceCategory:f9c8236f-7320-47f0-8daa-1d7c83a673ab:GLOBAL"
+  call list_categories($param_wstunnel_host, $param_wstunnel_token, $session_token) retrieve $category_ids
+  $category_id = null
+  foreach $category in $category_ids do
+    call get_category($param_wstunnel_host, $param_wstunnel_token, $session_token, $category) retrieve $spec
+    if $spec["name"] == $param_tag_category
+      $category_id = $category
+    end
+  end
+
+  if $category_id == null
+    call create_category($param_wstunnel_host, $param_wstunnel_token, $session_token,"MULTIPLE", "rightscale tag category", $param_tag_category) retrieve $category_id
+  end
+
+  $$tag_array = []
+  foreach $instance in $data do
+    call sys_log('VMWare Instance sync: ',to_s($instance))
+    $data_tags = $instance["tags"]
+    $$c_tag_ids = []
+    call list_tags_by_category($param_wstunnel_host, $param_wstunnel_token, $session_token, $category_id) retrieve $tag_ids
+    $$c_tag_ids = $tag_ids
+    $$detach_response = []
+    if size($tag_ids) > 0
+      foreach $tag_id in $tag_ids do
+        call detach_tag($param_wstunnel_host,$param_wstunnel_token, $session_token, $tag_id, $instance["id"]) retrieve $response
+        $$detach_response << $response
+      end
+    end
+    call list_tags($param_wstunnel_host, $param_wstunnel_token, $session_token) retrieve $tag_ids
+    call sys_log("tag_ids:", to_s($tag_ids))
+    task_label('populating tags list')
+    foreach $tag_id in $tag_ids do
+      $match_tag = first(select($$tag_array, { "id": $tag_id }))
+      if $match_tag == null
+        call get_tag($param_wstunnel_host, $param_wstunnel_token, $session_token, $tag_id) retrieve $spec
+        $$tag_array << { "name": $spec["name"], "id": $spec["id"] }
+      end
+    end
+    
+    foreach $tag in $data_tags do
+      task_label('instance:' + $instance["name"] + ', tag: '+ $tag)
+      $$matching_tag = []
+      $match_tag = first(select($$tag_array, { "name": $tag }))
+      if $match_tag == null
+        $$matching_id = null
+      else
+        call sys_log("matched tag:",$tag)
+        $$matching_tag << $match_tag
+        $$matching_id = $match_tag["id"]
+      end
+      if $$matching_id == null
+        call create_tag($param_wstunnel_host, $param_wstunnel_token, $session_token, $category_id, "rightscale synced tag", $tag) retrieve $tag_id
+      else
+        $tag_id = $$matching_id
+      end
+      call attach_tag($param_wstunnel_host, $param_wstunnel_token, $session_token, $tag_id, $instance["id"]) retrieve $response
+    end
+  end
+end
+
+# https://vdc-repo.vmware.com/vmwb-repository/dcr-public/1cd28284-3b72-4885-9e31-d1c6d9e26686/71ef7304-a6c9-43b3-a3cd-868b2c236c81/doc/operations/com/vmware/cis/session.create-operation.html
+define generate_session_token($param_wstunnel_host, $tunnel_token, $username, $password) return $token do
+  $$str = $username + ":" + $password
+  $$encoded_auth = to_base64($$str)
+  $response = http_post(
+    insecure: true,
+    url: "https://"+$param_wstunnel_host+"/_token/"+$tunnel_token+"/rest/com/vmware/cis/session",
+    headers: {
+      "Accept": "application/json",
+      "Authorization": "Basic " + $$encoded_auth
+    }
+  )
+  $token = $response["body"]["value"]
+end
+
+# https://vdc-repo.vmware.com/vmwb-repository/dcr-public/1cd28284-3b72-4885-9e31-d1c6d9e26686/71ef7304-a6c9-43b3-a3cd-868b2c236c81/doc/operations/com/vmware/cis/tagging/category.create-operation.html
+define create_category($param_wstunnel_host, $tunnel_token, $session_token, $cardinality, $description, $name) return $category_id do
+  $response = http_post(
+    insecure: true,
+    url: "https://"+$param_wstunnel_host+"/_token/"+$tunnel_token+"/rest/com/vmware/cis/tagging/category",
+    headers: {
+      "Accept": "application/json",
+      "Content-Type": "application/json",
+      "vmware-api-session-id": $session_token
+    },
+    body: {
+      "create_spec": {
+        "associable_types": [],
+        "cardinality": $cardinality,
+        "description": $description,
+        "name": $name
+      }
+    }
+  )
+  $category_id = $response["body"]["value"]
+end
+
+# https://vdc-repo.vmware.com/vmwb-repository/dcr-public/1cd28284-3b72-4885-9e31-d1c6d9e26686/71ef7304-a6c9-43b3-a3cd-868b2c236c81/doc/operations/com/vmware/cis/tagging/category.list-operation.html
+define list_categories($param_wstunnel_host, $tunnel_token, $session_token) return $category_ids do
+  $response = http_get(
+    insecure: true,
+    url: "https://"+$param_wstunnel_host+"/_token/"+$tunnel_token+"/rest/com/vmware/cis/tagging/category",
+    headers: {
+      "Accept": "application/json",
+      "Content-Type": "application/json",
+      "vmware-api-session-id": $session_token
+    }
+  )
+  $category_ids = $response["body"]["value"]
+end
+
+# https://vdc-repo.vmware.com/vmwb-repository/dcr-public/1cd28284-3b72-4885-9e31-d1c6d9e26686/71ef7304-a6c9-43b3-a3cd-868b2c236c81/doc/operations/com/vmware/cis/tagging/category.get-operation.html
+define get_category($param_wstunnel_host, $tunnel_token, $session_token, $category_id) return $spec do
+  $response = http_get(
+    insecure: true,
+    url: "https://"+$param_wstunnel_host+"/_token/"+$tunnel_token+"/rest/com/vmware/cis/tagging/category/id:"+$category_id,
+    headers: {
+      "Accept": "application/json",
+      "Content-Type": "application/json",
+      "vmware-api-session-id": $session_token
+    }
+  )
+  $spec = $response["body"]["value"]
+end
+
+# https://vdc-repo.vmware.com/vmwb-repository/dcr-public/1cd28284-3b72-4885-9e31-d1c6d9e26686/71ef7304-a6c9-43b3-a3cd-868b2c236c81/doc/operations/com/vmware/cis/tagging/category.update-operation.html
+define update_category($param_wstunnel_host, $tunnel_token, $session_token, $category_id, $cardinality, $description, $name) return $response do
+  $response = http_patch(
+    insecure: true,
+    url: "https://"+$param_wstunnel_host+"/_token/"+$tunnel_token+"/rest/com/vmware/cis/tagging/category/id:"+$category_id,
+    headers: {
+      "Accept": "application/json",
+      "Content-Type": "application/json",
+      "vmware-api-session-id": $session_token
+    },
+    body: {
+      "update_spec": {
+        "associable_types": [],
+        "cardinality": $cardinality,
+        "description": $description,
+        "name": $name
+      }
+    }
+  )
+end
+
+# https://vdc-repo.vmware.com/vmwb-repository/dcr-public/1cd28284-3b72-4885-9e31-d1c6d9e26686/71ef7304-a6c9-43b3-a3cd-868b2c236c81/doc/operations/com/vmware/cis/tagging/category.delete-operation.html
+define delete_category($param_wstunnel_host, $tunnel_token, $session_token, $category_id) return $response do
+  $response = http_delete(
+    insecure: true,
+    url: "https://"+$param_wstunnel_host+"/_token/"+$tunnel_token+"/rest/com/vmware/cis/tagging/category/id:"+$category_id,
+    headers: {
+      "Accept": "application/json",
+      "Content-Type": "application/json",
+      "vmware-api-session-id": $session_token
+    }
+  )
+end
+
+# https://vdc-repo.vmware.com/vmwb-repository/dcr-public/1cd28284-3b72-4885-9e31-d1c6d9e26686/71ef7304-a6c9-43b3-a3cd-868b2c236c81/doc/operations/com/vmware/cis/tagging/tag.create-operation.html
+define create_tag($param_wstunnel_host, $tunnel_token, $session_token, $category_id, $description, $name) return $tag_id do
+  $response = http_post(
+    insecure: true,
+    url: "https://"+$param_wstunnel_host+"/_token/"+$tunnel_token+"/rest/com/vmware/cis/tagging/tag",
+    headers: {
+      "Accept": "application/json",
+      "Content-Type": "application/json",
+      "vmware-api-session-id": $session_token
+    },
+    body: {
+      "create_spec": {
+        "category_id": $category_id,
+        "description": $description,
+        "name": $name
+      }
+    }
+  )
+  $tag_id = $response["body"]["value"]
+end
+
+# https://vdc-repo.vmware.com/vmwb-repository/dcr-public/1cd28284-3b72-4885-9e31-d1c6d9e26686/71ef7304-a6c9-43b3-a3cd-868b2c236c81/doc/operations/com/vmware/cis/tagging/tag.list-operation.html
+define list_tags($param_wstunnel_host, $tunnel_token, $session_token) return $tag_ids do
+  $response = http_get(
+    insecure: true,
+    url: "https://"+$param_wstunnel_host+"/_token/"+$tunnel_token+"/rest/com/vmware/cis/tagging/tag",
+    headers: {
+      "Accept": "application/json",
+      "Content-Type": "application/json",
+      "vmware-api-session-id": $session_token
+    }
+  )
+  $tag_ids = $response["body"]["value"]
+end
+
+# https://vdc-repo.vmware.com/vmwb-repository/dcr-public/1cd28284-3b72-4885-9e31-d1c6d9e26686/71ef7304-a6c9-43b3-a3cd-868b2c236c81/doc/operations/com/vmware/cis/tagging/tag.list-operation.html
+define list_tags_by_category($param_wstunnel_host, $tunnel_token, $session_token, $category_id) return $tag_ids do
+  $response = http_post(
+    insecure: true,
+    url: "https://"+$param_wstunnel_host+"/_token/"+$tunnel_token+"/rest/com/vmware/cis/tagging/tag/id:"+$category_id+"?~action=list-tags-for-category",
+    headers: {
+      "Accept": "application/json",
+      "Content-Type": "application/json",
+      "vmware-api-session-id": $session_token
+    }
+  )
+  $tag_ids = $response["body"]["value"]
+end
+
+# https://vdc-repo.vmware.com/vmwb-repository/dcr-public/1cd28284-3b72-4885-9e31-d1c6d9e26686/71ef7304-a6c9-43b3-a3cd-868b2c236c81/doc/operations/com/vmware/cis/tagging/tag.get-operation.html
+define get_tag($param_wstunnel_host, $tunnel_token, $session_token, $tag_id) return $spec do
+  $response = http_get(
+    insecure: true,
+    url: "https://"+$param_wstunnel_host+"/_token/"+$tunnel_token+"/rest/com/vmware/cis/tagging/tag/id:"+$tag_id,
+    headers: {
+      "Accept": "application/json",
+      "Content-Type": "application/json",
+      "vmware-api-session-id": $session_token
+    }
+  )
+  $spec = $response["body"]["value"]
+end
+
+# https://vdc-repo.vmware.com/vmwb-repository/dcr-public/1cd28284-3b72-4885-9e31-d1c6d9e26686/71ef7304-a6c9-43b3-a3cd-868b2c236c81/doc/operations/com/vmware/cis/tagging/tag.update-operation.html
+define update_tag($param_wstunnel_host, $tunnel_token, $session_token, $tag_id, $description, $name) return $response do
+  $response = http_post(
+    insecure: true,
+    url: "https://"+$param_wstunnel_host+"/_token/"+$tunnel_token+"/rest/com/vmware/cis/tagging/tag/id:"+$tag_id,
+    headers: {
+      "Accept": "application/json",
+      "Content-Type": "application/json",
+      "vmware-api-session-id": $session_token
+    },
+    body: {
+      "update_spec": {
+        "description": $description,
+        "name": $name
+      }
+    }
+  )
+end
+
+# https://vdc-repo.vmware.com/vmwb-repository/dcr-public/1cd28284-3b72-4885-9e31-d1c6d9e26686/71ef7304-a6c9-43b3-a3cd-868b2c236c81/doc/operations/com/vmware/cis/tagging/tag.delete-operation.html
+define delete_tag($param_wstunnel_host, $tunnel_token, $session_token, $tag_id) return $response do
+  $response = http_delete(
+    insecure: true,
+    url: "https://"+$param_wstunnel_host+"/_token/"+$tunnel_token+"/rest/com/vmware/cis/tagging/tag/id:"+$tag_id,
+    headers: {
+      "Accept": "application/json",
+      "Content-Type": "application/json",
+      "vmware-api-session-id": $session_token
+    }
+  )
+end
+
+# https://vdc-repo.vmware.com/vmwb-repository/dcr-public/1cd28284-3b72-4885-9e31-d1c6d9e26686/71ef7304-a6c9-43b3-a3cd-868b2c236c81/doc/operations/com/vmware/cis/tagging/tag_association.attach-operation.html
+define attach_tag($param_wstunnel_host, $tunnel_token, $session_token, $tag_id, $resource_id) return $response do
+  $response = http_post(
+    insecure: true,
+    url: "https://"+$param_wstunnel_host+"/_token/"+$tunnel_token+"/rest/com/vmware/cis/tagging/tag-association/id:"+$tag_id+"?~action=attach",
+    headers: {
+      "Accept": "application/json",
+      "Content-Type": "application/json",
+      "vmware-api-session-id": $session_token
+    },
+    body: {
+      "object_id": {
+        "id": $resource_id,
+        "type": "VirtualMachine"
+      }
+    }
+  )
+end
+
+# https://vdc-repo.vmware.com/vmwb-repository/dcr-public/1cd28284-3b72-4885-9e31-d1c6d9e26686/71ef7304-a6c9-43b3-a3cd-868b2c236c81/doc/operations/com/vmware/cis/tagging/tag_association.detach-operation.html
+define detach_tag($param_wstunnel_host, $tunnel_token, $session_token, $tag_id, $resource_id) return $response do
+  $response = http_post(
+    insecure: true,
+    url: "https://"+$param_wstunnel_host+"/_token/"+$tunnel_token+"/rest/com/vmware/cis/tagging/tag-association/id:"+$tag_id+"?~action=detach",
+    headers: {
+      "Accept": "application/json",
+      "Content-Type": "application/json",
+      "vmware-api-session-id": $session_token
+    },
+    body: {
+      "object_id": {
+        "id": $resource_id,
+        "type": "VirtualMachine"
+      }
+    }
+  )
+end
+
+define sys_log($subject, $detail) do
+  if $$debug
+    rs_cm.audit_entries.create(
+      notify: "None",
+      audit_entry: {
+        auditee_href: @@account,
+        summary: $subject,
+        detail: $detail
+      }
+    )
+  end
+end
