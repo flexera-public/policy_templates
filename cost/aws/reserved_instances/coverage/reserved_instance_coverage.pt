@@ -35,12 +35,12 @@ auth "aws", type: "aws" do
   secret_key cred("AWS_SECRET_ACCESS_KEY")
 end
 
-# Creating the end_date generally setting it to right now 
+# Creating the end_date generally setting it to right now
 # Expected Result: "2018-05-29"
 # Creating the start_date.
 # We are converting param_historical_number_of_days_in_past from string to a number.
 # daysToMove has to be negative
-# Expected result example: "2018-04-29" 
+# Expected result example: "2018-04-29"
 script "aws_reserved_instance_coverage_request", type: "javascript" do
   parameters "param_number_of_days_in_past"
   result "results"
@@ -61,13 +61,13 @@ script "aws_reserved_instance_coverage_request", type: "javascript" do
       "Content-Type": "application/x-amz-json-1.1",
      },
      body_fields: {
-      "TimePeriod": 
+      "TimePeriod":
        {
       "Start": start_dates,
       "End": end_dates,
        }
       },
-    
+
   }
   EOS
 end
@@ -88,12 +88,35 @@ datasource "ds_reservations_coverage" do
   end
 end
 
+datasource "ds_reservations_coverage_map" do
+  run_script $js_reservations_coverage_map, $ds_reservations_coverage
+end
+
+#parse the json files
+script "js_reservations_coverage_map", type: "javascript" do
+  parameters "reservations_coverage"
+  result "content"
+  code <<-EOS
+    var content=[]
+    var coverage =  parseInt(reservations_coverage['total_coverage_hours_percentage'], 10).toString() + "%"
+
+    content={total_coverage_hours_percentage: coverage,
+      total_on_demand_hours: reservations_coverage['total_on_demand_hours'],
+      total_reserved_hours: reservations_coverage['total_reserved_hours'],
+      total_running_hours: reservations_coverage['total_running_hours'],
+      timeperiod_start_time: reservations_coverage['timeperiod_start_time'],
+      timeperiod_end_timer: reservations_coverage['timeperiod_end_time']
+    }
+EOS
+end
+
+
 escalation "report_reserved_instances_coverage" do
   email $param_email
 end
 
 policy "pol_ri_coverage" do
-  validate $ds_reservations_coverage do
+  validate $ds_reservations_coverage_map do
     summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): Reserved Instances Coverage."
     detail_template <<-EOS
 # Reserved Instance Coverage

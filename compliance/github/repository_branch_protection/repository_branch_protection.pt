@@ -1,0 +1,148 @@
+name "GitHub.com Repository Branches without Protection"
+rs_pt_ver 20180301
+short_description "Gets the repositories + branches under a GitHub.com Organization and creates incidents for any that do not have protection enabled.  See the [README](https://github.com/rightscale/policy_templates/tree/master/compliance/github/unprotected_branches) and [docs.rightscale.com/policies](http://docs.rightscale.com/policies/) to learn more."
+long_description "Version: 1.0"
+severity "medium"
+category "Compliance"
+
+permission "read_creds" do
+  actions   "rs_cm.show_sensitive","rs_cm.index_sensitive"
+  resources "rs_cm.credentials"
+end
+
+parameter "param_email" do
+  type "list"
+  label "Email addresses of the recipients you wish to notify"
+end
+
+parameter "param_orgs" do
+  type "list"
+  label "Organizations on GitHub.com to scan"
+end
+
+parameter "param_branches" do
+  type "list"
+  label "Git branches that should be protected"
+  default ["master"]
+end
+
+parameter "param_whitelist" do
+  type "list"
+  label "Git org/repo(s) that are whitelisted from this policy"
+end
+
+auth "auth_github", type: "api_key" do
+  location "header"
+  field "Authorization"
+  type "token"
+  key cred("GITHUB_ORG_ADMIN_ACCESS_TOKEN")
+end
+
+pagination "github_pagination" do
+  get_page_marker do
+    header "Link"
+  end
+  set_page_marker do
+    uri true
+  end
+end
+
+datasource "ds_orgs_array" do
+  run_script $js_orgs_array, $param_orgs
+end
+script "js_orgs_array", type: "javascript" do
+  parameters "param_orgs"
+  result "orgs_array"
+  code <<-EOS
+var orgs_array = param_orgs;
+EOS
+end
+
+datasource "ds_orgs_repos" do
+  iterate $ds_orgs_array
+  request do
+    auth $auth_github
+    pagination $github_pagination
+    host "api.github.com"
+    path join(["/orgs/",iter_item,"/repos"])
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "[*]") do
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+      field "full_name", jmes_path(col_item, "full_name")
+      field "org", jmes_path(col_item, "owner.login")
+    end
+  end
+end
+
+datasource "ds_repos_branches" do
+  iterate $ds_orgs_repos
+  request do
+    auth $auth_github
+    pagination $github_pagination
+    host "api.github.com"
+    path join(["/repos/",val(iter_item,"org"),"/",val(iter_item,"name"),"/branches"])
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "[*]") do
+      field "repo_name", jmes_path(iter_item, "name")
+      field "repo_org", jmes_path(iter_item, "org")
+      field "branch_name", jmes_path(col_item, "name")
+      field "branch_protected", jmes_path(col_item, "protected")
+      field "branch_protection", jmes_path(col_item, "protection")
+    end
+  end
+end
+
+datasource "ds_invalid_repo_branches" do
+    run_script $js_invalid_repo_branches, $ds_repos_branches, $param_branches, $param_whitelist
+end
+  
+script "js_invalid_repo_branches", type: "javascript" do
+    parameters "repos_branches", "param_branches", "param_whitelist"
+    result "invalid_repo_branches"
+    code <<-EOS
+var invalid_repo_branches = [];
+for (var index = 0; index < repos_branches.length; index++) {
+  var branch = repos_branches[index];
+  // check if branch is in param_branches and if it's protected
+  if( _.contains(param_branches, branch.branch_name) && !_.contains(param_whitelist, branch.repo_org+"/"+branch.repo_name) && branch.branch_protected != true){
+    invalid_repo_branches.push(branch);
+  }
+}
+EOS
+end
+
+policy "invalid_repos" do
+  validate $ds_invalid_repo_branches do
+    summary_template "GitHub.com Unprotected Branches Report"
+    detail_template <<-EOS
+# GitHub.com Unprotected Branches Report
+
+The following repository branches do not meet the compliance standards of this policy.
+
+| Organization/Repository | Unprotected Branch |
+| ----------------------- | ------ |
+{{ range data -}}
+  | [{{.repo_org}}/{{.repo_name}}](https://github.com/{{.repo_org}}/{{.repo_name}}/settings/branches) | {{.branch_name}} |
+{{ end -}}
+
+#### Policy Organization(s): {{  parameters.param_orgs }}
+
+#### Policy Branches: {{  parameters.param_branches }}
+
+___
+###### Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }})
+
+EOS
+    check eq(size(data), 0)
+    escalate $email_report
+  end
+end
+
+escalation "email_report" do
+    email $param_email
+end

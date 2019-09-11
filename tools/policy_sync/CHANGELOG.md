@@ -1,3 +1,11 @@
+v1.8
+----
+- update github org in path
+
+v1.7
+----
+- refactoring version comparison logic.
+
 v1.6
 ----
 - Adding in changelog url

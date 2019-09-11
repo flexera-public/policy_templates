@@ -1,6 +1,25 @@
+v1.12
+----
+- Separate the Utilization from the downsize actions.  The Utilization policy is now [RightLink Utilization](/rightscale/policy_templates/cost/rightlink_utilization/README.md)
+
+v1.11
+----
+- Added aws instance types: memory optimize r5, r5a, r5d, x1e,z1d
+- Added aws instance types: compute optimized c5n, c5d
+- Added aws instance types: general purpose added m5a, m5d, a1
+- Added aws instance types: one f1, one g2, g3 family
+
+v1.10
+----
+- Added cpu and memory datapoint check for instances that are operational, but not sending monitoring data back to the platform.
+
+v1.9
+----
+- Changed total memory calculation to use instance_type memory attribute.
+
 v1.8
 ----
-- Upating Policy Template Name
+- Updating Policy Template Name
 
 v1.7
 ----

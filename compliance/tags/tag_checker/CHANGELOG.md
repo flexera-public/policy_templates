@@ -1,4 +1,18 @@
 ## Untagged Resource Policy Changelog
+
+v1.9
+----
+- removing icons from short description as icons break automated documentation
+
+v1.8
+----
+- fixed issue with creating tag for invalid_tag
+
+v1.7
+----
+- adding tags.multi_add permission #141
+- update README with permissions statement
+
 v1.6
 ----
 - Update email subject with account name and ID. Issue #75

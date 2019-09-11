@@ -1,3 +1,21 @@
+v1.9
+----
+- Fixing undefined when descriptions don't exist
+- Excluding snapshots if ami is found
+
+v1.8
+----
+- Adding additional messaging around errors. 
+- Remove snapshots created for images
+
+v1.7
+----
+- Emailing always, adding approval for only delete
+
+v1.6
+----
+- Adding delete function
+
 v1.5
 ----
 - Fixing a typo

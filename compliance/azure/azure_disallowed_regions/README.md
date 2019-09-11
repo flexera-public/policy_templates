@@ -20,6 +20,22 @@ This Policy Template accepts an input that defines which Azure regions are allow
 1. Create RightScale Credentials with values that match the Application ID (Credential name: `AZURE_APPLICATION_ID`) & Authentication Key (Credential name: `AZURE_APPLICATION_KEY`)
 1. [Retrieve your Tenant ID](https://docs.microsoft.com/en-us/azure/azure-resource-manager/resource-group-create-service-principal-portal#get-tenant-id)
 
+### Input Parameters
+
+This policy has the following input parameters required when launching the policy.
+
+- *Azure AD Tenant ID* - the Azure AD Tenant ID used for the Azure API Authentication
+- *Azure Subscription ID* - the Azure Subscription ID used for the Azure API Authentication
+- *Approved Azure Region(s)* - list of approved Azure regions
+- *Email addresses of the recipients you wish to notify* - A list of email addresses to notify
+
+### Policy Actions
+
+The following policy actions are taken on any resources found to be out of compliance.
+
+- An email is sent to the Email lists provided of the resources out of compliance
+- Delete any resource that are in regions not in the Approved Regions list.
+
 ### Supported Clouds
 
 - Azure
