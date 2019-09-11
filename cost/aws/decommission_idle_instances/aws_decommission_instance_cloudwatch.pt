@@ -1,8 +1,8 @@
-name "AWS Instance CloudWatch Utilization"
+name "AWS Decommission Idle Instance CloudWatch"
 rs_pt_ver 20180301
 type "policy"
 short_description "Gathers AWS CloudWatch data for instances on 30 day intervals. See the [README](https://github.com/rightscale/policy_templates/tree/master/cost/aws/instance_cloudwatch_utilization/) and [docs.rightscale.com/policies](http://docs.rightscale.com/policies/) to learn more."
-long_description "Version: 1.4"
+long_description "Version: 1.0"
 severity "low"
 category "Cost"
 
@@ -29,7 +29,7 @@ parameter "param_avg_used_memory" do
   type "number"
   label "Average used memory percentage"
   description "Set to -1 to ignore memory utilization"
-  default 60
+  default 5
   min_value -1
   max_value 100
 end
@@ -38,7 +38,7 @@ parameter "param_avg_cpu" do
   type "number"
   label "Average used CPU percentage"
   description "Set to -1 to ignore CPU utilization"
-  default 60
+  default 5
   min_value -1
   max_value 100
 end
@@ -369,7 +369,7 @@ end
 script "js_merged_metrics", type: "javascript" do
   parameters "ds_cloudwatch_cpu_usage", "ds_cloudwatch_mem_usage", "ds_cloudwatch_windows_mem_usage"
   result "merged_results"
-code <<-EOS
+  code <<-EOS
   var merged_results = []
   for ( i = 0; i < ds_cloudwatch_cpu_usage.length; i++){
     var instance = ds_cloudwatch_cpu_usage[i]
@@ -439,7 +439,7 @@ ___
 ###### Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }}) within Org: {{ rs_org_name }} (Org ID: {{ rs_org_id }})
 EOS
     escalate $email
-    escalate $tag_resources
+    escalate $terminate_resources
     check logic_or(eq($param_avg_used_memory, -1), gt(to_n(val(item,"mem_average")), $param_avg_used_memory))
     check logic_or(eq($param_avg_cpu, -1), gt(to_n(val(item,"cpu_average")),$param_avg_cpu))
   end
@@ -454,15 +454,24 @@ escalation "email" do
   email $param_email
 end
 
-escalation "tag_resources" do
-  run "tag_resources", data, $param_take_action_tag
+escalation "terminate_resources" do
+  request_approval do
+    label "Approve resource termination"
+    description "Approve esclation to run RightScale Cloud Workflow instance termination"
+    parameter "approval_resion" do
+      type "string"
+      label "Reason for Approval"
+      description "Explain why are you approving the action."
+    end
+  end
+  run "terminate_resources", data
 end
 
 ###############################################################################
 # Cloud Workflow
 ###############################################################################
 
-define tag_resources($data, $param_take_action_tag) return $all_responses do
+define tag_resources($data) return $all_responses do
   $$debug=true
   $$log = []
   $all_responses = []
@@ -478,11 +487,9 @@ define tag_resources($data, $param_take_action_tag) return $all_responses do
       host: "ec2."+$item["region"]+".amazonaws.com",
       signature: { "type": "aws" },
       query_strings: {
-        "Action": "CreateTags",
+        "Action": "TerminateInstances",
         "Version": "2012-06-01",
-        "ResourceId.1": $item["instanceId"],
-        "Tag.1.Key": $key,
-        "Tag.1.Value": $value
+        "InstanceId.1": $item["instanceId"]
       }
     )
     $all_responses << $response
