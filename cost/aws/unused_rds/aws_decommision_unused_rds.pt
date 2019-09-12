@@ -1,8 +1,8 @@
-name "AWS Decommision Unused RDS Instance"
+name "AWS Unused RDS Instance"
 rs_pt_ver 20180301
 type "policy"
-short_description "Gathers AWS CloudWatch data for instances on 30 day intervals. See the [README](https://github.com/rightscale/policy_templates/tree/master/cost/aws/instance_cloudwatch_utilization/) and [docs.rightscale.com/policies](http://docs.rightscale.com/policies/) to learn more."
-long_description "Version: 1.4"
+short_description "Check for AWS RDS instances that have no connections and decommissions them after approval. See the [README](https://github.com/rightscale/policy_templates/tree/master/cost/aws/unused_rds) and [docs.rightscale.com/policies](http://docs.rightscale.com/policies/) to learn more."
+long_description "Version: 1.0"
 severity "low"
 category "Cost"
 
@@ -28,9 +28,9 @@ end
 parameter "param_days" do
   type "number"
   label "Days"
-  description "Number of days of inactivity before decommision"
+  description "Number of days of to check for no connections"
   default 30
-  min_value 0
+  min_value 1
 end
 
 parameter "param_exclusion_tag_key" do
@@ -73,11 +73,12 @@ datasource "ds_regions_list" do
     header "User-Agent", "RS Policies"
   end
 end
-
+# get all the RDS instances merged together with the tags and CloudWatch
 datasource "ds_rds_instances" do
   run_script $js_rds_instances, $ds_rds_instances_set, $ds_list_tags_for_resource,$ds_cloudwatch_connections, $param_exclusion_tag_key
 end
 
+# get all the RDS instances
 datasource "ds_rds_instances_set" do
   iterate $ds_regions_list
   request do
@@ -98,6 +99,7 @@ datasource "ds_rds_instances_set" do
   end
 end
 
+#get the tags for the rds instance
 datasource "ds_list_tags_for_resource" do
   iterate $ds_rds_instances_set
   request do
@@ -113,6 +115,7 @@ datasource "ds_list_tags_for_resource" do
   end
 end
 
+# get the DBConnections from CloudWatch
 datasource "ds_cloudwatch_connections" do
   iterate $ds_rds_instances_set
   request do
@@ -143,7 +146,6 @@ script "js_rds_instances", type: "javascript" do
   var tag_value = param_exclusion_tag_key.split(':')[1]
   var results = []
 
-  console.log('ds_cloudwatch_connections:'+JSON.stringify(ds_cloudwatch_connections))
   console.log('ds_list_tags_for_resource:'+JSON.stringify(ds_list_tags_for_resource))
 
   /*var instance_tags = {}
@@ -156,6 +158,7 @@ script "js_rds_instances", type: "javascript" do
 
   for ( n=0; n < ds_rds_instance_set.length; n++) {
     var instance = ds_rds_instance_set[n]
+
     // get metrics for instance
     var metrics = _.where(ds_cloudwatch_connections, {instanceId: instance.instanceId})
     var sample_count = _.pluck(metrics, 'sample_count')
@@ -275,9 +278,9 @@ end
 
 policy "pol_unused_rds" do
   validate_each $ds_rds_instances do
-    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} rows containing AWS Used RDS Instances"
+    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} rows containing AWS RDS Unused Instances"
     detail_template <<-EOS
-# AWS Instance Utilization
+# AWS RDS Unused Instances
 | Region | Name | Status | Instance ID | Private DNS Name | Instance Type | Connections | ARN |
 | ------ | ---- | ------ | ---------- | ---------------- | ------------- | ------------ | --- |
 {{ range data -}}
@@ -289,7 +292,6 @@ EOS
     #escalate $email
     #escalate $decommision_rds
     check eq(to_n(val(item,"connections")),0)
-    #check eq(size(data), 0)
   end
 end
 
@@ -303,6 +305,15 @@ escalation "email" do
 end
 
 escalation "decommision_rds" do
+  request_approval  do
+    label "Escalation approval"
+    description "Approve Unused RDS decommission action"
+    parameter "approval_reason" do
+      type "string"
+      label "Reason for approval"
+      description "Explain why you are approving the action"
+    end
+  end
   run "decommision_rds", data
 end
 
