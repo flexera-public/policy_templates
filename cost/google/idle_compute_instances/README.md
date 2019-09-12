@@ -21,7 +21,7 @@ This policy has the following input parameters required when launching the polic
 - *Google Cloud Project* - a Google Cloud Project name
 - *Average used memory percentage"* - Set to -1 to ignore memory utilization
 - *Average used CPU percentage* - Set to -1 to ignore CPU utilization
-- *Exclusion Tag Key:Value* - Cloud native tag key to ignore instances. Format: Key:Value
+- *Exclusion label Key:Value* - Cloud native label to ignore instances. Format: Key:Value
 
 ### Supported Clouds
 
