@@ -5,7 +5,7 @@ This policy checks all the instances in the Azure Subscription for the average C
 
 ### Functional Details
  
-The policy leverages the Azure API to check all instances and then grab the utilization over the past hour, finally recommending the low ones for deletion
+The policy leverages the Azure API to check all instances and then checks the instance average CPU utilization over the past hour, finally recommending the low ones for deletion after approval.
  
 #### Input Parameters
  
