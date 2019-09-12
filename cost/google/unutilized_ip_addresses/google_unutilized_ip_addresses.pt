@@ -32,11 +32,12 @@ parameter "param_google_project" do
   allowed_pattern /^[0-9a-z:\.-]+$/
 end
 
-parameter "param_exclusion_label" do
+parameter "param_exclude_labels" do
   category "User Inputs"
-  label "Exclusion Label"
+  label "Exclusion Label Key:Value"
   description "Cloud native label to ignore IP addresses. Format: Key:Value"
   type "string"
+  allowed_pattern /(^$|[\w]?)+\:([\w]?)+/
 end
 
 ###############################################################################
@@ -79,7 +80,7 @@ end
 datasource "ds_addresses" do
   iterate $ds_regions_list
   request do
-    run_script $js_get_addresses, $param_google_project, val(iter_item, "region"), $param_exclusion_label
+    run_script $js_get_addresses, $param_google_project, val(iter_item, "region")
   end
   result do
     encoding "json"
@@ -94,12 +95,13 @@ datasource "ds_addresses" do
       field "selfLink", jmes_path(col_item,"selfLink")
       field "status", jmes_path(col_item,"status")
       field "subnetwork", jmes_path(col_item,"subnetwork")
+      field "labels", jmes_path(col_item,"labels")
     end
   end
 end
 
 datasource "ds_sanitize_data" do
-  run_script $js_sanitize_data, $ds_addresses
+  run_script $js_sanitize_data, $ds_addresses, $param_exclude_labels
 end
 
 ###############################################################################
@@ -137,22 +139,23 @@ end
 
 script "js_get_addresses", type: "javascript" do
   result "request"
-  parameters "project","region", "param_exclusion_label"
+  parameters "project","region"
   code <<-EOS
-    var tag_key = param_exclusion_label.split(':')[0]
-    var tag_value = param_exclusion_label.split(':')[1]
-    var tag_filter = '(labels.' + tag_key + '!=' + tag_value + ')'
+    //var tag_key = param_exclusion_label.split(':')[0]
+    //var tag_value = param_exclusion_label.split(':')[1]
+    //var tag_filter = '(labels.' + tag_key + ' != "' + tag_value + '")'
     request = {
       "auth": "auth_google",
       "host": "www.googleapis.com",
       "verb": "GET",
-      "path": "/compute/v1/projects/"+project+"/regions/"+region+"/addresses",
+      "path": "/compute/beta/projects/"+project+"/regions/"+region+"/addresses",
       "headers": {
         "User-Agent": "RS Policies",
         "Content-Type": "application/json"
       }
       "query_params": {
-        "filter": '(status!="IN_USE")AND'+tag_filter,
+        //"filter": '(status!="IN_USE") AND ' + tag_filter
+        "filter": 'status!="IN_USE"'
         //"filter": tag_filter
       }
     }
@@ -160,15 +163,31 @@ script "js_get_addresses", type: "javascript" do
 end
 
 script "js_sanitize_data", type: "javascript" do
-  result "data"
-  parameters "ds_addresses"
+  result "results"
+  parameters "ds_addresses", "param_exclude_labels"
   code <<-EOS
-    data = []
-    for (i = 0; i < ds_addresses.length; i++) {
-      if (ds_addresses[i].address != null){
-        data.push(ds_addresses[i])
+    label_key = param_exclude_labels.split(':')[0]
+    console.log(label_key)
+    label_value = param_exclude_labels.split(':')[1]
+    console.log(label_value)
+
+    results = _.filter(ds_addresses, function(data){
+      if ( data.address != null ){
+        if ( data.labels != null && data.labels !== undefined ){
+          if ( data.labels[label_key] != null && data.labels[label_key] !== undefined ){
+            console.log("Key Found")
+            console.log(data.labels[label_key])
+            if ( data.labels[label_key] != label_value ){
+              return data
+            }
+          } else {
+            return data
+          }
+        }else{
+          return data
+        }
       }
-    }
+    })
   EOS
 end
 
@@ -191,7 +210,7 @@ ___
 EOS
     check eq(0,1)
     escalate $email
-    #escalate $approve_delete_addresses
+    escalate $approve_delete_addresses
   end
 end
 
@@ -251,7 +270,7 @@ define google_authenticate() return $access_token do
     scope: "https://www.googleapis.com/auth/cloud-platform https://www.googleapis.com/auth/compute"
   }
 
-  #$signed_signature = jwt_encode("RS256", $jwt, cred("GCE_PLUGIN_PRIVATE_KEY"),{typ:"JWT"})
+  $signed_signature = jwt_encode("RS256", $jwt, cred("GCE_PLUGIN_PRIVATE_KEY"),{typ:"JWT"})
 
   $response = http_request({
     verb: 'post',
