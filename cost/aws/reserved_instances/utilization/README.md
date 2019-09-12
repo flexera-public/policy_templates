@@ -1,10 +1,10 @@
-## Reserved Instances Utilization Policy Template
+## AWS Reserved Instances Utilization Policy Template
 
 **As a best practice, this policy should only be applied to the Master Account, and not to each individual RightScale Account.**
 
 ### What it does
 
-This Policy Template leverages the RI report. It will notify only if utilization of a RI falls below the value specified in the `Show RI's with utilization below this value` field. It will email the user specified in `Email addresses of the recipients you wish to notify`
+This Policy Template leverages the AWS RI report. It will notify only if utilization of a RI falls below the value specified in the `Show RI's with utilization below this value` field. It will email the user specified in `Email addresses of the recipients you wish to notify`
 
 ### Input Parameters
 
