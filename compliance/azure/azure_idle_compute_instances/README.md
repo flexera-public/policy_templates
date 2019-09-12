@@ -1,11 +1,11 @@
 ## Azure Idle Compute Instances
  
 ### What it does
-This policy checks all the instances in the Azure Subscription for the average CPU usage over the the last hour.  If the usage is less than the user provided CPU percentage threshold then the virtual machines are recomended for removal, and the user is emailed.
+This policy checks all the instances in the Azure Subscription for the average CPU usage over the last hour.  If the usage is less than the user provided CPU percentage threshold then the virtual machines are recommended for deletion, and the user is emailed.
 
 ### Functional Details
  
-The policy leverages the Azure API to check all instances and then grab the utilization over the past hour, finally recomendending the low ones for decomissioning
+The policy leverages the Azure API to check all instances and then grab the utilization over the past hour, finally recommending the low ones for deletion
  
 #### Input Parameters
  
