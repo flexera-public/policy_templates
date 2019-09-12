@@ -106,11 +106,11 @@ datasource "ds_list_tags_for_resource" do
     run_script $js_list_tags_for_resource, val(iter_item,"instanceArn"), val(iter_item,"region")
   end
   result do
-  encoding "xml"
-  collect xpath(response, "//ListTagsForResourceResponse/ListTagsForResourceResult/TagList/Tag[*]", "array") do
-      field "instanceId", val(iter_item,"instanceId")
-      field "key",        xpath(col_item,"Key")
-      field "value",      xpath(col_item,"Value")
+    encoding "xml"
+    collect xpath(response, "//ListTagsForResourceResponse/ListTagsForResourceResult/TagList/Tag[*]", "array") do
+          field "instanceId", val(iter_item,"instanceId")
+          field "key", xpath(col_item, "Key")
+          field "value", xpath(col_item, "Value")
     end
   end
 end
@@ -146,18 +146,20 @@ script "js_rds_instances", type: "javascript" do
   var tag_value = param_exclusion_tag_key.split(':')[1]
   var results = []
 
-  console.log('ds_list_tags_for_resource:'+JSON.stringify(ds_list_tags_for_resource))
-
-  /*var instance_tags = {}
-  for ( n=0; n < ds_list_tags_for_resource.length; n++) {
-    var tag_set = ds_list_tags_for_resource[n]
-    instance_tags[tagset.instanceId]={
-      tag_set: tag_set.key+':'+tag_set.value
-    }
-  }*/
-
   for ( n=0; n < ds_rds_instance_set.length; n++) {
     var instance = ds_rds_instance_set[n]
+
+    // get tags for instance
+    var instances_w_tags = _.where(ds_list_tags_for_resource, {instanceId: instance.instanceId})
+    var instance_tags = {}
+    var tag_set = []
+    _.each(instances_w_tags, function(instance){
+      tag_set.push(instance.key+':'+instance.value)
+    })
+    instance_tags[instance.instanceId] = tag_set
+    console.log('instanceId: '+ instance.instanceId)
+    console.log('tagset: '+ tag_set)
+    console.log('instance_tags: '+ instance_tags[instance.instanceId])
 
     // get metrics for instance
     var metrics = _.where(ds_cloudwatch_connections, {instanceId: instance.instanceId})
@@ -165,10 +167,9 @@ script "js_rds_instances", type: "javascript" do
     var connections = _.reduce(sample_count, function(memo, num){ return memo + num; }, 0);
 
     //check tags for instance
-    //var tags = instance_tags[instance.instanceId]
-    //if (_.contains(_.pluck(tags,'key'), tag_key) && _.contains(_.pluck(tags,'value'), tag_value)){
-    //  continue
-    //} else {
+    if ( _.contains(instance_tags[instance.instanceId], param_exclusion_tag_key) ){
+      continue
+    } else {
       results.push({
         region: instance.region,
         name: instance.name,
@@ -178,9 +179,9 @@ script "js_rds_instances", type: "javascript" do
         privateDnsName: instance.privateDnsName,
         status: instance.status,
         connections: connections,
-        //tag_set: instance_tags[instance.instanceId].tag_set
+        tag_set: instance_tags[instance.instanceId]
       })
-    //}
+    }
   }
 EOS
 end
@@ -281,10 +282,10 @@ policy "pol_unused_rds" do
     summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} rows containing AWS RDS Unused Instances"
     detail_template <<-EOS
 # AWS RDS Unused Instances
-| Region | Name | Status | Instance ID | Private DNS Name | Instance Type | Connections | ARN |
-| ------ | ---- | ------ | ---------- | ---------------- | ------------- | ------------ | --- |
+| Region | Name | Status | Instance ID | Private DNS Name | Instance Type | Connections | ARN | Tags |
+| ------ | ---- | ------ | ---------- | ---------------- | ------------- | ------------ | --- | ---- |
 {{ range data -}}
-| {{.region}} | {{.name}} | {{.status}} | {{.instanceId}} | {{.privateDnsName }} | {{.instanceType}} | {{.connections}} | {{.arn}}
+| {{.region}} | {{.name}} | {{.status}} | {{.instanceId}} | {{.privateDnsName }} | {{.instanceType}} | {{.connections}} | {{.arn}} | {{.tag_set}}
 {{ end -}}
 ___
 ###### Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }}) within Org: {{ rs_org_name }} (Org ID: {{ rs_org_id }})
