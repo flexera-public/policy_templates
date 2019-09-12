@@ -75,13 +75,13 @@ datasource "ds_regions_list" do
 end
 
 datasource "ds_rds_instances" do
-  run_script $js_rds_instances, $ds_rds_instance_set, $ds_list_tags_for_resource $param_exclusion_tag_key
+  run_script $js_rds_instances, $ds_rds_instances_set, $ds_list_tags_for_resource,$ds_cloudwatch_connections, $param_exclusion_tag_key
 end
 
 datasource "ds_rds_instances_set" do
   iterate $ds_regions_list
   request do
-    run_script $js_rds_instances_set, val(iter_item,"region")
+    run_script $js_rds_instances_set_request, val(iter_item,"region")
   end
   result do
     encoding "xml"
@@ -98,84 +98,36 @@ datasource "ds_rds_instances_set" do
   end
 end
 
-datasource "ds_list_tags_for_resource"
-  iterate $ds_rds_instance_set
+datasource "ds_list_tags_for_resource" do
+  iterate $ds_rds_instances_set
   request do
     run_script $js_list_tags_for_resource, val(iter_item,"instanceArn"), val(iter_item,"region")
   end
   result do
   encoding "xml"
-  collect xpath(response, "//ListTagsForResourceResponse/ListTagsForResourceResult/TagList[*]", "array") do
-      field "instanceId" val(iter_item,"instanceId")
-      field "key",val(col_item,"Tag/Key")
-      field "value", xpath(col_item,"Tag/Value")
+  collect xpath(response, "//ListTagsForResourceResponse/ListTagsForResourceResult/TagList/Tag[*]", "array") do
+      field "instanceId", val(iter_item,"instanceId")
+      field "key",        xpath(col_item,"Key")
+      field "value",      xpath(col_item,"Value")
     end
   end
 end
 
-datasource "ds_cloudwatch_cpu_usage" do
-  iterate $ds_rds_instances
+datasource "ds_cloudwatch_connections" do
+  iterate $ds_rds_instances_set
   request do
-    run_script $js_cloudwatch_cpu_usage, val(iter_item, "region"), val(iter_item, "instanceId")
+    run_script $js_cloudwatch_connections, val(iter_item, "region"), val(iter_item, "name"), $param_days
   end
   result do
     encoding "json"
     collect jmes_path(response, "GetMetricStatisticsResponse.GetMetricStatisticsResult.Datapoints[*]") do
       field "region", val(iter_item, "region")
       field "instanceId", val(iter_item, "instanceId")
-      field "platform", val(iter_item, "platform")
+      field "name", val(iter_item, "name")
       field "privateDnsName", val(iter_item, "privateDnsName")
-      field "tag_set", val(iter_item, "tag_set")
-      field "cpu_unit", jmes_path(col_item,"Unit")
-      field "cpu_maximum", jmes_path(col_item, "Maximum")
-      field "cpu_minimum", jmes_path(col_item, "Minimum")
-      field "cpu_average", jmes_path(col_item, "Average")
+      field "sample_count", jmes_path(col_item, "SampleCount")
     end
   end
-end
-
-datasource "ds_cloudwatch_mem_usage" do
-  iterate $ds_rds_instances
-  request do
-    run_script $js_cloudwatch_mem_usage, val(iter_item, "region"), val(iter_item, "instanceId"), val(iter_item,"privateDnsName")
-  end
-  result do
-    encoding "json"
-    collect jmes_path(response,"GetMetricStatisticsResponse.GetMetricStatisticsResult.Datapoints[*]") do
-      field "region", val(iter_item, "region")
-      field "instanceId", val(iter_item, "instanceId")
-      field "privateDnsName", val(iter_item, "privateDnsName")
-      field "tag_set", val(iter_item, "tag_set")
-      field "mem_unit", jmes_path(col_item,"Unit")
-      field "mem_maximum", jmes_path(col_item, "Maximum")
-      field "mem_minimum", jmes_path(col_item, "Minimum")
-      field "mem_average", jmes_path(col_item, "Average")
-    end
-  end
-end
-
-datasource "ds_cloudwatch_windows_mem_usage" do
-  iterate $ds_rds_instances
-  request do
-    run_script $js_cloudwatch_windows_memory_usage, val(iter_item, "region"), val(iter_item, "instanceId"), val(iter_item, "imageId"), val(iter_item, "instanceType")
-  end
-  result do
-    encoding "json"
-    collect jmes_path(response,"GetMetricStatisticsResponse.GetMetricStatisticsResult.Datapoints[*]") do
-      field "region", val(iter_item, "region")
-      field "instanceId", val(iter_item, "instanceId")
-      field "privateDnsName", val(iter_item, "privateDnsName")
-      field "tag_set", val(iter_item, "tag_set")
-      field "mem_unit", jmes_path(col_item,"Unit")
-      field "mem_maximum", jmes_path(col_item, "Maximum")
-      field "mem_minimum", jmes_path(col_item, "Minimum")
-      field "mem_average", jmes_path(col_item, "Average")
-    end
-  end
-end
-
-datasource "ds_merged_metrics" do
-  run_script $js_merged_metrics, $ds_cloudwatch_cpu_usage, $ds_cloudwatch_mem_usage, $ds_cloudwatch_windows_mem_usage
 end
 
 ###############################################################################
@@ -185,42 +137,53 @@ end
 # merge the instances and tags and remove instances that have the exclusion tag
 script "js_rds_instances", type: "javascript" do
   result "results"
-  parameters "ds_rds_instance_set", "ds_list_tags_for_resource" "param_exclusion_tag_key"
+  parameters "ds_rds_instance_set", "ds_list_tags_for_resource", "ds_cloudwatch_connections", "param_exclusion_tag_key"
   code <<-EOS
   var tag_key = param_exclusion_tag_key.split(':')[0]
   var tag_value = param_exclusion_tag_key.split(':')[1]
   var results = []
 
-  var instance_tags = {}
+  console.log('ds_cloudwatch_connections:'+JSON.stringify(ds_cloudwatch_connections))
+  console.log('ds_list_tags_for_resource:'+JSON.stringify(ds_list_tags_for_resource))
+
+  /*var instance_tags = {}
   for ( n=0; n < ds_list_tags_for_resource.length; n++) {
     var tag_set = ds_list_tags_for_resource[n]
     instance_tags[tagset.instanceId]={
-      tag_set: tag_set.key+'':''+tag_set.value
+      tag_set: tag_set.key+':'+tag_set.value
     }
-  }
+  }*/
 
   for ( n=0; n < ds_rds_instance_set.length; n++) {
     var instance = ds_rds_instance_set[n]
-      var tags = instance_tags[instance.instanceId]
-      if (_.contains(_.pluck(tags,'key'), tag_key) && _.contains(_.pluck(tags,'value'), tag_value)){
-        continue
-      } else {
-        results.push({
-          "region": instance.region,
-          "instanceId": instance.instanceId,
-          "imageId": instance.imageId,
-          "instanceType": instance.instanceType,
-          "platform": instance.platform,
-          "privateDnsName": instance.privateDnsName,
-          "tag_set": instance.tag_set
-        })
-      }
+    // get metrics for instance
+    var metrics = _.where(ds_cloudwatch_connections, {instanceId: instance.instanceId})
+    var sample_count = _.pluck(metrics, 'sample_count')
+    var connections = _.reduce(sample_count, function(memo, num){ return memo + num; }, 0);
+
+    //check tags for instance
+    //var tags = instance_tags[instance.instanceId]
+    //if (_.contains(_.pluck(tags,'key'), tag_key) && _.contains(_.pluck(tags,'value'), tag_value)){
+    //  continue
+    //} else {
+      results.push({
+        region: instance.region,
+        name: instance.name,
+        arn: instance.instanceArn,
+        instanceId: instance.instanceId,
+        instanceType: instance.instanceType,
+        privateDnsName: instance.privateDnsName,
+        status: instance.status,
+        connections: connections,
+        //tag_set: instance_tags[instance.instanceId].tag_set
+      })
+    //}
   }
 EOS
 end
 
 #get list of the rds instances thier properties
-script "js_rds_instances_set", type: "javascript" do
+script "js_rds_instances_set_request", type: "javascript" do
   result "results"
   parameters "region"
   code <<-EOS
@@ -254,25 +217,28 @@ script "js_list_tags_for_resource", type: "javascript" do
     "auth": "auth_aws",
     "host": 'rds.'+region+'.amazonaws.com',
     "verb": "GET",
-    "path": "/?Action=ListTagsForResource&ResourceName="+instanceArn,
+    "path": "/",
+
     "headers": {
       "User-Agent": "RS Policies",
       "Content-Type": "text/xml"
     }
     "query_params": {
-      'Action': 'DescribeDBInstances',
+      'Action': 'ListTagsForResource',
+      'ResourceName': instanceArn,
       'Version': '2014-10-31'
     }
   }
 EOS
 end
 
-script "js_cloudwatch_cpu_usage", type: "javascript" do
+script "js_cloudwatch_connections", type: "javascript" do
   result "results"
-  parameters "region","instance_id"
+  parameters "region","name","param_days"
   code <<-EOS
+  var days = parseInt(param_days)
   var end_date = new Date().toISOString()
-  var start_date = new Date(new Date().setDate(new Date().getDate() - 30)).toISOString();
+  var start_date = new Date(new Date().setDate(new Date().getDate() - days )).toISOString();
   results = {
     "auth": "monitoring_auth_aws",
     "host": 'monitoring.'+region+'.amazonaws.com',
@@ -288,179 +254,42 @@ script "js_cloudwatch_cpu_usage", type: "javascript" do
     "query_params": {
       'Action': 'GetMetricStatistics',
       'Version': '2010-08-01',
-      'Namespace': 'AWS/EC2',
-      'MetricName': 'CPUUtilization',
-      'Dimensions.member.1.Name': 'InstanceId',
-      'Dimensions.member.1.Value': instance_id,
+      'Namespace': 'AWS/RDS',
+      //'MetricName':'CPUUtilization',
+      'MetricName': 'DatabaseConnections',
+      'Dimensions.member.1.Name': 'DBInstanceIdentifier',
+      'Dimensions.member.1.Value': name,
       'StartTime': start_date,
       'EndTime': end_date,
       'Period': "2592000",
-      'Statistics.member.1': 'Maximum',
-      'Statistics.member.2': 'Average',
-      'Statistics.member.3': 'Minimum'
+      //Period: "3600"
+      'Statistics.member.1': 'SampleCount',
     }
   }
 EOS
 end
-
-script "js_cloudwatch_mem_usage", type: "javascript" do
-  result "results"
-  parameters "region","instance_id","privateDnsName"
-  code <<-EOS
-  if (privateDnsName != null && privateDnsName !== undefined && privateDnsName.length != 0) {
-    var hostname = privateDnsName.split('.')[0]
-  } else {
-    var hostname = "ip-127-0-0-1"
-  }
-  var end_date = new Date().toISOString()
-  var start_date = new Date(new Date().setDate(new Date().getDate() - 30)).toISOString();
-  results = {
-    "auth": "monitoring_auth_aws",
-    "host": 'monitoring.'+region+'.amazonaws.com',
-    "verb": "GET",
-    "path": "/",
-    "headers": {
-      "User-Agent": "RS Policies",
-      "Content-Type": "application/json",
-      "x-amz-target": "GraniteServiceVersion20100801.GetMetricStatistics",
-      "Accept": "application/json",
-      "Content-Encoding": "amz-1.0"
-    }
-    "query_params": {
-      'Action': 'GetMetricStatistics',
-      'Version': '2010-08-01',
-      'Namespace': 'CWAgent',
-      'MetricName': 'mem_used_percent',
-      'Dimensions.member.1.Name': 'host',
-      'Dimensions.member.1.Value': hostname,
-      'StartTime': start_date,
-      'EndTime': end_date,
-      'Period': "2592000",
-      'Statistics.member.1': 'Maximum',
-      'Statistics.member.2': 'Average',
-      'Statistics.member.3': 'Minimum'
-    }
-  }
-EOS
-end
-
-script "js_cloudwatch_windows_memory_usage", type: "javascript" do
-  result "results"
-  parameters "region","instance_id", "image_id", "instance_type"
-  code <<-EOS
-  var end_date = new Date().toISOString()
-  var start_date = new Date(new Date().setDate(new Date().getDate() - 30)).toISOString();
-  results = {
-    "auth": "monitoring_auth_aws",
-    "host": 'monitoring.'+region+'.amazonaws.com',
-    "verb": "GET",
-    "path": "/",
-    "headers": {
-      "User-Agent": "RS Policies",
-      "Content-Type": "application/json",
-      "x-amz-target": "GraniteServiceVersion20100801.GetMetricStatistics",
-      "Accept": "application/json",
-      "Content-Encoding": "amz-1.0"
-    }
-    "query_params": {
-      'Action': 'GetMetricStatistics',
-      'Version': '2010-08-01',
-      'Namespace': 'CWAgent',
-      'MetricName': 'Memory % Committed Bytes In Use',
-      'Dimensions.member.1.Name': 'ImageId',
-      'Dimensions.member.1.Value': image_id,
-      'Dimensions.member.2.Name': 'InstanceId',
-      'Dimensions.member.2.Value': instance_id,
-      'Dimensions.member.3.Name': 'InstanceType',
-      'Dimensions.member.3.Value': instance_type,
-      'Dimensions.member.4.Name': 'objectname',
-      'Dimensions.member.4.Value': 'Memory',
-      'StartTime': start_date,
-      'EndTime': end_date,
-      'Period': "2592000",
-      'Statistics.member.1': 'Maximum',
-      'Statistics.member.2': 'Average',
-      'Statistics.member.3': 'Minimum'
-    }
-  }
-EOS
-end
-
-script "js_merged_metrics", type: "javascript" do
-  parameters "ds_cloudwatch_cpu_usage", "ds_cloudwatch_mem_usage", "ds_cloudwatch_windows_mem_usage"
-  result "merged_results"
-code <<-EOS
-  var merged_results = []
-  for ( i = 0; i < ds_cloudwatch_cpu_usage.length; i++){
-    var instance = ds_cloudwatch_cpu_usage[i]
-    var instance_id = instance.instanceId
-    if (instance.platform == 'windows'){
-      var mem_usage_record = _.find(ds_cloudwatch_windows_mem_usage, function(record) { return record.instanceId == instance_id; })
-
-      if (mem_usage_record != null && mem_usage_record !== undefined) {
-        var mem_maximum = parseFloat(mem_usage_record.mem_maximum).toFixed(2)
-        var mem_average = parseFloat(mem_usage_record.mem_average).toFixed(2)
-        var mem_minimum = parseFloat(mem_usage_record.mem_minimum).toFixed(2)
-      } else {
-        var mem_maximum = "101"
-        var mem_average = "101"
-        var mem_minimum = "101"
-      }
-    } else {
-      instance.platform = 'linux'
-      var mem_usage_record = _.find(ds_cloudwatch_mem_usage, function(record) { return record.instanceId == instance_id; })
-
-      if (mem_usage_record != null && mem_usage_record !== undefined) {
-        var mem_maximum = parseFloat(mem_usage_record.mem_maximum).toFixed(2)
-        var mem_average = parseFloat(mem_usage_record.mem_average).toFixed(2)
-        var mem_minimum = parseFloat(mem_usage_record.mem_minimum).toFixed(2)
-      } else {
-        var mem_maximum = "101"
-        var mem_average = "101"
-        var mem_minimum = "101"
-      }
-    }
-    merged_results.push(
-      {
-        "region": instance.region,
-        "instanceId": instance.instanceId,
-        "platform": instance.platform,
-        "privateDnsName": instance.privateDnsName,
-        "hostname": instance.privateDnsName.split('.')[0],
-        "tag_set": instance.tag_set,
-        "cpu_minimum": parseFloat(instance.cpu_minimum).toFixed(2),
-        "cpu_maximum": parseFloat(instance.cpu_maximum).toFixed(2),
-        "cpu_average": parseFloat(instance.cpu_average).toFixed(2),
-        "mem_maximum": mem_maximum,
-        "mem_minimum": mem_minimum,
-        "mem_average": mem_average
-      }
-    )
-  }
-EOS
-end
-
 
 ###############################################################################
 # Policy
 ###############################################################################
 
 policy "pol_unused_rds" do
-  validate $ds_rds_instances do
+  validate_each $ds_rds_instances do
     summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} rows containing AWS Used RDS Instances"
     detail_template <<-EOS
 # AWS Instance Utilization
-| Region | Name | instanceID | Private DNS Name | Instance Type | Connections |
-| ------ | ---- | ---------- | ---------------- | ------------- | ----------- |
+| Region | Name | Status | Instance ID | Private DNS Name | Instance Type | Connections | ARN |
+| ------ | ---- | ------ | ---------- | ---------------- | ------------- | ------------ | --- |
 {{ range data -}}
-| {{.region}} | {{.name}} | {{.instanceId}} | {{.privateDnsName }} | {{.instanceType}} | xxx
+| {{.region}} | {{.name}} | {{.status}} | {{.instanceId}} | {{.privateDnsName }} | {{.instanceType}} | {{.connections}} | {{.arn}}
 {{ end -}}
 ___
 ###### Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }}) within Org: {{ rs_org_name }} (Org ID: {{ rs_org_id }})
 EOS
     #escalate $email
     #escalate $decommision_rds
-    check false
+    check eq(to_n(val(item,"connections")),0)
+    #check eq(size(data), 0)
   end
 end
 
