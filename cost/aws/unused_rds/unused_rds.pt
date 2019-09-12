@@ -26,11 +26,9 @@ parameter "param_email" do
 end
 
 parameter "param_exclusion_tag_key" do
-  category "User Inputs"
   label "Exclusion Tag Key:Value"
   description "Cloud native tag key to ignore instances. Format: Key:Value"
   type "string"
-  allowed_pattern /([\w]?)+\:([\w]?)+|/
 end
 
 
@@ -227,9 +225,9 @@ end
 
 script "js_cloudwatch_connections", type: "javascript" do
   result "results"
-  parameters "region","name","param_days"
+  parameters "region","name"
   code <<-EOS
-  var days = parseInt("30") // use param_days for future enhancement
+  var days = parseInt("30") // use $param_days for future enhancement
   var end_date = new Date().toISOString()
   var start_date = new Date(new Date().setDate(new Date().getDate() - days )).toISOString();
   results = {
@@ -278,9 +276,9 @@ policy "pol_unused_rds" do
 ___
 ###### Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }}) within Org: {{ rs_org_name }} (Org ID: {{ rs_org_id }})
 EOS
-    #escalate $email
-    #escalate $decommision_rds
-    check eq(to_n(val(item,"connections")),0)
+    escalate $email
+    escalate $decommision_rds
+    check gt(to_n(val(item,"connections")),0)
   end
 end
 
@@ -314,23 +312,20 @@ define decommision_rds($data) return $all_responses do
   $$debug=true
   $$log = []
   $all_responses = []
-  $key = first(split($param_take_action_tag,':'))
-  $value = last(split($param_take_action_tag,':'))
 
-  $syslog_subject = "AWS Instance Utilization with CloudWatch: "
+  $syslog_subject = "AWS Unused RDS Instance: "
   call sys_log(join([$syslog_subject, "Identified Instances"]),to_s($data))
   foreach $item in $data do
     $response = http_request(
       https: true,
-      verb: "post",
-      host: "ec2."+$item["region"]+".amazonaws.com",
+      verb: "GET",
+      host: "rds."+$item["region"]+".amazonaws.com",
       signature: { "type": "aws" },
       query_strings: {
-        "Action": "CreateTags",
-        "Version": "2012-06-01",
-        "ResourceId.1": $item["instanceId"],
-        "Tag.1.Key": $key,
-        "Tag.1.Value": $value
+        "Action": "DeleteDBInstance",
+        "Version": "2014-09-01",
+        "DBInstanceIdentifier": $item["name"],
+        "SkipFinalSnapshot":"true"
       }
     )
     $all_responses << $response
