@@ -1,0 +1,250 @@
+name "Google Unutilized IP Addresses"
+rs_pt_ver 20180301
+type "policy"
+short_description "Checks Google for Unutilized IP Addresses. See the [README](https://github.com/rightscale/policy_templates/tree/master/cost/google/unutilized_ip_addresses/) and [docs.rightscale.com/policies](http://docs.rightscale.com/policies/) to learn more."
+long_description "Version: 1.0"
+severity "low"
+category "Cost"
+
+###############################################################################
+# Permissions
+###############################################################################
+
+permission "perm_read_creds" do
+  actions   "rs_cm.show_sensitive","rs_cm.index_sensitive"
+  resources "rs_cm.credentials"
+end
+
+###############################################################################
+# Parameters
+###############################################################################
+
+parameter "param_email" do
+  type "list"
+  label "Email addresses to notify"
+  description "Email addresses of the recipients you wish to notify when new incidents are created"
+end
+
+parameter "param_google_project" do
+  type "string"
+  label "Google Cloud Project"
+  description "Google Cloud Project"
+  allowed_pattern /^[0-9a-z:\.-]+$/
+end
+
+parameter "param_exclude_labels" do
+  category "User Inputs"
+  label "Exclusion Labels"
+  description "List of labels that will exclude IP addresses from being evaluated by this policy. Multiple labels are evaluated as an 'OR' condition. Label keys or key/value pairs can be listed. Example: 'test,env=dev'"
+  type "list"
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+auth "auth_google", type: "oauth2" do
+  token_url "https://www.googleapis.com/oauth2/v4/token"
+  grant type: "jwt_bearer" do
+    iss cred("GCE_PLUGIN_ACCOUNT")
+    aud "https://www.googleapis.com/oauth2/v4/token"
+    additional_claims do {
+      "scope" => "https://www.googleapis.com/auth/cloud-platform https://www.googleapis.com/auth/compute https://www.googleapis.com/auth/compute.readonly"
+    } end
+    signing_key cred("GCE_PLUGIN_PRIVATE_KEY")
+  end
+end
+
+###############################################################################
+# Pagination
+###############################################################################
+pagination "google_pagination" do
+  get_page_marker do
+    body_path "{{nextPageToken}}"
+  end
+  set_page_marker do
+    query "pageToken"
+  end
+end
+
+###############################################################################
+# Datasources
+###############################################################################
+
+datasource "ds_addresses" do
+  request do
+    auth $auth_google
+    host "www.googleapis.com"
+    path join(["/compute/beta/projects/",$param_google_project,"/aggregated/addresses/"])
+    query "filter", 'status!="IN_USE"'
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response,"items.*.addresses") do
+      collect jmes_path(response,"items.*.addresses") do
+        field "address", jmes_path(col_item,"address")
+        field "addressType", jmes_path(col_item,"addressType")
+        field "creationTimestamp", jmes_path(col_item,"creationTimestamp")
+        field "description", jmes_path(col_item,"description")
+        field "id", jmes_path(col_item,"id")
+        field "name", jmes_path(col_item,"name")
+        field "purpose", jmes_path(col_item,"purpose")
+        field "selfLink", jmes_path(col_item,"selfLink")
+        field "status", jmes_path(col_item,"status")
+        field "subnetwork", jmes_path(col_item,"subnetwork")
+        field "labels", jmes_path(col_item,"labels")
+      end
+    end
+  end
+end
+
+datasource "ds_sanitize_data" do
+  run_script $js_sanitize_data, $ds_addresses, $param_exclude_labels
+end
+
+###############################################################################
+# Scripts
+###############################################################################
+
+script "js_sanitize_data", type: "javascript" do
+  result "data"
+  parameters "ds_addresses", "param_exclude_labels"
+  code <<-EOS
+    data = []
+    var param_exclude_labels_lower=[];
+    
+    for(var j=0; j < param_exclude_labels.length; j++){
+      param_exclude_labels_lower[j]=param_exclude_labels[j].toString().toLowerCase();
+    }
+
+    for (i = 0; i < ds_addresses.length; i++) {
+      var ds_address = ds_addresses[i]
+      
+      if (ds_address.address != null){
+        var labels = ds_address['labels']
+        var isLabelMatched = false
+        for(var j=0; j < labels.length; j++){
+          var label = labels[j]
+          //Check, if the label present in param_exclude_labels, ignore the address if the tag matches/present.
+          if((param_exclude_labels_lower.indexOf((label['key']).toLowerCase()) !== -1) || (param_exclude_labels_lower.indexOf((tag['key']+'='+tag['value']).toLowerCase()) !== -1)){
+            isTagMatched = true;
+          }
+        }
+
+        if(!(isTagMatched)) {
+          data.push(ds_address)
+        }
+      }
+    }
+  EOS
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "pol_unutilized_addresses" do
+  validate_each $ds_sanitize_data do
+    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} Google Unutilized IP Addresses Discovered"
+    detail_template <<-EOS
+# Google Ununtilized Addresses
+| Address | Name | ID   | Description | Address Type | Creation Timestamp | Purpose | Status | Subnetwork |
+| ------ | ----- | ---- | ----------- | ------------ | ------------------ | ------- | ------ | ---------- |
+{{ range data -}}
+| {{.address}} | {{.name}} | {{.id}} | {{.description}} | {{.addressType}} | {{.creationTimestamp}} | {{.purpose}} | {{.status}} | {{.subnetwork}} |
+{{ end -}}
+___
+###### Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }}) within Org: {{ rs_org_name }} (Org ID: {{ rs_org_id }})
+EOS
+    check eq(0,1)
+    escalate $email
+    #escalate $approve_delete_addresses
+  end
+end
+
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "email" do
+  email $param_email
+end
+
+escalation "approve_delete_addresses" do
+  request_approval  do
+    label "Approve Resource Deletion"
+    description "Approve escalation to run RightScale Cloud Workflow to delete unused IP addresses"
+    parameter "approval_reason" do
+      type "string"
+      label "Reason for Approval"
+      description "Explain why you are approving the action"
+    end
+  end
+  run "delete_addresses", data
+end
+
+###############################################################################
+# Cloud Workflow
+###############################################################################
+
+# https://cloud.google.com/compute/docs/reference/rest/v1/addresses/delete
+define delete_addresses($data) return $all_responses do
+  $$debug=true
+  call google_authenticate() retrieve $access_token
+  $all_responses = []
+  foreach $item in $data do
+    sub on_error: skip do
+      $response = http_delete(
+        url: $item["selfLink"],
+        headers: {
+          "cache-control": "no-cache",
+          "content-type": "application/json",
+          "authorization": "Bearer " + $access_token
+        }
+      )
+      $all_responses << $response
+      call sys_log('IP Address delete response',to_s($response))
+    end
+  end
+end
+
+define google_authenticate() return $access_token do
+  $jwt = {
+    iss: cred("GCE_PLUGIN_ACCOUNT"),
+    aud:"https://oauth2.googleapis.com/token",
+    exp: to_n(strftime(now()+3600, "%s")),
+    iat:to_n(strftime(now(), "%s")),
+    scope: "https://www.googleapis.com/auth/cloud-platform https://www.googleapis.com/auth/compute"
+  }
+
+  #$signed_signature = jwt_encode("RS256", $jwt, cred("GCE_PLUGIN_PRIVATE_KEY"),{typ:"JWT"})
+
+  $response = http_request({
+    verb: 'post',
+    href: '/token',
+    host: 'oauth2.googleapis.com',
+    https: true,
+    headers: {
+      "content-type": "application/json"
+    },
+    body:{
+      "grant_type": "urn:ietf:params:oauth:grant-type:jwt-bearer",
+      "assertion": $signed_signature
+    }
+  })
+  $access_token = $response["body"]["access_token"]
+end
+
+define sys_log($subject, $detail) do
+  if $$debug
+    rs_cm.audit_entries.create(
+      notify: "None",
+      audit_entry: {
+        auditee_href: @@account,
+        summary: "Google Unutilized IP Addresses Policy: "+ $subject,
+        detail: $detail
+      }
+    )
+  end
+end
