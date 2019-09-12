@@ -7,6 +7,7 @@ Please contact sales@rightscale.com to learn more.
 ## Released Policy Templates
 
 ### Cost
+
 - [AWS Reserved Instance Expiration](./cost/aws/reserved_instances/expiration/)
 - [AWS Reserved Instances Utilization](./cost/aws/reserved_instances/utilization/)
 - [AWS Reserved Instance Reservation Coverage](./cost/aws/reserved_instances/coverage/)
@@ -38,9 +39,11 @@ Please contact sales@rightscale.com to learn more.
 - [Superseded Instance Remediation](./cost/superseded_instance_remediation/)
 - [AWS S3 Buckets without Server Access Logging](./security/storage/aws/s3_buckets_without_server_access_logging/)
 - [AWS Burstable Instance CloudWatch Utilization](./cost/aws/burstable_instance_cloudwatch_credit_utilization/)
-- [AWS Bucket Size Check] (/.cost/aws/s3_bucket_size/)
+- [AWS Bucket Size Check](/.cost/aws/s3_bucket_size/)
+- [AWS Idle Compute Instances](./cost/aws/idle_compute_instances/idle_compute_instances.pt)
 
 ### Security
+
 - [Security Group: ICMP Enabled](./security/security_groups/icmp_enabled/)
 - [Security Group: Rules Without Description](./security/security_groups/rules_without_descriptions/)
 - [Security Group: High Open Ports](./security/security_groups/high_open_ports/)
@@ -55,6 +58,7 @@ Please contact sales@rightscale.com to learn more.
 - [Check for publicly accessible Azure SQL Managed Instance](./security/azure/sql_publicly_accessible_managed_instance)
 
 ### Compliance
+
 - [Untagged Resources](./compliance/tags/tag_checker)
 - [Azure Disallowed Regions](./compliance/azure/azure_disallowed_regions)
 - [Azure: Tag Resources with Resource Group Name](./compliance/tags/azure_rg_tags)
@@ -73,8 +77,8 @@ Please contact sales@rightscale.com to learn more.
 - [Azure AHUB Utilization with Manual Entry](./compliance/azure/ahub_manual/)
 - [Azure Idle Compute Instances](./compliance/azure/ahub_idle_compute_instances/)
 
-
 ### Operational
+
 - [AWS Cloud Credentials Rotation Policy](./operational/cloud_credentials/aws)
 - [No Recent Snapshots](./operational/snapshots/)
 - [AWS RDS Backup Settings](./operational/dbaas/aws/rds_backup)
@@ -86,22 +90,26 @@ Please contact sales@rightscale.com to learn more.
 - [Schedule FlexNet Manager report](./operational/fnms/schedule_fnms_reports)
 
 ### SaaS Management
+
 - [Okta Inactive Users](./fsm/okta/inactive_users)
 
 ### Policy Data Sets
- - [AWS Regions](./data/aws/regions.json)
- - [AWS Instance Types](./data/aws/instance_types.json)
- - [Azure Instance Types](./data/azure/instance_types.json)
- - [Google Instance Types](./data/google/instance_types.json)
- - [Currency Reference](./cost/scheduled_reports/currency_reference.json)
+
+- [AWS Regions](./data/aws/regions.json)
+- [AWS Instance Types](./data/aws/instance_types.json)
+- [Azure Instance Types](./data/azure/instance_types.json)
+- [Google Instance Types](./data/google/instance_types.json)
+- [Currency Reference](./cost/scheduled_reports/currency_reference.json)
 
 ## Instructions to upload policy templates to RightScale
+
 - The policy templates in the repo are the files that have a .pt extension.
 - Select the desired policy template, click on the “Raw” button, and then right-click and choose “Save As” to save the file to your computer.
 - To upload the template to your account, navigate over to the Templates page in the left nav bar in [Governance](https://governance.rightscale.com). Ensure you have the role to access policy management in RightScale. Learn More about [Policy Access Control](http://docs.rightscale.com/policies/#how-policies-work-access-control).
 - Click the “Upload Policy Template” button in the account you wish to test the policy and follow the instructions to upload the template you just downloaded.
 
 ## RightScale Policy Template Documentation
+
 - [Getting Started](http://docs.rightscale.com/policies/getting_started/)
 - [Reference Documentation](http://docs.rightscale.com/policies/reference/)
 - [Policy Template Language](http://docs.rightscale.com/policies/reference/policy_template_language.html)
@@ -109,10 +117,12 @@ Please contact sales@rightscale.com to learn more.
 - [Libraries](./libraries/README.md)
 
 ## Getting Help
+
 Support for these policy templates will be provided though GitHub Issues and the Flexera Community.
-Visit https://community.flexera.com to join!
+Visit [Flexera Community](https://community.flexera.com) to join!
 
 ### Opening an Issue
+
 Github issues contain a template for three types of requests(Bugs, New Features to an existing Policy Template, New Policy Template Request)
 
 - Bugs: Any issue you are having with an existing policy template not functioning correctly, this does not include missing features, or actions.
@@ -120,5 +130,6 @@ Github issues contain a template for three types of requests(Bugs, New Features 
 - New Policy Template Request: Request for a new policy template.
 
 ### Troubleshooting Danger Locally
-- You can test against a pull request via: bundle exec danger pr https://github.com/flexera/policy_templates/pull/73 --pry
-- http://danger.systems/guides/troubleshooting.html
+
+- You can test against a pull request via: `bundle exec danger pr https://github.com/flexera/policy_templates/pull/73 --pry`
+- [Danger Troubleshooting](http://danger.systems/guides/troubleshooting.html)
