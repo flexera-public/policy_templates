@@ -1,3 +1,7 @@
+v1.9
+----
+- update policy name to reflect supported cloud.
+
 v1.8
 ----
 - Add `scope` and `type` to incident report
