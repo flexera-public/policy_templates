@@ -2,7 +2,7 @@
 
 ## What it does
 
-This Policy Template checks for idle instance in AWS EC2 and then terminates them upon approval. This is meant to be run as a monthly policy.
+This Policy Template checks for idle instance in AWS EC2 and then terminates them upon approval.
 
 ## Functional Details
 
