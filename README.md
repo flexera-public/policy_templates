@@ -41,7 +41,10 @@ Please contact sales@rightscale.com to learn more.
 - [AWS Burstable Instance CloudWatch Utilization](./cost/aws/burstable_instance_cloudwatch_credit_utilization/)
 - [AWS Bucket Size Check](/.cost/aws/s3_bucket_size/)
 - [AWS Idle Compute Instances](./cost/aws/idle_compute_instances/)
+- [Google Idle Compute Instances](./cost/google/idle_compute_instances/)
 - [AWS Unused RDS Instances](./cost/aws/unused_rds/)
+
+
 
 ### Security
 
