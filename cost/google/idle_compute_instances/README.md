@@ -2,11 +2,11 @@
 
 ## What it does
 
-This Policy Template gathers Google StackDriver utilization for instances on 30 day intervals. This is meant to be run as a monthly policy.
+This Policy Template checks for idle instance in Google Compute Engine and then terminates them upon approval. This is meant to be run as a monthly policy.
 
 ## Functional Details
 
-- This policy identifies all instances reporting performance metrics toGoogle StackDriver and delivers a report, whose CPU or Memory utilization is below the thresholds set in the **Average used memory percentage** and **Average used CPU percentage** parameters.
+- This policy identifies all instances reporting performance metrics to Google StackDriver and delivers a report, for instances whose CPU or Memory utilization is below the thresholds set in the **Average used memory percentage** and **Average used CPU percentage** parameters. These thresholds are what you would consider to be and idle instance.
 - This policy can terminate instances after approval for instances that match the criteria.
 - If you get an **N/A** in a field you will need to install the [StackDriver Agent](https://cloud.google.com/monitoring/agent/install-agent) on the instance to get those metrics.
 - This policy only pulls running instances, as it is unable to get correct monitoring metrics from instances in other states
