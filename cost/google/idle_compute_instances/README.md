@@ -2,7 +2,7 @@
 
 ## What it does
 
-This Policy Template checks for idle instance in Google Compute Engine and then terminates them upon approval. This is meant to be run as a monthly policy.
+This Policy Template checks for idle instance in Google Compute Engine and then terminates them upon approval.
 
 ## Functional Details
 
@@ -24,7 +24,7 @@ This policy has the following input parameters required when launching the polic
 ### Cloud Management Required Permissions/Google Required Permissions
 
 - Cloud Management - The `credential_viewer`,`observer` roles
-- Google - The `Monitoring Viewer` Role
+- Google - The `Monitoring Viewer` Role, and the `compute.instances.delete`, `compute.instances.list`, `compute.instances.get` Permissions
 
 ### Supported Clouds
 
