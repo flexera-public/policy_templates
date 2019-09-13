@@ -234,10 +234,12 @@ end
 # https://cloud.google.com/compute/docs/reference/rest/v1/addresses/delete
 define delete_addresses($data) return $all_responses do
   $$debug=true
-  call google_authenticate() retrieve $access_token
   $all_responses = []
+  $syslog_subject = "Google Unutilized IP Addresses: "
+  call sys_log(join([$syslog_subject, "Identified Addresses"]),to_s($data))
   foreach $item in $data do
-    sub on_error: skip do
+    call google_authenticate() retrieve $access_token
+    sub on_error: handle_error($response) do
       $response = http_delete(
         url: $item["selfLink"],
         headers: {
@@ -247,9 +249,9 @@ define delete_addresses($data) return $all_responses do
         }
       )
       $all_responses << $response
-      call sys_log('IP Address delete response',to_s($response))
     end
   end
+  call sys_log(join([$syslog_subject, "Responses"]),to_s($all_responses))
 end
 
 define google_authenticate() return $access_token do
@@ -279,13 +281,20 @@ define google_authenticate() return $access_token do
   $access_token = $response["body"]["access_token"]
 end
 
+define handle_error($response) do 
+  $status_code = $response["code"]
+  $syslog_subject = "Google Unutilized IP Addresses Deletion Error: "
+  call sys_log(join([$syslog_subject, $status_code]),to_s($response))
+  $_error_behavior = "skip"
+end 
+
 define sys_log($subject, $detail) do
   if $$debug
     rs_cm.audit_entries.create(
       notify: "None",
       audit_entry: {
         auditee_href: @@account,
-        summary: "Google Unutilized IP Addresses Policy: "+ $subject,
+        summary: $subject,
         detail: $detail
       }
     )
