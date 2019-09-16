@@ -345,25 +345,27 @@ end
 define modify_s3_object_storage_class($data) return $all_responses do
   $$debug=true
   $all_responses = []
-  foreach $item in $data do	
-    call url_encode($item['bucket_name']+"/"+$item['object_key']) retrieve $copy_source
-    call url_encode($item['modify_storage_class_to']) retrieve $storage_class
-    $response = http_request({
-                              verb: 'put',
-                              host: $item['host'],
-                              href: join(['/', $item['object_key']]),
-                              https: true,
-                              headers: {'content-type': 'application/x-amz-json-1.1',
-                                        'x-amz-copy-source': $copy_source,
-                                        'x-amz-storage-class': $storage_class
-                                       },
-                              "signature": {'type': 'aws',
-                                            'access_key': cred('AWS_ACCESS_KEY_ID'),
-                                            'secret_key': cred('AWS_SECRET_ACCESS_KEY') 
-                                           }
-                           })  
-    $all_responses << $response
-    call sys_log('AWS object storage optimization ',to_s($response))
+  foreach $item in $data do
+    sub on_error: skip do   
+      call url_encode($item['bucket_name']+"/"+$item['object_key']) retrieve $copy_source
+      call url_encode($item['modify_storage_class_to']) retrieve $storage_class
+      $response = http_request({
+                                verb: 'put',
+                                host: $item['host'],
+                                href: join(['/', $item['object_key']]),
+                                https: true,
+                                headers: {'content-type': 'application/x-amz-json-1.1',
+                                          'x-amz-copy-source': $copy_source,
+                                          'x-amz-storage-class': $storage_class
+                                         },
+                                "signature": {'type': 'aws',
+                                              'access_key': cred('AWS_ACCESS_KEY_ID'),
+                                              'secret_key': cred('AWS_SECRET_ACCESS_KEY') 
+                                             }
+                             })  
+      $all_responses << $response
+      call sys_log('AWS object storage optimization ',to_s($response))
+    end 
   end
 end
 
@@ -372,14 +374,16 @@ define delete_s3_objects($data) return $all_responses do
   $$debug=true
   $all_responses = []
   foreach $item in $data do   	
-    $response = http_delete(url: join(["https://",$item['host'],"/", $item['object_key']]),
-                            "signature": {"type": "aws",
-                                          "access_key": cred("AWS_ACCESS_KEY_ID"),
-                                          "secret_key": cred("AWS_SECRET_ACCESS_KEY") 
-                                         }
-                           )
-    $all_responses << $response
-    call sys_log('Delete AWS S3-Objects',to_s($response))   
+    sub on_error: skip do
+	  $response = http_delete(url: join(["https://",$item['host'],"/", $item['object_key']]),
+                              "signature": {"type": "aws",
+                                            "access_key": cred("AWS_ACCESS_KEY_ID"),
+                                            "secret_key": cred("AWS_SECRET_ACCESS_KEY") 
+                                           }
+                             )
+      $all_responses << $response
+      call sys_log('Delete AWS S3-Objects',to_s($response))   
+    end
   end
 end
 
