@@ -1,3 +1,11 @@
-v1.0.
------
+# Changelog
+
+## v1.1
+
+- Updating handle error.
+- Change exclude tag description and regex
+- changed default values to -1
+
+## v1.0
+
 - initial release

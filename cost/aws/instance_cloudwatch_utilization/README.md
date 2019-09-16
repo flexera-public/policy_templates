@@ -37,7 +37,7 @@ This policy has the following input parameters required when launching the polic
 - *Email addresses of the recipients you wish to notify* - A list of email addresses to notify
 - *Average used memory percentage* - Utilization below this percentage will raise an incident to tag the instance. Providing -1 will turn off this metric for consideration.
 - *Average used CPU percentage* - Utilization below this percentage will raise an incident to tag the instance. Providing -1 will turn off this metric for consideration.
-- *Exclusion Tag Key* - An Azure-native instance tag to ignore instances that you don't want to consider for downsizing. Only supply the tag key
+- *Exclusion Tag Key* - An AWS-native instance tag to ignore instances that you don't want to consider for downsizing. Only supply the tag key
 - *Action Tag Key:Value* - The tag key:value pair to set on an instance that is underutilized.
 
 ### AWS Required Permissions
