@@ -1,30 +1,3 @@
-#
-# Percent change policy template
-# 
-# The policy uses CMP to determine changes in running instance count by comparing the last 30 days to the previous 30 days.  When the percentage of changes reaches the specified threshold an incident is created.
-# INPUTS
-# 
-# Percent threshold for change
-# Flag to detect only increase or decrease as well
-# Email list
-# 
-# ACTIONS
-# Email
-#
-### Required Flexera Roles
-#
-# - policy_manager
-# - observer
-#
-### Supported Clouds
-#
-# - All
-#
-### Cost
-#
-# This policy does not incur any cloud costs
-#
-
 name "Running Instance Count Anomaly"
 rs_pt_ver 20180301
 type "policy"
@@ -33,9 +6,9 @@ long_description "Version: 1.0"
 severity "medium"
 category "Cost"
 
-#
-# User inputs
-#
+###############################################################################
+# Parameters
+###############################################################################
 
 parameter "param_percent_change" do
 	type "number"
@@ -54,65 +27,64 @@ end # parameter
 
 parameter "param_emails" do
 	type "list"
-	label "Notify"
+	label "Email List"
 	description "Email addresses of the recipients you wish to notify"
 end # parameter
 
-#
-# Permissions required
-#
+###############################################################################
+# Permissions
+###############################################################################
 
-permission "index_permissions" do
+permission "perm_index_instances" do
 	resources "rs_cm.instances"
 	actions "rs_cm.index"
-end # permission
+end 
 
-#
+###############################################################################
 # Authentication
-#
+###############################################################################
 
 auth "auth_rs", type: "rightscale"
 
-#
-# Resources/Datasources
-#
+###############################################################################
+# Datasources
+###############################################################################
 
 datasource "ds_instances" do
-
 	request do
-    	auth $auth_rs
-    	verb "GET"
-    	path "/api/instances"
-    	host rs_cm_host
-    	header "X-Api-Version", "1.6"
-    	header "X-Account", to_s(rs_project_id)
-    	query "view", "full"
-    	query "filter", "state=booting,running,stranded"
-  	end # request
-
-  	result do
-  		encoding "json"
-  		collect jmes_path(response,"[*]") do
-  			field "in_id", val(col_item, "id")
-  			field "in_href", val(col_item, "href")
-  			field "in_timestamp", jmes_path(col_item, "timestamps.created_at")
-  			field "in_cloudName", jmes_path(col_item, "links.cloud.name")
-  			field "in_cloudRegion", jmes_path(col_item, "links.cloud.region")
-  		end # collect
-  	end # result
-
+  	auth $auth_rs
+  	verb "GET"
+  	path "/api/instances"
+  	host rs_cm_host
+  	header "X-Api-Version", "1.6"
+  	header "X-Account", to_s(rs_project_id)
+  	query "view", "full"
+  	query "filter", "state=booting,running,stranded"
+ 	end
+ 	result do
+ 		encoding "json"
+		collect jmes_path(response,"[*]") do
+			field "in_id", val(col_item, "id")
+			field "in_href", val(col_item, "href")
+			field "in_timestamp", jmes_path(col_item, "timestamps.created_at")
+			field "in_cloudName", jmes_path(col_item, "links.cloud.name")
+			field "in_cloudRegion", jmes_path(col_item, "links.cloud.region")
+ 		end # collect
+ 	end # result
 end # datasource
 
 datasource "ds_check_instances" do
 	run_script $js_check_instances, $ds_instances, $param_percent_change, $param_decrease
 end # datasource
 
+###############################################################################
+# Scripts
+###############################################################################
+
 script "js_check_instances", type: "javascript" do
 	parameters "ds_instances", "param_percent_change", "param_change_dir"
 	result "report_table"
-
 	code <<-EOS
-
 		// Output
 		report_table = [];
 		var date = new Date();
@@ -192,16 +164,13 @@ script "js_check_instances", type: "javascript" do
 	EOS
 end
 
+###############################################################################
+# Policy
+###############################################################################
+
 policy "check_percent_change" do
-
-	#
-	# Second validate here - validate boolean false to ensure we always run the set of code
-	#
-
 	validate_each $ds_check_instances do
-
    	summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): Instance count threshold exceeded"
-
   	detail_template <<-EOS
 Instance count report: {{ rs_project_name }} (ID: {{ rs_project_id }})\n
 Date span [30 days ago: {{with(index data 0)}}{{.pretty_30}}{{end}}] - [60 days ago: {{with(index data 0)}}{{.pretty_60}}{{end}}] \n
@@ -212,23 +181,17 @@ Date span [30 days ago: {{with(index data 0)}}{{.pretty_30}}{{end}}] - [60 days 
 | {{.cloud}} | {{.region}} | {{.ago_30}} | {{.ago_60}} |
 {{ end -}}
 EOS
-
-		# Validity Checks - this is set in the "js_count_in_range" script which does calculation logic
 		check false
-
-		# Escalations if the validity check fails
 		escalate $email_threshold_report
-
 	end # validate
-
 end # policy
+
+###############################################################################
+# Escalations
+###############################################################################
 
 escalation "email_threshold_report" do
   # Let the identified folks know that instance count is out of range
   email $param_emails
 end # escalation
 
-# Log events as audit entries in the account audits
-define log($summary, $details) do
-  rs_cm.audit_entries.create(notify: "None", audit_entry: { auditee_href: @@account, summary: $summary , detail: $details})
-end # define
