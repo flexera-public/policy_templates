@@ -27,9 +27,9 @@ This policy has the following input parameters required when launching the polic
 
 Perform below steps to enable delete action.
 
-- *Edit the file [AWS_Unencrypted_RDS_Instances](https://github.com/flexera/policy_templates/tree/master/cost/aws/object_storage_optimization/aws_object_storage_optimization.pt)
-- *uncomment the line which conatins 'escalate $esc_delete_s3_objects_approval' and save the changes.
-- *upload the modified file and apply the policy.
+- Edit the file [AWS_Unencrypted_RDS_Instances](https://github.com/flexera/policy_templates/tree/master/cost/aws/object_storage_optimization/aws_object_storage_optimization.pt)
+- uncomment the line which conatins 'escalate $esc_delete_s3_objects_approval' and save the changes.
+- upload the modified file and apply the policy.
 
 ### AWS Required Permissions
 
