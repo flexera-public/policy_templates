@@ -73,6 +73,11 @@ By default, this policy calculates utilization over a 30 day period.
 To calculate over a different period of time, you can update the policy template.  
 Replace the `30` wherever you see `var start_date = new Date(new Date().setDate(new Date().getDate() - 30)).toISOString();` with the new number of days you want to use.
 
+Depending on the number of days you choose to collect metrics for, you may need to update the `period` property.
+For 30 days, we use the value of `2592000`, which is 30 days in seconds.
+You will need to update the value wherever you see `'Period': "2592000",`.
+For more details, see the official [AWS CloudWatch API Documentation](https://docs.aws.amazon.com/AmazonCloudWatch/latest/APIReference/API_GetMetricStatistics.html).
+
 ### Cost
 
 This Policy Template does not incur any cloud costs.
