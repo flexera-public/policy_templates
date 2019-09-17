@@ -3,7 +3,7 @@
 ####  As a best practice, this policy should only be applied to the Master Account, and not to each individual RightScale Account.
  
 ### What it does
-This policy identifies all CUDs that exist in a given GCP project that will be expiring in a set number of days.
+This policy identifies all active CUDs that exist in a given GCP project that will be expiring in a set number of days.
  
 ### Functional Details
  
@@ -32,5 +32,3 @@ This Policy Template does not incur any cloud costs.
 
 - Add New credentials (GC_SA_CLIENT_EMAIL and GC_SA_PRIVATE_KEY) *if does not exists* under RightScale cloud management Design -> Credentials. 
 - The value for credentials can be found in IAM & admin -> service accounts under Google-cloud platform.
-
-Note: The Service Account in GCP should have *owner role*

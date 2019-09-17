@@ -1,7 +1,7 @@
 name "Google Committed Use Discount (CUD) Expiration Report"
 rs_pt_ver 20180301
 type "policy"
-short_description "Report on all Google CUDs that are expiring. \n See the [README](https://github.com/rightscale/policy_templates/tree/master/cost/google/cud_expiration) and [docs.rightscale.com/policies](http://docs.rightscale.com/policies/) to learn more \n
+short_description "Report on active Google CUDs that are expiring. \n See the [README](https://github.com/rightscale/policy_templates/tree/master/cost/google/cud_expiration) and [docs.rightscale.com/policies](http://docs.rightscale.com/policies/) to learn more \n
 As a best practice, this policy should only be applied to the Master Account, and not to each individual RightScale Account.."
 long_description "Version: 1.0"
 category "Cost"
@@ -34,7 +34,7 @@ end
 parameter "param_days_expiration" do
   label "Identify CUDs that are expiring in the given number of days"
   type "number"
-  default "15"
+  default 15
 end
 
 ###############################################################################
@@ -116,26 +116,23 @@ script "js_committed_use_discount_map", type: "javascript" do
   for(var i=0; i < commitments.length ; i++){
     commitment = commitments[i]
 
-    if(commitments.status === "ACTIVE"){
-      var start_date = (new Date(commitment['startTimestamp'])).toISOString().slice(0, 10);
-      var end_date = (new Date(commitment['endTimestamp'])).toISOString().slice(0, 10);
-      var date2_ms = (new Date(commitment['endTimestamp'])).getTime();
-      var difference_ms = date2_ms - date1_ms;
-      var daysLeft = Math.round(difference_ms/one_day);
+    var start_date = (new Date(commitment['startTimestamp'])).toISOString().slice(0, 10);
+    var end_date = (new Date(commitment['endTimestamp'])).toISOString().slice(0, 10);
+    var date2_ms = (new Date(commitment['endTimestamp'])).getTime();
+    var difference_ms = date2_ms - date1_ms;
+    var daysLeft = Math.round(difference_ms/one_day);
 
-      if(daysLeft <= param_days_expiration) {
-
-        content.push({
-          cud_id: commitment['cud_id'],
-          name: commitment['name'],
-          region: commitment['region'],
-          status: commitment['status'],
-          startTimestamp: start_date,
-          plan: commitment['plan'],
-          endTimestamp: end_date,
-          daysExpiration: daysLeft
-        })
-      }
+    if(daysLeft <= param_days_expiration) {
+      content.push({
+        cud_id: commitment['cud_id'],
+        name: commitment['name'],
+        region: commitment['region'].split('/').reverse()[0],
+        status: commitment['status'],
+        startTimestamp: start_date,
+        plan: commitment['plan'],
+        endTimestamp: end_date,
+        daysExpiration: daysLeft
+      })
     }
   }
 EOS
@@ -147,12 +144,14 @@ end
 
 policy "policy_committed_use_discount_expiration" do
   validate $ds_committed_use_discount_map do
-	summary_template "{{ parameters.param_google_project }} : {{ len data }} Committed Use Discounts in Google Cloud Expiring in {{ parameters.param_google_project }} Days"
+	summary_template "{{ parameters.param_google_project }} : {{ len data }} Committed Use Discount(s) in Google Cloud Expiring"
 	detail_template <<-EOS
-# Expiring Committed Use Discounts in Google Cloud for Project: {{ parameters.param_google_project }}
+# Expiring Committed Use Discounts in Google Cloud
+### Project: {{ parameters.param_google_project }}
+### Threshold: {{ parameters.param_days_expiration }} Days
 
 | CUD Id |  Name  | Region | Status | Plan | Start Timestamp | End Timestamp | Days Until Expiration |
-| ------ | ------ | ------ | ------ | ---- | --------------- | ------------- | --------------------- |
+|:------:|:------:|:------:|:------:|:----:|:---------------:|:-------------:|:---------------------:|
 {{ range data -}}
 | {{.cud_id}} | {{.name}} | {{.region}} | {{.status}} | {{.plan}} | {{.startTimestamp}} | {{.endTimestamp}} | {{.daysExpiration}} |
 {{ end -}}
