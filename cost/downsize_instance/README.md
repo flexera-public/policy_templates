@@ -2,7 +2,7 @@
 
 ### What it does
 
-This Policy Template uses user defined to determine if you can decrease the size of your running instance.  
+This Policy Template uses user defined tags to determine if it can decrease the size of your running instance after user approval. 
 
 ### Usage
 
@@ -39,6 +39,19 @@ This policy requires permissions to access RightScale resources (clouds, instanc
 - AWS
 - Azure
 - Google
+
+### Instance Size Relationship Mapping
+
+This policy template uses instance mappings that we have defined in the following files:
+- AWS: [/rightscale/policy_templates/master/data/aws/instance_types.json](/rightscale/policy_templates/master/data/aws/instance_types.json)
+- Azure:  [/rightscale/policy_templates/master/data/azure/instance_types.json](/rightscale/policy_templates/master/data/azure/instance_types.json)
+- Google: [/rightscale/policy_templates/master/data/google/instance_types.json](/rightscale/policy_templates/master/data/google/instance_types.json)
+
+If you would like to modify the relationships, you can take the following steps:
+1. Clone the relevant `instance_types.json` file to a publicly available storage location. We recommend GitHub.
+1. Make the necessary updates to the mapping file(s)
+1. Update the relevant datasources within the Policy Template to pull the `instance_types.json` file from the new location.
+    - If using GitHub to store the updated mapping files, you simply need to update the `path` field in the datasources `ds_aws_instance_size_map`, `ds_azure_instance_size_map`, and `ds_google_instance_size_map`
 
 ### Cost
 
