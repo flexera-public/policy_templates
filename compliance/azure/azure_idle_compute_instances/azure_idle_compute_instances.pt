@@ -90,7 +90,7 @@ datasource "ds_azure_virtualmachines" do
     encoding "json"
     collect jmes_path(response, "value[*]") do
       field "id", jmes_path(col_item,"id")
-      field "rg", jmes_path(col_item,"tags.rg")
+      field "rg", get(4,split(jmes_path(col_item,"id"),'/'))
       field "name", jmes_path(col_item,"name")
       field "location", jmes_path(col_item, "location")
       field "tags", jmes_path(col_item,"tags")
@@ -125,7 +125,7 @@ datasource "ds_azure_instance_performance" do
 end
 
 datasource "ds_combineddata" do
-  run_script $js_combineddata,$param_cpu_average_percentage,$ds_azure_instance_performance
+  run_script $js_combineddata, $param_cpu_average_percentage, $ds_azure_instance_performance
 end
 
 ###############################################################################
@@ -135,32 +135,27 @@ end
 #This is to get the average cpu over time for the machine and return the dataset of machines with issues
 script "js_combineddata", type: "javascript" do
 parameters "param_cpu_average_percentage","ds_azure_instance_performance"
-result "result"
+result "results"
 code <<-EOS
-  var result = []
-  for (var i = 0; i < ds_azure_instance_performance.length; i++) {
-    result = ds_azure_instance_performance[i]
-    var machinename = ds_azure_instance_performance[i].vmname
-    var rg = ds_azure_instance_performance[i].rg
-    var averages = ds_azure_instance_performance[i].averages
-    var averagecpu = 0
+  var results = []
+  _.each(ds_azure_instance_performance, function(result){
+    var averages = _.pluck(result.averages,"average")
 
-    for (var z = 0; z < averages.length; z++) {
-        var averagenumber = averages[z]
-        averagecpu = 0
-        flagtrip = 0
-        if (!isNaN(averagenumber["average"])) {
-            averagecpu = averagenumber["average"] + averagecpu
-            flagtrip = 1
-        }
-    }
+    var sum = _.reduce(averages, function(memo, num){ 
+      if (num != null && num !== undefined){
+        return memo + parseFloat(num)
+      } else {}
+      return memo + 0; 
+      }, 
+    0)
 
-    finalaverage = averagecpu / (averages.length + 1)
-    if ((finalaverage < param_cpu_average_percentage) && (flagtrip == 1)) {
-      result["averagecpu"] = finalaverage
-      result.push(result)
+    var final_average = parseFloat(sum/averages.length)
+
+    if (final_average < param_cpu_average_percentage && final_average != 0) {
+      result["averagecpu"] = final_average
+      results.push(result)
     }
-  }
+  })
 EOS
 end
 
@@ -174,10 +169,10 @@ policy "azure_resource_policy" do
     summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): Azure idle compute instances found"
     detail_template <<-EOS
 # Azure Resources out of compliance
-| Name | CPU Average | Resource Group |
-| ----------------------- | -----------------------  | -------------------- |
+| Location | Name | CPU Average | Resource Group | Tags |
+| -------- | ---- | ----------- | -------------- | ---- |
 {{ range data -}}
-| {{.vmname}} | {{.averagecpu}} | {{.rg}} |
+{{ .location }} | {{.vmname}} | {{.averagecpu}} | {{.rg}} | {{range $i,$e := .tags}}{{$i}}:{{$e}},{{end}} |
 {{ end -}}
 EOS
     check eq(size(data), 0)
