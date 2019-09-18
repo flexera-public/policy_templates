@@ -1,7 +1,7 @@
-name "Azure SQL Utilization"
+name "Azure Rightsize SQL Instances"
 rs_pt_ver 20180301
 type "policy"
-short_description "Gathers database utilization data from Azure Metrics. See the [README](https://github.com/rightscale/policy_templates/tree/master/cost/azure/azure-sql-utilization) and [docs.rightscale.com/policies](http://docs.rightscale.com/policies/) to learn more."
+short_description "Gathers Azure SQL database utilization data from Azure Metrics, and reports on databases that is recommended to be resized. See the [README](https://github.com/rightscale/policy_templates/tree/master/cost/azure/azure-sql-utilization) and [docs.rightscale.com/policies](http://docs.rightscale.com/policies/) to learn more."
 long_description "Version: 1.0"
 severity "low"
 category "Cost"
@@ -177,8 +177,17 @@ script "js_merged_metrics", type: "javascript" do
     var result = [];
     result = db_resources;
 
-    //now find the metrics for the devices
+
     for (i=0; i< db_resources.length; i++) {
+      //Find the Resource groupe
+      var aTemp = db_resources[i].id.split("/resourceGroups/")
+      if (aTemp.length > 1) {
+        aTemp = aTemp[1].split("/"); 
+        db_resources[i].resource_group = aTemp[0];
+      } else
+        db_resources[i].resource_group = "";
+        
+      //now find the metrics for the devices
       var objMetric = _.findWhere(databases_metrics, { id : db_resources[i].id + "/providers/Microsoft.Insights/metrics/cpu_percent" } );
       if (typeof objMetric == "object" && typeof objMetric.timeseries[0].data == "object" ) {
         var total = 0.0;
@@ -201,17 +210,17 @@ end
 
 policy 'policy_azure_db_utilization' do
   validate_each $ds_merged_metrics do
-    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} Underutilized Instances Reporting to Azure Log Analytics"
+    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} Azure Rightsize SQL Instances"
     detail_template <<-EOS
-# Azure Database Utilization
+# Azure Rightsize SQL Instances
 
 ### Thresholds for Consideration
   - Average CPU Used %: {{ parameters.param_avg_cpu }}
 
-| Region | Name | Kind | Type | SKU - Name | SKU - family | SKU - Tier | SKU - Capacity | CPU Average % |
-| ------ | ---- | ---- | ---- | -----------| ------------ | ---------- | -------------- | ------------- |
+| Region | Name | Resource Group | Kind | Type | SKU - Name | SKU - family | SKU - Tier | SKU - Capacity | CPU Average % |
+| ------ | ---- | -------------- | ---- | ---- | -----------| ------------ | ---------- | -------------- | ------------- |
 {{ range data -}}
-| {{.location}} | {{.name}} | {{.kind}} | {{.type}} | {{.sku.name}} | {{.sku.family}} | {{.sku.tier}} | {{.sku.capacity}} | {{ .average_cpu }} |
+| {{.location}} | {{.name}} | {{.resource_group}} | {{.kind}} | {{.type}} | {{.sku.name}} | {{.sku.family}} | {{.sku.tier}} | {{.sku.capacity}} | {{ .average_cpu }} |
 {{ end -}}
 
 ___
