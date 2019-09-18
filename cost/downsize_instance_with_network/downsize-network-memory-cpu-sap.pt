@@ -1,0 +1,723 @@
+name "Downsize SAP Instances based on metrics of cpu, memory, and network throughput."
+rs_pt_ver 20180301
+type "policy"
+short_description "A policy that downsizes instances based on monitoring metrics. \n See the [README](https://github.com/rightscale/policy_templates/tree/master/cost/downsize_instance) and [docs.rightscale.com/policies](http://docs.rightscale.com/policies/) to learn more."
+long_description "Version: 1.01"
+severity "medium"
+category "Cost"
+
+permission "perm_instances" do
+  label "Permissions for instances"
+  actions "rs_cm.index", "rs_cm.show"
+  resources "rs_cm.instances", "rs_cm.clouds", "rs_cm.instance_types"
+end
+
+permission "perm_monitoring_metrics" do
+  label "Permissions for monitoring metrics"
+  actions "rs_cm.data"
+  resources "rs_cm.monitoring_metrics"
+end
+
+parameter "param_avg_free_memory_percent" do
+  type "number"
+  label "Average free memory percent to allow for downsize"
+  default -1
+  min_value -1
+  max_value 100
+end
+
+parameter "param_max_free_memory_percent" do
+  type "number"
+  label "Maximum free memory percent to allow for downsize"
+  default -1
+  min_value -1
+  max_value 100
+end
+
+parameter "param_avg_cpu_idle" do
+  type "number"
+  label "Average cpu idle percent to allow for downsize"
+  default -1
+  min_value -1
+  max_value 100
+end
+
+parameter "param_max_cpu_idle" do
+  type "number"
+  label "Maximum cpu idle percent to allow for downsize."
+  default -1
+  min_value -1
+  max_value 100
+end
+
+parameter "param_avg_network_throughput_interface_eth0" do
+  type "number"
+  label "Average network throughput interface_eth0 to allow for downsize. (packets per second)"
+  description "Leave at -1 to ignore"
+  default -1
+  min_value -1
+end
+
+parameter "param_max_network_throughput_interface_eth0" do
+  type "number"
+  label "Maximum network throughput via interface_eth0 to allow for downsize. (packets per second)"
+  description "Leave at -1 to ignore"
+  default -1
+  min_value -1
+end
+
+parameter "param_avg_network_throughput_Amazon_Elastic_Network_Adapter" do
+  type "number"
+  label "Average network throughput via Amazon_Elastic_Network_Adapter to allow for downsize. (packets per second)"
+  description "Leave at -1 to ignore"
+  default -1
+  min_value -1
+end
+
+parameter "param_max_network_throughput_Amazon_Elastic_Network_Adapter" do
+  type "number"
+  label "Maximum network throughput Amazon_Elastic_Network_Adapter to allow for downsize. (packets per second)"
+  description "Leave at -1 to ignore"
+  default -1
+  min_value -1
+end
+
+parameter "param_avg_network_throughput_Intel_R_82599_Virtual_Function" do
+  type "number"
+  label "Average network throughput via Intel_R_82599_Virtual_Function to allow for downsize. (packets per second)"
+  description "Leave at -1 to ignore"
+  default -1
+  min_value -1
+end
+
+parameter "param_max_network_throughput_Intel_R_82599_Virtual_Function" do
+  type "number"
+  label "Maximum network throughput via Intel_R_82599_Virtual_Function  to allow for downsize. (packets per second)"
+  description "Leave at -1 to ignore"
+  default -1
+  min_value -1
+end
+
+parameter "param_avg_network_throughput_Amazon_PV_Network_Adapter" do
+  type "number"
+  label "Average network throughput via Amazon_PV_Network_Adapter to allow for downsize. (packets per second)"
+  description "Leave at -1 to ignore"
+  default -1
+  min_value -1
+end
+
+parameter "param_max_network_throughput_Amazon_PV_Network_Adapter" do
+  type "number"
+  label "Maximum network throughput via Amazon_PV_Network_Adapter to allow for downsize. (packets per second)"
+  description "Leave at -1 to ignore"
+  default -1
+  min_value -1
+end
+
+parameter "param_instance_tag_list" do
+  type "list"
+  label "Instance tags used to filter instances that must validate policy. (e.g.: rs_monitoring:state=auth)"
+  min_length 1
+  allowed_pattern /([\w]?)+\:([\w]?)+\=([\w]?)+/
+end
+
+parameter "param_email" do
+  type "list"
+  label "Email addresses of the recipients you wish to notify"
+end
+
+parameter "param_alert_options" do
+  type "string"
+  label "Escalation Options"
+  allowed_values "Email"
+  default "Email"
+end
+
+parameter "param_cooldown_days" do
+  type "number"
+  label "Days to cooldown between checks of same instance"
+  default 30
+end
+
+auth "auth_rs", type: "rightscale"
+
+resources "clouds", type: "rs_cm.clouds" do
+  filter do # ignore clouds that are NOT represented in instance_types.json
+    cloud_type ne: ["vscale", "soft_layer", "cloud_stack", "rackspace_next_gen", "blue_skies","open_stack_v2","uca","open_stack_v3"]
+  end
+end
+
+resources "instances", type: "rs_cm.instances" do
+  iterate @clouds
+  cloud_href href(iter_item)
+  filter do
+    state "operational"
+  end
+  tags all(any($param_instance_tag_list), "rs_agent:type=right_link_lite",none("rs_downsize:cooldown=*"))
+end
+
+#tags all(any($param_instance_tag_list), "rs_agent:type=right_link_lite",none("rs_downsize:cooldown=*"))
+
+resources "instance_types", type: "rs_cm.instance_types" do
+  iterate @clouds
+  cloud_href href(iter_item)
+end
+
+datasource "ds_instance_type_memory", type: "javascript" do
+  run_script $js_instance_type_memory, @instance_types
+end
+
+script "js_instance_type_memory", type: "javascript" do
+  parameters "instance_types"
+  result "instance_type_memory_mapping"
+  code <<-EOS
+  var instance_type_memory_mapping = {};
+  var mb_bytes = 1000000
+  var gb_bytes = 1000000000
+for (m = 0; m < instance_types.length; m++) {
+  instance_type_name = instance_types[m]["name"]
+  instance_type_memory = instance_types[m]["memory"]
+  if (instance_type_memory.match(/GB/)) {
+    mem_gb = Number(instance_type_memory.split("GB")[0])
+    mem = mem_gb * gb_bytes
+  } else if (instance_type_memory.match(/MB/)) {
+    mem_mb = Number(instance_type_memory.split("MB")[0])
+    mem = mem_mb * mb_bytes
+  } else { // assume MB without the units
+    mem_mb = Number(instance_type_memory)
+    mem = mem_mb * mb_bytes
+  }
+  instance_type_memory_mapping[instance_type_name] = mem
+};
+EOS
+end
+
+datasource "ds_instances" do
+  iterate @instances
+  field "resource_uid", val(iter_item,  "resource_uid")
+  field "name", val(iter_item, "name")
+  field "href", href(iter_item)
+  field "instance_type", val(iter_item, "instance_type")
+  field "tags", val(iter_item,"tags")
+end
+
+datasource "ds_instances_16" do
+  iterate(@clouds)
+  request do
+    auth $auth_rs
+    verb "GET"
+    host rs_cm_host
+    path join([href(iter_item), "/instances"])
+    header "X-Api-Version", "1.6"
+    header "X-Account", to_s(rs_project_id)
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "[*]") do
+      field "account", jmes_path(col_item, "links.account.id")
+      field "cloud_id", jmes_path(col_item, "links.cloud.id")
+      field "href", jmes_path(col_item, "href")
+      field "name", jmes_path(col_item,"name")
+      field "description", jmes_path(col_item, "description")
+      field "legacy_id", to_n(jmes_path(col_item,"legacy_id"))
+      field "instance_type", jmes_path(col_item, "links.instance_type.name")
+      field "region", jmes_path(col_item, "links.cloud.region")
+      field "cloud_type", jmes_path(col_item, "links.cloud.cloud_type")
+    end
+  end
+end
+
+auth "my_aws_auth", type: "aws" do
+  version 4
+  service "s3"
+  region "us-east-1"
+  access_key cred("AWS_ACCESS_KEY_ID")
+  secret_key cred("AWS_SECRET_ACCESS_KEY")
+end
+
+# Importing instance types that are approved by sap with rough estimated costs.
+datasource "ds_instance_size_map" do
+  request do
+    auth $my_aws_auth
+    host "s3.amazonaws.com"
+    verb "GET"
+    path "rightscale-cft-templates/instance_types_cost_sap.json"
+  end
+end
+
+datasource "ds_filtered_instances" do
+  run_script $js_filter_instances, $ds_instances, $ds_instances_16, $ds_instance_size_map, $ds_instance_type_memory
+end
+
+script "js_filter_instances", type: "javascript" do
+  parameters "instances", "instances16", "instance_size_map", "instance_type_memory"
+  result "filtered_instances"
+  code <<-EOS
+// This is the list of filtered instances.
+var filtered_instances = [];
+var i_type = {};
+for ( n = 0; n < instances16.length; n++) {
+  i_type[instances16[n]["href"]] = {
+    cloud_type: instances16[n]["cloud_type"],
+    instance_type: instances16[n]["instance_type"],
+    legacy_id: instances16[n]["legacy_id"],
+    account: instances16[n]["account"],
+    cloud_id: instances16[n]["cloud_id"],
+    region: instances16[n]["region"]
+  }
+}
+
+for ( i = 0; i < instances.length; i++ ) {
+  var cloud_type = i_type[instances[i]["href"]]["cloud_type"]
+  var instance_type = i_type[instances[i]["href"]]["instance_type"]
+  var instance_type_mem = instance_type_memory[instance_type]
+  var legacy_id = i_type[instances[i]["href"]]["legacy_id"]
+  var region = i_type[instances[i]["href"]]["region"]
+  var account = i_type[instances[i]["href"]]["account"]
+  var cloud_id = i_type[instances[i]["href"]]["cloud_id"]
+
+  if (typeof instance_size_map["clouds"][cloud_type.toString()][instance_type.toString()] === 'undefined'){
+    //skip
+    continue;
+  }
+  else {
+  var next_instance_size = instance_size_map["clouds"][cloud_type.toString()][instance_type.toString()]["down"]
+  if (!next_instance_size) { next_instance_size = "N/A" }
+  filtered_instances.push(
+    {
+      account: account,
+      resource_uid: instances[i]["resource_uid"],
+      name: instances[i]["name"],
+      href: instances[i]["href"],
+      description: instances[i]["description"],
+      legacy_id: legacy_id,
+      cloud_id: cloud_id,
+      instance_type: instance_type,
+      total_memory: instance_type_mem,
+      region: region,
+      cloud_type: cloud_type,
+      tags: instances[i]["tags"],
+      next_instance_size: next_instance_size
+    }
+  )
+  }
+};
+EOS
+end
+
+/ This works for servers that have:  interface:if_packets-eth0 data /
+datasource "ds_instance_metrics_network_interface_eth0" do
+  iterate($ds_filtered_instances)
+  request do
+    ignore_status [422]
+    auth $auth_rs
+    host rs_cm_host
+    path join([val(iter_item,"href"), "/monitoring_metrics/interface:if_packets-eth0/data"])
+    query "start", "-300"
+    query "end", "0"
+    header "X-API-Version", "1.5"
+  end
+  result do
+    field "href",        val(iter_item,"href")
+    field "data_points", jmes_path(response, "variables_data[0].points[*]")
+    field "resource_uid",          val(iter_item,"resource_uid")
+    field "instance_type",        val(iter_item,"instance_type")
+    field "name",        val(iter_item,"name")
+  end
+end
+
+/ This works on servers that have network interface Intel_R_82599/
+datasource "ds_instance_metrics_network_interface_Intel_R_82599" do
+  iterate($ds_filtered_instances)
+  request do
+    ignore_status [422]
+    auth $auth_rs
+    host rs_cm_host
+    path join([val(iter_item,"href"), "/monitoring_metrics/interface-Intel_R_82599_Virtual_Function:if_packets/data"])
+    query "start", "-300"
+    query "end", "0"
+    header "X-API-Version", "1.5"
+  end
+  result do
+    field "href",        val(iter_item,"href")
+    field "data_points", jmes_path(response, "variables_data[0].points[*]")
+    field "resource_uid",          val(iter_item,"resource_uid")
+    field "instance_type",        val(iter_item,"instance_type")
+    field "name",        val(iter_item,"name")
+  end
+end
+
+/ This works on servers that have network interface AWS_PV_Network_Device/
+datasource "ds_instance_metrics_network_interface_AWS_PV_Network_Device" do
+  iterate($ds_filtered_instances)
+  request do
+    ignore_status [422]
+    auth $auth_rs
+    host rs_cm_host
+    path join([val(iter_item,"href"), "/monitoring_metrics/interface-AWS_PV_Network_Device:if_packets/data"])
+    query "start", "-300"
+    query "end", "0"
+    header "X-API-Version", "1.5"
+  end
+  result do
+    field "href",        val(iter_item,"href")
+    field "data_points", jmes_path(response, "variables_data[0].points[*]")
+    field "resource_uid",          val(iter_item,"resource_uid")
+    field "instance_type",        val(iter_item,"instance_type")
+    field "name",        val(iter_item,"name")
+  end
+end
+
+/ This works on servers that have network interface Amazon_Elastic_Network_Adapter/
+datasource "ds_instance_metrics_network_interface_Amazon_Elastic_Network_Adapter" do
+  iterate($ds_filtered_instances)
+  request do
+    ignore_status [422]
+    auth $auth_rs
+    host rs_cm_host
+    path join([val(iter_item,"href"), "/monitoring_metrics/interface-Amazon_Elastic_Network_Adapter:if_packets/data"])
+    query "start", "-300"
+    query "end", "0"
+    header "X-API-Version", "1.5"
+  end
+  result do
+    field "href",        val(iter_item,"href")
+    field "data_points", jmes_path(response, "variables_data[0].points[*]")
+    field "resource_uid",          val(iter_item,"resource_uid")
+    field "instance_type",        val(iter_item,"instance_type")
+    field "name",        val(iter_item,"name")
+  end
+end
+
+datasource "ds_instance_metrics_free_memory" do
+  iterate($ds_filtered_instances)
+  request do
+    auth $auth_rs
+    host rs_cm_host
+    path join([val(iter_item,"href"), "/monitoring_metrics/memory:memory-free/data"])
+    query "start", "-300"
+    query "end", "0"
+    header "X-API-Version", "1.5"
+  end
+  result do
+    field "href",               val(iter_item,"href")
+    field "memory_data_points", jmes_path(response, "variables_data[0].points[*]")
+    field "account",            val(iter_item,"account")
+    field "resource_uid",       val(iter_item,"resource_uid")
+    field "instance_type",      val(iter_item,"instance_type")
+    field "total_memory",       val(iter_item, "total_memory")
+    field "name",               val(iter_item,"name")
+    field "legacy_id",          val(iter_item,"legacy_id")
+    field "cloud_id",           val(iter_item,"cloud_id")
+    field "region",             val(iter_item,"region")
+    field "cloud_type",         val(iter_item,"cloud_type")
+    field "next_instance_size", val(iter_item,"next_instance_size")
+    field "tags",               val(iter_item,"tags")
+  end
+end
+
+datasource "ds_instance_metrics_cpu" do
+  iterate($ds_filtered_instances)
+  request do
+    auth $auth_rs
+    host rs_cm_host
+    path join([val(iter_item,"href"), "/monitoring_metrics/cpu-0:cpu-idle/data"])
+    query "start", "-300"
+    query "end", "0"
+    header "X-API-Version", "1.5"
+  end
+  result do
+    field "href",        val(iter_item,"href")
+    field "data_points", jmes_path(response, "variables_data[0].points[*]")
+    field "resource_uid",          val(iter_item,"resource_uid")
+    field "instance_type",        val(iter_item,"instance_type")
+    field "name",        val(iter_item,"name")
+  end
+end
+
+datasource "ds_instances_with_calculated_metrics" do
+  run_script $js_calculate_metrics, $ds_instance_metrics_free_memory, $ds_instance_metrics_cpu, $ds_instance_metrics_network_interface_eth0, $ds_instance_metrics_network_interface_Amazon_Elastic_Network_Adapter, $ds_instance_metrics_network_interface_Intel_R_82599, $ds_instance_metrics_network_interface_AWS_PV_Network_Device,$ds_instance_size_map
+end
+
+script "js_calculate_metrics", type: "javascript" do
+  parameters "instance_metrics_free_memory", "instance_metrics_cpu", "instance_metrics_network_interface_eth0", "instance_metrics_network_interface_Amazon_Elastic_Network_Adapter", "instance_metrics_network_interface_Intel_R_82599", "instance_metrics_network_interface_AWS_PV_Network_Device", "instance_size_map"
+  result "calculated_instances"
+  code <<-EOS
+var calculated_instances = [];
+for (var i = 0; i < instance_metrics_free_memory.length; i++) {
+      var free_sum = 0;
+      free_memory_data_points = instance_metrics_free_memory[i]["memory_data_points"]
+      //skip if no memory data point are available
+      if (free_memory_data_points < 1 ) {
+        continue;
+      }
+      var free_avg = free_memory_data_points.reduce(function(acc, val) { return acc + val; })/free_memory_data_points.length;
+      max_free_memory = Math.max.apply(Math,free_memory_data_points)
+
+      // Total memory does not change and so average and max total memory equals the total memory for the instance type
+      var total_avg = instance_metrics_free_memory[i]["total_memory"]
+      max_total_memory = instance_metrics_free_memory[i]["total_memory"]
+
+      avg = parseInt((free_avg/total_avg)*100)
+      max_free_memory_avg = parseInt((max_free_memory/max_total_memory)*100)
+
+
+      var cost_savings=0;
+      var mycloud_type = instance_metrics_free_memory[i]["cloud_type"]
+      var myinstance_type = instance_metrics_free_memory[i]["instance_type"]
+      var mynext_instance_size = instance_metrics_free_memory[i]["next_instance_size"]
+
+    if (typeof instance_size_map["clouds"][mycloud_type.toString()][myinstance_type.toString()] === 'undefined') {
+      //This means that the instance doesnt exist in the json, so we are skipping it. 
+      //console.log("Didnt match Instance type.  Skipping $" + cost_savings) 
+      //console.log("")
+      cost_savings=0;
+      continue;
+    }
+    else {
+      var current_cost =  (instance_size_map["clouds"][mycloud_type.toString()][myinstance_type.toString()]["cost"]);
+      //console.log("current cost: " + current_cost)
+      if (mynext_instance_size == "N/A")
+       {
+         // means that the next instance is N/A
+        cost_savings=0;
+        continue;
+       }
+       else
+        {
+      var next_instance_cost = (instance_size_map["clouds"][mycloud_type.toString()][mynext_instance_size.toString()]["cost"]);
+      //console.log("next_instance_cost" + next_instance_cost)
+      cost_savings =  (Math.abs(current_cost - next_instance_cost)) * 720
+      }
+
+      //console.log("Estimated Monthly Saving:   $" + cost_savings )
+      }
+      calculated_instances.push(
+          {
+            account: instance_metrics_free_memory[i]["account"],
+            resource_uid: instance_metrics_free_memory[i]["resource_uid"],
+            name: instance_metrics_free_memory[i]["name"],
+            href: instance_metrics_free_memory[i]["href"],
+            instance_type: instance_metrics_free_memory[i]["instance_type"],
+            tags: instance_metrics_free_memory[i]["vol_tags"],
+            average_mem_percent: avg,
+            max_free_memory_avg: max_free_memory_avg,
+            free_avg: parseInt((free_avg/1000)/1000),
+            total_avg: parseInt((total_avg/1000)/1000),
+            max_free_memory: parseInt((max_free_memory/1000)/1000),
+            max_total_memory: parseInt((max_total_memory/1000)/1000),
+            max_network_throughput: parseInt(0),
+            avg_network_throughput: parseInt(0),
+            legacy_id: instance_metrics_free_memory[i]["legacy_id"],
+            cloud_id: instance_metrics_free_memory[i]["cloud_id"],
+            region: instance_metrics_free_memory[i]["region"],
+            cloud_type: instance_metrics_free_memory[i]["cloud_type"],
+            costs: cost_savings,
+            tags: instance_metrics_free_memory[i]["tags"]
+            next_instance_size: instance_metrics_free_memory[i]["next_instance_size"]
+          }
+        )
+};
+for ( var i = 0; i < calculated_instances.length; i++ ) {
+  for ( v = 0; v < instance_metrics_cpu.length; v++ ) {
+    if ( calculated_instances[i]["href"] == instance_metrics_cpu[v]["href"] ) {
+      cpu_data_points = instance_metrics_cpu[v]["data_points"]
+      //skip if no cpu data points are available
+      if (cpu_data_points < 1 ) {
+        continue;
+      }
+      var max_cpu_idle = 0;
+      var average_cpu_idle = 0;
+      max_cpu_idle = Math.max.apply(Math,cpu_data_points)
+      average_cpu_idle = cpu_data_points.reduce(function(acc, val) { return acc + val; })/cpu_data_points.length;
+      calculated_instances[i]["max_cpu_idle"] = parseInt(max_cpu_idle)
+      calculated_instances[i]["average_cpu_idle"] = parseInt(average_cpu_idle)
+    }
+  }
+};
+
+//console.log("Starting calculations of ds_instance_metrics_network_interface_eth0")
+//console.log("calculated_instances lenght is:" + calculated_instances.length)
+//var instance_metrics_network_interface_eth0 = require('./datasource_ds_instance_metrics_network_interface_eth0.json');
+for ( var i = 0; i < calculated_instances.length; i++ ) {
+    //console.log("Inside calculated instances lenght for loop, network metric eth0: " + i + " " + instance_metrics_network_interface_eth0.length)
+    for ( w = 0; w < instance_metrics_network_interface_eth0.length; w++ ) {
+      if ( calculated_instances[i]["href"] == instance_metrics_network_interface_eth0[w]["href"] ) {
+        network_eth0_data_points = instance_metrics_network_interface_eth0[w]["data_points"]
+        //skip if no network metric eth0 points are available, meaning interface doesnt exist
+        if (network_eth0_data_points < 1 ) {
+          continue;
+        }
+        var max_network_eth0_throughput = 0;
+        var average_network_throughput = 0;
+        max_network_eth0_throughput = Math.max.apply(Math,network_eth0_data_points)
+        average_network_throughput = network_eth0_data_points.reduce(function(acc, val) { return acc + val; })/network_eth0_data_points.length;
+        calculated_instances[i]["max_network_throughput"] = parseInt(max_network_eth0_throughput)
+        calculated_instances[i]["avg_network_throughput"] = parseInt(average_network_throughput)
+        //console.log("Avg Network Traffic Eth0:"+ parseInt(average_network_throughput) + "" )
+        //console.log("Maximum Network Traffic Eth0:"+ parseInt(max_network_eth0_throughput) + "" )
+      }
+    }
+};
+
+//console.log("Starting calculations of ds_instance_metrics_network_interface_Amazon_Elastic_Network_Adapter");
+//console.log("calculated_instances lenght is:" + calculated_instances.length)
+//var instance_metrics_network_interface_Amazon_Elastic_Network_Adapter = require('./datasource_ds_instance_metrics_network_interface_Amazon_Elastic_Network_Adapter.json');
+for ( var i = 0; i < calculated_instances.length; i++ ) {
+    //console.log("Inside calculated instances lenght for loop:" + i + "network metric Amazon_Elastic_Network_Adapter:" + " " + instance_metrics_network_interface_Amazon_Elastic_Network_Adapter.length)
+    for ( w = 0; w < instance_metrics_network_interface_Amazon_Elastic_Network_Adapter.length; w++ ) {
+      if ( calculated_instances[i]["href"] == instance_metrics_network_interface_Amazon_Elastic_Network_Adapter[w]["href"] ) {
+        network_Amazon_Elastic_Network_Adapter_data_points = instance_metrics_network_interface_Amazon_Elastic_Network_Adapter[w]["data_points"]
+        //skip if no network metric eth0 points are available, meaning interface doesnt exist
+        if (network_Amazon_Elastic_Network_Adapter_data_points < 1 ) {
+          continue;
+        }
+        var max_network_Amazon_Elastic_Network_Adapter_throughput = 0;
+        var average_network_throughput = 0;
+        max_network_Amazon_Elastic_Network_Adapter_throughput = Math.max.apply(Math,network_Amazon_Elastic_Network_Adapter_data_points)
+        average_network_throughput = network_Amazon_Elastic_Network_Adapter_data_points.reduce(function(acc, val) { return acc + val; })/network_Amazon_Elastic_Network_Adapter_data_points.length;
+        calculated_instances[i]["max_network_throughput"] = parseInt(max_network_Amazon_Elastic_Network_Adapter_throughput)
+        calculated_instances[i]["avg_network_throughput"] = parseInt(average_network_throughput)
+        //console.log("Avg Network Traffic Amazon_Elastic_Network_Adapter:"+ parseInt(average_network_throughput) + "" )
+        //console.log("Maximum Network Traffic Amazon_Elastic_Network_Adapter:"+ parseInt(max_network_Amazon_Elastic_Network_Adapter_throughput) + "" )
+      }
+    }
+};
+
+//console.log("Starting calculations of ds_instance_metrics_network_interface_Intel_R_82599");
+//console.log("calculated_instances lenght is:" + calculated_instances.length)
+//var instance_metrics_network_interface_Intel_R_82599 = require('./datasource_ds_instance_metrics_network_interface_Intel_R_82599.json');
+for ( var i = 0; i < calculated_instances.length; i++ ) {
+    //console.log("Inside calculated instances lenght for loop:" + i + "network metric Intel R 82599:" + " " + instance_metrics_network_interface_Intel_R_82599.length)
+    for ( w = 0; w < instance_metrics_network_interface_Intel_R_82599.length; w++ ) {
+      if ( calculated_instances[i]["href"] == instance_metrics_network_interface_Intel_R_82599[w]["href"] ) {
+        network_Intel_R_82599_data_points = instance_metrics_network_interface_Intel_R_82599[w]["data_points"]
+        //skip if no network metric eth0 points are available, meaning interface doesnt exist
+        if (network_Intel_R_82599_data_points < 1 ) {
+          continue;
+        }
+        var max_network_Intel_R_82599_throughput = 0;
+        var average_network_throughput = 0;
+        max_network_Intel_R_82599_throughput = Math.max.apply(Math,network_Intel_R_82599_data_points)
+        average_network_throughput = network_Intel_R_82599_data_points.reduce(function(acc, val) { return acc + val; })/network_Intel_R_82599_data_points.length;
+
+        calculated_instances[i]["max_network_throughput"] = parseInt(max_network_Intel_R_82599_throughput)
+        calculated_instances[i]["avg_network_throughput"] = parseInt(average_network_throughput)
+        //console.log("Avg Network Traffic Intel_R_82599:"+ parseInt(average_network_throughput) + "" )
+        //console.log("Maximum Network Traffic Intel_R_82599:"+ parseInt(max_network_Intel_R_82599_throughput) + "" )
+      }
+    }
+};
+
+//console.log("Starting calculations of ds_instance_metrics_network_AWS_PV_Network_Device");
+//console.log("calculated_instances lenght is:" + calculated_instances.length)
+//var instance_metrics_network_interface_AWS_PV_Network_Device = require('./datasource_ds_instance_metrics_network_interface_AWS_PV_Network_Device.json');
+for ( var i = 0; i < calculated_instances.length; i++ ) {
+    //console.log("Inside calculated instances lenght for loop:" + i + "network metric AWS_PV_Network_Device:" + " " + instance_metrics_network_interface_AWS_PV_Network_Device.length)
+    for ( w = 0; w < instance_metrics_network_interface_AWS_PV_Network_Device.length; w++ ) {
+      if ( calculated_instances[i]["href"] == instance_metrics_network_interface_AWS_PV_Network_Device[w]["href"] ) {
+        network_AWS_PV_Network_Device_data_points = instance_metrics_network_interface_AWS_PV_Network_Device[w]["data_points"]
+        //skip if no network metric eth0 points are available, meaning interface doesnt exist
+        if (network_AWS_PV_Network_Device_data_points < 1 ) {
+          continue;
+        }
+        var max_network_AWS_PV_Network_Device_throughput = 0;
+        var average_network_throughput = 0;
+        max_network_AWS_PV_Network_Device_throughput = Math.max.apply(Math,network_AWS_PV_Network_Device_data_points)
+        average_network_throughput = network_AWS_PV_Network_Device_data_points.reduce(function(acc, val) { return acc + val; })/network_AWS_PV_Network_Device_data_points.length;
+        calculated_instances[i]["max_network_throughput"] = parseInt(max_network_AWS_PV_Network_Device_throughput)
+        calculated_instances[i]["avg_network_throughput"] = parseInt(average_network_throughput)
+        //console.log("Avg Network Traffic AWS_PV_Network_Device:"+ parseInt(average_network_throughput) + "" )
+        //console.log("Maximum Network Traffic AWS_PV_Network_Device:"+ parseInt(max_network_AWS_PV_Network_Device_throughput) + "" )
+      }
+    }
+};
+EOS
+end
+
+resolution "report_downsize_instances_resolution" do
+  email $param_email
+end
+
+escalation "report_downsize_instances" do
+  email $param_email
+end
+
+# escalation "downsize_instances" do
+#   run "downsize_instances", data, $param_alert_options, $param_instance_tag_list, $param_cooldown_days
+# end
+
+
+define downsize_instances($data,$param_alert_options,$param_instance_tag_list,$param_cooldown_days) do
+  if $param_alert_options != "Email"
+    foreach $item in $data do
+      @current_instance = rs_cm.instances.empty()
+      if $item["next_instance_size"] != "N/A"
+        @instance = rs_cm.get(href: $item["href"])
+        @current_server = @instance.parent()
+        task_label("stopping instance")
+        @instance.stop()
+        task_label("sleeping until instance stopped")
+        sleep_until(@current_server.state == 'provisioned')
+        @current_instance = @current_server.current_instance()
+        @cloud = @current_instance.cloud()
+        @new_instance_type = first(@cloud.instance_types(filter: ["name=="+$item["next_instance_size"]]))
+        @current_instance.update(instance: { instance_type_href: @new_instance_type.href })
+        task_label("sleeping until instance started")
+        @current_instance.start()
+        sleep_until(@current_instance.state == 'operational')
+        task_label("Instance Started")
+        $date = now() + (60*60*24)*$param_cooldown_days
+        $format_string = "%Y/%m/%d %H:%M:%S"
+        $formatted_time = strftime($date, $format_string)
+        task_label("Adding CoolDown Tag")
+        rs_cm.tags.multi_add(resource_hrefs: [@current_instance.href], tags: ["rs_downsize:cooldown="+$formatted_time])
+      end
+      if empty?(@current_instance)
+        @current_instance = rs_cm.get(href: $item["href"])
+      end
+      $excluded_tags = ["ec2:Name=","rs_agent:mime_shellscript","rs_agent:type","rs_login:state","rs_monitoring:state","rs_monitoring:util"]
+      $ok_tags = []
+      foreach $tag in $param_instance_tag_list do
+        if !contains?($excluded_tags,[$tag])
+          $ok_tags<<$tag
+        end
+      end
+      if size($ok_tags) > 0
+        task_label("Deleting Tags")
+        rs_cm.tags.multi_delete(resource_hrefs: [@current_instance.href], tags: $ok_tags)
+      end
+    end
+  end
+end
+
+policy "policy_rightsize" do
+  validate_each $ds_instances_with_calculated_metrics do
+    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} Instances that can be downsized"
+    detail_template <<-EOS
+# {{ len data }} Instances can be downsized
+
+| Instance Name | Resource UID | Average Memory | Free Average Memory | Total Average Memory | Max Free Memory | Max Total Memory | Max CPU Idle | Average CPU Idle | Current Instance Size | New Instance Size | Average Network Throughput (packets/second) | Max Network Throughput (packets/second)  | Estimated Cost Savings | Tags | 
+| ------- | ------------- | ------------ | -------------- | ------------------- | -------------------- | --------------- | ---------------- | ------------ | ---------------- | --------------------- | ----------------- | ----------------- | ----------------- | ----------------- | ----------------- 
+{{ range data -}}
+  | [{{.name}}](https://my.rightscale.com/acct/{{.account}}/clouds/{{.cloud_id}}/instances/{{.legacy_id}}) | {{.resource_uid}} | {{.average_mem_percent}}% | {{.free_avg }}MB | {{.total_avg }}MB | {{.max_free_memory }}MB | {{.max_total_memory }}MB | {{.max_cpu_idle}}% | {{.average_cpu_idle}}% | {{.instance_type}} | {{.next_instance_size}} | {{.avg_network_throughput}} | {{.max_network_throughput}} | ${{.costs}} | {{.tags}} |
+{{ end -}}
+
+EOS
+    escalate $report_downsize_instances
+    #escalate $downsize_instances
+    resolve $report_downsize_instances_resolution
+    check logic_and(eq($param_avg_free_memory_percent, -1), lt(to_n(val(item,"average_mem_percent")), $param_avg_free_memory_percent))
+    check logic_and(eq($param_max_free_memory_percent, -1), lt(to_n(val(item,"max_free_memory_avg")),$param_max_free_memory_percent))
+    check logic_and(eq($param_avg_cpu_idle, -1), lt(to_n(val(item,"average_cpu_idle")),$param_avg_cpu_idle))
+    check logic_and(eq($param_max_cpu_idle, -1), lt(to_n(val(item,"max_cpu_idle")),$param_max_cpu_idle))
+    check logic_and(eq($param_avg_network_throughput_interface_eth0, -1), lt(to_n(val(item,"avg_network_throughput")),$param_avg_network_throughput_interface_eth0))
+    check logic_and(eq($param_max_network_throughput_interface_eth0, -1), lt(to_n(val(item,"max_network_throughput")),$param_max_network_throughput_interface_eth0))
+    check logic_and(eq($param_avg_network_throughput_Amazon_Elastic_Network_Adapter, -1), lt(to_n(val(item,"avg_network_throughput")),$param_avg_network_throughput_Amazon_Elastic_Network_Adapter))
+    check logic_and(eq($param_max_network_throughput_Amazon_Elastic_Network_Adapter, -1), lt(to_n(val(item,"max_network_throughput")),$param_max_network_throughput_Amazon_Elastic_Network_Adapter))
+    check logic_and(eq($param_avg_network_throughput_Intel_R_82599_Virtual_Function, -1), lt(to_n(val(item,"avg_network_throughput")),$param_avg_network_throughput_Intel_R_82599_Virtual_Function))
+    check logic_and(eq($param_max_network_throughput_Intel_R_82599_Virtual_Function, -1), lt(to_n(val(item,"max_network_throughput")),$param_max_network_throughput_Intel_R_82599_Virtual_Function))
+    check logic_and(eq($param_avg_network_throughput_Amazon_PV_Network_Adapter, -1), lt(to_n(val(item,"avg_network_throughput")),$param_avg_network_throughput_Amazon_PV_Network_Adapter))
+    check logic_and(eq($param_max_network_throughput_Amazon_PV_Network_Adapter, -1), lt(to_n(val(item,"max_network_throughput")),$param_max_network_throughput_Amazon_PV_Network_Adapter))
+  end
+end
