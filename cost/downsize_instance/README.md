@@ -2,7 +2,7 @@
 
 ### What it does
 
-This Policy Template uses user defined to determine if you can decrease the size of your running instance.  
+This Policy Template uses user defined tags to determine if it can decrease the size of your running instance after user approval. 
 
 ### Usage
 
