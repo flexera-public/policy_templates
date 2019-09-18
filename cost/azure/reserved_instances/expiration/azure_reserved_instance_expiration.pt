@@ -1,0 +1,173 @@
+name "Azure Reserved Instances Expiration"
+rs_pt_ver 20180301
+type "policy"
+short_description "A policy that sends email notifications when RIs are about to expire. See the [README](https://github.com/rightscale/policy_templates/tree/master/cost/azure/reserved_instances/expiration) and [docs.rightscale.com/policies](http://docs.rightscale.com/policies/) to learn more."
+long_description "Version: 1.0"
+severity "low"
+category "Cost"
+
+###############################################################################
+# Permissions
+###############################################################################
+
+permission "perm_read_creds" do
+  actions   "rs_cm.show_sensitive","rs_cm.index_sensitive"
+  resources "rs_cm.credentials"
+end
+
+###############################################################################
+# Parameters
+###############################################################################
+
+parameter "param_azure_tenant_id" do
+  type "string"
+  label "Azure AD Tenant ID"
+  category "Azure"
+end
+
+parameter "param_days_expiration" do
+  label "Identify RIs that are expiring in the given number of days"
+  type "number"
+  default 15
+end
+
+parameter "param_email" do
+  type "list"
+  label "Email addresses of the recipients you wish to notify"
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+auth "azure_auth", type: "oauth2" do
+  token_url join(["https://login.microsoftonline.com/",$param_azure_tenant_id,"/oauth2/token"])
+  grant type: "client_credentials" do
+    client_id cred("AZURE_APPLICATION_ID")
+    client_secret cred("AZURE_APPLICATION_KEY")
+    additional_params do {
+      "resource" => "https://management.azure.com/"
+    } end
+  end
+end
+
+###############################################################################
+# Pagination
+###############################################################################
+
+pagination "azure_pagination" do
+  get_page_marker do
+    body_path "nextLink"
+  end
+  set_page_marker do
+    uri true
+  end
+end
+
+###############################################################################
+# Datasources
+###############################################################################
+
+datasource "ds_azure_ri_orders" do
+  request do
+    auth $azure_auth
+    pagination $azure_pagination
+    host "management.azure.com"
+    path join(["/providers/Microsoft.Capacity/reservationOrders"])
+    query "api-version","2019-04-01"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "value") do
+      field "id", jmes_path(col_item,"id")
+      field "type", jmes_path(col_item,"type")
+      field "name", jmes_path(col_item,"name")
+      field "etag", jmes_path(col_item,"etag")
+      field "createdDateTime", jmes_path(col_item,"properties.createdDateTime")
+      field "expiryDate", jmes_path(col_item,"properties.expiryDate")
+      field "originalQuantity", jmes_path(col_item,"properties.originalQuantity")
+      field "provisioningState", jmes_path(col_item,"properties.provisioningState")
+      field "term", jmes_path(col_item,"properties.term")
+      field "reservations", jmes_path(col_item,"properties.reservations")
+      #field "reservationId", jmes_path(col_item,"properties.reservations.id")
+      #field "location", jmes_path(col_item,"properties.reservations.location")
+      #field "resName", jmes_path(col_item,"properties.reservations.name")
+      #field "resSku", jmes_path(col_item,"properties.reservations.sku")
+      #field "displayName", jmes_path(col_item,"properties.reservations.type")
+    end
+  end
+end
+
+datasource "ds_azure_ri_filtered_data" do
+  run_script $js_azure_ri_filtered_data, $ds_azure_ri_orders, $param_days_expiration
+end
+
+###############################################################################
+# Scripts
+###############################################################################
+
+#Filter the JSON, based on user input for param 'param_days_expiration' and formating Date.
+script "js_azure_ri_filtered_data", type: "javascript" do
+  parameters "orders","param_days_expiration"
+  result "content"
+  code <<-EOS
+  var content=[];
+  var now = new Date();
+  var one_day=1000*60*60*24;
+  var date1_ms = now.getTime();
+  
+  for(var i=0; i < orders.length ; i++){
+    order = orders[i]
+    var start_date = (new Date(order['createdDateTime'])).toISOString().slice(0, 10);
+    var end_date = (new Date(order['expiryDate'])).toISOString().slice(0, 10);
+    var date2_ms = (new Date(order['expiryDate'])).getTime();
+    var difference_ms = date2_ms - date1_ms;
+    var daysLeft = Math.round(difference_ms/one_day);
+
+    if(daysLeft <= param_days_expiration) {
+      content.push({
+        id: order['id'],
+        name: order['name'],
+        term: order['term'],
+        provisioningState: order['provisioningState'],
+        startTimestamp: start_date,
+        originalQuantity: order['originalQuantity'],
+        endTimestamp: end_date,
+        daysExpiration: daysLeft
+      })
+    }
+  }
+EOS
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "policy_azure_ri_expiration" do
+  validate $ds_azure_ri_filtered_data do
+    summary_template "{{ parameters.param_google_project }} : {{ len data }} Reserved Instance(s) in Microsoft Azure Expiring"
+    detail_template <<-EOS
+# Expiring Reserved Instance(s) in Microsoft Azure
+### Tenant: {{ parameters.param_azure_tenant_id }}
+### Threshold: {{ parameters.param_days_expiration }} Days
+| Order Id | Name | Term | Provisioning State | Quantity | Start Date | End Date | Days Until Expiration |
+|:--------:|:----:|:----:|:------------------:|:--------:|:----------:|:--------:|:---------------------:|
+{{ range data -}}
+| {{.id}} | {{.name}} | {{.term}} | {{.provisioningState}} | {{.originalQuantity}} | {{.startTimestamp}} | {{.endTimestamp}} | {{.daysExpiration}} |
+{{ end -}}
+###### Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }}) within Org: {{ rs_org_name }} (Org ID: {{ rs_org_id }})
+EOS
+    escalate $report_list_of_CUDs
+    check eq(size(data),0)
+  end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "email" do
+   email $param_email
+end
