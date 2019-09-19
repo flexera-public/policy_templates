@@ -32,6 +32,8 @@ This policy has the following input parameters required when launching the polic
 - policy_designer
 - policy_manager
 - policy_publisher
+- credential_viewer
+- observer
 
 ### Installation
 
