@@ -31,9 +31,18 @@ parameter "param_azure_sub" do
   category "Azure"
 end
 
-parameter "param_avg_cpu" do
+parameter "param_avg_cpu_upscale" do
   type "number"
-  label "Average used CPU percentage"
+  label "Average used CPU % - Upscale threshold"
+  description "Set to -1 to ignore CPU utilization"
+  default 80
+  min_value -1
+  max_value 100
+end
+
+parameter "param_avg_cpu_downscale" do
+  type "number"
+  label "Average used CPU % - Downscale Threshold"
   description "Set to -1 to ignore CPU utilization"
   default 60
   min_value -1
@@ -163,7 +172,7 @@ datasource "ds_azure_databases_metrics" do
 end
 
 datasource "ds_merged_metrics" do
-  run_script $js_merged_metrics, $ds_azure_databases, $ds_azure_databases_metrics
+  run_script $js_merged_metrics, $ds_azure_databases, $ds_azure_databases_metrics, $param_exclusion_tag_key, $param_avg_cpu_downscale, $param_avg_cpu_upscale
 end
 
 ###############################################################################
@@ -171,24 +180,30 @@ end
 ###############################################################################
 
 script "js_merged_metrics", type: "javascript" do
-  parameters "db_resources", "databases_metrics"
+  parameters "db_resources", "databases_metrics", "exclusion_tag", "down_threshold", "up_threshold"
   result "result"
   code <<-EOS
     var result = [];
-    result = db_resources;
 
-
+    // First exclude the one with the exclution tags, and the system databases 
     for (i=0; i< db_resources.length; i++) {
+      if (_.has(db_resources[i].tags, exclusion_tag) || db_resources[i].kind.toLowerCase().indexOf(",system") > -1 ) {
+        // Instance has exclusion tag, skip
+      } else
+        result.push(db_resources[i]);
+    }
+
+    for (i=0; i< result.length; i++) {
       //Find the Resource groupe
-      var aTemp = db_resources[i].id.split("/resourceGroups/")
+      var aTemp = result[i].id.split("/resourceGroups/")
       if (aTemp.length > 1) {
         aTemp = aTemp[1].split("/"); 
-        db_resources[i].resource_group = aTemp[0];
+        result[i].resource_group = aTemp[0];
       } else
-        db_resources[i].resource_group = "";
+        result[i].resource_group = "";
         
       //now find the metrics for the devices
-      var objMetric = _.findWhere(databases_metrics, { id : db_resources[i].id + "/providers/Microsoft.Insights/metrics/cpu_percent" } );
+      var objMetric = _.findWhere(databases_metrics, { id : result[i].id + "/providers/Microsoft.Insights/metrics/cpu_percent" } );
       if (typeof objMetric == "object" && typeof objMetric.timeseries[0].data == "object" ) {
         var total = 0.0;
         var ts_data =  objMetric.timeseries[0].data;
@@ -196,10 +211,22 @@ script "js_merged_metrics", type: "javascript" do
           total += ts_data[x].average; 
         } 
         var average_cpu = total / ts_data.length;
-        db_resources[i].average_cpu = average_cpu.toFixed(2) + " %";
+        result[i].average_cpu = average_cpu.toFixed(2);
       }  else {
-        db_resources[i].average_cpu = "n/a";
+        result[i].average_cpu = "n/a";
       }
+
+      //Now check for Recomendation
+      if (result[i].average_cpu !== "n/a" && ((Number(result[i].average_cpu) >= Number(up_threshold)) || (Number(result[i].average_cpu) <= Number(down_threshold)))) {
+        if (Number(result[i].average_cpu) >= Number(up_threshold)) {
+          //Upscale
+          result[i].recomendation = "Scale up";
+        } else {
+          //Downscale
+          result[i].recomendation = "Scale Down";
+        }
+      } else
+        result[i].recomendation = "-";
     }
   EOS
 end
@@ -215,19 +242,20 @@ policy 'policy_azure_db_utilization' do
 # Azure Rightsize SQL Instances
 
 ### Thresholds for Consideration
-  - Average CPU Used %: {{ parameters.param_avg_cpu }}
+  - Upscale Average CPU% threshold   : {{ parameters.param_avg_cpu_upscale }} 
+  - Downscale Average CPU% threshold : {{ parameters.param_avg_cpu_downscale }}
 
-| Region | Name | Resource Group | Kind | Type | SKU - Name | SKU - family | SKU - Tier | SKU - Capacity | CPU Average % |
-| ------ | ---- | -------------- | ---- | ---- | -----------| ------------ | ---------- | -------------- | ------------- |
+| Region | Name | Resource Group | Kind | Type | SKU - Name | SKU - family | SKU - Tier | SKU - Capacity | CPU Average % | recomendation |
+| ------ | ---- | -------------- | ---- | ---- | -----------| ------------ | ---------- | -------------- | ------------- | ------------- |
 {{ range data -}}
-| {{.location}} | {{.name}} | {{.resource_group}} | {{.kind}} | {{.type}} | {{.sku.name}} | {{.sku.family}} | {{.sku.tier}} | {{.sku.capacity}} | {{ .average_cpu }} |
+| {{.location}} | {{.name}} | {{.resource_group}} | {{.kind}} | {{.type}} | {{.sku.name}} | {{.sku.family}} | {{.sku.tier}} | {{.sku.capacity}} | {{ .average_cpu }} % | {{.recomendation}} |
 {{ end -}}
 
 ___
 ###### Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }}) within Org: {{ rs_org_name }} (Org ID: {{ rs_org_id }})
 EOS
     escalate $email
-##    check logic_or(eq($param_avg_cpu, -1), gt(to_n(val(item,"cpu_average")),$param_avg_cpu))
+    check ne(val(item,"recomendation"),"-")
 check eq(1,2)
   end
 end
