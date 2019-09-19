@@ -45,6 +45,7 @@ Please contact sales@rightscale.com to learn more.
 - [AWS Object Storage Optimization](./cost/aws/object_storage_optimization/)
 - [AWS Unused RDS Instances](./cost/aws/unused_rds/)
 - [Google Committed Use Discount (CUD) Expiration Report](./cost/google/cud_expiration/)
+- [Azure Rightsize SQL Instances](./cost/azure/rightsize_sql_instances/)
 
 ### Security
 
