@@ -1,0 +1,777 @@
+name "Azure Instances Rightsizing from Log Analytics"
+rs_pt_ver 20180301
+type "policy"
+short_description "Rightsizes Azure instance based on utilization data from Azure Log Analytics.  See the [README](https://github.com/rightscale/policy_templates/tree/master/cost/azure/instances_log_analitics_utilization) and [docs.rightscale.com/policies](http://docs.rightscale.com/policies/) to learn more."
+long_description "Version: 1.0"
+severity "low"
+category "Cost"
+
+###############################################################################
+# Permissions
+###############################################################################
+
+permission "perm_read_creds" do
+  actions   "rs_cm.show_sensitive","rs_cm.index_sensitive"
+  resources "rs_cm.credentials"
+end
+
+###############################################################################
+# Parameters
+###############################################################################
+
+parameter "param_azure_tenant_id" do
+  type "string"
+  label "Azure AD Tenant ID"
+  category "Azure"
+end
+
+parameter "param_azure_sub" do
+  type "string"
+  label "Azure Subscription ID"
+  category "Azure"
+end
+
+parameter "param_upsize_avg_used_memory" do
+  type "number"
+  category "Upsize"
+  label "Upsize - Average used memory percentage"
+  description "Set to -1 to ignore memory utilization"
+  default 60
+  min_value -1
+  max_value 100
+end
+
+parameter "param_upsize_avg_cpu" do
+  type "number"
+  category "Upsize"
+  label "Upsize - Average used CPU percentage"
+  description "Set to -1 to ignore CPU utilization"
+  default 60
+  min_value -1
+  max_value 100
+end
+
+parameter "param_downsize_avg_used_memory" do
+  type "number"
+  category "Downsize"
+  label "Downsize - Average used memory percentage"
+  description "Set to -1 to ignore memory utilization"
+  default 60
+  min_value -1
+  max_value 100
+end
+
+parameter "param_downsize_avg_cpu" do
+  type "number"
+  category "Downsize"
+  label "Downsize - Average used CPU percentage"
+  description "Set to -1 to ignore CPU utilization"
+  default 60
+  min_value -1
+  max_value 100
+end
+
+parameter "param_exclusion_tag_key" do
+  category "User Inputs"
+  label "Exclusion Tag Key"
+  description "Cloud native tag key to ignore instances. Example: exclude_utilization"
+  type "string"
+end
+
+parameter "param_cooldown_days" do
+  type "number"
+  label "Cooldown Days"
+  description "Days to cooldown between checks of same instance"
+  default 30
+end
+
+parameter "param_email" do
+  type "list"
+  label "Email addresses"
+  description "Email addresses of the recipients you wish to notify"
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+auth "azure_auth", type: "oauth2" do
+  token_url join(["https://login.microsoftonline.com/",$param_azure_tenant_id,"/oauth2/token"])
+  grant type: "client_credentials" do
+    client_id cred("AZURE_APPLICATION_ID")
+    client_secret cred("AZURE_APPLICATION_KEY")
+    additional_params do {
+      "resource" => "https://management.azure.com/"
+    } end
+  end
+end
+
+auth "log_analytics_auth", type: "oauth2" do
+  token_url join(["https://login.microsoftonline.com/",$param_azure_tenant_id,"/oauth2/token"])
+  grant type: "client_credentials" do
+    client_id cred("AZURE_APPLICATION_ID")
+    client_secret cred("AZURE_APPLICATION_KEY")
+    additional_params do {
+      "resource" => "https://api.loganalytics.io"
+    } end
+  end
+end
+
+###############################################################################
+# Pagination
+###############################################################################
+
+pagination "azure_pagination" do
+  get_page_marker do
+    body_path "nextLink"
+  end
+  set_page_marker do
+    uri true
+  end
+end
+
+###############################################################################
+# Datasources
+###############################################################################
+
+datasource "ds_azure_skus" do
+  request do
+    auth $azure_auth
+    pagination $azure_pagination
+    host "management.azure.com"
+    path join(["/subscriptions/", $param_azure_sub, "/providers/Microsoft.Compute/skus"])
+    query "api-version","2017-09-01"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+      collect jmes_path(response, "value") do
+        field "resourceType", jmes_path(col_item,"resourceType")
+        field "name", jmes_path(col_item,"name")
+        field "locations", jmes_path(col_item,"locations")
+        field "capabilities", jmes_path(col_item,"capabilities")
+        field "restrictions", jmes_path(col_item,"restrictions")
+      end
+  end
+end
+
+datasource "ds_azure_vm_sizes" do
+  run_script $js_azure_vm_sizes, $ds_azure_skus
+end
+
+datasource "ds_azure_instances" do
+  request do
+    auth $azure_auth
+    pagination $azure_pagination
+    host "management.azure.com"
+    path join(["/subscriptions/", $param_azure_sub, "/providers/Microsoft.Compute/virtualMachines"])
+    query "api-version","2018-10-01"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+      collect jmes_path(response, "value") do
+        field "id", jmes_path(col_item,"id")
+      end
+  end
+end
+
+datasource "ds_azure_instances_view" do
+  iterate $ds_azure_instances
+  request do
+    auth $azure_auth
+    pagination $azure_pagination
+    host "management.azure.com"
+    path val(iter_item, "id")
+    query "api-version","2018-10-01"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+        field "id", jmes_path(response,"id")
+        field "name", jmes_path(response,"name")
+        field "location", jmes_path(response,"location")
+        field "osType", jmes_path(response,"properties.storageProfile.osDisk.osType")
+        field "vmSize", jmes_path(response,"properties.hardwareProfile.vmSize")
+        field "resources", jmes_path(response,"resources")
+        field "tags", jmes_path(response,"tags")
+        field "availabilitySet", jmes_path(response,"properties.availabilitySet.id")
+  end
+end
+
+datasource "ds_oms_resources" do
+  run_script $js_oms_resources, $ds_azure_instances_view, $param_exclusion_tag_key
+end
+
+datasource "ds_la_instances_utilization" do
+  iterate $ds_oms_resources
+  request do
+    auth $log_analytics_auth
+    verb "POST"
+    host "api.loganalytics.io"
+    path join(["/v1/workspaces/", val(iter_item,"workspaceId"), "/query"])
+    query "timespan","P30D"
+    header "User-Agent", "RS Policies"
+    body_field "query", join(['Perf | where _ResourceId == tolower("',val(iter_item,"id"),'") | where CounterName == "% Processor Time" or CounterName == "Available MBytes Memory" or CounterName == "% Committed Bytes In Use" | summarize ["avg"] = avg(CounterValue), ["max"] = max(CounterValue), ["min"] = min(CounterValue) by _ResourceId,CounterName'])
+  end
+  result do
+    encoding "json"
+      collect jmes_path(response, "tables") do
+        field "resourceid", jmes_path(col_item, "rows[0][0]")
+        field "results" do
+          collect jmes_path(col_item, "rows") do
+            field "counter", jmes_path(col_item, "[1]")
+            field "avg", jmes_path(col_item, "[2]")
+            field "max", jmes_path(col_item, "[3]")
+            field "min", jmes_path(col_item, "[4]")
+          end
+        end
+      end
+  end
+end
+
+datasource "ds_merged_metrics" do
+  run_script $js_merged_metrics, $ds_oms_resources, $ds_la_instances_utilization, $ds_azure_vm_sizes, $param_exclusion_tag_key
+end
+
+# get azure instance size map
+datasource "ds_azure_instance_size_map" do
+  request do
+    verb "GET"
+    host "raw.githubusercontent.com"
+    path "/rightscale/policy_templates/master/data/azure/instance_types.json"
+    header "User-Agent", "RS Policies"
+  end
+end
+
+datasource "ds_filtered_instances" do
+  run_script $js_filter_instances, $ds_instances, $ds_instances_16, $ds_aws_instance_size_map, $ds_azure_instance_size_map, $ds_google_instance_size_map
+end
+
+###############################################################################
+# Scripts
+###############################################################################
+
+script "js_azure_vm_sizes", type: "javascript" do
+  parameters "ds_azure_skus"
+  result "result"
+  code <<-EOS
+    var result = [];
+    _.each(ds_azure_skus, function(sku){
+      
+      if (sku.resourceType === "virtualMachines") {
+        var skipVmSku = false;
+        _.each(sku.restrictions, function(restriction){
+          if (restriction.type === "Location" && restriction.reasonCode === "NotAvailableForSubscription") {
+            skipVmSku = true
+          }
+        })
+        
+        if (skipVmSku) {
+          // VM Sku not available in this location for this subscription
+        } else {
+          var capabilities = [];
+          _.each(sku.capabilities, function(capability){
+            capabilities[capability.name] = capability.value
+          })
+
+          result.push({
+            name: sku.name,
+            resourceType: sku.resourceType,
+            locations: sku.locations,
+            MaxResourceVolumeMB: capabilities.MaxResourceVolumeMB,
+            OSVhdSizeMB: capabilities.OSVhdSizeMB,
+            vCPUs: capabilities.vCPUs,
+            HyperVGenerations: capabilities.HyperVGenerations,
+            MemoryGB: capabilities.MemoryGB,
+            MaxDataDiskCount: capabilities.MaxDataDiskCount,
+            LowPriorityCapable: capabilities.LowPriorityCapable,
+            PremiumIO: capabilities.PremiumIO,
+            vCPUsAvailable: capabilities.vCPUsAvailable,
+            ACUs: capabilities.ACUs,
+            vCPUsPerCore: capabilities.vCPUsPerCore,
+            CombinedTempDiskAndCachedIOPS: capabilities.CombinedTempDiskAndCachedIOPS,
+            CombinedTempDiskAndCachedReadBytesPerSecond: capabilities.CombinedTempDiskAndCachedReadBytesPerSecond,
+            CombinedTempDiskAndCachedWriteBytesPerSecond: capabilities.CombinedTempDiskAndCachedWriteBytesPerSecond,
+            CachedDiskBytes: capabilities.CachedDiskBytes,
+            UncachedDiskIOPS: capabilities.UncachedDiskIOPS,
+            UncachedDiskBytesPerSecond: capabilities.UncachedDiskBytesPerSecond,
+            EphemeralOSDiskSupported: capabilities.EphemeralOSDiskSupported
+          })
+        }
+      }
+    })
+  EOS
+end
+
+script "js_oms_resources", type: "javascript" do
+  parameters "azure_instances","exclusion_tag"
+  result "result"
+  code <<-EOS
+    var result = [];
+    _.each(azure_instances, function(instance){
+      if (_.has(instance.tags, exclusion_tag)) {
+        // Instance has exclusion tag, skip
+      } else {
+        var resourceGroup = instance.id.split('/')[4]
+        var log_agent = false;
+        var workspace_id = "N/A";
+        var diag_agent = false;
+        var storage_account = "N/A";
+        _.each(instance.resources, function(resource){
+          if (resource.name === "MicrosoftMonitoringAgent" || resource.name === "OmsAgentForLinux") {
+            log_agent = true
+            workspace_id = resource.properties.settings.workspaceId
+          } else if (resource.name === "Microsoft.Insights.VMDiagnosticsSettings" || resource.name === "LinuxDiagnostic") {
+            diag_agent = true
+            storage_account = resource.properties.settings.StorageAccount
+          }
+        })
+        if (instance["availabilitySet"]) {
+          var availabilitySet = true
+        } else {
+          var availabilitySet = false
+        }
+        if (log_agent === true) {
+          result.push({
+            id: instance["id"],
+            name: instance["name"],
+            resourceGroup: resourceGroup,
+            location: instance["location"],
+            vmSize: instance["vmSize"],
+            osType: instance["osType"],
+            logAgent: log_agent,
+            workspaceId: workspace_id,
+            diagAgent: diag_agent,
+            storageAccount: storage_account,
+            tags: instance["tags"],
+            availabilitySet: availabilitySet
+          })
+        }
+      }
+    })
+  EOS
+end
+
+script "js_merged_metrics", type: "javascript" do
+  parameters "ds_oms_resources","ds_la_instances_utilization","ds_azure_vm_sizes","exclusion_tag"
+  result "result"
+  code <<-EOS
+    var result = [];
+
+    _.each(ds_oms_resources, function(instance){
+      var cpu_maximum = "N/A";
+      var cpu_average = "N/A";
+      var mem_maximum = "N/A";
+      var mem_average = "N/A";
+
+      var metrics = (_.where(ds_la_instances_utilization, {"resourceid": instance["id"].toLowerCase()}));
+
+      if (metrics[0]) {
+        _.each(metrics[0]["results"], function(metric){
+          var counterName = metric.counter.replace("!"," ").replace("(MISSING)")
+          if (counterName === "% Processor Time") {
+            cpu_maximum = parseFloat(metric.max).toFixed(2)
+            cpu_average = parseFloat(metric.avg).toFixed(2)
+          } else if (counterName === "Available MBytes Memory") {
+            // Linux counter is available/free, not used
+            var instanceDetails = _.where(ds_azure_vm_sizes, {"name": instance["vmSize"]})
+            var totalMem = instanceDetails[0].MemoryGB * 1024
+            mem_maximum = parseFloat(((totalMem - metric.min) / totalMem) * 100).toFixed(2)
+            mem_average = parseFloat(((totalMem - metric.avg) / totalMem) * 100).toFixed(2)
+          } else if (counterName === "% Committed Bytes In Use") {
+            mem_maximum = parseFloat(metric.max).toFixed(2)
+            mem_average = parseFloat(metric.avg).toFixed(2)
+          }
+        })
+
+        result.push({
+          id: instance["id"],
+          name: instance["name"],
+          resourceGroup: instance["resourceGroup"],
+          location: instance["location"],
+          vmSize: instance["vmSize"],
+          osType: instance["osType"],
+          logAgent: instance["logAgent"],
+          workspaceId: instance["workspaceId"],
+          diagAgent: instance["diagAgent"],
+          storageAccount: instance["storageAccount"],
+          tags: instance["tags"],
+          availabilitySet: instance["availabilitySet"]
+          cpu_maximum: cpu_maximum,
+          cpu_average: cpu_average,
+          mem_maximum: mem_maximum,
+          mem_average: mem_average
+        })
+      }
+    })
+  EOS
+end
+
+script "js_filter_instances", type: "javascript" do
+  parameters "instances", "instances16", "aws_instance_size_map","azure_instance_size_map","google_instance_size_map"
+  result "details"
+  code <<-EOS
+// This is the list of filtered instances.
+var details = {}
+var downsize_instances = []
+var cooldown_instances = []
+var i_type = {};
+
+// merge multicloud instance type map
+var instance_size_map = _.extend(aws_instance_size_map,azure_instance_size_map,google_instance_size_map )
+
+for ( n = 0; n < instances16.length; n++) {
+  i_type[instances16[n]["href"]] = {
+    cloud_type: instances16[n]["cloud_type"],
+    cloud_href: instances16[n]["cloud_href"],
+    instance_type: instances16[n]["instance_type"],
+    legacy_id: instances16[n]["legacy_id"],
+    region: instances16[n]["region"]
+  }
+}
+
+for ( i = 0; i < instances.length; i++ ) {
+  var cloud_type = i_type[instances[i]["href"]]["cloud_type"]
+  var cloud_href = i_type[instances[i]["href"]]["cloud_href"]
+  var instance_type = i_type[instances[i]["href"]]["instance_type"]
+  var legacy_id = i_type[instances[i]["href"]]["legacy_id"]
+  var region = i_type[instances[i]["href"]]["region"]
+  var next_instance_size = instance_size_map[instance_type.toString()]["down"]
+  // get all the tag keys to search them
+  var tag_keys = []
+  _.each(instances[i]["tags"], function(tag){
+      this.push(tag.split('=')[0])
+  }, tag_keys )
+
+  if (!next_instance_size) { next_instance_size = "N/A" }
+
+  if ( tag_keys.indexOf('rs_downsize:cooldown') === -1 ){
+    if ( !instances[i]['cloud_specific_attributes']['availability_set']) {
+      downsize_instances.push({
+        resource_uid: instances[i]["resource_uid"],
+        name: instances[i]["name"],
+        href: instances[i]["href"],
+        description: instances[i]["description"],
+        tags: instances[i]["tags"],
+        legacy_id: legacy_id,
+        instance_type: instance_type,
+        region: region,
+        cloud_type: cloud_type,
+        cloud_href: cloud_href,
+        next_instance_size: next_instance_size
+      })
+    }
+  } else {
+    // get the cooldown date for report
+    var cooldown_tag = _.find(instances[i]['tags'], function(tag){
+      tag_key=tag.split('=')[0]
+      if (tag_key==='rs_downsize:cooldown'){
+       return tag
+      }
+    })
+    var cooldown_date = cooldown_tag.split('=')[1]
+    cooldown_instances.push({
+      resource_uid: instances[i]["resource_uid"],
+      name: instances[i]["name"],
+      href: instances[i]["href"],
+      description: instances[i]["description"],
+      cooldown_date: cooldown_date,
+      legacy_id: legacy_id,
+      instance_type: instance_type,
+      region: region,
+      cloud_type: cloud_type,
+      cloud_href: cloud_href,
+      next_instance_size: next_instance_size
+    })
+  }
+};
+details = {
+  downsize_instances: downsize_instances,
+  cooldown_instances: cooldown_instances
+}
+EOS
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy 'policy_azure_utilization' do
+  validate_each $ds_merged_metrics do
+    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} Underutilized Instances Reporting to Azure Log Analytics"
+    detail_template <<-EOS
+# Azure Instance Utilization from Log Analytics
+
+### Thresholds for Consideration 
+  - Average Memory Used %: {{ parameters.param_avg_used_memory }}
+  - Average CPU Used %: {{ parameters.param_avg_cpu }}
+
+| Region | Hostname | Resource Group | Instance Size | OS Type | Availability Set | OMS Workspace Id | CPU Maximum % | CPU Average % | Memory Maximum % | Memory Average % |
+| ------ | -------- | -------------- | ------------- | ------- | ---------------- | ---------------- | ------------- | ------------- | ---------------- | ---------------- |
+{{ range data -}}
+| {{.location}} | {{.name}} | {{.resourceGroup}} | {{.vmSize}} | {{.osType}} | {{.availabilitySet}} | {{.workspaceId}} | {{ .cpu_maximum }} | {{ .cpu_average }} | {{.mem_maximum}} | {{.mem_average}} |
+{{ end -}}
+
+___
+###### Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }}) within Org: {{ rs_org_name }} (Org ID: {{ rs_org_id }})
+EOS
+    escalate $email
+    escalate $tag_resources
+    check logic_or(eq($param_avg_used_memory, -1), gt(to_n(val(item,"mem_average")), $param_avg_used_memory))
+    check logic_or(eq($param_avg_cpu, -1), gt(to_n(val(item,"cpu_average")),$param_avg_cpu))
+  end
+end
+
+policy "policy_rightsize" do
+  validate $ds_filtered_instances do
+    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data.rightsize_instances }} Instances that can be rightsized"
+    detail_template <<-EOS
+# {{ len data.rightsize_instances }} Instances can be rightsized
+
+| Instance Name | Resource UID | Current Instance Type | New Instance Type | Action |
+| ------------- | ------------ | --------------------- | ----------------- | ------ |
+{{ range data.rightsize_instances -}}
+  | {{.name}} | {{.resource_uid}} | {{.instance_type}} | {{.next_instance_size}} | {{.action}}
+{{ end -}}
+___
+###### Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }}) within Org: {{ rs_org_name }} (Org ID: {{ rs_org_id }})
+EOS
+    escalate $report_rightsize_instances
+    escalate $rightsize_instances
+    resolve $report_rightsize_instances_resolution
+    check eq(size(val(data, "rightsize_instances")), 0)
+  end
+
+  validate $ds_filtered_instances do
+    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data.cooldown_instances }} Instances are in cooldown"
+    detail_template <<-EOS
+# {{ len data.cooldown_instances }} Instances are in cooldown
+
+| Instance Name | Resource UID | Current Instance Type | New Instance Type | Cooldown Date |
+| ------------- | ------------ | --------------------- | ----------------- | ------------- |
+{{ range data.cooldown_instances -}}
+| {{.name}} | {{.resource_uid}} | {{.instance_type}} | {{.next_instance_size}} | {{.cooldown_date}} |
+{{ end -}}
+___
+###### Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }}) within Org: {{ rs_org_name }} (Org ID: {{ rs_org_id }})
+EOS
+    escalate $cooldown_instances
+    check eq(size(val(data, "cooldown_instances")), 0)
+  end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "report_rightsize_instances" do
+  email $param_email
+end
+escalation "rightsize_instances" do
+  request_approval  do
+    label "Escalation approval"
+    description "Approve rightsize action"
+    parameter "approval_reason" do
+      type "string"
+      label "Reason for approval"
+      description "Explain why you are approving the action"
+    end
+  end
+  run "rightsize_instances", data, $param_instance_tag_list, $param_cooldown_days
+end
+
+escalation "cooldown_instances" do
+  run "delete_cooldown_tag", data,  $param_cooldown_days
+end
+
+###############################################################################
+# Resolutions
+###############################################################################
+
+resolution "report_rightsize_instances_resolution" do
+  email $param_email
+end
+
+###############################################################################
+# Cloud Workflow
+###############################################################################
+
+define rightsize_instances($data,$param_instance_tag_list,$param_cooldown_days) do
+  foreach $item in $data['rightsize_instances'] do
+
+    @current_instance = rs_cm.instances.empty()
+    @instance = rs_cm.get(href: $item["href"])
+    @cloud = @instance.cloud()
+    @next_instance = @instance
+
+    if $item["next_instance_size"] != "N/A"
+      sub on_error: rollback($item, @next_instance, @cloud) do
+        call sys_log('Instance Resizing',$item['name'])
+        call stop_instance(@instance, @cloud, $item) retrieve @next_instance
+
+        @next_instance = first(@cloud.instances(filter: ['resource_uid=='+$item['resource_uid']]))
+        @new_instance_type = first(@cloud.instance_types(filter: ["name=="+$item["next_instance_size"]]))
+        @next_instance.update(instance: { instance_type_href: @new_instance_type.href })
+
+        call sys_log('Instance Resized', @new_instance_type.name)
+        call start_instance(@next_instance, @cloud, $item) retrieve @next_instance
+      end
+
+      sub task_label:"Adding Cooldown Tag" do
+        $date = now() + (60*60*24)*$param_cooldown_days
+        $format_string = "%Y/%m/%d %H:%M:%S"
+        $formatted_time = strftime($date, $format_string)
+        # add the cooldown tag, but
+        # dont add/modify the cooldown tag if it already exists
+        $cooldown_tag = tag_value(@next_instance,'rs_downsize:cooldown')
+        call sys_log('cooldown_tag',$cooldown_tag)
+
+        if !$cooldown_tag
+          task_label("Adding Cooldown Tag " + $item['name'])
+          rs_cm.tags.multi_add(resource_hrefs: [@next_instance.href], tags: ["rs_downsize:cooldown="+$formatted_time])
+          call sys_log('Adding Cooldown Tag',$formatted_time)
+        end
+        @current_instance = @next_instance
+      end
+    end
+
+    sub task_label:"Removing Downsize Tag" do
+      if empty?(@current_instance)
+        @cloud = rs_cm.get(href: $item['cloud_href'])
+        # find the resource by resource_uid because the href may have changed after resize.
+        @current_instance = first(@cloud.instances(filter: ['resource_uid=='+$item['resource_uid'] ]))
+      end
+
+      # delete the downsize tag(s) provided by the user
+      $delete_tags = []
+      foreach $tag in $param_instance_tag_list do
+        # if tag exists include in the delete_tags array
+        $tag_key=split($tag,'=')[0]
+
+        if contains?($item['tags'],[$tag_key])
+          $delete_tags << $tag
+        end
+      end
+
+      if size($delete_tags) > 0
+        task_label("Deleting Tags " + @current_instance.name)
+        call sys_log('delete_tags',to_s($delete_tags))
+        rs_cm.tags.multi_delete(resource_hrefs: [@current_instance.href], tags: $delete_tags)
+      end
+    end
+  end
+end
+
+define rollback($item, @instance, @cloud) do
+  sub task_label:"Rolling Back to Original Instance Type" do
+    ## Logic to revert the instance back to its original instance type
+    call sys_log('Instance Rollingback', $item['name'])
+    @instance = first(@cloud.instances(filter: ['resource_uid=='+$item['resource_uid'] ]))
+
+    sub task_label:"Setting Error Tag" do
+      $msg = split($_error["message"], "\n")
+      foreach $i in $msg do
+        if $i =~ "CloudException"
+          $tag = "rs_policy_action:downsize_error_info=" + $i
+          rs_cm.tags.multi_add(tags: [$tag], resource_hrefs: [@instance.href])
+        end
+      end
+      call sys_log(join(["Resize Error: ",@instance.name]), to_s($msg))
+    end
+
+    $state = @instance.state
+    $current_instance_type = @instance.instance_type().name
+    $started_condition = "/^(stranded|stranded in booting|error|operational|running)$/"
+    if $current_instance_type == $item["instance_type"]
+      # Instance is still the original size, just make sure it's running
+      if $state =~ $started_condition
+        # instance is running nothing to do
+      else
+        # instance is not running, start it
+        call start_instance(@instance, @cloud, $item) retrieve @instance
+      end
+    else
+      # Instance is the new size, roll back
+      call sys_log('Instance Resizing', $item['name'])
+      call stop_instance(@instance, @cloud, $item) retrieve @instance
+
+      @instance = first(@cloud.instances(filter: ['resource_uid=='+$item['resource_uid']]))
+      @new_instance_type = first(@cloud.instance_types(filter: ["name=="+$item["instance_type"]]))
+      @instance.update(instance: { instance_type_href: @new_instance_type.href })
+
+      call sys_log('Instance Resized', @new_instance_type.name)
+      call start_instance(@instance, @cloud, $item) retrieve @instance
+    end
+  end
+  $_error_behavior = "skip"
+end
+
+define stop_instance(@instance, @cloud, $item) return @instance do
+  task_label("Stopping instance " + $item['name'])
+  @instance.stop()
+  task_label("Sleeping until instance stopped " + $item['name'])
+  $wake_condition = "/^(stopped|terminated|inactive|error|provisioned)$/"
+  $state = ''
+  while $state !~ $wake_condition do
+    sub on_error: retry, timeout: 20m, on_timeout: skip do
+      # find the resource by resource_uid because the href may have changed after resize.
+      @instance = first(@cloud.instances(filter: ['resource_uid=='+$item['resource_uid']]))
+      call sys_log('Waiting for instance stop state: ' + @instance.name,to_s(to_object(@instance)))
+      $state = @instance.state
+      call sys_log('Instance stop state',$state)
+    end
+  end
+  task_label("Instance Stopped " + $item['name'])
+  call sys_log('Instance Stopped', $item['name'])
+end
+
+define start_instance(@instance, @cloud, $item) return @instance do
+  task_label("Starting instance " + $item['name'])
+  @instance.start()
+  $wake_condition = "/^(stranded|stranded in booting|error|operational|running)$/"
+  $state = ''
+  task_label("Sleeping until instance started " + @next_instance.name)
+  while $state !~ $wake_condition do
+    sub on_error: retry, timeout: 20m, on_timeout: skip do
+      # find the resource by resource_uid because the href may have changed after resize.
+      @instance = first(@cloud.instances(filter: ['resource_uid=='+$item['resource_uid']]))
+      call sys_log('waiting for instance start state', to_s(to_object(@instance)))
+      $state = @instance.state
+      call sys_log('Instance start state', $state)
+    end
+  end
+  task_label("Instance Started " + $item['name'])
+  call sys_log('Instance Started', $item['name'])
+end
+
+# remove the cooldown tag if the $param_cooldown_days has exceeded
+define delete_cooldown_tag($data,$param_cooldown_days) do
+  foreach $item in $data['cooldown_instances'] do
+    @cloud = rs_cm.get(href: $item['cloud_href'])
+    # find the resource by resource_uid because the href may have changed after resize.
+    @instance = first(@cloud.instances(filter: ['resource_uid=='+$item['resource_uid'] ]))
+    $cooldown_tag = tag_value(@instance,'rs_downsize:cooldown')
+    call sys_log('cooldown_tag',$cooldown_tag)
+    $cooldown_time = to_d($cooldown_tag)
+    call sys_log('cooldown_time',to_s($cooldown_time))
+    # if the cooldown_time has passed delete the cooldown tag
+    if ($cooldown_time - now()) / 86400 >= $param_cooldown_days
+      rs_cm.tags.multi_delete(resource_hrefs: [@instance.href], tags: 'rs_downsize:cooldown')
+      call sys_log('deleted cooldown tag',$cooldown_value)
+    end
+
+  end
+end
+
+# logging to the Accounts Audit Entries
+define sys_log($subject, $detail) do
+  rs_cm.audit_entries.create(
+    notify: "None",
+    audit_entry: {
+      auditee_href: @@account,
+      summary: "Downsize Instance: "+ $subject,
+      detail: $detail
+    }
+  )
+end
