@@ -1,3 +1,8 @@
+v1.9
+---
+- add request_approval to delete volume escalation
+- remove param_delete parameter 
+
 v1.8
 ----
 - Adds option to snapshot on volume delete
