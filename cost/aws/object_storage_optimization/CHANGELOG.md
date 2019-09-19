@@ -1,6 +1,6 @@
 v1.1
 -----
-- modofied constructing S3 bucket endpoint. 
+- modified constructing S3 bucket endpoint. 
 
 v1.0
 -----
