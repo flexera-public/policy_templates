@@ -44,6 +44,7 @@ Please contact sales@rightscale.com to learn more.
 - [Google Idle Compute Instances](./cost/google/idle_compute_instances/)
 - [AWS Object Storage Optimization](./cost/aws/object_storage_optimization/)
 - [AWS Unused RDS Instances](./cost/aws/unused_rds/)
+- [Google Object Storage Optimization](./cost/google/object_storage_optimization/)
 - [Google Committed Use Discount (CUD) Expiration Report](./cost/google/cud_expiration/)
 
 ### Security
