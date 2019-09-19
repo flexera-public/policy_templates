@@ -2,11 +2,11 @@
 
 ## What it does
 
-This policy checks all the instances in the Azure Subscription for the average CPU usage over the last hour.  If the usage is less than the user provided CPU percentage threshold then the virtual machines are recommended for deletion, and the user is emailed.
+This policy checks all the instances in the Azure Subscription for the average CPU usage over the last 30 days.  If the usage is less than the user provided CPU percentage threshold then the virtual machines are recommended for deletion, and the user is emailed.
 
 ## Functional Details
 
-The policy leverages the Azure API to check all instances and then checks the instance average CPU utilization over the past hour, finally recommending the low ones for deletion after approval.
+The policy leverages the Azure API to check all instances and then checks the instance average CPU utilization over the past 30 days, finally recommending the low ones for deletion after approval.
 
 ### Input Parameters
 
