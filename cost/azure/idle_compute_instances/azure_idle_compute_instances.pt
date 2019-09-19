@@ -42,6 +42,13 @@ parameter "param_cpu_average_percentage" do
   allowed_pattern /^[0-9]$|^[1-9][0-9]$|^(100)$/
 end
 
+parameter "param_exclusion_tag_key" do
+  category "User Inputs"
+  label "Exclusion Tag Key"
+  description "Cloud native tag key to ignore instances. Example: exclude_utilization"
+  type "string"
+end
+
 ###############################################################################
 # Authentication
 ###############################################################################
@@ -98,9 +105,13 @@ datasource "ds_azure_virtualmachines" do
   end
 end
 
+datasource "ds_filter_instances" do
+  run_script $js_filter_instances, $ds_azure_virtualmachines, $param_exclusion_tag_key
+end
+
 #get cpu performance stats
 datasource "ds_azure_instance_performance" do
-  iterate $ds_azure_virtualmachines
+  iterate $ds_filter_instances
   request do
     auth $azure_auth
     pagination $azure_pagination
@@ -132,6 +143,19 @@ end
 ###############################################################################
 # Scripts
 ###############################################################################
+
+script "js_filter_instances", type: "javascript" do
+  parameters "ds_azure_virtualmachines", "param_exclusion_tag_key"
+  result "results"
+  code <<-EOF
+  var results = _.filter(ds_azure_virtualmachines, function(instance){
+    if (_.has(instance.tags, param_exclusion_tag_key)) {
+    }else{
+      return instance
+    }
+  })
+ EOF
+end
 
 #This is to get the average cpu over time for the machine and return the dataset of machines with issues
 script "js_combineddata", type: "javascript" do
@@ -244,7 +268,7 @@ end
 define get_access_token($param_azure_tenant_id) return $access_token do
 
   $client_id = cred("AZURE_APPLICATION_ID")
-  $client_secret = cred("AZURE_APPLICATION_KEY")
+  call url_encode(cred("AZURE_APPLICATION_KEY")) retrieve $client_secret
 
   $body_string = "grant_type=client_credentials&resource=https://management.core.windows.net/&client_id="+$client_id+"&client_secret="+$client_secret
 
@@ -274,4 +298,27 @@ define sys_log($subject, $detail) do
       }
     )
   end
+end
+
+define url_encode($string) return $encoded_string do
+  $encoded_string = $string
+  $encoded_string = gsub($encoded_string, " ", "%20")
+  $encoded_string = gsub($encoded_string, "!", "%21")
+  $encoded_string = gsub($encoded_string, "#", "%23")
+  $encoded_string = gsub($encoded_string, "$", "%24")
+  $encoded_string = gsub($encoded_string, "&", "%26")
+  $encoded_string = gsub($encoded_string, "'", "%27")
+  $encoded_string = gsub($encoded_string, "(", "%28")
+  $encoded_string = gsub($encoded_string, ")", "%29")
+  $encoded_string = gsub($encoded_string, "*", "%2A")
+  $encoded_string = gsub($encoded_string, "+", "%2B")
+  $encoded_string = gsub($encoded_string, ",", "%2C")
+  $encoded_string = gsub($encoded_string, "/", "%2F")
+  $encoded_string = gsub($encoded_string, ":", "%3A")
+  $encoded_string = gsub($encoded_string, ";", "%3B")
+  $encoded_string = gsub($encoded_string, "=", "%3D")
+  $encoded_string = gsub($encoded_string, "?", "%3F")
+  $encoded_string = gsub($encoded_string, "@", "%40")
+  $encoded_string = gsub($encoded_string, "[", "%5B")
+  $encoded_string = gsub($encoded_string, "]", "%5D")
 end
