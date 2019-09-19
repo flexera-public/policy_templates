@@ -116,7 +116,7 @@ datasource "ds_aws_list_s3_objects" do
     pagination $s3_objects_pagination
     verb "GET"
     host val(iter_item, "host")
-    path "/"
+    path join(["/", val(iter_item, "bucket_name"),"/"])
     query "list-type", "2"
   end
   result do
@@ -141,7 +141,7 @@ datasource "ds_aws_list_s3_objects_with_tags" do
     auth $auth_aws
     verb "GET"
     host val(iter_item, "host")
-    path join(["/", val(iter_item, "object_key")])
+    path join(["/", val(iter_item, "bucket_name"),"/", val(iter_item, "object_key")])
     query "tagging", ""
   end
   result do
@@ -185,7 +185,7 @@ script "js_parse_buckets", type: "javascript" do
           "bucket_name": buckets[i]["bucket_name"],
           "bucket_creation_date": buckets[i]["bucket_creation_date"],
           "region": "us-east-1",
-          "host": buckets[i]["bucket_name"]+".s3.amazonaws.com",
+          "host": "s3.amazonaws.com",
           "tagKeyValue": ""
         })
       }else{
@@ -194,7 +194,7 @@ script "js_parse_buckets", type: "javascript" do
           "bucket_name": buckets[i]["bucket_name"],
           "bucket_creation_date": buckets[i]["bucket_creation_date"],
           "region": buckets[i]["region"],
-          "host": buckets[i]["bucket_name"]+".s3-" + buckets[i]["region"] + ".amazonaws.com",
+          "host": "s3-" + buckets[i]["region"] + ".amazonaws.com",
           "tagKeyValue": ""
         })
       }
@@ -346,13 +346,15 @@ define modify_s3_object_storage_class($data) return $all_responses do
   $$debug=true
   $all_responses = []
   foreach $item in $data do
-    sub on_error: skip do   
+    sub on_error: skip do
+      call url_encode($item['bucket_name']) retrieve $bucket_name
+      call url_encode($item['object_key']) retrieve $object_key      	
       call url_encode($item['bucket_name']+"/"+$item['object_key']) retrieve $copy_source
       call url_encode($item['modify_storage_class_to']) retrieve $storage_class
       $response = http_request({
                                 verb: 'put',
                                 host: $item['host'],
-                                href: join(['/', $item['object_key']]),
+                                href: join(['/', $bucket_name, '/', $object_key]),
                                 https: true,
                                 headers: {'content-type': 'application/x-amz-json-1.1',
                                           'x-amz-copy-source': $copy_source,
@@ -375,7 +377,9 @@ define delete_s3_objects($data) return $all_responses do
   $all_responses = []
   foreach $item in $data do   	
     sub on_error: skip do
-	  $response = http_delete(url: join(["https://",$item['host'],"/", $item['object_key']]),
+      call url_encode($item['bucket_name']) retrieve $bucket_name
+      call url_encode($item['object_key']) retrieve $object_key      
+	  $response = http_delete(url: join(["https://",$item['host'],"/",$bucket_name,"/", $object_key]),
                               "signature": {"type": "aws",
                                             "access_key": cred("AWS_ACCESS_KEY_ID"),
                                             "secret_key": cred("AWS_SECRET_ACCESS_KEY") 
