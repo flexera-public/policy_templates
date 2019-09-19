@@ -30,6 +30,7 @@ This policy requires permissions to access RightScale resources (clouds, volumes
 - AWS
 - Azure
 - Google
+- VMWare (RCA-V)
 
 ### Cost
 
