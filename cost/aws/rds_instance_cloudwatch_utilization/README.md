@@ -1,4 +1,4 @@
-## AWS RDS Instances RightSizing Recommendations Policy
+## AWS Rightsize RDS Instances
 
 ### What it does
 
