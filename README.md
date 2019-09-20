@@ -48,6 +48,7 @@ Please contact sales@rightscale.com to learn more.
 - [Google Object Storage Optimization](./cost/google/object_storage_optimization/)
 - [Google Expiring Committed Use Discount (CUD)](./cost/google/cud_expiration/)
 - [Azure Expiring Reserved Instances](./cost/azure/reserved_instances/expiration)
+- [Azure Idle Compute Instances](./cost/azure/idle_compute_instances/)
 
 ### Security
 
@@ -82,7 +83,6 @@ Please contact sales@rightscale.com to learn more.
 - [Unapproved Instance Types](./compliance/unapproved_instance_types/)
 - [Azure Subscription Access](./compliance/azure/subscription_access/)
 - [Azure AHUB Utilization with Manual Entry](./compliance/azure/ahub_manual/)
-- [Azure Idle Compute Instances](./compliance/azure/ahub_idle_compute_instances/)
 
 ### Operational
 
