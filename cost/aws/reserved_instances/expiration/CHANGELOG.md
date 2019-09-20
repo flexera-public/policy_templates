@@ -1,3 +1,7 @@
+v1.6
+---
+- update show_description
+
 v1.5
 ----
 - using rs_optima_host variable
