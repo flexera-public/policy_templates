@@ -1,4 +1,4 @@
-# Azure Reserved Instance Expiration
+# Azure Expiring Reserved Instances
 
 ## What it does
 

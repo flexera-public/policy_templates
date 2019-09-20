@@ -1,4 +1,4 @@
-## AWS Reserved Instance Expiration
+## AWS Expiring Reserved Instances
 
 ### What it does
 

@@ -1,4 +1,4 @@
-## Google Committed Use Discount (CUD) Expiration
+## Google Expiring Committed Use Discount (CUD)
 
 ### What it does
 This policy identifies all active CUDs that exist in a given GCP project that will be expiring in a set number of days.
