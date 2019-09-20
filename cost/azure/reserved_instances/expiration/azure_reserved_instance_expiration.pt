@@ -1,0 +1,146 @@
+name "Azure Reserved Instances Expiration"
+rs_pt_ver 20180301
+type "policy"
+short_description "A policy that sends email notifications when Azure RIs are about to expire. See the [README](https://github.com/rightscale/policy_templates/tree/master/cost/azure/reserved_instances/expiration) and [docs.rightscale.com/policies](http://docs.rightscale.com/policies/) to learn more."
+long_description "Version: 1.0"
+severity "low"
+category "Cost"
+tenancy "single"
+
+###############################################################################
+# Permissions
+###############################################################################
+
+permission "optima" do
+  label "Access Optima Resources"
+  resources "rs_optima.aws_reserved_instances"
+  actions "rs_optima.index"
+end
+
+###############################################################################
+# Parameters
+###############################################################################
+
+parameter "param_days_expiration" do
+  type "number"
+  label "Number of days to prior to expiration date to trigger incident"
+end
+
+parameter "param_email" do
+  type "list"
+  label "Email addresses of the recipients you wish to notify"
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+auth "auth_rs", type: "rightscale"
+
+###############################################################################
+# Pagination
+###############################################################################
+
+###############################################################################
+# Datasources
+###############################################################################
+
+datasource "ds_reservations" do
+  request do
+    auth $auth_rs
+    host "ri-planning-front-service-d.indigo.rightscale.com"
+    path join(["/reserved_instances/orgs/",rs_org_id,"/clouds/azure/summary"])
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response,"[*]") do
+      field "account_name", jmes_path(col_item,"account_name")
+      field "arm_sku_name", jmes_path(col_item,"arm_sku_name")
+      field "expiration_date", jmes_path(col_item,"expiration_date")
+      field "purchasing_subscription_name", jmes_path(col_item,"purchasing_subscription_name")
+      field "purchasing_subscription_guid", jmes_path(col_item,"purchasing_subscription_guid")
+      field "quantity", jmes_path(col_item,"quantity")
+      field "region", jmes_path(col_item,"region")
+      field "reservation_id", jmes_path(col_item,"reservation_id")
+      field "reservation_order_id", jmes_path(col_item,"reservation_order_id")
+      field "reservation_order_name", jmes_path(col_item,"reservation_order_name")
+      field "term", jmes_path(col_item,"term")
+    end
+  end
+end
+
+datasource "ds_filtered_reservations" do
+  run_script $js_filtered_reservations, $ds_reservations, $param_days_expiration
+end
+
+###############################################################################
+# Scripts
+###############################################################################
+
+script "js_filtered_reservations", type: "javascript" do
+  parameters "reservations","param_days_expiration"
+  result "content"
+  code <<-EOS
+    var content=[];
+    var now = new Date();
+    var one_day=1000*60*60*24;
+    var date1_ms = now.getTime();
+    
+    for(var i=0; i < reservations.length ; i++){
+      reservation = reservations[i]
+      var end_date = (new Date(reservation['expiration_date'])).toISOString().slice(0, 10);
+      var date2_ms = (new Date(reservation['expiration_date'])).getTime();
+      var difference_ms = date2_ms - date1_ms;
+      var daysLeft = Math.round(difference_ms/one_day);
+
+      if(daysLeft <= param_days_expiration) {
+        content.push({
+          account_name: reservation['account_name'],
+          arm_sku_name: reservation['arm_sku_name'],
+          expiration_date: reservation['expiration_date'],
+          purchasing_subscription_name: reservation['purchasing_subscription_name'],
+          purchasing_subscription_guid: reservation['purchasing_subscription_guid'],
+          quantity: reservation['quantity'],
+          region: reservation['region'],
+          reservation_id: reservation['reservation_id'],
+          reservation_order_id: reservation['reservation_order_id'],
+          reservation_order_name: reservation['reservation_order_name'],
+          term: reservation['term'],
+          daysExpiration: daysLeft
+        })
+      }
+    }
+EOS
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "ri_expiration" do
+  validate $ds_filtered_reservations do
+    summary_template "{{ rs_org_name }} (Org ID: {{ rs_org_id }}): {{ len data }} Reserved Instance(s) in Microsoft Azure Expiring"
+    detail_template <<-EOS
+# Azure Reserved Instance Expiration
+### Threshold: {{ parameters.param_days_expiration }} Days
+
+| Reservation Id | Reservation Order Id | Reservation Order Name | Subscription Name | Subscription GUID | Region | ARM SKU | Quantity | Expiration Date | Days Until Expiration |
+| -------------- | -------------------- | ---------------------- | ----------------- | ----------------- | ------ | ------- | -------- | --------------- | --------------------- |
+{{ range data -}}
+| {{ .reservation_id }} | {{ .reservation_order_id }} | {{ .reservation_order_name }} | {{ .purchasing_subscription_name }} | {{ .purchasing_subscription_guid }}) | {{.region}} | {{.arm_sku_name}} | {{.quantity}} | {{.expiration_date}} | {{.daysExpiration}} |
+{{ end -}}
+___
+###### Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }}) within Org: {{ rs_org_name }} (Org ID: {{ rs_org_id }})
+EOS
+    escalate $report_expiring_reserved_instances
+    check eq(size(data),0)
+  end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "report_expiring_reserved_instances" do
+  email $param_email
+end
