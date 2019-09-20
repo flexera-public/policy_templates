@@ -47,6 +47,7 @@ Please contact sales@rightscale.com to learn more.
 - [AWS RDS Instances RightSizing](./cost/aws/rds_instance_cloudwatch_utilization)
 - [Azure Blob Storage Optimization](./cost/azure/object_storage_optimization/)
 - [Google Object Storage Optimization](./cost/google/object_storage_optimization/)
+- [Azure Rightsize SQL Instances](./cost/azure/rightsize_sql_instances/)
 - [Google Expiring Committed Use Discount (CUD)](./cost/google/cud_expiration/)
 - [Azure Expiring Reserved Instances](./cost/azure/reserved_instances/expiration)
 - [Azure Idle Compute Instances](./cost/azure/idle_compute_instances/)
