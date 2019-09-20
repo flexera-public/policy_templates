@@ -1,11 +1,11 @@
 ## Google Committed Use Discount (CUD)
 
 ### What it does
-This policy identifies all CUDs that exist in a given GCP project and provides a report listing them all. It can optionally report on all CUDs or only those that are active or expired.
+This policy identifies all CUDs that exist in a given GCP project and sends a notification. It can optionally send a notification on all CUDs or only those that are active or expired.
 
 ### Functional Details
 
-- Uses the GCP API to get a list of all CUDs and report on them.
+- Uses the GCP API to get a list of all CUDs and sends a notification.
 - Create a service account (if not exists) with owner role under Google-cloud platform (IAM & admin -> service accounts). Generate key, a JSON file will get downloaded in which you can find 'client email' and 'private key' which has to be added as credentials in RightScale cloud management Design -> Credentials with name 'GC_SA_CLIENT_EMAIL' and 'GC_SA_PRIVATE_KEY' respectively.  
 
 #### Input Parameters
