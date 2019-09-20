@@ -23,6 +23,32 @@ parameter "param_google_project" do
   allowed_pattern /^[0-9a-z:\.-]+$/
 end
 
+parameter "param_avg_cpu_upscale" do
+  type "number"
+  label "Average used CPU % - Upscale threshold"
+  description "Set to -1 to ignore CPU utilization"
+  default 80
+  min_value -1
+  max_value 100
+end
+
+parameter "param_avg_cpu_downscale" do
+  type "number"
+  label "Average used CPU % - Downscale Threshold"
+  description "Set to -1 to ignore CPU utilization"
+  default 60
+  min_value -1
+  max_value 100
+end
+
+parameter "param_exclusion_tag_key" do
+  category "User Inputs"
+  label "Exclusion Label Key:Value"
+  description "Cloud native label to ignore instances. Format: Key:Value"
+  type "string"
+  allowed_pattern /(^$)|([\w]?)+\:([\w]?)+/
+end
+
 ###############################################################################
 # Permissions
 ###############################################################################
@@ -100,6 +126,9 @@ datasource "ds_cloudsql_instances" do
         field "zone", jmes_path(col_item, "gceZone")
         field "region", jmes_path(col_item, "region")
         field "dataDiskSizeGb", jmes_path(col_item, "settings.dataDiskSizeGb")
+        field "userLabels", jmes_path(col_item,"settings.userLabels")
+        field "settings", jmes_path(col_item,"settings")
+        field "selfLink", jmes_path(col_item, "selfLink")
     end
   end
 end
@@ -128,8 +157,13 @@ datasource "ds_cloudsql_utilization" do
   end
 end
 
-datasource "ds_calculated_utilization" do
-  run_script $js_calculated_utilization, $ds_cloudsql_utilization, $ds_memory_utilization, $ds_disk_utilization, $ds_cloudsql_instances
+datasource "ds_google_instance_size_map" do
+  request do
+    verb "GET"
+    host "raw.githubusercontent.com"
+    path "/flexera/policy_templates/e412d4ca5dc191f15fcf6cc532dc2d31de44f3ee/data/google/instance_types.json"
+    header "User-Agent", "RS Policies"
+  end
 end
 
 datasource "ds_memory_utilization" do
@@ -156,30 +190,13 @@ datasource "ds_memory_utilization" do
   end
 end
 
-datasource "ds_disk_utilization" do
-  iterate $ds_time
-  request do
-    auth $auth_google
-    host "monitoring.googleapis.com"
-    path join(["/v3/projects/",$param_google_project,"/timeSeries/"])
-    query "filter", 'metric.type="cloudsql.googleapis.com/database/disk/bytes_used"'
-    query "interval.endTime", val(iter_item,"end_date")
-    query "interval.startTime", val(iter_item,"start_date")
-    query "aggregation.alignmentPeriod", "+10800s"
-    query "aggregation.perSeriesAligner", "ALIGN_MEAN"
-  end
-  result do
-    encoding "json"
-    collect jmes_path(response, "timeSeries[*]") do
-      field "database_id", jmes_path(col_item, "resource.labels.database_id")
-      field "region", jmes_path(col_item, "resource.labels.region")
-      field "avg_disk_points", jmes_path(col_item, "points[*].value.doubleValue | avg(@)")
-      field "max_disk_points", jmes_path(col_item, "points[*].value.doubleValue | max(@)")
-      field "min_disk_points", jmes_path(col_item, "points[*].value.doubleValue | min(@)")
-    end
-  end
+datasource "ds_calculated_utilization" do
+  run_script $js_calculated_utilization, $ds_cloudsql_utilization, $ds_memory_utilization, $ds_cloudsql_instances
 end
 
+datasource "ds_checked_utilization" do
+  run_script $js_checked_utilization, $ds_calculated_utilization, $ds_google_instance_size_map, $param_avg_cpu_downscale, $param_avg_cpu_upscale, $param_exclusion_tag_key
+end
 
 ###############################################################################
 # Scripts
@@ -196,18 +213,20 @@ end
 
 script "js_calculated_utilization", type: "javascript" do
   result "results"
-  parameters "ds_cloudsql_utilization", "ds_memory_utilization", "ds_disk_utilization", "ds_cloudsql_instances"
+  parameters "ds_cloudsql_utilization", "ds_memory_utilization", "ds_cloudsql_instances"
   code <<-EOS
     results = []
     for ( i =0; i < ds_cloudsql_utilization.length; i++ ){
-      var database_id = ds_cloudsql_utilization[i].database_id
-      var points = ds_cloudsql_utilization[i].points
+      var cloudsql_utilization_instance = ds_cloudsql_utilization[i]
+      var database_id = cloudsql_utilization_instance.database_id
+      var points = cloudsql_utilization_instance.points
       var cloudsql_instance = _.find(ds_cloudsql_instances,function(instance){ return instance.database_id == database_id})
-      if ( cloudsql_instance == null && cloudsql_instance !== undefined){
+      var memory_utilization = _.find(ds_memory_utilization,function(instance){ return instance.database_id == database_id})
+      if ( cloudsql_instance == null && cloudsql_instance === undefined){
 
       } else {
-        if (  ds_cloudsql_utilization[i].zone != null &&  ds_cloudsql_utilization[i].zone !== undefined ){
-          var zone =  ds_cloudsql_utilization[i].zone
+        if (  cloudsql_utilization_instance.zone != null &&  cloudsql_utilization_instance.zone !== undefined ){
+          var zone =  cloudsql_utilization_instance.zone
         } else {
           if ( cloudsql_instance != null && cloudsql_instance !== undefined){
             var zone = cloudsql_instance.zone
@@ -216,8 +235,8 @@ script "js_calculated_utilization", type: "javascript" do
           }
         }
 
-        if (  ds_cloudsql_utilization[i].tier != null &&  ds_cloudsql_utilization[i].tier !== undefined ){
-          var tier =  ds_cloudsql_utilization[i].tier
+        if (  cloudsql_utilization_instance.tier != null &&  cloudsql_utilization_instance.tier !== undefined ){
+          var tier =  cloudsql_utilization_instance.tier
         } else {
           if ( cloudsql_instance != null && cloudsql_instance !== undefined){
             var tier = cloudsql_instance.tier
@@ -226,8 +245,8 @@ script "js_calculated_utilization", type: "javascript" do
           }
         }
 
-        if (  ds_cloudsql_utilization[i].pricingPlan != null &&  ds_cloudsql_utilization[i].pricingPlan !== undefined ){
-          var pricingPlan =  ds_cloudsql_utilization[i].pricingPlan
+        if (  cloudsql_utilization_instance.pricingPlan != null &&  cloudsql_utilization_instance.pricingPlan !== undefined ){
+          var pricingPlan =  cloudsql_utilization_instance.pricingPlan
         } else {
           if ( cloudsql_instance != null && cloudsql_instance !== undefined){
             var pricingPlan = cloudsql_instance.pricingPlan
@@ -246,20 +265,17 @@ script "js_calculated_utilization", type: "javascript" do
         }
         results.push(
           {
-            region: ds_cloudsql_utilization[i].region,
+            region: cloudsql_utilization_instance.region,
             zone: zone,
             tier: tier,
             pricingPlan: pricingPlan,
             database_id: database_id,
-            cpu_average: (parseFloat(ds_cloudsql_utilization[i].avg_cpu_points)*100).toFixed(2),
-            cpu_maximum: (parseFloat(ds_cloudsql_utilization[i].max_cpu_points)*100).toFixed(2),
-            cpu_minimum: (parseFloat(ds_cloudsql_utilization[i].min_cpu_points)*100).toFixed(2),
-            mem_average: Math.round(parseFloat(ds_memory_utilization[i].avg_mem_points)/1000000).toFixed(2),
-            mem_maximum: Math.round(parseFloat(ds_memory_utilization[i].max_mem_points)/1000000).toFixed(2),
-            mem_minimum: Math.round(parseFloat(ds_memory_utilization[i].avg_mem_points)/1000000).toFixed(2),
-            disk_average: Math.round(parseFloat(ds_disk_utilization[i].avg_disk_points/1000000000)/dataDiskSizeGb*100).toFixed(2),
-            disk_maximum: Math.round(parseFloat(ds_disk_utilization[i].max_disk_points/1000000000)/dataDiskSizeGb*100).toFixed(2),
-            disk_minimum: Math.round(parseFloat(ds_disk_utilization[i].min_disk_points/1000000000)/dataDiskSizeGb*100).toFixed(2),
+            userLabels: cloudsql_instance.userLabels,
+            settings: cloudsql_instance.settings,
+            selfLink: cloudsql_instance.selfLink,
+            cpu_average: (parseFloat(cloudsql_utilization_instance.avg_cpu_points)*100).toFixed(2),
+            cpu_maximum: (parseFloat(cloudsql_utilization_instance.max_cpu_points)*100).toFixed(2),
+            cpu_minimum: (parseFloat(cloudsql_utilization_instance.min_cpu_points)*100).toFixed(2)
           }
         )
       }
@@ -267,26 +283,77 @@ script "js_calculated_utilization", type: "javascript" do
   EOS
 end
 
+script "js_checked_utilization", type: "javascript" do
+  parameters "ds_calculated_utilization", "ds_google_instance_size_map", "param_avg_cpu_downscale", "param_avg_cpu_upscale", "param_exclusion_tag_key"
+  result "results"
+  code <<-EOF
+  var results = []
+  tag_key = param_exclusion_tag_key.split(':')[0]
+  tag_value = param_exclusion_tag_key.split(':')[1]
+  _.each(ds_calculated_utilization, function(instance){
+    var instance_type_hash = ds_google_instance_size_map[instance.tier]
+    if ( instance.database_id.indexOf('failover') == -1){
+      if ( instance.userLabels != null && instance.userLabels !== undefined ){
+        if ( instance.userLabels[tag_key] != null && instance.userLabels[tag_key] !== undefined ){
+          if ( instance.userLabels[tag_key] != tag_value ){
+            var filtered_instance = instance;
+          }
+        } else {
+          var filtered_instance = instance;
+        }
+      } else {
+        var filtered_instance = instance;
+      }
+    }
+  
+    if (filtered_instance != null && filtered_instance !== undefined){
+      if (filtered_instance["cpu_average"] > param_avg_cpu_upscale){
+        var recommended_size = instance_type_hash["up"]
+        if ( recommended_size == null && recommended_size === null ){
+          // skip
+        } else {
+          filtered_instance["direction"] = "up"
+          filtered_instance["recommended_size"] = recommended_size
+          results.push(filtered_instance)
+        }
+      }
+    
+      if (filtered_instance["cpu_average"] < param_avg_cpu_downscale){
+        var recommended_size = instance_type_hash["down"]
+        if ( recommended_size == null && recommended_size === null ){
+          // skip
+        } else {
+          filtered_instance["recommended_size"] = recommended_size
+          filtered_instance["direction"] = "down"
+          results.push(filtered_instance)
+        }
+      }
+    }
+  })
+EOF
+end
 ###############################################################################
 # Policy
 ###############################################################################
 
 policy "pol_utilization" do
-  validate_each $ds_calculated_utilization do
+  validate_each $ds_checked_utilization do
     summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} rows containing Google CloudSQL instances to be rightsized"
     detail_template <<-EOS
 # Google CloudSQL Instances
 
-| Database ID | Region | Zone | Pricing Plan | Tier | CPU Maximum % | CPU Minimum % | CPU Average % | Disk Maximum % | Disk Minimum % | Disk Average % | Memory Minimum MB | Memory Maximum MB | Memory Average MB |
-| ----------- | ------ | ---- | ------------ | ---- | ------------- | ------------- | ------------- | -------------- | -------------- | -------------- | ----------------- | ----------------- | ----------------- |
+| Database ID | Region | Zone | Pricing Plan | Tier | Recommended Tier | CPU Maximum % | CPU Minimum % | CPU Average % | Tags |
+| ----------- | ------ | ---- | ------------ | ---- | ---------------- | ------------- | ------------- | ------------- | ---- |
 {{ range data -}}
-| {{.database_id}} | {{.region}} | {{.zone}} | {{.pricingPlan}} | {{.tier}} | {{ .cpu_maximum }} | {{.cpu_minimum}} | {{ .cpu_average }} | {{.disk_maximum}} | {{.disk_minimum}} | {{.disk_average}} | {{.mem_minimum}} | {{.mem_maximum}} | {{.mem_average}} |
+| {{.database_id}} | {{.region}} | {{.zone}} | {{.pricingPlan}} | {{.tier}} | {{.recommended_size}} | {{ .cpu_maximum }} | {{.cpu_minimum}} | {{ .cpu_average }} | {{ range $i,$e := .userLabels}}{{$i}}:{{ $e }}{{ end }} | 
 {{ end -}}
-___
+
+
 ###### Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }}) within Org: {{ rs_org_name }} (Org ID: {{ rs_org_id }})
 EOS
-    check eq(0,1)
+    check logic_not(val(item,"recommended_size"))
     escalate $email
+    escalate $update_resources
   end
 end
 
@@ -297,4 +364,91 @@ end
 
 escalation "email" do
   email $param_email
+end
+
+escalation "update_resources" do
+  request_approval do
+    label "Approve resource update"
+    description "Approve escalation to resize cloudsql instance"
+    parameter "approval_resion" do
+      type "string"
+      label "Reason for Approval"
+      description "Explain why are you approving the action."
+    end
+  end
+  run "update_resources", data
+end
+
+###############################################################################
+# Cloud Workflow
+###############################################################################
+
+define update_resources($data) return $all_responses do
+  $$debug=true
+  $$log = []
+  $all_responses = []
+  $syslog_subject = "Google Unused CloudSQL: "
+  call sys_log(join([$syslog_subject, "Identified Instances"]),to_s($data))
+
+  foreach $item in $data do
+    call google_authenticate() retrieve $access_token
+    sub on_error: handle_error($response) do
+      $response = http_delete(
+        url: $item["selfLink"],
+        headers: {
+          "cache-control": "no-cache",
+          "content-type": "application/json",
+          "authorization": "Bearer " + $access_token
+        }
+      )
+      $all_responses << $response
+    end
+  end
+  call sys_log(join([$syslog_subject, "Responses"]),to_s($all_responses))
+end
+
+define google_authenticate() return $access_token do
+  $jwt = {
+    iss: cred("GCE_PLUGIN_ACCOUNT"),
+    aud:"https://oauth2.googleapis.com/token",
+    exp: to_n(strftime(now()+3600, "%s")),
+    iat:to_n(strftime(now(), "%s")),
+    scope: "https://www.googleapis.com/auth/cloud-platform https://www.googleapis.com/auth/sqlservice.admin"
+  }
+
+  $signed_signature = jwt_encode("RS256", $jwt, cred("GCE_PLUGIN_PRIVATE_KEY"),{typ:"JWT"})
+  $response = http_request({
+    verb: 'post',
+    href: '/token',
+    host: 'oauth2.googleapis.com',
+    https: true,
+    headers: {
+      "content-type": "application/json"
+    },
+    body:{
+      "grant_type": "urn:ietf:params:oauth:grant-type:jwt-bearer",
+      "assertion": $signed_signature
+    }
+  })
+  $access_token = $response["body"]["access_token"]
+end
+
+define handle_error($response) do 
+  $status_code = $response["code"]
+  $syslog_subject = "Google Unused CloudSQL Termination Error: "
+  call sys_log(join([$syslog_subject, $status_code]),to_s($response))
+  $_error_behavior = "skip"
+end 
+
+define sys_log($subject, $detail) do
+  if $$debug
+    rs_cm.audit_entries.create(
+      notify: "None",
+      audit_entry: {
+        auditee_href: @@account,
+        summary: $subject,
+        detail: $detail
+      }
+    )
+  end
 end
