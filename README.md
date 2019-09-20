@@ -51,6 +51,7 @@ Please contact sales@rightscale.com to learn more.
 - [Google Expiring Committed Use Discount (CUD)](./cost/google/cud_expiration/)
 - [Azure Expiring Reserved Instances](./cost/azure/reserved_instances/expiration)
 - [Azure Idle Compute Instances](./cost/azure/idle_compute_instances/)
+- [Google CloudSQL RightSizing](./cost/google/cloudsql_rightsizing/)
 
 ### Security
 
