@@ -81,6 +81,7 @@ Please contact sales@rightscale.com to learn more.
 - [Unapproved Instance Types](./compliance/unapproved_instance_types/)
 - [Azure Subscription Access](./compliance/azure/subscription_access/)
 - [Azure AHUB Utilization with Manual Entry](./compliance/azure/ahub_manual/)
+- [Azure Idle Compute Instances](./compliance/azure/ahub_idle_compute_instances/)
 
 ### Operational
 
