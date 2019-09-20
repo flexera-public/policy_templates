@@ -8,7 +8,7 @@ Please contact sales@rightscale.com to learn more.
 
 ### Cost
 
-- [AWS Reserved Instance Expiration](./cost/aws/reserved_instances/expiration/)
+- [AWS Expiring Reserved Instances](./cost/aws/reserved_instances/expiration/)
 - [AWS Reserved Instances Utilization](./cost/aws/reserved_instances/utilization/)
 - [AWS Reserved Instance Reservation Coverage](./cost/aws/reserved_instances/coverage/)
 - [AWS Reserved Instances Report by Billing Center](./cost/aws/reserved_instances/report_by_bc)
@@ -25,7 +25,7 @@ Please contact sales@rightscale.com to learn more.
 - [Azure Reserved Instance Utilization](./cost/azure/reserved_instances/utilization/)
 - [Azure Reserved Instance Recommendations](./cost/azure/reserved_instances/recommendations)
 - [Billing Center Cost Anomaly](./cost/billing_center_cost_anomaly/)
-- [Google Committed Use Discount (CUD) Report](./cost/google/cud_report/)
+- [Google Committed Use Discount (CUD)](./cost/google/cud_report/)
 - [AWS Delete Unused Elastic Load Balancers (CLB)](./cost/aws/elb/clb_unused/)
 - [Cheaper Regions](./cost/cheaper_regions/)
 - [Low Account Usage](./cost/low_account_usage/)
@@ -47,7 +47,9 @@ Please contact sales@rightscale.com to learn more.
 - [AWS RDS Instances RightSizing Recommendations](./cost/aws/rds_instance_cloudwatch_utilization)
 - [Azure Blob Storage Optimization](./cost/azure/object_storage_optimization/)
 - [Google Object Storage Optimization](./cost/google/object_storage_optimization/)
-- [Google Committed Use Discount (CUD) Expiration Report](./cost/google/cud_expiration/)
+- [Google Expiring Committed Use Discount (CUD)](./cost/google/cud_expiration/)
+- [Azure Expiring Reserved Instances](./cost/azure/reserved_instances/expiration)
+- [Azure Idle Compute Instances](./cost/azure/idle_compute_instances/)
 
 ### Security
 
