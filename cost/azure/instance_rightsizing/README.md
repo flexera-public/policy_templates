@@ -1,8 +1,8 @@
-# Azure Instances Utilization from Log Analytics with Rightsizing
+# Azure Instance Rightsizing
 
 ## What it does
 
-This Policy Template uses performance metrics from Log Analytics from the last 30 days to identify over and underutilized instances. This is meant to be run as a weekly policy.
+This Policy Template uses performance metrics from Log Analytics from the last 30 days to identify over and underutilized instances and resizes them after approval. This is meant to be run as a weekly policy.
 
 ## Prerequisites
 

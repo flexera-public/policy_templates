@@ -34,7 +34,7 @@ Please contact sales@rightscale.com to learn more.
 - [AWS Instance CloudWatch Utilization](./cost/aws/instance_cloudwatch_utilization/)
 - [Google StackDriver Utilization](./cost/google/instances_stackdriver_utilization/)
 - [Terminate Instances with End Date](./cost/terminate_policy/)
-- [Azure Instances Utilization from Log Analytics](./cost/azure/instances_log_analitics_utilization/)
+- [Azure Instance Rightsizing](./cost/azure/instance_rightsizing/)
 - [Superseded Instances](./cost/superseded_instance/)
 - [Superseded Instance Remediation](./cost/superseded_instance_remediation/)
 - [AWS S3 Buckets without Server Access Logging](./security/storage/aws/s3_buckets_without_server_access_logging/)

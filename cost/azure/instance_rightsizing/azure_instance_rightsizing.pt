@@ -1,7 +1,7 @@
-name "Azure Instances Rightsizing from Log Analytics"
+name "Azure Instance Rightsizing"
 rs_pt_ver 20180301
 type "policy"
-short_description "Rightsizes Azure instance based on utilization data from Azure Log Analytics.  See the [README](https://github.com/rightscale/policy_templates/tree/master/cost/azure/instances_log_analitics_utilization) and [docs.rightscale.com/policies](http://docs.rightscale.com/policies/) to learn more."
+short_description "Rightsizes Azure instances based on CPU and Memory thresholds.  See the [README](https://github.com/rightscale/policy_templates/tree/master/cost/azure/instance_rightsizing) and [docs.rightscale.com/policies](http://docs.rightscale.com/policies/) to learn more."
 long_description "Version: 1.0"
 severity "low"
 category "Cost"
@@ -134,6 +134,15 @@ end
 # Datasources
 ###############################################################################
 
+datasource "ds_azure_instance_size_map" do
+  request do
+    verb "GET"
+    host "raw.githubusercontent.com"
+    path "/rightscale/policy_templates/master/data/azure/instance_types.json"
+    header "User-Agent", "RS Policies"
+  end
+end
+
 datasource "ds_azure_skus" do
   request do
     auth $azure_auth
@@ -232,16 +241,6 @@ end
 
 datasource "ds_merged_metrics" do
   run_script $js_merged_metrics, $ds_oms_resources, $ds_la_instances_utilization, $ds_azure_vm_sizes, $param_exclusion_tag_key
-end
-
-# get azure instance size map
-datasource "ds_azure_instance_size_map" do
-  request do
-    verb "GET"
-    host "raw.githubusercontent.com"
-    path "/rightscale/policy_templates/master/data/azure/instance_types.json"
-    header "User-Agent", "RS Policies"
-  end
 end
 
 datasource "ds_filtered_instances" do
@@ -497,37 +496,16 @@ end
 # Policy
 ###############################################################################
 
-policy 'policy_azure_utilization' do
-  validate_each $ds_merged_metrics do
-    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} Underutilized Instances Reporting to Azure Log Analytics"
-    detail_template <<-EOS
-# Azure Instance Utilization from Log Analytics
-
-### Thresholds for Consideration 
-  - Average Memory Used %: {{ parameters.param_avg_used_memory }}
-  - Average CPU Used %: {{ parameters.param_avg_cpu }}
-
-| Region | Hostname | Resource Group | Instance Size | OS Type | Availability Set | OMS Workspace Id | CPU Maximum % | CPU Average % | Memory Maximum % | Memory Average % |
-| ------ | -------- | -------------- | ------------- | ------- | ---------------- | ---------------- | ------------- | ------------- | ---------------- | ---------------- |
-{{ range data -}}
-| {{.location}} | {{.name}} | {{.resourceGroup}} | {{.vmSize}} | {{.osType}} | {{.availabilitySet}} | {{.workspaceId}} | {{ .cpu_maximum }} | {{ .cpu_average }} | {{.mem_maximum}} | {{.mem_average}} |
-{{ end -}}
-
-___
-###### Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }}) within Org: {{ rs_org_name }} (Org ID: {{ rs_org_id }})
-EOS
-    escalate $email
-    escalate $tag_resources
-    check logic_or(eq($param_avg_used_memory, -1), gt(to_n(val(item,"mem_average")), $param_avg_used_memory))
-    check logic_or(eq($param_avg_cpu, -1), gt(to_n(val(item,"cpu_average")),$param_avg_cpu))
-  end
-end
-
 policy "policy_rightsize" do
   validate $ds_filtered_instances do
-    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data.rightsize_instances }} Instances that can be rightsized"
+    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data.rightsize_instances }} Azure Instances to be Rightsized"
     detail_template <<-EOS
-# {{ len data.rightsize_instances }} Instances can be rightsized
+# Azure Instance Rightsizing
+
+### Thresholds for Consideration 
+
+  - Average Memory Used %: {{ parameters.param_avg_used_memory }}
+  - Average CPU Used %: {{ parameters.param_avg_cpu }}
 
 | Instance Name | Resource UID | Current Instance Type | New Instance Type | Action |
 | ------------- | ------------ | --------------------- | ----------------- | ------ |
@@ -546,12 +524,13 @@ EOS
   validate $ds_filtered_instances do
     summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data.cooldown_instances }} Instances are in cooldown"
     detail_template <<-EOS
-# {{ len data.cooldown_instances }} Instances are in cooldown
+# Azure Instance Rightsizing
+## {{ len data.cooldown_instances }} Instances are in cooldown
 
-| Instance Name | Resource UID | Current Instance Type | New Instance Type | Cooldown Date |
-| ------------- | ------------ | --------------------- | ----------------- | ------------- |
+| Instance Name | Resource UID | Current Instance Type | New Instance Type | Action | Cooldown Date |
+| ------------- | ------------ | --------------------- | ----------------- | ------ | ------------- |
 {{ range data.cooldown_instances -}}
-| {{.name}} | {{.resource_uid}} | {{.instance_type}} | {{.next_instance_size}} | {{.cooldown_date}} |
+| {{.name}} | {{.resource_uid}} | {{.instance_type}} | {{.next_instance_size}} | {{.action}} | {{.cooldown_date}} |
 {{ end -}}
 ___
 ###### Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }}) within Org: {{ rs_org_name }} (Org ID: {{ rs_org_id }})
