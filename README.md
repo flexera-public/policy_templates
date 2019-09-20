@@ -25,7 +25,7 @@ Please contact sales@rightscale.com to learn more.
 - [Azure Reserved Instance Utilization](./cost/azure/reserved_instances/utilization/)
 - [Azure Reserved Instance Recommendations](./cost/azure/reserved_instances/recommendations)
 - [Billing Center Cost Anomaly](./cost/billing_center_cost_anomaly/)
-- [Google Committed Use Discount (CUD) Report](./cost/google/cud_report/)
+- [Google Committed Use Discount (CUD)](./cost/google/cud_report/)
 - [AWS Delete Unused Elastic Load Balancers (CLB)](./cost/aws/elb/clb_unused/)
 - [Cheaper Regions](./cost/cheaper_regions/)
 - [Low Account Usage](./cost/low_account_usage/)
@@ -45,7 +45,7 @@ Please contact sales@rightscale.com to learn more.
 - [AWS Object Storage Optimization](./cost/aws/object_storage_optimization/)
 - [AWS Unused RDS Instances](./cost/aws/unused_rds/)
 - [Google Object Storage Optimization](./cost/google/object_storage_optimization/)
-- [Google Committed Use Discount (CUD) Expiration Report](./cost/google/cud_expiration/)
+- [Google Committed Use Discount (CUD) Expiration](./cost/google/cud_expiration/)
 
 ### Security
 
