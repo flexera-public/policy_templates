@@ -8,7 +8,7 @@ Please contact sales@rightscale.com to learn more.
 
 ### Cost
 
-- [AWS Reserved Instance Expiration](./cost/aws/reserved_instances/expiration/)
+- [AWS Expiring Reserved Instances](./cost/aws/reserved_instances/expiration/)
 - [AWS Reserved Instances Utilization](./cost/aws/reserved_instances/utilization/)
 - [AWS Reserved Instance Reservation Coverage](./cost/aws/reserved_instances/coverage/)
 - [AWS Reserved Instances Report by Billing Center](./cost/aws/reserved_instances/report_by_bc)
@@ -45,7 +45,7 @@ Please contact sales@rightscale.com to learn more.
 - [AWS Object Storage Optimization](./cost/aws/object_storage_optimization/)
 - [AWS Unused RDS Instances](./cost/aws/unused_rds/)
 - [Google Object Storage Optimization](./cost/google/object_storage_optimization/)
-- [Google Committed Use Discount (CUD) Expiration](./cost/google/cud_expiration/)
+- [Google Expiring Committed Use Discount (CUD)](./cost/google/cud_expiration/)
 
 ### Security
 
