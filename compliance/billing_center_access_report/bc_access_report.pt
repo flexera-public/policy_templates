@@ -2,7 +2,7 @@ name "Billing Center Access Report"
 rs_pt_ver 20180301
 type "policy"
 short_description "This policy generates an access report by Billing Center. See the [README](https://github.com/rightscale/policy_templates/tree/master/compliance/billing_center_access_report/) and [docs.rightscale.com/policies](http://docs.rightscale.com/policies/) to learn more."
-long_description "Version: 1.1"
+long_description "Version: 1.2"
 severity "low"
 category "Compliance"
 
@@ -73,6 +73,8 @@ datasource "bc_users" do
   result do
     encoding "json"
     collect jmes_path(response,"[*]") do
+      field "bc_id", val(iter_item, "id")
+      field "bc_href", val(iter_item, "href")
       field "bc_name", val(iter_item, "name")
       field "inherited", jmes_path(col_item,"access_rules[0].inherited")
       field "user_href", jmes_path(col_item,"subject.href")
@@ -112,6 +114,8 @@ script "identify_groups", type: "javascript" do
   _.each(bcs, function(bc){
     if (bc.user_href.match(/(groups)/g)){
       groups.push({
+        bc_id: bc["bc_id"],
+        bc_href: bc["bc_href"],
         bc_name: bc["bc_name"],
         inherited: bc["inherited"],
         group_name: bc["user_name"],
@@ -135,6 +139,8 @@ datasource "users_in_groups" do
   result do
     encoding "json"
     collect jmes_path(response,"users[*]") do
+      field "bc_id", val(iter_item, "bc_id")
+      field "bc_href", val(iter_item, "bc_href")
       field "bc_name", val(iter_item, "bc_name")
       field "inherited", val(iter_item, "inherited")
       field "user_href", jmes_path(col_item,"href")
@@ -166,6 +172,8 @@ script "format_users", type: "javascript" do
     _.each(orig_users, function(user){
       if (user.bc_name == billing_center_name){
         users.push({
+          bc_id: user["bc_id"],
+          bc_href: user["bc_href"],
           bc_name: user["bc_name"],
           inherited: user["inherited"],
           group_name: " ",
@@ -180,6 +188,8 @@ script "format_users", type: "javascript" do
     _.each(group_users, function(user){
       if (user.bc_name == billing_center_name){
         users.push({
+          bc_id: user["bc_id"],
+          bc_href: user["bc_href"],
           bc_name: user["bc_name"],
           inherited: user["inherited"],
           group_name: user["group_name"],
@@ -208,7 +218,7 @@ policy "access_report_by_bc" do
 | Billing Center Name | User Name | Email | User Href | Inherited? | Group Name | Group Href |
 | ------ | ------ | ------ | ------ | ------ | ------ | ------ |
 {{ range data -}}
-| {{ .bc_name }} | {{.user_name}} | {{ .user_email }} | {{ .user_href }} | {{ .inherited }} | {{ .group_name }} | {{ .group_href }} |
+| [{{ .bc_name }}](https://analytics.rightscale.com/orgs/{{ rs_org_id }}/billing_centers/{{ .bc_id }}/users)  | {{.user_name}} | {{ .user_email }} | {{ .user_href }} | {{ .inherited }} | {{ .group_name }} | {{ .group_href }} |
 {{ end -}}
 
 EOS
