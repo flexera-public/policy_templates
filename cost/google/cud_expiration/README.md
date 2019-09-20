@@ -1,13 +1,11 @@
 ## Google Committed Use Discount (CUD) Expiration
 
-####  As a best practice, this policy should only be applied to the Master Account.
-
 ### What it does
 This policy identifies all active CUDs that exist in a given GCP project that will be expiring in a set number of days.
 
 ### Functional Details
 
-- Uses the GCP API to get a list of all CUDs and report on them.
+- Uses the GCP API to get a list of all CUDs and sends a notification.
 - Create a service account (if none exist) with `owner` role under Google-cloud platform (IAM & admin -> service accounts). Generate key, a JSON file will get downloaded in which you can find 'client email' and 'private key' which has to be added as credentials in RightScale cloud management Design -> Credentials with name 'GC_SA_CLIENT_EMAIL' and 'GC_SA_PRIVATE_KEY' respectively.  
 
 #### Input Parameters
