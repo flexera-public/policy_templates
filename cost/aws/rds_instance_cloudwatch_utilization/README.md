@@ -2,7 +2,7 @@
 
 ### What it does
 
-This Policy Template gathers AWS CloudWatch data for RDS Instances on 30 day intervals.
+This Policy Template gathers AWS CloudWatch data for RDS Instances on 30 day intervals and provides rightsizing recommendations.  Once recommendations are generated, instances can be rightsized in an automated manner or after approval.
 
 ### Cloud Management Required Permissions/AWS Required Permissions
 - Cloud Management - The `credential_viewer` role
@@ -12,6 +12,8 @@ This Policy Template gathers AWS CloudWatch data for RDS Instances on 30 day int
 
 - This policy identifies all RDS instances reporting performance metrics to CloudWatch whose CPU utilization is below the thresholds set in the **Average used CPU % - Downsize Threshold** and **Average used CPU % - Upsize Threshold** parameters.
 - The **Exclusion Tag Key:Value** parameter is a string value.  Supply the Tag Key & Value.  If the exclusion tag is used on an RDS Instance, that Instance is presumed to be exempt from this policy.
+- The rightsizing escalation can be automated, executed after approval, or skipped.
+- After the policy escalation has executed the [ModifyDBInstance](https://docs.aws.amazon.com/AmazonRDS/latest/APIReference/API_ModifyDBInstance.html) method on the recommended resources, the RDS Instance will continue to use its original Instance Class until the next Maintenance Window set on the RDS Instance in AWS.  During the next Maintenance Window, the pending Instance Class change will take effect.
 
 #### Input Parameters
 
