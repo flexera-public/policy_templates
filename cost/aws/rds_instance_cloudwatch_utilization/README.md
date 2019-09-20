@@ -22,7 +22,7 @@ This policy has the following input parameters required when launching the polic
 - *Email addresses to notify* - A list of email addresses to notify
 - *Average used CPU % - Upsize threshold* - Utilization below this percentage will raise an incident to tag the instance. Providing -1 will turn off this metric for consideration.
 - *Average used CPU % - Downsize Threshold* - Utilization below this percentage will raise an incident to tag the instance. Providing -1 will turn off this metric for consideration.
-- *Exclusion Tag Key:Value* - An Azure-native instance tag to ignore instances that you don't want to consider for downsizing. Only supply the tag key
+- *Exclusion Tag Key:Value* - An AWS-native instance tag to ignore instances that you don't want to consider for resizing. Only supply the tag key
 
 ### Supported Clouds
 
