@@ -8,6 +8,7 @@ The README file is an important artifact of the policy template.  It is the cust
 
 The readme file contains a number of sections which describes the policy template details.  All sections should start with the Header 3 markdown with 3 # for the name and it should contain header 2 markdown.
 
+[Markdown Cheatsheet](https://www.markdownguide.org/cheat-sheet/)
 
 ### Name
 
