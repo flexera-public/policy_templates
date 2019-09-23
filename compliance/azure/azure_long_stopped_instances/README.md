@@ -1,7 +1,8 @@
 ## Azure Long-Stopped Instances
 
 ### What it does
-This checks all Azure instances that have been stopped for more than a specified period of time. The user may Terminate the instance after approval.
+
+This policy checks all Azure instances that have been stopped for more than a specified period of time and Terminates them after approval.
 
 ### Functional Details
 
