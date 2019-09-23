@@ -2,7 +2,7 @@
 
 ### What it does
 
-This policy checks for instances that are using instance types that are not approved.
+This policy checks for instances that are using instance types that are not in the specified list and stops them after approval.
 
 ### Functional Details
 
