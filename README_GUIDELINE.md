@@ -1,5 +1,6 @@
 # README Guideline
 
+<<<<<<< HEAD
 This document provides guidance on how to properly write a Policy Template README file.  The purpose of this file to help the policy template developer create a proper readme file and expedite the pull request review process.  
 
 The README file is an important artifact of the policy template.  It is the customer facing documentation and should be written as such.  The README file should be free of typos, easy to read and correct grammar.  
@@ -77,3 +78,22 @@ Example:
 ### Other
 
 Write additional details the policy developer or user may need to know to use or change the policy.  
+=======
+This document provides guidance on how to properly write a Policy Template README file.  The purpose of this file to help the policy template developer create a proper readme file and expedite the pull request review process.
+
+## Readme file sections
+
+### Name
+
+### What it does
+
+### Functional description
+
+### Inputs
+
+### Actions
+
+### Required Permissions
+
+### Other
+>>>>>>> 4fd84f4fade1c1fce7eb2561b009ce5359281045
