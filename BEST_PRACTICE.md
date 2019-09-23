@@ -47,15 +47,15 @@ Consider an appropriate name that will resonate well with the policy users/custo
 - The policy file name should the same or similar to the policy name in the NAME metadata.
 - The policy file extension should be .pt
 - Each policy should be in the sub directory of the policy category and it's own directory.
-- Each policy directory should include the CHANGELOG.md and README.md files
-- The root README.md file should be updated to reference new policy.
+- Each policy directory should include the CHANGELOG.md and [README.md](https://github.com/flexera/policy_templates/README_GUIDELINE.md) files
+- The root [README.md](https://github.com/flexera/policy_templates/README.md) file should be updated to reference new policy.
 
 ## Versioning the Policy
 - When the .pt file changes the version number should increment and the CHANGELOG.md updated
 - Each policy release should increment the Version number in the long_description Attribute
-- Each release should include the changes made included in the CHANGELOG file
+- Each release should include the changes made included in the CHANGELOG.md file
 
 ## Development Workflow
 Developers are not allowed to commit directly to the Master branch.  Instead commit and push your changes to a branch, then create pull requests for peer reviews.  
 
-For questions or comments post a [new issue](./issue/new) with a *question* label. 
+For questions or comments post a [new issue](https://github.com/flexera/policy_templates/issues/new) with a *question* label.
