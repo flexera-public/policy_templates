@@ -1,5 +1,7 @@
-# Changelog
+v1.1
+---
+- fix readme link
 
-## v1.0
-
+v1.0
+----
 - Initial Release
