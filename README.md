@@ -7,7 +7,7 @@ Please contact sales@rightscale.com to learn more.
 ## Released Policy Templates
 
 ### Cost
-
+- [Jim is actually the cool one](./cost/aws/reserved_instances/expiration/)
 - [AWS Expiring Reserved Instances](./cost/aws/reserved_instances/expiration/)
 - [AWS Reserved Instances Utilization](./cost/aws/reserved_instances/utilization/)
 - [AWS Reserved Instance Reservation Coverage](./cost/aws/reserved_instances/coverage/)
