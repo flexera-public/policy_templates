@@ -1,6 +1,8 @@
 # README Guideline
 
-This document provides guidance on how to properly write a Policy Template README file.  The purpose of this file to help the policy template developer create a proper readme file and expedite the pull request review process.
+This document provides guidance on how to properly write a Policy Template README file.  The purpose of this file to help the policy template developer create a proper readme file and expedite the pull request review process.  
+
+The README file is an important artifact of the policy template.  It is the customer facing documentation and should be written as such.  The README file should be free of typos, easy to read and correct grammar.  
 
 ## Readme file sections
 
@@ -33,8 +35,16 @@ Checks for AWS idle instances using CPU and Memory metrics and terminates them a
 
 ### Functional Description
 
+In this section you describe how the policy functions, not what it does.  It should include which clouds, APIs and how checks are made.  This would be a good place to write some technical details about API usage.
+
 ### Inputs
 
+Inputs are the parameters added to the policy template.  Each parameter listed in the policy template should be added to the readme.  Include extra details that may not fit into the parameter label or description fields of the parameter.  The field label should be bolded and the description and other details leave unbolded.
+
+Example:
+
+- *Email notify list* - Email addresses of the recipients you wish to notify.  
+- *Other parameter* - include detail and extra information here.
 
 
 ### Actions
@@ -43,22 +53,17 @@ Include all the actions available to the user.
 
 Example:
 
-- email
-- terminate all instances after approval
+- Email
+- Terminate all instances after approval
 
 ### Required Permissions
 
-Write any CMP user roles the policy manager needs to apply the policy.  Also include any cloud specific permissions or policies
+Write any CMP user roles the policy manager needs to apply the policy.  Also include any cloud specific permissions or policies needed.  This is also a good location to place details about
 
-Example:
+Some good examples are written in following policy policy_templates:
+- https://github.com/flexera/policy_templates/tree/master/cost/aws/elb/clb_unused
+- https://github.com/flexera/policy_templates/tree/master/cost/azure/object_storage_optimization
 
--
-
-AWS IAM roles
-```javascript
-
-
-```
 
 ### Supported Clouds
 
@@ -70,3 +75,5 @@ Example:
 ...
 
 ### Other
+
+Write additional details the policy developer or user may need to know to use or change the policy.  
