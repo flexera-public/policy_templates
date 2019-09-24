@@ -20,24 +20,25 @@ if (has_new_policy_template.length != 0) && missing_doc_changes
   fail "A README.md is required for new templates"
 end
 
-has_app_changes.each do |file|
+# checks for broken links in the any file
+changed_files.each do |file|
  diff = git.diff_for_file(file)
- #message "diff.patch #{diff.patch}"
- if diff && diff.patch =~ /http/
-   #urls = diff.patch.scan(URI.regexp)
-   #urls.each  do |url|
-   message "patch #{diff.patch}"
-   diff.patch.scan(/^\+/).each do |line|
-     message "line #{line}"
+ regex =/(^\+).+?(http|https):\/\/[a-zA-Z0-9.\/?=_-]*.+/
+ if diff && diff.patch =~ regex
+   diff.patch.each_line do |line|
+     if line =~ regex
+       URI.extract(line,['http','https']).each do |uri|
+         uri = URI(uri)
+         uri_string = uri.to_s.gsub(')','')
+         message "Checking URI #{uri_string}"
+         res = Net::HTTP.get_response(uri)
+         if res.code != '200'
+           fail "The URI is not valid: #{uri_string} in #{file} Status:#{res.code}"
+         end
+       end
+     end
    end
  end
- #url = file.scan(URI.regexp)
-  #message "url #{file.scan(URI.regexp)}"
-  status = 404
-
-  if (status == 404 )
-    fail "The README link is not valid. #{file} "
-  end
 end
 
 fail 'Please provide a summary of your Pull Request.' if github.pr_body.length < 10
