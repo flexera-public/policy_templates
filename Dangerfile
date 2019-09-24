@@ -1,3 +1,4 @@
+  require 'uri'
 # DangerFile
 # https://danger.systems/reference.html
 changed_files = (git.added_files + git.modified_files)
@@ -17,6 +18,26 @@ end
 
 if (has_new_policy_template.length != 0) && missing_doc_changes
   fail "A README.md is required for new templates"
+end
+
+has_app_changes.each do |file|
+ diff = git.diff_for_file(file)
+ #message "diff.patch #{diff.patch}"
+ if diff && diff.patch =~ /http/
+   #urls = diff.patch.scan(URI.regexp)
+   #urls.each  do |url|
+   message "patch #{diff.patch}"
+   diff.patch.scan(/^\+/).each do |line|
+     message "line #{line}"
+   end
+ end
+ #url = file.scan(URI.regexp)
+  #message "url #{file.scan(URI.regexp)}"
+  status = 404
+
+  if (status == 404 )
+    fail "The README link is not valid. #{file} "
+  end
 end
 
 fail 'Please provide a summary of your Pull Request.' if github.pr_body.length < 10
