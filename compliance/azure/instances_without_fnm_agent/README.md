@@ -18,7 +18,7 @@ The policy leverages the cloud API to get all current instances and the FlexNet 
 
 ### Installation
 
-### How to retrive Azure `AZURE_APPLICATION_ID`, `AZURE_APPLICATION_KEY` and 'Azure AD Tenant ID'
+### How to retrive Azure `AZURE_APPLICATION_ID`, `AZURE_APPLICATION_KEY` and `Azure AD Tenant ID`
 
 1. Follow steps to [Create an Azure Active Directory Application](https://docs.microsoft.com/en-us/azure/azure-resource-manager/resource-group-create-service-principal-portal#create-an-azure-active-directory-application)
 1. Grant the Azure AD Application access to the necessary subscription(s)
