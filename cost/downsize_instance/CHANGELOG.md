@@ -1,3 +1,7 @@
+v1.14
+----
+- Added Approval block
+
 v1.13
 ---
 - Adding request_approval for downsize escalation

@@ -1,3 +1,7 @@
+v1.2
+----
+- Added Approval block
+
 v1.1
 ----
 - url encode client secret
