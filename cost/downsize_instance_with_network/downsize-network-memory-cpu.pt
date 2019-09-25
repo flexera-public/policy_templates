@@ -1,4 +1,4 @@
-name "Downsize Instances based on CPU, Memory,Network."
+name "Downsize Instances based on metrics of cpu, memory, and network throughput."
 rs_pt_ver 20180301
 type "policy"
 short_description "A policy that downsizes instances based on monitoring metrics. \n See the [README](https://github.com/rightscale/policy_templates/tree/master/cost/downsize_instance) and [docs.rightscale.com/policies](http://docs.rightscale.com/policies/) to learn more."
@@ -44,7 +44,7 @@ end
 
 parameter "param_max_cpu_idle" do
   type "number"
-  label "Maximum cpu idle percent to allow for downsize"
+  label "Maximum cpu idle percent to allow for downsize."
   default -1
   min_value -1
   max_value 100
@@ -52,79 +52,79 @@ end
 
 parameter "param_avg_network_throughput_interface_eth0" do
   type "number"
-  label "Average network throughput interface_eth0 to allow for downsize"
+  label "Average network throughput interface_eth0 to allow for downsize. (packets per second)"
   description "Leave at -1 to ignore"
   default -1
   min_value -1
-  #max_value 100
 end
 
 parameter "param_max_network_throughput_interface_eth0" do
   type "number"
-  label "Maximum network throughput via interface_eth0 to allow for downsize"
+  label "Maximum network throughput via interface_eth0 to allow for downsize. (packets per second)"
   description "Leave at -1 to ignore"
   default -1
   min_value -1
-  #max_value 100
 end
 
 parameter "param_avg_network_throughput_Amazon_Elastic_Network_Adapter" do
   type "number"
-  label "Average network throughput via Amazon_Elastic_Network_Adapter to allow for downsize"
+  label "Average network throughput via Amazon_Elastic_Network_Adapter to allow for downsize. (packets per second)"
   description "Leave at -1 to ignore"
   default -1
   min_value -1
-  #max_value 100
 end
 
 parameter "param_max_network_throughput_Amazon_Elastic_Network_Adapter" do
   type "number"
-  label "Maximum network throughput Amazon_Elastic_Network_Adapter to allow for downsize"
+  label "Maximum network throughput Amazon_Elastic_Network_Adapter to allow for downsize. (packets per second)"
   description "Leave at -1 to ignore"
   default -1
   min_value -1
-  #max_value 100
 end
 
 parameter "param_avg_network_throughput_Intel_R_82599_Virtual_Function" do
   type "number"
-  label "Average network throughput via Intel_R_82599_Virtual_Function to allow for downsize"
+  label "Average network throughput via Intel_R_82599_Virtual_Function to allow for downsize. (packets per second)"
   description "Leave at -1 to ignore"
   default -1
   min_value -1
-  #max_value 100
 end
 
 parameter "param_max_network_throughput_Intel_R_82599_Virtual_Function" do
   type "number"
-  label "Maximum network throughput via Intel_R_82599_Virtual_Function  to allow for downsize"
+  label "Maximum network throughput via Intel_R_82599_Virtual_Function  to allow for downsize. (packets per second)"
   description "Leave at -1 to ignore"
   default -1
   min_value -1
-  #max_value 100
 end
 
 parameter "param_avg_network_throughput_Amazon_PV_Network_Adapter" do
   type "number"
-  label "Average network throughput via Amazon_PV_Network_Adapter to allow for downsize"
+  label "Average network throughput via Amazon_PV_Network_Adapter to allow for downsize. (packets per second)"
   description "Leave at -1 to ignore"
   default -1
   min_value -1
-  #max_value 100
 end
 
 parameter "param_max_network_throughput_Amazon_PV_Network_Adapter" do
   type "number"
-  label "Maximum network throughput via Amazon_PV_Network_Adapter to allow for downsize"
+  label "Maximum network throughput via Amazon_PV_Network_Adapter to allow for downsize. (packets per second)"
   description "Leave at -1 to ignore"
   default -1
   min_value -1
-  #max_value 100
 end
 
 parameter "param_instance_tag_list" do
   type "list"
-  label "Instance tags used to filter instances that must validate policy. (e.g.: rs_monitoring:resize=1)"
+  label "Instance tags used to filter instances that must validate policy. (e.g.: rs_monitoring:state=auth)"
+  min_length 1
+  allowed_pattern /([\w]?)+\:([\w]?)+\=([\w]?)+/
+end
+
+parameter "param_instance_tag_list_exclude" do
+  type "list"
+  label "Instance tags used to EXCLUDE instances. (e.g.: ec2:role:=sap)"
+  description "This field is OPTIONAL"
   min_length 1
   allowed_pattern /([\w]?)+\:([\w]?)+\=([\w]?)+/
 end
@@ -161,7 +161,7 @@ resources "instances", type: "rs_cm.instances" do
   filter do
     state "operational"
   end
-  tags all(any($param_instance_tag_list), "rs_agent:type=right_link_lite",none("rs_downsize:cooldown=*"))
+  tags all(any($param_instance_tag_list), "rs_agent:type=right_link_lite",none("rs_downsize:cooldown=*"),none($param_instance_tag_list_exclude))
 end
 
 resources "instance_types", type: "rs_cm.instance_types" do
@@ -204,6 +204,7 @@ datasource "ds_instances" do
   field "name", val(iter_item, "name")
   field "href", href(iter_item)
   field "instance_type", val(iter_item, "instance_type")
+  field "tags", val(iter_item,"tags")
 end
 
 datasource "ds_instances_16" do
@@ -219,6 +220,8 @@ datasource "ds_instances_16" do
   result do
     encoding "json"
     collect jmes_path(response, "[*]") do
+      field "account", jmes_path(col_item, "links.account.id")
+      field "cloud_id", jmes_path(col_item, "links.cloud.id")
       field "href", jmes_path(col_item, "href")
       field "name", jmes_path(col_item,"name")
       field "description", jmes_path(col_item, "description")
@@ -230,13 +233,21 @@ datasource "ds_instances_16" do
   end
 end
 
+auth "my_aws_auth", type: "aws" do
+  version 4
+  service "s3"
+  region "us-east-1"
+  access_key cred("AWS_ACCESS_KEY_ID")
+  secret_key cred("AWS_SECRET_ACCESS_KEY")
+end
+
 # Importing instance types that are approved by sap with rough estimated costs.
 datasource "ds_instance_size_map" do
   request do
+    auth $my_aws_auth
+    host "s3.amazonaws.com"
     verb "GET"
-    host "raw.githubusercontent.com"
-    path "/rightscale/policy_templates/master/data/aws/instance_types_cost_sap.json"
-    header "User-Agent", "RS Policies"
+    path "rightscale-cft-templates/instances_types_cost.json"
   end
 end
 
@@ -256,6 +267,8 @@ for ( n = 0; n < instances16.length; n++) {
     cloud_type: instances16[n]["cloud_type"],
     instance_type: instances16[n]["instance_type"],
     legacy_id: instances16[n]["legacy_id"],
+    account: instances16[n]["account"],
+    cloud_id: instances16[n]["cloud_id"],
     region: instances16[n]["region"]
   }
 }
@@ -266,22 +279,51 @@ for ( i = 0; i < instances.length; i++ ) {
   var instance_type_mem = instance_type_memory[instance_type]
   var legacy_id = i_type[instances[i]["href"]]["legacy_id"]
   var region = i_type[instances[i]["href"]]["region"]
+  var account = i_type[instances[i]["href"]]["account"]
+  var cloud_id = i_type[instances[i]["href"]]["cloud_id"]
+
+  if (typeof instance_size_map["clouds"][cloud_type.toString()][instance_type.toString()] === 'undefined'){
+    //skip
+    continue;
+  }
+  else {
   var next_instance_size = instance_size_map["clouds"][cloud_type.toString()][instance_type.toString()]["down"]
   if (!next_instance_size) { next_instance_size = "N/A" }
-  filtered_instances.push(
+  var tag_list = instances[i]["tags"]
+  for (var j = 0; j < tag_list.length; j++)
     {
-      resource_uid: instances[i]["resource_uid"],
-      name: instances[i]["name"],
-      href: instances[i]["href"],
-      description: instances[i]["description"],
-      legacy_id: legacy_id,
-      instance_type: instance_type,
-      total_memory: instance_type_mem,
-      region: region,
-      cloud_type: cloud_type,
-      next_instance_size: next_instance_size
+      //console.log("Checking for wildcard sap")
+      if (tag_list[j].indexOf("SAP") != -1 )
+        {
+        console.log("This tag contains SAP, EXCLUDE it: " + "Tag: " + j + " " + tag_list[j])
+        j = tag_list.length  
+        }
+       else {
+        console.log("This doesn't contain  SAP,  it: " + "Tag: " + j + " " + tag_list[j] + " tag lenght:"+ tag_list.length   )
+        if (j == (tag_list.length -1) )
+        {
+            console.log("we are Including this")
+            filtered_instances.push(
+            {
+              account: account,
+              resource_uid: instances[i]["resource_uid"],
+              name: instances[i]["name"],
+              href: instances[i]["href"],
+              description: instances[i]["description"],
+              legacy_id: legacy_id,
+              cloud_id: cloud_id,
+              instance_type: instance_type,
+              total_memory: instance_type_mem,
+              region: region,
+              cloud_type: cloud_type,
+              tags: instances[i]["tags"],
+              next_instance_size: next_instance_size
+            }
+            )
+        }
+       }
     }
-  )
+  }
 };
 EOS
 end
@@ -383,14 +425,17 @@ datasource "ds_instance_metrics_free_memory" do
   result do
     field "href",               val(iter_item,"href")
     field "memory_data_points", jmes_path(response, "variables_data[0].points[*]")
+    field "account",            val(iter_item,"account")
     field "resource_uid",       val(iter_item,"resource_uid")
     field "instance_type",      val(iter_item,"instance_type")
     field "total_memory",       val(iter_item, "total_memory")
     field "name",               val(iter_item,"name")
     field "legacy_id",          val(iter_item,"legacy_id")
+    field "cloud_id",           val(iter_item,"cloud_id")
     field "region",             val(iter_item,"region")
     field "cloud_type",         val(iter_item,"cloud_type")
     field "next_instance_size", val(iter_item,"next_instance_size")
+    field "tags",               val(iter_item,"tags")
   end
 end
 
@@ -414,11 +459,11 @@ datasource "ds_instance_metrics_cpu" do
 end
 
 datasource "ds_instances_with_calculated_metrics" do
-  run_script $js_calculate_metrics, $ds_instance_metrics_free_memory, $ds_instance_metrics_cpu, $ds_instance_metrics_network_interface_eth0, $ds_instance_metrics_network_interface_Amazon_Elastic_Network_Adapter, $ds_instance_metrics_network_interface_Intel_R_82599, $ds_instance_metrics_network_interface_AWS_PV_Network_Device
+  run_script $js_calculate_metrics, $ds_instance_metrics_free_memory, $ds_instance_metrics_cpu, $ds_instance_metrics_network_interface_eth0, $ds_instance_metrics_network_interface_Amazon_Elastic_Network_Adapter, $ds_instance_metrics_network_interface_Intel_R_82599, $ds_instance_metrics_network_interface_AWS_PV_Network_Device,$ds_instance_size_map
 end
 
 script "js_calculate_metrics", type: "javascript" do
-  parameters "instance_metrics_free_memory", "instance_metrics_cpu", "instance_metrics_network_interface_eth0", "instance_metrics_network_interface_Amazon_Elastic_Network_Adapter", "instance_metrics_network_interface_Intel_R_82599", "instance_metrics_network_interface_AWS_PV_Network_Device"
+  parameters "instance_metrics_free_memory", "instance_metrics_cpu", "instance_metrics_network_interface_eth0", "instance_metrics_network_interface_Amazon_Elastic_Network_Adapter", "instance_metrics_network_interface_Intel_R_82599", "instance_metrics_network_interface_AWS_PV_Network_Device", "instance_size_map"
   result "calculated_instances"
   code <<-EOS
 var calculated_instances = [];
@@ -438,8 +483,41 @@ for (var i = 0; i < instance_metrics_free_memory.length; i++) {
 
       avg = parseInt((free_avg/total_avg)*100)
       max_free_memory_avg = parseInt((max_free_memory/max_total_memory)*100)
+
+
+      var cost_savings=0;
+      var mycloud_type = instance_metrics_free_memory[i]["cloud_type"]
+      var myinstance_type = instance_metrics_free_memory[i]["instance_type"]
+      var mynext_instance_size = instance_metrics_free_memory[i]["next_instance_size"]
+
+    if (typeof instance_size_map["clouds"][mycloud_type.toString()][myinstance_type.toString()] === 'undefined') {
+      //This means that the instance doesnt exist in the json, so we are skipping it. 
+      //console.log("Didnt match Instance type.  Skipping $" + cost_savings) 
+      //console.log("")
+      cost_savings=0;
+      continue;
+    }
+    else {
+      var current_cost =  (instance_size_map["clouds"][mycloud_type.toString()][myinstance_type.toString()]["cost"]);
+      //console.log("current cost: " + current_cost)
+      if (mynext_instance_size == "N/A")
+       {
+         // means that the next instance is N/A
+        cost_savings=0;
+        continue;
+       }
+       else
+        {
+      var next_instance_cost = (instance_size_map["clouds"][mycloud_type.toString()][mynext_instance_size.toString()]["cost"]);
+      //console.log("next_instance_cost" + next_instance_cost)
+      cost_savings =  (Math.abs(current_cost - next_instance_cost)) * 720
+      }
+
+      //console.log("Estimated Monthly Saving:   $" + cost_savings )
+      }
       calculated_instances.push(
           {
+            account: instance_metrics_free_memory[i]["account"],
             resource_uid: instance_metrics_free_memory[i]["resource_uid"],
             name: instance_metrics_free_memory[i]["name"],
             href: instance_metrics_free_memory[i]["href"],
@@ -454,8 +532,11 @@ for (var i = 0; i < instance_metrics_free_memory.length; i++) {
             max_network_throughput: parseInt(0),
             avg_network_throughput: parseInt(0),
             legacy_id: instance_metrics_free_memory[i]["legacy_id"],
+            cloud_id: instance_metrics_free_memory[i]["cloud_id"],
             region: instance_metrics_free_memory[i]["region"],
             cloud_type: instance_metrics_free_memory[i]["cloud_type"],
+            costs: cost_savings,
+            tags: instance_metrics_free_memory[i]["tags"]
             next_instance_size: instance_metrics_free_memory[i]["next_instance_size"]
           }
         )
@@ -577,51 +658,6 @@ for ( var i = 0; i < calculated_instances.length; i++ ) {
 EOS
 end
 
-datasource "ds_instances_with_calculated_cost_savings" do
-  run_script $js_calculate_savings, $ds_instances_with_calculated_metrics, $ds_instance_size_map
-end
-
-script "js_calculate_savings", type: "javascript" do
-  parameters "calculated_instances", "instance_size_map"
-  result "calculated_savings"
-  code <<-EOS
-  //console.log ("")
-  //console.log("Starting calculations of Cost Savings");
-  for ( var i = 0; i < calculated_instances.length; i++ ) {
-    //console.log(calculated_instances[i]["name"] + " " + calculated_instances[i]["instance_type"]+ "  " + "next size:" + calculated_instances[i]["next_instance_size"])
-    if (calculated_instances[i]["next_instance_size"] == "N/A") {
-        //console.log("Skipping cost calculations")
-        continue;
-    }
-    var cloud_type = calculated_instances[i]["cloud_type"]
-    var instance_type = calculated_instances[i]["instance_type"]
-    var next_instance_size = calculated_instances[i]["next_instance_size"]
-    //console.log("Current Instance" + " Cloud Type: " + cloud_type + " Instance Type:" + instance_type + "")
-    //console.log("Next   Instance"  + " Cloud Type: " + cloud_type + " Instance Type:" + next_instance_size + "")
-    var cost_savings=0;    
-    if (typeof instance_size_map["clouds"][cloud_type.toString()][instance_type.toString()] === 'undefined') {
-        //This means that the instance doesnt exist in the json, so we are skipping it. 
-        //console.log("Didn t match Instance type.  Skipping $" + cost_savings) 
-        //console.log("")
-        continue;
-    }
-        //console.log ("Matched instance type...")
-        // Retrieveing current instance cost
-        var current_cost =  (instance_size_map["clouds"][cloud_type.toString()][instance_type.toString()]["cost"]);
-        //console.log("current cost: " + current_cost )
-        // Retrieveing next instance cost
-        var next_instance_size = (instance_size_map["clouds"][cloud_type.toString()][next_instance_size.toString()]["cost"]);
-        //console.log("Next Instance cost: " + next_instance_size )
-        // Calculating Monthly cost.  AWS uses 720 hours, so we are using that.
-        cost_savings =  (Math.abs(current_cost - next_instance_size)) * 720
-        //console.log("Estimated Monthly Saving:   $" + cost_savings )
-        // Setting cost_saving in the instance
-        calculated_instances[i]["cost"] = cost_savings
-        console.log("")
-   };
-  EOS
- end
-
 resolution "report_downsize_instances_resolution" do
   email $param_email
 end
@@ -630,9 +666,9 @@ escalation "report_downsize_instances" do
   email $param_email
 end
 
-escalation "downsize_instances" do
-  run "downsize_instances", data, $param_alert_options, $param_instance_tag_list, $param_cooldown_days
-end
+# escalation "downsize_instances" do
+#   run "downsize_instances", data, $param_alert_options, $param_instance_tag_list, $param_cooldown_days
+# end
 
 
 define downsize_instances($data,$param_alert_options,$param_instance_tag_list,$param_cooldown_days) do
@@ -684,15 +720,15 @@ policy "policy_rightsize" do
     detail_template <<-EOS
 # {{ len data }} Instances can be downsized
 
-| Instance Name | Resource UID | Average Memory | Free Average Memory | Total Average Memory | Max Free Memory | Max Total Memory | Max CPU Idle | Average CPU Idle | Current Instance Size | New Instance Size | Average Network Throughput | Max Network Throughput  | Estimated Cost Savings |
-| ------- | ------------- | ------------ | -------------- | ------------------- | -------------------- | --------------- | ---------------- | ------------ | ---------------- | --------------------- | ----------------- | ----------------- | ----------------- | ----------------- |
+| Instance Name | Resource UID | Average Memory | Free Average Memory | Total Average Memory | Max Free Memory | Max Total Memory | Max CPU Idle | Average CPU Idle | Current Instance Size | New Instance Size | Average Network Throughput (packets/second) | Max Network Throughput (packets/second)  | Estimated Monthly Cost Savings  | Tags | 
+| ------------- | ------------ | -------------- | ------------------- | -------------------- | --------------- | ---------------- | ------------ | ---------------- | --------------------- | ----------------- | ------------------------------------------- | ---------------------------------------- | ------------------------------- | ---- |
 {{ range data -}}
-  | {{.name}} | {{.resource_uid}} | {{.average_mem_percent}}% | {{.free_avg }}MB | {{.total_avg }}MB | {{.max_free_memory }}MB | {{.max_total_memory }}MB | {{.max_cpu_idle}}% | {{.average_cpu_idle}}% | {{.instance_type}} | {{.next_instance_size}} | {{.avg_network_throughput}} | ${{.cost}} |
+  | [{{.name}}](https://my.rightscale.com/acct/{{.account}}/clouds/{{.cloud_id}}/instances/{{.legacy_id}}) | {{.resource_uid}} | {{.average_mem_percent}}% | {{.free_avg }}MB | {{.total_avg }}MB | {{.max_free_memory }}MB | {{.max_total_memory }}MB | {{.max_cpu_idle}}% | {{.average_cpu_idle}}% | {{.instance_type}} | {{.next_instance_size}} | {{.avg_network_throughput}} | {{.max_network_throughput}} | ${{.costs}} | {{ range $i, $e := .tags }}{{ if $i }}, {{ end }}{{ $e }}{{ end }}|
 {{ end -}}
 
 EOS
     escalate $report_downsize_instances
-    escalate $downsize_instances
+    #escalate $downsize_instances
     resolve $report_downsize_instances_resolution
     check logic_and(eq($param_avg_free_memory_percent, -1), lt(to_n(val(item,"average_mem_percent")), $param_avg_free_memory_percent))
     check logic_and(eq($param_max_free_memory_percent, -1), lt(to_n(val(item,"max_free_memory_avg")),$param_max_free_memory_percent))

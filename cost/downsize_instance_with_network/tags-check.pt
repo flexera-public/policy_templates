@@ -1,0 +1,92 @@
+name "Downsize Instances based on Filters"
+rs_pt_ver 20180301
+type "policy"
+short_description "A policy that downsizes instances based on monitoring metrics. \n See the [README](https://github.com/rightscale/policy_templates/tree/master/cost/downsize_instance) and [docs.rightscale.com/policies](http://docs.rightscale.com/policies/) to learn more."
+long_description "Version: 1.01"
+severity "medium"
+category "Cost"
+
+permission "perm_instances" do
+  label "Permissions for instances"
+  actions "rs_cm.index", "rs_cm.show"
+  resources "rs_cm.instances", "rs_cm.clouds", "rs_cm.instance_types"
+end
+
+permission "perm_monitoring_metrics" do
+  label "Permissions for monitoring metrics"
+  actions "rs_cm.data"
+  resources "rs_cm.monitoring_metrics"
+end
+
+parameter "param_instance_tag_list" do
+  type "list"
+  label "Instance tags used to filter instances that must validate policy. (e.g.: rs_monitoring:state=auth)"
+  min_length 1
+  allowed_pattern /([\w]?)+\:([\w]?)+\=([\w]?)+/
+end
+
+parameter "param_instance_tag_list_exclude" do
+  type "list"
+  label "Instance tags used to EXCLUDE instances. (e.g.: ec2:role:=sap)"
+  min_length 1
+  allowed_pattern /([\w]?)+\:([\w]?)+\=([\w]?)+/
+end
+
+parameter "param_email" do
+  type "list"
+  label "Email addresses of the recipients you wish to notify"
+  #default "tushar.shah@rightscale.com"
+end
+
+auth "auth_rs", type: "rightscale"
+
+resources "clouds", type: "rs_cm.clouds" do
+  filter do # ignore clouds that are NOT represented in instance_types.json
+    cloud_type ne: ["vscale", "soft_layer", "cloud_stack", "rackspace_next_gen", "blue_skies","open_stack_v2","uca","open_stack_v3"]
+  end
+end
+
+resources "instances", type: "rs_cm.instances" do
+  iterate @clouds
+  cloud_href href(iter_item)
+  filter do
+    state "operational"
+  end
+  tags all(any($param_instance_tag_list), "rs_agent:type=right_link_lite",none("rs_downsize:cooldown=*"),none($param_instance_tag_list_exclude))
+  contains([@tags], "SAP")
+end
+
+datasource "myinstances" do
+ iterate @instances
+  field "resource_uid", val(iter_item,  "resource_uid")
+  field "name", val(iter_item, "name")
+  field "href", href(iter_item)
+  field "instance_type", val(iter_item, "instance_type")
+  field "tags", val(iter_item,"tags")
+end
+
+resolution "report_downsize_instances_resolution" do
+  email $param_email
+end
+
+escalation "report_downsize_instances" do
+  email $param_email
+end
+
+  policy "policy_rightsize" do
+  validate_each @instances do
+    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} Instances that can be downsized"
+    detail_template <<-EOS
+# {{ len data }} Instances can be downsized
+
+| Instance Name | Resource UID | Average Memory | Free Average Memory | Total Average Memory | Max Free Memory | Max Total Memory | Max CPU Idle | Average CPU Idle | Current Instance Size | New Instance Size | Average Network Throughput (packets/second) | Max Network Throughput (packets/second)  | Estimated Monthly Cost Savings  | Tags | 
+| ------------- | ------------ | -------------- | ------------------- | -------------------- | --------------- | ---------------- | ------------ | ---------------- | --------------------- | ----------------- | ------------------------------------------- | ---------------------------------------- | ------------------------------- | ---- |
+{{ range data -}}
+  | [{{.name}}](https://my.rightscale.com/acct/{{.account}}/clouds/{{.cloud_id}}/instances/{{.legacy_id}}) | {{.resource_uid}} | {{.average_mem_percent}}% | {{.free_avg }}MB | {{.total_avg }}MB | {{.max_free_memory }}MB | {{.max_total_memory }}MB | {{.max_cpu_idle}}% | {{.average_cpu_idle}}% | {{.instance_type}} | {{.next_instance_size}} | {{.avg_network_throughput}} | {{.max_network_throughput}} | ${{.costs}} | {{ range $i, $e := .tags }}{{ if $i }}, {{ end }}{{ $e }}{{ end }}|
+{{ end -}}
+
+EOS
+    escalate $report_downsize_instances
+    check gt(3, 2)
+  end
+end
