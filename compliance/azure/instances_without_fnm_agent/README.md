@@ -86,7 +86,7 @@ This Policy Template does not incur any cloud costs.
 [APIToken]: images/APIToken.png "APIToken"
 [CreateServeceAccount]: images/CreateServeceAccount.png "Create Service Account"
 [FNMSReport]: images/FNMS_cv_Report.png "FNMS Cloud Instance Report"
-[FilterFNMSReport]: images/Filter_FNMS_Report.png "FNMS Microsoft Azure Instance Report"
+[FilterFNMSReport]: images/Filter_FNMS_Report.PNG "FNMS Microsoft Azure Instance Report"
 [ReportNumber]: images/ReportNumber.png "ReportNumber"
 [WebServiceRole]: images/WebServiceRole.png "WebServiceRole"
 [CMPToken]: images/CMP_NewToken.png "CMP Token"
