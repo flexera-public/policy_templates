@@ -1,5 +1,7 @@
 # Scheduled Report
 
+**As a best practice, this policy should only be applied to the Master Account, and not to each individual RightScale Account.**
+
 This policy allows you to set up scheduled reports that will provide summaries of cloud cost across all resources in the billing centers you specify, delivered to any email addresses you specify. The policy will report the following:
 
 Chart of the previous 6 months of utilization based on whichever [Reporting Dimension](https://docs.rightscale.com/optima/reference/rightscale_dimensions.html) you select (only bill data and RightScale-generated dimensions are supported).  
