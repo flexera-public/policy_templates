@@ -1,3 +1,7 @@
+v1.8
+----
+- Added Approval block
+
 v1.7
 ----
 - Added optional Slack notification support.
