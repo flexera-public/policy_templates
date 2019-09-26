@@ -1,3 +1,7 @@
+v1.4
+----
+- don't raise error if instance type doesn't appear in the mapping
+
 v1.3
 ----
 - added region to output
