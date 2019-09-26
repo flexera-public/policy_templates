@@ -1,13 +1,13 @@
-## Check for Azure instances not running FNMS agent
+## Checks Azure instances that are not running the FlexNet Inventory Agent
 
 ### What it does
 This policy checks all instances running in Azure to determine if the FlexNet Inventory Agent is running on the instance and reports on any that are missing the agent.
-The policy is a report only policy, no action is taken during the Policy Escalation.
+The policy is a recommendation only policy, no action is taken during the Policy Escalation.
 
 ### Functional Details
 The policy leverages the cloud API to get all current instances and the FlexNet Manager report (Custom view) API to get all azure cloud instances with agent. It cross-checks the two lists to determine if any instances are running on the cloud that aren't known to FNM.  The policy matches the ComputerName from FNMS and the VirtualMachine.name from Azure. 
 
-### Pre-reqs
+### Prerequisites
 - FlexNet Manager
 - The following RightScale Credentials
   - 'FNMS_API_Token'
@@ -18,7 +18,7 @@ The policy leverages the cloud API to get all current instances and the FlexNet 
 
 ### Installation
 
-### How to retrive Azure `AZURE_APPLICATION_ID`, `AZURE_APPLICATION_KEY` and `Azure AD Tenant ID`
+#### How to retrive Azure `AZURE_APPLICATION_ID`, `AZURE_APPLICATION_KEY` and `Azure AD Tenant ID`:
 
 1. Follow steps to [Create an Azure Active Directory Application](https://docs.microsoft.com/en-us/azure/azure-resource-manager/resource-group-create-service-principal-portal#create-an-azure-active-directory-application)
 1. Grant the Azure AD Application access to the necessary subscription(s)
@@ -67,6 +67,7 @@ This policy has the following input parameters required when launching the polic
 ### Required RightScale Roles
 
 - `policy_manager`
+- `credential_viewer`
 
 ### Azure Required Permissions
 
