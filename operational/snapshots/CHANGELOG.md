@@ -1,4 +1,8 @@
-V1.3
+v1.5
+----
+- Added Approval block
+
+V1.4
 ----
 - Fix 'undefined' href error for excluded tagged resources.
 

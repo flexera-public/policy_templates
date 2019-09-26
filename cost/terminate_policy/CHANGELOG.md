@@ -1,3 +1,7 @@
+v1.3
+----
+- Added Approval block
+
 v1.2
 -----
 - Removing @current_server because its not needed to terminate
