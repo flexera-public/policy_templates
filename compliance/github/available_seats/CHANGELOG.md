@@ -1,3 +1,7 @@
+v1.5
+----
+- Added tenancy "single" in metadata
+
 v1.4
 -----
 - added support for github pagination

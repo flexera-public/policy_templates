@@ -1,5 +1,9 @@
 # Change log
 
+v1.7
+----
+- Added tenancy "single" in metadata
+
 v1.6
 ----
 - added "Resource Group", "Cloud Vendor", "Cloud Vendor Account", and "Cloud Vendor Account Name" as a dimensions 
