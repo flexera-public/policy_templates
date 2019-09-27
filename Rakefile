@@ -25,7 +25,7 @@ task :generate_policy_list do
         if line =~ /short_description/
           @description = line.split(' ')[1..-1].join(' ').to_s.chomp('"').reverse.chomp('"').reverse.split('.').first
         end
-        if line =~ /category \"((c|C)ompliance|(c|C)ost|(o|O)perational|(s|S)ecurity)(SaaS Manager)\"/
+        if line =~ /category \"((c|C)ompliance|(c|C)ost|(o|O)perational|(s|S)ecurity)|(SaaS Management)\"/
           @category = line.split(' ')[1..-1].join(' ').to_s.chomp('"').reverse.chomp('"').reverse
         end
         if line =~ /severity/
