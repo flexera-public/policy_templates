@@ -1,5 +1,9 @@
 ##AWS RDS Backup Settings Changelog
 
+v1.2
+----
+- Modify existing aws policies to use inferred regions in auth method
+
 v1.1
 ----
 - removing icons from short description as icons break automated documentation
