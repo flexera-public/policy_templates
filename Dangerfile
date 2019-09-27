@@ -21,6 +21,11 @@ if (has_new_policy_template.length != 0) && missing_doc_changes
 end
 
 # checks for broken links in the any file
+exclude_sites = [
+  'https://api.loganalytics.io',
+  'https://management.azure.com/',
+  'https://login.microsoftonline.com/'
+]
 changed_files.each do |file|
  diff = git.diff_for_file(file)
  regex =/(^\+).+?(http|https):\/\/[a-zA-Z0-9.\/?=_-]*.+/
@@ -28,6 +33,7 @@ changed_files.each do |file|
    diff.patch.each_line do |line|
      if line =~ regex
        URI.extract(line,['http','https']).each do |uri|
+         next if exclude_sites.include?(uri)
          uri = URI(uri)
          uri_string = uri.to_s.gsub(')','')
          message "Checking URI #{uri_string}"
