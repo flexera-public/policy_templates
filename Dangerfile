@@ -33,7 +33,7 @@ changed_files.each do |file|
          message "Checking URI #{uri_string}"
          res = Net::HTTP.get_response(uri)
          if res.code != '200'
-           fail "The URI is not valid: #{uri_string} in #{file} Status:#{res.code}"
+           fail "The URI is not valid: #{uri_string} in #{file} Status: #{res.code}"
          end
        end
      end
