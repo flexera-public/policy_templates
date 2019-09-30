@@ -1,4 +1,4 @@
-## Checks Azure instances that are not running the FlexNet Inventory Agent
+## Azure Instances not running FlexNet Inventory Agent
 
 ### What it does
 This policy checks all instances running in Azure to determine if the FlexNet Inventory Agent is running on the instance and reports on any that are missing the agent.
@@ -78,7 +78,8 @@ This policy has the following input parameters required when launching the polic
 - Azure
 
 ### Policy Actions
-No actions
+
+- Send an email report
 
 ### Cost
 This Policy Template does not incur any cloud costs.

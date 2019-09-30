@@ -86,7 +86,7 @@ Please contact sales@rightscale.com to learn more.
 - [Unapproved Instance Types](./compliance/unapproved_instance_types/)
 - [Azure Subscription Access](./compliance/azure/subscription_access/)
 - [Azure AHUB Utilization with Manual Entry](./compliance/azure/ahub_manual/)
-- [Checks Azure instances that are not running the FlexNet Inventory Agent](./compliance/azure/instances_without_fnm_agent/)
+- [Azure Instances not running FlexNet Inventory Agent](./compliance/azure/instances_without_fnm_agent/)
 
 ### Operational
 
