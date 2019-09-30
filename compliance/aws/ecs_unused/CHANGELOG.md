@@ -1,6 +1,6 @@
 v1.2
 ----
-- Modify existing aws policies to use inferred regions in auth method
+- Use inferred regions in auth method
 
 v1.1
 ----
