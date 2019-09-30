@@ -39,7 +39,7 @@ Please contact sales@rightscale.com to learn more.
 - [Superseded Instance Remediation](./cost/superseded_instance_remediation/)
 - [AWS S3 Buckets without Server Access Logging](./security/storage/aws/s3_buckets_without_server_access_logging/)
 - [AWS Burstable Instance CloudWatch Utilization](./cost/aws/burstable_instance_cloudwatch_credit_utilization/)
-- [AWS Bucket Size Check](/.cost/aws/s3_bucket_size/)
+- [AWS Bucket Size Check](./cost/aws/s3_bucket_size/)
 - [AWS Idle Compute Instances](./cost/aws/idle_compute_instances/)
 - [Google Idle Compute Instances](./cost/google/idle_compute_instances/)
 - [AWS Object Storage Optimization](./cost/aws/object_storage_optimization/)
@@ -86,6 +86,7 @@ Please contact sales@rightscale.com to learn more.
 - [Unapproved Instance Types](./compliance/unapproved_instance_types/)
 - [Azure Subscription Access](./compliance/azure/subscription_access/)
 - [Azure AHUB Utilization with Manual Entry](./compliance/azure/ahub_manual/)
+- [Azure Instances not running FlexNet Inventory Agent](./compliance/azure/instances_without_fnm_agent/)
 
 ### Operational
 
