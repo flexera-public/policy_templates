@@ -35,14 +35,13 @@ changed_files.each do |file|
  if diff && diff.patch =~ regex
    diff.patch.each_line do |line|
      if line =~ regex
-       URI.extract(line,['http','https']).each do |uri|
-         next if exclude_hosts.include?(uri.scan(URI.regexp)[0][3])
-         uri = URI(uri)
-         uri_string = uri.to_s.gsub(')','')
-         message "Checking URI #{uri_string}"
-         res = Net::HTTP.get_response(uri)
+       URI.extract(line,['http','https']).each do |url|
+         next if exclude_hosts.include?(url.scan(URI.regexp)[0][3])
+         url = URI(url)
+         url_string = url.to_s.gsub(')','')
+         res = Net::HTTP.get_response(url)
          if res.code != '200'
-           fail "The URI is not valid: #{uri_string} in #{file} Status: #{res.code}"
+           fail "The URL is not valid: #{url_string} in #{file} Status: #{res.code}"
          end
        end
      end
