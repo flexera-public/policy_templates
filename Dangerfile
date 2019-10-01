@@ -21,10 +21,13 @@ if (has_new_policy_template.length != 0) && missing_doc_changes
 end
 
 # checks for broken links in the any file
-exclude_sites = [
-  'https://api.loganalytics.io',
-  'https://management.azure.com/',
-  'https://login.microsoftonline.com/'
+# exclude api and auth hostnames
+exclude_hosts = [
+  'api.loganalytics.io',
+  'management.azure.com',
+  'login.microsoftonline.com',
+  'oauth2.googleapis.com',
+  'www.googleapis.com'
 ]
 changed_files.each do |file|
  diff = git.diff_for_file(file)
@@ -33,7 +36,7 @@ changed_files.each do |file|
    diff.patch.each_line do |line|
      if line =~ regex
        URI.extract(line,['http','https']).each do |uri|
-         next if exclude_sites.include?(uri)
+         next if exclude_hosts.include?(uri.scan(URI.regexp)[0][3])
          uri = URI(uri)
          uri_string = uri.to_s.gsub(')','')
          message "Checking URI #{uri_string}"
@@ -46,6 +49,37 @@ changed_files.each do |file|
    end
  end
 end
+
+# check for valid category values.
+# must be one of the following categories
+# when adding a new category update the Rakefile generate_policy_list task and
+# docs.rightscale.com/policies/users/policy_list.html.shim also.
+categories = [
+  'cost',
+  'compliance',
+  'operational',
+  'saas management',
+  'security'
+].sort
+changed_files.each do |file|
+ diff = git.diff_for_file(file)
+ regex =/^\+category/
+
+ #message diff.patch
+ if diff && diff.patch =~ regex
+
+   diff.patch.each_line do |line|
+     #message line
+     if line =~ regex
+       category = line.split(' ')[1..-1].join(' ').to_s.chomp('"').reverse.chomp('"').reverse
+       if !categories.include?(category.downcase)
+         fail "The Category is not valid: #{category}.  Valid Categories include #{categories.join(", ")}"
+       end
+    end
+   end
+ end
+end
+
 
 fail 'Please provide a summary of your Pull Request.' if github.pr_body.length < 10
 
