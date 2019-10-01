@@ -1,3 +1,7 @@
+v1.9
+----
+- Use inferred regions in auth method
+
 v1.8
 ----
 - Added Approval block
