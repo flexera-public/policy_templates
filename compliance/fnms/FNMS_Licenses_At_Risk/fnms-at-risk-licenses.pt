@@ -1,0 +1,154 @@
+name "FNMS - Licenses At Risk"
+rs_pt_ver 20180301
+type "policy"
+short_description "Scan the Licenses At Risk report in FlexNet Manager and raise an incident for any license identified as \"At Risk\"" 
+long_description "Version 0.2"
+severity "medium"
+category "Compliance"
+
+parameter "param_teams_webhook" do
+  category "Microsoft Teams Settings (Optional)"
+  type "string"
+  label "(Optional) Name of RightScale credential that contains the Teams webhook URL"
+  default "TEAMS_WEBHOOK"
+end
+
+parameter "param_slack_channel" do
+  category "Slack Channel Settings (Optional)"
+  type "string"
+  label "(Optional) Slack channel name including the \"#\""
+  default "#demo-bot"
+end
+
+parameter "param_slack_webhook_cred" do
+  category "Slack Channel Settings (Optional)"
+  type "string"
+  label "(Optional) Name of RightScale credential that contains the Slack webhook URL"
+  default "SLACK_WEBHOOK"
+end
+
+parameter "param_report_id" do
+  type "string"
+  label "FNMS Report ID"
+  default "8605"
+end
+
+parameter "param_email" do
+  type "list"
+  label "Email addresses of the recipients you wish to notify"
+end
+
+auth "api_key_auth", type: "api_key" do
+  location "header"
+  field "Authorization"
+  type "Bearer"
+  key cred("FNMS_CLOUD_DEMO_TOKEN")
+end
+
+datasource 'fnms_report' do
+  request do
+    auth $api_key_auth
+    host "www.flexnetmanager.com"
+    path '/ManageSoftServices/ComplianceAPIService/ComplianceAPIService.asmx'
+    verb 'POST'
+    scheme 'https'
+    header "Content-Type",'text/xml;charset=utf-8'
+    body '<?xml version="1.0" encoding="utf-8"?>
+    <soap:Envelope xmlns:soap="http://www.w3.org/2003/05/soap-envelope" xmlns:tem="http://tempuri.org/">
+      <soap:Body>
+        <tem:GetCustomView>
+          <tem:customViewID>',$param_report_id,'</tem:customViewID>
+          <tem:rowLimit>1000</tem:rowLimit>
+        </tem:GetCustomView>
+      </soap:Body>
+    </soap:Envelope>'
+  end
+  result do
+    encoding "xml"
+    collect xpath(response,"//NewDataSet/SearchResults") do
+      field "name", xpath(col_item, "Name")
+      field "edition", xpath(col_item, "Edition")
+      field "version", xpath(col_item, "Version")
+      field "available_licenses", xpath(col_item, "NumberAvailable")
+    end
+  end
+end
+
+
+policy 'fnms_policy' do
+  validate $fnms_report do
+    summary_template 'FNMS - Software Licenses At Risk'
+    detail_template <<-EOS
+| Name | Edition | Version | Shortfall / Availability |
+| ---- | ------- | ------- | ------------------------ |
+{{ range data -}}
+| {{ .name }} | {{ .edition }} | {{ .version }} | {{ .available_licenses }} |
+{{ end -}}
+EOS
+    escalate $send_report
+    escalate $teams_notification
+    check eq(size(data), 0)
+  end
+end
+
+escalation "send_report" do 
+  email $param_email
+end 
+
+escalation "teams_notification" do 
+  run "send_teams", data, $param_teams_webhook, $param_slack_channel, $param_slack_webhook_cred
+end 
+
+define send_teams($data, $param_teams_webhook, $param_slack_channel, $param_slack_webhook_cred)  do
+
+  if ($param_slack_channel != "") && ($param_slack_webhook_cred != "")
+    $channel = $param_slack_channel
+    $slack_channel_hook = cred($param_slack_webhook_cred)
+
+    # Build slack message from data
+
+    foreach $item in $data do
+      $message = "*" + $item["name"] + "* license is At Risk. Available license count is " + $item["available_licenses"]
+
+      # Send the message to slack
+      $response = http_post(
+          url: $slack_channel_hook,
+          body: {
+              channel: $channel,
+              text: $message,
+              icon_emoji: ":flexera:",
+            username: "Flexera Policy Engine"
+          }
+      )
+    end
+  end
+
+  if ($param_teams_webhook != "")
+    $teams_hook = cred($param_teams_webhook)
+
+    $facts = []
+    
+    foreach $item in $data do
+      $object = {}
+      $object["name"] = $item["name"]
+      $object["value"] = $item["available_licenses"]
+      $facts << $object
+    end
+
+    # Send the message to Teams
+    $response = http_post(
+      url: $teams_hook,
+      body: {
+        "@type": "MessageCard",
+        "@context": "http://schema.org/extensions",
+        "themeColor": "0076D7",
+        "summary": "FNMS Report",
+        "sections": [{
+          "activityTitle": "Licenses At Risk",
+            "facts": $facts,
+            "markdown": true
+          }]
+        }
+    )
+  end
+end
