@@ -43,6 +43,13 @@ This policy has the following input parameters required when launching the polic
 
 - Azure Resource Manager
 
+### Observation Period
+
+By default, this policy calculates utilization over a 30 day period.  
+
+To calculate over a different period of time, you can update the policy template.  
+Replace the `30` wherever you see `query "timespan","P30D"` with the new number of days you want to use.
+
 ### Cost
 
 This Policy Template does not incur any cloud costs.

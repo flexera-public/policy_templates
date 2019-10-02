@@ -1,3 +1,7 @@
+v1.6
+----
+- Added Approval block
+
 v1.5
 ----
 - Simplified logic such that the policy checks to see if there are already more than one keys for the IAM user and then removes a key before trying to create a new key.

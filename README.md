@@ -8,7 +8,7 @@ Please contact sales@rightscale.com to learn more.
 
 ### Cost
 
-- [AWS Reserved Instance Expiration](./cost/aws/reserved_instances/expiration/)
+- [AWS Expiring Reserved Instances](./cost/aws/reserved_instances/expiration/)
 - [AWS Reserved Instances Utilization](./cost/aws/reserved_instances/utilization/)
 - [AWS Reserved Instance Reservation Coverage](./cost/aws/reserved_instances/coverage/)
 - [AWS Reserved Instances Report by Billing Center](./cost/aws/reserved_instances/report_by_bc)
@@ -25,7 +25,7 @@ Please contact sales@rightscale.com to learn more.
 - [Azure Reserved Instance Utilization](./cost/azure/reserved_instances/utilization/)
 - [Azure Reserved Instance Recommendations](./cost/azure/reserved_instances/recommendations)
 - [Billing Center Cost Anomaly](./cost/billing_center_cost_anomaly/)
-- [Google Committed Use Discount (CUD) Report](./cost/google/cud_report/)
+- [Google Committed Use Discount (CUD)](./cost/google/cud_report/)
 - [AWS Delete Unused Elastic Load Balancers (CLB)](./cost/aws/elb/clb_unused/)
 - [Cheaper Regions](./cost/cheaper_regions/)
 - [Low Account Usage](./cost/low_account_usage/)
@@ -39,8 +39,19 @@ Please contact sales@rightscale.com to learn more.
 - [Superseded Instance Remediation](./cost/superseded_instance_remediation/)
 - [AWS S3 Buckets without Server Access Logging](./security/storage/aws/s3_buckets_without_server_access_logging/)
 - [AWS Burstable Instance CloudWatch Utilization](./cost/aws/burstable_instance_cloudwatch_credit_utilization/)
-- [AWS Bucket Size Check](/.cost/aws/s3_bucket_size/)
-- [AWS Idle Compute Instances](./cost/aws/idle_compute_instances/idle_compute_instances.pt)
+- [AWS Bucket Size Check](./cost/aws/s3_bucket_size/)
+- [AWS Idle Compute Instances](./cost/aws/idle_compute_instances/)
+- [Google Idle Compute Instances](./cost/google/idle_compute_instances/)
+- [AWS Object Storage Optimization](./cost/aws/object_storage_optimization/)
+- [AWS Unused RDS Instances](./cost/aws/unused_rds/)
+- [AWS RDS Instances RightSizing](./cost/aws/rds_instance_cloudwatch_utilization)
+- [Azure Blob Storage Optimization](./cost/azure/object_storage_optimization/)
+- [Google Object Storage Optimization](./cost/google/object_storage_optimization/)
+- [Azure Rightsize SQL Instances](./cost/azure/rightsize_sql_instances/)
+- [Google Expiring Committed Use Discount (CUD)](./cost/google/cud_expiration/)
+- [Azure Expiring Reserved Instances](./cost/azure/reserved_instances/expiration)
+- [Azure Idle Compute Instances](./cost/azure/idle_compute_instances/)
+- [Google CloudSQL RightSizing](./cost/google/cloudsql_rightsizing/)
 
 ### Security
 
@@ -76,6 +87,7 @@ Please contact sales@rightscale.com to learn more.
 - [Unapproved Instance Types](./compliance/unapproved_instance_types/)
 - [Azure Subscription Access](./compliance/azure/subscription_access/)
 - [Azure AHUB Utilization with Manual Entry](./compliance/azure/ahub_manual/)
+- [Azure Instances not running FlexNet Inventory Agent](./compliance/azure/instances_without_fnm_agent/)
 
 ### Operational
 

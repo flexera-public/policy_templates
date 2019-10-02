@@ -1,3 +1,7 @@
+v1.5
+----
+- Added Approval block
+
 v1.4
 ----
 - Fixing Readme

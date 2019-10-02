@@ -2,7 +2,7 @@ name "AWS RDS Backup Settings"
 rs_pt_ver 20180301
 type "policy"
 short_description "Checks for RDS Instances that have unapproved backup settings. \n See the [README](https://github.com/rightscale/policy_templates/tree/master/operational/dbaas/aws/rds_backup) and [docs.rightscale.com/policies](http://docs.rightscale.com/policies/) to learn more."
-long_description "Version: 1.1"
+long_description "Version: 1.2"
 severity "medium"
 category "Operational"
 
@@ -28,125 +28,13 @@ parameter "param_backup_window" do
   label "RDS Backup Window (HH:MM-HH:MM)"
 end
 
-auth "rds_us_east_2", type: "aws" do
+auth "auth_aws", type: "aws" do
   version 4
   service 'rds'
-  region 'us-east-2'
   access_key cred('AWS_ACCESS_KEY_ID')
   secret_key cred('AWS_SECRET_ACCESS_KEY')
 end
 
-auth "rds_us_east_1", type: "aws" do
-  version 4
-  service 'rds'
-  region 'us-east-1'
-  access_key cred('AWS_ACCESS_KEY_ID')
-  secret_key cred('AWS_SECRET_ACCESS_KEY')
-end
-
-auth "rds_us_west_1", type: "aws" do
-  version 4
-  service 'rds'
-  region 'us-west-1'
-  access_key cred('AWS_ACCESS_KEY_ID')
-  secret_key cred('AWS_SECRET_ACCESS_KEY')
-end
-
-auth "rds_us_west_2", type: "aws" do
-  version 4
-  service 'rds'
-  region 'us-west-2'
-  access_key cred('AWS_ACCESS_KEY_ID')
-  secret_key cred('AWS_SECRET_ACCESS_KEY')
-end
-
-auth "rds_ca_central_1", type: "aws" do
-  version 4
-  service 'rds'
-  region 'ca-central-1'
-  access_key cred('AWS_ACCESS_KEY_ID')
-  secret_key cred('AWS_SECRET_ACCESS_KEY')
-end
-
-auth "rds_ap_south_1", type: "aws" do
-  version 4
-  service 'rds'
-  region 'ap-south-1'
-  access_key cred('AWS_ACCESS_KEY_ID')
-  secret_key cred('AWS_SECRET_ACCESS_KEY')
-end
-
-auth "rds_ap_northeast_2", type: "aws" do
-  version 4
-  service 'rds'
-  region 'ap-northeast-2'
-  access_key cred('AWS_ACCESS_KEY_ID')
-  secret_key cred('AWS_SECRET_ACCESS_KEY')
-end
-
-auth "rds_ap_southeast_1", type: "aws" do
-  version 4
-  service 'rds'
-  region 'ap-southeast-1'
-  access_key cred('AWS_ACCESS_KEY_ID')
-  secret_key cred('AWS_SECRET_ACCESS_KEY')
-end
-
-auth "rds_ap_southeast_2", type: "aws" do
-  version 4
-  service 'rds'
-  region 'ap-southeast-2'
-  access_key cred('AWS_ACCESS_KEY_ID')
-  secret_key cred('AWS_SECRET_ACCESS_KEY')
-end
-
-auth "rds_ap_northeast_1", type: "aws" do
-  version 4
-  service 'rds'
-  region 'ap-northeast-1'
-  access_key cred('AWS_ACCESS_KEY_ID')
-  secret_key cred('AWS_SECRET_ACCESS_KEY')
-end
-
-auth "rds_eu_central_1", type: "aws" do
-  version 4
-  service 'rds'
-  region 'eu-central-1'
-  access_key cred('AWS_ACCESS_KEY_ID')
-  secret_key cred('AWS_SECRET_ACCESS_KEY')
-end
-
-auth "rds_eu_west_1", type: "aws" do
-  version 4
-  service 'rds'
-  region 'eu-west-1'
-  access_key cred('AWS_ACCESS_KEY_ID')
-  secret_key cred('AWS_SECRET_ACCESS_KEY')
-end
-
-auth "rds_eu_west_2", type: "aws" do
-  version 4
-  service 'rds'
-  region 'eu-west-2'
-  access_key cred('AWS_ACCESS_KEY_ID')
-  secret_key cred('AWS_SECRET_ACCESS_KEY')
-end
-
-auth "rds_eu_west_3", type: "aws" do
-  version 4
-  service 'rds'
-  region 'eu-west-3'
-  access_key cred('AWS_ACCESS_KEY_ID')
-  secret_key cred('AWS_SECRET_ACCESS_KEY')
-end
-
-auth "rds_sa_east_1", type: "aws" do
-  version 4
-  service 'rds'
-  region 'sa-east-1'
-  access_key cred('AWS_ACCESS_KEY_ID')
-  secret_key cred('AWS_SECRET_ACCESS_KEY')
-end
 
 pagination "rds_pagination" do
   get_page_marker do
@@ -157,33 +45,26 @@ pagination "rds_pagination" do
   end
 end
 
-datasource "us_east_1_instances" do
+###############################################################################
+# Datasources
+###############################################################################
+
+#Generates list of Regions
+datasource "ds_regions_list" do
   request do
-    auth $rds_us_east_1
-    pagination $rds_pagination
-    host "rds.us-east-1.amazonaws.com"
-    path "/"
-    query "Action", "DescribeDBInstances"
-    query "MaxRecords", "100"
-    query "Version", "2014-09-01"
+    verb "GET"
+    host "raw.githubusercontent.com"
+    path "/rightscale/policy_templates/master/data/aws/regions.json"
     header "User-Agent", "RS Policies"
-  end
-  result do
-    encoding "xml"
-    collect xpath(response, "//DescribeDBInstancesResult/DBInstances/DBInstance", "array") do
-      field "identifier", xpath(col_item,"DBInstanceIdentifier")
-      field "retention_period", xpath(col_item, "BackupRetentionPeriod")
-      field "window", xpath(col_item, "PreferredBackupWindow")
-      field "az", xpath(col_item, "AvailabilityZone")
-    end
   end
 end
 
-datasource "us_east_2_instances" do
+datasource "ds_dbinstances" do
+  iterate $ds_regions_list
   request do
-    auth $rds_us_east_2
+    auth $auth_aws
     pagination $rds_pagination
-    host "rds.us-east-2.amazonaws.com"
+    host join(["rds.",val(iter_item,"region"),".amazonaws.com"])
     path "/"
     query "Action", "DescribeDBInstances"
     query "MaxRecords", "100"
@@ -197,470 +78,36 @@ datasource "us_east_2_instances" do
       field "retention_period", xpath(col_item, "BackupRetentionPeriod")
       field "window", xpath(col_item, "PreferredBackupWindow")
       field "az", xpath(col_item, "AvailabilityZone")
-    end
-  end
-end
-
-datasource "us_west_1_instances" do
-  request do
-    auth $rds_us_west_1
-    pagination $rds_pagination
-    host "rds.us-west-1.amazonaws.com"
-    path "/"
-    query "Action", "DescribeDBInstances"
-    query "MaxRecords", "100"
-    query "Version", "2014-09-01"
-    header "User-Agent", "RS Policies"
-  end
-  result do
-    encoding "xml"
-    collect xpath(response, "//DescribeDBInstancesResult/DBInstances/DBInstance", "array") do
-      field "identifier", xpath(col_item,"DBInstanceIdentifier")
-      field "retention_period", xpath(col_item, "BackupRetentionPeriod")
-      field "window", xpath(col_item, "PreferredBackupWindow")
-      field "az", xpath(col_item, "AvailabilityZone")
-    end
-  end
-end
-
-datasource "us_west_2_instances" do
-  request do
-    auth $rds_us_west_2
-    pagination $rds_pagination
-    host "rds.us-west-2.amazonaws.com"
-    path "/"
-    query "Action", "DescribeDBInstances"
-    query "MaxRecords", "100"
-    query "Version", "2014-09-01"
-    header "User-Agent", "RS Policies"
-  end
-  result do
-    encoding "xml"
-    collect xpath(response, "//DescribeDBInstancesResult/DBInstances/DBInstance", "array") do
-      field "identifier", xpath(col_item,"DBInstanceIdentifier")
-      field "retention_period", xpath(col_item, "BackupRetentionPeriod")
-      field "window", xpath(col_item, "PreferredBackupWindow")
-      field "az", xpath(col_item, "AvailabilityZone")
-    end
-  end
-end
-
-datasource "ca_central_1_instances" do
-  request do
-    auth $rds_ca_central_1
-    pagination $rds_pagination
-    host "rds.ca-central-1.amazonaws.com"
-    path "/"
-    query "Action", "DescribeDBInstances"
-    query "MaxRecords", "100"
-    query "Version", "2014-09-01"
-    header "User-Agent", "RS Policies"
-  end
-  result do
-    encoding "xml"
-    collect xpath(response, "//DescribeDBInstancesResult/DBInstances/DBInstance", "array") do
-      field "identifier", xpath(col_item,"DBInstanceIdentifier")
-      field "retention_period", xpath(col_item, "BackupRetentionPeriod")
-      field "window", xpath(col_item, "PreferredBackupWindow")
-      field "az", xpath(col_item, "AvailabilityZone")
-    end
-  end
-end
-
-datasource "ap_south_1_instances" do
-  request do
-    auth $rds_ap_south_1
-    pagination $rds_pagination
-    host "rds.ap-south-1.amazonaws.com"
-    path "/"
-    query "Action", "DescribeDBInstances"
-    query "MaxRecords", "100"
-    query "Version", "2014-09-01"
-    header "User-Agent", "RS Policies"
-  end
-  result do
-    encoding "xml"
-    collect xpath(response, "//DescribeDBInstancesResult/DBInstances/DBInstance", "array") do
-      field "identifier", xpath(col_item,"DBInstanceIdentifier")
-      field "retention_period", xpath(col_item, "BackupRetentionPeriod")
-      field "window", xpath(col_item, "PreferredBackupWindow")
-      field "az", xpath(col_item, "AvailabilityZone")
-    end
-  end
-end
-
-datasource "ap_northeast_1_instances" do
-  request do
-    auth $rds_ap_northeast_1
-    pagination $rds_pagination
-    host "rds.ap-northeast-1.amazonaws.com"
-    path "/"
-    query "Action", "DescribeDBInstances"
-    query "MaxRecords", "100"
-    query "Version", "2014-09-01"
-    header "User-Agent", "RS Policies"
-  end
-  result do
-    encoding "xml"
-    collect xpath(response, "//DescribeDBInstancesResult/DBInstances/DBInstance", "array") do
-      field "identifier", xpath(col_item,"DBInstanceIdentifier")
-      field "retention_period", xpath(col_item, "BackupRetentionPeriod")
-      field "window", xpath(col_item, "PreferredBackupWindow")
-      field "az", xpath(col_item, "AvailabilityZone")
-    end
-  end
-end
-
-datasource "ap_northeast_2_instances" do
-  request do
-    auth $rds_ap_northeast_2
-    pagination $rds_pagination
-    host "rds.ap-northeast-2.amazonaws.com"
-    path "/"
-    query "Action", "DescribeDBInstances"
-    query "MaxRecords", "100"
-    query "Version", "2014-09-01"
-    header "User-Agent", "RS Policies"
-  end
-  result do
-    encoding "xml"
-    collect xpath(response, "//DescribeDBInstancesResult/DBInstances/DBInstance", "array") do
-      field "identifier", xpath(col_item,"DBInstanceIdentifier")
-      field "retention_period", xpath(col_item, "BackupRetentionPeriod")
-      field "window", xpath(col_item, "PreferredBackupWindow")
-      field "az", xpath(col_item, "AvailabilityZone")
-    end
-  end
-end
-
-datasource "ap_southeast_1_instances" do
-  request do
-    auth $rds_ap_southeast_1
-    pagination $rds_pagination
-    host "rds.ap-southeast-1.amazonaws.com"
-    path "/"
-    query "Action", "DescribeDBInstances"
-    query "MaxRecords", "100"
-    query "Version", "2014-09-01"
-    header "User-Agent", "RS Policies"
-  end
-  result do
-    encoding "xml"
-    collect xpath(response, "//DescribeDBInstancesResult/DBInstances/DBInstance", "array") do
-      field "identifier", xpath(col_item,"DBInstanceIdentifier")
-      field "retention_period", xpath(col_item, "BackupRetentionPeriod")
-      field "window", xpath(col_item, "PreferredBackupWindow")
-      field "az", xpath(col_item, "AvailabilityZone")
-    end
-  end
-end
-
-datasource "ap_southeast_2_instances" do
-  request do
-    auth $rds_ap_southeast_2
-    pagination $rds_pagination
-    host "rds.ap-southeast-2.amazonaws.com"
-    path "/"
-    query "Action", "DescribeDBInstances"
-    query "MaxRecords", "100"
-    query "Version", "2014-09-01"
-    header "User-Agent", "RS Policies"
-  end
-  result do
-    encoding "xml"
-    collect xpath(response, "//DescribeDBInstancesResult/DBInstances/DBInstance", "array") do
-      field "identifier", xpath(col_item,"DBInstanceIdentifier")
-      field "retention_period", xpath(col_item, "BackupRetentionPeriod")
-      field "window", xpath(col_item, "PreferredBackupWindow")
-      field "az", xpath(col_item, "AvailabilityZone")
-    end
-  end
-end
-
-datasource "eu_central_1_instances" do
-  request do
-    auth $rds_eu_central_1
-    pagination $rds_pagination
-    host "rds.eu-central-1.amazonaws.com"
-    path "/"
-    query "Action", "DescribeDBInstances"
-    query "MaxRecords", "100"
-    query "Version", "2014-09-01"
-    header "User-Agent", "RS Policies"
-  end
-  result do
-    encoding "xml"
-    collect xpath(response, "//DescribeDBInstancesResult/DBInstances/DBInstance", "array") do
-      field "identifier", xpath(col_item,"DBInstanceIdentifier")
-      field "retention_period", xpath(col_item, "BackupRetentionPeriod")
-      field "window", xpath(col_item, "PreferredBackupWindow")
-      field "az", xpath(col_item, "AvailabilityZone")
-    end
-  end
-end
-
-datasource "eu_west_1_instances" do
-  request do
-    auth $rds_eu_west_1
-    pagination $rds_pagination
-    host "rds.eu-west-1.amazonaws.com"
-    path "/"
-    query "Action", "DescribeDBInstances"
-    query "MaxRecords", "100"
-    query "Version", "2014-09-01"
-    header "User-Agent", "RS Policies"
-  end
-  result do
-    encoding "xml"
-    collect xpath(response, "//DescribeDBInstancesResult/DBInstances/DBInstance", "array") do
-      field "identifier", xpath(col_item,"DBInstanceIdentifier")
-      field "retention_period", xpath(col_item, "BackupRetentionPeriod")
-      field "window", xpath(col_item, "PreferredBackupWindow")
-      field "az", xpath(col_item, "AvailabilityZone")
-    end
-  end
-end
-
-datasource "eu_west_2_instances" do
-  request do
-    auth $rds_eu_west_2
-    pagination $rds_pagination
-    host "rds.eu-west-2.amazonaws.com"
-    path "/"
-    query "Action", "DescribeDBInstances"
-    query "MaxRecords", "100"
-    query "Version", "2014-09-01"
-    header "User-Agent", "RS Policies"
-  end
-  result do
-    encoding "xml"
-    collect xpath(response, "//DescribeDBInstancesResult/DBInstances/DBInstance", "array") do
-      field "identifier", xpath(col_item,"DBInstanceIdentifier")
-      field "retention_period", xpath(col_item, "BackupRetentionPeriod")
-      field "window", xpath(col_item, "PreferredBackupWindow")
-      field "az", xpath(col_item, "AvailabilityZone")
-    end
-  end
-end
-
-datasource "eu_west_3_instances" do
-  request do
-    auth $rds_eu_west_3
-    pagination $rds_pagination
-    host "rds.eu-west-3.amazonaws.com"
-    path "/"
-    query "Action", "DescribeDBInstances"
-    query "MaxRecords", "100"
-    query "Version", "2014-09-01"
-    header "User-Agent", "RS Policies"
-  end
-  result do
-    encoding "xml"
-    collect xpath(response, "//DescribeDBInstancesResult/DBInstances/DBInstance", "array") do
-      field "identifier", xpath(col_item,"DBInstanceIdentifier")
-      field "retention_period", xpath(col_item, "BackupRetentionPeriod")
-      field "window", xpath(col_item, "PreferredBackupWindow")
-      field "az", xpath(col_item, "AvailabilityZone")
-    end
-  end
-end
-
-datasource "sa_east_1_instances" do
-  request do
-    auth $rds_sa_east_1
-    pagination $rds_pagination
-    host "rds.sa-east-1.amazonaws.com"
-    path "/"
-    query "Action", "DescribeDBInstances"
-    query "MaxRecords", "100"
-    query "Version", "2014-09-01"
-    header "User-Agent", "RS Policies"
-  end
-  result do
-    encoding "xml"
-    collect xpath(response, "//DescribeDBInstancesResult/DBInstances/DBInstance", "array") do
-      field "identifier", xpath(col_item,"DBInstanceIdentifier")
-      field "retention_period", xpath(col_item, "BackupRetentionPeriod")
-      field "window", xpath(col_item, "PreferredBackupWindow")
-      field "az", xpath(col_item, "AvailabilityZone")
+	  field "region", val(iter_item,"region")
     end
   end
 end
 
 datasource "all_rds" do
-  run_script $parse_rds, $us_east_1_instances, $us_east_2_instances, $us_west_1_instances, $us_west_2_instances, $ca_central_1_instances, $ap_south_1_instances, $ap_northeast_1_instances, $ap_northeast_2_instances, $ap_southeast_1_instances, $ap_southeast_2_instances, $eu_central_1_instances, $eu_west_1_instances, $eu_west_2_instances, $eu_west_3_instances, $sa_east_1_instances
+  run_script $parse_rds, $ds_dbinstances
 end
 
+###############################################################################
+# Scripts
+###############################################################################
+
 script "parse_rds", type: "javascript" do
-  parameters "us_east_1_instances","us_east_2_instances","us_west_1_instances","us_west_2_instances","ca_central_1_instances","ap_south_1_instances","ap_northeast_1_instances","ap_northeast_2_instances","ap_southeast_1_instances","ap_southeast_2_instances","eu_central_1_instances","eu_west_1_instances","eu_west_2_instances","eu_west_3_instances","sa_east_1_instances"
+  parameters "ds_dbinstances"
   result "results"
   code <<-EOS
 results = []
-for ( i = 0; i < us_east_1_instances.length; i++ ) {
+for ( i = 0; i < ds_dbinstances.length; i++ ) {
   results.push(
   {
-    "identifier": us_east_1_instances[i]["identifier"],
-    "retention_period": us_east_1_instances[i]["retention_period"],
-    "window": us_east_1_instances[i]["window"],
-    "region": "us-east-1",
-    "az": us_east_1_instances[i]["az"]
+    "identifier": ds_dbinstances[i]["identifier"],
+    "retention_period": ds_dbinstances[i]["retention_period"],
+    "window": ds_dbinstances[i]["window"],
+    "region": ds_dbinstances[i]["region"],
+    "az": ds_dbinstances[i]["az"]
   }
   )
 }
-for ( i = 0; i < us_east_2_instances.length; i++ ) {
-  results.push(
-  {
-    "identifier": us_east_2_instances[i]["identifier"],
-    "retention_period": us_east_2_instances[i]["retention_period"],
-    "window": us_east_2_instances[i]["window"],
-    "region": "us-east-2",
-    "az": us_east_2_instances[i]["az"]
-  }
-  )
-}
-for ( i = 0; i < us_west_1_instances.length; i++ ) {
-  results.push(
-  {
-    "identifier": us_west_1_instances[i]["identifier"],
-    "retention_period": us_west_1_instances[i]["retention_period"],
-    "window": us_west_1_instances[i]["window"],
-    "region": "us-west-1",
-    "az": us_west_1_instances[i]["az"]
-  }
-  )
-}
-for ( i = 0; i < us_west_2_instances.length; i++ ) {
-  results.push(
-  {
-    "identifier": us_west_2_instances[i]["identifier"],
-    "retention_period": us_west_2_instances[i]["retention_period"],
-    "window": us_west_2_instances[i]["window"],
-    "region": "us-west-2",
-    "az": us_west_2_instances[i]["az"]
-  }
-  )
-}
-for ( i = 0; i < ca_central_1_instances.length; i++ ) {
-  results.push(
-  {
-    "identifier": ca_central_1_instances[i]["identifier"],
-    "retention_period": ca_central_1_instances[i]["retention_period"],
-    "window": ca_central_1_instances[i]["window"],
-    "region": "ca-central-1",
-    "az": ca_central_1_instances[i]["az"]
-  }
-  )
-}
-for ( i = 0; i < ap_south_1_instances.length; i++ ) {
-  results.push(
-  {
-    "identifier": ap_south_1_instances[i]["identifier"],
-    "retention_period": ap_south_1_instances[i]["retention_period"],
-    "window": ap_south_1_instances[i]["window"],
-    "region": "ap-south-1",
-    "az": ap_south_1_instances[i]["az"]
-  }
-  )
-}
-for ( i = 0; i < ap_northeast_1_instances.length; i++ ) {
-  results.push(
-  {
-    "identifier": ap_northeast_1_instances[i]["identifier"],
-    "retention_period": ap_northeast_1_instances[i]["retention_period"],
-    "window": ap_northeast_1_instances[i]["window"],
-    "region": "ap-northeast-1",
-    "az": ap_northeast_1_instances[i]["az"]
-  }
-  )
-}
-for ( i = 0; i < ap_northeast_2_instances.length; i++ ) {
-  results.push(
-  {
-    "identifier": ap_northeast_2_instances[i]["identifier"],
-    "retention_period": ap_northeast_2_instances[i]["retention_period"],
-    "window": ap_northeast_2_instances[i]["window"],
-    "region": "ap-northeast-2",
-    "az": ap_northeast_2_instances[i]["az"]
-  }
-  )
-}
-for ( i = 0; i < ap_southeast_1_instances.length; i++ ) {
-  results.push(
-  {
-    "identifier": ap_southeast_1_instances[i]["identifier"],
-    "retention_period": ap_southeast_1_instances[i]["retention_period"],
-    "window": ap_southeast_1_instances[i]["window"],
-    "region": "ap-southeast-1",
-    "az": ap_southeast_1_instances[i]["az"]
-  }
-  )
-}
-for ( i = 0; i < ap_southeast_2_instances.length; i++ ) {
-  results.push(
-  {
-    "identifier": ap_southeast_2_instances[i]["identifier"],
-    "retention_period": ap_southeast_2_instances[i]["retention_period"],
-    "window": ap_southeast_2_instances[i]["window"],
-    "region": "ap-southeast-2",
-    "az": ap_southeast_2_instances[i]["az"]
-  }
-  )
-}
-for ( i = 0; i < eu_central_1_instances.length; i++ ) {
-  results.push(
-  {
-    "identifier": eu_central_1_instances[i]["identifier"],
-    "retention_period": eu_central_1_instances[i]["retention_period"],
-    "window": eu_central_1_instances[i]["window"],
-    "region": "eu-central-1",
-    "az": eu_central_1_instances[i]["az"]
-  }
-  )
-}
-for ( i = 0; i < eu_west_1_instances.length; i++ ) {
-  results.push(
-  {
-    "identifier": eu_west_1_instances[i]["identifier"],
-    "retention_period": eu_west_1_instances[i]["retention_period"],
-    "window": eu_west_1_instances[i]["window"],
-    "region": "eu-west-1",
-    "az": eu_west_1_instances[i]["az"]
-  }
-  )
-}
-for ( i = 0; i < eu_west_2_instances.length; i++ ) {
-  results.push(
-  {
-    "identifier": eu_west_2_instances[i]["identifier"],
-    "retention_period": eu_west_2_instances[i]["retention_period"],
-    "window": eu_west_2_instances[i]["window"],
-    "region": "eu-west-2",
-    "az": eu_west_2_instances[i]["az"]
-  }
-  )
-}
-for ( i = 0; i < eu_west_3_instances.length; i++ ) {
-  results.push(
-  {
-    "identifier": eu_west_3_instances[i]["identifier"],
-    "retention_period": eu_west_3_instances[i]["retention_period"],
-    "window": eu_west_3_instances[i]["window"],
-    "region": "eu-west-3",
-    "az": eu_west_3_instances[i]["az"]
-  }
-  )
-}
-for ( i = 0; i < sa_east_1_instances.length; i++ ) {
-  results.push(
-  {
-    "identifier": sa_east_1_instances[i]["identifier"],
-    "retention_period": sa_east_1_instances[i]["retention_period"],
-    "window": sa_east_1_instances[i]["window"],
-    "region": "sa-east-1",
-    "az": sa_east_1_instances[i]["az"]
-  }
-  )
-};
+
 EOS
 end
 

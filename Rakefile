@@ -25,19 +25,21 @@ task :generate_policy_list do
         if line =~ /short_description/
           @description = line.split(' ')[1..-1].join(' ').to_s.chomp('"').reverse.chomp('"').reverse.split('.').first
         end
-        if line =~ /category \"((c|C)ompliance|(c|C)ost|(o|O)perational|(s|S)ecurity)\"/
+        if line =~ /category \"(compliance|cost|operational|security|saas management)\"/i
           @category = line.split(' ')[1..-1].join(' ').to_s.chomp('"').reverse.chomp('"').reverse
+          @category = @category.gsub(" ","_")
+          @category = @category.downcase
         end
         if line =~ /severity/
           @severity = line.split(' ')[1..-1].join(' ').to_s.chomp('"').reverse.chomp('"').reverse
         end
       end
       file_list<<{
-        "name": @name, 
-        "file_name": file, 
-        "version": @version, 
-        "change_log": change_log, 
-        "description": @description, 
+        "name": @name,
+        "file_name": file,
+        "version": @version,
+        "change_log": change_log,
+        "description": @description,
         "category": @category,
         "severity": @severity,
         "readme": readme

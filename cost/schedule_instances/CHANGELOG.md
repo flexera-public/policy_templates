@@ -1,4 +1,6 @@
-Change log
+v1.6
+----
+- Added Approval block
 
 v1.5
 ----

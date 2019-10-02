@@ -1,8 +1,8 @@
 name "AWS Idle Compute Instances"
 rs_pt_ver 20180301
 type "policy"
-short_description "Gathers AWS CloudWatch data for instances on 30 day intervals. See the [README](https://github.com/rightscale/policy_templates/tree/master/cost/aws/idle_compute_instances/) and [docs.rightscale.com/policies](http://docs.rightscale.com/policies/) to learn more."
-long_description "Version: 1.0"
+short_description "Checks for AWS Compute Instances that are idle for the last 30 days and terminates them after approval. See the [README](https://github.com/rightscale/policy_templates/tree/master/cost/aws/idle_compute_instances/) and [docs.rightscale.com/policies](http://docs.rightscale.com/policies/) to learn more."
+long_description "Version: 1.2"
 severity "low"
 category "Cost"
 
@@ -29,7 +29,7 @@ parameter "param_avg_used_memory" do
   type "number"
   label "Average used memory percentage"
   description "Set to -1 to ignore memory utilization"
-  default 5
+  default -1
   min_value -1
   max_value 100
 end
@@ -38,7 +38,7 @@ parameter "param_avg_cpu" do
   type "number"
   label "Average used CPU percentage"
   description "Set to -1 to ignore CPU utilization"
-  default 5
+  default -1
   min_value -1
   max_value 100
 end
@@ -46,9 +46,9 @@ end
 parameter "param_exclusion_tag_key" do
   category "User Inputs"
   label "Exclusion Tag Key:Value"
-  description "Cloud native tag key to ignore instances. Format: Key:Value"
+  description "Cloud native tag to ignore instances. Format: Key:Value"
   type "string"
-  allowed_pattern /([\w]?)+\:([\w]?)+/
+  allowed_pattern /(^$)|([\w]?)+\:([\w]?)+/
 end
 
 ###############################################################################
@@ -83,7 +83,7 @@ datasource "ds_regions_list" do
   end
 end
 
-datasource "ds_instances" do 
+datasource "ds_instances" do
   run_script $js_instances, $ds_instances_set, $param_exclusion_tag_key
 end
 
@@ -368,7 +368,7 @@ script "js_merged_metrics", type: "javascript" do
     var instance_id = instance.instanceId
     if (instance.platform == 'windows'){
       var mem_usage_record = _.find(ds_cloudwatch_windows_mem_usage, function(record) { return record.instanceId == instance_id; })
-      
+
       if (mem_usage_record != null && mem_usage_record !== undefined) {
         var mem_maximum = parseFloat(mem_usage_record.mem_maximum).toFixed(2)
         var mem_average = parseFloat(mem_usage_record.mem_average).toFixed(2)
@@ -381,7 +381,7 @@ script "js_merged_metrics", type: "javascript" do
     } else {
       instance.platform = 'linux'
       var mem_usage_record = _.find(ds_cloudwatch_mem_usage, function(record) { return record.instanceId == instance_id; })
-      
+
       if (mem_usage_record != null && mem_usage_record !== undefined) {
         var mem_maximum = parseFloat(mem_usage_record.mem_maximum).toFixed(2)
         var mem_average = parseFloat(mem_usage_record.mem_average).toFixed(2)
@@ -486,14 +486,12 @@ define terminate_resources($data) return $all_responses do
   call sys_log(join([$syslog_subject, "Responses"]),to_s($all_responses))
 end
 
-define handle_error($response) do 
+define handle_error($response) do
   $status_code = $response["code"]
-  if $status_code == 404
-    $_error_behavior = "skip"
-  else 
-    $_error_behavior = "raise"
-  end 
-end 
+  $syslog_subject = "AWS Idle Compute Termination Error: "
+  call sys_log(join([$syslog_subject, $status_code]),to_s($response))
+  $_error_behavior = "skip"
+end
 
 define sys_log($subject, $detail) do
   if $$debug

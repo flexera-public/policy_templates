@@ -1,3 +1,11 @@
+v1.14
+----
+- Added Approval block
+
+v1.13
+---
+- Adding request_approval for downsize escalation
+
 v1.12
 ----
 - Separate the Utilization from the downsize actions.  The Utilization policy is now [RightLink Utilization](/rightscale/policy_templates/cost/rightlink_utilization/README.md)
