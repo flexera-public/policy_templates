@@ -36,10 +36,11 @@ changed_files.each do |file|
    diff.patch.each_line do |line|
      if line =~ regex
        URI.extract(line,['http','https']).each do |url|
+         res = nil
          next if exclude_hosts.include?(url.scan(URI.regexp)[0][3])
-         url = URI(url)
-         url_string = url.to_s.gsub(')','')
-         res = Net::HTTP.get_response(url)
+         url_string = url.to_s.gsub(')','') #remove extra chars
+         url = URI(url_string) #convert to URL
+         res = Net::HTTP.get_response(url) #make request
          if res.code != '200'
            fail "The URL is not valid: #{url_string} in #{file} Status: #{res.code}"
          end
@@ -66,9 +67,7 @@ changed_files.each do |file|
 
  #message diff.patch
  if diff && diff.patch =~ regex
-
    diff.patch.each_line do |line|
-     #message line
      if line =~ regex
        category = line.split(' ')[1..-1].join(' ').to_s.chomp('"').reverse.chomp('"').reverse
        if !categories.include?(category.downcase)
