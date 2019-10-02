@@ -2,7 +2,7 @@ name "AWS VPC Name Tag Sync"
 rs_pt_ver 20180301
 type "policy"
 short_description "Ensures a Network name in Cloud Management reflects the value of the Network name tag in AWS. See the [README](https://github.com/rightscale/policy_templates/tree/master/operational/aws/vpc_name_sync) and [docs.rightscale.com/policies](http://docs.rightscale.com/policies/) to learn more."
-long_description "Version: 1.2"
+long_description "Version: 1.3"
 severity "medium"
 category "Operational"
 
@@ -33,133 +33,13 @@ end
 # Authentication
 ###############################################################################
 
-auth "auth_ec2_us_east_2", type: "aws" do
+auth "auth_aws", type: "aws" do
   version 4
   service 'ec2'
-  region 'us-east-2'
   access_key cred('AWS_ACCESS_KEY_ID')
   secret_key cred('AWS_SECRET_ACCESS_KEY')
 end
 
-auth "auth_ec2_us_east_1", type: "aws" do
-  version 4
-  service 'ec2'
-  region 'us-east-1'
-  access_key cred('AWS_ACCESS_KEY_ID')
-  secret_key cred('AWS_SECRET_ACCESS_KEY')
-end
-
-auth "auth_ec2_us_west_1", type: "aws" do
-  version 4
-  service 'ec2'
-  region 'us-west-1'
-  access_key cred('AWS_ACCESS_KEY_ID')
-  secret_key cred('AWS_SECRET_ACCESS_KEY')
-end
-
-auth "auth_ec2_us_west_2", type: "aws" do
-  version 4
-  service 'ec2'
-  region 'us-west-2'
-  access_key cred('AWS_ACCESS_KEY_ID')
-  secret_key cred('AWS_SECRET_ACCESS_KEY')
-end
-
-auth "auth_ec2_ap_south_1", type: "aws" do
-  version 4
-  service 'ec2'
-  region 'ap-south-1'
-  access_key cred('AWS_ACCESS_KEY_ID')
-  secret_key cred('AWS_SECRET_ACCESS_KEY')
-end
-
-auth "auth_ec2_ap_northeast_2", type: "aws" do
-  version 4
-  service 'ec2'
-  region 'ap-northeast-2'
-  access_key cred('AWS_ACCESS_KEY_ID')
-  secret_key cred('AWS_SECRET_ACCESS_KEY')
-end
-
-auth "auth_ec2_ap_southeast_1", type: "aws" do
-  version 4
-  service 'ec2'
-  region 'ap-southeast-1'
-  access_key cred('AWS_ACCESS_KEY_ID')
-  secret_key cred('AWS_SECRET_ACCESS_KEY')
-end
-
-auth "auth_ec2_ap_southeast_2", type: "aws" do
-  version 4
-  service 'ec2'
-  region 'ap-southeast-2'
-  access_key cred('AWS_ACCESS_KEY_ID')
-  secret_key cred('AWS_SECRET_ACCESS_KEY')
-end
-
-auth "auth_ec2_ap_northeast_1", type: "aws" do
-  version 4
-  service 'ec2'
-  region 'ap-northeast-1'
-  access_key cred('AWS_ACCESS_KEY_ID')
-  secret_key cred('AWS_SECRET_ACCESS_KEY')
-end
-
-auth "auth_ec2_ca_central_1", type: "aws" do
-  version 4
-  service 'ec2'
-  region 'ca-central-1'
-  access_key cred('AWS_ACCESS_KEY_ID')
-  secret_key cred('AWS_SECRET_ACCESS_KEY')
-end
-
-auth "auth_ec2_eu_central_1", type: "aws" do
-  version 4
-  service 'ec2'
-  region 'eu-central-1'
-  access_key cred('AWS_ACCESS_KEY_ID')
-  secret_key cred('AWS_SECRET_ACCESS_KEY')
-end
-
-auth "auth_ec2_eu_west_1", type: "aws" do
-  version 4
-  service 'ec2'
-  region 'eu-west-1'
-  access_key cred('AWS_ACCESS_KEY_ID')
-  secret_key cred('AWS_SECRET_ACCESS_KEY')
-end
-
-auth "auth_ec2_eu_west_2", type: "aws" do
-  version 4
-  service 'ec2'
-  region 'eu-west-2'
-  access_key cred('AWS_ACCESS_KEY_ID')
-  secret_key cred('AWS_SECRET_ACCESS_KEY')
-end
-
-auth "auth_ec2_eu_west_3", type: "aws" do
-  version 4
-  service 'ec2'
-  region 'eu-west-3'
-  access_key cred('AWS_ACCESS_KEY_ID')
-  secret_key cred('AWS_SECRET_ACCESS_KEY')
-end
-
-auth "auth_ec2_sa_east_1", type: "aws" do
-  version 4
-  service 'ec2'
-  region 'sa-east-1'
-  access_key cred('AWS_ACCESS_KEY_ID')
-  secret_key cred('AWS_SECRET_ACCESS_KEY')
-end
-
-auth "auth_ec2_eu_north_1", type: "aws" do
-  version 4
-  service 'ec2'
-  region 'eu-north-1'
-  access_key cred('AWS_ACCESS_KEY_ID')
-  secret_key cred('AWS_SECRET_ACCESS_KEY')
-end
 
 auth "rs", type: "rightscale"
 
@@ -188,33 +68,21 @@ end
 # Datasources
 ###############################################################################
 
-datasource "ds_us_east_2_vpcs" do
+#Generates list of Regions
+datasource "ds_regions_list" do
   request do
-    auth $auth_ec2_us_east_2
-    host "ec2.us-east-2.amazonaws.com"
-    path "/"
-    query "Action", "DescribeVpcs"
-    query "Version", "2016-11-15"
+    verb "GET"
+    host "raw.githubusercontent.com"
+    path "/rightscale/policy_templates/master/data/aws/regions.json"
     header "User-Agent", "RS Policies"
-  end
-  result do
-    encoding "xml"
-    collect xpath(response, "//DescribeVpcsResponse/vpcSet/item", "array") do
-      field "tag_set" do
-        collect xpath(col_item, "tagSet/item") do
-          field "key", xpath(col_item, "key")
-          field "value", xpath(col_item, "value")
-        end
-      end
-      field "vpc_id", xpath(col_item, "vpcId")
-    end
   end
 end
 
-datasource "ds_us_east_1_vpcs" do
+datasource "ds_vpcs" do
+  iterate $ds_regions_list
   request do
-    auth $auth_ec2_us_east_1
-    host "ec2.us-east-1.amazonaws.com"
+    auth $auth_aws
+    host join(["ec2.",val(iter_item,"region"),".amazonaws.com"])
     path "/"
     query "Action", "DescribeVpcs"
     query "Version", "2016-11-15"
@@ -230,328 +98,7 @@ datasource "ds_us_east_1_vpcs" do
         end
       end
       field "vpc_id", xpath(col_item, "vpcId")
-    end
-  end
-end
-
-datasource "ds_us_west_1_vpcs" do
-  request do
-    auth $auth_ec2_us_west_1
-    host "ec2.us-west-1.amazonaws.com"
-    path "/"
-    query "Action", "DescribeVpcs"
-    query "Version", "2016-11-15"
-    header "User-Agent", "RS Policies"
-  end
-  result do
-    encoding "xml"
-    collect xpath(response, "//DescribeVpcsResponse/vpcSet/item", "array") do
-      field "tag_set" do
-        collect xpath(col_item, "tagSet/item") do
-          field "key", xpath(col_item, "key")
-          field "value", xpath(col_item, "value")
-        end
-      end
-      field "vpc_id", xpath(col_item, "vpcId")
-    end
-  end
-end
-
-datasource "ds_us_west_2_vpcs" do
-  request do
-    auth $auth_ec2_us_west_2
-    host "ec2.us-west-2.amazonaws.com"
-    path "/"
-    query "Action", "DescribeVpcs"
-    query "Version", "2016-11-15"
-    header "User-Agent", "RS Policies"
-  end
-  result do
-    encoding "xml"
-    collect xpath(response, "//DescribeVpcsResponse/vpcSet/item", "array") do
-      field "tag_set" do
-        collect xpath(col_item, "tagSet/item") do
-          field "key", xpath(col_item, "key")
-          field "value", xpath(col_item, "value")
-        end
-      end
-      field "vpc_id", xpath(col_item, "vpcId")
-    end
-  end
-end
-
-datasource "ds_ap_south_1_vpcs" do
-  request do
-    auth $auth_ec2_ap_south_1
-    host "ec2.ap-south-1.amazonaws.com"
-    path "/"
-    query "Action", "DescribeVpcs"
-    query "Version", "2016-11-15"
-    header "User-Agent", "RS Policies"
-  end
-  result do
-    encoding "xml"
-    collect xpath(response, "//DescribeVpcsResponse/vpcSet/item", "array") do
-      field "tag_set" do
-        collect xpath(col_item, "tagSet/item") do
-          field "key", xpath(col_item, "key")
-          field "value", xpath(col_item, "value")
-        end
-      end
-      field "vpc_id", xpath(col_item, "vpcId")
-    end
-  end
-end
-
-datasource "ds_ap_northeast_2_vpcs" do
-  request do
-    auth $auth_ec2_ap_northeast_2
-    host "ec2.ap-northeast-2.amazonaws.com"
-    path "/"
-    query "Action", "DescribeVpcs"
-    query "Version", "2016-11-15"
-    header "User-Agent", "RS Policies"
-  end
-  result do
-    encoding "xml"
-    collect xpath(response, "//DescribeVpcsResponse/vpcSet/item", "array") do
-      field "tag_set" do
-        collect xpath(col_item, "tagSet/item") do
-          field "key", xpath(col_item, "key")
-          field "value", xpath(col_item, "value")
-        end
-      end
-      field "vpc_id", xpath(col_item, "vpcId")
-    end
-  end
-end
-
-datasource "ds_ap_southeast_1_vpcs" do
-  request do
-    auth $auth_ec2_ap_southeast_1
-    host "ec2.ap-southeast-1.amazonaws.com"
-    path "/"
-    query "Action", "DescribeVpcs"
-    query "Version", "2016-11-15"
-    header "User-Agent", "RS Policies"
-  end
-  result do
-    encoding "xml"
-    collect xpath(response, "//DescribeVpcsResponse/vpcSet/item", "array") do
-      field "tag_set" do
-        collect xpath(col_item, "tagSet/item") do
-          field "key", xpath(col_item, "key")
-          field "value", xpath(col_item, "value")
-        end
-      end
-      field "vpc_id", xpath(col_item, "vpcId")
-    end
-  end
-end
-
-datasource "ds_ap_southeast_2_vpcs" do
-  request do
-    auth $auth_ec2_ap_southeast_2
-    host "ec2.ap-southeast-2.amazonaws.com"
-    path "/"
-    query "Action", "DescribeVpcs"
-    query "Version", "2016-11-15"
-    header "User-Agent", "RS Policies"
-  end
-  result do
-    encoding "xml"
-    collect xpath(response, "//DescribeVpcsResponse/vpcSet/item", "array") do
-      field "tag_set" do
-        collect xpath(col_item, "tagSet/item") do
-          field "key", xpath(col_item, "key")
-          field "value", xpath(col_item, "value")
-        end
-      end
-      field "vpc_id", xpath(col_item, "vpcId")
-    end
-  end
-end
-
-datasource "ds_ap_northeast_1_vpcs" do
-  request do
-    auth $auth_ec2_ap_northeast_1
-    host "ec2.ap-northeast-1.amazonaws.com"
-    path "/"
-    query "Action", "DescribeVpcs"
-    query "Version", "2016-11-15"
-    header "User-Agent", "RS Policies"
-  end
-  result do
-    encoding "xml"
-    collect xpath(response, "//DescribeVpcsResponse/vpcSet/item", "array") do
-      field "tag_set" do
-        collect xpath(col_item, "tagSet/item") do
-          field "key", xpath(col_item, "key")
-          field "value", xpath(col_item, "value")
-        end
-      end
-      field "vpc_id", xpath(col_item, "vpcId")
-    end
-  end
-end
-
-datasource "ds_ca_central_1_vpcs" do
-  request do
-    auth $auth_ec2_ca_central_1
-    host "ec2.ca-central-1.amazonaws.com"
-    path "/"
-    query "Action", "DescribeVpcs"
-    query "Version", "2016-11-15"
-    header "User-Agent", "RS Policies"
-  end
-  result do
-    encoding "xml"
-    collect xpath(response, "//DescribeVpcsResponse/vpcSet/item", "array") do
-      field "tag_set" do
-        collect xpath(col_item, "tagSet/item") do
-          field "key", xpath(col_item, "key")
-          field "value", xpath(col_item, "value")
-        end
-      end
-      field "vpc_id", xpath(col_item, "vpcId")
-    end
-  end
-end
-
-datasource "ds_eu_central_1_vpcs" do
-  request do
-    auth $auth_ec2_eu_central_1
-    host "ec2.eu-central-1.amazonaws.com"
-    path "/"
-    query "Action", "DescribeVpcs"
-    query "Version", "2016-11-15"
-    header "User-Agent", "RS Policies"
-  end
-  result do
-    encoding "xml"
-    collect xpath(response, "//DescribeVpcsResponse/vpcSet/item", "array") do
-      field "tag_set" do
-        collect xpath(col_item, "tagSet/item") do
-          field "key", xpath(col_item, "key")
-          field "value", xpath(col_item, "value")
-        end
-      end
-      field "vpc_id", xpath(col_item, "vpcId")
-    end
-  end
-end
-
-datasource "ds_eu_west_1_vpcs" do
-  request do
-    auth $auth_ec2_eu_west_1
-    host "ec2.eu-west-1.amazonaws.com"
-    path "/"
-    query "Action", "DescribeVpcs"
-    query "Version", "2016-11-15"
-    header "User-Agent", "RS Policies"
-  end
-  result do
-    encoding "xml"
-    collect xpath(response, "//DescribeVpcsResponse/vpcSet/item", "array") do
-      field "tag_set" do
-        collect xpath(col_item, "tagSet/item") do
-          field "key", xpath(col_item, "key")
-          field "value", xpath(col_item, "value")
-        end
-      end
-      field "vpc_id", xpath(col_item, "vpcId")
-    end
-  end
-end
-
-datasource "ds_eu_west_2_vpcs" do
-  request do
-    auth $auth_ec2_eu_west_2
-    host "ec2.eu-west-2.amazonaws.com"
-    path "/"
-    query "Action", "DescribeVpcs"
-    query "Version", "2016-11-15"
-    header "User-Agent", "RS Policies"
-  end
-  result do
-    encoding "xml"
-    collect xpath(response, "//DescribeVpcsResponse/vpcSet/item", "array") do
-      field "tag_set" do
-        collect xpath(col_item, "tagSet/item") do
-          field "key", xpath(col_item, "key")
-          field "value", xpath(col_item, "value")
-        end
-      end
-      field "vpc_id", xpath(col_item, "vpcId")
-    end
-  end
-end
-
-datasource "ds_eu_west_3_vpcs" do
-  request do
-    auth $auth_ec2_eu_west_3
-    host "ec2.eu-west-3.amazonaws.com"
-    path "/"
-    query "Action", "DescribeVpcs"
-    query "Version", "2016-11-15"
-    header "User-Agent", "RS Policies"
-  end
-  result do
-    encoding "xml"
-    collect xpath(response, "//DescribeVpcsResponse/vpcSet/item", "array") do
-      field "tag_set" do
-        collect xpath(col_item, "tagSet/item") do
-          field "key", xpath(col_item, "key")
-          field "value", xpath(col_item, "value")
-        end
-      end
-      field "vpc_id", xpath(col_item, "vpcId")
-    end
-  end
-end
-
-datasource "ds_sa_east_1_vpcs" do
-  request do
-    auth $auth_ec2_sa_east_1
-    host "ec2.sa-east-1.amazonaws.com"
-    path "/"
-    query "Action", "DescribeVpcs"
-    query "Version", "2016-11-15"
-    header "User-Agent", "RS Policies"
-  end
-  result do
-    encoding "xml"
-    collect xpath(response, "//DescribeVpcsResponse/vpcSet/item", "array") do
-      field "tag_set" do
-        collect xpath(col_item, "tagSet/item") do
-          field "key", xpath(col_item, "key")
-          field "value", xpath(col_item, "value")
-        end
-      end
-      field "vpc_id", xpath(col_item, "vpcId")
-    end
-  end
-end
-
-datasource "ds_eu_north_1_vpcs" do
-  request do
-    auth $auth_ec2_eu_north_1
-    host "ec2.eu-north-1.amazonaws.com"
-    path "/"
-    query "Action", "DescribeVpcs"
-    query "Version", "2016-11-15"
-    header "User-Agent", "RS Policies"
-  end
-  result do
-    encoding "xml"
-    collect xpath(response, "//DescribeVpcsResponse/vpcSet/item", "array") do
-      field "tag_set" do
-        collect xpath(col_item, "tagSet/item") do
-          field "key", xpath(col_item, "key")
-          field "value", xpath(col_item, "value")
-        end
-      end
-      field "vpc_id", xpath(col_item, "vpcId")
+	  field "region", val(iter_item,"region")
     end
   end
 end
@@ -564,7 +111,7 @@ datasource "ds_networks" do
 end
 
 datasource "ds_rs_updates" do
-  run_script $script_vpcs, $ds_us_east_2_vpcs, $ds_us_east_1_vpcs, $ds_us_west_1_vpcs, $ds_us_west_2_vpcs, $ds_ap_south_1_vpcs, $ds_ap_northeast_2_vpcs, $ds_ap_southeast_1_vpcs, $ds_ap_southeast_2_vpcs, $ds_ap_northeast_1_vpcs, $ds_ca_central_1_vpcs, $ds_eu_central_1_vpcs, $ds_eu_west_1_vpcs, $ds_eu_west_2_vpcs, $ds_eu_west_3_vpcs, $ds_sa_east_1_vpcs, $ds_eu_north_1_vpcs, $ds_networks
+  run_script $script_vpcs, $ds_vpcs, $ds_networks
 end
 
 ###############################################################################
@@ -572,14 +119,14 @@ end
 ###############################################################################
 
 script "script_vpcs", type: "javascript" do
-  parameters "ds_us_east_2_vpcs","ds_us_east_1_vpcs","ds_us_west_1_vpcs","ds_us_west_2_vpcs","ds_ap_south_1_vpcs","ds_ap_northeast_2_vpcs","ds_ap_southeast_1_vpcs","ds_ap_southeast_2_vpcs","ds_ap_northeast_1_vpcs","ds_ca_central_1_vpcs","ds_eu_central_1_vpcs","ds_eu_west_1_vpcs","ds_eu_west_2_vpcs","ds_eu_west_3_vpcs","ds_sa_east_1_vpcs","ds_eu_north_1_vpcs","ds_networks"
+  parameters "ds_vpcs","ds_networks"
   result "updates"
   code <<-EOS
     results = [];
     updates = [];
 
-    for( i = 0; i <= ds_us_east_2_vpcs.length - 1; i++) {
-      var tags = ds_us_east_2_vpcs[i]["tag_set"];
+    for( i = 0; i <= ds_vpcs.length - 1; i++) {
+      var tags = ds_vpcs[i]["tag_set"];
 
       var name = "";
       for( x = 0; x <= tags.length - 1; x++){
@@ -588,249 +135,9 @@ script "script_vpcs", type: "javascript" do
         }
       };
       results.push({
-        "vpcid": ds_us_east_2_vpcs[i]["vpc_id"],
+        "vpcid": ds_vpcs[i]["vpc_id"],
         "name": name,
-        "region": "us-east-2"
-      });
-    };
-
-    for( i = 0; i <= ds_us_east_1_vpcs.length - 1; i++) {
-      var tags = ds_us_east_1_vpcs[i]["tag_set"];
-
-      var name = "";
-      for( x = 0; x <= tags.length - 1; x++){
-        if(tags[x]["key"] === "Name") {
-          name = tags[x]["value"];
-        }
-      };
-      results.push({
-        "vpcid": ds_us_east_1_vpcs[i]["vpc_id"],
-        "name": name,
-        "region": "us-east-1"
-      });
-    };
-
-    for( i = 0; i <= ds_us_west_1_vpcs.length - 1; i++) {
-      var tags = ds_us_west_1_vpcs[i]["tag_set"];
-
-      var name = "";
-      for( x = 0; x <= tags.length - 1; x++){
-        if(tags[x]["key"] === "Name") {
-          name = tags[x]["value"];
-        }
-      };
-      results.push({
-        "vpcid": ds_us_west_1_vpcs[i]["vpc_id"],
-        "name": name,
-        "region": "us-west-1"
-      });
-    };
-
-    for( i = 0; i <= ds_us_west_2_vpcs.length - 1; i++) {
-      var tags = ds_us_west_2_vpcs[i]["tag_set"];
-
-      var name = "";
-      for( x = 0; x <= tags.length - 1; x++){
-        if(tags[x]["key"] === "Name") {
-          name = tags[x]["value"];
-        }
-      };
-      results.push({
-        "vpcid": ds_us_west_2_vpcs[i]["vpc_id"],
-        "name": name,
-        "region": "us-west-2"
-      });
-    };
-
-    for( i = 0; i <= ds_ap_south_1_vpcs.length - 1; i++) {
-      var tags = ds_ap_south_1_vpcs[i]["tag_set"];
-
-      var name = "";
-      for( x = 0; x <= tags.length - 1; x++){
-        if(tags[x]["key"] === "Name") {
-          name = tags[x]["value"];
-        }
-      };
-      results.push({
-        "vpcid": ds_ap_south_1_vpcs[i]["vpc_id"],
-        "name": name,
-        "region": "ap-south-1"
-      });
-    };
-
-    for( i = 0; i <= ds_ap_northeast_2_vpcs.length - 1; i++) {
-      var tags = ds_ap_northeast_2_vpcs[i]["tag_set"];
-
-      var name = "";
-      for( x = 0; x <= tags.length - 1; x++){
-        if(tags[x]["key"] === "Name") {
-          name = tags[x]["value"];
-        }
-      };
-      results.push({
-        "vpcid": ds_ap_northeast_2_vpcs[i]["vpc_id"],
-        "name": name,
-        "region": "ap-northeast-2"
-      });
-    };
-
-    for( i = 0; i <= ds_ap_southeast_1_vpcs.length - 1; i++) {
-      var tags = ds_ap_southeast_1_vpcs[i]["tag_set"];
-
-      var name = "";
-      for( x = 0; x <= tags.length - 1; x++){
-        if(tags[x]["key"] === "Name") {
-          name = tags[x]["value"];
-        }
-      };
-      results.push({
-        "vpcid": ds_ap_southeast_1_vpcs[i]["vpc_id"],
-        "name": name,
-        "region": "ap-southeast-1"
-      });
-    };
-
-    for( i = 0; i <= ds_ap_southeast_2_vpcs.length - 1; i++) {
-      var tags = ds_ap_southeast_2_vpcs[i]["tag_set"];
-
-      var name = "";
-      for( x = 0; x <= tags.length - 1; x++){
-        if(tags[x]["key"] === "Name") {
-          name = tags[x]["value"];
-        }
-      };
-      results.push({
-        "vpcid": ds_ap_southeast_2_vpcs[i]["vpc_id"],
-        "name": name,
-        "region": "ap-southeast-2"
-      });
-    };
-
-    for( i = 0; i <= ds_ap_northeast_1_vpcs.length - 1; i++) {
-      var tags = ds_ap_northeast_1_vpcs[i]["tag_set"];
-
-      var name = "";
-      for( x = 0; x <= tags.length - 1; x++){
-        if(tags[x]["key"] === "Name") {
-          name = tags[x]["value"];
-        }
-      };
-      results.push({
-        "vpcid": ds_ap_northeast_1_vpcs[i]["vpc_id"],
-        "name": name,
-        "region": "ap-northeast-1"
-      });
-    };
-
-    for( i = 0; i <= ds_ca_central_1_vpcs.length - 1; i++) {
-      var tags = ds_ca_central_1_vpcs[i]["tag_set"];
-
-      var name = "";
-      for( x = 0; x <= tags.length - 1; x++){
-        if(tags[x]["key"] === "Name") {
-          name = tags[x]["value"];
-        }
-      };
-      results.push({
-        "vpcid": ds_ca_central_1_vpcs[i]["vpc_id"],
-        "name": name,
-        "region": "ca-central-1"
-      });
-    };
-
-    for( i = 0; i <= ds_eu_central_1_vpcs.length - 1; i++) {
-      var tags = ds_eu_central_1_vpcs[i]["tag_set"];
-
-      var name = "";
-      for( x = 0; x <= tags.length - 1; x++){
-        if(tags[x]["key"] === "Name") {
-          name = tags[x]["value"];
-        }
-      };
-      results.push({
-        "vpcid": ds_eu_central_1_vpcs[i]["vpc_id"],
-        "name": name,
-        "region": "eu-central-1"
-      });
-    };
-
-    for( i = 0; i <= ds_eu_west_1_vpcs.length - 1; i++) {
-      var tags = ds_eu_west_1_vpcs[i]["tag_set"];
-
-      var name = "";
-      for( x = 0; x <= tags.length - 1; x++){
-        if(tags[x]["key"] === "Name") {
-          name = tags[x]["value"];
-        }
-      };
-      results.push({
-        "vpcid": ds_eu_west_1_vpcs[i]["vpc_id"],
-        "name": name,
-        "region": "eu-west-1"
-      });
-    };
-
-    for( i = 0; i <= ds_eu_west_2_vpcs.length - 1; i++) {
-      var tags = ds_eu_west_2_vpcs[i]["tag_set"];
-
-      var name = "";
-      for( x = 0; x <= tags.length - 1; x++){
-        if(tags[x]["key"] === "Name") {
-          name = tags[x]["value"];
-        }
-      };
-      results.push({
-        "vpcid": ds_eu_west_2_vpcs[i]["vpc_id"],
-        "name": name,
-        "region": "eu-west-2"
-      });
-    };
-
-    for( i = 0; i <= ds_eu_west_3_vpcs.length - 1; i++) {
-      var tags = ds_eu_west_3_vpcs[i]["tag_set"];
-
-      var name = "";
-      for( x = 0; x <= tags.length - 1; x++){
-        if(tags[x]["key"] === "Name") {
-          name = tags[x]["value"];
-        }
-      };
-      results.push({
-        "vpcid": ds_eu_west_3_vpcs[i]["vpc_id"],
-        "name": name,
-        "region": "eu-west-3"
-      });
-    };
-
-    for( i = 0; i <= ds_sa_east_1_vpcs.length - 1; i++) {
-      var tags = ds_sa_east_1_vpcs[i]["tag_set"];
-
-      var name = "";
-      for( x = 0; x <= tags.length - 1; x++){
-        if(tags[x]["key"] === "Name") {
-          name = tags[x]["value"];
-        }
-      };
-      results.push({
-        "vpcid": ds_sa_east_1_vpcs[i]["vpc_id"],
-        "name": name,
-        "region": "sa-east-1"
-      });
-    };
-
-    for( i = 0; i <= ds_eu_north_1_vpcs.length - 1; i++) {
-      var tags = ds_eu_north_1_vpcs[i]["tag_set"];
-
-      var name = "";
-      for( x = 0; x <= tags.length - 1; x++){
-        if(tags[x]["key"] === "Name") {
-          name = tags[x]["value"];
-        }
-      };
-      results.push({
-        "vpcid": ds_eu_north_1_vpcs[i]["vpc_id"],
-        "name": name,
-        "region": "sa-east-1"
+        "region": ds_vpcs[i]["region"]
       });
     };
 
