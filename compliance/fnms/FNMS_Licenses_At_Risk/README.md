@@ -1,4 +1,4 @@
-## FlexNet Manager Licenses as risk.
+## FlexNet Manager Licenses At Risk.
 
 ### What it does
 This policy will look up the Licenses that are at risk, meaning that there is probably not enough entitlements for the consumed applications.
