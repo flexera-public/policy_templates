@@ -20,7 +20,7 @@ Current limitations:
 
 #### How to setup FlexNet Manager for this policy:
 
-1. Create the report in FlexNet manager to contain these fiels:
+1. Create the report in FlexNet manager that contains this fields:
 ![Alt text][FNMSCloudInstanceReport]
 Once saved note the report number in thr URL field :
 ![Alt text][ReportNumber] you need it when activating the Policy
