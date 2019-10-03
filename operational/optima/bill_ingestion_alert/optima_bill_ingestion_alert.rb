@@ -39,16 +39,6 @@ datasource "ds_bill_connects" do
     header "Api-Version", "1.0"
     header "User-Agent", "RS Policies"
   end
-  result do
-    encoding "json"
-    collect jmes_path(response,"[*]") do
-      field "cloud_vendor_id", jmes_path(col_item,"cloud_vendor_id")
-      field "created_at", jmes_path(col_item,"created_at")
-      field "href", jmes_path(col_item,"href")
-      field "id", jmes_path(col_item,"id")
-      field "updated_at", jmes_path(col_item,"updated_at")
-    end
-  end
 end
 
 datasource "ds_csp_partners" do
@@ -83,17 +73,6 @@ datasource "ds_billing_centers" do
     header "Api-Version", "1.0"
     header "User-Agent", "RS Policies"
     query "view", "allocation_table"
-  end
-  result do
-    encoding "json"
-    collect jmes_path(response,"[*]") do
-      field "href", jmes_path(col_item,"href")
-      field "id", jmes_path(col_item,"id")
-      field "name", jmes_path(col_item,"name")
-      field "parent_id", jmes_path(col_item,"parent_id")
-      field "ancestor_ids", jmes_path(col_item,"ancestor_ids")
-      field "allocation_table", jmes_path(col_item,"allocation_table")
-    end
   end
 end
 
@@ -140,18 +119,22 @@ script "js_normalize_bill_connects", type: "javascript" do
         cloud_vendor_normal = "aws"
         cloud_vendor_select = "AWS"
         cloud_vendor_friendly = "Amazon Web Services"
+        cloud_account_id = bill_connect['aws_bill_account_id']
       } else if ( vendor === "azure-ea" ) { 
         cloud_vendor_normal = "azure"
         cloud_vendor_select = "Azure"
         cloud_vendor_friendly = "Microsoft Azure EA"
+        cloud_account_id = bill_connect['azure_enrollment_number']
       } else if ( vendor === "azure-csp" ) {
         cloud_vendor_normal = "azurecsp"
         cloud_vendor_select = "AzureCSP"
         cloud_vendor_friendly = "Microsoft Azure CSP"
+        cloud_account_id = bill_connect['id']
       } else if ( vendor === "google" ) {
-        cloud_vendor_normal = "google"
-        cloud_vendor_select = "Google"
+        cloud_vendor_normal = "gcp"
+        cloud_vendor_select = "GCP"
         cloud_vendor_friendly = "Google Cloud Platform"
+        cloud_account_id = bill_connect['google_project_id']
       }
 
       result.push({
@@ -163,6 +146,7 @@ script "js_normalize_bill_connects", type: "javascript" do
         cloud_vendor_normal: cloud_vendor_normal
         cloud_vendor_select: cloud_vendor_select
         cloud_vendor_friendly: cloud_vendor_friendly
+        cloud_account_id: cloud_account_id
       })
     })
 EOS
@@ -209,7 +193,7 @@ script "js_new_costs_request", type: "javascript" do
       body_fields: {
         "billing_center_ids": billing_center_ids,
         "dimensions": dimensions,
-        "metrics": ["usage_amount", "cost_amortized_unblended_adj"],
+        "metrics": ["usage_amount","cost_nonamortized_unblended_adj"],
         "granularity": "day",
         "start_at": start_date,
         "end_at": end_date,
