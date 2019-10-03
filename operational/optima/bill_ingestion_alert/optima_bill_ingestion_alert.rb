@@ -1,4 +1,4 @@
-name "Optima Bill Ingestion Alerts"
+name "Optima Bill Ingestion Alert"
 rs_pt_ver 20180301
 type "policy"
 short_description "This policy alerts you when bill data for AWS, Azure, or Google connected bills are not being ingested. See [README](https://github.com/rightscale/policy_templates/tree/master/operational/optima/bill_ingestion_alerts) for more details"
