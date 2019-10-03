@@ -1,7 +1,7 @@
 name "Optima Bill Ingestion Alerts"
 rs_pt_ver 20180301
 type "policy"
-short_description "This policy allows alerts you when bill data for AWS, Azure or Google connected bills are not being ingested. See [README](https://github.com/rightscale/policy_templates/tree/master/operational/optima/bill_ingestion_alerts) for more details"
+short_description "This policy alerts you when bill data for AWS, Azure, or Google connected bills are not being ingested. See [README](https://github.com/rightscale/policy_templates/tree/master/operational/optima/bill_ingestion_alerts) for more details"
 long_description "Version: 1.0"
 severity "medium"
 category "Operational"
@@ -10,13 +10,6 @@ tenancy "single"
 ###############################################################################
 # Parameters
 ###############################################################################
-
-## commented out until the optima resource is added to policies.
-# permission "optima" do
-#   label "Access Optima Resources"
-#   resources "rs_optima.costs"
-#   actions "rs_optima.aggregated"
-# end
 
 parameter "param_email" do
   type "list"
@@ -43,27 +36,43 @@ datasource "ds_bill_connects" do
     auth $auth_rs
     host "onboarding.rightscale.com"
     path join(["/api/onboarding/orgs/",rs_org_id,"/bill_connects"])
-    header "Api-Version", "0.1"
+    header "Api-Version", "1.0"
     header "User-Agent", "RS Policies"
   end
   result do
     encoding "json"
-    field "cloud_vendor_id", jmes_path(response,"cloud_vendor_id")
-    field "created_at", jmes_path(response,"created_at")
-    field "href", jmes_path(response,"href")
-    field "id", jmes_path(response,"id")
-    field "updated_at", jmes_path(response,"updated_at")
+    collect jmes_path(response,"[*]") do
+      field "cloud_vendor_id", jmes_path(col_item,"cloud_vendor_id")
+      field "created_at", jmes_path(col_item,"created_at")
+      field "href", jmes_path(col_item,"href")
+      field "id", jmes_path(col_item,"id")
+      field "updated_at", jmes_path(col_item,"updated_at")
+    end
   end
 end
 
-datasource "ds_dimensions" do
+datasource "ds_csp_partners" do
   request do
     auth $auth_rs
-    host rs_optima_host
-    path join(["/bill-analysis/orgs/",rs_org_id,"/costs/dimensions"])
+    host "optima.rightscale.com"
+    path join(["/analytics/orgs/",rs_org_id,"/azure_csp_partners"])
     header "Api-Version", "1.0"
     header "User-Agent", "RS Policies"
   end
+  result do
+    encoding "json"
+    collect jmes_path(response,"[*]") do
+      field "cloud_vendor_id", "azure-csp"
+      field "created_at", jmes_path(col_item,"created_at")
+      field "href", jmes_path(col_item,"href")
+      field "id", jmes_path(col_item,"id")
+      field "updated_at", jmes_path(col_item,"updated_at")
+    end
+  end
+end
+
+datasource "ds_normalize_bill_connects" do
+  run_script $js_normalize_bill_connects, $ds_bill_connects, $ds_csp_partners
 end
 
 datasource "ds_billing_centers" do
@@ -88,27 +97,10 @@ datasource "ds_billing_centers" do
   end
 end
 
-datasource "ds_cloud_vendor_accounts" do
-  request do
-    auth $auth_rs
-    host rs_optima_host
-    path join(["/analytics/orgs/",rs_org_id,"/cloud_vendor_accounts"])
-    header "Api-Version", "1.0"
-    header "User-Agent", "RS Policies"
-  end
-  result do
-    encoding "json"
-    collect jmes_path(response,"[*]") do
-      field "id", jmes_path(col_item,"id")
-      field "name", jmes_path(col_item,"name")
-      field "vendor_name", jmes_path(col_item,"vendor_name")
-    end
-  end
-end
-
 datasource "ds_new_bc_costs" do
+  iterate $ds_normalize_bill_connects
   request do
-    run_script $js_new_costs_request, rs_org_id, $ds_billing_centers
+    run_script $js_new_costs_request, rs_org_id, $ds_billing_centers, val(iter_item,"cloud_vendor_select")
   end
   result do
     encoding "json"
@@ -119,7 +111,6 @@ datasource "ds_new_bc_costs" do
       field "cost_amortized_unblended_adj", jmes_path(col_item,"metrics.cost_amortized_unblended_adj")
       field "usage_amount", jmes_path(col_item, "metrics.usage_amount")
       field "region", jmes_path(col_item, "dimensions.region")
-      field "instance_type", jmes_path(col_item, "dimensions.instance_type")
       field "service", jmes_path(col_item, "dimensions.service")
       field "resource_type", jmes_path(col_item, "dimensions.resource_type")
       field "id", jmes_path(col_item,"dimensions.billing_center_id")
@@ -130,15 +121,55 @@ datasource "ds_new_bc_costs" do
 end
 
 datasource "ds_filter_cloud_bills" do
-  run_script $js_filter_cloud_bills, $ds_new_bc_costs, $ds_cloud_vendor_accounts, $ds_bill_connects
+  run_script $js_filter_cloud_bills, $ds_new_bc_costs, $ds_normalize_bill_connects
 end
 
 ###############################################################################
 # Scripts
 ###############################################################################
 
+script "js_normalize_bill_connects", type: "javascript" do
+  parameters "ds_bill_connects","ds_csp_partners"
+  result "result"
+  code <<-EOS
+    var result = [];
+    var bill_connects = ds_bill_connects.concat(ds_csp_partners);
+    _.each(bill_connects, function(bill_connect){
+      var vendor = bill_connect['cloud_vendor_id'];
+      if ( vendor === "aws" ) {
+        cloud_vendor_normal = "aws"
+        cloud_vendor_select = "AWS"
+        cloud_vendor_friendly = "Amazon Web Services"
+      } else if ( vendor === "azure-ea" ) { 
+        cloud_vendor_normal = "azure"
+        cloud_vendor_select = "Azure"
+        cloud_vendor_friendly = "Microsoft Azure EA"
+      } else if ( vendor === "azure-csp" ) {
+        cloud_vendor_normal = "azurecsp"
+        cloud_vendor_select = "AzureCSP"
+        cloud_vendor_friendly = "Microsoft Azure CSP"
+      } else if ( vendor === "google" ) {
+        cloud_vendor_normal = "google"
+        cloud_vendor_select = "Google"
+        cloud_vendor_friendly = "Google Cloud Platform"
+      }
+
+      result.push({
+        cloud_vendor_id: bill_connect.cloud_vendor_id
+        created_at: bill_connect.created_at
+        href: bill_connect.href
+        id: bill_connect.id
+        updated_at: bill_connect.updated_at
+        cloud_vendor_normal: cloud_vendor_normal
+        cloud_vendor_select: cloud_vendor_select
+        cloud_vendor_friendly: cloud_vendor_friendly
+      })
+    })
+EOS
+end
+
 script "js_new_costs_request", type: "javascript" do
-  parameters "org_id","ds_billing_centers"
+  parameters "org_id","ds_billing_centers","cloud_vendor_select"
   result "request"
   code <<-EOS
     // format the date for the `daily` API
@@ -168,21 +199,7 @@ script "js_new_costs_request", type: "javascript" do
     var top_billing_centers = _.reject(ds_billing_centers, function(bc){ return bc.parent_id != null });
     billing_center_ids = _.map(top_billing_centers, function(value, key){ return value.id });
 
-    var dimensions = ["billing_center_id","vendor","vendor_account","vendor_account_name", "category","instance_type","region","resource_type","service","usage_type","usage_unit","resource_id"]
-    var expression = [
-      {"type" : "and", "expressions" : [
-        {"dimension":"vendor","type":"equal","value":"Azure"}
-      ]},
-      {"type" : "and", "expressions" : [
-        {"dimension":"vendor","type":"equal","value":"AzureCSP"}
-      ]},
-      {"type" : "and", "expressions" : [
-        {"dimension":"vendor","type":"equal","value":"AWS"}
-      ]},
-      {"type" : "and", "expressions" : [
-        {"dimension":"vendor","type":"equal","value":"Google"}
-      ]}
-    ]
+    var dimensions = ["billing_center_id","vendor","vendor_account","vendor_account_name","category","instance_type","region","resource_type","service","usage_type","usage_unit","resource_id"]
 
     var request = {
       auth: "auth_rs",
@@ -196,10 +213,11 @@ script "js_new_costs_request", type: "javascript" do
         "granularity": "day",
         "start_at": start_date,
         "end_at": end_date,
-        "limit": 100000,
+        "limit": 1,
         "filter": {
-          "type":"or",
-          "expressions": expression
+          "dimension":"vendor",
+          "type":"equal",
+          "value": cloud_vendor_select
         }
       },
       headers: {
@@ -211,12 +229,30 @@ EOS
 end
 
 script "js_filter_cloud_bills", type: "javascript" do
-  parameters "ds_new_bc_costs", "ds_cloud_vendor_accounts", "ds_bill_connects"
+  parameters "ds_new_bc_costs", "ds_normalize_bill_connects"
   result "result"
   code <<-EOS
     var result = [];
+    var current_clouds = _.unique(_.pluck(ds_new_bc_costs, 'vendor').map(function(line) {return line.toLowerCase()}))
 
+    console.log("current_clouds:", current_clouds)
     
+    //Bill connect is aws, azure-ea, ??, ??
+    //Bill data vendor is AWS, Azure, AzureCSP, Google
+
+    _.each(ds_normalize_bill_connects, function(bill_connect){
+      var vendor = bill_connect['cloud_vendor_normal'];
+      var vendor_friendly = bill_connect['cloud_vendor_friendly']
+      console.log("Vendor: " + vendor)
+      
+      if ( _.contains(current_clouds, vendor) ) {
+        //Current bill data contains this vendor, nothing more to do
+      } else {
+        result.push({
+          cloud_vendor: vendor_friendly
+        })
+      }
+    })
 EOS
 end
 
@@ -230,20 +266,20 @@ policy "policy_bill_ingestion_alert" do
     detail_template <<-EOS
 # Optima Bill Ingestion Alert
 
-Optima has not ingested bill data for the following clouds in the past 4 days:
+Optima has not recently ingested bill data for the following clouds:
 
 {{ range data -}}
-  {{ .cloud_vendor }}
-{{ end -}}  
+* {{ .cloud_vendor }}
+{{ end }}
 
-Please verify that the neccessary credentials are still current.
-[Optima - Cloud Provider Billing Data Instructions](https://helpnet.flexerasoftware.com/Optima/#helplibrary/Cloud_Provider_Billing_Data_Instructions.htm)
-[Optima - Billing Configuration](https://analytics.rightscale.com/orgs/{{ rs_org_id }}/settings/billing-config)
+Please verify that the relevant credentials are still accurate.<br>
+[Optima - Cloud Provider Billing Data Instructions](https://helpnet.flexerasoftware.com/Optima/#helplibrary/Cloud_Provider_Billing_Data_Instructions.htm)<br>
+[Optima - Billing Configuration](https://analytics.rightscale.com/orgs/{{ rs_org_id }}/settings/billing-config)<br>
 ___
 ###### Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }}) within Org: {{ rs_org_name }} (Org ID: {{ rs_org_id }})
 EOS
     escalate $escalation_send_email
-    check eq(0,1)
+    check eq(size(data),0)
   end
 end
 
