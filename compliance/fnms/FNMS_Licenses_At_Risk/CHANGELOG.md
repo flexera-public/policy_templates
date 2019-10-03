@@ -1,4 +1,4 @@
-v0.9
+v1.0
 ----
 Initial version
 
