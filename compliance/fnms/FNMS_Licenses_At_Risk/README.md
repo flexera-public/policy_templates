@@ -1,36 +1,30 @@
 ## FlexNet Manager Licenses At Risk.
 
 ### What it does
-This policy will look up the Licenses that are at risk, meaning that there is probably not enough entitlements for the consumed applications.
-The policy is a report only policy, no action is taken during the Policy Escalation
+This policy looks up all FlexNet Manager Licenses that are at risk and lists them. A License at Risk is a License that is unable to cover the current license consumption.
 
 The report / Mail output looks like this:
 ![Alt text][emailoutput]
 
 Current limitations:
-- This only works with the FNMS Cloud
-- Output is limited to max 100.000 rows.
-
-### Pre-reqs
-- FlexNet Manager
-- The following RightScale Credentials
-  - 'FNMS_API_Token'
+- This policy currently only works with the FlexNet Manager Cloud.
+- Output is limited to max 100000 rows.
 
 ### Installation
 
-#### How to setup FlexNet Manager for this policy:
+#### How to setup FlexNet Manager for this policy
 
-1. Create the report in FlexNet manager that contains this fields:
+1. Create a report in FlexNet manager that contains these fields:
 ![Alt text][FNMSCloudInstanceReport]
-Once saved note the report number in thr URL field :
-![Alt text][ReportNumber] you need it when activating the Policy
+Once saved, note the report number in thr URL field:
+![Alt text][ReportNumber] you need it when activating the Policy.
 
-1. Setup the API Token in FNMS:
+1. Setup the API Token in FlexNet Manager:
     1. On the Account page - Select Create Account -> Service Account and fill in the form
 
         ![Alt text][CreateServeceAccount]
-    1. IMPORTANT: When you hit save you will see a API Token.. This is the only time you will see it so you need to save it at this point
-    
+    1. IMPORTANT: When you hit save you will see a API Token. This is the only time you will see it, so you need to save it at this point.
+
         ![Alt text][APIToken]
     1. Add the new account to the Role ___Webservice___
 
@@ -38,7 +32,7 @@ Once saved note the report number in thr URL field :
 
 #### Cloud manager
 
-1. Create RightScale Credentials with values that match the FlexNet Manager API Token (Credential name: `FNMS_API_Token`) 
+1. Create RightScale Credentials with values that match the FlexNet Manager API Token (Credential name: `FNMS_API_Token`).
 
 ### Input Parameters
 
@@ -52,7 +46,7 @@ This policy has the following input parameters required when launching the polic
 No actions
 
 ### Cost
-This Policy Template does not launch any instances, and so does not incur any cloud costs.
+This Policy Template does not incur any additional cloud costs.
 
 <!-- Image referances -->
 [emailoutput]: images/MailOutput_FNMSLicense.png "email output"
