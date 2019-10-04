@@ -34,1291 +34,172 @@ end
 # Authentication
 ###############################################################################
 
-auth "auth_us_east_1", type: "aws" do
+auth "auth_aws", type: "aws" do
   version 4
   service "elasticloadbalancing"
-  region 'us-east-1'
   access_key cred('AWS_ACCESS_KEY_ID')
   secret_key cred('AWS_SECRET_ACCESS_KEY')
 end
 
-auth "auth_us_east_2", type: "aws" do
-  version 4
-  service "elasticloadbalancing"
-  region 'us-east-2'
-  access_key cred('AWS_ACCESS_KEY_ID')
-  secret_key cred('AWS_SECRET_ACCESS_KEY')
-end
+###############################################################################
+# Pagination
+###############################################################################
 
-auth "auth_us_west_1", type: "aws" do
-  version 4
-  service "elasticloadbalancing"
-  region 'us-west-1'
-  access_key cred('AWS_ACCESS_KEY_ID')
-  secret_key cred('AWS_SECRET_ACCESS_KEY')
-end
-
-auth "auth_us_west_2", type: "aws" do
-  version 4
-  service "elasticloadbalancing"
-  region 'us-west-2'
-  access_key cred('AWS_ACCESS_KEY_ID')
-  secret_key cred('AWS_SECRET_ACCESS_KEY')
-end
-
-auth "auth_ap_south_1", type: "aws" do
-  version 4
-  service "elasticloadbalancing"
-  region 'ap-south-1'
-  access_key cred('AWS_ACCESS_KEY_ID')
-  secret_key cred('AWS_SECRET_ACCESS_KEY')
-end
-
-auth "auth_ap_northeast_2", type: "aws" do
-  version 4
-  service "elasticloadbalancing"
-  region 'ap-northeast-2'
-  access_key cred('AWS_ACCESS_KEY_ID')
-  secret_key cred('AWS_SECRET_ACCESS_KEY')
-end
-
-auth "auth_ap_southeast_1", type: "aws" do
-  version 4
-  service "elasticloadbalancing"
-  region 'ap-southeast-1'
-  access_key cred('AWS_ACCESS_KEY_ID')
-  secret_key cred('AWS_SECRET_ACCESS_KEY')
-end
-
-auth "auth_ap_southeast_2", type: "aws" do
-  version 4
-  service "elasticloadbalancing"
-  region 'ap-southeast-2'
-  access_key cred('AWS_ACCESS_KEY_ID')
-  secret_key cred('AWS_SECRET_ACCESS_KEY')
-end
-
-auth "auth_ap_northeast_1", type: "aws" do
-  version 4
-  service "elasticloadbalancing"
-  region 'ap-northeast-1'
-  access_key cred('AWS_ACCESS_KEY_ID')
-  secret_key cred('AWS_SECRET_ACCESS_KEY')
-end
-
-auth "auth_ca_central_1", type: "aws" do
-  version 4
-  service "elasticloadbalancing"
-  region 'ca-central-1'
-  access_key cred('AWS_ACCESS_KEY_ID')
-  secret_key cred('AWS_SECRET_ACCESS_KEY')
-end
-
-auth "auth_eu_central_1", type: "aws" do
-  version 4
-  service "elasticloadbalancing"
-  region 'eu-central-1'
-  access_key cred('AWS_ACCESS_KEY_ID')
-  secret_key cred('AWS_SECRET_ACCESS_KEY')
-end
-
-auth "auth_eu_west_1", type: "aws" do
-  version 4
-  service "elasticloadbalancing"
-  region 'eu-west-1'
-  access_key cred('AWS_ACCESS_KEY_ID')
-  secret_key cred('AWS_SECRET_ACCESS_KEY')
-end
-
-auth "auth_eu_west_2", type: "aws" do
-  version 4
-  service "elasticloadbalancing"
-  region 'eu-west-2'
-  access_key cred('AWS_ACCESS_KEY_ID')
-  secret_key cred('AWS_SECRET_ACCESS_KEY')
-end
-
-auth "auth_eu_west_3", type: "aws" do
-  version 4
-  service "elasticloadbalancing"
-  region 'eu-west-3'
-  access_key cred('AWS_ACCESS_KEY_ID')
-  secret_key cred('AWS_SECRET_ACCESS_KEY')
-end
-
-auth "auth_sa_east_1", type: "aws" do
-  version 4
-  service "elasticloadbalancing"
-  region 'sa-east-1'
-  access_key cred('AWS_ACCESS_KEY_ID')
-  secret_key cred('AWS_SECRET_ACCESS_KEY')
-end
-
-auth "auth_eu_north_1", type: "aws" do
-  version 4
-  service "elasticloadbalancing"
-  region 'eu-north-1'
-  access_key cred('AWS_ACCESS_KEY_ID')
-  secret_key cred('AWS_SECRET_ACCESS_KEY')
+pagination "elb_pagination" do
+  get_page_marker do
+    body_path "DescribeLoadBalancersResult.NextMarker"
+  end
+  set_page_marker do
+    query "Marker"
+  end
 end
 
 ###############################################################################
 # Datasources
 ###############################################################################
 
-#https://docs.aws.amazon.com/elasticloadbalancing/2012-06-01/APIReference/API_DescribeLoadBalancers.html
-datasource "ds_us_east_1_clb_list" do
+#Generates list of Regions
+datasource "ds_regions_list" do
   request do
-    auth $auth_us_east_1
-    host "elasticloadbalancing.us-east-1.amazonaws.com"
-    path "/"
     verb "GET"
-    query "Action", "DescribeLoadBalancers"
-    query "Version", "2012-06-01"
-    header "Accept", "application/json"
+    host "raw.githubusercontent.com"
+    path "/rightscale/policy_templates/master/data/aws/regions.json"
+    header "User-Agent", "RS Policies"
+  end
+end
+
+#Generates list of Regions with Load Balancer type and API version.
+datasource "ds_api_regions_list" do
+  run_script $js_api_regions_list, $ds_regions_list
+end
+
+#Get the list of all Classic and application load Balancers
+datasource "ds_elb_list" do
+  iterate $ds_api_regions_list
+  request do
+    run_script $js_elb_list, val(iter_item,"region"), val(iter_item,"API_version")
   end
   result do
     encoding "json"
-    collect jmes_path(response, "DescribeLoadBalancersResponse.DescribeLoadBalancersResult.LoadBalancerDescriptions[*]") do
+    collect jmes_path(response, "DescribeLoadBalancersResponse.DescribeLoadBalancersResult.*[*][]") do
       field "loadBalancerName", jmes_path(col_item, "LoadBalancerName")
+      field "loadBalancerType", val(iter_item,"LBtype")
+      field "region", val(iter_item,"region")
       field "availabilityZones", jmes_path(col_item, "AvailabilityZones")
-      field "instancesList", jmes_path(col_item, "Instances[*].InstanceId")
-      field "listenerList", jmes_path(col_item, "ListenerDescriptions[*].Listener")
+      field "scheme",  jmes_path(col_item, "Scheme")
+      field "loadBalancerArn",  jmes_path(col_item, "LoadBalancerArn")
+      field "api_version", val(iter_item,"API_version")
+      field "listenerDescriptions", jmes_path(col_item, "ListenerDescriptions")
     end
   end
 end
 
-# datasource "ds_us_east_2_clb_list" do
-#   request do
-#     auth $auth_us_east_2
-#     host "elasticloadbalancing.us-east-2.amazonaws.com"
-#     path "/"
-#     verb "GET"
-#     query "Action", "DescribeLoadBalancers"
-#     query "Version", "2012-06-01"
-#     header "Accept", "application/json"
-#   end
-#   result do
-#     encoding "json"
-#     collect jmes_path(response, "DescribeLoadBalancersResponse.DescribeLoadBalancersResult.LoadBalancerDescriptions[*]") do
-#       field "loadBalancerName", jmes_path(col_item, "LoadBalancerName")
-#       field "availabilityZones", jmes_path(col_item, "AvailabilityZones")
-#       field "instancesList", jmes_path(col_item, "Instances[*].InstanceId")
-#     end
-#   end
-# end
-
-# datasource "ds_us_west_1_clb_list" do
-#   request do
-#     auth $auth_us_west_1
-#     host "elasticloadbalancing.us-west-1.amazonaws.com"
-#     path "/"
-#     verb "GET"
-#     query "Action", "DescribeLoadBalancers"
-#     query "Version", "2012-06-01"
-#     header "Accept", "application/json"
-#   end
-#   result do
-#     encoding "json"
-#     collect jmes_path(response, "DescribeLoadBalancersResponse.DescribeLoadBalancersResult.LoadBalancerDescriptions[*]") do
-#       field "loadBalancerName", jmes_path(col_item, "LoadBalancerName")
-#       field "availabilityZones", jmes_path(col_item, "AvailabilityZones")
-#       field "instancesList", jmes_path(col_item, "Instances[*].InstanceId")
-#     end
-#   end
-# end
-
-# datasource "ds_us_west_2_clb_list" do
-#   request do
-#     auth $auth_us_west_2
-#     host "elasticloadbalancing.us-west-2.amazonaws.com"
-#     path "/"
-#     verb "GET"
-#     query "Action", "DescribeLoadBalancers"
-#     query "Version", "2012-06-01"
-#     header "Accept", "application/json"
-#   end
-#   result do
-#     encoding "json"
-#     collect jmes_path(response, "DescribeLoadBalancersResponse.DescribeLoadBalancersResult.LoadBalancerDescriptions[*]") do
-#       field "loadBalancerName", jmes_path(col_item, "LoadBalancerName")
-#       field "availabilityZones", jmes_path(col_item, "AvailabilityZones")
-#       field "instancesList", jmes_path(col_item, "Instances[*].InstanceId")
-#     end
-#   end
-# end
-
-# datasource "ds_ap_south_1_clb_list" do
-#   request do
-#     auth $auth_ap_south_1
-#     host "elasticloadbalancing.ap-south-1.amazonaws.com"
-#     path "/"
-#     verb "GET"
-#     query "Action", "DescribeLoadBalancers"
-#     query "Version", "2012-06-01"
-#     header "Accept", "application/json"
-#   end
-#   result do
-#     encoding "json"
-#     collect jmes_path(response, "DescribeLoadBalancersResponse.DescribeLoadBalancersResult.LoadBalancerDescriptions[*]") do
-#       field "loadBalancerName", jmes_path(col_item, "LoadBalancerName")
-#       field "availabilityZones", jmes_path(col_item, "AvailabilityZones")
-#       field "instancesList", jmes_path(col_item, "Instances[*].InstanceId")
-#     end
-#   end
-# end
-
-# datasource "ds_ap_northeast_2_clb_list" do
-#   request do
-#     auth $auth_ap_northeast_2
-#     host "elasticloadbalancing.ap-northeast-2.amazonaws.com"
-#     path "/"
-#     verb "GET"
-#     query "Action", "DescribeLoadBalancers"
-#     query "Version", "2012-06-01"
-#     header "Accept", "application/json"
-#   end
-#   result do
-#     encoding "json"
-#     collect jmes_path(response, "DescribeLoadBalancersResponse.DescribeLoadBalancersResult.LoadBalancerDescriptions[*]") do
-#       field "loadBalancerName", jmes_path(col_item, "LoadBalancerName")
-#       field "availabilityZones", jmes_path(col_item, "AvailabilityZones")
-#       field "instancesList", jmes_path(col_item, "Instances[*].InstanceId")
-#     end
-#   end
-# end
-
-# datasource "ds_ap_southeast_1_clb_list" do
-#   request do
-#     auth $auth_ap_southeast_1
-#     host "elasticloadbalancing.ap-southeast-1.amazonaws.com"
-#     path "/"
-#     verb "GET"
-#     query "Action", "DescribeLoadBalancers"
-#     query "Version", "2012-06-01"
-#     header "Accept", "application/json"
-#   end
-#   result do
-#     encoding "json"
-#     collect jmes_path(response, "DescribeLoadBalancersResponse.DescribeLoadBalancersResult.LoadBalancerDescriptions[*]") do
-#       field "loadBalancerName", jmes_path(col_item, "LoadBalancerName")
-#       field "availabilityZones", jmes_path(col_item, "AvailabilityZones")
-#       field "instancesList", jmes_path(col_item, "Instances[*].InstanceId")
-#     end
-#   end
-# end
-
-# datasource "ds_ap_southeast_2_clb_list" do
-#   request do
-#     auth $auth_ap_southeast_2
-#     host "elasticloadbalancing.ap-southeast-2.amazonaws.com"
-#     path "/"
-#     verb "GET"
-#     query "Action", "DescribeLoadBalancers"
-#     query "Version", "2012-06-01"
-#     header "Accept", "application/json"
-#   end
-#   result do
-#     encoding "json"
-#     collect jmes_path(response, "DescribeLoadBalancersResponse.DescribeLoadBalancersResult.LoadBalancerDescriptions[*]") do
-#       field "loadBalancerName", jmes_path(col_item, "LoadBalancerName")
-#       field "availabilityZones", jmes_path(col_item, "AvailabilityZones")
-#       field "instancesList", jmes_path(col_item, "Instances[*].InstanceId")
-#     end
-#   end
-# end
-
-# datasource "ds_ap_northeast_1_clb_list" do
-#   request do
-#     auth $auth_ap_northeast_1
-#     host "elasticloadbalancing.ap-northeast-1.amazonaws.com"
-#     path "/"
-#     verb "GET"
-#     query "Action", "DescribeLoadBalancers"
-#     query "Version", "2012-06-01"
-#     header "Accept", "application/json"
-#   end
-#   result do
-#     encoding "json"
-#     collect jmes_path(response, "DescribeLoadBalancersResponse.DescribeLoadBalancersResult.LoadBalancerDescriptions[*]") do
-#       field "loadBalancerName", jmes_path(col_item, "LoadBalancerName")
-#       field "availabilityZones", jmes_path(col_item, "AvailabilityZones")
-#       field "instancesList", jmes_path(col_item, "Instances[*].InstanceId")
-#     end
-#   end
-# end
-
-# datasource "ds_ca_central_1_clb_list" do
-#   request do
-#     auth $auth_ca_central_1
-#     host "elasticloadbalancing.ca-central-1.amazonaws.com"
-#     path "/"
-#     verb "GET"
-#     query "Action", "DescribeLoadBalancers"
-#     query "Version", "2012-06-01"
-#     header "Accept", "application/json"
-#   end
-#   result do
-#     encoding "json"
-#     collect jmes_path(response, "DescribeLoadBalancersResponse.DescribeLoadBalancersResult.LoadBalancerDescriptions[*]") do
-#       field "loadBalancerName", jmes_path(col_item, "LoadBalancerName")
-#       field "availabilityZones", jmes_path(col_item, "AvailabilityZones")
-#       field "instancesList", jmes_path(col_item, "Instances[*].InstanceId")
-#     end
-#   end
-# end
-
-# datasource "ds_eu_central_1_clb_list" do
-#   request do
-#     auth $auth_eu_central_1
-#     host "elasticloadbalancing.eu-central-1.amazonaws.com"
-#     path "/"
-#     verb "GET"
-#     query "Action", "DescribeLoadBalancers"
-#     query "Version", "2012-06-01"
-#     header "Accept", "application/json"
-#   end
-#   result do
-#     encoding "json"
-#     collect jmes_path(response, "DescribeLoadBalancersResponse.DescribeLoadBalancersResult.LoadBalancerDescriptions[*]") do
-#       field "loadBalancerName", jmes_path(col_item, "LoadBalancerName")
-#       field "availabilityZones", jmes_path(col_item, "AvailabilityZones")
-#       field "instancesList", jmes_path(col_item, "Instances[*].InstanceId")
-#     end
-#   end
-# end
-
-# datasource "ds_eu_west_1_clb_list" do
-#   request do
-#     auth $auth_eu_west_1
-#     host "elasticloadbalancing.eu-west-1.amazonaws.com"
-#     path "/"
-#     verb "GET"
-#     query "Action", "DescribeLoadBalancers"
-#     query "Version", "2012-06-01"
-#     header "Accept", "application/json"
-#   end
-#   result do
-#     encoding "json"
-#     collect jmes_path(response, "DescribeLoadBalancersResponse.DescribeLoadBalancersResult.LoadBalancerDescriptions[*]") do
-#       field "loadBalancerName", jmes_path(col_item, "LoadBalancerName")
-#       field "availabilityZones", jmes_path(col_item, "AvailabilityZones")
-#       field "instancesList", jmes_path(col_item, "Instances[*].InstanceId")
-#     end
-#   end
-# end
-
-# datasource "ds_eu_west_2_clb_list" do
-#   request do
-#     auth $auth_eu_west_2
-#     host "elasticloadbalancing.eu-west-2.amazonaws.com"
-#     path "/"
-#     verb "GET"
-#     query "Action", "DescribeLoadBalancers"
-#     query "Version", "2012-06-01"
-#     header "Accept", "application/json"
-#   end
-#   result do
-#     encoding "json"
-#     collect jmes_path(response, "DescribeLoadBalancersResponse.DescribeLoadBalancersResult.LoadBalancerDescriptions[*]") do
-#       field "loadBalancerName", jmes_path(col_item, "LoadBalancerName")
-#       field "availabilityZones", jmes_path(col_item, "AvailabilityZones")
-#       field "instancesList", jmes_path(col_item, "Instances[*].InstanceId")
-#     end
-#   end
-# end
-
-# datasource "ds_eu_west_3_clb_list" do
-#   request do
-#     auth $auth_eu_west_3
-#     host "elasticloadbalancing.eu-west-3.amazonaws.com"
-#     path "/"
-#     verb "GET"
-#     query "Action", "DescribeLoadBalancers"
-#     query "Version", "2012-06-01"
-#     header "Accept", "application/json"
-#   end
-#   result do
-#     encoding "json"
-#     collect jmes_path(response, "DescribeLoadBalancersResponse.DescribeLoadBalancersResult.LoadBalancerDescriptions[*]") do
-#       field "loadBalancerName", jmes_path(col_item, "LoadBalancerName")
-#       field "availabilityZones", jmes_path(col_item, "AvailabilityZones")
-#       field "instancesList", jmes_path(col_item, "Instances[*].InstanceId")
-#     end
-#   end
-# end
-
-# datasource "ds_sa_east_1_clb_list" do
-#   request do
-#     auth $auth_sa_east_1
-#     host "elasticloadbalancing.sa-east-1.amazonaws.com"
-#     path "/"
-#     verb "GET"
-#     query "Action", "DescribeLoadBalancers"
-#     query "Version", "2012-06-01"
-#     header "Accept", "application/json"
-#   end
-#   result do
-#     encoding "json"
-#     collect jmes_path(response, "DescribeLoadBalancersResponse.DescribeLoadBalancersResult.LoadBalancerDescriptions[*]") do
-#       field "loadBalancerName", jmes_path(col_item, "LoadBalancerName")
-#       field "availabilityZones", jmes_path(col_item, "AvailabilityZones")
-#       field "instancesList", jmes_path(col_item, "Instances[*].InstanceId")
-#     end
-#   end
-# end
-
-# datasource "ds_eu_north_1_clb_list" do
-#   request do
-#     auth $auth_eu_north_1
-#     host "elasticloadbalancing.eu-north-1.amazonaws.com"
-#     path "/"
-#     verb "GET"
-#     query "Action", "DescribeLoadBalancers"
-#     query "Version", "2012-06-01"
-#     header "Accept", "application/json"
-#   end
-#   result do
-#     encoding "json"
-#     collect jmes_path(response, "DescribeLoadBalancersResponse.DescribeLoadBalancersResult.LoadBalancerDescriptions[*]") do
-#       field "loadBalancerName", jmes_path(col_item, "LoadBalancerName")
-#       field "availabilityZones", jmes_path(col_item, "AvailabilityZones")
-#       field "instancesList", jmes_path(col_item, "Instances[*].InstanceId")
-#     end
-#   end
-# end
-
-#https://docs.aws.amazon.com/elasticloadbalancing/2012-06-01/APIReference/API_DescribeTags.html
-datasource "ds_us_east_1_clb_list_tags" do
-  iterate $ds_us_east_1_clb_list
+#Get respective tags for all Classic and application load Balancers
+datasource "ds_elb_list_with_tags" do
+  iterate $ds_elb_list
   request do
-    auth $auth_us_east_1
-    host "elasticloadbalancing.us-east-1.amazonaws.com"
-    path "/"
-    verb "GET"
-    query "Action", "DescribeTags"
-    query "Version", "2012-06-01"
-    query "LoadBalancerNames.member.1",val(iter_item, "loadBalancerName")
-    header "Accept", "application/json"
+    run_script $js_elb_list_with_tags, val(iter_item,"region"), val(iter_item,"api_version"), val(iter_item, "loadBalancerName"), val(iter_item, "loadBalancerArn")
   end
   result do
     encoding "json"
     collect jmes_path(response, "DescribeTagsResponse.DescribeTagsResult.TagDescriptions[*]") do
+      field "loadBalancerName", val(iter_item, "loadBalancerName")
+      field "loadBalancerType", val(iter_item,"loadBalancerType")
+      field "listenerDescriptions", val(iter_item,"listenerDescriptions")
+      field "region", val(iter_item,"region")
+      field "availabilityZones", val(iter_item, "availabilityZones")
       field "tags" do
         collect jmes_path(col_item,"Tags") do
           field "tagKey", jmes_path(col_item,"Key")
           field "tagValue", jmes_path(col_item,"Value")
         end
       end
-      field "loadBalancerName", val(iter_item, "loadBalancerName")
-      field "availabilityZones", val(iter_item, "availabilityZones")
-      field "instancesList", val(iter_item, "instancesList")
+      field "scheme",  val(iter_item,"scheme")
+      field "loadBalancerArn",  val(iter_item,"loadBalancerArn")
+      field "api_version", val(iter_item,"api_version")
     end
   end
 end
 
-# datasource "ds_us_east_2_clb_list_tags" do
-#   iterate $ds_us_east_2_clb_list
-#   request do
-#     auth $auth_us_east_2
-#     host "elasticloadbalancing.us-east-2.amazonaws.com"
-#     path "/"
-#     verb "GET"
-#     query "Action", "DescribeTags"
-#     query "Version", "2012-06-01"
-#     query "LoadBalancerNames.member.1",val(iter_item, "loadBalancerName")
-#     header "Accept", "application/json"
-#   end
-#   result do
-#     encoding "json"
-#     collect jmes_path(response, "DescribeTagsResponse.DescribeTagsResult.TagDescriptions[*]") do
-#       field "tags" do
-#         collect jmes_path(col_item,"Tags") do
-#           field "tagKey", jmes_path(col_item,"Key")
-#           field "tagValue", jmes_path(col_item,"Value")
-#         end
-#       end
-#       field "loadBalancerName", val(iter_item, "loadBalancerName")
-#       field "availabilityZones", val(iter_item, "availabilityZones")
-#       field "instancesList", val(iter_item, "instancesList")
-#     end
-#   end
-# end
-
-# datasource "ds_us_west_1_clb_list_tags" do
-#   iterate $ds_us_west_1_clb_list
-#   request do
-#     auth $auth_us_west_1
-#     host "elasticloadbalancing.us-west-1.amazonaws.com"
-#     path "/"
-#     verb "GET"
-#     query "Action", "DescribeTags"
-#     query "Version", "2012-06-01"
-#     query "LoadBalancerNames.member.1",val(iter_item, "loadBalancerName")
-#     header "Accept", "application/json"
-#   end
-#   result do
-#     encoding "json"
-#     collect jmes_path(response, "DescribeTagsResponse.DescribeTagsResult.TagDescriptions[*]") do
-#       field "tags" do
-#         collect jmes_path(col_item,"Tags") do
-#           field "tagKey", jmes_path(col_item,"Key")
-#           field "tagValue", jmes_path(col_item,"Value")
-#         end
-#       end
-#       field "loadBalancerName", val(iter_item, "loadBalancerName")
-#       field "availabilityZones", val(iter_item, "availabilityZones")
-#       field "instancesList", val(iter_item, "instancesList")
-#     end
-#   end
-# end
-
-# datasource "ds_us_west_2_clb_list_tags" do
-#   iterate $ds_us_west_2_clb_list
-#   request do
-#     auth $auth_us_west_2
-#     host "elasticloadbalancing.us-west-2.amazonaws.com"
-#     path "/"
-#     verb "GET"
-#     query "Action", "DescribeTags"
-#     query "Version", "2012-06-01"
-#     query "LoadBalancerNames.member.1",val(iter_item, "loadBalancerName")
-#     header "Accept", "application/json"
-#   end
-#   result do
-#     encoding "json"
-#     collect jmes_path(response, "DescribeTagsResponse.DescribeTagsResult.TagDescriptions[*]") do
-#       field "tags" do
-#         collect jmes_path(col_item,"Tags") do
-#           field "tagKey", jmes_path(col_item,"Key")
-#           field "tagValue", jmes_path(col_item,"Value")
-#         end
-#       end
-#       field "loadBalancerName", val(iter_item, "loadBalancerName")
-#       field "availabilityZones", val(iter_item, "availabilityZones")
-#       field "instancesList", val(iter_item, "instancesList")
-#     end
-#   end
-# end
-
-# datasource "ds_ap_south_1_clb_list_tags" do
-#   iterate $ds_ap_south_1_clb_list
-#   request do
-#     auth $auth_ap_south_1
-#     host "elasticloadbalancing.ap-south-1.amazonaws.com"
-#     path "/"
-#     verb "GET"
-#     query "Action", "DescribeTags"
-#     query "Version", "2012-06-01"
-#     query "LoadBalancerNames.member.1",val(iter_item, "loadBalancerName")
-#     header "Accept", "application/json"
-#   end
-#   result do
-#     encoding "json"
-#     collect jmes_path(response, "DescribeTagsResponse.DescribeTagsResult.TagDescriptions[*]") do
-#       field "tags" do
-#         collect jmes_path(col_item,"Tags") do
-#           field "tagKey", jmes_path(col_item,"Key")
-#           field "tagValue", jmes_path(col_item,"Value")
-#         end
-#       end
-#       field "loadBalancerName", val(iter_item, "loadBalancerName")
-#       field "availabilityZones", val(iter_item, "availabilityZones")
-#       field "instancesList", val(iter_item, "instancesList")
-#     end
-#   end
-# end
-
-# datasource "ds_ap_northeast_2_clb_list_tags" do
-#   iterate $ds_ap_northeast_2_clb_list
-#   request do
-#     auth $auth_ap_northeast_2
-#     host "elasticloadbalancing.ap-northeast-2.amazonaws.com"
-#     path "/"
-#     verb "GET"
-#     query "Action", "DescribeTags"
-#     query "Version", "2012-06-01"
-#     query "LoadBalancerNames.member.1",val(iter_item, "loadBalancerName")
-#     header "Accept", "application/json"
-#   end
-#   result do
-#     encoding "json"
-#     collect jmes_path(response, "DescribeTagsResponse.DescribeTagsResult.TagDescriptions[*]") do
-#       field "tags" do
-#         collect jmes_path(col_item,"Tags") do
-#           field "tagKey", jmes_path(col_item,"Key")
-#           field "tagValue", jmes_path(col_item,"Value")
-#         end
-#       end
-#       field "loadBalancerName", val(iter_item, "loadBalancerName")
-#       field "availabilityZones", val(iter_item, "availabilityZones")
-#       field "instancesList", val(iter_item, "instancesList")
-#     end
-#   end
-# end
-
-# datasource "ds_ap_southeast_1_clb_list_tags" do
-#   iterate $ds_ap_southeast_1_clb_list
-#   request do
-#     auth $auth_ap_southeast_1
-#     host "elasticloadbalancing.ap-southeast-1.amazonaws.com"
-#     path "/"
-#     verb "GET"
-#     query "Action", "DescribeTags"
-#     query "Version", "2012-06-01"
-#     query "LoadBalancerNames.member.1",val(iter_item, "loadBalancerName")
-#     header "Accept", "application/json"
-#   end
-#   result do
-#     encoding "json"
-#     collect jmes_path(response, "DescribeTagsResponse.DescribeTagsResult.TagDescriptions[*]") do
-#       field "tags" do
-#         collect jmes_path(col_item,"Tags") do
-#           field "tagKey", jmes_path(col_item,"Key")
-#           field "tagValue", jmes_path(col_item,"Value")
-#         end
-#       end
-#       field "loadBalancerName", val(iter_item, "loadBalancerName")
-#       field "availabilityZones", val(iter_item, "availabilityZones")
-#       field "instancesList", val(iter_item, "instancesList")
-#     end
-#   end
-# end
-
-# datasource "ds_ap_southeast_2_clb_list_tags" do
-#   iterate $ds_ap_southeast_2_clb_list
-#   request do
-#     auth $auth_ap_southeast_2
-#     host "elasticloadbalancing.ap-southeast-2.amazonaws.com"
-#     path "/"
-#     verb "GET"
-#     query "Action", "DescribeTags"
-#     query "Version", "2012-06-01"
-#     query "LoadBalancerNames.member.1",val(iter_item, "loadBalancerName")
-#     header "Accept", "application/json"
-#   end
-#   result do
-#     encoding "json"
-#     collect jmes_path(response, "DescribeTagsResponse.DescribeTagsResult.TagDescriptions[*]") do
-#       field "tags" do
-#         collect jmes_path(col_item,"Tags") do
-#           field "tagKey", jmes_path(col_item,"Key")
-#           field "tagValue", jmes_path(col_item,"Value")
-#         end
-#       end
-#       field "loadBalancerName", val(iter_item, "loadBalancerName")
-#       field "availabilityZones", val(iter_item, "availabilityZones")
-#       field "instancesList", val(iter_item, "instancesList")
-#     end
-#   end
-# end
-
-# datasource "ds_ap_northeast_1_clb_list_tags" do
-#   iterate $ds_ap_northeast_1_clb_list
-#   request do
-#     auth $auth_ap_northeast_1
-#     host "elasticloadbalancing.ap-northeast-1.amazonaws.com"
-#     path "/"
-#     verb "GET"
-#     query "Action", "DescribeTags"
-#     query "Version", "2012-06-01"
-#     query "LoadBalancerNames.member.1",val(iter_item, "loadBalancerName")
-#     header "Accept", "application/json"
-#   end
-#   result do
-#     encoding "json"
-#     collect jmes_path(response, "DescribeTagsResponse.DescribeTagsResult.TagDescriptions[*]") do
-#       field "tags" do
-#         collect jmes_path(col_item,"Tags") do
-#           field "tagKey", jmes_path(col_item,"Key")
-#           field "tagValue", jmes_path(col_item,"Value")
-#         end
-#       end
-#       field "loadBalancerName", val(iter_item, "loadBalancerName")
-#       field "availabilityZones", val(iter_item, "availabilityZones")
-#       field "instancesList", val(iter_item, "instancesList")
-#     end
-#   end
-# end
-
-# datasource "ds_ca_central_1_clb_list_tags" do
-#   iterate $ds_ca_central_1_clb_list
-#   request do
-#     auth $auth_ca_central_1
-#     host "elasticloadbalancing.ca-central-1.amazonaws.com"
-#     path "/"
-#     verb "GET"
-#     query "Action", "DescribeTags"
-#     query "Version", "2012-06-01"
-#     query "LoadBalancerNames.member.1",val(iter_item, "loadBalancerName")
-#     header "Accept", "application/json"
-#   end
-#   result do
-#     encoding "json"
-#     collect jmes_path(response, "DescribeTagsResponse.DescribeTagsResult.TagDescriptions[*]") do
-#       field "tags" do
-#         collect jmes_path(col_item,"Tags") do
-#           field "tagKey", jmes_path(col_item,"Key")
-#           field "tagValue", jmes_path(col_item,"Value")
-#         end
-#       end
-#       field "loadBalancerName", val(iter_item, "loadBalancerName")
-#       field "availabilityZones", val(iter_item, "availabilityZones")
-#       field "instancesList", val(iter_item, "instancesList")
-#     end
-#   end
-# end
-
-# datasource "ds_eu_central_1_clb_list_tags" do
-#   iterate $ds_eu_central_1_clb_list
-#   request do
-#     auth $auth_eu_central_1
-#     host "elasticloadbalancing.eu-central-1.amazonaws.com"
-#     path "/"
-#     verb "GET"
-#     query "Action", "DescribeTags"
-#     query "Version", "2012-06-01"
-#     query "LoadBalancerNames.member.1",val(iter_item, "loadBalancerName")
-#     header "Accept", "application/json"
-#   end
-#   result do
-#     encoding "json"
-#     collect jmes_path(response, "DescribeTagsResponse.DescribeTagsResult.TagDescriptions[*]") do
-#       field "tags" do
-#         collect jmes_path(col_item,"Tags") do
-#           field "tagKey", jmes_path(col_item,"Key")
-#           field "tagValue", jmes_path(col_item,"Value")
-#         end
-#       end
-#       field "loadBalancerName", val(iter_item, "loadBalancerName")
-#       field "availabilityZones", val(iter_item, "availabilityZones")
-#       field "instancesList", val(iter_item, "instancesList")
-#     end
-#   end
-# end
-
-# datasource "ds_eu_west_1_clb_list_tags" do
-#   iterate $ds_eu_west_1_clb_list
-#   request do
-#     auth $auth_eu_west_1
-#     host "elasticloadbalancing.eu-west-1.amazonaws.com"
-#     path "/"
-#     verb "GET"
-#     query "Action", "DescribeTags"
-#     query "Version", "2012-06-01"
-#     query "LoadBalancerNames.member.1",val(iter_item, "loadBalancerName")
-#     header "Accept", "application/json"
-#   end
-#   result do
-#     encoding "json"
-#     collect jmes_path(response, "DescribeTagsResponse.DescribeTagsResult.TagDescriptions[*]") do
-#       field "tags" do
-#         collect jmes_path(col_item,"Tags") do
-#           field "tagKey", jmes_path(col_item,"Key")
-#           field "tagValue", jmes_path(col_item,"Value")
-#         end
-#       end
-#       field "loadBalancerName", val(iter_item, "loadBalancerName")
-#       field "availabilityZones", val(iter_item, "availabilityZones")
-#       field "instancesList", val(iter_item, "instancesList")
-#     end
-#   end
-# end
-
-# datasource "ds_eu_west_2_clb_list_tags" do
-#   iterate $ds_eu_west_2_clb_list
-#   request do
-#     auth $auth_eu_west_2
-#     host "elasticloadbalancing.eu-west-2.amazonaws.com"
-#     path "/"
-#     verb "GET"
-#     query "Action", "DescribeTags"
-#     query "Version", "2012-06-01"
-#     query "LoadBalancerNames.member.1",val(iter_item, "loadBalancerName")
-#     header "Accept", "application/json"
-#   end
-#   result do
-#     encoding "json"
-#     collect jmes_path(response, "DescribeTagsResponse.DescribeTagsResult.TagDescriptions[*]") do
-#       field "tags" do
-#         collect jmes_path(col_item,"Tags") do
-#           field "tagKey", jmes_path(col_item,"Key")
-#           field "tagValue", jmes_path(col_item,"Value")
-#         end
-#       end
-#       field "loadBalancerName", val(iter_item, "loadBalancerName")
-#       field "availabilityZones", val(iter_item, "availabilityZones")
-#       field "instancesList", val(iter_item, "instancesList")
-#     end
-#   end
-# end
-
-# datasource "ds_eu_west_3_clb_list_tags" do
-#   iterate $ds_eu_west_3_clb_list
-#   request do
-#     auth $auth_eu_west_3
-#     host "elasticloadbalancing.eu-west-3.amazonaws.com"
-#     path "/"
-#     verb "GET"
-#     query "Action", "DescribeTags"
-#     query "Version", "2012-06-01"
-#     query "LoadBalancerNames.member.1",val(iter_item, "loadBalancerName")
-#     header "Accept", "application/json"
-#   end
-#   result do
-#     encoding "json"
-#     collect jmes_path(response, "DescribeTagsResponse.DescribeTagsResult.TagDescriptions[*]") do
-#       field "tags" do
-#         collect jmes_path(col_item,"Tags") do
-#           field "tagKey", jmes_path(col_item,"Key")
-#           field "tagValue", jmes_path(col_item,"Value")
-#         end
-#       end
-#       field "loadBalancerName", val(iter_item, "loadBalancerName")
-#       field "availabilityZones", val(iter_item, "availabilityZones")
-#       field "instancesList", val(iter_item, "instancesList")
-#     end
-#   end
-# end
-
-# datasource "ds_sa_east_1_clb_list_tags" do
-#   iterate $ds_sa_east_1_clb_list
-#   request do
-#     auth $auth_sa_east_1
-#     host "elasticloadbalancing.sa-east-1.amazonaws.com"
-#     path "/"
-#     verb "GET"
-#     query "Action", "DescribeTags"
-#     query "Version", "2012-06-01"
-#     query "LoadBalancerNames.member.1",val(iter_item, "loadBalancerName")
-#     header "Accept", "application/json"
-#   end
-#   result do
-#     encoding "json"
-#     collect jmes_path(response, "DescribeTagsResponse.DescribeTagsResult.TagDescriptions[*]") do
-#       field "tags" do
-#         collect jmes_path(col_item,"Tags") do
-#           field "tagKey", jmes_path(col_item,"Key")
-#           field "tagValue", jmes_path(col_item,"Value")
-#         end
-#       end
-#       field "loadBalancerName", val(iter_item, "loadBalancerName")
-#       field "availabilityZones", val(iter_item, "availabilityZones")
-#       field "instancesList", val(iter_item, "instancesList")
-#     end
-#   end
-# end
-
-# datasource "ds_eu_north_1_clb_list_tags" do
-#   iterate $ds_eu_north_1_clb_list
-#   request do
-#     auth $auth_eu_north_1
-#     host "elasticloadbalancing.eu-north-1.amazonaws.com"
-#     path "/"
-#     verb "GET"
-#     query "Action", "DescribeTags"
-#     query "Version", "2012-06-01"
-#     query "LoadBalancerNames.member.1",val(iter_item, "loadBalancerName")
-#     header "Accept", "application/json"
-#   end
-#   result do
-#     encoding "json"
-#     collect jmes_path(response, "DescribeTagsResponse.DescribeTagsResult.TagDescriptions[*]") do
-#       field "tags" do
-#         collect jmes_path(col_item,"Tags") do
-#           field "tagKey", jmes_path(col_item,"Key")
-#           field "tagValue", jmes_path(col_item,"Value")
-#         end
-#       end
-#       field "loadBalancerName", val(iter_item, "loadBalancerName")
-#       field "availabilityZones", val(iter_item, "availabilityZones")
-#       field "instancesList", val(iter_item, "instancesList")
-#     end
-#   end
-# end
-
-#https://docs.aws.amazon.com/elasticloadbalancing/2012-06-01/APIReference/API_DescribeInstanceHealth.html
-datasource "ds_us_east_1_instances_health" do
-  iterate $ds_us_east_1_clb_list
-   request do
-    auth $auth_us_east_1
-    host "elasticloadbalancing.us-east-1.amazonaws.com"
-    path "/"
-    verb "GET"
-    query "Action", "DescribeInstanceHealth"
-    query "Version", "2012-06-01"
-    query "LoadBalancerName",val(iter_item, "loadBalancerName")
-    header "Accept", "application/json"
-  end
-  result do
-    encoding "json"
-    collect jmes_path(response, "DescribeInstanceHealthResponse.DescribeInstanceHealthResult.InstanceStates[*]") do
-      field "description", jmes_path(col_item,"Description")
-      field "state", jmes_path(col_item,"State")
-      field "instanceId", jmes_path(col_item,"InstanceId")
-      field "loadBalancerName", val(iter_item, "loadBalancerName")
-    end
-  end
-end
-
-# datasource "ds_us_east_2_instances_health" do
-#   iterate $ds_us_east_2_clb_list
-#   request do
-#     auth $auth_us_east_2
-#     host "elasticloadbalancing.us-east-2.amazonaws.com"
-#     path "/"
-#     verb "GET"
-#     query "Action", "DescribeInstanceHealth"
-#     query "Version", "2012-06-01"
-#     query "LoadBalancerName",val(iter_item, "loadBalancerName")
-#     header "Accept", "application/json"
-#   end
-#   result do
-#     encoding "json"
-#     collect jmes_path(response, "DescribeInstanceHealthResponse.DescribeInstanceHealthResult.InstanceStates[*]") do
-#       field "description", jmes_path(col_item,"Description")
-#       field "state", jmes_path(col_item,"State")
-#       field "instanceId", jmes_path(col_item,"InstanceId")
-#       field "loadBalancerName", val(iter_item, "loadBalancerName")
-#     end
-#   end
-# end
-
-# datasource "ds_us_west_1_instances_health" do
-#   iterate $ds_us_west_1_clb_list
-#   request do
-#     auth $auth_us_west_1
-#     host "elasticloadbalancing.us-west-1.amazonaws.com"
-#     path "/"
-#     verb "GET"
-#     query "Action", "DescribeInstanceHealth"
-#     query "Version", "2012-06-01"
-#     query "LoadBalancerName",val(iter_item, "loadBalancerName")
-#     header "Accept", "application/json"
-#   end
-#   result do
-#     encoding "json"
-#     collect jmes_path(response, "DescribeInstanceHealthResponse.DescribeInstanceHealthResult.InstanceStates[*]") do
-#       field "description", jmes_path(col_item,"Description")
-#       field "state", jmes_path(col_item,"State")
-#       field "instanceId", jmes_path(col_item,"InstanceId")
-#       field "loadBalancerName", val(iter_item, "loadBalancerName")
-#     end
-#   end
-# end
-
-# datasource "ds_us_west_2_instances_health" do
-#   iterate $ds_us_west_2_clb_list
-#   request do
-#     auth $auth_us_west_2
-#     host "elasticloadbalancing.us-west-2.amazonaws.com"
-#     path "/"
-#     verb "GET"
-#     query "Action", "DescribeInstanceHealth"
-#     query "Version", "2012-06-01"
-#     query "LoadBalancerName",val(iter_item, "loadBalancerName")
-#     header "Accept", "application/json"
-#   end
-#   result do
-#     encoding "json"
-#     collect jmes_path(response, "DescribeInstanceHealthResponse.DescribeInstanceHealthResult.InstanceStates[*]") do
-#       field "description", jmes_path(col_item,"Description")
-#       field "state", jmes_path(col_item,"State")
-#       field "instanceId", jmes_path(col_item,"InstanceId")
-#       field "loadBalancerName", val(iter_item, "loadBalancerName")
-#     end
-#   end
-# end
-
-# datasource "ds_ap_south_1_instances_health" do
-#   iterate $ds_ap_south_1_clb_list
-#   request do
-#     auth $auth_ap_south_1
-#     host "elasticloadbalancing.ap-south-1.amazonaws.com"
-#     path "/"
-#     verb "GET"
-#     query "Action", "DescribeInstanceHealth"
-#     query "Version", "2012-06-01"
-#     query "LoadBalancerName",val(iter_item, "loadBalancerName")
-#     header "Accept", "application/json"
-#   end
-#   result do
-#     encoding "json"
-#     collect jmes_path(response, "DescribeInstanceHealthResponse.DescribeInstanceHealthResult.InstanceStates[*]") do
-#       field "description", jmes_path(col_item,"Description")
-#       field "state", jmes_path(col_item,"State")
-#       field "instanceId", jmes_path(col_item,"InstanceId")
-#       field "loadBalancerName", val(iter_item, "loadBalancerName")
-#     end
-#   end
-# end
-
-# datasource "ds_ap_northeast_2_instances_health" do
-#   iterate $ds_ap_northeast_2_clb_list
-#   request do
-#     auth $auth_ap_northeast_2
-#     host "elasticloadbalancing.ap-northeast-2.amazonaws.com"
-#     path "/"
-#     verb "GET"
-#     query "Action", "DescribeInstanceHealth"
-#     query "Version", "2012-06-01"
-#     query "LoadBalancerName",val(iter_item, "loadBalancerName")
-#     header "Accept", "application/json"
-#   end
-#   result do
-#     encoding "json"
-#     collect jmes_path(response, "DescribeInstanceHealthResponse.DescribeInstanceHealthResult.InstanceStates[*]") do
-#       field "description", jmes_path(col_item,"Description")
-#       field "state", jmes_path(col_item,"State")
-#       field "instanceId", jmes_path(col_item,"InstanceId")
-#       field "loadBalancerName", val(iter_item, "loadBalancerName")
-#     end
-#   end
-# end
-
-# datasource "ds_ap_southeast_1_instances_health" do
-#   iterate $ds_ap_southeast_1_clb_list
-#   request do
-#     auth $auth_ap_southeast_1
-#     host "elasticloadbalancing.ap-southeast-1.amazonaws.com"
-#     path "/"
-#     verb "GET"
-#     query "Action", "DescribeInstanceHealth"
-#     query "Version", "2012-06-01"
-#     query "LoadBalancerName",val(iter_item, "loadBalancerName")
-#     header "Accept", "application/json"
-#   end
-#   result do
-#     encoding "json"
-#     collect jmes_path(response, "DescribeInstanceHealthResponse.DescribeInstanceHealthResult.InstanceStates[*]") do
-#       field "description", jmes_path(col_item,"Description")
-#       field "state", jmes_path(col_item,"State")
-#       field "instanceId", jmes_path(col_item,"InstanceId")
-#       field "loadBalancerName", val(iter_item, "loadBalancerName")
-#     end
-#   end
-# end
-
-# datasource "ds_ap_southeast_2_instances_health" do
-#   iterate $ds_ap_southeast_2_clb_list
-#   request do
-#     auth $auth_ap_southeast_2
-#     host "elasticloadbalancing.ap-southeast-2.amazonaws.com"
-#     path "/"
-#     verb "GET"
-#     query "Action", "DescribeInstanceHealth"
-#     query "Version", "2012-06-01"
-#     query "LoadBalancerName",val(iter_item, "loadBalancerName")
-#     header "Accept", "application/json"
-#   end
-#   result do
-#     encoding "json"
-#     collect jmes_path(response, "DescribeInstanceHealthResponse.DescribeInstanceHealthResult.InstanceStates[*]") do
-#       field "description", jmes_path(col_item,"Description")
-#       field "state", jmes_path(col_item,"State")
-#       field "instanceId", jmes_path(col_item,"InstanceId")
-#       field "loadBalancerName", val(iter_item, "loadBalancerName")
-#     end
-#   end
-# end
-
-# datasource "ds_ap_northeast_1_instances_health" do
-#   iterate $ds_ap_northeast_1_clb_list
-#   request do
-#     auth $auth_ap_northeast_1
-#     host "elasticloadbalancing.ap-northeast-1.amazonaws.com"
-#     path "/"
-#     verb "GET"
-#     query "Action", "DescribeInstanceHealth"
-#     query "Version", "2012-06-01"
-#     query "LoadBalancerName",val(iter_item, "loadBalancerName")
-#     header "Accept", "application/json"
-#   end
-#   result do
-#     encoding "json"
-#     collect jmes_path(response, "DescribeInstanceHealthResponse.DescribeInstanceHealthResult.InstanceStates[*]") do
-#       field "description", jmes_path(col_item,"Description")
-#       field "state", jmes_path(col_item,"State")
-#       field "instanceId", jmes_path(col_item,"InstanceId")
-#       field "loadBalancerName", val(iter_item, "loadBalancerName")
-#     end
-#   end
-# end
-
-# datasource "ds_ca_central_1_instances_health" do
-#   iterate $ds_ca_central_1_clb_list
-#   request do
-#     auth $auth_ca_central_1
-#     host "elasticloadbalancing.ca-central-1.amazonaws.com"
-#     path "/"
-#     verb "GET"
-#     query "Action", "DescribeInstanceHealth"
-#     query "Version", "2012-06-01"
-#     query "LoadBalancerName",val(iter_item, "loadBalancerName")
-#     header "Accept", "application/json"
-#   end
-#   result do
-#     encoding "json"
-#     collect jmes_path(response, "DescribeInstanceHealthResponse.DescribeInstanceHealthResult.InstanceStates[*]") do
-#       field "description", jmes_path(col_item,"Description")
-#       field "state", jmes_path(col_item,"State")
-#       field "instanceId", jmes_path(col_item,"InstanceId")
-#       field "loadBalancerName", val(iter_item, "loadBalancerName")
-#     end
-#   end
-# end
-
-# datasource "ds_eu_central_1_instances_health" do
-#   iterate $ds_eu_central_1_clb_list
-#   request do
-#     auth $auth_eu_central_1
-#     host "elasticloadbalancing.eu-central-1.amazonaws.com"
-#     path "/"
-#     verb "GET"
-#     query "Action", "DescribeInstanceHealth"
-#     query "Version", "2012-06-01"
-#     query "LoadBalancerName",val(iter_item, "loadBalancerName")
-#     header "Accept", "application/json"
-#   end
-#   result do
-#     encoding "json"
-#     collect jmes_path(response, "DescribeInstanceHealthResponse.DescribeInstanceHealthResult.InstanceStates[*]") do
-#       field "description", jmes_path(col_item,"Description")
-#       field "state", jmes_path(col_item,"State")
-#       field "instanceId", jmes_path(col_item,"InstanceId")
-#       field "loadBalancerName", val(iter_item, "loadBalancerName")
-#     end
-#   end
-# end
-
-# datasource "ds_eu_west_1_instances_health" do
-#   iterate $ds_eu_west_1_clb_list
-#   request do
-#     auth $auth_eu_west_1
-#     host "elasticloadbalancing.eu-west-1.amazonaws.com"
-#     path "/"
-#     verb "GET"
-#     query "Action", "DescribeInstanceHealth"
-#     query "Version", "2012-06-01"
-#     query "LoadBalancerName",val(iter_item, "loadBalancerName")
-#     header "Accept", "application/json"
-#   end
-#   result do
-#     encoding "json"
-#     collect jmes_path(response, "DescribeInstanceHealthResponse.DescribeInstanceHealthResult.InstanceStates[*]") do
-#       field "description", jmes_path(col_item,"Description")
-#       field "state", jmes_path(col_item,"State")
-#       field "instanceId", jmes_path(col_item,"InstanceId")
-#       field "loadBalancerName", val(iter_item, "loadBalancerName")
-#     end
-#   end
-# end
-
-# datasource "ds_eu_west_2_instances_health" do
-#   iterate $ds_eu_west_2_clb_list
-#   request do
-#     auth $auth_eu_west_2
-#     host "elasticloadbalancing.eu-west-2.amazonaws.com"
-#     path "/"
-#     verb "GET"
-#     query "Action", "DescribeInstanceHealth"
-#     query "Version", "2012-06-01"
-#     query "LoadBalancerName",val(iter_item, "loadBalancerName")
-#     header "Accept", "application/json"
-#   end
-#   result do
-#     encoding "json"
-#     collect jmes_path(response, "DescribeInstanceHealthResponse.DescribeInstanceHealthResult.InstanceStates[*]") do
-#       field "description", jmes_path(col_item,"Description")
-#       field "state", jmes_path(col_item,"State")
-#       field "instanceId", jmes_path(col_item,"InstanceId")
-#       field "loadBalancerName", val(iter_item, "loadBalancerName")
-#     end
-#   end
-# end
-
-# datasource "ds_eu_west_3_instances_health" do
-#   iterate $ds_eu_west_3_clb_list
-#   request do
-#     auth $auth_eu_west_3
-#     host "elasticloadbalancing.eu-west-3.amazonaws.com"
-#     path "/"
-#     verb "GET"
-#     query "Action", "DescribeInstanceHealth"
-#     query "Version", "2012-06-01"
-#     query "LoadBalancerName",val(iter_item, "loadBalancerName")
-#     header "Accept", "application/json"
-#   end
-#   result do
-#     encoding "json"
-#     collect jmes_path(response, "DescribeInstanceHealthResponse.DescribeInstanceHealthResult.InstanceStates[*]") do
-#       field "description", jmes_path(col_item,"Description")
-#       field "state", jmes_path(col_item,"State")
-#       field "instanceId", jmes_path(col_item,"InstanceId")
-#       field "loadBalancerName", val(iter_item, "loadBalancerName")
-#     end
-#   end
-# end
-
-# datasource "ds_sa_east_1_instances_health" do
-#   iterate $ds_sa_east_1_clb_list
-#   request do
-#     auth $auth_sa_east_1
-#     host "elasticloadbalancing.sa-east-1.amazonaws.com"
-#     path "/"
-#     verb "GET"
-#     query "Action", "DescribeInstanceHealth"
-#     query "Version", "2012-06-01"
-#     query "LoadBalancerName",val(iter_item, "loadBalancerName")
-#     header "Accept", "application/json"
-#   end
-#   result do
-#     encoding "json"
-#     collect jmes_path(response, "DescribeInstanceHealthResponse.DescribeInstanceHealthResult.InstanceStates[*]") do
-#       field "description", jmes_path(col_item,"Description")
-#       field "state", jmes_path(col_item,"State")
-#       field "instanceId", jmes_path(col_item,"InstanceId")
-#       field "loadBalancerName", val(iter_item, "loadBalancerName")
-#     end
-#   end
-# end
-
-# datasource "ds_eu_north_1_instances_health" do
-#   iterate $ds_eu_north_1_clb_list
-#   request do
-#     auth $auth_eu_north_1
-#     host "elasticloadbalancing.eu-north-1.amazonaws.com"
-#     path "/"
-#     verb "GET"
-#     query "Action", "DescribeInstanceHealth"
-#     query "Version", "2012-06-01"
-#     query "LoadBalancerName",val(iter_item, "loadBalancerName")
-#     header "Accept", "application/json"
-#   end
-#   result do
-#     encoding "json"
-#     collect jmes_path(response, "DescribeInstanceHealthResponse.DescribeInstanceHealthResult.InstanceStates[*]") do
-#       field "description", jmes_path(col_item,"Description")
-#       field "state", jmes_path(col_item,"State")
-#       field "instanceId", jmes_path(col_item,"InstanceId")
-#       field "loadBalancerName", val(iter_item, "loadBalancerName")
-#     end
-#   end
-# end
-
-datasource "ds_unused_clb_map" do
-  #run_script $js_aws_clb_filter_map, $ds_us_east_1_clb_list_tags, $ds_us_east_2_clb_list_tags, $ds_us_west_1_clb_list_tags, $ds_us_west_2_clb_list_tags, $ds_ap_south_1_clb_list_tags, $ds_ap_northeast_2_clb_list_tags, $ds_ap_southeast_1_clb_list_tags, $ds_ap_southeast_2_clb_list_tags, $ds_ap_northeast_1_clb_list_tags, $ds_ca_central_1_clb_list_tags, $ds_eu_central_1_clb_list_tags, $ds_eu_west_1_clb_list_tags, $ds_eu_west_2_clb_list_tags, $ds_eu_west_3_clb_list_tags, $ds_sa_east_1_clb_list_tags, $ds_eu_north_1_clb_list_tags, $ds_us_east_1_instances_health, $ds_us_east_2_instances_health, $ds_us_west_1_instances_health, $ds_us_west_2_instances_health, $ds_ap_south_1_instances_health, $ds_ap_northeast_2_instances_health, $ds_ap_southeast_1_instances_health, $ds_ap_southeast_2_instances_health, $ds_ap_northeast_1_instances_health, $ds_ca_central_1_instances_health, $ds_eu_central_1_instances_health, $ds_eu_west_1_instances_health, $ds_eu_west_2_instances_health, $ds_eu_west_3_instances_health, $ds_sa_east_1_instances_health, $ds_eu_north_1_instances_health, $param_exclude_tags
-  run_script $js_aws_clb_filter_map, $ds_us_east_1_clb_list, $ds_us_east_1_clb_list_tags, $ds_us_east_1_instances_health, $param_exclude_tags
+datasource "ds_unencrypted_elb_map" do
+  run_script $js_elb_filter_map, $ds_elb_list_with_tags, $param_exclude_tags
 end
 
 ###############################################################################
 # Script
 ###############################################################################
 
-script "js_aws_clb_filter_map", type: "javascript" do
-  #parameters "ds_us_east_1_clb_list_tags","ds_us_east_2_clb_list_tags","ds_us_west_1_clb_list_tags","ds_us_west_2_clb_list_tags","ds_ap_south_1_clb_list_tags","ds_ap_northeast_2_clb_list_tags","ds_ap_southeast_1_clb_list_tags","ds_ap_southeast_2_clb_list_tags","ds_ap_northeast_1_clb_list_tags","ds_ca_central_1_clb_list_tags","ds_eu_central_1_clb_list_tags","ds_eu_west_1_clb_list_tags","ds_eu_west_2_clb_list_tags","ds_eu_west_3_clb_list_tags","ds_sa_east_1_clb_list_tags","ds_eu_north_1_clb_list_tags","ds_us_east_1_instances_health","ds_us_east_2_instances_health","ds_us_west_1_instances_health","ds_us_west_2_instances_health","ds_ap_south_1_instances_health","ds_ap_northeast_2_instances_health","ds_ap_southeast_1_instances_health","ds_ap_southeast_2_instances_health","ds_ap_northeast_1_instances_health","ds_ca_central_1_instances_health","ds_eu_central_1_instances_health","ds_eu_west_1_instances_health","ds_eu_west_2_instances_health","ds_eu_west_3_instances_health","ds_sa_east_1_instances_health","ds_eu_north_1_instances_health","param_exclude_tags"
-  parameters "ds_us_east_1_clb_list", "ds_us_east_1_clb_list_tags", "ds_us_east_1_instances_health", "param_exclude_tags"
+#Generates list of Regions with Load Balancer type and API version.
+script "js_api_regions_list", type: "javascript" do
+  parameters "regions_list"
+  result "regions_map"
+  code <<-EOS
+    var regions_map=[]
+    var api_versions_map = [{"LBtype": "Classic","API_version": "2012-06-01"},{"LBtype": "Application","API_version": "2015-12-01"}]
 
+    _.each(regions_list, function(region){
+      _.each(api_versions_map, function(api_version){
+        regions_map.push({
+          "region": region.region,
+          "API_version": api_version.API_version
+          "LBtype": api_version.LBtype
+        })
+      })
+    })
+EOS
+end
+
+#https://docs.aws.amazon.com/elasticloadbalancing/2012-06-01/APIReference/API_DescribeLoadBalancers.html (Classic Load Balancer)
+#https://docs.aws.amazon.com/elasticloadbalancing/latest/APIReference/API_DescribeLoadBalancers.html (Applicatio Load Balancer)
+script "js_elb_list", type: "javascript" do
+  parameters "region", "APIversion"
+  result "request"
+  code <<-EOS
+    request = {
+      auth: 'auth_aws',
+      pagination: 'elb_pagination',
+      host: 'elasticloadbalancing.'+region+'.amazonaws.com',
+      path: '/',
+      verb: 'GET',
+      query_params: {
+        "Action": "DescribeLoadBalancers",
+        "Version": APIversion
+      },
+      headers: {
+        "Accept": "application/json"
+      }
+    }
+  EOS
+end
+
+#https://docs.aws.amazon.com/elasticloadbalancing/2012-06-01/APIReference/API_DescribeTags.html (Classic Load Balancer)
+#https://docs.aws.amazon.com/elasticloadbalancing/latest/APIReference/API_DescribeTags.html (Applicatio Load Balancer)
+script "js_elb_list_with_tags", type: "javascript" do
+  parameters "region", "APIversion", "loadBalancerName", "loadBalancerArn"
+  result "request"
+  code <<-EOS
+    request = {
+      auth: 'auth_aws',
+      host: 'elasticloadbalancing.'+region+'.amazonaws.com',
+      path: '/',
+      verb: 'GET',
+      query_params: {
+        "Action": "DescribeTags",
+        "Version": APIversion,
+        "LoadBalancerNames.member.1": loadBalancerName,
+        "ResourceArns.member.1": loadBalancerArn
+      },
+      headers: {
+        "Accept": "application/json"
+      }
+    }
+  EOS
+end
+
+
+#Process the response data, check for the tags and generate a list of internetfacing ELB's
+script "js_elb_filter_map", type: "javascript" do
+  parameters "ds_elb_list_with_tags", "param_exclude_tags"
   result "content"
   code <<-EOS
     var param_exclude_tags_lower=[];
@@ -1327,1018 +208,57 @@ script "js_aws_clb_filter_map", type: "javascript" do
     }
 
     var content=[]
-    for(var i=0; i<ds_us_east_1_clb_list_tags.length; i++){
-      clb=ds_us_east_1_clb_list_tags[i]
+    for(var i=0; i<ds_elb_list_with_tags.length; i++){
+      elb=ds_elb_list_with_tags[i]
 
       // Constructing availabilityZones with comma separated to display in detail_template
-      var availabilityZones=clb['availabilityZones']
+      var availabilityZones=elb['availabilityZones']
       var s_availabilityZones=""
       for(var j=0; j < availabilityZones.length; j++){
         availabilityZone = availabilityZones[j]
-        s_availabilityZones = s_availabilityZones + ', '+ availabilityZone
+        if(elb['loadBalancerType'] === 'Classic'){
+          s_availabilityZones = s_availabilityZones + ', '+ availabilityZone
+        }else{
+          s_availabilityZones = s_availabilityZones + ', '+ availabilityZone.ZoneName
+        }
       }
-     
-      // Constructing IntanceIds with comma separated to display in detail_template
-      var instancesList = clb['instancesList']
-      var s_instanceIds=""
-      for(var j=0; j < instancesList.length; j++){
-        instanceId = instancesList[j]
-        s_instanceIds = s_instanceIds + ', '+ instanceId
-      }
-      
-      //Constructing Tags of individual CLB into key=value format. Check, if the tag present in entered param_exclude_tags, ignore the CLB if the tag matches/present.
-      var tags = clb['tags']
+
+      //Constructing Tags of individual ELB into key=value format. Check, if the tag present in entered param_exclude_tags. Ignore the Load Balancer if the tag matches/present.
+      var tags = elb['tags']
       var isTagMatched=false
       var tagKeyValue=""
       for(var j=0; j < tags.length; j++){
         tag = tags[j]
-        if(param_exclude_tags_lower.indexOf((tag['tagKey']+'='+tag['tagValue']).toLowerCase()) !== -1){
+        if((param_exclude_tags_lower.indexOf((tag['tagKey']).toLowerCase()) !== -1) || (param_exclude_tags_lower.indexOf((tag['tagKey']+'='+tag['tagValue']).toLowerCase()) !== -1)){
           isTagMatched = true;
         }
         // Constructing tags with comma separated to display in detail_template
-        tagKeyValue = tagKeyValue + ', '+ tag['tagKey']+'='+tag['tagValue']
-      }
-      
-      /*
-      //If the CLB tag does not match with entered param_exclude_tags, then check if any instance exists in the CLB and check for instances health.
-      if(!(isTagMatched)){
-        clb_details={
-          loadBalancerName: clb['loadBalancerName'],
-          instanceId:(s_instanceIds.slice(2)),
-          availabilityZones:(s_availabilityZones.slice(2)),
-          tagKeyValue:(tagKeyValue.slice(2)),
-          region: ("us-east-1")
-        }
-
-        // IF YOU HAVE INSTANCES THEN DO A CHECK AND SET FLAG TO DETERMINE IF INSTANCE IS UNHEALTHY
-        // IF YOU HAVE INSTANCE IS FLAGGED AS UNHEALTHY THEN PUSH THE CONTENTS WITH THE UNHEALTHY INSTANCE
-        // IF THERE ARE NO INSTANCES THEN PUSH CONTENT
-        if(instancesList.length > 0){
-          var isInstanceNotHealthy=false
-          // Check if the CLB has no healthy instance with state and description matches for the values mentioned below
-          var state= "OutOfService"
-          var description= "Instance has failed at least the UnhealthyThreshold number of health checks consecutively."
-          for(var k=0; k < ds_us_east_1_instances_health.length; k++){
-            instance= ds_us_east_1_instances_health[k]
-            if(((instance['loadBalancerName']) == (clb['loadBalancerName'])) && (instance['state'] == state && instance['description'] == description)){
-              isInstanceNotHealthy=true
-            }
-          }
-          if(isInstanceNotHealthy){
-            content.push(clb_details)
-          }
+        if((tag['tagValue']).length > 0){
+          tagKeyValue = tagKeyValue + ', '+ tag['tagKey']+'='+tag['tagValue']
         }else{
-          content.push(clb_details)
+          tagKeyValue = tagKeyValue + ', '+ tag['tagKey']
+        }
+      }
+
+      //If the Load Balancer tag does not match with entered param_exclude_tags, then check if Load Balancer is internet-facing and has SSL/TLS in use.
+      if(!(isTagMatched) && (elb['scheme']) === 'internet-facing'){
+        console.log("Listener Description:" , elb.listenerDescriptions)
+        // check for HTTPS or TLS listeners
+        var protocols = _.pluck(_.pluck(elb['listenerDescriptions'],'Listener'),'Protocol')
+        console.log("Protocols: ", protocols)
+        if(!(_.contains(protocols, 'HTTPS') || _.contains(protocols, 'TLS'))) {
+          content.push({
+            loadBalancerName: elb['loadBalancerName'],
+            loadBalancerType: elb['loadBalancerType'],
+            region: elb['region'],
+            availabilityZones:(s_availabilityZones.slice(2)),
+            tagKeyValue:(tagKeyValue.slice(2)),
+            loadBalancerArn: elb['loadBalancerArn'],
+            api_version: elb['api_version'],
+          })
         }
       }
     }
-    */
-    
-    //If the CLB tag does not match with entered param_exclude_tags, then check the listeners in the CLB and check for unencrypted ports.
-    if(!(isTagMatched)){
-      //clb_details={
-      //  loadBalancerName: clb['loadBalancerName'],
-      //  instanceId:(s_instanceIds.slice(2)),
-      //  availabilityZones:(s_availabilityZones.slice(2)),
-      //  tagKeyValue:(tagKeyValue.slice(2)),
-      //  region: ("us-east-1")
-      //}
-      //
-      for(var j=0; j<ds_us_east_1_clb_list.length; j++){
-        listeners=ds_us_east_1_clb_list[j]
-        var listenerList = listeners['listenerList']
-        for(var k=0; k < listenerList.length; k++){
-          listenerPort = listenerList[k].LoadBalancerPort
-          listenerProtocol = listenerList[k].InstanceProtocol
-          switch (listenerProtocol) {
-            case "HTTPS":
-              break
-            case "SSL":
-              break
-            default:
-              clb_details={
-                loadBalancerName: clb['loadBalancerName'],
-                availabilityZones:(s_availabilityZones.slice(2)),
-                tagKeyValue:(tagKeyValue.slice(2)),
-                region: ("us-east-1"),
-                listenerProtocol:(listenerProtocol),
-                listenerPort:(listenerPort)
-              }
-              content.push(clb_details)
-          }
-        }        
-      }
-    }    
-  }
-
-  /*
-    for(var i=0; i<ds_us_east_2_clb_list_tags.length; i++){
-      clb=ds_us_east_2_clb_list_tags[i]
-
-      // Constructing availabilityZones with comma separated to display in detail_template
-      var availabilityZones=clb['availabilityZones']
-      var s_availabilityZones=""
-      for(var j=0; j < availabilityZones.length; j++){
-        availabilityZone = availabilityZones[j]
-        s_availabilityZones = s_availabilityZones + ', '+ availabilityZone
-      }
-
-      // Constructing IntanceIds with comma separated to display in detail_template
-      var instancesList = clb['instancesList']
-      var s_instanceIds=""
-      for(var j=0; j < instancesList.length; j++){
-        instanceId = instancesList[j]
-        s_instanceIds = s_instanceIds + ', '+ instanceId
-      }
-
-      //Constructing Tags of individual CLB into key=value format. Check, if the tag present in entered param_exclude_tags, ignore the CLB if the tag matches/present.
-      var tags = clb['tags']
-      var isTagMatched=false
-      var tagKeyValue=""
-      for(var j=0; j < tags.length; j++){
-        tag = tags[j]
-        if(param_exclude_tags_lower.indexOf((tag['tagKey']+'='+tag['tagValue']).toLowerCase()) !== -1){
-          isTagMatched = true;
-        }
-        // Constructing tags with comma separated to display in detail_template
-        tagKeyValue = tagKeyValue + ', '+ tag['tagKey']+'='+tag['tagValue']
-      }
-
-      //If the CLB tag does not match with entered param_exclude_tags, then check if any instance exists in the CLB and check for instances health.
-      if(!(isTagMatched)){
-        clb_details={
-          loadBalancerName: clb['loadBalancerName'],
-          instanceId:(s_instanceIds.slice(2)),
-          availabilityZones:(s_availabilityZones.slice(2)),
-          tagKeyValue:(tagKeyValue.slice(2)),
-          region: ("us-east-2")
-        }
-        if(instancesList.length > 0){
-          var isInstanceNotHealthy=false
-          // Check if the CLB has no healthy instance with state and description matches for the values mentioned below
-          var state= "OutOfService"
-          var description= "Instance has failed at least the UnhealthyThreshold number of health checks consecutively."
-          for(var k=0; k < ds_us_east_2_instances_health.length; k++){
-            instance= ds_us_east_2_instances_health[k]
-            if(((instance['loadBalancerName']) == (clb['loadBalancerName'])) && (instance['state'] == state && instance['description'] == description)){
-              isInstanceNotHealthy=true
-            }
-          }
-          if(isInstanceNotHealthy){
-            content.push(clb_details)
-          }
-        }else{
-          content.push(clb_details)
-        }
-      }
-    }
-	  
-    for(var i=0; i<ds_us_west_1_clb_list_tags.length; i++){
-      clb=ds_us_west_1_clb_list_tags[i]
-
-      // Constructing availabilityZones with comma separated to display in detail_template
-      var availabilityZones=clb['availabilityZones']
-      var s_availabilityZones=""
-      for(var j=0; j < availabilityZones.length; j++){
-        availabilityZone = availabilityZones[j]
-        s_availabilityZones = s_availabilityZones + ', '+ availabilityZone
-      }
-
-      // Constructing IntanceIds with comma separated to display in detail_template
-      var instancesList = clb['instancesList']
-      var s_instanceIds=""
-      for(var j=0; j < instancesList.length; j++){
-        instanceId = instancesList[j]
-        s_instanceIds = s_instanceIds + ', '+ instanceId
-      }
-
-      //Constructing Tags of individual CLB into key=value format. Check, if the tag present in entered param_exclude_tags, ignore the CLB if the tag matches/present.
-      var tags = clb['tags']
-      var isTagMatched=false
-      var tagKeyValue=""
-      for(var j=0; j < tags.length; j++){
-        tag = tags[j]
-        if(param_exclude_tags_lower.indexOf((tag['tagKey']+'='+tag['tagValue']).toLowerCase()) !== -1){
-          isTagMatched = true;
-        }
-        // Constructing tags with comma separated to display in detail_template
-        tagKeyValue = tagKeyValue + ', '+ tag['tagKey']+'='+tag['tagValue']
-      }
-
-      //If the CLB tag does not match with entered param_exclude_tags, then check if any instance exists in the CLB and check for instances health.
-      if(!(isTagMatched)){
-        clb_details={
-          loadBalancerName: clb['loadBalancerName'],
-          instanceId:(s_instanceIds.slice(2)),
-          availabilityZones:(s_availabilityZones.slice(2)),
-          tagKeyValue:(tagKeyValue.slice(2)),
-          region: ("us-west-1")
-        }
-        if(instancesList.length > 0){
-          var isInstanceNotHealthy=false
-          // Check if the CLB has no healthy instance with state and description matches for the values mentioned below
-          var state= "OutOfService"
-          var description= "Instance has failed at least the UnhealthyThreshold number of health checks consecutively."
-          for(var k=0; k < ds_us_west_1_instances_health.length; k++){
-            instance= ds_us_west_1_instances_health[k]
-            if(((instance['loadBalancerName']) == (clb['loadBalancerName'])) && (instance['state'] == state && instance['description'] == description)){
-              isInstanceNotHealthy=true
-            }
-          }
-          if(isInstanceNotHealthy){
-            content.push(clb_details)
-          }
-        }else{
-          content.push(clb_details)
-        }
-      }
-    }
-	
-    for(var i=0; i<ds_us_west_2_clb_list_tags.length; i++){
-      clb=ds_us_west_2_clb_list_tags[i]
-
-      // Constructing availabilityZones with comma separated to display in detail_template
-      var availabilityZones=clb['availabilityZones']
-      var s_availabilityZones=""
-      for(var j=0; j < availabilityZones.length; j++){
-        availabilityZone = availabilityZones[j]
-        s_availabilityZones = s_availabilityZones + ', '+ availabilityZone
-      }
-
-      // Constructing IntanceIds with comma separated to display in detail_template
-      var instancesList = clb['instancesList']
-      var s_instanceIds=""
-      for(var j=0; j < instancesList.length; j++){
-        instanceId = instancesList[j]
-        s_instanceIds = s_instanceIds + ', '+ instanceId
-      }
-
-      //Constructing Tags of individual CLB into key=value format. Check, if the tag present in entered param_exclude_tags, ignore the CLB if the tag matches/present.
-      var tags = clb['tags']
-      var isTagMatched=false
-      var tagKeyValue=""
-      for(var j=0; j < tags.length; j++){
-        tag = tags[j]
-        if(param_exclude_tags_lower.indexOf((tag['tagKey']+'='+tag['tagValue']).toLowerCase()) !== -1){
-          isTagMatched = true;
-        }
-        // Constructing tags with comma separated to display in detail_template
-        tagKeyValue = tagKeyValue + ', '+ tag['tagKey']+'='+tag['tagValue']
-      }
-
-      //If the CLB tag does not match with entered param_exclude_tags, then check if any instance exists in the CLB and check for instances health.
-      if(!(isTagMatched)){
-        clb_details={
-          loadBalancerName: clb['loadBalancerName'],
-          instanceId:(s_instanceIds.slice(2)),
-          availabilityZones:(s_availabilityZones.slice(2)),
-          tagKeyValue:(tagKeyValue.slice(2)),
-          region: ("us-west-2")
-        }
-        if(instancesList.length > 0){
-          var isInstanceNotHealthy=false
-          // Check if the CLB has no healthy instance with state and description matches for the values mentioned below
-          var state= "OutOfService"
-          var description= "Instance has failed at least the UnhealthyThreshold number of health checks consecutively."
-          for(var k=0; k < ds_us_west_2_instances_health.length; k++){
-            instance= ds_us_west_2_instances_health[k]
-            if(((instance['loadBalancerName']) == (clb['loadBalancerName'])) && (instance['state'] == state && instance['description'] == description)){
-              isInstanceNotHealthy=true
-            }
-          }
-          if(isInstanceNotHealthy){
-            content.push(clb_details)
-          }
-        }else{
-          content.push(clb_details)
-        }
-      }
-    }
-	
-    for(var i=0; i<ds_ap_south_1_clb_list_tags.length; i++){
-      clb=ds_ap_south_1_clb_list_tags[i]
-
-      // Constructing availabilityZones with comma separated to display in detail_template
-      var availabilityZones=clb['availabilityZones']
-      var s_availabilityZones=""
-      for(var j=0; j < availabilityZones.length; j++){
-        availabilityZone = availabilityZones[j]
-        s_availabilityZones = s_availabilityZones + ', '+ availabilityZone
-      }
-
-      // Constructing IntanceIds with comma separated to display in detail_template
-      var instancesList = clb['instancesList']
-      var s_instanceIds=""
-      for(var j=0; j < instancesList.length; j++){
-        instanceId = instancesList[j]
-        s_instanceIds = s_instanceIds + ', '+ instanceId
-      }
-
-      //Constructing Tags of individual CLB into key=value format. Check, if the tag present in entered param_exclude_tags, ignore the CLB if the tag matches/present.
-      var tags = clb['tags']
-      var isTagMatched=false
-      var tagKeyValue=""
-      for(var j=0; j < tags.length; j++){
-        tag = tags[j]
-        if(param_exclude_tags_lower.indexOf((tag['tagKey']+'='+tag['tagValue']).toLowerCase()) !== -1){
-          isTagMatched = true;
-        }
-        // Constructing tags with comma separated to display in detail_template
-        tagKeyValue = tagKeyValue + ', '+ tag['tagKey']+'='+tag['tagValue']
-      }
-
-      //If the CLB tag does not match with entered param_exclude_tags, then check if any instance exists in the CLB and check for instances health.
-      if(!(isTagMatched)){
-        clb_details={
-          loadBalancerName: clb['loadBalancerName'],
-          instanceId:(s_instanceIds.slice(2)),
-          availabilityZones:(s_availabilityZones.slice(2)),
-          tagKeyValue:(tagKeyValue.slice(2)),
-          region: ("ap-south-1")
-        }
-        if(instancesList.length > 0){
-          var isInstanceNotHealthy=false
-          // Check if the CLB has no healthy instance with state and description matches for the values mentioned below
-          var state= "OutOfService"
-          var description= "Instance has failed at least the UnhealthyThreshold number of health checks consecutively."
-          for(var k=0; k < ds_ap_south_1_instances_health.length; k++){
-            instance= ds_ap_south_1_instances_health[k]
-            if(((instance['loadBalancerName']) == (clb['loadBalancerName'])) && (instance['state'] == state && instance['description'] == description)){
-              isInstanceNotHealthy=true
-            }
-          }
-          if(isInstanceNotHealthy){
-            content.push(clb_details)
-          }
-        }else{
-          content.push(clb_details)
-        }
-      }
-    }
-	
-    for(var i=0; i<ds_ap_northeast_2_clb_list_tags.length; i++){
-      clb=ds_ap_northeast_2_clb_list_tags[i]
-
-      // Constructing availabilityZones with comma separated to display in detail_template
-      var availabilityZones=clb['availabilityZones']
-      var s_availabilityZones=""
-      for(var j=0; j < availabilityZones.length; j++){
-        availabilityZone = availabilityZones[j]
-        s_availabilityZones = s_availabilityZones + ', '+ availabilityZone
-      }
-
-      // Constructing IntanceIds with comma separated to display in detail_template
-      var instancesList = clb['instancesList']
-      var s_instanceIds=""
-      for(var j=0; j < instancesList.length; j++){
-        instanceId = instancesList[j]
-        s_instanceIds = s_instanceIds + ', '+ instanceId
-      }
-
-      //Constructing Tags of individual CLB into key=value format. Check, if the tag present in entered param_exclude_tags, ignore the CLB if the tag matches/present.
-      var tags = clb['tags']
-      var isTagMatched=false
-      var tagKeyValue=""
-      for(var j=0; j < tags.length; j++){
-        tag = tags[j]
-        if(param_exclude_tags_lower.indexOf((tag['tagKey']+'='+tag['tagValue']).toLowerCase()) !== -1){
-          isTagMatched = true;
-        }
-        // Constructing tags with comma separated to display in detail_template
-        tagKeyValue = tagKeyValue + ', '+ tag['tagKey']+'='+tag['tagValue']
-      }
-
-      //If the CLB tag does not match with entered param_exclude_tags, then check if any instance exists in the CLB and check for instances health.
-      if(!(isTagMatched)){
-        clb_details={
-          loadBalancerName: clb['loadBalancerName'],
-          instanceId:(s_instanceIds.slice(2)),
-          availabilityZones:(s_availabilityZones.slice(2)),
-          tagKeyValue:(tagKeyValue.slice(2)),
-          region: ("ap-northeast-2")
-        }
-        if(instancesList.length > 0){
-          var isInstanceNotHealthy=false
-          // Check if the CLB has no healthy instance with state and description matches for the values mentioned below
-          var state= "OutOfService"
-          var description= "Instance has failed at least the UnhealthyThreshold number of health checks consecutively."
-          for(var k=0; k < ds_ap_northeast_2_instances_health.length; k++){
-            instance= ds_ap_northeast_2_instances_health[k]
-            if(((instance['loadBalancerName']) == (clb['loadBalancerName'])) && (instance['state'] == state && instance['description'] == description)){
-              isInstanceNotHealthy=true
-            }
-          }
-          if(isInstanceNotHealthy){
-            content.push(clb_details)
-          }
-        }else{
-          content.push(clb_details)
-        }
-      }
-    }
-	
-    for(var i=0; i<ds_ap_southeast_1_clb_list_tags.length; i++){
-      clb=ds_ap_southeast_1_clb_list_tags[i]
-
-      // Constructing availabilityZones with comma separated to display in detail_template
-      var availabilityZones=clb['availabilityZones']
-      var s_availabilityZones=""
-      for(var j=0; j < availabilityZones.length; j++){
-        availabilityZone = availabilityZones[j]
-        s_availabilityZones = s_availabilityZones + ', '+ availabilityZone
-      }
-
-      // Constructing IntanceIds with comma separated to display in detail_template
-      var instancesList = clb['instancesList']
-      var s_instanceIds=""
-      for(var j=0; j < instancesList.length; j++){
-        instanceId = instancesList[j]
-        s_instanceIds = s_instanceIds + ', '+ instanceId
-      }
-
-      //Constructing Tags of individual CLB into key=value format. Check, if the tag present in entered param_exclude_tags, ignore the CLB if the tag matches/present.
-      var tags = clb['tags']
-      var isTagMatched=false
-      var tagKeyValue=""
-      for(var j=0; j < tags.length; j++){
-        tag = tags[j]
-        if(param_exclude_tags_lower.indexOf((tag['tagKey']+'='+tag['tagValue']).toLowerCase()) !== -1){
-          isTagMatched = true;
-        }
-        // Constructing tags with comma separated to display in detail_template
-        tagKeyValue = tagKeyValue + ', '+ tag['tagKey']+'='+tag['tagValue']
-      }
-
-      //If the CLB tag does not match with entered param_exclude_tags, then check if any instance exists in the CLB and check for instances health.
-      if(!(isTagMatched)){
-        clb_details={
-          loadBalancerName: clb['loadBalancerName'],
-          instanceId:(s_instanceIds.slice(2)),
-          availabilityZones:(s_availabilityZones.slice(2)),
-          tagKeyValue:(tagKeyValue.slice(2)),
-          region: ("ap-southeast-1")
-        }
-        if(instancesList.length > 0){
-          var isInstanceNotHealthy=false
-          // Check if the CLB has no healthy instance with state and description matches for the values mentioned below
-          var state= "OutOfService"
-          var description= "Instance has failed at least the UnhealthyThreshold number of health checks consecutively."
-          for(var k=0; k < ds_ap_southeast_1_instances_health.length; k++){
-            instance= ds_ap_southeast_1_instances_health[k]
-            if(((instance['loadBalancerName']) == (clb['loadBalancerName'])) && (instance['state'] == state && instance['description'] == description)){
-              isInstanceNotHealthy=true
-            }
-          }
-          if(isInstanceNotHealthy){
-            content.push(clb_details)
-          }
-        }else{
-          content.push(clb_details)
-        }
-      }
-    }
-	
-    for(var i=0; i<ds_ap_southeast_2_clb_list_tags.length; i++){
-      clb=ds_ap_southeast_2_clb_list_tags[i]
-
-      // Constructing availabilityZones with comma separated to display in detail_template
-      var availabilityZones=clb['availabilityZones']
-      var s_availabilityZones=""
-      for(var j=0; j < availabilityZones.length; j++){
-        availabilityZone = availabilityZones[j]
-        s_availabilityZones = s_availabilityZones + ', '+ availabilityZone
-      }
-
-      // Constructing IntanceIds with comma separated to display in detail_template
-      var instancesList = clb['instancesList']
-      var s_instanceIds=""
-      for(var j=0; j < instancesList.length; j++){
-        instanceId = instancesList[j]
-        s_instanceIds = s_instanceIds + ', '+ instanceId
-      }
-
-      //Constructing Tags of individual CLB into key=value format. Check, if the tag present in entered param_exclude_tags, ignore the CLB if the tag matches/present.
-      var tags = clb['tags']
-      var isTagMatched=false
-      var tagKeyValue=""
-      for(var j=0; j < tags.length; j++){
-        tag = tags[j]
-        if(param_exclude_tags_lower.indexOf((tag['tagKey']+'='+tag['tagValue']).toLowerCase()) !== -1){
-          isTagMatched = true;
-        }
-        // Constructing tags with comma separated to display in detail_template
-        tagKeyValue = tagKeyValue + ', '+ tag['tagKey']+'='+tag['tagValue']
-      }
-
-      //If the CLB tag does not match with entered param_exclude_tags, then check if any instance exists in the CLB and check for instances health.
-      if(!(isTagMatched)){
-        clb_details={
-          loadBalancerName: clb['loadBalancerName'],
-          instanceId:(s_instanceIds.slice(2)),
-          availabilityZones:(s_availabilityZones.slice(2)),
-          tagKeyValue:(tagKeyValue.slice(2)),
-          region: ("ap-southeast-2")
-        }
-        if(instancesList.length > 0){
-          var isInstanceNotHealthy=false
-          // Check if the CLB has no healthy instance with state and description matches for the values mentioned below
-          var state= "OutOfService"
-          var description= "Instance has failed at least the UnhealthyThreshold number of health checks consecutively."
-          for(var k=0; k < ds_ap_southeast_2_instances_health.length; k++){
-            instance= ds_ap_southeast_2_instances_health[k]
-            if(((instance['loadBalancerName']) == (clb['loadBalancerName'])) && (instance['state'] == state && instance['description'] == description)){
-              isInstanceNotHealthy=true
-            }
-          }
-          if(isInstanceNotHealthy){
-            content.push(clb_details)
-          }
-        }else{
-          content.push(clb_details)
-        }
-      }
-    }
-	
-    for(var i=0; i<ds_ap_northeast_1_clb_list_tags.length; i++){
-      clb=ds_ap_northeast_1_clb_list_tags[i]
-
-      // Constructing availabilityZones with comma separated to display in detail_template
-      var availabilityZones=clb['availabilityZones']
-      var s_availabilityZones=""
-      for(var j=0; j < availabilityZones.length; j++){
-        availabilityZone = availabilityZones[j]
-        s_availabilityZones = s_availabilityZones + ', '+ availabilityZone
-      }
-
-      // Constructing IntanceIds with comma separated to display in detail_template
-      var instancesList = clb['instancesList']
-      var s_instanceIds=""
-      for(var j=0; j < instancesList.length; j++){
-        instanceId = instancesList[j]
-        s_instanceIds = s_instanceIds + ', '+ instanceId
-      }
-
-      //Constructing Tags of individual CLB into key=value format. Check, if the tag present in entered param_exclude_tags, ignore the CLB if the tag matches/present.
-      var tags = clb['tags']
-      var isTagMatched=false
-      var tagKeyValue=""
-      for(var j=0; j < tags.length; j++){
-        tag = tags[j]
-        if(param_exclude_tags_lower.indexOf((tag['tagKey']+'='+tag['tagValue']).toLowerCase()) !== -1){
-          isTagMatched = true;
-        }
-        // Constructing tags with comma separated to display in detail_template
-        tagKeyValue = tagKeyValue + ', '+ tag['tagKey']+'='+tag['tagValue']
-      }
-
-      //If the CLB tag does not match with entered param_exclude_tags, then check if any instance exists in the CLB and check for instances health.
-      if(!(isTagMatched)){
-        clb_details={
-          loadBalancerName: clb['loadBalancerName'],
-          instanceId:(s_instanceIds.slice(2)),
-          availabilityZones:(s_availabilityZones.slice(2)),
-          tagKeyValue:(tagKeyValue.slice(2)),
-          region: ("ap-northeast-1")
-        }
-        if(instancesList.length > 0){
-          var isInstanceNotHealthy=false
-          // Check if the CLB has no healthy instance with state and description matches for the values mentioned below
-          var state= "OutOfService"
-          var description= "Instance has failed at least the UnhealthyThreshold number of health checks consecutively."
-          for(var k=0; k < ds_ap_northeast_1_instances_health.length; k++){
-            instance= ds_ap_northeast_1_instances_health[k]
-            if(((instance['loadBalancerName']) == (clb['loadBalancerName'])) && (instance['state'] == state && instance['description'] == description)){
-              isInstanceNotHealthy=true
-            }
-          }
-          if(isInstanceNotHealthy){
-            content.push(clb_details)
-          }
-        }else{
-          content.push(clb_details)
-        }
-      }
-    }
-	
-    for(var i=0; i<ds_ca_central_1_clb_list_tags.length; i++){
-      clb=ds_ca_central_1_clb_list_tags[i]
-
-      // Constructing availabilityZones with comma separated to display in detail_template
-      var availabilityZones=clb['availabilityZones']
-      var s_availabilityZones=""
-      for(var j=0; j < availabilityZones.length; j++){
-        availabilityZone = availabilityZones[j]
-        s_availabilityZones = s_availabilityZones + ', '+ availabilityZone
-      }
-
-      // Constructing IntanceIds with comma separated to display in detail_template
-      var instancesList = clb['instancesList']
-      var s_instanceIds=""
-      for(var j=0; j < instancesList.length; j++){
-        instanceId = instancesList[j]
-        s_instanceIds = s_instanceIds + ', '+ instanceId
-      }
-
-      //Constructing Tags of individual CLB into key=value format. Check, if the tag present in entered param_exclude_tags, ignore the CLB if the tag matches/present.
-      var tags = clb['tags']
-      var isTagMatched=false
-      var tagKeyValue=""
-      for(var j=0; j < tags.length; j++){
-        tag = tags[j]
-        if(param_exclude_tags_lower.indexOf((tag['tagKey']+'='+tag['tagValue']).toLowerCase()) !== -1){
-          isTagMatched = true;
-        }
-        // Constructing tags with comma separated to display in detail_template
-        tagKeyValue = tagKeyValue + ', '+ tag['tagKey']+'='+tag['tagValue']
-      }
-
-      //If the CLB tag does not match with entered param_exclude_tags, then check if any instance exists in the CLB and check for instances health.
-      if(!(isTagMatched)){
-        clb_details={
-          loadBalancerName: clb['loadBalancerName'],
-          instanceId:(s_instanceIds.slice(2)),
-          availabilityZones:(s_availabilityZones.slice(2)),
-          tagKeyValue:(tagKeyValue.slice(2)),
-          region: ("ca-central-1")
-        }
-        if(instancesList.length > 0){
-          var isInstanceNotHealthy=false
-          // Check if the CLB has no healthy instance with state and description matches for the values mentioned below
-          var state= "OutOfService"
-          var description= "Instance has failed at least the UnhealthyThreshold number of health checks consecutively."
-          for(var k=0; k < ds_ca_central_1_instances_health.length; k++){
-            instance= ds_ca_central_1_instances_health[k]
-            if(((instance['loadBalancerName']) == (clb['loadBalancerName'])) && (instance['state'] == state && instance['description'] == description)){
-              isInstanceNotHealthy=true
-            }
-          }
-          if(isInstanceNotHealthy){
-            content.push(clb_details)
-          }
-        }else{
-          content.push(clb_details)
-        }
-      }
-    }
-	
-    for(var i=0; i<ds_eu_central_1_clb_list_tags.length; i++){
-      clb=ds_eu_central_1_clb_list_tags[i]
-
-      // Constructing availabilityZones with comma separated to display in detail_template
-      var availabilityZones=clb['availabilityZones']
-      var s_availabilityZones=""
-      for(var j=0; j < availabilityZones.length; j++){
-        availabilityZone = availabilityZones[j]
-        s_availabilityZones = s_availabilityZones + ', '+ availabilityZone
-      }
-
-      // Constructing IntanceIds with comma separated to display in detail_template
-      var instancesList = clb['instancesList']
-      var s_instanceIds=""
-      for(var j=0; j < instancesList.length; j++){
-        instanceId = instancesList[j]
-        s_instanceIds = s_instanceIds + ', '+ instanceId
-      }
-
-      //Constructing Tags of individual CLB into key=value format. Check, if the tag present in entered param_exclude_tags, ignore the CLB if the tag matches/present.
-      var tags = clb['tags']
-      var isTagMatched=false
-      var tagKeyValue=""
-      for(var j=0; j < tags.length; j++){
-        tag = tags[j]
-        if(param_exclude_tags_lower.indexOf((tag['tagKey']+'='+tag['tagValue']).toLowerCase()) !== -1){
-          isTagMatched = true;
-        }
-        // Constructing tags with comma separated to display in detail_template
-        tagKeyValue = tagKeyValue + ', '+ tag['tagKey']+'='+tag['tagValue']
-      }
-
-      //If the CLB tag does not match with entered param_exclude_tags, then check if any instance exists in the CLB and check for instances health.
-      if(!(isTagMatched)){
-        clb_details={
-          loadBalancerName: clb['loadBalancerName'],
-          instanceId:(s_instanceIds.slice(2)),
-          availabilityZones:(s_availabilityZones.slice(2)),
-          tagKeyValue:(tagKeyValue.slice(2)),
-          region: ("eu-central-1")
-        }
-        if(instancesList.length > 0){
-          var isInstanceNotHealthy=false
-          // Check if the CLB has no healthy instance with state and description matches for the values mentioned below
-          var state= "OutOfService"
-          var description= "Instance has failed at least the UnhealthyThreshold number of health checks consecutively."
-          for(var k=0; k < ds_eu_central_1_instances_health.length; k++){
-            instance= ds_eu_central_1_instances_health[k]
-            if(((instance['loadBalancerName']) == (clb['loadBalancerName'])) && (instance['state'] == state && instance['description'] == description)){
-              isInstanceNotHealthy=true
-            }
-          }
-          if(isInstanceNotHealthy){
-            content.push(clb_details)
-          }
-        }else{
-          content.push(clb_details)
-        }
-      }
-    }
-	
-    for(var i=0; i<ds_eu_west_1_clb_list_tags.length; i++){
-      clb=ds_eu_west_1_clb_list_tags[i]
-
-      // Constructing availabilityZones with comma separated to display in detail_template
-      var availabilityZones=clb['availabilityZones']
-      var s_availabilityZones=""
-      for(var j=0; j < availabilityZones.length; j++){
-        availabilityZone = availabilityZones[j]
-        s_availabilityZones = s_availabilityZones + ', '+ availabilityZone
-      }
-
-      // Constructing IntanceIds with comma separated to display in detail_template
-      var instancesList = clb['instancesList']
-      var s_instanceIds=""
-      for(var j=0; j < instancesList.length; j++){
-        instanceId = instancesList[j]
-        s_instanceIds = s_instanceIds + ', '+ instanceId
-      }
-
-      //Constructing Tags of individual CLB into key=value format. Check, if the tag present in entered param_exclude_tags, ignore the CLB if the tag matches/present.
-      var tags = clb['tags']
-      var isTagMatched=false
-      var tagKeyValue=""
-      for(var j=0; j < tags.length; j++){
-        tag = tags[j]
-        if(param_exclude_tags_lower.indexOf((tag['tagKey']+'='+tag['tagValue']).toLowerCase()) !== -1){
-          isTagMatched = true;
-        }
-        // Constructing tags with comma separated to display in detail_template
-        tagKeyValue = tagKeyValue + ', '+ tag['tagKey']+'='+tag['tagValue']
-      }
-
-      //If the CLB tag does not match with entered param_exclude_tags, then check if any instance exists in the CLB and check for instances health.
-      if(!(isTagMatched)){
-        clb_details={
-          loadBalancerName: clb['loadBalancerName'],
-          instanceId:(s_instanceIds.slice(2)),
-          availabilityZones:(s_availabilityZones.slice(2)),
-          tagKeyValue:(tagKeyValue.slice(2)),
-          region: ("eu-west-1")
-        }
-        if(instancesList.length > 0){
-          var isInstanceNotHealthy=false
-          // Check if the CLB has no healthy instance with state and description matches for the values mentioned below
-          var state= "OutOfService"
-          var description= "Instance has failed at least the UnhealthyThreshold number of health checks consecutively."
-          for(var k=0; k < ds_eu_west_1_instances_health.length; k++){
-            instance= ds_eu_west_1_instances_health[k]
-            if(((instance['loadBalancerName']) == (clb['loadBalancerName'])) && (instance['state'] == state && instance['description'] == description)){
-              isInstanceNotHealthy=true
-            }
-          }
-          if(isInstanceNotHealthy){
-            content.push(clb_details)
-          }
-        }else{
-          content.push(clb_details)
-        }
-      }
-    }
-	
-    for(var i=0; i<ds_eu_west_2_clb_list_tags.length; i++){
-      clb=ds_eu_west_2_clb_list_tags[i]
-
-      // Constructing availabilityZones with comma separated to display in detail_template
-      var availabilityZones=clb['availabilityZones']
-      var s_availabilityZones=""
-      for(var j=0; j < availabilityZones.length; j++){
-        availabilityZone = availabilityZones[j]
-        s_availabilityZones = s_availabilityZones + ', '+ availabilityZone
-      }
-
-      // Constructing IntanceIds with comma separated to display in detail_template
-      var instancesList = clb['instancesList']
-      var s_instanceIds=""
-      for(var j=0; j < instancesList.length; j++){
-        instanceId = instancesList[j]
-        s_instanceIds = s_instanceIds + ', '+ instanceId
-      }
-
-      //Constructing Tags of individual CLB into key=value format. Check, if the tag present in entered param_exclude_tags, ignore the CLB if the tag matches/present.
-      var tags = clb['tags']
-      var isTagMatched=false
-      var tagKeyValue=""
-      for(var j=0; j < tags.length; j++){
-        tag = tags[j]
-        if(param_exclude_tags_lower.indexOf((tag['tagKey']+'='+tag['tagValue']).toLowerCase()) !== -1){
-          isTagMatched = true;
-        }
-        // Constructing tags with comma separated to display in detail_template
-        tagKeyValue = tagKeyValue + ', '+ tag['tagKey']+'='+tag['tagValue']
-      }
-
-      //If the CLB tag does not match with entered param_exclude_tags, then check if any instance exists in the CLB and check for instances health.
-      if(!(isTagMatched)){
-        clb_details={
-          loadBalancerName: clb['loadBalancerName'],
-          instanceId:(s_instanceIds.slice(2)),
-          availabilityZones:(s_availabilityZones.slice(2)),
-          tagKeyValue:(tagKeyValue.slice(2)),
-          region: ("eu-west-2")
-        }
-        if(instancesList.length > 0){
-          var isInstanceNotHealthy=false
-          // Check if the CLB has no healthy instance with state and description matches for the values mentioned below
-          var state= "OutOfService"
-          var description= "Instance has failed at least the UnhealthyThreshold number of health checks consecutively."
-          for(var k=0; k < ds_eu_west_2_instances_health.length; k++){
-            instance= ds_eu_west_2_instances_health[k]
-            if(((instance['loadBalancerName']) == (clb['loadBalancerName'])) && (instance['state'] == state && instance['description'] == description)){
-              isInstanceNotHealthy=true
-            }
-          }
-          if(isInstanceNotHealthy){
-            content.push(clb_details)
-          }
-        }else{
-          content.push(clb_details)
-        }
-      }
-    }
-	
-    for(var i=0; i<ds_eu_west_3_clb_list_tags.length; i++){
-      clb=ds_eu_west_3_clb_list_tags[i]
-
-      // Constructing availabilityZones with comma separated to display in detail_template
-      var availabilityZones=clb['availabilityZones']
-      var s_availabilityZones=""
-      for(var j=0; j < availabilityZones.length; j++){
-        availabilityZone = availabilityZones[j]
-        s_availabilityZones = s_availabilityZones + ', '+ availabilityZone
-      }
-
-      //Constructing Tags of individual CLB into key=value format. Check, if the tag present in entered param_exclude_tags, ignore the CLB if the tag matches/present.
-      var tags = clb['tags']
-      var isTagMatched=false
-      var tagKeyValue=""
-      for(var j=0; j < tags.length; j++){
-        tag = tags[j]
-        if(param_exclude_tags_lower.indexOf((tag['tagKey']+'='+tag['tagValue']).toLowerCase()) !== -1){
-          isTagMatched = true;
-        }
-        // Constructing tags with comma separated to display in detail_template
-        tagKeyValue = tagKeyValue + ', '+ tag['tagKey']+'='+tag['tagValue']
-      }
-
-      //If the CLB tag does not match with entered param_exclude_tags, then check if any instance exists in the CLB and check for instances health.
-      if(!(isTagMatched)){
-        clb_details={
-          loadBalancerName: clb['loadBalancerName'],
-          instanceId:(s_instanceIds.slice(2)),
-          availabilityZones:(s_availabilityZones.slice(2)),
-          tagKeyValue:(tagKeyValue.slice(2)),
-          region: ("eu-west-3")
-        }
-        if(instancesList.length > 0){
-          var isInstanceNotHealthy=false
-          // Check if the CLB has no healthy instance with state and description matches for the values mentioned below
-          var state= "OutOfService"
-          var description= "Instance has failed at least the UnhealthyThreshold number of health checks consecutively."
-          for(var k=0; k < ds_eu_west_3_instances_health.length; k++){
-            instance= ds_eu_west_3_instances_health[k]
-            if(((instance['loadBalancerName']) == (clb['loadBalancerName'])) && (instance['state'] == state && instance['description'] == description)){
-              isInstanceNotHealthy=true
-            }
-          }
-          if(isInstanceNotHealthy){
-            content.push(clb_details)
-          }
-        }else{
-          content.push(clb_details)
-        }
-      }
-    }
-		
-    for(var i=0; i<ds_sa_east_1_clb_list_tags.length; i++){
-      clb=ds_sa_east_1_clb_list_tags[i]
-
-      // Constructing availabilityZones with comma separated to display in detail_template
-      var availabilityZones=clb['availabilityZones']
-      var s_availabilityZones=""
-      for(var j=0; j < availabilityZones.length; j++){
-        availabilityZone = availabilityZones[j]
-        s_availabilityZones = s_availabilityZones + ', '+ availabilityZone
-      }
-
-      // Constructing IntanceIds with comma separated to display in detail_template
-      var instancesList = clb['instancesList']
-      var s_instanceIds=""
-      for(var j=0; j < instancesList.length; j++){
-        instanceId = instancesList[j]
-        s_instanceIds = s_instanceIds + ', '+ instanceId
-      }
-
-      //Constructing Tags of individual CLB into key=value format. Check, if the tag present in entered param_exclude_tags, ignore the CLB if the tag matches/present.
-      var tags = clb['tags']
-      var isTagMatched=false
-      var tagKeyValue=""
-      for(var j=0; j < tags.length; j++){
-        tag = tags[j]
-        if(param_exclude_tags_lower.indexOf((tag['tagKey']+'='+tag['tagValue']).toLowerCase()) !== -1){
-          isTagMatched = true;
-        }
-        // Constructing tags with comma separated to display in detail_template
-        tagKeyValue = tagKeyValue + ', '+ tag['tagKey']+'='+tag['tagValue']
-      }
-
-      //If the CLB tag does not match with entered param_exclude_tags, then check if any instance exists in the CLB and check for instances health.
-      if(!(isTagMatched)){
-        clb_details={
-          loadBalancerName: clb['loadBalancerName'],
-          instanceId:(s_instanceIds.slice(2)),
-          availabilityZones:(s_availabilityZones.slice(2)),
-          tagKeyValue:(tagKeyValue.slice(2)),
-          region: ("sa-east-1")
-        }
-        if(instancesList.length > 0){
-          var isInstanceNotHealthy=false
-          // Check if the CLB has no healthy instance with state and description matches for the values mentioned below
-          var state= "OutOfService"
-          var description= "Instance has failed at least the UnhealthyThreshold number of health checks consecutively."
-          for(var k=0; k < ds_sa_east_1_instances_health.length; k++){
-            instance= ds_sa_east_1_instances_health[k]
-            if(((instance['loadBalancerName']) == (clb['loadBalancerName'])) && (instance['state'] == state && instance['description'] == description)){
-              isInstanceNotHealthy=true
-            }
-          }
-          if(isInstanceNotHealthy){
-            content.push(clb_details)
-          }
-        }else{
-          content.push(clb_details)
-        }
-      }
-    }
-		
-    for(var i=0; i<ds_eu_north_1_clb_list_tags.length; i++){
-      clb=ds_eu_north_1_clb_list_tags[i]
-
-      // Constructing availabilityZones with comma separated to display in detail_template
-      var availabilityZones=clb['availabilityZones']
-      var s_availabilityZones=""
-      for(var j=0; j < availabilityZones.length; j++){
-        availabilityZone = availabilityZones[j]
-        s_availabilityZones = s_availabilityZones + ', '+ availabilityZone
-      }
-
-      // Constructing IntanceIds with comma separated to display in detail_template
-      var instancesList = clb['instancesList']
-      var s_instanceIds=""
-      for(var j=0; j < instancesList.length; j++){
-        instanceId = instancesList[j]
-        s_instanceIds = s_instanceIds + ', '+ instanceId
-      }
-
-      //Constructing Tags of individual CLB into key=value format. Check, if the tag present in entered param_exclude_tags, ignore the CLB if the tag matches/present.
-      var tags = clb['tags']
-      var isTagMatched=false
-      var tagKeyValue=""
-      for(var j=0; j < tags.length; j++){
-        tag = tags[j]
-        if(param_exclude_tags_lower.indexOf((tag['tagKey']+'='+tag['tagValue']).toLowerCase()) !== -1){
-          isTagMatched = true;
-        }
-        // Constructing tags with comma separated to display in detail_template
-        tagKeyValue = tagKeyValue + ', '+ tag['tagKey']+'='+tag['tagValue']
-      }
-
-      //If the CLB tag does not match with entered param_exclude_tags, then check if any instance exists in the CLB and check for instances health.
-      if(!(isTagMatched)){
-        clb_details={
-          loadBalancerName: clb['loadBalancerName'],
-          instanceId:(s_instanceIds.slice(2)),
-          availabilityZones:(s_availabilityZones.slice(2)),
-          tagKeyValue:(tagKeyValue.slice(2)),
-          region: ("eu-north-1")
-        }
-        if(instancesList.length > 0){
-          var isInstanceNotHealthy=false
-          // Check if the CLB has no healthy instance with state and description matches for the values mentioned below
-          var state= "OutOfService"
-          var description= "Instance has failed at least the UnhealthyThreshold number of health checks consecutively."
-          for(var k=0; k < ds_eu_north_1_instances_health.length; k++){
-            instance= ds_eu_north_1_instances_health[k]
-            if(((instance['loadBalancerName']) == (clb['loadBalancerName'])) && (instance['state'] == state && instance['description'] == description)){
-              isInstanceNotHealthy=true
-            }
-          }
-          if(isInstanceNotHealthy){
-            content.push(clb_details)
-          }
-        }else{
-          content.push(clb_details)
-        }
-      }
-    }
-    */
   EOS
 end
 
@@ -2346,20 +266,19 @@ end
 # Policy
 ###############################################################################
 
-policy "policy_delete_unused_CLB" do
-  validate $ds_unused_clb_map do
-    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} Unused Classic Load Balancers Found in AWS"
+policy "policy_unencrypted_ELB" do
+  validate $ds_unencrypted_elb_map do
+    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} Internet-facing ELBs & ALBs Found in AWS"
     detail_template <<-EOS
-## List of Unused Classic Load Balancers
-| LoadBalancer_Name | Region | Availability_Zones | TAG_Value | Protocol | Port |
-| ----------------- | ------ | ------------------ | --------- | -------- | ---- |
+## List of internet-facing Classic and Application Load Balancers
+| LoadBalancer Name | LoadBalancer Type |  Region  | Availability Zones |    TAGs   |
+| ----------------- | ----------------- | ---------| ------------------ | --------- |
 {{ range data -}}
-| {{ .loadBalancerName }} | {{.region}} | {{ .availabilityZones }} | {{.tagKeyValue}} | {{.listenerProtocol}} | {{.listenerPort}} |
+| {{ .loadBalancerName }} | {{.loadBalancerType}} | {{.region}} | {{ .availabilityZones }} | {{.tagKeyValue}} |
 {{ end -}}
 ###### Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }}) within Org: {{ rs_org_name }} (Org ID: {{ rs_org_id }})
-EOS
-    escalate $report_unused_CLB
-    escalate $approve_delete_CLB
+    EOS
+    escalate $esc_unencrypted_lbs
     check eq(size(data),0)
   end
 end
@@ -2368,42 +287,14 @@ end
 # Escalations
 ###############################################################################
 
-escalation "report_unused_CLB" do
+escalation "esc_unencrypted_lbs" do
   email $param_email
 end
 
-escalation "approve_delete_CLB" do
-  request_approval  do
-    label "Approve Resource Deletion"
-    description "Approve escalation to run RightScale Cloud Workflow to delete unused CLB"
-    parameter "approval_reason" do
-      type "string"
-      label "Reason for Approval"
-      description "Explain why you are approving the action"
-    end
-  end
-  run "delete_CLB", data
-end
 
 ###############################################################################
 # Cloud Workflow
 ###############################################################################
-
-#https://docs.aws.amazon.com/elasticloadbalancing/2012-06-01/APIReference/API_DeleteLoadBalancer.html
-define delete_CLB($data) return $all_responses do
-  $$debug=true
-  $all_responses = []
-  foreach $item in $data do
-    sub on_error: skip do
-      $response = http_get(
-        url: "https://elasticloadbalancing."+$item["region"]+".amazonaws.com/?Action=DeleteLoadBalancer&Version=2012-06-01&LoadBalancerName="+ $item["loadBalancerName"],
-        "signature": { type: "aws" }
-      )
-      $all_responses << $response
-      call sys_log('CLB delete response',to_s($response))
-    end
-  end
-end
 
 define sys_log($subject, $detail) do
   if $$debug
