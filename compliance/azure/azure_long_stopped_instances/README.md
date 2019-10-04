@@ -16,6 +16,12 @@ The policy leverages the Azure API to check all instances that have been stopped
 ### Required RightScale Roles
 
 - policy_manager
+- credential_viewer
+
+### Azure Required Permissions
+
+- Microsoft.Compute/virtualMachines/read
+- Microsoft.Compute/virtualMachines/delete	
 
 ### Supported Clouds
 

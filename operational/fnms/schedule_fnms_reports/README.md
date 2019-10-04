@@ -52,6 +52,12 @@ This policy has the following input parameters required when launching the polic
 ### Policy Actions
 No actions
 
+### Required RightScale Roles
+ 
+- Cloud Management - Actor
+- Cloud Management - Observer
+- credential_viewer
+
 ### Cost
 This Policy Template does not launch any instances, and so does not incur any cloud costs.
 

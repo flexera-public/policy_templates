@@ -18,6 +18,13 @@ The following policy actions are taken on any resources found to be out of compl
 
 - Send an email report
 
+### Required RightScale Roles
+
+- Cloud Management - Actor
+- Cloud Management - Observer
+- credential_viewer
+
+
 ### Supported Clouds
 
 - AWS

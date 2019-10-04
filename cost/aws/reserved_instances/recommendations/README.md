@@ -33,6 +33,34 @@ The following policy actions are taken on any resources found to be out of compl
 
 - Send an email report
 
+### Required RightScale Roles
+
+- Cloud Management - Actor
+- Cloud Management - Observer
+- credential_viewer
+
+### AWS Required Permissions
+
+This policy requires permissions to describe AWS Cost Explorer.
+The Cloud Management Platform automatically creates two Credentials when connecting AWS to Cloud Management; AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY. The IAM user credentials contained in those credentials will require the following permissions:
+
+```javascript
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "ce:*"
+      ],
+      "Resource": [
+        "*"
+      ]
+    }
+  ]
+}
+```
+
 ### Supported Clouds
 
 - AWS

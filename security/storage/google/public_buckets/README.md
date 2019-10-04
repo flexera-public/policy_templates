@@ -24,6 +24,11 @@ This policy requires permissions to access RightScale resources (credentials).  
 - Cloud Management - credential_viewer or admin
 - Cloud Management - Observer
 
+### Google Required Permissions
+
+- storage.buckets.list
+- storage.buckets.getIamPolicy2
+
 ### Supported Clouds
 
 - Google

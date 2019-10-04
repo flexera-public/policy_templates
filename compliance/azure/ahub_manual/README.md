@@ -21,6 +21,12 @@ Each license is good for one VM with up to 16 cores or two VM's with up to 8 cor
 - policy_designer
 - policy_manager
 - policy_publisher
+- credential_viewer
+
+### Azure Required Permissions
+
+- Microsoft.Compute/virtualMachines/read
+- Microsoft.Compute/locations/vmSizes/read
 
 ### Installation
 

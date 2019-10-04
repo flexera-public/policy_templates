@@ -29,6 +29,27 @@ This policy requires permissions to access RightScale resources (credentials).  
 - Cloud Management - credential_viewer or admin
 - Cloud Management - Observer
 
+### AWS Required Permissions
+
+This policy requires permissions to describe AWS S3 ListAllMyBuckets, GetBucketLocation and GetBucketAcl.
+The Cloud Management Platform automatically creates two Credentials when connecting AWS to Cloud Management; AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY. The IAM user credentials contained in those credentials will require the following permissions:
+
+```javascript
+{
+    "Version": "2006-03-01",
+    "Statement": [
+        {
+            "Sid": "ListObjectsInBucket",
+            "Effect": "Allow",
+            "Action": ["s3:ListAllMyBuckets",
+                       "s3:GetBucketLocation",
+                       "s3:GetBucketAcl"],
+            "Resource": ["arn:aws:s3:::bucket-name"]
+        }
+    ]
+}
+```
+
 ### Supported Clouds
 
 - AWS
