@@ -88,6 +88,7 @@ Please contact sales@rightscale.com to learn more.
 - [Azure Subscription Access](./compliance/azure/subscription_access/)
 - [Azure AHUB Utilization with Manual Entry](./compliance/azure/ahub_manual/)
 - [Azure Instances not running FlexNet Inventory Agent](./compliance/azure/instances_without_fnm_agent/)
+- [FlexNet Manager Licenses At Risk](./compliance/fnms/fnms_licenses_at_risk/)
 
 ### Operational
 

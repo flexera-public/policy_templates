@@ -1,0 +1,117 @@
+name "FlexNet Manager Licenses At Risk"
+rs_pt_ver 20180301
+type "policy"
+short_description "Looks up Flexnet Manager Licenses \"At Risk\" and sends the result as an email.  See the [README](https://github.com/flexera/policy_templates/tree/master/compliance/fnms/fnms_licenses_at_risk) and [docs.rightscale.com/policies](http://docs.rightscale.com/policies/) to learn more." 
+long_description "Version 1.0"
+severity "medium"
+category "Compliance"
+
+permission "perm_read_creds" do
+  actions   "rs_cm.show_sensitive","rs_cm.index_sensitive"
+  resources "rs_cm.credentials"
+end
+
+parameter "param_fnms_url" do
+  type "string"
+  label "FNMS Report URL"
+  default "https://flexera-demo-1.flexnetmanager.com/Suite"
+  description "Full FlexNet URL (e.g. https://demo.flexnetmanager.com/Suite )"
+end
+
+parameter "param_report_id" do
+  type "string"
+  label "FNMS Report ID"
+  default "8605"
+  description "FlexNet Manager Custom View ID"
+end
+
+parameter "param_email" do
+  type "list"
+  label "Email addresses of the recipients you wish to notify"
+  description "A list of email addresse(s) to notify"
+end
+
+auth "api_token_auth", type: "api_key" do
+  location "header"
+  field "Authorization"
+  type "Bearer"
+  key cred("FNMS_API_Token")
+end
+
+# Build the API request object dynamically because we need to find the right authentiocation model and the right 
+script "fnms_request", type: "javascript" do
+  parameters "fnms_host", "report_id"
+  result "request"
+  code <<-EOS
+    var sHost = fnms_host.substr(fnms_host.indexOf('://')+3)
+    if (sHost.indexOf('/') > -1)  sHost = sHost.substr(0,sHost.indexOf('/'))
+
+    // Find the right schema
+    var sScheme = "http"
+    if (fnms_host.toLowerCase().indexOf("https") > -1) sScheme = "https"
+    
+    //Shoul we use User/password or Token to authenticate
+    var sAuth = "api_ntln_auth"
+    if (fnms_host.toLowerCase().indexOf(".flexnetmanager.") > -1) sAuth = "api_token_auth"
+
+    var sBody = '<?xml version="1.0" encoding="utf-8"?>'
+    sBody    += '<soap:Envelope xmlns:soap="http://www.w3.org/2003/05/soap-envelope" xmlns:tem="http://tempuri.org/">'
+    sBody    += '  <soap:Body>'
+    sBody    += '    <tem:GetCustomView>'
+    sBody    += '      <tem:customViewID>' +report_id+ '</tem:customViewID>'
+    sBody    += '     <tem:rowLimit>100000</tem:rowLimit>'
+    sBody    += '   </tem:GetCustomView>'
+    sBody    += '  </soap:Body>'
+    sBody    += '</soap:Envelope>'
+
+    var request = {
+      auth: sAuth,
+      scheme: sScheme,
+      host: sHost,
+      path: "/ManageSoftServices/ComplianceAPIService/ComplianceAPIService.asmx",
+      verb: "POST",
+      headers: {
+        "Content-Type": "text/xml;charset=utf-8"
+      },
+
+      body: sBody
+    } 
+  EOS
+end
+
+datasource 'fnms_report' do
+  request do
+    run_script $fnms_request, $param_fnms_url, $param_report_id
+  end
+  result do
+    encoding "xml"
+    collect xpath(response,"//NewDataSet/SearchResults") do
+      field "name", xpath(col_item, "Name")
+      field "edition", xpath(col_item, "Edition")
+      field "version", xpath(col_item, "Version")
+      field "license_type", xpath(col_item, "LicenseType")
+      field "available_licenses", xpath(col_item, "NumberAvailable")
+      field "license_compliance", xpath(col_item, "LicenseCompliance")
+    end
+  end
+end
+
+
+policy 'fnms_policy' do
+  validate_each $fnms_report do
+    summary_template 'FlexNet Manager - Software Licenses At Risk'
+    detail_template <<-EOS
+| Name | Edition | Version | License type | Shortfall / Availability |
+| ---- | ------- | ------- | ------------ | ------------------------ |
+{{ range data -}}
+| {{ .name }} | {{ .edition }} | {{ .version }} | {{ .license_type }} | {{ .available_licenses }} |
+{{ end -}}
+EOS
+    escalate $send_report
+    check ne(val(item,"license_compliance"),"At risk")
+  end
+end
+
+escalation "send_report" do 
+  email $param_email
+end 
