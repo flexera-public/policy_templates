@@ -127,7 +127,7 @@ This policy requires permissions to describe AWS LoadBalancers, InstanceHealth, 
 The Cloud Management automatically creates two credentials when connecting AWS to Cloud Management; AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY. If you did not connect your AWS account to CMP you will need to add the AWS_ACCESS_KEY_ID AND AWS_SECRET_ACCESS_KEY credentials manually. Read more about [adding Credentials](https://docs.rightscale.com/cm/dashboard/design/credentials/#overview)
 The IAM user credentials contained in those credentials will require the following permissions:
 
-```javascript
+\`\`\`javascript
 {
     "Version": "2012-06-01",
     "Statement":[{
@@ -140,7 +140,7 @@ The IAM user credentials contained in those credentials will require the followi
     }
   ]
 }
-```
+\`\`\`
 
 
 ### Supported Clouds
