@@ -87,7 +87,7 @@ Write additional details the policy designer, policy manager or policy approver 
 
 ### Example Readme
 
-Copy and paste the example below to start a new policy readme from scratch.   See more details about each section above.
+Copy and paste the example below to start a new policy readme from scratch.   See more details about each section above.  Read the example carefully and replace the example text with the details that apply to your policy.
 
 ```
 ## Replace this text with the policy name
