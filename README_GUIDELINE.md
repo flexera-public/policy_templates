@@ -14,7 +14,7 @@ All sections are required as noted.  Optional sections include Installation, Cos
 
 ### Name (REQUIRED)
 
-The name is the readme file header.  It begins with the Header 2 markdown characters ##.  The name should match the value of the name field inside the policy template.  The name includes the cloud supported and what it checks.  If the policy is multi cloud then you can exclude the cloud and only write what it checks
+The policy name is the readme file header.  It begins with the Header 2 markdown characters ##.  The name should match the value of the name field inside the policy template.  The name includes the cloud supported and what it checks.  If the policy is multi cloud then the cloud can be excluded and only write what it checks
 
 Example with supported cloud:
 
@@ -38,7 +38,7 @@ Checks for AWS idle instances using CPU and Memory metrics and terminates them a
 
 ### Functional Description (REQUIRED)
 
-In this section you describe how the policy functions, not what it does.  It should include which clouds, APIs and how checks are made.  This would be a good place to write some technical details about API usage, metrics used for gathering details etc.
+In this section you describe how the policy functions, not what it does.  It should include which clouds, APIs and how checks are made.  This would be a good place to write some technical details about API usage and  metrics used for gathering details etc.
 
 ### Input Parameters (REQUIRED)
 
@@ -50,7 +50,7 @@ Example:
 - *Other parameter* - include detail and extra information here.
 
 
-### Actions
+### Actions (REQUIRED)
 
 Include all the actions available to the user.  All policies will have at least one action, the email notification.  There could be other actions such as terminating or resizing an instance.  Include a list of all possible actions.
 
@@ -61,7 +61,7 @@ Example:
 
 ### Required Permissions (REQUIRED)
 
-Write any CMP/Optima user roles the policy manager needs to apply the policy.  Also include any cloud specific permissions needed. It is not necessary to include permissions needed to apply the policy or approve incidents.
+Write any CMP/Optima user roles the policy manager needs to run the policy.  Also include any cloud specific permissions needed. It is not necessary to include permissions needed to apply the policy or approve incidents.
 
 Some good examples are written in following policy policy_templates:
 - https://github.com/flexera/policy_templates/tree/master/cost/aws/elb/clb_unused
@@ -83,14 +83,14 @@ Example:
 
 ### Other (OPTIONAL)
 
-Write additional details the policy developer or policy manager or approver may need to know to use or change the policy.  
+Write additional details the policy designer, policy manager or policy approver may need to know to use or change the policy.  
 
 ### Example Readme
 
 Copy and paste the example below to start a new policy readme from scratch.   See more details about each section above.
 
 ```
-## Name of the policy
+## Replace this text with the policy name
 
 ### What It Does
 
