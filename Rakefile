@@ -11,7 +11,7 @@ task :generate_policy_list do
     change_log = ::File.join(file.split('/')[0...-1].join('/'),'CHANGELOG.md')
     readme = ::File.join(file.split('/')[0...-1].join('/'),'README.md')
     if !file.match(/test_code/)
-      f = File.read(file)
+      f = File.open(file, "r:bom|utf-8")
       f.each_line do |line|
         if line =~ /^name/
           @name = line.split(' ')[1..-1].join(' ').to_s.chomp('"').reverse.chomp('"').reverse
