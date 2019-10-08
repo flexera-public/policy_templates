@@ -79,7 +79,7 @@ Show a list of the supported clouds for the policy.
 Example:  
 - AWS
 - Google
-...
+- ...
 
 ### Other (OPTIONAL)
 
@@ -102,15 +102,15 @@ Add functional detail here
 
 ### Input Parameters
 
-This policy template has the following Input paramters which require value before the policy can be applied.  
+This policy template has the following Input parameters which require value before the policy can be applied.  
 
 - *Email notify list* - Email addresses of the recipients you wish to notify.  
 - *Other parameter* - include detail and extra information here.
 
 
-### Actions
+### Actions (REQUIRED)
 
-Policy actions may include automation to alert or remediate violations found in the Policy Incident. Actions that destroy or terminate a resource generally require aapproval from the Policy Approver. This policy includes the following actions.  
+Policy actions may include automation to alert or remediate violations found in the Policy Incident. Actions that destroy or terminate a resource generally require approval from the Policy Approver. This policy includes the following actions.  
 
 - Sends and email notification
 - list additional actions if any.  
