@@ -6,7 +6,7 @@ The README file is an important artifact of the policy template.  It is the cust
 
 ## Readme File Sections
 
-The readme file contains a number of sections which describes the policy template details.  All sections should start with the Header 3 markdown (3 #, ###) for the name it should contain header 2 markdown (2 #, ##).
+The readme file contains a number of sections which describes the policy template details.  All sections should start with the Header 2 markdown (2 #, ##) for the name it should contain header 1 markdown (1 #, #).
 
 [Markdown Cheatsheet](https://www.markdownguide.org/cheat-sheet/)
 
@@ -103,14 +103,14 @@ Add details here
 
 Add functional detail here
 
-### Input Parameters
+## Input Parameters
 
 This policy template has the following Input parameters which require value before the policy can be applied.  
 
 - *Email notify list* - Email addresses of the recipients you wish to notify.  
 - *Other parameter* - include detail and extra information here.
 
-### Actions (REQUIRED)
+## Actions (REQUIRED)
 
 Policy actions may include automation to alert or remediate violations found in the Policy Incident. Actions that destroy or terminate a resource generally require approval from the Policy Approver. This policy includes the following actions.  
 
