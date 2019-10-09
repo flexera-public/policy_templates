@@ -43,7 +43,7 @@ This policy has the following input parameters required when launching the polic
 
 - Cloud Management - Actor
 - Cloud Management - Observer
-- credential_viewer
+- Cloud Management - credential_viewer
 
 ### Azure Required Permissions
 

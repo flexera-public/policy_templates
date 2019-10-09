@@ -56,7 +56,7 @@ No actions
  
 - Cloud Management - Actor
 - Cloud Management - Observer
-- credential_viewer
+- Cloud Management - credential_viewer
 
 ### Cost
 This Policy Template does not launch any instances, and so does not incur any cloud costs.

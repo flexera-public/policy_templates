@@ -37,7 +37,7 @@ The following policy actions are taken on any resources found to be out of compl
 
 - Cloud Management - Actor
 - Cloud Management - Observer
-- credential_viewer
+- Cloud Management - credential_viewer
 
 ### AWS Required Permissions
 

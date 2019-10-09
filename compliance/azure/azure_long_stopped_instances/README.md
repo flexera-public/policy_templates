@@ -16,7 +16,7 @@ The policy leverages the Azure API to check all instances that have been stopped
 ### Required RightScale Roles
 
 - policy_manager
-- credential_viewer
+- Cloud Management - credential_viewer
 
 ### Azure Required Permissions
 
