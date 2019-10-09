@@ -18,13 +18,16 @@ The policy name is the readme file header.  It begins with the Header 2 markdown
 
 Example with supported cloud:
 
-```
+```markdown
+
 ## AWS Idle Compute Instances
 
 ```  
 
-Example: Multi Cloud.  
-```
+Example: Multi Cloud.
+
+```markdown
+
 ## Unapproved Instance Types
 
 ```
@@ -49,7 +52,6 @@ Example:
 - *Email notify list* - Email addresses of the recipients you wish to notify.  
 - *Other parameter* - include detail and extra information here.
 
-
 ### Actions (REQUIRED)
 
 Include all the actions available to the user.  All policies will have at least one action, the email notification.  There could be other actions such as terminating or resizing an instance.  Include a list of all possible actions.
@@ -64,9 +66,9 @@ Example:
 Write any CMP/Optima user roles the policy manager needs to run the policy.  Also include any cloud specific permissions needed. It is not necessary to include permissions needed to apply the policy or approve incidents.
 
 Some good examples are written in following policy policy_templates:
-- https://github.com/flexera/policy_templates/tree/master/cost/aws/elb/clb_unused
-- https://github.com/flexera/policy_templates/tree/master/cost/azure/object_storage_optimization
 
+- [https://github.com/flexera/policy_templates/tree/master/cost/aws/elb/clb_unused](https://github.com/flexera/policy_templates/tree/master/cost/aws/elb/clb_unused)
+- [https://github.com/flexera/policy_templates/tree/master/cost/azure/object_storage_optimization](https://github.com/flexera/policy_templates/tree/master/cost/azure/object_storage_optimization)
 
 ### Installation (OPTIONAL)
 
@@ -76,7 +78,8 @@ In this section include additional configuration needed to run the policy.  Addi
 
 Show a list of the supported clouds for the policy.
 
-Example:  
+Example:
+
 - AWS
 - Google
 - ...
@@ -89,14 +92,14 @@ Write additional details the policy designer, policy manager or policy approver 
 
 Copy and paste the example below to start a new policy readme from scratch.   See more details about each section above.  Read the example carefully and replace the example text with the details that apply to your policy.
 
-```
-## Replace this text with the policy name
+```markdown
+# Replace this text with the policy name
 
-### What It Does
+## What It Does
 
 Add details here
 
-### Functional Description
+## Functional Description
 
 Add functional detail here
 
@@ -107,7 +110,6 @@ This policy template has the following Input parameters which require value befo
 - *Email notify list* - Email addresses of the recipients you wish to notify.  
 - *Other parameter* - include detail and extra information here.
 
-
 ### Actions (REQUIRED)
 
 Policy actions may include automation to alert or remediate violations found in the Policy Incident. Actions that destroy or terminate a resource generally require approval from the Policy Approver. This policy includes the following actions.  
@@ -115,13 +117,13 @@ Policy actions may include automation to alert or remediate violations found in 
 - Sends and email notification
 - list additional actions if any.  
 
-### Required Permissions
+## Required Permissions
 
-#### Required CMP Roles
+### Required CMP Roles
 
 - Cloud Management: admin or credential_viewer
 
-#### AWS Required Permissions
+### AWS Required Permissions
 
 This policy requires permissions to describe AWS LoadBalancers, InstanceHealth, tags and DeleteLoadBalancer.
 The Cloud Management automatically creates two credentials when connecting AWS to Cloud Management; AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY. If you did not connect your AWS account to CMP you will need to add the AWS_ACCESS_KEY_ID AND AWS_SECRET_ACCESS_KEY credentials manually. Read more about [adding Credentials](https://docs.rightscale.com/cm/dashboard/design/credentials/#overview)
@@ -132,18 +134,19 @@ The IAM user credentials contained in those credentials will require the followi
     "Version": "2012-06-01",
     "Statement":[{
     "Effect":"Allow",
-    "Action":["elasticloadbalancing:DescribeLoadBalancers",
-              "elasticloadbalancing:DescribeInstanceHealth",
-	      "elasticloadbalancing:DescribeTags",
-	      "elasticloadbalancing:DeleteLoadBalancer"],
+    "Action":[
+      "elasticloadbalancing:DescribeLoadBalancers",
+      "elasticloadbalancing:DescribeInstanceHealth",
+      "elasticloadbalancing:DescribeTags",
+      "elasticloadbalancing:DeleteLoadBalancer"
+    ],
     "Resource":"*"
     }
   ]
 }
 ``` ``
 
-
-### Supported Clouds
+## Supported Clouds
 
 This policy template supports the following clouds:
 
@@ -151,11 +154,12 @@ This policy template supports the following clouds:
 - Azure
 - Google
 
-### Other
+## Other
 
 Add other details here
 
-### Costs
+## Costs
 
 This Policy Template does not incur any cloud costs.
+
 ```
