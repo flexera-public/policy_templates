@@ -1,3 +1,7 @@
+v1.3
+----
+- Added Permission block
+
 v1.2
 ----
 - Added Approval block

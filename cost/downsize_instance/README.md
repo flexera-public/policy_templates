@@ -2,7 +2,7 @@
 
 ### What it does
 
-This Policy Template uses user defined tags to determine if it can decrease the size of your running instance after user approval. 
+This Policy Template uses user defined tags to determine if it can decrease the size of your running instance after user approval.
 
 ### Usage
 
@@ -43,9 +43,9 @@ This policy requires permissions to access RightScale resources (clouds, instanc
 ### Instance Size Relationship Mapping
 
 This policy template uses instance mappings that we have defined in the following files:
-- AWS: [/rightscale/policy_templates/master/data/aws/instance_types.json](/rightscale/policy_templates/master/data/aws/instance_types.json)
-- Azure:  [/rightscale/policy_templates/master/data/azure/instance_types.json](/rightscale/policy_templates/master/data/azure/instance_types.json)
-- Google: [/rightscale/policy_templates/master/data/google/instance_types.json](/rightscale/policy_templates/master/data/google/instance_types.json)
+- AWS: [https://github.com/flexera/policy_templates/blob/master/data/aws/instance_types.json](https://github.com/flexera/policy_templates/blob/master/data/aws/instance_types.json)
+- Azure:  [https://github.com/flexera/policy_templates/blob/master/data/azure/instance_types.json](https://github.com/flexera/policy_templates/blob/master/data/azure/instance_types.json)
+- Google: [https://github.com/flexera/policy_templates/blob/master/data/google/instance_types.json](https://github.com/flexera/policy_templates/blob/master/data/google/instance_types.json)
 
 If you would like to modify the relationships, you can take the following steps:
 1. Clone the relevant `instance_types.json` file to a publicly available storage location. We recommend GitHub.

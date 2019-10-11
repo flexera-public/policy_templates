@@ -10,7 +10,12 @@ This Policy Template will scan all resources in an Azure Resource Manager Subscr
 - The following RightScale Credentials
   - `AZURE_APPLICATION_ID`
   - `AZURE_APPLICATION_KEY`
-- The `policy_designer`, `policy_manager` & `policy_publisher` roles
+- The `policy_designer`, `policy_manager`, `credential_viewer` & `policy_publisher` roles
+
+### Azure Required Permissions
+
+- Microsoft.Resources/subscriptions/resources/read
+- Microsoft.Resources/subscriptions/providers/read
 
 ### Installation
 
