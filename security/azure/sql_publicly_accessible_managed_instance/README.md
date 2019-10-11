@@ -23,6 +23,11 @@ Perform below steps to enable delete action.
 - policy_designer
 - policy_manager
 - policy_publisher
+- credential_viewer
+
+### Azure Required Permissions
+
+- Microsoft.Sql/managedInstances/*
 
 ### Installation
 

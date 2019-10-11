@@ -39,6 +39,17 @@ This policy has the following input parameters required when launching the polic
 - *Action Tag Key:Value* - The tag key:value pair to set on an instance that is underutilized.
 - *Email addresses of the recipients you wish to notify* - A list of email addresses to notify
 
+### Required RightScale Roles
+
+- Cloud Management - Actor
+- Cloud Management - Observer
+- Cloud Management - credential_viewer
+
+### Azure Required Permissions
+
+- Microsoft.Compute/skus/read
+- Microsoft.OperationalInsights/workspaces/analytics/query/action
+
 ### Supported Clouds
 
 - Azure Resource Manager

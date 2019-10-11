@@ -17,6 +17,11 @@ This policy identifies all CUDs that exist in a given GCP project and sends a no
 ### Required RightScale Roles
 
 - policy_manager
+- credential_viewer
+
+### Google Required Permissions
+
+- compute.commitments.get
 
 ### Supported Clouds
 
