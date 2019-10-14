@@ -1,8 +1,12 @@
 # Changelog
 
-## v1.1
+## v1.2
 
 - Added pagination for the Microsoft Graph API users call
+
+## v1.1
+
+- Added Permission block
 
 ## v1.0
 
