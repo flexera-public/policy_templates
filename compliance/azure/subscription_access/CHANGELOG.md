@@ -2,7 +2,7 @@
 
 ## v1.1
 
-- updated users call to return 999 users
+- Added pagination for the Microsoft Graph API users call
 
 ## v1.0
 

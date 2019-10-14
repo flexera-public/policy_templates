@@ -44,11 +44,6 @@ When the list of users that match the criteria changes, an incident is created a
 
 - Azure
 
-## Other
-
-Only 999 users are returned from the Microsoft Graph API call.
-If the referenced Azure AD Tenant contains more than 999 users, some Owners and/or Contributors may not be listed.
-
 ## Cost
 
 This Policy Template does not incur any cloud costs.
