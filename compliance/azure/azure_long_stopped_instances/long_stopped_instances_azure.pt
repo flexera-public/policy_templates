@@ -15,13 +15,16 @@ permission "perm_read_creds" do
   resources "rs_cm.credentials"
 end
 
+###############################################################################
+# Parameters
+###############################################################################
+
 parameter "param_email" do
   type "list"
   label "Email List"
   description "Email addresses of the recipients you wish to notify"
 end
 
-#pass in tenant ID
 parameter "param_azure_tenant_id" do
   type "string"
   label "Azure AD Tenant ID"
@@ -29,7 +32,6 @@ parameter "param_azure_tenant_id" do
   category "Azure"
 end
 
-#pass in Sub ID
 parameter "param_azure_sub" do
   type "string"
   label "Azure Subscription ID"
@@ -43,7 +45,10 @@ parameter "param_numberofdays" do
   description "Threshold of days to consider an instance long running."
 end
 
-#authenticate with Azure
+###############################################################################
+# Authentication
+###############################################################################
+
 auth "azure_auth", type: "oauth2" do
   token_url join(["https://login.microsoftonline.com/",$param_azure_tenant_id,"/oauth2/token"])
   grant type: "client_credentials" do
@@ -55,7 +60,10 @@ auth "azure_auth", type: "oauth2" do
   end
 end
 
-#pagination support
+###############################################################################
+# Pagination
+###############################################################################
+
 pagination "azure_pagination" do
   get_page_marker do
     body_path "nextLink"
@@ -64,6 +72,10 @@ pagination "azure_pagination" do
     uri true
   end
 end
+
+###############################################################################
+# Datasources
+###############################################################################
 
 #get all virtual machines
 datasource "ds_azure_virtualmachines" do
@@ -114,6 +126,10 @@ datasource "filtered_resources" do
   run_script $js_filter_resources,$ds_azure_instances,$param_numberofdays
 end
 
+###############################################################################
+# Scripts
+###############################################################################
+
 script "js_filter_resources", type: "javascript" do
   parameters "ds_azure_instances","param_numberofdays"
   result "result"
@@ -143,6 +159,10 @@ script "js_filter_resources", type: "javascript" do
 EOS
 end
 
+###############################################################################
+# Policy
+###############################################################################
+
 policy "azure_resource_policy" do
   validate $filtered_resources do
     summary_template "Azure Resources out of compliance"
@@ -160,6 +180,10 @@ EOS
   end
 end
 
+###############################################################################
+# Escalations
+###############################################################################
+
 escalation "email" do
    email $param_email
 end
@@ -176,6 +200,10 @@ escalation "delete_resources" do
    end
   run "delete_resources", data, $param_azure_tenant_id,$param_azure_sub
 end
+
+###############################################################################
+# Cloud Workflow
+###############################################################################
 
 define delete_resources($data, $param_azure_tenant_id,$param_azure_sub) return $all_responses do
   call get_access_token($param_azure_tenant_id) retrieve $access_token
