@@ -91,7 +91,7 @@ datasource "ds_azure_virtualmachines" do
     encoding "json"
     collect jmes_path(response, "value[*]") do
       field "id", jmes_path(col_item,"id")
-      field "rg", jmes_path(col_item,"tags.rg")
+      field "rg", get(4, split(jmes_path(col_item,"id"), "/"))
       field "name", jmes_path(col_item,"name")
     end
   end
@@ -141,19 +141,23 @@ script "js_filter_resources", type: "javascript" do
     var name= timeblock["name"]
     var state_displaystatus=stateblock["displayStatus"]
     var resourcegroup = stateblock["rg"]
-    if (state_displaystatus = "VM deallocated")
-      {
-        var timeofevent = new Date(timeblock["time"])
-        var nowtime = Date.now()
-        var res = Math.abs(timeofevent.valueOf() - nowtime.valueOf())
-        var dayselapsed = Math.ceil(res / (1000 * 3600 * 24))
-        //REMOVE THIS EXTRA CONDITION
-        if (dayselapsed > param_numberofdays && name == "full2016") {
-                  server_json = { "name": name, "status": state_displaystatus, "time_stopped": timeblock["time"], "days_elapsed": dayselapsed, "resourcegroup" : resourcegroup }
-                  result.push(server_json)
-        }
-
+    if (state_displaystatus = "VM deallocated") {
+      var timeofevent = new Date(timeblock["time"])
+      var nowtime = Date.now()
+      var res = Math.abs(timeofevent.valueOf() - nowtime.valueOf())
+      var dayselapsed = Math.ceil(res / (1000 * 3600 * 24))
+      //REMOVE THIS EXTRA CONDITION
+      if (dayselapsed > param_numberofdays && name == "full2016") {
+        result.push({
+          "name": name,
+          "status": state_displaystatus,
+          "time_stopped": timeblock["time"],
+          "days_elapsed": dayselapsed,
+          "resourcegroup" : resourcegroup
+        })
       }
+
+    }
   }
 
 EOS
@@ -168,10 +172,10 @@ policy "azure_resource_policy" do
     summary_template "Azure Resources out of compliance"
     detail_template <<-EOS
 # Azure Resources out of compliance
-| Name | Status | Time Stopped | Days Elapsed
-| ----------------------- | ----------------------- | ------------- | --------------- |
+| Name | Resource Group | Status | Time Stopped | Days Elapsed |
+| ---- | -------------- | ------ | ------------ | ------------ |
 {{ range data -}}
-| {{.name}} | {{.status}} | {{.time_stopped}} | {{.days_elapsed}} |
+| {{.name}} | {{.resourcegroup}} | {{.status}} | {{.time_stopped}} | {{.days_elapsed}} |
 {{ end -}}
 EOS
     escalate $email
