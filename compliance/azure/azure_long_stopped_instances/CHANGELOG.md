@@ -3,6 +3,7 @@
 ## v1.3
 
 - Removed need for `rg` tag
+- Added additional logic to account for multiple statuses
 
 ## v1.2
 
