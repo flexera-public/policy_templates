@@ -7,7 +7,7 @@ This policy checks all users who have Owner or Contributor access to a given Azu
 ## Functional Details
 
 The policy leverages the Azure RBAC API to get all the users with the given role(s) on the given subscription.
-When the list of users that match the criteria changes, an incident is created and the details are reported via email. 
+When the list of users that match the criteria changes, an incident is created and the details are reported via email.
 
 ## Pre-requisites
 
