@@ -1,15 +1,19 @@
 name "Azure Subscription Access"
 rs_pt_ver 20180301
 type "policy"
-short_description "Report on anyone who has been granted Owner or Contributor access to an Azure subscription. \n See the [README](https://github.com/rightscale/policy_templates/tree/master/compliance/azure/subscription_access) and [docs.rightscale.com/policies](http://docs.rightscale.com/policies/) to learn more."
-long_description "Version: 1.0"
+short_description "Lists anyone who has been granted Owner or Contributor access to an Azure subscription. \n See the [README](https://github.com/rightscale/policy_templates/tree/master/compliance/azure/subscription_access) and [docs.rightscale.com/policies](http://docs.rightscale.com/policies/) to learn more."
+long_description "Version: 1.3"
 category "Compliance"
 severity "low"
-
 
 ###############################################################################
 # Permissions
 ###############################################################################
+
+permission "perm_read_creds" do
+  actions   "rs_cm.show_sensitive","rs_cm.index_sensitive"
+  resources "rs_cm.credentials"
+end
 
 ###############################################################################
 # Parameters
@@ -81,6 +85,15 @@ pagination "azure_pagination" do
   end
 end
 
+pagination "azure_graph_pagination" do
+  get_page_marker do
+    body_path '"@odata.nextLink"'
+  end
+  set_page_marker do
+    uri true
+  end
+end
+
 ###############################################################################
 # Datasources
 ###############################################################################
@@ -88,6 +101,7 @@ end
 datasource "ds_azure_users" do
   request do
     auth $azure_graph_auth
+    pagination $azure_graph_pagination
     host "graph.microsoft.com"
     path join(["/v1.0/users"])
     header "User-Agent", "RS Policies"
@@ -142,6 +156,7 @@ datasource "ds_azure_role_assignments" do
     host "management.azure.com"
     path join(["/subscriptions/", $param_azure_sub, "/providers/Microsoft.Authorization/roleAssignments"])
     query "api-version","2015-07-01"
+    query "$filter","atScope()"
     header "User-Agent", "RS Policies"
   end
   result do

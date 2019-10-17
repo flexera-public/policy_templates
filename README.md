@@ -51,7 +51,8 @@ Please contact sales@rightscale.com to learn more.
 - [Google Expiring Committed Use Discount (CUD)](./cost/google/cud_expiration/)
 - [Azure Expiring Reserved Instances](./cost/azure/reserved_instances/expiration)
 - [Azure Idle Compute Instances](./cost/azure/idle_compute_instances/)
-- [Google CloudSQL RightSizing](./cost/google/cloudsql_rightsizing/)
+- [Google Rightsize CloudSQL Instances](./cost/google/cloudsql_rightsizing/)
+- [Google Unused CloudSQL Instances](./cost/google/unused_cloudsql_instances)
 
 ### Security
 
@@ -87,6 +88,7 @@ Please contact sales@rightscale.com to learn more.
 - [Azure Subscription Access](./compliance/azure/subscription_access/)
 - [Azure AHUB Utilization with Manual Entry](./compliance/azure/ahub_manual/)
 - [Azure Instances not running FlexNet Inventory Agent](./compliance/azure/instances_without_fnm_agent/)
+- [FlexNet Manager Licenses At Risk](./compliance/fnms/fnms_licenses_at_risk/)
 
 ### Operational
 

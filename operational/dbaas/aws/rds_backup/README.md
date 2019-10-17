@@ -25,6 +25,25 @@ This policy requires permissions to access RightScale resources (credentials).  
 
 - Cloud Management - credential_viewer or admin
 
+### AWS Required Permissions
+
+This policy requires permissions to describe AWS RDS DescribeDBInstances.
+The Cloud Management Platform automatically creates two Credentials when connecting AWS to Cloud Management; AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY. The IAM user credentials contained in those credentials will require the following permissions:
+
+```javascript
+{
+   "Version":"2014-09-01",
+   "Statement":[
+      {
+         "Sid":"AllowRDSDescribe",
+         "Effect":"Allow",
+         "Action":"rds:DescribeDBInstances",
+         "Resource":"*"
+      }
+   ]
+}
+```
+
 ### Supported Clouds
 
 - AWS

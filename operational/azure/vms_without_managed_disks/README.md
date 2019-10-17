@@ -21,6 +21,9 @@ When a VM that is using unmanaged disks is detected, VM location information as 
 ### Required RightScale Roles
 - credential_viewer or admin
 
+### Azure Required Permissions
+- Microsoft.Compute/virtualMachines/read
+
 ### Supported Clouds
 - Azure Resource Manager
 
