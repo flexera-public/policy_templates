@@ -1,7 +1,7 @@
-name "Actual v. Budgeted Spend Report"
+name "Monthly Actual v. Budgeted Spend Report"
 rs_pt_ver 20180301
 type "policy"
-short_description "This policy allows you to set up scheduled reports that will provide actual v. budgted cloud cost across all resources in the billing centers you specify, delivered to any email addresses you specify."
+short_description "This policy allows you to set up scheduled reports that will provide monthly actual v. budgted cloud cost across all resources in the Billing Center(s) you specify, delivered to any email addresses you specify."
 long_description "Version: 1.0"
 severity "low"
 category "Cost"
@@ -15,7 +15,7 @@ end
 parameter "param_billing_centers" do
   type "list"
   label "Billing Center List"
-  description "The Billing Center you want to report on. Leave blank to select all top level Billing Centers."
+  description "The Billing Center(s) you want to report on. Leave blank to select all top level Billing Centers."
 end
 
 parameter "param_cost_metric" do
@@ -151,6 +151,10 @@ datasource "ds_current_month_costs" do
   end
 end
 
+datasource "ds_report" do
+  run_script $js_report, $ds_current_month_costs, $param_cost_metric, $ds_currency_code, $ds_currency_reference, $param_billing_centers, $param_jan_monthly_budgeted, $param_feb_monthly_budgeted, $param_mar_monthly_budgeted, $param_apr_monthly_budgeted, $param_may_monthly_budgeted, $param_jun_monthly_budgeted, $param_jul_monthly_budgeted, $param_aug_monthly_budgeted, $param_sep_monthly_budgeted, $param_oct_monthly_budgeted, $param_nov_monthly_budgeted, $param_dec_monthly_budgeted
+end
+
 script "js_current_month_cost_request", type: "javascript" do
   parameters "param_billing_centers", "param_cost_metric", "rs_org_id", "rs_optima_host", "ds_billing_centers"
   result "request"
@@ -202,6 +206,8 @@ script "js_current_month_cost_request", type: "javascript" do
     end_at = getFormattedDailyDate(addDays(new Date(now.getFullYear(), now.getMonth() + 1, 0),1))
     
     var billing_center_ids = []
+    
+    /*
     if (param_billing_centers.length === 0){
       var top_billing_centers = _.reject(ds_billing_centers, function(bc){ return bc.parent_id != null });
       billing_center_ids = _.map(top_billing_centers, function(value, key){ return value.id });
@@ -209,6 +215,19 @@ script "js_current_month_cost_request", type: "javascript" do
       // get array of billing center id's that match the names in param_billing_centers.
       billing_center_names = _.map(param_billing_centers, function(name){ return name.toLowerCase(); });
       billing_center_ids = _.compact(_.map(ds_billing_centers, function(value){ if(_.contains(billing_center_names, value.name.toLowerCase())){return value.id} }));
+    }
+    */
+
+    for(var x=0; x < param_billing_centers.length; x++){
+      if (param_billing_centers[x] == "") {
+        var top_billing_centers = _.reject(ds_billing_centers, function(bc){ return bc.parent_id != null })
+        billing_center_ids = _.map(top_billing_centers, function(value, key){ return value.id })
+      }
+      else {
+        // get array of billing center id's that match the names in param_billing_centers.
+        billing_center_names = _.map(param_billing_centers, function(name){ return name.toLowerCase(); })
+        billing_center_ids = _.compact(_.map(ds_billing_centers, function(value){ if(_.contains(billing_center_names, value.name.toLowerCase())){return value.id} }))
+      }
     }
 
     var body = {
@@ -235,12 +254,8 @@ script "js_current_month_cost_request", type: "javascript" do
   EOS
 end
 
-datasource "ds_report" do
-  run_script $js_report, $ds_current_month_costs, $param_cost_metric, $ds_currency_code, $ds_currency_reference, $param_jan_monthly_budgeted, $param_feb_monthly_budgeted, $param_mar_monthly_budgeted, $param_apr_monthly_budgeted, $param_may_monthly_budgeted, $param_jun_monthly_budgeted, $param_jul_monthly_budgeted, $param_aug_monthly_budgeted, $param_sep_monthly_budgeted, $param_oct_monthly_budgeted, $param_nov_monthly_budgeted, $param_dec_monthly_budgeted
-end
-
 script "js_report", type: "javascript" do
-  parameters "ds_current_month_costs", "param_cost_metric", "ds_currency_code", "ds_currency_reference", "param_jan_monthly_budgeted", "param_feb_monthly_budgeted", "param_mar_monthly_budgeted", "param_apr_monthly_budgeted", "param_may_monthly_budgeted", "param_jun_monthly_budgeted", "param_jul_monthly_budgeted", "param_aug_monthly_budgeted", "param_sep_monthly_budgeted", "param_oct_monthly_budgeted", "param_nov_monthly_budgeted", "param_dec_monthly_budgeted"
+  parameters "ds_current_month_costs", "param_cost_metric", "ds_currency_code", "ds_currency_reference", "param_billing_centers", "param_jan_monthly_budgeted", "param_feb_monthly_budgeted", "param_mar_monthly_budgeted", "param_apr_monthly_budgeted", "param_may_monthly_budgeted", "param_jun_monthly_budgeted", "param_jul_monthly_budgeted", "param_aug_monthly_budgeted", "param_sep_monthly_budgeted", "param_oct_monthly_budgeted", "param_nov_monthly_budgeted", "param_dec_monthly_budgeted"
   result "report"
   code <<-EOS
   // format the date for the `monthly` API
@@ -311,83 +326,41 @@ script "js_report", type: "javascript" do
       var sep = ","
     }
 
-    var cm_total = cur + ' ' + formatNumber(Math.round(current_month_total), sep);
-    
-    //BEGIN MONTHLY BUDGET CHECK
+    var report = {};
     var now = new Date();
+    var longMonthNames = ["None","January","February","March","April","May","June","July","August","September","October","November","December"];
     var monthlyBudgetInputs = ["None", param_jan_monthly_budgeted, param_feb_monthly_budgeted, param_mar_monthly_budgeted, param_apr_monthly_budgeted, param_may_monthly_budgeted, param_jun_monthly_budgeted, param_jul_monthly_budgeted, param_aug_monthly_budgeted, param_sep_monthly_budgeted, param_oct_monthly_budgeted, param_nov_monthly_budgeted, param_dec_monthly_budgeted]
     var currentMonth = getFormattedMonthlyDate(now);
+    var currentMonthName = longMonthNames[parseInt(currentMonth.split('-')[1])];
     var param_monthly_budgeted = monthlyBudgetInputs[parseInt(currentMonth.split('-')[1])];
     
+    var cm_actual_total = cur + ' ' + formatNumber(Math.round(current_month_total), sep);
+    var cm_budget_total = cur + ' ' + formatNumber(Math.round(param_monthly_budgeted), sep);
+
+    // Monthly budget check
     if (current_month_total > param_monthly_budgeted){
       var cm_overbudget = cur + ' ' + formatNumber(Math.round(current_month_total - param_monthly_budgeted), sep);
     } else {
       var cm_overbudget = "Not Applicable";
     }
-    param_monthly_budgeted = cur + ' ' + formatNumber(Math.round(param_monthly_budgeted), sep);
-    //END MONTHLY BUDGET CHECK
 
-    var report = [
-      {
-        range: 'Monthly',
-        current: cm_total,
-        budget: param_monthly_budgeted,
-        overbudget: cm_overbudget
-      }
-    ]
-  EOS
-end
-
-datasource "ds_generated_report" do
-  run_script $js_generate_report, $param_cost_metric, $param_billing_centers, $ds_report, $ds_currency_code, $ds_currency_reference, $param_jan_monthly_budgeted, $param_feb_monthly_budgeted, $param_mar_monthly_budgeted, $param_apr_monthly_budgeted, $param_may_monthly_budgeted, $param_jun_monthly_budgeted, $param_jul_monthly_budgeted, $param_aug_monthly_budgeted, $param_sep_monthly_budgeted, $param_oct_monthly_budgeted, $param_nov_monthly_budgeted, $param_dec_monthly_budgeted
-end
-
-script "js_generate_report", type: "javascript" do
-  parameters "param_cost_metric", "param_billing_centers", "ds_report", "ds_currency_code", "ds_currency_reference", "param_jan_monthly_budgeted", "param_feb_monthly_budgeted", "param_mar_monthly_budgeted", "param_apr_monthly_budgeted", "param_may_monthly_budgeted", "param_jun_monthly_budgeted", "param_jul_monthly_budgeted", "param_aug_monthly_budgeted", "param_sep_monthly_budgeted", "param_oct_monthly_budgeted", "param_nov_monthly_budgeted", "param_dec_monthly_budgeted"
-  result "report"
-  code <<-EOS
-    // format the date for the `monthly` API
-    // returns date formatted as string: YYYY-mm
-    function getFormattedMonthlyDate(date) {
-      var year = date.getFullYear();
-
-      var month = (1 + date.getMonth()).toString();
-      month = month.length > 1 ? month : '0' + month;
-
-      var day = date.getDate().toString();
-      day = day.length > 1 ? day : '0' + day;
-
-      return year + '-' + month ;
-    }
-
-    // create a map to use in the request metric field.
-    var cost_metric = {
-      "Unamortized Unblended":"cost_nonamortized_unblended_adj",
-      "Amortized Unblended":"cost_amortized_unblended_adj",
-      "Unamortized Blended": "cost_nonamortized_blended_adj",
-      "Amortized Blended":"cost_amortized_blended_adj"
-    };
-
-    var now = new Date();
-    var report = {};
-    var collated_data = [];
-    var current_month_totals = [];
-    var metric = cost_metric[param_cost_metric];
-    
-    var longMonthNames = ["None","January","February","March","April","May","June","July","August","September","October","November","December"];
-    var shortMonthNames = ["None","Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
-    var monthlyBudgetInputs = ["None", param_jan_monthly_budgeted, param_feb_monthly_budgeted, param_mar_monthly_budgeted, param_apr_monthly_budgeted, param_may_monthly_budgeted, param_jun_monthly_budgeted, param_jul_monthly_budgeted, param_aug_monthly_budgeted, param_sep_monthly_budgeted, param_oct_monthly_budgeted, param_nov_monthly_budgeted, param_dec_monthly_budgeted]
-    var currentMonth = getFormattedMonthlyDate(now);
-    var currentMonthName = longMonthNames[parseInt(currentMonth.split('-')[1])];
-    var param_monthly_budgeted = monthlyBudgetInputs[parseInt(currentMonth.split('-')[1])];
-        
-    // get current month data
-    var current_month_total = ds_report[0].current.substr(ds_report[0].current.indexOf(' ')+1).replace(/,/g, '')
-    
+    /*
+    // Fetch Billing Centers for display
     if (param_billing_centers.length === 0){
       var billingCenters = "All";
     } else {
       var billingCenters = param_billing_centers.join()
+    }
+    */
+
+    // Fetch Billing Centers for display
+    for(var x=0; x < param_billing_centers.length; x++){
+      if (param_billing_centers[x] == "") {
+        var billingCenters = "All"
+      }
+      else {
+        var billingCenters = param_billing_centers.join()
+      }
     }
 
     // Format costs with currency symbol and thousands separator
@@ -396,6 +369,15 @@ script "js_generate_report", type: "javascript" do
     } else {
       var cur = "USD"
     }
+    
+    var reportData = [
+      {
+        range: 'Monthly',
+        current: cm_actual_total,
+        budget: cm_budget_total,
+        overbudget: cm_overbudget
+      }
+    ]
 
     report = {
       currentMonthName: currentMonthName,
@@ -407,17 +389,13 @@ script "js_generate_report", type: "javascript" do
       chartTitle: "chtt=Spending+Overview",
       chartAxis: "chxt=x",
       chartAxisFormat: "chxs=0N*c" + cur + "s*",
-      reportData: ds_report
+      reportData: reportData
     }
   EOS
 end
 
-escalation "escalation_send_email" do
-  email $param_email
-end
-
 policy "policy_scheduled_report" do
-  validate $ds_generated_report do
+  validate $ds_report do
     summary_template "{{ rs_org_name }} (Org ID: {{ rs_org_id }}): {{ data.currentMonthName }} Actual v. Budgeted Cost Report"
     detail_template <<-EOS
 # {{ data.currentMonthName }} Actual v. Budgeted Cost Report
@@ -440,4 +418,8 @@ EOS
     escalate $escalation_send_email
     check eq(0, 1)
   end
+end
+
+escalation "escalation_send_email" do
+  email $param_email
 end

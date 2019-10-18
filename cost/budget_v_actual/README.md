@@ -1,8 +1,8 @@
-# Actual v. Budgeted Spend Report
+# Monthly Actual v. Budgeted Spend Report
 
 **As a best practice, this policy should only be applied to the Master Account, and not to each individual RightScale Account.**
 
-This policy allows you to set up scheduled reports that will provide actual v. budgted cloud cost across all resources in the billing centers you specify, delivered to any email addresses you specify. The policy will provide a report with a bar chart of actual v. budgeted spend for the current month. We recommend running this policy on a weekly cadence and applying it to your master account.
+This policy allows you to set up scheduled reports that will provide monthly actual v. budgted cloud cost across all resources in the Billing Center(s) you specify, delivered to any email addresses you specify. The policy will provide a report with a bar chart of actual v. budgeted spend for the current month. We recommend running this policy on a weekly cadence and applying it to your master account.
 
 _Note 1: The last 3 days of data in the current week or month will contain incomplete data._  
 _Note 2: The account you apply the policy to is unimportant as Optima metrics are scoped to the Org._
@@ -23,8 +23,18 @@ This policy has the following input parameters required when launching the polic
 - *Email list* - Email addresses of the recipients you wish to notify
 - *Billing Center List* - List of top level Billing Center names you want to report on.  Names must be exactly as shown in Optima. Leave the field blank to report on all top level Billing Centers.
 - *Cost Metric* -  See Cost Metrics above for details on selection.
-- *Graph Dimension* - The cost dimension to break out the cost data in the embedded bar chart image
-- *Monthly Budgeted Cost* - Monthly budgeted cost for corresponding Billing Center
+- *January Budgeted Cost* - January budgeted cost for corresponding Billing Center
+- *February Budgeted Cost* - February budgeted cost for corresponding Billing Center
+- *March Budgeted Cost* - March budgeted cost for corresponding Billing Center
+- *April Budgeted Cost* - April budgeted cost for corresponding Billing Center
+- *May Budgeted Cost* - May budgeted cost for corresponding Billing Center
+- *June Budgeted Cost* - June budgeted cost for corresponding Billing Center
+- *July Budgeted Cost* - July budgeted cost for corresponding Billing Center
+- *August Budgeted Cost* - August budgeted cost for corresponding Billing Center
+- *September Budgeted Cost* - September budgeted cost for corresponding Billing Center
+- *October Budgeted Cost* - October budgeted cost for corresponding Billing Center
+- *November Budgeted Cost* - November budgeted cost for corresponding Billing Center
+- *December Budgeted Cost* - December budgeted cost for corresponding Billing Center
 
 ## Policy Actions
 
