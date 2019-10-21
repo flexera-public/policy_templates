@@ -4,7 +4,7 @@
 
 This Policy Template is used to automatically apply the Azure Hybrid Use Benefit (AHUB) to all eligible VMs in an Azure Subscription.
 
-### Prerequesites
+### Prerequisites
 
 - Azure Service Principal (AKA Azure Active Directory Application) with the appropriate permissions to manage resources in the target subscription
 - The following RightScale Credentials
@@ -18,17 +18,17 @@ This Policy Template is used to automatically apply the Azure Hybrid Use Benefit
 
 ### Installation
 
-1. Follow steps to [Create an Azure Active Directory Application](https://docs.microsoft.com/en-us/azure/azure-resource-manager/resource-group-create-service-principal-portal#create-an-azure-active-directory-application)
+1. Follow steps to [Create an Azure Active Directory Application] (https://docs.microsoft.com/en-us/azure/azure-resource-manager/resource-group-create-service-principal-portal#create-an-azure-active-directory-application)
 1. Grant the Azure AD Application access to the necessary subscription(s)
-1. [Retrieve the Application ID & Authentication Key](https://docs.microsoft.com/en-us/azure/azure-resource-manager/resource-group-create-service-principal-portal#get-application-id-and-authentication-key)
+1. [Retrieve the Application ID & Authentication Key] (https://docs.microsoft.com/en-us/azure/azure-resource-manager/resource-group-create-service-principal-portal#get-application-id-and-authentication-key)
 1. Create RightScale Credentials with values that match the Application ID (Credential name: `AZURE_APPLICATION_ID`) & Authentication Key (Credential name: `AZURE_APPLICATION_KEY`)
-1. [Retrieve your Tenant ID](https://docs.microsoft.com/en-us/azure/azure-resource-manager/resource-group-create-service-principal-portal#get-tenant-id)
+1. [Retrieve your Tenant ID] (https://docs.microsoft.com/en-us/azure/azure-resource-manager/resource-group-create-service-principal-portal#get-tenant-id)
 
 ### Functional Details
 
-_ The policy identifies all Windows server instances that are not currently using [Azure Hybrid Use Benefit](https://azure.microsoft.com/en-us/pricing/hybrid-benefit/). It raises an incident for all applicable VMs not currently using AHUB, which once approved, will enable AHUB on all identified instances.
+_ The policy identifies all Windows server instances that are not currently using [Azure Hybrid Use Benefit] (https://azure.microsoft.com/en-us/pricing/hybrid-benefit/). It raises an incident for all applicable VMs not currently using AHUB, which once approved, will enable AHUB on all identified instances.
 - The Exclusion Tag parameter is a string value.  Supply the Tag Key only.  Tag Values are not analyzed and therefore are not need.  If the exclusion tag key is used on an Instance, that Instance is presumed to be exempt from this policy.
-- This policy does not track licenses or availability. It is your responsibility to ensure you are not underlicensed.
+- This policy does not track licenses or availability. It is your responsibility to ensure you are not under licensed.
 
 ### Input Parameters
 
