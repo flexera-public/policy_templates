@@ -1,4 +1,6 @@
-﻿# RightScale Policy Templates
+# RightScale Policy Templates
+
+asdfaa
 
 This repo contains a library of open source RightScale Policy Templates to provide governance via automation across Cost, Security, Operational, and Compliance categories.  All contributions are shared under the MIT license.
 
