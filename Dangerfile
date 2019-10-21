@@ -79,11 +79,10 @@ changed_files.each do |file|
  end
 end
 
-# check mardown files with markdown lint
+# check markdown of .md files with markdown lint
 md_files.each do |file|
-  #message File.read(file)
   mdl = `mdl #{file}`
-  message mdl
+  fail mdl
 end
 
 fail 'Please provide a summary of your Pull Request.' if github.pr_body.length < 10
