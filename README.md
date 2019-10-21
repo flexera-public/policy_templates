@@ -69,7 +69,8 @@ Please contact sales@rightscale.com to learn more.
 - [AWS Publicly Accessible RDS Instances](./security/aws/rds_publicly_accessible/)
 - [AWS Unencrypted S3 Buckets](./security/aws/unencrypted_s3_buckets/)
 - [Check for publicly accessible Azure SQL Managed Instance](./security/azure/sql_publicly_accessible_managed_instance)
-- [AWS Elastic Load Balancer Encryption Check] (./security/aws/unencrypted_elb_listeners/)
+- [AWS Unencrypted ELB Listeners (CLB)] (./security/aws/clb_unencrypted/)
+- [AWS Unencrypted ELB Listeners (ALB/NLB)] (./security/aws/elb_unencrypted/)
 
 ### Compliance
 

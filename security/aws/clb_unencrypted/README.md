@@ -1,4 +1,4 @@
-## AWS Classic Load Balancers w/Internet-facing Unencrypted Listeners
+## AWS Unencrypted ELB Listeners (CLB)
  
 ### What it does
 Checks for unecrypted listeners on Classic Load Balancers. If an internet-facing listener is using an unecrypted protocol (eg: NOT HTTPS, SSL, or TLS) an incident report will show for the listener and an email will be sent to the user-specified email address.

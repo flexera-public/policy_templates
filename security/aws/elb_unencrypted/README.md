@@ -1,4 +1,4 @@
-## AWS App/Network Load Balancers w/Internet-facing Unencrypted Listeners
+## AWS Unencrypted ELB Listeners (ALB/NLB)
  
 ### What it does
 Checks for unecrypted listeners on Application and Network Load Balancers. If an internet-facing listener is using an unecrypted protocol (eg: NOT HTTPS, SSL, or TLS) an incident report will show for the listener and an email will be sent to the user-specified email address.
@@ -12,7 +12,7 @@ The policy leverages the AWS elasticloadbalancing API to examine listener detail
 #### Input Parameters
  
 - *Email addresses of the recipients you wish to notify* - A list of email addresses to notify
-- *Ignore tags* - CLB with any of these tags will be ignored 
+- *Ignore tags* - ALB/NLB with any of these tags will be ignored 
  
 ### Required RightScale Roles
  
