@@ -4,6 +4,7 @@
 changed_files = (git.added_files + git.modified_files)
 has_app_changes = changed_files.select{ |file| file.end_with? "pt" }
 has_new_policy_template = git.added_files.select{ |file| file.end_with? "pt" }
+md_files = changed_files.select{ |file| file.end_with? "md" }
 
 # Changelog entries are required for changes to library files.
 no_changelog_entry = (changed_files.grep(/[\w]+CHANGELOG.md/i)+changed_files.grep(/CHANGELOG.md/i)).empty?
@@ -78,6 +79,12 @@ changed_files.each do |file|
  end
 end
 
+# check mardown files with markdown lint
+md_files.each do |file|
+  #message File.read(file)
+  mdl = `mdl #{file}`
+  message mdl
+end
 
 fail 'Please provide a summary of your Pull Request.' if github.pr_body.length < 10
 
