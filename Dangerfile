@@ -80,6 +80,7 @@ changed_files.each do |file|
 end
 
 # check markdown of .md files with markdown lint
+# .md files should follow these rules https://github.com/markdownlint/markdownlint/blob/master/docs/RULES.md
 md_files.each do |file|
   mdl = `mdl #{file}`
   fail mdl
