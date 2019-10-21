@@ -17,7 +17,13 @@ The following policy actions are taken on any resources found to be out of compl
 
 - Send an email report
 
-### Required Permissions
+### Required RightScale Roles
+ 
+- Cloud Management - Actor
+- Cloud Management - Observer
+- Cloud Management - credential_viewer
+
+### Required AWS Permissions
 
 This policy requires permissions to list of AWS S3 Buckets, the location of S3 Buckets as well as permissions to list Metrics and Get Metric Statistics from the AWS Cloudwatch API.
 
