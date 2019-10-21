@@ -1,0 +1,330 @@
+name "AWS App/Network Load Balancers w/Internet-facing Unencrypted Listeners"
+rs_pt_ver 20180301
+type "policy"
+short_description "Report any AWS App/Network Load Balancers w/Internet-facing Unencrypted Listeners. \n See the [README](https://github.com/rightscale/policy_templates/tree/master/cost/aws/elb/clb_unused) and [docs.rightscale.com/policies](http://docs.rightscale.com/policies/) to learn more."
+long_description "Version: 1.0"
+category "Security"
+severity "medium"
+
+###############################################################################
+# Permissions
+###############################################################################
+
+permission "perm_read_creds" do
+  actions   "rs_cm.show_sensitive","rs_cm.index_sensitive"
+  resources "rs_cm.credentials"
+end
+
+###############################################################################
+# User inputs
+###############################################################################
+
+parameter "param_email" do
+  type "list"
+  label "Email addresses of the recipients you wish to notify"
+end
+
+parameter "param_exclude_tags" do
+  type "list"
+  label "List of one or more Tags that will exclude Classic Load Balancer from actions being taken. Format: Key=Value"
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+auth "auth_aws", type: "aws" do
+  version 4
+  service "elasticloadbalancing"
+  access_key cred('AWS_ACCESS_KEY_ID')
+  secret_key cred('AWS_SECRET_ACCESS_KEY')
+end
+
+###############################################################################
+# Pagination
+###############################################################################
+
+pagination "elb_pagination" do
+  get_page_marker do
+    body_path "DescribeLoadBalancersResult.NextMarker"
+  end
+  set_page_marker do
+    query "Marker"
+  end
+end
+
+pagination "listener_pagination" do
+  get_page_marker do
+    body_path "DescribeListenersResponse.NextMarker"
+  end
+  set_page_marker do
+    query "Marker"
+  end
+end
+
+###############################################################################
+# Datasources
+###############################################################################
+
+#Generates list of Regions
+datasource "ds_regions_list" do
+  request do
+    verb "GET"
+    host "raw.githubusercontent.com"
+    path "/rightscale/policy_templates/master/data/aws/regions.json"
+    header "User-Agent", "RS Policies"
+  end
+end
+
+#Get the list of all Classic and application load Balancers
+datasource "ds_elb_list" do
+  iterate $ds_regions_list
+  request do
+    run_script $js_elb_list, val(iter_item,"region")
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "DescribeLoadBalancersResponse.DescribeLoadBalancersResult.*[*][]") do
+      field "loadBalancerName", jmes_path(col_item, "LoadBalancerName")
+      field "region", val(iter_item,"region")
+      field "availabilityZones", jmes_path(col_item, "AvailabilityZones")
+      field "scheme",  jmes_path(col_item, "Scheme")
+      field "loadBalancerArn",  jmes_path(col_item, "LoadBalancerArn")
+      field "loadBalancerType", jmes_path(col_item, "Type")
+    end
+  end
+end
+
+#Get respective tags for all load Balancers
+datasource "ds_elb_list_with_tags" do
+  iterate $ds_elb_list
+  request do
+    run_script $js_elb_list_with_tags, val(iter_item,"region"), val(iter_item, "loadBalancerName"), val(iter_item, "loadBalancerArn")
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "DescribeTagsResponse.DescribeTagsResult.TagDescriptions[*]") do
+      field "loadBalancerName", val(iter_item, "loadBalancerName")
+      field "region", val(iter_item,"region")
+      field "availabilityZones", val(iter_item, "availabilityZones")
+      field "tags" do
+        collect jmes_path(col_item,"Tags") do
+          field "tagKey", jmes_path(col_item,"Key")
+          field "tagValue", jmes_path(col_item,"Value")
+        end
+      end
+      field "scheme",  val(iter_item,"scheme")
+      field "loadBalancerArn",  val(iter_item,"loadBalancerArn")
+      field "loadBalancerType", val(iter_item,"loadBalancerType")
+    end
+  end
+end
+
+datasource "ds_elb_listeners_with_tags" do
+  iterate $ds_elb_list_with_tags
+  request do
+    run_script $js_elb_listeners_with_tags, val(iter_item,"region"), val(iter_item, "loadBalancerArn")
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "DescribeListenersResponse.DescribeListenersResult.Listeners[*]") do
+      field "loadBalancerName", val(iter_item, "loadBalancerName")
+      field "region", val(iter_item,"region")
+      field "availabilityZones", val(iter_item, "availabilityZones")
+      field "tags", val(iter_item, "tags")
+      field "scheme",  val(iter_item,"scheme")
+      field "loadBalancerArn",  val(iter_item,"loadBalancerArn")
+      field "loadBalancerType", val(iter_item,"loadBalancerType")
+      field "listenerProtocol", jmes_path(col_item,"Protocol")
+      field "listenerPort", jmes_path(col_item,"Port")
+    end
+  end
+end
+
+datasource "ds_unencrypted_elb_map" do
+  run_script $js_elb_filter_map, $ds_elb_listeners_with_tags, $param_exclude_tags
+end
+
+###############################################################################
+# Script
+###############################################################################
+
+#https://docs.aws.amazon.com/elasticloadbalancing/latest/APIReference/API_DescribeLoadBalancers.html (Application or Network Load Balancer)
+script "js_elb_list", type: "javascript" do
+  parameters "region"
+  result "request"
+  code <<-EOS
+    request = {
+      auth: 'auth_aws',
+      pagination: 'elb_pagination',
+      host: 'elasticloadbalancing.'+region+'.amazonaws.com',
+      path: '/',
+      verb: 'GET',
+      query_params: {
+        "Action": "DescribeLoadBalancers",
+        "Version": "2015-12-01"
+      },
+      headers: {
+        "Accept": "application/json"
+      }
+    }
+  EOS
+end
+
+#https://docs.aws.amazon.com/elasticloadbalancing/latest/APIReference/API_DescribeTags.html (Application or Network Load Balancer)
+script "js_elb_list_with_tags", type: "javascript" do
+  parameters "region", "loadBalancerName", "loadBalancerArn"
+  result "request"
+  code <<-EOS
+    request = {
+      auth: 'auth_aws',
+      host: 'elasticloadbalancing.'+region+'.amazonaws.com',
+      path: '/',
+      verb: 'GET',
+      query_params: {
+        "Action": "DescribeTags",
+        "Version": "2015-12-01",
+        "LoadBalancerNames.member.1": loadBalancerName,
+        "ResourceArns.member.1": loadBalancerArn
+      },
+      headers: {
+        "Accept": "application/json"
+      }
+    }
+  EOS
+end
+
+#https://docs.aws.amazon.com/elasticloadbalancing/latest/APIReference/API_DescribeListeners.html (Application or Network Load Balancer)
+script "js_elb_listeners_with_tags", type: "javascript" do
+  parameters "region", "loadBalancerArn"
+  result "request"
+  code <<-EOS
+    request = {
+      auth: 'auth_aws',
+      pagination: 'listener_pagination',
+      host: 'elasticloadbalancing.'+region+'.amazonaws.com',
+      path: '/',
+      verb: 'GET',
+      query_params: {
+        "Action": "DescribeListeners",
+        "Version": "2015-12-01",
+        "LoadBalancerArn": loadBalancerArn
+      },
+      headers: {
+        "Accept": "application/json"
+      }
+    }
+  EOS
+end
+
+#Process the response data, check for the tags and generate a list of internetfacing listeners
+script "js_elb_filter_map", type: "javascript" do
+  parameters "ds_elb_listeners_with_tags", "param_exclude_tags"
+  
+  result "content"
+  code <<-EOS
+    var param_exclude_tags_lower=[];
+    for(var j=0; j < param_exclude_tags.length; j++){
+      param_exclude_tags_lower[j]=param_exclude_tags[j].toString().toLowerCase();
+    }
+
+    var content=[]
+    for(var i=0; i<ds_elb_listeners_with_tags.length; i++){
+      elb=ds_elb_listeners_with_tags[i]
+
+      // Constructing availabilityZones with comma separated to display in detail_template
+      var availabilityZones=elb['availabilityZones']
+      var s_availabilityZones=""
+      for(var j=0; j < availabilityZones.length; j++){
+        availabilityZone = availabilityZones[j]
+        s_availabilityZones = s_availabilityZones + ', '+ availabilityZone.ZoneName
+      }
+
+      //Constructing Tags of individual ELB into key=value format. Check, if the tag present in entered param_exclude_tags. Ignore the Load Balancer if the tag matches/present.
+      var tags = elb['tags']
+      var isTagMatched=false
+      var tagKeyValue=""
+      for(var j=0; j < tags.length; j++){
+        tag = tags[j]
+        if((param_exclude_tags_lower.indexOf((tag['tagKey']).toLowerCase()) !== -1) || (param_exclude_tags_lower.indexOf((tag['tagKey']+'='+tag['tagValue']).toLowerCase()) !== -1)){
+          isTagMatched = true;
+        }
+        // Constructing tags with comma separated to display in detail_template
+        if((tag['tagValue']).length > 0){
+          tagKeyValue = tagKeyValue + ', '+ tag['tagKey']+'='+tag['tagValue']
+        }else{
+          tagKeyValue = tagKeyValue + ', '+ tag['tagKey']
+        }
+      }
+
+      //If the Load Balancer tag does not match with entered param_exclude_tags, then check if Load Balancer is internet-facing and has HTTPS/TLS in use.
+      if(!(isTagMatched) && (elb['scheme']) === 'internet-facing') {
+        // check for HTTPS or TLS listeners
+        protocol = elb['listenerProtocol']
+		    switch (protocol) {
+          case "HTTPS":
+            break
+          case "TLS":
+            break
+          default:
+            content.push ({
+              loadBalancerName: elb['loadBalancerName'],
+              loadBalancerType: elb['loadBalancerType'],
+			        loadBalancerProtocol: protocol,
+              loadBalancerPort: elb['listenerPort'],
+              region: elb['region'],
+              availabilityZones:(s_availabilityZones.slice(2)),
+              tagKeyValue:(tagKeyValue.slice(2))
+            })
+	      }
+      }
+    }
+  EOS
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "policy_unencrypted_ELB" do
+  validate $ds_unencrypted_elb_map do
+    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} App/Network Load Balancers w/Internet-facing Unencrypted Listeners Found in AWS"
+    detail_template <<-EOS
+## List of AWS App/Network Load Balancers w/Internet-facing Unencrypted Listeners
+| LoadBalancer Name | LoadBalancer Type | Listener Protocol (Port) |  Region  | Availability Zones |    TAGs   |
+| ----------------- | ----------------- | ------------------------ | ---------| ------------------ | --------- |
+{{ range data -}}
+| {{ .loadBalancerName }} | {{.loadBalancerType}} | {{.loadBalancerProtocol}} ({{.loadBalancerPort}}) | {{.region}} | {{ .availabilityZones }} | {{.tagKeyValue}} |
+{{ end -}}
+###### Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }}) within Org: {{ rs_org_name }} (Org ID: {{ rs_org_id }})
+    EOS
+    escalate $esc_unencrypted_lbs
+    check eq(size(data),0)
+  end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_unencrypted_lbs" do
+  email $param_email
+end
+
+
+###############################################################################
+# Cloud Workflow
+###############################################################################
+
+define sys_log($subject, $detail) do
+  if $$debug
+    rs_cm.audit_entries.create(
+      notify: "None",
+      audit_entry: {
+        auditee_href: @@account,
+        summary: "AWS App/Network Load Balancers w/Internet-facing Unencrypted Listeners Policy "+ $subject,
+        detail: $detail
+      }
+    )
+  end
+end
