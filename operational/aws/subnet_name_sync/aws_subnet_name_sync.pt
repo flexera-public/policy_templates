@@ -2,7 +2,7 @@ name "AWS Subnet Name Tag Sync"
 rs_pt_ver 20180301
 type "policy"
 short_description "Ensures a Subnet name in Cloud Management reflect the value of the Subnet name tag in AWS. See the [README](https://github.com/rightscale/policy_templates/tree/master/operational/aws/subnet_name_sync) and [docs.rightscale.com/policies](http://docs.rightscale.com/policies/) to learn more."
-long_description "Version: 1.1"
+long_description "Version: 1.3"
 severity "medium"
 category "Operational"
 
@@ -33,133 +33,13 @@ end
 # Authentication
 ###############################################################################
 
-auth "auth_ec2_us_east_2", type: "aws" do
+auth "auth_aws", type: "aws" do
   version 4
   service 'ec2'
-  region 'us-east-2'
   access_key cred('AWS_ACCESS_KEY_ID')
   secret_key cred('AWS_SECRET_ACCESS_KEY')
 end
 
-auth "auth_ec2_us_east_1", type: "aws" do
-  version 4
-  service 'ec2'
-  region 'us-east-1'
-  access_key cred('AWS_ACCESS_KEY_ID')
-  secret_key cred('AWS_SECRET_ACCESS_KEY')
-end
-
-auth "auth_ec2_us_west_1", type: "aws" do
-  version 4
-  service 'ec2'
-  region 'us-west-1'
-  access_key cred('AWS_ACCESS_KEY_ID')
-  secret_key cred('AWS_SECRET_ACCESS_KEY')
-end
-
-auth "auth_ec2_us_west_2", type: "aws" do
-  version 4
-  service 'ec2'
-  region 'us-west-2'
-  access_key cred('AWS_ACCESS_KEY_ID')
-  secret_key cred('AWS_SECRET_ACCESS_KEY')
-end
-
-auth "auth_ec2_ap_south_1", type: "aws" do
-  version 4
-  service 'ec2'
-  region 'ap-south-1'
-  access_key cred('AWS_ACCESS_KEY_ID')
-  secret_key cred('AWS_SECRET_ACCESS_KEY')
-end
-
-auth "auth_ec2_ap_northeast_2", type: "aws" do
-  version 4
-  service 'ec2'
-  region 'ap-northeast-2'
-  access_key cred('AWS_ACCESS_KEY_ID')
-  secret_key cred('AWS_SECRET_ACCESS_KEY')
-end
-
-auth "auth_ec2_ap_southeast_1", type: "aws" do
-  version 4
-  service 'ec2'
-  region 'ap-southeast-1'
-  access_key cred('AWS_ACCESS_KEY_ID')
-  secret_key cred('AWS_SECRET_ACCESS_KEY')
-end
-
-auth "auth_ec2_ap_southeast_2", type: "aws" do
-  version 4
-  service 'ec2'
-  region 'ap-southeast-2'
-  access_key cred('AWS_ACCESS_KEY_ID')
-  secret_key cred('AWS_SECRET_ACCESS_KEY')
-end
-
-auth "auth_ec2_ap_northeast_1", type: "aws" do
-  version 4
-  service 'ec2'
-  region 'ap-northeast-1'
-  access_key cred('AWS_ACCESS_KEY_ID')
-  secret_key cred('AWS_SECRET_ACCESS_KEY')
-end
-
-auth "auth_ec2_ca_central_1", type: "aws" do
-  version 4
-  service 'ec2'
-  region 'ca-central-1'
-  access_key cred('AWS_ACCESS_KEY_ID')
-  secret_key cred('AWS_SECRET_ACCESS_KEY')
-end
-
-auth "auth_ec2_eu_central_1", type: "aws" do
-  version 4
-  service 'ec2'
-  region 'eu-central-1'
-  access_key cred('AWS_ACCESS_KEY_ID')
-  secret_key cred('AWS_SECRET_ACCESS_KEY')
-end
-
-auth "auth_ec2_eu_west_1", type: "aws" do
-  version 4
-  service 'ec2'
-  region 'eu-west-1'
-  access_key cred('AWS_ACCESS_KEY_ID')
-  secret_key cred('AWS_SECRET_ACCESS_KEY')
-end
-
-auth "auth_ec2_eu_west_2", type: "aws" do
-  version 4
-  service 'ec2'
-  region 'eu-west-2'
-  access_key cred('AWS_ACCESS_KEY_ID')
-  secret_key cred('AWS_SECRET_ACCESS_KEY')
-end
-
-auth "auth_ec2_eu_west_3", type: "aws" do
-  version 4
-  service 'ec2'
-  region 'eu-west-3'
-  access_key cred('AWS_ACCESS_KEY_ID')
-  secret_key cred('AWS_SECRET_ACCESS_KEY')
-end
-
-auth "auth_ec2_sa_east_1", type: "aws" do
-  version 4
-  service 'ec2'
-  region 'sa-east-1'
-  access_key cred('AWS_ACCESS_KEY_ID')
-  secret_key cred('AWS_SECRET_ACCESS_KEY')
-end
-
-auth "auth_ec2_eu_north_1", type: "aws" do
-  version 4
-  service 'ec2'
-  region 'eu-north-1'
-  access_key cred('AWS_ACCESS_KEY_ID')
-  secret_key cred('AWS_SECRET_ACCESS_KEY')
-end
 
 auth "rs", type: "rightscale"
 
@@ -186,10 +66,21 @@ end
 # Datasources
 ###############################################################################
 
-datasource "ds_us_east_2_subnets" do
+#Generates list of Regions
+datasource "ds_regions_list" do
   request do
-    auth $auth_ec2_us_east_2
-    host "ec2.us-east-2.amazonaws.com"
+    verb "GET"
+    host "raw.githubusercontent.com"
+    path "/rightscale/policy_templates/master/data/aws/regions.json"
+    header "User-Agent", "RS Policies"
+  end
+end
+
+datasource "ds_list_subnets" do
+  iterate $ds_regions_list
+  request do
+    auth $auth_aws
+    host join(["ec2.",val(iter_item,"region"),".amazonaws.com"])
     path "/"
     query "Action", "DescribeSubnets"
     query "Version", "2016-11-15"
@@ -205,351 +96,7 @@ datasource "ds_us_east_2_subnets" do
         end
       end
       field "subnet_id", xpath(col_item, "subnetId")
-    end
-  end
-end
-
-datasource "ds_us_east_1_subnets" do
-  request do
-    auth $auth_ec2_us_east_1
-    host "ec2.us-east-1.amazonaws.com"
-    path "/"
-    query "Action", "DescribeSubnets"
-    query "Version", "2016-11-15"
-    header "User-Agent", "RS Policies"
-  end
-  result do
-    encoding "xml"
-    collect xpath(response, "//DescribeSubnetsResponse/subnetSet/item", "array") do
-      field "tag_set" do
-        collect xpath(col_item, "tagSet/item") do
-          field "key", xpath(col_item, "key")
-          field "value", xpath(col_item, "value")
-        end
-      end
-      field "subnet_id", xpath(col_item, "subnetId")
-    end
-  end
-end
-
-datasource "ds_us_west_1_subnets" do
-  request do
-    auth $auth_ec2_us_west_1
-    host "ec2.us-west-1.amazonaws.com"
-    path "/"
-    query "Action", "DescribeSubnets"
-    query "Version", "2016-11-15"
-    header "User-Agent", "RS Policies"
-  end
-  result do
-    encoding "xml"
-    collect xpath(response, "//DescribeSubnetsResponse/subnetSet/item", "array") do
-      field "tag_set" do
-        collect xpath(col_item, "tagSet/item") do
-          field "key", xpath(col_item, "key")
-          field "value", xpath(col_item, "value")
-        end
-      end
-      field "subnet_id", xpath(col_item, "subnetId")
-    end
-  end
-end
-
-datasource "ds_us_west_2_subnets" do
-  request do
-    auth $auth_ec2_us_west_2
-    host "ec2.us-west-2.amazonaws.com"
-    path "/"
-    query "Action", "DescribeSubnets"
-    query "Version", "2016-11-15"
-    header "User-Agent", "RS Policies"
-  end
-  result do
-    encoding "xml"
-    collect xpath(response, "//DescribeSubnetsResponse/subnetSet/item", "array") do
-      field "tag_set" do
-        collect xpath(col_item, "tagSet/item") do
-          field "key", xpath(col_item, "key")
-          field "value", xpath(col_item, "value")
-        end
-      end
-      field "subnet_id", xpath(col_item, "subnetId")
-    end
-  end
-end
-
-datasource "ds_ap_south_1_subnets" do
-  request do
-    auth $auth_ec2_ap_south_1
-    host "ec2.ap-south-1.amazonaws.com"
-    path "/"
-    query "Action", "DescribeSubnets"
-    query "Version", "2016-11-15"
-    header "User-Agent", "RS Policies"
-  end
-  result do
-    encoding "xml"
-    collect xpath(response, "//DescribeSubnetsResponse/subnetSet/item", "array") do
-      field "tag_set" do
-        collect xpath(col_item, "tagSet/item") do
-          field "key", xpath(col_item, "key")
-          field "value", xpath(col_item, "value")
-        end
-      end
-      field "subnet_id", xpath(col_item, "subnetId")
-    end
-  end
-end
-
-datasource "ds_ap_northeast_2_subnets" do
-  request do
-    auth $auth_ec2_ap_northeast_2
-    host "ec2.ap-northeast-2.amazonaws.com"
-    path "/"
-    query "Action", "DescribeSubnets"
-    query "Version", "2016-11-15"
-    header "User-Agent", "RS Policies"
-  end
-  result do
-    encoding "xml"
-    collect xpath(response, "//DescribeSubnetsResponse/subnetSet/item", "array") do
-      field "tag_set" do
-        collect xpath(col_item, "tagSet/item") do
-          field "key", xpath(col_item, "key")
-          field "value", xpath(col_item, "value")
-        end
-      end
-      field "subnet_id", xpath(col_item, "subnetId")
-    end
-  end
-end
-
-datasource "ds_ap_southeast_1_subnets" do
-  request do
-    auth $auth_ec2_ap_southeast_1
-    host "ec2.ap-southeast-1.amazonaws.com"
-    path "/"
-    query "Action", "DescribeSubnets"
-    query "Version", "2016-11-15"
-    header "User-Agent", "RS Policies"
-  end
-  result do
-    encoding "xml"
-    collect xpath(response, "//DescribeSubnetsResponse/subnetSet/item", "array") do
-      field "tag_set" do
-        collect xpath(col_item, "tagSet/item") do
-          field "key", xpath(col_item, "key")
-          field "value", xpath(col_item, "value")
-        end
-      end
-      field "subnet_id", xpath(col_item, "subnetId")
-    end
-  end
-end
-
-datasource "ds_ap_southeast_2_subnets" do
-  request do
-    auth $auth_ec2_ap_southeast_2
-    host "ec2.ap-southeast-2.amazonaws.com"
-    path "/"
-    query "Action", "DescribeSubnets"
-    query "Version", "2016-11-15"
-    header "User-Agent", "RS Policies"
-  end
-  result do
-    encoding "xml"
-    collect xpath(response, "//DescribeSubnetsResponse/subnetSet/item", "array") do
-      field "tag_set" do
-        collect xpath(col_item, "tagSet/item") do
-          field "key", xpath(col_item, "key")
-          field "value", xpath(col_item, "value")
-        end
-      end
-      field "subnet_id", xpath(col_item, "subnetId")
-    end
-  end
-end
-
-datasource "ds_ap_northeast_1_subnets" do
-  request do
-    auth $auth_ec2_ap_northeast_1
-    host "ec2.ap-northeast-1.amazonaws.com"
-    path "/"
-    query "Action", "DescribeSubnets"
-    query "Version", "2016-11-15"
-    header "User-Agent", "RS Policies"
-  end
-  result do
-    encoding "xml"
-    collect xpath(response, "//DescribeSubnetsResponse/subnetSet/item", "array") do
-      field "tag_set" do
-        collect xpath(col_item, "tagSet/item") do
-          field "key", xpath(col_item, "key")
-          field "value", xpath(col_item, "value")
-        end
-      end
-      field "subnet_id", xpath(col_item, "subnetId")
-    end
-  end
-end
-
-datasource "ds_ca_central_1_subnets" do
-  request do
-    auth $auth_ec2_ca_central_1
-    host "ec2.ca-central-1.amazonaws.com"
-    path "/"
-    query "Action", "DescribeSubnets"
-    query "Version", "2016-11-15"
-    header "User-Agent", "RS Policies"
-  end
-  result do
-    encoding "xml"
-    collect xpath(response, "//DescribeSubnetsResponse/subnetSet/item", "array") do
-      field "tag_set" do
-        collect xpath(col_item, "tagSet/item") do
-          field "key", xpath(col_item, "key")
-          field "value", xpath(col_item, "value")
-        end
-      end
-      field "subnet_id", xpath(col_item, "subnetId")
-    end
-  end
-end
-
-datasource "ds_eu_central_1_subnets" do
-  request do
-    auth $auth_ec2_eu_central_1
-    host "ec2.eu-central-1.amazonaws.com"
-    path "/"
-    query "Action", "DescribeSubnets"
-    query "Version", "2016-11-15"
-    header "User-Agent", "RS Policies"
-  end
-  result do
-    encoding "xml"
-    collect xpath(response, "//DescribeSubnetsResponse/subnetSet/item", "array") do
-      field "tag_set" do
-          collect xpath(col_item, "tagSet/item") do
-            field "key", xpath(col_item, "key")
-            field "value", xpath(col_item, "value")
-          end
-      end
-      field "subnet_id", xpath(col_item, "subnetId")
-    end
-  end
-end
-
-datasource "ds_eu_west_1_subnets" do
-  request do
-    auth $auth_ec2_eu_west_1
-    host "ec2.eu-west-1.amazonaws.com"
-    path "/"
-    query "Action", "DescribeSubnets"
-    query "Version", "2016-11-15"
-    header "User-Agent", "RS Policies"
-  end
-  result do
-    encoding "xml"
-    collect xpath(response, "//DescribeSubnetsResponse/subnetSet/item", "array") do
-      field "tag_set" do
-        collect xpath(col_item, "tagSet/item") do
-          field "key", xpath(col_item, "key")
-          field "value", xpath(col_item, "value")
-        end
-      end
-      field "subnet_id", xpath(col_item, "subnetId")
-    end
-  end
-end
-
-datasource "ds_eu_west_2_subnets" do
-  request do
-    auth $auth_ec2_eu_west_2
-    host "ec2.eu-west-2.amazonaws.com"
-    path "/"
-    query "Action", "DescribeSubnets"
-    query "Version", "2016-11-15"
-    header "User-Agent", "RS Policies"
-  end
-  result do
-    encoding "xml"
-    collect xpath(response, "//DescribeSubnetsResponse/subnetSet/item", "array") do
-      field "tag_set" do
-        collect xpath(col_item, "tagSet/item") do
-          field "key", xpath(col_item, "key")
-          field "value", xpath(col_item, "value")
-        end
-      end
-      field "subnet_id", xpath(col_item, "subnetId")
-    end
-  end
-end
-
-datasource "ds_eu_west_3_subnets" do
-  request do
-    auth $auth_ec2_eu_west_3
-    host "ec2.eu-west-3.amazonaws.com"
-    path "/"
-    query "Action", "DescribeSubnets"
-    query "Version", "2016-11-15"
-    header "User-Agent", "RS Policies"
-  end
-  result do
-    encoding "xml"
-    collect xpath(response, "//DescribeSubnetsResponse/subnetSet/item", "array") do
-      field "tag_set" do
-        collect xpath(col_item, "tagSet/item") do
-          field "key", xpath(col_item, "key")
-          field "value", xpath(col_item, "value")
-        end
-      end
-      field "subnet_id", xpath(col_item, "subnetId")
-    end
-  end
-end
-
-datasource "ds_sa_east_1_subnets" do
-  request do
-    auth $auth_ec2_sa_east_1
-    host "ec2.sa-east-1.amazonaws.com"
-    path "/"
-    query "Action", "DescribeSubnets"
-    query "Version", "2016-11-15"
-    header "User-Agent", "RS Policies"
-  end
-  result do
-    encoding "xml"
-    collect xpath(response, "//DescribeSubnetsResponse/subnetSet/item", "array") do
-      field "tag_set" do
-        collect xpath(col_item, "tagSet/item") do
-          field "key", xpath(col_item, "key")
-          field "value", xpath(col_item, "value")
-        end
-      end
-      field "subnet_id", xpath(col_item, "subnetId")
-    end
-  end
-end
-
-datasource "ds_eu_north_1_subnets" do
-  request do
-    auth $auth_ec2_eu_north_1
-    host "ec2.eu-north-1.amazonaws.com"
-    path "/"
-    query "Action", "DescribeSubnets"
-    query "Version", "2016-11-15"
-    header "User-Agent", "RS Policies"
-  end
-  result do
-    encoding "xml"
-    collect xpath(response, "//DescribeSubnetsResponse/subnetSet/item", "array") do
-      field "tag_set" do
-        collect xpath(col_item, "tagSet/item") do
-          field "key", xpath(col_item, "key")
-          field "value", xpath(col_item, "value")
-        end
-      end
-      field "subnet_id", xpath(col_item, "subnetId")
+	  field "region", val(iter_item,"region")
     end
   end
 end
@@ -563,7 +110,7 @@ datasource "ds_subnets" do
 end
 
 datasource "ds_rs_updates" do
-  run_script $script_subnets, $ds_us_east_2_subnets, $ds_us_east_1_subnets, $ds_us_west_1_subnets, $ds_us_west_2_subnets, $ds_ap_south_1_subnets, $ds_ap_northeast_2_subnets, $ds_ap_southeast_1_subnets, $ds_ap_southeast_2_subnets, $ds_ap_northeast_1_subnets, $ds_ca_central_1_subnets, $ds_eu_central_1_subnets, $ds_eu_west_1_subnets, $ds_eu_west_2_subnets, $ds_eu_west_3_subnets, $ds_sa_east_1_subnets, $ds_eu_north_1_subnets, $ds_subnets
+  run_script $script_subnets, $ds_list_subnets, $ds_subnets
 end
 
 ###############################################################################
@@ -571,14 +118,14 @@ end
 ###############################################################################
 
 script "script_subnets", type: "javascript" do
-  parameters "ds_us_east_2_subnets","ds_us_east_1_subnets","ds_us_west_1_subnets","ds_us_west_2_subnets","ds_ap_south_1_subnets","ds_ap_northeast_2_subnets","ds_ap_southeast_1_subnets","ds_ap_southeast_2_subnets","ds_ap_northeast_1_subnets","ds_ca_central_1_subnets","ds_eu_central_1_subnets","ds_eu_west_1_subnets","ds_eu_west_2_subnets","ds_eu_west_3_subnets","ds_sa_east_1_subnets","ds_eu_north_1_subnets","ds_subnets"
+  parameters "ds_list_subnets","ds_subnets"
   result "updates"
   code <<-EOS
     results = [];
     updates = [];
 
-    for( i = 0; i <= ds_us_east_2_subnets.length - 1; i++) {
-      var tags = ds_us_east_2_subnets[i]["tag_set"];
+    for( i = 0; i <= ds_list_subnets.length - 1; i++) {
+      var tags = ds_list_subnets[i]["tag_set"];
 
       var name = "";
       for( x = 0; x <= tags.length - 1; x++){
@@ -587,249 +134,9 @@ script "script_subnets", type: "javascript" do
         }
       };
       results.push({
-        "subnetid": ds_us_east_2_subnets[i]["subnet_id"],
+        "subnetid": ds_list_subnets[i]["subnet_id"],
         "name": name,
-        "region": "us-east-2"
-      });
-    };
-
-    for( i = 0; i <= ds_us_east_1_subnets.length - 1; i++) {
-      var tags = ds_us_east_1_subnets[i]["tag_set"];
-
-      var name = "";
-      for( x = 0; x <= tags.length - 1; x++){
-        if(tags[x]["key"] === "Name") {
-          name = tags[x]["value"];
-        }
-      };
-      results.push({
-        "subnetid": ds_us_east_1_subnets[i]["subnet_id"],
-        "name": name,
-        "region": "us-east-1"
-      });
-    };
-
-    for( i = 0; i <= ds_us_west_1_subnets.length - 1; i++) {
-      var tags = ds_us_west_1_subnets[i]["tag_set"];
-
-      var name = "";
-      for( x = 0; x <= tags.length - 1; x++){
-        if(tags[x]["key"] === "Name") {
-          name = tags[x]["value"];
-        }
-      };
-      results.push({
-        "subnetid": ds_us_west_1_subnets[i]["subnet_id"],
-        "name": name,
-        "region": "us-west-1"
-      });
-    };
-
-    for( i = 0; i <= ds_us_west_2_subnets.length - 1; i++) {
-      var tags = ds_us_west_2_subnets[i]["tag_set"];
-
-      var name = "";
-      for( x = 0; x <= tags.length - 1; x++){
-        if(tags[x]["key"] === "Name") {
-          name = tags[x]["value"];
-        }
-      };
-      results.push({
-        "subnetid": ds_us_west_2_subnets[i]["subnet_id"],
-        "name": name,
-        "region": "us-west-2"
-      });
-    };
-
-    for( i = 0; i <= ds_ap_south_1_subnets.length - 1; i++) {
-      var tags = ds_ap_south_1_subnets[i]["tag_set"];
-
-      var name = "";
-      for( x = 0; x <= tags.length - 1; x++){
-        if(tags[x]["key"] === "Name") {
-          name = tags[x]["value"];
-        }
-      };
-      results.push({
-        "subnetid": ds_ap_south_1_subnets[i]["subnet_id"],
-        "name": name,
-        "region": "ap-south-1"
-      });
-    };
-
-    for( i = 0; i <= ds_ap_northeast_2_subnets.length - 1; i++) {
-      var tags = ds_ap_northeast_2_subnets[i]["tag_set"];
-
-      var name = "";
-      for( x = 0; x <= tags.length - 1; x++){
-          if(tags[x]["key"] === "Name") {
-            name = tags[x]["value"];
-          }
-      };
-      results.push({
-        "subnetid": ds_ap_northeast_2_subnets[i]["subnet_id"],
-        "name": name,
-        "region": "ap-northeast-2"
-      });
-    };
-
-    for( i = 0; i <= ds_ap_southeast_1_subnets.length - 1; i++) {
-      var tags = ds_ap_southeast_1_subnets[i]["tag_set"];
-
-      var name = "";
-      for( x = 0; x <= tags.length - 1; x++){
-        if(tags[x]["key"] === "Name") {
-          name = tags[x]["value"];
-        }
-      };
-      results.push({
-        "subnetid": ds_ap_southeast_1_subnets[i]["subnet_id"],
-        "name": name,
-        "region": "ap-southeast-1"
-      });
-    };
-
-    for( i = 0; i <= ds_ap_southeast_2_subnets.length - 1; i++) {
-      var tags = ds_ap_southeast_2_subnets[i]["tag_set"];
-
-      var name = "";
-      for( x = 0; x <= tags.length - 1; x++){
-        if(tags[x]["key"] === "Name") {
-          name = tags[x]["value"];
-        }
-      };
-      results.push({
-        "subnetid": ds_ap_southeast_2_subnets[i]["subnet_id"],
-        "name": name,
-        "region": "ap-southeast-2"
-      });
-    };
-
-    for( i = 0; i <= ds_ap_northeast_1_subnets.length - 1; i++) {
-      var tags = ds_ap_northeast_1_subnets[i]["tag_set"];
-
-      var name = "";
-      for( x = 0; x <= tags.length - 1; x++){
-        if(tags[x]["key"] === "Name") {
-          name = tags[x]["value"];
-        }
-      };
-      results.push({
-        "subnetid": ds_ap_northeast_1_subnets[i]["subnet_id"],
-        "name": name,
-        "region": "ap-northeast-1"
-      });
-    };
-
-    for( i = 0; i <= ds_ca_central_1_subnets.length - 1; i++) {
-      var tags = ds_ca_central_1_subnets[i]["tag_set"];
-
-      var name = "";
-      for( x = 0; x <= tags.length - 1; x++){
-        if(tags[x]["key"] === "Name") {
-          name = tags[x]["value"];
-        }
-      };
-      results.push({
-        "subnetid": ds_ca_central_1_subnets[i]["subnet_id"],
-        "name": name,
-        "region": "ca-central-1"
-      });
-    };
-
-    for( i = 0; i <= ds_eu_central_1_subnets.length - 1; i++) {
-      var tags = ds_eu_central_1_subnets[i]["tag_set"];
-
-      var name = "";
-      for( x = 0; x <= tags.length - 1; x++){
-        if(tags[x]["key"] === "Name") {
-          name = tags[x]["value"];
-        }
-      };
-      results.push({
-        "subnetid": ds_eu_central_1_subnets[i]["subnet_id"],
-        "name": name,
-        "region": "eu-central-1"
-      });
-    };
-
-    for( i = 0; i <= ds_eu_west_1_subnets.length - 1; i++) {
-      var tags = ds_eu_west_1_subnets[i]["tag_set"];
-
-      var name = "";
-      for( x = 0; x <= tags.length - 1; x++){
-        if(tags[x]["key"] === "Name") {
-          name = tags[x]["value"];
-        }
-      };
-      results.push({
-        "subnetid": ds_eu_west_1_subnets[i]["subnet_id"],
-        "name": name,
-        "region": "eu-west-1"
-      });
-    };
-
-    for( i = 0; i <= ds_eu_west_2_subnets.length - 1; i++) {
-      var tags = ds_eu_west_2_subnets[i]["tag_set"];
-
-      var name = "";
-      for( x = 0; x <= tags.length - 1; x++){
-        if(tags[x]["key"] === "Name") {
-          name = tags[x]["value"];
-        }
-      };
-      results.push({
-        "subnetid": ds_eu_west_2_subnets[i]["subnet_id"],
-        "name": name,
-        "region": "eu-west-2"
-      });
-    };
-
-    for( i = 0; i <= ds_eu_west_3_subnets.length - 1; i++) {
-      var tags = ds_eu_west_3_subnets[i]["tag_set"];
-
-      var name = "";
-      for( x = 0; x <= tags.length - 1; x++){
-        if(tags[x]["key"] === "Name") {
-          name = tags[x]["value"];
-        }
-      };
-      results.push({
-        "subnetid": ds_eu_west_3_subnets[i]["subnet_id"],
-        "name": name,
-        "region": "eu-west-3"
-      });
-    };
-
-    for( i = 0; i <= ds_sa_east_1_subnets.length - 1; i++) {
-      var tags = ds_sa_east_1_subnets[i]["tag_set"];
-
-      var name = "";
-      for( x = 0; x <= tags.length - 1; x++){
-        if(tags[x]["key"] === "Name") {
-          name = tags[x]["value"];
-        }
-      };
-      results.push({
-        "subnetid": ds_sa_east_1_subnets[i]["subnet_id"],
-        "name": name,
-        "region": "sa-east-1"
-      });
-    };
-
-    for( i = 0; i <= ds_eu_north_1_subnets.length - 1; i++) {
-      var tags = ds_eu_north_1_subnets[i]["tag_set"];
-
-      var name = "";
-      for( x = 0; x <= tags.length - 1; x++){
-        if(tags[x]["key"] === "Name") {
-          name = tags[x]["value"];
-        }
-      };
-      results.push({
-        "subnetid": ds_eu_north_1_subnets[i]["subnet_id"],
-        "name": name,
-        "region": "sa-east-1"
+        "region": ds_list_subnets[i]["region"]
       });
     };
 
@@ -881,6 +188,7 @@ policy "policy_subnet_sync" do
 {{ end -}}
 EOS
     check equals?(val(item, "rs_name"), val(item, "aws_name"))
+	escalate $email
     escalate $escalate_resources
   end
 end
@@ -889,8 +197,20 @@ end
 # Escalations
 ###############################################################################
 
-escalation "escalate_resources" do
+escalation "email" do
   email $param_email
+end
+
+escalation "escalate_resources" do
+  request_approval  do
+    label "Approve to Update subnets"
+    description "Update subnets"
+    parameter "approval_reason" do
+      type "string"
+      label "Reason for approval"
+      description "Explain why you are approving the action"
+    end
+  end
   run "update_subnets", data
 end
 

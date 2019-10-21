@@ -10,7 +10,11 @@ This Policy Template is used to automatically apply the Azure Hybrid Use Benefit
 - The following RightScale Credentials
   - `AZURE_APPLICATION_ID`
   - `AZURE_APPLICATION_KEY`
-- The `policy_designer`, `policy_manager` & `policy_publisher` roles
+- The `policy_designer`, `policy_manager`, `credential_viewer` & `policy_publisher` roles
+
+### Azure Required Permissions
+
+- Microsoft.Compute/virtualMachines/read
 
 ### Installation
 

@@ -39,9 +39,27 @@ This policy has the following input parameters required when launching the polic
 - *Action Tag Key:Value* - The tag key:value pair to set on an instance that is underutilized.
 - *Email addresses of the recipients you wish to notify* - A list of email addresses to notify
 
+### Required RightScale Roles
+
+- Cloud Management - Actor
+- Cloud Management - Observer
+- Cloud Management - credential_viewer
+
+### Azure Required Permissions
+
+- Microsoft.Compute/skus/read
+- Microsoft.OperationalInsights/workspaces/analytics/query/action
+
 ### Supported Clouds
 
 - Azure Resource Manager
+
+### Observation Period
+
+By default, this policy calculates utilization over a 30 day period.  
+
+To calculate over a different period of time, you can update the policy template.  
+Replace the `30` wherever you see `query "timespan","P30D"` with the new number of days you want to use.
 
 ### Cost
 

@@ -1,7 +1,5 @@
 ## Billing Center Cost Anomaly Policy
 
-**As a best practice, this policy should only be applied to the Master Account, and not to each individual RightScale Account.**
-
 ### What it does
 The Cost Anomaly Policy will analyze the spend of all Billing Centers in an Organization over a specified time period.  If the percentage change of the most recent period compared to the previous period exceeds the specified threshold, then an Incident will be raised.  
 
