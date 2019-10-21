@@ -42,6 +42,7 @@ Please contact sales@rightscale.com to learn more.
 - [AWS Bucket Size Check](./cost/aws/s3_bucket_size/)
 - [AWS Idle Compute Instances](./cost/aws/idle_compute_instances/)
 - [Google Idle Compute Instances](./cost/google/idle_compute_instances/)
+- [Running Instance Count Anomaly](./cost/instance_anomaly/)
 - [AWS Object Storage Optimization](./cost/aws/object_storage_optimization/)
 - [AWS Unused RDS Instances](./cost/aws/unused_rds/)
 - [AWS RDS Instances RightSizing](./cost/aws/rds_instance_cloudwatch_utilization)
