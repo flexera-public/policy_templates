@@ -1,6 +1,6 @@
 # Monthly Actual v. Budgeted Spend Report
 
-**As a best practice, this policy should only be applied to the Master Account, and not to each individual RightScale Account.**
+**As a best practice, this policy should only be applied to the Master Account, and not to each individual RightScale Account. The monthly budget inputs are compared against the current month's actual cloud costs of the applied policy. Reapply this policy on an annual basis to reflect the current year's monthly budgeted cloud costs.**
 
 This policy allows you to set up scheduled reports that will provide monthly actual v. budgted cloud cost across all resources in the Billing Center(s) you specify, delivered to any email addresses you specify. The policy will provide a report with a bar chart of actual v. budgeted spend for the current month. We recommend running this policy on a weekly cadence and applying it to your master account.
 
