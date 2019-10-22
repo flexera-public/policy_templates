@@ -15,6 +15,7 @@ This Policy Template is used to automatically apply the Azure Hybrid Use Benefit
 ### Azure Required Permissions
 
 - Microsoft.Compute/virtualMachines/read
+- Microsoft.Compute/virtualMachines/write
 
 ### Installation
 
