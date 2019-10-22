@@ -1,0 +1,425 @@
+name "Monthly Actual v. Budgeted Spend Report"
+rs_pt_ver 20180301
+type "policy"
+short_description "This policy allows you to set up scheduled reports that will provide monthly actual v. budgted cloud cost across all resources in the Billing Center(s) you specify, delivered to any email addresses you specify."
+long_description "Version: 1.0"
+severity "low"
+category "Cost"
+
+parameter "param_email" do
+  type "list"
+  label "Email List"
+  description "Email addresses of the recipients you wish to notify"
+end
+
+parameter "param_billing_centers" do
+  type "list"
+  label "Billing Center List"
+  description "The Billing Center(s) you want to report on. Leave blank to select all top level Billing Centers."
+end
+
+parameter "param_cost_metric" do
+  type "string"
+  label "Cost Metric"
+  allowed_values "Unamortized Unblended", "Amortized Unblended", "Unamortized Blended", "Amortized Blended"
+  default "Unamortized Unblended"
+  description "Select the cost metric for your report.  See the README file for more details"
+end
+
+parameter "param_jan_monthly_budgeted" do
+  type "number"
+  label "January Budgeted Cost"
+  description "Enter January budgeted cost."
+end
+
+parameter "param_feb_monthly_budgeted" do
+  type "number"
+  label "February Budgeted Cost"
+  description "Enter February budgeted cost."
+end
+
+parameter "param_mar_monthly_budgeted" do
+  type "number"
+  label "March Budgeted Cost"
+  description "Enter March budgeted cost."
+end
+
+parameter "param_apr_monthly_budgeted" do
+  type "number"
+  label "April Budgeted Cost"
+  description "Enter April budgeted cost."
+end
+
+parameter "param_may_monthly_budgeted" do
+  type "number"
+  label "May Budgeted Cost"
+  description "Enter May budgeted cost."
+end
+
+parameter "param_jun_monthly_budgeted" do
+  type "number"
+  label "June Budgeted Cost"
+  description "Enter June budgeted cost."
+end
+
+parameter "param_jul_monthly_budgeted" do
+  type "number"
+  label "July Budgeted Cost"
+  description "Enter July budgeted cost."
+end
+
+parameter "param_aug_monthly_budgeted" do
+  type "number"
+  label "August Budgeted Cost"
+  description "Enter August budgeted cost."
+end
+
+parameter "param_sep_monthly_budgeted" do
+  type "number"
+  label "September Budgeted Cost"
+  description "Enter September budgeted cost."
+end
+
+parameter "param_oct_monthly_budgeted" do
+  type "number"
+  label "October Budgeted Cost"
+  description "Enter October budgeted cost."
+end
+
+parameter "param_nov_monthly_budgeted" do
+  type "number"
+  label "November Budgeted Cost"
+  description "Enter November budgeted cost."
+end
+
+parameter "param_dec_monthly_budgeted" do
+  type "number"
+  label "December Budgeted Cost"
+  description "Enter December budgeted cost."
+end
+
+auth "auth_rs", type: "rightscale"
+
+datasource "ds_currency_reference" do
+  request do
+    host "raw.githubusercontent.com"
+    path "/rightscale/policy_templates/master/cost/scheduled_reports/currency_reference.json"
+    header "User-Agent", "RS Policies"
+  end
+end
+
+datasource "ds_currency_code" do
+  request do
+    auth $auth_rs
+    host rs_optima_host
+    path join(["/bill-analysis/orgs/", rs_org_id, "/settings/currency_code"])
+    header "Api-Version", "0.1"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+    field "id", jmes_path(response, "id")
+    field "value", jmes_path(response, "value")
+  end
+end
+
+datasource "ds_billing_centers" do
+  request do
+    auth $auth_rs
+    host rs_optima_host
+    path join(["/analytics/orgs/", rs_org_id, "/billing_centers"])
+    header "Api-Version", "1.0"
+    header "User-Agent", "RS Policies"
+    query "view", "allocation_table"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "[*]") do
+      field "href", jmes_path(col_item, "href")
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+      field "parent_id", jmes_path(col_item, "parent_id")
+      field "ancestor_ids", jmes_path(col_item, "ancestor_ids")
+      field "allocation_table", jmes_path(col_item, "allocation_table")
+    end
+  end
+end
+
+datasource "ds_current_month_costs" do
+  request do
+    run_script $js_current_month_cost_request, $param_billing_centers, $param_cost_metric, rs_org_id, rs_optima_host, $ds_billing_centers
+  end
+end
+
+datasource "ds_report" do
+  run_script $js_report, $ds_current_month_costs, $param_cost_metric, $ds_currency_code, $ds_currency_reference, $param_billing_centers, $param_jan_monthly_budgeted, $param_feb_monthly_budgeted, $param_mar_monthly_budgeted, $param_apr_monthly_budgeted, $param_may_monthly_budgeted, $param_jun_monthly_budgeted, $param_jul_monthly_budgeted, $param_aug_monthly_budgeted, $param_sep_monthly_budgeted, $param_oct_monthly_budgeted, $param_nov_monthly_budgeted, $param_dec_monthly_budgeted
+end
+
+script "js_current_month_cost_request", type: "javascript" do
+  parameters "param_billing_centers", "param_cost_metric", "rs_org_id", "rs_optima_host", "ds_billing_centers"
+  result "request"
+  code <<-EOS
+    var range = "monthly";
+    var scale = "current";
+    // format the date for the `daily` API
+    // returns date formatted as string: YYYY-mm-dd
+    function getFormattedDailyDate(date) {
+      var year = date.getFullYear();
+
+      var month = (1 + date.getMonth()).toString();
+      month = month.length > 1 ? month : '0' + month;
+
+      var day = date.getDate().toString();
+      day = day.length > 1 ? day : '0' + day;
+      return year + '-' + month + '-' + day;
+    }
+
+    // finds first day of week
+    function getMonday( date ) {
+      var day = date.getDay() || 7;
+      if( day !== 1 )
+        date.setHours(-24 * (day - 1));
+      return date;
+    }
+
+    // adds day(s) to the current day
+    function addDays(date, days) {
+      var result = new Date(date);
+      result.setDate(result.getDate() + days);
+      return result;
+    }
+
+    // create a map to use in the request metric field.
+    var cost_metric = {
+      "Unamortized Unblended":"cost_nonamortized_unblended_adj",
+      "Amortized Unblended":"cost_amortized_unblended_adj",
+      "Unamortized Blended": "cost_nonamortized_blended_adj",
+      "Amortized Blended":"cost_amortized_blended_adj"
+    }
+
+    var start_at = "";
+    var end_at = "";
+    var now = new Date();
+    // start_at from beginning of this month
+    start_at = getFormattedDailyDate(new Date(now.getFullYear(), now.getMonth(), 1))
+    // end_at to end of this month
+    end_at = getFormattedDailyDate(addDays(new Date(now.getFullYear(), now.getMonth() + 1, 0),1))
+    
+    var billing_center_ids = []
+    
+    if (param_billing_centers.length === 0){
+      var top_billing_centers = _.reject(ds_billing_centers, function(bc){ return bc.parent_id != null });
+      billing_center_ids = _.map(top_billing_centers, function(value, key){ return value.id });
+    } else {
+      // get array of billing center id's that match the names in param_billing_centers.
+      billing_center_names = _.map(param_billing_centers, function(name){ return name.toLowerCase(); });
+      billing_center_ids = _.compact(_.map(ds_billing_centers, function(value){ if(_.contains(billing_center_names, value.name.toLowerCase())){return value.id} }));
+    }
+    
+    /*
+    for(var x=0; x < param_billing_centers.length; x++){
+      if (param_billing_centers[x] == "") {
+        var top_billing_centers = _.reject(ds_billing_centers, function(bc){ return bc.parent_id != null })
+        billing_center_ids = _.map(top_billing_centers, function(value, key){ return value.id })
+      }
+      else {
+        // get array of billing center id's that match the names in param_billing_centers.
+        billing_center_names = _.map(param_billing_centers, function(name){ return name.toLowerCase(); })
+        billing_center_ids = _.compact(_.map(ds_billing_centers, function(value){ if(_.contains(billing_center_names, value.name.toLowerCase())){return value.id} }))
+      }
+    }
+    */
+
+    var body = {
+      "dimensions":[]
+      "granularity":"day",
+      "start_at": start_at ,
+      "end_at": end_at
+      "metrics":[cost_metric[param_cost_metric]],
+      "billing_center_ids": billing_center_ids
+    }
+
+    var request = {
+      auth:  'auth_rs',
+      host:  rs_optima_host,
+      scheme: 'https',
+      verb: 'POST',
+      path:  "/bill-analysis/orgs/"+ rs_org_id + "/costs/aggregated",
+      headers: {
+        "API-Version": "1.0",
+        "Content-Type":"application/json"
+      },
+      body: JSON.stringify(body)
+    }
+  EOS
+end
+
+script "js_report", type: "javascript" do
+  parameters "ds_current_month_costs", "param_cost_metric", "ds_currency_code", "ds_currency_reference", "param_billing_centers", "param_jan_monthly_budgeted", "param_feb_monthly_budgeted", "param_mar_monthly_budgeted", "param_apr_monthly_budgeted", "param_may_monthly_budgeted", "param_jun_monthly_budgeted", "param_jul_monthly_budgeted", "param_aug_monthly_budgeted", "param_sep_monthly_budgeted", "param_oct_monthly_budgeted", "param_nov_monthly_budgeted", "param_dec_monthly_budgeted"
+  result "report"
+  code <<-EOS
+  // format the date for the `monthly` API
+  // returns date formatted as string: YYYY-mm
+  function getFormattedMonthlyDate(date) {
+    var year = date.getFullYear();
+
+    var month = (1 + date.getMonth()).toString();
+    month = month.length > 1 ? month : '0' + month;
+
+    var day = date.getDate().toString();
+    day = day.length > 1 ? day : '0' + day;
+
+    return year + '-' + month ;
+  }
+  
+  // create a map to use in the request metric field.
+    var cost_metric = {
+      "Unamortized Unblended":"cost_nonamortized_unblended_adj",
+      "Amortized Unblended":"cost_amortized_unblended_adj",
+      "Unamortized Blended": "cost_nonamortized_blended_adj",
+      "Amortized Blended":"cost_amortized_blended_adj"
+    }
+
+    var metric = cost_metric[param_cost_metric]
+    
+    var current_month_total = 0.00
+    for (var i = 0; i < ds_current_month_costs['rows'].length; i++) {
+      var row = ds_current_month_costs['rows'][i]
+      current_month_total += row['metrics'][metric]
+    }
+
+    function formatNumber(number, separator)
+    {
+      var numString = number.toString()
+      var result = ''
+
+      while (numString.length > 3)
+      {
+        var chunk = numString.substr(-3)
+        numString = numString.substr(0, numString.length - 3)
+        result = separator + chunk + result
+      }
+
+      if (numString.length > 0)
+      {
+        result = numString + result
+      }
+
+      return result
+    }
+
+    // Format costs with currency symbol and thousands separator
+    if( ds_currency_code['value'] !== undefined ) {
+      if (ds_currency_reference[ds_currency_code['value']] !== undefined ) {
+        var cur = ds_currency_reference[ds_currency_code['value']]['symbol']
+        if( ds_currency_reference[ds_currency_code['value']]['t_separator'] !== undefined ) {
+          var sep = ds_currency_reference[ds_currency_code['value']]['t_separator']
+        } else {
+          var sep = ""
+        }
+      } else {
+        var cur = ""
+        var sep = ""
+      }
+    } else {
+      var cur = "$"
+      var sep = ","
+    }
+
+    var report = {};
+    var now = new Date();
+    var longMonthNames = ["None","January","February","March","April","May","June","July","August","September","October","November","December"];
+    var monthlyBudgetInputs = ["None", param_jan_monthly_budgeted, param_feb_monthly_budgeted, param_mar_monthly_budgeted, param_apr_monthly_budgeted, param_may_monthly_budgeted, param_jun_monthly_budgeted, param_jul_monthly_budgeted, param_aug_monthly_budgeted, param_sep_monthly_budgeted, param_oct_monthly_budgeted, param_nov_monthly_budgeted, param_dec_monthly_budgeted]
+    var currentMonth = getFormattedMonthlyDate(now);
+    var currentMonthName = longMonthNames[parseInt(currentMonth.split('-')[1])];
+    var param_monthly_budgeted = monthlyBudgetInputs[parseInt(currentMonth.split('-')[1])];
+    
+    var cm_actual_total = cur + ' ' + formatNumber(Math.round(current_month_total), sep);
+    var cm_budget_total = cur + ' ' + formatNumber(Math.round(param_monthly_budgeted), sep);
+
+    // Monthly budget check
+    if (current_month_total > param_monthly_budgeted){
+      var cm_overbudget = cur + ' ' + formatNumber(Math.round(current_month_total - param_monthly_budgeted), sep);
+    } else {
+      var cm_overbudget = "Not Applicable";
+    }
+
+    // Fetch Billing Centers for display
+    if (param_billing_centers.length === 0){
+      var billingCenters = "All";
+    } else {
+      var billingCenters = param_billing_centers.join()
+    }
+
+    /*
+    // Fetch Billing Centers for display
+    for(var x=0; x < param_billing_centers.length; x++){
+      if (param_billing_centers[x] == "") {
+        var billingCenters = "All"
+      }
+      else {
+        var billingCenters = param_billing_centers.join()
+      }
+    }
+    */
+
+    // Format costs with currency symbol and thousands separator
+    if( ds_currency_code['value'] !== undefined ) {
+      var cur = ds_currency_code['value']
+    } else {
+      var cur = "USD"
+    }
+    
+    var reportData = [
+      {
+        range: 'Monthly',
+        current: cm_actual_total,
+        budget: cm_budget_total,
+        overbudget: cm_overbudget
+      }
+    ]
+
+    report = {
+      currentMonthName: currentMonthName,
+      billingCenters: billingCenters,
+      chartType: "cht=bhg",
+      chartSize: "chs=700x190",
+      chartData: "chd=a:" + Math.round(current_month_total) + "|" + Math.round(param_monthly_budgeted),
+      chartLabels: "chl=Actual|Budgeted",
+      chartTitle: "chtt=Spending+Overview",
+      chartAxis: "chxt=x",
+      chartAxisFormat: "chxs=0N*c" + cur + "s*",
+      reportData: reportData
+    }
+  EOS
+end
+
+policy "policy_scheduled_report" do
+  validate $ds_report do
+    summary_template "{{ rs_org_name }} (Org ID: {{ rs_org_id }}): {{ data.currentMonthName }} Actual v. Budgeted Cost Report"
+    detail_template <<-EOS
+# {{ data.currentMonthName }} Actual v. Budgeted Cost Report
+## Org: {{ rs_org_name }} (Org ID: {{ rs_org_id }})
+## Billing Center(s): {{ data.billingCenters }}
+![Actual v. Monthly Cost Report](https://image-charts.com/chart?{{ data.chartType }}&{{ data.chartData }}&{{ data.chartSize }}&{{ data.chartLabels }}&{{ data.chartAxis }}&{{ data.chartAxisFormat }} "Actual v. Monthly Cost Report")
+
+|Range|Current|Budget|Overbudget|
+|:---:|------:|-----:|---------:|
+{{ range data.reportData -}}
+  | {{ .range }} | {{ .current }} | {{ .budget }} | {{ .overbudget }} |
+{{ end -}}  
+  
+### For more detailed cost information, visit [Optima](https://analytics.rightscale.com/orgs/{{ rs_org_id }}/dashboard).
+  
+For more information on this report, please view the [README](https://github.com/rightscale/policy_templates/tree/master/cost/scheduled_reports).
+___
+###### Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }}) within Org: {{ rs_org_name }} (Org ID: {{ rs_org_id }})
+EOS
+    escalate $escalation_send_email
+    check eq(0, 1)
+  end
+end
+
+escalation "escalation_send_email" do
+  email $param_email
+end
