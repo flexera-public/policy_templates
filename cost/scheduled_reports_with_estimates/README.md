@@ -1,4 +1,7 @@
-Scheduled Report
+# Scheduled Report with Estimates
+
+## What it does
+
 This policy allows you to set up scheduled reports that will provide summaries of cloud cost across all resources in the billing centers you specify, delivered to any email addresses you specify. The policy will report the following:
 
 Chart of the previous 6 months of utilization based on whichever Reporting Dimension you select (only bill data and RightScale-generated dimensions are supported).
@@ -23,22 +26,32 @@ Amortized Blended - One-time and upfront costs are spread evenly over the term o
 Input Parameters
 This policy has the following input parameters required when launching the policy.
 
-Email list - Email addresses of the recipients you wish to notify
-Billing Center List - List of top level Billing Center names you want to report on. Names must be exactly as shown in Optima.
-Leave the field blank to report on all top level Billing Centers.
-Cost Metric - See Cost Metrics above for details on selection.
-Graph Dimension - The cost dimension to break out the cost data in the embedded bar chart image
-Policy Actions
-The following policy actions are taken on any resources found to be out of compliance.
+## Functional Details
 
-Send an email report
-Required Permissions
+The policy leverages the RightScale APis to report on billing data and send an email report
+
+### Input Parameters
+
+-Email list - Email addresses of the recipients you wish to notify
+-Billing Center List - List of top level Billing Center names you want to report on. Names must be exactly as shown in Optima. Leave the field blank to report on all top level Billing Centers.
+-Cost Metric - See Cost Metrics above for details on selection.
+-Graph Dimension - The cost dimension to break out the cost data in the embedded bar chart image
+
+
+### Required RightScale Roles
+
 This policy requires permissions to access RightScale resources (Optima). Before applying this policy add the following roles to the user applying the policy. The roles should be applied to all Accounts where the policy will run or the Organization. For more information on modifying roles visit the Governance Docs
-
 Optima - billing_center_viewer
-Supported Clouds
+
+### Supported Clouds
+
 AWS
 Azure
 Google
-Cost
-This Policy Template does not launch any instances, and so does not incur any cloud costs.
+
+### Cost
+
+This Policy Template does not incur any cloud costs.
+
+
+
