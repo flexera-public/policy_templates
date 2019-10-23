@@ -1,3 +1,7 @@
+v1.3
+----
+- Updated Permission block
+
 v1.2
 ----
 - Added Permission block
