@@ -18,7 +18,8 @@ We recommend running this policy on a weekly cadence and applying it to your mas
 Note 1: The last 3 days of data in the current week or month will contain incomplete data.
 Note 2: The account you apply the policy to is unimportant as Optima metrics are scoped to the Org.
 
-Cost Metrics
+## Cost Metrics
+
 There are four cost metrics to choose from.
 
 - Unamortized Unblended - One-time and upfront costs are shown at the time of purchase. (AWS Only) Savings from reserved instances are applied first to matching instances in the account where it was purchased.
@@ -33,6 +34,7 @@ There are four cost metrics to choose from.
 The policy leverages the RightScale APis to report on billing data and send an email report
 
 ### Input Parameters
+
 This policy has the following input parameters required when launching the policy.
 
 - Email list - Email addresses of the recipients you wish to notify
@@ -44,7 +46,8 @@ This policy has the following input parameters required when launching the polic
 ### Required RightScale Roles
 
 This policy requires permissions to access RightScale resources (Optima). Before applying this policy add the following roles to the user applying the policy. The roles should be applied to all Accounts where the policy will run or the Organization. For more information on modifying roles visit the Governance Docs
-Optima - billing_center_viewer
+
+- Optima - billing_center_viewer
 
 ### Supported Clouds
 
