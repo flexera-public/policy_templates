@@ -42,6 +42,7 @@ Please contact sales@rightscale.com to learn more.
 - [AWS Bucket Size Check](./cost/aws/s3_bucket_size/)
 - [AWS Idle Compute Instances](./cost/aws/idle_compute_instances/)
 - [Google Idle Compute Instances](./cost/google/idle_compute_instances/)
+- [Running Instance Count Anomaly](./cost/instance_anomaly/)
 - [AWS Object Storage Optimization](./cost/aws/object_storage_optimization/)
 - [AWS Unused RDS Instances](./cost/aws/unused_rds/)
 - [AWS RDS Instances RightSizing](./cost/aws/rds_instance_cloudwatch_utilization)
@@ -68,6 +69,8 @@ Please contact sales@rightscale.com to learn more.
 - [AWS Publicly Accessible RDS Instances](./security/aws/rds_publicly_accessible/)
 - [AWS Unencrypted S3 Buckets](./security/aws/unencrypted_s3_buckets/)
 - [Check for publicly accessible Azure SQL Managed Instance](./security/azure/sql_publicly_accessible_managed_instance)
+- [AWS Unencrypted ELB Listeners (CLB)] (./security/aws/clb_unencrypted/)
+- [AWS Unencrypted ELB Listeners (ALB/NLB)] (./security/aws/elb_unencrypted/)
 
 ### Compliance
 
