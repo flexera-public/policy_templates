@@ -54,6 +54,7 @@ Please contact sales@rightscale.com to learn more.
 - [Azure Idle Compute Instances](./cost/azure/idle_compute_instances/)
 - [Google Rightsize CloudSQL Instances](./cost/google/cloudsql_rightsizing/)
 - [Google Unused CloudSQL Instances](./cost/google/unused_cloudsql_instances)
+- [Azure Unused SQL Databases](./cost/azure/unused_sql_databases/)
 
 ### Security
 
