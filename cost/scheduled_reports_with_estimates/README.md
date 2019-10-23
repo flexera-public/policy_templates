@@ -2,14 +2,16 @@
 
 ## What it does
 
-This policy allows you to set up scheduled reports that will provide summaries of cloud cost across all resources in the billing centers you specify, delivered to any email addresses you specify. The policy will report the following:
+This policy allows you to set up scheduled reports that will provide summaries of cloud cost across all resources in the billing centers you specify as well as estimated costs for the next 3 months, delivered to any email addresses you specify. The policy will report the following:
+
+## The Data Provided
 
 Chart of the previous 6 months of utilization based on whichever Reporting Dimension you select (only bill data and RightScale-generated dimensions are supported).
 Daily Average - Weekly: Daily average costs calculated from Monday of the previous week through today. Daily Average - Monthly: Daily average costs calculated from the 1st of the previous month through today. Previous - Weekly: Total costs during previous full week (Monday-Sunday).
 Previous - Monthly: Total costs during previous full month.
 Current - Weekly: Total costs during current (incomplete) week.
 Current - Monthly: Total costs during current (incomplete) month.
-Estimated Cost for each metrics for the next 3 months based on previous costs.
+Monthly Estimated Cost for each metric for the next 3 months based on previous costs.
 
 We recommend running this policy on a weekly cadence and applying it to your master account.
 
@@ -19,23 +21,24 @@ Note 2: The account you apply the policy to is unimportant as Optima metrics are
 Cost Metrics
 There are four cost metrics to choose from.
 
-Unamortized Unblended - One-time and upfront costs are shown at the time of purchase. (AWS Only) Savings from reserved instances are applied first to matching instances in the account where it was purchased.
-Amortized Unblended - One-time and upfront costs are spread evenly over the term of the item purchased. (AWS Only) Savings from reserved instances are applied first to matching instances in the account where it was purchased.
-Unamortized Blended - One-time and upfront costs are shown at the time of purchase. (AWS Only) Saving from reserved instances are shared equally by all matching instances in all accounts.
-Amortized Blended - One-time and upfront costs are spread evenly over the term of the item purchased. (AWS Only) Saving from reserved instances are shared equally by all matching instances in all accounts.
-Input Parameters
-This policy has the following input parameters required when launching the policy.
+- Unamortized Unblended - One-time and upfront costs are shown at the time of purchase. (AWS Only) Savings from reserved instances are applied first to matching instances in the account where it was purchased.
+- Amortized Unblended - One-time and upfront costs are spread evenly over the term of the item purchased. (AWS Only) Savings from reserved instances are applied first to matching instances in the account where it was purchased.
+- Unamortized Blended - One-time and upfront costs are shown at the time of purchase. (AWS Only) Saving from reserved instances are shared equally by all matching instances in all accounts.
+- Amortized Blended - One-time and upfront costs are spread evenly over the term of the item purchased. (AWS Only) Saving from reserved instances are shared equally by all matching instances in all accounts.
+
+
 
 ## Functional Details
 
 The policy leverages the RightScale APis to report on billing data and send an email report
 
 ### Input Parameters
+This policy has the following input parameters required when launching the policy.
 
--Email list - Email addresses of the recipients you wish to notify
--Billing Center List - List of top level Billing Center names you want to report on. Names must be exactly as shown in Optima. Leave the field blank to report on all top level Billing Centers.
--Cost Metric - See Cost Metrics above for details on selection.
--Graph Dimension - The cost dimension to break out the cost data in the embedded bar chart image
+- Email list - Email addresses of the recipients you wish to notify
+- Billing Center List - List of top level Billing Center names you want to report on. Names must be exactly as shown in Optima. Leave the field blank to report on all top level Billing Centers.
+- Cost Metric - See Cost Metrics above for details on selection.
+- Graph Dimension - The cost dimension to break out the cost data in the embedded bar chart image
 
 
 ### Required RightScale Roles
@@ -45,9 +48,9 @@ Optima - billing_center_viewer
 
 ### Supported Clouds
 
-AWS
-Azure
-Google
+- AWS
+- Azure
+- Google
 
 ### Cost
 
