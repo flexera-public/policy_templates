@@ -1,4 +1,4 @@
-## Azure Disallowed Instance Types
+## Azure Superseded Instance Types
 
 ### What it does
 

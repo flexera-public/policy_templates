@@ -1,9 +1,3 @@
-# CHANGELOG
-
-v1.4
-----
-- rename policy
-
 v1.3
 ----
 - Added Permission block
