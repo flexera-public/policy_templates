@@ -6,11 +6,10 @@ This Policy Template leverages the the Righscale cost API's to import Cloud vend
 
 ### Prerequesites
 
-- As this policy invoques the Rightscale API´s, the user invoquing the policy must have access to the Optima module and and copmponents.
+- As this policy invokes the Rightscale API´s, the user invoquing the policy must have access to the Optima module and and copmponents.
 
 ### Categories 
-For a detailed explanation regarding catgories and their mapping to the different cloud service please check the following link:
-https://helpnet.flexerasoftware.com/Optima/#helplibrary/RightScale_generated_Cost_Dimension__Category.htm#optimabilling_3089684038_1151644%3FTocPath%3DOptima%2520Billing%2520Centers%2520Guide%7CCost%2520Dimensions%7CRightScale-generated%2520Cost%2520Dimension%253A%2520Category%7C_____0
+For a detailed explanation regarding catgories and their mapping to the different cloud service please check the following link: [Rightscale categories](https://helpnet.flexerasoftware.com/Optima/#helplibrary/RightScale_generated_Cost_Dimension__Category.htm#optimabilling_3089684038_1151644%3FTocPath%3DOptima%2520Billing%2520Centers%2520Guide%7CCost%2520Dimensions%7CRightScale-generated%2520Cost%2520Dimension%253A%2520Category%7C_____0)
 
 ### Cost Metrics
 
