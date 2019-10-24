@@ -13,7 +13,7 @@ Please contact sales@rightscale.com to learn more.
 - [AWS Reserved Instance Reservation Coverage](./cost/aws/reserved_instances/coverage/)
 - [AWS Reserved Instances Report by Billing Center](./cost/aws/reserved_instances/report_by_bc)
 - [AWS Reserved Instance Recommendations](./cost/aws/reserved_instances/recommendations)
-- [Azure Superseded Instance Types](./cost/azure/superseded_instance_types/)
+- [Azure Disallowed Instance Types](./cost/azure/superseded_instance_types/)
 - [Budget Alerts](./cost/budget_alerts/)
 - [Downsize Instances](./cost/downsize_instance/)
 - [Unattached Volumes Policy](./cost/volumes/unattached_volumes/)

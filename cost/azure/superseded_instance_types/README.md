@@ -1,28 +1,8 @@
-## Azure Superseded Instance Types Policy
+## Azure Disallowed Instance Types
 
 ### What it does
 
-This Policy Template is used to automatically resize Azure Resource Manager Instances (VMs) based on user-defined standards.  For example, the Policy allows for a Disallowed Instance Type and its corresponding Superseded Instance Type.  If any Instances are found using the Disallowed type, they will be included in the corresponing Policy Incident.  Upon approval, Cloud Workflow will resize the Instance to the Superseded type. 
-
-### Prerequesites
-
-- Azure Service Principal (AKA Azure Active Directory Application) with the appropriate permissions to manage resources in the target subscription
-- The following RightScale Credentials
-  - `AZURE_APPLICATION_ID`
-  - `AZURE_APPLICATION_KEY`
-- The `policy_designer`, `policy_manager`, `credential_viewer` & `policy_publisher` roles
-
-### Azure Required Permissions
-
-- Microsoft.Compute/virtualMachines/read
-
-#### Installation
-
-1. Follow steps to [Create an Azure Active Directory Application](https://docs.microsoft.com/en-us/azure/azure-resource-manager/resource-group-create-service-principal-portal#create-an-azure-active-directory-application)
-1. Grant the Azure AD Application access to the necessary subscription(s)
-1. [Retrieve the Application ID & Authentication Key](https://docs.microsoft.com/en-us/azure/azure-resource-manager/resource-group-create-service-principal-portal#get-application-id-and-authentication-key)
-1. Create RightScale Credentials with values that match the Application ID (Credential name: `AZURE_APPLICATION_ID`) & Authentication Key (Credential name: `AZURE_APPLICATION_KEY`)
-1. [Retrieve your Tenant ID](https://docs.microsoft.com/en-us/azure/azure-resource-manager/resource-group-create-service-principal-portal#get-tenant-id)
+This Policy Template is used to automatically resize Azure Resource Manager Instances (VMs) based on user-defined standards.  For example, the Policy allows for a Disallowed Instance Type and its corresponding Superseded Instance Type.  If any Instances are found using the Disallowed type, they will be included in the corresponding Policy Incident.  The instances will be resized after user approval.
 
 ### Functional Details
 
@@ -41,6 +21,27 @@ This policy has the following input parameters required when launching the polic
 - *Superseded Instance Type* - the new Azure instance type that instances should be resized to
 - *Exclusion Tag Key* - an Azure-native instance tag to ignore instances that match the disallowed instance type. Only supply the tag key
 - *Email addresses of the recipients you wish to notify* - A list of email addresses to notify
+
+### Prerequesites
+
+- Azure Service Principal (AKA Azure Active Directory Application) with the appropriate permissions to manage resources in the target subscription
+- The following RightScale Credentials
+  - `AZURE_APPLICATION_ID`
+  - `AZURE_APPLICATION_KEY`
+- The `credential_viewer` roles
+
+### Azure Required Permissions
+
+- Microsoft.Compute/virtualMachines/read
+
+#### Installation
+
+1. Follow steps to [Create an Azure Active Directory Application](https://docs.microsoft.com/en-us/azure/azure-resource-manager/resource-group-create-service-principal-portal#create-an-azure-active-directory-application)
+1. Grant the Azure AD Application access to the necessary subscription(s)
+1. [Retrieve the Application ID & Authentication Key](https://docs.microsoft.com/en-us/azure/azure-resource-manager/resource-group-create-service-principal-portal#get-application-id-and-authentication-key)
+1. Create RightScale Credentials with values that match the Application ID (Credential name: `AZURE_APPLICATION_ID`) & Authentication Key (Credential name: `AZURE_APPLICATION_KEY`)
+1. [Retrieve your Tenant ID](https://docs.microsoft.com/en-us/azure/azure-resource-manager/resource-group-create-service-principal-portal#get-tenant-id)
+
 
 ### Supported Clouds
 
