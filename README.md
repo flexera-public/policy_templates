@@ -55,6 +55,7 @@ Please contact sales@rightscale.com to learn more.
 - [Google Rightsize CloudSQL Instances](./cost/google/cloudsql_rightsizing/)
 - [Google Unused CloudSQL Instances](./cost/google/unused_cloudsql_instances)
 - [Azure Unused SQL Databases](./cost/azure/unused_sql_databases/)
+- [Monthly Actual v. Budgeted Spend Report](./cost/budget_v_actual/)
 
 ### Security
 
@@ -70,8 +71,8 @@ Please contact sales@rightscale.com to learn more.
 - [AWS Publicly Accessible RDS Instances](./security/aws/rds_publicly_accessible/)
 - [AWS Unencrypted S3 Buckets](./security/aws/unencrypted_s3_buckets/)
 - [Check for publicly accessible Azure SQL Managed Instance](./security/azure/sql_publicly_accessible_managed_instance)
-- [AWS Unencrypted ELB Listeners (CLB)] (./security/aws/clb_unencrypted/)
-- [AWS Unencrypted ELB Listeners (ALB/NLB)] (./security/aws/elb_unencrypted/)
+- [AWS Unencrypted ELB Listeners (CLB)](./security/aws/clb_unencrypted/)
+- [AWS Unencrypted ELB Listeners (ALB/NLB)](./security/aws/elb_unencrypted/)
 
 ### Compliance
 
