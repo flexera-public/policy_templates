@@ -64,15 +64,16 @@ Please contact sales@rightscale.com to learn more.
 - [Security Group: High Open Ports](./security/security_groups/high_open_ports/)
 - [Security Groups With Ports Open To The World](./security/security_groups/world_open_ports)
 - [AWS Open Buckets Policy](./security/storage/aws/public_buckets/)
-- [Google Open Buckets Policy](./security/storage/google/public_buckets/)
 - [AWS Unencrypted Volumes Policy](./security/aws/ebs_unencrypted_volumes/)
 - [AWS Internet-facing ELBs & ALBs](./security/aws/loadbalancer_internet_facing/)
 - [AWS Unencrypted RDS Instances](./security/aws/rds_unencrypted/)
 - [AWS Publicly Accessible RDS Instances](./security/aws/rds_publicly_accessible/)
 - [AWS Unencrypted S3 Buckets](./security/aws/unencrypted_s3_buckets/)
-- [Check for publicly accessible Azure SQL Managed Instance](./security/azure/sql_publicly_accessible_managed_instance)
 - [AWS Unencrypted ELB Listeners (CLB)](./security/aws/clb_unencrypted/)
 - [AWS Unencrypted ELB Listeners (ALB/NLB)](./security/aws/elb_unencrypted/)
+- [Azure Publicly Accessible Managed SQL Instance](./security/azure/sql_publicly_accessible_managed_instance)
+- [Google Open Buckets Policy](./security/storage/google/public_buckets/)
+
 
 ### Compliance
 
