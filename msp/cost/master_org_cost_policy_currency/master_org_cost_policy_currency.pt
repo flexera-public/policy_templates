@@ -63,12 +63,6 @@ end
 
 auth "auth_rs", type: "rightscale"
 
-#auth "auth_fixerio", type: "api_key" do
-#  location "query"
-#  field "access_key"
-#  key cred("FIXER_IO_API_KEY")
-#end
-
 ###############################################################################
 # Resources
 ###############################################################################
@@ -105,8 +99,12 @@ datasource "ds_current_user_organizations" do
   end
 end
 
+datasource "ds_filtered_rejected_organizations" do
+  run_script $js_filter_rejected_organizations, $ds_current_user_organizations, $param_exclude_organizations
+end
+
 datasource "ds_filtered_user_organizations" do
-  run_script $js_filter_organizations, $ds_current_user_organizations, $param_exclude_organizations
+  run_script $js_filter_organizations, $ds_filtered_rejected_organizations, $ds_currency_code, $ds_currency_conversion
 end
 
 datasource "ds_currency_reference" do
@@ -116,16 +114,6 @@ datasource "ds_currency_reference" do
     header "User-Agent", "RS Policies"
   end
 end
-
-# Get current currency conversion rates - defaults to EUR base on free plan
-#datasource "ds_currency_conversion" do
-#  request do
-#    auth $auth_fixerio
-#    host "data.fixer.io"
-#    path "/api/latest"
-#    header "User-Agent", "RS Policies"
-#  end
-#end
 
 datasource "ds_currency_conversion" do
   request do
@@ -137,7 +125,7 @@ datasource "ds_currency_conversion" do
 end
 
 datasource "ds_currency_code" do
-  iterate $ds_filtered_user_organizations
+  iterate $ds_filtered_rejected_organizations
   request do
     auth $auth_rs
     host rs_optima_host
@@ -257,16 +245,16 @@ datasource "ds_previous_six_month_costs" do
   result do
     encoding "json"
     collect jmes_path(response,"rows[*]") do
-      field "dimensions", val(iter_item,"dimensions")
-      field "metrics", val(iter_item, "metrics")
-      field "timestamp", val(iter_item, "timestamp")
+      field "dimensions", jmes_path(col_item,"dimensions")
+      field "metrics", jmes_path(col_item,"metrics")
+      field "timestamp", jmes_path(col_item,"timestamp")
       field "org_id", val(iter_item,"org_id")
     end
   end
 end
 
 datasource "ds_generated_report" do
-  run_script $js_generate_report, $ds_previous_six_month_costs, $param_cost_metric, $ds_report, $param_graph_dimension, $ds_currency_code, $ds_currency_reference, $ds_currency_conversion, $ds_filtered_user_organizations
+  run_script $js_generate_report, $ds_previous_six_month_costs, $param_cost_metric, $ds_report, $param_graph_dimension, $ds_currency_code, $ds_currency_reference, $ds_currency_conversion, $ds_filtered_user_organizations, $param_final_currency
 end
 
 
@@ -288,12 +276,38 @@ script "js_current_user_organizations", type: "javascript" do
   EOF
 end
 
-script "js_filter_organizations", type: "javascript" do
+script "js_filter_rejected_organizations", type: "javascript" do
   parameters "ds_current_user_organizations", "param_exclude_organizations"
   result "results"
   code <<-EOF
     var results = _.reject(ds_current_user_organizations, function(org){
        return _.contains(param_exclude_organizations, org["name"])
+    })
+  EOF
+end
+
+script "js_filter_organizations", type: "javascript" do
+  parameters "ds_filtered_rejected_organizations","ds_currency_code","ds_currency_conversion"
+  result "results"
+  code <<-EOF
+    var results = [];
+    _.each(ds_filtered_rejected_organizations, function(org){
+      var org_id = org["org_id"]
+      var org_currency_code = _.pluck(_.where(ds_currency_code, {"org_id": org_id}), "value")
+      if( org_currency_code == undefined ) {
+        org_currency_code = "USD"
+      }
+
+      var conversion_rate = ds_currency_conversion["rates"][org_currency_code]
+
+      results.push({
+        href: org.href,
+        org_id: org_id,
+        name: org.name,
+        cluster: org.cluster,
+        currency: org_currency_code[0],
+        conversion_rate: conversion_rate
+      })
     })
   EOF
 end
@@ -304,7 +318,7 @@ script "js_current_week_cost_request", type: "javascript" do
   code <<-EOS
     var range = "daily";
     var scale = "current";
-    
+
     // format the date for the `daily` API
     // returns date formatted as string: YYYY-mm-dd
     function getFormattedDailyDate(date) {
@@ -649,23 +663,21 @@ script "js_report", type: "javascript" do
     var weekly_avg = 0
     var monthly_avg = 0
 
-    _.each(org_ids, function(org_id) {
-      var org_currency_code = _.pluck(_.where(ds_currency_code, {"org_id": org_id}), "value")
-      if( org_currency_code == undefined ) {
-        org_currency_code = "USD"
-      }
-      console.log("Step 2 - Org: " + org_id)
+    _.each(ds_filtered_user_organizations, function(org) {
+      var org_currency_code = org["currency"]
+      console.log("Step 2 - Org: " + org["org_id"])
       console.log("Step 2 - Org Currency: " + org_currency_code)
       
-      var conversion_rate = ds_currency_conversion["rates"][org_currency_code]
+      //var conversion_rate = ds_currency_conversion["rates"][org_currency_code]
+      var conversion_rate = org["conversion_rate"]
       console.log("Step 2 - Org Conversion Rate: " + conversion_rate)
-      var org_current_week_costs = _.where(ds_current_week_costs, {"org_id": org_id})
+      var org_current_week_costs = _.where(ds_current_week_costs, {"org_id": org["org_id"]})
       //console.log("Step 2 - Costs CW: " , org_current_week_costs)
-      var org_previous_week_costs = _.where(ds_previous_week_costs, {"org_id": org_id})
+      var org_previous_week_costs = _.where(ds_previous_week_costs, {"org_id": org["org_id"]})
       //console.log("Step 2 - Costs PW: " , org_previous_week_costs)
-      var org_previous_month_costs = _.where(ds_previous_month_costs, {"org_id": org_id})
+      var org_previous_month_costs = _.where(ds_previous_month_costs, {"org_id": org["org_id"]})
       //console.log("Step 2 - Costs PM: " , org_previous_month_costs)
-      var org_current_month_costs = _.where(ds_current_month_costs, {"org_id": org_id})
+      var org_current_month_costs = _.where(ds_current_month_costs, {"org_id": org["org_id"]})
       //console.log("Step 2 - Costs CM: " , org_current_month_costs)
       
       var org_current_week_total = _.reduce(_.pluck(_.pluck(org_current_week_costs, 'metrics'), metric), function(memo, num){ return memo + num; }, 0);
@@ -840,7 +852,7 @@ script "js_six_month_cost_request", type: "javascript" do
 end
 
 script "js_generate_report", type: "javascript" do
-  parameters "ds_previous_six_month_costs","param_cost_metric","ds_report","param_graph_dimension","ds_currency_code","ds_currency_reference","ds_currency_conversion","ds_filtered_user_organizations"
+  parameters "ds_previous_six_month_costs","param_cost_metric","ds_report","param_graph_dimension","ds_currency_code","ds_currency_reference","ds_currency_conversion","ds_filtered_user_organizations","param_final_currency"
   result "report"
   code <<-EOS
     // format the date for the `monthly` API
@@ -887,20 +899,20 @@ script "js_generate_report", type: "javascript" do
     var shortMonthNames = ["None","Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
     var currentMonth = getFormattedMonthlyDate(now);
     var currentMonthName = longMonthNames[parseInt(currentMonth.split('-')[1])];
-    _.each(ds_previous_six_month_costs, function(item){
-      _.each(item["rows"], function(row){
-        var yearMonth = row['timestamp'].split('-')[0] + '-' + row['timestamp'].split('-')[1]
-        var numberMonth = row['timestamp'].split('-')[1]
-        var stringMonth = shortMonthNames[parseInt(numberMonth)]
-        // CONVERT CASH MONEY HERE
-        //
-        //
-        collated_data.push({
-          stringMonth: stringMonth,
-          yearMonth: yearMonth,
-          category: row['dimensions'][dimension],
-          cost: row['metrics'][metric]
-        })
+    _.each(ds_previous_six_month_costs, function(row){
+      var yearMonth = row['timestamp'].split('-')[0] + '-' + row['timestamp'].split('-')[1]
+      var numberMonth = row['timestamp'].split('-')[1]
+      var stringMonth = shortMonthNames[parseInt(numberMonth)]
+      // CONVERT CASH MONEY HERE
+      var conversion_rate = _.pluck(_.where(ds_filtered_user_organizations, {"org_id": row["org_id"]}), "conversion_rate")
+      //var conversion_rate = org["conversion_rate"]
+      var cost = row['metrics'][metric] / conversion_rate
+      //
+      collated_data.push({
+        stringMonth: stringMonth,
+        yearMonth: yearMonth,
+        category: row['dimensions'][dimension],
+        cost: cost
       })
     })
 
