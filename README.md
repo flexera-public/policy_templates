@@ -55,6 +55,7 @@ Please contact sales@rightscale.com to learn more.
 - [Google Rightsize CloudSQL Instances](./cost/google/cloudsql_rightsizing/)
 - [Google Unused CloudSQL Instances](./cost/google/unused_cloudsql_instances)
 - [Monthly Actual v. Budgeted Spend Report](./cost/budget_v_actual/)
+- [New Services In Bill](./cost/new_services_in_bill/)
 
 ### Security
 
