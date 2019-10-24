@@ -29,17 +29,14 @@ parameter "param_exclude_tags" do
   type "list"
   category "User Inputs"
   label "Exclusion Tag"
-  description "List of tags that will exclude EC2 instances from being evaluated by this policy. Multiple tags are evaluated as an 'OR' condition. Tag keys or key/value pairs can be listed. Example: 'test,env=dev'"
+  description "List of tags that will exclude EC2 instances from being evaluated by this policy. Multiple tags are evaluated as an 'OR' condition. Tag keys or key/value pairs can be listed. Example: 'test,env=dev'."
 end
 
 parameter "param_disallowed_region" do
-  type "string"
+  type "list"
   label "Disallowed Regions(s)"
-  description "List of regions to disallow.Multiple regions are separated by a comma. Example: 'us-east-1,us-west-1'"
-  allowed_pattern /([\w]?)+\-([\w]?)+\-([\d]?)+/
-  constraint_description <<-EOS
-   Disallowed regions must be a series of one or more regions. Adjacent regions are separated by a comma. Disallowed regions can contain letter,number and hyphen(e.g., us-east-1)
-  EOS
+  allowed_pattern /([a-z])+\-([a-z])+\-([\d]?)+/
+  description "List of regions to disallow."
 end
 
 ###############################################################################
@@ -49,8 +46,8 @@ end
 auth "auth_aws", type: "aws" do
   version "4"
   service "ec2"
-  access_key cred("AWS_ACCESS_KEY_ID_NAG")
-  secret_key cred("AWS_SECRET_ACCESS_KEY_NAG")
+  access_key cred("AWS_ACCESS_KEY_ID")
+  secret_key cred("AWS_SECRET_ACCESS_KEY")
 end
 
 ###############################################################################
@@ -158,13 +155,16 @@ script "js_regions_map", type: "javascript" do
   parameters "param_disallowed_region"
   result "regions_map"
   code <<-EOS
-    regions_map=[]
-    var region_split = param_disallowed_region.toString().toLowerCase().split(",");
-    for (var i = 0; i < region_split.length; i++){
-      var disallowed_region = region_split[i];
-      regions_map.push({
-	    "region": disallowed_region
-	  })
+   regions_map=[]
+   var param_disallowed_region_lower=[];
+    for(var i=0; i < param_disallowed_region.length; i++){
+      param_disallowed_region_lower[i]=param_disallowed_region[i].toString().toLowerCase();
+    }
+    for (var j = 0; j < param_disallowed_region_lower.length; j++){
+      disallowed_region = param_disallowed_region_lower[j];
+        regions_map.push({
+         "region": disallowed_region
+        })
     }
   EOS
 end
@@ -196,13 +196,13 @@ end
 
 policy "pol_list_aws_instances" do
   validate $ds_list_aws_instances do
-    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} Aws Instances in Disallowed regions"
+    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} AWS Instances in Disallowed regions"
     detail_template <<-EOS
-# Aws Instance Details
-| Instance ID | Instance State | instance_type | Tags | Region |
-| ----------- | -------------- | ------------- | ---- | ------ |
+# AWS Instance Details
+| Instance ID | Instance State | Region | Instance Type | Tags |
+| ----------- | -------------- | ------ | ------------- | ---- |
 {{ range data -}}
-| {{.instance_id}} | {{.instance_state}}  | {{.instance_type}} | {{.tagKeyValue}} | {{.region}} |
+| {{.instance_id}} | {{.instance_state}}  | {{.region}} | {{.instance_type}} | {{.tagKeyValue}} |
 {{ end -}}
     EOS
     escalate $esc_report_disallowed_instances
@@ -224,8 +224,8 @@ define terminate_instances($data) return $all_responses do
     $response = http_get(
        url: "https://ec2."+$item["region"]+".amazonaws.com/?Action=TerminateInstances&Version=2016-11-15&InstanceId.1="+$item["instance_id"],
        "signature": { type: "aws",
-                      "access_key": cred("AWS_ACCESS_KEY_ID_NAG"),
-                      "secret_key": cred("AWS_SECRET_ACCESS_KEY_NAG")   
+                      "access_key": cred("AWS_ACCESS_KEY_ID"),
+                      "secret_key": cred("AWS_SECRET_ACCESS_KEY") 
 	                }
     )
     $all_responses << $response

@@ -7,13 +7,13 @@ This policy checks all instances in a set of disallowed regions. The user is giv
 ### Functional Details
 
 - The policy leverages the AWS API to check all instances that exist in a disallowed region.
-- When an EC2 instances in disallowed region is detected, an email action is triggered automatically to notify the specified users of the incident. Users then have the option to terminate instances after manual approval if needed.
+- When an EC2 instance in disallowed region is detected, an email action is triggered automatically to notify the specified users of the incident. Users then have the option to terminate instances after manual approval if needed.
 
 ### Input Parameters
  
 - *Email addresses to notify* - Email addresses of the recipients you wish to notify when new incidents are created.
 - *Exclusion Tag* - List of tags that will exclude EC2 instances from being evaluated by this policy. Multiple tags are evaluated as an 'OR' condition. Tag keys or key/value pairs can be listed. Example: 'test,env=dev'.
-- *Disallowed Regions(s)* - List of regions to disallow.Multiple regions are separated by a comma. Example: 'us-east-1,us-west-1'.
+- *Disallowed Regions(s)* - List of regions to disallow.
 Note: Refer Region column under Amazon Elastic Compute Cloud (Amazon EC2) in below link for AWS supported regions \n See the [README](https://docs.aws.amazon.com/general/latest/gr/rande.html). 
 
 ### Actions
