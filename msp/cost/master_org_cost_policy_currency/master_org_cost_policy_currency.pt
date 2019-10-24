@@ -1,7 +1,7 @@
-name "Master Org Cost Policy with Currency COnversion"
+name "Master Org Cost Policy with Currency Conversion"
 rs_pt_ver 20180301
 type "policy"
-short_description "This policy allows you to set up cross organization scheduled reports that will provide summaries of cloud cost across all resources in the billing centers you specify, delivered to any email addresses you specify. The policy will report the following:
+short_description "This policy allows you to set up cross organization scheduled reports that will provide summaries of cloud cost across all organizations you have access to, delivered to any email addresses you specify. The policy will report the following:
 Chart of the previous 6 months of utilization based on [category](https://docs.rightscale.com/optima/reference/rightscale_dimensions.html#category).  
 Daily average cost across the last week and last month.  
 Total cost during previous full week (Monday-Sunday) and previous full month.  
@@ -10,7 +10,7 @@ We recommend running this policy on a weekly cadence and applying it to your mas
 _Note 1: The last 3 days of data in the current week or month will contain incomplete data._  
 _Note 2: The account you apply the policy to is unimportant as Optima metrics are scoped to the Org._
 See [README](https://github.com/rightscale/policy_templates/tree/master/msp/cost/master_org_cost_policy) for more details"
-long_description "Version: 0.0"
+long_description "Version: 1.0"
 severity "low"
 category "Cost"
 
@@ -189,10 +189,11 @@ datasource "ds_current_week_costs" do
   result do
     encoding "json"
     collect jmes_path(response,"rows[*]") do
-      field "dimensions", val(iter_item,"dimensions")
-      field "metrics", val(iter_item, "metrics")
-      field "timestamp", val(iter_item, "timestamp")
+      field "dimensions", jmes_path(col_item,"dimensions")
+      field "metrics", jmes_path(col_item,"metrics")
+      field "timestamp", jmes_path(col_item,"timestamp")
       field "org_id", val(iter_item,"org_id")
+      field "org_name", val(iter_item, "name")
     end
   end
 end
@@ -205,10 +206,11 @@ datasource "ds_previous_week_costs" do
   result do
     encoding "json"
     collect jmes_path(response,"rows[*]") do
-      field "dimensions", val(iter_item,"dimensions")
-      field "metrics", val(iter_item, "metrics")
-      field "timestamp", val(iter_item, "timestamp")
+      field "dimensions", jmes_path(col_item,"dimensions")
+      field "metrics", jmes_path(col_item,"metrics")
+      field "timestamp", jmes_path(col_item,"timestamp")
       field "org_id", val(iter_item,"org_id")
+      field "org_name", val(iter_item, "name")
     end
   end
 end
@@ -221,10 +223,11 @@ datasource "ds_current_month_costs" do
   result do
     encoding "json"
     collect jmes_path(response,"rows[*]") do
-      field "dimensions", val(iter_item,"dimensions")
-      field "metrics", val(iter_item, "metrics")
-      field "timestamp", val(iter_item, "timestamp")
+      field "dimensions", jmes_path(col_item,"dimensions")
+      field "metrics", jmes_path(col_item,"metrics")
+      field "timestamp", jmes_path(col_item,"timestamp")
       field "org_id", val(iter_item,"org_id")
+      field "org_name", val(iter_item, "name")
     end
   end
 end
@@ -237,10 +240,11 @@ datasource "ds_previous_month_costs" do
   result do
     encoding "json"
     collect jmes_path(response,"rows[*]") do
-      field "dimensions", val(iter_item,"dimensions")
-      field "metrics", val(iter_item, "metrics")
-      field "timestamp", val(iter_item, "timestamp")
+      field "dimensions", jmes_path(col_item,"dimensions")
+      field "metrics", jmes_path(col_item,"metrics")
+      field "timestamp", jmes_path(col_item,"timestamp")
       field "org_id", val(iter_item,"org_id")
+      field "org_name", val(iter_item, "name")
     end
   end
 end
@@ -266,7 +270,7 @@ datasource "ds_previous_six_month_costs" do
 end
 
 datasource "ds_generated_report" do
-  run_script $js_generate_report, $ds_previous_six_month_costs, $param_cost_metric, $ds_report, $param_graph_dimension, $ds_currency_code, $ds_currency_reference, $ds_currency_conversion
+  run_script $js_generate_report, $ds_previous_six_month_costs, $param_cost_metric, $ds_report, $param_graph_dimension, $ds_currency_code, $ds_currency_reference, $ds_currency_conversion, $ds_filtered_user_organizations
 end
 
 
@@ -591,17 +595,34 @@ script "js_report", type: "javascript" do
   parameters "ds_current_week_costs","ds_previous_week_costs","ds_current_month_costs","ds_previous_month_costs","param_cost_metric","ds_currency_code","ds_currency_reference","ds_currency_conversion","ds_filtered_user_organizations", "param_final_currency"
   result "report"
   code <<-EOS 
+    function formatNumber(number, separator)
+    {
+      var numString = number.toString()
+      var result = ''
+      while (numString.length > 3)
+      {
+        var chunk = numString.substr(-3)
+        numString = numString.substr(0, numString.length - 3)
+        result = separator + chunk + result
+      }
+      if (numString.length > 0)
+      {
+        result = numString + result
+      }
+      return result
+    }
+
     // create a map to use in the request metric field.
-    
     var cost_metric = {
       "Unamortized Unblended":"cost_nonamortized_unblended_adj",
       "Amortized Unblended":"cost_amortized_unblended_adj",
       "Unamortized Blended": "cost_nonamortized_blended_adj",
       "Amortized Blended":"cost_amortized_blended_adj"
     }
+
     var metric = cost_metric[param_cost_metric]
     var org_ids = _.unique(_.pluck(ds_filtered_user_organizations, 'org_id'))
-
+    console.log("Step 1 - Orgs: " , org_ids)
     var current_week_total = 0.00
     var previous_week_total = 0.00
     var previous_month_total = 0.00
@@ -610,48 +631,42 @@ script "js_report", type: "javascript" do
     var monthly_avg = 0
 
     _.each(org_ids, function(org_id) {
-      if( ds_currency_code['value'] !== undefined ) {
-        var org_currency_code = (_.where(ds_currency_code, {"org_id": org_id})).value
-      } else {
-        var org_currency_code = "USD"
+      var org_currency_code = _.pluck(_.where(ds_currency_code, {"org_id": org_id}), "value")
+      if( org_currency_code == undefined ) {
+        org_currency_code = "USD"
       }
+      console.log("Step 2 - Org: " + org_id)
+      console.log("Step 2 - Org Currency: " + org_currency_code)
       
       var conversion_rate = ds_currency_conversion["rates"][org_currency_code]
+      console.log("Step 2 - Org Conversion Rate: " + conversion_rate)
       var org_current_week_costs = _.where(ds_current_week_costs, {"org_id": org_id})
+      //console.log("Step 2 - Costs CW: " , org_current_week_costs)
       var org_previous_week_costs = _.where(ds_previous_week_costs, {"org_id": org_id})
+      //console.log("Step 2 - Costs PW: " , org_previous_week_costs)
       var org_previous_month_costs = _.where(ds_previous_month_costs, {"org_id": org_id})
+      //console.log("Step 2 - Costs PM: " , org_previous_month_costs)
       var org_current_month_costs = _.where(ds_current_month_costs, {"org_id": org_id})
-      var org_current_week_total = _.reduce(org_current_week_costs['metrics'][metric], function(memo, num){ return memo + num; }, 0);
-      var org_previous_week_total = _.reduce(org_previous_week_costs['metrics'][metric], function(memo, num){ return memo + num; }, 0);
-      var org_previous_month_total = _.reduce(org_previous_month_costs['metrics'][metric], function(memo, num){ return memo + num; }, 0);
-      var org_current_month_total = _.reduce(org_current_month_costs['metrics'][metric], function(memo, num){ return memo + num; }, 0);
+      //console.log("Step 2 - Costs CM: " , org_current_month_costs)
       
-      
-      //var org_current_week_total = 0.00
-      //_.each(org_current_week_costs, function(item) {
-      //  org_current_week_total += item['metrics'][metric]
-      //})
-  
-      //var org_previous_week_total = 0.00
-      //_.each(org_previous_week_costs, function(item){
-      //  org_previous_week_total += item['metrics'][metric]
-      //})
-  
-      //var org_previous_month_total = 0.00
-      //_.each(org_previous_month_costs, function(item){
-      //  org_previous_month_total += item['metrics'][metric]
-      //})
-  
-      //var org_current_month_total = 0.00
-      //_.each(org_current_month_costs, function(item){
-      //  org_current_month_total += item['metrics'][metric]
-      //})
+      var org_current_week_total = _.reduce(_.pluck(_.pluck(org_current_week_costs, 'metrics'), metric), function(memo, num){ return memo + num; }, 0);
+      console.log("Step 2 - Total Costs CW: " , org_current_week_total)
+      var org_previous_week_total = _.reduce(_.pluck(_.pluck(org_previous_week_costs, 'metrics'), metric), function(memo, num){ return memo + num; }, 0);
+      console.log("Step 2 - Total Costs PW: " , org_previous_week_total)
+      var org_previous_month_total = _.reduce(_.pluck(_.pluck(org_previous_month_costs, 'metrics'), metric), function(memo, num){ return memo + num; }, 0);
+      console.log("Step 2 - Total Costs PM: " , org_previous_month_total)
+      var org_current_month_total = _.reduce(_.pluck(_.pluck(org_current_month_costs, 'metrics'), metric), function(memo, num){ return memo + num; }, 0);
+      console.log("Step 2 - Total Costs CM: " , org_current_month_total)
 
       // Convert the cash money
       org_current_week_total = org_current_week_total / conversion_rate
+      console.log("Step 2 - Total Costs CW - Converted: " , org_current_week_total)
       org_previous_week_total = org_previous_week_total / conversion_rate
+      console.log("Step 2 - Total Costs PW - Converted: " , org_previous_week_total)
       org_previous_month_total = org_previous_month_total / conversion_rate
+      console.log("Step 2 - Total Costs PM - Converted: " , org_previous_month_total)
       org_current_month_total = org_current_month_total / conversion_rate
+      console.log("Step 2 - Total Costs CM - Converted: " , org_current_month_total)
       
       var org_weekly_avg = 0.00
       if (org_current_week_costs.length > 0){
@@ -683,23 +698,6 @@ script "js_report", type: "javascript" do
     var monthly_change = 0
     if (current_month_total > 0){
       monthly_change = Number(( current_month_total - previous_month_total) / previous_month_total * 100).toFixed(1)
-    }
-
-    function formatNumber(number, separator)
-    {
-      var numString = number.toString()
-      var result = ''
-      while (numString.length > 3)
-      {
-        var chunk = numString.substr(-3)
-        numString = numString.substr(0, numString.length - 3)
-        result = separator + chunk + result
-      }
-      if (numString.length > 0)
-      {
-        result = numString + result
-      }
-      return result
     }
 
     // Format costs with currency symbol and thousands separator
@@ -819,7 +817,7 @@ script "js_six_month_cost_request", type: "javascript" do
 end
 
 script "js_generate_report", type: "javascript" do
-  parameters "ds_previous_six_month_costs","param_cost_metric","ds_report","param_graph_dimension","ds_currency_code","ds_currency_reference","ds_currency_conversion"
+  parameters "ds_previous_six_month_costs","param_cost_metric","ds_report","param_graph_dimension","ds_currency_code","ds_currency_reference","ds_currency_conversion","ds_filtered_user_organizations"
   result "report"
   code <<-EOS
     // format the date for the `monthly` API
@@ -943,7 +941,12 @@ script "js_generate_report", type: "javascript" do
     } else {
       var cur = "USD"
     }
+
+    // Flatten filtered orgs
+    var includedOrgs = _.pluck(ds_filtered_user_organizations, 'name').join('; ')
+
     report = {
+      includedOrgs: includedOrgs
       currentMonthName: currentMonthName,
       billingCenters: billingCenters,
       chartType: "cht=bvs",
@@ -976,7 +979,7 @@ policy "policy_scheduled_report" do
 ## Billing Centers: {{ data.billingCenters }}
 ### Cost Metric: {{ parameters.param_cost_metric }}
 ### Chart Dimension: {{ parameters.param_graph_dimension }}
-
+### Included Organizations: {{ data.includedOrgs }}
 ### Currency Converted to: {{ parameters.param_final_currency }} 
 
 ![Spending Overview Chart](https://image-charts.com/chart?{{ data.chartType }}&{{ data.chartSize }}&{{ data.chartTitle }}&{{ data.chartAxis }}&{{ data.chartXAxis }}&{{ data.chartAxisFormat }}&{{ data.chartData }}&{{ data.chartCategories }}&{{ data.chartColors }}&{{ data.chartKeyLocation }}&{{ data.chartExtension }} "Spending Overview Chart")
