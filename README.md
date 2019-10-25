@@ -13,10 +13,9 @@ Please contact sales@rightscale.com to learn more.
 - [AWS Reserved Instance Reservation Coverage](./cost/aws/reserved_instances/coverage/)
 - [AWS Reserved Instances Report by Billing Center](./cost/aws/reserved_instances/report_by_bc)
 - [AWS Reserved Instance Recommendations](./cost/aws/reserved_instances/recommendations)
-- [Azure Superseded Instance Types](./cost/azure/superseded_instance_types/)
 - [Budget Alerts](./cost/budget_alerts/)
 - [Downsize Instances](./cost/downsize_instance/)
-- [Unattached Volumes Policy](./cost/volumes/unattached_volumes/)
+- [Unattached Volumes](./cost/volumes/unattached_volumes/)
 - [Old Snapshots](./cost/volumes/old_snapshots/)
 - [Schedule Instances](./cost/schedule_instances/)
 - [Unattached IP Addresses](./cost/unattached_addresses/)
@@ -65,16 +64,17 @@ Please contact sales@rightscale.com to learn more.
 - [Security Group: Rules Without Description](./security/security_groups/rules_without_descriptions/)
 - [Security Group: High Open Ports](./security/security_groups/high_open_ports/)
 - [Security Groups With Ports Open To The World](./security/security_groups/world_open_ports)
-- [AWS Open Buckets Policy](./security/storage/aws/public_buckets/)
-- [Google Open Buckets Policy](./security/storage/google/public_buckets/)
-- [AWS Unencrypted Volumes Policy](./security/aws/ebs_unencrypted_volumes/)
+- [AWS Open Buckets](./security/storage/aws/public_buckets/)
+- [AWS Unencrypted Volumes](./security/aws/ebs_unencrypted_volumes/)
 - [AWS Internet-facing ELBs & ALBs](./security/aws/loadbalancer_internet_facing/)
 - [AWS Unencrypted RDS Instances](./security/aws/rds_unencrypted/)
 - [AWS Publicly Accessible RDS Instances](./security/aws/rds_publicly_accessible/)
 - [AWS Unencrypted S3 Buckets](./security/aws/unencrypted_s3_buckets/)
-- [Check for publicly accessible Azure SQL Managed Instance](./security/azure/sql_publicly_accessible_managed_instance)
 - [AWS Unencrypted ELB Listeners (CLB)](./security/aws/clb_unencrypted/)
 - [AWS Unencrypted ELB Listeners (ALB/NLB)](./security/aws/elb_unencrypted/)
+- [Azure Publicly Accessible Managed SQL Instance](./security/azure/sql_publicly_accessible_managed_instance)
+- [Google Open Buckets](./security/storage/google/public_buckets/)
+
 
 ### Compliance
 
@@ -100,7 +100,7 @@ Please contact sales@rightscale.com to learn more.
 
 ### Operational
 
-- [AWS Cloud Credentials Rotation Policy](./operational/cloud_credentials/aws)
+- [AWS Cloud Credentials Rotation](./operational/cloud_credentials/aws)
 - [No Recent Snapshots](./operational/snapshots/)
 - [AWS RDS Backup Settings](./operational/dbaas/aws/rds_backup)
 - [AWS VPC Name Tag Sync](./operational/aws/vpc_name_sync)
