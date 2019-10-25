@@ -57,6 +57,7 @@ Please contact sales@rightscale.com to learn more.
 - [Google Unused CloudSQL Instances](./cost/google/unused_cloudsql_instances)
 - [Azure Unused SQL Databases](./cost/azure/unused_sql_databases/)
 - [Monthly Actual v. Budgeted Spend Report](./cost/budget_v_actual/)
+- [New Service Usage](./cost/new_service_usage/)
 
 ### Security
 
