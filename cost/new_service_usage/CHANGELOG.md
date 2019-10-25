@@ -1,4 +1,4 @@
-# New Service Usage Policy Changelog
+# Changelog
 
 ## v1.0
 
