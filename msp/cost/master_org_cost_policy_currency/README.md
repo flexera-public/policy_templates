@@ -13,7 +13,8 @@ Current - Monthly: Total costs during current (incomplete) month.
 We recommend running this policy on a weekly cadence and applying it to your master account.
 
 _Note 1: The last 3 days of data in the current week or month will contain incomplete data._  
-_Note 2: The account you apply the policy to is unimportant as Optima metrics are scoped to the Org._
+_Note 2: The account you apply the policy to is unimportant as Optima metrics are scoped to the Org._  
+_Note 3: Exchange rates are calculated at execution time using [https://exchangeratesapi.io/](https://exchangeratesapi.io/)._  
 
 ## Cost Metrics
 

@@ -8,11 +8,13 @@ Total cost during previous full week (Monday-Sunday) and previous full month.
 Total cost during current (incomplete) week and month.  
 We recommend running this policy on a weekly cadence and applying it to your master account.
 _Note 1: The last 3 days of data in the current week or month will contain incomplete data._  
-_Note 2: The account you apply the policy to is unimportant as Optima metrics are scoped to the Org._
+_Note 2: The account you apply the policy to is unimportant as Optima metrics are scoped to the Org._  
+_Note 3: Exchange rates are calculated at execution time using [https://exchangeratesapi.io/](https://exchangeratesapi.io/)._  
 See [README](https://github.com/rightscale/policy_templates/tree/master/msp/cost/master_org_cost_policy) for more details"
 long_description "Version: 1.0"
 severity "low"
 category "Cost"
+tenancy "single"
 
 ###############################################################################
 # Permissions
@@ -136,7 +138,6 @@ datasource "ds_currency_code" do
   result do
     encoding "json"
     field "org_id", val(iter_item,"org_id")
-    #field "org_href", val(iter_item, "href")
     field "org_name", val(iter_item, "name")
     field "id", jmes_path(response,"id")
     field "value", jmes_path(response,"value")
@@ -157,8 +158,6 @@ datasource "ds_billing_centers" do
     encoding "json"
     collect jmes_path(response,"[*]") do
       field "org_id", val(iter_item,"org_id")
-      #field "org_href", val(iter_item, "href")
-      #field "org_name", val(iter_item, "name")
       field "href", jmes_path(col_item,"href")
       field "id", jmes_path(col_item,"id")
       field "name", jmes_path(col_item,"name")
@@ -177,9 +176,7 @@ datasource "ds_current_week_costs" do
   result do
     encoding "json"
     collect jmes_path(response,"rows[*]") do
-      #field "dimensions", jmes_path(col_item,"dimensions")
       field "metrics", jmes_path(col_item,"metrics")
-      #field "timestamp", jmes_path(col_item,"timestamp")
       field "org_id", val(iter_item,"org_id")
     end
   end
@@ -193,9 +190,7 @@ datasource "ds_previous_week_costs" do
   result do
     encoding "json"
     collect jmes_path(response,"rows[*]") do
-      #field "dimensions", jmes_path(col_item,"dimensions")
       field "metrics", jmes_path(col_item,"metrics")
-      #field "timestamp", jmes_path(col_item,"timestamp")
       field "org_id", val(iter_item,"org_id")
     end
   end
@@ -209,9 +204,7 @@ datasource "ds_current_month_costs" do
   result do
     encoding "json"
     collect jmes_path(response,"rows[*]") do
-      #field "dimensions", jmes_path(col_item,"dimensions")
       field "metrics", jmes_path(col_item,"metrics")
-      #field "timestamp", jmes_path(col_item,"timestamp")
       field "org_id", val(iter_item,"org_id")
     end
   end
@@ -225,9 +218,7 @@ datasource "ds_previous_month_costs" do
   result do
     encoding "json"
     collect jmes_path(response,"rows[*]") do
-      #field "dimensions", jmes_path(col_item,"dimensions")
       field "metrics", jmes_path(col_item,"metrics")
-      #field "timestamp", jmes_path(col_item,"timestamp")
       field "org_id", val(iter_item,"org_id")
     end
   end
@@ -363,7 +354,6 @@ script "js_current_week_cost_request", type: "javascript" do
     
     var billing_center_ids = []
     var org_billing_centers = _.filter(ds_billing_centers, function(bc){ return bc.org_id == rs_org_id })
-    console.log("ORGBC"+JSON.stringify(org_billing_centers))
     var top_billing_centers = _.reject(org_billing_centers, function(bc){ return bc.parent_id != null });
     billing_center_ids = _.map(top_billing_centers, function(value, key){ return value.id });
 
@@ -655,7 +645,6 @@ script "js_report", type: "javascript" do
 
     var metric = cost_metric[param_cost_metric]
     var org_ids = _.unique(_.pluck(ds_filtered_user_organizations, 'org_id'))
-    console.log("Step 1 - Orgs: " , org_ids)
     var current_week_total = 0.00
     var previous_week_total = 0.00
     var previous_month_total = 0.00
@@ -665,39 +654,23 @@ script "js_report", type: "javascript" do
 
     _.each(ds_filtered_user_organizations, function(org) {
       var org_currency_code = org["currency"]
-      console.log("Step 2 - Org: " + org["org_id"])
-      console.log("Step 2 - Org Currency: " + org_currency_code)
       
-      //var conversion_rate = ds_currency_conversion["rates"][org_currency_code]
       var conversion_rate = org["conversion_rate"]
-      console.log("Step 2 - Org Conversion Rate: " + conversion_rate)
       var org_current_week_costs = _.where(ds_current_week_costs, {"org_id": org["org_id"]})
-      //console.log("Step 2 - Costs CW: " , org_current_week_costs)
       var org_previous_week_costs = _.where(ds_previous_week_costs, {"org_id": org["org_id"]})
-      //console.log("Step 2 - Costs PW: " , org_previous_week_costs)
       var org_previous_month_costs = _.where(ds_previous_month_costs, {"org_id": org["org_id"]})
-      //console.log("Step 2 - Costs PM: " , org_previous_month_costs)
       var org_current_month_costs = _.where(ds_current_month_costs, {"org_id": org["org_id"]})
-      //console.log("Step 2 - Costs CM: " , org_current_month_costs)
       
       var org_current_week_total = _.reduce(_.pluck(_.pluck(org_current_week_costs, 'metrics'), metric), function(memo, num){ return memo + num; }, 0);
-      console.log("Step 2 - Total Costs CW: " , org_current_week_total)
       var org_previous_week_total = _.reduce(_.pluck(_.pluck(org_previous_week_costs, 'metrics'), metric), function(memo, num){ return memo + num; }, 0);
-      console.log("Step 2 - Total Costs PW: " , org_previous_week_total)
       var org_previous_month_total = _.reduce(_.pluck(_.pluck(org_previous_month_costs, 'metrics'), metric), function(memo, num){ return memo + num; }, 0);
-      console.log("Step 2 - Total Costs PM: " , org_previous_month_total)
       var org_current_month_total = _.reduce(_.pluck(_.pluck(org_current_month_costs, 'metrics'), metric), function(memo, num){ return memo + num; }, 0);
-      console.log("Step 2 - Total Costs CM: " , org_current_month_total)
 
-      // Convert the cash money
+      // Convert the currency
       org_current_week_total = org_current_week_total / conversion_rate
-      console.log("Step 2 - Total Costs CW - Converted: " , org_current_week_total)
       org_previous_week_total = org_previous_week_total / conversion_rate
-      console.log("Step 2 - Total Costs PW - Converted: " , org_previous_week_total)
       org_previous_month_total = org_previous_month_total / conversion_rate
-      console.log("Step 2 - Total Costs PM - Converted: " , org_previous_month_total)
       org_current_month_total = org_current_month_total / conversion_rate
-      console.log("Step 2 - Total Costs CM - Converted: " , org_current_month_total)
       
       var org_weekly_avg = 0.00
       if (org_current_week_costs.length > 0){
@@ -899,15 +872,14 @@ script "js_generate_report", type: "javascript" do
     var shortMonthNames = ["None","Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
     var currentMonth = getFormattedMonthlyDate(now);
     var currentMonthName = longMonthNames[parseInt(currentMonth.split('-')[1])];
+
     _.each(ds_previous_six_month_costs, function(row){
       var yearMonth = row['timestamp'].split('-')[0] + '-' + row['timestamp'].split('-')[1]
       var numberMonth = row['timestamp'].split('-')[1]
       var stringMonth = shortMonthNames[parseInt(numberMonth)]
-      // CONVERT CASH MONEY HERE
       var conversion_rate = _.pluck(_.where(ds_filtered_user_organizations, {"org_id": row["org_id"]}), "conversion_rate")
-      //var conversion_rate = org["conversion_rate"]
       var cost = row['metrics'][metric] / conversion_rate
-      //
+
       collated_data.push({
         stringMonth: stringMonth,
         yearMonth: yearMonth,
@@ -936,9 +908,7 @@ script "js_generate_report", type: "javascript" do
     
     // get current month data
     var current_month_costs = (_.where(collated_data, {yearMonth: currentMonth}));
-    
     _.each(current_month_costs, function(line){ current_month_totals.push(line.cost)})
-    
     var current_month_total = _.reduce(current_month_totals, function(memo, num){ return memo + num; }, 0);
     
     // build out the chart data for the top categories
@@ -1016,11 +986,12 @@ policy "policy_scheduled_report" do
     summary_template "Multi-Organization Full Cost Scheduled Report"
     detail_template <<-EOS
 # Full Cost Report for {{ data.currentMonthName }}
-## Billing Centers: {{ data.billingCenters }}
+### Included Organizations: {{ data.includedOrgs }}
+
 ### Cost Metric: {{ parameters.param_cost_metric }}
 ### Chart Dimension: {{ parameters.param_graph_dimension }}
-### Included Organizations: {{ data.includedOrgs }}
-### Currency Converted to: {{ parameters.param_final_currency }} 
+
+### Currency Converted to: {{ parameters.param_final_currency }}*
 
 ![Spending Overview Chart](https://image-charts.com/chart?{{ data.chartType }}&{{ data.chartSize }}&{{ data.chartTitle }}&{{ data.chartAxis }}&{{ data.chartXAxis }}&{{ data.chartAxisFormat }}&{{ data.chartData }}&{{ data.chartCategories }}&{{ data.chartColors }}&{{ data.chartKeyLocation }}&{{ data.chartExtension }} "Spending Overview Chart")
 
@@ -1032,7 +1003,8 @@ policy "policy_scheduled_report" do
   
 ### For more detailed cost information, visit [Optima](https://analytics.rightscale.com/orgs/{{ rs_org_id }}/dashboard).
   
-For more information on this report, please view the [README](https://github.com/rightscale/policy_templates/tree/master/cost/master_org_cost_policy_currency).
+For more information on this report, please view the [README](https://github.com/rightscale/policy_templates/tree/master/cost/master_org_cost_policy_currency).<br>
+*Exchange rates are calculated at execution time from [https://exchangeratesapi.io/](https://exchangeratesapi.io/)
 ___
 ###### Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }}) within Org: {{ rs_org_name }} (Org ID: {{ rs_org_id }})
 EOS
