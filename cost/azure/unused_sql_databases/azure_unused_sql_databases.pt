@@ -1,0 +1,346 @@
+name "Azure Unused SQL Databases"
+rs_pt_ver 20180301
+type "policy"
+short_description "Checks Azure unused SQL databases based on DB Connections, and delete them after user approval. See the [README](https://github.com/flexera/policy_templates/tree/master/cost/azure/unused_sql_databases/) and [docs.rightscale.com/policies](http://docs.rightscale.com/policies/) to learn more."
+long_description "Version: 1.0"
+severity "low"
+category "Cost"
+
+###############################################################################
+# Parameters
+###############################################################################
+
+parameter "param_email" do
+  type "list"
+  label "Email addresses to notify"
+  description "Email addresses of the recipients you wish to notify when new incidents are created."
+end
+
+parameter "param_azure_tenant_id" do
+  type "string"
+  label "Azure AD Tenant ID"
+  description "The Azure AD Tenant ID used for the Azure API Authentication."
+  category "Azure"
+end
+
+parameter "param_azure_sub" do
+  type "string"
+  label "Azure Subscription ID"
+  description "The Azure Subscription ID used for the Azure API."
+  category "Azure"
+end
+
+parameter "param_exclusion_tag_key" do
+  type "string"
+  category "User Inputs"
+  label "Exclusion Tag Key"
+  description "Azure-native SQL Database tag key to ignore databases. Only supply the tag key. The policy assumes that the tag value is irrelevant."
+end
+
+###############################################################################
+# Permissions
+###############################################################################
+
+permission "perm_read_creds" do
+  actions   "rs_cm.show_sensitive","rs_cm.index_sensitive"
+  resources "rs_cm.credentials"
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+auth "azure_auth", type: "oauth2" do
+  token_url join(["https://login.microsoftonline.com/",$param_azure_tenant_id,"/oauth2/token"])
+  grant type: "client_credentials" do
+    client_id cred("AZURE_APPLICATION_ID")
+    client_secret cred("AZURE_APPLICATION_KEY")
+    additional_params do {
+      "resource" => "https://management.azure.com/"
+    } end
+  end
+end
+
+###############################################################################
+# Pagination
+###############################################################################
+pagination "azure_pagination" do
+  get_page_marker do
+    body_path "nextLink"
+  end
+  set_page_marker do
+    uri true
+  end
+end
+
+###############################################################################
+# Datasources
+###############################################################################
+
+#https://docs.microsoft.com/en-us/rest/api/resources/resources/list
+datasource "ds_azure_sql_databases" do
+  request do
+    auth $azure_auth
+    pagination $azure_pagination
+    host "management.azure.com"
+    path join(["/subscriptions/", $param_azure_sub, "/resources"])
+    query "api-version","2019-08-01"
+    query "$filter", "resourceType eq 'Microsoft.Sql/servers/databases'"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+      collect jmes_path(response, "value") do
+        field "id", jmes_path(col_item,"id")
+        field "name", jmes_path(col_item,"name")
+        field "location", jmes_path(col_item,"location")
+        field "type", jmes_path(col_item,"type")
+        field "kind", jmes_path(col_item,"kind")
+        field "sku" , jmes_path(col_item,"sku")
+        field "tags", jmes_path(col_item,"tags")
+    end
+  end
+end
+
+datasource "ds_azure_sql_database_metrics" do
+  iterate $ds_azure_sql_databases
+  request do
+    run_script $js_utilization_request, val(iter_item,"id")
+  end
+  result do
+    encoding "json"
+      collect jmes_path(response, "value") do
+        field "id", val(iter_item,"id")
+        field "location", val(iter_item,"location")   
+        field "name", val(iter_item,"name")
+        field "kind", val(iter_item,"kind")
+        field "type", val(iter_item,"type")
+        field "sku" , val(iter_item,"sku")
+        field "unit", jmes_path(col_item,"unit")
+        field "timeseries", jmes_path(col_item,"timeseries")
+    end
+  end
+end
+
+datasource "ds_merged_metrics" do
+  run_script $js_merged_metrics, $ds_azure_sql_databases, $ds_azure_sql_database_metrics, $param_exclusion_tag_key
+end
+
+###############################################################################
+# Scripts
+###############################################################################
+
+# Build the API request object dynamically
+script "js_utilization_request", type: "javascript" do
+  parameters "resource_id"
+  result "request"
+  code <<-EOS
+    var end_date_tmp = new Date()
+    end_date_tmp.setMilliseconds(999)
+    end_date_tmp.setSeconds(59)
+    end_date_tmp.setMinutes(59)
+    end_date_tmp.setHours(23)
+    var end_date = new Date(end_date_tmp).toISOString()
+
+    var start_date_tmp = new Date(new Date().setDate(new Date().getDate() - 30))
+    start_date_tmp.setMilliseconds(0)
+    start_date_tmp.setSeconds(0)
+    start_date_tmp.setMinutes(0)
+    var start_date = new Date(start_date_tmp).toISOString()
+
+    var sTimespan = start_date  + "/" + end_date;
+
+    var request = {
+      auth: "azure_auth",
+      verb : "GET",
+      scheme : "https",
+      host : "management.azure.com",
+      path : "" + resource_id + "/providers/microsoft.insights/metrics",
+      query_params: {
+        "api-version" : "2018-01-01",
+        "timespan" : sTimespan,
+        "metricnames" : "connection_successful"
+        "aggregation" : "Average,count",
+        "interval" :  "P1D"                    //Dailey
+      },
+      headers: {
+        "User-Agent" : "RS Policies"
+      }
+    }
+  EOS
+end
+
+script "js_merged_metrics", type: "javascript" do
+  parameters "db_resources", "databases_metrics", "exclusion_tag"
+  result "result"
+  code <<-EOS
+    var result = [];
+
+    //exclude the database with the exclution tags, and the system databases
+    for(i=0; i< databases_metrics.length; i++){
+      if(!(_.has(databases_metrics[i].tags, exclusion_tag) || databases_metrics[i].kind.toLowerCase().indexOf(",system") > -1)){        
+        //Find the Resource groupe
+        var aTemp = databases_metrics[i].id.split("/resourceGroups/")
+        var resource_group="";
+        if(aTemp.length > 1){
+          aTemp = aTemp[1].split("/");
+          resource_group = aTemp[0];
+        }else{
+          resource_group = "";
+        }
+        //now find the metrics for the devices
+        var objMetric = databases_metrics[i];
+		var total = 0;
+        if (typeof objMetric == "object" && typeof objMetric.timeseries[0].data == "object"){
+          var ts_data =  objMetric.timeseries[0].data;
+          for (x=0; x < ts_data.length; x++) {
+            total += ts_data[x].count;
+          }
+          if(total == 0){
+            result.push({
+              id: databases_metrics[i].id,
+		      location: databases_metrics[i].location,
+              name: databases_metrics[i].name,
+              resource_group: resource_group,
+              kind: databases_metrics[i].kind,
+              type: databases_metrics[i].type,
+              sku: databases_metrics[i].sku,
+              unit: databases_metrics[i].unit
+            })
+          }
+        }
+      }	  
+    }
+  EOS
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "policy_azure_db_utilization" do
+  validate $ds_merged_metrics do
+    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} Azure Unused SQL Databases"
+    detail_template <<-EOS
+# Azure Unused SQL Databases
+
+| Region | Name | Resource Group | Kind | Type | SKU - Name | SKU - Tier | SKU - Capacity |
+| ------ | ---- | -------------- | ---- | ---- | -----------| ---------- | -------------- |
+{{ range data -}}
+| {{.location}} | {{.name}} | {{.resource_group}} | {{.kind}} | {{.type}} | {{.sku.name}} | {{.sku.tier}} | {{.sku.capacity}} |
+{{ end -}}
+
+___
+###### Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }}) within Org: {{ rs_org_name }} (Org ID: {{ rs_org_id }})
+EOS
+    escalate $esc_email_report
+    escalate $esc_delete_unused_sql_databases_approval
+    check eq(size(data), 0)
+  end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_email_report" do
+  email $param_email
+end
+
+escalation "esc_delete_unused_sql_databases_approval" do
+  request_approval do
+    label "Approve resource Delete"
+    description "Approve escalation to run RightScale Cloud Workflow to delete unused SQL databases."
+    parameter "approval_resion" do
+      type "string"
+      label "Reason for Approval"
+      description "Explain why are you approving the action."
+    end
+  end
+  run "delete_unused_sql_databases", data, $param_azure_tenant_id
+end
+
+###############################################################################
+# Cloud Workflow
+###############################################################################
+
+define delete_unused_sql_databases($data, $param_azure_tenant_id) return $all_responses do
+  call get_access_token($param_azure_tenant_id) retrieve $access_token
+
+  $all_responses = []
+  foreach $item in $data do
+    sub on_error: skip do
+      $response = http_request(
+        verb: "delete",
+        host: "management.azure.com",
+        https: true,
+        href: $item["id"],
+        query_strings: {
+          "api-version": "2017-10-01-preview"
+        },
+        headers: {
+          "cache-control": "no-cache",
+          "content-type": "application/json",
+          "authorization": "Bearer " + $access_token
+        }
+      )
+      call sys_log('Deleted Azure Unused SQL databases: ',to_s($response))
+      $all_responses << $response
+    end
+  end
+end
+
+define get_access_token($param_azure_tenant_id) return $access_token do
+  $$debug=true
+  $client_id = cred("AZURE_APPLICATION_ID")
+  call url_encode(cred("AZURE_APPLICATION_KEY")) retrieve $client_secret
+
+  $body_string = "grant_type=client_credentials&resource=https://management.core.windows.net/&client_id="+$client_id+"&client_secret="+$client_secret
+
+  $auth_response = http_post(
+    url: join(["https://login.microsoftonline.com/",$param_azure_tenant_id,"/oauth2/token?api-version=1.0"]),
+    headers : {
+      "cache-control":"no-cache",
+      "content-type":"application/x-www-form-urlencoded"
+    },
+    body:$body_string
+  )
+
+  $auth_response_body = $auth_response["body"]
+  $access_token = $auth_response_body["access_token"]
+end
+
+define url_encode($string) return $encoded_string do
+  $encoded_string = $string
+  $encoded_string = gsub($encoded_string, " ", "%20")
+  $encoded_string = gsub($encoded_string, "!", "%21")
+  $encoded_string = gsub($encoded_string, "#", "%23")
+  $encoded_string = gsub($encoded_string, "$", "%24")
+  $encoded_string = gsub($encoded_string, "&", "%26")
+  $encoded_string = gsub($encoded_string, "'", "%27")
+  $encoded_string = gsub($encoded_string, "(", "%28")
+  $encoded_string = gsub($encoded_string, ")", "%29")
+  $encoded_string = gsub($encoded_string, "*", "%2A")
+  $encoded_string = gsub($encoded_string, "+", "%2B")
+  $encoded_string = gsub($encoded_string, ",", "%2C")
+  $encoded_string = gsub($encoded_string, "/", "%2F")
+  $encoded_string = gsub($encoded_string, ":", "%3A")
+  $encoded_string = gsub($encoded_string, ";", "%3B")
+  $encoded_string = gsub($encoded_string, "=", "%3D")
+  $encoded_string = gsub($encoded_string, "?", "%3F")
+  $encoded_string = gsub($encoded_string, "@", "%40")
+  $encoded_string = gsub($encoded_string, "[", "%5B")
+  $encoded_string = gsub($encoded_string, "]", "%5D")
+end
+
+define sys_log($subject, $detail) do
+  if $$debug
+    rs_cm.audit_entries.create(
+      notify: "None",
+      audit_entry: {
+        auditee_href: @@account,
+        summary: "Azure unused SQL databases "+ $subject,
+        detail: $detail
+      }
+    )
+  end
+end
