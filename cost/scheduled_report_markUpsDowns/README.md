@@ -2,9 +2,9 @@
 
 ### What it does
 
-This Policy Template leverages the the Righscale cost API's to import Cloud vendor services import service costs and add a markup or Mardown by category.   
+This Policy Template leverages the the Righscale cost API's to import Cloud vendor services import service costs and add a markup or markdown by category.   
 
-### Prerequesites
+### Prerequisites
 
 - As this policy invokes the Rightscale API´s, the user invoquing the policy must have access to the Optima module and and copmponents.
 
@@ -26,23 +26,22 @@ This policy has the following input parameters required when launching the polic
 - *Email list* - Email addresses of the recipients you wish to notify
 - *Billing Center List* - List of top level Billing Center names you want to report on.  Names must be exactly as shown in Optima.  
 Leave the field blank to report on all top level Billing Centers.
-- *Cost Metric* -  See Cost Metrics above for details on selection.
-- *Compute mark up or Mark Down percentage* - mark up for the Compute category in number value (20 being 20% markup -20 being a 20% markdown. Leave 0 to apply the general markUp).
-- *Application Service mark up or Mark Down percentage* - mark up for the Application service category in number value (20 being 20% markup -20 being a 20% markdown. Leave 0 to apply the general markUp).
-- *Database mark up or Mark Down percentage* - mark up for the Database category in number value (20 being 20% markup -20 being a 20% markdown. Leave 0 to apply the general markUp).
-- *Network mark up or Mark Down percentage* - mark up for the Network category in number value (20 being 20% markup -20 being a 20% markdown. Leave 0 to apply the general markUp).
-- *Storage mark up or Mark Down percentage* - mark up for the Storage category in number value (20 being 20% markup -20 being a 20% markdown. Leave 0 to apply the general markUp).
-- *Reserved Instances mark up or Mark Down percentage* - mark up for the Reserved Instances category in number value (20 being 20% markup -20 being a 20% markdown. Leave 0 to apply the general markUp).
+- *Cost Metric* - See cost metrics above for details on selection.
+- *Compute markup or Markdown percentage* - markup for the compute category in number value (20 being 20% markup -20 being a 20% markdown. Leave 0 to apply the general markup).
+- *Application Service markup or Markdown percentage* - markup for the Application service category in number value (20 being 20% markup -20 being a 20% markdown. Leave 0 to apply the general markup).
+- *Database markup or Markdown percentage* - markup for the Database category in number value (20 being 20% markup -20 being a 20% markdown. Leave 0 to apply the general markup).
+- *Network markup or Markdown percentage* - markup for the Network category in number value (20 being 20% markup -20 being a 20% markdown. Leave 0 to apply the general markup).
+- *Storage markup or Markdown percentage* - markup for the Storage category in number value (20 being 20% markup -20 being a 20% markdown. Leave 0 to apply the general markup).
+- *Reserved Instances markup or Markdown percentage* - markup for the Reserved Instances category in number value (20 being 20% markup -20 being a 20% markdown. Leave 0 to apply the general markup).
 - *GENERAL MARKUP OR MARKDOWN PERCENTAGE* - general markup for the rest of the categories in number value (20 being 20% markup -20 being a 20% markdown). Any category that has 0 as a markup percentage will have this value as a Markup/down
-- *Admin mark up or Mark Down percentage* - mark up for the Admin category in number value (20 being 20% markup -20 being a 20% markdown. Leave 0 to apply the general markUp).
-- *Artificial Intelligence mark up or Mark Down percentage* - mark up for the Artificial Intelligence category in number value (20 being 20% markup -20 being a 20% markdown. Leave 0 to apply the general markUp).
-- *Application mark up or Mark Down percentage* - mark up for the Artificial Intelligence category in number value (20 being 20% markup -20 being a 20% markdown. Leave 0 to apply the general markUp).
-- *Marketplace mark up or Mark Down percentage* - mark up for the Marketplace category in number value (20 being 20% markup -20 being a 20% markdown. Leave 0 to apply the general markUp).
-- *Streaming mark up or Mark Down percentage* - mark up for the Streaming category in number value (20 being 20% markup -20 being a 20% markdown. Leave 0 to apply the general markUp).
-- *Support mark up or Mark Down percentage* - mark up for the support category in number value (20 being 20% markup -20 being a 20% markdown. Leave 0 to apply the general markUp).
-- *IOT mark up or Mark Down percentage* - mark up for the IOT category in number value (20 being 20% markup -20 being a 20% markdown. Leave 0 to apply the general markUp).
-- *Other mark up or Mark Down percentage* - mark up for the Other category in number value (20 being 20% markup -20 being a 20% markdown. Leave 0 to apply the general markUp).
-
+- *Admin markup or Markdown percentage* - markup for the Admin category in number value (20 being 20% markup -20 being a 20% markdown. Leave 0 to apply the general markup).
+- *Artificial Intelligence markup or Markdown percentage* - markup for the Artificial Intelligence category in number value (20 being 20% markup -20 being a 20% markdown. Leave 0 to apply the general markup).
+- *Application markup or Markdown percentage* - markup for the Artificial Intelligence category in number value (20 being 20% markup -20 being a 20% markdown. Leave 0 to apply the general markup).
+- *Marketplace markup or Markdown percentage* - markup for the Marketplace category in number value (20 being 20% markup -20 being a 20% markdown. Leave 0 to apply the general markup).
+- *Streaming markup or Markdown percentage* - markup for the Streaming category in number value (20 being 20% markup -20 being a 20% markdown. Leave 0 to apply the general markup).
+- *Support markup or Markdown percentage* - markup for the support category in number value (20 being 20% markup -20 being a 20% markdown. Leave 0 to apply the general markup).
+- *IOT markup or Markdown percentage* - markup for the IOT category in number value (20 being 20% markup -20 being a 20% markdown. Leave 0 to apply the general markup).
+- *Other markup or Markdown percentage* - markup for the Other category in number value (20 being 20% markup -20 being a 20% markdown. Leave 0 to apply the general markup).
 
 ### Required Permissions
 
@@ -52,7 +51,6 @@ This policy requires permissions to access RightScale resources (Optima).  Befor
 
 ### Supported Clouds
 
-
 - AWS
 - Azure
 - Google
@@ -60,3 +58,5 @@ This policy requires permissions to access RightScale resources (Optima).  Befor
 ### Cost
 
 This Policy Template does not incur any cloud costs.
+
+
