@@ -21,6 +21,7 @@ Please contact sales@rightscale.com to learn more.
 - [Schedule Instances](./cost/schedule_instances/)
 - [Unattached IP Addresses](./cost/unattached_addresses/)
 - [Scheduled Report](./cost/scheduled_reports/)
+- [Scheduled Report With Estimates](./cost/scheduled_reports_with_estimates/)
 - [Azure Hybrid Use Benefit](./cost/azure/hybrid_use_benefit/)
 - [Azure Reserved Instance Utilization](./cost/azure/reserved_instances/utilization/)
 - [Azure Reserved Instance Recommendations](./cost/azure/reserved_instances/recommendations)
@@ -42,6 +43,7 @@ Please contact sales@rightscale.com to learn more.
 - [AWS Bucket Size Check](./cost/aws/s3_bucket_size/)
 - [AWS Idle Compute Instances](./cost/aws/idle_compute_instances/)
 - [Google Idle Compute Instances](./cost/google/idle_compute_instances/)
+- [Running Instance Count Anomaly](./cost/instance_anomaly/)
 - [AWS Object Storage Optimization](./cost/aws/object_storage_optimization/)
 - [AWS Unused RDS Instances](./cost/aws/unused_rds/)
 - [AWS RDS Instances RightSizing](./cost/aws/rds_instance_cloudwatch_utilization)
@@ -53,6 +55,7 @@ Please contact sales@rightscale.com to learn more.
 - [Azure Idle Compute Instances](./cost/azure/idle_compute_instances/)
 - [Google Rightsize CloudSQL Instances](./cost/google/cloudsql_rightsizing/)
 - [Google Unused CloudSQL Instances](./cost/google/unused_cloudsql_instances)
+- [Monthly Actual v. Budgeted Spend Report](./cost/budget_v_actual/)
 
 ### Security
 
@@ -68,6 +71,8 @@ Please contact sales@rightscale.com to learn more.
 - [AWS Publicly Accessible RDS Instances](./security/aws/rds_publicly_accessible/)
 - [AWS Unencrypted S3 Buckets](./security/aws/unencrypted_s3_buckets/)
 - [Check for publicly accessible Azure SQL Managed Instance](./security/azure/sql_publicly_accessible_managed_instance)
+- [AWS Unencrypted ELB Listeners (CLB)](./security/aws/clb_unencrypted/)
+- [AWS Unencrypted ELB Listeners (ALB/NLB)](./security/aws/elb_unencrypted/)
 
 ### Compliance
 
@@ -89,6 +94,7 @@ Please contact sales@rightscale.com to learn more.
 - [Azure AHUB Utilization with Manual Entry](./compliance/azure/ahub_manual/)
 - [Azure Instances not running FlexNet Inventory Agent](./compliance/azure/instances_without_fnm_agent/)
 - [FlexNet Manager Licenses At Risk](./compliance/fnms/fnms_licenses_at_risk/)
+- [AWS Disallowed Regions](./compliance/aws/disallowed_regions/)
 
 ### Operational
 
