@@ -21,6 +21,7 @@ Please contact sales@rightscale.com to learn more.
 - [Schedule Instances](./cost/schedule_instances/)
 - [Unattached IP Addresses](./cost/unattached_addresses/)
 - [Scheduled Report](./cost/scheduled_reports/)
+- [Scheduled Report With Estimates](./cost/scheduled_reports_with_estimates/)
 - [Azure Hybrid Use Benefit](./cost/azure/hybrid_use_benefit/)
 - [Azure Reserved Instance Utilization](./cost/azure/reserved_instances/utilization/)
 - [Azure Reserved Instance Recommendations](./cost/azure/reserved_instances/recommendations)
@@ -94,6 +95,7 @@ Please contact sales@rightscale.com to learn more.
 - [Azure AHUB Utilization with Manual Entry](./compliance/azure/ahub_manual/)
 - [Azure Instances not running FlexNet Inventory Agent](./compliance/azure/instances_without_fnm_agent/)
 - [FlexNet Manager Licenses At Risk](./compliance/fnms/fnms_licenses_at_risk/)
+- [AWS Disallowed Regions](./compliance/aws/disallowed_regions/)
 
 ### Operational
 
