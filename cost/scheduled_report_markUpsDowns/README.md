@@ -1,4 +1,4 @@
-## Scheduled Report with Markups 
+## Scheduled Report with Markups & Markdowns
 
 ### What it does
 
@@ -33,12 +33,12 @@ Leave the field blank to report on all top level Billing Centers.
 - *Network markup or markdown percentage* - markup for the Network category in number value (20 being 20% markup -20 being a 20% markdown. Leave 0 to apply the general markup).
 - *Storage markup or markdown percentage* - markup for the Storage category in number value (20 being 20% markup -20 being a 20% markdown. Leave 0 to apply the general markup).
 - *Reserved Instances markup or markdown percentage* - markup for the Reserved Instances category in number value (20 being 20% markup -20 being a 20% markdown. Leave 0 to apply the general markup).
-- *GENERAL MARKUP OR MARKDOWN PERCENTAGE* - general markup for the rest of the categories in number value (20 being 20% markup -20 being a 20% markdown). Any category that has 0 as a markup percentage will have this value as a markup/markdown
+- *General markup or markdown percentage* - general markup for the rest of the categories in number value (20 being 20% markup -20 being a 20% markdown). Any category that has 0 as a markup percentage will have this value as a markup/markdown
 - *Admin markup or Markdown percentage* - markup for the Admin category in number value (20 being 20% markup -20 being a 20% markdown. Leave 0 to apply the general markup).
 - *Artificial Intelligence markup or markdown percentage* - markup for the Artificial Intelligence category in number value (20 being 20% markup -20 being a 20% markdown. Leave 0 to apply the general markup).
 - *Application markup or markdown percentage* - markup for the Artificial Intelligence category in number value (20 being 20% markup -20 being a 20% markdown. Leave 0 to apply the general markup).
 - *Marketplace markup or markdown percentage* - markup for the Marketplace category in number value (20 being 20% markup -20 being a 20% markdown. Leave 0 to apply the general markup).
-- *Streaming markup or Markdown percentage* - markup for the Streaming category in number value (20 being 20% markup -20 being a 20% markdown. Leave 0 to apply the general markup).
+- *Streaming markup or markdown percentage* - markup for the Streaming category in number value (20 being 20% markup -20 being a 20% markdown. Leave 0 to apply the general markup).
 - *Support markup or markdown percentage* - markup for the support category in number value (20 being 20% markup -20 being a 20% markdown. Leave 0 to apply the general markup).
 - *IOT markup or markdown percentage* - markup for the IOT category in number value (20 being 20% markup -20 being a 20% markdown. Leave 0 to apply the general markup).
 - *Other markup or markdown percentage* - markup for the Other category in number value (20 being 20% markup -20 being a 20% markdown. Leave 0 to apply the general markup).
