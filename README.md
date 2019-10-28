@@ -97,7 +97,7 @@ Please contact sales@rightscale.com to learn more.
 - [Azure Instances not running FlexNet Inventory Agent](./compliance/azure/instances_without_fnm_agent/)
 - [FlexNet Manager Licenses At Risk](./compliance/fnms/fnms_licenses_at_risk/)
 - [AWS Disallowed Regions](./compliance/aws/disallowed_regions/)
-- [Azure Regulatory Compliance Reports](./compliance/azure/compliance_score/)
+- [Azure Regulatory Compliance](./compliance/azure/compliance_score/)
 
 ### Operational
 

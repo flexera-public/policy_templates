@@ -1,10 +1,10 @@
-## Azure Regulatory Compliance Report
+## Azure Regulatory Compliance
 
 ### What it does
 
-This Policy Template will provide an overview for the various Regulatory Compliance controls and compliance scores. The policy will generate an email report.
+This Policy Template will provide an overview for the various Regulatory Compliance controls and compliance scores. The policy will generate an email notification.
 
-### Pre-reqs
+### Pre-requisites
 
 - Azure Service Principal (AKA Azure Active Directory Application) with the appropriate permissions to manage resources in the target subscription
 - The following RightScale Credentials
