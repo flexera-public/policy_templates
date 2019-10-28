@@ -1,3 +1,6 @@
-v0.0
-----
-Not included in the Catalog
+# Changelog
+
+## v0.0
+
+- Initial Release
+- Not included in the Catalog
