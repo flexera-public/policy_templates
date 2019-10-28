@@ -1,0 +1,124 @@
+name "Azure: Regulatory Compliance Report"
+rs_pt_ver 20180301
+type "policy"
+short_description "This Policy will provide an overview for the various Regulatory Compliance controls and generate an email with the results. \n See the [README](https://github.com/rightscale/policy_templates/tree/master/compliance/azure/compliance_score) and [docs.rightscale.com/policies](http://docs.rightscale.com/policies/) to learn more."
+long_description "Version: 1.0"
+severity "medium"
+category "Compliance"
+
+parameter "param_email" do
+  type "list"
+  label "Email addresses to notify"
+  description "Email addresses of the recipients you wish to notify when new incidents are created."
+end
+
+parameter "param_azure_tenant_id" do
+  type "string"
+  label "Azure AD Tenant ID"
+  description "This value needs to be your Azure tenant ID.  \n To get your tenant ID see the article https://docs.microsoft.com/en-us/onedrive/find-your-office-365-tenant-id"
+  category "Azure"
+  default "09b8fec1-4b8d-48dd-8afa-5c1a775ea0f2"
+end
+
+parameter "param_azure_sub" do
+  type "string"
+  label "Azure Subscription ID"
+  description "This value needs to be your Azure subcription ID.  \n To get your subscription ID see the article https://blogs.msdn.microsoft.com/mschray/2016/03/18/getting-your-azure-subscription-guid-new-portal/"
+  category "Azure"
+  default "8beb7791-9302-4ae4-97b4-afd482aadc59"
+end
+
+auth "azure_auth", type: "oauth2" do
+  token_url join(["https://login.microsoftonline.com/",$param_azure_tenant_id,"/oauth2/token"])
+  grant type: "client_credentials" do
+    client_id cred("AZURE_APPLICATION_ID")
+    client_secret cred("AZURE_APPLICATION_KEY")
+    additional_params do {
+      "resource" => "https://management.azure.com/"
+    } end
+  end
+end
+
+pagination "azure_pagination" do
+  get_page_marker do
+    body_path "nextLink"
+  end
+  set_page_marker do
+    uri true
+  end
+end
+
+datasource "ds_azure_resourceresult" do
+  request do
+    auth $azure_auth
+    pagination $azure_pagination
+    host "management.azure.com"
+    path join(["/subscriptions/", $param_azure_sub, "/providers/Microsoft.Security/regulatoryComplianceStandards"])
+    query "api-version","2019-01-01-preview"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "value[*]") do
+      field "id", jmes_path(col_item,"id")
+      field "name", jmes_path(col_item,"name")
+      field "type", jmes_path(col_item,"type")
+      field "state", jmes_path(col_item,"properties.state")
+      field "passedControls", jmes_path(col_item,"properties.passedControls")
+      field "failedControls", jmes_path(col_item,"properties.failedControls")
+      field "skippedControls", jmes_path(col_item,"properties.skippedControls")
+      field "unsupportedControls", jmes_path(col_item,"properties.unsupportedControls")
+    end
+  end
+end
+
+datasource "ds_format_report" do
+  run_script $js_calculate_score,$ds_azure_resourceresult
+end
+
+script "js_calculate_score", type: "javascript" do
+  parameters "reports"
+  result "result"
+  code <<-EOS
+  var result = [];
+
+  _.each(reports, function(report){
+    var total_controls = report["failedControls"] + report["skippedControls"] + report["passedControls"] ;
+    var calculated_score = ((Math.round((report["passedControls"] / total_controls) * 100) / 100) * 100).toString(10)
+
+    result.push({
+      id: report["id"],
+      name: report["name"],
+      score: calculated_score + "%",
+      state: report["state"],
+      passedControls: report["passedControls"],
+      failedControls: report["failedControls"],
+      skippedControls: report["skippedControls"]
+    })
+  })
+EOS
+end
+
+policy "policy_azure_exec_reg_compliance" do
+  validate $ds_format_report do
+    summary_template "Regulatory Compliance Report"
+    detail_template <<-EOS
+## Azure Subscription ID: {{parameters.param_azure_sub}}
+## Azure Tenant ID: {{parameters.param_azure_tenant_id}}
+
+| Compliance Standard | Compliance Score | Passed Controls | Failed Controls | Skipped Controls | Resource ID |
+| ------------------- | ---------------- | ----- | --------------- | --------------- | ---------------- | ----------- |
+{{ range data -}}
+| {{.name}} | {{.score}} | {{.passedControls}} | {{.failedControls}} | {{.skippedControls}} | {{.id}} |
+{{ end -}}
+
+###### Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }}) within Org: {{ rs_org_name }} (Org ID: {{ rs_org_id }})
+EOS
+  escalate $email
+  check eq(size(data), 0)
+  end
+end
+
+escalation "email" do
+   email $param_email
+end
