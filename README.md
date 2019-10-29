@@ -57,6 +57,7 @@ Please contact sales@rightscale.com to learn more.
 - [Azure Unused SQL Databases](./cost/azure/unused_sql_databases/)
 - [Monthly Actual v. Budgeted Spend Report](./cost/budget_v_actual/)
 - [New Service Usage](./cost/new_service_usage/)
+- [Scheduled Reports with Markups & Markdowns](./cost/scheduled_report_markUpsDowns/)
 
 ### Security
 
