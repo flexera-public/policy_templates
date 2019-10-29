@@ -12,6 +12,8 @@ The policy leverages the Azure API to check all instances that have been stopped
 
 - *Email addresses of the recipients you wish to notify* - A list of email addresses to notify
 - *Stopped days* - Number of days an instance is stopped before it is added to the report
+- *Azure AD Tenant ID* - the Azure AD Tenant ID used for the Azure API Authentication
+- *Azure Subscription ID* - the Azure Subscription ID used for the Azure API Authentication
 
 ### Required RightScale Roles
 
