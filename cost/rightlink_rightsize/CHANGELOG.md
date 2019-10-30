@@ -2,7 +2,7 @@
 
 v1.12
 
-- Rename policy to Instance Utilization
+- Rename policy to Inefficient Instance Utilization using RightLink
 - Add support for VMWare w/RCA-v
 
 v1.11
