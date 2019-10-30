@@ -57,6 +57,7 @@ Please contact sales@rightscale.com to learn more.
 - [Azure Unused SQL Databases](./cost/azure/unused_sql_databases/)
 - [Monthly Actual v. Budgeted Spend Report](./cost/budget_v_actual/)
 - [New Service Usage](./cost/new_service_usage/)
+- [Scheduled Reports with Markups & Markdowns](./cost/scheduled_report_markUpsDowns/)
 
 ### Security
 
@@ -97,6 +98,7 @@ Please contact sales@rightscale.com to learn more.
 - [Azure Instances not running FlexNet Inventory Agent](./compliance/azure/instances_without_fnm_agent/)
 - [FlexNet Manager Licenses At Risk](./compliance/fnms/fnms_licenses_at_risk/)
 - [AWS Disallowed Regions](./compliance/aws/disallowed_regions/)
+- [Azure Regulatory Compliance](./compliance/azure/compliance_score/)
 
 ### Operational
 
@@ -109,6 +111,7 @@ Please contact sales@rightscale.com to learn more.
 - [VMWare Instance Tag Sync](./operational/vmware/instance_tag_sync)
 - [Azure VMs Not Using Managed Disks](./operational/azure/vms_without_managed_disks/)
 - [Schedule FlexNet Manager report](./operational/fnms/schedule_fnms_reports)
+- [Application Migration Recommendations](./operational/compute_instance_migration/)
 
 ### SaaS Management
 
