@@ -2,7 +2,7 @@
 
 v1.12
 
-- Rename policy to RightLink Rightsize Instances
+- Rename policy to Instance Utilization
 - Add support for VMWare w/RCA-v
 
 v1.11

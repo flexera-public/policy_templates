@@ -1,23 +1,25 @@
-## RightLink Rightsize Instances
+## Instance Utilization
 
 ### What it does
 
-This Policy Template uses data from the RightLink 10 monitoring metrics api to rightsize the  instance after user approval
+This polich checks Flexera CMP for instance utilization using
+provided CPU and Memory thresholds and RightLink 10 monitoring metrics.  Instances
+matching the criteria can be resized after user approval.
 
 ### Functional Details
 
 The policy leverages the CMP API monitoring metics api to rightsize instances using the provided CPU and Memory thresholds.  If the instance can be rightsized the incident escalation will automatically change the instance size after the users approval.
 
-There are two policy templates required to support this policy, `RightLink Rightsize Instances` and `RightLink Rightsize Instances Add Tags`.
+There are two policy templates required to support this policy, `Instance Utilization` and `Instance Utilization Add Tags`.
 
-The RightLink Rightsize is used to actually downsize instances based on RightLink monitoring metrics. This policy will  resize the instance. This required the instance to be **stopped**.
+Instance Utilization is used to actually resize instances based on RightLink monitoring metrics.  This required the instance to be **stopped**.
 If a server is marked `N/A`, no action will be taken and only the resize tag will be removed. You will need to manually move that instance to another family type.
 **_This policy requires [RightLink 10](http://docs.rightscale.com/rl10/getting_started.html) with monitoring enabled and collecting metrics_**, see [Installation](http://docs.rightscale.com/rl10/about.html)
 
 
 ### Input Parameters
 
-#### RightLink Rightsize Instances
+#### Instance Utilization
 
 - Average free memory percent to allow for downsize - Value: 0-100, -1 disables this metric
 - Maximum free memory percent to allow for downsize - Value: 0-100, -1 disables this metric
@@ -25,7 +27,7 @@ If a server is marked `N/A`, no action will be taken and only the resize tag wil
 - Average cpu idle percent to allow for downsize - Value: 0-100, -1 disables this metric
 - Instance tags used to filter instances that must validate policy. Example: rs_monitoring:resize=1
 - Email address to send escalation emails to - Example: noreply@example.com
-- Days to cooldown between checks of same machine - Number of days to cooldown between checks of the same instance. This drives the `RightLink Rightsize Instances Add Tags`
+- Days to cooldown between checks of same machine - Number of days to cooldown between checks of the same instance. This drives the `Instance Utilization Add Tags`
 
 #### Policy Actions
 
@@ -34,7 +36,7 @@ The following policy actions are taken on any resources found to be out of compl
 - Downsize instances after approval
 - Send an email report
 
-#### RightLink Rightsize Instances Add Tags
+#### Instance Utilization Add Tags
 
 - Instance tags used to filter instances that must validate policy. Example: rs_monitoring:resize=1
 - Email address to send escalation emails to - Example: noreply@example.com

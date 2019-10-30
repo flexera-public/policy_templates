@@ -15,7 +15,7 @@ Please contact sales@rightscale.com to learn more.
 - [AWS Reserved Instance Recommendations](./cost/aws/reserved_instances/recommendations)
 - [Budget Alerts](./cost/budget_alerts/)
 - [Downsize Instances](./cost/downsize_instance/)
-- [RightLink Rightsize Instances](./cost/rightlink_rightsize)
+- [Instance Utilization](./cost/rightlink_rightsize)
 - [Unattached Volumes](./cost/volumes/unattached_volumes/)
 - [Old Snapshots](./cost/volumes/old_snapshots/)
 - [Schedule Instances](./cost/schedule_instances/)

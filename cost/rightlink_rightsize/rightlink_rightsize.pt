@@ -1,7 +1,11 @@
-name "RightLink Rightsize Instances"
+name "Instance Utilization"
 rs_pt_ver 20180301
 type "policy"
-short_description "A policy that rightsizes instances based on RightLink 10 monitoring metrics. \n See the [README](https://github.com/rightscale/policy_templates/tree/master/cost/downsize_instance) and [docs.rightscale.com/policies](http://docs.rightscale.com/policies/) to learn more."
+short_description "This polich checks Flexera CMP for instance utilization using
+provided CPU and Memory thresholds and RightLink 10 monitoring metrics.  Instances
+matching the criteria can be resized after user approval. \n See the
+[README](https://github.com/rightscale/policy_templates/tree/master/cost/downsize_instance)
+and [docs.rightscale.com/policies](http://docs.rightscale.com/policies/) to learn more."
 long_description "Version: 1.12"
 severity "medium"
 category "Cost"
@@ -157,6 +161,7 @@ datasource "ds_instances_16" do
     end
   end
 end
+
 # get vmware/rcav instance size map
 datasource "ds_vmware_instance_size_map" do
   request do
@@ -228,8 +233,16 @@ for ( i = 0; i < instances.length; i++ ) {
   var instance_type_mem = instance_type_memory[instance_type]
   var legacy_id = i_type[instances[i]["href"]]["legacy_id"]
   var region = i_type[instances[i]["href"]]["region"]
-  var next_instance_size = instance_size_map[instance_type.toString()]["down"]
+
+  console.log("cloud_type: "+ cloud_type)
+  console.log('instance_type:' + instance_type)
+
+  var next_instance_size = "N/A"
+  if ( instance_size_map[instance_type.toString()] ) {
+    next_instance_size = instance_size_map[instance_type.toString()]["down"]
+  }
   if (!next_instance_size) { next_instance_size = "N/A" }
+
   filtered_instances.push(
     {
       resource_uid: instances[i]["resource_uid"],
@@ -414,10 +427,10 @@ policy "policy_rightsize" do
     detail_template <<-EOS
 # {{ len data }} Instances can be rightsized
 
-| Instance Name | Resource UID | Average Memory | Free Average Memory | Total Average Memory | Max Free Memory | Max Total Memory | Max CPU Idle | Average CPU Idle | Current Instance Size | New Instance Size |
-| ------- | ------------- | ------------ | -------------- | ------------------- | -------------------- | --------------- | ---------------- | ------------ | ---------------- | --------------------- | ----------------- |
+| Cloud Type | Instance Name | Resource UID | Average Memory | Free Average Memory | Total Average Memory | Max Free Memory | Max Total Memory | Max CPU Idle | Average CPU Idle | Current Instance Size | New Instance Size |
+| ---------- | ------------- | ------------- | ------------ | -------------- | ------------------- | -------------------- | --------------- | ---------------- | ------------ | ---------------- | --------------------- | ----------------- |
 {{ range data -}}
-  | {{.name}} | {{.resource_uid}} | {{.average_mem_percent}}% | {{.free_avg }}MB | {{.total_avg }}MB | {{.max_free_memory }}MB | {{.max_total_memory }}MB | {{.max_cpu_idle}}% | {{.average_cpu_idle}}% | {{.instance_type}} | {{.next_instance_size}} |
+  | {{.cloud_type}} |{{.name}} | {{.resource_uid}} | {{.average_mem_percent}}% | {{.free_avg }}MB | {{.total_avg }}MB | {{.max_free_memory }}MB | {{.max_total_memory }}MB | {{.max_cpu_idle}}% | {{.average_cpu_idle}}% | {{.instance_type}} | {{.next_instance_size}} |
 {{ end -}}
 
 EOS
