@@ -2,7 +2,7 @@
 
 This policy allows you to set up scheduled reports that will provide summaries of cloud cost across all resources in the billing centers you specify, delivered to any email addresses you specify. The policy will report the following:
 
-Chart of the previous 6 months of utilization based on whichever [Reporting Dimension](https://docs.rightscale.com/optima/reference/rightscale_dimensions.html) you select (only bill data and RightScale-generated dimensions are supported).  
+Chart of the selected Date Range and Billing Term of utilization based on whichever [Reporting Dimension](https://docs.rightscale.com/optima/reference/rightscale_dimensions.html) you select (only bill data and RightScale-generated dimensions are supported).  
 Daily Average - Weekly: Daily average costs calculated from Monday of the previous week through today.
 Daily Average - Monthly: Daily average costs calculated from the 1st of the previous month through today.
 Previous - Weekly: Total costs during previous full week (Monday-Sunday).  
@@ -10,7 +10,7 @@ Previous - Monthly: Total costs during previous full month.
 Current - Weekly: Total costs during current (incomplete) week.  
 Current - Monthly: Total costs during current (incomplete) month.  
 
-We recommend running this policy on a weekly cadence and applying it to your master account.
+We recommend running this policy on a weekly cadence.
 
 _Note 1: The last 3 days of data in the current week or month will contain incomplete data._  
 _Note 2: The account you apply the policy to is unimportant as Optima metrics are scoped to the Org._
@@ -33,6 +33,8 @@ This policy has the following input parameters required when launching the polic
 Leave the field blank to report on all top level Billing Centers.
 - *Cost Metric* -  See Cost Metrics above for details on selection.
 - *Graph Dimension* - The cost dimension to break out the cost data in the embedded bar chart image
+- *Date Range - Select the previous range to display in the chart 
+- *Billing Term - Select term to display in the chart  
 
 ## Policy Actions
 
