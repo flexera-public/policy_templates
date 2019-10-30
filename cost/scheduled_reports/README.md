@@ -12,7 +12,7 @@ Current - Monthly: Total costs during current (incomplete) month.
 
 We recommend running this policy on a weekly cadence.
 
-_Note 1: The last 3 days of data in the current week or month will contain incomplete data._  
+_Note 1: The last 3 days of data in the current week or month will contain incomplete data.  
 _Note 2: The account you apply the policy to is unimportant as Optima metrics are scoped to the Org._
 
 ## Cost Metrics
@@ -29,12 +29,12 @@ There are four cost metrics to choose from.
 This policy has the following input parameters required when launching the policy.
 
 - *Email list* - Email addresses of the recipients you wish to notify
-- *Billing Center List* - List of top level Billing Center names you want to report on.  Names must be exactly as shown in Optima.  
-Leave the field blank to report on all top level Billing Centers.
-- *Cost Metric* -  See Cost Metrics above for details on selection.
+- *Billing Center List* - List of top-level Billing Center names you want to report on.  Names must be exactly as shown in Optima.  
+Leave the field blank to report on all top-level Billing Centers.
+- *Cost Metric* - See Cost Metrics above for details on selection.
 - *Graph Dimension* - The cost dimension to break out the cost data in the embedded bar chart image
-- *Date Range - Select the previous range to display in the chart 
-- *Billing Term - Select term to display in the chart  
+- *Date Range* - Select the previous range to display in the chart 
+- *Billing Term* - Select term to display in the chart  
 
 ## Policy Actions
 
@@ -57,3 +57,4 @@ This policy requires permissions to access RightScale resources (Optima).  Befor
 ## Cost
 
 This Policy Template does not launch any instances, and so does not incur any cloud costs.
+
