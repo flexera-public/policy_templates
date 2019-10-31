@@ -14,10 +14,7 @@ Please contact sales@rightscale.com to learn more.
 - [Budget Alerts](./cost/budget_alerts/)
 - [Cheaper Regions](./cost/cheaper_regions/)
 - [Downsize Instances](./cost/downsize_instance/)
-- [Low Account Usage](./cost/low_account_usage/)
-- [Low Service Usage](./cost/low_service_usage/)
-- [Monthly Actual v. Budgeted Spend Report](./cost/budget_v_actual/)
-- [New Service Usage](./cost/new_service_usage/)
+- [Inefficient Instance Utilization using RightLink](./cost/rightlink_rightsize)
 - [Old Snapshots](./cost/volumes/old_snapshots/)
 - [Running Instance Count Anomaly](./cost/instance_anomaly/)
 - [Unattached IP Addresses](./cost/unattached_addresses/)
@@ -152,6 +149,7 @@ Please contact sales@rightscale.com to learn more.
 - [Azure Disallowed Regions](./compliance/azure/azure_disallowed_regions)
 - [Azure Instances not running FlexNet Inventory Agent](./compliance/azure/instances_without_fnm_agent/)
 - [Azure Long Stopped Instances](./compliance/azure/azure_long_stopped_instances)
+- [Azure Regulatory Compliance](./compliance/azure/compliance_score/)
 - [Azure Subscription Access](./compliance/azure/subscription_access/)
 - [Azure Tag Resources with Resource Group Name](./compliance/tags/azure_rg_tags)
 
@@ -191,6 +189,7 @@ Please contact sales@rightscale.com to learn more.
 #### Other
 
 - [Schedule FlexNet Manager report](./operational/fnms/schedule_fnms_reports)
+- [Application Migration Recommendations](./operational/compute_instance_migration/)
 
 ### SaaS Management
 
