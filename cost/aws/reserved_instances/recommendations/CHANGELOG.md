@@ -1,6 +1,6 @@
 # Changelog
 
-## v1.1
+## v1.2
 - change to single tenancy
 
 ## v1.1
