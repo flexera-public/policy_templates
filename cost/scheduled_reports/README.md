@@ -10,7 +10,7 @@ Previous - Monthly: Total costs during previous full month.
 Current - Weekly: Total costs during current (incomplete) week.  
 Current - Monthly: Total costs during current (incomplete) month.  
 
-We recommend running this policy on a weekly cadence.
+We recommend running this policy on a weekly or monthly cadence.
 
 _Note 1: The last 3 days of data in the current week or month will contain incomplete data.  
 _Note 2: The account you apply the policy to is unimportant as Optima metrics are scoped to the Org._
