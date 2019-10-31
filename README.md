@@ -113,6 +113,7 @@ Please contact sales@rightscale.com to learn more.
 - [Azure VMs Not Using Managed Disks](./operational/azure/vms_without_managed_disks/)
 - [Schedule FlexNet Manager report](./operational/fnms/schedule_fnms_reports)
 - [Application Migration Recommendations](./operational/compute_instance_migration/)
+- [NetFlow Top Talkers](./operational/azure/network_flow)
 
 ### SaaS Management
 
