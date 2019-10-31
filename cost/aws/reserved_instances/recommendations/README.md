@@ -30,7 +30,8 @@ This policy has the following input parameters required when launching the polic
 The following policy actions are taken on any resources found to be out of compliance.
 
 - Send an email report
-- Retrieve RI Purchase Offerings and Execute RI Purchases (**Note:** Use the "AWS Reserved Instances Recommendations with Purchase" version of this policy to execute purchases)
+- Retrieve RI Purchase Offerings and Execute RI Purchases (Optional) 
+  - **Note:** Use the "AWS Reserved Instances Recommendations with Purchase" version of this policy to execute purchases
 
 ### Required RightScale Roles
 
