@@ -190,6 +190,7 @@ Please contact sales@rightscale.com to learn more.
 
 - [Schedule FlexNet Manager report](./operational/fnms/schedule_fnms_reports)
 - [Application Migration Recommendations](./operational/compute_instance_migration/)
+- [NetFlow Top Talkers](./operational/azure/network_flow)
 
 ### SaaS Management
 
