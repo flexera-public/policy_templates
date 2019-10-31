@@ -168,8 +168,10 @@ Please contact sales@rightscale.com to learn more.
 
 #### Multi-cloud
 
+- [Application Migration Recommendations](./operational/compute_instance_migration/)
 - [No Recent Snapshots](./operational/snapshots/)
 - [Stranded Servers](./operational/stranded_servers/)
+- [NetFlow Top Talkers](./operational/azure/network_flow)
 
 #### AWS  
 
@@ -189,8 +191,7 @@ Please contact sales@rightscale.com to learn more.
 #### Other
 
 - [Schedule FlexNet Manager report](./operational/fnms/schedule_fnms_reports)
-- [Application Migration Recommendations](./operational/compute_instance_migration/)
-- [NetFlow Top Talkers](./operational/azure/network_flow)
+
 
 ### SaaS Management
 
