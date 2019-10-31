@@ -3,18 +3,18 @@ rs_pt_ver 20180301
 type "policy"
 short_description "This policy allows you to set up scheduled reports that will provide summaries of cloud cost across all resources in the billing centers you specify, delivered to any email addresses you specify. The policy will report the following:
 
-Chart of the previous 6 months of utilization based on [category](https://docs.rightscale.com/optima/reference/rightscale_dimensions.html#category).  
+Chart of the selected Date Range and Billing Term of utilization based on [category](https://docs.rightscale.com/optima/reference/rightscale_dimensions.html#category).  
 Daily average cost across the last week and last month.  
 Total cost during previous full week (Monday-Sunday) and previous full month.  
 Total cost during current (incomplete) week and month.  
 
-We recommend running this policy on a weekly cadence and applying it to your master account.
+We recommend running this policy on a weekly or monthly cadence.
 
 _Note 1: The last 3 days of data in the current week or month will contain incomplete data._  
 _Note 2: The account you apply the policy to is unimportant as Optima metrics are scoped to the Org._
 
-See [README](https://github.com/rightscale/policy_templates/tree/master/cost/scheduled_reports) for more details"
-long_description "Version: 1.7"
+See [README](https://github.com/flexera/policy_templates/tree/master/cost/scheduled_reports) for more details"
+long_description "Version: 1.8"
 severity "low"
 category "Cost"
 tenancy "single"
@@ -52,6 +52,22 @@ parameter "param_graph_dimension" do
   allowed_values "Category","Instance Type","Region","Resource Group","Resource Type","Service","Usage Type","Usage Unit","Cloud Vendor","Cloud Vendor Account","Cloud Vendor Account Name"
   default "Category"
   description "Select which dimension you'd like to be broken out on the graph in the report."
+end
+
+parameter "param_date_range" do
+  type "string"
+  label "Date Range"
+  allowed_values "1 month","3 month","6 month","12 month"
+  default "6 month"
+  description "Select the Date Range options you'd like to be display on the graph in the report."
+end
+
+parameter "param_billing_term" do
+  type "string"
+  label "Billing Term"
+  allowed_values "Day","Week","Month"
+  default "Month"
+  description "Select the Billing Term options you'd like to be display on the graph in the report."
 end
 
 auth "auth_rs", type: "rightscale"
@@ -247,7 +263,6 @@ script "js_previous_week_cost_request", type: "javascript" do
     end_at = getFormattedDailyDate(addDays(new Date(now.setDate(now.getDate() - now.getDay())),1))
     // start_at beginning of last week, get sunday(end_at) and subtract 6
     start_at = getFormattedDailyDate(new Date(now.setDate(now.getDate() - 6)))
-
     
     var billing_center_ids = []
     if (param_billing_centers.length === 0){
@@ -590,30 +605,60 @@ script "js_report", type: "javascript" do
   EOS
 end
 
-datasource "ds_previous_six_month_costs" do
-  request do
-    run_script $js_six_month_cost_request, $param_billing_centers, $param_cost_metric, rs_org_id, rs_optima_host, $ds_billing_centers, $param_graph_dimension
+datasource "ds_previous_n_month_costs" do
+  iterate $ds_n_month_cost_request_list
+  request do     
+    auth $auth_rs
+    host val(iter_item,"host")
+    path val(iter_item,"path")
+    scheme "https"
+    verb  "POST"
+    header "Api-Version", "1.0"
+    header "Content-Type", "application/json"
+    body_field "dimensions", val(iter_item,"dimensions")
+    body_field "granularity", val(iter_item,"granularity")
+    body_field "start_at", val(iter_item,"start_at")
+    body_field "end_at", val(iter_item,"end_at")
+    body_field "metrics", val(iter_item,"metrics")
+    body_field "billing_center_ids", val(iter_item,"billing_center_ids")
+  end
+   result do
+    encoding "json"
+    collect jmes_path(response, "rows[*]") do
+      field "dimensions", jmes_path(col_item,"dimensions")
+      field "metrics", jmes_path(col_item,"metrics")
+      field "timestamp", jmes_path(col_item,"timestamp")
+    end
   end
 end
 
-script "js_six_month_cost_request", type: "javascript" do
-  parameters "param_billing_centers", "param_cost_metric", "rs_org_id", "rs_optima_host", "ds_billing_centers", "param_graph_dimension"
+datasource "ds_n_month_cost_request_list" do
+ run_script $js_n_month_cost_request, $param_billing_centers, $param_cost_metric, rs_org_id, rs_optima_host, $ds_billing_centers, $param_graph_dimension, $param_date_range, $param_billing_term
+end
+
+script "js_n_month_cost_request", type: "javascript" do
+  parameters "param_billing_centers", "param_cost_metric", "rs_org_id", "rs_optima_host", "ds_billing_centers", "param_graph_dimension", "param_date_range", "param_billing_term"
   result "request"
   code <<-EOS
     // format the date for the `monthly` API
     // returns date formatted as string: YYYY-mm
     function getFormattedMonthlyDate(date) {
       var year = date.getFullYear();
-
       var month = (1 + date.getMonth()).toString();
       month = month.length > 1 ? month : '0' + month;
-
       var day = date.getDate().toString();
       day = day.length > 1 ? day : '0' + day;
-
       return year + '-' + month ;
     }
 
+    // returns date formatted as string: YYYY-mm-dd
+    function getFormattedDailyDate(date) {
+      var year = date.getFullYear();
+      var month = (1 + date.getMonth()).toString();
+      month = month.length > 1 ? month : '0' + month;
+      return year + '-' + month + '-' + "01";
+    }
+	 
     // add months to date
     // returns date object
     function addMonths(date, months) {
@@ -644,10 +689,19 @@ script "js_six_month_cost_request", type: "javascript" do
     }
 
     var now = new Date();
-    var end_at = getFormattedMonthlyDate(addMonths(now, +1));
-    var start_at = getFormattedMonthlyDate(addMonths(now, -6));
+    var totalMonth=parseInt(param_date_range.split(' ')[0]); 
+    var end_at= "";
+    var start_at= "";
     var billing_center_ids = []
-    
+    var granularity="";
+
+    // adds day(s) to the current day
+    function addDays(date, days) {
+      var result = new Date(date);
+      result.setDate(result.getDate() + days);
+      return result;
+    }
+
     if (param_billing_centers.length === 0){
       var top_billing_centers = _.reject(ds_billing_centers, function(bc){ return bc.parent_id != null });
       billing_center_ids = _.map(top_billing_centers, function(value, key){ return value.id });
@@ -657,49 +711,73 @@ script "js_six_month_cost_request", type: "javascript" do
       billing_center_ids = _.compact(_.map(ds_billing_centers, function(value){ if(_.contains(billing_center_names, value.name.toLowerCase())){return value.id} }));
     }
 
-    var body = {
-      "dimensions":[graph_dimension[param_graph_dimension]]
-      "granularity":"month",
-      "start_at": start_at ,
-      "end_at": end_at
-      "metrics":[cost_metric[param_cost_metric]],
-      "billing_center_ids": billing_center_ids
-    }
-
-    var request = {
-      auth:  'auth_rs',
-      host:  rs_optima_host,
-      scheme: 'https',
-      verb: 'POST',
-      path:  "/bill-analysis/orgs/"+ rs_org_id + "/costs/aggregated",
-      headers: {
+    var request=[];
+    var body;
+    var i=0;
+    if(param_billing_term==="Day" || param_billing_term==="Week"){
+    for(; i<totalMonth ;i++){
+      now=new Date();
+      end_at = getFormattedDailyDate(addMonths(now, -(totalMonth-(i+1)-1)));
+      now=new Date();
+      start_at = getFormattedDailyDate(addMonths(now, -(totalMonth-i-1)));
+      granularity="day";
+      var result = {
+        auth:  'auth_rs',
+        host:  rs_optima_host,
+        scheme: 'https',
+        verb: 'POST',
+        path:  "/bill-analysis/orgs/"+ rs_org_id + "/costs/aggregated",
         "API-Version": "1.0",
-        "Content-Type":"application/json"
-      },
-      body: JSON.stringify(body)
-    }
+        "Content-Type": "application/json",
+        "dimensions":[graph_dimension[param_graph_dimension]],
+        "granularity":granularity,
+        "start_at": start_at ,
+        "end_at": end_at,
+        "metrics":[cost_metric[param_cost_metric]],
+        "billing_center_ids": billing_center_ids
+      }
+      request.push(result);
+   	}
+    }else{
+      end_at = getFormattedMonthlyDate(addMonths(now, +1));
+      start_at = getFormattedMonthlyDate(addMonths(now, -totalMonth));
+      granularity="month";
+      var req = {
+        auth:  'auth_rs',
+        host:  rs_optima_host,
+        scheme: 'https',
+        verb: 'POST',
+        path:  "/bill-analysis/orgs/"+ rs_org_id + "/costs/aggregated",
+        "API-Version": "1.0",
+        "Content-Type": "application/json",
+        "dimensions":[graph_dimension[param_graph_dimension]],
+        "granularity":granularity,
+        "start_at": start_at ,
+        "end_at": end_at,
+        "metrics":[cost_metric[param_cost_metric]],
+        "billing_center_ids": billing_center_ids
+      }
+      request.push(req);
+	}
   EOS
 end
 
 datasource "ds_generated_report" do
-  run_script $js_generate_report, $ds_previous_six_month_costs, $param_cost_metric, $param_billing_centers, $ds_report, $param_graph_dimension, $ds_currency_code, $ds_currency_reference
+  run_script $js_generate_report, $ds_previous_n_month_costs, $param_cost_metric, $param_billing_centers, $ds_report, $param_graph_dimension, $ds_currency_code, $ds_currency_reference, $param_date_range, $param_billing_term
 end
 
 script "js_generate_report", type: "javascript" do
-  parameters "ds_previous_six_month_costs","param_cost_metric","param_billing_centers","ds_report","param_graph_dimension","ds_currency_code","ds_currency_reference"
+  parameters "ds_previous_n_month_costs","param_cost_metric","param_billing_centers","ds_report","param_graph_dimension","ds_currency_code","ds_currency_reference", "param_date_range","param_billing_term"
   result "report"
   code <<-EOS
     // format the date for the `monthly` API
     // returns date formatted as string: YYYY-mm
     function getFormattedMonthlyDate(date) {
       var year = date.getFullYear();
-
       var month = (1 + date.getMonth()).toString();
       month = month.length > 1 ? month : '0' + month;
-
       var day = date.getDate().toString();
       day = day.length > 1 ? day : '0' + day;
-
       return year + '-' + month ;
     }
 
@@ -728,23 +806,45 @@ script "js_generate_report", type: "javascript" do
     var now = new Date();
     var report = {};
     var collated_data = [];
+    var temp_collated_data = [];
     var current_month_totals = [];
     var metric = cost_metric[param_cost_metric];
     var dimension = graph_dimension[param_graph_dimension];
-
     var colorArray = ['D05A5A','F78741','FCC419','007D76','37AA77','92DA71','0F77B3','7BACD1','BCC7E1','B80C83','E06C96','FBB3BB','5F3DC4','00A2F3','99E9F2','5C940D','8EBF45','C0EB75'];
     var longMonthNames = ["None","January","February","March","April","May","June","July","August","September","October","November","December"];
     var shortMonthNames = ["None","Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
     var currentMonth = getFormattedMonthlyDate(now);
     var currentMonthName = longMonthNames[parseInt(currentMonth.split('-')[1])];
-
-    _.each(ds_previous_six_month_costs["rows"], function(row){
-      var yearMonth = row['timestamp'].split('-')[0] + '-' + row['timestamp'].split('-')[1]
-      var numberMonth = row['timestamp'].split('-')[1]
-      var stringMonth = shortMonthNames[parseInt(numberMonth)]
-
+    var totalMonth=parseInt(param_date_range.split(' ')[0]);
+    var count=-1;
+    var weekNo=1;
+    var tempDayNo=0;
+    var stringWeek="";
+    _.each(ds_previous_n_month_costs, function(row){
+      var yearMonth = row['timestamp'].split('-')[0] + '-' + row['timestamp'].split('-')[1];
+      var numberMonth = row['timestamp'].split('-')[1];
+      var stringMonth = shortMonthNames[parseInt(numberMonth)];
+      var stringDay= stringMonth+"-"+row['timestamp'].split('-')[2].split('')[0]+row['timestamp'].split('-')[2].split('')[1];
+      var dayNo=parseInt(row['timestamp'].split('-')[2].split('')[0]+row['timestamp'].split('-')[2].split('')[1]);
+      
+      if(count==-1){
+        tempDayNo=dayNo;
+        stringWeek=stringMonth+"-"+dayNo;
+        count=0;
+      }	  
+      if(dayNo!=tempDayNo){ 
+        count++;
+        tempDayNo=dayNo;
+      }
+      if(count>=7){
+        weekNo=dayNo-1;
+        stringWeek=stringMonth+"-"+dayNo;
+	    count=0;
+      }
       collated_data.push({
         stringMonth: stringMonth,
+        stringDay:stringDay,
+        stringWeek:stringWeek,
         yearMonth: yearMonth,
         category: row['dimensions'][dimension],
         cost: row['metrics'][metric]
@@ -752,32 +852,54 @@ script "js_generate_report", type: "javascript" do
     })
 
     // get unique top 10 categories
-    var topValues = _.last(_.sortBy(_.filter(collated_data, function(x){ return x.yearMonth==currentMonth}),'cost'),10);
-    var categories = _.map(topValues, function(line) {return line.category});
-
+    var topValues;
+    var categories=[];
+    var otherData=[];
+    if(param_billing_term==="Month"){
+    topValues = _.last(_.sortBy(_.filter(collated_data, function(x){ return x.yearMonth==currentMonth}),'cost'),10);
+    categories = _.map(topValues, function(line) {return line.category});
     // Get all of the data that is not in the top categories and sum it up by month
     nonTopData = _.groupBy(_.reject(collated_data, function(d){ return _.contains(categories, d.category)}), function(d) { return d.yearMonth });
-    var otherData=[];
     _.each(nonTopData, function(d, k){
       total = _.reduce(d, function(total, el) {
         return total + el.cost;
       },0);
       otherData.push({yearMonth:k,cost:total});
     })
+    }else if(param_billing_term==="Day"){
+    // Get all of the data that is not in the top categories and sum it up by Day
+    nonTopData = _.groupBy(_.reject(collated_data, function(d){ return _.contains(categories, d.category)}), function(d) { return d.stringDay });
+    _.each(nonTopData, function(d, k){
+      total = _.reduce(d, function(total, el) {
+        return total + el.cost;
+      },0);
+      otherData.push({stringDay:k,cost:total});
+    })
+    }else if(param_billing_term==="Week"){
+     // Get all of the data that is not in the top categories and sum it up by Day
+     nonTopData = _.groupBy(_.reject(collated_data, function(d){ return _.contains(categories, d.category)}), function(d) { return d.stringWeek });
+    _.each(nonTopData, function(d, k){
+      total = _.reduce(d, function(total, el) {
+        return total + el.cost;
+      },0);
+      otherData.push({stringWeek:k,cost:total});
+    })
+    }
 
     // get unique dates
     var previousMonths = _.unique(_.chain(collated_data).map(function(line) {return line.yearMonth}).value());
-    var stringMonths = _.unique(_.chain(collated_data).map(function(line) {return line.stringMonth}).value());
+    var stringMonths = _.unique(_.chain(collated_data).map(function(line) {return line.stringMonth}).value());	
+    var stringDays = _.unique(_.chain(collated_data).map(function(line) {return line.stringDay}).value());
+    var stringWeeks = _.unique(_.chain(collated_data).map(function(line) {return line.stringWeek}).value());
 
     // get current month data
     var current_month_costs = (_.where(collated_data, {yearMonth: currentMonth}));
-    
     _.each(current_month_costs, function(line){ current_month_totals.push(line.cost)})
-    
     var current_month_total = _.reduce(current_month_totals, function(memo, num){ return memo + num; }, 0);
 
     // build out the chart data for the top categories
     var chartDataArray = [];
+   if(param_billing_term==="Month"){
     _.each(categories, function(category){
       var seriesData = [];
       _.each(previousMonths, function(month){
@@ -790,7 +912,7 @@ script "js_generate_report", type: "javascript" do
       })
       chartDataArray.push(seriesData.join())
     })
-
+   
     // Add the "Other" category and associated data
     if ( otherData.length > 0 ) {
       categories.push("Other");
@@ -805,7 +927,37 @@ script "js_generate_report", type: "javascript" do
       })
       chartDataArray.push(seriesData.join())
     }
-
+     }else if(param_billing_term==="Day"){	
+      // Add the "Other" category and associated data
+      if ( otherData.length > 0 ) {
+        categories.push("Other");
+        var seriesData = [];
+        _.each(stringDays, function(day){
+          var tempTotal = _.where(otherData, {stringDay: day});
+          if( tempTotal.length === 0 ) {
+            seriesData.push("_")
+          }else{
+            seriesData.push(Math.round(tempTotal[0].cost))
+          }
+        })
+      chartDataArray.push(seriesData.join())	
+      }
+    }else if(param_billing_term==="Week"){	
+      // Add the "Other" category and associated data
+      if( otherData.length > 0 ) {
+        categories.push("Other");
+        var seriesData = [];
+        _.each(stringWeeks, function(week){
+          var tempTotal = _.where(otherData, {stringWeek: week});
+          if( tempTotal.length === 0 ) {
+            seriesData.push("_")
+          }else{
+            seriesData.push(Math.round(tempTotal[0].cost))
+          }
+        })
+        chartDataArray.push(seriesData.join())	
+      }
+    }
     var chartData = "chd=a:" + chartDataArray.join('|')
     var encodedCategories = encodeURIComponent(categories.join('|')).replace(/[(]/gi,'%28').replace(/[)]/gi,'%29');
     if ( encodedCategories.length < 1) {
@@ -814,8 +966,14 @@ script "js_generate_report", type: "javascript" do
       var chartCategories = "chdl=" + encodedCategories
     }
     var chartColors = "chco=" + colorArray.slice(0,categories.length).join();
-    var chartXAxis = "chxl=0:|" + stringMonths.join('|')
-    
+    var chartXAxis="";
+    if(param_billing_term==="Day"){
+       chartXAxis = "chxl=0:|" + stringDays.join('|');
+    }else if(param_billing_term==="Week"){
+       chartXAxis = "chxl=0:|" + stringWeeks.join('|');
+    }else{
+       chartXAxis = "chxl=0:|" + stringMonths.join('|');
+    }
     if (param_billing_centers.length === 0){
       var billingCenters = "All";
     } else {
@@ -833,7 +991,7 @@ script "js_generate_report", type: "javascript" do
       currentMonthName: currentMonthName,
       billingCenters: billingCenters,
       chartType: "cht=bvs",
-      chartSize: "chs=800x500",
+      chartSize: "chs=999x500",
       chartTitle: "chtt=Spending+Overview",
       chartAxis: "chxt=x,y",
       chartXAxis: chartXAxis,
@@ -845,7 +1003,8 @@ script "js_generate_report", type: "javascript" do
       chartKeyLocation: "chdlp=b",
       currentSpend:  Math.round(current_month_total),
       currencyCode: cur,
-      reportData: ds_report
+      reportData: ds_report,
+      dataPresent: ds_previous_n_month_costs.length
     }
   EOS
 end
@@ -859,13 +1018,14 @@ policy "policy_scheduled_report" do
     summary_template "{{ rs_org_name }} (Org ID: {{ rs_org_id }}): Full Cost Scheduled Report"
     detail_template <<-EOS
 # Full Cost Report for {{ rs_org_name }} - {{ data.currentMonthName }}
-
 ## Billing Centers: {{ data.billingCenters }}
 ### Cost Metric: {{ parameters.param_cost_metric }}
 ### Chart Dimension: {{ parameters.param_graph_dimension }}
 ### Bill Currency: {{ data.currencyCode }}
+### Date Range: {{ parameters.param_date_range }}
+### Billing Term: {{ parameters.param_billing_term }}
 
-![Spending Overview Chart](https://image-charts.com/chart?{{ data.chartType }}&{{ data.chartSize }}&{{ data.chartTitle }}&{{ data.chartAxis }}&{{ data.chartXAxis }}&{{ data.chartAxisFormat }}&{{ data.chartData }}&{{ data.chartCategories }}&{{ data.chartColors }}&{{ data.chartKeyLocation }}&{{ data.chartExtension }} "Spending Overview Chart")
+![Spending Overview Chart](https://image-charts.com/chart?{{ data.chartType }}&{{ data.chartSize }}&{{ data.chartTitle }}&{{ data.chartAxis }}&{{ data.chartXAxis }}&{{ data.chartAxisFormat }}&{{ data.chartData }}&{{ data.chartCategories }}&{{ data.chartColors }}&{{ data.chartKeyLocation }}&{{ data.chartExtension }} "Spending Overview Chart") 
 
 |Range|Daily Average|Previous|Current (incomplete)|
 |:---:|------------:|-------:|-------------------:|
@@ -880,6 +1040,6 @@ ___
 ###### Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }}) within Org: {{ rs_org_name }} (Org ID: {{ rs_org_id }})
 EOS
     escalate $escalation_send_email
-    check eq(0,1)
+    check eq(val(data,"dataPresent"),0)
   end
 end
