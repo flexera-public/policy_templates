@@ -23,4 +23,5 @@ gem "rb-readline", "~> 0.5.5"
 
 # Markdownlint
 gem "mdl"
+#markdown spell
 gem "mdspell"

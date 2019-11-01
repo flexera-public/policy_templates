@@ -105,7 +105,7 @@ end
 mdspell = nil
 md_files.each do |file|
   mdspell = `mdspell #{file}`
-  if mdpspell
+  if mdspell
     fail mdspell
   end
 end
