@@ -21,5 +21,6 @@ gem "pry", "~> 0.11.3"
 # Added at 2018-06-21 16:05:26 -0500 by rshade:
 gem "rb-readline", "~> 0.5.5"
 
-# Markdownlint 
+# Markdownlint
 gem "mdl"
+gem "mdspell"
