@@ -42,6 +42,13 @@ changed_files.each do |file|
          url_string = url.to_s.gsub(')','') #remove extra chars
          url = URI(url_string) #convert to URL
          res = Net::HTTP.get_response(url) #make request
+         # test again when the file isn't found and path includes tree/master
+         # likely the README link or a new file included in the repo
+         if res.code == '404' && url_string =~ /tree\/master/
+           url_string = url.to_s.gsub('tree/master',"tree/#{github.branch_for_head}").gsub(')','')
+           url = URI(url_string) #convert to URL
+           res = Net::HTTP.get_response(url) #make request
+         end
          if res.code != '200'
            fail "The URL is not valid: #{url_string} in #{file} Status: #{res.code}"
          end
@@ -81,10 +88,10 @@ end
 
 # check markdown of .md files with markdown lint
 # .md files should follow these rules https://github.com/markdownlint/markdownlint/blob/master/docs/RULES.md
-md_files.each do |file|
-  mdl = `mdl #{file}`
-  fail mdl
-end
+# md_files.each do |file|
+#   mdl = `mdl #{file}`
+#   fail mdl
+# end
 
 fail 'Please provide a summary of your Pull Request.' if github.pr_body.length < 10
 
