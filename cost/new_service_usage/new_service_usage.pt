@@ -1,0 +1,419 @@
+name "New Service Usage"
+rs_pt_ver 20180301
+type "policy"
+short_description "Analyze bill for new service usage and notify. See the [README](https://github.com/rightscale/policy_templates/tree/master/cost/new_service_alert/) and [docs.rightscale.com/policies](http://docs.rightscale.com/policies/) to learn more."
+long_description "Version: 1.0"
+severity "low"
+category "Cost"
+tenancy "single"
+
+parameter "param_email" do
+  label "Email addresses"
+  description "Email addresses of the recipients you wish to notify"
+  type "list"
+end
+
+parameter "param_billing_centers" do
+  label "Billing Center Name"
+  description "List of Billing Center Names to check"
+  type "list"
+  min_length 1
+end
+
+parameter "param_include_0" do
+  label "Include 0 Dollar Items"
+  description "Include 0 Dollar Items"
+  type "string"
+  allowed_values "true", "false"
+  default "false"
+end
+
+auth "auth_rs", type: "rightscale"
+
+datasource "ds_dimensions" do
+  request do
+    auth $auth_rs
+    host rs_optima_host
+    path join(["/bill-analysis/orgs/",rs_org_id,"/costs/dimensions"])
+    header "Api-Version", "1.0"
+    header "User-Agent", "RS Policies"
+  end
+end
+
+datasource "ds_billing_centers" do
+  request do
+    auth $auth_rs
+    host rs_optima_host
+    path join(["/analytics/orgs/",rs_org_id,"/billing_centers"])
+    header "Api-Version", "1.0"
+    header "User-Agent", "RS Policies"
+    query "view", "allocation_table"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response,"[*]") do
+      field "href", jmes_path(col_item,"href")
+      field "id", jmes_path(col_item,"id")
+      field "name", jmes_path(col_item,"name")
+      field "parent_id", jmes_path(col_item,"parent_id")
+      field "ancestor_ids", jmes_path(col_item,"ancestor_ids")
+      field "allocation_table", jmes_path(col_item,"allocation_table")
+    end
+  end
+end
+
+datasource "ds_cloud_vendor_accounts" do
+  request do
+    auth $auth_rs
+    host rs_optima_host
+    path join(["/analytics/orgs/",rs_org_id,"/cloud_vendor_accounts"])
+    header "Api-Version", "1.0"
+    header "User-Agent", "RS Policies"
+    query "cloud_vendor", "aws"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response,"[*]") do
+      field "id", jmes_path(col_item,"id")
+      field "name", jmes_path(col_item,"name")
+      field "vendor_name", jmes_path(col_item,"vendor_name")
+    end
+  end
+end
+
+datasource "ds_new_bc_costs" do
+  request do
+    run_script $js_new_costs_request, rs_org_id, $ds_billing_centers, $param_billing_centers
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response,"rows[*]") do
+      field "vendor", jmes_path(col_item, "dimensions.vendor")
+      field "vendor_account_name", jmes_path(col_item,"dimensions.vendor_account_name")
+      field "cost_nonamortized_blended_adj", jmes_path(col_item,"metrics.cost_nonamortized_blended_adj")
+      field "service", jmes_path(col_item, "dimensions.service")
+      field "region", jmes_path(col_item, "dimensions.region")
+      field "id", jmes_path(col_item,"dimensions.billing_center_id")
+      field "timestamp", jmes_path(col_item,"timestamp")
+    end
+  end
+end
+
+script "js_new_costs_request", type: "javascript" do
+  parameters "org_id","ds_billing_centers", "param_billing_centers"
+  result "request"
+  code <<-EOS
+    //https://stackoverflow.com/questions/3605214/javascript-add-leading-zeroes-to-date 
+    function pad(n){return n<10 ? '0'+n : n}
+    var date = new Date();
+    var year = date.getUTCFullYear();
+    var month = (2 + date.getUTCMonth())
+    
+    if (month == 1){ 
+      var lmonth = 12;
+      var lyear = year-1 ;
+    } else {
+      var lmonth = month-1;
+      var lyear = year ;
+    }
+    
+    mo = month.toString().length > 1 ? month : '0' + month;
+    lmo = lmonth.toString().length > 1 ? lmonth : '0' + lmonth;
+    var yesterday = new Date(new Date().setDate(new Date().getDate()-1)).getDate()
+    var next_month = lyear + "-" + lmo + "-" + pad(yesterday)
+    var current_month = lyear + "-" + lmo + '-01'
+
+    var billing_center_ids = []
+    if (param_billing_centers.length === 0){
+      var top_billing_centers = _.reject(ds_billing_centers, function(bc){ return bc.parent_id != null });
+      billing_center_ids = _.map(top_billing_centers, function(value, key){ return value.id });
+    } else {
+      // get array of billing center id's that match the names in param_billing_centers.
+      billing_center_names = _.map(param_billing_centers, function(name){ return name.toLowerCase(); });
+      billing_center_ids = _.compact(_.map(ds_billing_centers, function(value){ if(_.contains(billing_center_names, value.name.toLowerCase())){return value.id} }));
+    }
+
+    var request = {
+      auth: "auth_rs",
+      verb: "POST",
+      host: "optima.rightscale.com",
+      path: "/bill-analysis/orgs/" + org_id + "/costs/aggregated",
+      body_fields: {
+        "dimensions": ["billing_center_id", "vendor", "vendor_account_name", "service", "region"],
+        "granularity": "day",
+        "metrics": ['cost_nonamortized_blended_adj'],
+        "billing_center_ids": billing_center_ids,
+        "start_at": current_month,
+        "end_at": next_month
+      },
+      headers: {
+        "Api-Version": "1.0",
+        "User-Agent": "RS Policies",
+      }
+    }
+  EOS
+end
+
+datasource "ds_format_new_costs" do
+  run_script $js_format_costs, $ds_new_bc_costs, $ds_cloud_vendor_accounts, $ds_billing_centers
+end
+
+script "js_format_costs", type: "javascript" do
+  parameters "new_bc_costs", "ds_cloud_vendor_accounts", "ds_billing_centers"
+  result "formatted_data"
+  code <<-EOS
+  //https://stackoverflow.com/questions/3605214/javascript-add-leading-zeroes-to-date 
+  function pad(n){return n<10 ? '0'+n : n}
+  //https://www.w3resource.com/javascript-exercises/javascript-date-exercise-3.php
+  var getDaysInMonth = function(month,year) {
+    // Here January is 1 based
+    //Day 0 is the last day in the previous month
+    return new Date(year, month, 0).getDate();
+  // Here January is 0 based
+  // return new Date(year, month+1, 0).getDate();
+  };
+  var date = new Date();
+  var year = date.getUTCFullYear();
+  var month = (2 + date.getUTCMonth())
+  var today = date.getDate()
+  var numdays = getDaysInMonth(date.getUTCMonth(),date.getUTCFullYear())
+  var yesterday = new Date(new Date().setDate(new Date().getDate()-1)).getDate()
+  
+  if (month == 1){ 
+    var lmonth = 12;
+    var lyear = year-1 ;
+  } else {
+    var lmonth = month-1;
+    var lyear = year ;
+  }
+  
+  mo = month.toString().length > 1 ? month : '0' + month;
+  lmo = lmonth.toString().length > 1 ? lmonth : '0' + lmonth;
+  var yesterday = new Date(new Date().setDate(new Date().getDate()-1)).getDate()
+  var next_month = lyear + "-" + lmo + "-" + pad(yesterday)
+  var current_month = lyear + "-" + lmo + '-01'
+
+  var formatted_data = [];
+  var arr_results = [];
+  var bcs = [];
+
+  _.each(new_bc_costs, function(bcc){bcs.push(bcc.id)})
+  bcs = _.uniq(bcs) ;
+
+  _.each(bcs, function(bc_id){
+  var new_bc_cost_objs = _.reject(new_bc_costs, function(new_bc_cost){ return new_bc_cost.id != bc_id });
+    _.each(new_bc_cost_objs, function(new_bc_cost_obj){
+      var billing_center = _.reject(ds_billing_centers, function(bc){ return bc.id != new_bc_cost_obj.id })[0];
+      if (new_bc_cost_obj.vendor == "AWS" ) {
+        var account = _.reject(ds_cloud_vendor_accounts, function(ds_cloud_vendor_account){ return ds_cloud_vendor_account.id != new_bc_cost_obj.vendor_account_name });
+        var vendor_account_name = account[0].name
+      } else {
+        var vendor_account_name = new_bc_cost_obj.vendor_account_name
+      }
+      arr_results.push({
+        name: billing_center.name,
+        id: bc_id,
+        service: new_bc_cost_obj.service,
+        region: new_bc_cost_obj.region,
+        new_sum: new_bc_cost_obj.cost_nonamortized_blended_adj,
+        vendor: new_bc_cost_obj.vendor,
+        vendor_account_name: vendor_account_name,
+        timestamp: new_bc_cost_obj.timestamp
+      })
+    })
+  })
+
+  var groups = _.groupBy(arr_results, function(value){
+    return value.id + '#' + value.vendor + '#' + value.vendor_account_name + '#' + value.service + '#' + value.region
+  });
+
+  var unsorted_results = _.map(groups, function(group){
+    counter = 0
+    for (i = 0; i< group.length; i++){
+      item = group[i]
+      if (item.new_sum == 0){
+        counter=counter+1
+      } else {
+        break
+      }
+    }
+    var arr_new_sum = _.pluck(group, 'new_sum')
+    var summed = _.reduce(arr_new_sum, function(memo, num){ return memo + num; }, 0)
+    var monthcomplete = yesterday / (numdays-counter) ;
+    var runrate = summed / monthcomplete
+    return {
+        name: group[0].name,
+        id: group[0].id,
+        vendor: group[0].vendor,
+        vendor_account_name: group[0].vendor_account_name,
+        service: group[0].service,
+        region: group[0].region,
+        run_rate: runrate,
+    }
+  });
+
+  var checked_results = unsorted_results
+
+  var formatted_data = _(checked_results).chain()
+  .sortBy(function(result){
+    return result.region;
+  }).sortBy(function(result) {
+    return result.vendor_account_name;
+  }).sortBy(function(result) {
+    return result.vendor;
+  }).value();
+
+  var total_sum = _.chain(formatted_data)
+  .pluck('run_rate')
+  .reduce(function(memo, num){ return memo + parseFloat(num); }, 0).value();
+  _.each(formatted_data, function(data){  
+    data["total_sum"] = parseFloat(total_sum).toFixed(2)
+    data["run_rate"] = parseFloat(data.run_rate).toFixed(2)
+    return data
+   })
+   formatted_data = _.groupBy(formatted_data, function(value){
+    return value.id + '#' + value.vendor + '#' + value.vendor_account_name + '#' + value.region + '#' + value.service
+  });
+EOS
+end
+
+datasource "ds_old_bc_costs" do
+  request do
+    run_script $js_old_costs_request, rs_org_id, $ds_billing_centers, $param_billing_centers
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response,"rows[*]") do
+      field "vendor", jmes_path(col_item, "dimensions.vendor")
+      field "vendor_account_name", jmes_path(col_item,"dimensions.vendor_account_name")
+      field "cost_nonamortized_blended_adj", jmes_path(col_item,"metrics.cost_nonamortized_blended_adj")
+      field "service", jmes_path(col_item, "dimensions.service")
+      field "region", jmes_path(col_item, "dimensions.region")
+      field "id", jmes_path(col_item,"dimensions.billing_center_id")
+      field "timestamp", jmes_path(col_item,"timestamp")
+    end
+  end
+end
+
+script "js_old_costs_request", type: "javascript" do
+  parameters "org_id","ds_billing_centers", "param_billing_centers"
+  result "request"
+  code <<-EOS
+    //https://stackoverflow.com/questions/3605214/javascript-add-leading-zeroes-to-date 
+    function pad(n){return n<10 ? '0'+n : n}
+    var date = new Date();
+    var year = date.getUTCFullYear();
+    var month = (2 + date.getUTCMonth())
+    
+    if (month == 1){ 
+      var lmonth = 12;
+      var lyear = year-1 ;
+    } else {
+      var lmonth = month-1;
+      var lyear = year ;
+    }
+    
+    mo = month.toString().length > 1 ? month : '0' + month;
+    lmo = lmonth.toString().length > 1 ? lmonth : '0' + lmonth;
+    var yesterday = new Date(new Date().setDate(new Date().getDate()-1)).getDate()
+    var next_month = lyear + "-" + lmo + "-" + pad(yesterday)
+    var current_month = lyear + "-" + lmo + '-01'
+    var last_month = new Date();
+    last_month.setDate(1);
+    var past_months = 1
+    last_month.setMonth(last_month.getMonth() - past_months);
+    var fom = last_month.toISOString().split('T')[0]
+    var d = new Date(lyear, lmo-1, 0);
+    var lom = d.toISOString().split('T')[0]
+
+    var billing_center_ids = []
+    if (param_billing_centers.length === 0){
+      var top_billing_centers = _.reject(ds_billing_centers, function(bc){ return bc.parent_id != null });
+      billing_center_ids = _.map(top_billing_centers, function(value, key){ return value.id });
+    } else {
+      // get array of billing center id's that match the names in param_billing_centers.
+      billing_center_names = _.map(param_billing_centers, function(name){ return name.toLowerCase(); });
+      billing_center_ids = _.compact(_.map(ds_billing_centers, function(value){ if(_.contains(billing_center_names, value.name.toLowerCase())){return value.id} }));
+    }
+
+    var request = {
+      auth: "auth_rs",
+      verb: "POST",
+      host: "optima.rightscale.com",
+      path: "/bill-analysis/orgs/" + org_id + "/costs/aggregated",
+      body_fields: {
+        "dimensions": ["billing_center_id", "vendor", "vendor_account_name", "service", "region"],
+        "granularity": "day",
+        "metrics": ['cost_nonamortized_blended_adj'],
+        "billing_center_ids": billing_center_ids,
+        "start_at": fom,
+        "end_at": lom
+      },
+      headers: {
+        "Api-Version": "1.0",
+        "User-Agent": "RS Policies",
+      }
+    }
+  EOS
+end
+
+datasource "ds_format_old_costs" do
+  run_script $js_format_costs, $ds_old_bc_costs, $ds_cloud_vendor_accounts, $ds_billing_centers
+end
+
+datasource "ds_check_services" do
+  run_script $js_check_services, $ds_format_new_costs, $ds_format_old_costs
+end
+
+script "js_check_services", type: "javascript" do
+  parameters "ds_format_new_costs", "ds_format_old_costs"
+  result "formatted_data"
+  code <<-EOS
+  var formatted_data = [];
+  var ds_new = ds_format_new_costs
+  var ds_old = ds_format_old_costs
+  var difference = _.difference(_.keys(ds_new),_.keys(ds_old))
+
+  var data = {}
+  _.each(difference, function(key){
+    data[key] = ds_new[key]
+  })
+
+  var formatted_data = _.map(data, function(item){
+    return {
+      name: item[0].name,
+      id: item[0].id,
+      vendor: item[0].vendor,
+      vendor_account_name: item[0].vendor_account_name,
+      service: item[0].service,
+      region: item[0].region,
+      run_rate: item[0].run_rate,
+      total_sum: item[0].total_sum
+    } 
+  })
+
+EOS
+end
+
+escalation "esc_budget_alert" do
+  email $param_email
+end
+
+policy "policy_budget_alert" do
+  validate_each $ds_check_services do
+    summary_template "{{ rs_org_name }} (Org ID: {{ rs_org_id }}): New Service Usage Detected"
+    detail_template <<-EOS
+# New Service Usage Detected
+
+| Billing Center Name | Vendor | Account Name | Region | Service | Projected Cost |
+| ------------------- | ------ | ------------ | ------ | ------- | -------------- |
+{{ range data -}}
+| {{.name}} | {{.vendor}} | {{.vendor_account_name}} | {{.region}} | {{.service}} | {{.run_rate}} | 
+{{ end -}}
+
+###### Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }}) within Org: {{ rs_org_name }} (Org ID: {{ rs_org_id }})
+EOS
+    escalate $esc_budget_alert
+    check logic_and(eq(val(item,"run_rate"),"0.00"), eq($param_include_0,"false"))
+  end
+end
