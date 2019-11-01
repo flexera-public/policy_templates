@@ -1,10 +1,4 @@
-<<<<<<< HEAD
-# RightScale Policy Templates
-
-asdfaa
-=======
 ﻿# Flexera CMP Policy Templates
->>>>>>> master
 
 This repository contains a library of open source Flexera CMP Policy Templates to provide governance via automation across Cost, Security, Operational, and Compliance categories.  All contributions are shared under the MIT license.
 
