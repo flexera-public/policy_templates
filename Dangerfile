@@ -69,11 +69,10 @@ categories = [
   'saas management',
   'security'
 ].sort
-changed_files.each do |file|
+#only check .pt files
+has_app_changes.each do |file|
  diff = git.diff_for_file(file)
  regex =/^\+category/
-
- #message diff.patch
  if diff && diff.patch =~ regex
    diff.patch.each_line do |line|
      if line =~ regex
@@ -88,10 +87,20 @@ end
 
 # check markdown of .md files with markdown lint
 # .md files should follow these rules https://github.com/markdownlint/markdownlint/blob/master/docs/RULES.md
-# md_files.each do |file|
-#   mdl = `mdl #{file}`
-#   fail mdl
-# end
+mdl = nil
+md_files.each do |file|
+  if file == 'README.md'
+    # MD024  Multiple headers with the same content
+    # MD013 disable line length
+    mdl = `mdl -r "~MD024","~MD013" #{file}`
+  else
+    # use .mdlrc rules
+    mdl = `mdl #{file}`
+  end
+  if mdl
+    fail mdl
+  end
+end
 
 fail 'Please provide a summary of your Pull Request.' if github.pr_body.length < 10
 
