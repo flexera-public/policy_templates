@@ -114,7 +114,7 @@ This policy template has the following Input parameters which require value befo
 
 Policy actions may include automation to alert or remediate violations found in the Policy Incident. Actions that destroy or terminate a resource generally require approval from the Policy Approver. This policy includes the following actions.  
 
-- Sends and email notification
+- Sends an email notification
 - list additional actions if any.  
 
 ## Required Permissions
