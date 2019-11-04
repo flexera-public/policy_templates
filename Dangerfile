@@ -102,14 +102,6 @@ md_files.each do |file|
   end
 end
 
-mdspell = nil
-md_files.each do |file|
-  mdspell = `mdspell #{file}`
-  if mdspell
-    fail mdspell
-  end
-end
-
 fail 'Please provide a summary of your Pull Request.' if github.pr_body.length < 10
 
 fail 'Please add labels to this Pull Request' if github.pr_labels.empty?
