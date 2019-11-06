@@ -32,7 +32,7 @@ exclude_hosts = [
 ]
 changed_files.each do |file|
  diff = git.diff_for_file(file)
- regex =/(^\+).+?(http|https):\/\/[a-zA-Z0-9.\/?=_-]*.+/
+ regex =/(^\+)/
  if diff && diff.patch =~ regex
    diff.patch.each_line do |line|
      if line =~ regex
