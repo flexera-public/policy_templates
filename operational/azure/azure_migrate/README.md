@@ -1,8 +1,8 @@
-## Azure Migrate Integration
+# Azure Migrate Integration
 
 ### What it does
 
-This Policy will collect the resources from a RISC Foundations assessment and seed Azure Migrate with the discovered servers. 
+This Policy will collect the resources from a RISC Foundations assessment and seed Azure Migrate with the discovered servers.
 
 ### Pre-requisites
 
@@ -24,7 +24,6 @@ This policy has the following input parameters required when launching the polic
 ### Supported Clouds
 
 - Azure
-
 
 ### Cost
 
