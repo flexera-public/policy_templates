@@ -21,6 +21,10 @@ This policy has the following input parameters required when launching the polic
 - *Azure Subscription ID* - the Azure Subscription ID used for the Azure API Authentication
 - *Azure Migrate Project Name* - The resource name of the Azure Migrate Project where RISC data should be populated
 
+## Policy Actions
+
+- Populate an Azure Migrate project with the discovered servers from a RISC Foundations Assessment
+
 ## Supported Clouds
 
 - Azure
