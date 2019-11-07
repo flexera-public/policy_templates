@@ -86,6 +86,7 @@ Please contact sales@flexera.com to learn more.
 - [Google Expiring Committed Use Discount (CUD)](./cost/google/cud_expiration/)
 
 ##### Database
+
 - [Google Unused CloudSQL Instances](./cost/google/unused_cloudsql_instances)
 - [Google Rightsize CloudSQL Instances](./cost/google/cloudsql_rightsizing/)
 
@@ -114,11 +115,13 @@ Please contact sales@flexera.com to learn more.
 - [AWS Publicly Accessible RDS Instances](./security/aws/rds_publicly_accessible/)
 
 ##### Storage
+
 - [AWS Open Buckets](./security/storage/aws/public_buckets/)
 - [AWS Unencrypted S3 Buckets](./security/aws/unencrypted_s3_buckets/)
 - [AWS Unencrypted Volumes](./security/aws/ebs_unencrypted_volumes/)
 
 ##### Load Balancers
+
 - [AWS Internet-facing ELBs & ALBs](./security/aws/loadbalancer_internet_facing/)
 - [AWS Unencrypted ELB Listeners (CLB)](./security/aws/clb_unencrypted/)
 - [AWS Unencrypted ELB Listeners (ALB/NLB)](./security/aws/elb_unencrypted/)
@@ -174,7 +177,7 @@ Please contact sales@flexera.com to learn more.
 - [Stranded Servers](./operational/stranded_servers/)
 - [NetFlow Top Talkers](./operational/azure/network_flow)
 
-#### AWS  
+#### AWS
 
 - [AWS Cloud Credentials Rotation](./operational/cloud_credentials/aws)
 - [AWS RDS Backup Settings](./operational/dbaas/aws/rds_backup)
@@ -192,7 +195,6 @@ Please contact sales@flexera.com to learn more.
 #### Other
 
 - [Schedule FlexNet Manager report](./operational/fnms/schedule_fnms_reports)
-
 
 ### SaaS Management
 
