@@ -17,7 +17,9 @@ end
 
 has_new_policy_template.each do |file|
   fpt = `fpt check #{file}`
-  fail fpt
+  if fpt != nil
+    fail fpt
+  end
 end
 
 if (has_new_policy_template.length != 0) && missing_doc_changes
