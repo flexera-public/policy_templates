@@ -39,6 +39,7 @@ Please contact sales@flexera.com to learn more.
 - [AWS Reserved Instance Reservation Coverage](./cost/aws/reserved_instances/coverage/)
 - [AWS Reserved Instances Report by Billing Center](./cost/aws/reserved_instances/report_by_bc)
 - [AWS Reserved Instance Recommendations](./cost/aws/reserved_instances/recommendations)
+- [AWS Savings Plan Recommendations](./cost/aws/savings_plan/recommendations)
 
 ##### Database
 
