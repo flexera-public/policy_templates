@@ -33,6 +33,7 @@ end
 exclude_hosts = [
   'api.loganalytics.io',
   'management.azure.com',
+  'management.core.windows.net',
   'login.microsoftonline.com',
   'oauth2.googleapis.com',
   'www.googleapis.com'
@@ -46,8 +47,9 @@ changed_files.each do |file|
        URI.extract(line,['http','https']).each do |url|
          res = nil
          next if exclude_hosts.include?(url.scan(URI.regexp)[0][3])
-         url_string = url.to_s.gsub(')','') #remove extra chars
+         url_string = url.to_s.gsub(/\)|\.$/,'') #remove extra chars
          url = URI(url_string) #convert to URL
+         next if ! url.host # verify there is a host
          res = Net::HTTP.get_response(url) #make request
          # test again when the file isn't found and path includes tree/master
          # likely the README link or a new file included in the repo
@@ -56,7 +58,7 @@ changed_files.each do |file|
            url = URI(url_string) #convert to URL
            res = Net::HTTP.get_response(url) #make request
          end
-         if res.code != '200'
+         if ! res.code =~ /200|302/ #allow OK and temporary redirects such as login
            fail "The URL is not valid: #{url_string} in #{file} Status: #{res.code}"
          end
        end
@@ -104,8 +106,8 @@ md_files.each do |file|
     # use .mdlrc rules
     mdl = `mdl #{file}`
   end
-  if mdl
-    fail mdl
+  if !mdl.empty?
+    fail "#{file} '#{mdl}'"
   end
 end
 
