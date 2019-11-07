@@ -20,7 +20,7 @@ The policy leverages the cloud API to get all current EC2 instances and the Flex
 ![Alt text][FNMSReport]
 
 Click on Preview and filter.
-Select `Microsoft Azure` under `Inventory device` > `Hosted in`
+Select `Amazon Web Services` under `Inventory device` > `Hosted in`
 
 ![Alt text][FilterFNMSReport]
 
@@ -86,7 +86,7 @@ This Policy Template does not incur any cloud costs.
 [APIToken]: images/APIToken.png "APIToken"
 [CreateServeceAccount]: images/CreateServeceAccount.png "Create Service Account"
 [FNMSReport]: images/FNMS_cv_Report.png "FNMS Cloud Instance Report"
-[FilterFNMSReport]: images/Filter_FNMS_Report.PNG "FNMS Microsoft Azure Instance Report"
-[ReportNumber]: images/ReportNumber.png "ReportNumber"
+[FilterFNMSReport]: images/Filter_FNMS_Report.PNG "FNMS Amazon Web Services Instance Report"
+[ReportNumber]: images/ReportNumber.png "Report Number"
 [WebServiceRole]: images/WebServiceRole.png "WebServiceRole"
 [CMPToken]: images/CMP_NewToken.png "CMP Token"
