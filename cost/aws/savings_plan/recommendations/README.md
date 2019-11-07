@@ -55,8 +55,6 @@ This policy has the following input parameters required when launching the polic
 
 - Cloud Management - credential_viewer
 
-
-
 ### Supported Clouds
 
 - AWS
