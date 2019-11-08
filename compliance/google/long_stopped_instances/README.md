@@ -1,6 +1,7 @@
-## Google Long-Stopped Instances
+# Google Long-Stopped Instances
 
 ### What it does
+
 This policy checks all Google instances that are stopped and reports on any that have been stopped for more than a specified period of time. The user is given the option to Terminate the instance after approval.
 
 ### Functional Details
