@@ -42,7 +42,7 @@ This policy has the following input parameters required when launching the polic
 ## Actions
 
 - Sends an email notification
-- Rightsize SQL Databases after approval 
+- Rightsize SQL Databases after approval
 
 ### Required RightScale Roles
 
