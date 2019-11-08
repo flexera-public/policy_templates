@@ -1,13 +1,16 @@
 # AWS EC2 Instances not running FlexNet Inventory Agent
 
 ## What it does
+
 This policy checks all EC2 instances running in AWS to determine if the FlexNet Inventory Agent is running on the instance and reports on any that are missing the agent.
 The policy is a recommendation only policy, no action is taken during the Policy Escalation.
 
 ## Functional Description
-The policy leverages the cloud API to get all current EC2 instances and the FlexNet Manager report (Custom view) API to get all AWS cloud instances with agent. It cross-checks the two lists to determine if any instances are running on the cloud that aren't known to FlexNet Manager.  The policy matches the InstanceCloudID from FlexNet Manager System and the instanceId from AWS. 
+
+The policy leverages the cloud API to get all current EC2 instances and the FlexNet Manager report (Custom view) API to get all AWS cloud instances with agent. It cross-checks the two lists to determine if any instances are running on the cloud that aren't known to FlexNet Manager.  The policy matches the InstanceCloudID from FlexNet Manager System and the instanceId from AWS.
 
 ## Prerequisites
+
 - FlexNet Manager
 - The following RightScale Credentials
 - 'FNMS_API_Token'
@@ -49,7 +52,7 @@ The Cloud Management Platform automatically creates two Credentials when connect
 
 ## Installation
 
-### How to setup FlexNet Manager Custom View for this policy:
+### How to setup FlexNet Manager Custom View for this policy
 
 1. Create a custom view in FlexNet manager that could look like this:
 ![Alt text][FNMSReport]
@@ -63,25 +66,27 @@ Once saved, note the report number in thr URL field :
 ![Alt text][ReportNumber] you need it when activating the Policy for 'FlexNet Manager System Report ID'.
 
 1. Setup the API Token in FlexNet Manager System:
+
     1. On the Account page - Select Create Account -> Service Account and fill in the form
 
         ![Alt text][CreateServeceAccount]
     1. IMPORTANT: When you hit save you will see a API Token.. This is the only time you will see it so you need to save it at this point
-    
+
         ![Alt text][APIToken]
     1. Add the new account to the Role ___Webservice___
 
         ![Alt text][WebServiceRole]
-		
+
 ### Cloud manager
 
-1. Create RightScale Credentials with values that match the FlexNet Manager API Token (Credential name: `FNMS_API_Token`) 
+1. Create RightScale Credentials with values that match the FlexNet Manager API Token (Credential name: `FNMS_API_Token`)
 
 ## Supported Clouds
 
 - AWS
 
 ## Cost
+
 This Policy Template does not incur any cloud costs.
 
 <!-- Image referances -->
