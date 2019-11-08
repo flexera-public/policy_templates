@@ -55,6 +55,7 @@ The Cloud Management Platform automatically creates two Credentials when connect
 ### How to setup FlexNet Manager Custom View for this policy
 
 1. Create a custom view in FlexNet manager that could look like this:
+
 ![Alt text][FNMSReport]
 
 Click on Preview and filter.
