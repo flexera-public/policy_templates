@@ -1,0 +1,309 @@
+name "Azure Migrate Integration"
+rs_pt_ver 20180301
+type "policy"
+short_description "This Policy will collect the resources from a RISC Foundations assessment and seed Azure Migrate with the discovered servers. See the [README](https://github.com/rightscale/policy_templates/tree/master/operational/azure/azure_migrate) and [docs.rightscale.com/policies](http://docs.rightscale.com/policies/) to learn more."
+long_description "Version: 1.0"
+category "Operational"
+severity "low"
+
+#Provide your RISC user name. E.g. (somebody@flexera.com)
+parameter "param_userid" do
+  type "string"
+  label "RISC User ID"
+  description "Email address of the RISC User Account which will be used for authentication"
+  category "RISC"
+end
+
+#Provide your RISC Password.  Hash it as per the guide here (https://portal.riscnetworks.com/app/documentation/?path=/using-the-platform/restful-api-access/)
+# Hash is MD5 of password, UCASE all letters, Prepend the API Key, MD5 the new string. Example : md5(concat(apiKey,to_upper(md5(password))));
+parameter "param_password" do
+  type "string"
+  label "RISC Hashed Password"
+  description "Hashed password to be used for authentication. See the README for requirements."
+  no_echo true
+  category "RISC"
+end
+
+#Whats your API Key provided by RISC
+parameter "param_acode" do
+  type "string"
+  label "RISC Assessment Code"
+  description "RISC Assessment Code to be used for authentication."
+  category "RISC"
+end
+
+parameter "param_azure_tenant_id" do 
+  type "string"
+  label "Azure Tenant ID"
+  category "Azure"
+end 
+
+parameter "param_subscription_id" do 
+  type "string"
+  label "Azure Subscription ID"
+  category "Azure"
+end 
+
+parameter "param_amh_project_name" do
+  type "string"
+  label "Azure Migrate Project Name"
+  category "Azure"
+end 
+
+datasource "ds_riscauth" do
+  request do
+    verb "POST"
+    host "api.riscnetworks.com"
+    path "/1_0/getAuthToken"
+    body_field "userid", $param_userid
+    body_field "password", $param_password
+    body_field "assessmentcode", $param_acode
+    header "Content-Type", "application/json"
+  end
+  result do
+    encoding "json"
+    field "token", jmes_path(response, "token")
+  end
+end
+
+datasource "ds_riscgetStackSummary" do
+  request do
+    run_script $js_riscgetStackSummary, $ds_riscauth, $param_acode
+  end
+
+  result do
+    encoding "json"
+    collect jmes_path(response, "assets[*]") do
+      field "confirmed", jmes_path(col_item, "confirmed")
+      field "licensed", jmes_path(col_item, "licensed")
+      field "num_stack_members", jmes_path(col_item, "num_stack_members")
+      field "stack_name", jmes_path(col_item, "stack_name")
+      field "stackid", jmes_path(col_item, "stackid")
+      field "tags", jmes_path(col_item, "tags")
+    end
+  end
+end
+
+script "js_riscgetStackSummary", type: "javascript" do
+  result "request"
+  parameters "ds_riscauth", "param_acode"
+
+  code <<-EOS
+    
+    var authtoken = ds_riscauth.token
+    request = {
+      "host": "api.riscnetworks.com",
+      "verb": "GET",
+      "path": "/1_0/stacks/getSummary",
+      "headers": {
+        "User-Agent": "RS Policies",
+        "Content-Type": "application/json",
+        "assessmentcode": param_acode,
+        "token":  authtoken 
+      }
+    }
+
+  EOS
+end
+
+datasource "ds_riscgetAssetsByStack" do
+  iterate $ds_riscgetStackSummary
+  request do
+    run_script $js_riscgetAssetsByStack, $ds_riscauth, $param_acode, val(iter_item,"stackid")
+  end
+
+  result do
+    encoding "json"
+    collect jmes_path(response, "assets[*]") do
+      field "hostname", jmes_path(col_item, "data.hostname")
+      field "hardware_serial", jmes_path(col_item,"data.hardware_serial")
+      field "deviceid", jmes_path(col_item, "data.deviceid")
+      field "identifying_ip", jmes_path(col_item, "data.identifying_ip")
+      field "identifying_mac", jmes_path(col_item, "data.identifying_mac")
+      field "ostype", jmes_path(col_item, "data.os")
+      field "osversion", jmes_path(col_item, "data.os_version")
+      field "tags" do 
+        collect jmes_path(col_item, "tags[*]") do 
+          field "key", jmes_path(col_item, "tagkey")
+          field "value", jmes_path(col_item, "tagvalue")
+        end
+      end
+
+    end
+  end
+end
+
+script "js_riscgetAssetsByStack", type: "javascript" do
+  result "request"
+  parameters "ds_riscauth", "param_acode", "stackid"
+  code <<-EOS
+    var authtoken = ds_riscauth.token
+    request = {
+      "host": "api.riscnetworks.com",
+      "verb": "GET",
+      "path": "/1_0/assets/getAssets/byStack/"+ stackid,
+      "headers": {
+        "User-Agent": "RS Policies",
+        "Content-Type": "application/json",
+        "assessmentcode": param_acode,
+        "token":  authtoken
+      }
+    }
+
+  EOS
+end
+
+policy "discovered_devices" do
+  validate $ds_riscgetAssetsByStack do
+    summary_template "Discovered Servers to be Added to Azure Migrate"
+    detail_template <<-EOS
+# Discovered Servers to be Added to Azure Migrate
+| Hostname | IP Address | 
+| -------- | ---------- |
+{{ range data -}}
+| {{.hostname}} | {{.identifying_ip}}
+{{ end -}}
+EOS
+    escalate $esc_azure_migrate
+    check false
+  end
+end
+
+escalation "esc_azure_migrate" do
+  run "main", data, $param_azure_tenant_id, $param_subscription_id, $param_amh_project_name
+end
+
+define main($data,$azure_tenant_id,$subscription_id,$amh_project_name) return $data_response do 
+  call get_access_token($azure_tenant_id) retrieve $access_token
+  call get_migrate_project_details($subscription_id,$amh_project_name,$access_token) retrieve $solution_id
+  call get_eventhub_and_token($solution_id,$access_token) retrieve $eventhub_host,$sas_token,$publisher_id,$eventhub_name
+  call format_data($data) retrieve $payload
+  call send_data($eventhub_host, $eventhub_name, $publisher_id, $sas_token, $payload) retrieve $data_response
+end
+
+define get_access_token($param_azure_tenant_id) return $access_token do
+
+  $client_id = cred("AZURE_APPLICATION_ID")
+  call url_encode(cred("AZURE_APPLICATION_KEY")) retrieve $client_secret
+
+  $body_string = "grant_type=client_credentials&resource=https://management.core.windows.net/&client_id="+$client_id+"&client_secret="+$client_secret
+
+  $auth_response = http_post(
+    url: join(["https://login.microsoftonline.com/",$param_azure_tenant_id,"/oauth2/token?api-version=1.0"]),
+    headers : {
+      "cache-control":"no-cache",
+      "content-type":"application/x-www-form-urlencoded"
+    },
+    body:$body_string
+  )
+
+  $auth_response_body = $auth_response["body"]
+  $access_token = $auth_response_body["access_token"]
+
+end
+
+define get_migrate_project_details($subscription_id,$amh_project_name,$access_token) return $solution_id do
+  $$projects_response = http_get(
+    url: join(["https://management.azure.com/subscriptions/",$subscription_id,"/providers/Microsoft.Migrate/MigrateProjects?api-version=2019-06-01"]),
+    headers: {"authorization": "Bearer " + $access_token}
+    )
+  $projects = $$projects_response["body"]["value"]
+  foreach $project in $projects do
+    if $project["name"] == $amh_project_name
+      $$target_project = $project
+    end 
+  end
+
+  $$target_project_solutions_response = http_get(
+    url: join(["https://management.azure.com",$$target_project["id"],"/Solutions?api-version=2019-06-01"]),
+    headers: {"authorization": "Bearer " + $access_token}
+    )
+  $solutions = $$target_project_solutions_response["body"]["value"]
+  foreach $solution in $solutions do 
+    if $solution["properties"]["tool"] == "Flexera"
+      $$target_solution = $solution 
+    end 
+  end
+  $solution_id = $$target_solution["id"]
+end
+
+define get_eventhub_and_token($solution_id,$access_token) return $eventhub_host,$sas_token,$publisher_id,$eventhub_name do
+  $response = http_post(
+    url: join(["https://management.azure.com", $solution_id, "/getConfig?api-version=2019-06-01"]),
+    headers: {"authorization": "Bearer " + $access_token}
+    )
+  $publisherSasUri = $response["body"]["publisherSasUri"]
+  $eventhub_host = split(split(split($publisherSasUri, ";")[0], "//")[1], "/")[0]
+  $sas_token = strip(split(split($publisherSasUri, ";")[1], "SharedAccessSignature")[2])
+  $publisher_id = split(split($publisherSasUri, ";")[3],"=")[1]
+  $eventhub_name = split(split($publisherSasUri, ";")[2],"=")[1]
+end
+
+define format_data($data) return $payload do 
+  $payload = []
+  foreach $item in $data do 
+    $object = {
+      "Version": "1.0",
+      "Name": $item['hostname'], 
+      "MessageType": "DiscoveryData",
+      "MachineId": $item['deviceid'],   
+      "MachineManagerId": "", 
+      "IpAddresses": [$item['identifying_ip']], 
+      "MacAddresses": [$item['identifying_mac']],
+      "BiosId": $item['hardware_serial'],
+      "OSType": $item['ostype'], 
+      "OSName": $item['osversion'], 
+      "OSVersion": $item['osversion'], 
+      "IsDeleted": "false"
+    }
+    $tags = {}
+    foreach $item_tag in $item['tags'] do 
+      if $item_tag['key'] != null
+        $key = $item_tag['key']
+        $val = $item_tag['value']
+        $tag = { $key : $val }
+        $tags = $tags + $tag
+      end
+    end 
+
+    $ext_prop = {"ExtendedProperties": $tags}
+
+    $object = $ext_prop + $object
+    $payload << $object
+  end 
+end 
+
+define send_data($eventhub_host, $eventhub_name, $publisher_id, $sas_token, $payload) return $response do 
+  $response = http_post(
+    url: join(["https://",$eventhub_host,"/",$eventhub_name,"/publishers/",$publisher_id,"/messages"]),
+    headers: {
+      "content-type": "application/json",
+      "authorization":"SharedAccessSignature "+$sas_token
+      },
+    body: $payload
+    )
+end
+
+define url_encode($string) return $encoded_string do
+  $encoded_string = $string
+  $encoded_string = gsub($encoded_string, " ", "%20")
+  $encoded_string = gsub($encoded_string, "!", "%21")
+  $encoded_string = gsub($encoded_string, "#", "%23")
+  $encoded_string = gsub($encoded_string, "$", "%24")
+  $encoded_string = gsub($encoded_string, "&", "%26")
+  $encoded_string = gsub($encoded_string, "'", "%27")
+  $encoded_string = gsub($encoded_string, "(", "%28")
+  $encoded_string = gsub($encoded_string, ")", "%29")
+  $encoded_string = gsub($encoded_string, "*", "%2A")
+  $encoded_string = gsub($encoded_string, "+", "%2B")
+  $encoded_string = gsub($encoded_string, ",", "%2C")
+  $encoded_string = gsub($encoded_string, "/", "%2F")
+  $encoded_string = gsub($encoded_string, ":", "%3A")
+  $encoded_string = gsub($encoded_string, ";", "%3B")
+  $encoded_string = gsub($encoded_string, "=", "%3D")
+  $encoded_string = gsub($encoded_string, "?", "%3F")
+  $encoded_string = gsub($encoded_string, "@", "%40")
+  $encoded_string = gsub($encoded_string, "[", "%5B")
+  $encoded_string = gsub($encoded_string, "]", "%5D")
+end
+

@@ -146,6 +146,7 @@ Please contact sales@flexera.com to learn more.
 
 - [AWS Disallowed Regions](./compliance/aws/disallowed_regions/)
 - [AWS Unused ECS Clusters](./compliance/aws/ecs_unused/)
+- [AWS EC2 Instances not running FlexNet Inventory Agent](./compliance/aws/instances_without_fnm_agent/)
 
 #### Azure
 
@@ -187,6 +188,7 @@ Please contact sales@flexera.com to learn more.
 #### Azure
 
 - [Azure VMs Not Using Managed Disks](./operational/azure/vms_without_managed_disks/)
+- [Azure Migrate Integration](./operational/azure/azure_migrate)
 
 #### VMWare
 
