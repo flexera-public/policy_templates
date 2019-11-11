@@ -86,7 +86,7 @@ Example:
 
 ### Other (OPTIONAL)
 
-Write additional details the policy designer, policy manager or policy approver may need to know to use or change the policy. 
+Write additional details the policy designer, policy manager or policy approver may need to know to use or change the policy.
 
 ### Example Readme
 
