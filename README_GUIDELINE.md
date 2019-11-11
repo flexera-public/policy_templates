@@ -2,7 +2,7 @@
 
 This document provides guidance on how to properly write a Policy Template README file.  The purpose of this file to help the policy template developer create a proper readme file, expedite the pull request review process, and have a consistent feel across all README files.
 
-The README file is an important artifact of the policy template.  It is the customer facing documentation and should be written as such.  The README file should be free of typos, spelling errors, easy to read and correct grammar.  
+The README file is an important artifact of the policy template.  It is the customer facing documentation and should be written as such.  The README file should be free of typos, spelling errors, easy to read and correct grammar.
 
 ## Readme File Sections
 
@@ -22,7 +22,7 @@ Example with supported cloud:
 
 ## AWS Idle Compute Instances
 
-```  
+```
 
 Example: Multi Cloud.
 
@@ -34,10 +34,10 @@ Example: Multi Cloud.
 
 ### What It Does (REQUIRED)
 
-This section should be exactly written as the short_description of the policy template without the links to the readme or docs site.  It should be a non-technical description of what the policy checks as well as it's action.  
+This section should be exactly written as the short_description of the policy template without the links to the readme or docs site.  It should be a non-technical description of what the policy checks as well as it's action.
 
 Example:
-Checks for AWS idle instances using CPU and Memory metrics and terminates them after approval.  
+Checks for AWS idle instances using CPU and Memory metrics and terminates them after approval.
 
 ### Functional Description (REQUIRED)
 
@@ -49,7 +49,7 @@ Inputs parameters are the fields displayed when applying the policy template.  E
 
 Example:
 
-- *Email notify list* - Email addresses of the recipients you wish to notify.  
+- *Email notify list* - Email addresses of the recipients you wish to notify.
 - *Other parameter* - include detail and extra information here.
 
 ### Policy Actions (REQUIRED)
@@ -86,7 +86,7 @@ Example:
 
 ### Other (OPTIONAL)
 
-Write additional details the policy designer, policy manager or policy approver may need to know to use or change the policy.  
+Write additional details the policy designer, policy manager or policy approver may need to know to use or change the policy. 
 
 ### Example Readme
 
@@ -105,17 +105,17 @@ Add functional detail here
 
 ## Input Parameters
 
-This policy template has the following Input parameters which require value before the policy can be applied.  
+This policy template has the following Input parameters which require value before the policy can be applied.
 
-- *Email notify list* - Email addresses of the recipients you wish to notify.  
+- *Email notify list* - Email addresses of the recipients you wish to notify.
 - *Other parameter* - include detail and extra information here.
 
 ## Policy Actions
 
-Policy actions may include automation to alert or remediate violations found in the Policy Incident. Actions that destroy or terminate a resource generally require approval from the Policy Approver. This policy includes the following actions.  
+Policy actions may include automation to alert or remediate violations found in the Policy Incident. Actions that destroy or terminate a resource generally require approval from the Policy Approver. This policy includes the following actions.
 
 - Sends an email notification
-- list additional actions if any.  
+- list additional actions if any.
 
 ## Required Permissions
 
