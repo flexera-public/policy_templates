@@ -160,7 +160,7 @@ Please contact sales@flexera.com to learn more.
 
 #### Google
 
--[Google Long-Stopped Instances](./compliance/google/long_stopped_instances)
+- [Google Long-Stopped Instances](./compliance/google/long_stopped_instances)
 
 #### Other
 
