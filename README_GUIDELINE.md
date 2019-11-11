@@ -52,7 +52,7 @@ Example:
 - *Email notify list* - Email addresses of the recipients you wish to notify.  
 - *Other parameter* - include detail and extra information here.
 
-### Actions (REQUIRED)
+### Policy Actions (REQUIRED)
 
 Include all the actions available to the user.  All policies will have at least one action, the email notification.  There could be other actions such as terminating or resizing an instance.  Include a list of all possible actions.
 
@@ -110,7 +110,7 @@ This policy template has the following Input parameters which require value befo
 - *Email notify list* - Email addresses of the recipients you wish to notify.  
 - *Other parameter* - include detail and extra information here.
 
-## Actions (REQUIRED)
+## Policy Actions
 
 Policy actions may include automation to alert or remediate violations found in the Policy Incident. Actions that destroy or terminate a resource generally require approval from the Policy Approver. This policy includes the following actions.  
 
