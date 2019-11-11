@@ -18,7 +18,7 @@ The policy leverages the Google API to check all instances that have been stoppe
 
 - credential_viewer
 
-### Actions (REQUIRED)
+### Actions
 
 The following policy actions are taken on any resources found to be out of compliance.
 
