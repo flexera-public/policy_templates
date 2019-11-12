@@ -213,6 +213,7 @@ Please contact sales@flexera.com to learn more.
 - [Azure Instance Types](./data/azure/instance_types.json)
 - [Google Instance Types](./data/google/instance_types.json)
 - [Currency Reference](./cost/scheduled_reports/currency_reference.json)
+- [Azure SQL Service Tier Types](./data/azure/sql_service_tier_types.json)
 
 ## Instructions to upload policy templates to Flexera CMP Policies
 
