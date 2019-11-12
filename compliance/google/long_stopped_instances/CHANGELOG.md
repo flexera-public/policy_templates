@@ -1,6 +1,5 @@
 # Change log
 
-v1.0
------
+## v1.0
 
 - initial release
