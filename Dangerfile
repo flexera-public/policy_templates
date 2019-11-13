@@ -42,7 +42,9 @@ changed_files.each do |file|
          next if exclude_hosts.include?(url.scan(URI.regexp)[0][3])
          url_string = url.to_s.gsub(/\)|\.$/,'') #remove extra chars
          url = URI(url_string) #convert to URL
-         next if ! url.host # verify there is a host
+         # check for a valid host.  skip urls that are dynamicly constructed may not have a valid hostname
+         # for example http://ec2. + $region + .awsamazon.com/... does not have a valid hostname to query
+         next if url.host !~ /(?=^.{4,253}$)(^((?!-)[a-zA-Z0-9-]{1,63}(?<!-)\.)+[a-zA-Z]{2,63}$)/
          res = Net::HTTP.get_response(url) #make request
          # test again when the file isn't found and path includes tree/master
          # likely the README link or a new file included in the repo
