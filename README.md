@@ -158,6 +158,10 @@ Please contact sales@flexera.com to learn more.
 - [Azure Subscription Access](./compliance/azure/subscription_access/)
 - [Azure Tag Resources with Resource Group Name](./compliance/tags/azure_rg_tags)
 
+#### Google
+
+- [Google Long-Stopped Instances](./compliance/google/long_stopped_instances)
+
 #### Other
 
 - [FlexNet Manager Licenses At Risk](./compliance/fnms/fnms_licenses_at_risk/)
