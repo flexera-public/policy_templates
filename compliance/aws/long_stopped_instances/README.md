@@ -43,7 +43,7 @@ The Cloud Management Platform automatically creates two Credentials when connect
 
 ```javascript
 {
-  "Version": "2012-10-17",
+  "Version": "2010-08-01",
   "Statement":[{
       "Effect":"Allow",
       "Action":["cloudwatch:GetMetricStatistics"],
