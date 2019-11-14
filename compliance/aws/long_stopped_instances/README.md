@@ -1,10 +1,10 @@
-## Long-Stopped Instances
+# AWS Long-Stopped Instances
 
-### What it does
+## What it does
 
 This policy checks all instances that are stopped and reports on any that have been stopped for more than a specified period of time. The user is given the option to Terminate the instance after approval.
 
-### Functional Details
+## Functional Details
 
 The policy leverages the AWS API to check all instances that have been stopped for longer than the specified period. If the action is approved, the instance is terminated.
 
