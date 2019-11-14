@@ -1,0 +1,301 @@
+name "AWS Long-stopped Instances"
+rs_pt_ver 20180301
+type "policy"
+short_description "Report on any instances that have been stopped for a long time with the option to Terminate them. \n See the [README](https://github.com/flexera/policy_templates/tree/master/compliance/aws/long_stopped_instances) and [docs.rightscale.com/policies](http://docs.rightscale.com/policies/) to learn more."
+long_description "Version: 1.0"
+category "Compliance"
+severity "low"
+
+###############################################################################
+# Permissions
+###############################################################################
+
+permission "perm_read_creds" do
+  actions   "rs_cm.show_sensitive","rs_cm.index_sensitive"
+  resources "rs_cm.credentials"
+end
+
+###############################################################################
+# User inputs
+###############################################################################
+
+parameter "param_email" do
+  type "list"
+  label "Email addresses to notify"
+  description "Email addresses of the recipients you wish to notify when new incidents are created."
+
+
+parameter "param_exclude_tags" do
+  type "list"
+  category "User Inputs"
+  label "Exclusion Tag"
+  description "List of tags that will exclude EC2 instances from being evaluated by this policy. Multiple tags are evaluated as an 'OR' condition. Tag keys or key/value pairs can be listed. Example: 'test,env=dev'."
+end
+
+parameter "param_stopped_days" do
+  type "number"
+  label "Stopped days"
+  description "Number of days an instance is stopped before it is added to the report."
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+auth "auth_aws", type: "aws" do
+  version 4
+  service "ec2"
+  access_key cred('AWS_ACCESS_KEY_ID')
+  secret_key cred('AWS_SECRET_ACCESS_KEY')
+end
+
+auth "monitoring_auth_aws", type: "aws" do
+  version 4
+  service "monitoring"
+  access_key cred('AWS_ACCESS_KEY_ID')
+  secret_key cred('AWS_SECRET_ACCESS_KEY')
+end
+
+###############################################################################
+# Pagination
+###############################################################################
+
+pagination "aws_pagination_xml" do
+  get_page_marker do
+    body_path "//DescribeInstancesResponse/nextToken"
+  end
+  set_page_marker do
+    query "NextToken"
+  end
+end
+
+###############################################################################
+# Datasources
+###############################################################################
+
+#Generates list of Regions
+datasource "ds_regions_list" do
+  request do
+    verb "GET"
+    host "raw.githubusercontent.com"
+    path "/rightscale/policy_templates/master/data/aws/regions.json"
+    header "User-Agent", "RS Policies"
+  end
+end
+
+#Get the list of all EC2 Instances across all regions.
+#https://docs.aws.amazon.com/AWSEC2/latest/APIReference/API_DescribeInstances.html
+datasource "ds_ec2_stopped_instances_list" do
+  iterate $ds_regions_list
+  request do
+    auth $auth_aws
+    pagination $aws_pagination_xml
+    verb "GET"
+    host join(["ec2.",val(iter_item,"region"),".amazonaws.com"])
+    path "/"
+    query "Action", "DescribeInstances"
+    query "Version", "2016-11-15"
+    query "Filter.1.Name", "instance-state-name"
+    query "Filter.1.Value.1", "stopped"
+  end
+  result do
+    encoding "xml"
+    collect xpath(response, "//DescribeInstancesResponse/reservationSet/item/instancesSet/item","array") do
+      field "instance_id", xpath(col_item, "instanceId")
+      field "region", val(iter_item,"region")
+      field "instance_state", xpath(col_item, "instanceState/name")
+      field "instance_type", xpath(col_item,"instanceType")
+      field "tags" do
+        collect xpath(col_item, "tagSet/item") do
+          field "tagKey", xpath(col_item, "key")
+          field "tagValue", xpath(col_item, "value")
+        end
+      end
+    end
+  end
+end
+
+datasource "ds_cloudwatch_cpu_usage" do
+  iterate $ds_ec2_stopped_instances_list
+  request do
+    run_script $js_cloudwatch_cpu_usage, $param_stopped_days, val(iter_item, "region"), val(iter_item, "instance_id")
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "GetMetricStatisticsResponse.GetMetricStatisticsResult") do
+      field "instance_id", val(iter_item, "instance_id") 
+      field "datapoints", jmes_path(col_item,"Datapoints")
+    end
+  end
+end
+
+datasource "ds_list_aws_instances" do
+  run_script $js_filter_aws_instances, $ds_ec2_stopped_instances_list, $ds_cloudwatch_cpu_usage, $param_exclude_tags
+end
+
+###############################################################################
+# Scripts
+###############################################################################
+
+#https://docs.aws.amazon.com/AmazonCloudWatch/latest/APIReference/API_GetMetricStatistics.html
+script "js_cloudwatch_cpu_usage", type: "javascript" do
+  result "results"
+  parameters "param_stopped_days","region","instance_id"
+  code <<-EOS
+  var start_date = new Date(new Date().setDate(new Date().getDate() - parseInt(param_stopped_days))).toISOString();
+  console.log("start_date = " + start_date);
+  var end_date = new Date().toISOString();
+  console.log("end_date = " + end_date);
+  results = {
+    "auth": "monitoring_auth_aws",
+    "host": 'monitoring.'+region+'.amazonaws.com',
+    "verb": "GET",
+    "path": "/",
+    "headers": {
+      "User-Agent": "RS Policies",
+      "Content-Type": "application/json",
+      "x-amz-target": "GraniteServiceVersion20100801.GetMetricStatistics",
+      "Accept": "application/json",
+      "Content-Encoding": "amz-1.0"
+    }
+    "query_params": {
+      'Action': 'GetMetricStatistics',
+      'Version': '2010-08-01',
+      'Namespace': 'AWS/EC2',
+      'MetricName': 'CPUUtilization',
+      'Dimensions.member.1.Name': 'InstanceId',
+      'Dimensions.member.1.Value': instance_id,
+      'StartTime': start_date,
+      'EndTime': end_date,
+      'Period': "2592000",
+      'Statistics.member.1': 'Maximum',
+      'Statistics.member.2': 'Average',
+      'Statistics.member.3': 'Minimum'
+    }
+  }
+EOS
+end
+
+script "js_filter_aws_instances", type: "javascript" do
+  parameters "ds_ec2_stopped_instances_list", "ds_cloudwatch_cpu_usage", "param_exclude_tags"
+  result "res"
+  code <<-EOS
+   res = []
+   var param_exclude_tags_lower=[];
+    for(var i=0; i < param_exclude_tags.length; i++){
+      param_exclude_tags_lower[i]=param_exclude_tags[i].toString().toLowerCase();
+    }
+    _.each(ds_ec2_stopped_instances_list, function(instance_stopped){
+      _.each(ds_cloudwatch_cpu_usage, function(cloudwatch_metrics){	  
+        var tags=instance_stopped['tags'];
+        var is_tag_matched=false
+        var tag_key_value=""
+        if(typeof(tags) != "undefined"){
+	      for(var k=0;k<tags.length;k++){
+            var tag=tags[k];
+            if((param_exclude_tags_lower.indexOf((tag['tagKey']).toLowerCase()) !== -1) ||      (param_exclude_tags_lower.indexOf((tag['tagKey']+'='+tag['tagValue']).toLowerCase()) !== -1)){
+                is_tag_matched = true;
+            }
+            // Constructing tags with comma separated to display in detail_template
+            if((tag['tagValue']).length > 0){
+              tag_key_value = tag_key_value + ', '+ tag['tagKey']+'='+tag['tagValue']
+            }else{
+              tag_key_value = tag_key_value + ', '+ tag['tagKey']
+            }
+		  }
+        }
+	    //If the EC2 instance tag does not match with entered param_exclude_tags and cloud metrics is empty,
+		if(instance_stopped["instance_id"] == cloudwatch_metrics["instance_id"] && cloudwatch_metrics['datapoints'].length == 0 && !is_tag_matched){
+          res.push({
+            instance_id: instance_stopped['instance_id'],
+            region: instance_stopped['region'],
+            tagKeyValue:(tag_key_value.slice(1)),
+            instance_state: instance_stopped['instance_state'],
+            instance_type: instance_stopped['instance_type']
+          })
+        }
+      })
+	})
+		
+  EOS
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_report_stopped_instances" do
+  email $param_email
+end
+
+escalation "esc_terminate_stopped_instances" do
+  request_approval  do
+    label "Approve Termination of Long-stopped Instances"
+    description "Approve escalation to run RightScale Cloud Workflow to terminate long stopped AWS instances"
+    parameter "approval_reason" do
+      type "string"
+      label "Reason for Approval"
+      description "Explain why you are approving the action"
+    end
+  end
+  run "terminate_instances", data
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "pol_list_aws_instances" do
+  validate $ds_list_aws_instances do
+    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} AWS Instances Stopped for Over {{parameters.param_stopped_days}} Day(s)"
+    detail_template <<-EOS
+# AWS Instance Details
+| Instance ID | Region | Instance Type | Tags |
+| ----------- | ------ | ------------- | ---- |
+{{ range data -}}
+| {{.instance_id}} | {{.region}} | {{.instance_type}} | {{.tagKeyValue}} |
+{{ end -}}
+___
+###### Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }}) within Org: {{ rs_org_name }} (Org ID: {{ rs_org_id }})
+EOS
+    escalate $esc_report_stopped_instances
+    escalate $esc_terminate_stopped_instances
+    check eq(size(data),0)
+  end
+end
+
+###############################################################################
+# Cloud Workflow
+###############################################################################
+
+#https://docs.aws.amazon.com/AWSEC2/latest/APIReference/API_TerminateInstances.html
+define terminate_instances($data) return $all_responses do
+  $$debug=true
+  $all_responses = []
+  foreach $item in $data do
+   sub on_error: skip do
+    $response = http_get(
+       url: "https://ec2."+$item["region"]+".amazonaws.com/?Action=TerminateInstances&Version=2016-11-15&InstanceId.1="+$item["instance_id"],
+       "signature": { type: "aws",
+                      "access_key": cred("AWS_ACCESS_KEY_ID"),
+                      "secret_key": cred("AWS_SECRET_ACCESS_KEY") 
+	                }
+    )
+    $all_responses << $response
+    call sys_log('terminate long stopped ec2 instances response',to_s($response))
+    end
+  end
+end
+
+define sys_log($subject, $detail) do
+  if $$debug
+    rs_cm.audit_entries.create(
+      notify: "None",
+      audit_entry: {
+        auditee_href: @@account,
+        summary: "AWS Long stopped Instances Policy "+ $subject,
+        detail: $detail
+      }
+    )
+  end
+end

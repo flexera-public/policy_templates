@@ -17,15 +17,15 @@ if (has_app_changes.length != 0) && missing_doc_changes
   warn("Should this include readme changes")
 end
 
-has_new_policy_template.each do |file|
+if (has_new_policy_template.length != 0) && missing_doc_changes
+  fail "A README.md is required for new templates"
+end
+
+has_app_changes.each do |file|
   fpt = `fpt check #{file}`
   if fpt != nil
     fail fpt
   end
-end
-
-if (has_new_policy_template.length != 0) && missing_doc_changes
-  fail "A README.md is required for new templates"
 end
 
 # checks for broken links in the any file
