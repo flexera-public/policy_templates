@@ -147,6 +147,7 @@ Please contact sales@flexera.com to learn more.
 - [AWS Disallowed Regions](./compliance/aws/disallowed_regions/)
 - [AWS Unused ECS Clusters](./compliance/aws/ecs_unused/)
 - [AWS EC2 Instances not running FlexNet Inventory Agent](./compliance/aws/instances_without_fnm_agent/)
+- [AWS Long-stopped Instances](./compliance/aws/long_stopped_instances/)
 
 #### Azure
 
