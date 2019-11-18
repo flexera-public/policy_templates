@@ -1,0 +1,171 @@
+name "List all virtualMachines in Azure"
+rs_pt_ver 20180301
+type "policy"
+short_description "Report all virtualMachines in Azure"
+severity "low"
+category "testpolicypooja"
+
+###############################################################################
+# User inputs
+###############################################################################
+
+parameter "param_email" do
+  type "list"
+  label "Email addresses to notify"
+  description "Email addresses of the recipients you wish to notify when new incidents are created"
+end
+
+parameter "param_exclusion_tag_key" do
+  type "list"
+  category "User Inputs"
+  label "Exclusion Tag Key"
+  description "Azure SQL Managed instance tag to ignore instance that are with public data endpoint enabled. Only supply the tag key. The policy assumes that the tag value is irrelevant."
+
+
+parameter "param_azure_tenant_id" do
+  type "string"
+  label "Azure AD Tenant ID"
+  default ""
+  category "Azure"
+end
+
+parameter "param_azure_sub" do
+  type "string"
+  label "Azure Subscription ID"
+  default ""
+  category "Azure"
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+auth "azure_auth", type: "oauth2" do
+  token_url join(["https://login.microsoftonline.com/",$param_azure_tenant_id,"/oauth2/token"])
+  grant type: "client_credentials" do
+    client_id cred("Azure_nag_client_id")
+    client_secret cred("Azure_nag_client_secret")
+    additional_params do {
+      "resource" => "https://management.azure.com/"
+    }
+    end
+  end
+end
+
+###############################################################################
+# Pagination
+###############################################################################
+
+pagination "azure_pagination" do
+  get_page_marker do
+    body_path "nextLink"
+  end
+  set_page_marker do
+    uri true
+  end
+end
+
+###############################################################################
+# Datasources
+###############################################################################
+
+datasource "ds_list_azure_instances" do
+  request do
+    auth $azure_auth
+    pagination $azure_pagination
+    host "management.azure.com"
+    path join(["/subscriptions/", $param_azure_sub, "/providers/Microsoft.Compute/virtualMachines"])
+    query "api-version","2018-06-01"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "value[*]") do
+      field "name", jmes_path(col_item,"name")
+    field "location", jmes_path(col_item,"location")
+    field "license_type", jmes_path(col_item,"properties.licenseType")
+      field "id", jmes_path(col_item,"id")
+      field "tags", jmes_path(col_item,"tags")
+
+    end
+  end
+end
+
+datasource "script_list_azure_instances" do
+  run_script $fetch_instances_without_tag,$ds_list_azure_instances,$param_exclusion_tag_key
+end
+
+script "fetch_instances_without_tag", type: "javascript" do
+  parameters "ds_list_azure_instances", "param_exclusion_tag_key"
+  result "res"
+  code <<-EOS
+
+  res = []
+  var instances = ds_list_azure_instances
+  for (var i = 0; i < instances.length; i++) {
+    var instance = instances[i];
+    var resourceName="";
+    var tagkeyValue="";
+    var istagMatched=false;
+    var id=instance['id'];
+    var arr1= id.split("/");
+    resourceName=arr1[4];
+
+
+    var tags=instance['tags'];
+	if(typeof(tags) != "undefined"){
+    var tagKey = Object.keys(tags);
+    for (var j = 0; j < tagKey.length; j++){
+      var key = tagKey[j];
+        var value = tags[key];
+        tagkeyValue=tagkeyValue + ", "+ key+"="+value;
+
+      if(param_exclusion_tag_key.indexOf(key+"="+value) >= 0 ){
+      istagMatched = true;
+    }
+	}
+    }
+
+    if(!istagMatched){
+    res.push({name:instance['name'],
+                location:instance['location'],
+          license_type:instance['license_type'],
+          ResourceName:resourceName,
+          tagKeyValue:(tagkeyValue.slice(1))
+        })
+        }
+  }
+
+  EOS
+  end
+
+
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_report_azure_instances" do
+  email $param_email
+end
+
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "pol_list_azure_instances" do
+  validate $script_list_azure_instances do
+    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} Azure SQL managed instances with public endpoint enabled"
+    detail_template <<-EOS
+# Azure SQL managed Instance Details
+| Name | Location | License Type | Tags | Resource Name |
+| ---- | -------- | ------------ | ---- | ------------ |
+{{ range data -}}
+| {{.name}} | {{.location}} | {{.license_type}}  | {{.tagKeyValue}} | {{.ResourceName}} |
+{{ end -}}
+    EOS
+    escalate $esc_report_azure_instances
+    check eq(size(data),0)
+  end
+end
