@@ -23,7 +23,7 @@ end
 
 fpt = nil
 has_app_changes.each do |file|
-  fpt = `fpt check #{file}`
+  fpt = `./fpt check #{file}`
   if fpt != nil
     fail fpt
   end
