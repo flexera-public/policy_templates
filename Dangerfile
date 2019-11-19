@@ -21,6 +21,14 @@ if (has_new_policy_template.length != 0) && missing_doc_changes
   fail "A README.md is required for new templates"
 end
 
+fpt = nil
+has_app_changes.each do |file|
+  fpt = `./fpt check #{file}`
+  if fpt != nil
+    fail fpt
+  end
+end
+
 # checks for broken links in the any file
 # exclude api and auth hostnames
 exclude_hosts = [
