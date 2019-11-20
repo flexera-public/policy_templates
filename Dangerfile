@@ -114,6 +114,14 @@ md_files.each do |file|
   end
 end
 
+# check for lowercase files and directories
+has_app_changes.each do |file|
+  regex = /^[a-z]+$/g
+  if file !~ regex
+    fail "Policy Template path is not lowercase. #{file}"
+  end
+end
+
 fail 'Please provide a summary of your Pull Request.' if github.pr_body.length < 10
 
 fail 'Please add labels to this Pull Request' if github.pr_labels.empty?
