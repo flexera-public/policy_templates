@@ -110,7 +110,7 @@ md_files.each do |file|
     mdl = `mdl #{file}`
   end
   if !mdl.empty?
-    fail "#{file} '#{mdl}'"
+    fail "'#{mdl}'"
   end
 end
 
