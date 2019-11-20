@@ -23,8 +23,8 @@ end
 
 fpt = nil
 has_app_changes.each do |file|
-  fpt = `./fpt check #{file}`
-  if fpt != nil
+  fpt = `[ -x ./fpt ] && ./fpt check #{file}`
+  if ! fpt.empty?
     fail fpt
   end
 end
@@ -116,8 +116,7 @@ end
 
 # check for lowercase files and directories
 has_app_changes.each do |file|
-  regex = /^[a-z]+$/g
-  if file !~ regex
+  if ! file.scan(/^[a-z]+$/)
     fail "Policy Template path is not lowercase. #{file}"
   end
 end
