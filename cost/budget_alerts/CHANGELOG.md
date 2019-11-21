@@ -1,4 +1,4 @@
-# Change log
+# Changelog
 
 ## v1.5
 
