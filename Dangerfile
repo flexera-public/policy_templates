@@ -9,7 +9,7 @@ md_files = changed_files.select{ |file| file.end_with? "md" }
 # Changelog entries are required for changes to library files.
 no_changelog_entry = (changed_files.grep(/[\w]+CHANGELOG.md/i)+changed_files.grep(/CHANGELOG.md/i)).empty?
 if (has_app_changes.length != 0) && no_changelog_entry
-  fail "Please add a changelog"
+  fail "Please add a CHANGELOG.md file"
 end
 
 missing_doc_changes = (changed_files.grep(/[\w]+README.md/i)+changed_files.grep(/README.md/i)).empty?
@@ -23,9 +23,10 @@ end
 
 fpt = nil
 has_app_changes.each do |file|
-  fpt = `./fpt check #{file}`
-  if fpt != nil
-    fail fpt
+  # check if fpt is installed and do the check.  only report if there is a syntax error
+  fpt = `[ -x ./fpt ] && ./fpt check #{file} | grep -v Checking`
+  if ! fpt.empty?
+    fail "Checking #{file}\n#{fpt}"
   end
 end
 
@@ -110,7 +111,14 @@ md_files.each do |file|
     mdl = `mdl #{file}`
   end
   if !mdl.empty?
-    fail "#{file} '#{mdl}'"
+    fail mdl
+  end
+end
+
+# check for lowercase files and directories
+has_app_changes.each do |file|
+  if file.scan(/^[a-z]+$/)
+    fail "Policy Template path should be lowercase. #{file}"
   end
 end
 
