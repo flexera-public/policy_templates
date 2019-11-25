@@ -206,6 +206,7 @@ Please contact sales@flexera.com to learn more.
 ### SaaS Management
 
 - [Okta Inactive Users](./saas/okta/inactive_users)
+- [ServiceNow Inactive Approvers](./saas/servicenow/inactive_approvers)
 
 ### Policy Data Sets
 
