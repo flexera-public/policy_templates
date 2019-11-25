@@ -1,0 +1,434 @@
+name "Azure Rightsize SQL Databases"
+rs_pt_ver 20180301
+type "policy"
+short_description "Checks Azure SQL databases based on CPU thresholds, and recommend resizing after user approval. See the [README](https://github.com/flexera/policy_templates/tree/master/cost/azure/rightsize_sql_instances/) and [docs.rightsize.com/policies](http://docs.rightsize.com/policies/) to learn more."
+long_description "Version: 1.2"
+severity "low"
+category "Cost"
+
+###############################################################################
+# Permissions
+###############################################################################
+
+permission "perm_read_creds" do
+  actions   "rs_cm.show_sensitive","rs_cm.index_sensitive"
+  resources "rs_cm.credentials"
+end
+
+###############################################################################
+# Parameters
+###############################################################################
+
+parameter "param_azure_tenant_id" do
+  type "string"
+  label "Azure AD Tenant ID"
+  description "The Azure AD Tenant ID used for the Azure API Authentication."
+  category "Azure"
+end
+
+parameter "param_azure_sub" do
+  type "string"
+  label "Azure Subscription ID"
+  description "The Azure Subscription ID used for the Azure API."
+  category "Azure"
+end
+
+parameter "param_avg_cpu_upsize" do
+  type "number"
+  label "Average used CPU % - Upsize threshold"
+  description "Set to -1 to ignore CPU utilization"
+  default 80
+  min_value -1
+  max_value 100
+end
+
+parameter "param_avg_cpu_downsize" do
+  type "number"
+  label "Average used CPU % - Downsize Threshold"
+  description "Set to -1 to ignore CPU utilization"
+  default 60
+  min_value -1
+  max_value 100
+end
+
+parameter "param_exclusion_tag_key" do
+  category "User Inputs"
+  label "Exclusion Tag Key"
+  description "Cloud native tag key to ignore instances. Example: exclude_utilization"
+  type "string"
+end
+
+parameter "param_email" do
+  type "list"
+  label "Email addresses"
+  description "Email addresses of the recipients you wish to notify"
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+auth "azure_auth", type: "oauth2" do
+  token_url join(["https://login.microsoftonline.com/",$param_azure_tenant_id,"/oauth2/token"])
+  grant type: "client_credentials" do
+    client_id cred("AZURE_APPLICATION_ID")
+    client_secret cred("AZURE_APPLICATION_KEY")
+    additional_params do {
+      "resource" => "https://management.azure.com/"
+    } end
+  end
+end
+
+###############################################################################
+# Pagination
+###############################################################################
+pagination "azure_pagination" do
+  get_page_marker do
+    body_path "nextLink"
+  end
+  set_page_marker do
+    uri true
+  end
+end
+
+###############################################################################
+# Datasources
+###############################################################################
+
+#https://docs.microsoft.com/en-us/rest/api/resources/resources/list
+datasource "ds_azure_sql_databases" do
+  request do
+    auth $azure_auth
+    pagination $azure_pagination
+    host "management.azure.com"
+    path join(["/subscriptions/", $param_azure_sub, "/resources"])
+    query "api-version","2019-08-01"
+    query "$filter", "resourceType eq 'Microsoft.Sql/servers/databases'"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+      collect jmes_path(response, "value") do
+        field "id", jmes_path(col_item,"id")
+        field "name", jmes_path(col_item,"name")
+        field "location", jmes_path(col_item,"location")
+        field "type", jmes_path(col_item,"type")
+        field "kind", jmes_path(col_item,"kind")
+        field "sku" , jmes_path(col_item,"sku")
+        field "tags", jmes_path(col_item,"tags")
+    end
+  end
+end
+
+datasource "ds_azure_sql_database_metrics" do
+  iterate $ds_azure_sql_databases
+  request do
+    run_script $js_utilization_request, val(iter_item,"id")
+  end
+  result do
+    encoding "json"
+      collect jmes_path(response, "value") do
+        field "id", val(iter_item,"id")
+        field "location", val(iter_item,"location")
+        field "name", val(iter_item,"name")
+        field "kind", val(iter_item,"kind")
+        field "type", val(iter_item,"type")
+        field "sku" , val(iter_item,"sku")
+        field "tags", val(iter_item,"tags")
+        field "unit", jmes_path(col_item,"unit")
+        field "timeseries", jmes_path(col_item,"timeseries")
+    end
+  end
+end
+
+#Generates list of service tiers.
+datasource "ds_azure_sql_resize_map" do
+  request do
+    verb "GET"
+    host "raw.githubusercontent.com"
+    path "/flexera/policy_templates/master/data/azure/sql_service_tier_types.json"
+    header "User-Agent", "RS Policies"
+  end
+end
+
+datasource "ds_merged_metrics" do
+  run_script $js_merged_metrics, $ds_azure_sql_database_metrics, $ds_azure_sql_resize_map, $param_exclusion_tag_key, $param_avg_cpu_downsize, $param_avg_cpu_upsize
+end
+
+###############################################################################
+# Scripts
+###############################################################################
+
+# Build the API request object dynamically
+script "js_utilization_request", type: "javascript" do
+  parameters "resource_id"
+  result "request"
+  code <<-EOS
+    var end_date_tmp = new Date()
+    end_date_tmp.setMilliseconds(999)
+    end_date_tmp.setSeconds(59)
+    end_date_tmp.setMinutes(59)
+    end_date_tmp.setHours(23)
+    var end_date = new Date(end_date_tmp).toISOString()
+    var start_date_tmp = new Date(new Date().setDate(new Date().getDate() - 30))
+    start_date_tmp.setMilliseconds(0)
+    start_date_tmp.setSeconds(0)
+    start_date_tmp.setMinutes(0)
+    var start_date = new Date(start_date_tmp).toISOString()
+    var sTimespan = start_date  + "/" + end_date;
+    var request = {
+      auth: "azure_auth",
+      verb : "GET",
+      scheme : "https",
+      host : "management.azure.com",
+      path : "" + resource_id + "/providers/microsoft.insights/metrics",
+      query_params: {
+        "api-version" : "2018-01-01",
+        "timespan" : sTimespan,
+        "metricnames" : "cpu_percent"
+        "aggregation" : "Average,count",
+        "interval" :  "P1D"                    //Dailey
+      },
+      headers: {
+        "User-Agent" : "RS Policies"
+      }
+    }
+  EOS
+end
+
+script "js_merged_metrics", type: "javascript" do
+  parameters "databases_metrics", "ds_azure_sql_resize_map", "exclusion_tag" , "down_threshold", "up_threshold"
+  result "result"
+  code <<-EOS
+    var result = [];
+
+    //exclude the database with the exclution tags, and the system databases
+    for(i=0; i< databases_metrics.length; i++){
+      if(!(_.has(databases_metrics[i].tags, exclusion_tag) || databases_metrics[i].kind.toLowerCase().indexOf(",system") > -1)){
+        //Find the Resource group
+        var aTemp = databases_metrics[i].id.split("/resourceGroups/")
+        var resource_group="";
+        if(aTemp.length > 1){
+          aTemp = aTemp[1].split("/");
+          resource_group = aTemp[0];
+        }else{
+          resource_group = "";
+        }
+
+        //now find the metrics for the devices
+        var objMetric = databases_metrics[i];
+        var total = 0.0;
+        var average_cpu = "";
+        if (typeof objMetric == "object" && typeof objMetric.timeseries[0].data == "object"){
+          var ts_data =  objMetric.timeseries[0].data;
+          for (x=0; x < ts_data.length; x++) {
+            total += ts_data[x].average;
+          }
+          average_cpu = total / ts_data.length;
+          average_cpu = average_cpu.toFixed(2);
+        }else{
+          average_cpu = "n/a";
+        }
+
+        var sku = databases_metrics[i].sku;
+        var recommended_capacity = "";
+        var recommendation = "";
+        //Now check for recommendation
+        if(average_cpu !== "n/a"){
+          //Upsize
+          if(Number(average_cpu) >= Number(up_threshold)){
+            var json_tier = ds_azure_sql_resize_map[sku.tier];
+            var json_name = json_tier[sku.name+"_"+sku.capacity];
+            var capacity = json_name["up"];
+            if(capacity != null){
+             recommended_capacity = capacity;
+            }else{
+             recommended_capacity = "n/a";
+            }
+            recommendation = "Upsize";
+          }else if(Number(average_cpu) <= Number(down_threshold)){
+          //Downsize
+            var recommended_capacity = "";
+            var json_tier = ds_azure_sql_resize_map[sku.tier];
+            var json_name = json_tier[sku.name+"_"+sku.capacity];
+            var capacity = json_name["down"];
+            if(capacity != null){
+             recommended_capacity = capacity;
+            }else{
+             recommended_capacity = "n/a";
+            }
+            recommendation = "Downsize";
+            if (sku.tier === "Basic"){
+              recommendation = "-";
+            }
+          }
+        }else{
+          recommendation = "-";
+          recommended_capacity = "n/a";
+        }
+        if(average_cpu !== "n/a"){
+          result.push({
+            id: databases_metrics[i].id,
+            location: databases_metrics[i].location,
+            average_cpu: average_cpu,
+            name: databases_metrics[i].name,
+            resource_group: resource_group,
+            kind: databases_metrics[i].kind,
+            type: databases_metrics[i].type,
+            sku: databases_metrics[i].sku,
+            unit: databases_metrics[i].unit,
+            tags: databases_metrics[i].tags,
+            recommendation: recommendation,
+            recommended_capacity:recommended_capacity
+          })
+        }
+      }
+    }
+  EOS
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy 'policy_azure_db_utilization' do
+  validate $ds_merged_metrics do
+    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} Azure Rightsize SQL Databases"
+    detail_template <<-EOS
+
+# Azure Rightsize SQL Databases
+
+### Thresholds for Consideration
+  - Upsize Average CPU% threshold   : {{ parameters.param_avg_cpu_upsize }}
+  - Downsize Average CPU% threshold : {{ parameters.param_avg_cpu_downsize }}
+
+
+| Region | Name | Resource Group | Kind | Type | Current Capacity | Recommended Capacity | SKU - Name | SKU - Tier | CPU Average % | Recommendation |
+| ------ | ---- | -------------- | ---- | ---- | ---------------- | -------------------- | ---------- | ---------- | ------------- | -------------- |
+{{ range data -}}
+| {{.location}} | {{.name}} | {{.resource_group}} | {{.kind}} | {{.type}} | {{.sku.capacity}} | {{.recommended_capacity}} | {{.sku.name}} | {{.sku.tier}} | {{ .average_cpu }} % | {{.recommendation}} |
+{{ end -}}
+
+___
+###### Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }}) within Org: {{ rs_org_name }} (Org ID: {{ rs_org_id }})
+EOS
+    escalate $email_report
+    escalate $esc_update_rightsize_sql_databases_approval
+    check eq(size(data),0)
+  end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "email_report" do
+  email $param_email
+end
+
+escalation "esc_update_rightsize_sql_databases_approval" do
+  request_approval do
+    label "Approve resource Update"
+    description "Approve escalation to run RightScale Cloud Workflow to update rightsize SQL databases."
+    parameter "approval_resion" do
+    type "string"
+    label "Reason for Approval"
+    description "Explain why are you approving the action."
+    end
+  end
+  run "update_rightsize_sql_databases", data, $param_azure_tenant_id
+end
+
+###############################################################################
+# Cloud Workflow
+###############################################################################
+
+define update_rightsize_sql_databases($data, $param_azure_tenant_id) return $all_responses do
+  call get_access_token($param_azure_tenant_id) retrieve $access_token
+
+  $all_responses = []
+  foreach $item in $data do
+    if $item["recommended_capacity"] != "n/a"
+      sub on_error: skip do
+        $response = http_request(
+          verb: "patch",
+          host: "management.azure.com",
+          https: true,
+          href: $item["id"],
+          query_strings: {
+            "api-version": "2017-10-01-preview"
+          },
+          headers: {
+            "cache-control": "no-cache",
+            "content-type": "application/json",
+            "authorization": "Bearer " + $access_token
+          },
+          body: {
+            "sku": {
+            "name": $item["sku"]["name"],
+            "tier": $item["sku"]["tier"],
+            "capacity": $item["recommended_capacity"]
+          }
+        }
+      )
+      call sys_log('Update RightSize Azure SQL Databases: ',to_s($response))
+      $all_responses << $response
+    end
+  end
+ end
+end
+
+define get_access_token($param_azure_tenant_id) return $access_token do
+  $$debug=true
+  $client_id = cred("AZURE_APPLICATION_ID")
+  call url_encode(cred("AZURE_APPLICATION_KEY")) retrieve $client_secret
+
+  $body_string = "grant_type=client_credentials&resource=https://management.core.windows.net/&client_id="+$client_id+"&client_secret="+$client_secret
+
+  $auth_response = http_post(
+    url: join(["https://login.microsoftonline.com/",$param_azure_tenant_id,"/oauth2/token?api-version=1.0"]),
+    headers : {
+      "cache-control":"no-cache",
+      "content-type":"application/x-www-form-urlencoded"
+    },
+    body:$body_string
+  )
+
+  $auth_response_body = $auth_response["body"]
+  $access_token = $auth_response_body["access_token"]
+end
+
+define url_encode($string) return $encoded_string do
+  $encoded_string = $string
+  $encoded_string = gsub($encoded_string, " ", "%20")
+  $encoded_string = gsub($encoded_string, "!", "%21")
+  $encoded_string = gsub($encoded_string, "#", "%23")
+  $encoded_string = gsub($encoded_string, "$", "%24")
+  $encoded_string = gsub($encoded_string, "&", "%26")
+  $encoded_string = gsub($encoded_string, "'", "%27")
+  $encoded_string = gsub($encoded_string, "(", "%28")
+  $encoded_string = gsub($encoded_string, ")", "%29")
+  $encoded_string = gsub($encoded_string, "*", "%2A")
+  $encoded_string = gsub($encoded_string, "+", "%2B")
+  $encoded_string = gsub($encoded_string, ",", "%2C")
+  $encoded_string = gsub($encoded_string, "/", "%2F")
+  $encoded_string = gsub($encoded_string, ":", "%3A")
+  $encoded_string = gsub($encoded_string, ";", "%3B")
+  $encoded_string = gsub($encoded_string, "=", "%3D")
+  $encoded_string = gsub($encoded_string, "?", "%3F")
+  $encoded_string = gsub($encoded_string, "@", "%40")
+  $encoded_string = gsub($encoded_string, "[", "%5B")
+  $encoded_string = gsub($encoded_string, "]", "%5D")
+end
+
+define sys_log($subject, $detail) do
+  if $$debug
+    rs_cm.audit_entries.create(
+      notify: "None",
+      audit_entry: {
+        auditee_href: @@account,
+        summary: "Azure RightSize SQL Databases "+ $subject,
+        detail: $detail
+      }
+    )
+  end
+end

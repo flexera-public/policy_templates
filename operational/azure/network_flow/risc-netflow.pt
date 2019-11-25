@@ -1,0 +1,230 @@
+name "NetFlow Top Talkers"
+rs_pt_ver 20180301
+type "policy"
+short_description "This Policy Template will analyze RISC Foundations NetFlow data and will leverage these traffic patterns to identify the top communication routes from each application stack to external dependencies.  See the [README](https://github.com/rightscale/policy_templates/tree/master/operational/network_flow) and [docs.rightscale.com/policies](http://docs.rightscale.com/policies/) to learn more."
+long_description "Version: 1.0"
+category "Operational"
+severity "low"
+
+parameter "param_email" do
+  type "list"
+  label "Email addresses to notify"
+  description "Email addresses of the recipients you wish to notify when new incidents are created"
+end
+
+parameter "param_metric" do 
+  type "string"
+  label "Metric"
+  allowed_values "Bytes","Packets"
+  description "Metric by which to measure top talkers"
+end
+
+parameter "param_top_count" do
+  type "number"
+  label "Number of Top Talkers"
+  description "Number of Top Talkers by Application to Include"
+  allowed_values 3,5,10
+end
+
+#Provide your RISC user name. E.g. (somebody@flexera.com)
+parameter "param_userid" do
+  type "string"
+  label "RISC User ID"
+  description "Email address of the RISC User Account which will be used for authentication"
+end
+
+#Provide your RISC Password.  Hash it as per the guide here (https://portal.riscnetworks.com/app/documentation/?path=/using-the-platform/restful-api-access/)
+# Hash is MD5 of password, UCASE all letters, Prepend the API Key, MD5 the new string. Example : md5(concat(apiKey,to_upper(md5(password))));
+parameter "param_password" do
+  type "string"
+  label "RISC Hashed Password"
+  description "Hashed password to be used for authentication. See the README for requirements."
+  no_echo true
+end
+
+#Whats your API Key provided by RISC
+parameter "param_acode" do
+  type "string"
+  label "RISC Assessment Code"
+  description "RISC Assessment Code to be used for authentication."
+end
+
+# Risc Auth Token.  Stays good for hours if in constant use
+datasource "ds_riscauth" do
+  request do
+    verb "POST"
+    host "api.riscnetworks.com"
+    path "/1_0/getAuthToken"
+    body_field "userid", $param_userid
+    body_field "password", $param_password
+    body_field "assessmentcode", $param_acode
+    header "Content-Type", "application/json"
+  end
+  result do
+    encoding "json"
+    field "token", jmes_path(response, "token")
+  end
+end
+
+datasource "ds_stacks" do
+  request do
+    run_script $js_getStacks, $ds_riscauth, $param_acode
+  end
+
+  result do
+    encoding "json"
+    collect jmes_path(response, "assets[*]") do
+      field "stack_name", jmes_path(col_item, "stack_name")
+      field "stackid", jmes_path(col_item, "stackid")
+    end
+  end
+end
+
+script "js_getStacks", type: "javascript" do
+  result "request"
+  parameters "ds_riscauth", "param_acode"
+
+  code <<-EOS
+    
+    var authtoken = ds_riscauth.token
+    request = {
+      "host": "api.riscnetworks.com",
+      "verb": "GET",
+      "path": "/1_0/stacks/getSummary",
+      "headers": {
+        "User-Agent": "RS Policies",
+        "Content-Type": "application/json",
+        "assessmentcode": param_acode,
+        "token":  authtoken 
+      }
+    }
+
+  EOS
+end
+
+datasource "ds_externalConnectivity" do
+  iterate $ds_stacks
+  request do
+    run_script $js_getExternalDeviceConnectivity, $ds_riscauth, $param_acode, val(iter_item,"stackid")
+  end
+
+  result do
+    encoding "json"
+    field "stack_name", val(iter_item, "stack_name")
+    field "stackid", val(iter_item, "stackid")
+    field "netflow_details" do
+      collect jmes_path(response, "connectivity[*]") do
+        field "avg_duration", jmes_path(col_item,"avg_duration")
+        field "avg_kbps", jmes_path(col_item, "avg_kbps")
+        field "dest_ip", jmes_path(col_item,"dest_ip")
+        field "dest_port", jmes_path(col_item,"dest_port")
+        field "max_kbps", jmes_path(col_item,"max_kbps")
+        field "src_ip", jmes_path(col_item,"src_ip")
+        field "total_bytes", jmes_path(col_item,"total_bytes")
+        field "total_duration", jmes_path(col_item,"total_duration")
+        field "total_packets", jmes_path(col_item,"total_packets")
+      end
+    end
+  end
+end
+
+script "js_getExternalDeviceConnectivity", type: "javascript" do
+  result "request"
+  parameters "ds_riscauth", "param_acode", "stackid"
+  code <<-EOS
+    var authtoken = ds_riscauth.token
+    request = {
+      "host": "api.riscnetworks.com",
+      "verb": "GET",
+      "path": "/1_0/stacks/getExternalDeviceConnectivity/" + stackid,
+      "headers": {
+        "User-Agent": "RS Policies",
+        "Content-Type": "application/json",
+        "assessmentcode": param_acode,
+        "token":  authtoken
+      }
+    }
+
+EOS
+end
+
+datasource "ds_formatData" do
+  run_script $js_formatData, $ds_externalConnectivity, $param_metric, $param_top_count
+end 
+
+script "js_formatData", type: "javascript" do 
+  result "result"
+  parameters "netflows", "param_metric", "param_top_count"
+  code <<-EOS
+  var result = [];
+  var stack_ids = _.uniq(_.pluck(netflows, 'stackid'));
+  var stacks = [];
+
+  if (param_metric == "Packets"){
+    var sort = 'total_packets';
+  } else {
+    var sort = 'total_bytes';
+  }
+
+  _.each(stack_ids, function(stack_id){
+    console.log("StackID: "+stack_id)
+    var app_netflows = _.where(netflows, {stackid: stack_id});
+    console.log("App_NetFlows: ")
+    console.log(app_netflows)
+    var sorted_netflow = _.sortBy(app_netflows[0]["netflow_details"], sort).reverse();
+    console.log("Sorted_Netflow: ")
+    console.log(sorted_netflow)
+    if (app_netflows[0].netflow_details == ""){ 
+      // skip
+    } else {
+      var final_stack = {
+        stack_name: app_netflows[0]["stack_name"],
+        stackid: app_netflows[0]["stackid"],
+        netflow_details: []
+      }
+      for (i=0; i < param_top_count; i++) {
+        if (sorted_netflow[i].total_packets == 0){
+          // skip
+        } else {
+          final_stack.netflow_details.push(sorted_netflow[i])
+        }
+      }
+      if (final_stack.netflow_details == ""){
+        // skip
+      } else {
+        result.push(final_stack)
+      }
+    }
+
+  })
+
+  result = _.sortBy(result, 'stack_name');
+
+EOS
+end 
+
+policy "top_talkers" do
+  validate_each $ds_formatData do
+    summary_template "NetFlow Top Talkers"
+    detail_template <<-EOS
+
+{{ range data -}}
+## Application: {{ .stack_name }}
+| Source IP | Destination IP | Total Bytes | Total Packets | Total Duration | 
+| --------- | -------------- | ----------- | ------------- | -------------- |
+{{ range .netflow_details -}}
+| {{.src_ip}} | {{.dest_ip}} | {{.total_bytes}} | {{.total_packets}} | {{.total_duration}} |
+{{ end -}}
+{{ end -}}
+
+###### Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }}) within Org: {{ rs_org_name }} (Org ID: {{ rs_org_id }})
+
+EOS
+    escalate $email
+    check false
+  end
+end
+
+escalation "email" do
+  email $param_email
+end

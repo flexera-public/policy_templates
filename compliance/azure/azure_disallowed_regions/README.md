@@ -10,7 +10,10 @@ This Policy Template accepts an input that defines which Azure regions are allow
 - The following RightScale Credentials
   - `AZURE_APPLICATION_ID`
   - `AZURE_APPLICATION_KEY`
-- The `policy_designer`, `policy_manager` & `policy_publisher` roles
+- The `policy_designer`, `policy_manager`, `credential_viewer` & `policy_publisher` roles
+
+### Azure Required Permissions
+- Microsoft.Resources/subscriptions/resources/read
 
 ### Installation
 

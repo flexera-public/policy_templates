@@ -1,0 +1,374 @@
+name "Google Idle Compute Instances"
+rs_pt_ver 20180301
+type "policy"
+short_description "Checks for Google Compute instances that are idle for the last 30 days and terminates them after approval.. See the [README](https://github.com/rightscale/policy_templates/tree/master/cost/google/idle_compute_instances/) and [docs.rightscale.com/policies](http://docs.rightscale.com/policies/) to learn more."
+long_description "Version: 1.1"
+severity "low"
+category "Cost"
+
+###############################################################################
+# Permissions
+###############################################################################
+
+permission "perm_read_creds" do
+  actions   "rs_cm.show_sensitive","rs_cm.index_sensitive"
+  resources "rs_cm.credentials"
+end
+
+###############################################################################
+# Parameters
+###############################################################################
+
+parameter "param_email" do
+  type "list"
+  label "Email addresses to notify"
+  description "Email addresses of the recipients you wish to notify when new incidents are created"
+end
+
+parameter "param_google_project" do
+  type "string"
+  label "Google Cloud Project"
+  description "Google Cloud Project"
+  allowed_pattern /^[0-9a-z:\.-]+$/
+end
+
+parameter "param_avg_used_memory" do
+  type "number"
+  label "Average used memory percentage"
+  description "Set to -1 to ignore memory utilization"
+  default -1
+  min_value -1
+  max_value 100
+end
+
+parameter "param_avg_cpu" do
+  type "number"
+  label "Average used CPU percentage"
+  description "Set to -1 to ignore CPU utilization"
+  default -1
+  min_value -1
+  max_value 100
+end
+
+parameter "param_exclusion_tag_key" do
+  category "User Inputs"
+  label "Exclusion Label Key:Value"
+  description "Cloud native label to ignore instances. Format: Key:Value"
+  type "string"
+  allowed_pattern /(^$)|([\w]?)+\:([\w]?)+/
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+auth "auth_google", type: "oauth2" do
+  token_url "https://www.googleapis.com/oauth2/v4/token"
+  grant type: "jwt_bearer" do
+    iss cred("GCE_PLUGIN_ACCOUNT")
+    aud "https://www.googleapis.com/oauth2/v4/token"
+    additional_claims do {
+      "scope" => "https://www.googleapis.com/auth/monitoring.write https://www.googleapis.com/auth/cloud-platform https://www.googleapis.com/auth/monitoring.read https://www.googleapis.com/auth/monitoring https://www.googleapis.com/auth/compute https://www.googleapis.com/auth/compute.readonly"
+    } end
+    signing_key cred("GCE_PLUGIN_PRIVATE_KEY")
+  end
+end
+
+###############################################################################
+# Datasources
+###############################################################################
+datasource "ds_time" do
+  run_script $js_time
+end
+
+datasource "ds_compute_utilization" do
+  iterate $ds_time
+  request do
+    auth $auth_google
+    host "monitoring.googleapis.com"
+    path join(["/v3/projects/",$param_google_project,"/timeSeries/"])
+    query "filter", 'metric.type="compute.googleapis.com/instance/cpu/utilization"'
+    query "interval.endTime", val(iter_item,"end_date")
+    query "interval.startTime", val(iter_item,"start_date")
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "timeSeries[*]") do
+      field "label_instance_name", jmes_path(col_item, "metric.labels.instance_name")
+      field "instance_id", jmes_path(col_item, "resource.labels.instance_id")
+      field "zone", jmes_path(col_item, "resource.labels.zone")
+      field "avg_cpu_points", jmes_path(col_item, "points[*].value.doubleValue | avg(@)")
+      field "max_cpu_points", jmes_path(col_item, "points[*].value.doubleValue | max(@)")
+      field "min_cpu_points", jmes_path(col_item, "points[*].value.doubleValue | min(@)")
+    end
+  end
+end
+
+datasource "ds_calculated_utilization" do
+  run_script $js_calculated_utilization, $ds_compute_utilization, $ds_memory_utilization
+end
+
+datasource "ds_memory_utilization" do
+  iterate $ds_time
+  request do
+    auth $auth_google
+    host "monitoring.googleapis.com"
+    path join(["/v3/projects/",$param_google_project,"/timeSeries/"])
+    query "filter", 'metric.type="agent.googleapis.com/memory/percent_used" AND metric.label.state=used'
+    query "interval.endTime", val(iter_item,"end_date")
+    query "interval.startTime", val(iter_item,"start_date")
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "timeSeries[*]") do
+      field "label_instance_name", jmes_path(col_item, "metric.labels.instance_name")
+      field "instance_id", jmes_path(col_item, "resource.labels.instance_id")
+      field "zone", jmes_path(col_item, "resource.labels.zone")
+      field "mem_points", jmes_path(col_item, "points[*].value.doubleValue")
+    end
+  end
+end
+
+datasource "ds_add_instance_data" do
+  iterate $ds_calculated_utilization
+  request do
+    run_script $js_add_instance_data, $param_google_project, val(iter_item,"zone"), val(iter_item,"instance_id")
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response,"items[*]") do
+      field "instance_id", val(iter_item, "instance_id")
+      field "hostname", jmes_path(col_item,"name || instance_id")
+      field "selfLink", jmes_path(col_item, "selfLink")
+      field "label_instance_name",val(iter_item, "label_instance_name")
+      field "status", jmes_path(col_item, "status")
+      field "zone", val(iter_item, "zone")
+      field "labels", jmes_path(col_item,"labels")
+      field "cpu_average", val(iter_item, "cpu_average")
+      field "cpu_maximum", val(iter_item, "cpu_maximum")
+      field "cpu_minimum", val(iter_item, "cpu_minimum")
+      field "mem_average", val(iter_item, "mem_average")
+      field "mem_maximum", val(iter_item, "mem_maximum")
+      field "mem_minimum", val(iter_item, "mem_minimum")
+    end
+  end
+end
+
+datasource "ds_clean_instance_data" do
+  run_script $js_clean_instance_data, $ds_add_instance_data, $param_exclusion_tag_key
+end
+
+###############################################################################
+# Scripts
+###############################################################################
+script "js_time", type: "javascript" do
+  result "time"
+  code <<-EOF
+    var time = [{
+      "end_date":  new Date().toISOString(),
+      "start_date": new Date(new Date().setDate(new Date().getDate() - 30)).toISOString()
+    }]
+EOF
+end
+
+script "js_calculated_utilization", type: "javascript" do
+  result "results"
+  parameters "ds_compute_utilization", "ds_memory_utilization"
+  code <<-EOS
+    results = []
+    for ( i =0; i < ds_compute_utilization.length; i++ ){
+      var instance_id = ds_compute_utilization[i].instance_id
+      var points = ds_compute_utilization[i].points
+      var memory_record = _.find(ds_memory_utilization, function(record) { return record.instance_id == instance_id; })
+      if (memory_record != null && memory_record !== undefined ) {
+        var memory_maximum = parseFloat(Math.max(memory_record.mem_points)).toFixed(2)
+        var memory_sum = _.reduce(memory_record.mem_points, function(memo, num){ return memo + num; }, 0);
+        var memory_average = parseFloat(memory_sum/memory_record.mem_points.length).toFixed(2)
+        var memory_minimum = parseFloat(Math.min(memory_record.mem_points)).toFixed(2)
+      } else {
+        var memory_maximum = "101"
+        var memory_average = "101"
+        var memory_minimum = "101"
+      }
+
+      results.push(
+        {
+          zone: ds_compute_utilization[i].zone,
+          instance_id: instance_id,
+          points: points,
+          label_instance_name: ds_compute_utilization[i].label_instance_name,
+          cpu_average: parseFloat(ds_compute_utilization[i].avg_cpu_points).toFixed(2),
+          cpu_maximum: parseFloat(ds_compute_utilization[i].max_cpu_points).toFixed(2),
+          cpu_minimum: parseFloat(ds_compute_utilization[i].min_cpu_points).toFixed(2),
+          mem_average: memory_average,
+          mem_maximum: memory_maximum,
+          mem_minimum: memory_minimum
+        }
+      )
+    }
+  EOS
+end
+
+script "js_add_instance_data", type: "javascript" do
+  result "request"
+  parameters "project","zone", "instance_id"
+  code <<-EOS
+    request = {
+      "auth": "auth_google",
+      "host": "www.googleapis.com",
+      "verb": "GET",
+      "path": "/compute/v1/projects/"+project+"/zones/"+zone+"/instances",
+      "headers": {
+        "User-Agent": "RS Policies",
+        "Content-Type": "application/json"
+      },
+      "query_params": {
+        "filter": "(id="+instance_id+") AND (status=RUNNING)"
+      }
+    }
+  EOS
+end
+
+script "js_clean_instance_data", type: "javascript" do
+  result "results"
+  parameters "ds_add_instance_data", "param_exclusion_tag_key"
+  code <<-EOS
+    tag_key = param_exclusion_tag_key.split(':')[0]
+    tag_value = param_exclusion_tag_key.split(':')[1]
+
+    results = _.filter(ds_add_instance_data, function(data){
+      if ( data.status == "RUNNING" ){
+        if ( data.labels != null && data.labels !== undefined ){
+          if ( data.labels[tag_key] != null && data.labels[tag_key] !== undefined ){
+            if ( data.labels[tag_key] != tag_value ){
+              return data
+            }
+          } else {
+            return data
+          }
+        }else{
+          return data
+        }
+      }
+    })
+  EOS
+end
+###############################################################################
+# Policy
+###############################################################################
+
+policy "pol_utilization" do
+  validate_each $ds_clean_instance_data do
+    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} rows containing Google instance StackDriver Utilization data"
+    detail_template <<-EOS
+# Google Instance StackDriver Utilization
+| Region | instanceID | Hostname | CPU Maximum % | CPU Minimum % | CPU Average % | Memory Minimum % | Memory Maximum % | Memory Average % | Labels |
+| ------ | ---------- | -------- | ------------- | ------------- | ------------- | ---------------- | ---------------- | ---------------- | ------ |
+{{ range data -}}
+| {{.zone}} | {{.instance_id}} | {{if .hostname}} {{.hostname}} {{ else }} {{.instance_id}} {{end}} | {{ .cpu_maximum }} | {{.cpu_minimum}} | {{ .cpu_average }} | {{.mem_minimum}} | {{.mem_maximum}} | {{.mem_average}} | {{ range $i, $e := .labels }}{{$i}}:{{ $e }}, {{ end }} |
+{{ end -}}
+___
+###### Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }}) within Org: {{ rs_org_name }} (Org ID: {{ rs_org_id }})
+EOS
+    check logic_or(eq($param_avg_used_memory, -1), gt(to_n(val(item,"mem_average")), $param_avg_used_memory))
+    check logic_or(eq($param_avg_cpu, -1), gt(to_n(val(item,"cpu_average")),$param_avg_cpu))
+    escalate $email
+    escalate $terminate_resources
+  end
+end
+
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "email" do
+  email $param_email
+end
+
+escalation "terminate_resources" do
+  request_approval do
+    label "Approve resource termination"
+    description "Approve escalation to terminate instances"
+    parameter "approval_resion" do
+      type "string"
+      label "Reason for Approval"
+      description "Explain why are you approving the action."
+    end
+  end
+  run "terminate_resources", data
+end
+
+###############################################################################
+# Cloud Workflow
+###############################################################################
+
+define terminate_resources($data) return $all_responses do
+  $$debug=true
+  $$log = []
+  $all_responses = []
+  $syslog_subject = "Google Idle Compute: "
+  call sys_log(join([$syslog_subject, "Identified Instances"]),to_s($data))
+  foreach $item in $data do
+    call google_authenticate() retrieve $access_token
+    sub on_error: handle_error($response) do
+      $response = http_delete(
+        url: $item["selfLink"],
+        headers: {
+          "cache-control": "no-cache",
+          "content-type": "application/json",
+          "authorization": "Bearer " + $access_token
+        }
+      )
+      $all_responses << $response
+    end
+  end
+  call sys_log(join([$syslog_subject, "Responses"]),to_s($all_responses))
+end
+
+define google_authenticate() return $access_token do
+  $jwt = {
+    iss: cred("GCE_PLUGIN_ACCOUNT"),
+    aud:"https://oauth2.googleapis.com/token",
+    exp: to_n(strftime(now()+3600, "%s")),
+    iat:to_n(strftime(now(), "%s")),
+    scope: "https://www.googleapis.com/auth/cloud-platform https://www.googleapis.com/auth/compute"
+  }
+
+  $signed_signature = jwt_encode("RS256", $jwt, cred("GCE_PLUGIN_PRIVATE_KEY"),{typ:"JWT"})
+
+  $response = http_request({
+    verb: 'post',
+    href: '/token',
+    host: 'oauth2.googleapis.com',
+    https: true,
+    headers: {
+      "content-type": "application/json"
+    },
+    body:{
+      "grant_type": "urn:ietf:params:oauth:grant-type:jwt-bearer",
+      "assertion": $signed_signature
+    }
+  })
+  $access_token = $response["body"]["access_token"]
+end
+
+define handle_error($response) do
+  $status_code = $response["code"]
+  $syslog_subject = "Google Idle Compute Termination Error: "
+  call sys_log(join([$syslog_subject, $status_code]),to_s($response))
+  $_error_behavior = "skip"
+end
+
+define sys_log($subject, $detail) do
+  if $$debug
+    rs_cm.audit_entries.create(
+      notify: "None",
+      audit_entry: {
+        auditee_href: @@account,
+        summary: $subject,
+        detail: $detail
+      }
+    )
+  end
+end

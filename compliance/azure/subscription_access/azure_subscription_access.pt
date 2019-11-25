@@ -1,0 +1,264 @@
+name "Azure Subscription Access"
+rs_pt_ver 20180301
+type "policy"
+short_description "Lists anyone who has been granted Owner or Contributor access to an Azure subscription. \n See the [README](https://github.com/rightscale/policy_templates/tree/master/compliance/azure/subscription_access) and [docs.rightscale.com/policies](http://docs.rightscale.com/policies/) to learn more."
+long_description "Version: 1.3"
+category "Compliance"
+severity "low"
+
+###############################################################################
+# Permissions
+###############################################################################
+
+permission "perm_read_creds" do
+  actions   "rs_cm.show_sensitive","rs_cm.index_sensitive"
+  resources "rs_cm.credentials"
+end
+
+###############################################################################
+# Parameters
+###############################################################################
+
+parameter "param_email" do
+  type "list"
+  label "Email addresses of the recipients you wish to notify"
+end
+
+parameter "param_azure_tenant_id" do
+  type "string"
+  label "Azure AD Tenant ID"
+  description "the Azure AD Tenant ID used for the Azure API Authentication"
+  category "Azure"
+end
+
+parameter "param_azure_sub" do
+  type "string"
+  label "Azure Subscription ID"
+  description "the Azure Subscription ID used for the Azure API Authentication"
+  category "Azure"
+end
+
+parameter "param_azure_roles" do
+  type "list"
+  label "Roles to report on"
+  category "Azure"
+  description "Can choose to report on Owner, Contributor, or Both"
+  allowed_values "Owner", "Contributor"
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+auth "azure_auth", type: "oauth2" do
+  token_url join(["https://login.microsoftonline.com/",$param_azure_tenant_id,"/oauth2/token"])
+  grant type: "client_credentials" do
+    client_id cred("AZURE_APPLICATION_ID")
+    client_secret cred("AZURE_APPLICATION_KEY")
+    additional_params do {
+      "resource" => "https://management.azure.com/"
+    } end
+  end
+end
+
+auth "azure_graph_auth", type: "oauth2" do
+  token_url join(["https://login.microsoftonline.com/",$param_azure_tenant_id,"/oauth2/token"])
+  grant type: "client_credentials" do
+    client_id cred("AZURE_APPLICATION_ID")
+    client_secret cred("AZURE_APPLICATION_KEY")
+    additional_params do {
+      "resource" => "https://graph.microsoft.com/"
+    } end
+  end
+end
+
+###############################################################################
+# Pagination
+###############################################################################
+
+pagination "azure_pagination" do
+  get_page_marker do
+    body_path "nextLink"
+  end
+  set_page_marker do
+    uri true
+  end
+end
+
+pagination "azure_graph_pagination" do
+  get_page_marker do
+    body_path '"@odata.nextLink"'
+  end
+  set_page_marker do
+    uri true
+  end
+end
+
+###############################################################################
+# Datasources
+###############################################################################
+
+datasource "ds_azure_users" do
+  request do
+    auth $azure_graph_auth
+    pagination $azure_graph_pagination
+    host "graph.microsoft.com"
+    path join(["/v1.0/users"])
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "value[*]") do
+      field "id", jmes_path(col_item,"id")
+      field "businessPhones", jmes_path(col_item,"businessPhones")
+      field "displayName", jmes_path(col_item,"displayName")
+      field "givenName", jmes_path(col_item,"givenName")
+      field "id", jmes_path(col_item,"id")
+      field "jobTitle", jmes_path(col_item,"jobTitle")
+      field "mail", jmes_path(col_item,"mail")
+      field "mobilePhone", jmes_path(col_item, "mobilePhone")
+      field "officeLocation", jmes_path(col_item, "officeLocation")
+      field "preferredLanguage", jmes_path(col_item, "preferredLanguage")
+      field "surname", jmes_path(col_item,"surname")
+      field "userPrincipalName", jmes_path(col_item,"userPrincipalName")
+    end
+  end
+end
+
+datasource "ds_azure_role_definitions" do
+  request do
+    auth $azure_auth
+    pagination $azure_pagination
+    host "management.azure.com"
+    path join(["/subscriptions/", $param_azure_sub, "/providers/Microsoft.Authorization/roleDefinitions"])
+    query "api-version","2015-07-01"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "value[*]") do
+      field "id", jmes_path(col_item,"id")
+      field "type", jmes_path(col_item,"type")
+      field "name", jmes_path(col_item,"name")
+      field "properties", jmes_path(col_item,"properties")
+    end
+  end
+end
+
+datasource "ds_filtered_azure_role_definitions" do
+  run_script $js_filtered_azure_role_definitions, $ds_azure_role_definitions, $param_azure_roles
+end
+
+datasource "ds_azure_role_assignments" do
+  request do
+    auth $azure_auth
+    pagination $azure_pagination
+    host "management.azure.com"
+    path join(["/subscriptions/", $param_azure_sub, "/providers/Microsoft.Authorization/roleAssignments"])
+    query "api-version","2015-07-01"
+    query "$filter","atScope()"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "value[*]") do
+      field "id", jmes_path(col_item,"id")
+      field "type", jmes_path(col_item,"type")
+      field "name", jmes_path(col_item,"name")
+      field "properties", jmes_path(col_item,"properties")
+    end
+  end
+end
+
+datasource "filtered_resources" do
+  run_script $js_filter_resources, $ds_azure_role_assignments, $ds_filtered_azure_role_definitions, $ds_azure_users
+end
+
+###############################################################################
+# Scripts
+###############################################################################
+
+script "js_filtered_azure_role_definitions", type: "javascript" do
+  parameters "ds_azure_role_definitions", "param_azure_roles"
+  result "results"
+  code <<-EOS
+    var results = [];
+    _.each(param_azure_roles,function(role) {
+      console.log(role)
+      var result = _.find(ds_azure_role_definitions, function(definition){ return definition.properties.roleName == role})
+      results.push(result)
+    })
+EOS
+end
+
+script "js_filter_resources", type: "javascript" do
+  parameters "ds_azure_role_assignments", "ds_filtered_azure_role_definitions", "ds_azure_users"
+  result "results"
+  code <<-EOS
+    var results = [];
+
+    // Iterate through all resources
+    _.each(ds_filtered_azure_role_definitions, function(definition){
+      var result = _.filter(ds_azure_role_assignments, function(ra) { return ra.properties.roleDefinitionId == definition.id})
+      _.each(result, function(r) {
+        var user = _.find(ds_azure_users, function(user){ return user.id == r.properties.principalId })
+        if (user != null){
+          results.push({
+            name: user.displayName,
+            username: user.mail,
+            principalname: user.userPrincipalName,
+            role: definition.properties.roleName
+          })
+        }
+      })
+    })
+
+EOS
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "azure_resource_policy" do
+  validate_each $filtered_resources do
+    summary_template "{{ len data }} Azure Users who are {{parameters.param_azure_roles}}"
+    detail_template <<-EOS
+# Azure users out of compliance
+| Resource Name | Azure Username | Azure User Principal Name | Role |
+| ------------- | -------------- | ------------------------- | ---- |
+{{ range data -}}
+| {{.name}} | {{.username}} | {{.principalname}} | {{.role}} |
+{{ end -}}
+
+###### Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }}) within Org: {{ rs_org_name }} (Org ID: {{ rs_org_id }})
+EOS
+    escalate $email
+    check eq(0,1)
+  end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "email" do
+   email $param_email
+end
+
+###############################################################################
+# Cloud Workflow
+###############################################################################
+
+define sys_log($subject, $detail) do
+  if $$debug
+    rs_cm.audit_entries.create(
+      notify: "None",
+      audit_entry: {
+        auditee_href: @@account,
+        summary: "Azure Subscription Access - "+ $subject,
+        detail: $detail
+      }
+    )
+  end
+end

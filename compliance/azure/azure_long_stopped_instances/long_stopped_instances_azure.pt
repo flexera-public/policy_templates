@@ -1,0 +1,250 @@
+name "Azure Long Stopped Instances"
+rs_pt_ver 20180301
+type "policy"
+short_description "Checks for Azure instances that have been stopped for more than a specified period of time with the option to Terminate them after approval. \n See the [README](https://github.com/flexera/policy_templates/tree/master/compliance/azure/azure_long_stopped_instances) and [docs.rightscale.com/policies](http://docs.rightscale.com/policies/) to learn more."
+long_description "Version: 1.3"
+category "Compliance"
+severity "low"
+
+###############################################################################
+# Permissions
+###############################################################################
+
+permission "perm_read_creds" do
+  actions   "rs_cm.show_sensitive","rs_cm.index_sensitive"
+  resources "rs_cm.credentials"
+end
+
+###############################################################################
+# Parameters
+###############################################################################
+
+parameter "param_email" do
+  type "list"
+  label "Email List"
+  description "Email addresses of the recipients you wish to notify"
+end
+
+parameter "param_azure_tenant_id" do
+  type "string"
+  label "Azure AD Tenant ID"
+  description "This value needs to be your Azure tenant ID.  \n To get your tenant ID see the article https://docs.microsoft.com/en-us/onedrive/find-your-office-365-tenant-id"
+  category "Azure"
+end
+
+parameter "param_azure_sub" do
+  type "string"
+  label "Azure Subscription ID"
+  description "This value needs to be your Azure subcription ID.  \n To get your subscription ID see the article https://blogs.msdn.microsoft.com/mschray/2016/03/18/getting-your-azure-subscription-guid-new-portal/"
+  category "Azure"
+end
+
+parameter "param_numberofdays" do
+  type "string"
+  label "Days"
+  description "Threshold of days to consider an instance long running."
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+auth "azure_auth", type: "oauth2" do
+  token_url join(["https://login.microsoftonline.com/",$param_azure_tenant_id,"/oauth2/token"])
+  grant type: "client_credentials" do
+    client_id cred("AZURE_APPLICATION_ID")
+    client_secret cred("AZURE_APPLICATION_KEY")
+    additional_params do {
+      "resource" => "https://management.azure.com/"
+    } end
+  end
+end
+
+###############################################################################
+# Pagination
+###############################################################################
+
+pagination "azure_pagination" do
+  get_page_marker do
+    body_path "nextLink"
+  end
+  set_page_marker do
+    uri true
+  end
+end
+
+###############################################################################
+# Datasources
+###############################################################################
+
+#get all virtual machines
+datasource "ds_azure_virtualmachines" do
+  request do
+    auth $azure_auth
+    pagination $azure_pagination
+    host "management.azure.com"
+    path join(["/subscriptions/", $param_azure_sub, "/providers/Microsoft.Compute/virtualMachines"])
+    query "api-version","2018-06-01"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "value[*]") do
+      field "id", jmes_path(col_item,"id")
+      field "rg", get(4, split(jmes_path(col_item,"id"), "/"))
+      field "name", jmes_path(col_item,"name")
+    end
+  end
+end
+
+#get all deeper instance data from those machines
+datasource "ds_azure_instances" do
+  iterate $ds_azure_virtualmachines
+  request do
+    auth $azure_auth
+    pagination $azure_pagination
+    host "management.azure.com"
+    path join(["/subscriptions/", $param_azure_sub, "/resourceGroups/", val(iter_item,"rg"), "/providers/Microsoft.Compute/virtualMachines/",val(iter_item,"name"),"/instanceView"])
+    query "api-version","2018-06-01"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+    field "rg", val(iter_item,"rg")
+    field "name", val(iter_item,"name")
+    field "statuses", jmes_path(response,"statuses")
+  end
+end
+
+#filter list down to only machines that are long running
+datasource "ds_filtered_resources" do
+  run_script $js_filter_resources, $ds_azure_instances, $param_numberofdays
+end
+
+###############################################################################
+# Scripts
+###############################################################################
+
+script "js_filter_resources", type: "javascript" do
+  parameters "ds_azure_instances", "param_numberofdays"
+  result "result"
+  code <<-EOS
+  var result=[];
+
+  _.each(ds_azure_instances, function(instance){
+    var codes = _.pluck(instance.statuses, 'code')
+    if ( _.contains(codes, "PowerState/deallocated") ) {
+      var deallocateState = _.where(instance.statuses, {"code": "PowerState/deallocated"});
+      var displayStatus = deallocateState[0]["displayStatus"];
+      var provisionState = _.where(instance.statuses, {"code": "ProvisioningState/succeeded"});
+      var timeStopped = provisionState[0]["time"];
+      var timeofevent = new Date(timeStopped);
+      var nowtime = Date.now();
+      var res = Math.abs(timeofevent.valueOf() - nowtime.valueOf());
+      var daysElapsed = Math.ceil(res / (1000 * 3600 * 24));
+      if (daysElapsed > param_numberofdays) {
+        result.push({
+          "name": instance["name"],
+          "status": displayStatus,
+          "time_stopped": timeStopped,
+          "days_elapsed": daysElapsed,
+          "resourcegroup" : instance["rg"]
+        })
+      }
+    }
+  })
+EOS
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "azure_resource_policy" do
+  validate $ds_filtered_resources do
+    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} Azure VMs in Stopped State for Over {{parameters.param_numberofdays}} Day(s)"
+    detail_template <<-EOS
+# Azure Virtual Machines Out of Compliance
+| Name | Resource Group | Status | Time Stopped | Days Elapsed |
+| ---- | -------------- | ------ | ------------ | ------------ |
+{{ range data -}}
+| {{.name}} | {{.resourcegroup}} | {{.status}} | {{.time_stopped}} | {{.days_elapsed}} |
+{{ end -}}
+___
+###### Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }}) within Org: {{ rs_org_name }} (Org ID: {{ rs_org_id }})
+EOS
+    escalate $email
+    escalate $delete_resources
+    check eq(size(data), 0)
+  end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "email" do
+   email $param_email
+end
+
+escalation "delete_resources" do
+   request_approval  do
+     label "Approve Resource Deletion"
+     description "Approve escalation to terminate the instance(s)"
+     parameter "approval_reason" do
+     type "string"
+       label "Reason for Approval"
+      description "Explain why you are approving the action"
+     end
+   end
+  run "delete_resources", data, $param_azure_tenant_id,$param_azure_sub
+end
+
+###############################################################################
+# Cloud Workflow
+###############################################################################
+
+define delete_resources($data, $param_azure_tenant_id,$param_azure_sub) return $all_responses do
+  call get_access_token($param_azure_tenant_id) retrieve $access_token
+  $all_responses = []
+  foreach $item in $data do
+   sub on_error: skip do
+      $response = http_request(
+        verb: "delete",
+        host: "management.azure.com",
+        href: join(["/subscriptions/", $param_azure_sub, "/resourceGroups/", $item["resourcegroup"], "/providers/Microsoft.Compute/virtualMachines/",$item["name"]]),
+        https: true,
+        query_strings: {
+          "api-version": "2018-06-01"
+        },
+        headers: {
+          "cache-control": "no-cache",
+          "content-type": "application/json",
+          "authorization": "Bearer " + $access_token
+        }
+      )
+      $all_responses << $response
+    end
+  end
+end
+
+define get_access_token($param_azure_tenant_id) return $access_token do
+
+  $client_id = cred("AZURE_APPLICATION_ID")
+  $client_secret = cred("AZURE_APPLICATION_KEY")
+
+  $body_string = "grant_type=client_credentials&resource=https://management.core.windows.net/&client_id="+$client_id+"&client_secret="+$client_secret
+
+  $auth_response = http_post(
+    url: join(["https://login.microsoftonline.com/",$param_azure_tenant_id,"/oauth2/token?api-version=1.0"]),
+    headers : {
+      "cache-control":"no-cache",
+      "content-type":"application/x-www-form-urlencoded"
+    },
+    body:$body_string
+  )
+
+  $auth_response_body = $auth_response["body"]
+  $access_token = $auth_response_body["access_token"]
+
+end

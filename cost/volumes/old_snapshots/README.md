@@ -16,8 +16,8 @@ This policy has the following input parameters required when launching the polic
 
 The following policy actions are taken on any resources found to be out of compliance.
 
-- Stop and Start the instances with the schedule tag.
 - Send an email report
+- Delete old snapshots after an approval
 
 ### Required Permissions
 
@@ -30,6 +30,7 @@ This policy requires permissions to access RightScale resources (clouds, volumes
 - AWS
 - Azure
 - Google
+- VMWare (RCA-V)
 
 ### Cost
 

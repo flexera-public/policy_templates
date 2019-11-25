@@ -1,3 +1,7 @@
+v1.4
+----
+- Added tenancy "single" in metadata
+
 v1.3
 ----
 - ignore changing amounts when creating incidents so that emails are sent less frequently

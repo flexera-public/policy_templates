@@ -1,4 +1,11 @@
 # Change log
+v1.8
+----
+- Provided option to display chart with different granularity.
+
+v1.7
+----
+- Added tenancy "single" in metadata
 
 v1.6
 ----
