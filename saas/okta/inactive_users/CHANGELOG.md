@@ -1,3 +1,7 @@
+v1.3
+----
+- Updated README URL 
+
 v1.2
 ----
 - Added Permission block
