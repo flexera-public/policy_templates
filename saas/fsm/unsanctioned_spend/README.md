@@ -7,6 +7,7 @@ This policy will raise an alert when Flexera SaaS Manager identifies unsanctione
 ## Functional Description
 
 This policy integrates with the Flexera SaaS Manager API to retrieve the expense data that has been flagged as unsanctioned. Therefore the following are prerequisites for this policy to execute:
+
 - Flexera SaaS Manager implementation with expense system connected
 - Retrieve a Flexera IAM refresh token for authentication
 - The Flexera IAM refresh token must then be stored as a RightScale Credential in the account in which this policy will be applied. The credential must be named `FSM_TOKEN`.
