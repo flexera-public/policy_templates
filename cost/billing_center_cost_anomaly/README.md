@@ -2,7 +2,7 @@
 
 ## What it does
 
-The Cost Anomaly Policy will analyze the spend of all Billing Centers in an Organization over a specified time period.  If the percentage change of the most recent period compared to the previous period exceeds the specified threshold, then an Incident will be raised.  
+The Cost Anomaly Policy will analyze the spend of all Billing Centers in an Organization over a specified time period.  If the percentage change of the most recent period compared to the previous period exceeds the specified threshold, then an Incident will be raised.
 
 ## Functional Details
 
@@ -17,8 +17,8 @@ The Cost Anomaly Policy will analyze the spend of all Billing Centers in an Orga
 - *Anomaly Threshold* - Percentage change threshold.  If the percentage change of Billing Center spend from the latest time period compared to the previous time period exceeds this value, then an Incident will be raised.
 - *Cost Metric* - Specify options for amortized vs nonamortized and blended vs unblended costs.
 - *Email addresses of the recipients you wish to notify* - A list of email addresses to notify
-- *Billing Center List* - List of Billing Center names you want to report on.  Names must be exactly as shown in Optima.  
-Leave the field blank to report on all Billing Centers.
+- *Billing Center List* - List of Billing Center names you want to report on. Names must be exactly as shown in Optima.
+   Leave the field blank to report on all Billing Centers.
 
 ### Required RightScale Roles
 
