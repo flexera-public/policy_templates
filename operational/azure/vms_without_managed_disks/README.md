@@ -31,13 +31,17 @@ When a VM that is using unmanaged disks is detected, VM location information as 
 1. [Retrieve your Tenant ID](https://docs.microsoft.com/en-us/azure/azure-resource-manager/resource-group-create-service-principal-portal#get-tenant-id)
 
 ## Required RightScale Roles
+
 - credential_viewer or admin
 
 ## Azure Required Permissions
+
 - Microsoft.Compute/virtualMachines/read
 
 ## Supported Clouds
+
 - Azure Resource Manager
 
 ## Cost
+
 This Policy Template does not incur any cloud costs.
