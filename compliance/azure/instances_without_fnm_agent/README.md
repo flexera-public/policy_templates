@@ -1,13 +1,16 @@
-## Azure Instances not running FlexNet Inventory Agent
+# Azure Instances not running FlexNet Inventory Agent
 
-### What it does
+## What it does
+
 This policy checks all instances running in Azure to determine if the FlexNet Inventory Agent is running on the instance and reports on any that are missing the agent.
 The policy is a recommendation only policy, no action is taken during the Policy Escalation.
 
-### Functional Details
-The policy leverages the cloud API to get all current instances and the FlexNet Manager report (Custom view) API to get all azure cloud instances with agent. It cross-checks the two lists to determine if any instances are running on the cloud that aren't known to FNM.  The policy matches the ComputerName from FNMS and the VirtualMachine.name from Azure. 
+## Functional Details
 
-### Prerequisites
+The policy leverages the cloud API to get all current instances and the FlexNet Manager report (Custom view) API to get all azure cloud instances with agent. It cross-checks the two lists to determine if any instances are running on the cloud that aren't known to FNM.  The policy matches the ComputerName from FNMS and the VirtualMachine.name from Azure.
+
+## Prerequisites
+
 - FlexNet Manager
 - The following RightScale Credentials
   - 'FNMS_API_Token'
@@ -16,9 +19,9 @@ The policy leverages the cloud API to get all current instances and the FlexNet 
   - `AZURE_APPLICATION_ID`
   - `AZURE_APPLICATION_KEY`
 
-### Installation
+## Installation
 
-#### How to retrive Azure `AZURE_APPLICATION_ID`, `AZURE_APPLICATION_KEY` and `Azure AD Tenant ID`:
+### How to retrieve Azure `AZURE_APPLICATION_ID`, `AZURE_APPLICATION_KEY` and `Azure AD Tenant ID`:
 
 1. Follow steps to [Create an Azure Active Directory Application](https://docs.microsoft.com/en-us/azure/azure-resource-manager/resource-group-create-service-principal-portal#create-an-azure-active-directory-application)
 1. Grant the Azure AD Application access to the necessary subscription(s)
@@ -44,7 +47,7 @@ Once saved, note the report number in thr URL field :
 
         ![Alt text][CreateServeceAccount]
     1. IMPORTANT: When you hit save you will see a API Token.. This is the only time you will see it so you need to save it at this point
-    
+
         ![Alt text][APIToken]
     1. Add the new account to the Role ___Webservice___
 
@@ -52,9 +55,9 @@ Once saved, note the report number in thr URL field :
 
 #### Cloud manager
 
-1. Create RightScale Credentials with values that match the FlexNet Manager API Token (Credential name: `FNMS_API_Token`) 
+1. Create RightScale Credentials with values that match the FlexNet Manager API Token (Credential name: `FNMS_API_Token`)
 
-### Input Parameters
+## Input Parameters
 
 This policy has the following input parameters required when launching the policy.
 
@@ -64,7 +67,7 @@ This policy has the following input parameters required when launching the polic
 - *Azure Subscription ID* - The Azure Subscription ID used for the Azure API.
 - *FNMS Report ID* - FlexNet manager Custom View ID.
 
-### Required RightScale Roles
+## Required RightScale Roles
 
 - `policy_manager`
 - `credential_viewer`
@@ -73,15 +76,16 @@ This policy has the following input parameters required when launching the polic
 
 - `Reader`
 
-### Supported Clouds
+## Supported Clouds
 
 - Azure
 
-### Policy Actions
+## Policy Actions
 
 - Send an email report
 
-### Cost
+## Cost
+
 This Policy Template does not incur any cloud costs.
 
 <!-- Image referances -->

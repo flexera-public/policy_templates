@@ -25,6 +25,21 @@ This policy has the following input parameters required when launching the polic
 
 - Populate an Azure Migrate project with the discovered servers from a RISC Foundations Assessment
 
+## Prerequisites
+
+- Azure Service Principal (AKA Azure Active Directory Application) with the appropriate permissions to manage resources in the target subscription
+- The following RightScale Credentials
+  - `AZURE_APPLICATION_ID`
+  - `AZURE_APPLICATION_KEY`
+
+## Installation
+
+1. Follow steps to [Create an Azure Active Directory Application](https://docs.microsoft.com/en-us/azure/azure-resource-manager/resource-group-create-service-principal-portal#create-an-azure-active-directory-application)
+1. Grant the Azure AD Application access to the necessary subscription(s)
+1. [Retrieve the Application ID & Authentication Key](https://docs.microsoft.com/en-us/azure/azure-resource-manager/resource-group-create-service-principal-portal#get-application-id-and-authentication-key)
+1. Create RightScale Credentials with values that match the Application ID (Credential name: `AZURE_APPLICATION_ID`) & Authentication Key (Credential name: `AZURE_APPLICATION_KEY`)
+1. [Retrieve your Tenant ID](https://docs.microsoft.com/en-us/azure/azure-resource-manager/resource-group-create-service-principal-portal#get-tenant-id)
+
 ## Supported Clouds
 
 - Azure
