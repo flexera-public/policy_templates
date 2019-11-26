@@ -4,7 +4,7 @@
 
 This Policy will collect the resources from a RISC Foundations assessment and seed Azure Migrate with the discovered servers.
 
-## Pre-requisites
+## Prerequisites
 
 - RISC Foundations assessment to have successfully discovered resources and analyzed application stacks
 - Retrieve a RISC API Assessment Code and API Key from your Subscription Administrator.  See more about RISC API authentication requirements [here](https://portal.riscnetworks.com/app/documentation/?path=/using-the-platform/restful-api-access/)
