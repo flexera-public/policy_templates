@@ -117,7 +117,7 @@ end
 
 # check for lowercase files and directories
 has_app_changes.each do |file|
-  if ! file.scan(/^[a-z]+$/)
+  if file.scan(/^[a-z0-9.\/_-]+$/).empty?
     fail "Policy Template path should be lowercase. #{file}"
   end
 end
