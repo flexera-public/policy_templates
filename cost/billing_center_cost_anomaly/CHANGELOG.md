@@ -1,4 +1,4 @@
-# Changelog 
+# Changelog
 
 ## v1.2
 
@@ -7,7 +7,6 @@
 ## v1.1
 
 - Added tenancy "single" in metadata
-
 
 ## v1.0
 
