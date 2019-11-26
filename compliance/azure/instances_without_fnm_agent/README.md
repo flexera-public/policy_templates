@@ -21,7 +21,7 @@ The policy leverages the cloud API to get all current instances and the FlexNet 
 
 ## Installation
 
-### How to retrieve Azure `AZURE_APPLICATION_ID`, `AZURE_APPLICATION_KEY` and `Azure AD Tenant ID`:
+### How to retrieve Azure `AZURE_APPLICATION_ID`, `AZURE_APPLICATION_KEY` and `Azure AD Tenant ID`
 
 1. Follow steps to [Create an Azure Active Directory Application](https://docs.microsoft.com/en-us/azure/azure-resource-manager/resource-group-create-service-principal-portal#create-an-azure-active-directory-application)
 1. Grant the Azure AD Application access to the necessary subscription(s)
@@ -29,10 +29,9 @@ The policy leverages the cloud API to get all current instances and the FlexNet 
 1. Create RightScale Credentials with values that match the Application ID (Credential name: `AZURE_APPLICATION_ID`) & Authentication Key (Credential name: `AZURE_APPLICATION_KEY`)
 1. [Retrieve your Azure AD Tenant ID](https://docs.microsoft.com/en-us/azure/azure-resource-manager/resource-group-create-service-principal-portal#get-tenant-id)
 
-#### How to setup FlexNet Manager Custom View for this policy:
+#### How to setup FlexNet Manager Custom View for this policy
 
-1. Create a custom view in FlexNet manager that could look like this:
-![Alt text][FNMSReport]
+- Create a custom view in FlexNet manager that could look like this: ![Alt text][FNMSReport]
 
 Click on Preview and filter.
 Select `Microsoft Azure` under `Inventory device` > `Hosted in`
@@ -42,16 +41,10 @@ Select `Microsoft Azure` under `Inventory device` > `Hosted in`
 Once saved, note the report number in thr URL field :
 ![Alt text][ReportNumber] you need it when activating the Policy for 'FNMS Report ID'.
 
-1. Setup the API Token in FNMS:
-    1. On the Account page - Select Create Account -> Service Account and fill in the form
-
-        ![Alt text][CreateServeceAccount]
-    1. IMPORTANT: When you hit save you will see a API Token.. This is the only time you will see it so you need to save it at this point
-
-        ![Alt text][APIToken]
-    1. Add the new account to the Role ___Webservice___
-
-        ![Alt text][WebServiceRole]
+- Setup the API Token in FNMS:
+- On the Account page - Select Create Account -> Service Account and fill in the form ![Alt text][CreateServeceAccount]
+- IMPORTANT: When you hit save you will see a API Token.. This is the only time you will see it so you need to save it at this point ![Alt text][APIToken]
+- Add the new account to the Role ___Webservice___ ![Alt text][WebServiceRole]
 
 #### Cloud manager
 
