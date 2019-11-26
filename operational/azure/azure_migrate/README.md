@@ -9,6 +9,10 @@ This Policy will collect the resources from a RISC Foundations assessment and se
 - RISC Foundations assessment to have successfully discovered resources and analyzed application stacks
 - Retrieve a RISC API Assessment Code and API Key from your Subscription Administrator.  See more about RISC API authentication requirements [here](https://portal.riscnetworks.com/app/documentation/?path=/using-the-platform/restful-api-access/)
 - Create an Azure Migrate project in the target Azure Subscription, and select "Flexera" as your Assessment Tool
+- Azure Service Principal (AKA Azure Active Directory Application) with the appropriate permissions to manage resources in the target subscription
+- The following RightScale Credentials
+  - `AZURE_APPLICATION_ID`
+  - `AZURE_APPLICATION_KEY`
 
 ## Input Parameters
 
@@ -24,13 +28,6 @@ This policy has the following input parameters required when launching the polic
 ## Policy Actions
 
 - Populate an Azure Migrate project with the discovered servers from a RISC Foundations Assessment
-
-## Prerequisites
-
-- Azure Service Principal (AKA Azure Active Directory Application) with the appropriate permissions to manage resources in the target subscription
-- The following RightScale Credentials
-  - `AZURE_APPLICATION_ID`
-  - `AZURE_APPLICATION_KEY`
 
 ## Installation
 
