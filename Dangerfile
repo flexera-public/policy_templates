@@ -62,7 +62,7 @@ changed_files.each do |file|
            url = URI(url_string) #convert to URL
            res = Net::HTTP.get_response(url) #make request
          end
-         if ! res.code =~ /200|302/ #allow OK and temporary redirects such as login
+         if res.code !~ /200|302/ #allow OK and temporary redirects such as login
            fail "The URL is not valid: #{url_string} in #{file} Status: #{res.code}"
          end
        end
