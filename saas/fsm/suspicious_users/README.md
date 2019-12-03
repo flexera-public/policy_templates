@@ -2,7 +2,7 @@
 
 ## What it does
 
-This policy will raise an alert when Flexera SaaS Manager identifies suspicious users logging into SaaS applications.
+This policy will create an incident when Flexera SaaS Manager identifies suspicious users logging into SaaS applications.
 
 ## Functional Description
 
