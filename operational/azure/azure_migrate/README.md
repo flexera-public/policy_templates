@@ -4,11 +4,15 @@
 
 This Policy will collect the resources from a RISC Foundations assessment and seed Azure Migrate with the discovered servers.
 
-## Pre-requisites
+## Prerequisites
 
 - RISC Foundations assessment to have successfully discovered resources and analyzed application stacks
 - Retrieve a RISC API Assessment Code and API Key from your Subscription Administrator.  See more about RISC API authentication requirements [here](https://portal.riscnetworks.com/app/documentation/?path=/using-the-platform/restful-api-access/)
 - Create an Azure Migrate project in the target Azure Subscription, and select "Flexera" as your Assessment Tool
+- Azure Service Principal (AKA Azure Active Directory Application) with the appropriate permissions to manage resources in the target subscription
+- The following RightScale Credentials
+  - `AZURE_APPLICATION_ID`
+  - `AZURE_APPLICATION_KEY`
 
 ## Input Parameters
 
@@ -24,6 +28,14 @@ This policy has the following input parameters required when launching the polic
 ## Policy Actions
 
 - Populate an Azure Migrate project with the discovered servers from a RISC Foundations Assessment
+
+## Installation
+
+1. Follow steps to [Create an Azure Active Directory Application](https://docs.microsoft.com/en-us/azure/azure-resource-manager/resource-group-create-service-principal-portal#create-an-azure-active-directory-application)
+1. Grant the Azure AD Application access to the necessary subscription(s)
+1. [Retrieve the Application ID & Authentication Key](https://docs.microsoft.com/en-us/azure/azure-resource-manager/resource-group-create-service-principal-portal#get-application-id-and-authentication-key)
+1. Create RightScale Credentials with values that match the Application ID (Credential name: `AZURE_APPLICATION_ID`) & Authentication Key (Credential name: `AZURE_APPLICATION_KEY`)
+1. [Retrieve your Tenant ID](https://docs.microsoft.com/en-us/azure/azure-resource-manager/resource-group-create-service-principal-portal#get-tenant-id)
 
 ## Supported Clouds
 
