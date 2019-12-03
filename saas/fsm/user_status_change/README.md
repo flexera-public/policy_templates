@@ -2,7 +2,7 @@
 
 ## What it does
 
-This policy will raise an alert when Flexera SaaS Manager identifies users whose status in the HR roster changes to inactive.
+This policy will create an incident when Flexera SaaS Manager identifies users whose status in the HR roster changes to inactive.
 
 ## Functional Description
 
