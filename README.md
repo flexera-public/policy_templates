@@ -141,6 +141,7 @@ Please contact sales@flexera.com to learn more.
 - [Billing Center Access](./compliance/billing_center_access_report/)
 - [Untagged Resources](./compliance/tags/tag_checker)
 - [Unapproved Instance Types](./compliance/unapproved_instance_types/)
+- [Disallowed Cloud Images](./compliance/disallowed_images/)
 
 #### AWS
 
