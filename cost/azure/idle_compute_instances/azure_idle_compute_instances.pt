@@ -17,21 +17,21 @@ parameter "param_email" do
   description "Please enter the email address to use for the escalation"
 end
 
-#pass in tenant ID
+# #pass in tenant ID
 parameter "param_azure_tenant_id" do
   type "string"
   label "Azure AD Tenant ID"
   category "Azure"
   description "Please enter your Azure tenant ID."
 end
-
-#pass in Sub ID
-parameter "param_azure_sub" do
-  type "string"
-  label "Azure Subscription ID"
-  category "Azure"
-  description "Please enter your Azure Subscription ID."
-end
+#
+# #pass in Sub ID
+# parameter "param_azure_sub" do
+#   type "string"
+#   label "Azure Subscription ID"
+#   category "Azure"
+#   description "Please enter your Azure Subscription ID."
+# end
 
 #pass in the CPU in percentage
 parameter "param_cpu_average_percentage" do
@@ -65,6 +65,13 @@ auth "azure_auth", type: "oauth2" do
   end
 end
 
+# credential "azure_auth" do
+#   schemes 'azure'
+#   label "Azure"
+#   description "Azure Resource Manager"
+#   tags "provider=azure_rm"
+# end
+
 ###############################################################################
 # Pagination
 ###############################################################################
@@ -83,13 +90,34 @@ end
 # Datasources
 ###############################################################################
 
-#get all virtual machines 
-datasource "ds_azure_virtualmachines" do
+datasource "ds_subscriptions" do
   request do
     auth $azure_auth
     pagination $azure_pagination
     host "management.azure.com"
-    path join(["/subscriptions/", $param_azure_sub, "/providers/Microsoft.Compute/virtualMachines"])
+    path "/subscriptions/"
+    query "api-version","2019-06-01"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "value[*]") do
+      field "subscriptionId", jmes_path(col_item,"subscriptionId")
+      field "displayName", jmes_path(col_item,"displayName")
+      field "state", jmes_path(col_item,"state")
+    end
+  end
+end
+
+
+#get all virtual machines
+datasource "ds_azure_virtualmachines" do
+  iterate $ds_subscriptions
+  request do
+    auth $azure_auth
+    pagination $azure_pagination
+    host "management.azure.com"
+    path join(["/subscriptions/", val(iter_item,"subscriptionId"), "/providers/Microsoft.Compute/virtualMachines"])
     query "api-version","2019-03-01"
     header "User-Agent", "RS Policies"
   end
@@ -101,6 +129,8 @@ datasource "ds_azure_virtualmachines" do
       field "name", jmes_path(col_item,"name")
       field "location", jmes_path(col_item, "location")
       field "tags", jmes_path(col_item,"tags")
+      field "subscriptionId",val(iter_item,"subscriptionId")
+      field "subscriptionName",val(iter_item,"displayName")
     end
   end
 end
@@ -116,14 +146,14 @@ datasource "ds_azure_instance_performance" do
     auth $azure_auth
     pagination $azure_pagination
     host "management.azure.com"
-    path join(["/subscriptions/", $param_azure_sub, "/resourceGroups/", val(iter_item,"rg"), "/providers/Microsoft.Compute/virtualMachines/",val(iter_item,"name"),"/providers/microsoft.insights/metrics"])
+    path join(["/subscriptions/", val(iter_item,"subscriptionId"), "/resourceGroups/", val(iter_item,"rg"), "/providers/Microsoft.Compute/virtualMachines/",val(iter_item,"name"),"/providers/microsoft.insights/metrics"])
     query "api-version","2016-09-01"
     query "timespan","P30D"
     header "User-Agent", "RS Policies"
-  end 
+  end
   result do
     encoding "json"
-    field "vmname", val(iter_item,"name") 
+    field "vmname", val(iter_item,"name")
     field "rg", val(iter_item, "rg")
     field "id", val(iter_item, "id")
     field "location", val(iter_item, "location")
@@ -166,12 +196,12 @@ code <<-EOS
   _.each(ds_azure_instance_performance, function(result){
     var averages = _.pluck(result.averages,"average")
 
-    var sum = _.reduce(averages, function(memo, num){ 
+    var sum = _.reduce(averages, function(memo, num){
       if (num != null && num !== undefined){
         return memo + parseFloat(num)
       } else {}
-      return memo + 0; 
-      }, 
+      return memo + 0;
+      },
     0)
 
     var final_average = parseFloat(sum/averages.length)
@@ -195,10 +225,10 @@ policy "azure_resource_policy" do
     detail_template <<-EOS
 # Azure idle compute instances
 
-| Region/Location | Name | CPU Average | Resource Group | Tags |
-| -------- | ---- | ----------- | -------------- | ---- |
+| Subscription Name | Region/Location | Name | CPU Average | Resource Group | Tags |
+| ----------------- | -------- | ---- | ----------- | -------------- | ---- |
 {{ range data -}}
-| {{ .location }} | {{.vmname}} | {{.averagecpu}} | {{.rg}} | {{range $i,$e := .tags}}{{$i}}:{{$e}},{{end}} |
+| {{.subscriptionName}} | {{ .location }} | {{.vmname}} | {{.averagecpu}} | {{.rg}} | {{range $i,$e := .tags}}{{$i}}:{{$e}},{{end}} |
 {{ end -}}
 
 EOS
@@ -226,14 +256,14 @@ escalation "delete_resources" do
      description "Explain why you are approving the action"
     end
   end
- run "delete_resources", data, $param_azure_tenant_id,$param_azure_sub
+ run "delete_resources", data, $param_azure_tenant_id
 end
 
 ###############################################################################
 # Cloud Workflow
 ###############################################################################
 
-define delete_resources($data, $param_azure_tenant_id,$param_azure_sub) return $all_responses do
+define delete_resources($data, $param_azure_tenant_id) return $all_responses do
   $$debug=true
   $$log = []
   $all_responses = []
@@ -246,7 +276,7 @@ define delete_resources($data, $param_azure_tenant_id,$param_azure_sub) return $
       $response = http_request(
         verb: "delete",
         host: "management.azure.com",
-        href: join(["/subscriptions/", $param_azure_sub, "/resourceGroups/", $item["rg"], "/providers/Microsoft.Compute/virtualMachines/",$item["vmname"]]),
+        href: join(["/subscriptions/", $item['subscriptionId'], "/resourceGroups/", $item["rg"], "/providers/Microsoft.Compute/virtualMachines/",$item["vmname"]]),
         https: true,
         query_strings: {
           "api-version": "2018-06-01"
