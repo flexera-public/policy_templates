@@ -1,8 +1,8 @@
-# SaaS Manager - Unsanctioned Spend Alert
+# SaaS Manager - Unsanctioned Spend
 
 ## What it does
 
-This policy will raise an alert when Flexera SaaS Manager identifies unsanctioned spend on SaaS applications.
+This policy will create an incident when Flexera SaaS Manager identifies unsanctioned spend on SaaS applications.
 
 ## Functional Description
 
