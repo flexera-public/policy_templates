@@ -2,7 +2,7 @@
 
 ## What it does
 
-This policy will raise an alert when Flexera SaaS Manager identifies applications whose contract expiration date is approaching.
+This policy will create an incident when Flexera SaaS Manager identifies applications whose contract expiration date is approaching.
 
 ## Functional Description
 
