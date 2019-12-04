@@ -207,6 +207,7 @@ Please contact sales@flexera.com to learn more.
 
 - [Okta Inactive Users](./saas/okta/inactive_users)
 - [SaaS Manager - Renewal Reminder](./saas/fsm/renewal_reminder)
+- [SaaS Manager - Unsanctioned Spend](./saas/fsm/unsanctioned_spend)
 
 ### Policy Data Sets
 
