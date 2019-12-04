@@ -1,7 +1,7 @@
 name "Disallowed Cloud Images"
 rs_pt_ver 20180301
 type "policy"
-short_description "Checks for any running instances that are using disallowed cloud images with the option to Terminate them after approval. \n See the [README](https://github.com/flexera/policy_templates/tree/master/compliance/disallowed_images) and [docs.rightscale.com/policies](http://docs.rightscale.com/policies/) to learn more."
+short_description "Checks for any running instances that are using disallowed cloud images with the option to Terminate them after approval. \n See the [README](https://github.com/flexera/policy_templates/tree/master/compliance/disallowed_images) and [docs.rightscale.com/policies](https://docs.rightscale.com/policies/) to learn more."
 long_description "Version: 1.0"
 category "Compliance"
 severity "low"
@@ -28,7 +28,7 @@ end
 parameter "param_exclude_tags" do
   type "list"
   label "Tags to ignore"
-  description "List of tags that will exclude Servers from being evaluated by this policy. Multiple tags are evaluated as an 'OR' condition. Tag must be of the format 'namespace:predicate=value'. Example: 'rs_agent:type=right_link_lite,rs_monitoring:state=auth'"
+  description "List of tags that will exclude instances from being evaluated by this policy. Multiple tags are evaluated as an 'OR' condition. Tag must be of the format 'namespace:predicate=value'. Example: 'rs_agent:type=right_link_lite,rs_monitoring:state=auth'"
 end
 
 parameter "param_allowed_cloud_images" do
@@ -166,13 +166,7 @@ script "js_filter_instances_list", type: "javascript" do
     for(var j=0;j<tags.length;j++){
          var tag=tags[j];
          dis_tags=dis_tags+", "+tag;
-    }
-         var locked = instance['locked'];
-        if(locked === true){
-          locked = 'Yes';
-        }else{
-          locked = 'No';
-        }
+    }         
          var instance_image_href = instance.image_href
 	     var matched_image = _.find(ds_images_list, function(image) {return image.href == instance_image_href})
 	    if (matched_image != null && matched_image !== undefined) {
@@ -190,13 +184,24 @@ script "js_filter_instances_list", type: "javascript" do
              name:instance['name']
              tags:(dis_tags.slice(2))
              href:instance['href']
-             locked:locked
+             locked:instance['locked']
              state:instance['state']
             })   
 	    }
 	    }
 	}
-  EOS
+	    content.sort(getSortOrder("cloud_name"));
+        function getSortOrder(prop){  
+           return function(a, b){  
+        if (a[prop] > b[prop]){  
+           return 1;  
+        }else if (a[prop] < b[prop]){  
+           return -1;  
+        }  
+           return 0; 
+           }  
+        }
+	EOS
 end
 
 ###############################################################################
@@ -247,7 +252,7 @@ end
 
 define terminate_instance($data) do
   foreach $item in $data do
-    sub on_error: skip do
+    if !$item["locked"]
       @instance=rs_cm.get(href:$item["href"])
       @instance.terminate()
     end
