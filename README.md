@@ -207,6 +207,7 @@ Please contact sales@flexera.com to learn more.
 
 - [Okta Inactive Users](./saas/okta/inactive_users)
 - [Office 365 Security Alerts](./saas/office365/security_alerts)
+- [SaaS Manager - Suspicious Users](./saas/fsm/suspicious_users)
 - [SaaS Manager - Unsanctioned Spend](./saas/fsm/unsanctioned_spend)
 
 ### Policy Data Sets
