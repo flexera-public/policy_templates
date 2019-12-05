@@ -38,7 +38,8 @@ exclude_hosts = [
   'management.core.windows.net',
   'login.microsoftonline.com',
   'oauth2.googleapis.com',
-  'www.googleapis.com'
+  'www.googleapis.com',
+  'graph.microsoft.com'
 ]
 changed_files.each do |file|
  diff = git.diff_for_file(file)

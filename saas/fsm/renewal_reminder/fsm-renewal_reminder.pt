@@ -1,0 +1,204 @@
+name "SaaS Manager - Renewal Reminder"
+rs_pt_ver 20180301
+type "policy"
+short_description "This policy will create an incident when Flexera SaaS Manager identifies applications whose contract expiration date is approaching. See the [README](https://github.com/flexera/policy_templates/tree/master/saas/fsm/unsanctioned_spend/) and [docs.rightscale.com/policies](https://docs.rightscale.com/policies/) to learn more."
+long_description "Version: 1.0"
+severity "medium"
+category "SaaS Management"
+
+permission "perm_read_creds" do
+  actions   "rs_cm.show_sensitive","rs_cm.index_sensitive"
+  resources "rs_cm.credentials"
+end
+
+parameter "param_days" do
+  type "number"
+  label "Upcoming Number of Days"
+  default 60
+  description "If an application renewal is due in the upcoming time period, raise an incident"
+end
+
+parameter "param_email" do
+  type "list"
+  label "Email addresses to notify"
+  description "Email addresses of the recipients you wish to notify"
+end
+
+
+resources "refresh_token", type: "rs_cm.credentials" do
+  filter do
+      name "FSM_TOKEN"
+  end
+  view "sensitive"
+end
+
+datasource "ds_access_token" do
+  iterate @refresh_token
+  request do
+    host "login.flexera.com"
+    path "/oidc/token"
+    verb "POST"
+    body_field "grant_type", "refresh_token"
+    body_field "refresh_token", val(iter_item, "value")
+  end
+  result do
+    encoding "json"
+    field "access_token", val(response, "access_token")
+  end
+end
+
+datasource "ds_global_auth" do
+  iterate $ds_access_token
+  request do
+    host "api.metasaas.com"
+    path "/auth/external-token"
+    verb "POST"
+    body_field "token", val(iter_item, "access_token")
+  end
+  result do
+    encoding "json"
+    field "access_token", val(response, "token")
+  end
+end
+
+datasource "ds_customer_select" do
+  iterate $ds_global_auth
+  request do
+      host "api.metasaas.com"
+      path "/auth/select-customer"
+      verb "POST"
+      header "Authorization", join(["Bearer", val(iter_item, "access_token")])
+      body_field "orgId", rs_org_id
+  end
+  result do
+      encoding "json"
+      field "access_token", val(response, "token")
+  end
+end
+
+datasource "ds_num_products" do
+  iterate $ds_customer_select
+  request do
+    #auth $rs_auth
+    host "api.metasaas.com"
+    verb "GET"
+    scheme "https"
+    path "/svc/managed-products"
+    header "content-type", "application/json"
+    header "Authorization", join(["Bearer ", val(iter_item, "access_token"), " "])
+  end
+  result do
+    encoding "json"
+    field "totalItems", jmes_path(response, "totalItems")
+  end
+end
+
+datasource "ds_products" do
+  iterate $ds_num_products
+  request do
+    run_script $js_products, val(iter_item, "totalItems"), $ds_customer_select
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "items[*]") do
+        field "application", jmes_path(col_item, "name")
+        field "pointOfContactEmail", jmes_path(col_item, "pointOfContactEmail")
+        field "contracts", jmes_path(col_item, "contracts")
+        field "vendor", jmes_path(col_item, "product.vendor.name")
+      end
+  end
+end
+
+script "js_products", type: "javascript" do
+  parameters "num_items", "access_token"
+  result "request"
+  code <<-EOS
+  request = {
+    host: "api.metasaas.com",
+    verb: "GET",
+    scheme: "https",
+    path: "/svc/managed-products",
+    headers: {
+      "content-type": "application/json",
+      "Authorization": "Bearer " + access_token[0]["access_token"] + " "
+    },
+    query_params: {
+      "pageSize": num_items.toString(),
+      "includeInactive": "false"
+    }
+  }
+EOS
+end
+
+datasource "ds_cleanup_products" do
+  run_script $js_cleanup_products, $ds_products, $param_days
+end
+
+script "js_cleanup_products", type: "javascript" do
+  parameters "products", "param_days"
+  result "result"
+  code <<-EOS
+  var result = [];
+  var date = new Date();
+  date = date.setHours(24 * param_days);
+  date = new Date(date);
+
+  console.log("Target Date: "+date)
+
+  // returns date formatted as string: YYYY-mm-dd
+  function getFormattedDailyDate(date) {
+    var year = date.getFullYear();
+    var month = (1 + date.getMonth()).toString();
+    month = month.length > 1 ? month : '0' + month;
+    var day = date.getDate().toString();
+    day = day.length > 1 ? day : '0' + day;
+    return year + '-' + month + '-' + day;
+  }
+
+
+  _.each(products, function(product){
+    console.log("Product Object: "+product)
+    _.each(product["contracts"], function(contract){
+      console.log("Contract ID: "+contract["id"])
+      var expiration_date = new Date(contract["endDate"]);
+      console.log("Expiration Date: "+expiration_date)
+      if (expiration_date < date){
+        result.push({
+          application: product["application"],
+          pointOfContactEmail: product["pointOfContactEmail"],
+          annualCost: contract["annualCost"],
+          endDate: contract["endDate"],
+          vendor: product["vendor"],
+          contractName: contract["name"]
+        })
+        }
+    })
+  })
+
+  result = _.sortBy(result, 'endDate');
+EOS
+end
+
+escalation "report_summary" do
+    email $param_email
+end
+
+policy "policy_fsm_renewal_reminder" do
+  validate $ds_cleanup_products do
+      summary_template "{{ len data }} Expiring Contracts Found"
+      detail_template <<-EOS
+# SaaS Renewal Reminder
+
+| Contract Expiration Date (YYYY-MM-DD) | Vendor | Application | Contract Name | Contract Point of Contact |  Annual Cost |
+| ------------------------------------- | ------ | ----------- | ------------- | ------------------------- | ------------ |
+{{ range data -}}
+| {{.endDate}} | {{.vendor}} | {{.application}} | {{.contractName}} | {{.pointOfContactEmail}} | {{.annualCost}} |
+{{ end -}}
+
+
+###### Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }}) within Org: {{ rs_org_name }} (Org ID: {{ rs_org_id }})
+EOS
+      escalate $report_summary
+      check eq(size(data), 0)
+  end
+end
