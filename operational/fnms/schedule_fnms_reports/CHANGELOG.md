@@ -1,3 +1,7 @@
+v2.0
+----
+- Added support for onPrem Flexnet Manager. (Still need to be available on the Internet)
+
 v1.4
 ----
 - Added Permission block
