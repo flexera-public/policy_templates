@@ -147,6 +147,7 @@ Please contact sales@flexera.com to learn more.
 - [AWS Disallowed Regions](./compliance/aws/disallowed_regions/)
 - [AWS Unused ECS Clusters](./compliance/aws/ecs_unused/)
 - [AWS EC2 Instances not running FlexNet Inventory Agent](./compliance/aws/instances_without_fnm_agent/)
+- [AWS Long-stopped Instances](./compliance/aws/long_stopped_instances/)
 
 #### Azure
 
@@ -204,7 +205,12 @@ Please contact sales@flexera.com to learn more.
 
 ### SaaS Management
 
-- [Okta Inactive Users](./fsm/okta/inactive_users)
+- [Okta Inactive Users](./saas/okta/inactive_users)
+- [Office 365 Security Alerts](./saas/office365/security_alerts)
+- [SaaS Manager - Renewal Reminder](./saas/fsm/renewal_reminder)
+- [SaaS Manager - User Status Change](./saas/fsm/user_status_change)
+- [SaaS Manager - Suspicious Users](./saas/fsm/suspicious_users)
+- [SaaS Manager - Unsanctioned Spend](./saas/fsm/unsanctioned_spend)
 
 ### Policy Data Sets
 

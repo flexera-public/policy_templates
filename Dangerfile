@@ -9,7 +9,7 @@ md_files = changed_files.select{ |file| file.end_with? "md" }
 # Changelog entries are required for changes to library files.
 no_changelog_entry = (changed_files.grep(/[\w]+CHANGELOG.md/i)+changed_files.grep(/CHANGELOG.md/i)).empty?
 if (has_app_changes.length != 0) && no_changelog_entry
-  fail "Please add a changelog"
+  fail "Please add a CHANGELOG.md file"
 end
 
 missing_doc_changes = (changed_files.grep(/[\w]+README.md/i)+changed_files.grep(/README.md/i)).empty?
@@ -21,6 +21,15 @@ if (has_new_policy_template.length != 0) && missing_doc_changes
   fail "A README.md is required for new templates"
 end
 
+fpt = nil
+has_app_changes.each do |file|
+  # check if fpt is installed and do the check.  only report if there is a syntax error
+  fpt = `[ -x ./fpt ] && ./fpt check #{file} | grep -v Checking`
+  if ! fpt.empty?
+    fail "Checking #{file}\n#{fpt}"
+  end
+end
+
 # checks for broken links in the any file
 # exclude api and auth hostnames
 exclude_hosts = [
@@ -29,7 +38,8 @@ exclude_hosts = [
   'management.core.windows.net',
   'login.microsoftonline.com',
   'oauth2.googleapis.com',
-  'www.googleapis.com'
+  'www.googleapis.com',
+  'graph.microsoft.com'
 ]
 changed_files.each do |file|
  diff = git.diff_for_file(file)
@@ -53,7 +63,7 @@ changed_files.each do |file|
            url = URI(url_string) #convert to URL
            res = Net::HTTP.get_response(url) #make request
          end
-         if ! res.code =~ /200|302/ #allow OK and temporary redirects such as login
+         if res.code !~ /200|302/ #allow OK and temporary redirects such as login
            fail "The URL is not valid: #{url_string} in #{file} Status: #{res.code}"
          end
        end
@@ -102,7 +112,14 @@ md_files.each do |file|
     mdl = `mdl #{file}`
   end
   if !mdl.empty?
-    fail "#{file} '#{mdl}'"
+    fail mdl
+  end
+end
+
+# check for lowercase files and directories
+has_app_changes.each do |file|
+  if file.scan(/^[a-z0-9.\/_-]+$/).empty?
+    fail "Policy Template path should be lowercase. #{file}"
   end
 end
 
