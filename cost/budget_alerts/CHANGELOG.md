@@ -1,3 +1,7 @@
+v1.5
+----
+- handling transition next month when in Dec -> January
+
 v1.4
 ----
 - Added tenancy "single" in metadata
