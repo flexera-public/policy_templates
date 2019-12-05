@@ -1,0 +1,250 @@
+name "Disallowed Cloud Images"
+rs_pt_ver 20180301
+type "policy"
+short_description "Checks for any running instances that are using disallowed cloud images with the option to Terminate them after approval. \n See the [README](https://github.com/flexera/policy_templates/tree/master/compliance/disallowed_images) and [docs.rightscale.com/policies](https://docs.rightscale.com/policies/) to learn more."
+long_description "Version: 1.0"
+category "Compliance"
+severity "low"
+
+###############################################################################
+# Permissions
+###############################################################################
+
+permission "perm_read_creds" do
+  actions   "rs_cm.show_sensitive","rs_cm.index_sensitive"
+  resources "rs_cm.credentials"
+end
+
+###############################################################################
+# User inputs
+###############################################################################
+
+parameter "param_email" do
+  type "list"
+  label "Email addresses to notify"
+  description "Email addresses of the recipients you wish to notify when new incidents are created."
+end
+
+parameter "param_exclude_tags" do
+  type "list"
+  label "Exclude Tags"
+  description "List of tags that will exclude instances from being evaluated by this policy. Multiple tags are evaluated as an 'OR' condition. Tag must be of the format 'namespace:predicate=value'. Example: 'rs_agent:type=right_link_lite,rs_monitoring:state=auth'"
+end
+
+parameter "param_allowed_cloud_images" do
+  type "list"
+  label "Allowed Cloud Images"
+  description "A list of allowed cloud images resource_uids."
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+auth "auth_rs", type: "rightscale"
+
+###############################################################################
+# Datasources
+###############################################################################
+
+datasource "ds_instances_list" do
+  request do
+    run_script $js_instances_list, rs_cm_host, rs_project_id, $param_exclude_tags
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "[*]") do
+      field "cloud_name", jmes_path(col_item, "links.cloud.name")
+      field "cloud_type", jmes_path(col_item, "links.cloud.cloud_type")
+      field "cloud_id", jmes_path(col_item, "links.cloud.id")
+      field "name", jmes_path(col_item, "name")
+      field "id", jmes_path(col_item, "id")
+      field "image_href", jmes_path(col_item, "links.image.href")
+      field "tags", jmes_path(col_item, "tags")
+      field "state", jmes_path(col_item, "state")
+      field "href", jmes_path(col_item, "href")
+      field "locked", jmes_path(col_item, "locked")
+    end
+  end
+end
+
+datasource "ds_instances_cloud_id" do
+  run_script $js_filter_instances_cloud_id, $ds_instances_list
+end
+
+datasource "ds_images_list" do
+  iterate $ds_instances_cloud_id
+  request do
+    run_script $js_image_list, rs_cm_host, iter_item, rs_project_id
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "[*]") do
+      field "href", jmes_path(col_item, "href")
+      field "resource_uid", jmes_path(col_item, "resource_uid")
+    end
+  end
+end
+
+datasource "ds_list_cloud_instances" do
+  run_script $js_filter_instances_list, $ds_instances_list, $ds_images_list, $param_allowed_cloud_images
+end
+
+###############################################################################
+# Script
+###############################################################################
+
+script "js_instances_list", type: "javascript" do
+ parameters "rs_cm_host","rs_project_id","param_exclude_tags"
+  result "request"
+  code <<-EOS
+    var filtered_tags = ""
+    if ( param_exclude_tags.length > 0 ){
+      var filtered_tags = "&tag!=" + param_exclude_tags.join(",");
+    }
+	request = {
+      "auth": "auth_rs",
+      "verb": "GET",
+      "host": rs_cm_host,
+      "path": "/api/instances",
+      "headers": {
+        "X-Api-Version": "1.6",
+        "X-Account": \""+rs_project_id+\"",
+        "accept": "application/json"
+      },
+      "query_params": {
+        "view": "full",
+        "filter": "state=running,operational,provisioned" + filtered_tags
+      }
+    }
+  EOS
+end
+
+script "js_image_list", type: "javascript" do
+  parameters "rs_cm_host","cloud_id","rs_project_id"
+  result "request"
+  code <<-EOS
+    request = {
+      "auth": "auth_rs",
+      "verb": "GET",
+      "host": rs_cm_host,
+      "path": "/api/clouds/"+cloud_id+"/images",
+      "headers": {
+        "X-Api-Version": "1.6",
+        "X-Account": \""+rs_project_id+\"",
+        "accept": "application/json"
+      }
+    }
+  EOS
+end
+
+script "js_filter_instances_cloud_id", type: "javascript" do
+ parameters "ds_instances_list"
+ result "content"
+ code <<-EOS
+ var content=[]
+   _.each(ds_instances_list, function(instance){
+      if(instance["image_href"] != null){
+        content.push(instance.cloud_id)
+      }
+    })
+        content = _.uniq(content);
+ EOS
+end
+
+script "js_filter_instances_list", type: "javascript" do
+  parameters "ds_instances_list","ds_images_list","param_allowed_cloud_images"
+  result "content"
+  code <<-EOS
+  var content=[]
+    for ( i =0; i < ds_instances_list.length; i++ ){
+      var instance=ds_instances_list[i]
+        if(instance.image_href != null){
+        // Constructing tags with comma separated to display in detail_template
+         var tags = instance.tags
+         var dis_tags=""
+    for(var j=0;j<tags.length;j++){
+         var tag=tags[j];
+         dis_tags=dis_tags+", "+tag;
+    }         
+         var instance_image_href = instance.image_href
+	     var matched_image = _.find(ds_images_list, function(image) {return image.href == instance_image_href})
+	    if (matched_image != null && matched_image !== undefined) {
+	     var resource_uid = matched_image.resource_uid
+         var is_cloud_image_resource_uid_matched=false
+        if((param_allowed_cloud_images.indexOf(resource_uid) !== -1) || (param_allowed_cloud_images.join()).match(resource_uid)){
+         is_cloud_image_resource_uid_matched = true;
+        }
+        }
+        if(matched_image != null && !(is_cloud_image_resource_uid_matched)){
+            content.push({
+             cloud_name:instance['cloud_name']
+             id:instance['id']
+             cloud_type:instance['cloud_type']
+             name:instance['name']
+             tags:(dis_tags.slice(2))
+             href:instance['href']
+             locked:instance['locked']
+             state:instance['state']
+            })   
+	    }
+	    }
+	}
+	        content = _.sortBy(content, 'cloud_name');
+	EOS
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_report_disallowed_cloud_images" do
+  email $param_email
+end
+
+escalation "esc_approve_terminate_instances" do
+  request_approval  do
+  label "Approve Instance Termination"
+    description "Approve escalation to run RightScale Cloud Workflow to terminate Instances under Disallowed Cloud Images"
+    parameter "approval_reason" do
+      type "string"
+      label "Reason for Approval"
+      description "[Note]: Locked instances will not be terminated."
+    end
+  end
+  run "terminate_instance", data
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "pol_list_cloud_instances" do
+  validate $ds_list_cloud_instances do
+    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} Disallowed Cloud Images Instance Details"
+    detail_template <<-EOS
+# Instance Details
+| Cloud Name | ID | Cloud Type | State | Instance Name | Is Instance Locked | Href | Tags |
+| ---------- | -- | ---------- | ----- | ------------- | ------------------ | ---- | ---- |
+{{ range data -}}
+| {{.cloud_name}} | {{.id}} | {{.cloud_type}} | {{.state}} | {{.name}} | {{.locked}} | {{.href}} | {{.tags}} |
+{{ end -}}
+    EOS
+    escalate $esc_report_disallowed_cloud_images
+    escalate $esc_approve_terminate_instances
+    check eq(size(data),0)
+  end
+end
+
+###############################################################################
+# Cloud Workflow
+###############################################################################
+
+define terminate_instance($data) do
+  foreach $item in $data do
+    if !$item["locked"]
+      @instance=rs_cm.get(href:$item["href"])
+      @instance.terminate()
+    end
+  end
+end
