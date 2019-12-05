@@ -8,7 +8,7 @@ The report / Mail output looks like this:
 ![Alt text][emailoutput]
 
 Current limitations:
-- This only works with the FNMS Cloud of a onPrem installation available on the internet.
+- This only works with the FNMS Cloud or a onPrem installation available on the internet.
 - Output is limited to max 100.000 rows.
 
 ### Pre-reqs
