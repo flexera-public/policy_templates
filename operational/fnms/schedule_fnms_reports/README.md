@@ -1,4 +1,4 @@
-# Schedule FlexNet Manager report
+# Schedule FlexNet Manager Report
 
 ## What it does
 
