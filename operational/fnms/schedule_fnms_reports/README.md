@@ -10,8 +10,6 @@ The report / Mail output looks like this:
 
 Current limitations:
 
-- This only works with the FNMS Cloud or a on-premise installation available on the internet.
-
 - Output is limited to max 100.000 rows.
 
 ## Prerequisites
