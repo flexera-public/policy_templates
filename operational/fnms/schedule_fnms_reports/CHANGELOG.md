@@ -1,9 +1,8 @@
 # Changelog
 
-## v2.0
+## v1.5
 
-- Added support for onPrem FlexNet Manager. (Still need to be available on the
-Internet)
+- Added support for on-premise FlexNet Manager.
 
 ## v1.4
 
