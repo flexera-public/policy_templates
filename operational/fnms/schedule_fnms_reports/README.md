@@ -16,7 +16,8 @@ Current limitations:
 
 - FlexNet Manager.
 
-    __Note:__ If the FlexNet Manager Suite is not accessible from the Internet, you will need to setup a wtunnel to provide the necessary connection from the Policy engine to the FlexNet manager. For more details on wtunnel please refer to this: <https://github.com/rightscale/wstunnel>
+    __Note:__ If FlexNet Manager Suite is not accessible from the Internet, you will need to setup a wstunnel to provide a secure connection into the FlexNet manager system.
+    For more details on wstunnel please refer to this: [https://github.com/rightscale/wstunnel](https://github.com/rightscale/wstunnel)
 
 - The following RightScale Credentials
   - FlexNet Manager Cloud
@@ -61,13 +62,13 @@ Once saved note the report number in thr URL field :
     1. For FlexNet manager Cloud - Add the FlexNet Manager API Token (Credential name: `FNMS_API_Token`)
     1. For FlexNet Manager on-premise - Add two Credentials : (Credential name: `FNMS_API_Username` and Credential name: `FNMS_API_Password`)
 
-1. In the case of FlexNet Manager Suite is not accessible from the Internet: Setup a wtunnel to provide the necessary connection from the Policy engine. For more details on wtunnel please refer to this link: <https://github.com/rightscale/wstunnel>
+1. If FlexNet Manager Suite is not accessible from the Internet, you will need to setup a wstunnel to provide a secure connection into the FlexNet manager system. For more details on wstunnel please refer to this: [https://github.com/rightscale/wstunnel](https://github.com/rightscale/wstunnel)
 
 ## Input Parameters
 
 This policy has the following input parameters required when launching the policy.
 
-- *FNMS Report URL* - Full FlexNet URL (e.g. <https://demo.flexnetmanager.com/Suite> )
+- *FNMS Report URL* - Full FlexNet URL (e.g. [https://demo.flexnetmanager.com/Suite](https://demo.flexnetmanager.com/Suite) )
 - *FNMS Report ID* - FlexNet manager Custom View ID
 - *Report Title in the Mail* - Report header in the report result
 - *Email addresses of the recipients you wish to notify* - A list of email addresse(s) to notify
