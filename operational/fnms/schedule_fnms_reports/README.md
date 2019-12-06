@@ -67,7 +67,7 @@ Once saved note the report number in thr URL field :
 
 This policy has the following input parameters required when launching the policy.
 
-- *FNMS Report URL* - Full FlexNet URL (e.g. https://demo.flexnetmanager.com/Suite )
+- *FNMS Report URL* - Full FlexNet URL (e.g. <https://demo.flexnetmanager.com/Suite> )
 - *FNMS Report ID* - FlexNet manager Custom View ID
 - *Report Title in the Mail* - Report header in the report result
 - *Email addresses of the recipients you wish to notify* - A list of email addresse(s) to notify
