@@ -39,6 +39,7 @@ exclude_hosts = [
   'login.microsoftonline.com',
   'oauth2.googleapis.com',
   'www.googleapis.com',
+  'image-charts.com',
   'graph.microsoft.com'
 ]
 changed_files.each do |file|
