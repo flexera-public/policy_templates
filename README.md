@@ -141,6 +141,7 @@ Please contact sales@flexera.com to learn more.
 - [Billing Center Access](./compliance/billing_center_access_report/)
 - [Untagged Resources](./compliance/tags/tag_checker)
 - [Unapproved Instance Types](./compliance/unapproved_instance_types/)
+- [Disallowed Cloud Images](./compliance/disallowed_images/)
 
 #### AWS
 
@@ -206,6 +207,11 @@ Please contact sales@flexera.com to learn more.
 ### SaaS Management
 
 - [Okta Inactive Users](./saas/okta/inactive_users)
+- [Office 365 Security Alerts](./saas/office365/security_alerts)
+- [SaaS Manager - Renewal Reminder](./saas/fsm/renewal_reminder)
+- [SaaS Manager - User Status Change](./saas/fsm/user_status_change)
+- [SaaS Manager - Suspicious Users](./saas/fsm/suspicious_users)
+- [SaaS Manager - Unsanctioned Spend](./saas/fsm/unsanctioned_spend)
 
 ### Policy Data Sets
 
