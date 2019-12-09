@@ -16,7 +16,10 @@ The policy leverages the Azure API to check all instances and then checks the in
 
 ## Prerequisites
 
-To run this policy the Policy Manager must create an Azure Resource Manager Credential.  The credential must contain the value *Azure RM* in the Provider field.  
+This policy requires the Azure Resource Manager Credential.  When applying the policy select the appropriate credentials
+from the list for your tenant.  If such credential doesn't exist please contact your cloud admin to create the Credential.
+
+The credential must contain the value *Azure RM* in the Provider field.  
 Refer to our documentation for more details on the [Credential Service](https://docs.rightscale.com/credentials/)
 
 ### Azure Required Permissions
