@@ -2,7 +2,7 @@
 
 ## v1.5
 
-- Added support for on-premise FlexNet Manager.
+- Added support for on-premise FlexNet Manager
 
 ## v1.4
 
