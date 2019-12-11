@@ -12,17 +12,28 @@ task :generate_policy_list do
   Dir['**/*.pt'].reject{ |f| f['msp/'] }.each do |file|
     change_log = ::File.join(file.split('/')[0...-1].join('/'),'CHANGELOG.md')
     readme = ::File.join(file.split('/')[0...-1].join('/'),'README.md')
-    @version = nil
 
     if !file.match(/test_code/)
       f = File.open(file, "r:bom|utf-8")
+
+      # get info field data
+      info = {}
+      content = File.read(file)
+      info_string = content.scan(/info\((.*?)\)/m)
+      info = eval(info_string.flatten[0]) if info_string.any?
+      version = info[:version] || nil
+      provider = info[:provider] || nil
+      service = info[:service] || nil
+      policy_set = info[:policy_set] || nil
+
       f.each_line do |line|
         if line =~ /^name/
           @name = line.split(' ')[1..-1].join(' ').to_s.chomp('"').reverse.chomp('"').reverse
         end
-        if line =~ /long_description/
+        # get the version that wasn't included in the info field.
+        if version.nil?  && line =~ /long_description/
           if line =~ /Version/
-            @version = line.split(':').last.strip.chomp("\"")
+            version = line.split(':').last.strip.chomp("\"")
           end
         end
         if line =~ /short_description/
@@ -39,7 +50,7 @@ task :generate_policy_list do
       end
 
       # skip policy if the version isn't supplied or if version is '0.0'
-      if ! @version || @version == '0.0'
+      if ! version || version == '0.0'
         puts "Skipping #{@name}, policy missing version"
         next
       end
@@ -49,12 +60,15 @@ task :generate_policy_list do
       file_list<<{
         "name": @name,
         "file_name": file,
-        "version": @version,
+        "version": version,
         "change_log": change_log,
         "description": @description,
         "category": @category,
         "severity": @severity,
-        "readme": readme
+        "readme": readme,
+        "provider":provider,
+        "service":service,
+        "policy_set":policy_set
       }
     end
   end
