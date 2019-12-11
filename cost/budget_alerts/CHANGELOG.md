@@ -2,7 +2,7 @@
 
 ## v1.6
 
-- Modified graph representation of the Actual budget alert 
+- Modified graph representation of the Actual budget alert
 
 ## v1.5
 
