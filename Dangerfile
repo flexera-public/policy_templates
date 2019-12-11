@@ -138,8 +138,14 @@ has_app_changes.each do |file|
   provider = info[:provider] || nil
   service = info[:service] || nil
   policy_set = info[:policy_set] || nil
-  fail "Missing Version in info field." if version.nil?
-  fail "Missing Provider in info field." if provider.nil?
+
+  fail "Please add the info field. #{file}" if info.empty?
+  if info.any?
+    fail "Please add version to the info field. #{file} " if version.nil?
+    fail "Please add provider to the info field. #{file} " if provider.nil?
+    warn "Should this include service in the info field. #{file}"  if service.nil?
+    warn "Should this include policy_set in the info field. #{file}" if policy_set.nil?
+  end
 end
 
 fail 'Please provide a summary of your Pull Request.' if github.pr_body.length < 10
