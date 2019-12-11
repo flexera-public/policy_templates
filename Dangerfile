@@ -124,6 +124,24 @@ has_app_changes.each do |file|
   end
 end
 
+# check for info field required fields
+has_app_changes.each do |file|
+  # get info field data
+  info = {}
+  content = File.read(file)
+  info_body = content.scan(/info\((.*?)\)/m)
+  info_body = info_body.flatten[0] if !info_body.nil?
+  info_body = info_body.gsub("\n","") if !info_body.nil?
+  # convert the string to hash
+  info = eval(info_body) if !info_body.nil? && info_body!="" #&& info_body.any?
+  version = info[:version] || nil
+  provider = info[:provider] || nil
+  service = info[:service] || nil
+  policy_set = info[:policy_set] || nil
+  fail "Missing Version in info field." if version.nil?
+  fail "Missing Provider in info field." if provider.nil?
+end
+
 fail 'Please provide a summary of your Pull Request.' if github.pr_body.length < 10
 
 fail 'Please add labels to this Pull Request' if github.pr_labels.empty?
