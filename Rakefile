@@ -19,8 +19,11 @@ task :generate_policy_list do
       # get info field data
       info = {}
       content = File.read(file)
-      info_string = content.scan(/info\((.*?)\)/m)
-      info = eval(info_string.flatten[0]) if info_string.any?
+      info_body = content.scan(/info\((.*?)\)/m)
+      info_body = info_body.flatten[0] if !info_body.nil?
+      info_body = info_body.gsub("\n","") if !info_body.nil?
+      # convert the string to hash
+      info = eval(info_body) if !info_body.nil? && info_body!="" #&& info_body.any?
       version = info[:version] || nil
       provider = info[:provider] || nil
       service = info[:service] || nil
