@@ -1,7 +1,7 @@
 require 'rubygems'
 require 'json'
 require 'fileutils'
-require './tools/lib/policy_parser'
+require_relative 'tools/lib/policy_parser'
 
 # the list of policies is consumed by the tools/policy_sync/policy_sync.pt
 # and the docs.rightscale.com build to generate the policies/user/policy_list.html
@@ -20,7 +20,7 @@ task :generate_policy_list do
 
       pp = PolicyParser.new
       pp.parse(file)
-      
+
       if pp.parsed_info
         version = pp.parsed_info[:version]
         provider = pp.parsed_info[:provider]
@@ -34,6 +34,11 @@ task :generate_policy_list do
         else
           publish = false
         end
+      end
+
+      # get version from long description
+      if version.nil? && pp.parsed_long_description =~ /Version/
+        version = pp.parsed_long_description.split(':').last.strip.chomp("\"")
       end
 
       # skip policy if the version isn't supplied or if version is '0.0'
