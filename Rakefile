@@ -13,30 +13,32 @@ task :generate_policy_list do
   Dir['**/*.pt'].reject{ |f| f['msp/'] }.each do |file|
     change_log = ::File.join(file.split('/')[0...-1].join('/'),'CHANGELOG.md')
     readme = ::File.join(file.split('/')[0...-1].join('/'),'README.md')
+    publish = true
 
     if !file.match(/test_code/)
       f = File.open(file, "r:bom|utf-8")
 
       pp = PolicyParser.new
       pp.parse(file)
-
-      info =  pp.parsed_info
       
-      #puts pp.parsed_category
       if pp.parsed_info
         version = pp.parsed_info[:version]
         provider = pp.parsed_info[:provider]
         service = pp.parsed_info[:service]
         policy_set = pp.parsed_info[:policy_set]
-      end
-
-      if version.nil? && pp.parsed_long_description =~ /Version/
-        version = pp.parsed_long_description.split(':').last.strip.chomp("\"")
+        publish = pp.parsed_info[:publish]
+        # not all templates have the publish key
+        # set these to true,
+        if publish.nil? || publish=='true' || publish==true
+          publish = true
+        else
+          publish = false
+        end
       end
 
       # skip policy if the version isn't supplied or if version is '0.0'
-      if ! version || version == '0.0'
-        puts "Skipping #{pp.parsed_name}, policy missing version"
+      if ! version || version == '0.0' || ! publish
+        puts "Skipping #{pp.parsed_name}, policy not published"
         next
       end
 
