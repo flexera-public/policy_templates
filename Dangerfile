@@ -1,5 +1,5 @@
 require 'uri'
-require './tools/lib/policy_parser'
+require_relative 'tools/lib/policy_parser'
 # DangerFile
 # https://danger.systems/reference.html
 changed_files = (git.added_files + git.modified_files)
