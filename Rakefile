@@ -69,9 +69,9 @@ task :generate_policy_list do
         "category": @category,
         "severity": @severity,
         "readme": readme,
-        "provider":provider,
-        "service":service,
-        "policy_set":policy_set
+        "provider": provider,
+        "service": service,
+        "policy_set": policy_set,
       }
     end
   end
