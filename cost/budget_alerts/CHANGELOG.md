@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.6
+
+- Modified graph representation of the Actual budget alert
+
 ## v1.5
 
 - Added graph representation of the Forecasted Full Month Spend/Actual Full Month Spend
