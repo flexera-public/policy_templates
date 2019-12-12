@@ -1,4 +1,5 @@
-  require 'uri'
+require 'uri'
+require './tools/lib/policy_parser'
 # DangerFile
 # https://danger.systems/reference.html
 changed_files = (git.added_files + git.modified_files)
@@ -6,6 +7,7 @@ has_app_changes = changed_files.select{ |file| file.end_with? "pt" }
 has_new_policy_template = git.added_files.select{ |file| file.end_with? "pt" }
 md_files = changed_files.select{ |file| file.end_with? "md" }
 
+pp = PolicyParser.new
 # Changelog entries are required for changes to library files.
 no_changelog_entry = (changed_files.grep(/[\w]+CHANGELOG.md/i)+changed_files.grep(/CHANGELOG.md/i)).empty?
 if (has_app_changes.length != 0) && no_changelog_entry
@@ -86,18 +88,10 @@ categories = [
 ].sort
 #only check .pt files
 has_app_changes.each do |file|
- diff = git.diff_for_file(file)
- regex =/^\+category/
- if diff && diff.patch =~ regex
-   diff.patch.each_line do |line|
-     if line =~ regex
-       category = line.split(' ')[1..-1].join(' ').to_s.chomp('"').reverse.chomp('"').reverse
-       if !categories.include?(category.downcase)
-         fail "The Category is not valid: #{category}.  Valid Categories include #{categories.join(", ")}"
-       end
-    end
-   end
- end
+  pp.parse(file)
+  if !categories.include?(pp.parsed_category.downcase)
+    fail "The Category is not valid: #{category}.  Valid Categories include #{categories.join(", ")}"
+  end
 end
 
 # check markdown of .md files with markdown lint
@@ -127,24 +121,14 @@ end
 # check for info field required fields
 has_app_changes.each do |file|
   # get info field data
-  info = {}
-  content = File.read(file)
-  info_body = content.scan(/info\((.*?)\)/m)
-  info_body = info_body.flatten[0] if !info_body.nil?
-  info_body = info_body.gsub("\n","") if !info_body.nil?
-  # convert the string to hash
-  info = eval(info_body) if !info_body.nil? && info_body!="" #&& info_body.any?
-  version = info[:version] || nil
-  provider = info[:provider] || nil
-  service = info[:service] || nil
-  policy_set = info[:policy_set] || nil
+  pp.parse(file)
 
-  fail "Please add the info field. #{file}" if info.empty?
-  if info.any?
-    fail "Please add version to the info field. #{file} " if version.nil?
-    fail "Please add provider to the info field. #{file} " if provider.nil?
-    warn "Should this include service in the info field. #{file}"  if service.nil?
-    warn "Should this include policy_set in the info field. #{file}" if policy_set.nil?
+  fail "Please add the info field. #{file}" if pp.parsed_info.empty?
+  if pp.parsed_info.any?
+    fail "Please add version to the info field. #{file} " if pp.parsed_info[:version].nil?
+    fail "Please add provider to the info field. #{file} " if pp.parsed_info[:provider].nil?
+    warn "Should this include service in the info field. #{file}"  if pp.parsed_info[:service].nil?
+    warn "Should this include policy_set in the info field. #{file}" if pp.parsed_info[:policy_set].nil?
   end
 end
 
