@@ -89,7 +89,12 @@ categories = [
 #only check .pt files
 has_app_changes.each do |file|
   pp.parse(file)
-  if !categories.include?(pp.parsed_category.downcase)
+  category = pp.parsed_category
+  if ! category
+    fail "Please add a category field. #{file}"
+  end
+  # check category meets the expected list
+  if category && !categories.include?(category.downcase)
     fail "The Category is not valid: #{category}.  Valid Categories include #{categories.join(", ")}"
   end
 end
@@ -123,8 +128,8 @@ has_app_changes.each do |file|
   # get info field data
   pp.parse(file)
 
-  fail "Please add the info field. #{file}" if pp.parsed_info.empty?
-  if pp.parsed_info.any?
+  fail "Please add the info field. #{file}" if pp.parsed_info.nil?
+  if pp.parsed_info
     fail "Please add version to the info field. #{file} " if pp.parsed_info[:version].nil?
     fail "Please add provider to the info field. #{file} " if pp.parsed_info[:provider].nil?
     warn "Should this include service in the info field. #{file}"  if pp.parsed_info[:service].nil?
