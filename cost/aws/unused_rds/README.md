@@ -12,13 +12,33 @@ This policy template checks for Unused RDS instances by reviewing the DBconnecti
 
 This policy has the following input parameters required when launching the policy.
 
-- *Email addresses of the recipients you wish to notify* - A list of email addresses to notify
-- *Exclusion Tag Key* - A RDS tag to exclude from the instance list. Example: mytag:value
+- *Email addresses to notify* - Email addresses of the recipients you wish to notify when new incidents are created
+- *Exclusion Tag Key:Value* - AWS tag key to ignore instances. Format: Key:Value
 
-### Cloud Management Required Permissions/AWS Required Permissions
-- Cloud Management - The `credential_viewer`,`observer` roles
-- Cloud Management - The `policy_designer`, `policy_manager` & `policy_publisher` roles
-- AWS - The `CloudWatchReadOnlyAccess` AWS IAM Policy
+## Policy Actions
+
+The following policy actions are taken on any resources found to be out of compliance.
+
+- Send an email report
+- decommissions AWS RDS instances after approval.
+
+## Prerequisites
+
+This policy requires the AWS IAM User Credential. When applying the policy select the appropriate credentials
+from the list for your tenant. If such credential doesn't exist please contact your cloud admin to create the Credential.
+
+The credential must contain the value *AWS* in the Provider field.  
+Refer to our documentation for more details on the [Credential Service](https://docs.rightscale.com/credentials/)
+
+## Required Permissions
+
+### Required RightScale Roles
+
+- policy_designer
+- policy_manager
+- policy_publisher
+- credential_viewer
+- observer
 
 ### AWS Required Permissions
 

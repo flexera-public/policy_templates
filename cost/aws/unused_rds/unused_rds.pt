@@ -2,9 +2,16 @@ name "AWS Unused RDS Instance"
 rs_pt_ver 20180301
 type "policy"
 short_description "Check for AWS RDS instances that have no connections and decommissions them after approval. See the [README](https://github.com/rightscale/policy_templates/tree/master/cost/aws/unused_rds) and [docs.rightscale.com/policies](http://docs.rightscale.com/policies/) to learn more."
-long_description "Version: 1.0"
+long_description ""
 severity "low"
 category "Cost"
+tenancy "single"
+info({
+  version: "2.0",
+  provider: "AWS",
+  service: "RDS",
+  policy_set: "aws-unused-rds-instance"
+})
 
 ###############################################################################
 # Permissions
@@ -36,18 +43,12 @@ end
 # Authentication
 ###############################################################################
 
-auth "auth_aws", type: "aws" do
-  version 4
-  service "rds"
-  access_key cred('AWS_ACCESS_KEY_ID')
-  secret_key cred('AWS_SECRET_ACCESS_KEY')
-end
-
-auth "monitoring_auth_aws", type: "aws" do
-  version 4
-  service "monitoring"
-  access_key cred('AWS_ACCESS_KEY_ID')
-  secret_key cred('AWS_SECRET_ACCESS_KEY')
+#authenticate with AWS
+credentials "auth_aws" do
+  schemes "aws"
+  label "AWS"
+  description "AWS IAM"
+  tags "provider=aws"
 end
 
 ###############################################################################
@@ -232,7 +233,7 @@ script "js_cloudwatch_connections", type: "javascript" do
   var end_date = new Date().toISOString()
   var start_date = new Date(new Date().setDate(new Date().getDate() - days )).toISOString();
   results = {
-    "auth": "monitoring_auth_aws",
+    "auth": "auth_aws",
     "host": 'monitoring.'+region+'.amazonaws.com',
     "verb": "GET",
     "path": "/",
@@ -278,7 +279,7 @@ ___
 EOS
     escalate $email
     escalate $decommision_rds
-    check gt(to_n(val(item,"connections")),0)
+    check gt(to_n(val(item,"connections")),1000)
   end
 end
 
@@ -317,10 +318,11 @@ define decommision_rds($data) return $all_responses do
   call sys_log(join([$syslog_subject, "Identified Instances"]),to_s($data))
   foreach $item in $data do
     $response = http_request(
-      https: true,
-      verb: "GET",
+      auth: $$auth_aws,
+	  https: true,
+      verb: "get",
       host: "rds."+$item["region"]+".amazonaws.com",
-      signature: { "type": "aws" },
+      href: "/",
       query_strings: {
         "Action": "DeleteDBInstance",
         "Version": "2014-09-01",
@@ -328,7 +330,8 @@ define decommision_rds($data) return $all_responses do
         "SkipFinalSnapshot":"true"
       }
     )
-    $all_responses << $response
+
+	$all_responses << $response
   end
   call sys_log(join([$syslog_subject, "Responses"]),to_s($all_responses))
 end
