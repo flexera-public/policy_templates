@@ -1,14 +1,14 @@
-## AWS Unused RDS Policy
+# AWS Unused RDS Policy
 
-### What it does
+## What it does
 
 This policy template checks for Unused RDS instances by reviewing the DBconnections and terminates them after user approval.
 
-### Functional Details
+## Functional Details
 
 - This policy gets's a list of RDS instances and uses CloudWatch DBConnection metric to check for connections over a 30 day period.  If there are no DBConnections the policy will terminate the RDS instance after the user approval.
 
-#### Input Parameters
+## Input Parameters
 
 This policy has the following input parameters required when launching the policy.
 
@@ -27,7 +27,7 @@ The following policy actions are taken on any resources found to be out of compl
 This policy requires the AWS IAM User Credential. When applying the policy select the appropriate credentials
 from the list for your tenant. If such credential doesn't exist please contact your cloud admin to create the Credential.
 
-The credential must contain the value *AWS* in the Provider field.  
+The credential must contain the value *AWS* in the Provider field.
 Refer to our documentation for more details on the [Credential Service](https://docs.rightscale.com/credentials/)
 
 ## Required Permissions
@@ -62,10 +62,10 @@ The Cloud Management Platform automatically creates two Credentials when connect
 }
 ```
 
-### Supported Clouds
+## Supported Clouds
 
 - Amazon
 
-### Cost
+## Cost
 
 This Policy Template does not incur any cloud costs.

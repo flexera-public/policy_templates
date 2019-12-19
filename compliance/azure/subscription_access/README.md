@@ -23,7 +23,7 @@ When the list of users that match the criteria changes, an incident is created a
 This policy requires the Azure Resource Manager Credential. When applying the policy select the appropriate credentials
 from the list for your tenant. If such credential doesn't exist please contact your cloud admin to create the Credential.
 
-The credential must contain the value *Azure RM* in the Provider field.  
+The credential must contain the value *Azure RM* in the Provider field.
 Refer to our documentation for more details on the [Credential Service](https://docs.rightscale.com/credentials/)
 
 ## Required Permissions

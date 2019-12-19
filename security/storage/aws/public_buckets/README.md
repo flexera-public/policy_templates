@@ -23,13 +23,14 @@ The following policy actions are taken on any resources found to be out of compl
 This policy requires the AWS IAM User Credential. When applying the policy select the appropriate credentials
 from the list for your tenant. If such credential doesn't exist please contact your cloud admin to create the Credential.
 
-The credential must contain the value *AWS* in the Provider field.  
+The credential must contain the value *AWS* in the Provider field.
 Refer to our documentation for more details on the [Credential Service](https://docs.rightscale.com/credentials/)
 
 ## Slack Channel Notification Support
 
 The policy includes optional support to send a notification to a slack channel when an anomaly is detected.
 The policy accepts two optional input parameters to support this capability:
+
 - `Slack Channel Name`: This is the slack channel name, e.g. #policy_alerts
 - `RightScale Credential for Slack Channel Webhook`: This is the name of a RightScale credential in the account that contains the Slack webhook URL.
 

@@ -14,7 +14,7 @@
 
 ## v1.7
 
-- Added optional Slack notification support.
+- Added optional Slack notification support
 
 ## v1.6
 
