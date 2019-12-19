@@ -14,7 +14,7 @@
 
 ## v1.2
 
-- Changing run rate to monthly estimated cost. 
+- Changing run rate to monthly estimated cost.
 
 ## v1.1
 
