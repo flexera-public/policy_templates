@@ -35,17 +35,7 @@ from the list for your tenant. If such credential doesn't exist please contact y
 The credential must contain the value *AWS* in the Provider field.
 Refer to our documentation for more details on the [Credential Service](https://docs.rightscale.com/credentials/)
 
-## Required Permissions
-
-### Required RightScale Roles
-
-- policy_designer
-- policy_manager
-- policy_publisher
-- credential_viewer
-- observer
-
-### AWS Required Permissions
+## AWS Required Permissions
 
 - AWS - Read access to CloudWatch & RDS
 

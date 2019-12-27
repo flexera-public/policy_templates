@@ -30,17 +30,7 @@ from the list for your tenant. If such credential doesn't exist please contact y
 The credential must contain the value *AWS* in the Provider field.
 Refer to our documentation for more details on the [Credential Service](https://docs.rightscale.com/credentials/)
 
-## Required Permissions
-
-### Required RightScale Roles
-
-- policy_designer
-- policy_manager
-- policy_publisher
-- credential_viewer
-- observer
-
-### AWS Required Permissions
+## AWS Required Permissions
 
 This policy requires permissions to list Metrics and Get Metric Statistics from the AWS Cloudwatch API.
 The Cloud Management Platform automatically creates two Credentials when connecting AWS to Cloud Management; AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY. The IAM user credentials contained in those credentials will require the following permissions:

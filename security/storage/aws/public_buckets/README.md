@@ -34,16 +34,7 @@ The policy accepts two optional input parameters to support this capability:
 - `Slack Channel Name`: This is the slack channel name, e.g. #policy_alerts
 - `RightScale Credential for Slack Channel Webhook`: This is the name of a RightScale credential in the account that contains the Slack webhook URL.
 
-## Required Permissions
-
-### Required RightScale Roles
-
-This policy requires permissions to access RightScale resources (credentials).  Before applying this policy add the following roles to the user applying the policy.  The roles should be applied to all Accounts where the policy will run or the Organization. For more information on modifying roles visit the [Governance Docs](https://docs.rightscale.com/cm/ref/user_roles.html)
-
-- Cloud Management - credential_viewer or admin
-- Cloud Management - Observer
-
-### AWS Required Permissions
+## AWS Required Permissions
 
 This policy requires permissions to describe AWS S3 ListAllMyBuckets, GetBucketLocation and GetBucketAcl.
 The Cloud Management Platform automatically creates two Credentials when connecting AWS to Cloud Management; AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY. The IAM user credentials contained in those credentials will require the following permissions:
