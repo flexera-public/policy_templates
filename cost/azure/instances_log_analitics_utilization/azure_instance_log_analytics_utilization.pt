@@ -1,10 +1,16 @@
-name "Azure Instances Utilization from Log Analytics"
+name "Azure Inefficient Instance Utilization using Log Analytics"
 rs_pt_ver 20180301
 type "policy"
-short_description "Gathers instance utilization data from Azure Log Analytics and tags underutilized instances.  See the [README](https://github.com/rightscale/policy_templates/tree/master/cost/azure/instances_log_analitics_utilization) and [docs.rightscale.com/policies](http://docs.rightscale.com/policies/) to learn more."
-long_description "Version: 1.1"
+short_description "Gathers instance utilization data from Azure Log Analytics from the last 30 days to identify underutilized instances and provides rightsizing recommendations. Once recommendations are generated, instances can be rightsized in an automated manner or after approval. See the [README](https://github.com/rightscale/policy_templates/tree/master/cost/azure/instances_log_analitics_utilization) and [docs.rightscale.com/policies](http://docs.rightscale.com/policies/) to learn more."
+long_description ""
 severity "low"
 category "Cost"
+info(
+  version: "2.0",
+  provider: "Azure",
+  service: "Compute",
+  policy_set: ""
+  )
 
 ###############################################################################
 # Permissions
@@ -18,18 +24,6 @@ end
 ###############################################################################
 # Parameters
 ###############################################################################
-
-parameter "param_azure_tenant_id" do
-  type "string"
-  label "Azure AD Tenant ID"
-  category "Azure"
-end
-
-parameter "param_azure_sub" do
-  type "string"
-  label "Azure Subscription ID"
-  category "Azure"
-end
 
 parameter "param_avg_used_memory" do
   type "number"
@@ -56,13 +50,6 @@ parameter "param_exclusion_tag_key" do
   type "string"
 end
 
-parameter "param_take_action_tag" do
-  category "User Inputs"
-  label "Action Tag Key:Value"
-  description "Cloud native instance tag key and value that will be added to an instance identified for action. Example: downsize:true"
-  type "string"
-end
-
 parameter "param_email" do
   type "list"
   label "Email addresses"
@@ -73,27 +60,22 @@ end
 # Authentication
 ###############################################################################
 
-auth "azure_auth", type: "oauth2" do
-  token_url join(["https://login.microsoftonline.com/",$param_azure_tenant_id,"/oauth2/token"])
-  grant type: "client_credentials" do
-    client_id cred("AZURE_APPLICATION_ID")
-    client_secret cred("AZURE_APPLICATION_KEY")
-    additional_params do {
-      "resource" => "https://management.azure.com/"
-    } end
-  end
+#authenticate with Azure
+credentials "azure_auth" do
+  schemes "oauth2"
+  label "Azure"
+  description "Azure Resource Manager"
+  tags "provider=azure_rm"
 end
 
-auth "log_analytics_auth", type: "oauth2" do
-  token_url join(["https://login.microsoftonline.com/",$param_azure_tenant_id,"/oauth2/token"])
-  grant type: "client_credentials" do
-    client_id cred("AZURE_APPLICATION_ID")
-    client_secret cred("AZURE_APPLICATION_KEY")
-    additional_params do {
-      "resource" => "https://api.loganalytics.io"
-    } end
-  end
+#authenticate with Log Analytics
+credentials "log_analytics_auth" do
+  schemes "oauth2"
+  label "Log Analytics"
+  description "Please select the credentials for Log Analytics"
+  tags "provider=azure_rm"
 end
+
 
 ###############################################################################
 # Pagination
@@ -112,17 +94,38 @@ end
 # Datasources
 ###############################################################################
 
-datasource "ds_azure_skus" do
+#get all subscription details.
+datasource "ds_subscriptions" do
   request do
     auth $azure_auth
     pagination $azure_pagination
     host "management.azure.com"
-    path join(["/subscriptions/", $param_azure_sub, "/providers/Microsoft.Compute/skus"])
-    query "api-version","2017-09-01"
+    path "/subscriptions/"
+    query "api-version","2019-06-01"
     header "User-Agent", "RS Policies"
   end
   result do
     encoding "json"
+    collect jmes_path(response, "value[*]") do
+      field "subscriptionId", jmes_path(col_item,"subscriptionId")
+      field "displayName", jmes_path(col_item,"displayName")
+      field "state", jmes_path(col_item,"state")
+    end
+  end
+end
+
+datasource "ds_azure_skus" do
+  iterate $ds_subscriptions
+    request do
+      auth $azure_auth
+      pagination $azure_pagination
+      host "management.azure.com"
+      path join(["/subscriptions/", val(iter_item,"subscriptionId"), "/providers/Microsoft.Compute/skus"])
+      query "api-version","2017-09-01"
+      header "User-Agent", "RS Policies"
+    end
+    result do
+      encoding "json"
       collect jmes_path(response, "value") do
         field "resourceType", jmes_path(col_item,"resourceType")
         field "name", jmes_path(col_item,"name")
@@ -130,7 +133,7 @@ datasource "ds_azure_skus" do
         field "capabilities", jmes_path(col_item,"capabilities")
         field "restrictions", jmes_path(col_item,"restrictions")
       end
-  end
+    end
 end
 
 datasource "ds_azure_vm_sizes" do
@@ -138,20 +141,23 @@ datasource "ds_azure_vm_sizes" do
 end
 
 datasource "ds_azure_instances" do
-  request do
-    auth $azure_auth
-    pagination $azure_pagination
-    host "management.azure.com"
-    path join(["/subscriptions/", $param_azure_sub, "/providers/Microsoft.Compute/virtualMachines"])
-    query "api-version","2018-10-01"
-    header "User-Agent", "RS Policies"
-  end
-  result do
-    encoding "json"
-      collect jmes_path(response, "value") do
-        field "id", jmes_path(col_item,"id")
-      end
-  end
+  iterate $ds_subscriptions
+    request do
+      auth $azure_auth
+      pagination $azure_pagination
+      host "management.azure.com"
+      path join(["/subscriptions/", val(iter_item,"subscriptionId"), "/providers/Microsoft.Compute/virtualMachines"])
+      query "api-version","2018-10-01"
+      header "User-Agent", "RS Policies"
+	end
+	result do
+	  encoding "json"
+	  collect jmes_path(response, "value") do
+	    field "id", jmes_path(col_item,"id")
+	    field "subscriptionId",val(iter_item,"subscriptionId")
+	    field "subscriptionName",val(iter_item,"displayName")
+	  end
+	end
 end
 
 datasource "ds_azure_instances_view" do
@@ -166,14 +172,16 @@ datasource "ds_azure_instances_view" do
   end
   result do
     encoding "json"
-        field "id", jmes_path(response,"id")
-        field "name", jmes_path(response,"name")
-        field "location", jmes_path(response,"location")
-        field "osType", jmes_path(response,"properties.storageProfile.osDisk.osType")
-        field "vmSize", jmes_path(response,"properties.hardwareProfile.vmSize")
-        field "resources", jmes_path(response,"resources")
-        field "tags", jmes_path(response,"tags")
-        field "availabilitySet", jmes_path(response,"properties.availabilitySet.id")
+      field "id", jmes_path(response,"id")
+      field "name", jmes_path(response,"name")
+      field "location", jmes_path(response,"location")
+      field "osType", jmes_path(response,"properties.storageProfile.osDisk.osType")
+      field "vmSize", jmes_path(response,"properties.hardwareProfile.vmSize")
+      field "resources", jmes_path(response,"resources")
+      field "tags", jmes_path(response,"tags")
+      field "availabilitySet", jmes_path(response,"properties.availabilitySet.id")
+      field "subscriptionId",val(iter_item,"subscriptionId")
+      field "subscriptionName",val(iter_item,"subscriptionName")
   end
 end
 
@@ -208,8 +216,22 @@ datasource "ds_la_instances_utilization" do
   end
 end
 
+# get Azure instance size map
+datasource "ds_azure_instance_size_map" do
+  request do
+    verb "GET"
+    host "raw.githubusercontent.com"
+    path "/rightscale/policy_templates/master/data/azure/instance_types.json"
+    header "User-Agent", "RS Policies"
+  end
+end
+
 datasource "ds_merged_metrics" do
-  run_script $js_merged_metrics, $ds_oms_resources, $ds_la_instances_utilization, $ds_azure_vm_sizes, $param_exclusion_tag_key
+  run_script $js_merged_metrics, $ds_oms_resources, $ds_la_instances_utilization, $ds_azure_vm_sizes
+end
+
+datasource "ds_inefficient_utilization_metrics" do
+  run_script $js_inefficient_utilization_metrics, $ds_azure_instance_size_map, $ds_merged_metrics, $param_avg_used_memory, $param_avg_cpu
 end
 
 ###############################################################################
@@ -222,7 +244,7 @@ script "js_azure_vm_sizes", type: "javascript" do
   code <<-EOS
     var result = [];
     _.each(ds_azure_skus, function(sku){
-      
+
       if (sku.resourceType === "virtualMachines") {
         var skipVmSku = false;
         _.each(sku.restrictions, function(restriction){
@@ -230,7 +252,7 @@ script "js_azure_vm_sizes", type: "javascript" do
             skipVmSku = true
           }
         })
-        
+
         if (skipVmSku) {
           // VM Sku not available in this location for this subscription
         } else {
@@ -309,7 +331,9 @@ script "js_oms_resources", type: "javascript" do
             diagAgent: diag_agent,
             storageAccount: storage_account,
             tags: instance["tags"],
-            availabilitySet: availabilitySet
+            availabilitySet: availabilitySet,
+            subscriptionId: instance["subscriptionId"],
+            subscriptionName:instance["subscriptionName"]
           })
         }
       }
@@ -318,58 +342,96 @@ script "js_oms_resources", type: "javascript" do
 end
 
 script "js_merged_metrics", type: "javascript" do
-  parameters "ds_oms_resources","ds_la_instances_utilization","ds_azure_vm_sizes","exclusion_tag"
+  parameters "ds_oms_resources","ds_la_instances_utilization","ds_azure_vm_sizes"
   result "result"
   code <<-EOS
-    var result = [];
+  var result = [];
+  _.each(ds_oms_resources, function(instance){
+    var cpu_maximum = "N/A";
+    var cpu_average = "N/A";
+    var mem_maximum = "N/A";
+    var mem_average = "N/A";
+    var metrics = (_.where(ds_la_instances_utilization, {"resourceid": instance["id"].toLowerCase()}));
+    if (metrics[0]){
+      _.each(metrics[0]["results"], function(metric){
+        var counterName = metric.counter.replace("!"," ").replace("(MISSING)")
+        if (counterName === "% Processor Time") {
+          cpu_maximum = parseFloat(metric.max).toFixed(2)
+          cpu_average = parseFloat(metric.avg).toFixed(2)
+        }else if (counterName === "Available MBytes Memory") {
+          // Linux counter is available/free, not used
+          var instanceDetails = _.where(ds_azure_vm_sizes, {"name": instance["vmSize"]})
+          var totalMem = instanceDetails[0].MemoryGB * 1024
+          mem_maximum = parseFloat(((totalMem - metric.min) / totalMem) * 100).toFixed(2)
+          mem_average = parseFloat(((totalMem - metric.avg) / totalMem) * 100).toFixed(2)
+        }else if (counterName === "% Committed Bytes In Use") {
+          mem_maximum = parseFloat(metric.max).toFixed(2)
+          mem_average = parseFloat(metric.avg).toFixed(2)
+        }
+      })
 
-    _.each(ds_oms_resources, function(instance){
-      var cpu_maximum = "N/A";
-      var cpu_average = "N/A";
-      var mem_maximum = "N/A";
-      var mem_average = "N/A";
+      result.push({
+        subscriptionId: instance["subscriptionId"]
+        subscriptionName:instance["subscriptionName"]
+        id: instance["id"],
+        name: instance["name"],
+        resourceGroup: instance["resourceGroup"],
+        location: instance["location"],
+        vmSize: instance["vmSize"],
+        osType: instance["osType"],
+        logAgent: instance["logAgent"],
+        workspaceId: instance["workspaceId"],
+        diagAgent: instance["diagAgent"],
+        storageAccount: instance["storageAccount"],
+        tags: instance["tags"],
+        availabilitySet: instance["availabilitySet"]
+        cpu_maximum: cpu_maximum,
+        cpu_average: cpu_average,
+        mem_maximum: mem_maximum,
+        mem_average: mem_average
+      })
+    }
+  })
+EOS
+end
 
-      var metrics = (_.where(ds_la_instances_utilization, {"resourceid": instance["id"].toLowerCase()}));
-
-      if (metrics[0]) {
-        _.each(metrics[0]["results"], function(metric){
-          var counterName = metric.counter.replace("!"," ").replace("(MISSING)")
-          if (counterName === "% Processor Time") {
-            cpu_maximum = parseFloat(metric.max).toFixed(2)
-            cpu_average = parseFloat(metric.avg).toFixed(2)
-          } else if (counterName === "Available MBytes Memory") {
-            // Linux counter is available/free, not used
-            var instanceDetails = _.where(ds_azure_vm_sizes, {"name": instance["vmSize"]})
-            var totalMem = instanceDetails[0].MemoryGB * 1024
-            mem_maximum = parseFloat(((totalMem - metric.min) / totalMem) * 100).toFixed(2)
-            mem_average = parseFloat(((totalMem - metric.avg) / totalMem) * 100).toFixed(2)
-          } else if (counterName === "% Committed Bytes In Use") {
-            mem_maximum = parseFloat(metric.max).toFixed(2)
-            mem_average = parseFloat(metric.avg).toFixed(2)
-          }
-        })
-
-        result.push({
-          id: instance["id"],
-          name: instance["name"],
-          resourceGroup: instance["resourceGroup"],
-          location: instance["location"],
-          vmSize: instance["vmSize"],
-          osType: instance["osType"],
-          logAgent: instance["logAgent"],
-          workspaceId: instance["workspaceId"],
-          diagAgent: instance["diagAgent"],
-          storageAccount: instance["storageAccount"],
-          tags: instance["tags"],
-          availabilitySet: instance["availabilitySet"]
-          cpu_maximum: cpu_maximum,
-          cpu_average: cpu_average,
-          mem_maximum: mem_maximum,
-          mem_average: mem_average
-        })
-      }
-    })
-  EOS
+script "js_inefficient_utilization_metrics", type: "javascript" do
+  result "inefficient_utilization_results"
+  parameters "ds_azure_instance_size_map", "ds_merged_metrics", "param_avg_used_memory", "param_avg_cpu"
+  code <<-EOS
+  var inefficient_utilization_results = []
+  for ( i = 0; i < ds_merged_metrics.length; i++){
+    var instance = ds_merged_metrics[i]
+    var cpu_average = instance.cpu_average
+    var mem_average = instance.mem_average
+    var next_vm_size = ds_azure_instance_size_map[instance.vmSize].down
+    if(next_vm_size == null && typeof next_vm_size == "undefined" ){
+      next_vm_size="N/A";
+    }
+    if (cpu_average < param_avg_cpu || mem_average < param_avg_used_memory){
+      inefficient_utilization_results.push({
+        subscriptionName:instance.subscriptionName,
+        id: instance.id,
+        name: instance.name,
+        resourceGroup: instance.resourceGroup,
+        location: instance.location,
+        vmSize: instance.vmSize,
+        osType: instance.osType,
+        logAgent: instance.logAgent,
+        workspaceId: instance.workspaceId,
+        diagAgent: instance.diagAgent,
+        storageAccount: instance.storageAccount,
+        tags: instance.tags,
+        availabilitySet: instance.availabilitySet,
+        cpu_maximum: instance.cpu_maximum,
+        cpu_average: cpu_average,
+        mem_maximum: instance.mem_maximum,
+        mem_average: mem_average,
+        next_vm_size: next_vm_size
+      })
+    }
+  }
+EOS
 end
 
 ###############################################################################
@@ -377,28 +439,28 @@ end
 ###############################################################################
 
 policy 'policy_azure_utilization' do
-  validate_each $ds_merged_metrics do
+  validate_each $ds_inefficient_utilization_metrics do
     summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} Underutilized Instances Reporting to Azure Log Analytics"
     detail_template <<-EOS
 # Azure Instance Utilization from Log Analytics
 
-### Thresholds for Consideration 
+### Thresholds for Consideration
   - Average Memory Used %: {{ parameters.param_avg_used_memory }}
   - Average CPU Used %: {{ parameters.param_avg_cpu }}
 
-| Region | Hostname | Resource Group | Instance Size | OS Type | Availability Set | OMS Workspace Id | CPU Maximum % | CPU Average % | Memory Maximum % | Memory Average % |
-| ------ | -------- | -------------- | ------------- | ------- | ---------------- | ---------------- | ------------- | ------------- | ---------------- | ---------------- |
+| Subscription Name | Region | Hostname | Resource Group | Instance Size | Next Instance Size |OS Type | Availability Set | OMS Workspace Id | CPU Maximum % | CPU Average % | Memory Maximum % | Memory Average % | 
+| ----------------- | ------ | -------- | -------------- | ------------- | ------- | ---------------- | ---------------- | ------------- | ------------- | ---------------- | ---------------- | ------------------ |
 {{ range data -}}
-| {{.location}} | {{.name}} | {{.resourceGroup}} | {{.vmSize}} | {{.osType}} | {{.availabilitySet}} | {{.workspaceId}} | {{ .cpu_maximum }} | {{ .cpu_average }} | {{.mem_maximum}} | {{.mem_average}} |
+|{{.subscriptionName}} | {{.location}} | {{.name}} | {{.resourceGroup}} | {{.vmSize}} | {{.next_vm_size}} | {{.osType}} | {{.availabilitySet}} | {{.workspaceId}} | {{ .cpu_maximum }} | {{ .cpu_average }} | {{.mem_maximum}} | {{.mem_average}} |
 {{ end -}}
 
 ___
 ###### Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }}) within Org: {{ rs_org_name }} (Org ID: {{ rs_org_id }})
 EOS
-    escalate $email
-    escalate $tag_resources
-    check logic_or(eq($param_avg_used_memory, -1), gt(to_n(val(item,"mem_average")), $param_avg_used_memory))
-    check logic_or(eq($param_avg_cpu, -1), gt(to_n(val(item,"cpu_average")),$param_avg_cpu))
+  escalate $email
+  check logic_or(eq($param_avg_used_memory, -1), gt(to_n(val(item,"mem_average")), $param_avg_used_memory))
+  check logic_or(eq($param_avg_cpu, -1), gt(to_n(val(item,"cpu_average")),$param_avg_cpu))
+  escalate $esc_downsize_instances
   end
 end
 
@@ -410,130 +472,56 @@ escalation "email" do
   email $param_email
 end
 
-escalation "tag_resources" do
+escalation "esc_downsize_instances" do
   request_approval  do
-    label "Approve to tag the Resources"
-    description "Tag the input key and value on Resources"
+    label "Approve Instances for downsizing"
+    description "Approve downsize action"
     parameter "approval_reason" do
       type "string"
       label "Reason for approval"
       description "Explain why you are approving the action"
     end
   end
-  run "tag_resources", data, $param_azure_tenant_id, $param_azure_sub, $param_take_action_tag
+  run "downsize_instances", data
 end
 
 ###############################################################################
 # Cloud Workflow
 ###############################################################################
 
-define tag_resources($data, $param_azure_tenant_id, $param_azure_sub, $param_take_action_tag) return $all_responses do
-  $$debug=false
-  $$log = []
-  $all_responses = []
-
+define downsize_instances($data) return $all_responses do
+  $response={}
+  $$debug = true
   $syslog_subject = "Azure Instance Utilization with Log Analytics Policy: "
-  call sys_log(join([$syslog_subject, "Identified Instances"]),to_s($data))
-
-  call get_access_token($param_azure_tenant_id) retrieve $access_token
-
-  $providers_response = http_request(
-    verb: "get",
-    host: "management.azure.com",
-    https: true,
-    href: "/subscriptions/"+$param_azure_sub+"/providers",
-    query_strings: {
-      "api-version": "2018-05-01"
-    },
-    headers: {
-      "cache-control": "no-cache",
-      "content-type": "application/json",
-      "authorization": "Bearer " + $access_token
-    }
-  )
-
-  $providers_array = $providers_response["body"]["value"]
-  call sys_log(join([$syslog_subject, "Resource Providers"]),to_s($providers_array))
-
-  $namespace = "Microsoft.Compute" # Hardcoded because it is always the same
-  $$log << "Namespace: " + $namespace
-  $resource_type = "virtualMachines" # Hardcoded because it is always the same
-  $$log << "Resource Type: " + $resource_type
-
-  $namespace_obj = select($providers_array, {"namespace": $namespace})
-  if $namespace_obj == []
-    $namespace_obj = select($providers_array, {"namespace": downcase($namespace)})
-  end 
-  $resource_type_obj = select($namespace_obj[0]["resourceTypes"], {"resourceType": $resource_type})
-  $api_versions = $resource_type_obj[0]["apiVersions"]
-  $api_version = first($api_versions)
-  $$log << "API Version: "+ $api_version
-
-  call sys_log(join([$syslog_subject, "API Details"]),to_s($$log))
-
   foreach $item in $data do
-    $$log << "ID: "+$item["id"]
-    
-    $new_tags = {}
-    if $item["tags"] == null
-      #skip
-    else
-      $new_tags = $item["tags"]
-    end
-    
-    $new_tags[first(split($param_take_action_tag,":"))] = last(split($param_take_action_tag,":"))
-    
-    sub on_error: handle_error($update_resource_response) do 
-      $update_resource_response = http_request(
-        verb: "patch",
-        host: "management.azure.com",
-        https: true,
-        href: $item["id"],
-        query_strings: {
-          "api-version": $api_version
-        },
-        headers: {
-          "cache-control": "no-cache",
-          "content-type": "application/json",
-          "authorization": "Bearer " + $access_token
-        },
-        body: {"tags": $new_tags}
-      )
-    end 
-    $all_responses << $update_resource_response
+    if $item["next_vm_size"]!= "N/A"
+      sub on_error: skip do
+        $response = http_request(
+          auth: $$azure_auth,
+          verb: "patch",
+          host: "management.azure.com",
+          https: true,
+          href: $item["id"],
+          query_strings: {
+            "api-version": "2019-03-01"
+          },
+          headers:{
+            "content-type": "application/json"
+          },
+          body: {
+            "properties":{
+              "hardwareProfile": {
+                "vmSize": $item["next_vm_size"]
+              }
+            }
+          }
+        ) 
+      call sys_log(join([$syslog_subject, "Response"]),to_s($response))
+      end 
+	end
   end
-  call sys_log(join([$syslog_subject, "All Responses"]),to_s($all_responses))
 end
 
-define handle_error($response) do 
-  $status_code = $response["code"]
-  if $status_code == 404
-    $_error_behavior = "skip"
-  else 
-    $_error_behavior = "raise"
-  end 
-end 
-
-define get_access_token($param_azure_tenant_id) return $access_token do
-
-  $client_id = cred("AZURE_APPLICATION_ID")
-  call url_encode(cred("AZURE_APPLICATION_KEY")) retrieve $client_secret
-
-  $body_string = "grant_type=client_credentials&resource=https://management.core.windows.net/&client_id="+$client_id+"&client_secret="+$client_secret
-
-  $auth_response = http_post(
-    url: join(["https://login.microsoftonline.com/",$param_azure_tenant_id,"/oauth2/token"]),
-    headers: {
-      "cache-control": "no-cache",
-      "content-type": "application/x-www-form-urlencoded"
-    },
-    body:$body_string
-  )
-
-  $auth_response_body = $auth_response["body"]
-  $access_token = $auth_response_body["access_token"]
-
-end
 
 define sys_log($subject, $detail) do
   if $$debug
@@ -544,29 +532,6 @@ define sys_log($subject, $detail) do
         summary: $subject,
         detail: $detail
       }
-    )
+	)
   end
-end
-
-define url_encode($string) return $encoded_string do
-  $encoded_string = $string
-  $encoded_string = gsub($encoded_string, " ", "%20")
-  $encoded_string = gsub($encoded_string, "!", "%21")
-  $encoded_string = gsub($encoded_string, "#", "%23")
-  $encoded_string = gsub($encoded_string, "$", "%24")
-  $encoded_string = gsub($encoded_string, "&", "%26")
-  $encoded_string = gsub($encoded_string, "'", "%27")
-  $encoded_string = gsub($encoded_string, "(", "%28")
-  $encoded_string = gsub($encoded_string, ")", "%29")
-  $encoded_string = gsub($encoded_string, "*", "%2A")
-  $encoded_string = gsub($encoded_string, "+", "%2B")
-  $encoded_string = gsub($encoded_string, ",", "%2C")
-  $encoded_string = gsub($encoded_string, "/", "%2F")
-  $encoded_string = gsub($encoded_string, ":", "%3A")
-  $encoded_string = gsub($encoded_string, ";", "%3B")
-  $encoded_string = gsub($encoded_string, "=", "%3D")
-  $encoded_string = gsub($encoded_string, "?", "%3F")
-  $encoded_string = gsub($encoded_string, "@", "%40")
-  $encoded_string = gsub($encoded_string, "[", "%5B")
-  $encoded_string = gsub($encoded_string, "]", "%5D")
 end
