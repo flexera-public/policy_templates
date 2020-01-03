@@ -1,4 +1,4 @@
-# Azure Instances Utilization from Log Analytics
+# Azure Inefficient Instance Utilization using Log Analytics
 
 ## What it does
 
