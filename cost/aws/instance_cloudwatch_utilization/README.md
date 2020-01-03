@@ -21,7 +21,7 @@ If you get an **N/A** in a field you will need to install the [CloudWatch Agent]
 
 ## Prerequisites
 
-This policy requires the AWS IAM User Credential. When applying the policy select the appropriate credentials
+This policy requires the AWS IAM or AWS STS Credential. When applying the policy select the appropriate credentials
 from the list for your tenant. If such credential doesn't exist please contact your cloud admin to create the Credential.
 
 The credential must contain the value *AWS* in the Provider field.
@@ -41,7 +41,7 @@ This policy has the following input parameters required when launching the polic
 
 ### AWS Required Permissions
 
-This policy requires permissions to list Metrics and Get Metric Statistics from the AWS Cloudwatch API.The Cloud Management Platform automatically creates two Credentials when connecting AWS to Cloud Management; AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY. The IAM user credentials contained in those credentials will require the following permissions:
+This policy requires permissions to list Metrics and Get Metric Statistics from the AWS Cloudwatch API. The AWS credentials contained in those credentials will require the following permissions:
 ```javascript{
   "Version": "2012-10-17",
   "Statement":[{ 
