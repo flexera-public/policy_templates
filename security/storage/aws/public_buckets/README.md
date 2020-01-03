@@ -37,7 +37,7 @@ The policy accepts two optional input parameters to support this capability:
 ## AWS Required Permissions
 
 This policy requires permissions to describe AWS S3 ListAllMyBuckets, GetBucketLocation and GetBucketAcl.
-The Cloud Management Platform automatically creates two Credentials when connecting AWS to Cloud Management; AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY. The IAM user credentials contained in those credentials will require the following permissions:
+The IAM user credentials requires the following permissions:
 
 ```javascript
 {
