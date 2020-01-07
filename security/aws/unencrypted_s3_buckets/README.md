@@ -14,21 +14,21 @@ When an unencrypted bucket is detected, an email action is triggered automatical
 
 ## Input Parameters
 
-- *Email addresses of the recipients you wish to notify* - A list of email addresses to notify
-- *Ignore tags* - S3 Buckets with any of these tags will be ignored
+- Email addresses of the recipients you wish to notify - A list of email addresses to notify
+- Ignore tags - S3 Buckets with any of these tags will be ignored
 
 ## Policy Actions
 
 Perform below steps to enable delete action.
 
-- *Edit the file [AWS_Unencrypted_S3_Buckets](https://github.com/flexera/policy_templates/tree/master/security/aws/unencrypted_s3_buckets/AWS_Unencrypted_S3_Buckets.pt)
-- *uncomment below mentioned line
+- Edit the file [AWS_Unencrypted_S3_Buckets](https://github.com/flexera/policy_templates/tree/master/security/aws/unencrypted_s3_buckets/AWS_Unencrypted_S3_Buckets.pt)
+- uncomment below mentioned line
 
 ```javascript
    escalate $delete_unencrypted_s3_buckets_approval
 ```
 
-- *upload the modified file and apply the policy.
+- upload the modified file and apply the policy.
 
 ## Prerequisites
 
@@ -62,7 +62,7 @@ The IAM user will require the following permissions:
 
 ## Supported Clouds
 
-- *AWS
+- AWS
 
 ## Cost
 
