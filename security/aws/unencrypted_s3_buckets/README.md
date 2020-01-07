@@ -3,7 +3,7 @@
 ## What it does
 
 This policy checks all S3 buckets in the AWS account and reports on any that do not have default encryption set. When an unencrypted S3 bucket is detected, the user can choose to enable default encryption (AES-256) after approval and the user can also choose to delete the unencrypted S3 Buckets by enabling 'delete action' as mentioned in Enable delete action section below after approval.
- 
+
 ## Functional Details
 
 The policy leverages the AWS API to determine the encryption settings for each S3 bucket.
@@ -14,19 +14,21 @@ When an unencrypted bucket is detected, an email action is triggered automatical
 
 ## Input Parameters
 
-- Email addresses of the recipients you wish to notify* - A list of email addresses to notify
-- Ignore tags* - S3 Buckets with any of these tags will be ignored 
+- *Email addresses of the recipients you wish to notify* - A list of email addresses to notify
+- *Ignore tags* - S3 Buckets with any of these tags will be ignored
 
 ## Policy Actions
 
 Perform below steps to enable delete action.
 
-- Edit the file [AWS_Unencrypted_S3_Buckets](https://github.com/rightscale/policy_templates/tree/master/security/aws/unencrypted_s3_buckets/AWS_Unencrypted_S3_Buckets.pt)
-- uncomment below mentioned line
+- *Edit the file [AWS_Unencrypted_S3_Buckets](https://github.com/flexera/policy_templates/tree/master/security/aws/unencrypted_s3_buckets/AWS_Unencrypted_S3_Buckets.pt)
+- *uncomment below mentioned line
+
 ```javascript
-   escalate $delete_unencrypted_s3_buckets_approval	
-```	
-- upload the modified file and apply the policy.
+   escalate $delete_unencrypted_s3_buckets_approval
+```
+
+- *upload the modified file and apply the policy.
 
 ## Prerequisites
 
@@ -60,7 +62,7 @@ The IAM user will require the following permissions:
 
 ## Supported Clouds
 
-- AWS
+- *AWS
 
 ## Cost
 

@@ -8,6 +8,7 @@ When applied, the policy will iterate through all VPCs in all AWS regions and en
 ## Functional Details
 
 This policy performs the following action:
+
 - Synchronizes AWS Subnet names to Subnets in Cloud Management
 
 ## Input Parameters

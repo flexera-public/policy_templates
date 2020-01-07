@@ -1,6 +1,7 @@
 # AWS Unencrypted ELB Listeners (ALB/NLB)
 
 ## What it does
+
 Checks for unecrypted listeners on Application and Network Load Balancers. If an internet-facing listener is using an unecrypted protocol (eg: NOT HTTPS, SSL, or TLS) an incident report will show for the listener and an email will be sent to the user-specified email address.
 
 Note: Elastic Load Balancing (ELB) supports three types of load balancers: Classic Load Balancers, Application Load Balancers, and Network Load Balancers. There is a separate policy for Classic Load Balancers with unencrypted internet-facing listeners.

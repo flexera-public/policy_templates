@@ -6,12 +6,12 @@ This policy checks all Relational Database Service (RDS) instances and reports o
 
 ## Functional Details
 
-When a Unencrypted RDS instance is detected, an email action is triggered automatically to notify the specified users of the incident. Users then have the option to delete the RDS instance after manual approval if needed. 
- 
+When a Unencrypted RDS instance is detected, an email action is triggered automatically to notify the specified users of the incident. Users then have the option to delete the RDS instance after manual approval if needed.
+
 ## Input Parameters
 
 - Email addresses of the recipients you wish to notify* - A list of email addresses to notify
-- Ignore tags* - RDS instances with any of these tags will be ignored 
+- Ignore tags* - RDS instances with any of these tags will be ignored
 
 ## Policy Actions
 
@@ -19,6 +19,7 @@ Perform below steps to enable delete action.
 
 - Edit the file [AWS_Unencrypted_RDS_Instances](https://github.com/rightscale/policy_templates/tree/master/security/aws/rds_unencrypted/AWS_Unencrypted_RDS_Instances.pt)
 - uncomment below mentioned lines
+
 ```javascript
    escalate $delete_unencrypted_RDS_instances_approval
      check logic_or(
@@ -26,10 +27,12 @@ Perform below steps to enable delete action.
        ne(val(item, "db_instance_status"), "available")
      )
 ```
+
 - And comment the line which contains 'check eq(val(item, "storage_encrypted"), "false")', save the changes.
 - Upload the modified file and apply the policy.
 
-Note: 
+Note:
+
 - RDS instances with 'DB Instance Status' other than 'Available' and RDS instances with 'Delete Protection Enabled' cannot be deleted.
 - When delete action is performed, DB snapshot gets created with name '<--RDS Instance Name-->-finalSnapshot' Ex mySQL-DBinstance-finalSnapshot before deleting DB instance.
 - For Aurora instance, policy creates cluster snapshot since DB instance snapshot cannot be created directly.
@@ -54,9 +57,9 @@ The IAM user will require the following permissions:
               "rds:CreateDBClusterSnapshot",
               "rds:DescribeDBClusterSnapshots",
               "rds:DeleteDBInstance"
-			  ],
+             ],
     "Resource":"*"
-    }  
+    }
     ]
 }
 ```
