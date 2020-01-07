@@ -10,24 +10,22 @@ The policy leverages the AWS API to determine the encryption settings for each S
 
 When an unencrypted bucket is detected, an email action is triggered automatically to notify the specified users of the incident. Users then have an option to modify configuration after manual approval, and even Users can perform delete action if required.
 
-* encrypt - modifies the configuration of the unencrypted S3 Bucket by enabling the Default encryption i.e. AES-256
+encrypt - modifies the configuration of the unencrypted S3 Bucket by enabling the Default encryption i.e. AES-256
 
 ## Input Parameters
 
-- Email addresses of the recipients you wish to notify - A list of email addresses to notify
-- Ignore tags - S3 Buckets with any of these tags will be ignored
+- *Email addresses to notify* - Email addresses of the recipients you wish to notify when new incidents are created
+- *Tags to ignore* - List of tags that will exclude resources from being evaluated by this policy. Multiple tags are evaluated as an 'OR' condition. Tag keys or key/value pairs can be listed. Example: 'test,env=dev'
 
 ## Policy Actions
 
 Perform below steps to enable delete action.
 
-- Edit the file [AWS_Unencrypted_S3_Buckets](https://github.com/flexera/policy_templates/tree/master/security/aws/unencrypted_s3_buckets/AWS_Unencrypted_S3_Buckets.pt)
+- Edit the file [AWS_Unencrypted_S3_Buckets] (https://github.com/flexera/policy_templates/tree/master/security/aws/unencrypted_s3_buckets/AWS_Unencrypted_S3_Buckets.pt)
 - uncomment below mentioned line
-
 ```javascript
    escalate $delete_unencrypted_s3_buckets_approval
 ```
-
 - upload the modified file and apply the policy.
 
 ## Prerequisites
