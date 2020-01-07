@@ -8,7 +8,7 @@
 
 - Use inferred regions in auth method
 
-##v1.2
+## v1.2
 
 - Added Approval block
 

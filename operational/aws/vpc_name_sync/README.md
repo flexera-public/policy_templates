@@ -1,34 +1,34 @@
-## AWS VPC Name Tag Sync Policy Template
+# AWS VPC Name Tag Sync Policy Template
 
-### What it does
+## What it does
 
 This Policy Template is used to automatically synchronize the AWS VPC names to Cloud Management.
 When applied, the policy will iterate through all VPCs in all AWS regions and ensure the matching network reference in Cloud Management has the correct name.
 
-### Functional Details
+## Functional Details
 
 This policy performs the following action:
 
 - Synchronizes AWS VPC names to Networks in Cloud Management
 
-### Input Parameters
+## Input Parameters
 
 This policy has the following input parameter required when launching the policy.
 
 - *Email addresses of the recipients you wish to notify* - A list of email addresses to notify
 
-### Policy Actions
+## Policy Actions
 
 The following policy actions are taken on any resources found to be out of compliance.
 
 - Network name in Cloud Management updated to match VPC name in AWS
 
-### Prerequisites
+## Prerequisites
 
 - This policy requires the AWS IAM or AWS STS Credential. When applying the policy select the appropriate credentials from the list for your tenant. If such credential doesn't exist please contact your cloud admin to create the Credential.
 - The credential must contain the value *AWS* in the Provider field. Refer to our documentation for more details on the [Credential Service](https://docs.rightscale.com/credentials/)
 
-### AWS Required Permissions
+## AWS Required Permissions
 
 This policy requires permissions to describe AWS VPCs and tags.
 The IAM user will require the following permissions:
@@ -46,10 +46,10 @@ The IAM user will require the following permissions:
 }
 ```
 
-### Supported Clouds
+## Supported Clouds
 
 - AWS
 
-### Cost
+## Cost
 
 This Policy Template does not incur any cloud costs.
