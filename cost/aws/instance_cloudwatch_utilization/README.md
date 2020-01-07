@@ -31,11 +31,10 @@ Refer to our documentation for more details on the [Credential Service](https://
 
 This policy has the following input parameters required when launching the policy.
 
-- *Email addresses of the recipients you wish to notify*
-- A list of email addresses to notify- *Average used memory percentage*
-- Utilization below this percentage will raise an incident to tag the instance. Providing -1 will turn off this metric for consideration.
-- *Average used CPU percentage* - Utilization below this percentage will raise an incident to tag the instance. Providing -1 will turn off this metric for consideration.
-- *Exclusion Tag Key* - An AWS-native instance tag to ignore instances that you don't want to consider for downsizing. Only supply the tag key
+- *Email addresses to notify* - Email addresses of the recipients you wish to notify when new incidents are created
+- *Average used memory percentage* - Set to -1 to ignore memory utilization
+- *Average used CPU percentage* - Set to -1 to ignore CPU utilization
+- *Exclusion Tag Key:Value* - Cloud native tag key to ignore instances. Format: Key:Value
 
 ## Required Permissions
 
