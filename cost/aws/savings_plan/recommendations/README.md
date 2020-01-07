@@ -5,14 +5,27 @@
 ### What it does
 
 This Policy Template leverages the [AWS Cost Explorer API](https://docs.aws.amazon.com/aws-cost-management/latest/APIReference/API_GetSavingsPlansPurchaseRecommendation.html). It will raise incidents if AWS has any Savings Plan Purchase Recommendations, whose monthly savings exceeds the *Monthly Savings Threshold* parameter in the Policy.
-
 It will email the user specified in `Email addresses of the recipients you wish to notify`
+
+### Input Parameters
+
+This policy has the following input parameters required when launching the policy.
+
+- *Look Back Period* - Specify the number of days of past usage to analyze.
+- *Savings Plan Term* - Specify he Term length for the Savings Plan.
+- *Payment Option* - Specify the payment option for the Savings Plan.
+- *Savings Plan Type* - Choose between Compute Savings Plans or EC2 Instance Savings Plans
+- *Monthly Savings Threshold* - Specify the minimum monthly savings that should result in a Savings Plan purchase recommendation
+- *Email addresses to notify* - A list of email addresses to notify
+
+### Policy Actions
+
+- Send an email report
 
 ### Prerequisites
 
-- The following RightScale Credentials
-  - `AWS_ACCESS_KEY_ID` - The Access Key of an IAM User in the Master Payer account, which has access to Cost Explorer.
-  - `AWS_SECRET_ACCESS_KEY` - The Secret Access Key of the IAM User.
+- This policy requires the AWS IAM or AWS STS Credential. When applying the policy select the appropriate credentials from the list for your tenant. If such credential doesn't exist please contact your cloud admin to create the Credential.
+- The credential must contain the value *AWS* in the Provider field. Refer to our documentation for more details on the [Credential Service](https://docs.rightscale.com/credentials/)
 
 #### AWS Required Permissions
 
@@ -35,25 +48,6 @@ The IAM user will require the following permissions:
   ]
 }
 ```
-
-### Input Parameters
-
-This policy has the following input parameters required when launching the policy.
-
-- *Look Back Period* - Specify the number of days of past usage to analyze.
-- *Savings Plan Term* - Specify he Term length for the Savings Plan.
-- *Payment Option* - Specify the payment option for the Savings Plan.
-- *Savings Plan Type* - Choose between Compute Savings Plans or EC2 Instance Savings Plans
-- *Monthly Savings Threshold* - Specify the minimum monthly savings that should result in a Savings Plan purchase recommendation
-- *Email addresses to notify* - A list of email addresses to notify
-
-### Policy Actions
-
-- Send an email report
-
-### Required RightScale Roles
-
-- Cloud Management - credential_viewer
 
 ### Supported Clouds
 

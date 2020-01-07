@@ -12,13 +12,8 @@ When a Unencrypted RDS instance is detected, an email action is triggered automa
  
 - *Email addresses of the recipients you wish to notify* - A list of email addresses to notify
 - *Ignore tags* - RDS instances with any of these tags will be ignored 
- 
-### Required RightScale Roles
- 
-- policy_manager
-- admin or credential_viewer
 
-### Enable delete action
+### Policy Actions
 
 Perform below steps to enable delete action.
 
@@ -39,10 +34,15 @@ Note:
 - When delete action is performed, DB snapshot gets created with name '<--RDS Instance Name-->-finalSnapshot' Ex mySQL-DBinstance-finalSnapshot before deleting DB instance.
 - For Aurora instance, policy creates cluster snapshot since DB instance snapshot cannot be created directly.
 
+### Prerequisites
+
+- This policy requires the AWS IAM or AWS STS Credential. When applying the policy select the appropriate credentials from the list for your tenant. If such credential doesn't exist please contact your cloud admin to create the Credential.
+- The credential must contain the value *AWS* in the Provider field. Refer to our documentation for more details on the [Credential Service](https://docs.rightscale.com/credentials/)
+
 ### AWS Required Permissions
 
 This policy requires permissions to describe AWS Unencrypted RDS instances, describe RDS tags, create DB  cluster snapshot, describe DB  cluster snapshot and delete RDS instances.
-The Cloud Management Platform automatically creates two Credentials when connecting AWS to Cloud Management; AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY. The IAM user credentials contained in those credentials will require the following permissions:
+The IAM user will require the following permissions:
 
 ```javascript
 {

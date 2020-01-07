@@ -22,6 +22,11 @@ The following policy actions are taken on any resources found to be out of compl
 
 - Subnet name in Cloud Management updated to match Subnet name in AWS
 
+### Prerequisites
+
+- This policy requires the AWS IAM or AWS STS Credential. When applying the policy select the appropriate credentials from the list for your tenant. If such credential doesn't exist please contact your cloud admin to create the Credential.
+- The credential must contain the value *AWS* in the Provider field. Refer to our documentation for more details on the [Credential Service](https://docs.rightscale.com/credentials/)
+
 ### Cloud Management Required Permissions
 
 This policy requires permissions to access Cloud Management resources; Clouds and Subnets.  Before applying this policy add the following roles to the user applying the policy.  The roles should be applied to all Accounts where the policy will run or at the Organization level. For more information on modifying roles visit the [Governance Docs](https://docs.rightscale.com/cm/ref/user_roles.html)
@@ -33,7 +38,7 @@ This policy requires permissions to access Cloud Management resources; Clouds an
 ### AWS Required Permissions
 
 This policy requires permissions to describe AWS Subnets and tags.
-The Cloud Management Platform automatically creates two Credentials when connecting AWS to Cloud Management; AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY. The IAM user credentials contained in those credentials will require the following permissions:
+The IAM user will require the following permissions:
 
 ```javascript
 {

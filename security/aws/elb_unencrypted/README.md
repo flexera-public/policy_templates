@@ -13,15 +13,19 @@ The policy leverages the AWS elasticloadbalancing API to examine listener detail
  
 - *Email addresses of the recipients you wish to notify* - A list of email addresses to notify
 - *Ignore tags* - ALB/NLB with any of these tags will be ignored 
- 
-### Required RightScale Roles
- 
-- admin or credential_viewer
+
+### Policy Actions
+
+- Send an email report
+
+### Prerequisites
+
+- This policy requires the AWS IAM or AWS STS Credential. When applying the policy select the appropriate credentials from the list for your tenant. If such credential doesn't exist please contact your cloud admin to create the Credential.
+- The credential must contain the value *AWS* in the Provider field. Refer to our documentation for more details on the [Credential Service](https://docs.rightscale.com/credentials/)
 
 ### AWS Required Permissions
 
-This policy requires permissions to describe AWS LoadBalancers, AWS LoadBalancer Tags, and AWS LoadBalancer Listeners.
-The Cloud Management Platform automatically creates two Credentials when connecting AWS to Cloud Management; AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY. The IAM user credentials contained in those credentials will require the following permissions:
+This policy requires permissions to describe AWS LoadBalancers, AWS LoadBalancer Tags, and AWS LoadBalancer Listeners. The IAM user will require the following permissions:
 
 ```javascript
 {

@@ -16,14 +16,26 @@ When an unencrypted bucket is detected, an email action is triggered automatical
 - *Email addresses of the recipients you wish to notify* - A list of email addresses to notify
 - *Ignore tags* - S3 Buckets with any of these tags will be ignored 
  
-### Required RightScale Roles
- 
-- admin or credential_viewer
- 
+### Policy Actions
+
+Perform below steps to enable delete action.
+
+- Edit the file [AWS_Unencrypted_S3_Buckets](https://github.com/rightscale/policy_templates/tree/master/security/aws/unencrypted_s3_buckets/AWS_Unencrypted_S3_Buckets.pt)
+- uncomment below mentioned line
+```javascript
+   escalate $delete_unencrypted_s3_buckets_approval	
+```	
+- upload the modified file and apply the policy.
+
+### Prerequisites
+
+- This policy requires the AWS IAM or AWS STS Credential. When applying the policy select the appropriate credentials from the list for your tenant. If such credential doesn't exist please contact your cloud admin to create the Credential.
+- The credential must contain the value *AWS* in the Provider field. Refer to our documentation for more details on the [Credential Service](https://docs.rightscale.com/credentials/)
+
 ### AWS Required Permissions
 
 This policy requires permissions to list of AWS S3 Buckets, location of S3 Buckets, tagging S3 Buckets, encryption of S3 Buckets, modify unencrypted S3 Buckets and delete unencrypted S3 Buckets.
-The Cloud Management Platform automatically creates two Credentials when connecting AWS to Cloud Management; AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY. The IAM user credentials contained in those credentials will require the following permissions:
+The IAM user will require the following permissions:
 
 ```javascript
 {
@@ -53,16 +65,7 @@ The Cloud Management Platform automatically creates two Credentials when connect
  
 This Policy Template does not incur any cloud costs.
 
-### Enable delete action
 
-Perform below steps to enable delete action.
-
-- Edit the file [AWS_Unencrypted_S3_Buckets](https://github.com/rightscale/policy_templates/tree/master/security/aws/unencrypted_s3_buckets/AWS_Unencrypted_S3_Buckets.pt)
-- uncomment below mentioned line
-```javascript
-   escalate $delete_unencrypted_s3_buckets_approval	
-```	
-- upload the modified file and apply the policy.
 
 
 
