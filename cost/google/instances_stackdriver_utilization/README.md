@@ -33,7 +33,7 @@ Refer to our documentation for more details on the [Credential Service](https://
 
 ## Google Required Permissions
 
-- Google - The `Monitoring Viewer ` Role
+- Google - The `Monitoring Viewer` Role
 
 ## Supported Clouds
 
