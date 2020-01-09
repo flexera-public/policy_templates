@@ -41,7 +41,8 @@ This policy has the following input parameters required when launching the polic
 ### AWS Required Permissions
 
 This policy requires permissions to list Metrics and Get Metric Statistics from the AWS Cloudwatch API. The AWS credentials contained in those credentials will require the following permissions:
-```javascript{
+```javascript
+{
   "Version": "2012-10-17",
   "Statement":[{ 
     "Effect":"Allow",
@@ -53,7 +54,9 @@ This policy requires permissions to list Metrics and Get Metric Statistics from 
              }
       }
     }
-]}```
+  ]
+}
+```
 
 ### Windows Support
 
@@ -67,7 +70,8 @@ To enable windows support you will need to add the following to your cloudwatch 
     "InstanceId": "${aws:InstanceId}",
     "InstanceType": "${aws:InstanceType}"
   }
-}```
+}
+```
 
 ## Supported Clouds
 
