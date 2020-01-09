@@ -29,7 +29,7 @@ The following policy actions are taken on any resources found to be out of compl
 
 ## Prerequisites
 
-This policy requires the AWS IAM User Credential. When applying the policy select the appropriate credentials
+This policy requires the AWS Credential. When applying the policy select the appropriate credentials
 from the list for your tenant. If such credential doesn't exist please contact your cloud admin to create the Credential.
 
 The credential must contain the value *AWS* in the Provider field.

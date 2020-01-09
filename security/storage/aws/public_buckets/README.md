@@ -20,7 +20,7 @@ The following policy actions are taken on any resources found to be out of compl
 
 ## Prerequisites
 
-This policy requires the AWS IAM User Credential. When applying the policy select the appropriate credentials
+This policy requires the AWS Credential. When applying the policy select the appropriate credentials
 from the list for your tenant. If such credential doesn't exist please contact your cloud admin to create the Credential.
 
 The credential must contain the value *AWS* in the Provider field.
@@ -37,7 +37,7 @@ The policy accepts two optional input parameters to support this capability:
 ## AWS Required Permissions
 
 This policy requires permissions to describe AWS S3 ListAllMyBuckets, GetBucketLocation and GetBucketAcl.
-The IAM user credentials requires the following permissions:
+The AWS credentials requires the following permissions:
 
 ```javascript
 {
