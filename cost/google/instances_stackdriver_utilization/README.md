@@ -2,7 +2,7 @@
 
 ## What it does
 
-This Policy Template gathers Google StackDriver utilization for instances on 30 day intervals and resizes them after user approval. This is meant to be run as a monthly policy.
+This Policy Template gathers Google StackDriver utilization for instances on 30 day intervals and resizes them after user approval.
 
 ## Functional Details
 
