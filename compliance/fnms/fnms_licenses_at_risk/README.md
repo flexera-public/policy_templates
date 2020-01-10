@@ -1,4 +1,4 @@
-# FlexNet Manager Licenses At Risk.
+# FlexNet Manager Licenses At Risk
 
 ## What it does
 
@@ -8,6 +8,7 @@ The report / Mail output looks like this:
 ![Alt text][emailoutput]
 
 Current limitations:
+
 - Output is limited to max 100000 rows.
 
 ## Prerequisites
@@ -22,7 +23,7 @@ Current limitations:
 
 This policy has the following input parameters required when launching the policy.
 
-- *FNMS Report URL* - Full FlexNet URL (e.g. https://demo.flexnetmanager.com/Suite )
+- *FNMS Report URL* - Full FlexNet URL (e.g. <https://demo.flexnetmanager.com/Suite> )
 - *FNMS Report ID* - FlexNet manager Custom View ID
 - *Email addresses of the recipients you wish to notify* - A list of email addresse(s) to notify
 

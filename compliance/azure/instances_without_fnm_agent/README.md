@@ -10,6 +10,7 @@ The policy is a recommendation only policy, no action is taken during the Policy
 The policy leverages the cloud API to get all current instances and the FlexNet Manager report (Custom view) API to get all azure cloud instances with agent. It cross-checks the two lists to determine if any instances are running on the cloud that aren't known to FlexNet Manager.  The policy matches the ComputerName from FlexNet Manager System and the VirtualMachine.name from Azure.
 
 Current limitations:
+
 - Output is limited to max 100000 rows.
 
 ## Input Parameters
@@ -20,7 +21,7 @@ This policy has the following input parameters required when launching the polic
 - *Exclusion Tag Key* - Azure-native Virtual machines tag to ignore VM's which has FNMS inventory agent running. Only supply the tag key. The policy assumes that the tag value is irrelevant.
 - *Azure AD Tenant ID* - The Azure AD Tenant ID used for the Azure API Authentication.
 - *Azure Subscription ID* - The Azure Subscription ID used for the Azure API.
-- *FNMS Report URL* - Full FlexNet URL (e.g. https://demo.flexnetmanager.com/Suite )
+- *FNMS Report URL* - Full FlexNet URL (e.g. <https://demo.flexnetmanager.com/Suite> )
 - *FNMS Report ID* - FlexNet manager Custom View ID.
 
 ## Policy Actions
