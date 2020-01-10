@@ -1,40 +1,24 @@
-## FlexNet Manager Licenses At Risk.
+# FlexNet Manager Licenses At Risk.
 
-### What it does
+## What it does
+
 This policy looks up all FlexNet Manager Licenses that are at risk and lists them. A License at Risk is a License that is unable to cover the current license consumption.
 
 The report / Mail output looks like this:
 ![Alt text][emailoutput]
 
 Current limitations:
-- This policy currently only works with the FlexNet Manager Cloud.
 - Output is limited to max 100000 rows.
 
-### Installation
+## Prerequisites
 
-#### How to setup FlexNet Manager for this policy
+- FlexNet Manager.
+    __Note:__ If FlexNet Manager Suite is not accessible from the Internet, you will need to setup a wstunnel to provide a secure connection into the FlexNet manager system.
+    For more details on wstunnel please refer to this: [https://github.com/rightscale/wstunnel](https://github.com/rightscale/wstunnel)
+- This policy requires the Flexera FNMS Token Credential and Flexera FNMS NTLM Credential. When applying the policy select the appropriate credentials from the list for your tenant. If such credential doesn't exist please contact your cloud admin to create the Credential.
+- The credential must contain the value *Flexera FNMS* and *Flexera FNMS NTLM* in the Provider field. Refer to our documentation for more details on the [Credential Service](https://docs.rightscale.com/credentials/)
 
-1. Create a report in FlexNet manager that contains these fields:
-![Alt text][FNMSCloudInstanceReport]
-Once saved, note the report number in thr URL field:
-![Alt text][ReportNumber] you need it when activating the Policy.
-
-1. Setup the API Token in FlexNet Manager:
-    1. On the Account page - Select Create Account -> Service Account and fill in the form
-
-        ![Alt text][CreateServeceAccount]
-    1. IMPORTANT: When you hit save you will see a API Token. This is the only time you will see it, so you need to save it at this point.
-
-        ![Alt text][APIToken]
-    1. Add the new account to the Role ___Webservice___
-
-        ![Alt text][WebServiceRole]
-
-#### Cloud manager
-
-1. Create RightScale Credentials with values that match the FlexNet Manager API Token (Credential name: `FNMS_API_Token`).
-
-### Input Parameters
+## Input Parameters
 
 This policy has the following input parameters required when launching the policy.
 
@@ -42,10 +26,29 @@ This policy has the following input parameters required when launching the polic
 - *FNMS Report ID* - FlexNet manager Custom View ID
 - *Email addresses of the recipients you wish to notify* - A list of email addresse(s) to notify
 
-### Policy Actions
-No actions
+## Policy Actions
 
-### Cost
+- Send an email report
+
+## Installation
+
+### How to setup FlexNet Manager for this policy
+
+1. Create a report in FlexNet manager that contains these fields:![Alt text][FNMSCloudInstanceReport]Once saved, note the report number in thr URL field:![Alt text][ReportNumber] you need it when activating the Policy.
+1. Setup the API Token in FlexNet Manager:
+    1. On the Account page - Select Create Account -> Service Account and fill in the form ![Alt text][CreateServeceAccount]
+    1. IMPORTANT: When you hit save you will see a API Token. This is the only time you will see it, so you need to save it at this point. ![Alt text][APIToken]
+    1. Add the new account to the Role ___Webservice___ ![Alt text][WebServiceRole]
+1. Set Up user for FlexNet manager on-premise:
+    1. In your user management add the new user and assign it a password.
+    1. On the Account page - Select Create Account -> Service Account ![Alt text][CreateServeceAccount]
+    1. in the Account field; select the newly created account and fill in the form.
+    1. Add the new account to the Role ___Webservice___ ![Alt text][WebServiceRole]
+
+__NOTE__: You can use a normal interactive user for the API credentials, but it is recommended to add a special service user for the API connection.
+
+## Cost
+
 This Policy Template does not incur any additional cloud costs.
 
 <!-- Image referances -->
@@ -55,4 +58,3 @@ This Policy Template does not incur any additional cloud costs.
 [FNMSCloudInstanceReport]: images/FNMSCloudInstanceReport.png "FNMS Cloud Instance Report"
 [ReportNumber]: images/ReportNumber.png "ReportNumber"
 [WebServiceRole]: images/WebServiceRole.png "WebServiceRole"
-

@@ -1,10 +1,16 @@
 name "AWS EC2 Instances not running FlexNet Inventory Agent"
 rs_pt_ver 20180301
 type "policy"
-short_description "Check AWS EC2 instances that are not running the FlexNet Inventory Agent. \n See the [README](https://github.com/flexera/policy_templates/tree/master/compliance/aws/instances_without_fnm_agent) and [docs.rightscale.com/policies](http://docs.rightscale.com/policies/) to learn more."
-long_description "Version: 1.0"
+short_description "Check AWS EC2 instances that are not running the FlexNet Inventory Agent. \n See the [README](https://github.com/flexera/policy_templates/tree/master/compliance/aws/instances_without_fnm_agent) and [docs.rightscale.com/policies](https://docs.rightscale.com/policies/) to learn more."
+long_description "Version: 1.1"
 severity "medium"
 category "Compliance"
+info(
+  version: "2.0",
+  provider: "AWS",
+  service: "EC2",
+  policy_set: ""
+)
 
 ###############################################################################
 # Permissions
@@ -19,6 +25,18 @@ end
 # User inputs
 ###############################################################################
 
+parameter "param_fnms_url" do
+  type "string"
+  label "FNMS Report URL"
+  description "Full FlexNet URL (e.g. https://demo.flexnetmanager.com/Suite )"
+end
+
+parameter "param_report_id" do
+  type "string"
+  label "FNMS Report ID"
+  description "FlexNet manager Custom View ID."
+end
+
 parameter "param_email" do
   type "list"
   label "Email addresses to notify"
@@ -29,12 +47,6 @@ parameter "param_exclude_tags" do
   type "list"
   label "Tags to ignore"
   description "List of tags that will exclude EC2 instance from being evaluated by this policy. Multiple tags are evaluated as an 'OR' condition. Tag keys or key/value pairs can be listed. Example: 'test,env=dev'"
-end
-
-parameter "param_report_id" do
-  type "string"
-  label "FNMS Report ID"
-  description "FlexNet manager Custom View ID."
 end
 
 ###############################################################################
@@ -54,18 +66,26 @@ end
 # Authentication
 ###############################################################################
 
-auth "auth_aws", type: "aws" do
-  version "4"
-  service "ec2"
-  access_key cred("AWS_ACCESS_KEY_ID")
-  secret_key cred("AWS_SECRET_ACCESS_KEY")
+#authenticate with AWS
+credentials "auth_aws" do
+  schemes "aws"
+  label "AWS"
+  description "Select the AWS Credential from the list."
+  tags "provider=aws"
 end
 
-auth "fnms_api_key_auth", type: "api_key" do
-  location "header"
-  field "Authorization"
-  type "Bearer"
-  key cred("FNMS_API_Token")
+credentials "fnms_api_key_auth" do
+  schemes "api_key"
+  label "FNMS"
+  description "Select the FNMS Token Credential from the list."
+  tags "provider=flexera_fnms_api_key"
+end
+
+credentials "api_ntlm_auth" do
+  schemes "basic"
+  label "FNMS NTLM"
+  description "Select the FNMS NTLM Credential from the list."
+  tags "provider=flexera_fnms_ntlm"
 end
 
 ###############################################################################
@@ -118,21 +138,7 @@ end
 
 datasource 'ds_fnms_report' do
   request do
-    auth $fnms_api_key_auth
-    host "www.flexnetmanager.com"
-    path '/ManageSoftServices/ComplianceAPIService/ComplianceAPIService.asmx'
-    verb 'POST'
-    scheme 'https'
-    header "Content-Type",'text/xml;charset=utf-8'
-    body join(['<?xml version="1.0" encoding="utf-8"?>
-    <soap:Envelope xmlns:soap="http://www.w3.org/2003/05/soap-envelope" xmlns:tem="http://tempuri.org/">
-      <soap:Body>
-        <tem:GetCustomView>
-          <tem:customViewID>',$param_report_id,'</tem:customViewID>
-          <tem:rowLimit>1000</tem:rowLimit>
-        </tem:GetCustomView>
-      </soap:Body>
-    </soap:Envelope>'])
+    run_script $js_fnms_report, $param_fnms_url, $param_report_id
   end
   result do
     encoding "xml"
@@ -195,6 +201,47 @@ script "js_format_instances", type: "javascript" do
         })
       }
     })
+    result =  _.sortBy(result, 'region');
+  EOS
+end
+
+# Build the API request object dynamically to find the right authentiocation model.
+script "js_fnms_report", type: "javascript" do
+  parameters "fnms_host", "report_id"
+  result "request"
+  code <<-EOS
+    var sHost = fnms_host.substr(fnms_host.indexOf('://')+3)
+    if (sHost.indexOf('/') > -1)  sHost = sHost.substr(0,sHost.indexOf('/'))
+
+    // Find the right schema
+    var sScheme = "http"
+    if (fnms_host.toLowerCase().indexOf("https") > -1) sScheme = "https"
+    
+    //Should we use User/password or Token to authenticate
+    var sAuth = "api_ntlm_auth"
+    if (fnms_host.toLowerCase().indexOf(".flexnetmanager.") > -1) sAuth = "fnms_api_key_auth"
+
+    var sBody = '<?xml version="1.0" encoding="utf-8"?>'
+    sBody    += '<soap:Envelope xmlns:soap="http://www.w3.org/2003/05/soap-envelope" xmlns:tem="http://tempuri.org/">'
+    sBody    += '  <soap:Body>'
+    sBody    += '    <tem:GetCustomView>'
+    sBody    += '      <tem:customViewID>' +report_id+ '</tem:customViewID>'
+    sBody    += '     <tem:rowLimit>100000</tem:rowLimit>'
+    sBody    += '   </tem:GetCustomView>'
+    sBody    += '  </soap:Body>'
+    sBody    += '</soap:Envelope>'
+
+    var request = {
+      auth: sAuth,
+      scheme: sScheme,
+      host: sHost,
+      path: "/ManageSoftServices/ComplianceAPIService/ComplianceAPIService.asmx",
+      verb: "POST",
+      headers: {
+        "Content-Type": "text/xml;charset=utf-8"
+      },
+      body: sBody
+    } 
   EOS
 end
 
