@@ -1,20 +1,21 @@
-# AWS Unused Classic Load Balancers (CLB) 
- 
+# AWS Unused Classic Load Balancers (CLB)
+
 ## What it does
+
 This policy checks all Classic Load Balancers (CLB) to determine if any are unused (have no healthy instances) and allows them to be deleted by the user after approval.
 
 Note:Elastic Load Balancing (ELB) supports three types of load balancers: Application Load Balancers, Network Load Balancers and Classic Load Balancers.
 
 ## Functional Details
- 
+
 The policy leverages the AWS elasticloadbalancing API to determine if the CLB is in use.
- 
+
 When an unused CLB is detected, an email action is triggered automatically to notify the specified users of the incident. Users then have the option to delete the CLB after manual approval if needed.
- 
+
 ## Input Parameters
- 
+
 - *Email addresses of the recipients you wish to notify* - A list of email addresses to notify
-- *Ignore tags* - CLB with any of these tags will be ignored 
+- *Ignore tags* - CLB with any of these tags will be ignored
 
 ## Policy Actions
 
@@ -41,8 +42,8 @@ The AWS credentials will require the following permissions:
     "Effect":"Allow",
     "Action":["elasticloadbalancing:DescribeLoadBalancers",
               "elasticloadbalancing:DescribeInstanceHealth",
-	      "elasticloadbalancing:DescribeTags",
-	      "elasticloadbalancing:DeleteLoadBalancer"],
+	          "elasticloadbalancing:DescribeTags",
+	          "elasticloadbalancing:DeleteLoadBalancer"],
     "Resource":"*"
     }
   ]
@@ -50,9 +51,9 @@ The AWS credentials will require the following permissions:
 ```
 
 ## Supported Clouds
- 
+
 - AWS
- 
+
 ## Cost
- 
+
 This Policy Template does not incur any cloud costs.

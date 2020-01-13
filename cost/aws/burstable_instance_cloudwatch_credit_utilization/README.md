@@ -8,7 +8,7 @@ This Policy Template gathers AWS CloudWatch data for instances on 30 day interva
 
 - This policy identifies all instances reporting performance metrics to CloudWatch whose CPU, Burst Credit Balance, Surplus Burst Credit Balance meet specified thresholds set forth in the parameters.
 - The **Exclusion Tag** parameter is a string value. If the exclusion tag is used on an Instance, that Instance is presumed to be exempt from this policy.
-- If you get an **N/A** in a field you will need to install the [CloudWatch Agent](https://docs.aws.amazon.com/AmazonCloudWatch/latest/monitoring/Install-CloudWatch-Agent.html) on the instance to get those metrics. 
+- If you get an **N/A** in a field you will need to install the [CloudWatch Agent](https://docs.aws.amazon.com/AmazonCloudWatch/latest/monitoring/Install-CloudWatch-Agent.html) on the instance to get those metrics.
 
 ## Input Parameters
 
@@ -17,7 +17,7 @@ This policy has the following input parameters required when launching the polic
 - *Email addresses to notify* - Email addresses of the recipients you wish to notify when new incidents are created
 - *Number of Surplus Credits to alert on* - Number of CPU Surplus Credits to report on, Set to -1 to ignore cpu burst credits
 - *Enable checking burst credit balance against max* - checks burst credit balance against max_earnable_credits
-- *Exclusion Tag* - Cloud native tag key to ignore instances. Format: Key:Value 
+- *Exclusion Tag* - Cloud native tag key to ignore instances. Format: Key:Value
 - *Cooldown Days* - Days to cooldown between checks of same instance
 
 ## Policy Actions

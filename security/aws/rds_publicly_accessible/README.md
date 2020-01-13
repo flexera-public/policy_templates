@@ -1,17 +1,19 @@
 # AWS Publicly Accessible RDS Instances
- 
+
 ## What it does
+
 This policy checks all Relational Database Service (RDS) instances and reports on any that are publicly accessible. When such an instance is detected, the user can choose to disable the publicly accessible option and the user can also choose to delete by enabling 'delete action' option as mentioned in Enable delete action section below.
- 
+
 ## Functional Details
- 
-When a publicly accessible RDS instance is detected, an email action is triggered automatically to notify the specified users of the incident. Users then have an option to modify configuration after manual approval, and even Users can perform delete action if required. 
+
+When a publicly accessible RDS instance is detected, an email action is triggered automatically to notify the specified users of the incident. Users then have an option to modify configuration after manual approval, and even Users can perform delete action if required.
+
 - *remove public access rule* - modifies the configuration of the RDS instance by disabling the public access rule
- 
+
 ## Input Parameters
- 
+
 - *Email addresses to notify* - Email addresses of the recipients you wish to notify when new incidents are created
-- *Tags to ignore* - List of tags that will exclude resources from being evaluated by this policy. Multiple tags are evaluated as an 'OR' condition. Tag keys or key/value pairs can be listed. Example: 'test,env=dev' 
+- *Tags to ignore* - List of tags that will exclude resources from being evaluated by this policy. Multiple tags are evaluated as an 'OR' condition. Tag keys or key/value pairs can be listed. Example: 'test,env=dev'
 
 ## Policy Actions
 
@@ -21,15 +23,17 @@ When a publicly accessible RDS instance is detected, an email action is triggere
 
 Perform below steps to enable delete action.
 
-- Edit the file [AWS_Publicly_Accessible_RDS_Instances](https://github.com/rightscale/policy_templates/tree/master/security/aws/rds_publicly_accessible/AWS_Publicly_Accessible_RDS_Instances.pt)
+- Edit the file [AWS_Publicly_Accessible_RDS_Instances](https://github.com/flexera/policy_templates/tree/master/security/aws/rds_publicly_accessible/AWS_Publicly_Accessible_RDS_Instances.pt)
 - uncomment below mentioned lines
+
 ```javascript
    escalate $delete_publicly_accessible_RDS_instances_approval
 	check logic_or(
       eq(val(item, "delete_protection"), "YES"),
       ne(val(item, "db_instance_status"), "available")
     )
-```	
+```
+
 - And comment the line which contains 'check eq(val(item, "publicly_accessible"), "false")', save the changes.
 - upload the modified file and apply the policy.
 
@@ -70,7 +74,7 @@ The Cloud Management Platform automatically creates two Credentials when connect
 ```
 
 ## Supported Clouds
- 
+
 - AWS
  
 ## Cost
