@@ -21,7 +21,7 @@ encrypt - modifies the configuration of the unencrypted S3 Bucket by enabling th
 
 Perform below steps to enable delete action.
 
-- Edit the file [AWS_Unencrypted_S3_Buckets] <https://github.com/flexera/policy_templates/tree/master/security/aws/unencrypted_s3_buckets>
+- Edit the pt file in this location [AWS_Unencrypted_S3_Buckets] <https://github.com/flexera/policy_templates/tree/master/security/aws/unencrypted_s3_buckets>
 - uncomment below mentioned line
 
 ```javascript
