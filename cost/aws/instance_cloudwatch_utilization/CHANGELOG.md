@@ -4,7 +4,7 @@
 
 - Changes to support the Credential Service
 - Removed tagging action
-- Added downsize action 
+- Added downsize action
 
 ## v1.5
 
