@@ -1,8 +1,8 @@
-# AWS EC2 Instances not running FlexNet Inventory Agent - Cloud
+# AWS EC2 Instances not running FlexNet Inventory Agent - On Premise
 
 ## What it does
 
-This policy uses a Flexnet Manger Cloud instance and checks all EC2 instances running in AWS to determine if the FlexNet Inventory Agent is running on the instance and reports on any that are missing the agent.
+This policy uses a Flexnet Manger On Premise instance checks all EC2 instances running in AWS to determine if the FlexNet Inventory Agent is running on the instance and reports on any that are missing the agent.
 The policy is a recommendation only policy, no action is taken during the Policy Escalation.
 
 ## Functional Description
@@ -15,8 +15,9 @@ Current limitations:
 
 ## Prerequisites
 
-- This policy requires the AWS Credential and Flexnet Manager API Key Credential. When applying the policy select the appropriate credentials from the list for your tenant. If such credential doesn't exist please contact your cloud admin to create the Credential.
-- The credential must contain the value **aws**, **flexera_fnms_api_key** in each Provider field. Refer to our documentation for more details on the [Credential Service](https://docs.rightscale.com/credentials/)
+- If FlexNet Manager Suite is not accessible from the Internet, you will need to setup a wstunnel to provide a secure connection into the FlexNet manager system.For more details on wstunnel please refer to this: [https://github.com/rightscale/wstunnel](https://github.com/rightscale/wstunnel)
+- This policy requires the AWS Credential, Flexnet Manager NTLM Credential. When applying the policy select the appropriate credentials from the list for your tenant. If such credential doesn't exist please contact your cloud admin to create the Credential.
+- The credential must contain the value **AWS**, **flexera_fnms_ntlm** in each Provider field. Refer to our documentation for more details on the [Credential Service](https://docs.rightscale.com/credentials/)
 
 ## Input Parameters
 
@@ -33,7 +34,7 @@ This policy has the following input parameters required when launching the polic
 
 ## AWS Required Permissions
 
-This policy requires permissions to describe EC2 Instances.
+This policy requires permissions to describe EC2 instances.
 The AWS user credentials contained in those credentials will require the following permissions:
 
 ```javascript
@@ -58,9 +59,10 @@ Select `Amazon Web Services` under `Inventory device` > `Hosted in` ![Alt text][
 
 Once saved, note the report number in the URL field : ![Alt text][ReportNumber] you need it when activating the Policy for 'FlexNet Manager System Report ID'.
 
-1. Retrieve the API Token in FlexNet Manager System:
-    1. On the Account page - Select Create Account -> Service Account and fill in the form ![Alt text][CreateServeceAccount]
-    1. IMPORTANT: When you hit save you will see a API Token.. This is the only time you will see it so you need to save it at this point ![Alt text][APIToken]
+1. Set Up user for FlexNet manager on-premise:
+    1. In your user management add the new user and assign it a password.
+    1. On the Account page - Select Create Account -> Service Account ![Alt text][CreateServeceAccount]
+    1. in the Account field; select the newly created account and fill in the form.
     1. Add the new account to the Role ___Webservice___ ![Alt text][WebServiceRole]
 
 __NOTE__: You can use a normal interactive user for the API credentials, but it is recommended to add a special service user for the API connection.

@@ -1,8 +1,8 @@
-# Azure Instances not running FlexNet Inventory Agent - Cloud
+# Azure Instances not running FlexNet Inventory Agent - On Premise
 
 ## What it does
 
-This policy uses a Flexnet Manger Cloud instance and checks all instances running in Azure to determine if the FlexNet Inventory Agent is running on the instance and reports on any that are missing the agent.
+This policy uses a Flexnet Manger On Premise instance and checks all instances running in Azure to determine if the FlexNet Inventory Agent is running on the instance and reports on any that are missing the agent.
 The policy is a recommendation only policy, no action is taken during the Policy Escalation.
 
 ## Functional Details
@@ -28,8 +28,9 @@ This policy has the following input parameters required when launching the polic
 
 ## Prerequisites
 
-- This policy requires the Azure Resource Manager Credential, Flexnet API Key Credential. When applying the policy select the appropriate credentials from the list for your tenant. If such credential doesn't exist please contact your cloud admin to create the Credential.
-- The credential must contain the value **azure_rm**, **flexera_fnms_api_key** in each Provider field. Refer to our documentation for more details on the [Credential Service](https://docs.rightscale.com/credentials/)
+- If FlexNet Manager Suite is not accessible from the Internet, you will need to setup a wstunnel to provide a secure connection into the FlexNet manager system. For more details on wstunnel please refer to this: [https://github.com/rightscale/wstunnel](https://github.com/rightscale/wstunnel)
+- This policy requires the Azure Resource Manager Credential, Flexnet Manager NTLM Credential. When applying the policy select the appropriate credentials from the list for your tenant. If such credential doesn't exist please contact your cloud admin to create the Credential.
+- The credential must contain the value **azure_rm**, **flexera_fnms_ntlm** in each Provider field. Refer to our documentation for more details on the [Credential Service](https://docs.rightscale.com/credentials/)
 
 ## Azure Required Permissions
 
@@ -46,9 +47,10 @@ Select `Microsoft Azure` under `Inventory device` > `Hosted in` ![Alt text][Filt
 
 Once saved, note the report number in the URL field : ![Alt text][ReportNumber] you need it when activating the Policy for 'FNMS Report ID'.
 
-1. Retrieve the API Token in FlexNet Manager System:
-    1. On the Account page - Select Create Account -> Service Account and fill in the form ![Alt text][CreateServeceAccount]
-    1. IMPORTANT: When you hit save you will see a API Token.. This is the only time you will see it so you need to save it at this point ![Alt text][APIToken]
+1. Set Up user for FlexNet manager on-premise:
+    1. In your user management add the new user and assign it a password.
+    1. On the Account page - Select Create Account -> Service Account ![Alt text][CreateServeceAccount]
+    1. in the Account field; select the newly created account and fill in the form.
     1. Add the new account to the Role ___Webservice___ ![Alt text][WebServiceRole]
 
 __NOTE__: You can use a normal interactive user for the API credentials, but it is recommended to add a special service user for the API connection.

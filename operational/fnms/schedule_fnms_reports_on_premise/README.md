@@ -1,8 +1,8 @@
-# Schedule Flexnet Manager Report - Cloud
+# Schedule Flexnet Manager Report - On Premise
 
 ## What it does
 
-This policy runs on the Flexnet Manager Cloud instance and will run a FlexNet Manager report (Custom view) and send the result via email.
+This policy runs on the Flexnet Manager On Premise instance and will run a FlexNet Manager report (Custom view) and send the result via email.
 The policy is a report only policy, no action is taken during the Policy Escalation.
 
 The report / Mail output looks like this:
@@ -14,11 +14,15 @@ Current limitations:
 
 ## Prerequisites
 
-This policy requires the Flexnet Manager API Key Credential. When applying the policy select the
+This policy requires the Flexnet Manager NTLM Credential. When applying the policy select the
 appropriate credentials from the list for your tenant. If such credential doesn't exist please contact your cloud admin to create the Credential.
 
-The credential must contain the value **flexera_fnms_api_key** in the Provider field.
+The credential must contain the value **flexera_fnms_ntlm** in the Provider field.
 Refer to our documentation for more details on the [Credential Service](https://docs.rightscale.com/credentials/)
+
+If FlexNet Manager Suite is not accessible from the Internet, you will need to setup a wstunnel to
+provide a secure connection into the FlexNet manager system.  For more details on wstunnel
+please refer to this: [https://github.com/rightscale/wstunnel](https://github.com/rightscale/wstunnel)
 
 ## Installation
 
@@ -26,10 +30,10 @@ Refer to our documentation for more details on the [Credential Service](https://
 
 1. Create a custom view in FlexNet manager that could look like this: ![Alt text][FNMSReport]
 Once saved note the report number in the URL field : ![Alt text][ReportNumber] you need it when activating the Policy
-1. Retrieve the API Token in FlexNet manager Cloud:
-    1. On the Account page - Select Create Account -> Service Account and fill in the form ![Alt text][CreateServeceAccount]
-    1. IMPORTANT: When you hit save you will see a API Token.. This is the only time you will
-    see it so you need to save it at this point ![Alt text][APIToken]
+1. Set Up user for FlexNet manager on-premise:
+    1. In your user management add the new user and assign it a password.
+    1. On the Account page - Select Create Account -> Service Account ![Alt text][CreateServeceAccount]
+    1. in the Account field; select the newly created account and fill in the form.
     1. Add the new account to the Role ___Webservice___ ![Alt text][WebServiceRole]
 
 __NOTE__: You can use a normal interactive user for the API credentials, but it is recommended to add a
