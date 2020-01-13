@@ -1,4 +1,4 @@
-# AWS Subnet Name Tag Sync Policy Template
+# AWS Subnet Name Tag Sync
 
 ## What it does
 
@@ -15,7 +15,7 @@ This policy performs the following action:
 
 This policy has the following input parameter required when launching the policy.
 
-- Email addresses of the recipients you wish to notify* - A list of email addresses to notify
+- *Email addresses of the recipients you wish to notify* - A list of email addresses to notify
 
 ## Policy Actions
 

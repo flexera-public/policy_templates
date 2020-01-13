@@ -12,8 +12,8 @@ The policy leverages the AWS elasticloadbalancing API to examine listener detail
 
 ## Input Parameters
 
-- Email addresses of the recipients you wish to notify* - A list of email addresses to notify
-- Ignore tags* - ALB/NLB with any of these tags will be ignored
+- *Email addresses of the recipients you wish to notify* - A list of email addresses to notify
+- *Ignore tags* - ALB/NLB with any of these tags will be ignored
 
 ## Policy Actions
 

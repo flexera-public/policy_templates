@@ -10,8 +10,8 @@ The policy leverages the AWS EC2 API to determine volume encryption settings.
 
 ## Input Parameters
 
-- Email addresses of the recipients you wish to notify* - A list of email addresses to notify
-- Ignore tags* - EBS volumes with any of these tags will be ignored
+- *Email addresses of the recipients you wish to notify* - A list of email addresses to notify
+- *Ignore tags* - EBS volumes with any of these tags will be ignored
 
 ## Policy Actions
 

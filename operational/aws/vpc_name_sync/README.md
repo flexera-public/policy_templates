@@ -1,4 +1,4 @@
-# AWS VPC Name Tag Sync Policy Template
+# AWS VPC Name Tag Sync
 
 ## What it does
 
