@@ -1,10 +1,16 @@
 ﻿name "AWS Internet-facing ELBs & ALBs"
 rs_pt_ver 20180301
 type "policy"
-short_description "Report and remediate any Classic Load Balancers(ELBs) and Application load Balancers(ALBs) that are Internet-facing. \n See the [README](https://github.com/rightscale/policy_templates/tree/master/security/aws/loadbalancer_internet_facing) and [docs.rightscale.com/policies](http://docs.rightscale.com/policies/) to learn more."
-long_description "Version: 1.1"
+short_description "Report and remediate any Classic Load Balancers(ELBs) and Application load Balancers(ALBs) that are Internet-facing. \n See the [README](https://github.com/flexera/policy_templates/tree/master/security/aws/loadbalancer_internet_facing) and [docs.rightscale.com/policies](https://docs.rightscale.com/policies/) to learn more."
+long_description ""
 category "Security"
 severity "high"
+info(
+  version: "2.0",
+  provider: "AWS",
+  service: "ELB",
+  policy_set: ""
+)
 
 ###############################################################################
 # Permissions
@@ -35,11 +41,12 @@ end
 # Authentication
 ###############################################################################
 
-auth "auth_aws", type: "aws" do
-  version 4
-  service "elasticloadbalancing"
-  access_key cred('AWS_ACCESS_KEY_ID')
-  secret_key cred('AWS_SECRET_ACCESS_KEY')
+#authenticate with AWS
+credentials "auth_aws" do
+  schemes "aws"
+  label "AWS"
+  description "Select the AWS Credential from the list"
+  tags "provider=aws"
 end
 
 
@@ -233,6 +240,7 @@ script "js_elb_filter_map", type: "javascript" do
         })
       }
     }
+	content = _.sortBy(content, 'region');
   EOS
 end
 
@@ -297,10 +305,17 @@ define delete_internet_facing_ELB($data) return $all_responses do
     end
     
 	sub on_error: skip do
-      $response = http_get(
-        url: "https://elasticloadbalancing."+$item["region"]+".amazonaws.com/?Action=DeleteLoadBalancer&Version="+$item["api_version"]+"&"+$LoadBalancer,
-        "signature": { type: "aws" }
-      )
+	  $response = http_request(
+      verb: "get",
+      host: join(["elasticloadbalancing.",$item["region"],".amazonaws.com"]),
+      auth: $$auth_aws,
+      href: join(["/", "?Action=DeleteLoadBalancer", "&Version=", $item["api_version"], "&", $LoadBalancer]),
+      https: true,
+      headers:{
+        "cache-control": "no-cache",
+        "content-type": "application/json"
+      }
+    )
       $all_responses << $response
       call sys_log('ELB delete response',to_s($response))
     end

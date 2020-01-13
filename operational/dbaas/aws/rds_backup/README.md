@@ -1,11 +1,10 @@
-## AWS RDS Backup Policy Template
+# AWS RDS Backup Policy Template
 
-### What it does
+## What it does
 
 This Policy Template will check your account for Amazon RDS Instances with non-compliant backup settings.
 
-
-### Input Parameters
+## Input Parameters
 
 This policy has the following input parameters required when launching the policy.
 
@@ -13,22 +12,24 @@ This policy has the following input parameters required when launching the polic
 - *Backup Retention Period* - Example value: `7`
 - *Preferred Backup Window* - Example value: `08:00-08:30`
 
-### Policy Actions
+## Policy Actions
 
 The following policy actions are taken on any resources found to be out of compliance.
 
 - Send an email report
 
-### Required Permissions
+## Prerequisites
 
-This policy requires permissions to access RightScale resources (credentials).  Before applying this policy add the following roles to the user applying the policy.  The roles should be applied to all Accounts where the policy will run or the Organization. For more information on modifying roles visit the [Governance Docs](https://docs.rightscale.com/cm/ref/user_roles.html)
+This policy requires the AWS Credential. When applying the policy select the appropriate credentials
+from the list for your tenant. If such credential doesn't exist please contact your cloud admin to create the Credential.
 
-- Cloud Management - credential_viewer or admin
+The credential must contain the value *AWS* in the Provider field.
+Refer to our documentation for more details on the [Credential Service](https://docs.rightscale.com/credentials/)
 
-### AWS Required Permissions
+## AWS Required Permissions
 
 This policy requires permissions to describe AWS RDS DescribeDBInstances.
-The Cloud Management Platform automatically creates two Credentials when connecting AWS to Cloud Management; AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY. The IAM user credentials contained in those credentials will require the following permissions:
+The AWS credentials will require the following permissions:
 
 ```javascript
 {
@@ -44,10 +45,10 @@ The Cloud Management Platform automatically creates two Credentials when connect
 }
 ```
 
-### Supported Clouds
+## Supported Clouds
 
 - AWS
 
-### Cost
+## Cost
 
 This Policy Template does not launch any instances, and so does not incur any cloud costs.

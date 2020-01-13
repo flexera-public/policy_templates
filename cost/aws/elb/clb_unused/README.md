@@ -1,30 +1,38 @@
-## AWS Unused Classic Load Balancers (CLB) 
+# AWS Unused Classic Load Balancers (CLB) 
  
-### What it does
+## What it does
 This policy checks all Classic Load Balancers (CLB) to determine if any are unused (have no healthy instances) and allows them to be deleted by the user after approval.
 
 Note:Elastic Load Balancing (ELB) supports three types of load balancers: Application Load Balancers, Network Load Balancers and Classic Load Balancers.
 
-### Functional Details
+## Functional Details
  
 The policy leverages the AWS elasticloadbalancing API to determine if the CLB is in use.
  
 When an unused CLB is detected, an email action is triggered automatically to notify the specified users of the incident. Users then have the option to delete the CLB after manual approval if needed.
  
-#### Input Parameters
+## Input Parameters
  
 - *Email addresses of the recipients you wish to notify* - A list of email addresses to notify
 - *Ignore tags* - CLB with any of these tags will be ignored 
- 
-### Required RightScale Roles
- 
-- policy_manager
-- admin or credential_viewer
 
-### AWS Required Permissions
+## Policy Actions
+
+- Sends an email notification.
+- Delete unused CLB after approval.
+
+## Prerequisites
+
+This policy requires the AWS Credential. When applying the policy select the appropriate credentials
+from the list for your tenant. If such credential doesn't exist please contact your cloud admin to create the Credential.
+
+The credential must contain the value *AWS* in the Provider field.
+Refer to our documentation for more details on the [Credential Service](https://docs.rightscale.com/credentials/)
+
+## AWS Required Permissions
 
 This policy requires permissions to describe AWS LoadBalancers, InstanceHealth, tags and DeleteLoadBalancer.
-The Cloud Management Platform automatically creates two Credentials when connecting AWS to Cloud Management; AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY. The IAM user credentials contained in those credentials will require the following permissions:
+The AWS credentials will require the following permissions:
 
 ```javascript
 {
@@ -41,10 +49,10 @@ The Cloud Management Platform automatically creates two Credentials when connect
 }
 ```
 
-### Supported Clouds
+## Supported Clouds
  
 - AWS
  
-### Cost
+## Cost
  
 This Policy Template does not incur any cloud costs.

@@ -1,10 +1,16 @@
 name "AWS Idle Compute Instances"
 rs_pt_ver 20180301
 type "policy"
-short_description "Checks for AWS Compute Instances that are idle for the last 30 days and terminates them after approval. See the [README](https://github.com/rightscale/policy_templates/tree/master/cost/aws/idle_compute_instances/) and [docs.rightscale.com/policies](http://docs.rightscale.com/policies/) to learn more."
-long_description "Version: 1.2"
+short_description "Check for instances that are idle for the last 30 days and terminates them after approval. See the [README](https://github.com/flexera/policy_templates/tree/master/cost/aws/idle_compute_instances/) and [docs.rightscale.com/policies](https://docs.rightscale.com/policies/) to learn more."
+long_description ""
 severity "low"
 category "Cost"
+info(
+  version: "2.0",
+  provider: "AWS",
+  service: "EC2",
+  policy_set: "Idle Compute Instances"
+)
 
 ###############################################################################
 # Permissions
@@ -55,18 +61,12 @@ end
 # Authentication
 ###############################################################################
 
-auth "auth_aws", type: "aws" do
-  version 4
-  service "ec2"
-  access_key cred('AWS_ACCESS_KEY_ID')
-  secret_key cred('AWS_SECRET_ACCESS_KEY')
-end
-
-auth "monitoring_auth_aws", type: "aws" do
-  version 4
-  service "monitoring"
-  access_key cred('AWS_ACCESS_KEY_ID')
-  secret_key cred('AWS_SECRET_ACCESS_KEY')
+#authenticate with AWS
+credentials "auth_aws" do
+  schemes "aws"
+  label "AWS"
+  description "Select the AWS Credential from the list"
+  tags "provider=aws"
 end
 
 ###############################################################################
@@ -246,7 +246,7 @@ script "js_cloudwatch_cpu_usage", type: "javascript" do
   var end_date = new Date().toISOString()
   var start_date = new Date(new Date().setDate(new Date().getDate() - 30)).toISOString();
   results = {
-    "auth": "monitoring_auth_aws",
+    "auth": "auth_aws",
     "host": 'monitoring.'+region+'.amazonaws.com',
     "verb": "GET",
     "path": "/",
@@ -287,7 +287,7 @@ script "js_cloudwatch_mem_usage", type: "javascript" do
   var end_date = new Date().toISOString()
   var start_date = new Date(new Date().setDate(new Date().getDate() - 30)).toISOString();
   results = {
-    "auth": "monitoring_auth_aws",
+    "auth": "auth_aws",
     "host": 'monitoring.'+region+'.amazonaws.com',
     "verb": "GET",
     "path": "/",
@@ -323,7 +323,7 @@ script "js_cloudwatch_windows_memory_usage", type: "javascript" do
   var end_date = new Date().toISOString()
   var start_date = new Date(new Date().setDate(new Date().getDate() - 30)).toISOString();
   results = {
-    "auth": "monitoring_auth_aws",
+    "auth": "auth_aws",
     "host": 'monitoring.'+region+'.amazonaws.com',
     "verb": "GET",
     "path": "/",
@@ -409,6 +409,7 @@ script "js_merged_metrics", type: "javascript" do
       }
     )
   }
+  merged_results = _.sortBy(merged_results, 'region');
 EOS
 end
 
@@ -471,10 +472,11 @@ define terminate_resources($data) return $all_responses do
   call sys_log(join([$syslog_subject, "Identified Instances"]),to_s($data))
   foreach $item in $data do
     $response = http_request(
+      auth: $$auth_aws,
       https: true,
       verb: "post",
+      href: "/",
       host: "ec2."+$item["region"]+".amazonaws.com",
-      signature: { "type": "aws" },
       query_strings: {
         "Action": "TerminateInstances",
         "Version": "2012-06-01",

@@ -1,33 +1,35 @@
-## AWS Bucket Size Check Policy Template
+# AWS Bucket Size Check Policy Template
 
-### What it does
+## What it does
 
 This Policy Template scans all S3 buckets in the given account and checks if the bucket exceeds a specified byte size provided as an input parameter. Bucket size is harvested via CloudWatch queries. If the a bucket exceeds the threshold, and incident report will show for the S3 buckets, and related information and an email will be sent to the user-specified email address.
 
-### Input Parameters
+## Input Parameters
 
 This policy has the following input parameters required when launching the policy.
 
 - *Byte size to check (eg: 1000000000 = 1GB)* - enter the S3 bucket size threshold to trigger an incident.
-- *Email addresses of the recipients you wish to notify* - A list of email addresses to notify
+- *Email Address* - Email addresses of the recipients you wish to notify
 
-### Policy Actions
+## Policy Actions
 
 The following policy actions are taken on any resources found to be out of compliance.
 
 - Send an email report
 
-### Required RightScale Roles
- 
-- Cloud Management - Actor
-- Cloud Management - Observer
-- Cloud Management - credential_viewer
+## Prerequisites
 
-### Required AWS Permissions
+This policy requires the AWS IAM or AWS STS Credential. When applying the policy select the appropriate credentials
+from the list for your tenant. If such credential doesn't exist please contact your cloud admin to create the Credential.
+
+The credential must contain the value *AWS* in the Provider field.
+Refer to our documentation for more details on the [Credential Service](https://docs.rightscale.com/credentials/)
+
+## Required AWS Permissions
 
 This policy requires permissions to list of AWS S3 Buckets, the location of S3 Buckets as well as permissions to list Metrics and Get Metric Statistics from the AWS Cloudwatch API.
 
-The Cloud Management Platform automatically creates two Credentials when connecting AWS to Cloud Management; AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY. The IAM user credentials contained in those credentials will require the following permissions:
+The AWS credentials will require the following permissions:
 
 ```javascript
 {
@@ -60,10 +62,10 @@ The Cloud Management Platform automatically creates two Credentials when connect
 }
 ```
 
-### Supported Clouds
+## Supported Clouds
 
 - AWS
 
-### Cost
+## Cost
 
 This Policy Template does not incur any cloud costs.
