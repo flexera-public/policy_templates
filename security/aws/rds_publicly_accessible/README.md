@@ -28,7 +28,7 @@ Perform below steps to enable delete action.
 
 ```javascript
    escalate $delete_publicly_accessible_RDS_instances_approval
-	check logic_or(
+     check logic_or(
       eq(val(item, "delete_protection"), "YES"),
       ne(val(item, "db_instance_status"), "available")
     )
@@ -37,7 +37,8 @@ Perform below steps to enable delete action.
 - And comment the line which contains 'check eq(val(item, "publicly_accessible"), "false")', save the changes.
 - upload the modified file and apply the policy.
 
-Note: 
+Note:
+
 - RDS Instances with 'DB Instance Status' other than 'Available' and RDS instances with 'Delete Protection Enabled' cannot be deleted
 - RDS instances with 'DB Instance Status' other than 'Available' can not be modified.
 - When delete action is performed, DB snapshot gets created with name '<--RDS Instance Name-->-finalSnapshot' Ex mySQL-DBinstance-finalSnapshot before deleting DB instance.
@@ -65,7 +66,7 @@ The Cloud Management Platform automatically creates two Credentials when connect
             "rds:ListTagsForResource",
             "rds:ModifyDBInstance",
             "rds:CreateDBClusterSnapshot",
-            "rds:DescribeDBClusterSnapshots",			
+            "rds:DescribeDBClusterSnapshots",
             "rds:DeleteDBInstance"],
     "Resource":"*"
     }
@@ -76,7 +77,7 @@ The Cloud Management Platform automatically creates two Credentials when connect
 ## Supported Clouds
 
 - AWS
- 
+
 ## Cost
- 
+
 This Policy Template does not incur any cloud costs.

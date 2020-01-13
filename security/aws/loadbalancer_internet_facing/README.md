@@ -39,20 +39,20 @@ The AWS credentials will require the following permissions:
     "Statement":[{
     "Effect":"Allow",
     "Action":["elasticloadbalancing:DescribeLoadBalancers",
-	          "elasticloadbalancing:DescribeTags",
-	          "elasticloadbalancing:DeleteLoadBalancer"],
+              "elasticloadbalancing:DescribeTags",
+              "elasticloadbalancing:DeleteLoadBalancer"],
     "Resource":"*"
     }
   ]
 }
 
 {
-    "Version": "2015-12-01",
+    "Version": "2015-12-01",	
     "Statement":[{
     "Effect":"Allow",
     "Action":["elasticloadbalancing:DescribeLoadBalancers",
-	          "elasticloadbalancing:DescribeTags",
-	          "elasticloadbalancing:DeleteLoadBalancer"],
+              "elasticloadbalancing:DescribeTags",
+              "elasticloadbalancing:DeleteLoadBalancer"],
     "Resource":"*"
     }
   ]

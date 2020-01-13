@@ -42,8 +42,8 @@ The AWS credentials will require the following permissions:
     "Effect":"Allow",
     "Action":["elasticloadbalancing:DescribeLoadBalancers",
               "elasticloadbalancing:DescribeInstanceHealth",
-	          "elasticloadbalancing:DescribeTags",
-	          "elasticloadbalancing:DeleteLoadBalancer"],
+              "elasticloadbalancing:DescribeTags",
+              "elasticloadbalancing:DeleteLoadBalancer"],
     "Resource":"*"
     }
   ]
