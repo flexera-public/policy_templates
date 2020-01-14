@@ -1,4 +1,4 @@
-# AWS RDS Backup Policy Template
+# AWS RDS Backup
 
 ## What it does
 

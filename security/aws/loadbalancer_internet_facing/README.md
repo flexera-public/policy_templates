@@ -1,4 +1,4 @@
-# Check for internet-facing ELBs & ALBs
+# AWS Internet-facing ELBs & ALBs
 
 ## What it does
 

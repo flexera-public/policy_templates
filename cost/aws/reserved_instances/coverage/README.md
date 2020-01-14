@@ -1,4 +1,4 @@
-# Reserved Instances Coverage Policy Template
+# Reserved Instances Coverage
 
 ## What it does
 

@@ -1,4 +1,4 @@
-# AWS Bucket Size Check Policy Template
+# AWS Bucket Size Check
 
 ## What it does
 

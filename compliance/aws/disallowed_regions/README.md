@@ -22,13 +22,6 @@ Note:Refer Region column under Amazon Elastic Compute Cloud (Amazon EC2) in belo
 - Sends an email notification.
 - Terminate reported instances after approval.
 
-## Required RightScale Roles
-
-- policy_designer
-- policy_manager
-- policy_publisher
-- credential_viewer
-
 ## AWS Required Permissions
 
 This policy requires permissions to describe AWS ECS DescribeInstances.
