@@ -1,10 +1,16 @@
 name "AWS Object Storage Optimization"
 rs_pt_ver 20180301
 type "policy"
-short_description "Checks S3 objects for last modified date and moves the object to glacier or glacier deep archive  or delete(enable delete action as mentioned in README.md) after user approval [README](https://github.com/flexera/policy_templates/tree/master/cost/aws/object_storage_optimization) and [docs.rightscale.com/policies](http://docs.rightscale.com/policies/) to learn more."
-long_description "Version: 1.0"
+short_description "Check for object store items for last modified date and moves the object to cool or cold archive tiers after user approval. [README](https://github.com/flexera/policy_templates/tree/master/cost/aws/object_storage_optimization) and [docs.rightscale.com/policies](https://docs.rightscale.com/policies/) to learn more."
+long_description ""
 category "Cost"
 severity "low"
+info(
+  version: "2.0",
+  provider: "AWS",
+  service: "S3",
+  policy_set: "Object Store Optimization"
+)
 
 ###############################################################################
 # Permissions
@@ -47,11 +53,12 @@ end
 # Authentication
 ###############################################################################
 
-auth "auth_aws", type: "aws" do
-  version "4"
-  service "s3"
-  access_key cred("AWS_ACCESS_KEY_ID")
-  secret_key cred("AWS_SECRET_ACCESS_KEY")
+#authenticate with AWS
+credentials "auth_aws" do
+  schemes "aws"
+  label "AWS"
+  description "Select the AWS Credential from the list"
+  tags "provider=aws"
 end
 
 ###############################################################################
@@ -354,16 +361,13 @@ define modify_s3_object_storage_class($data) return $all_responses do
       $response = http_request({
                                 verb: 'put',
                                 host: $item['host'],
+                                auth: $$auth_aws,
                                 href: join(['/', $bucket_name, '/', $object_key]),
                                 https: true,
                                 headers: {'content-type': 'application/x-amz-json-1.1',
                                           'x-amz-copy-source': $copy_source,
                                           'x-amz-storage-class': $storage_class
-                                         },
-                                "signature": {'type': 'aws',
-                                              'access_key': cred('AWS_ACCESS_KEY_ID'),
-                                              'secret_key': cred('AWS_SECRET_ACCESS_KEY') 
-                                             }
+                                         }
                              })  
       $all_responses << $response
       call sys_log('AWS object storage optimization ',to_s($response))
@@ -380,10 +384,7 @@ define delete_s3_objects($data) return $all_responses do
       call url_encode($item['bucket_name']) retrieve $bucket_name
       call url_encode($item['object_key']) retrieve $object_key      
 	  $response = http_delete(url: join(["https://",$item['host'],"/",$bucket_name,"/", $object_key]),
-                              "signature": {"type": "aws",
-                                            "access_key": cred("AWS_ACCESS_KEY_ID"),
-                                            "secret_key": cred("AWS_SECRET_ACCESS_KEY") 
-                                           }
+                              auth: $$auth_aws
                              )
       $all_responses << $response
       call sys_log('Delete AWS S3-Objects',to_s($response))   
