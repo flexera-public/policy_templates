@@ -21,11 +21,9 @@ If you get an **N/A** in a field you will need to install the [CloudWatch Agent]
 
 ## Prerequisites
 
-This policy requires the AWS IAM or AWS STS Credential. When applying the policy select the appropriate credentials
-from the list for your tenant. If such credential doesn't exist please contact your cloud admin to create the Credential.
+This policy requires the AWS Credential. When applying the policy select the appropriate credentials from the list for your tenant. If such credential doesn't exist please contact your cloud admin to create the Credential.
 
-The credential must contain the value *AWS* in the Provider field.
-Refer to our documentation for more details on the [Credential Service](https://docs.rightscale.com/credentials/)
+The credential must contain the value *aws* in the Provider field. Refer to our documentation for more details on the [Credential Service](https://docs.rightscale.com/credentials/)
 
 ## Input Parameters
 
