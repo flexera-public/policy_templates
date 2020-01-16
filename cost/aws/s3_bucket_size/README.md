@@ -19,16 +19,13 @@ The following policy actions are taken on any resources found to be out of compl
 
 ## Prerequisites
 
-This policy requires the AWS IAM or AWS STS Credential. When applying the policy select the appropriate credentials
-from the list for your tenant. If such credential doesn't exist please contact your cloud admin to create the Credential.
+This policy requires the AWS Credential. When applying the policy select the appropriate credentials from the list for your tenant. If such credential doesn't exist please contact your cloud admin to create the Credential.
 
-The credential must contain the value *AWS* in the Provider field.
-Refer to our documentation for more details on the [Credential Service](https://docs.rightscale.com/credentials/)
+The credential must contain the value *aws* in the Provider field. Refer to our documentation for more details on the [Credential Service](https://docs.rightscale.com/credentials/)
 
 ## Required AWS Permissions
 
 This policy requires permissions to list of AWS S3 Buckets, the location of S3 Buckets as well as permissions to list Metrics and Get Metric Statistics from the AWS Cloudwatch API.
-
 The AWS credentials will require the following permissions:
 
 ```javascript

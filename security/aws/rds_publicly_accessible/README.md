@@ -23,7 +23,7 @@ When a publicly accessible RDS instance is detected, an email action is triggere
 
 Perform below steps to enable delete action.
 
-- Edit the file [AWS_Publicly_Accessible_RDS_Instances](https://github.com/flexera/policy_templates/tree/master/security/aws/rds_publicly_accessible/AWS_Publicly_Accessible_RDS_Instances.pt)
+- Edit the file [AWS_Publicly_Accessible_RDS_Instances](https://github.com/flexera/policy_templates/tree/master/security/aws/rds_publicly_accessible/aws_publicly_accessible_rds_instances.pt)
 - uncomment below mentioned lines
 
 ```javascript
@@ -46,16 +46,14 @@ Note:
 
 ## Prerequisites
 
-This policy requires the AWS IAM or AWS STS Credential. When applying the policy select the appropriate credentials
-from the list for your tenant. If such credential doesn't exist please contact your cloud admin to create the Credential.
+This policy requires the AWS Credential. When applying the policy select the appropriate credentials from the list for your tenant. If such credential doesn't exist please contact your cloud admin to create the Credential.
 
-The credential must contain the value *AWS* in the Provider field.
-Refer to our documentation for more details on the [Credential Service](https://docs.rightscale.com/credentials/)
+The credential must contain the value *aws* in the Provider field. Refer to our documentation for more details on the [Credential Service](https://docs.rightscale.com/credentials/)
 
 ## AWS Required Permissions
 
 This policy requires permissions to describe AWS RDS instances, list RDS tags, modify RDS instances and delete RDS instances.
-The Cloud Management Platform automatically creates two Credentials when connecting AWS to Cloud Management; AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY. The IAM user credentials contained in those credentials will require the following permissions:
+The AWS credentials will require the following permissions::
 
 ```javascript
 {

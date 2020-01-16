@@ -18,19 +18,24 @@ This policy has the following input parameters required when launching the polic
 - *Days since last modified to move to Deep Archive* - Move to glacier deep archive after days last modified- leave blank to skip moving
 - *Exclude Tag* - List of tags that will exclude s3 objects from being evaluated by this policy. Multiple tags are evaluated as an 'OR' condition. Tag keys or key/value pairs can be listed. Example: 'test,env=dev'
 
-## Policy Actions
+## Enable delete action
 
 Perform below steps to enable delete action.
 
 - Edit the file [AWS Object Storage Optimization](https://github.com/flexera/policy_templates/tree/master/cost/aws/object_storage_optimization/aws_object_storage_optimization.pt)
-- uncomment the line which contains 'escalate $esc_delete_s3_objects_approval' 
+- uncomment the line which contains 'escalate $esc_delete_s3_objects_approval'
 - comment the line which contains '$esc_modify_s3_object_storage_class_approval' and save the changes.
 - upload the modified file and apply the policy.
 
+## Prerequisites
+
+This policy requires the AWS Credential. When applying the policy select the appropriate credentials from the list for your tenant. If such credential doesn't exist please contact your cloud admin to create the Credential.
+
+The credential must contain the value *aws* in the Provider field. Refer to our documentation for more details on the [Credential Service](https://docs.rightscale.com/credentials/)
+
 ## AWS Required Permissions
 
-This policy requires permissions to S3 bucket GET Service, GET Bucket location, GET Bucket (List Objects) Version 2, GET Object tagging, PUT Object - Copy, DELETE Object.
-The Cloud Management Platform automatically creates two Credentials when connecting AWS to Cloud Management; AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY. The IAM user credentials contained in those credentials will require the following permissions:
+This policy requires permissions to S3 bucket GET Service, GET Bucket location, GET Bucket (List Objects) Version 2, GET Object tagging, PUT Object - Copy, DELETE Object. The AWS credentials will require the following permissions:
 
 ```javascript
 {
@@ -47,7 +52,7 @@ The Cloud Management Platform automatically creates two Credentials when connect
                          ],
                 "Resource":"*"
               }
-			  ]
+              ]
 }
 ```
 
