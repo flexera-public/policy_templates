@@ -28,8 +28,7 @@ Refer to our documentation for more details on the [Credential Service](https://
 Once saved note the report number in the URL field : ![Alt text][ReportNumber] you need it when activating the Policy
 1. Retrieve the API Token in FlexNet manager Cloud:
     1. On the Account page - Select Create Account -> Service Account and fill in the form ![Alt text][CreateServeceAccount]
-    1. IMPORTANT: When you hit save you will see a API Token.. This is the only time you will
-    see it so you need to save it at this point ![Alt text][APIToken]
+    1. IMPORTANT: When you hit save you will see a API Token.. This is the only time you will see it so you need to save it at this point ![Alt text][APIToken]
     1. Add the new account to the Role ___Webservice___ ![Alt text][WebServiceRole]
 
 __NOTE__: You can use a normal interactive user for the API credentials, but it is recommended to add a
@@ -47,7 +46,6 @@ This policy has the following input parameters required when launching the polic
 ## Policy Actions
 
 - send an email
-
 
 ## Cost
 

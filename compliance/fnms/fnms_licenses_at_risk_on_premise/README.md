@@ -13,7 +13,7 @@ Current limitations:
 
 ## Prerequisites
 
-If FlexNet Manager Suite is not accessible from the Internet, you will need to setup a wstunnel to provide a secure connection into the FlexNet manager system.  For more details on wstunnel please refer to this: [https://github.com/rightscale/wstunnel](https://github.com/rightscale/wstunnel)
+- If FlexNet Manager Suite is not accessible from the Internet, you will need to setup a wstunnel to provide a secure connection into the FlexNet manager system.  For more details on wstunnel please refer to this: [https://github.com/rightscale/wstunnel](https://github.com/rightscale/wstunnel)
 - This policy requires the Flexnet Manager NTLM  Credential . When applying the policy select the appropriate credentials from the list for your tenant. If such credential doesn't exist please contact your cloud admin to create the Credential.
 - The credential must contain the value  **flexera_fnms_ntlm** in the Provider field. Refer to our documentation for more details on the [Credential Service](https://docs.rightscale.com/credentials/)
 

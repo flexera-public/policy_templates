@@ -28,8 +28,7 @@ please refer to this: [https://github.com/rightscale/wstunnel](https://github.co
 
 ### How to setup FlexNet Manager Custom View for this policy
 
-1. Create a custom view in FlexNet manager that could look like this: ![Alt text][FNMSReport]
-Once saved note the report number in the URL field : ![Alt text][ReportNumber] you need it when activating the Policy
+1. Create a custom view in FlexNet manager that could look like this: ![Alt text][FNMSReport] Once saved note the report number in the URL field : ![Alt text][ReportNumber] you need it when activating the Policy
 1. Set Up user for FlexNet manager on-premise:
     1. In your user management add the new user and assign it a password.
     1. On the Account page - Select Create Account -> Service Account ![Alt text][CreateServeceAccount]
@@ -51,7 +50,6 @@ This policy has the following input parameters required when launching the polic
 ## Policy Actions
 
 - send an email
-
 
 ## Cost
 
