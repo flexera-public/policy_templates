@@ -24,8 +24,7 @@ Refer to our documentation for more details on the [Credential Service](https://
 
 ### How to setup FlexNet Manager Custom View for this policy
 
-1. Create a custom view in FlexNet manager that could look like this: ![Alt text][FNMSReport]
-Once saved note the report number in the URL field : ![Alt text][ReportNumber] you need it when activating the Policy
+1. Create a custom view in FlexNet manager that could look like this: ![Alt text][FNMSReport] Once saved note the report number in the URL field : ![Alt text][ReportNumber] you need it when activating the Policy
 1. Retrieve the API Token in FlexNet manager Cloud:
     1. On the Account page - Select Create Account -> Service Account and fill in the form ![Alt text][CreateServeceAccount]
     1. IMPORTANT: When you hit save you will see a API Token.. This is the only time you will see it so you need to save it at this point ![Alt text][APIToken]
