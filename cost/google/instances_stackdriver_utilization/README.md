@@ -28,7 +28,7 @@ This policy has the following input parameters required when launching the polic
 This policy requires the Google Cloud Credential. When applying the policy select the appropriate credentials
 from the list for your tenant. If such credential doesn't exist please contact your cloud admin to create the Credential.
 
-The credential must contain the value *GCE* in the Provider field.
+The credential must contain the value *gce* in the Provider field.
 Refer to our documentation for more details on the [Credential Service](https://docs.rightscale.com/credentials/)
 
 ## Google Required Permissions
