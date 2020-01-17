@@ -37,7 +37,8 @@ For administrators [creating and managing credentials](https://docs.rightscale.c
 
 Provider tag value to match this policy: `aws`
 
-Required permissions in the provider: 
+Required permissions in the provider:
+
 - Read access to CloudWatch & RDS
 
 ## Supported Clouds

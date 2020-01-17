@@ -23,7 +23,8 @@ For administrators [creating and managing credentials](https://docs.rightscale.c
 
 Provider tag value to match this policy: `azure_rm`
 
-Required permissions in the provider: 
+Required permissions in the provider:
+
 - Microsoft.Compute/virtualMachines/read
 - Microsoft.Compute/virtualMachines/delete
 

@@ -37,7 +37,8 @@ For administrators [creating and managing credentials](https://docs.rightscale.c
 
 Provider tag value to match this policy: `azure_rm`
 
-Required permissions in the provider: 
+Required permissions in the provider:
+
 - Microsoft.Sql/servers/databases/read
 - Microsoft.Sql/servers/databases/update
 - Microsoft.Sql/servers/databases/metrics/read
@@ -49,5 +50,3 @@ Required permissions in the provider:
 ## Cost
 
 This Policy Template does not incur any cloud costs.
-
-
