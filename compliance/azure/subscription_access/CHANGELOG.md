@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.0
+
+- Changes to support the Credential Service
+
 ## v1.3
 
 - Added filter to only gather role assignments from the subscription level
