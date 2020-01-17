@@ -63,7 +63,7 @@ end
 
 #authenticate with AWS
 credentials "auth_aws" do
-  schemes "aws"
+  schemes "aws","aws_sts"
   label "AWS"
   description "Select the AWS Credential from the list"
   tags "provider=aws"
@@ -96,7 +96,7 @@ datasource "ds_regions_list" do
   end
 end
 
-datasource "ds_instances" do 
+datasource "ds_instances" do
   run_script $js_instances, $ds_instances_set, $param_exclusion_tag_key
 end
 
@@ -249,9 +249,9 @@ script "js_instances", type: "javascript" do
       }
     }
   }
-  
+
   results = _.sortBy(results, 'region');
-  
+
 EOS
 end
 
@@ -384,7 +384,7 @@ code <<-EOS
     var instance_id = instance.instanceId
     if (instance.platform == 'windows'){
       var mem_usage_record = _.find(ds_cloudwatch_windows_mem_usage, function(record) { return record.instanceId == instance_id; })
-      
+
       if (mem_usage_record != null && mem_usage_record !== undefined) {
         var mem_maximum = parseFloat(mem_usage_record.mem_maximum).toFixed(2)
         var mem_average = parseFloat(mem_usage_record.mem_average).toFixed(2)
@@ -397,7 +397,7 @@ code <<-EOS
     } else {
       instance.platform = 'linux'
       var mem_usage_record = _.find(ds_cloudwatch_mem_usage, function(record) { return record.instanceId == instance_id; })
-      
+
       if (mem_usage_record != null && mem_usage_record !== undefined) {
         var mem_maximum = parseFloat(mem_usage_record.mem_maximum).toFixed(2)
         var mem_average = parseFloat(mem_usage_record.mem_average).toFixed(2)
@@ -431,7 +431,7 @@ end
 
 script "js_inefficient_utilization_metrics", type: "javascript" do
   result "inefficient_utilization_results"
-  parameters "ds_aws_instance_size_map", "ds_merged_metrics", "param_avg_used_memory", "param_avg_cpu" 
+  parameters "ds_aws_instance_size_map", "ds_merged_metrics", "param_avg_used_memory", "param_avg_cpu"
   code <<-EOS
   var inefficient_utilization_results = []
   for ( i = 0; i < ds_merged_metrics.length; i++){
@@ -521,7 +521,7 @@ define downsize_instances($data) return $all_responses do
   foreach $item in $data do
     if $item["next_instance_size"]!= "N/A"
       sub on_error: rollback($item) do
-        call stop_instances($item) retrieve $status_code	
+        call stop_instances($item) retrieve $status_code
         if(to_s($status_code)=="200")
           call set_instance_type($item) retrieve $status_code
         else
@@ -532,7 +532,7 @@ define downsize_instances($data) return $all_responses do
           call start_instances($item) retrieve $status_code
         elsif ($go_next)
           call rollback($item)
-          $go_next = false		
+          $go_next = false
         end
         if($go_next && to_s($status_code)!="200")
           call rollback($item)
@@ -545,7 +545,7 @@ end
 
 define stop_instances($item) return $status_code do
   $status_code={}
-  $response={}        
+  $response={}
   sub on_error: retry, timeout: 20m, on_timeout: skip do
     $response = http_request(
       verb: "post",
@@ -571,7 +571,7 @@ define stop_instances($item) return $status_code do
         $state = to_s($status_responses["instanceState"]["name"])
         $status_code = to_s($status_response["code"])
       end
-    end		
+    end
   end
 end
 
@@ -609,7 +609,7 @@ define start_instances($item) return $status_code do
       }
     )
     call sys_log("StartInstanceResponseCode", to_s($response["code"]))
-  end	  
+  end
   $status_code=$response["code"]
   if($response["code"]==200)
     $wake_condition = "running"
@@ -621,7 +621,7 @@ define start_instances($item) return $status_code do
         $state = to_s($status_responses["instanceState"]["name"])
         $status_code = $status_response["code"]
       end
-    end	  
+    end
   end
 end
 
@@ -650,7 +650,7 @@ define rollback($item) do
   call sys_log("Rollback_statusResponse", to_s($status_responses))
   $state = to_s($status_responses["instanceState"]["name"])
   $started_condition = "running"
-  if include?(to_s($status_responses["instanceType"]), to_s($item["instanceType"])) 
+  if include?(to_s($status_responses["instanceType"]), to_s($item["instanceType"]))
     # Instance is still the original size, just make sure it's running
     if $state =~ $started_condition
       # instance is running nothing to do
@@ -665,8 +665,8 @@ define rollback($item) do
     end
     call rollback_instance_type($item)
     call start_instances($item)
-  end	  
-end	  
+  end
+end
 
 define rollback_instance_type($item) do
    sub on_error: skip do
