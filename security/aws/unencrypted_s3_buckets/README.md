@@ -32,14 +32,15 @@ Perform below steps to enable delete action.
 
 ## Prerequisites
 
-- This policy requires the AWS IAM or AWS STS Credential. When applying the policy select the appropriate credentials from the list for your tenant. If such credential doesn't exist please contact your cloud admin to create the Credential.
-- The credential must contain the value *AWS* in the Provider field. Refer to our documentation for more details on the [Credential Service](https://docs.rightscale.com/credentials/)
+This policy uses [credentials](https://docs.rightscale.com/policies/users/guides/credential_management.html) for connecting to the cloud -- in order to apply this policy you must have a credential registered in the system that is compatible with this policy. If there are no credentials listed when you apply the policy, please contact your cloud admin and ask them to register a credential that is compatible with this policy. The information below should be consulted when creating the credential.
 
-## AWS Required Permissions
+### Credential configuration
 
-This policy requires permissions to list of AWS S3 Buckets, location of S3 Buckets, tagging S3 Buckets, encryption of S3 Buckets, modify unencrypted S3 Buckets and delete unencrypted S3 Buckets.
-The IAM user will require the following permissions:
+For administrators [creating and managing credentials](https://docs.rightscale.com/policies/users/guides/credential_management.html) to use with this policy, the following information is needed:
 
+Provider tag value to match this policy: `aws`
+
+Required permissions in the provider: 
 ```javascript
 {
   "Version": "2006-03-01",
