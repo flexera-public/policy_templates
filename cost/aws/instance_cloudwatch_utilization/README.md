@@ -21,25 +21,15 @@ If you get an **N/A** in a field you will need to install the [CloudWatch Agent]
 
 ## Prerequisites
 
-This policy requires the AWS Credential. When applying the policy select the appropriate credentials from the list for your tenant. If such credential doesn't exist please contact your cloud admin to create the Credential.
+This policy uses [credentials](https://docs.rightscale.com/policies/users/guides/credential_management.html) for connecting to the cloud -- in order to apply this policy you must have a credential registered in the system that is compatible with this policy. If there are no credentials listed when you apply the policy, please contact your cloud admin and ask them to register a credential that is compatible with this policy. The information below should be consulted when creating the credential.
 
-The credential must contain the value *aws* in the Provider field. Refer to our documentation for more details on the [Credential Service](https://docs.rightscale.com/credentials/)
+### Credential configuration
 
-## Input Parameters
+For administrators [creating and managing credentials](https://docs.rightscale.com/policies/users/guides/credential_management.html) to use with this policy, the following information is needed:
 
-This policy has the following input parameters required when launching the policy.
+Provider tag value to match this policy: `aws`
 
-- *Email addresses to notify* - Email addresses of the recipients you wish to notify when new incidents are created
-- *Average used memory percentage* - Set to -1 to ignore memory utilization
-- *Average used CPU percentage* - Set to -1 to ignore CPU utilization
-- *Exclusion Tag Key:Value* - Cloud native tag key to ignore instances. Format: Key:Value
-
-## Required Permissions
-
-### AWS Required Permissions
-
-This policy requires permissions to list Metrics and Get Metric Statistics from the AWS Cloudwatch API. The AWS credentials contained in those credentials will require the following permissions:
-
+Required permissions in the provider: 
 ```javascript
 {
   "Version":"2012-10-17",
@@ -57,7 +47,16 @@ This policy requires permissions to list Metrics and Get Metric Statistics from 
 }
 ```
 
-### Windows Support
+## Input Parameters
+
+This policy has the following input parameters required when launching the policy.
+
+- *Email addresses to notify* - Email addresses of the recipients you wish to notify when new incidents are created
+- *Average used memory percentage* - Set to -1 to ignore memory utilization
+- *Average used CPU percentage* - Set to -1 to ignore CPU utilization
+- *Exclusion Tag Key:Value* - Cloud native tag key to ignore instances. Format: Key:Value
+
+## Windows Support
 
 To enable windows support you will need to add the following to your cloudwatch config.json and restart cloudwatch agent
 
