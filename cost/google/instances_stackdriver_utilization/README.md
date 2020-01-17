@@ -33,7 +33,8 @@ For administrators [creating and managing credentials](https://docs.rightscale.c
 
 Provider tag value to match this policy: `gce`
 
-Required permissions in the provider: 
+Required permissions in the provider:
+
 - The `Monitoring Viewer` Role
 
 ## Supported Clouds
