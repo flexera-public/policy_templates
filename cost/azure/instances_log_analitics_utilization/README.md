@@ -25,13 +25,21 @@ This policy has the following input parameters required when launching the polic
 
 ## Prerequisites
 
-- Azure Service Principal (AKA Azure Active Directory Application) with the appropriate permissions to manage resources in the target subscription.
-- In addition, the Service Principal will need the `Log Analytics Reader` role on all Log Analytics Workspaces the VMs in the subscription are sending performance metrics to.
-- Virtual Machines must have the Log Analytics/OMS Agent installed for sending performance metrics to a Azure Log Analytics workspace.
-- This policy requires the Azure Resource Manager Credential and the Azure Log Analytics Credentials. When applying the policy select the appropriate credentials from the list for your tenant. If such credential doesn't exist please contact your cloud admin to create the Credential
-- The credential must contain the value *Azure RM* in the Provider field. Refer to our documentation for more details on the [Credential Service](https://docs.rightscale.com/credentials/)
+Azure Service Principal (AKA Azure Active Directory Application) with the appropriate permissions to manage resources in the target subscription.
 
-## Azure Required Permissions
+In addition, the Service Principal will need the `Log Analytics Reader` role on all Log Analytics Workspaces the VMs in the subscription are sending performance metrics to.
+
+Virtual Machines must have the Log Analytics/OMS Agent installed for sending performance metrics to a Azure Log Analytics workspace.
+
+This policy uses [credentials](https://docs.rightscale.com/policies/users/guides/credential_management.html) for connecting to the cloud -- in order to apply this policy you must have a credential registered in the system that is compatible with this policy. If there are no credentials listed when you apply the policy, please contact your cloud admin and ask them to register a credential that is compatible with this policy. The information below should be consulted when creating the credential.
+
+### Credential configuration
+
+For administrators [creating and managing credentials](https://docs.rightscale.com/policies/users/guides/credential_management.html) to use with this policy, the following information is needed:
+
+Provider tag value to match this policy: `azure_rm`
+
+Required permissions in the provider: 
 
 - Microsoft.Compute/skus/read
 - Microsoft.OperationalInsights/workspaces/analytics/query/action
