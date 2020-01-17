@@ -147,14 +147,16 @@ Please contact sales@flexera.com to learn more.
 
 - [AWS Disallowed Regions](./compliance/aws/disallowed_regions/)
 - [AWS Unused ECS Clusters](./compliance/aws/ecs_unused/)
-- [AWS EC2 Instances not running FlexNet Inventory Agent](./compliance/aws/instances_without_fnm_agent/)
+- [AWS EC2 Instances not running FlexNet Inventory Agent - Cloud](./compliance/aws/instances_without_fnm_agent/)
+- [AWS EC2 Instances not running FlexNet Inventory Agent - On Premise](./compliance/aws/instances_without_fnm_agent_on_premise/)
 - [AWS Long-stopped Instances](./compliance/aws/long_stopped_instances/)
 
 #### Azure
 
 - [Azure AHUB Utilization with Manual Entry](./compliance/azure/ahub_manual/)
 - [Azure Disallowed Regions](./compliance/azure/azure_disallowed_regions)
-- [Azure Instances not running FlexNet Inventory Agent](./compliance/azure/instances_without_fnm_agent/)
+- [Azure Instances not running FlexNet Inventory Agent - Cloud](./compliance/azure/instances_without_fnm_agent/)
+- [Azure Instances not running FlexNet Inventory Agent - On Premise](./compliance/azure/instances_without_fnm_agent_on_premise/)
 - [Azure Long Stopped Instances](./compliance/azure/azure_long_stopped_instances)
 - [Azure Regulatory Compliance](./compliance/azure/compliance_score/)
 - [Azure Subscription Access](./compliance/azure/subscription_access/)
@@ -166,7 +168,8 @@ Please contact sales@flexera.com to learn more.
 
 #### Other
 
-- [FlexNet Manager Licenses At Risk](./compliance/fnms/fnms_licenses_at_risk/)
+- [FlexNet Manager Licenses At Risk - Cloud](./compliance/fnms/fnms_licenses_at_risk/)
+- [FlexNet Manager Licenses At Risk - On Premise](./compliance/fnms/fnms_licenses_at_risk_on_premise/)
 - [GitHub.com Available Seats](./compliance/github/available_seats/)
 - [GitHub.com Unpermitted Outside Collaborators](./compliance/github/outside_collaborators/)
 - [GitHub.com Unpermitted Repository Names](./compliance/github/repository_naming/)
@@ -202,7 +205,8 @@ Please contact sales@flexera.com to learn more.
 
 #### Other
 
-- [Schedule FlexNet Manager report](./operational/fnms/schedule_fnms_reports)
+- [Schedule FlexNet Manager Report - Cloud](./operational/fnms/schedule_fnms_reports/)
+- [Schedule FlexNet Manager Report - On Premise](./operational/fnms/schedule_fnms_reports_on_premise/)
 
 ### SaaS Management
 
