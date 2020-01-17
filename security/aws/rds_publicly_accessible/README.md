@@ -23,7 +23,7 @@ When a publicly accessible RDS instance is detected, an email action is triggere
 
 Perform below steps to enable delete action.
 
-- Edit the file [AWS_Publicly_Accessible_RDS_Instances](https://github.com/flexera/policy_templates/tree/master/security/aws/rds_publicly_accessible/aws_publicly_accessible_rds_instances.pt)
+- Edit the file [AWS_Publicly_Accessible_RDS_Instances](/security/aws/rds_publicly_accessible/aws_publicly_accessible_rds_instances.pt)
 - uncomment below mentioned lines
 
 ```javascript
