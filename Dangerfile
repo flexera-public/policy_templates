@@ -2,7 +2,11 @@ require 'uri'
 require_relative 'tools/lib/policy_parser'
 # DangerFile
 # https://danger.systems/reference.html
-changed_files = (git.added_files + git.modified_files)
+# get list of old names that were renamed
+renamed_files = (git.renamed_files.collect{|r| r[:before]})
+# get list of all files changes minus the old files renamed
+# remove list of renamed files to prevent errors on files that don't exist
+changed_files = (git.added_files + git.modified_files - renamed_files)
 has_app_changes = changed_files.select{ |file| file.end_with? "pt" }
 has_new_policy_template = git.added_files.select{ |file| file.end_with? "pt" }
 md_files = changed_files.select{ |file| file.end_with? "md" }
@@ -42,7 +46,9 @@ exclude_hosts = [
   'oauth2.googleapis.com',
   'www.googleapis.com',
   'image-charts.com',
-  'graph.microsoft.com'
+  'graph.microsoft.com',
+  'www.w3.org',
+  'tempuri.org',
 ]
 changed_files.each do |file|
  diff = git.diff_for_file(file)
