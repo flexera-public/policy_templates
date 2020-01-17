@@ -22,15 +22,15 @@ Using this may result in instances with no load balancers.
 
 ## Prerequisites
 
-This policy requires the AWS Credential. When applying the policy select the appropriate credentials from the list for your tenant. If such credential doesn't exist please contact your cloud admin to create the Credential.
+This policy uses [credentials](https://docs.rightscale.com/policies/users/guides/credential_management.html) for connecting to the cloud -- in order to apply this policy you must have a credential registered in the system that is compatible with this policy. If there are no credentials listed when you apply the policy, please contact your cloud admin and ask them to register a credential that is compatible with this policy. The information below should be consulted when creating the credential.
 
-The credential must contain the value *aws* in the Provider field. Refer to our documentation for more details on the [Credential Service](https://docs.rightscale.com/credentials/)
+### Credential configuration
 
-## AWS Required Permissions
+For administrators [creating and managing credentials](https://docs.rightscale.com/policies/users/guides/credential_management.html) to use with this policy, the following information is needed:
 
-This policy requires permissions to describe AWS Load Balancers, tags and Delete Load Balancer.
-The AWS credentials will require the following permissions:
+Provider tag value to match this policy: `aws`
 
+Required permissions in the provider:
 ```javascript
 {
     "Version": "2012-06-01",

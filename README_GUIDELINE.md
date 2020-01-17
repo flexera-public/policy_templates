@@ -61,7 +61,7 @@ Example:
 - Sends an email notification
 - Terminate all instances after approval
 
-### Required Permissions (REQUIRED)
+## Required Permissions (REQUIRED)
 
 Write any CMP/Optima user roles the policy manager needs to run the policy.  Also include any cloud specific permissions needed. It is not necessary to include permissions needed to apply the policy or approve incidents.
 
