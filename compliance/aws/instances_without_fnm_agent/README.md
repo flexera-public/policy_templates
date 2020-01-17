@@ -24,6 +24,7 @@ For administrators [creating and managing credentials](https://docs.rightscale.c
 Provider tag value to match this policy: `aws` , `flexera_fnms_api_key`
 
 Required permissions in the provider:
+
 ```javascript
  {
     "Version": "2016-11-15",
