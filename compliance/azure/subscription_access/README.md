@@ -27,6 +27,7 @@ This policy uses [credentials](https://docs.rightscale.com/policies/users/guides
 For administrators [creating and managing credentials](https://docs.rightscale.com/policies/users/guides/credential_management.html) to use with this policy, the following information is needed:
 
 Provider tag value to match this policy: `azure_rm`
+
 Required permissions in the provider: 
 - Tenant > Microsoft Graph > Directory.Read.all
 - Subscription > Reader
