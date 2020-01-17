@@ -20,25 +20,14 @@ The following policy actions are taken on any resources found to be out of compl
 
 ## Prerequisites
 
-This policy requires the AWS Credential. When applying the policy select the appropriate credentials
-from the list for your tenant. If such credential doesn't exist please contact your cloud admin to create the Credential.
+This policy uses [credentials](https://docs.rightscale.com/policies/users/guides/credential_management.html) for connecting to the cloud -- in order to apply this policy you must have a credential registered in the system that is compatible with this policy. If there are no credentials listed when you apply the policy, please contact your cloud admin and ask them to register a credential that is compatible with this policy. The information below should be consulted when creating the credential.
 
-The credential must contain the value *AWS* in the Provider field.
-Refer to our documentation for more details on the [Credential Service](https://docs.rightscale.com/credentials/)
+### Credential configuration
 
-## Slack Channel Notification Support
+For administrators [creating and managing credentials](https://docs.rightscale.com/policies/users/guides/credential_management.html) to use with this policy, the following information is needed:
 
-The policy includes optional support to send a notification to a slack channel when an anomaly is detected.
-The policy accepts two optional input parameters to support this capability:
-
-- `Slack Channel Name`: This is the slack channel name, e.g. #policy_alerts
-- `RightScale Credential for Slack Channel Webhook`: This is the name of a RightScale credential in the account that contains the Slack webhook URL.
-
-## AWS Required Permissions
-
-This policy requires permissions to describe AWS S3 ListAllMyBuckets, GetBucketLocation and GetBucketAcl.
-The AWS credentials requires the following permissions:
-
+Provider tag value to match this policy: `aws`
+Required permissions in the provider: 
 ```javascript
 {
     "Version": "2006-03-01",
@@ -54,6 +43,14 @@ The AWS credentials requires the following permissions:
     ]
 }
 ```
+
+## Slack Channel Notification Support
+
+The policy includes optional support to send a notification to a slack channel when an anomaly is detected.
+The policy accepts two optional input parameters to support this capability:
+
+- `Slack Channel Name`: This is the slack channel name, e.g. #policy_alerts
+- `RightScale Credential for Slack Channel Webhook`: This is the name of a RightScale credential in the account that contains the Slack webhook URL.
 
 ## Supported Clouds
 
