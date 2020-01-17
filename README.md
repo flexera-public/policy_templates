@@ -34,7 +34,7 @@ Please contact sales@flexera.com to learn more.
 - [AWS Burstable Instance CloudWatch Utilization](./cost/aws/burstable_instance_cloudwatch_credit_utilization/)
 - [AWS Expiring Reserved Instances](./cost/aws/reserved_instances/expiration/)
 - [AWS Idle Compute Instances](./cost/aws/idle_compute_instances/)
-- [AWS Instance CloudWatch Utilization](./cost/aws/instance_cloudwatch_utilization/)
+- [AWS Inefficient Instance Utilization using CloudWatch](./cost/aws/instance_cloudwatch_utilization/)
 - [AWS Reserved Instances Utilization](./cost/aws/reserved_instances/utilization/)
 - [AWS Reserved Instance Reservation Coverage](./cost/aws/reserved_instances/coverage/)
 - [AWS Reserved Instances Report by Billing Center](./cost/aws/reserved_instances/report_by_bc)
@@ -62,7 +62,7 @@ Please contact sales@flexera.com to learn more.
 
 - [Azure Hybrid Use Benefit](./cost/azure/hybrid_use_benefit/)
 - [Azure Idle Compute Instances](./cost/azure/idle_compute_instances/)
-- [Azure Instances Utilization from Log Analytics](./cost/azure/instances_log_analitics_utilization/)
+- [Azure Inefficient Instance Utilization using Log Analytics](./cost/azure/instances_log_analitics_utilization/)
 - [Azure Expiring Reserved Instances](./cost/azure/reserved_instances/expiration)
 - [Azure Reserved Instance Utilization](./cost/azure/reserved_instances/utilization/)
 - [Azure Reserved Instance Recommendations](./cost/azure/reserved_instances/recommendations)
@@ -80,7 +80,7 @@ Please contact sales@flexera.com to learn more.
 
 ##### Compute
 
-- [Google StackDriver Utilization](./cost/google/instances_stackdriver_utilization/)
+- [Google Inefficient Instance Utilization using StackDriver](./cost/google/instances_stackdriver_utilization/)
 - [Google Committed Use Discount (CUD)](./cost/google/cud_report/)
 - [Google Idle Compute Instances](./cost/google/idle_compute_instances/)
 - [Google Expiring Committed Use Discount (CUD)](./cost/google/cud_expiration/)
