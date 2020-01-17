@@ -1,10 +1,16 @@
 name "Azure Rightsize SQL Databases"
 rs_pt_ver 20180301
 type "policy"
-short_description "Checks Azure SQL databases based on CPU thresholds, and recommend resizing after user approval. See the [README](https://github.com/flexera/policy_templates/tree/master/cost/azure/rightsize_sql_instances/) and [docs.rightsize.com/policies](http://docs.rightsize.com/policies/) to learn more."
-long_description "Version: 1.2"
+short_description "Check for Inefficient database services that are inside or outside the CPU threshold for the last 30 days and resizes them after approval. See the [README](https://github.com/flexera/policy_templates/tree/master/cost/azure/rightsize_sql_instances/) and [docs.rightscale.com/policies](https://docs.rightscale.com/policies/) to learn more."
+long_description ""
 severity "low"
 category "Cost"
+info(
+  version: "2.0",
+  provider: "Azure",
+  service: "SQL",
+  policy_set: "RightSize Database Services"
+)
 
 ###############################################################################
 # Permissions
@@ -18,20 +24,6 @@ end
 ###############################################################################
 # Parameters
 ###############################################################################
-
-parameter "param_azure_tenant_id" do
-  type "string"
-  label "Azure AD Tenant ID"
-  description "The Azure AD Tenant ID used for the Azure API Authentication."
-  category "Azure"
-end
-
-parameter "param_azure_sub" do
-  type "string"
-  label "Azure Subscription ID"
-  description "The Azure Subscription ID used for the Azure API."
-  category "Azure"
-end
 
 parameter "param_avg_cpu_upsize" do
   type "number"
@@ -67,15 +59,13 @@ end
 ###############################################################################
 # Authentication
 ###############################################################################
-auth "azure_auth", type: "oauth2" do
-  token_url join(["https://login.microsoftonline.com/",$param_azure_tenant_id,"/oauth2/token"])
-  grant type: "client_credentials" do
-    client_id cred("AZURE_APPLICATION_ID")
-    client_secret cred("AZURE_APPLICATION_KEY")
-    additional_params do {
-      "resource" => "https://management.azure.com/"
-    } end
-  end
+
+#authenticate with Azure
+credentials "azure_auth" do
+  schemes "oauth2"
+  label "Azure"
+  description "Select the Azure Resource Manager Credential from the list."
+  tags "provider=azure_rm"
 end
 
 ###############################################################################
@@ -94,27 +84,49 @@ end
 # Datasources
 ###############################################################################
 
-#https://docs.microsoft.com/en-us/rest/api/resources/resources/list
-datasource "ds_azure_sql_databases" do
+datasource "ds_subscriptions" do
   request do
     auth $azure_auth
     pagination $azure_pagination
     host "management.azure.com"
-    path join(["/subscriptions/", $param_azure_sub, "/resources"])
+    path "/subscriptions/"
+    query "api-version","2019-06-01"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "value[*]") do
+      field "subscriptionId", jmes_path(col_item,"subscriptionId")
+      field "displayName", jmes_path(col_item,"displayName")
+      field "state", jmes_path(col_item,"state")
+    end
+  end
+end
+
+#https://docs.microsoft.com/en-us/rest/api/resources/resources/list
+datasource "ds_azure_sql_databases" do
+  iterate $ds_subscriptions
+  request do
+    auth $azure_auth
+    pagination $azure_pagination
+    host "management.azure.com"
+    path join(["/subscriptions/", val(iter_item,"subscriptionId"), "/resources"])
     query "api-version","2019-08-01"
     query "$filter", "resourceType eq 'Microsoft.Sql/servers/databases'"
     header "User-Agent", "RS Policies"
   end
   result do
     encoding "json"
-      collect jmes_path(response, "value") do
-        field "id", jmes_path(col_item,"id")
-        field "name", jmes_path(col_item,"name")
-        field "location", jmes_path(col_item,"location")
-        field "type", jmes_path(col_item,"type")
-        field "kind", jmes_path(col_item,"kind")
-        field "sku" , jmes_path(col_item,"sku")
-        field "tags", jmes_path(col_item,"tags")
+    collect jmes_path(response, "value") do
+      field "id", jmes_path(col_item,"id")
+      field "name", jmes_path(col_item,"name")
+      field "location", jmes_path(col_item,"location")
+      field "type", jmes_path(col_item,"type")
+      field "kind", jmes_path(col_item,"kind")
+      field "sku" , jmes_path(col_item,"sku")
+      field "tags", jmes_path(col_item,"tags")
+      field "subscriptionId",val(iter_item,"subscriptionId")
+      field "subscriptionName",val(iter_item,"displayName")
     end
   end
 end
@@ -126,16 +138,18 @@ datasource "ds_azure_sql_database_metrics" do
   end
   result do
     encoding "json"
-      collect jmes_path(response, "value") do
-        field "id", val(iter_item,"id")
-        field "location", val(iter_item,"location")
-        field "name", val(iter_item,"name")
-        field "kind", val(iter_item,"kind")
-        field "type", val(iter_item,"type")
-        field "sku" , val(iter_item,"sku")
-        field "tags", val(iter_item,"tags")
-        field "unit", jmes_path(col_item,"unit")
-        field "timeseries", jmes_path(col_item,"timeseries")
+    collect jmes_path(response, "value") do
+      field "id", val(iter_item,"id")
+      field "location", val(iter_item,"location")
+      field "name", val(iter_item,"name")
+      field "kind", val(iter_item,"kind")
+      field "type", val(iter_item,"type")
+      field "sku" , val(iter_item,"sku")
+      field "tags", val(iter_item,"tags")
+      field "unit", jmes_path(col_item,"unit")
+      field "timeseries", jmes_path(col_item,"timeseries")
+      field "subscriptionId",val(iter_item,"subscriptionId")
+      field "subscriptionName",val(iter_item,"subscriptionName")
     end
   end
 end
@@ -278,7 +292,9 @@ script "js_merged_metrics", type: "javascript" do
             unit: databases_metrics[i].unit,
             tags: databases_metrics[i].tags,
             recommendation: recommendation,
-            recommended_capacity:recommended_capacity
+            recommended_capacity:recommended_capacity,
+            subscriptionId: databases_metrics[i].subscriptionId,
+            subscriptionName: databases_metrics[i].subscriptionName
           })
         }
       }
@@ -302,10 +318,10 @@ policy 'policy_azure_db_utilization' do
   - Downsize Average CPU% threshold : {{ parameters.param_avg_cpu_downsize }}
 
 
-| Region | Name | Resource Group | Kind | Type | Current Capacity | Recommended Capacity | SKU - Name | SKU - Tier | CPU Average % | Recommendation |
-| ------ | ---- | -------------- | ---- | ---- | ---------------- | -------------------- | ---------- | ---------- | ------------- | -------------- |
+| Subscription Name | Region | Name | Resource Group | Kind | Type | Current Capacity | Recommended Capacity | SKU - Name | SKU - Tier | CPU Average % | Recommendation |
+| ----------------- | ------ | ---- | -------------- | ---- | ---- | ---------------- | -------------------- | ---------- | ---------- | ------------- | -------------- |
 {{ range data -}}
-| {{.location}} | {{.name}} | {{.resource_group}} | {{.kind}} | {{.type}} | {{.sku.capacity}} | {{.recommended_capacity}} | {{.sku.name}} | {{.sku.tier}} | {{ .average_cpu }} % | {{.recommendation}} |
+| {{.subscriptionName}} | {{.location}} | {{.name}} | {{.resource_group}} | {{.kind}} | {{.type}} | {{.sku.capacity}} | {{.recommended_capacity}} | {{.sku.name}} | {{.sku.tier}} | {{ .average_cpu }} % | {{.recommendation}} |
 {{ end -}}
 
 ___
@@ -335,21 +351,21 @@ escalation "esc_update_rightsize_sql_databases_approval" do
     description "Explain why are you approving the action."
     end
   end
-  run "update_rightsize_sql_databases", data, $param_azure_tenant_id
+  run "update_rightsize_sql_databases", data
 end
 
 ###############################################################################
 # Cloud Workflow
 ###############################################################################
 
-define update_rightsize_sql_databases($data, $param_azure_tenant_id) return $all_responses do
-  call get_access_token($param_azure_tenant_id) retrieve $access_token
+define update_rightsize_sql_databases($data) return $all_responses do
 
   $all_responses = []
   foreach $item in $data do
     if $item["recommended_capacity"] != "n/a"
       sub on_error: skip do
         $response = http_request(
+          auth: $$azure_auth,
           verb: "patch",
           host: "management.azure.com",
           https: true,
@@ -359,8 +375,7 @@ define update_rightsize_sql_databases($data, $param_azure_tenant_id) return $all
           },
           headers: {
             "cache-control": "no-cache",
-            "content-type": "application/json",
-            "authorization": "Bearer " + $access_token
+            "content-type": "application/json"
           },
           body: {
             "sku": {
@@ -375,49 +390,6 @@ define update_rightsize_sql_databases($data, $param_azure_tenant_id) return $all
     end
   end
  end
-end
-
-define get_access_token($param_azure_tenant_id) return $access_token do
-  $$debug=true
-  $client_id = cred("AZURE_APPLICATION_ID")
-  call url_encode(cred("AZURE_APPLICATION_KEY")) retrieve $client_secret
-
-  $body_string = "grant_type=client_credentials&resource=https://management.core.windows.net/&client_id="+$client_id+"&client_secret="+$client_secret
-
-  $auth_response = http_post(
-    url: join(["https://login.microsoftonline.com/",$param_azure_tenant_id,"/oauth2/token?api-version=1.0"]),
-    headers : {
-      "cache-control":"no-cache",
-      "content-type":"application/x-www-form-urlencoded"
-    },
-    body:$body_string
-  )
-
-  $auth_response_body = $auth_response["body"]
-  $access_token = $auth_response_body["access_token"]
-end
-
-define url_encode($string) return $encoded_string do
-  $encoded_string = $string
-  $encoded_string = gsub($encoded_string, " ", "%20")
-  $encoded_string = gsub($encoded_string, "!", "%21")
-  $encoded_string = gsub($encoded_string, "#", "%23")
-  $encoded_string = gsub($encoded_string, "$", "%24")
-  $encoded_string = gsub($encoded_string, "&", "%26")
-  $encoded_string = gsub($encoded_string, "'", "%27")
-  $encoded_string = gsub($encoded_string, "(", "%28")
-  $encoded_string = gsub($encoded_string, ")", "%29")
-  $encoded_string = gsub($encoded_string, "*", "%2A")
-  $encoded_string = gsub($encoded_string, "+", "%2B")
-  $encoded_string = gsub($encoded_string, ",", "%2C")
-  $encoded_string = gsub($encoded_string, "/", "%2F")
-  $encoded_string = gsub($encoded_string, ":", "%3A")
-  $encoded_string = gsub($encoded_string, ";", "%3B")
-  $encoded_string = gsub($encoded_string, "=", "%3D")
-  $encoded_string = gsub($encoded_string, "?", "%3F")
-  $encoded_string = gsub($encoded_string, "@", "%40")
-  $encoded_string = gsub($encoded_string, "[", "%5B")
-  $encoded_string = gsub($encoded_string, "]", "%5D")
 end
 
 define sys_log($subject, $detail) do
