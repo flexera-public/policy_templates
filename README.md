@@ -80,7 +80,7 @@ Please contact sales@flexera.com to learn more.
 
 ##### Compute
 
-- [Google StackDriver Utilization](./cost/google/instances_stackdriver_utilization/)
+- [Google Inefficient Instance Utilization using StackDriver](./cost/google/instances_stackdriver_utilization/)
 - [Google Committed Use Discount (CUD)](./cost/google/cud_report/)
 - [Google Idle Compute Instances](./cost/google/idle_compute_instances/)
 - [Google Expiring Committed Use Discount (CUD)](./cost/google/cud_expiration/)
