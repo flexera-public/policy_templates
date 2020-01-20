@@ -61,14 +61,9 @@ Example:
 - Sends an email notification
 - Terminate all instances after approval
 
-### Required Permissions (REQUIRED)
+### Prerequisites
 
-Write any CMP/Optima user roles the policy manager needs to run the policy.  Also include any cloud specific permissions needed. It is not necessary to include permissions needed to apply the policy or approve incidents.
-
-Some good examples are written in following policy policy_templates:
-
-- [https://github.com/flexera/policy_templates/tree/master/cost/aws/elb/clb_unused](https://github.com/flexera/policy_templates/tree/master/cost/aws/elb/clb_unused)
-- [https://github.com/flexera/policy_templates/tree/master/cost/azure/object_storage_optimization](https://github.com/flexera/policy_templates/tree/master/cost/azure/object_storage_optimization)
+This section describes what it takes to run the policy.  This may include the Credential Managements, and provider permissions.  See more below.
 
 ### Installation (OPTIONAL)
 
@@ -117,17 +112,17 @@ Policy actions may include automation to alert or remediate violations found in 
 - Sends an email notification
 - list additional actions if any.
 
-## Required Permissions
+## Prerequisites
 
-### Required CMP Roles
+This policy uses [credentials](https://docs.rightscale.com/policies/users/guides/credential_management.html) for connecting to the cloud -- in order to apply this policy you must have a credential registered in the system that is compatible with this policy. If there are no credentials listed when you apply the policy, please contact your cloud admin and ask them to register a credential that is compatible with this policy. The information below should be consulted when creating the credential.
 
-- Cloud Management: admin or credential_viewer
+### Credential configuration
 
-### AWS Required Permissions
+For administrators [creating and managing credentials](https://docs.rightscale.com/policies/users/guides/credential_management.html) to use with this policy, the following information is needed:
 
-This policy requires permissions to describe AWS LoadBalancers, InstanceHealth, tags and DeleteLoadBalancer.
-The Cloud Management automatically creates two credentials when connecting AWS to Cloud Management; AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY. If you did not connect your AWS account to CMP you will need to add the AWS_ACCESS_KEY_ID AND AWS_SECRET_ACCESS_KEY credentials manually. Read more about [adding Credentials](https://docs.rightscale.com/cm/dashboard/design/credentials/#overview)
-The IAM user credentials contained in those credentials will require the following permissions:
+Provider tag value to match this policy: `aws`
+
+Required permissions in the provider:
 
 `` ```javascript
 {
