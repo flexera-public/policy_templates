@@ -12,29 +12,18 @@ The policy leverages the Azure API to check all instances that have been stopped
 
 - *Email addresses of the recipients you wish to notify* - A list of email addresses to notify
 - *Stopped days* - Number of days an instance is stopped before it is added to the report
-- *Azure AD Tenant ID* - the Azure AD Tenant ID used for the Azure API Authentication
-- *Azure Subscription ID* - the Azure Subscription ID used for the Azure API Authentication
 
 ## Prerequisites
 
-- Azure Service Principal (AKA Azure Active Directory Application) with the appropriate permissions to manage resources in the target subscription
-- The following RightScale Credentials
-  - `AZURE_APPLICATION_ID`
-  - `AZURE_APPLICATION_KEY`
+This policy uses [credentials](https://docs.rightscale.com/policies/users/guides/credential_management.html) for connecting to the cloud -- in order to apply this policy you must have a credential registered in the system that is compatible with this policy. If there are no credentials listed when you apply the policy, please contact your cloud admin and ask them to register a credential that is compatible with this policy. The information below should be consulted when creating the credential.
 
-## Installation
+### Credential configuration
 
-1. Follow steps to [Create an Azure Active Directory Application](https://docs.microsoft.com/en-us/azure/azure-resource-manager/resource-group-create-service-principal-portal#create-an-azure-active-directory-application)
-1. Grant the Azure AD Application access to the necessary subscription(s)
-1. [Retrieve the Application ID & Authentication Key](https://docs.microsoft.com/en-us/azure/azure-resource-manager/resource-group-create-service-principal-portal#get-application-id-and-authentication-key)
-1. Create RightScale Credentials with values that match the Application ID (Credential name: `AZURE_APPLICATION_ID`) & Authentication Key (Credential name: `AZURE_APPLICATION_KEY`)
-1. [Retrieve your Tenant ID](https://docs.microsoft.com/en-us/azure/azure-resource-manager/resource-group-create-service-principal-portal#get-tenant-id)
+For administrators [creating and managing credentials](https://docs.rightscale.com/policies/users/guides/credential_management.html) to use with this policy, the following information is needed:
 
-## Required RightScale Roles
+Provider tag value to match this policy: `azure_rm`
 
-- Cloud Management - credential_viewer
-
-## Azure Required Permissions
+Required permissions in the provider:
 
 - Microsoft.Compute/virtualMachines/read
 - Microsoft.Compute/virtualMachines/delete

@@ -1,0 +1,239 @@
+name "Schedule FlexNet Manager report - On Premise"
+rs_pt_ver 20180301
+type "policy"
+short_description "Schedule a FlexNet Manager report (Custom view) and send it as a email to one or more recipients.  See the [README](https://github.com/flexera/policy_templates/tree/master/operational/fnms/schedule_fnms_reports_on_premise) and [docs.rightscale.com/policies](https://docs.rightscale.com/policies/) to learn more."
+long_description ""
+severity "medium"
+category "Operational"
+info( version: "2.0", 
+      provider: "Flexera FNMS", 
+      service: "", 
+      policy_set: "Schedule FlexNet Manager Report" 
+)
+
+###############################################################################
+# Permissions
+###############################################################################
+
+permission "perm_read_creds" do
+  actions   "rs_cm.show_sensitive","rs_cm.index_sensitive"
+  resources "rs_cm.credentials"
+end
+
+parameter "param_fnms_url" do
+  type "string"
+  label "FNMS Report URL"
+  description "Full FlexNet URL (e.g. http://<<host_name>>)"
+  allowed_pattern /^(http:\/\/)+[a-z0-9]+([\-\.]{1}[a-z0-9]+)*\.[a-z0-9]{2,5}(:[0-9]{1,5})?(\/.*)?$/
+end
+
+parameter "param_report_id" do
+  type "string"
+  label "FNMS Report ID"
+  description "FlexNet manager Custom View ID"
+end
+
+parameter "param_report_title" do
+  type "string"
+  label "Report Title in the Mail"
+  default "FNMS Report"
+  description "Report header in the report result"
+end
+
+parameter "param_email" do
+  type "list"
+  label "Email addresses of the recipients you wish to notify"
+  description "A list of email addresse(s) to notify"
+end
+
+credentials "api_ntlm_auth" do
+  schemes "ntlm"
+  label "FNMS NTLM"
+  description "Select the FNMS NTLM Credential from the list."
+  tags "provider=flexera_fnms_ntlm"
+end
+
+# Build the API request object dynamically because we need to find the right authentiocation model and the right 
+script "fnms_request", type: "javascript" do
+  parameters "fnms_host", "report_id"
+  result "request"
+  code <<-EOS
+    var sHost = fnms_host.substr(fnms_host.indexOf('://')+3)
+    if (sHost.indexOf('/') > -1)  sHost = sHost.substr(0,sHost.indexOf('/'))
+
+    // Find the right schema
+    var sScheme = "http"
+    
+    //Shoul we use User/password or Token to authenticate
+    var sAuth = "api_ntlm_auth"
+
+    var sBody = '<?xml version="1.0" encoding="utf-8"?>'
+    sBody    += '<soap:Envelope xmlns:soap="http://www.w3.org/2003/05/soap-envelope" xmlns:tem="http://tempuri.org/">'
+    sBody    += '  <soap:Body>'
+    sBody    += '    <tem:GetCustomView>'
+    sBody    += '      <tem:customViewID>' +report_id+ '</tem:customViewID>'
+    sBody    += '     <tem:rowLimit>100000</tem:rowLimit>'
+    sBody    += '   </tem:GetCustomView>'
+    sBody    += '  </soap:Body>'
+    sBody    += '</soap:Envelope>'
+
+    var request = {
+      auth: sAuth,
+      scheme: sScheme,
+      host: sHost,
+      path: "/ManageSoftServices/ComplianceAPIService/ComplianceAPIService.asmx",
+      verb: "POST",
+      headers: {
+        "Content-Type": "text/xml;charset=utf-8"
+      },
+
+      body: sBody
+    } 
+  EOS
+end
+
+script "xml2json", type: "javascript" do
+  parameters "sXML", "header"
+  result "result"
+  code <<-EOS
+
+        var includeID = false;  //Flag fro including colimns with ID in it
+        var result = {};
+        result.header = [];
+
+        //First build the header area..
+        for (i=0; i< header.length; i++) {
+          var item ={};
+          item.name = header[i].name;
+          item.caption = header[i].caption.length != 0 ? header[i].caption : header[i].name;
+          item.show = ((header[i].name.indexOf("ID") === header[i].name.length - 2) && (i==0)) ? false : true;   //Strip 1 row if name ends in with ID
+          result.header.push(item);
+        }  
+
+        result.data = [];
+
+        //Now extract the data part 
+        RawData = sXML.split("<NewDataSet");
+        if (RawData.length > 1) {
+          RawData = RawData[1].split("</NewDataSet");
+          //strip the tailing > in the data from last node.
+          sRawData = "" + RawData[0].substr(RawData[0].indexOf(">")+1);
+
+          //Now split it into 
+          DataCollection = sRawData.split("<SearchResults");
+          if (DataCollection.length > 0) {
+            //Walk through the collection 
+            for (i=0; i < DataCollection.length; i++) {
+              //Get each columns based on the header
+              var row = {};
+              for (x=0; x< result.header.length; x++) {
+                sRaw = DataCollection[i]
+                sRaw = sRaw.substr(sRaw.indexOf("<" + result.header[x].name +">")+2+result.header[x].name.length);
+                sVal = sRaw.substr(0,sRaw.indexOf("</" + result.header[x].name +">"));
+                
+                row[result.header[x].name] = sVal;
+              }
+              result.data.push(row);
+            }
+          } 
+            /* else {   //Build one blank row
+            var row = {};
+              for (x=0; x< result.header.length; x++) {
+                row[result.header[x].name] = "";
+              }
+              result.data.push(row);
+            }  
+            */
+        }
+
+  EOS
+end
+
+script "parse_report", type: "javascript" do
+  parameters "data", "name"
+  result "result"
+  code <<-EOS
+    var result = {};
+    result.name = name;
+    result.sResult = "";
+
+    //Function repeats a character a number of times
+    function pad(input, times) {
+        sRet = "";
+        for (i=0; i < times; i++) sRet += input;
+        return sRet;
+    }
+
+    //format the Report output
+    result.sResult = "| ";
+    var sSeparator = "| ";
+    for (x=0; x < data.header.length; x++) {
+      if (data.header[x].show) {
+        result.sResult += data.header[x].caption + " | ";
+        sSeparator += pad('-',data.header[x].caption.length) + " | ";
+      }
+    }
+    result.sResult = result.sResult.trim() + "\\n";
+    result.sResult += sSeparator.trim() + "\\n";
+    
+    //now the data
+    for (i=0; i < data.data.length; i++) {
+      if (data.data[i][data.header[0].name] != "") {
+        sLine = "| ";
+        for (x=0; x < data.header.length; x++) {
+          if (data.header[x].show) {
+            sLine += data.data[i][data.header[x].name] + " | ";
+          }
+        }
+        result.sResult += sLine.trim() + "\\n";     
+      } 
+    }
+  EOS
+end
+
+# Use the request object above to make the API call and get the data
+datasource "fnms_report_header_request" do
+  request do
+    run_script $fnms_request, $param_fnms_url, $param_report_id
+  end
+  result do
+    encoding "xml"
+    collect xpath(response,"//choice/element[@name='SearchResults']/complexType/sequence/element") do
+      field "name", xpath(col_item, "@name")
+      field "caption", xpath(col_item, "@Caption")
+    end
+  end
+end
+
+# Use the request object above to make the API call and get the data
+datasource "fnms_report_request" do
+  request do
+    run_script $fnms_request, $param_fnms_url, $param_report_id
+  end
+  result do
+    encoding "text"
+  end
+end
+
+datasource "fnms_raw_json" do
+  run_script $xml2json, $fnms_report_request, $fnms_report_header_request
+end
+
+datasource "fnms_report" do 
+  run_script $parse_report, $fnms_raw_json, $param_report_title
+end
+
+policy 'fnms_report_policy' do
+  validate $fnms_report do
+    summary_template "FNMS Report - {{data.name}}"
+    detail_template <<-EOS 
+{{data.sResult}}
+    EOS
+    escalate $send_report
+    check eq(1, 0)
+  end
+end
+
+escalation "send_report" do 
+  email $param_email
+end 
