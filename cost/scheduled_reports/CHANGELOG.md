@@ -14,7 +14,7 @@
 
 ## v1.6
 
-- added "Resource Group", "Cloud Vendor", "Cloud Vendor Account", and "Cloud Vendor Account Name" as a dimensions 
+- added "Resource Group", "Cloud Vendor", "Cloud Vendor Account", and "Cloud Vendor Account Name" as a dimensions
 - added support to report on child Billing Centers
 - forced chart legend to bottom of chart
 - fixed the billing data api call that was leaving off a days worth of costs
