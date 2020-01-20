@@ -63,8 +63,8 @@ gathering details etc.
 
 ### Input Parameters (REQUIRED)
 
-Inputs parameters are the fields displayed when applying the policy template.  
-Each parameter listed in the policy template should be added to the readme.  
+Inputs parameters are the fields displayed when applying the policy template.
+Each parameter listed in the policy template should be added to the readme.
 Include extra details that may not fit into the parameter label or description
 fields of the parameter.  The field label should be bolded and the description
 and other details leave unbolded.
@@ -92,7 +92,7 @@ This section describes what it takes to run the policy.  This may include the
 
 ### Installation (OPTIONAL)
 
-In this section include additional configuration needed to run the policy.  
+In this section include additional configuration needed to run the policy.
 Additional information may include setting up credentials in Cloud Management,
  configuring an external system etc.
 
@@ -113,7 +113,7 @@ may need to know to use or change the policy.
 
 ### Example Readme
 
-Copy and paste the example below to start a new policy readme from scratch.   
+Copy and paste the example below to start a new policy readme from scratch. 
 See more details about each section above.  Read the example carefully and
 replace the example text with the details that apply to your policy.
 
