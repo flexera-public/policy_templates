@@ -3,6 +3,7 @@
 ## v1.9
 
 - Fix for Bug Dimension Information Missing for DAY and WEEK.
+- Added default_frequency "monthly"
 
 ## v1.8
 
