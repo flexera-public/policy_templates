@@ -113,7 +113,7 @@ may need to know to use or change the policy.
 
 ### Example Readme
 
-Copy and paste the example below to start a new policy readme from scratch. 
+Copy and paste the example below to start a new policy readme from scratch.
 See more details about each section above.  Read the example carefully and
 replace the example text with the details that apply to your policy.
 
