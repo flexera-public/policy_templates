@@ -1,4 +1,9 @@
 # Change log
+
+v1.9
+----
+- Fix for Bug Dimension Information Missing for DAY and WEEK.
+
 v1.8
 ----
 - Provided option to display chart with different granularity.

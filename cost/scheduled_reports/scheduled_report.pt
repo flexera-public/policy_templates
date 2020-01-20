@@ -14,7 +14,7 @@ _Note 1: The last 3 days of data in the current week or month will contain incom
 _Note 2: The account you apply the policy to is unimportant as Optima metrics are scoped to the Org._
 
 See [README](https://github.com/flexera/policy_templates/tree/master/cost/scheduled_reports) for more details"
-long_description "Version: 1.8"
+long_description "Version: 1.9"
 severity "low"
 category "Cost"
 tenancy "single"
@@ -855,9 +855,13 @@ script "js_generate_report", type: "javascript" do
     var topValues;
     var categories=[];
     var otherData=[];
+    topValues = _.sortBy(_.filter(collated_data, function(x){ return (x.yearMonth==currentMonth &&  x.category != "")}),'cost').reverse();
+    _.each(topValues, function(topValue){
+      if(!_.contains(categories, topValue.category) && _.size(categories) < 10){
+        categories.push(topValue.category);	
+      }
+    })
     if(param_billing_term==="Month"){
-    topValues = _.last(_.sortBy(_.filter(collated_data, function(x){ return x.yearMonth==currentMonth}),'cost'),10);
-    categories = _.map(topValues, function(line) {return line.category});
     // Get all of the data that is not in the top categories and sum it up by month
     nonTopData = _.groupBy(_.reject(collated_data, function(d){ return _.contains(categories, d.category)}), function(d) { return d.yearMonth });
     _.each(nonTopData, function(d, k){
@@ -927,7 +931,19 @@ script "js_generate_report", type: "javascript" do
       })
       chartDataArray.push(seriesData.join())
     }
-     }else if(param_billing_term==="Day"){	
+     }else if(param_billing_term==="Day"){
+       _.each(categories, function(category){
+         var seriesData = [];
+         _.each(stringDays, function(day){
+           var tempTotal = _.where(collated_data, {stringDay: day, category: category});
+           if ( tempTotal.length === 0 ) {
+             seriesData.push("_")
+           } else {
+             seriesData.push(Math.round(tempTotal[0].cost))
+           }
+         })
+         chartDataArray.push(seriesData.join())
+       }) 
       // Add the "Other" category and associated data
       if ( otherData.length > 0 ) {
         categories.push("Other");
@@ -942,7 +958,19 @@ script "js_generate_report", type: "javascript" do
         })
       chartDataArray.push(seriesData.join())	
       }
-    }else if(param_billing_term==="Week"){	
+    }else if(param_billing_term==="Week"){
+      _.each(categories, function(category){
+        var seriesData = [];
+        _.each(stringWeek, function(week){
+          var tempTotal = _.where(collated_data, {stringWeek: week, category: category});
+          if ( tempTotal.length === 0 ) {
+            seriesData.push("_")
+          } else {
+            seriesData.push(Math.round(tempTotal[0].cost))
+          }
+        })
+        chartDataArray.push(seriesData.join())
+      }) 
       // Add the "Other" category and associated data
       if( otherData.length > 0 ) {
         categories.push("Other");
