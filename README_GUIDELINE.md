@@ -139,7 +139,8 @@ the policy can be applied.
 ## Policy Actions
 
 Policy actions may include automation to alert or remediate violations found in the
- Policy Incident. Actions that destroy or terminate a resource generally require approval from the Policy Approver. This policy includes the following actions.
+ Policy Incident. Actions that destroy or terminate a resource generally require
+ approval from the Policy Approver. This policy includes the following actions.
 
 - Sends an email notification
 - list additional actions if any.
