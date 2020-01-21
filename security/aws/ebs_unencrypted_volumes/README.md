@@ -1,26 +1,33 @@
-## AWS Unencrypted Volumes
+# AWS Unencrypted Volumes
 
-### What it does
+## What it does
+
 This policy checks all Elastic Block Store (EBS) volumes in a given account and reports on any that are not encrypted.
- 
-### Functional Details
- 
+
+## Functional Details
+
 The policy leverages the AWS EC2 API to determine volume encryption settings.
- 
-#### Input Parameters
- 
+
+## Input Parameters
+
 - *Email addresses of the recipients you wish to notify* - A list of email addresses to notify
-- *Ignore tags* - EBS volumes with any of these tags will be ignored 
- 
-### Required RightScale Roles
- 
-- policy_manager
-- admin or credential_viewer
+- *Ignore tags* - EBS volumes with any of these tags will be ignored
 
-### AWS Required Permissions
+## Policy Actions
 
-This policy requires permissions to describe EBS volumes.
-The Cloud Management Platform automatically creates two Credentials when connecting AWS to Cloud Management; AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY. The IAM user credentials contained in those credentials will require the following permissions:
+- Send an email report
+
+## Prerequisites
+
+This policy uses [credentials](https://docs.rightscale.com/policies/users/guides/credential_management.html) for connecting to the cloud -- in order to apply this policy you must have a credential registered in the system that is compatible with this policy. If there are no credentials listed when you apply the policy, please contact your cloud admin and ask them to register a credential that is compatible with this policy. The information below should be consulted when creating the credential.
+
+### Credential configuration
+
+For administrators [creating and managing credentials](https://docs.rightscale.com/policies/users/guides/credential_management.html) to use with this policy, the following information is needed:
+
+Provider tag value to match this policy: `aws`
+
+Required permissions in the provider:
 
 ```javascript
 {
@@ -33,11 +40,11 @@ The Cloud Management Platform automatically creates two Credentials when connect
   ]
 }
 ```
- 
-### Supported Clouds
- 
+
+## Supported Clouds
+
 - AWS
 
-### Cost
- 
+## Cost
+
 This Policy Template does not incur any cloud costs.
