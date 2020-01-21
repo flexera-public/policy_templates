@@ -1,10 +1,16 @@
 name "AWS Delete Unused Classic Load Balancers"
 rs_pt_ver 20180301
 type "policy"
-short_description "Report and remediate any Classic Load Balancers (CLB) that are not currently in use. \n See the [README](https://github.com/rightscale/policy_templates/tree/master/cost/aws/elb/clb_unused) and [docs.rightscale.com/policies](http://docs.rightscale.com/policies/) to learn more."
-long_description "Version: 1.2"
+short_description "Report and remediate any Classic Load Balancers (CLB) that are not currently in use. \n See the [README](https://github.com/flexera/policy_templates/tree/master/cost/aws/elb/clb_unused) and [docs.rightscale.com/policies](https://docs.rightscale.com/policies/) to learn more."
+long_description ""
 category "Cost"
 severity "low"
+info(
+  version: "2.0",
+  provider: "AWS",
+  service: "ELB",
+  policy_set: ""
+)
 
 ###############################################################################
 # Permissions
@@ -34,11 +40,12 @@ end
 # Authentication
 ###############################################################################
 
-auth "auth_aws", type: "aws" do
-  version 4
-  service "elasticloadbalancing"
-  access_key cred('AWS_ACCESS_KEY_ID')
-  secret_key cred('AWS_SECRET_ACCESS_KEY')
+#authenticate with AWS
+credentials "auth_aws" do
+  schemes "aws","aws_sts"
+  label "AWS"
+  description "Select the AWS Credential from the list"
+  tags "provider=aws"
 end
 
 ###############################################################################
@@ -269,10 +276,17 @@ define delete_CLB($data) return $all_responses do
   $all_responses = []
   foreach $item in $data do
     sub on_error: skip do
-      $response = http_get(
-        url: "https://elasticloadbalancing."+$item["region"]+".amazonaws.com/?Action=DeleteLoadBalancer&Version=2012-06-01&LoadBalancerName="+ $item["loadBalancerName"],
-        "signature": { type: "aws" }
-      )
+	$response = http_request(
+      verb: "get",
+      host: join(["elasticloadbalancing.",$item["region"],".amazonaws.com"]),
+      auth: $$auth_aws,
+      href: join(["/", "?Action=DeleteLoadBalancer", "&LoadBalancerName=", $item["loadBalancerName"], "&Version=2012-06-01"]),
+      https: true,
+      headers:{
+        "cache-control": "no-cache",
+        "content-type": "application/json"
+      }
+    )
       $all_responses << $response
       call sys_log('CLB delete response',to_s($response))
     end
