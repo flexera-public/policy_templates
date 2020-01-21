@@ -42,7 +42,7 @@ end
 ###############################################################################
 
 credentials "auth_aws" do
-  schemes "aws"
+  schemes "aws","aws_sts"
   label "AWS"
   description "Select the AWS Credential from the list"
   tags "provider=aws"
@@ -294,34 +294,38 @@ define enable_encryption_s3_buckets($data) return $all_responses do
   $body_string="<ServerSideEncryptionConfiguration xmlns='http://s3.amazonaws.com/doc/2006-03-01/'><Rule><ApplyServerSideEncryptionByDefault><SSEAlgorithm>AES256</SSEAlgorithm></ApplyServerSideEncryptionByDefault></Rule></ServerSideEncryptionConfiguration>"
   $all_responses = []
   foreach $item in $data do
-    sub on_error: skip do	  
-      $response = http_put(
-        url: join(["https://",$item['host'],"/", $item['bucket_name'],"/","?encryption"]),
-        headers: {"content-type": "application/json"},
-        body:$body_string,
-        auth: $$auth_aws
-      )
-      $all_responses << $response
-      call sys_log('AWS Unencrypted S3 Buckets config change to encryption',to_s($response))
-    end
+    $response = http_request(
+      auth: $$auth_aws,
+      https: true,
+      verb: "put",
+      host: $item['host'],
+      href: "/"+$item['bucket_name']+"/?encryption=true",
+      headers: {"content-type": "application/json"},
+      body:$body_string
+    )
+    $all_responses << $response
+    call sys_log('AWS Unencrypted S3 Buckets config change to encryption',to_s($response))
   end
 end
+
 
 #https://docs.aws.amazon.com/AmazonS3/latest/API/RESTBucketDELETE.html
 define delete_unencrypted_s3_buckets($data) return $all_responses do
   $$debug=true
   $all_responses = []
   foreach $item in $data do
-    sub on_error: skip do      	
-      $response = http_delete(
-        url: join(["https://",$item['host'],"/", $item['bucket_name']]),
-        auth: $$auth_aws
-      )
-      $all_responses << $response
-      call sys_log('Delete AWS Unencrypted S3 Buckets',to_s($response))	  
-    end
+    $response = http_request(
+      auth: $$auth_aws,
+      https: true,
+      verb: "delete",
+      href: "/",
+      url: $item['host']+"/"+$item['bucket_name']
+    )
+    $all_responses << $response
+    call sys_log('Delete AWS Unencrypted S3 Buckets',to_s($response))
   end
 end
+
 
 define sys_log($subject, $detail) do
   if $$debug
