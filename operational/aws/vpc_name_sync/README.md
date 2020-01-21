@@ -27,10 +27,13 @@ The following policy actions are taken on any resources found to be out of compl
 
 This policy uses [credentials](https://docs.rightscale.com/policies/users/guides/credential_management.html) for connecting to the cloud -- in order to apply this policy you must have a credential registered in the system that is compatible with this policy. If there are no credentials listed when you apply the policy, please contact your cloud admin and ask them to register a credential that is compatible with this policy. The information below should be consulted when creating the credential.
 
-## AWS Required Permissions
+### Credential configuration
 
-This policy requires permissions to describe AWS VPCs and tags.
-The IAM user will require the following permissions:
+For administrators [creating and managing credentials](https://docs.rightscale.com/policies/users/guides/credential_management.html) to use with this policy, the following information is needed:
+
+Provider tag value to match this policy: `aws`
+
+Required permissions in the provider:
 
 ```javascript
 {
