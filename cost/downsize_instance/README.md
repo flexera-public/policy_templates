@@ -49,9 +49,9 @@ This policy template uses instance mappings that we have defined in the followin
 
 If you would like to modify the relationships, you can take the following steps:
 
-- Clone the relevant `instance_types.json` file to a publicly available storage location. We recommend GitHub.
-- Make the necessary updates to the mapping file(s)
-- Update the relevant datasources within the Policy Template to pull the `instance_types.json` file from the new location.
+1. Clone the relevant `instance_types.json` file to a publicly available storage location. We recommend GitHub.
+1. Make the necessary updates to the mapping file(s)
+1. Update the relevant datasources within the Policy Template to pull the `instance_types.json` file from the new location.
   - If using GitHub to store the updated mapping files, you simply need to update the `path` field in the datasources `ds_aws_instance_size_map`, `ds_azure_instance_size_map`, and `ds_google_instance_size_map`
 
 ### Cost
