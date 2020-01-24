@@ -1,57 +1,37 @@
-## Azure Blob Storage Optimization
- 
-### What it does
+# Azure Blob Storage Optimization
+
+## What it does
 
 This Policy checks Azure Blob Storage for older objects and can move old object to the Cool or Archive tier after a given period of time.
 
-### Functional Details
+## Functional Details
 
 - This policy identifies all Azure Blob Storage objects last modified outside of the specified timeframe
 - For all objects identified as old, the user can choose to move the object to Cool or Archived tiers after user approval
- 
-### Input Parameters
- 
+
+## Input Parameters
+
 This policy has the following input parameters required when launching the policy.
 
-- *Azure AD Tenant ID* - the Azure AD Tenant ID used for the Azure API Authentication
-- *Azure Subscription ID* - the Azure Subscription ID used for the Azure API Authentication
-- *Storage Account* - Name of Storage account to search for blobs.
+- *Storage Account* - Name of Storage account to search for blobs
 - *Email addresses to notify* - Email addresses of the recipients you wish to notify when new incidents are created
 - *Move to Cool tier after days last modified* - leave blank to skip moving
 - *Move to Archive tier after days last modified* - leave blank to skip moving
 
-### Prerequesites
+## Prerequesites
 
-- Azure Service Principal (AKA Azure Active Directory Application) with the appropriate permissions to manage resources in the target subscription
-- The following RightScale Credentials
-  - `AZURE_APPLICATION_ID`
-  - `AZURE_APPLICATION_KEY`
-  
-### Required RightScale Roles
+This policy requires the Azure Resource Manager Credential. When applying the policy select the appropriate credentials from the list for your tenant. If such credential doesn't exist please contact your cloud admin to create the Credential.
+The credential must contain the value *azure_rm* in the Provider field. Refer to our documentation for more details on the [Credential Service](https://docs.rightscale.com/credentials/)
 
-- policy_designer
-- policy_manager
-- policy_publisher
-- credential_viewer
-- observer
-
-### Installation
-
-1. Follow steps to [Create an Azure Active Directory Application](https://docs.microsoft.com/en-us/azure/azure-resource-manager/resource-group-create-service-principal-portal#create-an-azure-active-directory-application)
-1. Grant the Azure AD Application access to the necessary subscription(s)
-1. [Retrieve the Application ID & Authentication Key](https://docs.microsoft.com/en-us/azure/azure-resource-manager/resource-group-create-service-principal-portal#get-application-id-and-authentication-key)
-1. Create RightScale Credentials with values that match the Application ID (Credential name: `AZURE_APPLICATION_ID`) & Authentication Key (Credential name: `AZURE_APPLICATION_KEY`)
-1. [Retrieve your Tenant ID](https://docs.microsoft.com/en-us/azure/azure-resource-manager/resource-group-create-service-principal-portal#get-tenant-id)
-
-### Supported Clouds
+## Supported Clouds
 
 - Azure
 
-### Cost
+## Cost
 
 This policy does not incur any cloud costs.
 
-### Notes
+## Notes
 
 1.'Storage Blob Data Owner' permission need to be added for storage account to fetch the container/blobs list, before calling List Containers/List Blobs API's.
 2.Enter 'Standard Type' storage account with account kind type as 'StorageV2 (general purpose v2) / BlobStorage' to search for blobs.

@@ -1,10 +1,16 @@
 name "Azure Idle Compute Instances"
 rs_pt_ver 20180301
 type "policy"
-short_description "Checks for Azure Compute Instances that are idle for the last 30 days and terminates them after approval.\n See the [README](https://github.com/flexera/policy_templates/tree/master/cost/azure/idle_compute_instances/) and [docs.rightscale.com/policies](http://docs.rightscale.com/policies/) to learn more."
-long_description "Version: 1.0"
+short_description "Checks for instances that are idle for the last 30 days and terminates them after approval. \n See the [README](https://github.com/flexera/policy_templates/tree/master/cost/azure/idle_compute_instances/) and [docs.rightscale.com/policies](http://docs.rightscale.com/policies/) to learn more."
+long_description ""
 category "Cost"
 severity "low"
+info(
+  version: "2.0",
+  provider: "Azure",
+  service: "Compute",
+  policy_set: "Idle Compute Instances"
+  )
 
 ###############################################################################
 # Parameters
@@ -15,22 +21,6 @@ parameter "param_email" do
   type "list"
   label "Email address"
   description "Please enter the email address to use for the escalation"
-end
-
-#pass in tenant ID
-parameter "param_azure_tenant_id" do
-  type "string"
-  label "Azure AD Tenant ID"
-  category "Azure"
-  description "Please enter your Azure tenant ID."
-end
-
-#pass in Sub ID
-parameter "param_azure_sub" do
-  type "string"
-  label "Azure Subscription ID"
-  category "Azure"
-  description "Please enter your Azure Subscription ID."
 end
 
 #pass in the CPU in percentage
@@ -54,15 +44,11 @@ end
 ###############################################################################
 
 #authenticate with Azure
-auth "azure_auth", type: "oauth2" do
-  token_url join(["https://login.microsoftonline.com/",$param_azure_tenant_id,"/oauth2/token"])
-  grant type: "client_credentials" do
-    client_id cred("AZURE_APPLICATION_ID")
-    client_secret cred("AZURE_APPLICATION_KEY")
-    additional_params do {
-      "resource" => "https://management.azure.com/"
-    } end
-  end
+credentials "azure_auth" do
+  schemes "oauth2"
+  label "Azure"
+  description "Select the Azure Resource Manager Credential from the list."
+  tags "provider=azure_rm"
 end
 
 ###############################################################################
@@ -82,14 +68,34 @@ end
 ###############################################################################
 # Datasources
 ###############################################################################
-
-#get all virtual machines 
-datasource "ds_azure_virtualmachines" do
+#get all subscription details.
+datasource "ds_subscriptions" do
   request do
     auth $azure_auth
     pagination $azure_pagination
     host "management.azure.com"
-    path join(["/subscriptions/", $param_azure_sub, "/providers/Microsoft.Compute/virtualMachines"])
+    path "/subscriptions/"
+    query "api-version","2019-06-01"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "value[*]") do
+      field "subscriptionId", jmes_path(col_item,"subscriptionId")
+      field "displayName", jmes_path(col_item,"displayName")
+      field "state", jmes_path(col_item,"state")
+    end
+  end
+end
+
+#get all virtual machines 
+datasource "ds_azure_virtualmachines" do
+  iterate $ds_subscriptions
+  request do
+    auth $azure_auth
+    pagination $azure_pagination
+    host "management.azure.com"
+	path join(["/subscriptions/", val(iter_item,"subscriptionId"), "/providers/Microsoft.Compute/virtualMachines"])
     query "api-version","2019-03-01"
     header "User-Agent", "RS Policies"
   end
@@ -101,6 +107,8 @@ datasource "ds_azure_virtualmachines" do
       field "name", jmes_path(col_item,"name")
       field "location", jmes_path(col_item, "location")
       field "tags", jmes_path(col_item,"tags")
+	  field "subscriptionId",val(iter_item,"subscriptionId")
+      field "subscriptionName",val(iter_item,"displayName")
     end
   end
 end
@@ -116,7 +124,7 @@ datasource "ds_azure_instance_performance" do
     auth $azure_auth
     pagination $azure_pagination
     host "management.azure.com"
-    path join(["/subscriptions/", $param_azure_sub, "/resourceGroups/", val(iter_item,"rg"), "/providers/Microsoft.Compute/virtualMachines/",val(iter_item,"name"),"/providers/microsoft.insights/metrics"])
+    path join(["/subscriptions/", val(iter_item,"subscriptionId"), "/resourceGroups/", val(iter_item,"rg"), "/providers/Microsoft.Compute/virtualMachines/",val(iter_item,"name"),"/providers/microsoft.insights/metrics"])
     query "api-version","2016-09-01"
     query "timespan","P30D"
     header "User-Agent", "RS Policies"
@@ -128,6 +136,8 @@ datasource "ds_azure_instance_performance" do
     field "id", val(iter_item, "id")
     field "location", val(iter_item, "location")
     field "tags", val(iter_item, "tags")
+	field "subscriptionId",val(iter_item,"subscriptionId")
+    field "subscriptionName",val(iter_item,"displayName")
     field "averages" do
       collect jmes_path(response,"value[].data[]") do
         field "average", jmes_path(col_item,"average")
@@ -195,10 +205,10 @@ policy "azure_resource_policy" do
     detail_template <<-EOS
 # Azure idle compute instances
 
-| Region/Location | Name | CPU Average | Resource Group | Tags |
-| -------- | ---- | ----------- | -------------- | ---- |
+| Subscription Name | Region/Location | Name | CPU Average | Resource Group | Tags |
+| ------------------ | -------- | ---- | ----------- | -------------- | ---- |
 {{ range data -}}
-| {{ .location }} | {{.vmname}} | {{.averagecpu}} | {{.rg}} | {{range $i,$e := .tags}}{{$i}}:{{$e}},{{end}} |
+| {{.subscriptionName}} | {{ .location }} | {{.vmname}} | {{.averagecpu}} | {{.rg}} | {{range $i,$e := .tags}}{{$i}}:{{$e}},{{end}} |
 {{ end -}}
 
 EOS
@@ -226,64 +236,40 @@ escalation "delete_resources" do
      description "Explain why you are approving the action"
     end
   end
- run "delete_resources", data, $param_azure_tenant_id,$param_azure_sub
+ run "delete_resources", data
 end
 
 ###############################################################################
 # Cloud Workflow
 ###############################################################################
 
-define delete_resources($data, $param_azure_tenant_id,$param_azure_sub) return $all_responses do
+define delete_resources($data) return $all_responses do
   $$debug=true
   $$log = []
   $all_responses = []
   $syslog_subject = "Azure Terminate Instance: "
   call sys_log(join([$syslog_subject, "Identified Instances"]),to_s($data))
-  call get_access_token($param_azure_tenant_id) retrieve $access_token
   $all_responses = []
   foreach $item in $data do
    sub on_error: skip do
       $response = http_request(
         verb: "delete",
         host: "management.azure.com",
-        href: join(["/subscriptions/", $param_azure_sub, "/resourceGroups/", $item["rg"], "/providers/Microsoft.Compute/virtualMachines/",$item["vmname"]]),
+		auth: $$azure_auth,
+        href: join(["/subscriptions/", $item['subscriptionId'], "/resourceGroups/", $item["rg"], "/providers/Microsoft.Compute/virtualMachines/",$item["vmname"]]),
         https: true,
         query_strings: {
           "api-version": "2018-06-01"
         },
         headers: {
           "cache-control": "no-cache",
-          "content-type": "application/json",
-          "authorization": "Bearer " + $access_token
+          "content-type": "application/json"
         }
       )
       $all_responses << $response
     end
   end
   call sys_log(join([$syslog_subject, "Responses"]),to_s($all_responses))
-end
-
-
-
-define get_access_token($param_azure_tenant_id) return $access_token do
-
-  $client_id = cred("AZURE_APPLICATION_ID")
-  call url_encode(cred("AZURE_APPLICATION_KEY")) retrieve $client_secret
-
-  $body_string = "grant_type=client_credentials&resource=https://management.core.windows.net/&client_id="+$client_id+"&client_secret="+$client_secret
-
-  $auth_response = http_post(
-    url: join(["https://login.microsoftonline.com/",$param_azure_tenant_id,"/oauth2/token?api-version=1.0"]),
-    headers : {
-      "cache-control":"no-cache",
-      "content-type":"application/x-www-form-urlencoded"
-    },
-    body:$body_string
-  )
-
-  $auth_response_body = $auth_response["body"]
-  $access_token = $auth_response_body["access_token"]
-
 end
 
 #function to log
@@ -298,27 +284,4 @@ define sys_log($subject, $detail) do
       }
     )
   end
-end
-
-define url_encode($string) return $encoded_string do
-  $encoded_string = $string
-  $encoded_string = gsub($encoded_string, " ", "%20")
-  $encoded_string = gsub($encoded_string, "!", "%21")
-  $encoded_string = gsub($encoded_string, "#", "%23")
-  $encoded_string = gsub($encoded_string, "$", "%24")
-  $encoded_string = gsub($encoded_string, "&", "%26")
-  $encoded_string = gsub($encoded_string, "'", "%27")
-  $encoded_string = gsub($encoded_string, "(", "%28")
-  $encoded_string = gsub($encoded_string, ")", "%29")
-  $encoded_string = gsub($encoded_string, "*", "%2A")
-  $encoded_string = gsub($encoded_string, "+", "%2B")
-  $encoded_string = gsub($encoded_string, ",", "%2C")
-  $encoded_string = gsub($encoded_string, "/", "%2F")
-  $encoded_string = gsub($encoded_string, ":", "%3A")
-  $encoded_string = gsub($encoded_string, ";", "%3B")
-  $encoded_string = gsub($encoded_string, "=", "%3D")
-  $encoded_string = gsub($encoded_string, "?", "%3F")
-  $encoded_string = gsub($encoded_string, "@", "%40")
-  $encoded_string = gsub($encoded_string, "[", "%5B")
-  $encoded_string = gsub($encoded_string, "]", "%5D")
 end
