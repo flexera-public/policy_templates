@@ -9,8 +9,9 @@ Total cost during current (incomplete) week and month.
 We recommend running this policy on a weekly cadence and applying it to your master account.
 _Note 1: The last 3 days of data in the current week or month will contain incomplete data._  
 _Note 2: The account you apply the policy to is unimportant as Optima metrics are scoped to the Org._
+_Note 3: If it excluding orgs is needed use only either 'Excluded Organizations' or 'Exclucded organizations IDs' parameter, not both._
 See [README](https://github.com/rightscale/policy_templates/tree/master/msp/cost/master_org_cost_policy) for more details"
-long_description "Version: 1.0"
+long_description "Version: 1.1"
 severity "low"
 category "Cost"
 
@@ -30,7 +31,15 @@ end
 parameter "param_exclude_organizations" do
   type "list"
   label "Excluded Organizations"
-  description "Names of organizations to exclude"
+  description "Names of organizations to exclude. \n
+  NOTE: use only either 'Excluded Organizations' or 'Exclucded organizations IDs', not both"
+end
+
+parameter "param_exclude_organizations_ids" do
+  type "list"
+  label "Excluded Organizations IDs"
+  description "IDs of organizations to exclude. \n
+  NOTE: use only either 'Excluded Organizations' or 'Exclucded organizations IDs', not both"
 end
 
 parameter "param_cost_metric" do
@@ -92,7 +101,7 @@ datasource "ds_current_user_organizations" do
 end
 
 datasource "ds_filtered_user_organizations" do
-  run_script $js_filter_organizations, $ds_current_user_organizations, $param_exclude_organizations
+  run_script $js_filter_organizations, $ds_current_user_organizations, $param_exclude_organizations, $param_exclude_organizations_ids
 end
 
 datasource "ds_currency_reference" do
@@ -211,12 +220,18 @@ script "js_current_user_organizations", type: "javascript" do
 end
 
 script "js_filter_organizations", type: "javascript" do
-  parameters "ds_current_user_organizations", "param_exclude_organizations"
+  parameters "ds_current_user_organizations", "param_exclude_organizations", "param_exclude_organizations_ids"
   result "results"
   code <<-EOF
+  if ( param_exclude_organizations.length > 0) {
     var results = _.reject(ds_current_user_organizations, function(org){
-       return _.contains(param_exclude_organizations, org["name"])
+      return _.contains(param_exclude_organizations, org["name"])
     })
+  } else if ( param_exclude_organizations_ids.length > 0) {
+    var results = _.reject(ds_current_user_organizations, function(org){
+      return _.contains(param_exclude_organizations_ids, org["org_id"])
+    })
+  }
   EOF
 end
 

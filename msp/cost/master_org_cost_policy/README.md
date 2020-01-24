@@ -16,6 +16,7 @@ We recommend running this policy on a weekly cadence and applying it to your mas
 
 _Note 1: The last 3 days of data in the current week or month will contain incomplete data._  
 _Note 2: The account you apply the policy to is unimportant as Optima metrics are scoped to the Org._
+_Note 3: If it excluding orgs is needed use only either 'Excluded Organizations' or 'Exclucded organizations IDs' parameter, not both._
 
 ## Cost Metrics
 
