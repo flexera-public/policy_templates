@@ -7,6 +7,7 @@ This policy checks all Azure SQL Managed instances and reports on any that are p
 ## Functional Details
 
 When a publicly accessible Azure SQL Managed Instance is detected, an email action is triggered automatically to notify the specified users of the incident. Users then have multiple actions that they are able to take after approval:
+
 - *delete* - deletes the Azure SQL managed instance
 - *Note: by default *delete* action has been disabled, the user can follow the steps mentioned in "To enable delete action" section above to enable delete action.*
 - *disable public data endpoint* - modifies the configuration of virtual network of the particular SQL managed instance that allows public accessibility.
@@ -22,7 +23,7 @@ This policy has the following input parameters required when launching the polic
 
 This policy requires the Azure Resource Manager Credential. When applying the policy select the appropriate credentials from the list for your tenant. If such credential doesn't exist please contact your cloud admin to create the Credential.
 The credential must contain the value *azure_rm* in the Provider field. Refer to our documentation for more details on the [Credential Service](https://docs.rightscale.com/credentials/)
-  
+
 ## To enable delete action
 
 Perform below steps to enable delete action.

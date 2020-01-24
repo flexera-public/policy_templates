@@ -7,7 +7,7 @@ This Policy template checks for Azure SQL Databases that are unused by reviewing
 ## Functional Details
 
 This policy gets a list of Azure SQL Databases and uses the DB Connection metric to check for successful connections over a 30-day period. If there are no successful DB Connections the policy will terminate the SQL databases after the user approval.
- 
+
 ## Input Parameters
 
 This policy has the following input parameters required when launching the policy.
