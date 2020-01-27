@@ -1,7 +1,9 @@
-v1.0
-----
-- Initial Release
+# Changelog
 
-v1.1
-----
+## v1.1
+
 - Exclude Orgs by ID added.
+
+## v1.0
+
+- Initial Release.
