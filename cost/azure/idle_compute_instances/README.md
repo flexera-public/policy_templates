@@ -24,7 +24,7 @@ For administrators [creating and managing credentials](https://docs.rightscale.c
 
 Provider tag value to match this policy: `azure_rm`
 
-## Azure Required Permissions
+Required permissions in the provider:
 
 - Microsoft.Compute/virtualMachines/read
 - Microsoft.Compute/virtualMachines/write

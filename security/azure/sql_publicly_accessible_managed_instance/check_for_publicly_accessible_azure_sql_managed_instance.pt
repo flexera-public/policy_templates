@@ -1,7 +1,7 @@
 name "Azure Publicly Accessible Managed SQL Instance"
 rs_pt_ver 20180301
 type "policy"
-short_description "Check for database services that are publicly accessible and terminate them after approval. \n See the [README](https://github.com/rightscale/policy_templates/tree/master/security/azure/sql_publicly_accessible_managed_instance) and [docs.rightscale.com/policies](https://docs.rightscale.com/policies/) to learn more."
+short_description "Check for database services that are publicly accessible and terminate them after approval. \n See the [README](https://github.com/flexera/policy_templates/tree/master/security/azure/sql_publicly_accessible_managed_instance) and [docs.rightscale.com/policies](https://docs.rightscale.com/policies/) to learn more."
 long_description ""
 severity "high"
 category "Security"
@@ -116,12 +116,57 @@ datasource "ds_list_sql_managed_instances" do
   end
 end
 
+datasource "ds_sql_managed_instances" do
+  run_script $js_sql_managed_instances, $ds_list_sql_managed_instances, $param_exclusion_tag_key
+end
+
+##################
+# Script         #
+##################
+
+script "js_sql_managed_instances", type: "javascript" do
+  parameters "ds_list_sql_managed_instances", "param_exclusion_tag_key"
+  result "res"
+  code <<-EOS
+    res = []
+    for (var j = 0; j < ds_list_sql_managed_instances.length; j++) {
+      var instance = ds_list_sql_managed_instances[j];
+      var tags=instance['tags'];
+      var is_tag_matched=false;
+      var param_exclusion_tag_key_lowercase = param_exclusion_tag_key.toLowerCase();
+        if(typeof(tags) != "undefined" && tags!=null){
+          for(var k=0;k<tags.length;k++){
+            var tag=tags[k];
+              if(param_exclusion_tag_key_lowercase.indexOf((tag['tagKey']).toLowerCase()) !== -1){
+               is_tag_matched = true;
+              }
+          }
+        }         
+        if(!is_tag_matched){
+          res.push({
+            instance_state:instance['instance_state'],
+            name:instance['name'],
+            location:instance['location'],
+            license_type:instance['license_type'],
+            id:instance['id'],
+            v_cores:instance['v_cores'],
+            storage_size_in_gb:instance['storage_size_in_gb'],
+            isPublicDataEndpointEnabled:instance['isPublicDataEndpointEnabled'],
+            tags:instance['tags'],
+            subscriptionId:instance['subscriptionId'],
+            subscriptionName:instance['subscriptionName']
+          })
+        }
+    }
+  EOS
+end
+
 ###############################################################################
 # Policy
 ###############################################################################
 
 policy "pol_sql_managed_instances" do
-  validate_each $ds_list_sql_managed_instances do
+  validate_each $ds_sql_managed_instances do
     summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} Azure SQL managed instances with public endpoint enabled"
     detail_template <<-EOS
 # Azure SQL managed Instance Details
@@ -135,10 +180,7 @@ policy "pol_sql_managed_instances" do
     escalate $esc_disable_public_endpoint_approval
 #Note: Uncomment below line(remove '#') to enable Delete action And comment above line (add '#' at beginning) when you enable Delete action.
     #escalate $esc_delete_Managed_instances_approval
-    check logic_or(
-      logic_not(val(item,"isPublicDataEndpointEnabled")),
-      contains(val(item,"tagKeys"), $param_exclusion_tag_key)
-    )
+    check logic_not(val(item,"isPublicDataEndpointEnabled"))
   end
 end
 

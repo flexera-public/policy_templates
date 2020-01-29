@@ -29,6 +29,10 @@ For administrators [creating and managing credentials](https://docs.rightscale.c
 
 Provider tag value to match this policy: `azure_rm`
 
+Required permissions in the provider:
+
+- Microsoft.Sql/managedInstances/*
+
 ## To enable delete action
 
 Perform below steps to enable delete action.
@@ -36,10 +40,6 @@ Perform below steps to enable delete action.
 - Edit the file [Check_for_publicly_accessible_Azure_SQL_Managed_Instance](https://github.com/flexera/policy_templates/tree/master/security/azure/sql_publicly_accessible_managed_instance)
 - uncomment the line which conatins 'escalate $esc_delete_Managed_instances_approval' and save the changes.
 - upload the modified file and apply the policy.
-
-## Azure Required Permissions
-
-- Microsoft.Sql/managedInstances/*
 
 ## Supported Clouds
 

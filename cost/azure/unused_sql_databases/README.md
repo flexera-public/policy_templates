@@ -25,16 +25,16 @@ For administrators [creating and managing credentials](https://docs.rightscale.c
 
 Provider tag value to match this policy: `azure_rm`
 
-## Actions
-
-- Sends an email notification
-- Delete unused SQL Databases after approval
-
-## Azure Required Permissions
+Required permissions in the provider:
 
 - Microsoft.Sql/servers/databases/read
 - Microsoft.Sql/servers/databases/delete
 - Microsoft.Sql/servers/databases/metrics/read
+
+## Actions
+
+- Sends an email notification
+- Delete unused SQL Databases after approval
 
 ## Supported Clouds
 
