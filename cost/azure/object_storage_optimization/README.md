@@ -18,7 +18,7 @@ This policy has the following input parameters required when launching the polic
 - *Move to Cool tier after days last modified* - leave blank to skip moving
 - *Move to Archive tier after days last modified* - leave blank to skip moving
 
-## Prerequesites
+## Prerequisites
 
 This policy uses [credentials](https://docs.rightscale.com/policies/users/guides/credential_management.html) for connecting to the cloud -- in order to apply this policy you must have a credential registered in the system that is compatible with this policy. If there are no credentials listed when you apply the policy, please contact your cloud admin and ask them to register a credential that is compatible with this policy. The information below should be consulted when creating the credential.
 
@@ -27,6 +27,10 @@ This policy uses [credentials](https://docs.rightscale.com/policies/users/guides
 For administrators [creating and managing credentials](https://docs.rightscale.com/policies/users/guides/credential_management.html) to use with this policy, the following information is needed:
 
 Provider tag value to match this policy: `azure_rm`
+
+Required permissions in the provider:
+
+- Storage Blob Data Owner
 
 ## Supported Clouds
 
@@ -38,6 +42,6 @@ This policy does not incur any cloud costs.
 
 ## Notes
 
-1.'Storage Blob Data Owner' permission need to be added for storage account to fetch the container/blobs list, before calling List Containers/List Blobs API's.
-2.Enter 'Standard Type' storage account with account kind type as 'StorageV2 (general purpose v2) / BlobStorage' to search for blobs.
-3.Blob with type 'PageBlob' or 'AppendBlob' will not support moving object to 'cool tier' and 'archive tier'.
+1. 'Storage Blob Data Owner' permission need to be added for storage account to fetch the container/blobs list, before calling List Containers/List Blobs API's.
+1. Enter 'Standard Type' storage account with account kind type as 'StorageV2 (general purpose v2) / BlobStorage' to search for blobs.
+1. Blob with type 'PageBlob' or 'AppendBlob' will not support moving object to 'cool tier' and 'archive tier'.
