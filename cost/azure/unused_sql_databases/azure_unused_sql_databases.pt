@@ -128,12 +128,14 @@ datasource "ds_azure_sql_database_metrics" do
         field "sku" , val(iter_item,"sku")
         field "unit", jmes_path(col_item,"unit")
         field "timeseries", jmes_path(col_item,"timeseries")
+		field "subscriptionId",val(iter_item,"subscriptionId")
+        field "subscriptionName",val(iter_item,"subscriptionName")
     end
   end
 end
 
 datasource "ds_merged_metrics" do
-  run_script $js_merged_metrics, $ds_azure_sql_databases, $ds_azure_sql_database_metrics, $param_exclusion_tag_key
+  run_script $js_merged_metrics, $ds_azure_sql_database_metrics, $param_exclusion_tag_key
 end
 
 ###############################################################################
@@ -181,7 +183,7 @@ script "js_utilization_request", type: "javascript" do
 end
 
 script "js_merged_metrics", type: "javascript" do
-  parameters "db_resources", "databases_metrics", "exclusion_tag"
+  parameters "databases_metrics", "exclusion_tag"
   result "result"
   code <<-EOS
     var result = [];
@@ -215,12 +217,16 @@ script "js_merged_metrics", type: "javascript" do
               kind: databases_metrics[i].kind,
               type: databases_metrics[i].type,
               sku: databases_metrics[i].sku,
-              unit: databases_metrics[i].unit
+              unit: databases_metrics[i].unit,
+			  subscriptionName: databases_metrics[i].subscriptionName,
+			  subscriptionId: databases_metrics[i].subscriptionId
             })
           }
         }
       }	  
     }
+	result = _.sortBy(result, 'subscriptionName');
+	result = _.sortBy(result, 'location');
   EOS
 end
 
@@ -234,7 +240,7 @@ policy "policy_azure_db_utilization" do
     detail_template <<-EOS
 # Azure Unused SQL Databases
 
-| Subscription Name | Region | Name | Resource Group | Kind | Type | SKU - Name | SKU - Tier | SKU - Capacity |
+| Subscription Name | Location | Name | Resource Group | Kind | Type | SKU - Name | SKU - Tier | SKU - Capacity |
 | ----------------- | -------| ---- | -------------- | ---- | ---- | -----------| ---------- | -------------- |
 {{ range data -}}
 | {{.subscriptionName}} | {{.location}} | {{.name}} | {{.resource_group}} | {{.kind}} | {{.type}} | {{.sku.name}} | {{.sku.tier}} | {{.sku.capacity}} |
