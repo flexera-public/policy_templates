@@ -3,6 +3,7 @@
 ## v1.2
 
 - Added a new parameter "Billing Center List" to create an incident based on input billing centers.
+- added info field
 
 ## v1.1
 
