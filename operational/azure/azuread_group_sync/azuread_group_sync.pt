@@ -1,0 +1,752 @@
+name "AzureAD Group Sync"
+rs_pt_ver 20180301
+type "policy"
+short_description "Synchronizes AzureAD Groups to Flexera Governance Groups. \n See the [README](https://github.com/rightscale/policy_templates/tree/master/operational/azure/azuread_group_sync) and [docs.rightscale.com/policies](http://docs.rightscale.com/policies/) to learn more."
+long_description ""
+category "Operational"
+severity "low"
+tenancy "single"
+info(
+    version: "1.0",
+    provider: "Azure",
+    service: "AzureAD"
+)
+
+###############################################################################
+# Permissions
+###############################################################################
+
+permission "perm_read_creds" do
+  actions   "rs_cm.show_sensitive","rs_cm.index_sensitive"
+  resources "rs_cm.credentials"
+end
+
+###############################################################################
+# Parameters
+###############################################################################
+
+parameter "param_email" do
+  type "list"
+  label "Email addresses of the recipients you wish to notify"
+end
+
+parameter "param_azure_tenant_id" do
+  type "string"
+  label "Azure AD Tenant ID"
+  description "the Azure AD Tenant ID used for the Azure API Authentication"
+  category "Azure"
+end
+
+parameter "param_group_name_prefix" do
+  type "string"
+  label "Prefix to filter groups on"
+  category "Azure"
+  description "Uses the 'startswith()' odata query to filter AzureAD groups based on a prefix"
+end
+
+parameter "param_default_phone" do
+  type "string"
+  label "Default Phone Number for New Users"
+  category "Azure"
+  description "Use this phone number if the user doesn't have one set in AzureAD"
+end
+
+parameter "param_default_company" do
+  type "string"
+  label "Default Company Name for New Users"
+  category "Azure"
+  description "Use this Company Name if the user doesn't have one set in AzureAD"
+end
+
+parameter "param_idp_href" do
+  type "string"
+  label "Identity Provider Href"
+  category "CMP"
+  description "The Href for the Identity Provider to associate to new users"
+end
+
+parameter "param_purge_users" do
+  type "string"
+  label "Remove Users"
+  category "CMP"
+  description "Remove users from the Organization that are no longer members of a group"
+  allowed_values "true", "false"
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+auth "azure_graph_auth", type: "oauth2" do
+  token_url join(["https://login.microsoftonline.com/",$param_azure_tenant_id,"/oauth2/token"])
+  grant type: "client_credentials" do
+    client_id cred("AZUREAD_APPLICATION_ID")
+    client_secret cred("AZUREAD_APPLICATION_KEY")
+    additional_params do {
+      "resource" => "https://graph.microsoft.com/"
+    } end
+  end
+end
+
+auth "auth_rs", type: "rightscale"
+
+###############################################################################
+# Pagination
+###############################################################################
+
+pagination "azure_graph_pagination" do
+  get_page_marker do
+    body_path '"@odata.nextLink"'
+  end
+  set_page_marker do
+    uri true
+  end
+end
+
+###############################################################################
+# Datasources
+###############################################################################
+
+datasource "ds_azure_groups" do
+  request do
+    auth $azure_graph_auth
+    pagination $azure_graph_pagination
+    host "graph.microsoft.com"
+    path join(["/v1.0/groups"])
+    header "User-Agent", "RS Policies"
+    query "$filter", join(["startswith(displayName,'",$param_group_name_prefix,"')"])
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "value[*]") do
+      field "objectId", jmes_path(col_item,"id")
+      field "displayName", jmes_path(col_item,"displayName")
+      field "description", jmes_path(col_item,"description")
+      field "objectType", '#microsoft.graph.group'
+    end
+  end
+end
+
+datasource "ds_azure_group_members" do
+  iterate $ds_azure_groups
+  request do
+    auth $azure_graph_auth
+    pagination $azure_graph_pagination
+    host "graph.microsoft.com"
+    path join(["/v1.0/groups/",val(iter_item,"objectId"),"/transitiveMembers"])
+    header "User-Agent", "RS Policies"
+    query "$select", "id,surname,givenName,userPrincipalName,businessPhones,companyName"
+  end
+  result do
+    encoding "json"
+    field "objectId", val(iter_item,"objectId")
+    field "objectType", val(iter_item,"objectType")
+    field "displayName", val(iter_item,"displayName")
+    field "description", val(iter_item,"description")
+    field "members" do
+      collect jmes_path(response, "value[*]") do
+        field "principalUIDAttribute", jmes_path(col_item,"id")
+        field "objectId", jmes_path(col_item,"id")
+        field "objectType", jmes_path(col_item,'"@odata.type"')
+        field "surname", jmes_path(col_item,"surname")
+        field "givenName", jmes_path(col_item,"givenName")
+        field "email", jmes_path(col_item,"userPrincipalName")
+        field "businessPhones", jmes_path(col_item, "businessPhones")
+        field "companyName", jmes_path(col_item, "companyName")
+      end
+    end
+  end
+end
+
+datasource "ds_grs_groups" do
+  request do
+    auth $auth_rs
+    host "governance.rightscale.com"
+    path join(["grs/orgs/",rs_org_id,"/groups"])
+    header "X-Api-Version", "2.0"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response,"[*]") do
+      field "name", jmes_path(col_item, "name")
+      field "id", jmes_path(col_item, "id")
+      field "href", jmes_path(col_item, "href")
+    end
+  end
+end
+
+datasource "ds_grs_users" do
+  request do
+    auth $auth_rs
+    host "governance.rightscale.com"
+    path join(["grs/orgs/",rs_org_id,"/users"])
+    header "X-Api-Version", "2.0"
+    header "User-Agent", "RS Policies"
+    query "view", "extended"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response,"[*]") do
+      field "email", jmes_path(col_item, "email")
+      field "id", jmes_path(col_item, "id")
+      field "href", jmes_path(col_item, "href")
+      field "groups", jmes_path(col_item, "groups")
+    end
+  end
+end
+
+datasource "ds_filtered_aad_groups" do
+  run_script $js_filtered_aad_groups, $ds_azure_group_members, $param_default_phone, $param_default_company
+end
+
+datasource "ds_filtered_aad_users" do
+  run_script $js_filtered_aad_users, $ds_filtered_aad_groups, $param_default_phone, $param_default_company
+end
+
+datasource "ds_filtered_grs_users" do
+  run_script $js_filtered_grs_users, $ds_filtered_aad_users, $ds_grs_users
+end
+
+datasource "ds_filtered_grs_groups" do
+  run_script $js_filtered_grs_groups, $ds_filtered_aad_groups, $ds_grs_groups
+end
+
+datasource "ds_combined_data" do
+  run_script $js_combined_data, $ds_filtered_aad_groups, $ds_filtered_aad_users, $ds_filtered_grs_users, $ds_filtered_grs_groups, $ds_grs_groups, $ds_grs_users
+end
+
+###############################################################################
+# Scripts
+###############################################################################
+
+script "js_filtered_aad_groups", type: "javascript" do
+  parameters "ds_azure_group_members", "param_default_phone", "param_default_company"
+  result "results"
+  code <<-EOS
+    var results = [];
+
+    // Cleanup AzureAD group member list
+    // Remove groups from members
+    // Make list of members unique
+    
+    _.each(ds_azure_group_members, function(group){
+      var members = [];
+      //members = _.where(_.unique(group["members"]), {"objectType": "#microsoft.graph.user"})
+      members = _.where(group["members"], {"objectType": "#microsoft.graph.user"})
+
+      results.push({
+        objectId: group["objectId"],
+        objectType: group["objectType"],
+        displayName: group["displayName"],
+        description: group["description"],
+        members: members
+      })
+    })
+EOS
+end
+
+script "js_filtered_aad_users", type: "javascript" do
+  parameters "ds_filtered_aad_groups", "param_default_phone", "param_default_company"
+  result "results"
+  code <<-EOS
+    var results = [];
+    var users = [];
+
+    // Return unique list of all AzureAD users from the discovered groups
+    // Update company name/phone number if null; used for creating new users
+    
+    _.each(ds_filtered_aad_groups, function(group){
+      users = users.concat(group["members"])
+    })
+
+    users = _.unique(users, function(item, key, objectId){
+      return item.objectId
+    })
+
+    _.each(users, function(user){
+      console.log("User: ", user)
+      var userPhone = param_default_phone;
+      var userCompany = param_default_company;
+      console.log("User Phone: " + user["businessPhones"][0])
+      if (( user["businessPhones"][0] != null && user["businessPhones"][0] !== undefined)) {
+        userPhone = user["businessPhones"][0]
+      }
+
+      if (( user["companyName"] != null && user["companyName"] !== undefined )) {
+        userCompany = user["companyName"]
+      }
+
+      results.push({
+        principalUIDAttribute: user["principalUIDAttribute"],
+        objectId: user["objectId"],
+        objectType: user["objectType"],
+        surname: user["surname"],
+        givenName: user["givenName"],
+        email: user["email"],
+        telephoneNumber: userPhone,
+        companyName: userCompany
+      })
+    })
+EOS
+end
+
+script "js_filtered_grs_users", type: "javascript" do
+  parameters "ds_filtered_aad_users", "ds_grs_users"
+  result "results"
+  code <<-EOS
+    var results = {};
+    var usersToCreate = [];
+    var usersToPurge = [];
+    
+    // Filter users to be created and removed
+
+    var usersNotInGRS = _.difference(_.pluck(ds_filtered_aad_users, "email"), _.pluck(ds_grs_users, "email"))
+    var usersNotInAAD = _.difference(_.pluck(ds_grs_users, "email"), _.pluck(ds_filtered_aad_users, "email"))
+    console.log("Users Not in GRS: ", usersNotInGRS)
+    console.log("Users Not in AAD: ", usersNotInAAD)
+
+    _.each(usersNotInGRS, function(user) {
+      var currentUserObject = _.where(ds_filtered_aad_users, {email: user});
+      console.log("Current User Object(Create): ", currentUserObject)
+      usersToCreate.push({
+        principalUIDAttribute: currentUserObject[0]["principalUIDAttribute"],
+        objectId: currentUserObject[0]["objectId"],
+        objectType: currentUserObject[0]["objectType"],
+        surname: currentUserObject[0]["surname"],
+        givenName: currentUserObject[0]["givenName"],
+        email: currentUserObject[0]["email"],
+        telephoneNumber: currentUserObject[0]["telephoneNumber"],
+        companyName: currentUserObject[0]["companyName"],
+        action: "Create"
+      })
+    })
+
+    _.each(usersNotInAAD, function(user) {
+      var currentUserObject = _.where(ds_grs_users, {email: user});
+      console.log("Current User Object(Purge): ", currentUserObject)
+
+      var currentUserGroups = _.pluck(currentUserObject, "groups")[0]
+      console.log("Current User Object(Purge) Groups: ", currentUserGroups)
+      
+      console.log("Current User Object(Purge) Groups Count: " + _.size(currentUserGroups))
+
+      if ((_.size(currentUserGroups) == 0 || currentUserGroups == null || currentUserGroups === undefined)) {
+        console.log("Purge User")
+        usersToPurge.push({
+          email: currentUserObject[0]["email"],
+          id: currentUserObject[0]["id"],
+          action: "Remove"
+        })
+      }
+    })
+
+    results = {
+      UsersToCreate: usersToCreate,
+      UsersToPurge: usersToPurge
+    }
+EOS
+end
+
+script "js_filtered_grs_groups", type: "javascript" do
+  parameters "ds_filtered_aad_groups", "ds_grs_groups"
+  result "results"
+  code <<-EOS
+    var results = {};
+    var groupsToCreate = [];
+    var groupsToUpdate = [];
+    
+    // Filter groups to be updated/created
+
+    var groupsNotInGRS = _.difference(_.pluck(ds_filtered_aad_groups, "displayName"), _.pluck(ds_grs_groups, "name"))
+    var groupsOnlyInGRS = _.difference(_.pluck(ds_grs_groups, "name"), _.pluck(ds_filtered_aad_groups, "displayName"))
+    var groupsInGRS = _.difference(_.pluck(ds_grs_groups, "name"), groupsOnlyInGRS)
+    
+    console.log("Groups Not in GRS: ", groupsNotInGRS)
+    console.log("Groups Only in GRS: ", groupsOnlyInGRS)
+    console.log("Groups in GRS: ", groupsInGRS)
+
+    _.each(groupsNotInGRS, function(group) {
+      var currentGroupObject = _.where(ds_filtered_aad_groups, {displayName: group});
+      var aadGroupObject = _.where(ds_filtered_aad_groups, {displayName: group});
+
+      groupsToCreate.push({
+        name: currentGroupObject[0]["displayName"],
+        id: "N/A",
+        href: "N/A",
+        action: "Create",
+        objectId: aadGroupObject[0]["objectId"]
+      })
+    })
+
+    _.each(groupsInGRS, function(group) {
+      var currentGroupObject = _.where(ds_grs_groups, {name: group});
+      var aadGroupObject = _.where(ds_filtered_aad_groups, {displayName: group});
+      var userCount = _.size(aadGroupObject[0]["members"])
+
+      groupsToUpdate.push({
+        name: currentGroupObject[0]["name"],
+        id: currentGroupObject[0]["id"],
+        href: currentGroupObject[0]["href"],
+        action: "Update",
+        userCount: userCount,
+        objectId: aadGroupObject[0]["objectId"]
+      })
+    })
+
+    results = {
+      GroupsToCreate: groupsToCreate,
+      GroupsToUpdate: groupsToUpdate
+    }
+EOS
+end
+
+script "js_combined_data", type: "javascript" do
+  parameters "ds_filtered_aad_groups", "ds_filtered_aad_users", "ds_filtered_grs_users", "ds_filtered_grs_groups", "ds_grs_groups", "ds_grs_users"
+  result "results"
+  code <<-EOS
+    var results = {};
+    results= {
+      aadGroups: ds_filtered_aad_groups,
+      aadUsers: ds_filtered_aad_users,
+      grsGroups: ds_grs_groups,
+      grsUsers: ds_grs_users,
+      groupsToCreate: ds_filtered_grs_groups["GroupsToCreate"],
+      groupsToUpdate: ds_filtered_grs_groups["GroupsToUpdate"],
+      usersToCreate: ds_filtered_grs_users["UsersToCreate"],
+      usersToPurge: ds_filtered_grs_users["UsersToPurge"],
+    }
+EOS
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "policy_azuread_group_sync" do
+  validate $ds_combined_data do
+    summary_template "{{ len data.groupsToUpdate }} AzureAD Groups to Synchronize"
+    detail_template <<-EOS
+## Groups that Will Be Synchronized from AzureAD
+| Name  | Href  | AzureAD Object Id | User Count |
+| :---: | :---: | :---------------: | :--------: |
+{{ range data.groupsToUpdate -}}
+  | {{ .name }} | {{ .href }} | {{ .objectId }} | {{ .userCount }} |
+{{ end -}}
+
+
+{{ $create_count := len data.groupsToCreate }}
+{{ if (gt $create_count 0) -}}
+{{ range data.groupsToCreate -}}
+
+<br />
+<br />
+### The following groups need to be created and have permissions assigned to them in Governance:
+{{ .name }}
+
+{{ end -}}
+{{ end -}}
+
+___
+###### Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }}) within Org: {{ rs_org_name }} (Org ID: {{ rs_org_id }})
+EOS
+    escalate $email
+    escalate $update_groups
+    check false
+  end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "email" do
+   email $param_email
+end
+
+escalation "update_groups" do
+  run "group_sync", data, $param_purge_users, $param_idp_href, rs_cm_host, rs_org_id
+end
+
+###############################################################################
+# Cloud Workflow
+###############################################################################
+
+define create_user_error_handler($user, $create_response) do
+  if $create_response != null
+    $status_code = $create_response["code"]
+    $syslog_subject = join(["Error creating new user: ", $user["email"], "! Status Code: ", $create_response["code"]])
+    $errorDetail = "Status Code: " + $create_response["code"]
+    $errorDetail = $errorDetail + to_s($newUserBodyPayload)
+    $errorDetail = $errorDetail + to_s($create_response)
+    call sys_log($syslog_subject, to_s($errorDetail))
+  else
+    $syslog_subject = join(["Error creating new user: ", $user["email"], "!"])
+    call sys_log($syslog_subject, to_s($user))
+  end
+  $_error_behavior = "skip"
+end
+
+define group_sync($data, $param_purge_users, $param_idp_href, $rs_cm_host, $rs_org_id) return $usersToCreate, $usersToPurge, $grsGroups, $grsUsers, $aadGroups, $aadUsers, $responses do
+  $$debug = true
+  $$log = ""
+  $usersToCreate = $data["usersToCreate"]
+  $usersToPurge = $data["usersToPurge"]
+  $grsGroups = $data["grsGroups"]
+  $grsUsers = $data["grsUsers"]
+  $aadGroups = $data["aadGroups"]
+  $aadUsers = $data["aadUsers"]
+  $newUsersCreated = []
+  $newUsersNotCreated = []
+
+  $usersDeleted = []
+  $usersNotDeleted = []
+
+  $responses = []
+
+  call write_log("AzureAD Group Sync Starting...")
+  call sys_log("AzureAD Group Sync Starting...", to_s($data))
+
+  # Create Users and add to $grsUsers array
+  sub task_label: "Creating New Users" do
+    if size($usersToCreate) > 0
+      call write_log(join([size($usersToCreate), " new user(s) to create..."]))
+
+      foreach $user in $usersToCreate do
+        $create_response = null
+        sub task_label: join(["Creating new user '", $user["email"],"'..."]), on_error: create_user_error_handler($user, $create_response) do
+          call write_log(join(["Creating new user '", $user["email"],"'..."]))
+          $newUserHref = ""
+          $newUserId = ""
+          $newUserResult = {}
+          $errorDetail = ""
+
+          $newUserBodyPayload = { 
+            "user": {
+              "first_name": $user["surname"],
+              "last_name": $user["givenName"],
+              "company": $user["companyName"],
+              "email": $user["email"],
+              "phone": $user["telephoneNumber"],
+              "identity_provider_href": $param_idp_href,
+              "principal_uid": $user["principalUIDAttribute"]
+            }
+          }
+
+          $create_response = http_request(
+            verb: "post",
+            https: true,
+            host: $rs_cm_host,
+            href: "/api/users",
+            headers: { "X-Api-Version": "1.5" },
+            body: $newUserBodyPayload
+          )
+          $responses << $create_response
+
+          if $create_response["code"] == 201
+            $newUserHref = $create_response["headers"]["Location"]
+            $newUserId = last(split($newUserHref, "/"))
+            $newUserBodyPayload["rs_user_href"] = $newUserHref
+
+            $newUserResult = {
+              "email": $user["email"],
+              "id": $newUserId,
+              "href": $newUserHref,
+              "groups": {}
+            }
+            
+            $grsUsers << $newUserResult
+            $newUsersCreated << $newUserResult
+            call write_log(join(["Successfully created new Flexera CMP user: ", $user["email"], " (ID: ", $newUserId,")!"]))
+            call sys_log(join(["Successfully created new user: ", $user["email"]]), to_s($newUserBodyPayload))
+          else
+            $newUsersNotCreated = $newUsersNotCreated + $user
+            $errorDetail = "Status Code: " + $create_response["code"]
+            $errorDetail = $errorDetail + to_s($newUserBodyPayload)
+            $errorDetail = $errorDetail + to_s($create_response)
+            call write_log(join(["Error creating new user: ", $user["email"], "! Status Code: ", $create_response["code"]]))
+            call sys_log(join(["Error creating new user: ", $user["email"], "! Status Code: ", $create_response["code"]]), to_s($errorDetail))
+          end
+        end
+      end
+
+      if size($newUsersCreated) > 0
+        call write_log(join(["New user(s) created: ", size($newUsersCreated)]))
+        task_label("Sleeping 60 seconds for new user replication...")
+        $sleepSeconds = 60
+        call write_log(join(["Sleeping ", $sleepSeconds, " seconds to allow for new user replication..."]))
+        #sleep($sleepSeconds)
+      end
+    end
+  end
+
+  # Update Group Membership
+  sub task_label: "Updating Group Memberships" do
+    foreach $aadGroup in $aadGroups do
+      $group = ""
+      $group = select($grsGroups, { "name": $aadGroup["displayName"] })
+      if size($group) > 0
+        $$group = $group
+        $group_name = ""
+        $group_id = ""
+        $group_href = ""
+        $group_name = $group[0]["name"]
+        $group_id = $group[0]["id"]
+        $group_href = $group[0]["href"]
+        call write_log(join(["Group: ", $group_name, " (ID: ", $group_id, ")"]))
+        $userPayload = []
+        if size($aadGroup["members"]) > 0
+          foreach $member in $aadGroup["members"] do
+            $user_id = ""
+            $user_email = ""
+            $user_email = $member["email"]
+            $user_id = first(select($grsUsers, { "email": $user_email }))
+            $user_id = $user_id["id"]
+            if $user_id == null
+              # Can't find user reference
+              call write_log(join(["* Error retrieving User ID for '", $user_email,"' (AzureAD ObjectID: ", $member["objectId"], "). Skipping..."]))
+            else
+              call write_log(join(["* Member: ", $user_email," (Id: ", $user_id,")"]))
+              $userObject = {}
+              $userObject["id"] = $user_id
+              $userObject["href"] = join(["/grs/users/",$user_id])
+              $userObject["kind"] = "user"
+              $userPayload << $userObject
+            end
+          end
+
+          # Call 'replace' method
+          $membershipBodyPayload = {
+              "group": {
+                  "id": $group_id,
+                  "href": $group_href,
+                  "kind": "group"
+              },
+              "users": $userPayload
+          }
+  
+          $update_response = http_request(
+            verb: "put",
+            https: true,
+            host: $rs_cm_host,
+            href: join(["/grs/orgs/", $rs_org_id, "/memberships"]), 
+            headers: { "X-Api-Version": "2.0" },
+            body: $membershipBodyPayload
+          )
+          $responses << $update_response
+
+          if $update_response["code"] == 204
+            call write_log(join(["Successfully updated '", $group_name, "' membership!"]))
+            call sys_log(join(["Successfully Updated Group: ", $group_name]), to_s($update_response))
+          else
+            $errorDetail = "Status Code: " + $update_response["code"]
+            $errorDetail = $errorDetail + to_s($membershipBodyPayload)
+            $errorDetail = $errorDetail + to_s($update_response)
+            call write_log(join(["Error updating '", $group_name, "! Status Code: ", $update_response["code"]]))
+            call sys_log(join(["Error updating '", $group_name, "! Status Code: ", $update_response["code"]]), to_s($errorDetail))
+          end
+
+        else
+          # No members
+          call write_log("* No members")
+        end
+      else
+        # Create Group First
+        call write_log(join(["The group '", $aadGroup["displayName"],"' does not exist! Please create it first!"]))
+      end
+    end
+  end
+
+  # Purge Users
+  sub task_label: "Removing Users from Organization" do
+    #
+    # It takes an extra run cycle to purge users because we are not recalculating what 
+    #   users to remove after removing them from groups during this cycle.
+    # Is it worth recapturing the users and comparing?
+    # ...
+    # ...
+    # ...
+    # Probably...
+    #
+    # We should probably decide what users to create and purge in CWF instead of the policy.
+    #
+    if size($usersToPurge) > 0
+      call write_log(join([size($usersToPurge), " user(s) to purge..."]))
+      $usersToPurgeDetails = "Users will be purged? " + $param_purge_users + "\n"
+      $usersToPurgeDetails = $usersToPurgeDetails + "The following users have been identified for removal from the Organization: \n"
+      $usersToPurgeDetails = $usersToPurgeDetails + to_s($usersToPurge)
+      call sys_log("User(s) identified for Removal", $usersToPurgeDetails)
+      if $param_purge_users == "true" || $param_purge_users == true
+        call write_log("Purging users...")
+        foreach $user in $usersToPurge do
+          $delete_response = null
+          sub task_label: join(["Purging user '", $user["email"],"'..."]), on_error: remove_user_error_handler($user, $delete_response) do
+            $userId = $user["id"]
+            $userEmail = $user["email"]
+            call write_log(join(["* User: ", $userEmail]))
+
+            $delete_response = http_request(
+              verb: "delete",
+              https: true,
+              host: $rs_cm_host,
+              href: join(["/grs/orgs/", $rs_org_id, "/users/", $userId]),
+              headers: { "X-API-Version": "2.0" }
+            )
+            $responses << $delete_response
+
+            if $delete_response["code"] == 204
+              $usersDeleted = $usersDeleted + $user
+              call sys_log(join(["Successfully removed ", $userEmail, " affiliation!"]), join(["Flexera CMP User ID: ", $userId]))
+            else
+              $usersNotDeleted = $usersNotDeleted + $user
+              $errorDetail = "Status Code: " + $delete_response["code"] + "\n"
+              $errorDetail = $errorDetail + to_s($delete_response)
+              call sys_log(join(["Error removing ", $userEmail, " affiliation!"]), to_s($errorDetail))
+            end
+          end
+        end
+      else
+        call write_log("Skip purging users! param_purge_users is set to 'false'")
+      end
+    else
+      call write_log("Skip purging users! No users to purge.")
+    end
+  end
+
+  call write_log("Group Sync Complete!")
+  call sys_log("Complete", to_s($$log))
+end
+
+define remove_user_error_handler($user, $delete_response) do
+  if $delete_response != null
+    $status_code = $delete_response["code"]
+    $syslog_subject = join(["Error removing ", $userEmail, " affiliation!"])
+    $errorDetail = "Status Code: " + $delete_response["code"] + "\n"
+    $errorDetail = $errorDetail + to_s($delete_response)
+    call sys_log($syslog_subject, to_s($errorDetail))
+  else
+    $syslog_subject = join(["Error creating new user: ", $user["email"], "!"])
+    call sys_log($syslog_subject, to_s($user))
+  end
+  $_error_behavior = "skip"
+end
+
+define sys_log($subject, $detail) do
+  if $$debug
+    rs_cm.audit_entries.create(
+      notify: "None",
+      audit_entry: {
+        auditee_href: @@account,
+        summary: "AzureAD Group Sync Policy - "+ $subject,
+        detail: $detail
+      }
+    )
+  end
+end
+
+define write_log($message) do
+  $time = now()
+  $strTime = strftime($time, "%Y-%m-%dT%H:%M:%S.%L+0000")
+  #$$log << "[" + $strTime + "] " + $message
+  $$log = $$log + "[" + $strTime + "] " + $message + "\n"
+end
