@@ -2,9 +2,15 @@ name "Google Long-stopped instances"
 rs_pt_ver 20180301
 type "policy"
 short_description "Report on any google instances that have been stopped for a long time with the option to Terminate them. \n See the [README](https://github.com/rightscale/policy_templates/tree/master/compliance/google/long_stopped_instances) and [docs.rightscale.com/policies](http://docs.rightscale.com/policies/) to learn more."
-long_description "Version: 1.0"
+long_description ""
 category "Compliance"
 severity "low"
+info(
+      version: "1.1",
+      provider: "GCE",
+      service: "Compute",
+      policy_set: "Long Stopped Instances"
+    )
 
 ###############################################################################
 # Permissions
@@ -45,29 +51,47 @@ end
 # Authentication
 ###############################################################################
 
-auth "auth_google", type: "oauth2" do
-  token_url "https://www.googleapis.com/oauth2/v4/token"
-  grant type: "jwt_bearer" do
-    iss cred("GCE_PLUGIN_ACCOUNT")
-    aud "https://www.googleapis.com/oauth2/v4/token"
-    additional_claims do {
-      "scope" => "https://www.googleapis.com/auth/monitoring.write https://www.googleapis.com/auth/cloud-platform https://www.googleapis.com/auth/monitoring.read https://www.googleapis.com/auth/monitoring https://www.googleapis.com/auth/compute https://www.googleapis.com/auth/compute.readonly"
-    } end
-    signing_key cred("GCE_PLUGIN_PRIVATE_KEY")
+# authenticate with Google
+credentials "auth_google" do
+  schemes "oauth2"
+  label "Google"
+  description "Select the Google Cloud Credential from the list."
+  tags "provider=gce"
+end
+
+#get all google project
+datasource "ds_google_project" do
+  iterate $ds_time
+  request do
+    auth $auth_google
+    pagination $google_pagination
+    host "cloudresourcemanager.googleapis.com"
+    path "/v1/projects/"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "projects[*]") do
+      field "projectNumber", jmes_path(col_item,"projectNumber")
+      field "projectId", jmes_path(col_item,"projectId")
+      field "end_date", val(iter_item,"end_date")
+      field "start_date", val(iter_item,"start_date")
+    end
   end
 end
 
 #https://cloud.google.com/compute/docs/reference/rest/v1/zones/list
 datasource "ds_zone" do
+  iterate $ds_google_project
   request do
     auth $auth_google
     host "compute.googleapis.com"
-    path join(["/compute/v1/projects/",$param_google_project,"/zones/"])
+    path join(["/compute/v1/projects/",val(iter_item, "projectId"),"/zones/"])
   end
   result do
     encoding "json"
       collect jmes_path(response, "items[*]") do
       field "zone", jmes_path(col_item, "name")
+	  field "projectId", val(iter_item, "projectId")
     end
   end
 end
@@ -78,7 +102,7 @@ datasource "ds_stoped_instances" do
   request do
     auth $auth_google
     host "compute.googleapis.com"
-    path join(["/compute/v1/projects/",$param_google_project,"/zones/",val(iter_item, "zone"),"/instances"])
+    path join(["/compute/v1/projects/",val(iter_item, "projectId"),"/zones/",val(iter_item, "zone"),"/instances"])
     query "filter", 'status="TERMINATED"'
   end
   result do
@@ -89,6 +113,7 @@ datasource "ds_stoped_instances" do
       field "status", jmes_path(col_item, "status")
       field "zone", val(iter_item, "zone")
       field "tags", jmes_path(col_item, "tags")
+	  field "projectId", val(iter_item, "projectId")
     end
   end
 end
@@ -103,7 +128,7 @@ datasource "ds_list_stoped_instances" do
   request do
     auth $auth_google
     host "monitoring.googleapis.com"
-    path join(["/v3/projects/",$param_google_project,"/timeSeries/"])
+    path join(["/v3/projects/",val(iter_item, "projectId"),"/timeSeries/"])
     query "filter", join(['metric.type = "compute.googleapis.com/instance/uptime" AND metric.labels.instance_name =', val(iter_item,"instance_name")])
     query "interval.endTime", val(iter_item,"end_at")
     query "interval.startTime", val(iter_item,"start_at")
@@ -136,7 +161,8 @@ script "js_stoped_instances_req_list", type: "javascript" do
     var result = {
         "start_at": new Date(new Date().setDate(new Date().getDate() - parseInt(param_stoped_days))).toISOString(),
         "end_at": new Date().toISOString(),
-        "instance_name": row["instance_name"]
+        "instance_name": row["instance_name"],
+		"projectId": row["projectId"]
       }
     request.push(result); 
     }
@@ -180,6 +206,7 @@ script "js_report", type: "javascript" do
           "status": instance_stoped["status"],
           "instance_id": instance_stoped["instance_id"],
           "zone": instance_stoped["zone"],
+		  "projectId": instance_stoped["projectId"],
 		  "tagKeyValue":(tagKeyValue.slice(2))
         }) 
 		} 
@@ -230,7 +257,7 @@ escalation "esc_delete_instances" do
      description "Explain why you are approving the action"
      end
    end
-  run "delete_instances", data, $param_google_project
+  run "delete_instances", data
 end
 
 ###############################################################################
@@ -239,48 +266,22 @@ end
 
 #https://cloud.google.com/compute/docs/reference/rest/v1/instances/delete
 define delete_instances($data, $param_google_project) return $all_responses do
-  call google_authenticate() retrieve $access_token
   $all_responses = []
   foreach $item in $data do
    sub on_error: skip do
       $response = http_request(
+	    auth: $$auth_google,
         verb: "delete",
         host: "compute.googleapis.com",
-        href: join(["/compute/v1/projects/", $param_google_project, "/zones/", $item["zone"], "/instances/",$item["name"]]),
+        href: join(["/compute/v1/projects/", $item["projectId"], "/zones/", $item["zone"], "/instances/",$item["name"]]),
         https: true,
         headers: {
           "cache-control": "no-cache",
-          "content-type": "application/json",
-          "authorization": "Bearer " + $access_token
+          "content-type": "application/json"
         }
       )
       $all_responses << $response
     end
   end
-end
-
-define google_authenticate() return $access_token do
-  $jwt = {
-    iss: cred("GCE_PLUGIN_ACCOUNT"),
-    aud:"https://oauth2.googleapis.com/token",
-    exp: to_n(strftime(now()+3600, "%s")),
-    iat:to_n(strftime(now(), "%s")),
-    scope: "https://www.googleapis.com/auth/cloud-platform https://www.googleapis.com/auth/sqlservice.admin"
-  }
-  $signed_signature = jwt_encode("RS256", $jwt, cred("GCE_PLUGIN_PRIVATE_KEY"),{typ:"JWT"})
-  $response = http_request({
-    verb: 'post',
-    href: '/token',
-    host: 'oauth2.googleapis.com',
-    https: true,
-    headers: {
-      "content-type": "application/json"
-    },
-    body:{
-      "grant_type": "urn:ietf:params:oauth:grant-type:jwt-bearer",
-      "assertion": $signed_signature
-    }
-  })
-  $access_token = $response["body"]["access_token"]
 end
 
