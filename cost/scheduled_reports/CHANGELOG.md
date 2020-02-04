@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.20
+
+- Fixed date value issue.
+
 ## v1.9
 
 - Fix for Bug Dimension Information Missing for DAY and WEEK.
