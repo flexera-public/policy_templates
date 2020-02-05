@@ -1,3 +1,7 @@
+v1.9
+----
+- use the info field for version.
+
 v1.8
 ----
 - update github org in path
