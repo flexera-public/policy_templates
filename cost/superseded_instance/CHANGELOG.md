@@ -24,6 +24,6 @@
 
 - Fixing Table
 
-v1.0
+## v1.0
 
 - Initial Release
