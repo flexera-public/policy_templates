@@ -7,7 +7,7 @@
 ## v1.9
 
 - add request_approval to delete volume escalation
-- remove param_delete parameter 
+- remove param_delete parameter
 
 ## v1.8
 

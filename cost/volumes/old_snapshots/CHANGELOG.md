@@ -11,7 +11,7 @@
 
 ## v1.8
 
-- Adding additional messaging around errors. 
+- Adding additional messaging around errors.
 - Remove snapshots created for images
 
 ## v1.7

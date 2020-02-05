@@ -17,6 +17,7 @@
 - update permission declaration.
 
 ## v1.3
+
 - fix issue with stop/start schedule.
 
 ## v1.2
