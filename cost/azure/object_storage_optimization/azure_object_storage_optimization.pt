@@ -1,10 +1,16 @@
 name "Azure Blob Storage Optimization"
 rs_pt_ver 20180301
 type "policy"
-short_description "Checks Azure Blob Storage for last modified date and moves the object to the Cool or Archive tier after user approval [README](https://github.com/flexera/policy_templates/tree/master/cost/azure/object_storage_optimization) and [docs.rightscale.com/policies](http://docs.rightscale.com/policies/) to learn more."
-long_description "Version: 1.0"
+short_description "Checks Azure Blob Storage for last modified date and moves the object to the Cool or Archive tier after user approval [README](https://github.com/flexera/policy_templates/tree/master/cost/azure/object_storage_optimization) and [docs.rightscale.com/policies](https://docs.rightscale.com/policies/) to learn more."
+long_description ""
 severity "low"
 category "Cost"
+info(
+  version: "2.0",
+  provider: "Azure",
+  service: "Blob Store",
+  policy_set: "Object Store Optimization"
+  )
 
 ###############################################################################
 # Permissions
@@ -23,18 +29,6 @@ parameter "param_email" do
   type "list"
   label "Email addresses to notify"
   description "Email addresses of the recipients you wish to notify when new incidents are created"
-end
-
-parameter "param_azure_tenant_id" do
-  type "string"
-  label "Azure AD Tenant ID"
-  category "Azure"
-end
-
-parameter "param_azure_sub_id" do
-  type "string"
-  label "Azure Subscription ID"
-  category "Azure"
 end
 
 parameter "param_azure_storage_account" do
@@ -60,15 +54,11 @@ end
 # Authentication
 ###############################################################################
 
-auth "azure_auth_storage_accounts", type: "oauth2" do
-  token_url join(["https://login.microsoftonline.com/",$param_azure_tenant_id,"/oauth2/token"])
-  grant type: "client_credentials" do
-    client_id cred("AZURE_APPLICATION_ID")
-    client_secret cred("AZURE_APPLICATION_KEY")
-    additional_params do {
-      "resource" => join(["https://", $param_azure_storage_account, ".blob.core.windows.net/"])
-    } end
-  end
+credentials "azure_auth" do
+  schemes "oauth2"
+  label "Azure"
+  description "Select the Azure Resource Manager Credential from the list."
+  tags "provider=azure_rm"
 end
 
 ###############################################################################
@@ -91,7 +81,7 @@ end
 #https://docs.microsoft.com/en-us/rest/api/storageservices/list-containers2 
 datasource "ds_azure_container_list" do
   request do
-    auth $azure_auth_storage_accounts
+    auth $azure_auth
     pagination $azure_pagination_xml
     verb "GET"
     host join([$param_azure_storage_account, ".blob.core.windows.net"])
@@ -111,7 +101,7 @@ end
 datasource "ds_azure_blobs_list" do
   iterate $ds_azure_container_list
   request do
-    auth $azure_auth_storage_accounts
+    auth $azure_auth
     pagination $azure_pagination_xml
     verb "GET"
     host join([$param_azure_storage_account, ".blob.core.windows.net"])
@@ -196,6 +186,7 @@ script "js_azure_filtered_blobs", type: "javascript" do
         }
       }
     });
+	results = _.sortBy(results, 'blobname');
   EOS
 end
 
@@ -238,49 +229,35 @@ escalation "modify_accesstier_approval" do
       description "Explain why you are approving the action"
     end
   end
-  run "update_accesstier_blobs", data, $param_azure_tenant_id, $param_azure_storage_account
+  run "update_accesstier_blobs", data, $param_azure_storage_account
 end
 
-define update_accesstier_blobs($data, $param_azure_tenant_id, $param_azure_storage_account) return $all_responses do
+###############################################################################
+# Cloud Workflow
+###############################################################################
+
+define update_accesstier_blobs($data, $param_azure_storage_account) return $all_responses do
   $$debug=true
-  call get_access_token($param_azure_tenant_id, $param_azure_storage_account) retrieve $access_token
   $all_responses = []
   foreach $item in $data do
     sub on_error: skip do
-      call url_encode($item['blobname']) retrieve $blob_name 
-      $response = http_put(
-        url: join(["https://", $param_azure_storage_account, ".blob.core.windows.net/", $item['containername'], "/", $blob_name, "?comp=tier"]),
+	call url_encode($item['blobname']) retrieve $blob_name 
+	$response = http_request(
+        verb: "put",
+        host: $param_azure_storage_account,
+		auth: $$azure_auth,
+        https: true,
+		href: join([".blob.core.windows.net/", $item['containername'], "/", $blob_name, "?comp=tier"]),
         headers: {
           "x-ms-version": "2019-02-02",
           "content-type": "application/json",
-          "x-ms-access-tier": $item['modify_accesstier_to'],
-          "authorization": "Bearer " + $access_token
+          "x-ms-access-tier": $item['modify_accesstier_to']
         }
       )
       $all_responses << $response
       call sys_log('Azure object storage optimization ',to_s($response))
     end
   end
-end
-
-define get_access_token($param_azure_tenant_id, $param_azure_storage_account) return $access_token do
-  $client_id = cred("AZURE_APPLICATION_ID")
-  call url_encode(cred("AZURE_APPLICATION_KEY")) retrieve $client_secret
-
-  $body_string = "grant_type=client_credentials&resource=https://"+$param_azure_storage_account+".blob.core.windows.net/&client_id="+$client_id+"&client_secret="+$client_secret
-  
-  $auth_response = http_post(
-    url: join(["https://login.microsoftonline.com/",$param_azure_tenant_id,"/oauth2/token?api-version=1.0"]),
-    headers : {
-      "cache-control":"no-cache",
-      "content-type":"application/x-www-form-urlencoded"
-    },
-    body:$body_string
-  )
-
-  $auth_response_body = $auth_response["body"]
-  $access_token = $auth_response_body["access_token"]
-
 end
 
 define sys_log($subject, $detail) do
@@ -295,7 +272,7 @@ define sys_log($subject, $detail) do
     )
   end
 end
-
+  
 define url_encode($string) return $encoded_string do
   $encoded_string = $string
   $encoded_string = gsub($encoded_string, " ", "%20")
