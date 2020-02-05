@@ -40,12 +40,6 @@ parameter "param_stoped_days" do
   label "Stopped days"
   description "Number of days an instance is stopped before it is added to the report"
 end
-parameter "param_google_project" do
-  type "string"
-  label "Google Cloud Project"
-  description "Google Cloud Project"
-  allowed_pattern /^[0-9a-z:\.-]+$/
-end
 
 ###############################################################################
 # Authentication
@@ -59,9 +53,18 @@ credentials "auth_google" do
   tags "provider=gce"
 end
 
+pagination "google_pagination" do
+  get_page_marker do
+    body_path "nextPageToken"
+  end
+  set_page_marker do
+    query "pageToken"
+  end
+end
+
+
 #get all google project
 datasource "ds_google_project" do
-  iterate $ds_time
   request do
     auth $auth_google
     pagination $google_pagination
@@ -73,8 +76,6 @@ datasource "ds_google_project" do
     collect jmes_path(response, "projects[*]") do
       field "projectNumber", jmes_path(col_item,"projectNumber")
       field "projectId", jmes_path(col_item,"projectId")
-      field "end_date", val(iter_item,"end_date")
-      field "start_date", val(iter_item,"start_date")
     end
   end
 end
@@ -84,6 +85,7 @@ datasource "ds_zone" do
   iterate $ds_google_project
   request do
     auth $auth_google
+    pagination $google_pagination
     host "compute.googleapis.com"
     path join(["/compute/v1/projects/",val(iter_item, "projectId"),"/zones/"])
   end
@@ -101,6 +103,7 @@ datasource "ds_stoped_instances" do
   iterate $ds_zone
   request do
     auth $auth_google
+    pagination $google_pagination
     host "compute.googleapis.com"
     path join(["/compute/v1/projects/",val(iter_item, "projectId"),"/zones/",val(iter_item, "zone"),"/instances"])
     query "filter", 'status="TERMINATED"'
@@ -127,6 +130,7 @@ datasource "ds_list_stoped_instances" do
   iterate $ds_stoped_instances_req_list
   request do
     auth $auth_google
+    pagination $google_pagination
     host "monitoring.googleapis.com"
     path join(["/v3/projects/",val(iter_item, "projectId"),"/timeSeries/"])
     query "filter", join(['metric.type = "compute.googleapis.com/instance/uptime" AND metric.labels.instance_name =', val(iter_item,"instance_name")])
@@ -265,7 +269,7 @@ end
 ###############################################################################
 
 #https://cloud.google.com/compute/docs/reference/rest/v1/instances/delete
-define delete_instances($data, $param_google_project) return $all_responses do
+define delete_instances($data) return $all_responses do
   $all_responses = []
   foreach $item in $data do
    sub on_error: skip do
