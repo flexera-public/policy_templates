@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.0
+
+- Updated the metadata
+
 ## v1.2
 
 - Update Optima API endpoint
