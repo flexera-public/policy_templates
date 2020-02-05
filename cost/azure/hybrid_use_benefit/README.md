@@ -6,7 +6,7 @@ This Policy Template is used to automatically apply the Azure Hybrid Use Benefit
 
 ## Functional Details
 
-_ The policy identifies all Windows server instances that are not currently using [Azure Hybrid Use Benefit] (https://azure.microsoft.com/en-us/pricing/hybrid-benefit/). It raises an incident for all applicable VMs not currently using AHUB, which once approved, will enable AHUB on all identified instances.
+-The policy identifies all Windows server instances that are not currently using [Azure Hybrid Use Benefit]< https://azure.microsoft.com/en-us/pricing/hybrid-benefit >. It raises an incident for all applicable VMs not currently using AHUB, which once approved, will enable AHUB on all identified instances.
 - The Exclusion Tag parameter is a string value.  Supply the Tag Key only.  Tag Values are not analyzed and therefore are not need.  If the exclusion tag key is used on an Instance, that Instance is presumed to be exempt from this policy.
 - This policy does not track licenses or availability. It is your responsibility to ensure you are not under licensed.
 

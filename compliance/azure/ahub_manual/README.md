@@ -16,7 +16,7 @@ This policy has the following input parameters required when launching the polic
 - *Email addresses to notify* - Email addresses of the recipients you wish to notify when new incidents are created
 - *Allowed AHUB licenses* - Number of AHUB licenses that are allowed to be run on Azure
 - *Exclusion Tag Key* - Azure VMs instance tag to ignore instance that are with AHUB enabled. Only supply the tag key. The policy assumes that the tag value is irrelevant.
- 
+
 ## Prerequesites
 
 This policy uses [credentials](https://docs.rightscale.com/policies/users/guides/credential_management.html) for connecting to the cloud -- in order to apply this policy you must have a credential registered in the system that is compatible with this policy. If there are no credentials listed when you apply the policy, please contact your cloud admin and ask them to register a credential that is compatible with this policy. The information below should be consulted when creating the credential.
@@ -24,6 +24,7 @@ This policy uses [credentials](https://docs.rightscale.com/policies/users/guides
 ### Azure Required Permissions
 
 The following Azure permissions must be allowed for the policy to run.
+
 - Microsoft.Compute/virtualMachines/read
 - Microsoft.Compute/locations/vmSizes/read
 

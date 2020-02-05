@@ -4,7 +4,7 @@
 
 - Changed the authentication to credential services
 
-##v1.3
+## v1.3
 
 - Updated Permission block
 
