@@ -1,6 +1,6 @@
 # Change log
 
-## v1.4
+## v2.0
 
 - Changed the authentication to credential services
 - Added new datasource for google project ID

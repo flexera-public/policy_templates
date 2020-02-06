@@ -1,12 +1,12 @@
 name "Google Object Storage Optimization"
 rs_pt_ver 20180301
 type "policy"
-short_description "Checks Google Storage objects for last updated time and moves the object to 'nearline' or 'coldline' or delete(enable delete action as mentioned in README.md) after user approval [README](https://github.com/flexera/policy_templates/tree/master/cost/google/object_storage_optimization) and [docs.rightscale.com/policies](http://docs.rightscale.com/policies/) to learn more."
+short_description "Checks Google Storage objects for last updated time and moves the object to 'nearline' or 'coldline' or delete(enable delete action as mentioned in README.md) after user approval [README](https://github.com/flexera/policy_templates/tree/master/cost/google/object_storage_optimization) and [docs.rightscale.com/policies](https://docs.rightscale.com/policies/) to learn more."
 long_description ""
 category "Cost"
 severity "low"
 info(
-      version: "1.1",
+      version: "2.0",
       provider: "GCE",
       service: "Storage",
       policy_set: "Object Store Optimization"
@@ -112,6 +112,7 @@ datasource "ds_list_google_buckets" do
     collect jmes_path(response, "items[*]") do
       field "bucket_name", jmes_path(col_item, "name")
       field "location", jmes_path(col_item, "location")
+      field "projectId", val(iter_item,"projectId")
     end
   end
 end
@@ -137,6 +138,7 @@ datasource "ds_list_google_buckets_objects" do
       field "last_modified", jmes_path(col_item, "updated")
       field "object_size", jmes_path(col_item, "size")
       field "metadata", jmes_path(col_item, "metadata")
+      field "projectId", val(iter_item,"projectId")
     end
   end
 end
@@ -223,7 +225,8 @@ script "js_google_filtered_bucket_objects", type: "javascript" do
             "last_modified": bucket_object["last_modified"],
             "modify_storage_class_to": modify_storage_class_to,
             "object_size": bucket_object["object_size"],
-            "tagKeyValue":(tagKeyValue.slice(2))
+            "tagKeyValue":(tagKeyValue.slice(2)),
+            "projectId": bucket_object["projectId"]
           });
         }
       }
@@ -240,10 +243,10 @@ policy "google_object_storage_optimization" do
     summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): Google Object Storage Optimization."
     detail_template <<-EOS
 # Found {{ len data }} Google bucket objects which are last modified outside of the specified timeframe.
-| Bucket Name | Region | Object Name | Current Storage Class | Last Modified Date | Move Storage Class To | Tags |
-| ----------- | ------ | ----------- | --------------------- | ------------------ | --------------------- | ---- |
+| Project ID | Bucket Name | Region | Object Name | Current Storage Class | Last Modified Date | Move Storage Class To | Tags |
+| ---------- | ----------- | ------ | ----------- | --------------------- | ------------------ | --------------------- | ---- |
 {{ range data -}}
-| {{.bucket_name}} | {{.region}} | {{.object_name}} | {{.storage_class}} | {{.last_modified}} | {{.modify_storage_class_to}} | {{.tagKeyValue}}
+| {{.projectId}} | {{.bucket_name}} | {{.region}} | {{.object_name}} | {{.storage_class}} | {{.last_modified}} | {{.modify_storage_class_to}} | {{.tagKeyValue}}
 {{ end -}}
     EOS
     escalate $esc_report_bucket_Objects_list
@@ -303,7 +306,7 @@ define modify_bucket_object_storage_class($data) return $all_responses do
       call url_encode($item['object_name']) retrieve $object_name
       $response = http_request({
                                 verb: 'post',
-								auth: $$auth_google,
+                                auth: $$auth_google,
                                 host: 'www.googleapis.com',
                                 href: join(['/storage/v1/b/', $bucket_name, '/o/', $object_name, '/rewriteTo/b/', $bucket_name, '/o/', $object_name]),
                                 https: true,
