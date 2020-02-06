@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.7
+
+- Updated the metadata
+
 ## v1.6
 
 - Modified graph representation of the Actual budget alert
