@@ -1,10 +1,16 @@
 name "AWS S3 Buckets without Server Access Logging"
 rs_pt_ver 20180301
 type "policy"
-short_description "Checks for buckets that do not have server_access_logging enabled. See the [README](https://github.com/rightscale/policy_templates/tree/master/security/storage/aws/s3_buckets_without_server_access_logging) and [docs.rightscale.com/policies](http://docs.rightscale.com/policies/) to learn more."
-long_description "Version: 1.2"
+short_description "Checks for buckets that do not have server_access_logging enabled. See the [README](https://github.com/flexera/policy_templates/tree/master/security/storage/aws/s3_buckets_without_server_access_logging) and [docs.rightscale.com/policies](https://docs.rightscale.com/policies/) to learn more."
+long_description ""
 severity "high"
 category "Security"
+info(
+  version: "2.0",
+  provider: "AWS",
+  service: "S3",
+  policy_set: ""
+  )
 
 ###############################################################################
 # Permissions
@@ -27,7 +33,7 @@ end
 parameter "param_target_bucket" do
   type "string"
   label "Target Bucket"
-  description "An existing bucket in same reason as source to be used for logging."
+  description "An existing bucket in same region as source to be used for logging."
 end
 
 parameter "param_target_prefix" do
@@ -47,11 +53,12 @@ end
 # Authentication
 ###############################################################################
 
-auth "auth_aws", type: "aws" do
-  version 4
-  service "s3"
-  access_key cred('AWS_ACCESS_KEY_ID')
-  secret_key cred('AWS_SECRET_ACCESS_KEY')
+#authenticate with AWS
+credentials "auth_aws" do
+  schemes "aws","aws_sts"
+  label "AWS"
+  description "Select the AWS Credential from the list."
+  tags "provider=aws"
 end
 
 ###############################################################################
@@ -142,6 +149,7 @@ datasource "aws_bucket_logging" do
     field "creation_date", val(iter_item,"creation_date")
     field "region", val(iter_item,"region")
     field "target_bucket", xpath(response,"//TargetBucket")
+    field "host",val(iter_item, "host")
   end
 end
 
@@ -222,12 +230,13 @@ define enable_logging($data, $param_target_bucket, $param_target_prefix) return 
     else
       $target_prefix = $param_target_prefix
     end
-    sub on_error: skip do
+
       $response = http_request(
-        verb: "post",
-        host: $item["bucket_name"]+".s3.amazonaws.com",
+        verb: "put",
+        host: $item["bucket_name"]+"."+$item["host"],
         https: true,
-        signature: { type: "aws", version: 4 },
+        auth: $$auth_aws,
+		href: "/",
         headers: {
           "content-type": "application/xml"
         },
@@ -236,7 +245,7 @@ define enable_logging($data, $param_target_bucket, $param_target_prefix) return 
       )
       $all_responses << $response
       call sys_log('all_responses', to_s($all_responses))
-    end
+
   end
 end
 
