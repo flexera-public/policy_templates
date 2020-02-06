@@ -8,8 +8,9 @@ This Policy Template accepts an input that defines which Azure regions are allow
 
 - The policy leverages the Azure API to check all resources that exist in a disallowed region.
 - When resource in disallowed region is detected, an email action is triggered automatically to notify the specified users of the incident. Users then have the option to terminate resources after manual approval if needed.
-- If you find an error about dependency of the resources, re-execute the policy.
-- If there is any error about supported api-version for any of the resource then manually delete the particular resource.
+- After approving the terminate action, all the resources may not get deleted due to the dependency.
+- So, if you find any error about dependency of the resources, those resources will get deleted in next schedule or you can re-execute the policy.
+- If there is any error about supported api-version for any of the resource then you need to manually delete the particular resource.
 
 ## Input Parameters
 
