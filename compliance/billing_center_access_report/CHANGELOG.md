@@ -1,6 +1,6 @@
 # Changelog
 
-## v2.0
+## v1.4
 
 - Updated the metadata
 
