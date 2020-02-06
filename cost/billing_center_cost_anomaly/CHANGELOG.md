@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.3
+
+- Updated the metadata
+
 ## v1.2
 
 - Added a new parameter "Billing Center List" to create an incident based on input billing centers.
