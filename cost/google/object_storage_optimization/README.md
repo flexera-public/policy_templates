@@ -43,7 +43,7 @@ Required permissions in the provider:
 
 - This policy requires IAM permissions to storage.buckets.list, storage.buckets.getIamPolicy2, storage.objects.list, storage.objects.getIamPolicy2,6, storage.objects.create (for the destination bucket), storage.objects.delete (for the destination bucket)4, storage.objects.get (for the source bucket) and storage.objects.delete.
 - Create a service account (if not exists) with the necessary permissions under Google-cloud platform (IAM & admin -> service accounts). Generate key, a JSON file will get downloaded in which you can find 'client email' and 'private key' which has to be added as credentials in RightScale cloud management Design -> Credentials with name 'GCE_PLUGIN_ACCOUNT' and 'GCE_PLUGIN_PRIVATE_KEY' respectively.
-- Scope for the credential is < https://www.googleapis.com/auth/monitoring.write https://www.googleapis.com/auth/cloud-platform https://www.googleapis.com/auth/monitoring.read https://www.googleapis.com/auth/monitoring https://www.googleapis.com/auth/compute https://www.googleapis.com/auth/compute.readonly https://www.googleapis.com/auth/devstorage.full_control>
+- Scope for the credential is <https://www.googleapis.com/auth/monitoring.write https://www.googleapis.com/auth/cloud-platform https://www.googleapis.com/auth/monitoring.read https://www.googleapis.com/auth/monitoring https://www.googleapis.com/auth/compute https://www.googleapis.com/auth/compute.readonly https://www.googleapis.com/auth/devstorage.full_control>
 
 ## Supported Clouds
 
