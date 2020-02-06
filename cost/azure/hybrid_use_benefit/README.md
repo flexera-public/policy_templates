@@ -6,7 +6,7 @@ This Policy Template is used to automatically apply the Azure Hybrid Use Benefit
 
 ## Functional Details
 
-- The policy identifies all Windows server instances that are not currently using [Azure Hybrid Use Benefit]<https://azure.microsoft.com/en-us/pricing/hybrid-benefit/>. It raises an incident for all applicable VMs not currently using AHUB, which once approved, will enable AHUB on all identified instances.
+- The policy identifies all Windows server instances that are not currently using [Azure Hybrid Use Benefit](https://azure.microsoft.com/en-us/pricing/hybrid-benefit/). It raises an incident for all applicable VMs not currently using AHUB, which once approved, will enable AHUB on all identified instances.1
 - The Exclusion Tag parameter is a string value. Supply the Tag Key only. Tag Values are not analyzed and therefore are not need. If the exclusion tag key is used on an Instance, that Instance is presumed to be exempt from this policy.
 - This policy does not track licenses or availability. It is your responsibility to ensure you are not under licensed.
 
@@ -21,7 +21,13 @@ This policy has the following input parameters required when launching the polic
 
 This policy uses [credentials](https://docs.rightscale.com/policies/users/guides/credential_management.html) for connecting to the cloud -- in order to apply this policy you must have a credential registered in the system that is compatible with this policy. If there are no credentials listed when you apply the policy, please contact your cloud admin and ask them to register a credential that is compatible with this policy. The information below should be consulted when creating the credential.
 
-### Azure Required Permissions
+### Credential configuration
+
+For administrators [creating and managing credentials](https://docs.rightscale.com/policies/users/guides/credential_management.html) to use with this policy, the following information is needed:
+
+Provider tag value to match this policy: `azure_rm`
+
+Required permissions in the provider:
 
 - Microsoft.Compute/virtualMachines/read
 - Microsoft.Compute/virtualMachines/write

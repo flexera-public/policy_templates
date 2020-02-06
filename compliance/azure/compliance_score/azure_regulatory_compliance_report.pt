@@ -63,6 +63,7 @@ datasource "ds_subscriptions" do
     encoding "json"
     collect jmes_path(response, "value[*]") do
       field "subscriptionId", jmes_path(col_item,"subscriptionId")
+      field "subscriptionName", jmes_path(col_item,"displayName")
     end
   end
 end
@@ -80,6 +81,7 @@ datasource "ds_azure_resourceresult" do
     result do
       encoding "json"
       collect jmes_path(response, "value[*]") do
+	    field "subscriptionName", val(iter_item,"subscriptionName")
         field "id", jmes_path(col_item,"id")
         field "name", jmes_path(col_item,"name")
         field "type", jmes_path(col_item,"type")
@@ -111,6 +113,7 @@ script "js_calculate_score", type: "javascript" do
     var calculated_score = ((Math.round((report["passedControls"] / total_controls) * 100) / 100) * 100).toString(10)
 
     result.push({
+	  subscriptionName: report["subscriptionName"],
       id: report["id"],
       name: report["name"],
       score: calculated_score + "%",
@@ -120,6 +123,7 @@ script "js_calculate_score", type: "javascript" do
       skippedControls: report["skippedControls"]
     })
   })
+  result = _.sortBy(result, 'subscriptionName');
 EOS
 end
 
@@ -131,13 +135,11 @@ policy "policy_azure_exec_reg_compliance" do
   validate $ds_format_report do
     summary_template "Regulatory Compliance Report"
     detail_template <<-EOS
-## Azure Subscription ID: {{parameters.param_azure_sub}}
-## Azure Tenant ID: {{parameters.param_azure_tenant_id}}
 
-| Compliance Standard | Compliance Score | Passed Controls | Failed Controls | Skipped Controls | Resource ID |
+| Subscription Name | Compliance Standard | Compliance Score | Passed Controls | Failed Controls | Skipped Controls | Resource ID |
 | ------------------- | ---------------- | ----- | --------------- | --------------- | ---------------- | ----------- |
 {{ range data -}}
-| {{.name}} | {{.score}} | {{.passedControls}} | {{.failedControls}} | {{.skippedControls}} | {{.id}} |
+|{{.subscriptionName}} | {{.name}} | {{.score}} | {{.passedControls}} | {{.failedControls}} | {{.skippedControls}} | {{.id}} |
 {{ end -}}
 
 ###### Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }}) within Org: {{ rs_org_name }} (Org ID: {{ rs_org_id }})
