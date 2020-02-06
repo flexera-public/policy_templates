@@ -13,7 +13,6 @@ This Policy Template gathers Google StackDriver utilization for instances on 30 
 This policy has the following input parameters required when launching the policy.
 
 - *Email addresses to notify* - Email addresses of the recipients you wish to notify when new incidents are created
-- *Google Cloud Project* - a Google Cloud Project ID
 - *Average used memory percentage* - Utilization below this percentage will raise an incident to tag the instance.
 - *Average used CPU percentage* - Utilization below this percentage will raise an incident to tag the instance.
 - *Exclusion Tag Key* - An google-native instance tag to ignore instances that you don't want to consider for downsizing. Only supply the tag key
@@ -27,7 +26,7 @@ This policy has the following input parameters required when launching the polic
 
 This policy uses [credentials](https://docs.rightscale.com/policies/users/guides/credential_management.html) for connecting to the cloud -- in order to apply this policy you must have a credential registered in the system that is compatible with this policy. If there are no credentials listed when you apply the policy, please contact your cloud admin and ask them to register a credential that is compatible with this policy. The information below should be consulted when creating the credential.
 
-### Credential configuration
+## Credential configuration
 
 For administrators [creating and managing credentials](https://docs.rightscale.com/policies/users/guides/credential_management.html) to use with this policy, the following information is needed:
 

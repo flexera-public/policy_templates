@@ -3,6 +3,7 @@
 ## v1.4
 
 - Changed the authentication to credential services
+- Added new datasource for google project ID
 
 ## v1.3
 

@@ -15,15 +15,9 @@ This Policy checks Google buckets for older objects and can move old object to '
 This policy has the following input parameters required when launching the policy.
 
 - *Email addresses of the recipients you wish to notify* - A list of email addresses to notify
-- *Google Cloud Project Id* - Google Cloud Project Id
 - *Move to Nearline after days last modified* - leave blank to skip moving
 - *Move to coldline after days last modified* - leave blank to skip moving
-- *Exclude Tag* - exclude object with the included tags 
- 
-### Required RightScale Roles
- 
-- Cloud Management - The `credential_viewer`,`observer` roles
-- Cloud Management - The `policy_designer`, `policy_manager` & `policy_publisher` roles
+- *Exclude Tag* - exclude object with the included tags
 
 ### Enable delete action
 
@@ -34,7 +28,17 @@ Perform below steps to enable delete action.
 - comment the line which contains 'escalate $esc_modify_bucket_object_storage_class_approval' and save the changes. and save the changes.
 - upload the modified file and apply the policy.
 
-### Google Required Permissions
+### Prerequisites
+
+This policy uses [credentials](https://docs.rightscale.com/policies/users/guides/credential_management.html) for connecting to the cloud -- in order to apply this policy you must have a credential registered in the system that is compatible with this policy. If there are no credentials listed when you apply the policy, please contact your cloud admin and ask them to register a credential that is compatible with this policy. The information below should be consulted when creating the credential.
+
+### Credential configuration
+
+For administrators [creating and managing credentials](https://docs.rightscale.com/policies/users/guides/credential_management.html) to use with this policy, the following information is needed:
+
+Provider tag value to match this policy: `gce`
+
+Required permissions in the provider:
 
 - This policy requires IAM permissions to storage.buckets.list, storage.buckets.getIamPolicy2, storage.objects.list, storage.objects.getIamPolicy2,6, storage.objects.create (for the destination bucket), storage.objects.delete (for the destination bucket)4, storage.objects.get (for the source bucket) and storage.objects.delete.
 - Create a service account (if not exists) with the necessary permissions under Google-cloud platform (IAM & admin -> service accounts). Generate key, a JSON file will get downloaded in which you can find 'client email' and 'private key' which has to be added as credentials in RightScale cloud management Design -> Credentials with name 'GCE_PLUGIN_ACCOUNT' and 'GCE_PLUGIN_PRIVATE_KEY' respectively.
