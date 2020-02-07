@@ -1,5 +1,9 @@
 # CHANGELOG
 
+## 1.10
+
+- fix an issue with publishing
+
 ## v1.9
 
 - use the info field for version.
