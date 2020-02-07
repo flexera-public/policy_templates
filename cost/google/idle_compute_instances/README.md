@@ -1,4 +1,4 @@
-# Google Idle Compute Instances Policy
+# Google Idle Compute Instances
 
 ## What it does
 
