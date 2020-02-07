@@ -1,10 +1,16 @@
 name "Google Open Buckets"
 rs_pt_ver 20180301
 type "policy"
-short_description "Checks for buckets that are open to the public. See the [README](https://github.com/rightscale/policy_templates/tree/master/security/storage/google/public_buckets) and [docs.rightscale.com/policies](http://docs.rightscale.com/policies/) to learn more."
-long_description "Version: 1.3"
+short_description "Checks for buckets that are open to the public. See the [README](https://github.com/flexera/policy_templates/tree/master/security/storage/google/public_buckets) and [docs.rightscale.com/policies](https://docs.rightscale.com/policies/) to learn more."
+long_description ""
 severity "high"
 category "Security"
+info(
+      version: "2.0",
+      provider: "GCE",
+      service: "Storage",
+      policy_set: "Open Buckets"
+    )
 
 permission "perm_read_creds" do
   actions   "rs_cm.show_sensitive","rs_cm.index_sensitive"
@@ -16,40 +22,52 @@ parameter "param_email" do
   label "Email addresses of the recipients you wish to notify"
 end
 
-parameter "param_google_project" do
-  type "string"
-  label "Google Cloud Project"
-  allowed_pattern /^[0-9a-z:\.-]+$/
-end
+###############################################################################
+# Authentication
+###############################################################################
 
-auth "auth_google", type: "oauth2" do
-  token_url "https://www.googleapis.com/oauth2/v4/token"
-  grant type: "jwt_bearer" do
-    iss cred("GCE_PLUGIN_ACCOUNT")
-    aud "https://www.googleapis.com/oauth2/v4/token"
-    additional_claims do {
-      "scope" => "https://www.googleapis.com/auth/devstorage.full_control"
-    } end
-    signing_key cred("GCE_PLUGIN_PRIVATE_KEY")
-  end
+# authenticate with Google
+credentials "auth_google" do
+  schemes "oauth2"
+  label "Google"
+  description "Select the Google Cloud Credential from the list."
+  tags "provider=gce"
 end
 
 pagination "google_pagination" do
   get_page_marker do
-    body_path "{{nextPageToken}}"
+    body_path "nextPageToken"
   end
   set_page_marker do
     query "pageToken"
   end
 end
 
+#get all google project
+datasource "ds_google_project" do
+  request do
+    auth $auth_google
+    pagination $google_pagination
+    host "cloudresourcemanager.googleapis.com"
+    path "/v1/projects/"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "projects[*]") do
+      field "projectNumber", jmes_path(col_item,"projectNumber")
+      field "projectId", jmes_path(col_item,"projectId")
+    end
+  end
+end
+
 datasource "ds_storage_buckets" do
+  iterate $ds_google_project
   request do
     auth $auth_google
     host "www.googleapis.com"
     path "/storage/v1/b"
     query "projection", "full"
-    query "project", to_s($param_google_project)
+    query "project", val(iter_item,"projectId")
   end
   result do
     encoding "json"
@@ -59,6 +77,7 @@ datasource "ds_storage_buckets" do
         collect jmes_path(col_item, "acl") do
           field "entity", jmes_path(col_item, "entity")
           field "role", jmes_path(col_item, "role")
+          field "projectId", val(iter_item,"projectId")		  
         end
       end
     end
@@ -74,13 +93,13 @@ policy "public_buckets" do
     summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} Public Buckets Found in Google"
     detail_template <<-EOS
 # Public Buckets Found in Google
-| Bucket Name | Entity | Role |
-| ----------- | ------ | ---- |
+| Project ID | Bucket Name | Entity | Role |
+| ---------- | ----------- | ------ | ---- |
 {{ range data -}}
 {{ $name := .name -}}
 {{ range .acl -}}
 {{ if (eq .entity "allUsers") -}}
-| {{$name}} | {{.entity}} | {{.role}} |
+| {{.projectId}} | {{$name}} | {{.entity}} | {{.role}} |
 {{ end -}}
 {{ end -}}
 {{ end -}}
