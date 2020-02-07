@@ -1,8 +1,8 @@
 # CHANGELOG
 
-## 1.20
+## 1.10
 
-- fix an issue with publishing 
+- fix an issue with publishing
 
 ## v1.9
 
