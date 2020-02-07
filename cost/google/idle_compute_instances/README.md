@@ -39,8 +39,10 @@ Provider tag value to match this policy: `gce`
 
 Required permissions in the provider:
 
-- Google - The `Monitoring Viewer` Role, and the `compute.instances.delete`, `compute.instances.list`, `compute.instances.get` Permissions
-- Scope for the credential is <https://www.googleapis.com/auth/monitoring.write https://www.googleapis.com/auth/cloud-platform https://www.googleapis.com/auth/monitoring.read https://www.googleapis.com/auth/monitoring https://www.googleapis.com/auth/compute https://www.googleapis.com/auth/compute.readonly https://www.googleapis.com/auth/devstorage.full_control>
+-  The `Monitoring Viewer` Role
+-  The `compute.instances.delete` permission
+-  The `compute.instances.list` permission
+-  The `compute.instances.get` permission
 
 ## Supported Clouds
 

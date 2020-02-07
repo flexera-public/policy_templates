@@ -30,7 +30,6 @@ Required permissions in the provider:
 
 - storage.buckets.list
 - storage.buckets.getIamPolicy2
-- Scope for the credential is <https://www.googleapis.com/auth/monitoring.write https://www.googleapis.com/auth/cloud-platform https://www.googleapis.com/auth/monitoring.read https://www.googleapis.com/auth/monitoring https://www.googleapis.com/auth/compute https://www.googleapis.com/auth/compute.readonly https://www.googleapis.com/auth/devstorage.full_control>
 
 ## Supported Clouds
 
