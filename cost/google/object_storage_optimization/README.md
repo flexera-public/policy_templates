@@ -41,14 +41,14 @@ Provider tag value to match this policy: `gce`
 
 Required permissions in the provider:
 
-- The storage.buckets.list permission
-- The storage.buckets.getIamPolicy2 permission
-- The storage.objects.list permission
-- The storage.objects.getIamPolicy2 permission
-- The storage.objects.create (for the destination bucket) permission
-- The storage.objects.delete (for the destination bucket)4 permission
-- The storage.objects.get (for the source bucket) permission
-- The storage.objects.delete permission
+- The `storage.buckets.list` permission
+- The `storage.buckets.getIamPolicy2` permission
+- The `storage.objects.list` permission
+- The `storage.objects.getIamPolicy2` permission
+- The `storage.objects.create` (for the destination bucket) permission
+- The `storage.objects.delete` (for the destination bucket)4 permission
+- The `storage.objects.get` (for the source bucket) permission
+- The `storage.objects.delete` permission
 - The `resourcemanager.projects.get` permission
 
 ## Supported Clouds
