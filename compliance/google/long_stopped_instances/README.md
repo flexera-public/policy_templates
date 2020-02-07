@@ -35,6 +35,7 @@ Required permissions in the provider:
 - The `Monitoring Viewer` Role
 - The `compute.instances.delete` permission
 - The `compute.instances.list`  permission
+- The `resourcemanager.projects.get` permission
 
 ## Supported Clouds
 

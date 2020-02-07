@@ -35,6 +35,8 @@ Provider tag value to match this policy: `gce`
 Required permissions in the provider:
 
 - The `Monitoring Viewer` Role
+- The `monitoring.timeSeries.list` permission
+- The `resourcemanager.projects.get` permission
 
 ## Supported Clouds
 

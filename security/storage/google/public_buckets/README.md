@@ -28,8 +28,9 @@ Provider tag value to match this policy: `gce`
 
 Required permissions in the provider:
 
-- storage.buckets.list
-- storage.buckets.getIamPolicy2
+- The `storage.buckets.list` permission
+- The `storage.buckets.getIamPolicy2` permission
+- The `resourcemanager.projects.get` permission
 
 ## Supported Clouds
 

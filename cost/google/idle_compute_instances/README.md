@@ -43,6 +43,7 @@ Required permissions in the provider:
 - The `compute.instances.delete` permission
 - The `compute.instances.list` permission
 - The `compute.instances.get` permission
+- The `resourcemanager.projects.get` permission
 
 ## Supported Clouds
 

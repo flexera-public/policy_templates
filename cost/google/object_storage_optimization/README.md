@@ -49,6 +49,7 @@ Required permissions in the provider:
 - The storage.objects.delete (for the destination bucket)4 permission
 - The storage.objects.get (for the source bucket) permission
 - The storage.objects.delete permission
+- The `resourcemanager.projects.get` permission
 
 ## Supported Clouds
 
