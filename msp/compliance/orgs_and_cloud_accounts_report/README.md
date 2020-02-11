@@ -1,6 +1,5 @@
-# Orgs and Clouds Vendor Accounts Report Policy
+# Orgs and Clouds Vendor Accounts
 
-**As a best practice, this policy should only be applied to the Master Account, and not to each individual RightScale Account.**
 This policy generates a list of cross organization Cloud Vendor Accounts connected to Flexera Optima based on
 the bill connection settings for Azure and Google, as well as full list of AWS accounts under the payer account connected for each Flexera Organization.
 
