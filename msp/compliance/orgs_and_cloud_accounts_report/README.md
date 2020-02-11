@@ -5,6 +5,7 @@ This policy generates a list of cross organization Cloud Vendor Accounts connect
 the bill connection settings for Azure and Google, as well as full list of AWS accounts under the payer account connected for each Flexera Organization.
 
 _Note 1: 'enterprise_manager' user role is required for each organization._
+
 _Note 2: If excluding orgs is needed use only either 'Excluded Organizations' or 'Exclucded organizations IDs' parameter, not both._
 
 ## Input Parameters
