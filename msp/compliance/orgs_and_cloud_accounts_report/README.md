@@ -2,7 +2,8 @@
 
 **As a best practice, this policy should only be applied to the Master Account, and not to each individual RightScale Account.**
 This policy generates a list of cross organization Cloud Vendor Accounts connected to Flexera Optima based on
-the bill connection settings for Azure and Google, as well as full list of AWS accounts under the payer account connected for each Flexera Organization.\n
+the bill connection settings for Azure and Google, as well as full list of AWS accounts under the payer account connected for each Flexera Organization.
+
 _Note 1: 'enterprise_manager' user role is required for each organization._
 _Note 2: If excluding orgs is needed use only either 'Excluded Organizations' or 'Exclucded organizations IDs' parameter, not both._
 
