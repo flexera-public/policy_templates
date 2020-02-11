@@ -1,4 +1,4 @@
-# Master Org Cost Policy
+# Orgs and Clouds Vendor Accounts Report Policy
 
 **As a best practice, this policy should only be applied to the Master Account, and not to each individual RightScale Account.**
 This policy generates a list of cross organization Cloud Vendor Accounts connected to Flexera Optima based on
@@ -9,6 +9,7 @@ _Note 2: If excluding orgs is needed use only either 'Excluded Organizations' or
 ## Input Parameters
 
 This policy has the following input parameters required when launching the policy.
+
 - *Email list* - Email addresses of the recipients you wish to notify
 - *Excluded Organizations* - Names of organizations to exclude
 - *Excluded Organizations IDs* - Names of organizations to exclude
