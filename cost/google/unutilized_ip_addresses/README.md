@@ -1,4 +1,4 @@
-# Google Unutilized IP Addresses Policy
+# Google Unutilized IP Addresses
 
 ## What it does
 
@@ -7,7 +7,6 @@ Checks Google for Unutilized IP Addresses and deletes them after approval.
 ## Functional Details
 
 - This policy uses Google Cloud to get a list of IP addresses, internal and external, that are not in use.
-- Create a service account (if not exists) with the necessary permissions under Google-cloud platform (IAM & admin -> service accounts). Generate key, a JSON file will get downloaded in which you can find 'client email' and 'private key' which has to be added as credentials in RightScale cloud management Design -> Credentials with name 'GCE_PLUGIN_ACCOUNT' and 'GCE_PLUGIN_PRIVATE_KEY' respectively.
 
 ## Input Parameters
 
@@ -36,7 +35,7 @@ Required permissions in the provider:
 - The `compute.addresses.delete` permission
 - The `compute.addresses.list` permission
 - The `compute.addresses.get` permission
-- The 'compute.regions.list' permission
+- The `compute.regions.list` permission
 - The `resourcemanager.projects.get` permission
 
 ## Supported Clouds
