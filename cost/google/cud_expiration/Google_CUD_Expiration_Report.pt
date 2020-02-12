@@ -1,11 +1,17 @@
 name "Google Expiring Committed Use Discount (CUD)"
 rs_pt_ver 20180301
 type "policy"
-short_description "A policy that sends email notifications when Google CUD's are about to expire. \n See the [README](https://github.com/rightscale/policy_templates/tree/master/cost/google/cud_expiration) and [docs.rightscale.com/policies](http://docs.rightscale.com/policies/) to learn more \n"
-long_description "Version: 1.1"
+short_description "A policy that sends email notifications when Google CUD's are about to expire. \n See the [README](https://github.com/flexera/policy_templates/tree/master/cost/google/cud_expiration) and [docs.rightscale.com/policies](https://docs.rightscale.com/policies/) to learn more \n"
+long_description ""
 category "Cost"
 severity "low"
 tenancy "single"
+info(
+      version: "2.0",
+      provider: "GCE",
+      service: "Compute",
+      policy_set: ""
+    )
 
 ###############################################################################
 # Permissions
@@ -25,12 +31,6 @@ parameter "param_email" do
   label "Email addresses of the recipients you wish to notify"
 end
 
-parameter "param_google_project" do
-  type "string"
-  label "Google Cloud Project"
-  allowed_pattern /^[0-9a-z:\.-]+$/
-end
-
 parameter "param_days_expiration" do
   label "Identify CUDs that are expiring in the given number of days"
   type "number"
@@ -41,17 +41,12 @@ end
 # Authentication
 ###############################################################################
 
-auth "auth_google", type: "oauth2" do
-  token_url "https://oauth2.googleapis.com/token"
-  grant type: "jwt_bearer" do
-    iss cred("GC_SA_CLIENT_EMAIL")
-    aud "https://oauth2.googleapis.com/token"
-    additional_claims do {
-      "scope" => "https://www.googleapis.com/auth/compute"
-    }
-    end
-    signing_key cred("GC_SA_PRIVATE_KEY")
-  end
+# authenticate with Google
+credentials "auth_google" do
+  schemes "oauth2"
+  label "Google"
+  description "Select the Google Cloud Credential from the list."
+  tags "provider=gce"
 end
 
 ###############################################################################
@@ -60,7 +55,7 @@ end
 
 pagination "google_pagination" do
   get_page_marker do
-    body_path "{{nextPageToken}}"
+    body_path "nextPageToken"
   end
   set_page_marker do
     query "pageToken"
@@ -71,13 +66,31 @@ end
 # Datasources
 ###############################################################################
 
+#get all google project
+datasource "ds_google_project" do
+  request do
+    auth $auth_google
+    pagination $google_pagination
+    host "cloudresourcemanager.googleapis.com"
+    path "/v1/projects/"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "projects[*]") do
+      field "projectNumber", jmes_path(col_item,"projectNumber")
+      field "projectId", jmes_path(col_item,"projectId")
+    end
+  end
+end
+
 #https://cloud.google.com/compute/docs/instances/signing-up-committed-use-discounts#viewing_active_commitments
 datasource "ds_committed_use_discount" do
+  iterate $ds_google_project
   request do
     auth $auth_google
     host "www.googleapis.com"
     header "Content-Type", "application/json"
-    path join(["/compute/v1/projects/",$param_google_project,"/aggregated/commitments"])
+    path join(["/compute/v1/projects/",val(iter_item, "projectId"),"/aggregated/commitments"])
     query "accept" , "application/json"
     query "filter", 'status="ACTIVE"'
   end
@@ -91,6 +104,7 @@ datasource "ds_committed_use_discount" do
       field "plan", jmes_path(col_item, 'plan')
       field "endTimestamp", jmes_path(col_item, 'endTimestamp')
       field "startTimestamp", jmes_path(col_item, 'startTimestamp')
+      field "projectId", val(iter_item,"projectId")
     end
   end
 end
@@ -131,10 +145,13 @@ script "js_committed_use_discount_map", type: "javascript" do
         startTimestamp: start_date,
         plan: commitment['plan'],
         endTimestamp: end_date,
-        daysExpiration: daysLeft
+        daysExpiration: daysLeft,
+        projectId: commitment['projectId']
       })
     }
   }
+    content = _.sortBy(content, 'region');
+    content= _.sortBy(content, 'projectId');
 EOS
 end
 
@@ -144,16 +161,15 @@ end
 
 policy "policy_committed_use_discount_expiration" do
   validate $ds_committed_use_discount_map do
-    summary_template "{{ parameters.param_google_project }} : {{ len data }} Committed Use Discount(s) in Google Cloud Expiring"
+    summary_template "{{ rs_project_name }} : {{ len data }} Committed Use Discount(s) in Google Cloud Expiring"
     detail_template <<-EOS
 # Expiring Committed Use Discounts in Google Cloud
-### Project: {{ parameters.param_google_project }}
 ### Threshold: {{ parameters.param_days_expiration }} Days
 
-| CUD Id |  Name  | Region | Status | Plan | Start Date | End Date | Days Until Expiration |
-|:------:|:------:|:------:|:------:|:----:|:----------:|:--------:|:---------------------:|
+| Project ID | CUD Id |  Name  | Region | Status | Plan | Start Date | End Date | Days Until Expiration |
+|:----------:|:------:|:------:|:------:|:------:|:----:|:----------:|:--------:|:---------------------:|
 {{ range data -}}
-| {{.cud_id}} | {{.name}} | {{.region}} | {{.status}} | {{.plan}} | {{.startTimestamp}} | {{.endTimestamp}} | {{.daysExpiration}} |
+| {{.projectId}} | {{.cud_id}} | {{.name}} | {{.region}} | {{.status}} | {{.plan}} | {{.startTimestamp}} | {{.endTimestamp}} | {{.daysExpiration}} |
 {{ end -}}
 
 ###### Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }}) within Org: {{ rs_org_name }} (Org ID: {{ rs_org_id }})

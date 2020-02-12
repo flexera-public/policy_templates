@@ -2,9 +2,15 @@ name "Google Rightsize CloudSQL Instances"
 rs_pt_ver 20180301
 type "policy"
 short_description "Checks Google CloudSQL instances based on provided CPU threshold and Resize them after approval. See the [README](https://github.com/flexera/policy_templates/tree/master/cost/google/cloudsql_rightsizing/) and [docs.rightscale.com/policies](https://docs.rightscale.com/policies/) to learn more."
-long_description "Version: 1.1"
+long_description ""
 severity "medium"
 category "Cost"
+info(
+      version: "2.0",
+      provider: "GCE",
+      service: "SQL",
+      policy_set: "Rightsize Database Services"
+    )
 
 ###############################################################################
 # Parameters
@@ -14,13 +20,6 @@ parameter "param_email" do
   type "list"
   label "Email addresses to notify"
   description "Email addresses of the recipients you wish to notify when new incidents are created"
-end
-
-parameter "param_google_project" do
-  type "string"
-  label "Google Cloud Project"
-  description "Google Cloud Project"
-  allowed_pattern /^[0-9a-z:\.-]+$/
 end
 
 parameter "param_avg_cpu_upscale" do
@@ -62,27 +61,24 @@ end
 # Authentication
 ###############################################################################
 
-auth "auth_google", type: "oauth2" do
-  token_url "https://www.googleapis.com/oauth2/v4/token"
-  grant type: "jwt_bearer" do
-    iss cred("GCE_PLUGIN_ACCOUNT")
-    aud "https://www.googleapis.com/oauth2/v4/token"
-    additional_claims do {
-      "scope" => "https://www.googleapis.com/auth/monitoring.write https://www.googleapis.com/auth/cloud-platform https://www.googleapis.com/auth/monitoring.read https://www.googleapis.com/auth/monitoring https://www.googleapis.com/auth/compute https://www.googleapis.com/auth/compute.readonly"
-    } end
-    signing_key cred("GCE_PLUGIN_PRIVATE_KEY")
-  end
+# authenticate with Google
+credentials "auth_google" do
+  schemes "oauth2"
+  label "Google"
+  description "Select the Google Cloud Credential from the list."
+  tags "provider=gce"
 end
 
-auth "auth_google_sql", type: "oauth2" do
-  token_url "https://www.googleapis.com/oauth2/v4/token"
-  grant type: "jwt_bearer" do
-    iss cred("GOOGLE_SQL_PLUGIN_ACCOUNT")
-    aud "https://www.googleapis.com/oauth2/v4/token"
-    additional_claims do {
-      "scope" => "https://www.googleapis.com/auth/monitoring.write https://www.googleapis.com/auth/cloud-platform https://www.googleapis.com/auth/monitoring.read https://www.googleapis.com/auth/monitoring https://www.googleapis.com/auth/compute https://www.googleapis.com/auth/compute.readonly"
-    } end
-    signing_key cred("GOOGLE_SQL_PLUGIN_PRIVATE_KEY")
+###############################################################################
+# Pagination
+###############################################################################
+
+pagination "google_pagination" do
+  get_page_marker do
+    body_path "nextPageToken"
+  end
+  set_page_marker do
+    query "pageToken"
   end
 end
 
@@ -90,15 +86,36 @@ end
 # Datasources
 ###############################################################################
 
+#get all google project
+datasource "ds_google_project" do
+  iterate $ds_time
+  request do
+    auth $auth_google
+    pagination $google_pagination
+    host "cloudresourcemanager.googleapis.com"
+    path "/v1/projects/"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "projects[*]") do
+      field "projectNumber", jmes_path(col_item,"projectNumber")
+      field "projectId", jmes_path(col_item,"projectId")
+      field "end_date", val(iter_item,"end_date")
+      field "start_date", val(iter_item,"start_date")
+    end
+  end
+end
+
 datasource "ds_time" do
   run_script $js_time
 end
 
 datasource "ds_cloudsql_tiers" do
+  iterate $ds_google_project
   request do
-    auth $auth_google_sql
+    auth $auth_google
     host "www.googleapis.com"
-    path join(["/sql/v1beta4/projects/",$param_google_project,"/tiers/"])
+    path join(["/sql/v1beta4/projects/",val(iter_item,"projectId"),"/tiers/"])
   end
   result do
     encoding "json"
@@ -111,11 +128,11 @@ datasource "ds_cloudsql_tiers" do
 end
 
 datasource "ds_cloudsql_instances" do
-  iterate $ds_time
+  iterate $ds_google_project
   request do
-    auth $auth_google_sql
+    auth $auth_google
     host "www.googleapis.com"
-    path join(["/sql/v1beta4/projects/",$param_google_project,"/instances/"])
+    path join(["/sql/v1beta4/projects/",val(iter_item,"projectId"),"/instances/"])
   end
   result do
     encoding "json"
@@ -134,11 +151,11 @@ datasource "ds_cloudsql_instances" do
 end
 
 datasource "ds_cloudsql_utilization" do
-  iterate $ds_time
+  iterate $ds_google_project
   request do
     auth $auth_google
     host "monitoring.googleapis.com"
-    path join(["/v3/projects/",$param_google_project,"/timeSeries/"])
+    path join(["/v3/projects/",val(iter_item,"projectId"),"/timeSeries/"])
     query "filter", 'metric.type="cloudsql.googleapis.com/database/cpu/utilization"'
     query "interval.endTime", val(iter_item,"end_date")
     query "interval.startTime", val(iter_item,"start_date")
@@ -153,6 +170,7 @@ datasource "ds_cloudsql_utilization" do
       field "avg_cpu_points", jmes_path(col_item, "points[*].value.doubleValue | avg(@)")
       field "max_cpu_points", jmes_path(col_item, "points[*].value.doubleValue | max(@)")
       field "min_cpu_points", jmes_path(col_item, "points[*].value.doubleValue | min(@)")
+      field "projectId", val(iter_item, "projectId")	  
     end
   end
 end
@@ -167,11 +185,11 @@ datasource "ds_google_instance_size_map" do
 end
 
 datasource "ds_memory_utilization" do
-  iterate $ds_time
+  iterate $ds_google_project
   request do
     auth $auth_google
     host "monitoring.googleapis.com"
-    path join(["/v3/projects/",$param_google_project,"/timeSeries/"])
+    path join(["/v3/projects/",val(iter_item,"projectId"),"/timeSeries/"])
     query "filter", 'metric.type="cloudsql.googleapis.com/database/memory/usage"'
     query "interval.endTime", val(iter_item,"end_date")
     query "interval.startTime", val(iter_item,"start_date")
@@ -266,6 +284,7 @@ script "js_calculated_utilization", type: "javascript" do
         results.push(
           {
             region: cloudsql_utilization_instance.region,
+			projectId: cloudsql_utilization_instance['projectId'],	
             zone: zone,
             tier: tier,
             pricingPlan: pricingPlan,
@@ -342,10 +361,10 @@ policy "pol_utilization" do
     detail_template <<-EOS
 # Google CloudSQL Instances
 
-| Database ID | Region | Zone | Pricing Plan | Tier | Recommended Tier | CPU Maximum % | CPU Minimum % | CPU Average % | Tags |
-| ----------- | ------ | ---- | ------------ | ---- | ---------------- | ------------- | ------------- | ------------- | ---- |
+| Project ID | Database ID | Region | Zone | Pricing Plan | Tier | Recommended Tier | CPU Maximum % | CPU Minimum % | CPU Average % | Tags |
+| ---------- | ----------- | ------ | ---- | ------------ | ---- | ---------------- | ------------- | ------------- | ------------- | ---- |
 {{ range data -}}
-| {{.database_id}} | {{.region}} | {{.zone}} | {{.pricingPlan}} | {{.tier}} | {{.recommended_size}} | {{ .cpu_maximum }} | {{.cpu_minimum}} | {{ .cpu_average }} | {{ range $i,$e := .userLabels}}{{$i}}:{{ $e }}{{ end }} |
+| {{.projectId}} | {{.database_id}} | {{.region}} | {{.zone}} | {{.pricingPlan}} | {{.tier}} | {{.recommended_size}} | {{ .cpu_maximum }} | {{.cpu_minimum}} | {{ .cpu_average }} | {{ range $i,$e := .userLabels}}{{$i}}:{{ $e }}{{ end }} |
 {{ end -}}
 
 
@@ -391,14 +410,13 @@ define update_resources($data) return $all_responses do
   call sys_log(join([$syslog_subject, "Identified Instances"]),to_s($data))
 
   foreach $item in $data do
-    call google_authenticate() retrieve $access_token
     sub on_error: handle_error($response) do
       $response = http_patch(
         url: $item["selfLink"],
+		auth: $$auth_google,
         headers: {
           "cache-control": "no-cache",
-          "content-type": "application/json",
-          "authorization": "Bearer " + $access_token
+          "content-type": "application/json"
         },
         body: {
           settings: { tier: $item["recommended_size"]}
@@ -408,32 +426,6 @@ define update_resources($data) return $all_responses do
     end
   end
   call sys_log(join([$syslog_subject, "Responses"]),to_s($all_responses))
-end
-
-define google_authenticate() return $access_token do
-  $jwt = {
-    iss: cred("GCE_PLUGIN_ACCOUNT"),
-    aud:"https://oauth2.googleapis.com/token",
-    exp: to_n(strftime(now()+3600, "%s")),
-    iat:to_n(strftime(now(), "%s")),
-    scope: "https://www.googleapis.com/auth/cloud-platform https://www.googleapis.com/auth/sqlservice.admin"
-  }
-
-  $signed_signature = jwt_encode("RS256", $jwt, cred("GCE_PLUGIN_PRIVATE_KEY"),{typ:"JWT"})
-  $response = http_request({
-    verb: 'post',
-    href: '/token',
-    host: 'oauth2.googleapis.com',
-    https: true,
-    headers: {
-      "content-type": "application/json"
-    },
-    body:{
-      "grant_type": "urn:ietf:params:oauth:grant-type:jwt-bearer",
-      "assertion": $signed_signature
-    }
-  })
-  $access_token = $response["body"]["access_token"]
 end
 
 define handle_error($response) do
