@@ -7,12 +7,11 @@ severity "high"
 category "Cost"
 tenancy "single"
 default_frequency "daily"
-info(
-  version: "1.3",
+
+info( version: "1.4",
   provider: "Flexera Optima",
   service: "",
-  policy_set: ""
-)
+  policy_set:"")
 
 parameter "param_days" do
   label "Time Period"
@@ -29,6 +28,15 @@ parameter "param_threshold" do
   type "number"
   default 80
 end
+
+parameter "param_min_spend" do
+    label "Minimum Period Spend"
+    description "Minimum spend for the specified period required to trigger incidents"
+    type "number"
+    default 1000
+    min_value 0
+end
+
 
 parameter "param_cost_metric" do
   type "string"
@@ -107,18 +115,18 @@ script "js_listed_billing_centers", type: "javascript" do
      var billing_center_list = [];
     if (param_billing_centers.length === 0){
       _.map(billing_centers, function(value, key){
-     	  billing_center_list.push(value);
-	  });
+         billing_center_list.push(value);
+    });
     } else {
       billing_center_names = _.map(param_billing_centers, function(name){ return name.toLowerCase(); });
       _.compact(_.map(billing_centers, function(value){
-	  if(_.contains(billing_center_names, value.name.toLowerCase())){
-	      billing_center_list.push(value);
-	   }
-	  }));
+    if(_.contains(billing_center_names, value.name.toLowerCase())){
+        billing_center_list.push(value);
+     }
+    }));
     }
-	billing_center_list.sort(GetSortOrder("name"));
-	function GetSortOrder(prop) {
+  billing_center_list.sort(GetSortOrder("name"));
+  function GetSortOrder(prop) {
     return function(a, b) {
         if (a[prop] > b[prop]) {
             return 1;
@@ -291,11 +299,11 @@ script "old_costs_request", type: "javascript" do
 end
 
 datasource "format_costs" do
-  run_script $js_format_costs, $old_bc_costs, $new_bc_costs, $param_cost_metric, $ds_currency_code, $ds_currency_reference, $param_billing_centers, $param_threshold
+  run_script $js_format_costs, $old_bc_costs, $new_bc_costs, $param_cost_metric, $ds_currency_code, $ds_currency_reference, $param_billing_centers, $param_threshold, $param_min_spend
 end
 
 script "js_format_costs", type: "javascript" do
-  parameters "bc_costs","new_bc_costs","param_cost_metric", "ds_currency_code", "ds_currency_reference", "param_billing_centers", "param_threshold"
+  parameters "bc_costs","new_bc_costs","param_cost_metric", "ds_currency_code", "ds_currency_reference", "param_billing_centers", "param_threshold", "param_min_spend"
   result "report"
   code <<-EOS
   var cost_metric = {
@@ -363,7 +371,7 @@ script "js_format_costs", type: "javascript" do
     per_change = per_change-1
     per_change = per_change * 100
 
-    if(per_change > param_threshold ){
+    if(per_change > param_threshold && (new_sum >= param_min_spend || sum >= param_min_spend)) {
     formatted_data.push({
       name: bc_cost_objs[0]["name"],
       id: bc_id,
@@ -372,7 +380,7 @@ script "js_format_costs", type: "javascript" do
       per_change: (Math.round(per_change * 100) / 100).toString(10) + "%",
       percent: per_change
     })
-	}
+  }
   })
     if (param_billing_centers.length === 0){
       var billingCenters = "All";
@@ -403,6 +411,7 @@ policy "budget_alert" do
 ### Cost Metric: {{ parameters.param_cost_metric }}
 ### Anomaly Threshold: {{ parameters.param_threshold }}
 ### Time Period: {{ parameters.param_days }}
+### Minimum Spend for Period:  {{ parameters.param_min_spend}}
 
 | Billing Center Name | Latest Period | Previous Period | Percent Change | Billing Center ID |
 | ------------------- | ------------: | --------------: | -------------- | ----------------- |
