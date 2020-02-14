@@ -1,0 +1,406 @@
+name "Google Delete Unattached Volumes"
+rs_pt_ver 20180301
+type "policy"
+short_description "Checks for unattached volumes older than specified number of days and, optionally, deletes them. See the [README](https://github.com/flexera/policy_templates/tree/master/cost/google/unattached_volumes) and [docs.rightscale.com/policies](https://docs.rightscale.com/policies/) to learn more."
+category "Cost"
+severity "low"
+#info "(version: "2.0", provider:"Google", service: "Storage" policy_set: "Unattached Volumes")"
+
+###############################################################################
+# Permissions
+###############################################################################
+
+permission "perm_read_creds" do
+  actions   "rs_cm.show_sensitive","rs_cm.index_sensitive"
+  resources "rs_cm.credentials"
+end
+
+###############################################################################
+# Parameters
+###############################################################################
+
+parameter "param_email" do
+  type "list"
+  label "Email addresses of the recipients you wish to notify"
+end
+
+parameter "param_unattached_days" do
+  type "string"
+  label "The number of days a volume has been unattached"
+  default "30"
+end
+###############################################################################
+# Authentication
+###############################################################################
+
+auth "my_google_auth", type: "oauth2" do
+  token_url "https://www.googleapis.com/oauth2/v4/token"
+  grant type: "jwt_bearer" do
+    iss cred("GCE_PLUGIN_ACCOUNT")
+    aud "https://www.googleapis.com/oauth2/v4/token"
+    additional_claims do {
+      "scope" => "https://www.googleapis.com/auth/compute",
+      "scope" => "https://www.googleapis.com/auth/cloud-platform"
+    } end
+    signing_key cred("GCE_PLUGIN_PRIVATE_KEY")
+  end
+end
+
+
+datasource "ds_projects" do
+  request do
+    auth $my_google_auth
+    host "cloudresourcemanager.googleapis.com"
+    verb "GET"
+    path "/v1/projects"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response,"projects[*]") do
+      field "project_name", jmes_path(col_item, "projectId")
+      end
+  end
+end
+
+
+datasource "ds_zones" do
+  iterate $ds_projects
+  request do
+    auth $my_google_auth
+    host "compute.googleapis.com"
+    verb "GET"
+    path join(["/compute/v1/projects/", val(iter_item, "project_name"), "/zones"])
+    query "project", val(iter_item, "project_name")
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response,"items[*]") do
+      field "region", last(split(jmes_path(col_item, "region"),'/'))
+      field "zone", jmes_path(col_item, "name") 
+    end
+  end
+end
+
+datasource "ds_merged_project_zone" do
+  run_script $merge, $ds_zones, $ds_projects
+end
+
+script "merge", type: "javascript" do
+  parameters "ds_zones", "ds_projects"
+  result "res"
+  code <<-EOS
+  res = []
+  _.each(ds_projects, function(project){
+    _.each(ds_zones, function(zone){
+      var result_json = {"project": project.project_name,"region": zone.zone}
+      res.push(result_json)
+    })
+  })
+  EOS
+end
+
+
+
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy 'policy_google_cloud_data' do
+  validate_each $ds_merged_project_zone do
+    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} Google VPC's Discovered"
+    detail_template <<-EOS
+#  VPC from the Google Cloud 
+# Google Cloud  VPCs Collected for Use with Self-Service
+{{ range data }}
+| vpcs | subnets |region |
+| {{.vpc_name}} | {{.subnet_name}} | {{.region}} |
+{{ end }}
+EOS
+  check equals?(0,1)
+  escalate $escalate_vpcs
+  end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "escalate_vpcs" do
+  email $param_email
+  run "generate_cat_package", data
+end
+
+###############################################################################
+# Cloud Workflow
+###############################################################################
+
+define generate_cat_package($data) return $data,$item,$cat do
+  $$debug=true
+  $filename = "google_cloud_data.rb"
+  $cat_name = "Package: Google Cloud Data"
+  $allowed_values = '  allowed_values '
+  $syslog_subject = "Google VPCs Collector for Self-Service Policy: "
+  call sys_log(join([$syslog_subject, "Discovered VPCs"]),to_s($data))
+  $item = $data[0]
+  $cat = "## Warning: This file is maintained automatically via the RightScale Policy 'Amazon VPC Collector for Self-Service' ##
+name 'Package: Google Cloud Data'
+rs_ca_ver 20161221
+short_description 'Google Cloud Data Parameter'
+package 'google/cloud_data'
+
+
+  ##########
+	# Mappings
+	##########
+  
+  mapping 'cloud_info' do {
+  'vpcs' => " + gsub(gsub(to_s($item["vpcs"]),/:+/,'=>'),/;+/,':') +",
+  'datacenters' => " + gsub(gsub(to_s($item["datacenters"]),/:+/,'=>'),/;+/,':') +",
+  'security_groups' => " + gsub(gsub(to_s($item["security_groups"]),/:+/,'=>'),/;+/,':') +",
+  'subnets' => " + gsub(gsub(to_s($item["subnets"]),/:+/,'=>'),/;+/,':') +"
+} end
+
+### End ###
+"
+
+  call sys_log(join([$syslog_subject, "CAT"]),to_s($cat))
+
+  call find_shard_and_account_number() retrieve $shard,$account
+
+  $ss_headers = {
+    "X_API_VERSION": "1.0",
+    "accept": "application/json"
+  }
+
+  ## Create new compilation job
+  $response = http_post(
+    url: "https://selfservice-" + $shard + ".rightscale.com/compilation_service/v1/projects/" + $account + "/compilation_jobs",
+    headers: $ss_headers,
+    body:{
+      "file_name": $filename,
+      "source_content": $cat
+    }
+  )
+
+  call sys_log(join([$syslog_subject, "Create Compilation Job Response"]),to_s($response))
+
+  if $response["code"] == 202
+    $job_href = $response["headers"]["Location"]
+  else
+    raise "Error creating compilation job: " + $response["code"]
+  end
+
+  ## Wait for the compilation to complete
+  $job_not_complete = true
+  $response_body = ""
+  while $job_not_complete do
+    sleep(5)
+
+    $response = http_get(
+      url: "https://selfservice-" + $shard + ".rightscale.com" + $job_href,
+      headers: $ss_headers
+    )
+
+    call sys_log(join([$syslog_subject, "Wait for Compliation Job Response"]),to_s($response))
+
+    if $response["code"] == 200
+      $response_body = from_json($response["body"])
+      if $response_body["status"] == "successful"
+        $job_not_complete = false
+      elsif $response_body["status"] == "failed"
+        raise "Compilation job failed!"
+      end
+    else
+      raise "Error retrieving compilation job: " + $response["code"]
+    end
+  end
+
+  ## Once complete, index templates in designer and filter on the one we are updating/creating
+  $compilation_href = $response_body["compilation_result"]["compilation_href"]
+  call sys_log(join([$syslog_subject, "Compliation Href"]),to_s($compilation_href))
+
+  $response = http_get(
+    url: "https://selfservice-" + $shard + ".rightscale.com/api/designer/collections/" + $account + "/templates?filter[]=name==" + to_uri($cat_name),
+    headers: $ss_headers
+  )
+
+  call sys_log(join([$syslog_subject, "Index Templates Response"]),to_s($response))
+
+  if $response["code"] == 200
+    $template = from_json($response["body"])
+  else
+    raise "Error retrieving template: " + $response["code"]
+  end
+
+  ## Determine if we are creating or updating the template and do it
+  if empty?($template)
+    # Create
+    $action = "creating"
+    $url = "https://selfservice-" + $shard + ".rightscale.com/api/designer/collections/" + $account + "/templates/actions/create_from_compilation"
+  else
+    # Update
+    $action = "updating"
+    $url = "https://selfservice-" + $shard + ".rightscale.com/api/designer/collections/" + $account + "/templates/" + $template[0]["id"] + "/actions/update_from_compilation"
+  end
+
+  $response = http_post(
+    url: $url,
+    headers: $ss_headers,
+    body:{
+      "compilation_href": $compilation_href,
+      "filename": $filename
+    }
+  )
+
+  call sys_log(join([$syslog_subject, "Create or Update Template Response"]),to_s($response))
+
+  if $response["code"] == 200 || $response["code"] == 201 || $response["code"] == 204
+    # Nothing to do
+  else
+    raise "Error " + $action + " package: " + $response["code"]
+  end
+
+  $ss_headers_sess = {
+    "Accept": "application/json"
+  }
+  
+  http_get(
+    insecure: false,
+    url: "https://selfservice-" + $shard+ ".rightscale.com/api/designer/new_session?account_id="+$account,
+    headers: $ss_headers_sess
+  )
+  
+  ## Get dependents of the template
+  $response = http_get(
+    url: "https://selfservice-" + $shard + ".rightscale.com/api/designer/collections/" + $account + "/templates?view=expanded",
+    headers: $ss_headers
+  )
+
+  call sys_log(join([$syslog_subject, "Templates Response"]),to_s($response))
+
+  if $response["code"] == 200
+    $templates = from_json($response["body"])
+    $template = select($templates, {"package": "amazon/vpcs_parameter"})
+    $dependents = $template[0]["dependents"]
+  else
+    raise "Error retrieving template: " + $response["code"]
+  end
+
+  call sys_log(join([$syslog_subject, "Template Dependents"]),to_s($dependents))
+
+## For Each Dependent, Recompile and republish templates
+  foreach $dependent in $dependents do
+    ## Create recompile job
+    $cat = select($templates, {"id": $dependent["template_id"]})
+    $compilation_href = $cat[0]["compilation_href"]
+    $template_href = $cat[0]["href"]
+    $cat_filename = $cat[0]["filename"]
+    $cat_id = $cat[0]["id"]
+    $url = "https://selfservice-" + $shard + ".rightscale.com" + $compilation_href + "/actions/recompile"
+    $response = http_post(
+      url: $url,
+      headers: $ss_headers,
+      body:{
+        "infer_dependencies": true
+      }
+    )
+
+    call sys_log(join([$syslog_subject, "Create Recompile Template Job Response"]),to_s($response))
+
+    if $response["code"] == 202
+      $job_href = $response["headers"]["Location"]
+    else
+      raise "Error recompiling template: " + $response["code"]
+    end
+
+    ## Wait for compilation job to complete
+    $job_not_complete = true
+    $response_body = ""
+    while $job_not_complete do
+      sleep(5)
+
+      $response = http_get(
+        url: "https://selfservice-" + $shard + ".rightscale.com" + $job_href,
+        headers: $ss_headers
+      )
+
+      call sys_log(join([$syslog_subject, "Wait for Recompile Template Job Response"]),to_s($response))
+
+      if $response["code"] == 200
+        $response_body = from_json($response["body"])
+        if $response_body["status"] == "successful"
+          $job_not_complete = false
+        elsif $response_body["status"] == "failed"
+          raise "Compilation job failed!"
+        end
+      else
+        raise "Error retrieving compilation job: " + $response["code"]
+      end
+    end
+
+    ## Once complete, updating the template in designer
+    $compilation_href = $response_body["compilation_result"]["compilation_href"]
+    call sys_log(join([$syslog_subject, "Compliation Href"]),to_s($compilation_href))
+
+    $response = http_post(
+      url: "https://selfservice-" + $shard + ".rightscale.com/api/designer/collections/" + $account + "/templates/" + $cat_id + "/actions/update_from_compilation",
+      headers: $ss_headers,
+      body:{
+        "compilation_href": $compilation_href,
+        "filename": $cat_filename
+      }
+    )
+
+    call sys_log(join([$syslog_subject, "Update Template Response"]),to_s($response))
+
+    if $response["code"] == 200 || $response["code"] == 201 || $response["code"] == 204
+      # Nothing to do
+    else
+      raise "Error " + $action + " package: " + $response["code"]
+    end
+
+    ## Determine if the template is a published application, and republish if it is
+    if $cat[0]["timestamps"]["published_at"]
+      # CAT is published, republish it...
+      $response = http_post(
+        url: "https://selfservice-" + $shard + ".rightscale.com/api/designer/collections/" + $account + "/templates/actions/publish",
+        headers: $ss_headers,
+        body:{
+          "id": $cat_id,
+          "overridden_application_href": $cat[0]["application_info"]["href"]
+        }
+      )
+
+      call sys_log(join([$syslog_subject, "Publish Template Response"]),to_s($response))
+
+      if $response["code"] == 204
+        # Nothing to do
+      else
+        raise "Error publishing template: " + $response["code"]
+      end
+    else
+      # Not published, nothing to do!
+    end
+  end
+end
+
+define find_shard_and_account_number() return $shard_number,$account_number do
+  $session = rs_cm.sessions.index(view: "whoami")
+  $account_number = last(split(select($session[0]["links"], {"rel":"account"})[0]["href"],"/"))
+  $account = rs_cm.get(href: "/api/accounts/" + $account_number)
+  $shard_number = last(split(select($account[0]["links"], {"rel":"cluster"})[0]["href"],"/"))
+end
+
+define sys_log($subject, $detail) do
+  if $$debug
+    rs_cm.audit_entries.create(
+      notify: "None",
+      audit_entry: {
+        auditee_href: @@account,
+        summary: $subject,
+        detail: $detail
+      }
+    )
+  end
+end
