@@ -2,26 +2,41 @@ name "Billing Center Cost Anomalies"
 rs_pt_ver 20180301
 type "policy"
 short_description "Analyze all Billing Centers for a specified number of days and raise an incident if the percentage of spend (compared to the previous period of the same number of days) has surpassed the defined threshold. See the [README](https://github.com/rightscale/policy_templates/tree/master/cost/billing_center_cost_anomaly/) and [docs.rightscale.com/policies](http://docs.rightscale.com/policies/) to learn more."
-long_description "Version: 1.1"
+long_description ""
 severity "high"
 category "Cost"
 tenancy "single"
+default_frequency "daily"
 
-parameter "param_days" do 
+info( version: "1.4",
+  provider: "Flexera Optima",
+  service: "",
+  policy_set:"")
+
+parameter "param_days" do
   label "Time Period"
   description "Number of days to analyze"
   type "number"
   default 6
   min_value 1
   max_value 31
-end 
+end
 
-parameter "param_threshold" do 
+parameter "param_threshold" do
   label "Anomaly Threshold"
   description "Percentage change in spend that will trigger incidents"
   type "number"
   default 80
-end 
+end
+
+parameter "param_min_spend" do
+    label "Minimum Period Spend"
+    description "Minimum spend for the specified period required to trigger incidents"
+    type "number"
+    default 1000
+    min_value 0
+end
+
 
 parameter "param_cost_metric" do
   type "string"
@@ -100,28 +115,28 @@ script "js_listed_billing_centers", type: "javascript" do
      var billing_center_list = [];
     if (param_billing_centers.length === 0){
       _.map(billing_centers, function(value, key){
-     	  billing_center_list.push(value);
-	  });
+         billing_center_list.push(value);
+    });
     } else {
       billing_center_names = _.map(param_billing_centers, function(name){ return name.toLowerCase(); });
       _.compact(_.map(billing_centers, function(value){
-	  if(_.contains(billing_center_names, value.name.toLowerCase())){
-	      billing_center_list.push(value);
-	   } 
-	  }));
+    if(_.contains(billing_center_names, value.name.toLowerCase())){
+        billing_center_list.push(value);
+     }
+    }));
     }
-	billing_center_list.sort(GetSortOrder("name"));
-	function GetSortOrder(prop) {  
-    return function(a, b) {  
-        if (a[prop] > b[prop]) {  
-            return 1;  
-        } else if (a[prop] < b[prop]) {  
-            return -1;  
-        }  
-        return 0;  
-     }  
+  billing_center_list.sort(GetSortOrder("name"));
+  function GetSortOrder(prop) {
+    return function(a, b) {
+        if (a[prop] > b[prop]) {
+            return 1;
+        } else if (a[prop] < b[prop]) {
+            return -1;
+        }
+        return 0;
+     }
    }
-	 
+
   EOS
 end
 
@@ -129,7 +144,7 @@ datasource "new_bc_costs" do
   iterate $ds_listed_billing_centers
   request do
     run_script $new_costs_request,rs_org_id,val(iter_item,"id"),$param_cost_metric,$param_days
-  end 
+  end
   result do
     encoding "json"
     collect jmes_path(response,"rows[*]") do
@@ -179,8 +194,8 @@ script "new_costs_request", type: "javascript" do
       return date;
     }
 
-    start_at = getFormattedDailyDate(getStartDate(new Date())) 
-    end_at = getFormattedDailyDate(getEndDate(new Date())) 
+    start_at = getFormattedDailyDate(getStartDate(new Date()))
+    end_at = getFormattedDailyDate(getEndDate(new Date()))
 
     var request = {
       auth: "auth_rs",
@@ -199,7 +214,7 @@ script "new_costs_request", type: "javascript" do
         "Api-Version": "1.0",
         "User-Agent": "RS Policies",
       }
-    } 
+    }
   EOS
 end
 
@@ -207,7 +222,7 @@ datasource "old_bc_costs" do
   iterate $ds_listed_billing_centers
   request do
     run_script $old_costs_request,rs_org_id,val(iter_item,"id"),$param_cost_metric,$param_days
-  end 
+  end
   result do
     encoding "json"
     collect jmes_path(response,"rows[*]") do
@@ -259,8 +274,8 @@ script "old_costs_request", type: "javascript" do
       return date;
     }
 
-    start_at = getFormattedDailyDate(getStartDate(new Date())) 
-    end_at = getFormattedDailyDate(getEndDate(new Date())) 
+    start_at = getFormattedDailyDate(getStartDate(new Date()))
+    end_at = getFormattedDailyDate(getEndDate(new Date()))
 
     var request = {
       auth: "auth_rs",
@@ -279,16 +294,16 @@ script "old_costs_request", type: "javascript" do
         "Api-Version": "1.0",
         "User-Agent": "RS Policies",
       }
-    } 
+    }
   EOS
 end
 
 datasource "format_costs" do
-  run_script $js_format_costs, $old_bc_costs, $new_bc_costs, $param_cost_metric, $ds_currency_code, $ds_currency_reference, $param_billing_centers, $param_threshold
+  run_script $js_format_costs, $old_bc_costs, $new_bc_costs, $param_cost_metric, $ds_currency_code, $ds_currency_reference, $param_billing_centers, $param_threshold, $param_min_spend
 end
 
 script "js_format_costs", type: "javascript" do
-  parameters "bc_costs","new_bc_costs","param_cost_metric", "ds_currency_code", "ds_currency_reference", "param_billing_centers", "param_threshold"
+  parameters "bc_costs","new_bc_costs","param_cost_metric", "ds_currency_code", "ds_currency_reference", "param_billing_centers", "param_threshold", "param_min_spend"
   result "report"
   code <<-EOS
   var cost_metric = {
@@ -297,10 +312,10 @@ script "js_format_costs", type: "javascript" do
     "Unamortized Blended": "cost_nonamortized_blended_adj",
     "Amortized Blended":"cost_amortized_blended_adj"
   }
-  var type = cost_metric[param_cost_metric]; 
+  var type = cost_metric[param_cost_metric];
   var formatted_data = [];
   var report = {};
-  var bcs = []; 
+  var bcs = [];
   function formatNumber(number, separator){
        var numString =number.toString();
        var values=numString.split(".");
@@ -336,27 +351,27 @@ script "js_format_costs", type: "javascript" do
       var cur = "$"
       var separator = ","
     }
-  
-  
+
+
   _.each(bc_costs, function(bcc){bcs.push(bcc.id)})
   bcs = _.uniq(bcs) ;
-  
+
   _.each(bcs, function(bc_id){
     var bc_cost_objs = _.reject(bc_costs, function(bc_cost){ return bc_cost.id != bc_id });
     var costs = [];
-    _.each(bc_cost_objs, function(cost){costs.push(cost[type])}) 
+    _.each(bc_cost_objs, function(cost){costs.push(cost[type])})
     var sum = _.reduce(costs, function(memo, num){ return memo + num; }, 0)
 
     var new_bc_cost_objs = _.reject(new_bc_costs, function(new_bc_cost){ return new_bc_cost.id != bc_id });
     var new_costs = [];
-    _.each(new_bc_cost_objs, function(cost){new_costs.push(cost[type])}) 
+    _.each(new_bc_cost_objs, function(cost){new_costs.push(cost[type])})
     var new_sum = _.reduce(new_costs, function(memo, num){ return memo + num; }, 0)
 
     var per_change = new_sum / sum ;
     per_change = per_change-1
     per_change = per_change * 100
-	
-    if(per_change > param_threshold ){
+
+    if(per_change > param_threshold && (new_sum >= param_min_spend || sum >= param_min_spend)) {
     formatted_data.push({
       name: bc_cost_objs[0]["name"],
       id: bc_id,
@@ -364,8 +379,8 @@ script "js_format_costs", type: "javascript" do
       new_sum: cur + ' '+formatNumber((Math.round(new_sum * 100) / 100), separator),
       per_change: (Math.round(per_change * 100) / 100).toString(10) + "%",
       percent: per_change
-    })	
-	}
+    })
+  }
   })
     if (param_billing_centers.length === 0){
       var billingCenters = "All";
@@ -375,9 +390,9 @@ script "js_format_costs", type: "javascript" do
   report={
    formatted_data: formatted_data,
    billingCenters: billingCenters,
-   currencyCode: cur 
+   currencyCode: cur
   }
-  
+
 EOS
 end
 
@@ -396,15 +411,16 @@ policy "budget_alert" do
 ### Cost Metric: {{ parameters.param_cost_metric }}
 ### Anomaly Threshold: {{ parameters.param_threshold }}
 ### Time Period: {{ parameters.param_days }}
+### Minimum Spend for Period:  {{ parameters.param_min_spend}}
 
 | Billing Center Name | Latest Period | Previous Period | Percent Change | Billing Center ID |
 | ------------------- | ------------: | --------------: | -------------- | ----------------- |
 {{ range data.formatted_data -}}
-| {{.name}} | {{.new_sum}} | {{.old_sum}} | {{.per_change}} | {{.id}} 
+| {{.name}} | {{.new_sum}} | {{.old_sum}} | {{.per_change}} | {{.id}}
 {{ end -}}
 
 EOS
     escalate $esc_budget_alert
     check eq(1,0)
-  end 
+  end
 end

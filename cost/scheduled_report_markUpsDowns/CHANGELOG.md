@@ -1,6 +1,10 @@
 # Changelog
 
-## v0.0
+## v1.1
+
+- Updated the metadata
+
+## v1.0
 
 - Initial Release
 - Not included in the Catalog

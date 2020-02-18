@@ -1,10 +1,16 @@
 name "AWS Unencrypted S3 Buckets"
 rs_pt_ver 20180301
 type "policy"
-short_description "Report any S3 buckets in AWS that are unencrypted and provide the option to set the default encryption after approval. \n See the [README](https://github.com/rightscale/policy_templates/tree/master/security/aws/unencrypted_s3_buckets) and [docs.rightscale.com/policies](http://docs.rightscale.com/policies/) to learn more."
-long_description "Version: 1.0"
+short_description "Report any S3 buckets in AWS that are unencrypted and provide the option to set the default encryption after approval. \n See the [README](https://github.com/flexera/policy_templates/tree/master/security/aws/unencrypted_s3_buckets) and [docs.rightscale.com/policies](https://docs.rightscale.com/policies/) to learn more."
+long_description ""
 category "Security"
 severity "low"
+info(
+  version: "2.0",
+  provider: "AWS",
+  service: "S3",
+  policy_set: ""
+)
 
 ###############################################################################
 # Permissions
@@ -35,11 +41,11 @@ end
 # Authentication
 ###############################################################################
 
-auth "auth_aws", type: "aws" do
-  version "4"
-  service "s3"
-  access_key cred("AWS_ACCESS_KEY_ID")
-  secret_key cred("AWS_SECRET_ACCESS_KEY")
+credentials "auth_aws" do
+  schemes "aws","aws_sts"
+  label "AWS"
+  description "Select the AWS Credential from the list"
+  tags "provider=aws"
 end
 
 ###############################################################################
@@ -288,34 +294,38 @@ define enable_encryption_s3_buckets($data) return $all_responses do
   $body_string="<ServerSideEncryptionConfiguration xmlns='http://s3.amazonaws.com/doc/2006-03-01/'><Rule><ApplyServerSideEncryptionByDefault><SSEAlgorithm>AES256</SSEAlgorithm></ApplyServerSideEncryptionByDefault></Rule></ServerSideEncryptionConfiguration>"
   $all_responses = []
   foreach $item in $data do
-    sub on_error: skip do	  
-      $response = http_put(
-        url: join(["https://",$item['host'],"/", $item['bucket_name'],"/","?encryption"]),
-        headers: {"content-type": "application/json"},
-        body:$body_string,
-        "signature": { type: "aws" }
-      )
-      $all_responses << $response
-      call sys_log('AWS Unencrypted S3 Buckets config change to encryption',to_s($response))
-    end
+    $response = http_request(
+      auth: $$auth_aws,
+      https: true,
+      verb: "put",
+      host: $item['host'],
+      href: "/"+$item['bucket_name']+"/?encryption=true",
+      headers: {"content-type": "application/json"},
+      body:$body_string
+    )
+    $all_responses << $response
+    call sys_log('AWS Unencrypted S3 Buckets config change to encryption',to_s($response))
   end
 end
+
 
 #https://docs.aws.amazon.com/AmazonS3/latest/API/RESTBucketDELETE.html
 define delete_unencrypted_s3_buckets($data) return $all_responses do
   $$debug=true
   $all_responses = []
   foreach $item in $data do
-    sub on_error: skip do      	
-      $response = http_delete(
-        url: join(["https://",$item['host'],"/", $item['bucket_name']]),
-        "signature": { type: "aws" }
-      )
-      $all_responses << $response
-      call sys_log('Delete AWS Unencrypted S3 Buckets',to_s($response))	  
-    end
+    $response = http_request(
+      auth: $$auth_aws,
+      https: true,
+      verb: "delete",
+      href: "/"+"/"+$item['bucket_name'],
+      host: $item['host']
+    )
+    $all_responses << $response
+    call sys_log('Delete AWS Unencrypted S3 Buckets',to_s($response))
   end
 end
+
 
 define sys_log($subject, $detail) do
   if $$debug

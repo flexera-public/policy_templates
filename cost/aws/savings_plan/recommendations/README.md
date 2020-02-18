@@ -5,19 +5,34 @@
 ### What it does
 
 This Policy Template leverages the [AWS Cost Explorer API](https://docs.aws.amazon.com/aws-cost-management/latest/APIReference/API_GetSavingsPlansPurchaseRecommendation.html). It will raise incidents if AWS has any Savings Plan Purchase Recommendations, whose monthly savings exceeds the *Monthly Savings Threshold* parameter in the Policy.
-
 It will email the user specified in `Email addresses of the recipients you wish to notify`
+
+### Input Parameters
+
+This policy has the following input parameters required when launching the policy.
+
+- *Look Back Period* - Specify the number of days of past usage to analyze.
+- *Savings Plan Term* - Specify he Term length for the Savings Plan.
+- *Payment Option* - Specify the payment option for the Savings Plan.
+- *Savings Plan Type* - Choose between Compute Savings Plans or EC2 Instance Savings Plans
+- *Monthly Savings Threshold* - Specify the minimum monthly savings that should result in a Savings Plan purchase recommendation
+- *Email addresses to notify* - A list of email addresses to notify
+
+### Policy Actions
+
+- Send an email report
 
 ### Prerequisites
 
-- The following RightScale Credentials
-  - `AWS_ACCESS_KEY_ID` - The Access Key of an IAM User in the Master Payer account, which has access to Cost Explorer.
-  - `AWS_SECRET_ACCESS_KEY` - The Secret Access Key of the IAM User.
+This policy uses [credentials](https://docs.rightscale.com/policies/users/guides/credential_management.html) for connecting to the cloud -- in order to apply this policy you must have a credential registered in the system that is compatible with this policy. If there are no credentials listed when you apply the policy, please contact your cloud admin and ask them to register a credential that is compatible with this policy. The information below should be consulted when creating the credential.
 
-#### AWS Required Permissions
+### Credential configuration
 
-This policy requires permissions to describe AWS Cost Explorer.
-The IAM user will require the following permissions:
+For administrators [creating and managing credentials](https://docs.rightscale.com/policies/users/guides/credential_management.html) to use with this policy, the following information is needed:
+
+Provider tag value to match this policy: `aws`
+
+Required permissions in the provider:
 
 ```javascript
 {
@@ -35,25 +50,6 @@ The IAM user will require the following permissions:
   ]
 }
 ```
-
-### Input Parameters
-
-This policy has the following input parameters required when launching the policy.
-
-- *Look Back Period* - Specify the number of days of past usage to analyze.
-- *Savings Plan Term* - Specify he Term length for the Savings Plan.
-- *Payment Option* - Specify the payment option for the Savings Plan.
-- *Savings Plan Type* - Choose between Compute Savings Plans or EC2 Instance Savings Plans
-- *Monthly Savings Threshold* - Specify the minimum monthly savings that should result in a Savings Plan purchase recommendation
-- *Email addresses to notify* - A list of email addresses to notify
-
-### Policy Actions
-
-- Send an email report
-
-### Required RightScale Roles
-
-- Cloud Management - credential_viewer
 
 ### Supported Clouds
 

@@ -1,29 +1,38 @@
-## AWS Unused RDS Policy
+# AWS Unused RDS Policy
 
-### What it does
+## What it does
 
 This policy template checks for Unused RDS instances by reviewing the DBconnections and terminates them after user approval.
 
-### Functional Details
+## Functional Details
 
 - This policy gets's a list of RDS instances and uses CloudWatch DBConnection metric to check for connections over a 30 day period.  If there are no DBConnections the policy will terminate the RDS instance after the user approval.
 
-#### Input Parameters
+## Input Parameters
 
 This policy has the following input parameters required when launching the policy.
 
-- *Email addresses of the recipients you wish to notify* - A list of email addresses to notify
-- *Exclusion Tag Key* - A RDS tag to exclude from the instance list. Example: mytag:value
+- *Email addresses to notify* - Email addresses of the recipients you wish to notify when new incidents are created
+- *Exclusion Tag Key:Value* - AWS tag key to ignore instances. Format: Key:Value
 
-### Cloud Management Required Permissions/AWS Required Permissions
-- Cloud Management - The `credential_viewer`,`observer` roles
-- Cloud Management - The `policy_designer`, `policy_manager` & `policy_publisher` roles
-- AWS - The `CloudWatchReadOnlyAccess` AWS IAM Policy
+## Policy Actions
 
-### AWS Required Permissions
+The following policy actions are taken on any resources found to be out of compliance.
 
-This policy requires permissions to list Metrics and Get Metric Statistics from the AWS Cloudwatch API.
-The Cloud Management Platform automatically creates two Credentials when connecting AWS to Cloud Management; AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY. The IAM user credentials contained in those credentials will require the following permissions:
+- Send an email report
+- decommissions AWS RDS instances after approval.
+
+## Prerequisites
+
+This policy uses [credentials](https://docs.rightscale.com/policies/users/guides/credential_management.html) for connecting to the cloud -- in order to apply this policy you must have a credential registered in the system that is compatible with this policy. If there are no credentials listed when you apply the policy, please contact your cloud admin and ask them to register a credential that is compatible with this policy. The information below should be consulted when creating the credential.
+
+### Credential configuration
+
+For administrators [creating and managing credentials](https://docs.rightscale.com/policies/users/guides/credential_management.html) to use with this policy, the following information is needed:
+
+Provider tag value to match this policy: `aws`
+
+Required permissions in the provider:
 
 ```javascript
 {
@@ -42,10 +51,10 @@ The Cloud Management Platform automatically creates two Credentials when connect
 }
 ```
 
-### Supported Clouds
+## Supported Clouds
 
 - Amazon
 
-### Cost
+## Cost
 
 This Policy Template does not incur any cloud costs.
