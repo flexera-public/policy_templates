@@ -17,10 +17,6 @@ info(
 # Permissions
 ###############################################################################
 
-permission "perm_read_creds" do
-  actions   "rs_cm.show_sensitive","rs_cm.index_sensitive"
-  resources "rs_cm.credentials"
-end
 
 ###############################################################################
 # Parameters
@@ -80,7 +76,7 @@ end
 ###############################################################################
 
 ## Remove before merging, used for legacy auth dev with fpt
-auth "azure_graph_auth", type: "oauth2" do
+auth "auth_azure_graph", type: "oauth2" do
   token_url join(["https://login.microsoftonline.com/",$param_azure_tenant_id,"/oauth2/token"])
   grant type: "client_credentials" do
     client_id cred("AZUREAD_APPLICATION_ID")
@@ -92,7 +88,7 @@ auth "azure_graph_auth", type: "oauth2" do
 end
 
 ## Uncomment before publishing
-#credentials "azure_graph_auth" do
+#credentials "auth_azure_graph" do
 #  schemes "oauth2"
 #  label "Azure"
 #  description "Select the Azure Resource Manager Credential from the list."
@@ -105,7 +101,7 @@ auth "auth_rs", type: "rightscale"
 # Pagination
 ###############################################################################
 
-pagination "azure_graph_pagination" do
+pagination "pagination_azure_graph" do
   get_page_marker do
     body_path '"@odata.nextLink"'
   end
@@ -120,8 +116,8 @@ end
 
 datasource "ds_azure_groups" do
   request do
-    auth $azure_graph_auth
-    pagination $azure_graph_pagination
+    auth $auth_azure_graph
+    pagination $pagination_azure_graph
     host "graph.microsoft.com"
     path join(["/v1.0/groups"])
     header "User-Agent", "RS Policies"
@@ -141,8 +137,8 @@ end
 datasource "ds_azure_group_members" do
   iterate $ds_azure_groups
   request do
-    auth $azure_graph_auth
-    pagination $azure_graph_pagination
+    auth $auth_azure_graph
+    pagination $pagination_azure_graph
     host "graph.microsoft.com"
     path join(["/v1.0/groups/",val(iter_item,"objectId"),"/transitiveMembers"])
     header "User-Agent", "RS Policies"
@@ -276,10 +272,8 @@ script "js_filtered_aad_users", type: "javascript" do
     })
 
     _.each(users, function(user){
-      console.log("User: ", user)
       var userPhone = param_default_phone;
       var userCompany = param_default_company;
-      console.log("User Phone: " + user["businessPhones"][0])
       if (( user["businessPhones"][0] != null && user["businessPhones"][0] !== undefined)) {
         userPhone = user["businessPhones"][0]
       }
@@ -311,15 +305,12 @@ script "js_filtered_grs_users", type: "javascript" do
     var usersToPurge = [];
     
     // Filter users to be created and removed
-
     var usersNotInGRS = _.difference(_.pluck(ds_filtered_aad_users, "email"), _.pluck(ds_grs_users, "email"))
     var usersNotInAAD = _.difference(_.pluck(ds_grs_users, "email"), _.pluck(ds_filtered_aad_users, "email"))
-    console.log("Users Not in GRS: ", usersNotInGRS)
-    console.log("Users Not in AAD: ", usersNotInAAD)
 
     _.each(usersNotInGRS, function(user) {
       var currentUserObject = _.where(ds_filtered_aad_users, {email: user});
-      console.log("Current User Object(Create): ", currentUserObject)
+      
       usersToCreate.push({
         principalUIDAttribute: currentUserObject[0]["principalUIDAttribute"],
         objectId: currentUserObject[0]["objectId"],
@@ -335,15 +326,9 @@ script "js_filtered_grs_users", type: "javascript" do
 
     _.each(usersNotInAAD, function(user) {
       var currentUserObject = _.where(ds_grs_users, {email: user});
-      console.log("Current User Object(Purge): ", currentUserObject)
-
       var currentUserGroups = _.pluck(currentUserObject, "groups")[0]
-      console.log("Current User Object(Purge) Groups: ", currentUserGroups)
-      
-      console.log("Current User Object(Purge) Groups Count: " + _.size(currentUserGroups))
 
       if ((_.size(currentUserGroups) == 0 || currentUserGroups == null || currentUserGroups === undefined)) {
-        console.log("Purge User")
         usersToPurge.push({
           email: currentUserObject[0]["email"],
           id: currentUserObject[0]["id"],
@@ -372,10 +357,6 @@ script "js_filtered_grs_groups", type: "javascript" do
     var groupsNotInGRS = _.difference(_.pluck(ds_filtered_aad_groups, "displayName"), _.pluck(ds_grs_groups, "name"))
     var groupsOnlyInGRS = _.difference(_.pluck(ds_grs_groups, "name"), _.pluck(ds_filtered_aad_groups, "displayName"))
     var groupsInGRS = _.difference(_.pluck(ds_grs_groups, "name"), groupsOnlyInGRS)
-    
-    console.log("Groups Not in GRS: ", groupsNotInGRS)
-    console.log("Groups Only in GRS: ", groupsOnlyInGRS)
-    console.log("Groups in GRS: ", groupsInGRS)
 
     _.each(groupsNotInGRS, function(group) {
       var currentGroupObject = _.where(ds_filtered_aad_groups, {displayName: group});
