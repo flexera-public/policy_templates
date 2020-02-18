@@ -584,6 +584,7 @@ define group_sync($data, $param_purge_users, $param_idp_href, $rs_cm_host, $rs_o
 
   # Update Group Membership
   sub task_label: "Updating Group Memberships" do
+    call write_log("Updating group memberships...")
     foreach $aadGroup in $aadGroups do
       $group = ""
       $group = select($grsGroups, { "name": $aadGroup["displayName"] })
@@ -662,7 +663,9 @@ define group_sync($data, $param_purge_users, $param_idp_href, $rs_cm_host, $rs_o
 
   # Purge Users
   sub task_label: "Removing Users from Organization" do
+    call write_log("Removing Users from Organization...")
     sub task_label: "Collecting Current Organization Users" do
+      call write_log("Collecting Current Organization Users...")
       $users_response = http_request(
         verb: "get",
         https: true,
@@ -704,7 +707,7 @@ define group_sync($data, $param_purge_users, $param_idp_href, $rs_cm_host, $rs_o
           sub task_label: join(["Purging user '", $user["email"],"'..."]), on_error: remove_user_error_handler($user, $delete_response) do
             $userId = $user["id"]
             $userEmail = $user["email"]
-            call write_log(join(["* User: ", $userEmail]))
+            call write_log(join(["Removing '", $userEmail, "' (Id: ", $userId, ") affiliation with organization..."]))
 
             $delete_response = http_request(
               verb: "delete",
@@ -717,12 +720,14 @@ define group_sync($data, $param_purge_users, $param_idp_href, $rs_cm_host, $rs_o
 
             if $delete_response["code"] == 204
               $usersDeleted << $user
-              call sys_log(join(["Successfully removed ", $userEmail, " affiliation!"]), join(["Flexera CMP User ID: ", $userId]))
+              call write_log(join(["Successfully Removed '", $userEmail, "' (Id: ", $userId, ") affiliation with organization!"]))
+              call sys_log(join(["Successfully Removed ", $userEmail, " Affiliation!"]), join(["Flexera CMP User ID: ", $userId]))
             else
               $usersNotDeleted = $usersNotDeleted + $user
               $errorDetail = "Status Code: " + $delete_response["code"] + "\n"
               $errorDetail = $errorDetail + to_s($delete_response)
-              call sys_log(join(["Error removing ", $userEmail, " affiliation!"]), to_s($errorDetail))
+              call write_log(join(["Error Removing '", $userEmail, "' (Id: ", $userId, ") affiliation with organization!"]))
+              call sys_log(join(["Error Removing ", $userEmail, " Affiliation!"]), to_s($errorDetail))
             end
           end
         end
@@ -741,12 +746,12 @@ end
 define remove_user_error_handler($user, $delete_response) do
   if $delete_response != null
     $status_code = $delete_response["code"]
-    $syslog_subject = join(["HANDLER Error removing ", $userEmail, " affiliation!"])
+    $syslog_subject = join(["Error Removing ", $userEmail, " Affiliation!"])
     $errorDetail = "Status Code: " + $delete_response["code"] + "\n"
     $errorDetail = $errorDetail + to_s($delete_response)
     call sys_log($syslog_subject, to_s($errorDetail))
   else
-    $syslog_subject = join(["HANDLER Error removing user: ", $user["email"], "!"])
+    $syslog_subject = join(["Error Removing User: ", $user["email"], "!"])
     call sys_log($syslog_subject, to_s($user))
   end
   $_error_behavior = "skip"
