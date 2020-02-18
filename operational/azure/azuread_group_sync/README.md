@@ -8,18 +8,9 @@ This policy collects groups and their members from AzureAD and synchronizes them
 
 The policy leverages the Azure AD Graph API to collect groups and their members based on a filter prefix. It then compares them to the groups and members that currently exist in the Flexera CMP and updates the CMP groups to reflect the current membership in AzureAD.
 
-## Pre-requisites
+If users do not exist in the CMP, they are created using the information gathered from AzureAD.
 
-- Azure Service Principal (AKA Azure Active Directory Application) with the appropriate permissions to read groups and users in the target tenant.
-- A [configured Identity Provider](https://docs.rightscale.com/platform/guides/configuring_sso/) in the Cloud Management Platform.
-- [Groups need to be created](https://docs.rightscale.com/gov/getting_started/gov_groups.html), and have permissions assigned, for each one that you want to synchronize from AzureAD. This policy will NOT create groups, or assign permissions to them, in the CMP.
-
-## Installation
-
-1. Follow steps to [Create an Azure Active Directory Application](https://docs.microsoft.com/en-us/azure/azure-resource-manager/resource-group-create-service-principal-portal#create-an-azure-active-directory-application)
-1. Grant the Azure AD Application access to the necessary APIs as detailed in the [Azure Required Permissions](#Azure-Required-Permissions) section.
-1. [Retrieve the Application ID & Authentication Key](https://docs.microsoft.com/en-us/azure/azure-resource-manager/resource-group-create-service-principal-portal#get-application-id-and-authentication-key)
-1. [Retrieve your Tenant ID](https://docs.microsoft.com/en-us/azure/azure-resource-manager/resource-group-create-service-principal-portal#get-tenant-id)
+You can elect to automatically remove users from your organization that are no longer members of any groups by setting the `Remove Users?` input to `true`.
 
 ## Input Parameters
 
@@ -31,6 +22,30 @@ The policy leverages the Azure AD Graph API to collect groups and their members 
   - The policy looks for a value in the `companyName` attribute of the AzureAD user account.
 - *Identity Provider Href* - The Href for the Identity Provider to associate to new users
 - *Remove Users* - Remove users from the Organization that are no longer members of a group
+
+## Actions
+
+- Synchronizes group memberships in CMP from AzureAD
+
+## Pre-requisites
+
+- Azure Service Principal (AKA Azure Active Directory Application) with the appropriate permissions to read groups and users in the target tenant.
+- A [configured Identity Provider](https://docs.rightscale.com/platform/guides/configuring_sso/) in the Cloud Management Platform.
+- [Groups need to be created](https://docs.rightscale.com/gov/getting_started/gov_groups.html), and have [permissions assigned](https://docs.rightscale.com/gov/getting_started/gov_groups.html#roles), for each one that you want to synchronize from AzureAD. This policy will NOT create groups, or assign permissions to them, in the CMP.
+- This policy uses [credentials](https://docs.rightscale.com/policies/users/guides/credential_management.html) for connecting to the cloud -- in order to apply this policy you must have a credential registered in the system that is compatible with this policy. If there are no credentials listed when you apply the policy, please contact your cloud admin and ask them to register a credential that is compatible with this policy. [The information below](#Credential-configuration) should be consulted when creating the credential.
+
+### Credential configuration
+
+For administrators [creating and managing credentials](https://docs.rightscale.com/policies/users/guides/credential_management.html) to use with this policy, the following information is needed:
+
+Provider tag value to match this policy: `azure_rm`
+
+Required permissions in the provider:
+
+- Tenant > Azure Active Directory Graph > Directory.Read.All (Application with Admin Consent)
+- Subscription > Reader
+
+
 
 ## Required RightScale Roles
 
