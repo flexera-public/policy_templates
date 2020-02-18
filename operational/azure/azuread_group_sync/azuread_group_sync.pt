@@ -538,7 +538,7 @@ define group_sync($data, $param_purge_users, $param_idp_href, $rs_cm_host, $rs_o
             https: true,
             host: $rs_cm_host,
             href: "/api/users",
-            headers: { "X-Api-Version": "1.5" },
+            headers: { "X-Api-Version": "1.5", "User-Agent": "RS Policies" },
             body: $newUserBodyPayload
           )
           $responses << $create_response
@@ -572,11 +572,13 @@ define group_sync($data, $param_purge_users, $param_idp_href, $rs_cm_host, $rs_o
 
       if size($newUsersCreated) > 0
         call write_log(join(["New user(s) created: ", size($newUsersCreated)]))
-        task_label("Sleeping 60 seconds for new user replication...")
-        $sleepSeconds = 60
+        $sleepSeconds = 30
+        task_label(join(["Sleeping ",to_s($sleepSeconds) ," seconds for new user replication..."]))
         call write_log(join(["Sleeping ", $sleepSeconds, " seconds to allow for new user replication..."]))
-        #sleep($sleepSeconds)
+        sleep($sleepSeconds)
       end
+    else
+      call write_log("Skip creating users! No users to create.")
     end
   end
 
@@ -586,7 +588,6 @@ define group_sync($data, $param_purge_users, $param_idp_href, $rs_cm_host, $rs_o
       $group = ""
       $group = select($grsGroups, { "name": $aadGroup["displayName"] })
       if size($group) > 0
-        $$group = $group
         $group_name = ""
         $group_id = ""
         $group_href = ""
@@ -625,14 +626,14 @@ define group_sync($data, $param_purge_users, $param_idp_href, $rs_cm_host, $rs_o
               "users": $userPayload
           }
           
-          ### We should probably log the payload. Doesn't the LDAP Sync Script do that?
+          call sys_log(join(["Updating Group: ", $group_name]), join(["Desired membership:\n" + to_s($membershipBodyPayload)]))
 
           $update_response = http_request(
             verb: "put",
             https: true,
             host: $rs_cm_host,
             href: join(["/grs/orgs/", $rs_org_id, "/memberships"]), 
-            headers: { "X-Api-Version": "2.0" },
+            headers: { "X-Api-Version": "2.0", "User-Agent": "RS Policies" },
             body: $membershipBodyPayload
           )
           $responses << $update_response
@@ -641,8 +642,8 @@ define group_sync($data, $param_purge_users, $param_idp_href, $rs_cm_host, $rs_o
             call write_log(join(["Successfully updated '", $group_name, "' membership!"]))
             call sys_log(join(["Successfully Updated Group: ", $group_name]), to_s($update_response))
           else
-            $errorDetail = "Status Code: " + $update_response["code"]
-            $errorDetail = $errorDetail + to_s($membershipBodyPayload)
+            $errorDetail = "Status Code: " + $update_response["code"] + "\n"
+            $errorDetail = $errorDetail + to_s($membershipBodyPayload) + "\n"
             $errorDetail = $errorDetail + to_s($update_response)
             call write_log(join(["Error updating '", $group_name, "! Status Code: ", $update_response["code"]]))
             call sys_log(join(["Error updating '", $group_name, "! Status Code: ", $update_response["code"]]), to_s($errorDetail))
@@ -661,17 +662,35 @@ define group_sync($data, $param_purge_users, $param_idp_href, $rs_cm_host, $rs_o
 
   # Purge Users
   sub task_label: "Removing Users from Organization" do
-    #
-    # It takes an extra run cycle to purge users because we are not recalculating what 
-    #   users to remove after removing them from groups during this cycle.
-    # Is it worth recapturing the users and comparing?
-    # ...
-    # ...
-    # ...
-    # Probably...
-    #
-    # We should probably decide what users to create and purge in CWF instead of the policy.
-    #
+    sub task_label: "Collecting Current Organization Users" do
+      $users_response = http_request(
+        verb: "get",
+        https: true,
+        host: $rs_cm_host,
+        href: join(["/grs/orgs/", $rs_org_id, "/users"]),
+        headers: { "X-Api-Version": "2.0", "User-Agent": "RS Policies" },
+        query_strings: { "view": "extended" }
+      )
+      $responses << $users_response
+
+      if $users_response["code"] == 200
+        $currentUsers = $users_response["body"]
+        # Identify users that are not currently members of any groups
+        $updatedUsersToPurge = []
+        foreach $orgUser in $currentUsers do
+          if size($orgUser["groups"]) == 0
+            $updatedUsersToPurge << $orgUser
+          end
+        end
+        if size($updatedUsersToPurge) > 0
+          call write_log("Identified users to purge! Updating purge list...")
+        end
+        $usersToPurge = $updatedUsersToPurge
+      else
+        call write_log("Unable to retrieve current Org Users! Using predetermined purge list.")
+      end
+    end
+
     if size($usersToPurge) > 0
       call write_log(join([size($usersToPurge), " user(s) to purge..."]))
       $usersToPurgeDetails = "Users will be purged? " + $param_purge_users + "\n"
@@ -692,12 +711,12 @@ define group_sync($data, $param_purge_users, $param_idp_href, $rs_cm_host, $rs_o
               https: true,
               host: $rs_cm_host,
               href: join(["/grs/orgs/", $rs_org_id, "/users/", $userId]),
-              headers: { "X-API-Version": "2.0" }
+              headers: { "X-API-Version": "2.0", "User-Agent": "RS Policies" }
             )
             $responses << $delete_response
 
             if $delete_response["code"] == 204
-              $usersDeleted = $usersDeleted + $user
+              $usersDeleted << $user
               call sys_log(join(["Successfully removed ", $userEmail, " affiliation!"]), join(["Flexera CMP User ID: ", $userId]))
             else
               $usersNotDeleted = $usersNotDeleted + $user
@@ -722,12 +741,12 @@ end
 define remove_user_error_handler($user, $delete_response) do
   if $delete_response != null
     $status_code = $delete_response["code"]
-    $syslog_subject = join(["Error removing ", $userEmail, " affiliation!"])
+    $syslog_subject = join(["HANDLER Error removing ", $userEmail, " affiliation!"])
     $errorDetail = "Status Code: " + $delete_response["code"] + "\n"
     $errorDetail = $errorDetail + to_s($delete_response)
     call sys_log($syslog_subject, to_s($errorDetail))
   else
-    $syslog_subject = join(["Error creating new user: ", $user["email"], "!"])
+    $syslog_subject = join(["HANDLER Error removing user: ", $user["email"], "!"])
     call sys_log($syslog_subject, to_s($user))
   end
   $_error_behavior = "skip"
@@ -749,6 +768,5 @@ end
 define write_log($message) do
   $time = now()
   $strTime = strftime($time, "%Y-%m-%dT%H:%M:%S.%L+0000")
-  #$$log << "[" + $strTime + "] " + $message
   $$log = $$log + "[" + $strTime + "] " + $message + "\n"
 end
