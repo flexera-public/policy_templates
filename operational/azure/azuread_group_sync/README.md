@@ -1,44 +1,41 @@
-# Azure Subscription Access
+# AzureAD Group Sync
 
 ## What it does
 
-This policy checks all users who have Owner or Contributor access to a given Azure subscription and creates an incident whenever that user list changes.
+This policy collects groups and their members from AzureAD and synchronizes them to the Flexera Cloud Management Platform
 
 ## Functional Details
 
-The policy leverages the Azure RBAC API to get all the users with the given role(s) on the given subscription.
-When the list of users that match the criteria changes, an incident is created and the details are reported via email.
+The policy leverages the Azure AD Graph API to collect groups and their members based on a filter prefix. It then compares them to the groups and members that currently exist in the Flexera CMP and updates the CMP groups to reflect the current membership in AzureAD.
 
 ## Pre-requisites
 
-- Azure Service Principal (AKA Azure Active Directory Application) with the appropriate permissions to manage resources in the target subscription
-- The following RightScale Credentials
-  - `AZURE_APPLICATION_ID`
-  - `AZURE_APPLICATION_KEY`
+- Azure Service Principal (AKA Azure Active Directory Application) with the appropriate permissions to read groups and users in the target tenant.
+- Groups need to be created and have permissions assigned for each one that you want to sync from AzureAD. This policy will NOT create groups in the CMP.
 
 ## Installation
 
 1. Follow steps to [Create an Azure Active Directory Application](https://docs.microsoft.com/en-us/azure/azure-resource-manager/resource-group-create-service-principal-portal#create-an-azure-active-directory-application)
-1. Grant the Azure AD Application access to the necessary subscription(s)
+1. Grant the Azure AD Application access to the necessary APIs as detailed in the [Azure Required Permissions](#Azure-Required-Permissions) section.
 1. [Retrieve the Application ID & Authentication Key](https://docs.microsoft.com/en-us/azure/azure-resource-manager/resource-group-create-service-principal-portal#get-application-id-and-authentication-key)
-1. Create RightScale Credentials with values that match the Application ID (Credential name: `AZURE_APPLICATION_ID`) & Authentication Key (Credential name: `AZURE_APPLICATION_KEY`)
 1. [Retrieve your Tenant ID](https://docs.microsoft.com/en-us/azure/azure-resource-manager/resource-group-create-service-principal-portal#get-tenant-id)
 
 ## Input Parameters
 
 - *Email addresses of the recipients you wish to notify* - A list of email addresses to notify
-- *Roles to report on* - Can choose to report on Owner, Contributor, or Both
-- *Azure AD Tenant ID* - the Azure AD Tenant ID used for the Azure API Authentication
-- *Azure Subscription ID* - the Azure Subscription ID used for the Azure API Authentication
+- *Prefix to filter groups on* - Uses the 'startswith()' odata query to filter AzureAD groups based on a prefix
+- *Default Phone Number for New Users* - Use this phone number if the user doesn't have one set in AzureAD
+- *Default Company Name for New Users* - Use this Company Name if the user doesn't have one set in AzureAD
+- *Identity Provider Href* - The Href for the Identity Provider to associate to new users
+- *Remove Users* - Remove users from the Organization that are no longer members of a group
 
 ## Required RightScale Roles
 
-- credential_viewer
+- enterprise_manager
 
 ## Azure Required Permissions
 
-- Tenant > Microsoft Graph > Directory.Read.all
-- Subscription > Reader
+- AzureAD Tenant > Azure Active Directory Graph > Directory.Read.All (Application with Admin Consent)
 
 ## Supported Clouds
 
