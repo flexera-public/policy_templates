@@ -8,7 +8,7 @@ This Policy Template will scan all resources in an Azure Resource Manager Subscr
 
 This policy has the following input parameters required when launching the policy.
 
-- *Tag Key* - the tag key to scan on resources and to utilize when applying new/updated tags on resources  
+- *Tag Key* - the tag key to scan on resources and to utilize when applying new/updated tags on resources
 - *Email addresses of the recipients you wish to notify* - A list of email addresses to notify
 
 ## Policy Actions
