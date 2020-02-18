@@ -11,7 +11,8 @@ The policy leverages the Azure AD Graph API to collect groups and their members 
 ## Pre-requisites
 
 - Azure Service Principal (AKA Azure Active Directory Application) with the appropriate permissions to read groups and users in the target tenant.
-- Groups need to be created and have permissions assigned for each one that you want to sync from AzureAD. This policy will NOT create groups in the CMP.
+- A [configured Identity Provider](https://docs.rightscale.com/platform/guides/configuring_sso/) in the Cloud Management Platform.
+- [Groups need to be created](https://docs.rightscale.com/gov/getting_started/gov_groups.html), and have permissions assigned, for each one that you want to synchronize from AzureAD. This policy will NOT create groups, or assign permissions to them, in the CMP.
 
 ## Installation
 
@@ -24,8 +25,10 @@ The policy leverages the Azure AD Graph API to collect groups and their members 
 
 - *Email addresses of the recipients you wish to notify* - A list of email addresses to notify
 - *Prefix to filter groups on* - Uses the 'startswith()' odata query to filter AzureAD groups based on a prefix
-- *Default Phone Number for New Users* - Use this phone number if the user doesn't have one set in AzureAD
+- *Default Phone Number for New Users* - Use this phone number if the user doesn't have one set in AzureAD.
+  - The policy looks for a value in the first item of `businessPhones` attribute of the AzureAD user account.
 - *Default Company Name for New Users* - Use this Company Name if the user doesn't have one set in AzureAD
+  - The policy looks for a value in the `companyName` attribute of the AzureAD user account.
 - *Identity Provider Href* - The Href for the Identity Provider to associate to new users
 - *Remove Users* - Remove users from the Organization that are no longer members of a group
 
