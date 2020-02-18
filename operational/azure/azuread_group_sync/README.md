@@ -21,7 +21,7 @@ You can elect to automatically remove users from your organization that are no l
 - *Default Company Name for New Users* - Use this Company Name if the user doesn't have one set in AzureAD
   - The policy looks for a value in the `companyName` attribute of the AzureAD user account.
 - *Identity Provider Href* - The Href for the Identity Provider to associate to new users
-- *Remove Users* - Remove users from the Organization that are no longer members of a group
+- *Remove Users?* - Remove users from the Organization that are no longer members of a group
 
 ## Actions
 
@@ -43,9 +43,6 @@ Provider tag value to match this policy: `azure_rm`
 Required permissions in the provider:
 
 - Tenant > Azure Active Directory Graph > Directory.Read.All (Application with Admin Consent)
-- Subscription > Reader
-
-
 
 ## Required RightScale Roles
 
