@@ -6,7 +6,7 @@ long_description ""
 severity "low"
 category "Cost"
 info(
-      version: "2.0",
+      version: "2.1",
       provider: "GCE",
       service: "Compute",
       policy_set: "Inefficient Instance Usage"
@@ -29,13 +29,6 @@ parameter "param_email" do
   type "list"
   label "Email addresses to notify"
   description "Email addresses of the recipients you wish to notify when new incidents are created"
-end
-
-parameter "param_google_project" do
-  type "string"
-  label "Google Cloud Project"
-  description "Google Cloud Project ID"
-  allowed_pattern /^[0-9a-z:\.-]+$/
 end
 
 parameter "param_avg_used_mem_percentage" do
@@ -89,13 +82,33 @@ datasource "ds_time" do
   run_script $js_time
 end
 
-datasource "ds_compute_utilization" do
+#get all google project
+datasource "ds_google_project" do
   iterate $ds_time
   request do
     auth $auth_google
     pagination $google_pagination
+    host "cloudresourcemanager.googleapis.com"
+    path "/v1/projects/"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "projects[*]") do
+      field "projectNumber", jmes_path(col_item,"projectNumber")
+      field "projectId", jmes_path(col_item,"projectId")
+      field "end_date", val(iter_item,"end_date")
+      field "start_date", val(iter_item,"start_date")
+    end
+  end
+end
+
+datasource "ds_compute_utilization" do
+  iterate $ds_google_project
+  request do
+    auth $auth_google
+    pagination $google_pagination
     host "monitoring.googleapis.com"
-    path join(["/v3/projects/",$param_google_project,"/timeSeries/"])
+    path join(["/v3/projects/",val(iter_item,"projectId"),"/timeSeries/"])
     query "filter", 'metric.type="compute.googleapis.com/instance/cpu/utilization"'
     query "interval.endTime", val(iter_item,"end_date")
     query "interval.startTime", val(iter_item,"start_date")
@@ -106,6 +119,7 @@ datasource "ds_compute_utilization" do
       field "label_instance_name", jmes_path(col_item, "metric.labels.instance_name")
       field "instance_id", jmes_path(col_item, "resource.labels.instance_id")
       field "zone", jmes_path(col_item, "resource.labels.zone")
+      field "projectId", val(iter_item,"projectId")
       field "avg_cpu_points", jmes_path(col_item, "points[*].value.doubleValue | avg(@)")
       field "max_cpu_points", jmes_path(col_item, "points[*].value.doubleValue | max(@)")
       field "min_cpu_points", jmes_path(col_item, "points[*].value.doubleValue | min(@)")
@@ -114,12 +128,12 @@ datasource "ds_compute_utilization" do
 end
 
 datasource "ds_memory_utilization" do
-  iterate $ds_time
+  iterate $ds_google_project
   request do
     auth $auth_google
     pagination $google_pagination
     host "monitoring.googleapis.com"
-    path join(["/v3/projects/",$param_google_project,"/timeSeries/"])
+    path join(["/v3/projects/",val(iter_item,"projectId"),"/timeSeries/"])
     query "filter", 'metric.type="agent.googleapis.com/memory/percent_used" AND metric.label.state=used'
     query "interval.endTime", val(iter_item,"end_date")
     query "interval.startTime", val(iter_item,"start_date")
@@ -136,12 +150,12 @@ datasource "ds_memory_utilization" do
 end
 
 datasource "ds_disk_utilization" do
-  iterate $ds_time
+  iterate $ds_google_project
   request do
     auth $auth_google
     pagination $google_pagination
     host "monitoring.googleapis.com"
-    path join(["/v3/projects/",$param_google_project,"/timeSeries/"])
+    path join(["/v3/projects/",val(iter_item,"projectId"),"/timeSeries/"])
     query "filter", 'metric.type="agent.googleapis.com/disk/percent_used" AND metric.label.state=used'
     query "interval.endTime", val(iter_item,"end_date")
     query "interval.startTime", val(iter_item,"start_date")
@@ -164,7 +178,7 @@ end
 datasource "ds_add_instance_data" do
   iterate $ds_calculated_utilization
   request do
-    run_script $js_add_instance_data, $param_google_project, val(iter_item,"zone"), val(iter_item,"instance_id")
+    run_script $js_add_instance_data, val(iter_item,"projectId"), val(iter_item,"zone"), val(iter_item,"instance_id")
   end
   result do
     encoding "json"
@@ -186,6 +200,7 @@ datasource "ds_add_instance_data" do
       field "disk_average", val(iter_item, "disk_average")
       field "disk_maximum", val(iter_item, "disk_maximum")
       field "disk_minimum", val(iter_item, "disk_minimum")
+      field "projectId", val(iter_item,"projectId")
       field "tags", jmes_path(col_item, "tags")
     end
   end
@@ -267,6 +282,7 @@ script "js_filtered_instances", type: "javascript" do
           disk_average: instance_data["disk_average"],
           disk_maximum: instance_data["disk_maximum"],
           disk_minimum: instance_data["disk_minimum"],
+          projectId: instance_data["projectId"],
           next_instance_size: next_instance_size,
           next_machine_type: next_machine_type,
           tagKeyValue:(tagKeyValue.slice(2))
@@ -274,6 +290,7 @@ script "js_filtered_instances", type: "javascript" do
       }
     })
     results = _.sortBy(results, 'zone');
+	results= _.sortBy(results, 'projectId');
   EOS
 end
 
@@ -322,6 +339,7 @@ script "js_calculated_utilization", type: "javascript" do
       results.push(
         {
           zone: ds_compute_utilization[i].zone,
+		  projectId: ds_compute_utilization[i].projectId,
           instance_id: instance_id,
           points: points,
           label_instance_name: ds_compute_utilization[i].label_instance_name,
@@ -368,10 +386,10 @@ policy "pol_utilization" do
     summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} rows containing Google instance StackDriver Utilization data"
     detail_template <<-EOS
 # Google Instance StackDriver Utilization
-| Region | instanceID | Hostname | Current Machine Type | Machine Type To Downsize | CPU Maximum % | CPU Minimum % | CPU Average % | Disk Maximum % | Disk Minimum % | Disk Average % | Memory Minimum % | Memory Maximum % | Memory Average % | Tags |
-| ------ | ---------- | -------- | -------------------- | ------------------------ | ------------- | ------------- | ------------- | -------------- | -------------- | -------------- | ---------------- | ---------------- | ---------------- | ---- |
+| Project ID | Region | instanceID | Hostname | Current Machine Type | Machine Type To Downsize | CPU Maximum % | CPU Minimum % | CPU Average % | Disk Maximum % | Disk Minimum % | Disk Average % | Memory Minimum % | Memory Maximum % | Memory Average % | Tags |
+| ---------- | ------ | ---------- | -------- | -------------------- | ------------------------ | ------------- | ------------- | ------------- | -------------- | -------------- | -------------- | ---------------- | ---------------- | ---------------- | ---- |
 {{ range data -}}
-| {{.zone}} | {{.instance_id}} | {{if .hostname}} {{.hostname}} {{ else }} {{.instance_id}} {{end}} | {{.machine_type}} | {{.next_instance_size}} | {{ .cpu_maximum }} | {{.cpu_minimum}} | {{ .cpu_average }} | {{.disk_maximum}} | {{.disk_minimum}} | {{.disk_average}} | {{.mem_minimum}} | {{.mem_maximum}} | {{.mem_average}} | {{.tagKeyValue}} |
+| {{.projectId}} | {{.zone}} | {{.instance_id}} | {{if .hostname}} {{.hostname}} {{ else }} {{.instance_id}} {{end}} | {{.machine_type}} | {{.next_instance_size}} | {{ .cpu_maximum }} | {{.cpu_minimum}} | {{ .cpu_average }} | {{.disk_maximum}} | {{.disk_minimum}} | {{.disk_average}} | {{.mem_minimum}} | {{.mem_maximum}} | {{.mem_average}} | {{.tagKeyValue}} |
 {{ end -}}
 ___
 ###### Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }}) within Org: {{ rs_org_name }} (Org ID: {{ rs_org_id }})
@@ -401,7 +419,7 @@ escalation "esc_downsize_instances" do
       description "Explain why you are approving the action"
     end
   end
-  run "downsize_instances", data, $param_google_project
+  run "downsize_instances", data
 end
 
 ###############################################################################
@@ -409,11 +427,13 @@ end
 ###############################################################################
 
 # https://cloud.google.com/compute/docs/reference/rest/v1/instances/delete
-define downsize_instances($data, $param_google_project) return $all_responses do
+define downsize_instances($data) return $all_responses do
   $status_code=''
   $go_next = true
+  $param_google_project=''
   foreach $item in $data do
     if $item["next_machine_type"] != "N/A"
+	$param_google_project = $item["projectId"]
     sub on_error: rollback($item, $param_google_project) do  
         call stop_instances($item, $param_google_project) retrieve $status_code
         if($status_code == 200)
