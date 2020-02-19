@@ -1,4 +1,4 @@
-# Azure: Tag Resources with Resource Group Name
+# Azure Tag Resources with Resource Group Name
 
 ## What it does
 
