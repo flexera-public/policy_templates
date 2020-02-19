@@ -31,7 +31,11 @@ Provider tag value to match this policy: `gce`
 
 Required permissions in the provider:
 
-[list all permissions here]
+- The `compute.snapshots.delete` permission
+- The `compute.snapshots.list` permission
+- The `compute.snapshots.get` permission
+- The `compute.regions.list` permission
+- The `resourcemanager.projects.get` permission
 
 ## Supported Clouds
 

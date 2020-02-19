@@ -29,7 +29,7 @@ end
 
 parameter "param_exclusion_tags" do
   label "Snapshot Tag List"
-  description "Cloud native label to ignore instances. Format: Key:Value"
+  description "Cloud native label to ignore snapshots. Format: Key:Value"
   type "list"
   allowed_pattern /(^$)|([\w]?)+\:([\w]?)+/
 end
@@ -93,6 +93,7 @@ datasource "ds_snapshots" do
     auth $auth_google
     host "compute.googleapis.com"
     path join(["/compute/v1/projects/",val(iter_item,"projectId"),"/global/snapshots"])
+    query "filter","status=READY"
   end
   result do
     encoding "json"
@@ -136,7 +137,6 @@ script "js_filter_snapshots", type: "javascript" do
         console.log(tag)
         tag_key = tag.split(':')[0]
         tag_value = tag.split(':')[1]
-        console.log(tag_key)
         if ( snapshot.labels[tag_key] != null && snapshot.labels[tag_key] !== undefined){
           if (snapshot.labels[tag_key] == tag_value){
             count = 1
@@ -149,6 +149,17 @@ script "js_filter_snapshots", type: "javascript" do
     }
   }
 )
+
+var now = new Date()
+var one_day=1000*60*60*24
+_.each(filtered_snapshots, function(snapshot){
+  var creation_time = new Date(snapshot.creationTimestamp)
+  var difference = now.getTime() - creation_time.getTime()
+  var days_old=(difference/one_day).toFixed(2)
+  snapshot["days_old"] = days_old
+}
+)
+var filtered_snapshots = _.sortBy(filtered_snapshots, "name")
 EOF
 end
 
@@ -161,10 +172,10 @@ policy "policy_old_snapshots" do
     summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} rows containing Old Snapshots"
     detail_template <<-EOS
 # Google Old Snapshots
-| Project ID | Name | Size | Labels | Creation Time | Status |
+| Project ID | Name | Size | Labels | Age In Days| Status |
 | ---------- | ---- | ---- | ------ | ------------- | ------ |
 {{ range data -}}
-| {{.projectId}} | {{.name}} | {{.diskSizeGb}} | {{ range $i, $e := .labels }}{{$i}}:{{ $e }}, {{ end }} | {{.creationTimestamp}} | {{.status}} |
+| {{.projectId}} | {{.name}} | {{.diskSizeGb}} | {{ range $i, $e := .labels }}{{$i}}:{{ $e }}, {{ end }} | {{.days_old}} | {{.status}} |
 {{ end -}}
 ###### Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }}) within Org: {{ rs_org_name }} (Org ID: {{ rs_org_id }})
 EOS
