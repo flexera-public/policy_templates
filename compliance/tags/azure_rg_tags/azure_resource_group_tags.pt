@@ -65,6 +65,7 @@ datasource "ds_subscriptions" do
     encoding "json"
     collect jmes_path(response, "value[*]") do
       field "subscriptionId", jmes_path(col_item,"subscriptionId")
+	  field "subscriptionName", jmes_path(col_item,"displayName")
     end
   end
 end
@@ -82,7 +83,8 @@ datasource "ds_azure_resources" do
   result do
     encoding "json"
     collect jmes_path(response, "value[*]") do
-        field "subscriptionId", val(iter_item,"subscriptionId")
+      field "subscriptionId", val(iter_item,"subscriptionId")
+	  field "subscriptionName", val(iter_item,"subscriptionName")
       field "id", jmes_path(col_item,"id")
       field "region", jmes_path(col_item,"location")
       field "name", jmes_path(col_item,"name")
@@ -116,6 +118,7 @@ script "js_filter_resources", type: "javascript" do
         if (_.isEmpty(resource_tags)) {
           result.push({
             subscriptionId: ar["subscriptionId"],
+			subscriptionName : ar["subscriptionName"],
             id: ar["id"],
             region: ar["region"],
             name: ar["name"],
@@ -132,6 +135,7 @@ script "js_filter_resources", type: "javascript" do
             console.log('Tag Value: '+rg_tag_value)
             result.push({
               subscriptionId: ar["subscriptionId"],
+			  subscriptionName : ar["subscriptionName"],
               id: ar["id"],
               region: ar["region"],
               name: ar["name"],
@@ -145,6 +149,7 @@ script "js_filter_resources", type: "javascript" do
             console.log('Tag Key Not Found')
             result.push({
               subscriptionId: ar["subscriptionId"],
+			  subscriptionName : ar["subscriptionName"],
               id: ar["id"],
               region: ar["region"],
               name: ar["name"],
@@ -158,6 +163,8 @@ script "js_filter_resources", type: "javascript" do
         }
       }
     })
+	result = _.sortBy(result, 'subscriptionName');
+    result = _.sortBy(result, 'name');
 
 EOS
 end
@@ -167,10 +174,10 @@ policy "policy_azure_resource" do
     summary_template "{{ len data }} Azure Resources out of compliance."
     detail_template <<-EOS
 # Azure Resources Incorrectly Tagged
-| Resource Name | Resource Group | Azure Region | Resource ID | Tag Value | 
-| ------------- | -------------- | ------------ | ----------- | --------- |
+| Subscription Name | Resource Name | Resource Group | Azure Region | Resource ID | Tag Value | 
+| ------------- | -------------- | ------------ | ----------- | --------- | ------------ |
 {{ range data -}}
-| {{.name}} | {{.resource_group}} | {{.region}} | {{.id}} | {{.tag}}
+| {{.subscriptionName}} | {{.name}} | {{.resource_group}} | {{.region}} | {{.id}} | {{.tag}}
 {{ end -}}
 
 ###### Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }})
