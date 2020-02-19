@@ -9,7 +9,7 @@ This Policy finds Google snapshots older than the specified days and deletes the
 This policy has the following input parameters required when launching the policy.
 
 - *Email addresses* - A list of email addresses to notify
-- *Snapshot age* - The number of dates since the snapshot was created.
+- *Snapshot age* - The number of days since the snapshot was created.
 - *Exclusion Label List* - list of tags that a snapshot can have to exclude it from the list.
 
 ## Policy Actions
