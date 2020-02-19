@@ -92,13 +92,51 @@ script "merge", type: "javascript" do
   res = []
   _.each(ds_projects, function(project){
     _.each(ds_zones, function(zone){
-      var result_json = {"project": project.project_name,"region": zone.zone}
+      var result_json = {"project": project.project_name,"zone": zone.zone}
       res.push(result_json)
     })
   })
   EOS
 end
 
+datasource "ds_volumes_list" do
+  iterate $ds_merged_project_zone
+  request do
+    auth $my_google_auth
+    host "compute.googleapis.com"
+    verb "GET"
+    path join(["/compute/v1/projects/", val(iter_item, "project"), "/zones/", val(iter_item, "zone"), "/disks"])
+    query "project", val(iter_item, "project_name")
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response,"items[*]") do
+      field "zone", jmes_path(col_item, "zone")
+      field "id", jmes_path(col_item, "id")
+	    field "name", jmes_path(col_item, "name")
+	    field "creationTimestamp", jmes_path(col_item, "creationTimestamp")
+	    field "lastAttachTimestamp", jmes_path(col_item, "lastAttachTimestamp")
+	    field "lastDetachTimestamp", jmes_path(col_item, "lastDetachTimestamp")
+    end
+  end
+end
+
+
+datasource "ds_clean_volume_list" do
+  run_script $clean_volume_list, $ds_volumes_list
+end
+
+script "clean_volume_list", type: "javascript" do
+  parameters "ds_volumes_list"
+  result "res"
+  code <<-EOS
+  res = []
+  _.each(ds_volumes_list, function(ds_volumes){
+    if(ds_volumes.name!=null && ds_volumes.id!=null && ds_volumes.zone!=null)
+      res.push(ds_volumes)
+  })
+  EOS
+end
 
 
 
@@ -130,6 +168,7 @@ escalation "escalate_vpcs" do
   email $param_email
   run "generate_cat_package", data
 end
+
 
 ###############################################################################
 # Cloud Workflow
