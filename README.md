@@ -93,6 +93,7 @@ Please contact sales@flexera.com to learn more.
 ##### Storage
 
 - [Google Object Storage Optimization](./cost/google/object_storage_optimization/)
+- [Google Delete Old Snapshots]()./cost/google/old_snapshots/)
 
 ##### Other
 
