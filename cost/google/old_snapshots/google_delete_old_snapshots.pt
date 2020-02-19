@@ -1,0 +1,151 @@
+name "Google Delete Old Snapshots"
+rs_pt_ver 20180301
+type "policy"
+short_description "Checks for snapshots older than specified number of days and, optionally, deletes them. See the [README](https://github.com/flexera/policy_templates/tree/master/cost/google/old_snapshots) and [docs.rightscale.com/policies](https://docs.rightscale.com/policies/) to learn more."
+category "Cost"
+severity "low"
+info(
+  version: "2.0", 
+  provider:"Google", 
+  service: "Storage",
+  policy_set: "Old Snapshots"
+)
+
+###############################################################################
+# Parameters
+###############################################################################
+
+parameter "param_email" do
+  type "list"
+  label "Email addresses to notify"
+  description "Email addresses of the recipients you wish to notify when new incidents are created"
+end
+
+parameter "param_snapshot_age" do
+  label "Snapshot Age"
+  description "The number of dates since the snapshot was created"
+  type "string"
+end
+
+parameter "param_exclusion_tag" do
+  label "Snapshot Tag List"
+  description "Cloud native label to ignore instances. Format: Key:Value"
+  type "list"
+  allowed_pattern /(^$)|([\w]?)+\:([\w]?)+/
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+auth "auth_google", type: "oauth2" do	# authenticate with Google
+  token_url "https://www.googleapis.com/oauth2/v4/token"
+  grant type: "jwt_bearer" do
+    iss cred("GCE_PLUGIN_ACCOUNT")
+    aud "https://www.googleapis.com/oauth2/v4/token"
+    additional_claims do {
+      "scope" => "https://www.googleapis.com/auth/cloud-platform"
+    } end	
+    signing_key cred("GCE_PLUGIN_PRIVATE_KEY")	
+  end	
+end	
+
+# authenticate with Google
+# credentials "auth_google" do
+#   schemes "oauth2"
+ #  label "Google"
+#   description "Select the Google Cloud Credential from the list."
+#   tags "provider=gce"
+#end
+
+###############################################################################
+# Pagination
+###############################################################################
+
+pagination "google_pagination" do
+  get_page_marker do
+    body_path "nextPageToken"
+  end
+  set_page_marker do
+    query "pageToken"
+  end
+end
+
+###############################################################################
+# Datasources
+###############################################################################
+
+#get all google project
+datasource "ds_google_project" do
+  iterate $ds_time
+  request do
+    auth $auth_google
+    pagination $google_pagination
+    host "cloudresourcemanager.googleapis.com"
+    path "/v1/projects/"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "projects[*]") do
+      field "projectNumber", jmes_path(col_item,"projectNumber")
+      field "projectId", jmes_path(col_item,"projectId")
+      field "end_date", val(iter_item,"end_date")
+      field "start_date", val(iter_item,"start_date")
+    end
+  end
+end
+
+datasource "ds_time" do
+  run_script $js_time
+end
+
+datasource "ds_snapshots" do
+  iterate $ds_google_project
+  request do
+    auth $auth_google
+    host "compute.googleapis.com"
+    path join(["/compute/v1/projects/",val(iter_item,"projectId"),"/global/snapshots"])
+  end
+end
+
+###############################################################################
+# Scripts
+###############################################################################
+script "js_time", type: "javascript" do
+  result "time"
+  code <<-EOF
+  var time = [{
+    "end_date":  new Date().toISOString(),
+    "start_date": new Date(new Date().setDate(new Date().getDate() - 30)).toISOString()
+  }]
+EOF
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "pol_old_snapshots" do
+  validate_each $ds_snapshots do
+    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} rows"
+    detail_template <<-EOS
+# Google Old Snapshots
+| Project ID |
+| ---------- |
+{{ range data -}}
+| {{.projectId}} |
+{{ end -}}
+###### Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }}) within Org: {{ rs_org_name }} (Org ID: {{ rs_org_id }})
+EOS
+    check eq(0,1)
+    escalate $email
+  end
+end
+
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "email" do
+  email $param_email
+end
