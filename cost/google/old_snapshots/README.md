@@ -10,7 +10,7 @@ This policy has the following input parameters required when launching the polic
 
 - *Email addresses* - A list of email addresses to notify
 - *Snapshot age* - The number of dates since the snapshot was created.
-- *Snapshot Tag List* - list of tags that a snapshot can have to exclude it from the list.
+- *Exclusion Label List* - list of tags that a snapshot can have to exclude it from the list.
 
 ## Policy Actions
 
