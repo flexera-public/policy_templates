@@ -24,7 +24,7 @@ This policy has the following input parameters required when launching the polic
 
 The following policy actions are taken on any resources found to be out of compliance.
 
-- Delete Unattached volumes after approval 
+- Delete Unattached volumes after approval
 - Send an email report
 
 ## Prerequisites
@@ -32,7 +32,7 @@ The following policy actions are taken on any resources found to be out of compl
 This policy requires the AWS Credential.  When applying the policy select the appropriate credentials
 from the list for your tenant.  If such credential doesn't exist please contact your cloud admin to create the Credential.
 
-The credential must contain the value *aws* in the Provider field.  
+The credential must contain the value *aws* in the Provider field.
 Refer to our documentation for more details on the [Credential Service](https://docs.rightscale.com/credentials/)
 
 ### AWS Required Permissions
