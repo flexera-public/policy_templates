@@ -1,6 +1,6 @@
-## AWS Delete Unattached Volumes
+# AWS Delete Unattached Volumes
 
-### What it does
+## What it does
 
 This Policy Template scans all volumes in the given account and identifies any unattached volumes that have been unattached for at least the number of user-specified days. If any are found, an incident report will show the volumes, and related information and an email will be sent to the user-specified email address.
 
@@ -11,20 +11,20 @@ Note: The unattached volumes report will reflect the updated set of unattached v
 
 Optionally, the user can specify one or more tags that if found on a volume will exclude the volume from the list.
 
-### Input Parameters
+## Input Parameters
 
 This policy has the following input parameters required when launching the policy.
 
-- *Unattached days* - the number of days a volume has been unattached..
+- *Unattached days* - the number of days a volume has been unattached.
 - *Email addresses* - A list of email addresses to notify
 - *Exclude Tags.* - a list of tags used to excluded volumes from the incident.
 - *Create Final Snapshot* - Boolean for whether or not to take a final snapshot before deleting
 
-### Policy Actions
+## Policy Actions
 
 The following policy actions are taken on any resources found to be out of compliance.
 
-- Delete Unattached volumes after approval
+- Delete Unattached volumes after approval 
 - Send an email report
 
 ## Prerequisites
@@ -44,19 +44,17 @@ The following AWS permissions must be allowed for the policy to run.
     "Version": "2016-11-15",
     "Statement":[{
     "Effect":"Allow",
-    "Action":["ec2:DescribeVolumes"],
+    "Action":["ec2:DescribeVolumes","ec2:CreateTags"],
     "Resource":"*"
     }
   ]
 }
 ```
 
-
-
-### Supported Clouds
+## Supported Clouds
 
 - AWS
 
-### Cost
+## Cost
 
 This Policy Template does not incur any cloud costs.
