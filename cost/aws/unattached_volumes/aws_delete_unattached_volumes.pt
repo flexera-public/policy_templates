@@ -17,28 +17,29 @@ info(
 
 parameter "param_email" do
   type "list"
-  label "Email Addresses To Notify"
-  description "Email addresses of the recipients you wish to notify when new incidents are created."
+  label "Email addresses"
+  description "A list of email addresses to notify."
 end
 
 parameter "param_exclude_tags" do
-    type "list"
+  type "list"
     category "User Inputs"
-    label "Exclusion Tag"
-    description "List of tags that will exclude EBS Volumes from being evaluated by this policy. Multiple tags are evaluated as an 'OR' condition. Tags keys or key/value pairs can be listed. Example: 'test,env=dev'."
+    label "Exclude Tags"
+    description "a list of tags used to excluded volumes from the incident."
 end
 
 parameter "param_unattached_days" do
-    type "number"
-    label "Volumes Unattached Days"
-    description "Number of days the Volumes are Unattached"
+  type "number"
+  label "Unattached days"
+  description "the number of days a volume has been unattached."
 end
 
 parameter "param_take_snapshot" do
-    type "string"
-    label "Do you want to take snapshot of volumes ?"
-    allowed_values "Yes","No"
-    default "Yes"
+  type "string"
+  label "Create Final Snapshot"
+  description "Boolean for whether or not to take a final snapshot before deleting."
+  allowed_values "Yes","No"
+  default "Yes"
 end
 
 ###############################################################################
@@ -47,10 +48,10 @@ end
 
 #Authenticate with AWS
 credentials "auth_aws" do
-    schemes "aws"
-    label "AWS"
-    description "Select the AWS Credential from the list"
-    tags "provider=aws"
+  schemes "aws"
+  label "AWS"
+  description "Select the AWS Credential from the list"
+  tags "provider=aws"
 end
 
 ###############################################################################
@@ -58,23 +59,22 @@ end
 ###############################################################################
 
 pagination "aws_volumes_pagination_xml" do
-    get_page_marker do
-        body_path "//DescribeVolumesResponse/nextToken"
-    end
-    set_page_marker do
-        query "NextToken"
-    end
+  get_page_marker do
+    body_path "//DescribeVolumesResponse/nextToken"
+  end
+  set_page_marker do
+    query "NextToken"
+  end
 end
 
 pagination "aws_cloudtrails_pagination_xml" do
-    get_page_marker do
-        body_path "NextToken"
-    end
-    set_page_marker do
-        query "NextToken"
-    end
+  get_page_marker do
+    body_path "NextToken"
+  end
+  set_page_marker do
+    query "NextToken"
+  end
 end
-
 
 ###############################################################################
 # Datasource
@@ -82,70 +82,70 @@ end
 
 #Generates List Of Regions.
 datasource "ds_regions_list" do
-    request do
-        verb "GET"
-        host "raw.githubusercontent.com"
-        path "/rightscale/policy_templates/master/data/aws/regions.json"
-        header "User-Agent","RS Policies"
+  request do
+    verb "GET"
+      host "raw.githubusercontent.com"
+      path "/rightscale/policy_templates/master/data/aws/regions.json"
+      header "User-Agent","RS Policies"
     end
 end
 
 #To get list of Unattached Volumes.
 datasource "ds_unattached_volumes_list" do
-    iterate $ds_regions_list 
-        request do
-            run_script $js_aws_unattached_volumes_list, val(iter_item,"region")
-        end
-    result do
-        encoding "xml"
-        collect xpath(response, "//DescribeVolumesResponse/volumeSet/item","array") do
-            field "tags" do
-                collect xpath(col_item,"tagSet/item") do
-                    field "tagKey", xpath(col_item, "key")
-                    field "tagValue", xpath(col_item, "value")
-                end
-            end
-            field "attachments" do
-                collect xpath(col_item, "attachmentSet/item") do
-                    field "instance_id", xpath(col_item, "instanceId")
-                end
-            end
-            field "volume_id", xpath(col_item, "volumeId")
-            field "availability_zone", xpath(col_item, "availabilityZone")
-            field "snapshot_id", xpath(col_item, "snapshotId")
-            field "volume_Type", xpath(col_item, "volumeType")
-            field "region", val(iter_item, "region")
-        end
+  iterate $ds_regions_list 
+    request do
+      run_script $js_aws_unattached_volumes_list, val(iter_item,"region")
     end
+  result do
+  encoding "xml"
+  collect xpath(response, "//DescribeVolumesResponse/volumeSet/item","array") do
+    field "tags" do
+      collect xpath(col_item,"tagSet/item") do
+        field "tagKey", xpath(col_item, "key")
+        field "tagValue", xpath(col_item, "value")
+      end
+    end
+    field "attachments" do
+      collect xpath(col_item, "attachmentSet/item") do
+        field "instance_id", xpath(col_item, "instanceId")
+      end
+    end
+    field "volume_id", xpath(col_item, "volumeId")
+    field "availability_zone", xpath(col_item, "availabilityZone")
+    field "snapshot_id", xpath(col_item, "snapshotId")
+    field "volume_Type", xpath(col_item, "volumeType")
+    field "region", val(iter_item, "region")
+   end
+  end
 end
 
 datasource "ds_unattached_volumes_map" do
-    run_script $js_filter_aws_unattached_volumes, $ds_unattached_volumes_list, $param_exclude_tags
+  run_script $js_filter_aws_unattached_volumes, $ds_unattached_volumes_list, $param_exclude_tags
 end
 
 #To get volumes cloud trail logs.
 datasource "ds_volumes_cloud_tails_logs" do
-    iterate $ds_unattached_volumes_map 
+  iterate $ds_unattached_volumes_map 
     request do
-        run_script $js_aws_volumes_cloud_trail_logs, val(iter_item,"vol_id"), val(iter_item,"region"), $param_unattached_days
+      run_script $js_aws_volumes_cloud_trail_logs, val(iter_item,"vol_id"), val(iter_item,"region"), $param_unattached_days
     end
-    result do
-        encoding "json"
-        collect jmes_path(response,"Events[*]") do
-            field "eventName", jmes_path(col_item,"EventName")
-            field "eventTime", jmes_path(col_item,"EventTime")
-            field "region", val(iter_item,"region")
-            field "volume_id", val(iter_item,"vol_id")
-            field "availability_zone", val(iter_item,"availability_zone")
-            field "volume_type", val(iter_item,"volume_type")
-            field "tagKeyValue", val(iter_item, "tagKeyValue")
-        end
+  result do
+    encoding "json"
+      collect jmes_path(response,"Events[*]") do
+        field "eventName", jmes_path(col_item,"EventName")
+        field "eventTime", jmes_path(col_item,"EventTime")
+        field "region", val(iter_item,"region")
+        field "volume_id", val(iter_item,"vol_id")
+        field "availability_zone", val(iter_item,"availability_zone")
+        field "volume_type", val(iter_item,"volume_type")
+        field "tagKeyValue", val(iter_item, "tagKeyValue")
+      end
     end
 end
 
 #To get unattached volumes more than specified Days
 datasource "ds_unattached_volumes_for_long" do
-    run_script $js_filter_volumes_unattached_for_long, $ds_volumes_cloud_tails_logs,$ds_unattached_volumes_map, $param_unattached_days
+  run_script $js_filter_volumes_unattached_for_long, $ds_volumes_cloud_tails_logs,$ds_unattached_volumes_map, $param_unattached_days
 end
 
 ###############################################################################
@@ -154,152 +154,143 @@ end
 
 #https://docs.aws.amazon.com/AWSEC2/latest/APIReference/API_DescribeVolumes.html
 script "js_aws_unattached_volumes_list", type:"javascript" do
-    parameters  "region"
+  parameters  "region"
     result "results"
     code <<-EOS
-        results = {
-            auth: "auth_aws",
-            host: 'ec2.'+region+'.amazonaws.com',
-            path: '/',
-            pagination: "aws_volumes_pagination_xml",
-            query_params: {
-                "Action": "DescribeVolumes",
-                "Version": "2016-11-15",
-                "Filter.1.Name": "status",
-                "Filter.1.Value.1": "available"
-            }
-        }
+    results = {
+      auth: "auth_aws",
+      host: 'ec2.'+region+'.amazonaws.com',
+      path: '/',
+      pagination: "aws_volumes_pagination_xml",
+      query_params: {
+        "Action": "DescribeVolumes",
+        "Version": "2016-11-15",
+        "Filter.1.Name": "status",
+        "Filter.1.Value.1": "available"
+      }
+    }
     EOS
 end
 
 script "js_filter_aws_unattached_volumes", type:"javascript" do
-    parameters "ds_unattached_volumes_list","param_exclude_tags"
-    result "content"
-    code <<-EOS
-        var param_exclude_tags_lower=[];
-        for(var j=0;j<param_exclude_tags.length;j++){
-            param_exclude_tags_lower[j] = param_exclude_tags[j].toString().toLowerCase();
+  parameters "ds_unattached_volumes_list","param_exclude_tags"
+  result "content"
+  code <<-EOS
+    var param_exclude_tags_lower=[];
+      for(var j=0;j<param_exclude_tags.length;j++){
+        param_exclude_tags_lower[j] = param_exclude_tags[j].toString().toLowerCase();
+      }
+
+    var content = [];
+      for(var i=0;i<ds_unattached_volumes_list.length;i++){
+        vol = ds_unattached_volumes_list[i];
+        // Check, if the tag present in entered param_exclude_tags, ignore the volume if the tag matches/present.
+        var tags = vol['tags'];
+        var isTagMatched = false;
+        var tagKeyValue = "";
+        for(var k=0; k < tags.length; k++){
+        tag = tags[k];
+        if((param_exclude_tags_lower.indexOf((tag['tagKey']).toLowerCase()) !== -1) || (param_exclude_tags_lower.indexOf((tag['tagKey']+'='+tag['tagValue']).toLowerCase()) !== -1)){
+          isTagMatched = true;
         }
 
-        var content = [];
-        for(var i=0;i<ds_unattached_volumes_list.length;i++){
-            vol = ds_unattached_volumes_list[i];
-            // Check, if the tag present in entered param_exclude_tags, ignore the volume if the tag matches/present.
-            var tags = vol['tags'];
-            var isTagMatched = false;
-            var tagKeyValue = "";
-            for(var k=0; k < tags.length; k++){
-                tag = tags[k];
-                if((param_exclude_tags_lower.indexOf((tag['tagKey']).toLowerCase()) !== -1) || (param_exclude_tags_lower.indexOf((tag['tagKey']+'='+tag['tagValue']).toLowerCase()) !== -1)){
-                    isTagMatched = true;
-                }
-
-                // Constructing tags with comma separated to display in detail_template
-                if((tag['tagValue']).length > 0){
-                    tagKeyValue = tagKeyValue+" , "+tag['tagKey']+'='+tag['tagValue'];
-                }else{
-                    tagKeyValue = tagKeyValue+" , "+tag['tagKey'];
-                }
-            }
-
-            //If the volume tag does not match with entered param_exlude_tags
-            if(!(isTagMatched)){
-                content.push({
-                    tagKeyValue : (tagKeyValue.slice(2)),
-                    vol_id : vol['volume_id'],
-                    availability_zone : vol['availability_zone'],
-                    snapshot_id : vol['snapshot_id'],
-                    volume_Type : vol['volume_Type']
-                    region : vol['region']
-                })
-            }
+        // Constructing tags with comma separated to display in detail_template
+        if((tag['tagValue']).length > 0){
+          tagKeyValue = tagKeyValue+" , "+tag['tagKey']+'='+tag['tagValue'];
+        }else{
+          tagKeyValue = tagKeyValue+" , "+tag['tagKey'];
         }
-    EOS
+      }
+
+      //If the volume tag does not match with entered param_exlude_tags
+      if(!(isTagMatched)){
+        content.push({
+          tagKeyValue : (tagKeyValue.slice(2)),
+          vol_id : vol['volume_id'],
+          availability_zone : vol['availability_zone'],
+          snapshot_id : vol['snapshot_id'],
+          volume_Type : vol['volume_Type']
+          region : vol['region']
+        })
+      }
+    }
+  EOS
 end
 
 script "js_aws_volumes_cloud_trail_logs", type:"javascript" do
-    parameters  "volume_id","region","unattachedDays"
-    result "logs"
-    code <<-EOS
+  parameters  "volume_id","region","unattachedDays"
+  result "logs"
+  code <<-EOS
+    var endDate = new Date();
+    var endDateInEpochTime = endDate.getTime() / 1000;
+    var startDate = new Date();
+    startDate.setDate(startDate.getDate() - unattachedDays);
+    var startDateInEpochTime = startDate.getTime() / 1000;
+    logs = {
+      auth: "auth_aws",
+      host: 'cloudtrail.'+region+'.amazonaws.com',
+      path: '/',
+      verb: 'POST',
+      pagination: "aws_cloudtrails_pagination_xml",
+      headers: {
+        "X-Amz-Target": "com.amazonaws.cloudtrail.v20131101.CloudTrail_20131101.LookupEvents",
+        "Content-Type": "application/x-amz-json-1.1",
+      },
+      body_fields:{
+        "StartTime" : startDateInEpochTime,
+        "LookupAttributes" :[{
+          "AttributeKey": "ResourceName",
+          "AttributeValue": volume_id
+        }],
+        "EndTime" : endDateInEpochTime
+      }
+    }
 
-        var endDate = new Date();
-        var endDateInEpochTime = endDate.getTime() / 1000;
-
-        var startDate = new Date();
-        startDate.setDate(startDate.getDate() - unattachedDays);
-        var startDateInEpochTime = startDate.getTime() / 1000;
-
-        logs = {
-            auth: "auth_aws",
-            host: 'cloudtrail.'+region+'.amazonaws.com',
-            path: '/',
-            verb: 'POST',
-            pagination: "aws_cloudtrails_pagination_xml",
-            headers: {
-                "X-Amz-Target": "com.amazonaws.cloudtrail.v20131101.CloudTrail_20131101.LookupEvents",
-                "Content-Type": "application/x-amz-json-1.1",
-            },
-            body_fields:{
-                "StartTime" : startDateInEpochTime,
-                "LookupAttributes" :[{
-                    "AttributeKey": "ResourceName",
-                    "AttributeValue": volume_id
-                }],
-                "EndTime" : endDateInEpochTime
-            }
-        }
-
-        // To Delay Next Request
-        // Due to AWS ThrottlingException (Rate Limit)
-        // Delaying the next request for 1 second.
-        var current_time = Math.round((new Date()).getTime())
-        var endTime   = current_time + ( 1000)
-        while (current_time <= endTime) {
-            current_time = Math.round((new Date()).getTime())
-        }
-    EOS
+  // To Delay Next Request
+  // Due to AWS ThrottlingException (Rate Limit)
+  // Delaying the next request for 1 second.
+  var current_time = Math.round((new Date()).getTime())
+  var endTime   = current_time + ( 1000)
+  while (current_time <= endTime) {
+    current_time = Math.round((new Date()).getTime())
+  }
+  EOS
 end
 
 script "js_filter_volumes_unattached_for_long", type:"javascript" do
-    parameters "cloud_trail_logs","unattached_volumes","unattached_days"
-    result "trail_logs"
-    code <<-EOS
-        var trail_logs = [];
-
-        for(var i =0 ; i < unattached_volumes.length; i++){
-            vol = unattached_volumes[i];
-            for(var j=0; j < cloud_trail_logs.length; j++){
-                log = cloud_trail_logs[j];
-                // Check, if the volume has been unattached for more than param_unattached_days, ignore the volume if the unattached for less than param_unattached_days
-                if(vol['vol_id'] === log['volume_id']){
-                    if(log['eventName'] === 'DetachVolume' || log['eventName'] === 'CreateVolume'){
-                        var eventOccurDate = new Date(log['eventTime'] * 1000);
-                        var today = new Date();
-                        var time_difference = today.getTime() - eventOccurDate.getTime();
-                        var days_difference = time_difference / (1000 * 3600 * 24);
-                        console.log("Event Date "+eventOccurDate);
-                        console.log("Time Diff "+time_difference);
-                        console.log("Days Diff "+days_difference);
-                        if(days_difference <= unattached_days){
-                                trail_logs.push({
-                                volume_id : vol['vol_id'],
-                                region : log['region'],
-                                availability_zone : log['availability_zone'],
-                                tagKeyValue : vol['tagKeyValue'],
-                                eventName : log['eventName'],
-                                volume_Type : vol['volume_Type']
-                                eventTime : (eventOccurDate).toString()
-                            })
-
-                            console.log("Tag_Value_Test : "+vol['tagKeyValue']);
-                        }
-                        break;
-                    }
-                }
+  parameters "cloud_trail_logs","unattached_volumes","unattached_days"
+  result "trail_logs"
+  code <<-EOS
+  var trail_logs = [];
+  for(var i =0 ; i < unattached_volumes.length; i++){
+    vol = unattached_volumes[i];
+    for(var j=0; j < cloud_trail_logs.length; j++){
+      log = cloud_trail_logs[j];
+      // Check, if the volume has been unattached for more than param_unattached_days, ignore the volume if the unattached for less than param_unattached_days
+      if(vol['vol_id'] === log['volume_id']){
+        if(log['eventName'] === 'DetachVolume' || log['eventName'] === 'CreateVolume'){
+          var eventOccurDate = new Date(log['eventTime'] * 1000);
+          var today = new Date();
+          var time_difference = today.getTime() - eventOccurDate.getTime();
+          var days_difference = time_difference / (1000 * 3600 * 24);
+            if(days_difference <= unattached_days){
+              trail_logs.push({
+                volume_id : vol['vol_id'],
+                region : log['region'],
+                availability_zone : log['availability_zone'],
+                tagKeyValue : vol['tagKeyValue'],
+                eventName : log['eventName'],
+                volume_Type : vol['volume_Type']
+                eventTime : (eventOccurDate).toString()
+              })
             }
+          break;
         }
-    trail_logs = _.sortBy(trail_logs, 'region');
-    EOS
+      }
+    }
+  }
+  trail_logs = _.sortBy(trail_logs, 'region');
+  EOS
 end
 
 ###############################################################################
@@ -308,18 +299,19 @@ end
 
 policy "policy_unattached_volumes_list" do
   validate $ds_unattached_volumes_for_long do
-    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} UnAttached Volumes Found in AWS"
-    detail_template <<-EOS
+  summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} UnAttached Volumes Found in AWS"
+  detail_template <<-EOS
 # List of UnAttached Volumes
 | Volume_ID | Region | Availability_Zones | Volume_Type | TAG_Value | Volume_UnAttached_Date |
-| ------------ | -------- | -------------------- | ----------| ----------- | ----------- |
+| ------ | ---------- | ------------ | -------- | -------- |---------------- |
 {{ range data -}}
-| {{.volume_id}} | {{ .region }} | {{ .availability_zone }} | {{.volume_Type}} | {{.tagKeyValue}} | {{.eventTime}} |
+| {{.volume_id}} | {{.region}} | {{.availability_zone}} | {{.volume_Type}} | {{.tagKeyValue}} |  {{.eventTime }} |
 {{ end -}}
-    EOS
-    escalate $report_unattached_volumes
-    escalate $delete_volumes
-    check eq(size(data),0)
+
+  EOS
+  escalate $report_unattached_volumes
+  escalate $delete_volumes
+  check eq(size(data),0)
   end
 end
 
@@ -332,16 +324,16 @@ escalation "report_unattached_volumes" do
 end
 
 escalation "delete_volumes" do
-    request_approval do
-        label "Approve Volume Deletion"
-        description "Approve escalation to delete the volume(s)"
-        parameter "approval_reason" do
-            type "string"
-            label "Reason for Approval"
-            description "Expain why are you approving the action"
-        end
+  request_approval do
+    label "Approve Volume Deletion"
+    description "Approve escalation to delete the volume(s)"
+    parameter "approval_reason" do
+      type "string"
+      label "Reason for Approval"
+      description "Expain why are you approving the action"
     end
-    run "take_action",data,$param_take_snapshot
+  end
+  run "take_action",data,$param_take_snapshot
 end
 
 ###############################################################################
@@ -349,120 +341,122 @@ end
 ###############################################################################
 
 define take_action($data,$param_take_snapshot) return $all_responses do
-    
-    $$debug = true
-    $all_responses = []
-    foreach $item in $data do
-        $snapshot_status_code = 200
-        if $param_take_snapshot == "Yes"
-            call create_volumes_snapshot($item) retrieve $status_code
-            $snapshot_status_code = $status_code 
-        end
-            if $snapshot_status_code == 200 
-                call delete_volume($item) retrieve $status_code
-            end
+  # If you see the audit entries. Please set $$debug = false
+  $$debug = false
+  $all_responses = []
+  foreach $item in $data do
+    $snapshot_status_code = 200
+    if $param_take_snapshot == "Yes"
+      call create_volumes_snapshot($item) retrieve $status_code
+      $snapshot_status_code = $status_code 
     end
+    if $snapshot_status_code == 200 
+      call delete_volume($item) retrieve $status_code
+    end
+  end
 end
 
 define create_volumes_snapshot($item) return $status_code do
-    $response = []
-    $status_code
-    $snapshot_status = "pending"
-    $response = http_request(
-        auth: $$auth_aws,
-        https: true,
-        verb: "get",
-        host: "ec2."+$item["region"]+".amazonaws.com",
-        href: "/",
-        query_strings: {
-            "Action": "CreateSnapshot",
-            "Version": "2016-11-15",
-            "VolumeId": $item["volume_id"]
-        }
-    )
-    call sys_log("Create Volumes Snapshot Response ",to_s($response))
-    $status_code = $response["code"]
+  $response = []
+  $status_code
+  $snapshot_status = "pending"
+  $response = http_request(
+    auth: $$auth_aws,
+    https: true,
+    verb: "get",
+    host: "ec2."+$item["region"]+".amazonaws.com",
+    href: "/",
+    query_strings: {
+      "Action": "CreateSnapshot",
+      "Version": "2016-11-15",
+      "VolumeId": $item["volume_id"]
+    }
+  )
+  call sys_log("Create Volumes Snapshot Response ",to_s($response))
+  $status_code = $response["code"]
+  
+  if $status_code == 200
     $snapshot_status = $response["body"]["CreateSnapshotResponse"]["status"]
     $snapshotId = $response["body"]["CreateSnapshotResponse"]["snapshotId"]
 
-    if $status_code == 200
-        if $snapshot_status == "pending"
-            $condition_check = "completed"
+    if $snapshot_status == "pending"
+      $condition_check = "completed"
 
-            while $condition_check !~ $snapshot_status do
-                call get_snapshot_status(to_s($snapshotId)) retrieve $status
-                $snapshot_status = $status
+      while $condition_check !~ $snapshot_status do
+        call get_snapshot_status(to_s($snapshotId)) retrieve $status
+        $snapshot_status = $status
 
-                if $snapshot_status == "error"
-                    $status_code = 400
-                    $snapshot_status = "completed"
-                end
-
-            end
+        if $snapshot_status == "error"
+          $status_code = 400
+          $snapshot_status = "completed"
         end
+
+      end
     end
+  end
 end
 
 define delete_volume($item) return $status_code do
-   $delete_response = http_request(
-        auth: $$auth_aws,
-        https: true,
-        verb: "get",
-        host: "ec2."+$item["region"]+".amazonaws.com",
-        href: "/",
-        query_strings: {
-            "Action": "DeleteVolume",
-            "Version": "2016-11-15",
-            "VolumeId": $item["volume_id"]
-        }
-    ) 
-    call sys_log("Delete Volumes Response ",to_s($delete_response))
-    $volume_delete_status = $delete_response["code"]
-    if $volume_delete_status != 200
-        $volume_delete_body = $delete_response["body"]
-        $split_body = split($volume_delete_body,"<Message>")
-        $split_final_message = split($split_body[1],"</Message>");
-        call create_tag($item["region"],$item["volume_id"],to_s($split_final_message[0]))
-    end
+  $delete_response = http_request(
+    auth: $$auth_aws,
+    https: true,
+    verb: "get",
+    host: "ec2."+$item["region"]+".amazonaws.com",
+    href: "/",
+    query_strings: {
+      "Action": "DeleteVolume",
+      "Version": "2016-11-15",
+      "VolumeId": $item["volume_id"]
+    }
+  ) 
+  call sys_log("Delete Volumes Response ",to_s($delete_response))
+  $volume_delete_status = $delete_response["code"]
+  if $volume_delete_status != 200
+    $volume_delete_body = $delete_response["body"]
+    $split_body = split($volume_delete_body,"<Message>")
+    $split_final_message = split($split_body[1],"</Message>");
+     call create_tag($item["region"],$item["volume_id"],to_s($split_final_message[0]))
+  end
 end
 
 define get_snapshot_status($snapshotId) return $snapshot_status do
-    call sys_log("Inside Get Snapshot Details Snapshot Id ",$snapshotId)
-    $snapshot_response = http_request(
-        auth: $$auth_aws,
-        https: true,
-        verb: "get",
-        host: "ec2."+$item["region"]+".amazonaws.com",
-        href: "/",
-        query_strings: {
-            "Action": "DescribeSnapshots",
-            "Version": "2016-11-15",
-            "SnapshotId": $snapshotId
-        }
-    )
-    call sys_log("Get Snapshot Details ",to_s($snapshot_response))
-    $snapshot_status = $snapshot_response["body"]["DescribeSnapshotsResponse"]["snapshotSet"]["item"]["status"]
+  call sys_log("Inside Get Snapshot Details Snapshot Id ",$snapshotId)
+  $snapshot_response = http_request(
+    auth: $$auth_aws,
+    https: true,
+    verb: "get",
+    host: "ec2."+$item["region"]+".amazonaws.com",
+    href: "/",
+    query_strings: {
+      "Action": "DescribeSnapshots",
+      "Version": "2016-11-15",
+      "SnapshotId": $snapshotId
+    }
+  )
+  call sys_log("Get Snapshot Details ",to_s($snapshot_response))
+  $snapshot_status = $snapshot_response["body"]["DescribeSnapshotsResponse"]["snapshotSet"]["item"]["status"]
 end
 
 define create_tag($region,$volumeId,$message) do
-    call sys_log("Create Tag  ",$volumeId)
-    $snapshot_response = http_request(
-        auth: $$auth_aws,
-        https: true,
-        verb: "get",
-        host: "ec2."+$region+".amazonaws.com",
-        href: "/",
-        query_strings: {
-            "Action": "CreateTags",
-            "Version": "2016-11-15",
-            "ResourceId.1": $volumeId,
-            "Tag.1.Key": "Error While Deleting Volume",
-            "Tag.1.Value": to_s($message)
-        }
-    )
+  call sys_log("Create Tag  ",$volumeId)
+  $snapshot_response = http_request(
+    auth: $$auth_aws,
+    https: true,
+    verb: "get",
+    host: "ec2."+$region+".amazonaws.com",
+    href: "/",
+    query_strings: {
+      "Action": "CreateTags",
+      "Version": "2016-11-15",
+      "ResourceId.1": $volumeId,
+      "Tag.1.Key": "Error While Deleting Volume",
+      "Tag.1.Value": to_s($message)
+    }
+  )
 end
 
 define sys_log($subject, $detail) do
+  if $$debug
     rs_cm.audit_entries.create(
       notify: "None",
       audit_entry: {
@@ -471,4 +465,5 @@ define sys_log($subject, $detail) do
         detail: $detail
       }
     )
+  end
 end
