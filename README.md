@@ -32,6 +32,7 @@ Please contact sales@flexera.com to learn more.
 ##### Compute
 
 - [AWS Burstable Instance CloudWatch Utilization](./cost/aws/burstable_instance_cloudwatch_credit_utilization/)
+- [AWS Delete Unattached Volumes](./cost/aws/unattached_volumes)
 - [AWS Expiring Reserved Instances](./cost/aws/reserved_instances/expiration/)
 - [AWS Idle Compute Instances](./cost/aws/idle_compute_instances/)
 - [AWS Inefficient Instance Utilization using CloudWatch](./cost/aws/instance_cloudwatch_utilization/)
@@ -40,7 +41,6 @@ Please contact sales@flexera.com to learn more.
 - [AWS Reserved Instances Report by Billing Center](./cost/aws/reserved_instances/report_by_bc)
 - [AWS Reserved Instance Recommendations](./cost/aws/reserved_instances/recommendations)
 - [AWS Savings Plan Recommendations](./cost/aws/savings_plan/recommendations)
-- [AWS Delete Unattached Volumes](./cost/aws/unattached_volumes)
 
 ##### Database
 
