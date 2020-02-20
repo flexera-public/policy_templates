@@ -33,7 +33,7 @@ This policy requires the AWS Credential.  When applying the policy select the ap
 from the list for your tenant.  If such credential doesn't exist please contact your cloud admin to create the Credential.
 
 The credential must contain the value *aws* in the Provider field.
-Refer to our documentation for more details on the [Credential Service](https://docs.rightscale.com/credentials/)
+Refer to our documentation for more details on the [Credential Service](https://docs.rightscale.com/policies/users/guides/credential_management.html)
 
 ### AWS Required Permissions
 
