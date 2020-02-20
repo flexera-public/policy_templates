@@ -118,7 +118,7 @@ datasource "ds_volumes_list" do
   result do
     encoding "json"
     collect jmes_path(response,"items[*]") do
-      field "zone", jmes_path(col_item, "zone")
+      field "zone_path",jmes_path(col_item, "zone")
       field "id", jmes_path(col_item, "id")
 	    field "name", jmes_path(col_item, "name")
 	    field "creationTimestamp", jmes_path(col_item, "creationTimestamp")
@@ -139,8 +139,11 @@ script "js_clean_volume_list", type: "javascript" do
   code <<-EOS
   res = []
   _.each(ds_volumes_list, function(ds_volumes){
-    if(ds_volumes.name!=null && ds_volumes.id!=null && ds_volumes.zone!=null)
+    if(ds_volumes.name!=null && ds_volumes.id!=null && ds_volumes.zone_path!=null){
+      var temp = ds_volumes.zone_path.split("/", 9)[8]
+      ds_volumes["zone"] = temp
       res.push(ds_volumes)
+    }
   })
   EOS
 end
@@ -181,8 +184,8 @@ policy 'policy_google_unattached_volumes' do
 | {{.id}} | {{.name}} | {{.zone}} |
 {{ end }}
 EOS
-  check equals?($param_delete_unattached_volumes,"Yes")
-  escalate $escalate_delete_unattached_volumes
+  check equals?($param_delete_unattached_volumes,"No")
+    escalate $escalate_delete_unattached_volumes
   end
 end
 
@@ -192,9 +195,9 @@ end
 
 escalation "escalate_delete_unattached_volumes" do
   email $param_email
+ # run "delete_unattached_volumes", data
 end
-
-
 ###############################################################################
 # Cloud Workflow
 ###############################################################################
+
