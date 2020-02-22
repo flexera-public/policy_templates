@@ -28,12 +28,12 @@ parameter "param_email" do
 end
 
 ## Remove before merging, used for legacy auth dev with fpt
-parameter "param_azure_tenant_id" do
-  type "string"
-  label "Azure AD Tenant ID"
-  description "the Azure AD Tenant ID used for the Azure API Authentication"
-  category "Azure"
-end
+#parameter "param_azure_tenant_id" do
+#  type "string"
+#  label "Azure AD Tenant ID"
+#  description "the Azure AD Tenant ID used for the Azure API Authentication"
+#  category "Azure"
+#end
 
 parameter "param_group_name_prefix" do
   type "string"
@@ -47,6 +47,7 @@ parameter "param_default_phone" do
   label "Default Phone Number for New Users"
   category "Azure"
   description "Use this phone number if the user doesn't have one set in AzureAD"
+  allowed_pattern /^[\.()\s\d+-]+$/
 end
 
 parameter "param_default_company" do
@@ -61,6 +62,7 @@ parameter "param_idp_href" do
   label "Identity Provider Href"
   category "CMP"
   description "The Href for the Identity Provider to associate to new users"
+  allowed_pattern /^\/api\/identity_providers\/\d*$/
 end
 
 parameter "param_purge_users" do
@@ -76,26 +78,33 @@ end
 ###############################################################################
 
 ## Remove before merging, used for legacy auth dev with fpt
-auth "auth_azure_graph", type: "oauth2" do
-  token_url join(["https://login.microsoftonline.com/",$param_azure_tenant_id,"/oauth2/token"])
-  grant type: "client_credentials" do
-    client_id cred("AZUREAD_APPLICATION_ID")
-    client_secret cred("AZUREAD_APPLICATION_KEY")
-    additional_params do {
-      "resource" => "https://graph.microsoft.com/"
-    } end
-  end
-end
-
-## Uncomment before publishing
-#credentials "auth_azure_graph" do
-#  schemes "oauth2"
-#  label "Azure"
-#  description "Select the Azure Resource Manager Credential from the list."
-#  tags "provider=azure_rm"
+#auth "auth_azure_graph", type: "oauth2" do
+#  token_url join(["https://login.microsoftonline.com/",$param_azure_tenant_id,"/oauth2/token"])
+#  grant type: "client_credentials" do
+#    client_id cred("AZUREAD_APPLICATION_ID")
+#    client_secret cred("AZUREAD_APPLICATION_KEY")
+#    additional_params do {
+#      "resource" => "https://graph.microsoft.com/"
+#    } end
+#  end
 #end
 
-auth "auth_rs", type: "rightscale"
+#auth "auth_rs", type: "rightscale"
+
+## Uncomment before merging
+credentials "auth_azure_graph" do
+  schemes "oauth2"
+  label "Microsoft Azure Graph"
+  description "Select the Microsoft Azure Graph Credential from the list."
+  tags "provider=azure_graph"
+end
+
+credentials "auth_rs" do
+  schemes "oauth2"
+  label "Flexera CMP"
+  description "Select the CMP Credential from the list."
+  tags "provider=flexera_cmp"
+end
 
 ###############################################################################
 # Pagination
@@ -426,16 +435,13 @@ policy "policy_azuread_group_sync" do
   | {{ .name }} | {{ .href }} | {{ .objectId }} | {{ .userCount }} |
 {{ end -}}
 
-
 {{ $create_count := len data.groupsToCreate }}
 {{ if (gt $create_count 0) -}}
 {{ range data.groupsToCreate -}}
-
 <br />
 <br />
 ### The following groups need to be created and have permissions assigned to them in Governance:
 {{ .name }}
-
 {{ end -}}
 {{ end -}}
 
@@ -464,22 +470,7 @@ end
 # Cloud Workflow
 ###############################################################################
 
-define create_user_error_handler($user, $create_response) do
-  if $create_response != null
-    $status_code = $create_response["code"]
-    $syslog_subject = join(["Error creating new user: ", $user["email"], "! Status Code: ", $create_response["code"]])
-    $errorDetail = "Status Code: " + $create_response["code"]
-    $errorDetail = $errorDetail + to_s($newUserBodyPayload)
-    $errorDetail = $errorDetail + to_s($create_response)
-    call sys_log($syslog_subject, to_s($errorDetail))
-  else
-    $syslog_subject = join(["Error creating new user: ", $user["email"], "!"])
-    call sys_log($syslog_subject, to_s($user))
-  end
-  $_error_behavior = "skip"
-end
-
-define group_sync($data, $param_purge_users, $param_idp_href, $rs_cm_host, $rs_org_id) return $usersToCreate, $usersToPurge, $grsGroups, $grsUsers, $aadGroups, $aadUsers, $responses do
+define group_sync($data, $param_purge_users, $param_idp_href, $rs_cm_host, $rs_org_id) return $responses do
   $$debug = true
   $$log = ""
   $usersToCreate = $data["usersToCreate"]
@@ -499,7 +490,6 @@ define group_sync($data, $param_purge_users, $param_idp_href, $rs_cm_host, $rs_o
   call write_log("AzureAD Group Sync Starting...")
   call sys_log("AzureAD Group Sync Starting...", to_s($data))
 
-  # Create Users and add to $grsUsers array
   sub task_label: "Creating New Users" do
     if size($usersToCreate) > 0
       call write_log(join([size($usersToCreate), " new user(s) to create..."]))
@@ -526,6 +516,7 @@ define group_sync($data, $param_purge_users, $param_idp_href, $rs_cm_host, $rs_o
           }
 
           $create_response = http_request(
+            auth: $$auth_rs,
             verb: "post",
             https: true,
             host: $rs_cm_host,
@@ -574,7 +565,6 @@ define group_sync($data, $param_purge_users, $param_idp_href, $rs_cm_host, $rs_o
     end
   end
 
-  # Update Group Membership
   sub task_label: "Updating Group Memberships" do
     call write_log("Updating group memberships...")
     foreach $aadGroup in $aadGroups do
@@ -597,7 +587,6 @@ define group_sync($data, $param_purge_users, $param_idp_href, $rs_cm_host, $rs_o
             $user_id = first(select($grsUsers, { "email": $user_email }))
             $user_id = $user_id["id"]
             if $user_id == null
-              # Can't find user reference
               call write_log(join(["* Error retrieving User ID for '", $user_email,"' (AzureAD ObjectID: ", $member["objectId"], "). Skipping..."]))
             else
               call write_log(join(["* Member: ", $user_email," (Id: ", $user_id,")"]))
@@ -609,7 +598,6 @@ define group_sync($data, $param_purge_users, $param_idp_href, $rs_cm_host, $rs_o
             end
           end
 
-          # Call 'replace' method
           $membershipBodyPayload = {
               "group": {
                   "id": $group_id,
@@ -622,6 +610,7 @@ define group_sync($data, $param_purge_users, $param_idp_href, $rs_cm_host, $rs_o
           call sys_log(join(["Updating Group: ", $group_name]), join(["Desired membership:\n" + to_s($membershipBodyPayload)]))
 
           $update_response = http_request(
+            auth: $$auth_rs,
             verb: "put",
             https: true,
             host: $rs_cm_host,
@@ -643,22 +632,20 @@ define group_sync($data, $param_purge_users, $param_idp_href, $rs_cm_host, $rs_o
           end
 
         else
-          # No members
           call write_log("* No members")
         end
       else
-        # Create Group First
         call write_log(join(["The group '", $aadGroup["displayName"],"' does not exist! Please create it first!"]))
       end
     end
   end
 
-  # Purge Users
-  sub task_label: "Removing Users from Organization" do
-    call write_log("Removing Users from Organization...")
+  sub task_label: "Preparing to Remove Users from Organization" do
+    call write_log("Preparing to Remove Users from Organization...")
     sub task_label: "Collecting Current Organization Users" do
       call write_log("Collecting Current Organization Users...")
       $users_response = http_request(
+        auth: $$auth_rs,
         verb: "get",
         https: true,
         host: $rs_cm_host,
@@ -670,7 +657,6 @@ define group_sync($data, $param_purge_users, $param_idp_href, $rs_cm_host, $rs_o
 
       if $users_response["code"] == 200
         $currentUsers = $users_response["body"]
-        # Identify users that are not currently members of any groups
         $updatedUsersToPurge = []
         foreach $orgUser in $currentUsers do
           if size($orgUser["groups"]) == 0
@@ -702,6 +688,7 @@ define group_sync($data, $param_purge_users, $param_idp_href, $rs_cm_host, $rs_o
             call write_log(join(["Removing '", $userEmail, "' (Id: ", $userId, ") affiliation with organization..."]))
 
             $delete_response = http_request(
+              auth: $$auth_rs,
               verb: "delete",
               https: true,
               host: $rs_cm_host,
@@ -733,6 +720,21 @@ define group_sync($data, $param_purge_users, $param_idp_href, $rs_cm_host, $rs_o
 
   call write_log("Group Sync Complete!")
   call sys_log("Complete", to_s($$log))
+end
+
+define create_user_error_handler($user, $create_response) do
+  if $create_response != null
+    $status_code = $create_response["code"]
+    $syslog_subject = join(["Error creating new user: ", $user["email"], "! Status Code: ", $create_response["code"]])
+    $errorDetail = "Status Code: " + $create_response["code"]
+    $errorDetail = $errorDetail + to_s($newUserBodyPayload)
+    $errorDetail = $errorDetail + to_s($create_response)
+    call sys_log($syslog_subject, to_s($errorDetail))
+  else
+    $syslog_subject = join(["Error creating new user: ", $user["email"], "!"])
+    call sys_log($syslog_subject, to_s($user))
+  end
+  $_error_behavior = "skip"
 end
 
 define remove_user_error_handler($user, $delete_response) do
