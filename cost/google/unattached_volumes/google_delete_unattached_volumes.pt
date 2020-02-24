@@ -26,12 +26,14 @@ end
 
 parameter "param_email" do
   type "list"
-  label "Email addresses of the recipients you wish to notify"
+  label "Email addresses"
+  description "Email addresses of the recipients you wish to notify"
 end
 
 parameter "param_unattached_days" do
   type "number"
-  label "The number of days a volume has been unattached"
+  label "Unattached days"
+  description "The number of days a volume has been unattached"
   default 30
 end
 
@@ -44,6 +46,7 @@ end
 
 parameter "param_create_final_snapshot" do
   label "Create Final Snapshot"
+  description "Boolean for whether or not to take a final snapshot before deleting"
   type "string"
   allowed_values "true", "false"
 end
@@ -53,7 +56,7 @@ end
 # Authentication
 ###############################################################################
 
-auth "my_google_auth", type: "oauth2" do
+auth "auth_google", type: "oauth2" do
   token_url "https://www.googleapis.com/oauth2/v4/token"
   grant type: "jwt_bearer" do
     iss cred("GCE_PLUGIN_ACCOUNT")
@@ -85,7 +88,7 @@ end
 
 datasource "ds_projects" do
   request do
-    auth $my_google_auth
+    auth $auth_google
     host "cloudresourcemanager.googleapis.com"
     verb "GET"
     path "/v1/projects"
@@ -102,7 +105,7 @@ end
 datasource "ds_zones" do
   iterate $ds_projects
   request do
-    auth $my_google_auth
+    auth $auth_google
     host "compute.googleapis.com"
     verb "GET"
     path join(["/compute/v1/projects/", val(iter_item, "project_name"), "/zones"])
@@ -139,7 +142,7 @@ end
 datasource "volume_list" do
   iterate $ds_merged_project_zone
   request do
-    auth $my_google_auth
+    auth $auth_google
     host "compute.googleapis.com"
     verb "GET"
     path join(["/compute/v1/projects/", val(iter_item, "project"), "/zones/", val(iter_item, "zone"), "/disks"])
@@ -196,7 +199,10 @@ script "js_unattached_volumes", type: "javascript" do
 
   ds_volumes = []
   _.each(ds_clean_volume_list, function(volume){    
-    if(volume.lastDetachTimestamp!=null && volume.lastDetachTimestamp > volume.lastAttachTimestamp ){
+    if( (volume.lastDetachTimestamp != null)  && (volume.lastDetachTimestamp > volume.lastAttachTimestamp )){
+      ds_volumes.push(volume)
+    }
+    if( volume.lastDetachTimestamp == null && volume.lastAttachTimestamp == null){
       ds_volumes.push(volume)
     }
   })
@@ -224,7 +230,11 @@ script "js_unattached_volumes", type: "javascript" do
   var now = new Date()
   var one_day=1000*60*60*24
   _.each(filtered_volumes, function(volume){
-    var creation_time = new Date(volume.lastDetachTimestamp)
+    if (volume.lastDetachTimestamp != null && volume.lastDetachTimestamp !== undefined){
+      var creation_time = new Date(volume.lastDetachTimestamp)
+    } else {
+      var creation_time = new Date(volume.creationTimestamp)
+    }
     var difference = now.getTime() - creation_time.getTime()
     var days_old=(difference/one_day).toFixed(2)
     volume["days_old"] = days_old
@@ -284,7 +294,7 @@ end
 # Cloud Workflow
 ###############################################################################
 
-define delete_volumes($data,$param_create_final_snapshot) return $all_responses do
+define delete_volumes($data,$param_create_final_snapshot) return $all_responses,$snapshot_responses do
   $$debug=true
   $snapshot_responses = []
   $all_responses = []
@@ -292,17 +302,8 @@ define delete_volumes($data,$param_create_final_snapshot) return $all_responses 
   call sys_log(join([$syslog_subject, "Google volume"]),to_s($data))
   foreach $item in $data do
     if ($param_create_final_snapshot == "true")
-      sub on_error: handle_error($response) do
-        $response = http_post(
-          url: join([$item["selfLink"],"/createSnapshot"]),
-          auth: $$auth_google,
-          headers: {
-            "cache-control": "no-cache",
-            "content-type": "application/json"
-          }
-        )
-        $snapshot_responses << $response
-      end
+      call create_snapshot($item) retrieve $response
+      $snapshot_responses << $response
     end
     sub on_error: handle_error($response) do
       $response = http_delete(
@@ -319,10 +320,57 @@ define delete_volumes($data,$param_create_final_snapshot) return $all_responses 
   call sys_log(join([$syslog_subject, "Responses"]),to_s($all_responses))
 end
 
-define handle_error($response) do 
-  $status_code = $response["code"]
-  $syslog_subject = "Google volume Deletion Error: "
-  call sys_log(join([$syslog_subject, $status_code]),to_s($response))
+define create_snapshot($volume) return $response do
+  $response = []
+  $postResponse = {}
+
+  sub on_error: handle_error($postResponse) do
+    $postResponse = http_post(
+      url: join([$item["selfLink"],"/createSnapshot"]),
+      auth: $$auth_google,
+      headers: {
+        "cache-control": "no-cache",
+        "content-type": "application/json"
+      },
+      body: {
+        name: join([$item["name"], "-final-snapshot"])
+      }
+    )
+  end
+  $response << $postResponse
+
+  call sys_log("Post Response", to_s($postResponse))
+  sub on_error: handle_error($getResponse) do
+    $getResponse = http_get(
+      url: $postResponse["body"]["selfLink"],
+      auth: $$auth_google,
+      headers: {
+        "cache-control": "no-cache",
+        "content-type": "application/json"
+      }
+    )
+    call sys_log("Get Response", to_s($getResponse))
+    while $getResponse["body"]["status"] != "DONE" do
+      sleep(1)
+      $getResponse = http_get(
+        url: $getResponse["body"]["selfLink"],
+        auth: $$auth_google,
+        headers: {
+          "cache-control": "no-cache",
+          "content-type": "application/json"
+        }
+      )
+      call sys_log("Get Response", to_s($getResponse))
+    end
+    $response << $getResponse
+  end
+
+  sleep(10)
+end
+
+define handle_error($response) do
+  $syslog_subject = "Google Volume Deletion Error: "
+  call sys_log($syslog_subject,to_s($response))
   $_error_behavior = "skip"
 end 
 
