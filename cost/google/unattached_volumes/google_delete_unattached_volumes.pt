@@ -1,0 +1,349 @@
+name "Google Delete Unattached Volumes"
+rs_pt_ver 20180301
+type "policy"
+short_description "Checks for unattached volumes older than specified number of days and, optionally, deletes them. See the [README](https://github.com/flexera/policy_templates/tree/master/cost/google/unattached_volumes) and [docs.rightscale.com/policies](https://docs.rightscale.com/policies/) to learn more."
+category "Cost"
+severity "low"
+info(
+  version: "2.0", 
+  provider:"Google", 
+  service: "Storage",
+  policy_set: "Unattached Volumes"
+)
+
+###############################################################################
+# Parameters
+###############################################################################
+
+parameter "param_email" do
+  type "list"
+  label "Email addresses"
+  description "Email addresses of the recipients you wish to notify"
+end
+
+parameter "param_unattached_days" do
+  type "number"
+  label "Unattached days"
+  description "The number of days a volume has been unattached"
+  default 30
+end
+
+parameter "param_exclusion_tags" do
+  label "Exclusion Label List"
+  description "Cloud native label to ignore volumes. Format: Key:Value"
+  type "list"
+  allowed_pattern /(^$)|([\w]?)+\:([\w]?)+/
+end
+
+parameter "param_create_final_snapshot" do
+  label "Create Final Snapshot"
+  description "Boolean for whether or not to take a final snapshot before deleting"
+  type "string"
+  allowed_values "true", "false"
+end
+
+
+###############################################################################
+# Authentication
+###############################################################################
+
+#authenticate with Google
+credentials "auth_google" do
+  schemes "oauth2"
+  label "Google"
+  description "Select the Google Cloud Credential from the list."
+  tags "provider=gce"
+end
+
+###############################################################################
+# Pagination
+###############################################################################
+
+pagination "google_pagination" do
+  get_page_marker do
+    body_path "nextPageToken"
+  end
+  set_page_marker do
+    query "pageToken"
+  end
+end
+
+###############################################################################
+# Datasources
+###############################################################################
+
+datasource "ds_projects" do
+  request do
+    auth $auth_google
+    host "cloudresourcemanager.googleapis.com"
+    verb "GET"
+    path "/v1/projects"
+    pagination $google_pagination
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response,"projects[*]") do
+      field "projectId", jmes_path(col_item, "projectId")
+      end
+  end
+end
+
+datasource "ds_zones" do
+  iterate $ds_projects
+  request do
+    auth $auth_google
+    host "compute.googleapis.com"
+    verb "GET"
+    path join(["/compute/v1/projects/", val(iter_item, "projectId"), "/zones"])
+    query "project", val(iter_item, "projectId")
+    pagination $google_pagination
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response,"items[*]") do
+      field "projectId", val(iter_item, "projectId")
+      field "region", last(split(jmes_path(col_item, "region"),'/'))
+      field "zone", jmes_path(col_item, "name") 
+    end
+  end
+end
+
+datasource "ds_volumes" do
+  iterate $ds_zones
+  request do
+    auth $auth_google
+    host "compute.googleapis.com"
+    verb "GET"
+    path join(["/compute/v1/projects/", val(iter_item, "projectId"), "/zones/", val(iter_item, "zone"), "/disks"])
+    query "project", val(iter_item, "project_name")
+    pagination $google_pagination
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response,"items[*]") do
+      field "projectId", val(iter_item, "projectId")
+      field "zone", val(iter_item, "zone")
+      field "selfLink", jmes_path(col_item,"selfLink")
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+      field "diskSizeGb", jmes_path(col_item, "sizeGb")
+      field "status", jmes_path(col_item, "status")
+	    field "creationTimestamp", jmes_path(col_item, "creationTimestamp")
+	    field "lastAttachTimestamp", jmes_path(col_item, "lastAttachTimestamp")
+      field "lastDetachTimestamp", jmes_path(col_item, "lastDetachTimestamp")
+      field "labels", jmes_path(col_item, "labels")
+    end
+  end
+end
+
+datasource "ds_unattached_volumes" do
+  run_script $js_unattached_volumes, $ds_volumes, $param_exclusion_tags
+end
+
+###############################################################################
+# Scripts
+###############################################################################
+
+script "js_unattached_volumes", type: "javascript" do
+  parameters "ds_volumes", "param_exclusion_tags"
+  result "filtered_volumes"
+  code <<-EOS
+  var sanitized_volumes = _.filter(ds_volumes, function(volume){
+    if (volume.selfLink != null && volume.selfLink !== undefined){
+      return volume
+    }
+  })
+
+  var volumes_to_check = _.filter(sanitized_volumes, function(volume){    
+    if( (volume.lastDetachTimestamp != null)  && (volume.lastDetachTimestamp > volume.lastAttachTimestamp )){
+      return volume
+    }
+    if( volume.lastDetachTimestamp == null && volume.lastAttachTimestamp == null){
+      return volume
+    }
+  })
+
+  var tag_filter_volumes = _.filter(volumes_to_check, function(volume){
+    var count = 0
+    _.each(param_exclusion_tags, function(tag)
+      {
+        tag_key = tag.split(':')[0]
+        tag_value = tag.split(':')[1]
+        if (volume.labels != null && volume.labels !== undefined ){
+          if ( volume.labels[tag_key] != null && volume.labels[tag_key] !== undefined){
+            if (volume.labels[tag_key] == tag_value){
+              count = 1
+            }
+          }
+        }
+      }
+    )
+    if (count == 0){
+      return volume
+    }
+  }
+  )
+  var now = new Date()
+  var one_day=1000*60*60*24
+  _.each(tag_filter_volumes, function(volume){
+    if (volume.lastDetachTimestamp != null && volume.lastDetachTimestamp !== undefined){
+      var creation_time = new Date(volume.lastDetachTimestamp)
+    } else {
+      var creation_time = new Date(volume.creationTimestamp)
+    }
+    var difference = now.getTime() - creation_time.getTime()
+    var days_old=(difference/one_day).toFixed(2)
+    volume["days_old"] = days_old
+  }
+  )
+
+  var filtered_volumes = _(tag_filter_volumes)
+    .chain()
+    .sortBy(function(volume){
+      return volume.name;
+    }).sortBy(function(volume){
+      return volume.zone;
+    }).value();
+  EOS
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy 'policy_google_unattached_volumes' do
+  validate_each $ds_unattached_volumes do
+    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} Google unattached volumes discovered"
+    detail_template <<-EOS
+# Unattached volumes from the Google Cloud
+| Project ID | Zone | Name | Size | Labels | Age In Days |
+| ---------- | ---- | ---- | ---- | ------ | ----------- |
+{{ range data -}}
+| {{.projectId}} | {{.zone}} | {{.name}} | {{.diskSizeGb}} | {{ range $i, $e := .labels }}{{$i}}:{{ $e }}, {{ end }} | {{.days_old}} |
+{{ end -}}
+###### Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }}) within Org: {{ rs_org_name }} (Org ID: {{ rs_org_id }})
+EOS
+
+  check lt(to_n(val(item, "days_old")), $param_unattached_days)
+  escalate $esc_email
+  escalate $esc_approve_delete_volumes
+  end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_email" do
+  email $param_email
+end
+
+escalation "esc_approve_delete_volumes" do
+  request_approval  do
+    label "Approve Resource Deletion"
+    description "Approve escalation to run RightScale Cloud Workflow to delete unattached volumes"
+    parameter "approval_reason" do
+      type "string"
+      label "Reason for Approval"
+      description "Explain why you are approving the action"
+    end
+  end
+  run "delete_volumes", data, $param_create_final_snapshot
+end
+
+###############################################################################
+# Cloud Workflow
+###############################################################################
+
+define delete_volumes($data,$param_create_final_snapshot) return $all_responses,$snapshot_responses do
+  $$debug=true
+  $snapshot_responses = []
+  $all_responses = []
+  $syslog_subject = "Google unattached volumes: "
+  call sys_log(join([$syslog_subject, "Google volume"]),to_s($data))
+  foreach $item in $data do
+    if ($param_create_final_snapshot == "true")
+      call create_snapshot($item) retrieve $response
+      $snapshot_responses << $response
+    end
+    sub on_error: handle_error($response) do
+      $response = http_delete(
+        url: $item["selfLink"],
+        auth: $$auth_google,
+        headers: {
+          "cache-control": "no-cache",
+          "content-type": "application/json"
+        }
+      )
+      $all_responses << $response
+    end
+  end
+  call sys_log(join([$syslog_subject, "Responses"]),to_s($all_responses))
+end
+
+define create_snapshot($volume) return $response do
+  $response = []
+  $postResponse = {}
+
+  sub on_error: handle_error($postResponse) do
+    $postResponse = http_post(
+      url: join([$item["selfLink"],"/createSnapshot"]),
+      auth: $$auth_google,
+      headers: {
+        "cache-control": "no-cache",
+        "content-type": "application/json"
+      },
+      body: {
+        name: join([$item["name"], "-final-snapshot"])
+      }
+    )
+  end
+  $response << $postResponse
+
+  call sys_log("Post Response", to_s($postResponse))
+  sub on_error: handle_error($getResponse) do
+    $getResponse = http_get(
+      url: $postResponse["body"]["selfLink"],
+      auth: $$auth_google,
+      headers: {
+        "cache-control": "no-cache",
+        "content-type": "application/json"
+      }
+    )
+    call sys_log("Get Response", to_s($getResponse))
+    while $getResponse["body"]["status"] != "DONE" do
+      sleep(1)
+      $getResponse = http_get(
+        url: $getResponse["body"]["selfLink"],
+        auth: $$auth_google,
+        headers: {
+          "cache-control": "no-cache",
+          "content-type": "application/json"
+        }
+      )
+      call sys_log("Get Response", to_s($getResponse))
+    end
+    $response << $getResponse
+  end
+
+  sleep(10)
+end
+
+define handle_error($response) do
+  $syslog_subject = "Google Volume Deletion Error: "
+  call sys_log($syslog_subject,to_s($response))
+  $_error_behavior = "skip"
+end 
+
+define sys_log($subject, $detail) do
+  if $$debug
+    rs_cm.audit_entries.create(
+      notify: "None",
+      audit_entry: {
+        auditee_href: @@account,
+        summary: $subject,
+        detail: $detail
+      }
+    )
+  end
+end
