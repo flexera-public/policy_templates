@@ -32,7 +32,6 @@ Please contact sales@flexera.com to learn more.
 ##### Compute
 
 - [AWS Burstable Instance CloudWatch Utilization](./cost/aws/burstable_instance_cloudwatch_credit_utilization/)
-- [AWS Delete Unattached Volumes](./cost/aws/unattached_volumes)
 - [AWS Expiring Reserved Instances](./cost/aws/reserved_instances/expiration/)
 - [AWS Idle Compute Instances](./cost/aws/idle_compute_instances/)
 - [AWS Inefficient Instance Utilization using CloudWatch](./cost/aws/instance_cloudwatch_utilization/)
@@ -54,6 +53,7 @@ Please contact sales@flexera.com to learn more.
 ##### Storage
 
 - [AWS Bucket Size Check](./cost/aws/s3_bucket_size/)
+- [AWS Delete Unattached Volumes](./cost/aws/unattached_volumes)
 - [AWS S3 Buckets without Server Access Logging](./security/storage/aws/s3_buckets_without_server_access_logging/)
 - [AWS Object Storage Optimization](./cost/aws/object_storage_optimization/)
 
