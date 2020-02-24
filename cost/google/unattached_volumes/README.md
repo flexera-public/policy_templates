@@ -33,14 +33,23 @@ The following policy actions are taken on any resources found to be out of compl
 This policy requires the Google Credential.  When applying the policy select the appropriate credentials
 from the list for your tenant.  If such credential doesn't exist please contact your cloud admin to create the Credential.
 
-The credential must contain the value *Google* in the Provider field.  
-Refer to our documentation for more details on the [Credential Service](https://docs.rightscale.com/credentials/)
+The credential must contain the value *Google* in the Provider field.
+Refer to our documentation for more details on the [Credential Service](https://docs.rightscale.com/policies/users/guides/credential_management.html)
 
 ### Google Required Permissions
 
 The following Google permissions must be allowed for the policy to run.
 
-[list permissions here]
+- The `compute.disks.delete` permission
+- The `compute.disks.list` permission
+- The `compute.disks.get` permission
+- The `compute.regions.list` permission
+- The `resourcemanager.projects.get` permission
+
+Snapshot Create Permissions:
+
+- The `compute.disks.createSnapshot` permission
+- The `compute.snapshots.create` permission
 
 ## Supported Clouds
 
