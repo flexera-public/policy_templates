@@ -44,7 +44,7 @@ The following AWS permissions must be allowed for the policy to run.
     "Version": "2016-11-15",
     "Statement":[{
     "Effect":"Allow",
-    "Action":["ec2:DescribeVolumes","ec2:CreateTags","ec2:CreateSnapshot","ec2:DescribeSnapshots"],
+    "Action":["ec2:DescribeVolumes","ec2:CreateTags","ec2:CreateSnapshot","ec2:DescribeSnapshots","ec2:DeleteVolume"],
     "Resource":"*"
     }
   ]
