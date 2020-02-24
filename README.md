@@ -95,6 +95,7 @@ Please contact sales@flexera.com to learn more.
 
 - [Google Object Storage Optimization](./cost/google/object_storage_optimization/)
 - [Google Delete Old Snapshots](./cost/google/old_snapshots/)
+- [Google Delete Unattached Volumes](./cost/google/unattached_volumes/)
 
 ##### Other
 
