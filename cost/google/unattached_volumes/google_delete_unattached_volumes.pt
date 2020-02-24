@@ -12,15 +12,6 @@ info(
 )
 
 ###############################################################################
-# Permissions
-###############################################################################
-
-permission "perm_read_creds" do
-  actions   "rs_cm.show_sensitive","rs_cm.index_sensitive"
-  resources "rs_cm.credentials"
-end
-
-###############################################################################
 # Parameters
 ###############################################################################
 
@@ -56,17 +47,12 @@ end
 # Authentication
 ###############################################################################
 
-auth "auth_google", type: "oauth2" do
-  token_url "https://www.googleapis.com/oauth2/v4/token"
-  grant type: "jwt_bearer" do
-    iss cred("GCE_PLUGIN_ACCOUNT")
-    aud "https://www.googleapis.com/oauth2/v4/token"
-    additional_claims do {
-      "scope" => "https://www.googleapis.com/auth/compute",
-      "scope" => "https://www.googleapis.com/auth/cloud-platform"
-    } end
-    signing_key cred("GCE_PLUGIN_PRIVATE_KEY")
-  end
+#authenticate with Google
+credentials "auth_google" do
+  schemes "oauth2"
+  label "Google"
+  description "Select the Google Cloud Credential from the list."
+  tags "provider=gce"
 end
 
 ###############################################################################
@@ -97,7 +83,7 @@ datasource "ds_projects" do
   result do
     encoding "json"
     collect jmes_path(response,"projects[*]") do
-      field "project_name", jmes_path(col_item, "projectId")
+      field "projectId", jmes_path(col_item, "projectId")
       end
   end
 end
@@ -108,54 +94,36 @@ datasource "ds_zones" do
     auth $auth_google
     host "compute.googleapis.com"
     verb "GET"
-    path join(["/compute/v1/projects/", val(iter_item, "project_name"), "/zones"])
-    query "project", val(iter_item, "project_name")
+    path join(["/compute/v1/projects/", val(iter_item, "projectId"), "/zones"])
+    query "project", val(iter_item, "projectId")
     pagination $google_pagination
   end
   result do
     encoding "json"
     collect jmes_path(response,"items[*]") do
+      field "projectId", val(iter_item, "projectId")
       field "region", last(split(jmes_path(col_item, "region"),'/'))
       field "zone", jmes_path(col_item, "name") 
     end
   end
 end
 
-datasource "ds_merged_project_zone" do
-  run_script $js_merge, $ds_zones, $ds_projects
-end
-
-script "js_merge", type: "javascript" do
-  parameters "ds_zones", "ds_projects"
-  result "res"
-  code <<-EOS
-  res = []
-  _.each(ds_projects, function(project){
-    _.each(ds_zones, function(zone){
-      var result_json = {"project": project.project_name,"zone": zone.zone}
-      res.push(result_json)
-    })
-  })
-  EOS
-end
-
-datasource "volume_list" do
-  iterate $ds_merged_project_zone
+datasource "ds_volumes" do
+  iterate $ds_zones
   request do
     auth $auth_google
     host "compute.googleapis.com"
     verb "GET"
-    path join(["/compute/v1/projects/", val(iter_item, "project"), "/zones/", val(iter_item, "zone"), "/disks"])
+    path join(["/compute/v1/projects/", val(iter_item, "projectId"), "/zones/", val(iter_item, "zone"), "/disks"])
     query "project", val(iter_item, "project_name")
     pagination $google_pagination
   end
   result do
     encoding "json"
     collect jmes_path(response,"items[*]") do
-      field "project", val(iter_item, "project")
+      field "projectId", val(iter_item, "projectId")
       field "zone", val(iter_item, "zone")
       field "selfLink", jmes_path(col_item,"selfLink")
-      field "zone_path",jmes_path(col_item, "zone")
       field "id", jmes_path(col_item, "id")
       field "name", jmes_path(col_item, "name")
       field "diskSizeGb", jmes_path(col_item, "sizeGb")
@@ -168,46 +136,34 @@ datasource "volume_list" do
   end
 end
 
-datasource "ds_clean_volume_list" do
-  run_script $js_clean_volume_list, $volume_list
-end
-
-script "js_clean_volume_list", type: "javascript" do
-  parameters "volume_list"
-  result "res"
-  code <<-EOS
-  res = []
-  _.each(volume_list, function(volume){
-    if(volume.name!=null && volume.id!=null && volume.zone_path!=null){
-      var temp = volume.zone_path.split("/", 9)[8]
-      volume["zone"] = temp
-      res.push(volume)
-    }
-  })
-  EOS
-end
-
-
 datasource "ds_unattached_volumes" do
-  run_script $js_unattached_volumes, $ds_clean_volume_list, $param_exclusion_tags
+  run_script $js_unattached_volumes, $ds_volumes, $param_exclusion_tags
 end
+
+###############################################################################
+# Scripts
+###############################################################################
 
 script "js_unattached_volumes", type: "javascript" do
-  parameters "ds_clean_volume_list", "param_exclusion_tags"
+  parameters "ds_volumes", "param_exclusion_tags"
   result "filtered_volumes"
   code <<-EOS
-
-  ds_volumes = []
-  _.each(ds_clean_volume_list, function(volume){    
-    if( (volume.lastDetachTimestamp != null)  && (volume.lastDetachTimestamp > volume.lastAttachTimestamp )){
-      ds_volumes.push(volume)
-    }
-    if( volume.lastDetachTimestamp == null && volume.lastAttachTimestamp == null){
-      ds_volumes.push(volume)
+  var sanitized_volumes = _.filter(ds_volumes, function(volume){
+    if (volume.selfLink != null && volume.selfLink !== undefined){
+      return volume
     }
   })
 
-  var filtered_volumes = _.filter(ds_volumes, function(volume){
+  var volumes_to_check = _.filter(sanitized_volumes, function(volume){    
+    if( (volume.lastDetachTimestamp != null)  && (volume.lastDetachTimestamp > volume.lastAttachTimestamp )){
+      return volume
+    }
+    if( volume.lastDetachTimestamp == null && volume.lastAttachTimestamp == null){
+      return volume
+    }
+  })
+
+  var tag_filter_volumes = _.filter(volumes_to_check, function(volume){
     var count = 0
     _.each(param_exclusion_tags, function(tag)
       {
@@ -229,7 +185,7 @@ script "js_unattached_volumes", type: "javascript" do
   )
   var now = new Date()
   var one_day=1000*60*60*24
-  _.each(filtered_volumes, function(volume){
+  _.each(tag_filter_volumes, function(volume){
     if (volume.lastDetachTimestamp != null && volume.lastDetachTimestamp !== undefined){
       var creation_time = new Date(volume.lastDetachTimestamp)
     } else {
@@ -240,10 +196,15 @@ script "js_unattached_volumes", type: "javascript" do
     volume["days_old"] = days_old
   }
   )
-  var filtered_volumes = _.sortBy(filtered_volumes, "name")
+  var filtered_volumes = _(tag_filter_volumes)
+    .chain()
+    .sortBy(function(volume){
+      volume.name
+    }).reverse().sortBy(function(volume){
+      volume.zone
+    }).reverse().value();
   EOS
 end
-
 
 ###############################################################################
 # Policy
@@ -251,14 +212,13 @@ end
 
 policy 'policy_google_unattached_volumes' do
   validate_each $ds_unattached_volumes do
-    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} Google unattached volumes Discovered"
+    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} Google unattached volumes discovered"
     detail_template <<-EOS
-# Unattached volumes from the Google Cloud 
-# Google Old volumes
-| Project ID | Name | Size | Labels | Age In Days| Status |
-| ---------- | ---- | ---- | ------ | ------------- | ------ |
+# Unattached volumes from the Google Cloud
+| Project ID | Zone | Name | Size | Labels | Age In Days | Status |
+| ---------- | ---- | ---- | ---- | ------ | ----------- | ------ |
 {{ range data -}}
-| {{.project}} | {{.name}} | {{.diskSizeGb}} | {{ range $i, $e := .labels }}{{$i}}:{{ $e }}, {{ end }} | {{.days_old}} | {{.status}} |
+| {{.projectId}} | {{.zone}} | {{.name}} | {{.diskSizeGb}} | {{ range $i, $e := .labels }}{{$i}}:{{ $e }}, {{ end }} | {{.days_old}} | {{.status}} |
 {{ end -}}
 ###### Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }}) within Org: {{ rs_org_name }} (Org ID: {{ rs_org_id }})
 EOS
