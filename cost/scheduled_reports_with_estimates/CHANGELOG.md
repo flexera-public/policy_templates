@@ -1,6 +1,9 @@
-# Change log
+# Changelog
 
+## v1.1
 
-v0.0
------
+- Updated the metadata
+
+## v1.0
+
 - initial release
