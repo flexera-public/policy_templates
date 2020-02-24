@@ -32,6 +32,7 @@ Provider tag value to match this policy: `azure_rm`
 Required permissions in the provider:
 
 - Microsoft.Resources/subscriptions/resources/read
+- Microsoft.Resources/subscriptions/resources/delete
 
 ## Policy Actions
 
