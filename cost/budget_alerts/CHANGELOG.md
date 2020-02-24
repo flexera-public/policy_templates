@@ -1,5 +1,13 @@
 # Changelog
 
+## v1.8
+
+- Set timeframe to today - 3
+
+## v1.7
+
+- Updated the metadata
+
 ## v1.6
 
 - Modified graph representation of the Actual budget alert

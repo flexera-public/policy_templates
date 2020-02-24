@@ -1,10 +1,16 @@
 name "Google Idle Compute Instances"
 rs_pt_ver 20180301
 type "policy"
-short_description "Checks for Google Compute instances that are idle for the last 30 days and terminates them after approval.. See the [README](https://github.com/rightscale/policy_templates/tree/master/cost/google/idle_compute_instances/) and [docs.rightscale.com/policies](http://docs.rightscale.com/policies/) to learn more."
-long_description "Version: 1.1"
+short_description "Checks for Google Compute instances that are idle for the last 30 days and terminates them after approval.. See the [README](https://github.com/flexera/policy_templates/tree/master/cost/google/idle_compute_instances/) and [docs.rightscale.com/policies](https://docs.rightscale.com/policies/) to learn more."
+long_description ""
 severity "low"
 category "Cost"
+info(
+      version: "2.0",
+      provider: "GCE",
+      service: "Compute",
+      policy_set: "Idle Compute Instances"
+    )
 
 ###############################################################################
 # Permissions
@@ -23,13 +29,6 @@ parameter "param_email" do
   type "list"
   label "Email addresses to notify"
   description "Email addresses of the recipients you wish to notify when new incidents are created"
-end
-
-parameter "param_google_project" do
-  type "string"
-  label "Google Cloud Project"
-  description "Google Cloud Project"
-  allowed_pattern /^[0-9a-z:\.-]+$/
 end
 
 parameter "param_avg_used_memory" do
@@ -62,31 +61,56 @@ end
 # Authentication
 ###############################################################################
 
-auth "auth_google", type: "oauth2" do
-  token_url "https://www.googleapis.com/oauth2/v4/token"
-  grant type: "jwt_bearer" do
-    iss cred("GCE_PLUGIN_ACCOUNT")
-    aud "https://www.googleapis.com/oauth2/v4/token"
-    additional_claims do {
-      "scope" => "https://www.googleapis.com/auth/monitoring.write https://www.googleapis.com/auth/cloud-platform https://www.googleapis.com/auth/monitoring.read https://www.googleapis.com/auth/monitoring https://www.googleapis.com/auth/compute https://www.googleapis.com/auth/compute.readonly"
-    } end
-    signing_key cred("GCE_PLUGIN_PRIVATE_KEY")
-  end
+# authenticate with Google
+credentials "auth_google" do
+  schemes "oauth2"
+  label "Google"
+  description "Select the Google Cloud Credential from the list."
+  tags "provider=gce"
 end
 
 ###############################################################################
 # Datasources
 ###############################################################################
+pagination "google_pagination" do
+  get_page_marker do
+    body_path "nextPageToken"
+  end
+  set_page_marker do
+    query "pageToken"
+  end
+end
+
 datasource "ds_time" do
   run_script $js_time
 end
 
-datasource "ds_compute_utilization" do
+#get all google project
+datasource "ds_google_project" do
   iterate $ds_time
   request do
     auth $auth_google
+    pagination $google_pagination
+    host "cloudresourcemanager.googleapis.com"
+    path "/v1/projects/"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "projects[*]") do
+      field "projectNumber", jmes_path(col_item,"projectNumber")
+      field "projectId", jmes_path(col_item,"projectId")
+      field "end_date", val(iter_item,"end_date")
+      field "start_date", val(iter_item,"start_date")
+    end
+  end
+end
+
+datasource "ds_compute_utilization" do
+  iterate $ds_google_project
+  request do
+    auth $auth_google
     host "monitoring.googleapis.com"
-    path join(["/v3/projects/",$param_google_project,"/timeSeries/"])
+    path join(["/v3/projects/",val(iter_item,"projectId"),"/timeSeries/"])
     query "filter", 'metric.type="compute.googleapis.com/instance/cpu/utilization"'
     query "interval.endTime", val(iter_item,"end_date")
     query "interval.startTime", val(iter_item,"start_date")
@@ -97,6 +121,7 @@ datasource "ds_compute_utilization" do
       field "label_instance_name", jmes_path(col_item, "metric.labels.instance_name")
       field "instance_id", jmes_path(col_item, "resource.labels.instance_id")
       field "zone", jmes_path(col_item, "resource.labels.zone")
+      field "projectId", val(iter_item,"projectId")
       field "avg_cpu_points", jmes_path(col_item, "points[*].value.doubleValue | avg(@)")
       field "max_cpu_points", jmes_path(col_item, "points[*].value.doubleValue | max(@)")
       field "min_cpu_points", jmes_path(col_item, "points[*].value.doubleValue | min(@)")
@@ -109,11 +134,11 @@ datasource "ds_calculated_utilization" do
 end
 
 datasource "ds_memory_utilization" do
-  iterate $ds_time
+  iterate $ds_google_project
   request do
     auth $auth_google
     host "monitoring.googleapis.com"
-    path join(["/v3/projects/",$param_google_project,"/timeSeries/"])
+    path join(["/v3/projects/",val(iter_item,"projectId"),"/timeSeries/"])
     query "filter", 'metric.type="agent.googleapis.com/memory/percent_used" AND metric.label.state=used'
     query "interval.endTime", val(iter_item,"end_date")
     query "interval.startTime", val(iter_item,"start_date")
@@ -132,7 +157,7 @@ end
 datasource "ds_add_instance_data" do
   iterate $ds_calculated_utilization
   request do
-    run_script $js_add_instance_data, $param_google_project, val(iter_item,"zone"), val(iter_item,"instance_id")
+    run_script $js_add_instance_data,  val(iter_item,"projectId"), val(iter_item,"zone"), val(iter_item,"instance_id")
   end
   result do
     encoding "json"
@@ -150,6 +175,7 @@ datasource "ds_add_instance_data" do
       field "mem_average", val(iter_item, "mem_average")
       field "mem_maximum", val(iter_item, "mem_maximum")
       field "mem_minimum", val(iter_item, "mem_minimum")
+      field "projectId", val(iter_item,"projectId")
     end
   end
 end
@@ -194,6 +220,7 @@ script "js_calculated_utilization", type: "javascript" do
       results.push(
         {
           zone: ds_compute_utilization[i].zone,
+          projectId: ds_compute_utilization[i].projectId,
           instance_id: instance_id,
           points: points,
           label_instance_name: ds_compute_utilization[i].label_instance_name,
@@ -251,6 +278,8 @@ script "js_clean_instance_data", type: "javascript" do
         }
       }
     })
+    results = _.sortBy(results, 'zone');
+    results= _.sortBy(results, 'projectId');
   EOS
 end
 ###############################################################################
@@ -262,10 +291,10 @@ policy "pol_utilization" do
     summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} rows containing Google instance StackDriver Utilization data"
     detail_template <<-EOS
 # Google Instance StackDriver Utilization
-| Region | instanceID | Hostname | CPU Maximum % | CPU Minimum % | CPU Average % | Memory Minimum % | Memory Maximum % | Memory Average % | Labels |
-| ------ | ---------- | -------- | ------------- | ------------- | ------------- | ---------------- | ---------------- | ---------------- | ------ |
+| Project ID | Region | instanceID | Hostname | CPU Maximum % | CPU Minimum % | CPU Average % | Memory Minimum % | Memory Maximum % | Memory Average % | Labels |
+| ---------- | ------ | ---------- | -------- | ------------- | ------------- | ------------- | ---------------- | ---------------- | ---------------- | ------ |
 {{ range data -}}
-| {{.zone}} | {{.instance_id}} | {{if .hostname}} {{.hostname}} {{ else }} {{.instance_id}} {{end}} | {{ .cpu_maximum }} | {{.cpu_minimum}} | {{ .cpu_average }} | {{.mem_minimum}} | {{.mem_maximum}} | {{.mem_average}} | {{ range $i, $e := .labels }}{{$i}}:{{ $e }}, {{ end }} |
+| {{.projectId}} | {{.zone}} | {{.instance_id}} | {{if .hostname}} {{.hostname}} {{ else }} {{.instance_id}} {{end}} | {{ .cpu_maximum }} | {{.cpu_minimum}} | {{ .cpu_average }} | {{.mem_minimum}} | {{.mem_maximum}} | {{.mem_average}} | {{ range $i, $e := .labels }}{{$i}}:{{ $e }}, {{ end }} |
 {{ end -}}
 ___
 ###### Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }}) within Org: {{ rs_org_name }} (Org ID: {{ rs_org_id }})
@@ -310,47 +339,19 @@ define terminate_resources($data) return $all_responses do
   $syslog_subject = "Google Idle Compute: "
   call sys_log(join([$syslog_subject, "Identified Instances"]),to_s($data))
   foreach $item in $data do
-    call google_authenticate() retrieve $access_token
     sub on_error: handle_error($response) do
       $response = http_delete(
         url: $item["selfLink"],
+        auth: $$auth_google,
         headers: {
           "cache-control": "no-cache",
-          "content-type": "application/json",
-          "authorization": "Bearer " + $access_token
+          "content-type": "application/json"
         }
       )
       $all_responses << $response
     end
   end
   call sys_log(join([$syslog_subject, "Responses"]),to_s($all_responses))
-end
-
-define google_authenticate() return $access_token do
-  $jwt = {
-    iss: cred("GCE_PLUGIN_ACCOUNT"),
-    aud:"https://oauth2.googleapis.com/token",
-    exp: to_n(strftime(now()+3600, "%s")),
-    iat:to_n(strftime(now(), "%s")),
-    scope: "https://www.googleapis.com/auth/cloud-platform https://www.googleapis.com/auth/compute"
-  }
-
-  $signed_signature = jwt_encode("RS256", $jwt, cred("GCE_PLUGIN_PRIVATE_KEY"),{typ:"JWT"})
-
-  $response = http_request({
-    verb: 'post',
-    href: '/token',
-    host: 'oauth2.googleapis.com',
-    https: true,
-    headers: {
-      "content-type": "application/json"
-    },
-    body:{
-      "grant_type": "urn:ietf:params:oauth:grant-type:jwt-bearer",
-      "assertion": $signed_signature
-    }
-  })
-  $access_token = $response["body"]["access_token"]
 end
 
 define handle_error($response) do
