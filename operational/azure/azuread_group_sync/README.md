@@ -58,7 +58,7 @@ Required permissions in the provider:
 Type: `Oauth2`  
 Grant Type: `Refresh Token`  
 Token URL: `https://us-3.rightscale.com/api/oauth2` or `https://us-4.rightscale.com/api/oauth2` (based on where token was generated)  
-Token: [Value of refresh token](https://docs.rightscale.com/cm/dashboard/settngs/account/enable_oauth)  
+Token: [Value of refresh token](https://docs.rightscale.com/cm/dashboard/settings/account/enable_oauth)  
 Additional Headers: `X-API-Version: 1.5`  
 Provider tag value to match this policy: `flexera_cmp`  
 
