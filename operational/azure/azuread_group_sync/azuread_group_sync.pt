@@ -185,6 +185,7 @@ datasource "ds_grs_groups" do
     path join(["grs/orgs/",rs_org_id,"/groups"])
     header "X-Api-Version", "2.0"
     header "User-Agent", "RS Policies"
+    query "view", "extended"
   end
   result do
     encoding "json"
@@ -192,6 +193,7 @@ datasource "ds_grs_groups" do
       field "name", jmes_path(col_item, "name")
       field "id", jmes_path(col_item, "id")
       field "href", jmes_path(col_item, "href")
+      field "users", jmes_path(col_item, "users")
     end
   end
 end
@@ -387,14 +389,16 @@ script "js_filtered_grs_groups", type: "javascript" do
     _.each(groupsInGRS, function(group) {
       var currentGroupObject = _.where(ds_grs_groups, {name: group});
       var aadGroupObject = _.where(ds_filtered_aad_groups, {displayName: group});
-      var userCount = _.size(aadGroupObject[0]["members"])
+      var aadUserCount = _.size(aadGroupObject[0]["members"])
+      cmpUserCount = _.size(currentGroupObject[0]["users"])
 
       groupsToUpdate.push({
         name: currentGroupObject[0]["name"],
         id: currentGroupObject[0]["id"],
         href: currentGroupObject[0]["href"],
         action: "Update",
-        userCount: userCount,
+        aadUserCount: aadUserCount,
+        cmpUserCount: cmpUserCount
         objectId: aadGroupObject[0]["objectId"]
       })
     })
@@ -433,10 +437,10 @@ policy "policy_azuread_group_sync" do
     summary_template "{{ len data.groupsToUpdate }} AzureAD Groups to Synchronize"
     detail_template <<-EOS
 ## Groups that Will Be Synchronized from AzureAD
-| Name  | Href  | AzureAD Object Id | User Count |
-| :---: | :---: | :---------------: | :--------: |
+| Name  | Href  | AzureAD Object Id | AzureAD User Count | CMP User Count |
+| :---: | :---: | :---------------: | :----------------: | :------------: |
 {{ range data.groupsToUpdate -}}
-  | {{ .name }} | {{ .href }} | {{ .objectId }} | {{ .userCount }} |
+  | {{ .name }} | {{ .href }} | {{ .objectId }} | {{ .aadUserCount }} | {{ .cmpUserCount }} |
 {{ end -}}
 
 {{ $create_count := len data.groupsToCreate }}
