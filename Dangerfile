@@ -49,6 +49,8 @@ exclude_hosts = [
   'graph.microsoft.com',
   'www.w3.org',
   'tempuri.org',
+  'us-3.rightscale.com',
+  'us-4.rightscale.com'
 ]
 changed_files.each do |file|
  diff = git.diff_for_file(file)

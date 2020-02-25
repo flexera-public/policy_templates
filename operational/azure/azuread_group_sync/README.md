@@ -24,7 +24,7 @@ You can elect to automatically remove users from your organization that are no l
 - *Default Company Name for New Users* - Use this Company Name if the user doesn't have one set in AzureAD
   - The policy looks for a value in the `companyName` attribute of the AzureAD user account.
 - *Identity Provider Href* - The Href for the Identity Provider to associate to new users
-  - Can be retrieved by copying the link to edit your SSO: ht&#8203;tps://us-3.rightscale.com/global/enterprises/54321/edit_sso?identity_provider_id=**123** and grabbing the ID value at the end, or via the [RightScale Cloud Management API](https://reference.rightscale.com/api1.5/resources/ResourceIdentityProviders.html#index)  
+  - Can be retrieved by copying the link to edit your SSO: ht&#8203;tps://us-3.rightscale.com/global/enterprises/54321/edit_sso?identity_provider_id=**123** and grabbing the ID value at the end, or via the [RightScale Cloud Management API](https://reference.rightscale.com/api1.5/resources/ResourceIdentityProviders.html#index)
   - Example: `/api/identity_providers/123`
 - *Remove Users?* - Remove users from the Organization that are no longer members of a group
 
@@ -60,7 +60,7 @@ Grant Type: `Refresh Token`
 Token URL: `https://us-3.rightscale.com/api/oauth2` or `https://us-4.rightscale.com/api/oauth2` (based on where token was generated)  
 Token: [Value of refresh token](https://docs.rightscale.com/cm/dashboard/settings/account/enable_oauth)  
 Additional Headers: `X-API-Version: 1.5`  
-Provider tag value to match this policy: `flexera_cmp`  
+Provider tag value to match this policy: `flexera_cmp`
 
 Required permissions in the provider:
 
