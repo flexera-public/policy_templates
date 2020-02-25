@@ -1,22 +1,23 @@
-# Azure Tag Resources with Resource Group Name
+# Google Delete Old Snapshots
 
 ## What it does
 
-This Policy Template will scan all resources in an Azure Resource Manager Subscription, and will raise an incident if any resources are not properly tagged with their corresponding Resource Group name.  When an incident is raised, the Policy escalation will execute Cloud Workflow to tag the resources with the correct Resource Group name.
+This Policy finds Google snapshots older than the specified days and deletes them.
 
 ## Input Parameters
 
 This policy has the following input parameters required when launching the policy.
 
-- *Tag Key* - the tag key to scan on resources and to utilize when applying new/updated tags on resources
-- *Email addresses of the recipients you wish to notify* - A list of email addresses to notify
+- *Email addresses* - A list of email addresses to notify
+- *Snapshot age* - The number of days since the snapshot was created.
+- *Exclusion Label List* - list of tags that a snapshot can have to exclude it from the list.
 
 ## Policy Actions
 
 The following policy actions are taken on any resources found to be out of compliance.
 
-- An email is sent to the Email lists provided of the resources out of compliance
-- Tag resources with the name of their Resource Group
+- Send an email report
+- Delete old snapshots after an approval
 
 ## Prerequisites
 
@@ -26,20 +27,19 @@ This policy uses [credentials](https://docs.rightscale.com/policies/users/guides
 
 For administrators [creating and managing credentials](https://docs.rightscale.com/policies/users/guides/credential_management.html) to use with this policy, the following information is needed:
 
-Provider tag value to match this policy: `azure_rm`
+Provider tag value to match this policy: `gce`
 
 Required permissions in the provider:
 
-- Microsoft.Resources/subscriptions/resources/read
-- Microsoft.Resources/subscriptions/providers/read
+- The `compute.snapshots.delete` permission
+- The `compute.snapshots.list` permission
+- The `compute.snapshots.get` permission
+- The `compute.regions.list` permission
+- The `resourcemanager.projects.get` permission
 
 ## Supported Clouds
 
-- Azure Resource Manager
-
-## Limitations
-
-**Note:** Azure Classic (Azure Service Manager / ASM) resources are not supported by this Policy.
+- Google
 
 ## Cost
 
