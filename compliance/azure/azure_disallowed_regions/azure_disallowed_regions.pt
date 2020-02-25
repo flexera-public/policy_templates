@@ -1,10 +1,16 @@
 name "Azure Disallowed Regions"
 rs_pt_ver 20180301
 type "policy"
-short_description "A policy that discovers all Azure resources that have been provisioned in unapproved regions and optionally deletes them. See the [README](https://github.com/rightscale/policy_templates/tree/master/compliance/azure/azure_disallowed_regions) and [docs.rightscale.com/policies](http://docs.rightscale.com/policies/) to learn more."
-long_description "Version: 1.2"
+short_description "Check for instances that are in a disallowed region with the option to terminate them. See the [README](https://github.com/flexera/policy_templates/tree/master/compliance/azure/azure_disallowed_regions) and [docs.rightscale.com/policies](https://docs.rightscale.com/policies/) to learn more."
+long_description ""
 severity "medium"
 category "Compliance"
+info(
+  version: "2.0",
+  provider: "Azure",
+  service: "Compute",
+  policy_set: "Disallowed Regions"
+  )
 
 ###############################################################################
 # Permissions
@@ -20,33 +26,18 @@ parameter "param_email" do
   label "Email addresses of the recipients you wish to notify"
 end
 
-parameter "param_azure_tenant_id" do
-  type "string"
-  label "Azure AD Tenant ID"
-  category "Azure"
-end
-
-parameter "param_azure_sub" do
-  type "string"
-  label "Azure Subscription ID"
-  category "Azure"
-end
-
 parameter "param_approved_region" do
   type "list"
   label "Approved Azure Region(s)"
   category "Azure"
 end
 
-auth "azure_auth", type: "oauth2" do
-  token_url join(["https://login.microsoftonline.com/",$param_azure_tenant_id,"/oauth2/token"])
-  grant type: "client_credentials" do
-    client_id cred("AZURE_APPLICATION_ID")
-    client_secret cred("AZURE_APPLICATION_KEY")
-    additional_params do {
-      "resource" => "https://management.azure.com/"
-    } end
-  end
+#authenticate with Azure
+credentials "azure_auth" do
+  schemes "oauth2"
+  label "Azure"
+  description "Select the Azure Resource Manager Credential from the list."
+  tags "provider=azure_rm"
 end
 
 pagination "azure_pagination" do
@@ -58,12 +49,33 @@ pagination "azure_pagination" do
   end
 end
 
-datasource "azure_resources" do
+#get all subscription details.
+datasource "ds_subscriptions" do
   request do
     auth $azure_auth
     pagination $azure_pagination
     host "management.azure.com"
-    path join(["/subscriptions/", $param_azure_sub, "/resources"])
+    path "/subscriptions/"
+    query "api-version","2019-06-01"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "value[*]") do
+      field "subscriptionId", jmes_path(col_item,"subscriptionId")
+      field "displayName", jmes_path(col_item,"displayName")
+      field "state", jmes_path(col_item,"state")
+    end
+  end
+end
+
+datasource "azure_resources" do
+  iterate $ds_subscriptions
+  request do
+    auth $azure_auth
+    pagination $azure_pagination
+    host "management.azure.com"
+	path join(["/subscriptions/", val(iter_item,"subscriptionId"), "/resources"])
     query "api-version","2018-02-01"
     header "User-Agent", "RS Policies"
   end
@@ -73,6 +85,9 @@ datasource "azure_resources" do
       field "id", jmes_path(col_item,"id")
       field "region", jmes_path(col_item,"location")
       field "name", jmes_path(col_item,"name")
+	  field "managedBy",jmes_path(col_item,"managedBy")
+	  field "subscriptionId",val(iter_item,"subscriptionId")
+      field "subscriptionName",val(iter_item,"displayName")
     end
   end
 end
@@ -93,14 +108,27 @@ script "js_filter_resources", type: "javascript" do
       if (_.contains(param_approved_region, ar.region)) {
 
       } else {
-        result.push({
+	    if(ar.managedBy==null){
+	      result.push({
           id: ar["id"],
           region: ar["region"],
-          name: ar["name"]
-        })
-      }
+          name: ar["name"],
+		  subscriptionName: ar["subscriptionName"],
+		  managedBy: "NA"
+	      })
+	    }else{  
+          result.push({
+           id: ar["id"],
+           region: ar["region"],
+           name: ar["name"],
+		   subscriptionName: ar["subscriptionName"],	   
+		   managedBy: ar["managedBy"]	
+         })
+        }
+	  }
     })
-
+    result = _.sortBy(result, 'subscriptionName');
+    result = _.sortBy(result, 'region');
 EOS
 end
 
@@ -109,10 +137,10 @@ policy "azure_resource_policy" do
     summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} Azure Resources out of compliance"
     detail_template <<-EOS
 # Azure Resources out of compliance
-| Resource Name | Azure Region | Resource ID |
-| ----------------------- | ----------------------- | ------------- |
+| Subscription Name | Resource Name | Azure Region | Resource ID |
+| -----------| ------------ | ----------------------- | ------------- | 
 {{ range data -}}
-| {{.name}} | {{.region}} | {{.id}} |
+| {{.subscriptionName}} | {{.name}} | {{.region}} | {{.id}} |
 {{ end -}}
 EOS
     escalate $email
@@ -135,74 +163,82 @@ escalation "delete_resources" do
       description "Explain why you are approving the action"
     end
   end
-  run "delete_resources", data, $param_azure_tenant_id
+  run "delete_resources", data
 end
 
-define delete_resources($data, $param_azure_tenant_id) return $all_responses do
-  call get_access_token($param_azure_tenant_id) retrieve $access_token
+###############################################################################
+# Cloud Workflow
+###############################################################################
+
+define delete_resources($data) return $all_responses do
 
   $all_responses = []
   foreach $item in $data do
     sub on_error: skip do
+	if($item["managedBy"]=="NA")
+	$resourceName = $item["name"]
       $response = http_request(
         verb: "delete",
         host: "management.azure.com",
+		auth: $$azure_auth,
         https: true,
         href: $item["id"],
         query_strings: {
-          "api-version": "2018-02-01"
+          "api-version": "2019-07-01"
         },
         headers: {
           "cache-control": "no-cache",
-          "content-type": "application/json",
-          "authorization": "Bearer " + $access_token
+          "content-type": "application/json"
         }
       )
+	  $statusCode=to_s($response["code"])
+	  if(!($statusCode=="200"||$statusCode=="202"||$statusCode=="204"))
+	    $errorMessage=$response["body"]
+		call sys_log('Error:Failed to delete the resource ',to_s($errorMessage))
+	  end
       $all_responses << $response
-    end
+	  call sys_log('Azure Disallowed Regions ',to_s($response))
+	  end
+	end  
   end
+  
+  foreach $item in $data do
+    sub on_error: skip do
+	if($item["managedBy"]!="NA")
+	$resourceName = $item["name"]
+      $response = http_request(
+        verb: "delete",
+        host: "management.azure.com",
+		auth: $$azure_auth,
+        https: true,
+        href: $item["id"],
+        query_strings: {
+          "api-version": "2019-07-01"
+        },
+        headers: {
+          "cache-control": "no-cache",
+          "content-type": "application/json"
+        }
+      )
+	  $statusCode=to_s($response["code"])
+	  if(!($statusCode=="200"||$statusCode=="202"||$statusCode=="204"))
+	    $errorMessage=$response["body"]
+		call sys_log('Error:Failed to delete the resource ',to_s($errorMessage))
+	  end
+      $all_responses << $response
+	  call sys_log('Azure Disallowed Regions ',to_s($response))
+	end  
+  end
+ end 
 end
 
-define get_access_token($param_azure_tenant_id) return $access_token do
-
-  $client_id = cred("AZURE_APPLICATION_ID")
-  call url_encode(cred("AZURE_APPLICATION_KEY")) retrieve $client_secret
-
-  $body_string = "grant_type=client_credentials&resource=https://management.core.windows.net/&client_id="+$client_id+"&client_secret="+$client_secret
-
-  $auth_response = http_post(
-    url: join(["https://login.microsoftonline.com/",$param_azure_tenant_id,"/oauth2/token?api-version=1.0"]),
-    headers : {
-      "cache-control":"no-cache",
-      "content-type":"application/x-www-form-urlencoded"
-    },
-    body:$body_string
-  )
-
-  $auth_response_body = $auth_response["body"]
-  $access_token = $auth_response_body["access_token"]
-
-end
-
-define url_encode($string) return $encoded_string do
-  $encoded_string = $string
-  $encoded_string = gsub($encoded_string, " ", "%20")
-  $encoded_string = gsub($encoded_string, "!", "%21")
-  $encoded_string = gsub($encoded_string, "#", "%23")
-  $encoded_string = gsub($encoded_string, "$", "%24")
-  $encoded_string = gsub($encoded_string, "&", "%26")
-  $encoded_string = gsub($encoded_string, "'", "%27")
-  $encoded_string = gsub($encoded_string, "(", "%28")
-  $encoded_string = gsub($encoded_string, ")", "%29")
-  $encoded_string = gsub($encoded_string, "*", "%2A")
-  $encoded_string = gsub($encoded_string, "+", "%2B")
-  $encoded_string = gsub($encoded_string, ",", "%2C")
-  $encoded_string = gsub($encoded_string, "/", "%2F")
-  $encoded_string = gsub($encoded_string, ":", "%3A")
-  $encoded_string = gsub($encoded_string, ";", "%3B")
-  $encoded_string = gsub($encoded_string, "=", "%3D")
-  $encoded_string = gsub($encoded_string, "?", "%3F")
-  $encoded_string = gsub($encoded_string, "@", "%40")
-  $encoded_string = gsub($encoded_string, "[", "%5B")
-  $encoded_string = gsub($encoded_string, "]", "%5D")
+define sys_log($subject, $detail) do
+    rs_cm.audit_entries.create(
+      notify: "None",
+      audit_entry: {
+        auditee_href: @@account,
+        summary: "Azure Disallowed Regions "+ $subject,
+        detail: $detail
+      }
+    )
 end
