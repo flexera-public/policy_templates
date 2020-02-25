@@ -61,7 +61,7 @@ changed_files.each do |file|
        URI.extract(line,['http','https']).each do |url|
          res = nil
          next if exclude_hosts.include?(url.scan(URI.regexp)[0][3])
-         url_string = url.to_s.gsub(/[!@#$%^&*(),.?":{}|<>]/,'') #remove extra chars
+         url_string = url.to_s.gsub(/[!@#$%^&*(),.?":{}|<>]/,'')  #remove extra chars
          url = URI(url_string) #convert to URL
          # check for a valid host.  skip urls that are dynamicly constructed may not have a valid hostname
          # for example http://ec2. + $region + .awsamazon.com/... does not have a valid hostname to query
