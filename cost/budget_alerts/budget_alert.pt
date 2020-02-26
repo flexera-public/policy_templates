@@ -8,7 +8,7 @@ category "Cost"
 tenancy "single"
 default_frequency "daily"
 info(
-  version: "1.8",
+  version: "1.9",
   provider: "Flexera Optima",
   service: "",
   policy_set: ""
@@ -18,13 +18,6 @@ parameter "param_monthly_budget" do
   label "Monthly Budget"
   type "number"
 end 
-
-parameter "param_budget_scope" do 
-  label "Budget Scope"
-  type "string"
-  allowed_values "Organization","Billing Center"
-  default "Organization"
-end
 
 parameter "param_bc_name" do 
   label "Billing Center Name"
@@ -202,52 +195,47 @@ script "js_bc_costs", type: "javascript" do
   var totalCost=0;
   var bc_id="";
   var count=0;
+  var bc_name= "";
    _.each(billing_centers, function(bc){
     var type = cost_type[param_cost_metric];
     var cost = bc[type];
-	if(bc["name"]== param_bc_name){
-      count++;
-      totalCost=totalCost+cost;
-     if(count==1){
-       bc_id=bc["id"];
-     }else{
-       bc_id=param_bc_name;
-     } 
-    }
-   })
-    costs.push({
-        name: param_bc_name,
-        total: totalCost,
-        id: bc_id       
-    })
-  
-  _.each(billing_centers, function(bc){
-    if(bc["name"]!== param_bc_name){
-    var type = cost_type[param_cost_metric];
-    var cost = bc[type];
+	if(param_bc_name === bc.name){
+      bc_name = param_bc_name;
+      totalCost=totalCost + cost;
+      bc_id = bc["id"];
+	  count++;
+    }else{
     costs.push({
         name: bc["name"],
         total: cost,
         id: bc["id"]       
     })
     }
-  })
+   })  
+   if(param_bc_name === bc_name){
+    costs.push({
+        name: bc_name,
+        total: totalCost,
+        id: bc_id       
+    })
+   }
 EOS
 end 
 
 datasource "org_total" do 
-  run_script $js_org_total, $top_bc_costs_formatted
+  run_script $js_org_total, $top_bc_costs_formatted, $param_bc_name
 end 
 
 script "js_org_total", type: "javascript" do 
-  parameters "billing_centers"
+  parameters "billing_centers", "param_bc_name"
   result "org_total"
   code <<-EOS
   var totals = [] ; 
-   
+  var sum =0;
+   if( param_bc_name.length <= 0 ){
   _.each(billing_centers, function(bc_total){ totals.push(bc_total.total)})
-
-  var sum = _.reduce(totals, function(memo, num){ return memo + num; }, 0)
+   sum = _.reduce(totals, function(memo, num){ return memo + num; }, 0)
+  }
   var org_total = {
     name: "Organization",
     total: sum,
@@ -256,8 +244,21 @@ script "js_org_total", type: "javascript" do
 EOS
 end
 
+datasource "ds_filtered_billing_centers" do
+    run_script $js_filtered_billing_centers, $billing_centers, $param_bc_name
+end
+
+script "js_filtered_billing_centers", type: "javascript" do
+  parameters "billing_centers", "param_bc_name"
+  result "filtered_billing_centers"
+  code <<-EOS
+  var filtered_billing_centers =
+    _.reject(billing_centers, function(bc){ return (param_bc_name !== bc.name) });
+EOS
+end
+
 datasource "all_bc_costs" do
-  iterate $billing_centers
+  iterate $ds_filtered_billing_centers
   request do
     run_script $costs_request, rs_org_id, $param_cost_metric, val(iter_item, "id")
   end
@@ -279,17 +280,19 @@ datasource "all_bc_costs_formatted" do
 end
 
 datasource "all_costs" do 
-  run_script $js_combine_ds, $all_bc_costs_formatted, $org_total
+  run_script $js_combine_ds, $all_bc_costs_formatted, $org_total, $param_bc_name
 end 
 
 script "js_combine_ds", type: "javascript" do 
-  parameters "billing_centers","org"
+  parameters "billing_centers","org", "param_bc_name"
   result "result"
   code <<-EOS
   var result = [] ; 
    
   _.each(billing_centers, function(bc){ 
-    result.push(bc)
+  if (param_bc_name === bc.name){
+    result.push(bc);
+	}
   })
 
   result.push(org)
@@ -297,11 +300,11 @@ EOS
 end
 
 datasource "filtered_target" do 
-  run_script $js_filter_target, $all_costs, $param_budget_scope, $param_bc_name, $param_monthly_budget, $param_type, $ds_currency_code, $ds_currency_reference
+  run_script $js_filter_target, $all_costs, $param_bc_name, $param_monthly_budget, $param_type, $ds_currency_code, $ds_currency_reference
 end 
 
 script "js_filter_target", type: "javascript" do 
-  parameters "all_costs", "param_scope", "param_bc_name", "param_monthly_budget", "param_type", "ds_currency_code", "ds_currency_reference"
+  parameters "all_costs", "param_bc_name", "param_monthly_budget", "param_type", "ds_currency_code", "ds_currency_reference"
   result "report"
   code <<-EOS
   var target = [] ;
@@ -364,7 +367,7 @@ script "js_filter_target", type: "javascript" do
       var separator = ","
     }
   var selected_bc=null;
-  if (param_scope === "Organization"){
+  if (param_bc_name.length <= 0){
     _.each(all_costs, function(bc){
 	  var runrate = bc["total"] / monthcomplete ;
       var overBudgetAmountCur="";
@@ -416,7 +419,7 @@ script "js_filter_target", type: "javascript" do
            overBudgetAmountCur=cur;
          }	
          var forecastedSpend = cur+' '+formatNumber((Math.round(( runrate -bc["total"]) * 100) / 100), separator);
-	  if (bc.name === param_bc_name){
+	  if (param_bc_name === bc.name){
 	    selected_bc=bc;
         if (param_type === "Forecasted Spend"){
          var overBudgetAmount = overBudgetAmountCur+' '+formatNumber((Math.round((runrate - param_monthly_budget) * 100) / 100), separator);

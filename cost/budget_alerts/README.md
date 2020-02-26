@@ -15,7 +15,6 @@ This Policy Template is used to determine if a Billing Center or the entire Orga
 This policy has the following input parameters required when launching the policy.
 
 - *Monthly Budget* - specify the monthly budget.  Currency is irrelevant; the policy will default to whichever currency is used in Optima.
-- *Budget Scope* - Organization or Billing Center
 - *Billing Center Name* - if the scope is "Billing Center", supply the name of the target Billing Center
 - *Cost Metric* - specify options for amortized vs nonamortized and blended vs unblended costs
 - *Budget Alert Type* - Actual Spend or Forecasted Spend
