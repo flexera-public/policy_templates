@@ -388,14 +388,14 @@ script "js_combined_data", type: "javascript" do
   code <<-EOS
     var results = {};
     results= {
-      aadGroups: ds_filtered_aad_groups,
-      aadUsers: ds_filtered_aad_users,
-      grsGroups: ds_grs_groups,
-      grsUsers: ds_grs_users,
+      aadGroups: _.sortBy(ds_filtered_aad_groups, 'displayName'),
+      aadUsers: _.sortBy(ds_filtered_aad_users, 'surname'),
+      grsGroups: _.sortBy(ds_grs_groups, 'name'),
+      grsUsers: _.sortBy(ds_grs_users, 'email'),
       groupsToCreate: _.sortBy(ds_filtered_grs_groups["GroupsToCreate"], 'name'),
       groupsToUpdate: _.sortBy(ds_filtered_grs_groups["GroupsToUpdate"], 'name'),
-      usersToCreate: ds_filtered_grs_users["UsersToCreate"],
-      usersToPurge: ds_filtered_grs_users["UsersToPurge"],
+      usersToCreate: _.sortBy(ds_filtered_grs_users["UsersToCreate"], 'surname'),
+      usersToPurge: _.sortBy(ds_filtered_grs_users["UsersToPurge"], 'email')
     }
 EOS
 end
@@ -409,10 +409,10 @@ policy "policy_azuread_group_sync" do
     summary_template "{{ len data.groupsToUpdate }} AzureAD Groups to Synchronize"
     detail_template <<-EOS
 ## Groups that Will Be Synchronized from AzureAD
-| Name  | Href  | AzureAD Object Id | AzureAD User Count | CMP User Count |
-| :---: | :---: | :---------------: | :----------------: | :------------: |
+| Name  | CMP Group Href  | AzureAD Object Id |
+| :---: | :-------------: | :---------------: |
 {{ range data.groupsToUpdate -}}
-  | {{ .name }} | {{ .href }} | {{ .objectId }} | {{ .aadUserCount }} | {{ .cmpUserCount }} |
+  | {{ .name }} | {{ .href }} | {{ .objectId }} |
 {{ end -}}
 
 {{ $create_count := len data.groupsToCreate }}
@@ -556,6 +556,20 @@ define group_sync($data, $param_purge_users, $param_idp_href, $rs_cm_host, $rs_o
         $group_id = $group[0]["id"]
         $group_href = $group[0]["href"]
         call write_log(join(["Group: ", $group_name, " (ID: ", $group_id, ")"]))
+
+        $patch_response = http_request(
+          auth: $$auth_rs,
+          verb: "patch",
+          https: true,
+          host: $rs_cm_host,
+          href: $group_href, 
+          headers: { "X-Api-Version": "2.0", "User-Agent": "RS Policies" },
+          body: {
+            "description": "The membership of this group is maintained by the ‘AzureAD Group Sync’ policy. Any changes you make will be invalidated the next time the policy runs. Please update the group in AzureAD directly."
+          }
+        )
+        $responses << $patch_response
+
         $userPayload = []
         if size($aadGroup["members"]) > 0
           foreach $member in $aadGroup["members"] do
