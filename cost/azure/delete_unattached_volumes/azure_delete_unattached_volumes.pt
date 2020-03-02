@@ -1,0 +1,446 @@
+name "Azure Delete Unattached Volumes"
+rs_pt_ver 20180301
+type "policy"
+short_description "Checks for unattached volumes older than specified number of days and, optionally, deletes them. See the [README](https://github.com/flexera/policy_templates/tree/master/cost/azure/unattached_volumes) and [docs.rightscale.com/policies](https://docs.rightscale.com/policies/) to learn more."
+long_description ""
+severity "low"
+category "Cost"
+info(
+  version: "2.0",
+  provider: "Azure",
+  service: "Storage",
+  policy_set: "Unattached Volumes"
+  )
+
+##################
+# User inputs    #
+##################
+
+parameter "param_email" do
+  type "list"
+  label "Email addresses of the recipients you wish to notify"
+end
+
+parameter "param_unattached_days" do
+  type "number"
+  label "Identify volumes that have been Unattached for the given number of days"
+  default 30
+end
+
+parameter "workspaceId" do
+  type "string"
+  label "Workspace ID"
+  description "ID of the log analytics workspace which is created in the Azure portal"
+end
+
+parameter "param_create_snapshot" do
+  type "string"
+  label "Create Final Snapshot"
+  description "Determines whether to create final snapshot"
+  allowed_values "true", "false"
+end
+
+parameter "param_exclusion_tag_key" do
+  category "User Inputs"
+  label "Exclusion Tag Key"
+  description "Cloud native tag key to ignore instances. Example: exclude_utilization"
+  type "string"
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+#authenticate with Azure
+credentials "azure_auth" do
+  schemes "oauth2"
+  label "Azure"
+  description "Select the Azure Resource Manager Credential from the list."
+  tags "provider=azure_rm"
+end
+
+#authenticate with Log Analytics
+credentials "log_analytics_auth" do
+  schemes "oauth2"
+  label "Azure Log Analytics"
+  description "Select the Azure Resource Manager Credential for Log Analytics."
+  tags "provider=azure_rm"
+end
+
+###############################################################################
+# Pagination
+###############################################################################
+
+#pagination support
+pagination "azure_pagination" do
+  get_page_marker do
+    body_path "nextLink"
+  end
+  set_page_marker do
+    uri true
+  end
+end
+
+###############################################################################
+# Datasources
+###############################################################################
+
+#get all subscription details.
+datasource "ds_subscriptions" do
+  request do
+    auth $azure_auth
+    pagination $azure_pagination
+    host "management.azure.com"
+    path "/subscriptions/"
+    query "api-version","2019-06-01"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "value[*]") do
+      field "subscriptionId", jmes_path(col_item,"subscriptionId")
+      field "displayName", jmes_path(col_item,"displayName")
+      field "state", jmes_path(col_item,"state")
+    end
+  end
+end
+
+#get all disks
+datasource "ds_azure_disks" do
+  iterate $ds_subscriptions
+  request do
+    auth $azure_auth
+    pagination $azure_pagination
+    host "management.azure.com"
+    path join(["/subscriptions/", val(iter_item,"subscriptionId"), "/providers/Microsoft.Compute/disks"])
+    query "api-version","2019-07-01"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "value[*]") do
+      field "id", jmes_path(col_item,"id")
+      field "name", jmes_path(col_item,"name")
+      field "location", jmes_path(col_item, "location")
+      field "tags", jmes_path(col_item,"tags")
+      field "diskState", jmes_path(col_item,"properties.diskState")
+	  field "timeCreated", jmes_path(col_item,"properties.timeCreated")
+	  field "subscriptionId",val(iter_item,"subscriptionId")
+      field "subscriptionName",val(iter_item,"displayName")
+    end
+  end
+end
+
+datasource "ds_filter_disks" do
+  run_script $js_filter_disks, $param_exclusion_tag_key, $ds_azure_disks
+end
+
+datasource "ds_azure_log_analytics" do
+  request do
+    run_script $js_get_logactivity, $workspaceId, $param_unattached_days
+  end 
+  result do
+    encoding "json"
+	field "activities", jmes_path(response, "tables[*].rows[*]")
+  end
+end
+
+datasource "ds_combineddata" do
+  run_script $js_combineddata, $ds_azure_log_analytics, $ds_filter_disks, $param_unattached_days
+end
+
+###############################################################################
+# Scripts
+###############################################################################
+
+script "js_get_logactivity", type: "javascript" do
+  parameters "workspaceId", "param_unattached_days"
+  result "results"
+  code <<-EOS    
+    results = {
+      host: "api.loganalytics.io",
+      path: "/v1/workspaces/"+workspaceId+"/query",
+      verb: 'POST',
+      auth: "log_analytics_auth",
+	  body_fields: {
+	   "query":'AzureActivity | where TimeGenerated > ago('+param_unattached_days+'d) | where OperationName == "Create or Update Virtual Machine"'
+	  } 
+    }
+  EOS
+end
+
+script "js_filter_disks", type: "javascript" do
+  parameters "param_exclusion_tag_key", "ds_azure_disks"
+  result "res"
+  code <<-EOS
+   var res = [];
+   _.each(ds_azure_disks, function(disk){
+      var tags='';
+	  if (_.has(disk.tags, param_exclusion_tag_key)) {
+        // disk has exclusion tag, skip
+      }else{
+	     if(disk['diskState']=="Unattached"){
+            res.push({
+              disk_id:disk['id'],
+              name:disk['name'],
+              location:disk['location'],
+              diskState:disk['diskState'],
+			  timeCreated:disk['timeCreated'],
+              subscriptionId:disk['subscriptionId'],
+              subscriptionName:disk['subscriptionName']
+            })
+        }
+	  }    
+   })
+   
+  EOS
+end
+
+script "js_combineddata", type: "javascript" do
+parameters "ds_azure_log_analytics", "ds_filter_disks", "param_unattached_days"
+result "results"
+code <<-EOS
+  var results = []
+  var azure_activities= ds_azure_log_analytics;
+  var events=azure_activities.activities;
+  var activities=events[0];
+  console.log("activities length: "+activities.length);
+  for(i in ds_filter_disks){
+    var disk= ds_filter_disks[i];
+	var expectedDate=new Date();
+	var createdTime=new Date(disk['timeCreated']);
+	expectedDate.setDate(expectedDate.getDate()- parseInt(param_unattached_days));
+	var diskId=disk['disk_id'];
+	var diskName=disk['name'];
+	var snapshot=diskId.substring(0,diskId.indexOf("Microsoft.Compute")+17)+"/snapshots/"+diskName+"Snapshot"
+	console.log("snapshot name"+snapshot)
+	if(disk['diskState']==="Unattached" && expectedDate.getTime()<createdTime.getTime()){
+	  results.push({
+        disk_id:disk['disk_id'],
+        name:disk['name'],
+        location:disk['location'],
+        diskState:disk['diskState'],
+		snapshotName:snapshot,
+		subscriptionId:disk['subscriptionId'],
+        subscriptionName:disk['subscriptionName']
+      })
+	} else if(disk['diskState']==="Unattached"){
+	  for(var i=0;i<activities.length;i++){
+        var activity=activities[i].toString();  
+	    if(activity.indexOf(disk['id'])>-1 && activity.indexOf('toBeDetached')>-1){
+	       var tobedetach=activity.substring(activity.indexOf('toBeDetached'), activity.indexOf('toBeDetached')+20);
+		   if(tobedetach.indexOf('true')>-1){
+		      results.push({
+                disk_id:disk['disk_id'],
+                name:disk['name'],
+                location:disk['location'],
+                diskState:disk['diskState'],
+				snapshotName:snapshot,
+				subscriptionId:disk['subscriptionId'],
+                subscriptionName:disk['subscriptionName']
+              })
+		    }
+	    }	
+      }
+	}
+	 
+  }
+  results = _.sortBy(results, 'subscriptionName');
+  results = _.sortBy(results, 'location');
+      
+EOS
+end
+
+policy "pol_azure_unattached_volumes" do
+  validate $ds_combineddata do
+    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} Unattached Volumes Found"
+    detail_template <<-EOS
+The following {{ len data }} unattached volumes, for Account: {{ rs_project_name }} (ID: {{ rs_project_id }}), have exceeded the specified age of: {{ parameters.param_unattached_days }} days old\n
+| Subscription Name | Disk ID | Name | Location | Disk State |
+| ----------------- | ------- | ---- | -------- | ---------- |
+{{ range data -}}
+| {{ .subscriptionName }} | {{ .disk_id }} | {{ .name }} | {{ .location }} | {{ .diskState }} |
+{{ end -}}
+EOS
+   # Send email report
+   escalate $send_email_report
+   # Delete the volume if user selected the delete option
+   escalate $process_volumes
+   check eq(size(data), 0)
+  end
+end
+
+escalation "send_email_report" do
+  email $param_email
+end
+
+escalation "process_volumes" do
+  request_approval  do
+    label "Escalation approval"
+    description "Approve delete volume action"
+    parameter "approval_reason" do
+      type "string"
+      label "Reason for approval"
+      description "Explain why you are approving the action"
+    end
+  end
+  run "delete_unattached_volumes", data, $param_create_snapshot
+end
+
+###############################################################################
+# Cloud Workflow
+###############################################################################
+
+define delete_unattached_volumes($data, $param_create_snapshot) return $all_responses do
+  $$debug = false
+  $status_code=''
+  $all_responses = []
+  foreach $item in $data do
+    sub on_error: skip do
+	  call sys_log("Infor item =",to_s($item))
+	  if $param_create_snapshot == "true"
+        call create_snapshot($item) retrieve $status_code
+        if to_s($status_code)=="202"
+          call delete_unattached_disk($item['disk_id'])
+        else
+          call sys_log("Azure create snapshot error statusCode: ",to_s($status_code))
+        end
+	  else
+		call delete_unattached_disk($item['disk_id'])
+      end
+	end
+  end
+end
+
+define create_snapshot($item) return $status_code do
+  $response={}
+  $syslog_subject = "Azure create snapshot API response: "
+  call sys_log($syslog_subject,to_s($item))
+    $response = http_request(
+          auth: $$azure_auth,
+          verb: "put",
+          host: "management.azure.com",
+          https: true,
+          href: $item['snapshotName'],
+          query_strings: {
+            "api-version": "2019-07-01"
+          },
+          headers:{
+            "content-type": "application/json"
+          },
+          body: {
+                  "properties": {
+                    "creationData": {
+                      "createOption": "Copy",
+                      "sourceUri": $item["disk_id"]
+                    }
+                  },
+                  "location": $item["location"]
+                }
+        ) 
+    call sys_log("Create Snapshot response",to_s($response))
+	$status_code = $response["code"]
+	call sys_log("status_code",to_s($status_code))  
+	if $status_code == 202
+	   $snapshotstatus=$response["body"]["properties"]["provisioningState"] 
+	   
+	   if $snapshotstatus == "Updating"
+		  $expected_status = "Succeeded"		  
+		  while $expected_status !~ $snapshotstatus do
+            call sys_log("In while snapshotstatus",to_s($disksnapshot_status))
+			call get_disksnapshot($item['snapshotName']) retrieve $status
+			$disksnapshot_status = $status
+			call sys_log("disksnapshot_status",to_s($disksnapshot_status))
+			if $disksnapshot_status == "Creating"
+               $disksnapshot_status="Updating"
+            end
+			if $disksnapshot_status == "Succeeded"
+			   call sys_log("disksnapshot_status in if","")
+			   $snapshotstatus= "Succeeded"
+			elsif  $disksnapshot_status !~ "Updating"
+			   call sys_log("disksnapshot_status in elsif","")
+			   $snapshotstatus= "Succeeded"
+			   $status_code = 400
+			   call sys_log($syslog_subject, join(["Failed to create snapshot for following disk: ", to_s($item['name'])]))
+			end
+		  end
+			
+	   end   
+		 
+	end
+end
+
+define get_disksnapshot($snapshotId) return $status do
+  
+  $snapshot_response = http_request(
+    auth: $$azure_auth,
+    https: true,
+    verb: "get",
+    host: "management.azure.com",
+    href: $snapshotId,
+    query_strings: {
+      "api-version": "2019-07-01"
+    }
+  )
+  call sys_log("Get Snapshot Details ",to_s($snapshot_response))
+  call sys_log("Get Snapshot status ",to_s($snapshot_response["body"]["properties"]["provisioningState"]))
+  $status = to_s($snapshot_response["body"]["properties"]["provisioningState"])
+end
+
+define delete_unattached_disk($disk_id) do
+  $response={}
+  $syslog_subject = "Azure delete unattached disk API response: "
+  $response = http_request(
+          auth: $$azure_auth,
+          verb: "delete",
+          host: "management.azure.com",
+          https: true,
+          href: $disk_id,
+          query_strings: {
+            "api-version": "2019-07-01"
+          }
+        ) 
+  call sys_log($syslog_subject,to_s($response))
+  $delete_status = $response["code"]
+  
+   if $delete_status != 202
+     $error_code = $response["body"]["error"]["code"]
+	 call tagdisk_error($disk_id,$error_code)
+   end
+  
+end
+
+define tagdisk_error($disk_id,$error_code) do
+  $response={}
+  $syslog_subject = "Azure tag a disk API response: "
+  $response = http_request(
+	    auth: $$azure_auth,
+        verb: "patch",
+        host: "management.azure.com",
+        https: true,
+        href: $disk_id,
+        query_strings: {
+          "api-version": "2019-07-01"
+        },
+        headers: {
+          "content-type": "application/json"
+        },
+        body: {
+		  "tags": {
+		      "DeleteDiskError" :$error_code
+		    }
+		  }
+      )
+  call sys_log(join([$syslog_subject, "Response"]),to_s($response))
+  
+end
+
+define sys_log($subject, $detail) do
+  rs_cm.audit_entries.create(
+    notify: "None",
+    audit_entry: {
+      auditee_href: @@account,
+      summary: join(["Unattached Volume Policy - ", $subject]),
+      detail: $detail
+    }
+  )
+end
