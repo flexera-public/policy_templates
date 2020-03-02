@@ -45,6 +45,7 @@ Please contact sales@flexera.com to learn more.
 
 - [AWS Unused RDS Instances](./cost/aws/unused_rds/)
 - [AWS RDS Instances RightSizing](./cost/aws/rds_instance_cloudwatch_utilization)
+- [AWS RDS Instances Report](./cost/aws/rds_instance_report)
 
 ##### Load Balancers
 
