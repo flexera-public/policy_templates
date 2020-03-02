@@ -59,17 +59,14 @@ end
 
 datasource "ds_instances_set" do
   iterate $ds_regions_list
-  #request do
-  #  run_script $js_instances_set, val(iter_item,"region")
-  #end
   request do
     auth $auth_aws
     host join(["rds.", val(iter_item, "region"), ".amazonaws.com"])
     path "/"
     header "User-Agent", "RS Policies"
     header "Content-Type", "text/xml"
-    query 'Action': 'DescribeDBInstances',
-    query 'Version': '2014-10-31'
+    query "Action", "DescribeDBInstances"
+    query "Version", "2014-10-31"
   end
   result do
     encoding "xml"
@@ -84,6 +81,12 @@ datasource "ds_instances_set" do
       field "region", val(iter_item, "region")
       field "processorFeatures", xpath(col_item, "ProcessorFeatures")
       field "licenseModel", xpath(col_item, "LicenseModel")
+      field "processorFeatures" do
+        collect xpath(col_item, "ProcessorFeatures/ProcessorFeature") do
+          field "name", xpath(col_item, "Name")
+          field "value", xpath(col_item, "Value")
+        end
+      end
     end
   end
 end
@@ -92,7 +95,6 @@ datasource "ds_aws_instance_size_map" do
   request do
     verb "GET"
     host "raw.githubusercontent.com"
-    #path "/flexera/policy_templates/master/data/aws/instance_types.json"
     path "/flexera/policy_templates/master/data/aws/instance_types.json"
     header "User-Agent", "RS Policies"
   end
@@ -106,27 +108,6 @@ end
 # Scripts
 ###############################################################################
 
-script "js_instances_set", type: "javascript" do
-  result "results"
-  parameters "region"
-  code <<-EOS
-  results = {
-    "auth": "auth_aws",
-    "host": 'rds.'+region+'.amazonaws.com',
-    "verb": "GET",
-    "path": "/",
-    "headers": {
-      "User-Agent": "RS Policies",
-      "Content-Type": "text/xml"
-    }
-    "query_params": {
-      'Action': 'DescribeDBInstances',
-      'Version': '2014-10-31'
-    }
-  }
-EOS
-end
-
 script "js_filtered_results", type: "javascript" do
   parameters "ds_instances_set", "ds_aws_instance_size_map"
   result "results"
@@ -136,11 +117,11 @@ script "js_filtered_results", type: "javascript" do
   _.each(ds_instances_set, function(instance){
     var vcpu = "Unknown"
     
-    if (instance["processorFeatures"] != null){
-      vcpu = ds_aws_instance_size_map[instance.dbInstanceClass][vcpu]
+    if (_.isEmpty(instance["processorFeatures"])){
+      vcpu = ds_aws_instance_size_map[instance["dbInstanceClass"]]["vcpu"]
     } else {
-      var cores = _.findWhere(instance["processorFeatures"], {"name": "coreCount"})
-      var threads = _.findWhere(instance["processorFeatures"], {"name": "threadsPerCore"})
+      var cores = _.findWhere(instance["processorFeatures"], {"name": "coreCount"})["value"]
+      var threads = _.findWhere(instance["processorFeatures"], {"name": "threadsPerCore"})["value"]
       vcpu = cores * threads
     }
 
@@ -153,7 +134,7 @@ script "js_filtered_results", type: "javascript" do
         "dbInstanceClass": instance["dbInstanceClass"],
         "engine": instance["engine"],
         "engineVersion": instance["engineVersion"]
-        "vcpu": vcpu
+        "vcpu": vcpu.toString()
       }
     )
   })
@@ -169,7 +150,7 @@ policy "pol_rds_instances" do
     summary_template "AWS RDS Instances"
     detail_template <<-EOS
 # AWS RDS Instances
-| Region | Instance ID | Engine | Engine Version | Instance Class | Availability Zone | vCPU |
+| Region | Instance ID | Engine | Engine Version | Instance Class | Availability Zone | vCPUs |
 | ------ | ----------- | ------ | -------------- | -------------- | ----------------- | ---- |
 {{ range data -}}
 | {{.region}} | {{.dbInstanceIdentifier}} | {{.engine}} | {{.engineVersion}} | {{.dbInstanceClass}} | {{.availabilityZone }} | {{.vcpu}} |
@@ -179,7 +160,6 @@ policy "pol_rds_instances" do
 EOS
     check eq(size(data),0)
     escalate $email
-    escalate $resize_instances
   end
 end
 
@@ -190,85 +170,4 @@ end
 
 escalation "email" do
   email $param_email
-end
-
-escalation "resize_instances" do
-  request_approval  do
-    label "Escalation approval"
-    description "Approve RDS RightSizing action"
-    parameter "approval_reason" do
-      type "string"
-      label "Reason for approval"
-      description "Explain why you are approving the action"
-    end
-  end
-  run "rightsize_rds", data
-end
-
-define rightsize_rds($data) return $all_responses do
-  $$debug=true
-  $$log = []
-  $all_responses = []
-
-  $syslog_subject = "AWS RDS Instances to RightSize: "
-  call sys_log(join([$syslog_subject, "Identified Instances"]),to_s($data))
-  foreach $item in $data do
-    sub on_error: skip do
-      $get_response = http_request(
-        auth: $$auth_aws,
-		https: true,
-        verb: "get",
-        host: "rds."+$item["region"]+".amazonaws.com",
-        href: "/",
-        query_strings: {
-          "Action": "DescribeDBInstances",
-          "Version": "2014-10-31",
-          "DBInstanceIdentifier": $item["dbInstanceIdentifier"]
-        }
-      )
-      $all_responses << $get_response
-
-      $state = $get_response["body"]["DescribeDBInstancesResponse"]["DescribeDBInstancesResult"]["DBInstances"]["DBInstance"]["DBInstanceStatus"]
-
-      if $state == "available"
-        $modify_response = http_request(
-          auth: $$auth_aws,
-		  https: true,
-          verb: "get",
-          host: "rds."+$item["region"]+".amazonaws.com",
-          href: "/",
-          query_strings: {
-            "Action": "ModifyDBInstance",
-            "Version": "2014-10-31",
-            "DBInstanceIdentifier": $item["dbInstanceIdentifier"],
-            "DBInstanceClass": $item["recommended_size"]
-          }
-        )
-        $all_responses << $modify_response
-      end
-    end
-  end
-  call sys_log(join([$syslog_subject, "Responses"]),to_s($all_responses))
-end
-
-define handle_error($response) do
-  $status_code = $response["code"]
-  if $status_code == 404
-    $_error_behavior = "skip"
-  else
-    $_error_behavior = "raise"
-  end
-end
-
-define sys_log($subject, $detail) do
-  if $$debug
-    rs_cm.audit_entries.create(
-      notify: "None",
-      audit_entry: {
-        auditee_href: @@account,
-        summary: $subject,
-        detail: $detail
-      }
-    )
-  end
 end
