@@ -59,8 +59,17 @@ end
 
 datasource "ds_instances_set" do
   iterate $ds_regions_list
+  #request do
+  #  run_script $js_instances_set, val(iter_item,"region")
+  #end
   request do
-    run_script $js_instances_set, val(iter_item,"region")
+    auth $auth_aws
+    host join(["rds.", val(iter_item, "region"), ".amazonaws.com"])
+    path "/"
+    header "User-Agent", "RS Policies"
+    header "Content-Type", "text/xml"
+    query 'Action': 'DescribeDBInstances',
+    query 'Version': '2014-10-31'
   end
   result do
     encoding "xml"
@@ -90,7 +99,7 @@ datasource "ds_aws_instance_size_map" do
 end
 
 datasource "ds_filtered_results" do
-  run_script $js_filtered_results, $ds_merged_metrics, $param_avg_cpu_downsize, $param_avg_cpu_upsize
+  run_script $js_filtered_results, $ds_instances_set, $ds_aws_instance_size_map
 end
 
 ###############################################################################
@@ -118,158 +127,36 @@ script "js_instances_set", type: "javascript" do
 EOS
 end
 
-script "js_list_tags_for_resource", type: "javascript" do
-  result "results"
-  parameters "instanceArn","region"
-  code <<-EOS
-  var end_date = new Date().toISOString()
-  var start_date = new Date(new Date().setDate(new Date().getDate() - 30)).toISOString();
-  results = {
-    "auth": "auth_aws",
-    "host": 'rds.'+region+'.amazonaws.com',
-    "verb": "GET",
-    "path": "/",
-    "headers": {
-      "User-Agent": "RS Policies",
-      "Content-Type": "text/xml"
-    }
-    "query_params": {
-      'Action': 'ListTagsForResource',
-      'ResourceName': instanceArn,
-      'Version': '2014-10-31'
-    }
-  }
-EOS
-end
-
-script "js_cloudwatch_cpu_mem_usage", type: "javascript" do
-  result "results"
-  parameters "region","instance_id", "MetricName"
-  code <<-EOS
-  var end_date_tmp = new Date()
-  end_date_tmp.setMilliseconds(0)
-  end_date_tmp.setSeconds(0)
-  end_date_tmp.setMinutes(0)
-  var end_date = new Date(end_date_tmp).toISOString()
-
-  var start_date_tmp = new Date(new Date().setDate(new Date().getDate() - 30))
-  start_date_tmp.setMilliseconds(0)
-  start_date_tmp.setSeconds(0)
-  start_date_tmp.setMinutes(0)
-  var start_date = new Date(start_date_tmp).toISOString()
-
-  results = {
-    "auth": "auth_aws",
-    "host": 'monitoring.'+region+'.amazonaws.com',
-    "verb": "GET",
-    "path": "/",
-    "headers": {
-      "User-Agent": "RS Policies",
-      "Content-Type": "application/json",
-      "x-amz-target": "GraniteServiceVersion20100801.GetMetricStatistics",
-      "Accept": "application/json",
-      "Content-Encoding": "amz-1.0"
-    }
-    "query_params": {
-      'Action': 'GetMetricStatistics',
-      'Version': '2010-08-01',
-      'Namespace': 'AWS/RDS',
-      'MetricName': MetricName,
-      'Dimensions.member.1.Name': 'DBInstanceIdentifier',
-      'Dimensions.member.1.Value': instance_id,
-      'StartTime': start_date,
-      'EndTime': end_date,
-      'Period': "2592000",
-      'Statistics.member.1': 'Maximum',
-      'Statistics.member.2': 'Average',
-      'Statistics.member.3': 'Minimum'
-    }
-  }
-EOS
-end
-
-script "js_merged_metrics", type: "javascript" do
-  parameters "ds_instances", "ds_cloudwatch_cpu_usage"
-  result "results"
- code <<-EOS
- var results = []
-
- for (n=0; n < ds_instances.length; n++) {
-   var instance = ds_instances[n]
-   var dbInstanceIdentifier = instance["dbInstanceIdentifier"]
-   //console.log("dbInstanceIdentifier is " + dbInstanceIdentifier)
-   for (x=0; x < ds_cloudwatch_cpu_usage.length; x++) {
-     var cpu_data=ds_cloudwatch_cpu_usage[x]
-     var cpu_instanceid=cpu_data["instanceId"]
-     //console.log("cpu_instanceid is " + cpu_instanceid)
-     if (dbInstanceIdentifier == cpu_instanceid) {
-      var cpu_average=parseFloat(cpu_data["cpu_average"]).toFixed(2)
-      //console.log("cpu_average is " + cpu_average)
-     }
-
-   }
-   results.push (
-     {
-       "region": instance["region"],
-       "availabilityZone": instance["availabilityZone"],
-       "dbInstanceArn": instance["dbInstanceArn"],
-       "dbInstanceIdentifier": instance["dbInstanceIdentifier"],
-       "dbInstanceClass": instance["dbInstanceClass"],
-       "engine": instance["engine"],
-       "percent_cpu_avg": cpu_average,
-       "upsize": instance["upsize"],
-       "downsize": instance["downsize"]
-     }
-   )
- }
-EOS
-end
-
-
 script "js_filtered_results", type: "javascript" do
-  parameters "ds_merged_metrics", "param_avg_cpu_downsize", "param_avg_cpu_upsize"
+  parameters "ds_instances_set", "ds_aws_instance_size_map"
   result "results"
   code <<-EOS
   var results = []
-  _.each(ds_merged_metrics, function(instance){
-    if (instance["percent_cpu_avg"] > param_avg_cpu_upsize){
-      if (instance["upsize"] == null){
-        // skip
-      } else {
-        results.push (
-          {
-            "region": instance["region"],
-            "availabilityZone": instance["availabilityZone"],
-            "dbInstanceArn": instance["dbInstanceArn"],
-            "dbInstanceIdentifier": instance["dbInstanceIdentifier"],
-            "dbInstanceClass": instance["dbInstanceClass"],
-            "engine": instance["engine"],
-            "percent_cpu_avg": instance["percent_cpu_avg"],
-            "recommended_size": instance["upsize"]
-          }
-        )
-      }
-    }
-    if (instance["percent_cpu_avg"] < param_avg_cpu_downsize){
-      if (instance["downsize"] == null){
-        // skip
-      } else {
-        results.push (
-          {
-            "region": instance["region"],
-            "availabilityZone": instance["availabilityZone"],
-            "dbInstanceArn": instance["dbInstanceArn"],
-            "dbInstanceIdentifier": instance["dbInstanceIdentifier"],
-            "dbInstanceClass": instance["dbInstanceClass"],
-            "engine": instance["engine"],
-            "percent_cpu_avg": instance["percent_cpu_avg"],
-            "recommended_size": instance["downsize"]
-          }
-        )
-      }
-    }
-  })
 
+  _.each(ds_instances_set, function(instance){
+    var vcpu = "Unknown"
+    
+    if (instance["processorFeatures"] != null){
+      vcpu = ds_aws_instance_size_map[instance.dbInstanceClass][vcpu]
+    } else {
+      var cores = _.findWhere(instance["processorFeatures"], {"name": "coreCount"})
+      var threads = _.findWhere(instance["processorFeatures"], {"name": "threadsPerCore"})
+      vcpu = cores * threads
+    }
+
+    results.push (
+      {
+        "region": instance["region"],
+        "availabilityZone": instance["availabilityZone"],
+        "dbInstanceArn": instance["dbInstanceArn"],
+        "dbInstanceIdentifier": instance["dbInstanceIdentifier"],
+        "dbInstanceClass": instance["dbInstanceClass"],
+        "engine": instance["engine"],
+        "engineVersion": instance["engineVersion"]
+        "vcpu": vcpu
+      }
+    )
+  })
  EOS
 end
 
@@ -277,15 +164,15 @@ end
 # Policy
 ###############################################################################
 
-policy "pol_utilization" do
+policy "pol_rds_instances" do
   validate $ds_filtered_results do
-    summary_template "AWS RDS instances to Resize"
+    summary_template "AWS RDS Instances"
     detail_template <<-EOS
-# AWS RDS Instances to Resize
-| Region | instanceID | Engine | Current Instance Class | Recommended Instance Class | Availability Zone | CPU Average % |
-| ------ | ---------- | ------ | ---------------------- | -------------------------- | ----------------- | ------------- |
+# AWS RDS Instances
+| Region | Instance ID | Engine | Engine Version | Instance Class | Availability Zone | vCPU |
+| ------ | ----------- | ------ | -------------- | -------------- | ----------------- | ---- |
 {{ range data -}}
-| {{.region}} | {{.dbInstanceIdentifier}} | {{.engine}} | {{.dbInstanceClass}} |  {{.recommended_size}} | {{.availabilityZone }} | {{ .percent_cpu_avg }} |
+| {{.region}} | {{.dbInstanceIdentifier}} | {{.engine}} | {{.engineVersion}} | {{.dbInstanceClass}} | {{.availabilityZone }} | {{.vcpu}} |
 {{ end -}}
 
 ###### Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }}) within Org: {{ rs_org_name }} (Org ID: {{ rs_org_id }})
