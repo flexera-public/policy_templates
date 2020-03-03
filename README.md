@@ -53,7 +53,7 @@ Please contact sales@flexera.com to learn more.
 ##### Storage
 
 - [AWS Bucket Size Check](./cost/aws/s3_bucket_size/)
-- [AWS Delete Unattached Volumes](./cost/aws/unattached_volumes)
+- [AWS Unattached Volumes](./cost/aws/unattached_volumes)
 - [AWS S3 Buckets without Server Access Logging](./security/storage/aws/s3_buckets_without_server_access_logging/)
 - [AWS Object Storage Optimization](./cost/aws/object_storage_optimization/)
 
@@ -76,7 +76,7 @@ Please contact sales@flexera.com to learn more.
 ##### Storage
 
 - [Azure Blob Storage Optimization](./cost/azure/object_storage_optimization/)
-- [Azure Delete Unattached Volumes](./cost/azure/unattached_volumes)
+- [Azure Unattached Volumes](./cost/azure/unattached_volumes)
 
 #### Google
 
@@ -95,8 +95,8 @@ Please contact sales@flexera.com to learn more.
 ##### Storage
 
 - [Google Object Storage Optimization](./cost/google/object_storage_optimization/)
-- [Google Delete Old Snapshots](./cost/google/old_snapshots/)
-- [Google Delete Unattached Volumes](./cost/google/unattached_volumes/)
+- [Google Old Snapshots](./cost/google/old_snapshots/)
+- [Google Unattached Volumes](./cost/google/unattached_volumes/)
 
 ##### Other
 
