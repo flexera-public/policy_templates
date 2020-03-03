@@ -47,7 +47,8 @@ Provider tag value to match this policy: `aws`
 
 Required permissions in the provider:
 
-`` ```javascript
+```javascript
+
 {
     "Version": "2012-10-17",
     "Statement": [
@@ -67,7 +68,8 @@ Required permissions in the provider:
         }
     ]
 }
-``` ``
+
+```
 
 ## Supported Clouds
 
