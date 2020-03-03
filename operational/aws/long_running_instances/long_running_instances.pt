@@ -18,14 +18,22 @@ info(
 
 parameter "param_email" do
   type "list"
-  label "Email addresses to notify"
+  label "Email notify list"
   description "Email addresses of the recipients you wish to notify when new incidents are created"
 end
 
 parameter "param_days_old" do
   type "number"
   label "Days Old"
+  description "Number of days to be running before included in list"
   default 20
+end
+
+parameter "param_action" do
+  type "string"
+  label "Action to take"
+  allowed_values "stop", "terminate"
+  description "Either Stop or Terminate the instance"
 end
 
 parameter "param_exclusion_tag_key" do
@@ -181,6 +189,7 @@ ___
 ###### Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }}) within Org: {{ rs_org_name }} (Org ID: {{ rs_org_id }})
 EOS
     escalate $email
+    escalate $esc_stop_or_terminate
     check lt(to_n(val(item, "days_old")),$param_days_old)
   end
 end
@@ -194,50 +203,38 @@ escalation "email" do
   email $param_email
 end
 
-escalation "esc_downsize_instances" do
+escalation "esc_stop_or_terminate" do
   request_approval  do
-    label "Approve Instances for downsizing"
-    description "Approve downsize action"
+    label "Approve Instances for Stop/Terminate"
+    description "Approve Stop/Terminate action"
     parameter "approval_reason" do
       type "string"
       label "Reason for approval"
       description "Explain why you are approving the action"
     end
   end
-  run "downsize_instances", data
+  run "stop_or_terminate_instances", data, $param_action
 end
 
 ###############################################################################
 # Cloud Workflow
 ###############################################################################
 
-define downsize_instances($data) return $all_responses do
+define stop_or_terminate_instances($data, $param_action) return $all_responses do
   $status_code=''
   $go_next = true
   foreach $item in $data do
-    if $item["next_instance_size"]!= "N/A"
-      sub on_error: rollback($item) do
+    if $param_action == "stop"
+      sub on_error: skip do
         call stop_instances($item) retrieve $status_code
-        if(to_s($status_code)=="200")
-          call set_instance_type($item) retrieve $status_code
-        else
-          call rollback($item)
-          $go_next = false
-        end
-        if(to_s($status_code)=="200")
-          call start_instances($item) retrieve $status_code
-        elsif ($go_next)
-          call rollback($item)
-          $go_next = false
-        end
-        if($go_next && to_s($status_code)!="200")
-          call rollback($item)
-        end
+      end
+    else
+      sub on_error: skip do
+        call terminate_instances($item) retrieve $status_code
       end
     end
   end
 end
-
 
 define stop_instances($item) return $status_code do
   $status_code={}
@@ -271,123 +268,45 @@ define stop_instances($item) return $status_code do
   end
 end
 
-define set_instance_type($item) return $status_code do
-  $response = {}
+define terminate_instances($item) return $status_code do
+  $status_code={}
+  $response={}
   sub on_error: retry, timeout: 20m, on_timeout: skip do
     $response = http_request(
       verb: "post",
       host: "ec2.amazonaws.com",
       auth: $$auth_aws,
-      href: join(["/", "?Action=ModifyInstanceAttribute", "&InstanceId.1=", $item["instanceId"], "&InstanceType.Value=", $item["next_instance_size"], "&Version=2016-11-15"]),
+      href: join(["/", "?Action=TerminateInstances", "&InstanceId.1=", $item["instanceId"], "&Version=2016-11-15"]),
       https: true,
-      headers: {
+      headers:{
         "cache-control": "no-cache",
         "content-type": "application/json"
       }
     )
-    call sys_log("ModifyInstanceResponseCode", to_s($response["code"]))
-  end
-  $status_code=$response["code"]
-end
-
-define start_instances($item) return $status_code do
-  $response = {}
-  sub on_error: retry, timeout: 20m, on_timeout: skip do
-    $response = http_request(
-      verb: "post",
-      host: "ec2.amazonaws.com",
-      auth: $$auth_aws,
-      href: join(["/", "?Action=StartInstances", "&InstanceId.1=", $item["instanceId"], "&Version=2016-11-15"]),
-      https: true,
-      headers: {
-        "cache-control": "no-cache",
-        "content-type": "application/json"
-      }
-    )
-    call sys_log("StartInstanceResponseCode", to_s($response["code"]))
+    call sys_log("TerminateInstancesResponseCode", to_s($response["code"]))
   end
   $status_code=$response["code"]
   if($response["code"]==200)
-    $wake_condition = "running"
+    $wake_condition = "terminated"
     $state = ''
     while $state !~ $wake_condition do
       sub on_error: skip do
         call get_instance($item) retrieve $status_response
         $status_responses=$status_response["body"]["DescribeInstancesResponse"]["reservationSet"]["item"]["instancesSet"]["item"]
         $state = to_s($status_responses["instanceState"]["name"])
-        $status_code = $status_response["code"]
+        $status_code = to_s($status_response["code"])
       end
     end
   end
 end
 
-
-define get_instance($item) return $status_response do
-  $status_response = {}
-  sub on_error: retry, timeout: 20m, on_timeout: skip do
-    $response = http_request(
-      verb: "get",
-      host: "ec2.amazonaws.com",
-      auth: $$auth_aws,
-      href: join(["/", "?Action=DescribeInstances", "&InstanceId.1=", $item["instanceId"], "&Version=2016-11-15"]),
-      https: true,
-      headers: {
-        "cache-control": "no-cache",
-        "Accept": "application/json"
-      }
-    )
-    $status_response=$response
-  end
-end
-
-define rollback($item) do
-  call get_instance($item) retrieve $status_response
-  $status_responses=$status_response["body"]["DescribeInstancesResponse"]["reservationSet"]["item"]["instancesSet"]["item"]
-  call sys_log("Rollback_statusResponse", to_s($status_responses))
-  $state = to_s($status_responses["instanceState"]["name"])
-  $started_condition = "running"
-  if include?(to_s($status_responses["instanceType"]), to_s($item["instanceType"]))
-    # Instance is still the original size, just make sure it's running
-    if $state =~ $started_condition
-      # instance is running nothing to do
-    else
-      # instance is not running, start it
-      call start_instances($item) retrieve $start_response
-    end
-  else
-    # Instance is the new size. Roll back
-    if $state == $started_condition
-      call stop_instances($item)
-    end
-    call rollback_instance_type($item)
-    call start_instances($item)
-  end
-end
-
-define rollback_instance_type($item) do
-   sub on_error: skip do
-      $response = http_request({
-        verb: "post",
-        host: "ec2.amazonaws.com",
-        auth: $$auth_aws,
-        href: join(["/", "?Action=ModifyInstanceAttribute", "&InstanceId.1=", $item["instanceId"], "&InstanceType.Value=", $item["instanceType"], "&Version=2016-11-15"]),
-        https: true,
-        headers: {
-          "cache-control": "no-cache",
-          "content-type": "application/json"
-        }
-      })
-  end
-end
-
 define sys_log($subject, $detail) do
-
-    rs_cm.audit_entries.create(
-      notify: "None",
-      audit_entry: {
-        auditee_href: @@account,
-        summary: $subject,
-        detail: $detail
-      }
-    )
+  rs_cm.audit_entries.create(
+    notify: "None",
+    audit_entry: {
+      auditee_href: @@account,
+      summary: $subject,
+      detail: $detail
+    }
+  )
 end
