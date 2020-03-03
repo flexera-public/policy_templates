@@ -177,9 +177,9 @@ end
 
 policy "pol_utilization" do
   validate_each $ds_instances do
-    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} AWS instances with inefficient utilization"
+    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} AWS instances running longer than {{ parameters.param_days_old}} days"
     detail_template <<-EOS
-# AWS Instance Utilization
+# AWS Long Running Instances
 | Region | instanceID | instanceType | Hostname | Private DNS Name | Days Old | Tags |
 | ------ | ---------- | ------------ | -------- |----------------- | -------- | ---- |
 {{ range data -}}
@@ -222,15 +222,17 @@ end
 
 define stop_or_terminate_instances($data, $param_action) return $all_responses do
   $status_code=''
-  $go_next = true
+  $all_responses = []
   foreach $item in $data do
     if $param_action == "stop"
       sub on_error: skip do
         call stop_instances($item) retrieve $status_code
+        $all_responses << $status_code
       end
     else
       sub on_error: skip do
         call terminate_instances($item) retrieve $status_code
+        $all_responses << $status_code
       end
     end
   end
@@ -297,6 +299,24 @@ define terminate_instances($item) return $status_code do
         $status_code = to_s($status_response["code"])
       end
     end
+  end
+end
+
+define get_instance($item) return $status_response do
+  $status_response = {}
+  sub on_error: retry, timeout: 20m, on_timeout: skip do
+    $response = http_request(
+      verb: "get",
+      host: "ec2.amazonaws.com",
+      auth: $$auth_aws,
+      href: join(["/", "?Action=DescribeInstances", "&InstanceId.1=", $item["instanceId"], "&Version=2016-11-15"]),
+      https: true,
+      headers: {
+        "cache-control": "no-cache",
+        "Accept": "application/json"
+      }
+    )
+    $status_response=$response
   end
 end
 
