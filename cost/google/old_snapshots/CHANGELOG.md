@@ -2,7 +2,7 @@
 
 ## v2.1
 
-- rename policy 
+- rename policy
 
 ## v2.0
 
