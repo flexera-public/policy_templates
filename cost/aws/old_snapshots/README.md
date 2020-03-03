@@ -1,4 +1,4 @@
-# AWS Delete Unattached Volumes
+# AWS Delete Old Snapshots
 
 ## What it does
 
