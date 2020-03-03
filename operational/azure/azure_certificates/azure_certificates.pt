@@ -1,0 +1,227 @@
+name "Azure Certificates"
+rs_pt_ver 20180301
+type "policy"
+short_description "Report to list all of the certificates in Azure, their resource group and expiration date."
+long_description ""
+category "Operational"
+severity "low"
+info(
+  version: "2.0", 
+  provider: "Azure",
+  service: "Compute",
+  policy_set: ""
+)
+
+###############################################################################
+# Permissions
+###############################################################################
+
+permission "perm_read_creds" do
+  actions   "rs_cm.show_sensitive","rs_cm.index_sensitive"
+  resources "rs_cm.credentials"
+end
+
+###############################################################################
+# Parameters
+###############################################################################
+
+parameter "param_email" do
+  type "list"
+  label "Email addresses of the recipients you wish to notify"
+end
+
+parameter "param_numberofdays" do
+  type "string"
+  label "Days"
+  description "Threshold of days to alert on an expiring certificate."
+end
+
+parameter "param_exclusion_tag_key" do
+  category "User Inputs"
+  label "Exclusion Tag Key"
+  description "Azure-native instance tag to ignore instances that match the disallowed instance type. Only supply the tag key. The policy assumes that the tag value is irrelevant."
+  type "string"
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+credentials "azure_auth" do
+  schemes "oauth2"
+  label "Azure"
+  description "Select the Azure Resource Manager Credential from the list."
+  tags "provider=azure_rm"
+end
+
+###############################################################################
+# Pagination
+###############################################################################
+
+pagination "azure_pagination" do
+  get_page_marker do
+    body_path "nextLink"
+  end
+  set_page_marker do
+    uri true
+  end
+end
+
+###############################################################################
+# Datasources
+###############################################################################
+
+datasource "ds_subscriptions" do
+  request do
+    auth $azure_auth
+    pagination $azure_pagination
+    host "management.azure.com"
+    path "/subscriptions/"
+    query "api-version","2018-06-01"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "value[*]") do
+      field "subscriptionId", jmes_path(col_item,"subscriptionId")
+	    field "subscriptionName", jmes_path(col_item,"displayName")
+    end
+  end
+end
+
+datasource "ds_resource_groups" do
+  iterate $ds_subscriptions
+  request do
+    auth $azure_auth
+    pagination $azure_pagination
+    host "management.azure.com"
+    path join(["/subscriptions/", val(iter_item,"subscriptionId"), "/resourcegroups"])
+    query "api-version","2019-10-01"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "value[*]") do
+      field "id", jmes_path(col_item, "id")
+      field "location", jmes_path(col_item, "location")
+      field "rgName", jmes_path(col_item, "name")
+      field "subscriptionName", val(iter_item, "subscriptionName")
+    end
+  end
+end
+
+datasource "ds_certificates" do
+  iterate $ds_resource_groups
+  request do
+    auth $azure_auth
+    pagination $azure_pagination
+    host "management.azure.com"
+    path join([val(iter_item,"id"), "/providers/Microsoft.Web/certificates", ])
+    query "api-version","2019-10-01"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "value[*]") do
+      field "id", jmes_path(col_item, "id")
+      field "subscriptionName", val(iter_item, "subscriptionName")
+      field "rgName", val(iter_item, "rgName")
+      field "location", jmes_path(col_item, "location")
+      field "name", jmes_path(col_item, "name")
+      field "tags", jmes_path(col_item, "tags")
+      field "properties" do 
+        collect jmes_path(response, "properties[*]") do
+          field "expirationDate", jmes_path(col_item, "expirationDate")
+          field "subjectName", jmes_path(col_item, "subjectName")
+          field "issuer", jmes_path(col_item, "issuer")
+          field "issueDate", jmes_path(col_item, "issueDate")
+          field "hostNames", jmes_path(col_item, "hostNames")
+          field "thumbprint", jmes_path(col_item, "thumbprint")
+          field "keyVaultId", jmes_path(col_item, "keyVaultId")
+          field "keyVaultSecretName", jmes_path(col_item, "keyVaultSecretName")
+          field "keyVaultSecretStatus", jmes_path(col_item, "keyVaultSecretStatus")
+        end
+      end
+    end
+  end
+end
+
+datasource "ds_filtered_certificates" do
+  run_script $js_filter_certificates, $ds_certificates, $param_exclusion_tag_key, $param_numberofdays
+end
+
+###############################################################################
+# Scripts
+###############################################################################
+script "js_filter_certificates", type: "javascript" do
+  parameters "certificates", "exclusion_tag", "expire_days"
+  result "result"
+  code <<-EOS
+    var result = [];
+    _.each(certificates, function(certs){
+      if (_.has(certs.tags, exclusion_tag)){
+        // skip due to exclusion tag
+      } else {
+        var cert_details = certs["properties"];
+
+        _.each(cert_details, function(cert){
+          var nowDate = Date.now();
+          var compareDate = new Date(certs["expirtationDate"]);
+          var cert_status = "Active";
+          if (compareDate > nowDate){
+            cert_status = "Expired";
+          }
+          if (expire_days > (nowDate - compareDate)) {
+            result.push({
+              subscriptionName: certs["subscriptionName"],
+              rgName: certs["rgName"],
+              location: certs["location"],
+              name: certs["name"],
+              expirationDate: cert["expirationDate"].toString(),
+              subjectName: cert["subjectName"].toString(),
+              issuer: cert["issuer"].toString(),
+              issueDate: cert["issueDate"].toString(),
+              hostNames: cert["hostNames"].toString(),
+              thumbprint: cert["thumbprint"].toString(),
+              keyVaultId: cert["keyVaultId"].toString(),
+              keyVaultSecretName: cert["keyVaultSecretName"].toString(),
+              keyVaultSecretStatus: cert["keyVaultSecretStatus"].toString(),
+              certStatus: cert_status
+            })
+          }
+        })
+      }
+    })
+    result = _.sortBy(result, 'subscriptionName');
+    result = _.sortBy(result, 'rgName');
+EOS
+end
+###############################################################################
+# Policy
+###############################################################################
+
+policy "azure_certificate_policy" do
+  validate_each $ds_filtered_certificates do
+    summary_template "Azure Subscription({{parameters.param_azure_sub}}) - {{ len data }} App Service Certificates"
+    detail_template <<-EOS
+# Azure Certificates
+| Subscription Name	| Resource Group | Location |	Expiration Date	| Subject	| Certificate Name | Issuer | Issue Date | Host Names	| Thumbprint | Key Vault ID | Key Vault Secret Name | Key Vault Secret Status | Certificate Status |
+| ----------------- | -------------- | -------- | --------------- | ------- | ---------------- | ------ | ---------- | ---------- | ---------- | ------------ | --------------------- | ----------------------- | ------------------ |
+{{ range data -}}
+|{{.subscriptionName}} | {{.rgName}} | {{.location}} | {{.name}} | {{.expirationDate}} | {{.subjectName}} | {{.issuer}} | {{.issuerDate}} | {{.hostNames}} | {{.thumbprint}} | {{.keyVaultId}} | {{.keyVaultSecretName}} | {{.keyVaultSecretStatus}} | {{.certStatus}} |
+{{ end -}}
+
+###### Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }}) within Org: {{ rs_org_name }} (Org ID: {{ rs_org_id }})
+EOS
+    escalate $email
+    check eq(0,1)
+  end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "email" do
+   email $param_email
+end
