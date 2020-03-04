@@ -1,4 +1,4 @@
-# AWS Delete Old Snapshots
+# AWS Old Snapshots
 
 ## What it does
 

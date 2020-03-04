@@ -40,7 +40,6 @@ Please contact sales@flexera.com to learn more.
 - [AWS Reserved Instances Report by Billing Center](./cost/aws/reserved_instances/report_by_bc)
 - [AWS Reserved Instance Recommendations](./cost/aws/reserved_instances/recommendations)
 - [AWS Savings Plan Recommendations](./cost/aws/savings_plan/recommendations)
-- [AWS Delete Old Snapshots](./cost/aws/old_snapshots/)
 
 ##### Database
 
@@ -57,6 +56,7 @@ Please contact sales@flexera.com to learn more.
 - [AWS Delete Unattached Volumes](./cost/aws/unattached_volumes)
 - [AWS S3 Buckets without Server Access Logging](./security/storage/aws/s3_buckets_without_server_access_logging/)
 - [AWS Object Storage Optimization](./cost/aws/object_storage_optimization/)
+- [AWS Old Snapshots](./cost/aws/old_snapshots/)
 
 #### Azure
 
