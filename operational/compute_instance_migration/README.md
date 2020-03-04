@@ -1,15 +1,15 @@
-## Application Migration Recommendations
+# Application Migration Recommendations
 
-### What it does
+## What it does
 
-This Policy Template will analyze RISC CloudScape data and will generate recommendations for migrating application stacks to the most cost effective cloud providers & regions.  
+This Policy Template will analyze RISC CloudScape data and will generate recommendations for migrating application stacks to the most cost effective cloud providers & regions.
 
-### Pre-requisites
+## Pre-requisites
 
 - RISC Foundations & CloudScape assessment to have successfully discovered resources, analyzed application stacks, and generated migration data
 - Retrieve a RISC API Assessment Code and API Key from your Subscription Administrator.  See more about RISC API authentication requirements [here](https://portal.riscnetworks.com/app/documentation/?path=/using-the-platform/restful-api-access/)
 
-### Input Parameters
+## Input Parameters
 
 This policy has the following input parameters required when launching the policy.
 
@@ -19,7 +19,7 @@ This policy has the following input parameters required when launching the polic
 - *RISC Assessment Code* - RISC Assessment Code to be used for authentication
 - *Included Provides* - A list of Cloud providers to include. If blank all providers available will be included
 
-### Supported Clouds
+## Supported Clouds
 
 - AWS
 - Azure
@@ -30,7 +30,6 @@ This policy has the following input parameters required when launching the polic
 - Quest
 - Tierpoint
 
-
-### Cost
+## Cost
 
 This Policy Template does not incur any cloud costs.
