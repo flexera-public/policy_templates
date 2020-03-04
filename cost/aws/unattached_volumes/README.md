@@ -1,4 +1,4 @@
-# AWS Delete Unattached Volumes
+# AWS Unattached Volumes
 
 ## What it does
 
