@@ -1,8 +1,8 @@
-# Azure Unattached Volumes
+# Azure Delete Unattached Volumes
 
 ## What it does
 
-This Policy Template scans all volumes in the given account and identifies any unattached volumes that have been unattached for at least the number of user-specified days. If any are found, an incident report will show the volumes, and related information and an email will be sent to the user-specified email address.
+This Policy Template scans all volumes in the given account and identifies any unattached volumes that have been unattached for at least the number of user-specified days. Using log analytics, we will determine the number of days the disk has been ditached. If any are found, an incident report will show the volumes, and related information and an email will be sent to the user-specified email address.
 
 If the user approves that the volumes should be deleted, the policy will delete the volumes.
 If the volume is not able to be deleted, say, due to it being locked, the volume will be tagged to indicate the error that was received.
@@ -25,7 +25,6 @@ This policy has the following input parameters required when launching the polic
 ## Prerequisites
 
 This policy uses [credentials](https://docs.rightscale.com/policies/users/guides/credential_management.html) for connecting to the cloud -- in order to apply this policy you must have a credential registered in the system that is compatible with this policy. If there are no credentials listed when you apply the policy, please contact your cloud admin and ask them to register a credential that is compatible with this policy. The information below should be consulted when creating the credential.
-
 In the log analytics workspace provided, Microsoft-Windows-Disk/Operational event log should be enabled.
 
 ### Credential configuration
