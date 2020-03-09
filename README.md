@@ -201,6 +201,7 @@ Please contact sales@flexera.com to learn more.
 
 - [Azure VMs Not Using Managed Disks](./operational/azure/vms_without_managed_disks/)
 - [Azure Migrate Integration](./operational/azure/azure_migrate)
+- [AzureAD Group Sync](./operational/azure/azuread_group_sync/)
 
 #### VMWare
 
