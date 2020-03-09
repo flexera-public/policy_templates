@@ -196,6 +196,7 @@ Please contact sales@flexera.com to learn more.
 - [AWS RDS Backup Settings](./operational/dbaas/aws/rds_backup)
 - [AWS Subnet Name Tag Sync](./operational/aws/subnet_name_sync)
 - [AWS VPC Name Tag Sync](./operational/aws/vpc_name_sync)
+- [AWS Long Running Instances](./operational/aws/long_running_instances/)
 
 #### Azure
 
