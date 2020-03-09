@@ -6,7 +6,7 @@ long_description ""
 severity "low"
 category "Cost"
 info(
-  version: "2.0",
+  version: "2.1",
   provider: "AWS",
   service: "EC2",
   policy_set: "Inefficient Instance Usage"
@@ -442,10 +442,19 @@ script "js_inefficient_utilization_metrics", type: "javascript" do
 	if(next_instance_size == null && typeof next_instance_size == "undefined" ){
       next_instance_size="N/A";
 	}
+    var maximumMemoryField = instance.mem_maximum
+    if(maximumMemoryField == "101" || maximumMemoryField === "101"){
+       maximumMemoryField = "N/A"
+	}
+
+    var averageMemoryField = instance.mem_average
+    if(averageMemoryField == "101" || averageMemoryField === "101"){
+       averageMemoryField = "N/A"
+	}
     if ((cpu_average < param_avg_cpu || mem_average < param_avg_used_memory)){
       inefficient_utilization_results.push({
         "region": instance.region,
-        "instanceId": instance.instanceId,
+        "id": instance.instanceId,
         "platform": instance.platform,
         "privateDnsName": instance.privateDnsName,
         "hostname": instance.privateDnsName.split('.')[0],
@@ -453,9 +462,9 @@ script "js_inefficient_utilization_metrics", type: "javascript" do
         "cpu_minimum": instance.cpu_minimum,
         "cpu_maximum": instance.cpu_maximum,
         "cpu_average": cpu_average,
-        "mem_maximum": instance.mem_maximum,
+        "mem_maximum": maximumMemoryField,
         "mem_minimum": instance.mem_minimum,
-        "mem_average": mem_average,
+        "mem_average": averageMemoryField,
 		"instanceType": instance.instanceType,
 		"next_instance_size": next_instance_size
       })
@@ -472,20 +481,46 @@ end
 policy "pol_utilization" do
   validate_each $ds_inefficient_utilization_metrics do
     summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} AWS instances with inefficient utilization"
-    detail_template <<-EOS
-# AWS Instance Utilization
-| Region | instanceID | instanceType | Platform | Hostname | Private DNS Name | CPU Maximum % | CPU Average % | Memory Maximum % | Memory Average % | Next Instance Size % |
-| ------ | ---------- | ------------ | -------- | -------- |---------------- | ------------- | ------------- | ---------------- | ---------------- | ------------------- |
-{{ range data -}}
-| {{.region}} | {{.instanceId}} | {{.instanceType}} | {{.platform}} | {{.hostname}} |  {{.privateDnsName }} | {{ .cpu_maximum }} | {{ .cpu_average }} | {{if eq .mem_maximum "101"}}N/A{{else}}{{.mem_maximum}}{{end}} | {{if eq .mem_average "101"}}N/A{{else}}{{.mem_average}}{{end}} | {{ .next_instance_size }} |
-{{ end -}}
-___
-###### Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }}) within Org: {{ rs_org_name }} (Org ID: {{ rs_org_id }})
-EOS
     escalate $email
     check logic_or(eq($param_avg_used_memory, -1), gt(to_n(val(item,"mem_average")), $param_avg_used_memory))
     check logic_or(eq($param_avg_cpu, -1), gt(to_n(val(item,"cpu_average")),$param_avg_cpu))
 	escalate $esc_downsize_instances
+    export do
+      resource_level true
+      field "id" do
+        label "Instance Id"
+      end
+      field "region" do
+        label "Region"
+      end
+      field "instanceType" do
+        label "Instance Type"
+      end
+      field "platform" do
+        label "platform"
+      end
+      field "hostname" do
+        label "Hostname"
+      end
+      field "privateDnsName" do
+        label "Private DNS Name"
+      end
+      field "cpu_maximum" do
+        label "CPU Maximum %"
+      end
+      field "cpu_average" do
+        label "CPU Average %"
+      end
+      field "maximumMemoryField" do
+        label "Memory Maximum %"
+      end
+      field "averageMemoryField" do
+        label "Memory Average %"
+      end
+      field "next_instance_size" do
+        label "Next Instance Size %"
+      end
+    end  
   end
 end
 
@@ -495,19 +530,16 @@ end
 ###############################################################################
 
 escalation "email" do
+  automatic true
+  label "Send Mail"
+  description "Sends incident email"
   email $param_email
 end
 
 escalation "esc_downsize_instances" do
-  request_approval  do
-    label "Approve Instances for downsizing"
-    description "Approve downsize action"
-    parameter "approval_reason" do
-      type "string"
-      label "Reason for approval"
-      description "Explain why you are approving the action"
-    end
-  end
+  automatic false
+  label "Downsize Instances"
+  description "Downsize selected instances"
   run "downsize_instances", data
 end
 
@@ -551,7 +583,7 @@ define stop_instances($item) return $status_code do
       verb: "post",
       host: "ec2.amazonaws.com",
       auth: $$auth_aws,
-      href: join(["/", "?Action=StopInstances", "&InstanceId.1=", $item["instanceId"], "&Version=2016-11-15"]),
+      href: join(["/", "?Action=StopInstances", "&InstanceId.1=", $item["id"], "&Version=2016-11-15"]),
       https: true,
       headers:{
         "cache-control": "no-cache",
@@ -582,7 +614,7 @@ define set_instance_type($item) return $status_code do
       verb: "post",
       host: "ec2.amazonaws.com",
       auth: $$auth_aws,
-      href: join(["/", "?Action=ModifyInstanceAttribute", "&InstanceId.1=", $item["instanceId"], "&InstanceType.Value=", $item["next_instance_size"], "&Version=2016-11-15"]),
+      href: join(["/", "?Action=ModifyInstanceAttribute", "&InstanceId.1=", $item["id"], "&InstanceType.Value=", $item["next_instance_size"], "&Version=2016-11-15"]),
       https: true,
       headers: {
         "cache-control": "no-cache",
@@ -601,7 +633,7 @@ define start_instances($item) return $status_code do
       verb: "post",
       host: "ec2.amazonaws.com",
       auth: $$auth_aws,
-      href: join(["/", "?Action=StartInstances", "&InstanceId.1=", $item["instanceId"], "&Version=2016-11-15"]),
+      href: join(["/", "?Action=StartInstances", "&InstanceId.1=", $item["id"], "&Version=2016-11-15"]),
       https: true,
       headers: {
         "cache-control": "no-cache",
@@ -633,7 +665,7 @@ define get_instance($item) return $status_response do
       verb: "get",
       host: "ec2.amazonaws.com",
       auth: $$auth_aws,
-      href: join(["/", "?Action=DescribeInstances", "&InstanceId.1=", $item["instanceId"], "&Version=2016-11-15"]),
+      href: join(["/", "?Action=DescribeInstances", "&InstanceId.1=", $item["id"], "&Version=2016-11-15"]),
       https: true,
       headers: {
         "cache-control": "no-cache",
@@ -674,7 +706,7 @@ define rollback_instance_type($item) do
         verb: "post",
         host: "ec2.amazonaws.com",
         auth: $$auth_aws,
-        href: join(["/", "?Action=ModifyInstanceAttribute", "&InstanceId.1=", $item["instanceId"], "&InstanceType.Value=", $item["instanceType"], "&Version=2016-11-15"]),
+        href: join(["/", "?Action=ModifyInstanceAttribute", "&InstanceId.1=", $item["id"], "&InstanceType.Value=", $item["instanceType"], "&Version=2016-11-15"]),
         https: true,
         headers: {
           "cache-control": "no-cache",

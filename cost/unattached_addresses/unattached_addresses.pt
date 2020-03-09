@@ -6,7 +6,7 @@ long_description ""
 severity "low"
 category "Cost"
 info(
-  version: "1.2",
+  version: "1.3",
   provider: "Flexera Cloud Management",
   service: "",
   policy_set: "Unused IP Addresses"
@@ -85,12 +85,11 @@ script "js_munge_addresses", type: "javascript" do
 
       // exlcude white listed names
       // only show which addresses are not attached, no bindings
-      if( param_whitelist.indexOf(address['address']) === -1 &&
-        attached === 'false' ){
+      if( param_whitelist.indexOf(address['address']) === -1 && attached === 'false' ){
         addresses.push({
           cloud_name: clouds[cloud_href]['name'],
           cloud_type: clouds[cloud_href]['type'],
-          address: address['address'],
+          id: address['address'],
           name: address['name'],
           href: address['href'],
           attached: attached
@@ -102,19 +101,16 @@ EOS
 end
 
 escalation "email" do
+  automatic true
+  label "Send Email"
+  description "Sends incident email"
   email $param_email
 end
 
 escalation "report_description" do
-  request_approval  do
-    label "Escalation approval"
-    description "Approve delete action"
-    parameter "approval_reason" do
-      type "string"
-      label "Reason for approval"
-      description "Explain why you are approving the action"
-    end
-  end
+  automatic false
+  label "Delete Addresses"
+  description "Delete selected unattached addresses"
   run "delete_unattached_addresses", data
 end
 
@@ -125,21 +121,33 @@ end
 policy "unattached_ip_addresses" do
   validate $ds_munged_addresses do
     summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} Unattached IP Addresses"
-    detail_template <<-EOS
-# Unattached IP Addresses
-
-| Cloud Name | Cloud Type | Address Name | Address | Attached | href |
-| ---------  | ---------- | ------------ | ------- | -------- | ---- |
-{{ range data -}}
-| {{ .cloud_name }} | {{ .cloud_type }} | {{.name}}| {{.address}} | {{.attached}} | {{.href}}|
-{{ end -}}
-EOS
     escalate $email
     escalate $report_description
     check eq(size(data),0)
-    #check contains($param_whitelist,val(item, "address"))
+    #check contains($param_whitelist,val(item, "id"))
     #check eq(val(item,'attached'),'true')
     resolve $report_resolution
+    export do
+      resource_level true
+      field "id" do
+        label "Address" 
+      end
+      field "cloud_name" do
+        label "Cloud Name"
+      end
+      field "cloud_type" do
+        label "Cloud Type"
+      end
+      field "name" do
+        label "Address Name"
+      end
+      field "attached" do
+        label "Attached"
+      end
+      field "href" do
+        label "HREF"
+      end
+    end    
   end
 end
 

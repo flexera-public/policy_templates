@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.2
+
+- adding incident resource table
+
 ## v2.1
 
 - rename policy
