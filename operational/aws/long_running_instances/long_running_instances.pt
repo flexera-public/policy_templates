@@ -6,7 +6,7 @@ long_description ""
 severity "low"
 category "Cost"
 info(
-  version: "1.0",
+  version: "2.0",
   provider: "AWS",
   service: "EC2",
   policy_set: "Long Running Instances"
@@ -36,11 +36,11 @@ parameter "param_action" do
   description "Either Stop or Terminate the instance"
 end
 
-parameter "param_exclusion_tag_key" do
+parameter "param_exclude_tags" do
   category "User Inputs"
   label "Exclusion Tag Key:Value"
   description "Cloud native tag key to ignore instances. Format: Key:Value"
-  type "string"
+  type "list"
   allowed_pattern /(^$)|([\w]?)+\:([\w]?)+/
 end
 
@@ -84,23 +84,23 @@ datasource "ds_regions_list" do
 end
 
 datasource "ds_instances" do
-  run_script $js_instances, $ds_instances_set, $param_exclusion_tag_key
+  run_script $js_instances, $ds_instances_set, $param_exclude_tags
 end
 
 datasource "ds_instances_set" do
   iterate $ds_regions_list
   request do
     verb "GET"
-	auth $auth_aws
-	pagination $aws_pagination_xml
+    auth $auth_aws
+    pagination $aws_pagination_xml
     host join(["ec2.", val(iter_item, "region"), ".amazonaws.com"])
     path "/"
-	query "Action", "DescribeInstances"
-	query "Version", "2016-11-15"
-	query "Filter.1.Name", "instance-state-name"
-	query "Filter.1.Value.1", "running"
+    query "Action", "DescribeInstances"
+    query "Version", "2016-11-15"
+    query "Filter.1.Name", "instance-state-name"
+    query "Filter.1.Value.1", "running"
     header "User-Agent", "RS Policies"
-	header "Content-Type", "text/xml"
+    header "Content-Type", "text/xml"
   end
   result do
     encoding "xml"
@@ -114,25 +114,15 @@ datasource "ds_instances_set" do
           field "platform", xpath(col_item, "platform")
           field "privateDnsName", xpath(col_item, "privateDnsName")
           field "launchTime", xpath(col_item, "launchTime")
-          field "tag_set" do
+          field "tags" do
             collect xpath(col_item,"tagSet/item","array") do
-              field "key", xpath(col_item, "key")
-              field "value", xpath(col_item, "value")
+              field "tagKey", xpath(col_item, "key")
+              field "tagValue", xpath(col_item, "value")
             end
           end
         end
       end
     end
-  end
-end
-
-# get AWS instance size map
-datasource "ds_aws_instance_size_map" do
-  request do
-    verb "GET"
-    host "raw.githubusercontent.com"
-    path "/rightscale/policy_templates/master/data/aws/instance_types.json"
-    header "User-Agent", "RS Policies"
   end
 end
 
@@ -142,32 +132,62 @@ end
 
 script "js_instances", type: "javascript" do
   result "results"
-  parameters "ds_instance_set", "param_exclusion_tag_key"
+  parameters "ds_instance_set", "param_exclude_tags"
   code <<-EOS
-  var tag_key = param_exclusion_tag_key.split(':')[0]
-  var tag_value = param_exclusion_tag_key.split(':')[1]
+
+  var param_exclude_tags_lower=[];
+  for(var j=0;j<param_exclude_tags.length;j++){
+    param_exclude_tags_lower[j] = param_exclude_tags[j].toString().toLowerCase();
+  }
+  console.log(param_exclude_tags_lower)
+
   var results = []
   for ( n=0; n < ds_instance_set.length; n++) {
     var instance_set = ds_instance_set[n].instances_set
     for ( i=0; i < instance_set.length; i++) {
       var instance = instance_set[i]
-      var tags = instance.tag_set
-      if (_.contains(_.pluck(tags,'key'), tag_key) && _.contains(_.pluck(tags,'value'), tag_value)){
-        continue
-      } else {
+      // Check, if the tag present in entered param_exclude_tags, ignore the volume if the tag matches/present.
+      var tags = instance['tags'];
+      console.log(tags)
+      var isTagMatched = false;
+      var tagKeyValue = "";
+      for(var k=0; k < tags.length; k++){
+        tag = tags[k];
+        if((param_exclude_tags_lower.indexOf((tag['tagKey']).toLowerCase()) !== -1) || (param_exclude_tags_lower.indexOf((tag['tagKey']+':'+tag['tagValue']).toLowerCase()) !== -1)){
+          isTagMatched = true;
+        }
+        // Constructing tags with comma separated to display in detail_template
+        if((tag['tagValue']).length > 0){
+          tagKeyValue = tagKeyValue+" , "+tag['tagKey']+'='+tag['tagValue'];
+        }else{
+          tagKeyValue = tagKeyValue+" , "+tag['tagKey'];
+        }
+      }
+      var instance_tags = []
+      _.each(tags, function(tag){
+        instance_tags.push(tag.tagKey+':'+tag.tagValue)
+      })
+      if(!(isTagMatched)){
         var now = new Date()
         var one_day=1000*60*60*24
         var launchTime = new Date(instance.launchTime)
         var difference = now.getTime() - launchTime.getTime()
         var days_old=(difference/one_day).toFixed(2)
         instance["hostname"] = instance.privateDnsName.split('.')[0]
+        instance["instance_tags"] = instance_tags
         instance["days_old"] = days_old
         results.push(instance)
       }
     }
   }
 
-  results = _.sortBy(results, 'region');
+  results = _(results)
+    .chain()
+    .sortBy(function(result){
+      return result.instanceType;
+    }).sortBy(function(result){
+      return result.region;
+    }).value();
 EOS
 end
 
@@ -180,10 +200,10 @@ policy "pol_utilization" do
     summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} AWS instances running longer than {{ parameters.param_days_old}} days"
     detail_template <<-EOS
 # AWS Long Running Instances
-| Region | instanceID | instanceType | Hostname | Private DNS Name | Days Old | Tags |
+| Region | instanceID | Instance Type | Hostname | Private DNS Name | Days Old | Tags |
 | ------ | ---------- | ------------ | -------- |----------------- | -------- | ---- |
 {{ range data -}}
-| {{.region}} | {{.instanceId}} | {{.instanceType}} | {{.hostname}} |  {{.privateDnsName }} | {{.days_old}} |  {{range $i,$e := .tag_set }}{{range $k, $v := $e}}{{$k}}:{{$v}},{{end}}{{end}} |
+| {{.region}} | {{.instanceId}} | {{.instanceType}} | {{.hostname}} |  {{.privateDnsName }} | {{.days_old}} | {{range $i,$e := .instance_tags }}{{$e}},{{end}} |
 {{ end -}}
 ___
 ###### Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }}) within Org: {{ rs_org_name }} (Org ID: {{ rs_org_id }})
@@ -244,7 +264,7 @@ define stop_instances($item) return $status_code do
   sub on_error: retry, timeout: 20m, on_timeout: skip do
     $response = http_request(
       verb: "post",
-      host: "ec2.amazonaws.com",
+      host: join(["ec2.",$item["region"],".amazonaws.com"]),
       auth: $$auth_aws,
       href: join(["/", "?Action=StopInstances", "&InstanceId.1=", $item["instanceId"], "&Version=2016-11-15"]),
       https: true,
@@ -276,7 +296,7 @@ define terminate_instances($item) return $status_code do
   sub on_error: retry, timeout: 20m, on_timeout: skip do
     $response = http_request(
       verb: "post",
-      host: "ec2.amazonaws.com",
+      host: join(["ec2.",$item["region"],".amazonaws.com"]),
       auth: $$auth_aws,
       href: join(["/", "?Action=TerminateInstances", "&InstanceId.1=", $item["instanceId"], "&Version=2016-11-15"]),
       https: true,
@@ -307,7 +327,7 @@ define get_instance($item) return $status_response do
   sub on_error: retry, timeout: 20m, on_timeout: skip do
     $response = http_request(
       verb: "get",
-      host: "ec2.amazonaws.com",
+      host: join(["ec2.",$item["region"],".amazonaws.com"]),
       auth: $$auth_aws,
       href: join(["/", "?Action=DescribeInstances", "&InstanceId.1=", $item["instanceId"], "&Version=2016-11-15"]),
       https: true,

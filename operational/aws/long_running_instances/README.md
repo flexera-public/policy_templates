@@ -6,8 +6,7 @@ This policy checks for running instances that have been running longer than the 
 
 ## Functional Description
 
-- This policy identifies all instances that have been running longer than the `Days Old` parameter. It only includes running instances.
-- The **Exclusion Tag** parameter is a string value. If the exclusion tag is used on an Instance, that Instance is presumed to be exempt from this policy.
+- This policy identifies all instances that have been running longer than the `Days Old` parameter.
 
 ## Input Parameters
 
@@ -76,10 +75,6 @@ Required permissions in the provider:
 This policy template supports the following clouds:
 
 - AWS
-
-## Other
-
-Add other details here
 
 ## Costs
 
