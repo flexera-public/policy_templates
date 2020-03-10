@@ -1,0 +1,429 @@
+name "AWS Object Storage Optimization"
+rs_pt_ver 20180301
+type "policy"
+short_description "Check for object store items for last modified date and moves the object to cool or cold archive tiers after user approval. [README](https://github.com/flexera/policy_templates/tree/master/cost/aws/object_storage_optimization) and [docs.rightscale.com/policies](https://docs.rightscale.com/policies/) to learn more."
+long_description ""
+category "Cost"
+severity "low"
+info(
+  version: "2.0",
+  provider: "AWS",
+  service: "S3",
+  policy_set: "Object Store Optimization"
+)
+
+###############################################################################
+# Permissions
+###############################################################################
+
+permission "perm_read_creds" do
+  actions   "rs_cm.show_sensitive","rs_cm.index_sensitive"
+  resources "rs_cm.credentials"
+end
+
+###############################################################################
+# User inputs
+###############################################################################
+
+parameter "param_email" do
+  type "list"
+  label "Email addresses to notify"
+  description "Email addresses of the recipients you wish to notify when new incidents are created"
+end
+
+parameter "param_glacier_days" do
+  type "string"
+  label "Days since last modified to move to Glacier"
+  description "Move to glacier after days last modified - leave blank to skip moving"
+end
+
+parameter "param_deep_archive_days" do
+  type "string"
+  label "Days since last modified to move to Deep Archive"
+  description "Move to glacier deep archive after days last modified- leave blank to skip moving"
+end
+
+parameter "param_exclude_tags" do
+  type "list"
+  label "Tags to ignore"
+  description "List of tags that will exclude s3 objects from being evaluated by this policy. Multiple tags are evaluated as an 'OR' condition. Tag keys or key/value pairs can be listed. Example: 'test,env=dev'"
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+#authenticate with AWS
+credentials "auth_aws" do
+  schemes "aws","aws_sts"
+  label "AWS"
+  description "Select the AWS Credential from the list"
+  tags "provider=aws"
+end
+
+###############################################################################
+# Pagination
+###############################################################################
+
+pagination "s3_objects_pagination" do
+  get_page_marker do
+    body_path "//ListBucketResult/NextContinuationToken"
+  end
+  set_page_marker do
+    query "continuation-token"
+  end
+end
+
+###############################################################################
+# Datasources
+###############################################################################
+
+#https://docs.aws.amazon.com/AmazonS3/latest/API/RESTServiceGET.html
+datasource "ds_aws_buckets" do
+  request do
+    auth $auth_aws
+    host "s3.amazonaws.com"
+    path "/"
+  end
+  result do
+    encoding "xml"
+    collect xpath(response, "//ListAllMyBucketsResult/Buckets/Bucket", "array") do
+      field "bucket_name", xpath(col_item,"Name")
+      field "bucket_creation_date", xpath(col_item, "CreationDate")
+    end
+  end
+end
+
+#https://docs.aws.amazon.com/AmazonS3/latest/API/RESTBucketGETlocation.html
+datasource "ds_aws_buckets_with_region" do
+  iterate $ds_aws_buckets
+  request do
+    auth $auth_aws
+    host "s3.amazonaws.com"
+    path join(["/", val(iter_item, "bucket_name")])
+    query "location", ""
+  end
+  result do
+    encoding "xml"
+    field "bucket_name", val(iter_item, "bucket_name")
+    field "bucket_creation_date", val(iter_item, "bucket_creation_date")
+    field "region", xpath(response, "//LocationConstraint")
+  end
+end
+
+datasource "ds_aws_sanitized_buckets" do
+  run_script $js_parse_buckets, $ds_aws_buckets_with_region
+end
+
+#https://docs.aws.amazon.com/AmazonS3/latest/API/v2-RESTBucketGET.html
+datasource "ds_aws_list_s3_objects" do
+  iterate $ds_aws_sanitized_buckets
+  request do
+    auth $auth_aws
+    pagination $s3_objects_pagination
+    verb "GET"
+    host val(iter_item, "host")
+    path join(["/", val(iter_item, "bucket_name"),"/"])
+    query "list-type", "2"
+  end
+  result do
+    encoding "xml"
+    collect xpath(response, "//ListBucketResult/Contents", "array") do
+      field "bucket_name", val(iter_item, "bucket_name")
+      field "region", val(iter_item, "region")
+      field "bucket_creation_date", val(iter_item, "bucket_creation_date")
+      field "object_key", xpath(col_item,"Key")
+      field "storage_class", xpath(col_item,"StorageClass")
+      field "last_modified", xpath(col_item,"LastModified")
+      field "object_size", xpath(col_item,"Size")
+      field "host", val(iter_item, "host")
+    end
+  end
+end
+
+#https://docs.aws.amazon.com/AmazonS3/latest/API/RESTObjectGETtagging.html
+datasource "ds_aws_list_s3_objects_with_tags" do
+  iterate $ds_aws_list_s3_objects
+  request do
+    auth $auth_aws
+    verb "GET"
+    host val(iter_item, "host")
+    path join(["/", val(iter_item, "bucket_name"),"/", val(iter_item, "object_key")])
+    query "tagging", ""
+  end
+  result do
+    encoding "xml"
+    collect xpath(response, "//Tagging/TagSet", "array") do
+      field "tags" do
+        collect xpath(col_item, "Tag") do
+          field "tagKey", xpath(col_item, "Key")
+          field "tagValue", xpath(col_item, "Value")
+        end
+      end
+      field "bucket_name", val(iter_item, "bucket_name")
+      field "region", val(iter_item, "region")
+      field "bucket_creation_date", val(iter_item, "bucket_creation_date")
+      field "object_key", val(iter_item, "object_key")
+      field "storage_class", val(iter_item, "storage_class")
+      field "last_modified", val(iter_item, "last_modified")
+      field "object_size", val(iter_item, "object_size")
+      field "host", val(iter_item, "host")
+    end
+  end
+end
+
+datasource "ds_aws_filtered_s3_objects" do
+  run_script $js_aws_filtered_s3_objects, $ds_aws_list_s3_objects_with_tags, $param_exclude_tags, $param_glacier_days, $param_deep_archive_days
+end
+
+
+###############################################################################
+# Scripts
+###############################################################################
+
+script "js_parse_buckets", type: "javascript" do
+  parameters "buckets"
+  result "results"
+  code <<-EOS
+    results = []
+    for ( i = 0; i < buckets.length; i++ ) {
+      if ( !buckets[i]["region"] ){
+        results.push({
+          "bucket_name": buckets[i]["bucket_name"],
+          "bucket_creation_date": buckets[i]["bucket_creation_date"],
+          "region": "us-east-1",
+          "host": "s3.amazonaws.com",
+          "tagKeyValue": ""
+        })
+      }else{
+        if(buckets[i]["region"] == "EU" ) { buckets[i]["region"] = "eu-west-1" }
+        results.push({
+          "bucket_name": buckets[i]["bucket_name"],
+          "bucket_creation_date": buckets[i]["bucket_creation_date"],
+          "region": buckets[i]["region"],
+          "host": "s3-" + buckets[i]["region"] + ".amazonaws.com",
+          "tagKeyValue": ""
+        })
+      }
+    }
+  EOS
+end
+
+#Process the response data, check for the tags and generate a list of s3 objects
+script "js_aws_filtered_s3_objects", type: "javascript" do
+  parameters "ds_aws_list_s3_objects_with_tags", "param_exclude_tags", "param_glacier_days", "param_deep_archive_days"
+  result "results"
+  code <<-EOS
+    results = [];
+    var param_exclude_tags_lower=[];
+    for(var i=0; i < param_exclude_tags.length; i++){
+      param_exclude_tags_lower[i]=param_exclude_tags[i].toString().toLowerCase();
+    }
+    var glacier_date = new Date();
+    var deep_archive_date = new Date();
+    var glacier_days_to_move = parseInt(param_glacier_days,10);
+    var deep_archive_days_to_move = parseInt(param_deep_archive_days,10);
+    glacier_date = glacier_date.setDate(glacier_date.getDate() - glacier_days_to_move);
+    deep_archive_date = deep_archive_date.setDate(deep_archive_date.getDate() - deep_archive_days_to_move);
+    glacier_date = (new Date(glacier_date)).setHours(23, 59, 59, 999);
+    deep_archive_date =(new Date(deep_archive_date)).setHours(23, 59, 59, 999);
+
+    _.each(ds_aws_list_s3_objects_with_tags, function(s3Object){
+      var tags = s3Object['tags'];
+      var isTagMatched=false
+      var tagKeyValue=""
+      for(var k=0; k < tags.length; k++){
+        tag = tags[k]
+        //Check, if the tag present in entered param_exclude_tags, ignore the S3 object if the tag matches/present.
+        if((param_exclude_tags_lower.indexOf((tag['tagKey']).toLowerCase()) !== -1) || (param_exclude_tags_lower.indexOf((tag['tagKey']+'='+tag['tagValue']).toLowerCase()) !== -1)){
+          isTagMatched = true;
+        }
+        if((tag['tagValue']).length > 0){
+          tagKeyValue = tagKeyValue + ', '+ tag['tagKey']+'='+tag['tagValue']
+        }else{
+          tagKeyValue = tagKeyValue + ', '+ tag['tagKey']
+        }
+      }
+      if(!isTagMatched && s3Object.storage_class !== "GLACIER" && s3Object.storage_class !== "DEEP_ARCHIVE"){
+        var last_modified_date = (new Date(s3Object["last_modified"])).setHours(23, 59, 59, 999);
+        var modify_storage_class_to="";
+        if(param_glacier_days.length > 0 && param_deep_archive_days.length == 0 &&  last_modified_date <= glacier_date){
+          //When param_deep_archive_days is blank.
+          modify_storage_class_to = "GLACIER";
+        }else if(param_glacier_days.length == 0 && param_deep_archive_days.length > 0 && last_modified_date <= deep_archive_date){
+          //When param_glacier_days is blank.
+          modify_storage_class_to = "DEEP_ARCHIVE";
+        }else if(param_glacier_days.length > 0 && param_deep_archive_days.length > 0 && (last_modified_date <= glacier_date || last_modified_date <= deep_archive_date)){
+          if(glacier_days_to_move < deep_archive_days_to_move){
+            if(last_modified_date <= glacier_date && last_modified_date >= deep_archive_date){
+              modify_storage_class_to = "GLACIER";
+            }else{
+              modify_storage_class_to = "DEEP_ARCHIVE";
+            }
+          }else if(glacier_days_to_move > deep_archive_days_to_move){
+            if(last_modified_date <= deep_archive_date && last_modified_date >= glacier_date){
+              modify_storage_class_to = "DEEP_ARCHIVE";
+            }else{
+              modify_storage_class_to = "GLACIER";
+            }
+          }
+        }
+        if(modify_storage_class_to.length > 0){
+          results.push({
+            "bucket_name": s3Object["bucket_name"],
+            "region":s3Object["region"],
+            "bucket_creation_date": s3Object["bucket_creation_date"],
+            "host": s3Object["host"],
+            "object_key": s3Object["object_key"],
+            "storage_class": s3Object["storage_class"],
+            "last_modified": s3Object["last_modified"],
+            "modify_storage_class_to": modify_storage_class_to,
+            "object_size": s3Object["object_size"],
+            "tagKeyValue":(tagKeyValue.slice(2))
+          });
+        }
+      }
+    });
+  EOS
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "policy_s3_object_list" do
+  validate $ds_aws_filtered_s3_objects do
+    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): AWS Object Storage Optimization."
+    detail_template <<-EOS
+# Found {{ len data }} S3 Objects which are last modified outside of the specified timeframe.
+| Bucket Name| Region | Object Key | Current Storage Class | Last Modified Date | Move Storage Class To | Tags |
+| ---------- | ------ | ---------- | --------------------- | ------------------ | --------------------- | ---- |
+{{ range data -}}
+| {{.bucket_name}} | {{.region}} | {{.object_key}} | {{.storage_class}} | {{.last_modified}} | {{.modify_storage_class_to}} | {{.tagKeyValue}}
+{{ end -}}
+    EOS
+    escalate $esc_report_s3_Objects_list
+    escalate $esc_modify_s3_object_storage_class_approval
+    #Uncomment below line (remove '#') to enable Delete action and comment above line(add '#').
+    #escalate $esc_delete_s3_objects_approval
+    check eq(size(data),0)
+  end
+end
+
+###############################################################################
+# Escalation
+###############################################################################
+
+escalation "esc_report_s3_Objects_list" do
+  email $param_email
+end
+
+escalation "esc_modify_s3_object_storage_class_approval" do
+  request_approval  do
+    label "Approve S3 object storage class change."
+    description "Approve escalation to run RightScale Cloud Workflow to update storage class for s3 objects."
+    parameter "approval_reason" do
+      type "string"
+      label "Reason for Approval"
+      description "Explain why you are approving the action."
+    end
+  end
+  run "modify_s3_object_storage_class", data
+end
+
+escalation "esc_delete_s3_objects_approval" do
+  request_approval  do
+    label "Approve Resource Deletion"
+    description "Approve escalation to run RightScale Cloud Workflow to delete the S3 Objects"
+    parameter "approval_reason" do
+      type "string"
+      label "Reason for Approval"
+      description "Explain why you are approving the action."
+    end
+  end
+  run "delete_s3_objects", data
+end
+
+###############################################################################
+# Cloud Workflow
+###############################################################################
+
+#https://docs.aws.amazon.com/AmazonS3/latest/API/RESTObjectCOPY.html
+define modify_s3_object_storage_class($data) return $all_responses do
+  $$debug=true
+  $all_responses = []
+  foreach $item in $data do
+    sub on_error: skip do
+      call url_encode($item['bucket_name']) retrieve $bucket_name
+      call url_encode($item['object_key']) retrieve $object_key      	
+      call url_encode($item['bucket_name']+"/"+$item['object_key']) retrieve $copy_source
+      call url_encode($item['modify_storage_class_to']) retrieve $storage_class
+      $response = http_request({
+                                verb: 'put',
+                                host: $item['host'],
+                                auth: $$auth_aws,
+                                href: join(['/', $bucket_name, '/', $object_key]),
+                                https: true,
+                                headers: {'content-type': 'application/x-amz-json-1.1',
+                                          'x-amz-copy-source': $copy_source,
+                                          'x-amz-storage-class': $storage_class
+                                         }
+                             })  
+      $all_responses << $response
+      call sys_log('AWS object storage optimization ',to_s($response))
+    end 
+  end
+end
+
+#https://docs.aws.amazon.com/AmazonS3/latest/API/RESTObjectDELETE.html
+define delete_s3_objects($data) return $all_responses do
+  $$debug=true
+  $all_responses = []
+  foreach $item in $data do   	
+    sub on_error: skip do
+      call url_encode($item['bucket_name']) retrieve $bucket_name
+      call url_encode($item['object_key']) retrieve $object_key      
+	  $response = http_delete(url: join(["https://",$item['host'],"/",$bucket_name,"/", $object_key]),
+                              auth: $$auth_aws
+                             )
+      $all_responses << $response
+      call sys_log('Delete AWS S3-Objects',to_s($response))   
+    end
+  end
+end
+
+define sys_log($subject, $detail) do
+  if $$debug
+    rs_cm.audit_entries.create(
+      notify: "None",
+      audit_entry: {
+        auditee_href: @@account,
+        summary: "AWS S3 object storage optimization Policy "+ $subject,
+        detail: $detail
+      }
+    )
+  end
+end
+
+define url_encode($string) return $encoded_string do
+  $encoded_string = $string
+  $encoded_string = gsub($encoded_string, " ", "%20")
+  $encoded_string = gsub($encoded_string, "!", "%21")
+  $encoded_string = gsub($encoded_string, "#", "%23")
+  $encoded_string = gsub($encoded_string, "$", "%24")
+  $encoded_string = gsub($encoded_string, "&", "%26")
+  $encoded_string = gsub($encoded_string, "'", "%27")
+  $encoded_string = gsub($encoded_string, "(", "%28")
+  $encoded_string = gsub($encoded_string, ")", "%29")
+  $encoded_string = gsub($encoded_string, "*", "%2A")
+  $encoded_string = gsub($encoded_string, "+", "%2B")
+  $encoded_string = gsub($encoded_string, ",", "%2C")
+  $encoded_string = gsub($encoded_string, "/", "%2F")
+  $encoded_string = gsub($encoded_string, ":", "%3A")
+  $encoded_string = gsub($encoded_string, ";", "%3B")
+  $encoded_string = gsub($encoded_string, "=", "%3D")
+  $encoded_string = gsub($encoded_string, "?", "%3F")
+  $encoded_string = gsub($encoded_string, "@", "%40")
+  $encoded_string = gsub($encoded_string, "[", "%5B")
+  $encoded_string = gsub($encoded_string, "]", "%5D")
+end

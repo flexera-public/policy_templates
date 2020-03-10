@@ -1,11 +1,10 @@
-## AWS RDS Backup Policy Template
+# AWS RDS Backup
 
-### What it does
+## What it does
 
 This Policy Template will check your account for Amazon RDS Instances with non-compliant backup settings.
 
-
-### Input Parameters
+## Input Parameters
 
 This policy has the following input parameters required when launching the policy.
 
@@ -13,22 +12,42 @@ This policy has the following input parameters required when launching the polic
 - *Backup Retention Period* - Example value: `7`
 - *Preferred Backup Window* - Example value: `08:00-08:30`
 
-### Policy Actions
+## Policy Actions
 
 The following policy actions are taken on any resources found to be out of compliance.
 
 - Send an email report
 
-### Required Permissions
+## Prerequisites
 
-This policy requires permissions to access RightScale resources (credentials).  Before applying this policy add the following roles to the user applying the policy.  The roles should be applied to all Accounts where the policy will run or the Organization. For more information on modifying roles visit the [Governance Docs](https://docs.rightscale.com/cm/ref/user_roles.html)
+This policy uses [credentials](https://docs.rightscale.com/policies/users/guides/credential_management.html) for connecting to the cloud -- in order to apply this policy you must have a credential registered in the system that is compatible with this policy. If there are no credentials listed when you apply the policy, please contact your cloud admin and ask them to register a credential that is compatible with this policy. The information below should be consulted when creating the credential.
 
-- Cloud Management - credential_viewer or admin
+### Credential configuration
 
-### Supported Clouds
+For administrators [creating and managing credentials](https://docs.rightscale.com/policies/users/guides/credential_management.html) to use with this policy, the following information is needed:
+
+Provider tag value to match this policy: `aws`
+
+Required permissions in the provider:
+
+```javascript
+{
+   "Version":"2014-09-01",
+   "Statement":[
+      {
+         "Sid":"AllowRDSDescribe",
+         "Effect":"Allow",
+         "Action":"rds:DescribeDBInstances",
+         "Resource":"*"
+      }
+   ]
+}
+```
+
+## Supported Clouds
 
 - AWS
 
-### Cost
+## Cost
 
 This Policy Template does not launch any instances, and so does not incur any cloud costs.

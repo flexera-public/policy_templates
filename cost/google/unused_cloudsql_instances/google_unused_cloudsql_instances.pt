@@ -1,0 +1,323 @@
+name "Google Unused CloudSQL Instances"
+rs_pt_ver 20180301
+type "policy"
+short_description "Checks for unused Google Cloud SQL instances using DB connections over 30 day period. See the [README](https://github.com/flexera/policy_templates/tree/master/cost/google/unused_cloudsql_instances/) and [docs.rightscale.com/policies](https://docs.rightscale.com/policies/) to learn more."
+long_description ""
+severity "low"
+category "Cost"
+info(
+      version: "2.0",
+      provider: "GCE",
+      service: "SQL",
+      policy_set: "Unused Database Services"
+    )
+
+###############################################################################
+# Permissions
+###############################################################################
+
+permission "perm_read_creds" do
+  actions   "rs_cm.show_sensitive","rs_cm.index_sensitive"
+  resources "rs_cm.credentials"
+end
+
+###############################################################################
+# Parameters
+###############################################################################
+
+parameter "param_email" do
+  type "list"
+  label "Email addresses to notify"
+  description "Email addresses of the recipients you wish to notify when new incidents are created"
+end
+
+parameter "param_connections" do
+  type "number"
+  label "DB Connections Threshold"
+  description "Number of database connections to consider a db is unused"
+  default 1
+  min_value 1
+  max_value 100
+end
+
+parameter "param_exclusion_tag_key" do
+  category "User Inputs"
+  label "Exclusion Label Key:Value"
+  description "Cloud native label to ignore instances. Format: Key:Value"
+  type "string"
+  allowed_pattern /(^$)|([\w]?)+\:([\w]?)+/
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+# authenticate with Google
+credentials "auth_google" do
+  schemes "oauth2"
+  label "Google"
+  description "Select the Google Cloud Credential from the list."
+  tags "provider=gce"
+end
+
+###############################################################################
+# Pagination
+###############################################################################
+
+pagination "google_pagination" do
+  get_page_marker do
+    body_path "nextPageToken"
+  end
+  set_page_marker do
+    query "pageToken"
+  end
+end
+
+###############################################################################
+# Datasources
+###############################################################################
+
+#get all google project
+datasource "ds_google_project" do
+  iterate $ds_time
+  request do
+    auth $auth_google
+    pagination $google_pagination
+    host "cloudresourcemanager.googleapis.com"
+    path "/v1/projects/"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "projects[*]") do
+      field "projectNumber", jmes_path(col_item,"projectNumber")
+      field "projectId", jmes_path(col_item,"projectId")
+      field "end_date", val(iter_item,"end_date")
+      field "start_date", val(iter_item,"start_date")
+    end
+  end
+end
+
+datasource "ds_time" do
+  run_script $js_time
+end
+
+datasource "ds_connections" do
+  iterate $ds_google_project
+  request do
+    auth $auth_google
+    host "monitoring.googleapis.com"
+    path join(["/v3/projects/",val(iter_item,"projectId"),"/timeSeries/"])
+    query "filter", 'metric.type="cloudsql.googleapis.com/database/network/connections"'
+    query "interval.endTime", val(iter_item,"end_date")
+    query "interval.startTime", val(iter_item,"start_date")
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "timeSeries[*]") do
+      field "metric", jmes_path(col_item, "metric.type")
+      field "labels", jmes_path(col_item, "resource.labels")
+      field "database_id", jmes_path(col_item, "resource.labels.database_id")
+      field "points", jmes_path(col_item, "points[*].value.int64Value")
+      field "projectId", val(iter_item, "projectId")	  
+    end
+  end
+end
+
+datasource "ds_add_instance_data" do
+  iterate $ds_google_project
+  request do
+    run_script $js_add_instance_data, val(iter_item,"projectId")
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response,"items[*]") do
+      field "name", jmes_path(col_item, "name")
+      field "state", jmes_path(col_item,"state")
+      field "selfLink", jmes_path(col_item, "selfLink")
+      field "tier", jmes_path(col_item, "settings.tier")
+      field "region", jmes_path(col_item, "region")
+      field "userLabels", jmes_path(col_item,"settings.userLabels")
+      field "projectId", val(iter_item, "projectId")	  
+    end
+  end
+end
+
+datasource "ds_clean_instance_data" do
+  run_script $js_clean_instance_data, $ds_add_instance_data, $param_exclusion_tag_key, $ds_connections
+end
+
+###############################################################################
+# Scripts
+###############################################################################
+script "js_time", type: "javascript" do
+  result "time"
+  code <<-EOF
+    var time = [{
+      "end_date":  new Date().toISOString(),
+      "start_date": new Date(new Date().setDate(new Date().getDate() - 30)).toISOString()
+    }]
+EOF
+end
+
+script "js_add_instance_data", type: "javascript" do
+  result "request"
+  parameters "project"
+  code <<-EOS
+    request = {
+      "auth": "auth_google",
+      "host": "www.googleapis.com",
+      "verb": "GET",
+      "path": "/sql/v1beta4/projects/"+project+"/instances",
+      "headers": {
+        "User-Agent": "RS Policies",
+        "Content-Type": "application/json"
+      }
+    }
+  EOS
+end
+
+script "js_clean_instance_data", type: "javascript" do
+  result "results"
+  parameters "ds_add_instance_data", "param_exclusion_tag_key", "ds_connections"
+  code <<-EOS
+   if( param_exclusion_tag_key != null && typeof param_exclusion_tag_key !== 'undefined' ){
+    tag_key = param_exclusion_tag_key.split(':')[0]
+    tag_value = param_exclusion_tag_key.split(':')[1]
+	}
+    
+    _.each(ds_add_instance_data, function(result){
+      var connection = _.filter(ds_connections, function(conn){
+        if ( conn != null &&  typeof conn != null && conn.database_id != null && typeof (conn.database_id) !== 'undefined' && conn.database_id.split(':')[2] == result.name){
+          return conn
+        }
+      })
+    
+      var c = connection[0]
+      if ( c != null && c !== undefined){
+        if ( c.points != null && c.points !== undefined){
+          var points = c.points
+          var sum = _.reduce(points,function(memo, num){ return memo + parseFloat(num); }, 0)
+          var avg = sum / points.length
+        }
+        _.extend(result,connection[0])
+        result["avg_connections"] = avg
+      } else {
+        result["avg_connections"] = 0
+      }
+    })
+    
+    tag_results = _.filter(ds_add_instance_data, function(data){
+      if ( data.state == "RUNNABLE" ){
+        if ( data.userLabels != null && data.userLabels !== undefined ){
+          if ( data.userLabels[tag_key] != null && data.userLabels[tag_key] !== undefined ){
+            if ( data.userLabels[tag_key] != tag_value ){
+              return data
+            }
+          } else {
+            return data
+          }
+        }else{
+          return data
+        }
+      }
+    })
+    results = _.filter(tag_results, function(result){
+      if ( result.name.indexOf('failover') == -1){
+        return result
+      }
+    })
+    results = _.sortBy(results, 'region');
+    results= _.sortBy(results, 'projectId');
+  EOS
+end
+###############################################################################
+# Policy
+###############################################################################
+
+policy "pol_utilization" do
+  validate_each $ds_clean_instance_data do
+    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} rows containing Google Unused CloudSQL Instances"
+    detail_template <<-EOS
+# Google Unused CloudSQL Instances
+| Project ID | Region | Name | Status | Instance ID | Instance Type | Connections | Tags |
+| ---------- | ------ | ---- | ------ | ----------- | ------------- | ------------| ---- |
+{{ range data -}}
+| {{.projectId}} | {{.region}} | {{.name}} | {{.state}} | {{.name}} | {{.tier}} | {{.avg_connections}} | {{ range $i,$e := .userLabels}}{{$i}}:{{ $e }}{{ end }} |
+{{ end -}}
+___
+###### Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }}) within Org: {{ rs_org_name }} (Org ID: {{ rs_org_id }})
+EOS
+
+    check gt(to_n(val(item,"avg_connections")),$param_connections)
+    escalate $email
+    escalate $terminate_resources
+  end
+end
+
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "email" do
+  email $param_email
+end
+
+escalation "terminate_resources" do
+  request_approval do
+    label "Approve resource termination"
+    description "Approve escalation to terminate unused cloudsql instances"
+    parameter "approval_resion" do
+      type "string"
+      label "Reason for Approval"
+      description "Explain why are you approving the action."
+    end
+  end
+  run "terminate_resources", data
+end
+
+###############################################################################
+# Cloud Workflow
+###############################################################################
+
+define terminate_resources($data) return $all_responses do
+  $$debug=true
+  $$log = []
+  $all_responses = []
+  $syslog_subject = "Google Unused CloudSQL: "
+  call sys_log(join([$syslog_subject, "Identified Instances"]),to_s($data))
+  foreach $item in $data do
+    sub on_error: handle_error($response) do
+      $response = http_delete(
+        url: $item["selfLink"],
+        auth: $$auth_google,
+        headers: {
+          "cache-control": "no-cache",
+          "content-type": "application/json"
+        }
+      )
+      $all_responses << $response
+    end
+  end
+  call sys_log(join([$syslog_subject, "Responses"]),to_s($all_responses))
+end
+
+define handle_error($response) do 
+  $status_code = $response["code"]
+  $syslog_subject = "Google Unused CloudSQL Termination Error: "
+  call sys_log(join([$syslog_subject, $status_code]),to_s($response))
+  $_error_behavior = "skip"
+end 
+
+define sys_log($subject, $detail) do
+  if $$debug
+    rs_cm.audit_entries.create(
+      notify: "None",
+      audit_entry: {
+        auditee_href: @@account,
+        summary: $subject,
+        detail: $detail
+      }
+    )
+  end
+end

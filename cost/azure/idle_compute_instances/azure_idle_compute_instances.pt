@@ -1,0 +1,289 @@
+name "Azure Idle Compute Instances"
+rs_pt_ver 20180301
+type "policy"
+short_description "Checks for instances that are idle for the last 30 days and terminates them after approval. \n See the [README](https://github.com/flexera/policy_templates/tree/master/cost/azure/idle_compute_instances/) and [docs.rightscale.com/policies](https://docs.rightscale.com/policies/) to learn more."
+long_description ""
+category "Cost"
+severity "low"
+info(
+  version: "2.0",
+  provider: "Azure",
+  service: "Compute",
+  policy_set: "Idle Compute Instances"
+  )
+
+###############################################################################
+# Parameters
+###############################################################################
+
+#pass in the email address to notify
+parameter "param_email" do
+  type "list"
+  label "Email address"
+  description "Please enter the email address to use for the escalation"
+end
+
+#pass in the CPU in percentage
+parameter "param_cpu_average_percentage" do
+  type "string"
+  label "CPU Threshold"
+  description "Average CPU threshold at which to trigger a decommission"
+  default "60"
+  allowed_pattern /^[0-9]$|^[1-9][0-9]$|^(100)$/
+end
+
+parameter "param_exclusion_tag_key" do
+  category "User Inputs"
+  label "Exclusion Tag Key"
+  description "Cloud native tag key to ignore instances. Example: exclude_utilization"
+  type "string"
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+#authenticate with Azure
+credentials "azure_auth" do
+  schemes "oauth2"
+  label "Azure"
+  description "Select the Azure Resource Manager Credential from the list."
+  tags "provider=azure_rm"
+end
+
+###############################################################################
+# Pagination
+###############################################################################
+
+#pagination support
+pagination "azure_pagination" do
+  get_page_marker do
+    body_path "nextLink"
+  end
+  set_page_marker do
+    uri true
+  end
+end
+
+###############################################################################
+# Datasources
+###############################################################################
+#get all subscription details.
+datasource "ds_subscriptions" do
+  request do
+    auth $azure_auth
+    pagination $azure_pagination
+    host "management.azure.com"
+    path "/subscriptions/"
+    query "api-version","2019-06-01"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "value[*]") do
+      field "subscriptionId", jmes_path(col_item,"subscriptionId")
+      field "displayName", jmes_path(col_item,"displayName")
+      field "state", jmes_path(col_item,"state")
+    end
+  end
+end
+
+#get all virtual machines 
+datasource "ds_azure_virtualmachines" do
+  iterate $ds_subscriptions
+  request do
+    auth $azure_auth
+    pagination $azure_pagination
+    host "management.azure.com"
+	path join(["/subscriptions/", val(iter_item,"subscriptionId"), "/providers/Microsoft.Compute/virtualMachines"])
+    query "api-version","2019-03-01"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "value[*]") do
+      field "id", jmes_path(col_item,"id")
+      field "rg", get(4,split(jmes_path(col_item,"id"),'/'))
+      field "name", jmes_path(col_item,"name")
+      field "location", jmes_path(col_item, "location")
+      field "tags", jmes_path(col_item,"tags")
+	  field "subscriptionId",val(iter_item,"subscriptionId")
+      field "subscriptionName",val(iter_item,"displayName")
+    end
+  end
+end
+
+datasource "ds_filter_instances" do
+  run_script $js_filter_instances, $ds_azure_virtualmachines, $param_exclusion_tag_key
+end
+
+#get cpu performance stats
+datasource "ds_azure_instance_performance" do
+  iterate $ds_filter_instances
+  request do
+    auth $azure_auth
+    pagination $azure_pagination
+    host "management.azure.com"
+    path join(["/subscriptions/", val(iter_item,"subscriptionId"), "/resourceGroups/", val(iter_item,"rg"), "/providers/Microsoft.Compute/virtualMachines/",val(iter_item,"name"),"/providers/microsoft.insights/metrics"])
+    query "api-version","2016-09-01"
+    query "timespan","P30D"
+    header "User-Agent", "RS Policies"
+  end 
+  result do
+    encoding "json"
+    field "vmname", val(iter_item,"name") 
+    field "rg", val(iter_item, "rg")
+    field "id", val(iter_item, "id")
+    field "location", val(iter_item, "location")
+    field "tags", val(iter_item, "tags")
+	field "subscriptionId",val(iter_item,"subscriptionId")
+    field "subscriptionName",val(iter_item,"displayName")
+    field "averages" do
+      collect jmes_path(response,"value[].data[]") do
+        field "average", jmes_path(col_item,"average")
+      end
+    end
+  end
+end
+
+datasource "ds_combineddata" do
+  run_script $js_combineddata, $param_cpu_average_percentage, $ds_azure_instance_performance
+end
+
+###############################################################################
+# Scripts
+###############################################################################
+
+script "js_filter_instances", type: "javascript" do
+  parameters "ds_azure_virtualmachines", "param_exclusion_tag_key"
+  result "results"
+  code <<-EOF
+  var results = _.filter(ds_azure_virtualmachines, function(instance){
+    if (_.has(instance.tags, param_exclusion_tag_key)) {
+    }else{
+      return instance
+    }
+  })
+ EOF
+end
+
+#This is to get the average cpu over time for the machine and return the dataset of machines with issues
+script "js_combineddata", type: "javascript" do
+parameters "param_cpu_average_percentage","ds_azure_instance_performance"
+result "results"
+code <<-EOS
+  var results = []
+  _.each(ds_azure_instance_performance, function(result){
+    var averages = _.pluck(result.averages,"average")
+
+    var sum = _.reduce(averages, function(memo, num){ 
+      if (num != null && num !== undefined){
+        return memo + parseFloat(num)
+      } else {}
+      return memo + 0; 
+      }, 
+    0)
+
+    var final_average = parseFloat(sum/averages.length)
+
+    if (final_average < param_cpu_average_percentage && final_average != 0) {
+      result["averagecpu"] = final_average
+      results.push(result)
+    }
+  })
+  results = _.sortBy(results, 'subscriptionName');
+  results = _.sortBy(results, 'location');
+EOS
+end
+
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "azure_resource_policy" do
+  validate $ds_combineddata do
+    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): Azure idle compute instances found"
+    detail_template <<-EOS
+# Azure idle compute instances
+
+| Subscription Name | Region/Location | Name | CPU Average | Resource Group | Tags |
+| ------------------ | -------- | ---- | ----------- | -------------- | ---- |
+{{ range data -}}
+| {{.subscriptionName}} | {{ .location }} | {{.vmname}} | {{.averagecpu}} | {{.rg}} | {{range $i,$e := .tags}}{{$i}}:{{$e}},{{end}} |
+{{ end -}}
+
+EOS
+    check eq(size(data), 0)
+    escalate $email
+    escalate $delete_resources
+  end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "email" do
+   email $param_email
+end
+
+escalation "delete_resources" do
+  request_approval  do
+    label "Approve Resource Deletion"
+    description "Approve escalation to terminate the instance(s)"
+    parameter "approval_reason" do
+    type "string"
+      label "Reason for Approval"
+     description "Explain why you are approving the action"
+    end
+  end
+ run "delete_resources", data
+end
+
+###############################################################################
+# Cloud Workflow
+###############################################################################
+
+define delete_resources($data) return $all_responses do
+  $$debug=true
+  $$log = []
+  $all_responses = []
+  $syslog_subject = "Azure Terminate Instance: "
+  call sys_log(join([$syslog_subject, "Identified Instances"]),to_s($data))
+  $all_responses = []
+  foreach $item in $data do
+   sub on_error: skip do
+      $response = http_request(
+        verb: "delete",
+        host: "management.azure.com",
+		auth: $$azure_auth,
+        href: join(["/subscriptions/", $item['subscriptionId'], "/resourceGroups/", $item["rg"], "/providers/Microsoft.Compute/virtualMachines/",$item["vmname"]]),
+        https: true,
+        query_strings: {
+          "api-version": "2018-06-01"
+        },
+        headers: {
+          "cache-control": "no-cache",
+          "content-type": "application/json"
+        }
+      )
+      $all_responses << $response
+    end
+  end
+  call sys_log(join([$syslog_subject, "Responses"]),to_s($all_responses))
+end
+
+#function to log
+define sys_log($subject, $detail) do
+  if $$debug
+    rs_cm.audit_entries.create(
+      notify: "None",
+      audit_entry: {
+        auditee_href: @@account,
+        summary: $subject,
+        detail: $detail
+      }
+    )
+  end
+end

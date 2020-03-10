@@ -1,0 +1,260 @@
+name "AWS Disallowed Regions"
+rs_pt_ver 20180301
+type "policy"
+short_description "Check for instances that are in a disallowed region with the option to terminate them. \n See the [README](https://github.com/flexera/policy_templates/tree/master/compliance/aws/disallowed_regions) and [docs.rightscale.com/policies](https://docs.rightscale.com/policies/) to learn more."
+long_description ""
+category "Compliance"
+severity "low"
+info(
+  version: "2.0",
+  provider: "AWS",
+  service: "EC2",
+  policy_set: "Disallowed Regions"
+)
+
+###############################################################################
+# Permissions
+###############################################################################
+
+permission "perm_read_creds" do
+  actions   "rs_cm.show_sensitive","rs_cm.index_sensitive"
+  resources "rs_cm.credentials"
+end
+
+###############################################################################
+# User inputs
+###############################################################################
+
+parameter "param_email" do
+  type "list"
+  label "Email addresses to notify"
+  description "Email addresses of the recipients you wish to notify when new incidents are created."
+end
+
+parameter "param_exclude_tags" do
+  type "list"
+  category "User Inputs"
+  label "Exclusion Tag"
+  description "List of tags that will exclude EC2 instances from being evaluated by this policy. Multiple tags are evaluated as an 'OR' condition. Tag keys or key/value pairs can be listed. Example: 'test,env=dev'."
+end
+
+parameter "param_disallowed_region" do
+  type "list"
+  label "Disallowed Regions(s)"
+  allowed_pattern /([a-z])+\-([a-z])+\-([\d]?)+/
+  description "List of regions to disallow."
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+#authenticate with AWS
+credentials "auth_aws" do
+  schemes "aws","aws_sts"
+  label "AWS"
+  description "Select the AWS Credential from the list"
+  tags "provider=aws"
+end
+
+###############################################################################
+# Pagination
+###############################################################################
+
+pagination "aws_pagination_xml" do
+  get_page_marker do
+    body_path "//DescribeInstancesResponse/nextToken"
+  end
+  set_page_marker do
+    query "NextToken"
+  end
+end
+
+###############################################################################
+# Datasources
+###############################################################################
+
+#Generates list of Regions which User input.
+datasource "ds_regions_list" do
+  run_script $js_regions_map,$param_disallowed_region
+end
+
+#Get the list of all EC2 Instances across all regions.
+#https://docs.aws.amazon.com/AWSEC2/latest/APIReference/API_DescribeInstances.html
+datasource "ds_disallowed_instances_list" do
+  iterate $ds_regions_list
+  request do
+    auth $auth_aws
+	pagination $aws_pagination_xml
+    verb "GET"
+    host join(["ec2.",val(iter_item,"region"),".amazonaws.com"])
+    path "/"
+    query "Action", "DescribeInstances"
+    query "Version", "2016-11-15"
+  end
+  result do
+    encoding "xml"
+    collect xpath(response, "//DescribeInstancesResponse/reservationSet/item/instancesSet/item","array") do
+      field "instance_id", xpath(col_item, "instanceId")
+      field "region", val(iter_item,"region")
+      field "instance_state", xpath(col_item, "instanceState/name")
+      field "instance_type", xpath(col_item,"instanceType")
+      field "tags" do
+        collect xpath(col_item, "tagSet/item") do
+          field "tagKey", xpath(col_item, "key")
+          field "tagValue", xpath(col_item, "value")
+        end
+      end
+    end
+  end
+end
+
+datasource "ds_list_aws_instances" do
+  run_script $js_filter_aws_instances,$ds_disallowed_instances_list,$param_exclude_tags
+end
+
+###############################################################################
+# Scripts
+###############################################################################
+
+script "js_filter_aws_instances", type: "javascript" do
+  parameters "ds_disallowed_instances_list","param_exclude_tags"
+  result "res"
+  code <<-EOS
+   res = []
+   var param_exclude_tags_lower=[];
+    for(var i=0; i < param_exclude_tags.length; i++){
+      param_exclude_tags_lower[i]=param_exclude_tags[i].toString().toLowerCase();
+    }
+    for (var j = 0; j < ds_disallowed_instances_list.length; j++) {
+      var instance = ds_disallowed_instances_list[j];
+      var tags=instance['tags'];
+	  var is_tag_matched=false
+	  var tag_key_value=""
+        if(typeof(tags) != "undefined"){
+	      for(var k=0;k<tags.length;k++){
+            var tag=tags[k];
+              if((param_exclude_tags_lower.indexOf((tag['tagKey']).toLowerCase()) !== -1) || (param_exclude_tags_lower.indexOf((tag['tagKey']+'='+tag['tagValue']).toLowerCase()) !== -1)){
+               is_tag_matched = true;
+                  }
+        // Constructing tags with comma separated to display in detail_template
+        if((tag['tagValue']).length > 0){
+              tag_key_value = tag_key_value + ', '+ tag['tagKey']+'='+tag['tagValue']
+        }else{
+              tag_key_value = tag_key_value + ', '+ tag['tagKey']
+             }
+		    }
+        }
+	    if(!is_tag_matched && instance['instance_state']!="terminated"){
+            res.push({
+              instance_id:instance['instance_id'],
+              region:instance['region'],
+              instance_state:instance['instance_state'],
+              tagKeyValue:(tag_key_value.slice(1)),
+              instance_type:instance['instance_type']
+            })
+        }
+    }
+	res = _.sortBy(res, 'region');
+  EOS
+end
+
+script "js_regions_map", type: "javascript" do
+  parameters "param_disallowed_region"
+  result "regions_map"
+  code <<-EOS
+   regions_map=[]
+   var param_disallowed_region_lower=[];
+    for(var i=0; i < param_disallowed_region.length; i++){
+      param_disallowed_region_lower[i]=param_disallowed_region[i].toString().toLowerCase();
+    }
+    for (var j = 0; j < param_disallowed_region_lower.length; j++){
+      disallowed_region = param_disallowed_region_lower[j];
+        regions_map.push({
+         "region": disallowed_region
+        })
+    }
+  EOS
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_report_disallowed_instances" do
+  email $param_email
+end
+
+escalation "esc_terminate_instances_disallowed_region" do
+  request_approval  do
+    label "Approve Termination of Instances in Disallowed Region"
+    description "Approve escalation to run RightScale Cloud Workflow to terminate instances in disallowed region"
+    parameter "approval_reason" do
+      type "string"
+      label "Reason for Approval"
+      description "Explain why you are approving the action"
+    end
+  end
+  run "terminate_instances", data
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "pol_list_aws_instances" do
+  validate $ds_list_aws_instances do
+    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} AWS Instances in Disallowed regions"
+    detail_template <<-EOS
+# AWS Instance Details
+| Instance ID | Instance State | Region | Instance Type | Tags |
+| ----------- | -------------- | ------ | ------------- | ---- |
+{{ range data -}}
+| {{.instance_id}} | {{.instance_state}}  | {{.region}} | {{.instance_type}} | {{.tagKeyValue}} |
+{{ end -}}
+    EOS
+    escalate $esc_report_disallowed_instances
+    escalate $esc_terminate_instances_disallowed_region
+    check eq(size(data),0)
+  end
+end
+
+###############################################################################
+# Cloud Workflow
+###############################################################################
+
+#https://docs.aws.amazon.com/AWSEC2/latest/APIReference/API_TerminateInstances.html
+define terminate_instances($data) return $all_responses do
+  $$debug=true
+  $all_responses = []
+  foreach $item in $data do
+   sub on_error: skip do
+   $response = http_request(
+      verb: "get",
+      host: join(["ec2.",$item["region"],".amazonaws.com"]),
+      auth: $$auth_aws,
+      href: join(["/", "?Action=TerminateInstances", "&InstanceId.1=", $item["instance_id"], "&Version=2016-11-15"]),
+      https: true,
+      headers:{
+        "cache-control": "no-cache",
+        "content-type": "application/json"
+      }
+    )
+    $all_responses << $response
+    call sys_log('terminate instances in disallowed region response',to_s($response))
+    end
+  end
+end
+
+define sys_log($subject, $detail) do
+  if $$debug
+    rs_cm.audit_entries.create(
+      notify: "None",
+      audit_entry: {
+        auditee_href: @@account,
+        summary: "AWS Instances in disallowed region Policy "+ $subject,
+        detail: $detail
+      }
+    )
+  end
+end

@@ -1,29 +1,54 @@
-## Google Instance StackDriver Utilization Policy
+# Google Inefficient Instance Utilization using StackDriver
 
-### What it does
+## What it does
 
-This Policy Template gathers Google StackDriver utilization for instances on 30 day intervals. This is meant to be run as a monthly policy. 
+This Policy Template gathers Google StackDriver utilization for instances on 30 day intervals and resizes them after user approval.
 
-### Cloud Management Required Permissions/Google Required Permissions
-- Cloud Management - The `credential_viewer`,`observer` roles
-- Cloud Management - The `policy_designer`, `policy_manager` & `policy_publisher` roles
-- Google - The `Monitoring Viewer ` Role
+## Functional Details
 
-### Functional Details
+- This policy uses the Google API to get a list of instances and Google StackDriver for metrics for instance performance and delivers a report. If you get an **N/A** in a field you will need to install the [StackDriver Agent](https://cloud.google.com/monitoring/agent/install-agent) on the instance to get those metrics.
 
-- This policy uses RightScale to get a list of instances, it then polls Google StackDriver for metrics for instance performance and delivers a report. If you get an **N/A** in a field you will need to install the [StackDriver Agent](https://cloud.google.com/monitoring/agent/install-agent) on the instance to get those metrics. 
-
-#### Input Parameters
+## Input Parameters
 
 This policy has the following input parameters required when launching the policy.
 
-- *Email addresses of the recipients you wish to notify* - A list of email addresses to notify
-- *Google Cloud Project* - a Google Cloud Project name
+- *Email addresses to notify* - Email addresses of the recipients you wish to notify when new incidents are created
+- *Average used memory percentage* - Utilization below this percentage will raise an incident to tag the instance.
+- *Average used CPU percentage* - Utilization below this percentage will raise an incident to tag the instance.
+- *Exclusion Tag Key* - An google-native instance tag to ignore instances that you don't want to consider for downsizing. Only supply the tag key
 
-### Supported Clouds
+## Policy Actions
+
+- Sends an email notification
+- Resize instances after approval
+
+## Prerequisites
+
+This policy uses [credentials](https://docs.rightscale.com/policies/users/guides/credential_management.html) for connecting to the cloud -- in order to apply this policy you must have a credential registered in the system that is compatible with this policy. If there are no credentials listed when you apply the policy, please contact your cloud admin and ask them to register a credential that is compatible with this policy. The information below should be consulted when creating the credential.
+
+### Credential configuration
+
+For administrators [creating and managing credentials](https://docs.rightscale.com/policies/users/guides/credential_management.html) to use with this policy, the following information is needed:
+
+Provider tag value to match this policy: `gce`
+
+Required permissions in the provider:
+
+- The `Monitoring Viewer` Role
+- The `monitoring.timeSeries.list` permission
+- The `resourcemanager.projects.get` permission
+
+## Supported Clouds
 
 - Google
 
-### Cost
+## Observation Period
+
+By default, this policy calculates utilization over a 30 day period.
+
+To calculate over a different period of time, you can update the policy template.
+Replace the `30` wherever you see `"start_date": new Date(new Date().setDate(new Date().getDate() - 30)).toISOString()` with the new number of days you want to use.
+
+## Cost
 
 This Policy Template does not incur any cloud costs.

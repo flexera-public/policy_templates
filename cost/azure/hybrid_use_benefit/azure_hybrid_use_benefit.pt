@@ -1,22 +1,29 @@
 name "Azure Hybrid Use Benefit for Windows Server"
 rs_pt_ver 20180301
 type "policy"
-short_description "Identifies eligible instances not utilizing Azure Hybrid Use Benefit.  See the [README](https://github.com/rightscale/policy_templates/tree/master/cost/azure/hybrid_use_benefit) and [docs.rightscale.com/policies](http://docs.rightscale.com/policies/) to learn more."
-long_description "Version: 1.1"
+short_description "Identifies instances eligible for Azure Hybrid Use Benefit.  See the [README](https://github.com/rightscale/policy_templates/tree/master/cost/azure/hybrid_use_benefit) and [docs.rightscale.com/policies](http://docs.rightscale.com/policies/) to learn more."
+long_description ""
 severity "low"
 category "Cost"
+info(
+  version: "2.0",
+  provider: "Azure",
+  service: "",
+  policy_set: ""
+)
 
-parameter "param_azure_tenant_id" do
-  type "string"
-  label "Azure AD Tenant ID"
-  category "Azure"
+##############
+# Permissions
+##############
+
+permission "perm_read_creds" do
+  actions "rs_cm.show_sensitive","rs_cm.index_sensitive"
+  resources "rs_cm.credentials"
 end
 
-parameter "param_azure_sub" do
-  type "string"
-  label "Azure Subscription ID"
-  category "Azure"
-end
+#############
+# Parameters
+#############
 
 parameter "param_exclusion_tag_key" do
   category "User Inputs"
@@ -31,17 +38,21 @@ parameter "param_email" do
   label "Email addresses of the recipients you wish to notify"
 end
 
-auth "azure_auth", type: "oauth2" do
-  token_url join(["https://login.microsoftonline.com/",$param_azure_tenant_id,"/oauth2/token"])
-  grant type: "client_credentials" do
-    client_id cred("AZURE_APPLICATION_ID")
-    client_secret cred("AZURE_APPLICATION_KEY")
-    additional_params do {
-      "resource" => "https://management.azure.com/"
-    } end
-  end
+#################
+# Authentication
+#################
+
+credentials "azure_auth" do
+  schemes "oauth2"
+  label "Azure"
+  description "Select the Azure Resource Manager Credential from the list."
+  tags "provider=azure_rm"
 end
-  
+
+#############
+# Pagination
+#############
+
 pagination "azure_pagination" do
   get_page_marker do
     body_path "nextLink"
@@ -51,18 +62,42 @@ pagination "azure_pagination" do
   end
 end
 
-datasource "azure_instances" do
+##############
+# Datasources
+##############
+
+datasource "ds_subscriptions" do
   request do
     auth $azure_auth
     pagination $azure_pagination
     host "management.azure.com"
-    path join(["/subscriptions/", $param_azure_sub, "/providers/Microsoft.Compute/virtualMachines"])
-    query "api-version","2017-12-01"
+    path "/subscriptions/"
+    query "api-version","2019-06-01"
     header "User-Agent", "RS Policies"
   end
   result do
     encoding "json"
+    collect jmes_path(response, "value[*]") do
+      field "subscriptionId", jmes_path(col_item,"subscriptionId")
+      field "subscriptionName", jmes_path(col_item,"displayName")
+    end
+  end
+end
+
+datasource "azure_instances" do
+  iterate $ds_subscriptions
+    request do
+      auth $azure_auth
+      pagination $azure_pagination
+      host "management.azure.com"
+      path join(["/subscriptions/", val(iter_item,"subscriptionId"), "/providers/Microsoft.Compute/virtualMachines"])
+      query "api-version","2017-12-01"
+      header "User-Agent", "RS Policies"
+    end
+    result do
+      encoding "json"
       collect jmes_path(response, "value") do
+	    field "subscriptionName", val(iter_item,"subscriptionName")
         field "id", jmes_path(col_item,"id")
         field "name", jmes_path(col_item,"name")
         field "location", jmes_path(col_item,"location")
@@ -75,13 +110,17 @@ datasource "azure_instances" do
         field "imageVersion", jmes_path(col_item,"properties.storageProfile.imageReference.version")
         field "tags", jmes_path(col_item,"tags")
       end
-  end
+    end
 end
 
 datasource "filtered_resources" do
   run_script $js_filter_resources, $azure_instances, $param_exclusion_tag_key
 end
-  
+
+##########
+# Scripts
+##########
+
 script "js_filter_resources", type: "javascript" do
   parameters "azure_instances","exclusion_tag"
   result "result"
@@ -110,6 +149,7 @@ script "js_filter_resources", type: "javascript" do
           console.log(instance["name"], "AHUB: ", ahub)
 
           result.push({
+		    subscriptionName: instance["subscriptionName"],
             id: instance["id"],
             name: instance["name"],
             resourceGroup: resourceGroup,
@@ -125,18 +165,24 @@ script "js_filter_resources", type: "javascript" do
         }
       }
     })
+    result = _.sortBy(result, 'subscriptionName');
+    result = _.sortBy(result, 'location');
   EOS
 end
+
+##########
+# Policy
+##########
 
 policy 'azure_license_policy' do
   validate_each $filtered_resources do
     summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} Instances Not Using Azure Hybrid Use Benefit for Windows Server"
     detail_template <<-EOS
 # Azure Hybrid Use Benefit
-| Instance Name | Resource Group | Location | Instance Size | Image Publisher | Image Offer | Image Sku | Image Version | AHUB | Tags |
+| Subscription Name | Location | Resource Group | Instance Name | Instance Size | Image Publisher | Image Offer | Image Sku | Image Version | AHUB | Tags |
 | ------------- | -------------- | -------- | ------------- | --------------- | ----------- | --------- | ------------- | ---- | ---- |
 {{ range data -}}
-| {{.name}} | {{.resourceGroup}} | {{.location}} | {{.vmSize}} | {{.imagePublisher}} | {{.imageOffer}} | {{.imageSku}} | {{.imageVersion}} | {{.ahub}} | {{.tags}} |
+|{{.subscriptionName}} | {{.location}} | {{.resourceGroup}} | {{.name}} | {{.vmSize}} | {{.imagePublisher}} | {{.imageOffer}} | {{.imageSku}} | {{.imageVersion}} | {{.ahub}} | {{.tags}} |
 {{ end -}}
 EOS
     escalate $email
@@ -144,6 +190,10 @@ EOS
     check eq(val(item,"ahub"),"Yes")
   end
 end
+
+##############
+# Escalations
+##############
 
 escalation "email" do
   email $param_email
@@ -159,16 +209,20 @@ escalation "license_instances" do
       description "Explain why you are approving the action"
     end
   end
-  run "license_instances", data, $param_azure_tenant_id
+  run "license_instances", data
 end
 
-define license_instances($data, $param_azure_tenant_id) return $all_responses do
-  call get_access_token($param_azure_tenant_id) retrieve $access_token
+##################
+# Cloud Workflow
+##################
+
+define license_instances($data) return $all_responses do
 
   $all_responses = []
   foreach $item in $data do
     sub on_error: skip do
       $update_inst_response = http_request(
+	    auth: $$azure_auth,
         verb: "patch",
         host: "management.azure.com",
         https: true,
@@ -178,8 +232,7 @@ define license_instances($data, $param_azure_tenant_id) return $all_responses do
         },
         headers: {
           "cache-control": "no-cache",
-          "content-type": "application/json",
-          "authorization": "Bearer " + $access_token
+          "content-type": "application/json"
         },
         body: {
           "properties": {
@@ -192,46 +245,4 @@ define license_instances($data, $param_azure_tenant_id) return $all_responses do
 
     end
   end
-end
-
-define get_access_token($param_azure_tenant_id) return $access_token do
-  $client_id = cred("AZURE_APPLICATION_ID")
-  call url_encode(cred("AZURE_APPLICATION_KEY")) retrieve $client_secret
-
-  $body_string = "grant_type=client_credentials&resource=https://management.core.windows.net/&client_id="+$client_id+"&client_secret="+$client_secret
-
-  $auth_response = http_post(
-    url: join(["https://login.microsoftonline.com/",$param_azure_tenant_id,"/oauth2/token?api-version=1.0"]),
-    headers : {
-      "cache-control":"no-cache",
-      "content-type":"application/x-www-form-urlencoded"
-    },
-    body:$body_string
-  )
-
-  $auth_response_body = $auth_response["body"]
-  $access_token = $auth_response_body["access_token"]
-end
-
-define url_encode($string) return $encoded_string do
-  $encoded_string = $string
-  $encoded_string = gsub($encoded_string, " ", "%20")
-  $encoded_string = gsub($encoded_string, "!", "%21")
-  $encoded_string = gsub($encoded_string, "#", "%23")
-  $encoded_string = gsub($encoded_string, "$", "%24")
-  $encoded_string = gsub($encoded_string, "&", "%26")
-  $encoded_string = gsub($encoded_string, "'", "%27")
-  $encoded_string = gsub($encoded_string, "(", "%28")
-  $encoded_string = gsub($encoded_string, ")", "%29")
-  $encoded_string = gsub($encoded_string, "*", "%2A")
-  $encoded_string = gsub($encoded_string, "+", "%2B")
-  $encoded_string = gsub($encoded_string, ",", "%2C")
-  $encoded_string = gsub($encoded_string, "/", "%2F")
-  $encoded_string = gsub($encoded_string, ":", "%3A")
-  $encoded_string = gsub($encoded_string, ";", "%3B")
-  $encoded_string = gsub($encoded_string, "=", "%3D")
-  $encoded_string = gsub($encoded_string, "?", "%3F")
-  $encoded_string = gsub($encoded_string, "@", "%40")
-  $encoded_string = gsub($encoded_string, "[", "%5B")
-  $encoded_string = gsub($encoded_string, "]", "%5D")
 end

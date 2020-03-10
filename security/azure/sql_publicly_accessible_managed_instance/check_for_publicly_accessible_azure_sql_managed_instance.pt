@@ -1,0 +1,293 @@
+name "Azure Publicly Accessible Managed SQL Instance"
+rs_pt_ver 20180301
+type "policy"
+short_description "Check for database services that are publicly accessible and terminate them after approval. \n See the [README](https://github.com/flexera/policy_templates/tree/master/security/azure/sql_publicly_accessible_managed_instance) and [docs.rightscale.com/policies](https://docs.rightscale.com/policies/) to learn more."
+long_description ""
+severity "high"
+category "Security"
+info(
+  version: "2.0",
+  provider: "Azure",
+  service: "SQL",
+  policy_set: "Public Database Access"
+  )
+
+###############################################################################
+# Permissions
+###############################################################################
+
+permission "perm_read_creds" do
+  actions   "rs_cm.show_sensitive","rs_cm.index_sensitive"
+  resources "rs_cm.credentials"
+end
+
+###############################################################################
+# User inputs
+###############################################################################
+
+parameter "param_email" do
+  type "list"
+  label "Email addresses to notify"
+  description "Email addresses of the recipients you wish to notify when new incidents are created"
+end
+
+parameter "param_exclusion_tag_key" do
+  type "string"
+  category "User Inputs"
+  label "Exclusion Tag Key"
+  description "Azure SQL Managed instance tag to ignore instance that are with public data endpoint enabled. Only supply the tag key. The policy assumes that the tag value is irrelevant."
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+#authenticate with Azure
+credentials "azure_auth" do
+  schemes "oauth2"
+  label "Azure"
+  description "Select the Azure Resource Manager Credential from the list."
+  tags "provider=azure_rm"
+end
+
+###############################################################################
+# Pagination
+###############################################################################
+
+pagination "azure_pagination" do
+  get_page_marker do
+    body_path "nextLink"
+  end
+  set_page_marker do
+    uri true
+  end
+end
+
+###############################################################################
+# Datasources
+###############################################################################
+
+#get all subscription details.
+datasource "ds_subscriptions" do
+  request do
+    auth $azure_auth
+    pagination $azure_pagination
+    host "management.azure.com"
+    path "/subscriptions/"
+    query "api-version","2019-06-01"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "value[*]") do
+      field "subscriptionId", jmes_path(col_item,"subscriptionId")
+      field "displayName", jmes_path(col_item,"displayName")
+      field "state", jmes_path(col_item,"state")
+    end
+  end
+end
+
+datasource "ds_list_sql_managed_instances" do
+  iterate $ds_subscriptions
+  request do
+    auth $azure_auth
+    pagination $azure_pagination
+    host "management.azure.com"
+    path join(["/subscriptions/", val(iter_item,"subscriptionId"), "/providers/Microsoft.Sql/managedInstances"])
+    query "api-version","2015-05-01-preview"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "value[*]") do
+      field "name", jmes_path(col_item,"name")
+      field "location", jmes_path(col_item,"location")
+      field "license_type", jmes_path(col_item,"properties.licenseType")
+      field "id", jmes_path(col_item,"id")
+      field "v_cores", jmes_path(col_item,"properties.vCores")
+      field "storage_size_in_gb", jmes_path(col_item,"properties.storageSizeInGB")
+      field "instance_state", jmes_path(col_item,"properties.state")
+      field "isPublicDataEndpointEnabled", jmes_path(col_item,"properties.publicDataEndpointEnabled")
+      field "tags", jmes_path(col_item,"tags")
+   	  field "subscriptionId",val(iter_item,"subscriptionId")
+      field "subscriptionName",val(iter_item,"displayName")
+    end
+  end
+end
+
+datasource "ds_sql_managed_instances" do
+  run_script $js_sql_managed_instances, $ds_list_sql_managed_instances, $param_exclusion_tag_key
+end
+
+##################
+# Script         #
+##################
+
+script "js_sql_managed_instances", type: "javascript" do
+  parameters "ds_list_sql_managed_instances", "param_exclusion_tag_key"
+  result "res"
+  code <<-EOS
+    res = []
+    for (var j = 0; j < ds_list_sql_managed_instances.length; j++) {
+      var instance = ds_list_sql_managed_instances[j];
+      var tags=instance['tags'];
+      var is_tag_matched=false;
+      var param_exclusion_tag_key_lowercase = param_exclusion_tag_key.toLowerCase();
+        if(typeof(tags) != "undefined" && tags!=null){
+          for(var k=0;k<tags.length;k++){
+            var tag=tags[k];
+              if(param_exclusion_tag_key_lowercase.indexOf((tag['tagKey']).toLowerCase()) !== -1){
+               is_tag_matched = true;
+              }
+          }
+        }         
+        if(!is_tag_matched){
+          res.push({
+            instance_state:instance['instance_state'],
+            name:instance['name'],
+            location:instance['location'],
+            license_type:instance['license_type'],
+            id:instance['id'],
+            v_cores:instance['v_cores'],
+            storage_size_in_gb:instance['storage_size_in_gb'],
+            isPublicDataEndpointEnabled:instance['isPublicDataEndpointEnabled'],
+            tags:instance['tags'],
+            subscriptionId:instance['subscriptionId'],
+            subscriptionName:instance['subscriptionName']
+          })
+        }
+    }
+
+	res = _.sortBy(res, 'subscriptionName');
+	res = _.sortBy(res, 'location');
+  EOS
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "pol_sql_managed_instances" do
+  validate_each $ds_sql_managed_instances do
+    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} Azure SQL managed instances with public endpoint enabled"
+    detail_template <<-EOS
+# Azure SQL managed Instance Details
+| Subscription Name | Name | Location | Instance State | License Type | vCores | Storage Size In GB | Tags |
+| ----------------- | ------| -------- | -------------- | ------------ | ------ | ------------------ | ---- |
+{{ range data -}}
+| {{.subscriptionName}} | {{.name}} | {{.location}} | {{.instance_state}} | {{.license_type}} | {{.v_cores}} | {{.storage_size_in_gb}} | {{.tags}} |
+{{ end -}}
+    EOS
+    escalate $esc_report_Managed_instances
+    escalate $esc_disable_public_endpoint_approval
+#Note: Uncomment below line(remove '#') to enable Delete action And comment above line (add '#' at beginning) when you enable Delete action.
+    #escalate $esc_delete_Managed_instances_approval
+    check logic_not(val(item,"isPublicDataEndpointEnabled"))
+  end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_report_Managed_instances" do
+  email $param_email
+end
+
+escalation "esc_disable_public_endpoint_approval" do
+  request_approval do
+    label "Approve resource Update"
+    description "Approve esclation to run RightScale Cloud Workflow to disable public endpoint"
+    parameter "approval_resion" do
+      type "string"
+      label "Reason for Approval"
+      description "Explain why are you approving the action."
+    end
+  end
+  run "esc_disable_public_endpoint", data
+end
+
+escalation "esc_delete_Managed_instances_approval" do
+  request_approval do
+    label "Approve resource Delete"
+    description "Approve escalation to run RightScale Cloud Workflow to delete SQL managed instance with public endpoint enabled."
+    parameter "approval_resion" do
+      type "string"
+      label "Reason for Approval"
+      description "Explain why are you approving the action."
+    end
+  end
+  run "ecs_delete_Managed_instances", data
+end
+
+###############################################################################
+# Cloud Workflow
+###############################################################################
+
+define esc_disable_public_endpoint($data) return $all_responses do
+
+  $all_responses = []
+  foreach $item in $data do
+    sub on_error: skip do
+      $update_inst_response = http_request(
+        verb: "patch",
+        host: "management.azure.com",
+		auth: $$azure_auth,
+        https: true,
+        href: $item["id"],
+        query_strings: {
+          "api-version": "2015-05-01-preview"
+        },
+        headers: {
+          "cache-control": "no-cache",
+          "content-type": "application/json"
+        },
+        body: {
+          "properties": {
+            "publicDataEndpointEnabled": false
+          }
+        }
+      )
+      call sys_log('SQL Managed instances update_inst_response: ',to_s($update_inst_response))
+      $all_responses << $update_inst_response
+    end
+  end
+end
+
+define ecs_delete_Managed_instances($data) return $all_responses do
+
+  $all_responses = []
+  foreach $item in $data do
+    sub on_error: skip do
+      $response = http_request(
+        verb: "delete",
+        host: "management.azure.com",
+		auth: $$azure_auth,
+        https: true,
+        href: $item["id"],
+        query_strings: {
+          "api-version": "2015-05-01-preview"
+        },
+        headers: {
+          "cache-control": "no-cache",
+          "content-type": "application/json"
+        }
+      )
+      call sys_log('Deleted Azure SQL Managed instance: ',to_s($response))
+      $all_responses << $response
+    end
+  end
+end
+
+define sys_log($subject, $detail) do
+  if $$debug
+    rs_cm.audit_entries.create(
+      notify: "None",
+      audit_entry: {
+        auditee_href: @@account,
+        summary: "Check for publicly accessible Azure SQL Managed Instance Policy "+ $subject,
+        detail: $detail
+      }
+    )
+  end
+end

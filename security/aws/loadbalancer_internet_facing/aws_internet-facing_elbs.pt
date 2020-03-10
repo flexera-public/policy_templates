@@ -1,0 +1,336 @@
+﻿name "AWS Internet-facing ELBs & ALBs"
+rs_pt_ver 20180301
+type "policy"
+short_description "Report and remediate any Classic Load Balancers(ELBs) and Application load Balancers(ALBs) that are Internet-facing. \n See the [README](https://github.com/flexera/policy_templates/tree/master/security/aws/loadbalancer_internet_facing) and [docs.rightscale.com/policies](https://docs.rightscale.com/policies/) to learn more."
+long_description ""
+category "Security"
+severity "high"
+info(
+  version: "2.0",
+  provider: "AWS",
+  service: "ELB",
+  policy_set: ""
+)
+
+###############################################################################
+# Permissions
+###############################################################################
+
+permission "perm_read_creds" do
+  actions   "rs_cm.show_sensitive","rs_cm.index_sensitive"
+  resources "rs_cm.credentials"
+end
+
+###############################################################################
+# User inputs
+###############################################################################
+
+parameter "param_email" do
+  type "list"
+  label "Email addresses to notify"
+  description "Email addresses of the recipients you wish to notify when new incidents are created"
+end
+
+parameter "param_exclude_tags" do
+  type "list"
+  label "Tags to ignore"
+  description "List of tags that will exclude load Balancers from being evaluated by this policy. Multiple tags are evaluated as an 'OR' condition. Tag keys or Key/value pairs can be listed. Example: 'test,env=dev'"
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+#authenticate with AWS
+credentials "auth_aws" do
+  schemes "aws","aws_sts"
+  label "AWS"
+  description "Select the AWS Credential from the list"
+  tags "provider=aws"
+end
+
+
+###############################################################################
+# Pagination
+###############################################################################
+
+pagination "elb_pagination" do
+  get_page_marker do
+    body_path "DescribeLoadBalancersResult.NextMarker"
+  end
+  set_page_marker do
+    query "Marker"
+  end
+end
+
+###############################################################################
+# Datasources
+###############################################################################
+
+#Generates list of Regions with Load Balancer type and API version.
+datasource "ds_regions_list" do
+  run_script $js_regions_map
+end
+
+#Get the list of all Classic and application load Balancers
+datasource "ds_elb_list" do
+  iterate $ds_regions_list
+  request do
+    run_script $js_elb_list, val(iter_item,"region"), val(iter_item,"API_version")
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "DescribeLoadBalancersResponse.DescribeLoadBalancersResult.*[*][]") do
+      field "loadBalancerName", jmes_path(col_item, "LoadBalancerName")
+      field "loadBalancerType", val(iter_item,"LBtype")
+      field "region", val(iter_item,"region")
+      field "availabilityZones", jmes_path(col_item, "AvailabilityZones")
+      field "scheme",  jmes_path(col_item, "Scheme")
+      field "loadBalancerArn",  jmes_path(col_item, "LoadBalancerArn")
+      field "api_version", val(iter_item,"API_version")
+    end
+  end
+end
+
+#Get respective tags for all Classic and application load Balancers
+datasource "ds_elb_list_with_tags" do
+  iterate $ds_elb_list
+  request do
+    run_script $js_elb_list_with_tags, val(iter_item,"region"), val(iter_item,"api_version"), val(iter_item, "loadBalancerName"), val(iter_item, "loadBalancerArn")
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "DescribeTagsResponse.DescribeTagsResult.TagDescriptions[*]") do
+      field "loadBalancerName", val(iter_item, "loadBalancerName")
+      field "loadBalancerType", val(iter_item,"loadBalancerType")
+      field "region", val(iter_item,"region")
+      field "availabilityZones", val(iter_item, "availabilityZones")
+      field "tags" do
+        collect jmes_path(col_item,"Tags") do
+          field "tagKey", jmes_path(col_item,"Key")
+          field "tagValue", jmes_path(col_item,"Value")
+        end
+      end
+      field "scheme",  val(iter_item,"scheme")
+      field "loadBalancerArn",  val(iter_item,"loadBalancerArn")
+      field "api_version", val(iter_item,"api_version")
+    end
+  end
+end
+
+datasource "ds_internet_facing_elb_map" do
+  run_script $js_elb_filter_map, $ds_elb_list_with_tags, $param_exclude_tags
+end
+
+###############################################################################
+# Script
+###############################################################################
+
+#Generates list of Regions with Load Balancer type and API version.
+script "js_regions_map", type: "javascript" do
+  result "regions_map"
+  code <<-EOS
+    var regions_map=[]
+    regions_map.push({"region": "us-east-1", "API_version": "2012-06-01", "LBtype": "Classic"}, {"region": "us-east-2", "API_version": "2012-06-01", "LBtype": "Classic"}, {"region": "us-west-1", "API_version": "2012-06-01", "LBtype": "Classic"}, {"region": "us-west-2", "API_version": "2012-06-01", "LBtype": "Classic"}, {"region": "ap-south-1", "API_version": "2012-06-01", "LBtype": "Classic"}, {"region": "ap-northeast-2", "API_version": "2012-06-01", "LBtype": "Classic"}, {"region": "ap-southeast-1", "API_version": "2012-06-01", "LBtype": "Classic"}, {"region": "ap-southeast-2", "API_version": "2012-06-01", "LBtype": "Classic"}, {"region": "ap-northeast-1", "API_version": "2012-06-01", "LBtype": "Classic"}, {"region": "ca-central-1", "API_version": "2012-06-01", "LBtype": "Classic"}, {"region": "eu-central-1", "API_version": "2012-06-01", "LBtype": "Classic"}, {"region": "eu-west-1", "API_version": "2012-06-01", "LBtype": "Classic"}, {"region": "eu-west-2", "API_version": "2012-06-01", "LBtype": "Classic"}, {"region": "eu-west-3", "API_version": "2012-06-01", "LBtype": "Classic"}, {"region": "sa-east-1", "API_version": "2012-06-01", "LBtype": "Classic"}, {"region": "eu-north-1", "API_version": "2012-06-01", "LBtype": "Classic"},
+                     {"region": "us-east-1", "API_version": "2015-12-01", "LBtype": "Application"}, {"region": "us-east-2", "API_version": "2015-12-01", "LBtype": "Application"}, {"region": "us-west-1", "API_version": "2015-12-01", "LBtype": "Application"}, {"region": "us-west-2", "API_version": "2015-12-01", "LBtype": "Application"}, {"region": "ap-south-1", "API_version": "2015-12-01", "LBtype": "Application"}, {"region": "ap-northeast-2", "API_version": "2015-12-01", "LBtype": "Application"}, {"region": "ap-southeast-1", "API_version": "2015-12-01", "LBtype": "Application"}, {"region": "ap-southeast-2", "API_version": "2015-12-01", "LBtype": "Application"}, {"region": "ap-northeast-1", "API_version": "2015-12-01", "LBtype": "Application"}, {"region": "ca-central-1", "API_version": "2015-12-01", "LBtype": "Application"}, {"region": "eu-central-1", "API_version": "2015-12-01", "LBtype": "Application"}, {"region": "eu-west-1", "API_version": "2015-12-01", "LBtype": "Application"}, {"region": "eu-west-2", "API_version": "2015-12-01", "LBtype": "Application"}, {"region": "eu-west-3", "API_version": "2015-12-01", "LBtype": "Application"}, {"region": "sa-east-1", "API_version": "2015-12-01", "LBtype": "Application"}, {"region": "eu-north-1", "API_version": "2015-12-01", "LBtype": "Application"})
+  EOS
+end
+
+#https://docs.aws.amazon.com/elasticloadbalancing/2012-06-01/APIReference/API_DescribeLoadBalancers.html (Classic Load Balancer)
+#https://docs.aws.amazon.com/elasticloadbalancing/latest/APIReference/API_DescribeLoadBalancers.html (Applicatio Load Balancer)
+script "js_elb_list", type: "javascript" do
+  parameters "region", "APIversion"
+  result "request"
+  code <<-EOS
+    request = {
+      auth: 'auth_aws',
+      pagination: 'elb_pagination',
+      host: 'elasticloadbalancing.'+region+'.amazonaws.com',
+      path: '/',
+      verb: 'GET',
+      query_params: {
+        "Action": "DescribeLoadBalancers",
+        "Version": APIversion
+      },
+      headers: {
+        "Accept": "application/json"
+      }
+    }
+  EOS
+end
+
+#https://docs.aws.amazon.com/elasticloadbalancing/2012-06-01/APIReference/API_DescribeTags.html (Classic Load Balancer)
+#https://docs.aws.amazon.com/elasticloadbalancing/latest/APIReference/API_DescribeTags.html (Applicatio Load Balancer)
+script "js_elb_list_with_tags", type: "javascript" do
+  parameters "region", "APIversion", "loadBalancerName", "loadBalancerArn"
+  result "request"
+  code <<-EOS
+    request = {
+      auth: 'auth_aws',
+      host: 'elasticloadbalancing.'+region+'.amazonaws.com',
+      path: '/',
+      verb: 'GET',
+      query_params: {
+        "Action": "DescribeTags",
+        "Version": APIversion,
+        "LoadBalancerNames.member.1": loadBalancerName,
+        "ResourceArns.member.1": loadBalancerArn
+      },
+      headers: {
+        "Accept": "application/json"
+      }
+    }
+  EOS
+end
+
+
+#Process the response data, check for the tags and generate a list of internetfacing ELB's
+script "js_elb_filter_map", type: "javascript" do
+  parameters "ds_elb_list_with_tags", "param_exclude_tags"
+  result "content"
+  code <<-EOS
+    var param_exclude_tags_lower=[];
+    for(var j=0; j < param_exclude_tags.length; j++){
+      param_exclude_tags_lower[j]=param_exclude_tags[j].toString().toLowerCase();
+    }
+
+    var content=[]
+    for(var i=0; i<ds_elb_list_with_tags.length; i++){
+      elb=ds_elb_list_with_tags[i]
+
+      // Constructing availabilityZones with comma separated to display in detail_template
+      var availabilityZones=elb['availabilityZones']
+      var s_availabilityZones=""
+      for(var j=0; j < availabilityZones.length; j++){
+        availabilityZone = availabilityZones[j]
+        if(elb['loadBalancerType'] === 'Classic'){
+          s_availabilityZones = s_availabilityZones + ', '+ availabilityZone
+        }else{
+          s_availabilityZones = s_availabilityZones + ', '+ availabilityZone.ZoneName
+        }
+      }
+
+      //Constructing Tags of individual ELB into key=value format. Check, if the tag present in entered param_exclude_tags. Ignore the Load Balancer if the tag matches/present.
+      var tags = elb['tags']
+      var isTagMatched=false
+      var tagKeyValue=""
+      for(var j=0; j < tags.length; j++){
+        tag = tags[j]
+        if((param_exclude_tags_lower.indexOf((tag['tagKey']).toLowerCase()) !== -1) || (param_exclude_tags_lower.indexOf((tag['tagKey']+'='+tag['tagValue']).toLowerCase()) !== -1)){
+          isTagMatched = true;
+        }
+        // Constructing tags with comma separated to display in detail_template
+        if((tag['tagValue']).length > 0){
+          tagKeyValue = tagKeyValue + ', '+ tag['tagKey']+'='+tag['tagValue']
+        }else{
+          tagKeyValue = tagKeyValue + ', '+ tag['tagKey']
+        }
+      }
+
+      //If the Load Balancer tag does not match with entered param_exclude_tags, then check if Load Balancer is internet-facing.
+      if(!(isTagMatched) && (elb['scheme']) === 'internet-facing'){
+        content.push({
+          loadBalancerName: elb['loadBalancerName'],
+          loadBalancerType: elb['loadBalancerType'],
+          region: elb['region'],
+          availabilityZones:(s_availabilityZones.slice(2)),
+          tagKeyValue:(tagKeyValue.slice(2)),
+          loadBalancerArn: elb['loadBalancerArn'],
+          api_version: elb['api_version'],
+        })
+      }
+    }
+	content = _.sortBy(content, 'region');
+  EOS
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "policy_internet_facing_ELB" do
+  validate $ds_internet_facing_elb_map do
+    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} Internet-facing ELBs & ALBs Found in AWS"
+    detail_template <<-EOS
+## List of internet-facing Classic and Application Load Balancers
+| LoadBalancer Name | LoadBalancer Type |  Region  | Availability Zones |    TAGs   |
+| ----------------- | ----------------- | ---------| ------------------ | --------- |
+{{ range data -}}
+| {{ .loadBalancerName }} | {{.loadBalancerType}} | {{.region}} | {{ .availabilityZones }} | {{.tagKeyValue}} |
+{{ end -}}
+###### Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }}) within Org: {{ rs_org_name }} (Org ID: {{ rs_org_id }})
+    EOS
+    escalate $report_internet_facing_ELB
+    escalate $approve_delete_internet_facing_ELB
+    check eq(size(data),0)
+  end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "report_internet_facing_ELB" do
+  email $param_email
+end
+
+escalation "approve_delete_internet_facing_ELB" do
+  request_approval  do
+    label "Approve Resource Deletion"
+    description "Approve escalation to run RightScale Cloud Workflow to delete Internet-facing ELB's & ALB's"
+    parameter "approval_reason" do
+      type "string"
+      label "Reason for Approval"
+      description "Explain why you are approving the action"
+    end
+  end
+  run "delete_internet_facing_ELB", data
+end
+
+###############################################################################
+# Cloud Workflow
+###############################################################################
+
+#https://docs.aws.amazon.com/elasticloadbalancing/2012-06-01/APIReference/API_DeleteLoadBalancer.html (Classic Load Balancer)
+#https://docs.aws.amazon.com/elasticloadbalancing/latest/APIReference/API_DeleteLoadBalancer.html (Application Load Balancer)
+define delete_internet_facing_ELB($data) return $all_responses do
+  $$debug=true
+  $all_responses = []
+  $LoadBalancer= ""
+  foreach $item in $data do
+    if $item["loadBalancerType"] == "Classic"
+      $LoadBalancer= "LoadBalancerName="+ $item["loadBalancerName"]
+    else
+      $LoadBalancer="LoadBalancerArn="+ $item["loadBalancerArn"]
+    end
+    
+	sub on_error: skip do
+	  $response = http_request(
+      verb: "get",
+      host: join(["elasticloadbalancing.",$item["region"],".amazonaws.com"]),
+      auth: $$auth_aws,
+      href: join(["/", "?Action=DeleteLoadBalancer", "&Version=", $item["api_version"], "&", $LoadBalancer]),
+      https: true,
+      headers:{
+        "cache-control": "no-cache",
+        "content-type": "application/json"
+      }
+    )
+      $all_responses << $response
+      call sys_log('ELB delete response',to_s($response))
+    end
+  end
+end
+
+define sys_log($subject, $detail) do
+  if $$debug
+    rs_cm.audit_entries.create(
+      notify: "None",
+      audit_entry: {
+        auditee_href: @@account,
+        summary: "AWS Delete Internet-facing ELB's & ALB's Policy "+ $subject,
+        detail: $detail
+      }
+    )
+  end
+end

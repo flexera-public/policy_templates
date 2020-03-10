@@ -2,9 +2,17 @@ name "Superseded Instances"
 rs_pt_ver 20180301
 type "policy"
 short_description "This Policy Template is used to automatically resize instances based on user-defined standards. \n See the [README](https://github.com/rightscale/policy_templates/tree/master/cost/superseded_instance) and [docs.rightscale.com/policies](http://docs.rightscale.com/policies/) to learn more."
-long_description "Version: 1.2"
+long_description ""
 category "Cost"
 severity "low"
+default_frequency "daily"
+tenancy "single"
+info(
+  version: "1.6",
+  provider: "Flexera Optima",
+  service: "",
+  policy_set: ""
+)
 
 ###############################################################################
 # Permissions
@@ -124,6 +132,7 @@ datasource "ds_new_bc_costs" do
       field "vendor_account_name", jmes_path(col_item,"dimensions.vendor_account_name")
       field "cost_amortized_unblended_adj", jmes_path(col_item,"metrics.cost_amortized_unblended_adj")
       field "usage_amount", jmes_path(col_item, "metrics.usage_amount")
+      field "region", jmes_path(col_item, "dimensions.region")
       field "instance_type", jmes_path(col_item, "dimensions.instance_type")
       field "service", jmes_path(col_item, "dimensions.service")
       field "resource_type", jmes_path(col_item, "dimensions.resource_type")
@@ -137,19 +146,20 @@ end
 script "js_new_costs_request", type: "javascript" do
   parameters "org_id","ds_billing_centers", "param_billing_centers"
   result "request"
-  code <<-EOS
+  code <<-EOS  
     var date = new Date();
     var year = date.getUTCFullYear();
-    var month = (2 + date.getUTCMonth())
-    
-    if (month == 1){ 
+	var month =  (date.getUTCMonth()==11)?1:2 + date.getUTCMonth();
+
+    if (month == 1){
       var lmonth = 12;
-      var lyear = year-1 ;
+      var lyear = year ;
+	  year=year+1;
     } else {
       var lmonth = month-1;
       var lyear = year ;
     }
-    
+
     mo = month.toString().length > 1 ? month : '0' + month;
     lmo = lmonth.toString().length > 1 ? lmonth : '0' + lmonth;
     var next_month = year + "-" + mo
@@ -210,6 +220,7 @@ script "js_new_costs_request", type: "javascript" do
     }
 EOS
 end
+
 datasource "ds_format_costs" do
   run_script $js_format_costs, $ds_new_bc_costs, $ds_cloud_vendor_accounts, $ds_billing_centers
 end
@@ -258,6 +269,7 @@ script "js_format_costs", type: "javascript" do
           vendor: new_bc_cost_obj.vendor,
           vendor_account_name: vendor_account_name,
           usage_amount: new_bc_cost_obj.usage_amount,
+          region: new_bc_cost_obj.region,
           instance_type: new_bc_cost_obj.instance_type,
           resource_id: new_bc_cost_obj.resource_id,
           resource_type: new_bc_cost_obj.resource_type,
@@ -269,7 +281,7 @@ script "js_format_costs", type: "javascript" do
     })
   })
   var total =  parseFloat(_.reduce(_.pluck(arr_results, "run_rate_for_calc"), function(memo, num){ return memo + num; }, 0)).toFixed(2);
-  _.each(arr_results, function(result){ 
+  _.each(arr_results, function(result){
     result["total"] = total
     formatted_data.push(result)
   })
@@ -316,58 +328,65 @@ script "js_merge_instance_data", type: "javascript" do
       console.log(instance_type)
       if (instance_type == "None" ) {continue;}
       var found_instance_type = superseded_instance_map[instance_type]
-      var superseded = found_instance_type["superseded"] 
-      if ( typeof(superseded) === "undefined" || superseded == null ){
-        continue
+      if ( typeof(found_instance_type) === "undefined" || found_instance_type == null ){
+        instance["new_instance_type"] = "Unavailable"
+        instance["warn"] = true
+        results.push(instance)
       } else {
-        console.log("superseded: " +JSON.stringify(superseded))
-        var new_instance_type = superseded[param_new_instancetype_category]
-        if (new_instance_type === "undefined" || new_instance_type == null || new_instance_type == "") {continue;}
-        console.log("nit: "+ new_instance_type)
-        var new_instance_type_info = superseded_instance_map[new_instance_type]
-        if ( new_instance_type_info === "undefined" ) {continue;}
-        old_instance_ena = found_instance_type.enhanced_networking || false
-        new_instance_ena = new_instance_type_info.enhanced_networking || false
-        old_instance_vpc = !found_instance_type.ec2_classic || false
-        new_instance_vpc = !new_instance_type_info.ec2_classic || false
-
-        if ( !old_instance_ena && new_instance_ena ) { 
-          var ena_incompatible = true
+        var superseded = found_instance_type["superseded"]
+        if ( typeof(superseded) === "undefined" || superseded == null ){
+          continue
         } else {
-          var ena_incompatible = false
-        }
+          console.log("superseded: " +JSON.stringify(superseded))
+          var new_instance_type = superseded[param_new_instancetype_category]
+          if (new_instance_type === "undefined" || new_instance_type == null || new_instance_type == "") {continue;}
+          console.log("nit: "+ new_instance_type)
+          var new_instance_type_info = superseded_instance_map[new_instance_type]
+          if ( new_instance_type_info === "undefined" ) {continue;}
+          old_instance_ena = found_instance_type.enhanced_networking || false
+          new_instance_ena = new_instance_type_info.enhanced_networking || false
+          old_instance_vpc = !found_instance_type.ec2_classic || false
+          new_instance_vpc = !new_instance_type_info.ec2_classic || false
 
-        if ((!old_instance_vpc) && (new_instance_vpc)) {
-          var vpc_incompatible_move = true
-        } else {
-          var vpc_incompatible_move = false
-        }
-
-        var warn = false
-        if ( vpc_incompatible_move || ena_incompatible ) {
-          warn = true
-        }
-        results.push(
-          {
-            name: instance.name,
-            id: instance.id,
-            new_sum: instance.new_sum,
-            service: instance.service,
-            vendor: instance.vendor,
-            vendor_account_name: instance.vendor_account_name,
-            usage_amount: instance.usage_amount,
-            instance_type: instance.instance_type,
-            new_instance_type: new_instance_type,
-            resource_id: instance.resource_id,
-            timestamp: instance.timestamp,
-            run_rate: instance.run_rate,
-            run_rate_for_calc: instance.run_rate_for_calc,
-            vpc_incompatible_move: vpc_incompatible_move,
-            ena_incompatible: ena_incompatible,
-            warn: warn,
-            total: instance.total
+          if ( !old_instance_ena && new_instance_ena ) {
+            var ena_incompatible = true
+          } else {
+            var ena_incompatible = false
           }
-        )
+
+          if ((!old_instance_vpc) && (new_instance_vpc)) {
+            var vpc_incompatible_move = true
+          } else {
+            var vpc_incompatible_move = false
+          }
+
+          var warn = false
+          if ( vpc_incompatible_move || ena_incompatible ) {
+            warn = true
+          }
+          results.push(
+            {
+              name: instance.name,
+              id: instance.id,
+              new_sum: instance.new_sum,
+              service: instance.service,
+              vendor: instance.vendor,
+              vendor_account_name: instance.vendor_account_name,
+              usage_amount: instance.usage_amount,
+              region: instance.region,
+              instance_type: instance.instance_type,
+              new_instance_type: new_instance_type,
+              resource_id: instance.resource_id,
+              timestamp: instance.timestamp,
+              run_rate: instance.run_rate,
+              run_rate_for_calc: instance.run_rate_for_calc,
+              vpc_incompatible_move: vpc_incompatible_move,
+              ena_incompatible: ena_incompatible,
+              warn: warn,
+              total: instance.total
+            }
+          )
+        }
       }
     }
   EOS
@@ -394,10 +413,10 @@ policy "pol_aws_superseded_instance" do
     detail_template <<-EOS
 # Superseded Instances
 
-| Resource UID | Name | Current Instance Type | New Instance Type | VPC Required | ENA Required | Monthly Estimated Cost |
-| ------------ | ---- | --------------------- | ----------------- | ------------ | ------------ | ---------------------- |
+| Resource UID | Name | Current Instance Type | Region | New Instance Type | VPC Required | ENA Required | Monthly Estimated Cost |
+| ------------ | ---- | --------------------- | ------ | ----------------- | ------------ | ------------ | ---------------------- |
 {{ range data -}}
-| {{ if .warn }}**_{{ end -}}{{ .resource_id }}{{ if .warn }}_**{{ end -}} | {{ .name }} | {{.instance_type}} | {{.new_instance_type}} | {{ if .vpc_incompatible_move }} **_TRUE_** {{else}} false {{end}} |  {{ if .ena_incompatible }} **_TRUE_** {{else}} false {{end}} | {{.run_rate}} |
+| {{ if .warn }}**_{{ end -}}{{ .resource_id }}{{ if .warn }}_**{{ end -}} | {{ .name }} | {{.instance_type}} | {{.region}} | {{.new_instance_type}} | {{ if .vpc_incompatible_move }} **_TRUE_** {{else}} false {{end}} |  {{ if .ena_incompatible }} **_TRUE_** {{else}} false {{end}} | {{.run_rate}} |
 {{ end -}}
 
 ___

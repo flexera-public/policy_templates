@@ -1,0 +1,158 @@
+name "Azure Regulatory Compliance"
+rs_pt_ver 20180301
+type "policy"
+short_description "This Policy will provide an overview for the various Regulatory Compliance controls and generate an email with the results. \n See the [README](https://github.com/rightscale/policy_templates/tree/master/compliance/azure/compliance_score) and [docs.rightscale.com/policies](http://docs.rightscale.com/policies/) to learn more."
+long_description ""
+severity "medium"
+category "Compliance"
+info(
+  version: "2.0",
+  provider: "Azure",
+  service: "",
+  policy_set: ""
+)
+
+#############
+# Parameters
+#############
+
+parameter "param_email" do
+  type "list"
+  label "Email addresses to notify"
+  description "Email addresses of the recipients you wish to notify when new incidents are created."
+end
+
+#################
+# Authentication
+#################
+
+credentials "azure_auth" do
+  schemes "oauth2"
+  label "Azure"
+  description "Select the Azure Resource Manager Credential from the list."
+  tags "provider=azure_rm"
+end
+
+#############
+# Pagination
+#############
+
+pagination "azure_pagination" do
+  get_page_marker do
+    body_path "nextLink"
+  end
+  set_page_marker do
+    uri true
+  end
+end
+
+##############
+# Datasources
+##############
+
+datasource "ds_subscriptions" do
+  request do
+    auth $azure_auth
+    pagination $azure_pagination
+    host "management.azure.com"
+    path "/subscriptions/"
+    query "api-version","2018-06-01"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "value[*]") do
+      field "subscriptionId", jmes_path(col_item,"subscriptionId")
+      field "subscriptionName", jmes_path(col_item,"displayName")
+    end
+  end
+end
+
+datasource "ds_azure_resourceresult" do
+  iterate $ds_subscriptions
+    request do
+      auth $azure_auth
+      pagination $azure_pagination
+      host "management.azure.com"
+      path join(["/subscriptions/", val(iter_item,"subscriptionId"), "/providers/Microsoft.Security/regulatoryComplianceStandards"])
+      query "api-version","2019-01-01-preview"
+      header "User-Agent", "RS Policies"
+    end
+    result do
+      encoding "json"
+      collect jmes_path(response, "value[*]") do
+	    field "subscriptionName", val(iter_item,"subscriptionName")
+        field "id", jmes_path(col_item,"id")
+        field "name", jmes_path(col_item,"name")
+        field "type", jmes_path(col_item,"type")
+        field "state", jmes_path(col_item,"properties.state")
+        field "passedControls", jmes_path(col_item,"properties.passedControls")
+        field "failedControls", jmes_path(col_item,"properties.failedControls")
+        field "skippedControls", jmes_path(col_item,"properties.skippedControls")
+        field "unsupportedControls", jmes_path(col_item,"properties.unsupportedControls")
+      end
+    end
+end
+
+datasource "ds_format_report" do
+  run_script $js_calculate_score,$ds_azure_resourceresult
+end
+
+###########
+# Scripts
+###########
+
+script "js_calculate_score", type: "javascript" do
+  parameters "reports"
+  result "result"
+  code <<-EOS
+  var result = [];
+
+  _.each(reports, function(report){
+    var total_controls = report["failedControls"] + report["skippedControls"] + report["passedControls"] ;
+    var calculated_score = ((Math.round((report["passedControls"] / total_controls) * 100) / 100) * 100).toString(10)
+
+    result.push({
+	  subscriptionName: report["subscriptionName"],
+      id: report["id"],
+      name: report["name"],
+      score: calculated_score + "%",
+      state: report["state"],
+      passedControls: report["passedControls"],
+      failedControls: report["failedControls"],
+      skippedControls: report["skippedControls"]
+    })
+  })
+  result = _.sortBy(result, 'subscriptionName');
+EOS
+end
+
+##########
+# Policy
+##########
+
+policy "policy_azure_exec_reg_compliance" do
+  validate $ds_format_report do
+    summary_template "Regulatory Compliance Report"
+    detail_template <<-EOS
+
+| Subscription Name | Compliance Standard | Compliance Score | Passed Controls | Failed Controls | Skipped Controls | Resource ID |
+| ------------------- | ---------------- | ----- | --------------- | --------------- | ---------------- | ----------- |
+{{ range data -}}
+|{{.subscriptionName}} | {{.name}} | {{.score}} | {{.passedControls}} | {{.failedControls}} | {{.skippedControls}} | {{.id}} |
+{{ end -}}
+
+###### Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }}) within Org: {{ rs_org_name }} (Org ID: {{ rs_org_id }})
+EOS
+  escalate $email
+  check eq(size(data), 0)
+  end
+end
+
+##############
+# Escalations
+##############
+
+escalation "email" do
+   email $param_email
+end

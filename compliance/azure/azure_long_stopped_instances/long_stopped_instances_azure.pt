@@ -1,0 +1,244 @@
+name "Azure Long Stopped Instances"
+rs_pt_ver 20180301
+type "policy"
+short_description "Check for instances that have been stopped for a long time with the option to terminates them after approval. \n See the [README](https://github.com/flexera/policy_templates/tree/master/compliance/azure/azure_long_stopped_instances) and [docs.rightscale.com/policies](https://docs.rightscale.com/policies/) to learn more."
+long_description ""
+category "Compliance"
+severity "low"
+info(
+  version: "2.0",
+  provider: "Azure",
+  service: "Compute",
+  policy_set: "Long Stopped Instances"
+  )
+
+###############################################################################
+# Permissions
+###############################################################################
+
+permission "perm_read_creds" do
+  actions   "rs_cm.show_sensitive","rs_cm.index_sensitive"
+  resources "rs_cm.credentials"
+end
+
+###############################################################################
+# Parameters
+###############################################################################
+
+parameter "param_email" do
+  type "list"
+  label "Email List"
+  description "Email addresses of the recipients you wish to notify"
+end
+
+parameter "param_numberofdays" do
+  type "string"
+  label "Days"
+  description "Threshold of days to consider an instance long running."
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+#authenticate with Azure
+credentials "azure_auth" do
+  schemes "oauth2"
+  label "Azure"
+  description "Select the Azure Resource Manager Credential from the list."
+  tags "provider=azure_rm"
+end
+
+###############################################################################
+# Pagination
+###############################################################################
+
+pagination "azure_pagination" do
+  get_page_marker do
+    body_path "nextLink"
+  end
+  set_page_marker do
+    uri true
+  end
+end
+
+###############################################################################
+# Datasources
+###############################################################################
+
+#get all subscription details.
+datasource "ds_subscriptions" do
+  request do
+    auth $azure_auth
+    pagination $azure_pagination
+    host "management.azure.com"
+    path "/subscriptions/"
+    query "api-version","2019-06-01"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "value[*]") do
+      field "subscriptionId", jmes_path(col_item,"subscriptionId")
+      field "displayName", jmes_path(col_item,"displayName")
+      field "state", jmes_path(col_item,"state")
+    end
+  end
+end
+
+#get all virtual machines
+datasource "ds_azure_virtualmachines" do
+  iterate $ds_subscriptions
+  request do
+    auth $azure_auth
+    pagination $azure_pagination
+    host "management.azure.com"
+    path join(["/subscriptions/", val(iter_item,"subscriptionId"), "/providers/Microsoft.Compute/virtualMachines"])
+    query "api-version","2018-06-01"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "value[*]") do
+      field "id", jmes_path(col_item,"id")
+      field "rg", get(4, split(jmes_path(col_item,"id"), "/"))
+      field "name", jmes_path(col_item,"name")
+      field "subscriptionId",val(iter_item,"subscriptionId")
+      field "subscriptionName",val(iter_item,"displayName")
+    end
+  end
+end
+
+#get all deeper instance data from those machines
+datasource "ds_azure_instances" do
+  iterate $ds_azure_virtualmachines
+  request do
+    auth $azure_auth
+    pagination $azure_pagination
+    host "management.azure.com"
+    path join(["/subscriptions/", val(iter_item,"subscriptionId"), "/resourceGroups/", val(iter_item,"rg"), "/providers/Microsoft.Compute/virtualMachines/",val(iter_item,"name"),"/instanceView"])
+    query "api-version","2018-06-01"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+    field "rg", val(iter_item,"rg")
+    field "name", val(iter_item,"name")
+    field "statuses", jmes_path(response,"statuses")
+    field "subscriptionId",val(iter_item,"subscriptionId")
+    field "subscriptionName",val(iter_item,"subscriptionName")
+  end
+end
+
+#filter list down to only machines that are long running
+datasource "ds_filtered_resources" do
+  run_script $js_filter_resources, $ds_azure_instances, $param_numberofdays
+end
+
+###############################################################################
+# Scripts
+###############################################################################
+
+script "js_filter_resources", type: "javascript" do
+  parameters "ds_azure_instances", "param_numberofdays"
+  result "result"
+  code <<-EOS
+  var result=[];
+
+  _.each(ds_azure_instances, function(instance){
+    var codes = _.pluck(instance.statuses, 'code')
+    if ( _.contains(codes, "PowerState/deallocated") ) {
+      var deallocateState = _.where(instance.statuses, {"code": "PowerState/deallocated"});
+      var displayStatus = deallocateState[0]["displayStatus"];
+      var provisionState = _.where(instance.statuses, {"code": "ProvisioningState/succeeded"});
+      var timeStopped = provisionState[0]["time"];
+      var timeofevent = new Date(timeStopped);
+      var nowtime = Date.now();
+      var res = Math.abs(timeofevent.valueOf() - nowtime.valueOf());
+      var daysElapsed = Math.ceil(res / (1000 * 3600 * 24));
+      if (daysElapsed > param_numberofdays) {
+        result.push({
+          "name": instance["name"],
+          "status": displayStatus,
+          "time_stopped": timeStopped,
+          "days_elapsed": daysElapsed,
+          "resourcegroup" : instance["rg"]
+          "subscriptionId" : instance["subscriptionId"]
+          "subscriptionName" : instance["subscriptionName"]
+        })
+      }
+    }
+  })
+EOS
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "azure_resource_policy" do
+  validate $ds_filtered_resources do
+    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} Azure VMs in Stopped State for Over {{parameters.param_numberofdays}} Day(s)"
+    detail_template <<-EOS
+# Azure Virtual Machines Out of Compliance
+| Subscription Name | Name | Resource Group | Status | Time Stopped | Days Elapsed |
+| ----------------- | ---- | -------------- | ------ | ------------ | ------------ |
+{{ range data -}}	
+| {{.subscriptionName}} | {{.name}} | {{.resourcegroup}} | {{.status}} | {{.time_stopped}} | {{.days_elapsed}} |
+{{ end -}}
+___
+###### Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }}) within Org: {{ rs_org_name }} (Org ID: {{ rs_org_id }})
+EOS
+    escalate $email
+    escalate $delete_resources
+    check eq(size(data), 0)
+  end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "email" do
+   email $param_email
+end
+
+escalation "delete_resources" do
+   request_approval  do
+     label "Approve Resource Deletion"
+     description "Approve escalation to terminate the instance(s)"
+     parameter "approval_reason" do
+     type "string"
+       label "Reason for Approval"
+      description "Explain why you are approving the action"
+     end
+   end
+  run "delete_resources", data
+end
+
+###############################################################################
+# Cloud Workflow
+###############################################################################
+
+define delete_resources($data) return $all_responses do
+  $all_responses = []
+  foreach $item in $data do
+   sub on_error: skip do
+      $response = http_request(
+        auth: $$azure_auth,
+        verb: "delete",
+        host: "management.azure.com",
+        href: join(["/subscriptions/", $item['subscriptionId'], "/resourceGroups/", $item["resourcegroup"], "/providers/Microsoft.Compute/virtualMachines/",$item["name"]]),
+        https: true,
+        query_strings: {
+          "api-version": "2018-06-01"
+        },
+        headers: {
+          "cache-control": "no-cache",
+          "content-type": "application/json"
+        }
+      )
+      $all_responses << $response
+    end
+  end
+end

@@ -1,0 +1,297 @@
+name "Azure Blob Storage Optimization"
+rs_pt_ver 20180301
+type "policy"
+short_description "Checks Azure Blob Storage for last modified date and moves the object to the Cool or Archive tier after user approval [README](https://github.com/flexera/policy_templates/tree/master/cost/azure/object_storage_optimization) and [docs.rightscale.com/policies](https://docs.rightscale.com/policies/) to learn more."
+long_description ""
+severity "low"
+category "Cost"
+info(
+  version: "2.0",
+  provider: "Azure",
+  service: "Blob Store",
+  policy_set: "Object Store Optimization"
+  )
+
+###############################################################################
+# Permissions
+###############################################################################
+
+permission "perm_read_creds" do
+  actions   "rs_cm.show_sensitive","rs_cm.index_sensitive"
+  resources "rs_cm.credentials"
+end
+
+###############################################################################
+# User inputs
+###############################################################################
+
+parameter "param_email" do
+  type "list"
+  label "Email addresses to notify"
+  description "Email addresses of the recipients you wish to notify when new incidents are created"
+end
+
+parameter "param_azure_storage_account" do
+  type "string"
+  label "Name of Storage account"
+  category "Azure"
+  description "Name of Storage account to search for blobs"
+end
+
+parameter "param_cooltier_days" do
+  type "string"
+  label "Days since last modified to move to Cool tier"
+  description "Move to Cool tier after days last modified - leave blank to skip moving"
+end
+
+parameter "param_archivetier_days" do
+  type "string"
+  label "Days since last modified to move to Archive tier"
+  description "Move to Archive tier after days last modified- leave blank to skip moving"
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+credentials "azure_auth" do
+  schemes "oauth2"
+  label "Azure"
+  description "Select the Azure Resource Manager Credential from the list."
+  tags "provider=azure_rm"
+end
+
+###############################################################################
+# Pagination
+###############################################################################
+
+pagination "azure_pagination_xml" do
+  get_page_marker do
+    body_path "//EnumerationResults/NextMarker"
+  end
+  set_page_marker do
+    query "marker"
+  end
+end
+
+###############################################################################
+# Datasources
+###############################################################################
+
+#https://docs.microsoft.com/en-us/rest/api/storageservices/list-containers2 
+datasource "ds_azure_container_list" do
+  request do
+    auth $azure_auth
+    pagination $azure_pagination_xml
+    verb "GET"
+    host join([$param_azure_storage_account, ".blob.core.windows.net"])
+    path "/"
+    query "comp", "list"
+    header "x-ms-version", "2018-11-09"
+  end
+  result do
+    encoding "xml"
+      collect xpath(response, "//EnumerationResults/Containers/Container", "array") do
+        field "containername", xpath(col_item,"Name")
+      end
+  end
+end
+
+#https://docs.microsoft.com/en-us/rest/api/storageservices/list-blobs
+datasource "ds_azure_blobs_list" do
+  iterate $ds_azure_container_list
+  request do
+    auth $azure_auth
+    pagination $azure_pagination_xml
+    verb "GET"
+    host join([$param_azure_storage_account, ".blob.core.windows.net"])
+    path join(["/", val(iter_item, "containername")])
+    query "restype", "container"
+    query "comp", "list"
+    header "x-ms-version", "2018-03-28"	
+  end
+  result do
+    encoding "xml"
+      collect xpath(response, "//EnumerationResults/Blobs/Blob", "array") do
+        field "blobname", xpath(col_item,"Name")
+        field "lastmodified", xpath(col_item,"Properties/Last-Modified")
+        field "creationdate", xpath(col_item,"Properties/Creation-Time")
+        field "contenttype", xpath(col_item,"Properties/Content-Type")
+        field "leasestate", xpath(col_item,"Properties/LeaseState")
+        field "accesstier", xpath(col_item,"Properties/AccessTier")
+        field "blobtype", xpath(col_item,"Properties/BlobType")
+        field "containername", val(iter_item,"containername")		 
+      end
+  end
+end
+
+datasource "ds_azure_filtered_blobs" do
+  run_script $js_azure_filtered_blobs, $ds_azure_blobs_list, $param_cooltier_days, $param_archivetier_days
+end
+
+###############################################################################
+# Scripts
+###############################################################################
+
+#Process the response data, check for the last modified date and generate a list of blobs objects.
+script "js_azure_filtered_blobs", type: "javascript" do
+  parameters "ds_azure_blobs_list", "param_cooltier_days", "param_archivetier_days"
+  result "results"
+  code <<-EOS
+    results = [];
+    var cooltier_date = new Date();
+    var archivetier_date = new Date();
+    var cooltier_days_to_move = parseInt(param_cooltier_days,10);
+    var archivetier_days_to_move = parseInt(param_archivetier_days,10);
+    cooltier_date = cooltier_date.setDate(cooltier_date.getDate() - cooltier_days_to_move);
+    archivetier_date = archivetier_date.setDate(archivetier_date.getDate() - archivetier_days_to_move);
+    cooltier_date = (new Date(cooltier_date)).setHours(23, 59, 59, 999);
+    archivetier_date =(new Date(archivetier_date)).setHours(23, 59, 59, 999);
+
+    _.each(ds_azure_blobs_list, function(blob_object){
+      if(blob_object.accesstier !== "Cool" && blob_object.accesstier !== "Archive" && blob_object.blobtype !== "PageBlob" && blob_object.blobtype !== "AppendBlob"){
+        var last_modified_date = (new Date(blob_object["lastmodified"])).setHours(23, 59, 59, 999);
+        var modify_accesstier_to="";
+        if(param_cooltier_days.length > 0 && param_archivetier_days.length == 0 &&  last_modified_date <= cooltier_date){
+          //When param_archivetier_days is blank.
+          modify_accesstier_to = "Cool";
+        }else if(param_cooltier_days.length == 0 && param_archivetier_days.length > 0 && last_modified_date <= archivetier_date){
+          //When param_cooltier_days is blank.
+          modify_accesstier_to = "Archive";
+        }else if(param_cooltier_days.length > 0 && param_archivetier_days.length > 0 && (last_modified_date <= cooltier_date || last_modified_date <= archivetier_date)){
+          if(cooltier_days_to_move < archivetier_days_to_move){
+            if(last_modified_date <= cooltier_date && last_modified_date >= archivetier_date){
+              modify_accesstier_to = "Cool";
+            }else{
+              modify_accesstier_to = "Archive";
+            }
+          }else if(cooltier_days_to_move > archivetier_days_to_move){		 		  
+            if(last_modified_date <= archivetier_date && last_modified_date >= cooltier_date){
+              modify_accesstier_to = "Archive";
+            }else{
+              modify_accesstier_to = "Cool";
+            }
+          }
+        }
+        if(modify_accesstier_to.length > 0){
+          results.push({
+            "blobname": blob_object["blobname"],            
+            "lastmodified": blob_object["lastmodified"],            
+            "contenttype": blob_object["contenttype"],
+            "blobtype": blob_object["blobtype"], 
+            "accesstier": blob_object["accesstier"], 
+            "containername": blob_object["containername"]
+            "modify_accesstier_to": modify_accesstier_to,
+          });
+        }
+      }
+    });
+	results = _.sortBy(results, 'blobname');
+  EOS
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "policy_azure_blobs_list" do
+  validate $ds_azure_filtered_blobs do
+    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): Azure Object Storage Optimization."
+    detail_template <<-EOS
+# Found {{ len data }} Blob Storage which are last modified outside of the specified timeframe.
+| Blob Name | Container Name | Current Access Tier | Blob Type | Last Modified Date | Move Access Tier To | Content Type |  
+| --------- | -------------- | ------------------- | --------- | ------------------ | ------------------- | ------------ | 
+{{ range data -}}
+| {{.blobname}} | {{.containername}} | {{.accesstier}} | {{.blobtype}} | {{.lastmodified}} | {{.modify_accesstier_to}} | {{.contenttype}} |
+{{ end -}}
+    EOS
+    escalate $modify_accesstier_approval
+    escalate $report_blobs_list
+    check eq(size(data),0)
+  end
+end
+
+###############################################################################
+# Escalation
+###############################################################################
+
+escalation "report_blobs_list" do
+  email $param_email
+end
+
+escalation "modify_accesstier_approval" do
+  request_approval  do
+    label "Approve Resource Modification"
+    description "Approve escalation to run RightScale Cloud Workflow to update access tier for blobs storage in Azure"
+    parameter "approval_reason" do
+      type "string"
+      label "Reason for Approval"
+      description "Explain why you are approving the action"
+    end
+  end
+  run "update_accesstier_blobs", data, $param_azure_storage_account
+end
+
+###############################################################################
+# Cloud Workflow
+###############################################################################
+
+define update_accesstier_blobs($data, $param_azure_storage_account) return $all_responses do
+  $$debug=true
+  $all_responses = []
+  foreach $item in $data do
+    sub on_error: skip do
+	call url_encode($item['blobname']) retrieve $blob_name 
+	$response = http_request(
+        verb: "put",
+        host: $param_azure_storage_account,
+		auth: $$azure_auth,
+        https: true,
+		href: join([".blob.core.windows.net/", $item['containername'], "/", $blob_name, "?comp=tier"]),
+        headers: {
+          "x-ms-version": "2019-02-02",
+          "content-type": "application/json",
+          "x-ms-access-tier": $item['modify_accesstier_to']
+        }
+      )
+      $all_responses << $response
+      call sys_log('Azure object storage optimization ',to_s($response))
+    end
+  end
+end
+
+define sys_log($subject, $detail) do
+  if $$debug
+    rs_cm.audit_entries.create(
+      notify: "None",
+      audit_entry: {
+        auditee_href: @@account,
+        summary: "Azure Blob Storage Optimization Policy "+ $subject,
+        detail: $detail
+      }
+    )
+  end
+end
+  
+define url_encode($string) return $encoded_string do
+  $encoded_string = $string
+  $encoded_string = gsub($encoded_string, " ", "%20")
+  $encoded_string = gsub($encoded_string, "!", "%21")
+  $encoded_string = gsub($encoded_string, "#", "%23")
+  $encoded_string = gsub($encoded_string, "$", "%24")
+  $encoded_string = gsub($encoded_string, "&", "%26")
+  $encoded_string = gsub($encoded_string, "'", "%27")
+  $encoded_string = gsub($encoded_string, "(", "%28")
+  $encoded_string = gsub($encoded_string, ")", "%29")
+  $encoded_string = gsub($encoded_string, "*", "%2A")
+  $encoded_string = gsub($encoded_string, "+", "%2B")
+  $encoded_string = gsub($encoded_string, ",", "%2C")
+  $encoded_string = gsub($encoded_string, "/", "%2F")
+  $encoded_string = gsub($encoded_string, ":", "%3A")
+  $encoded_string = gsub($encoded_string, ";", "%3B")
+  $encoded_string = gsub($encoded_string, "=", "%3D")
+  $encoded_string = gsub($encoded_string, "?", "%3F")
+  $encoded_string = gsub($encoded_string, "@", "%40")
+  $encoded_string = gsub($encoded_string, "[", "%5B")
+  $encoded_string = gsub($encoded_string, "]", "%5D")
+end

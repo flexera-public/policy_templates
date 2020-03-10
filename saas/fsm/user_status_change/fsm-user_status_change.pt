@@ -1,0 +1,257 @@
+name "SaaS Manager - User Status Change"
+rs_pt_ver 20180301
+type "policy"
+short_description "This policy will create an incident when Flexera SaaS Manager identifies users whose status in the HR roster changes to inactive. See the [README](https://github.com/flexera/policy_templates/tree/master/saas/fsm/user_status_change/) and [docs.rightscale.com/policies](https://docs.rightscale.com/policies/) to learn more."
+long_description ""
+severity "medium"
+category "SaaS Management"
+default_frequency "daily"
+info(
+  version: "1.1",
+  provider: "Flexera SaaS Manager",
+  service: "",
+  policy_set: ""
+)
+
+permission "perm_read_creds" do
+  actions   "rs_cm.show_sensitive","rs_cm.index_sensitive"
+  resources "rs_cm.credentials"
+end
+
+parameter "param_days" do
+  type "number"
+  label "Number of Days Back"
+  description "If a user's status changes to inactive during this time period, those user accounts will raise an incident"
+end
+
+parameter "param_email" do
+  type "list"
+  label "Email addresses to notify"
+  description "Email addresses of the recipients you wish to notify"
+end
+
+resources "refresh_token", type: "rs_cm.credentials" do
+  filter do
+      name "FSM_TOKEN"
+  end
+  view "sensitive"
+end
+
+datasource "ds_access_token" do
+  iterate @refresh_token
+  request do
+    host "login.flexera.com"
+    path "/oidc/token"
+    verb "POST"
+    body_field "grant_type", "refresh_token"
+    body_field "refresh_token", val(iter_item, "value")
+  end
+  result do
+    encoding "json"
+    field "access_token", val(response, "access_token")
+  end
+end
+
+datasource "ds_global_auth" do
+  iterate $ds_access_token
+  request do
+    host "api.metasaas.com"
+    path "/auth/external-token"
+    verb "POST"
+    body_field "token", val(iter_item, "access_token")
+  end
+  result do
+    encoding "json"
+    field "access_token", val(response, "token")
+  end
+end
+
+datasource "ds_customer_select" do
+  iterate $ds_global_auth
+  request do
+      host "api.metasaas.com"
+      path "/auth/select-customer"
+      verb "POST"
+      header "Authorization", join(["Bearer", val(iter_item, "access_token")])
+      body_field "orgId", rs_org_id
+  end
+  result do
+      encoding "json"
+      field "access_token", val(response, "token")
+  end
+end
+
+datasource "ds_num_users" do
+  iterate $ds_customer_select
+  request do
+    #auth $rs_auth
+    host "api.metasaas.com"
+    verb "GET"
+    scheme "https"
+    path "/svc/customer-agents"
+    header "content-type", "application/json"
+    header "Authorization", join(["Bearer ", val(iter_item, "access_token"), " "])
+    query "includeInactive", "true"
+    query "property", "totalItems"
+  end
+  result do
+    encoding "json"
+    field "totalItems", jmes_path(response, "totalItems")
+  end
+end
+
+datasource "ds_users" do
+  iterate $ds_num_users
+  request do
+    run_script $js_users, val(iter_item, "totalItems"), $ds_customer_select
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "items[*]") do
+        field "firstName", val(col_item, "firstName")
+        field "lastName", val(col_item, "lastName")
+        field "email", val(col_item, "email")
+        field "id", val(col_item, "id")
+        field "active", val(col_item, "active")
+      end
+  end
+end
+
+script "js_users", type: "javascript" do
+  parameters "num_items", "access_token"
+  result "request"
+  code <<-EOS
+  request = {
+    host: "api.metasaas.com",
+    verb: "GET",
+    scheme: "https",
+    path: "/svc/customer-agents",
+    headers: {
+      "content-type": "application/json",
+      "Authorization": "Bearer " + access_token[0]["access_token"] + " "
+    },
+    query_params: {
+      "includeInactive": "true",
+      "pageSize": num_items.toString(),
+      "property": "items.id,items.email,items.firstName,items.lastName,items.active"
+    }
+  }
+EOS
+end
+
+
+datasource "ds_inactive_users" do
+  run_script $js_filter_users, $ds_users
+end
+
+script "js_filter_users", type: "javascript" do
+  parameters "users"
+  result "inactive_users"
+  code <<-EOS
+    var inactive_users =
+      _.reject(users, function(user){ return user.active == true });
+EOS
+end
+
+datasource "ds_users_details" do
+  iterate $ds_inactive_users
+  request do
+    run_script $js_user_details, val(iter_item, "id"), $ds_customer_select
+  end
+  result do
+    encoding "json"
+    field "firstName", jmes_path(response, "firstName")
+    field "lastName", jmes_path(response, "lastName")
+    field "email", jmes_path(response, "email")
+    field "id", jmes_path(response, "id")
+    field "active", jmes_path(response, "active")
+    field "activeDate", jmes_path(response, "activeDate")
+    field "inactiveDate", jmes_path(response, "inactiveDate")
+    field "numberOfLicenses", jmes_path(response, "numberOfLicenses")
+  end
+end
+
+script "js_user_details", type: "javascript" do
+  parameters "user", "access_token"
+  result "request"
+  code <<-EOS
+  request = {
+    host: "api.metasaas.com",
+    verb: "GET",
+    scheme: "https",
+    path: "/svc/customer-agents/" + user,
+    headers: {
+      "content-type": "application/json",
+      "Authorization": "Bearer " + access_token[0]["access_token"] + " "
+    }
+  }
+  EOS
+end
+
+datasource "ds_cleanup_users" do
+  run_script $js_cleanup_users, $ds_users_details, $param_days
+end
+
+script "js_cleanup_users", type: "javascript" do
+  parameters "users", "param_days"
+  result "result"
+  code <<-EOS
+  var result = [];
+  var date = new Date();
+  date = date.setHours(-24 * param_days);
+  date = new Date(date);
+
+  console.log("Target Date: "+date)
+
+  // returns date formatted as string: YYYY-mm-dd
+  function getFormattedDailyDate(date) {
+    var year = date.getFullYear();
+    var month = (1 + date.getMonth()).toString();
+    month = month.length > 1 ? month : '0' + month;
+    var day = date.getDate().toString();
+    day = day.length > 1 ? day : '0' + day;
+    return year + '-' + month + '-' + day;
+  }
+
+  _.each(users, function(user){
+    console.log("User Object: "+user)
+    var inactive_date = new Date(user["inactiveDate"]);
+    console.log("Inactive Date: "+inactive_date)
+    if (inactive_date > date){
+      result.push({
+        firstName: user["firstName"],
+        lastName: user["lastName"],
+        email: user["email"],
+        numberOfLicenses: user["numberOfLicenses"],
+        inactiveDate: getFormattedDailyDate(inactive_date)
+      })
+    }
+  })
+
+  result = _.sortBy(result, 'inactiveDate').reverse();
+EOS
+end
+
+escalation "report_summary" do
+    email $param_email
+end
+
+policy "policy_fsm_inactive_users" do
+  validate $ds_cleanup_users do
+      summary_template "{{ len data }} Inactive Users Found"
+      detail_template <<-EOS
+# Recently Deactivated Users
+
+| Email | First Name | Last Name | Inactive Date (YYYY-MM-DD) | Number of Licenses |
+| ----- | ---------- | --------- | -------------------------- | ------------------ |
+{{ range data -}}
+| {{.email}} | {{.firstName}} | {{.lastName}} | {{.inactiveDate}} | {{.numberOfLicenses}} |
+{{ end -}}
+
+
+###### Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }}) within Org: {{ rs_org_name }} (Org ID: {{ rs_org_id }})
+EOS
+      escalate $report_summary
+      check eq(size(data), 0)
+  end
+end

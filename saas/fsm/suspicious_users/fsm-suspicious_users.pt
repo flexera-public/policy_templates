@@ -1,0 +1,157 @@
+name "SaaS Manager - Suspicious Users"
+rs_pt_ver 20180301
+type "policy"
+short_description "This policy will create an incident when Flexera SaaS Manager identifies suspicious users logging into SaaS applications. See the [README](https://github.com/flexera/policy_templates/tree/master/saas/fsm/suspicious_users/) and [docs.rightscale.com/policies](https://docs.rightscale.com/policies/) to learn more."
+long_description ""
+severity "high"
+default_frequency "daily"
+category "SaaS Management"
+info(
+  version: "1.1",
+  provider: "Flexera SaaS Manager",
+  service: "",
+  policy_set: ""
+)
+
+
+parameter "param_email" do
+    type "list"
+    label "Email addresses to notify"
+    description "Email addresses of the recipients you wish to notify"
+end
+
+
+resources "refresh_token", type: "rs_cm.credentials" do
+  filter do
+      name "FSM_TOKEN"
+  end
+  view "sensitive"
+end
+
+datasource "ds_access_token" do
+  iterate @refresh_token
+  request do
+    host "login.flexera.com"
+    path "/oidc/token"
+    verb "POST"
+    body_field "grant_type", "refresh_token"
+    body_field "refresh_token", val(iter_item, "value")
+  end
+  result do
+    encoding "json"
+    field "access_token", val(response, "access_token")
+  end
+end
+
+datasource "ds_global_auth" do
+  iterate $ds_access_token
+  request do
+    host "api.metasaas.com"
+    path "/auth/external-token"
+    verb "POST"
+    body_field "token", val(iter_item, "access_token")
+  end
+  result do
+    encoding "json"
+    field "access_token", val(response, "token")
+  end
+end
+
+datasource "ds_customer_select" do
+  iterate $ds_global_auth
+  request do
+      host "api.metasaas.com"
+      path "/auth/select-customer"
+      verb "POST"
+      header "Authorization", join(["Bearer", val(iter_item, "access_token")])
+      body_field "orgId", rs_org_id
+  end
+  result do
+      encoding "json"
+      field "access_token", val(response, "token")
+  end
+end
+
+
+
+datasource "ds_suspicious_users" do
+  iterate $ds_customer_select
+  request do
+    #auth $rs_auth
+    host "api.metasaas.com"
+    verb "GET"
+    scheme "https"
+    path "/svc/activity/suspicious-agents"
+    header "content-type", "application/json"
+    header "Authorization", join(["Bearer ", val(iter_item, "access_token"), " "])
+    query "page", "1"
+    query "pageSize", "100"
+    query "asc", "false"
+    query "includeUnauthorized", "true"
+    query "includeUnrecognized", "true"
+    query "includeRecognized", "false"
+  end
+    result do
+       encoding "json"
+       collect jmes_path(response, "[*]") do
+           field "firstName", val(col_item, "firstName")
+           field "lastName", val(col_item, "lastName")
+           field "email", val(col_item, "email")
+           field "managedProductName", val(col_item, "managedProductName")
+           field "recognized", val(col_item, "recognized")
+           field "unauthorized", val(col_item, "unauthorized")
+        end
+    end
+end
+
+datasource "ds_users_cleanup" do
+  run_script $js_users_cleanup, $ds_suspicious_users
+end
+
+script "js_users_cleanup", type: "javascript" do
+  parameters "users"
+  result "result"
+  code <<-EOS
+    var result = [];
+    _.each(users, function(user){
+      if (user["unauthorized"] == true){
+        var activity_type = "Unauthorized";
+      } else {
+        var activity_type = "Unrecognized";
+      }
+      result.push({
+        firstName: user['firstName'],
+        lastName: user['lastName'],
+        email: user['email'],
+        managedProductName: user['managedProductName'],
+        activity_type: activity_type
+      })
+    })
+
+  EOS
+end
+
+
+escalation "report_summary" do
+    email $param_email
+end
+
+policy "policy_fsm_suspicious_users" do
+  validate $ds_users_cleanup do
+      summary_template "{{ len data }} Suspicious SaaS Users Found"
+      detail_template <<-EOS
+# Suspicious SaaS Users
+
+| Email | First Name | Last Name | Application | Activity Type |
+| ----- | ---------- | --------- | ----------- | ------------- |
+{{ range data -}}
+| {{.email}} | {{.firstName}} | {{.lastName}} | {{.managedProductName}} | {{.activity_type}} |
+{{ end -}}
+
+
+###### Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }}) within Org: {{ rs_org_name }} (Org ID: {{ rs_org_id }})
+EOS
+      escalate $report_summary
+      check eq(size(data), 0)
+  end
+end

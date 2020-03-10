@@ -1,0 +1,159 @@
+name "Google Committed Use Discount (CUD)"
+rs_pt_ver 20180301
+type "policy"
+short_description "A policy that sends email notifications for all Google CUD's. \n See the [README](https://github.com/flexera/policy_templates/tree/master/cost/google/cud_report) and [docs.rightscale.com/policies](https://docs.rightscale.com/policies/) to learn more \n"
+long_description ""
+category "Cost"
+severity "low"
+tenancy "single"
+info(
+      version: "2.0",
+      provider: "GCE",
+      service: "Compute",
+      policy_set: "Committed Use Discount"
+    )
+
+###############################################################################
+# Permissions
+###############################################################################
+
+permission "general_permissions" do
+  resources "rs_cm.credentials", "rs_cm.audit_entries", "rs_cm.clouds"
+  actions   "rs_cm.*"
+end
+
+##################
+# User inputs    #
+##################
+
+parameter "param_email" do
+  type "list"
+  label "Email addresses of the recipients you wish to notify"
+end
+
+parameter "param_cud_status" do
+  label "CUD status"
+  type "string"
+  allowed_values "All","Active","Expired"
+  default "All"
+end
+
+# authenticate with Google
+credentials "auth_google" do
+  schemes "oauth2"
+  label "Google"
+  description "Select the Google Cloud Credential from the list."
+  tags "provider=gce"
+end
+
+pagination "google_pagination" do
+  get_page_marker do
+    body_path "nextPageToken"
+  end
+  set_page_marker do
+    query "pageToken"
+  end
+end
+
+#get all google project
+datasource "ds_google_project" do
+  request do
+    auth $auth_google
+    pagination $google_pagination
+    host "cloudresourcemanager.googleapis.com"
+    path "/v1/projects/"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "projects[*]") do
+      field "projectNumber", jmes_path(col_item,"projectNumber")
+      field "projectId", jmes_path(col_item,"projectId")
+    end
+  end
+end
+
+#https://cloud.google.com/compute/docs/instances/signing-up-committed-use-discounts#viewing_active_commitments
+datasource "ds_committed_use_discount" do
+  iterate $ds_google_project
+  request do
+    auth $auth_google
+    host "www.googleapis.com"
+  header "Content-Type", "application/json"
+    path join(["/compute/v1/projects/",val(iter_item,"projectId"),"/aggregated/commitments"])
+    query "accept" , "application/json"
+  end
+  result do
+  encoding "json"
+  collect jmes_path(response, "items.*.commitments[0]") do
+  field "cud_id", jmes_path(col_item, 'id')
+  field "name", jmes_path(col_item, 'name')
+  field "region", jmes_path(col_item, 'region')
+  field "status", jmes_path(col_item, 'status')
+  field "plan", jmes_path(col_item, 'plan')
+  field "endTimestamp", jmes_path(col_item, 'endTimestamp')
+  field "startTimestamp", jmes_path(col_item, 'startTimestamp')
+  field "projectId", val(iter_item, "projectId")  
+  end
+ end
+end
+
+datasource "ds_committed_use_discount_map" do
+  run_script $js_committed_use_discount_map, $ds_committed_use_discount, $param_cud_status
+end
+
+#Filter the JSON, based on user selection for param 'param_cud_status' and formating Date.
+script "js_committed_use_discount_map", type: "javascript" do
+  parameters "commitments","param_cud_status"
+  result "content"
+  code <<-EOS
+  var content=[];
+  for(var i=0; i < commitments.length ; i++){
+	commitment = commitments[i]
+
+	var start_date = (new Date(commitment['startTimestamp'])).toISOString().slice(0, 10);
+	var end_date = (new Date(commitment['endTimestamp'])).toISOString().slice(0, 10);
+
+	commitmentDetails={
+          cud_id: commitment['cud_id'],
+          name: commitment['name'],
+          region: commitment['region'],
+          status: commitment['status'],
+          startTimestamp: start_date,
+          plan: commitment['plan'],
+          endTimestamp: end_date,
+          projectId: commitment['projectId']			
+		}
+
+	if(param_cud_status != 'All'){
+		if(commitments[i].status === param_cud_status.toUpperCase()){
+			content.push(commitmentDetails)
+		}
+	}else{
+			content.push(commitmentDetails)
+		}
+  }
+EOS
+end
+
+escalation "report_list_of_CUDs" do
+   email $param_email
+end
+
+policy "policy_committed_use_discount" do
+  validate $ds_committed_use_discount_map do
+	summary_template " List of {{ parameters.param_cud_status }} Committed Use Discounts in Google Cloud"
+	detail_template <<-EOS
+# {{ parameters.param_cud_status }} Committed Use Discounts in Google Cloud
+
+| Project ID | CUD Id |  Name  | Region | Status | Plan | StartTimestamp | EndTimestamp |
+| ---------- | ------ | ------ | ------ | ------ | ---- | -------------- | ------------ |
+{{ range data -}}
+| {{.projectId}} | {{.cud_id}} | {{.name}} | {{.region}} | {{.status}} | {{.plan}} | {{.startTimestamp}} | {{.endTimestamp}} |
+{{ end -}}
+
+###### Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }}) within Org: {{ rs_org_name }} (Org ID: {{ rs_org_id }})
+EOS
+	escalate $report_list_of_CUDs
+	check eq(size(data),0)
+  end
+end

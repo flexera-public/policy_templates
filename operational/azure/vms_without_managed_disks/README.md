@@ -1,28 +1,36 @@
-## Azure VMs Not Using Managed Disks
+# Azure VMs Not Using Managed Disks
 
-### What it does
+## What it does
+
 This policy checks all Azure VMs and reports on any that are not using Managed Disks, which are the latest offering from Azure and are much easier to manage.
 
-### Functional Details
+## Functional Details
+
 When a VM that is using unmanaged disks is detected, VM location information as well as unmanaged disk information is reported to the specified users.
 
-### Pre-reqs
-- Azure Service Principal (AKA Azure Active Directory Application) with the appropriate permissions to manage resources in the target subscription
-- The following RightScale Credentials
-  - `AZURE_APPLICATION_ID`
-  - `AZURE_APPLICATION_KEY`
+## Input Parameters
 
-#### Input Parameters
 - *Email addresses of the recipients you wish to notify* - A list of email addresses to notify
-- *Exclusion Tag Key* - an Azure-native instance tag to ignore instances that match the disallowed instance type. Only supply the tag key
-- *Azure AD Tenant ID* - the Azure AD Tenant ID used for the Azure API Authentication
-- *Azure Subscription ID* - the Azure Subscription ID used for the Azure API Authentication
+- *Exclusion Tag Key* - an Azure-native instance tag to ignore instances that match the disallowed instance type. Only supply the tag key.
 
-### Required RightScale Roles
-- credential_viewer or admin
+## Prerequisites
 
-### Supported Clouds
+This policy uses [credentials](https://docs.rightscale.com/policies/users/guides/credential_management.html) for connecting to the cloud -- in order to apply this policy you must have a credential registered in the system that is compatible with this policy. If there are no credentials listed when you apply the policy, please contact your cloud admin and ask them to register a credential that is compatible with this policy. The information below should be consulted when creating the credential.
+
+### Credential configuration
+
+For administrators [creating and managing credentials](https://docs.rightscale.com/policies/users/guides/credential_management.html) to use with this policy, the following information is needed:
+
+Provider tag value to match this policy: `azure_rm`
+
+Required permissions in the provider:
+
+- Microsoft.Compute/virtualMachines/read
+
+## Supported Clouds
+
 - Azure Resource Manager
 
-### Cost
+## Cost
+
 This Policy Template does not incur any cloud costs.

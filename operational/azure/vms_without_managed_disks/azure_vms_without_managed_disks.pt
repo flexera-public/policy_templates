@@ -2,12 +2,24 @@ name "Azure VMs Not Using Managed Disks"
 rs_pt_ver 20180301
 type "policy"
 short_description "Report any VMs that are not using managed disks in Azure. \n See the [README](https://github.com/rightscale/policy_templates/tree/master/operational/azure/vms_without_managed_disks) and [docs.rightscale.com/policies](http://docs.rightscale.com/policies/) to learn more."
-long_description "Version: 1.1"
+long_description ""
 category "Operational"
 severity "low"
+info(
+  version: "2.0",
+  provider: "Azure",
+  service: "Compute",
+  policy_set: ""
+)
+
 ###############################################################################
 # Permissions
 ###############################################################################
+
+permission "perm_read_creds" do
+  actions   "rs_cm.show_sensitive","rs_cm.index_sensitive"
+  resources "rs_cm.credentials"
+end
 
 ###############################################################################
 # Parameters
@@ -16,18 +28,6 @@ severity "low"
 parameter "param_email" do
   type "list"
   label "Email addresses of the recipients you wish to notify"
-end
-
-parameter "param_azure_tenant_id" do
-  type "string"
-  label "Azure AD Tenant ID"
-  category "Azure"
-end
-
-parameter "param_azure_sub" do
-  type "string"
-  label "Azure Subscription ID"
-  category "Azure"
 end
 
 parameter "param_exclusion_tag_key" do
@@ -41,15 +41,11 @@ end
 # Authentication
 ###############################################################################
 
-auth "azure_auth", type: "oauth2" do
-  token_url join(["https://login.microsoftonline.com/",$param_azure_tenant_id,"/oauth2/token"])
-  grant type: "client_credentials" do
-    client_id cred("AZURE_APPLICATION_ID")
-    client_secret cred("AZURE_APPLICATION_KEY")
-    additional_params do {
-      "resource" => "https://management.azure.com/"
-    } end
-  end
+credentials "azure_auth" do
+  schemes "oauth2"
+  label "Azure"
+  description "Select the Azure Resource Manager Credential from the list."
+  tags "provider=azure_rm"
 end
 
 ###############################################################################
@@ -68,38 +64,48 @@ end
 ###############################################################################
 # Datasources
 ###############################################################################
-datasource "all_ds_azure_virtual_machines" do
-  request do
-    auth $azure_auth
-    pagination $azure_pagination
-    host "management.azure.com"
-    path join(["/subscriptions/", $param_azure_sub, "/providers/Microsoft.Compute/virtualMachines"])
-    query "api-version","2018-06-01"
-    header "User-Agent", "RS Policies"
-  end
-end
 
-datasource "ds_azure_virtual_machines" do
+datasource "ds_subscriptions" do
   request do
     auth $azure_auth
     pagination $azure_pagination
     host "management.azure.com"
-    path join(["/subscriptions/", $param_azure_sub, "/providers/Microsoft.Compute/virtualMachines"])
+    path "/subscriptions/"
     query "api-version","2018-06-01"
     header "User-Agent", "RS Policies"
   end
   result do
     encoding "json"
     collect jmes_path(response, "value[*]") do
-      field "id", jmes_path(col_item, "id")
-      field "type", jmes_path(col_item, "type")
-      field "location", jmes_path(col_item, "location")
-      field "name", jmes_path(col_item, "name")
-      field "osDisk", jmes_path(col_item, "properties.storageProfile.osDisk")
-      field "tags", jmes_path(col_item, "tags")
-      field "properties", jmes_path(col_item, "properties")
+      field "subscriptionId", jmes_path(col_item,"subscriptionId")
+	  field "subscriptionName", jmes_path(col_item,"displayName")
     end
   end
+end
+
+datasource "ds_azure_virtual_machines" do
+  iterate $ds_subscriptions
+    request do
+      auth $azure_auth
+      pagination $azure_pagination
+      host "management.azure.com"
+      path join(["/subscriptions/", val(iter_item,"subscriptionId"), "/providers/Microsoft.Compute/virtualMachines"])
+      query "api-version","2018-06-01"
+      header "User-Agent", "RS Policies"
+    end
+    result do
+      encoding "json"
+      collect jmes_path(response, "value[*]") do
+	    field "subscriptionName", val(iter_item,"subscriptionName")
+        field "id", jmes_path(col_item, "id")
+        field "type", jmes_path(col_item, "type")
+        field "location", jmes_path(col_item, "location")
+        field "name", jmes_path(col_item, "name")
+        field "osDisk", jmes_path(col_item, "properties.storageProfile.osDisk")
+        field "tags", jmes_path(col_item, "tags")
+        field "properties", jmes_path(col_item, "properties")
+      end
+    end
 end
 
 datasource "ds_filtered_virtual_machines" do
@@ -111,9 +117,9 @@ end
 ###############################################################################
 script "js_filter_virtual_machines", type: "javascript" do
   parameters "ds_azure_virtual_machines", "param_exclusion_tag_key"
-  result "results"
+  result "result"
   code <<-EOS
-    var results = [];
+    var result = [];
     _.each(ds_azure_virtual_machines, function(vm){
       if (vm.osDisk.vhd != null && vm.osDisk.vhd !== undefined){
         if (_.has(vm.tags, param_exclusion_tag_key)){
@@ -121,7 +127,8 @@ script "js_filter_virtual_machines", type: "javascript" do
         }else{
           var resourceGroup = vm.id.split('/')[4]
           var storageAccount = vm.osDisk.vhd.uri.split('/')[2].split('.')[0]
-          results.push({
+          result.push({
+		    subscriptionName: vm.subscriptionName,
             name: vm.name,
             resourceGroup: resourceGroup,
             location: vm.location,
@@ -131,6 +138,8 @@ script "js_filter_virtual_machines", type: "javascript" do
         }
       }
     })
+    result = _.sortBy(result, 'subscriptionName');
+    result = _.sortBy(result, 'location');
 EOS
 end
 ###############################################################################
@@ -142,10 +151,10 @@ policy "azure_resource_policy" do
     summary_template "Azure Subscription({{parameters.param_azure_sub}}) - {{ len data }} Azure VMs without managed disks"
     detail_template <<-EOS
 # Azure Resources out of compliance
-| Instance Name | Resource Group | Location | Storage Account | osDisk VHD |
+| Subscription Name | Location | Instance Name | Resource Group | Storage Account | osDisk VHD |
 | ------------- | -------------- | -------- | --------------- | ---------- |
 {{ range data -}}
-| {{.name}} | {{.resourceGroup}} | {{.location}} | {{.storageAccount}} | {{.osDisk.vhd.uri}} |
+|{{.subscriptionName}} | {{.location}} | {{.name}} | {{.resourceGroup}} | {{.storageAccount}} | {{.osDisk.vhd.uri}} |
 {{ end -}}
 
 ###### Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }}) within Org: {{ rs_org_name }} (Org ID: {{ rs_org_id }})
@@ -161,21 +170,4 @@ end
 
 escalation "email" do
    email $param_email
-end
-
-###############################################################################
-# Cloud Workflow
-###############################################################################
-
-define sys_log($subject, $detail) do
-  if $$debug
-    rs_cm.audit_entries.create(
-      notify: "None",
-      audit_entry: {
-        auditee_href: @@account,
-        summary: "Azure Subscription Access - "+ $subject,
-        detail: $detail
-      }
-    )
-  end
 end

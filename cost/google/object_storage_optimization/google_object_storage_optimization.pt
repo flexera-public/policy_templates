@@ -1,0 +1,388 @@
+name "Google Object Storage Optimization"
+rs_pt_ver 20180301
+type "policy"
+short_description "Checks Google Storage objects for last updated time and moves the object to 'nearline' or 'coldline' or delete(enable delete action as mentioned in README.md) after user approval [README](https://github.com/flexera/policy_templates/tree/master/cost/google/object_storage_optimization) and [docs.rightscale.com/policies](https://docs.rightscale.com/policies/) to learn more."
+long_description ""
+category "Cost"
+severity "low"
+info(
+      version: "2.0",
+      provider: "GCE",
+      service: "Storage",
+      policy_set: "Object Store Optimization"
+    )
+
+###############################################################################
+# Permissions
+###############################################################################
+
+permission "perm_read_creds" do
+  actions   "rs_cm.show_sensitive","rs_cm.index_sensitive"
+  resources "rs_cm.credentials"
+end
+
+###############################################################################
+# User inputs
+###############################################################################
+
+parameter "param_email" do
+  type "list"
+  label "Email addresses to notify"
+  description "Email addresses of the recipients you wish to notify when new incidents are created"
+end
+
+parameter "param_nearline_days" do
+  type "string"
+  label "Days since last modified to move to nearline"
+  description "Move to nearline after days last modified - leave blank to skip moving"
+end
+
+parameter "param_coldline_days" do
+  type "string"
+  label "Days since last modified to move to coldline"
+  description "Move to coldline after days last modified- leave blank to skip moving"
+end
+
+parameter "param_exclude_tags" do
+  type "list"
+  label "Tags to ignore"
+  description "List of tags(Key or Key, value mentioned in object metadata.) that will exclude objects from being evaluated by this policy. Multiple tags are evaluated as an 'OR' condition. Tag keys or key/value pairs can be listed. Example: 'test,env=dev'"
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+# authenticate with Google
+credentials "auth_google" do
+  schemes "oauth2"
+  label "Google"
+  description "Select the Google Cloud Credential from the list."
+  tags "provider=gce"
+end
+
+###############################################################################
+# Pagination
+###############################################################################
+
+pagination "google_pagination" do
+  get_page_marker do
+    body_path "nextPageToken"
+  end
+  set_page_marker do
+    query "pageToken"
+  end
+end
+
+###############################################################################
+# Datasources
+###############################################################################
+
+#get all google project
+datasource "ds_google_project" do
+  request do
+    auth $auth_google
+    pagination $google_pagination
+    host "cloudresourcemanager.googleapis.com"
+    path "/v1/projects/"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "projects[*]") do
+      field "projectNumber", jmes_path(col_item,"projectNumber")
+      field "projectId", jmes_path(col_item,"projectId")
+    end
+  end
+end
+
+#https://cloud.google.com/storage/docs/json_api/v1/buckets/list
+datasource "ds_list_google_buckets" do
+  iterate $ds_google_project 
+  request do
+    auth $auth_google
+    pagination $google_pagination
+    verb "GET"
+    host "www.googleapis.com"
+    path "/storage/v1/b"
+    query "project", val(iter_item,"projectId")
+    query "projection", "noAcl"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "items[*]") do
+      field "bucket_name", jmes_path(col_item, "name")
+      field "location", jmes_path(col_item, "location")
+      field "projectId", val(iter_item,"projectId")
+    end
+  end
+end
+
+#https://cloud.google.com/storage/docs/json_api/v1/objects/list
+datasource "ds_list_google_buckets_objects" do
+  iterate $ds_list_google_buckets
+  request do
+    auth $auth_google
+    pagination $google_pagination
+    verb "GET"
+    host "www.googleapis.com"
+    path join(["/storage/v1/b/",val(iter_item, "bucket_name"),"/o"])
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "items[*]") do
+      field "bucket_name", jmes_path(col_item, "bucket")
+      field "creation_date", jmes_path(col_item, "timeCreated")
+      field "region", val(iter_item, "location")
+      field "object_name", jmes_path(col_item, "name")
+      field "storage_class", jmes_path(col_item, "storageClass")
+      field "last_modified", jmes_path(col_item, "updated")
+      field "object_size", jmes_path(col_item, "size")
+      field "metadata", jmes_path(col_item, "metadata")
+      field "projectId", val(iter_item,"projectId")
+    end
+  end
+end
+
+datasource "ds_google_filtered_bucket_objects" do
+  run_script $js_google_filtered_bucket_objects, $ds_list_google_buckets_objects, $param_exclude_tags, $param_nearline_days, $param_coldline_days
+end
+
+###############################################################################
+# Scripts
+###############################################################################
+
+#Process the response data, check for the tags and generate a list of bucket objects.
+script "js_google_filtered_bucket_objects", type: "javascript" do
+  parameters "ds_list_google_buckets_objects", "param_exclude_tags", "param_nearline_days", "param_coldline_days"
+  result "results"
+  code <<-EOS
+    results = [];
+    var param_exclude_tags_lower=[];
+    for(var i=0; i < param_exclude_tags.length; i++){
+      param_exclude_tags_lower[i]=param_exclude_tags[i].toString().toLowerCase();
+    }
+    var nearline_date = new Date();
+    var coldline_date = new Date();
+    var nearline_days_to_move = parseInt(param_nearline_days,10);
+    var coldline_days_to_move = parseInt(param_coldline_days,10);
+    nearline_date = nearline_date.setDate(nearline_date.getDate() - nearline_days_to_move);
+    coldline_date = coldline_date.setDate(coldline_date.getDate() - coldline_days_to_move);
+    nearline_date = (new Date(nearline_date)).setHours(23, 59, 59, 999);
+    coldline_date =(new Date(coldline_date)).setHours(23, 59, 59, 999);
+
+    _.each(ds_list_google_buckets_objects, function(bucket_object){
+      var tags = bucket_object['metadata'];
+      var isTagMatched=false
+      var tagKeyValue=""
+      if(typeof(tags) !== "undefined"){
+        var tagKeys = Object.keys(tags);
+        for (var j = 0; j < tagKeys.length; j++){
+          var tagKey = tagKeys[j];
+          var tagValue = tags[tagKey];
+          //Check, if the tag present in entered param_exclude_tags, ignore the google bucket object if the tag matches/present.
+          if((param_exclude_tags_lower.indexOf(tagKey.toLowerCase()) !== -1) || (param_exclude_tags_lower.indexOf((tagKey+'='+tagValue).toLowerCase()) !== -1)){
+            isTagMatched = true;
+          }
+          if(tagValue.length > 0){
+            tagKeyValue = tagKeyValue + ', '+ tagKey+'='+tagValue
+          }else{
+            tagKeyValue = tagKeyValue + ', '+ tagKey
+          }
+        }
+      }
+
+      if(!isTagMatched && (bucket_object.storage_class) != null && typeof (bucket_object.storage_class) !== 'undefined' &&(bucket_object.storage_class).toLowerCase() !== "nearline" && (bucket_object.storage_class).toLowerCase() !== "coldline"){
+        var last_modified_date = (new Date(bucket_object["last_modified"])).setHours(23, 59, 59, 999);
+        var modify_storage_class_to="";
+        if(param_nearline_days.length > 0 && param_coldline_days.length == 0 &&  last_modified_date <= nearline_date){
+          //When param_coldline_days is blank.
+          modify_storage_class_to = "nearline";
+        }else if(param_nearline_days.length == 0 && param_coldline_days.length > 0 && last_modified_date <= coldline_date){
+          //When param_nearline_days is blank.
+          modify_storage_class_to = "coldline";
+        }else if(param_nearline_days.length > 0 && param_coldline_days.length > 0 && (last_modified_date <= nearline_date || last_modified_date <= coldline_date)){
+          if(nearline_days_to_move < coldline_days_to_move){
+            if(last_modified_date <= nearline_date && last_modified_date >= coldline_date){
+              modify_storage_class_to = "nearline";
+            }else{
+              modify_storage_class_to = "coldline";
+            }
+          }else if(nearline_days_to_move > coldline_days_to_move){
+            if(last_modified_date <= coldline_date && last_modified_date >= nearline_date){
+              modify_storage_class_to = "coldline";
+            }else{
+              modify_storage_class_to = "nearline";
+            }
+          }
+        }
+        if(modify_storage_class_to.length > 0){
+          results.push({
+            "bucket_name": bucket_object["bucket_name"],
+            "creation_date": bucket_object["creation_date"],
+            "region":bucket_object["region"],
+            "object_name": bucket_object["object_name"],
+            "storage_class": (bucket_object["storage_class"]).toLowerCase(),
+            "last_modified": bucket_object["last_modified"],
+            "modify_storage_class_to": modify_storage_class_to,
+            "object_size": bucket_object["object_size"],
+            "tagKeyValue":(tagKeyValue.slice(2)),
+            "projectId": bucket_object["projectId"]
+          });
+        }
+      }
+    });
+	results = _.sortBy(results, 'region');
+    results= _.sortBy(results, 'projectId');
+  EOS
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "google_object_storage_optimization" do
+  validate $ds_google_filtered_bucket_objects do
+    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): Google Object Storage Optimization."
+    detail_template <<-EOS
+# Found {{ len data }} Google bucket objects which are last modified outside of the specified timeframe.
+| Project ID | Bucket Name | Region | Object Name | Current Storage Class | Last Modified Date | Move Storage Class To | Tags |
+| ---------- | ----------- | ------ | ----------- | --------------------- | ------------------ | --------------------- | ---- |
+{{ range data -}}
+| {{.projectId}} | {{.bucket_name}} | {{.region}} | {{.object_name}} | {{.storage_class}} | {{.last_modified}} | {{.modify_storage_class_to}} | {{.tagKeyValue}}
+{{ end -}}
+    EOS
+    escalate $esc_report_bucket_Objects_list
+    escalate $esc_modify_bucket_object_storage_class_approval
+    #Uncomment below line (remove '#') to enable Delete action and comment above line(add '#').
+    #escalate $esc_delete_bucket_objects_approval
+    check eq(size(data),0)
+  end
+end
+
+###############################################################################
+# Escalation
+###############################################################################
+
+escalation "esc_report_bucket_Objects_list" do
+  email $param_email
+end
+
+escalation "esc_modify_bucket_object_storage_class_approval" do
+  request_approval  do
+    label "Approve Google Bucket object storage class Change"
+    description "Approve escalation to run RightScale Cloud Workflow to update storage class for bucket objects"
+    parameter "approval_reason" do
+      type "string"
+      label "Reason for Approval"
+      description "Explain why you are approving the action."
+    end
+  end
+  run "modify_bucket_object_storage_class", data
+end
+
+escalation "esc_delete_bucket_objects_approval" do
+  request_approval  do
+    label "Approve Google Bucket object Deletion"
+    description "Approve escalation to run RightScale Cloud Workflow to delete the Google Bucket objects"
+    parameter "approval_reason" do
+      type "string"
+      label "Reason for Approval"
+      description "Explain why you are approving the action."
+    end
+  end
+  run "delete_bucket_objects", data
+end
+
+###############################################################################
+# Cloud Workflow
+###############################################################################
+
+#https://cloud.google.com/storage/docs/json_api/v1/objects/copy
+define modify_bucket_object_storage_class($data) return $all_responses do
+  $$debug=true
+  call google_authenticate() retrieve $access_token
+  $all_responses = []
+  foreach $item in $data do
+    sub on_error: skip do
+      call url_encode($item['bucket_name']) retrieve $bucket_name
+      call url_encode($item['object_name']) retrieve $object_name
+      $response = http_request({
+                                verb: 'post',
+                                auth: $$auth_google,
+                                host: 'www.googleapis.com',
+                                href: join(['/storage/v1/b/', $bucket_name, '/o/', $object_name, '/rewriteTo/b/', $bucket_name, '/o/', $object_name]),
+                                https: true,
+                                body: {
+                                       "storageClass": $item['modify_storage_class_to']
+                                      },
+                                headers: {
+                                          "cache-control": "no-cache",
+                                          "content-type": "application/json"
+                                         }
+                              })
+      $all_responses << $response
+      call sys_log('Google object storage optimization response ',to_s($response))
+    end
+  end
+end
+
+#https://cloud.google.com/storage/docs/json_api/v1/objects/delete
+define delete_bucket_objects($data) return $all_responses do
+  $$debug=true
+  $all_responses = []
+  foreach $item in $data do
+    sub on_error: skip do
+      call url_encode($item['bucket_name']) retrieve $bucket_name
+      call url_encode($item['object_name']) retrieve $object_name
+      $response = http_request(
+                                auth: $$auth_google,
+                                verb: 'delete',
+                                host: 'www.googleapis.com',
+                                href: join(['/storage/v1/b/', $bucket_name, '/o/', $object_name]),
+                                https: true,
+                                headers: {
+                                            "cache-control": "no-cache",
+                                            "content-type": "application/json"
+                                            }
+                              )
+      $all_responses << $response
+      call sys_log('Google Storage optimization delete response ',to_s($response))
+    end
+  end
+end
+
+define sys_log($subject, $detail) do
+  if $$debug
+    rs_cm.audit_entries.create(
+      notify: "None",
+      audit_entry: {
+        auditee_href: @@account,
+        summary: "Google Storage optimization Policy "+ $subject,
+        detail: $detail
+      }
+    )
+  end
+end
+
+define url_encode($string) return $encoded_string do
+  $encoded_string = $string
+  $encoded_string = gsub($encoded_string, " ", "%20")
+  $encoded_string = gsub($encoded_string, "!", "%21")
+  $encoded_string = gsub($encoded_string, "#", "%23")
+  $encoded_string = gsub($encoded_string, "$", "%24")
+  $encoded_string = gsub($encoded_string, "&", "%26")
+  $encoded_string = gsub($encoded_string, "'", "%27")
+  $encoded_string = gsub($encoded_string, "(", "%28")
+  $encoded_string = gsub($encoded_string, ")", "%29")
+  $encoded_string = gsub($encoded_string, "*", "%2A")
+  $encoded_string = gsub($encoded_string, "+", "%2B")
+  $encoded_string = gsub($encoded_string, ",", "%2C")
+  $encoded_string = gsub($encoded_string, "/", "%2F")
+  $encoded_string = gsub($encoded_string, ":", "%3A")
+  $encoded_string = gsub($encoded_string, ";", "%3B")
+  $encoded_string = gsub($encoded_string, "=", "%3D")
+  $encoded_string = gsub($encoded_string, "?", "%3F")
+  $encoded_string = gsub($encoded_string, "@", "%40")
+  $encoded_string = gsub($encoded_string, "[", "%5B")
+  $encoded_string = gsub($encoded_string, "]", "%5D")
+end

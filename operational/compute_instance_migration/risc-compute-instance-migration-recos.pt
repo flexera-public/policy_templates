@@ -1,0 +1,210 @@
+name "Application Migration Recommendations"
+rs_pt_ver 20180301
+type "policy"
+short_description "This Policy Template will analyze RISC CloudScape data and will generate recommendations for migrating application stacks to the most cost effective cloud providers & regions.  See the [README](https://github.com/rightscale/policy_templates/tree/master/operational/compute_instance_migration) and [docs.rightscale.com/policies](http://docs.rightscale.com/policies/) to learn more."
+long_description ""
+category "Operational"
+severity "low"
+tenancy "single"
+info(
+  version: "1.1",
+  provider: "Flexera RISC",
+  service: "",
+  policy_set: ""
+)
+
+parameter "param_email" do
+  type "list"
+  label "Email addresses to notify"
+  description "Email addresses of the recipients you wish to notify when new incidents are created"
+end
+
+#Provide your RISC user name. E.g. (somebody@flexera.com)
+parameter "param_userid" do
+  type "string"
+  label "RISC User ID"
+  description "Email address of the RISC User Account which will be used for authentication"
+end
+
+#Provide your RISC Password.  Hash it as per the guide here (https://portal.riscnetworks.com/app/documentation/?path=/using-the-platform/restful-api-access/)
+# Hash is MD5 of password, UCASE all letters, Prepend the API Key, MD5 the new string. Example : md5(concat(apiKey,to_upper(md5(password))));
+parameter "param_password" do
+  type "string"
+  label "RISC Hashed Password"
+  description "Hashed password to be used for authentication. See the README for requirements."
+  no_echo true
+end
+
+#Whats your API Key provided by RISC
+parameter "param_acode" do
+  type "string"
+  label "RISC Assessment Code"
+  description "RISC Assessment Code to be used for authentication."
+end
+
+# Risc Auth Token.  Stays good for hours if in constant use
+datasource "ds_riscauth" do
+  request do
+    verb "POST"
+    host "api.riscnetworks.com"
+    path "/1_0/getAuthToken"
+    body_field "userid", $param_userid
+    body_field "password", $param_password
+    body_field "assessmentcode", $param_acode
+    header "Content-Type", "application/json"
+  end
+  result do
+    encoding "json"
+    field "token", jmes_path(response, "token")
+  end
+end
+
+datasource "ds_getProviders" do
+  request do
+    run_script $js_getProviders, $ds_riscauth, $param_acode
+  end
+
+  result do
+    encoding "json"
+    collect jmes_path(response, "providers[*]") do
+      field "provider_name", jmes_path(col_item, "provider_name")
+      field "providerid", jmes_path(col_item, "providerid")
+    end
+  end
+end
+
+script "js_getProviders", type: "javascript" do
+  result "request"
+  parameters "ds_riscauth", "param_acode"
+
+  code <<-EOS
+    
+    var authtoken = ds_riscauth.token
+    request = {
+      "host": "api.riscnetworks.com",
+      "verb": "GET",
+      "path": "/1_0/iaas/getProviders",
+      "headers": {
+        "User-Agent": "RS Policies",
+        "Content-Type": "application/json",
+        "assessmentcode": param_acode,
+        "token":  authtoken 
+      }
+    }
+
+  EOS
+end
+
+datasource "ds_getSummaryWithCost" do
+  iterate $ds_getProviders
+  request do
+    run_script $js_getSummaryWithCost, $ds_riscauth, $param_acode, val(iter_item,"providerid")
+  end
+
+  result do
+    encoding "json"
+    collect jmes_path(response, "assets[*]") do
+      field "cost_usage_total_hour", jmes_path(col_item, "cost_usage_total_hour")
+      field "stack_name", jmes_path(col_item,"stack_name")
+      field "stackid", jmes_path(col_item, "stackid")
+      field "providerid", val(iter_item,"providerid")
+      field "provider_name", val(iter_item,"provider_name")
+    end
+  end
+end
+
+script "js_getSummaryWithCost", type: "javascript" do
+  result "request"
+  parameters "ds_riscauth", "param_acode", "providerid"
+  code <<-EOS
+    var authtoken = ds_riscauth.token
+    request = {
+      "host": "api.riscnetworks.com",
+      "verb": "GET",
+      "path": "/1_0/stacks/getSummaryWithCost/" + providerid,
+      "headers": {
+        "User-Agent": "RS Policies",
+        "Content-Type": "application/json",
+        "assessmentcode": param_acode,
+        "token":  authtoken
+      }
+    }
+
+  EOS
+end
+
+datasource "ds_formatStacks" do
+  run_script $js_formatStacks, $ds_getSummaryWithCost
+end 
+
+script "js_formatStacks", type: "javascript" do 
+  result "result"
+  parameters "summaries"
+  code <<-EOS
+  var result = [];
+  var stack_ids = _.uniq(_.pluck(summaries, 'stackid'));
+  var stacks = [];
+
+  _.each(stack_ids, function(stack_id){
+    var stack_summaries = _.where(summaries, {stackid: stack_id});
+    var stack = {
+      stack_name: stack_summaries[0]["stack_name"],
+      stackid: stack_id,
+      costs: []
+    }
+    _.each(stack_summaries, function(stack_summary){
+      if (stack_summary["cost_usage_total_hour"] == 0) {
+        // skip
+      } else {
+        var cost = {
+          provider_name: stack_summary["provider_name"],
+          provider_id: stack_summary["providerid"],
+          cost: stack_summary["cost_usage_total_hour"]
+        }
+        stack.costs.push(cost)
+      }
+    })
+    stacks.push(stack)
+  })
+
+  _.each(stacks, function(stack){
+    var target = _.min(stack.costs, function(stack_cost){ return stack_cost.cost; });
+    if (target.cost == null){
+      // skip 
+    } else {
+      result.push({
+        cost: "$" + target.cost.toString(),
+        provider_name: target.provider_name,
+        provider_id: target.provider_id,
+        stack_name: stack["stack_name"],
+        stackid: stack["stackid"]
+      })
+    }
+  })
+
+
+EOS
+end 
+
+policy "stack_migration_recos" do
+  validate_each $ds_formatStacks do
+    summary_template "Application Migration Recommendations"
+    detail_template <<-EOS
+
+| Application Stack | Recommended Provider/Region | Estimated Hourly Cost | Stack ID | Provider ID |
+| ----------------- | --------------------------- | --------------------- | -------- | ----------- |
+{{ range data -}}
+| {{.stack_name}} | {{.provider_name}} | {{.cost}} | {{.stackid}} | {{.provider_id}} |
+{{ end -}}
+
+###### Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }}) within Org: {{ rs_org_name }} (Org ID: {{ rs_org_id }})
+
+EOS
+    escalate $email
+    check eq(val(item, "cost"), 0)
+  end
+end
+
+escalation "email" do
+  email $param_email
+end

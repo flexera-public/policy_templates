@@ -1,10 +1,16 @@
 name "Unattached Volumes"
 rs_pt_ver 20180301
 type "policy"
-short_description "Finds unattached volumes older than specified number of days and, optionally, deletes them. See the [README](https://github.com/rightscale/policy_templates/tree/master/cost/volumes/unattached_volumes) and [docs.rightscale.com/policies](http://docs.rightscale.com/policies/) to learn more."
-long_description "Version: 1.8"
+short_description "Checks for unattached volumes older than specified number of days and, optionally, deletes them."
+long_description ""
 severity "medium"
 category "Cost"
+info(
+  version: "1.10",
+  provider: "Flexera Cloud Management",
+  service: "",
+  policy_set: "Unattached Volumes"
+)
 
 ###############################################################################
 # Permissions
@@ -34,13 +40,6 @@ end
 parameter "param_exclude_tags" do
   type "list"
   label "List of RightScale volume tags to exclude from policy."
-end
-
-parameter "param_delete" do
-  type "string"
-  label "Choose the appropriate action you wish to take on the Volumes"
-  allowed_values "Email Only", "Email and Delete"
-  default "Email Only"
 end
 
 parameter "param_email" do
@@ -73,7 +72,7 @@ end
 
 resources "volumes", type: "rs_cm.volumes" do
   iterate @clouds
-  cloud_href href(iter_item) 
+  cloud_href href(iter_item)
   view "extended"
   tags none($param_exclude_tags)  # This, my friend, is a beautiful thing. This bit of policy language magic (i.e. the "tags" directive) makes it so easy to cull a collection based on tags.
 end
@@ -103,7 +102,7 @@ datasource "ds_volumes" do
   field "size", val(iter_item, "size")
   field "iops", val(iter_item, "iops")
   field "status", val(iter_item, "status")
-  field "placement_group", val(iter_item, "placement_group") 
+  field "placement_group", val(iter_item, "placement_group")
   field "volume_type", val(iter_item, "volume_type")
   field "created_at", val(iter_item, "created_at")
   field "updated_at", val(iter_item, "updated_at")
@@ -113,13 +112,13 @@ end
 
 # script-based datasource that applies the logic to return only unattached volumes
 datasource "ds_unattached_volumes" do
-  run_script $js_unattached_volumes, $ds_clouds, $ds_pgs, $ds_volumes, $param_delete #, $ds_resource_tags_hash
+  run_script $js_unattached_volumes, $ds_clouds, $ds_pgs, $ds_volumes
 end
 # Find unattached volumes.
 # If Azure volume, deduce the type.
 # Calculate the volume's age.
 script "js_unattached_volumes", type: "javascript" do
-  parameters "ds_clouds", "ds_pgs", "ds_volumes", "param_delete" #, "ds_resource_tags_hash"
+  parameters "ds_clouds", "ds_pgs", "ds_volumes"
   result "unattached_volumes"
   code <<-EOS
 // This is the eventual output list of unattached volumes.
@@ -153,7 +152,7 @@ for (var i = 0; i < ds_pgs.length; i++) {
     pg_name = ds_pg["name"]
   }
   var pg_account_type = "unspecified"
-  if (ds_pg["account_type"]) { 
+  if (ds_pg["account_type"]) {
     pg_account_type = ds_pg["account_type"]
   }
   pg_hash[pg_id] = { "name": pg_name, "account_type": pg_account_type }
@@ -162,7 +161,7 @@ for (var i = 0; i < ds_pgs.length; i++) {
 // loop through the volumes and find the unattached ones and deduce storage type if Azure
 for (var i = 0; i < ds_volumes.length; i++) {
   var vol = ds_volumes[i]
-  if ((vol.status == "available") || (vol.status == "provisioned")) { 
+  if ((vol.status == "available") || (vol.status == "provisioned")) {
     // build a volume object
     var my_vol = {}
     my_vol["id"] = vol["resource_uid"]
@@ -170,28 +169,25 @@ for (var i = 0; i < ds_volumes.length; i++) {
     my_vol["size"] = vol["size"]
     my_vol["iops"] = vol["iops"]
     my_vol["status"] = vol["status"]
-    if (param_delete == "Email and Delete") {  // Then the volume is marked so that it will be deleted later
-      my_vol["action"] = "DELETE"
-    }
     my_vol["created_at"] =  vol["created_at"]
     my_vol["updated_at"] =  vol["updated_at"]
     var tags_array = vol["tags"]
     var tags = tags_array.toString()
     my_vol["tags"] = tags
-      
+
     my_vol["pg_id"] = null
     my_vol["volume_type"] = null
-    
+
     if (vol.placement_group) {
       my_vol["pg_id"] = vol.placement_group.resource_uid
     }
-    
+
     if (vol.volume_type) {
       my_vol["volume_type"] = vol.volume_type.resource_uid
     }
 
     // Include information about azure storage types since it is helpful to know what kind of azure storage is being used when
-    // doing cost optimzation.      
+    // doing cost optimzation.
     // We only care about Azure storage types and so first we need to figure out if this volume is in azure.
     // volume href is <<CLOUD_HREF>>/volumes/<<VOLUME_ID>>
     // So extract cloud href from the volument object
@@ -204,13 +200,13 @@ for (var i = 0; i < ds_volumes.length; i++) {
         vol_href = link.href
       }
     })
-    
+
     my_vol["href"] = vol_href
-    my_vol["cloud_href"] = vol_cloud_href 
+    my_vol["cloud_href"] = vol_cloud_href
     my_vol["cloud_name"] = cloud_hash[vol_cloud_href]["cloud_name"]
-    
+
     // Now use that cloud hash built above to see if this volume is in Azure/RM
-    if (cloud_hash[vol_cloud_href]["cloud_type"] == "azure_v2") {  
+    if (cloud_hash[vol_cloud_href]["cloud_type"] == "azure_v2") {
       // AzureRM - we care
       if (my_vol["pg_id"]) {
         my_vol["azure_disk_type"] = "Unmanaged"
@@ -225,7 +221,7 @@ for (var i = 0; i < ds_volumes.length; i++) {
         my_vol["azure_storage_type"] = "Unknown"
         my_vol["azure_storage_account_name"] = "Unknown"
       }
-    } else if (cloud_hash[vol_cloud_href]["cloud_type"] == "azure") {   
+    } else if (cloud_hash[vol_cloud_href]["cloud_type"] == "azure") {
       // old Azure - we also care
       my_vol["azure_disk_type"] = "Unmanaged"
       my_vol["azure_storage_type"] = "Classic"
@@ -233,7 +229,7 @@ for (var i = 0; i < ds_volumes.length; i++) {
       if (my_vol["pg_id"]) {
         var vol_pg_id = my_vol["pg_id"]
         if (pg_hash[vol_pg_id]) {
-          my_vol["azure_storage_account_name"] = pg_hash[vol_pg_id]["name"] 
+          my_vol["azure_storage_account_name"] = pg_hash[vol_pg_id]["name"]
         }
       }
     } else {
@@ -242,7 +238,7 @@ for (var i = 0; i < ds_volumes.length; i++) {
       my_vol["azure_storage_type"] = "N/A"
       my_vol["azure_storage_account_name"] = "N/A"
     }
-    
+
     // Calculate the age and add the information to the hash for the unattached volume.
     // This is used in the reporting to tell the user the age of the unattachedness.
     // Get the parts of the updated_at date found in the hash
@@ -251,7 +247,7 @@ for (var i = 0; i < ds_volumes.length; i++) {
     var date_parts = updated_at_parts[0].split("/")
 
     // Create a Date object based on the yyyy, mm, dd
-    // NOTE: months in javascript goes 0-11 so subtract one from the mm bit 
+    // NOTE: months in javascript goes 0-11 so subtract one from the mm bit
     var updated_at_date = new Date(date_parts[0], (Number(date_parts[1]) - 1), date_parts[2])
     var updated_at_ms = updated_at_date.getTime()
     var difference_ms = Math.abs(today_ms - updated_at_ms)
@@ -261,7 +257,7 @@ for (var i = 0; i < ds_volumes.length; i++) {
     my_vol["age"] = number_of_days_old
 
     // Push the volume hash element to the unattach_volumes array
-    unattached_volumes.push(my_vol)  
+    unattached_volumes.push(my_vol)
   }
 }
 EOS
@@ -291,7 +287,7 @@ EOS
 end
 
 policy "pol_unattached_volumes" do
-  
+
   # REPORT UNATTACHED VOLUMES OLDER THAN GIVEN NUMBER OF DAYS
   # This first validation produces the report and related email.
   # It goes through the unattached volumes that were found by the script-based datasource above
@@ -299,10 +295,11 @@ policy "pol_unattached_volumes" do
   validate_each $ds_unattached_volumes do
 
   	check le(val(item, "age"), $param_days_old)
-  
+    # Delete the volume if user selected the delete option
+  	escalate $process_volumes
   	# Send email report
-  	escalate $send_email_report 
-  
+  	escalate $send_email_report
+
   	summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} Unattached Volumes Found"
 
   	detail_template <<-EOS
@@ -315,48 +312,37 @@ The following {{ len data }} unattached volumes, for Account: {{ rs_project_name
 EOS
 
   end
-
-  # TAKE ACTION ON UNATTACHED VOLUMES
-  # This validation is focused on going through the unattached volumes and deleting them if the user selected that option.
-  # It uses a data source that is identical to the one used for the REPORT validation above but this datasource includes a timestamp.
-  # This timestamp changes each time the policy is run and so forces a validation.
-  # This way if a delete of a volume failed the last time the policy ran, this will force another attempt on this run.
-  validate_each $ds_unattached_volumes_with_timestamp do
-
-  	check le(val(item, "age"), $param_days_old)
-  
-  	# Delete the volume if user selected the delete option
-  	escalate $process_volumes
- 	
-    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): Processing {{ len data }} unattached volumes"
-    detail_template "Processing volumes ...."
-  end
 end
 
 escalation "send_email_report" do
   email $param_email
 end
-  
+
 escalation "process_volumes" do
+  request_approval  do
+    label "Escalation approval"
+    description "Approve delete volume action"
+    parameter "approval_reason" do
+      type "string"
+      label "Reason for approval"
+      description "Explain why you are approving the action"
+    end
+  end
   run "delete_volumes", data, $param_create_snapshot
-  # remove the "Processing volumes" incident since it's a done deal at this point.
-  resolve_incident
 end
-  
+
 define delete_volumes($data,$param_create_snapshot) do
   foreach $item in $data do
-    if $item["action"] == "DELETE"
-      # If the delete fails, tag the volume with some info about the failure
-      sub on_error: handle_delete_failure(@volume) do
-        # Find the volume
-        @volume = rs_cm.get(href: $item["href"])
-        if $param_create_snapshot == "true"
-          @snapshot = @volume.volume_snapshots().create(name: join([@volume.name,"-final"]))
-          sleep_until(@snapshot.state == "available")
-        end
-        # Delete the volume 
-        delete(@volume)
+    # If the delete fails, tag the volume with some info about the failure
+    sub on_error: handle_delete_failure(@volume) do
+      # Find the volume
+      @volume = rs_cm.get(href: $item["href"])
+      if $param_create_snapshot == "true"
+        @snapshot = @volume.volume_snapshots().create(name: join([@volume.name,"-final"]))
+        sleep_until(@snapshot.state == "available")
       end
+      # Delete the volume
+      delete(@volume)
     end
   end
 end
@@ -383,4 +369,4 @@ define sys_log($subject, $detail) do
       detail: $detail
     }
   )
-end 
+end

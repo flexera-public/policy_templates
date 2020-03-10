@@ -1,12 +1,9 @@
-## Expired Reserved Instances Policy Template
-
-**As a best practice, this policy should only be applied to the Master Account, and not to each individual RightScale Account.**
+## AWS Expiring Reserved Instances
 
 ### What it does
 
-This Policy Template leverages the RI report. It will notify only if expiration is within the timeframe specified in `Number of days to prior to expiration date to trigger incident` field. It will email the user specified in `Email addresses of the recipients you wish to notify`.  
+This Policy Template leverages the Optima Bill Data for AWS Reserved Instances. It will notify only if expiration is within the timeframe specified in `Number of days to prior to expiration date to trigger incident` field. It will email the user specified in `Email addresses of the recipients you wish to notify`.  
 
-This policy uses the Optima Bill Data for AWS Reserved Instance.
 
 ### Input Parameters
 
@@ -20,6 +17,13 @@ This policy has the following input parameters required when launching the polic
 The following policy actions are taken on any resources found to be out of compliance.
 
 - Send an email report
+
+### Required RightScale Roles
+
+- Cloud Management - Actor
+- Cloud Management - Observer
+- Cloud Management - credential_viewer
+
 
 ### Supported Clouds
 
