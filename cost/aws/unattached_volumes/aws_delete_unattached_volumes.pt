@@ -202,6 +202,10 @@ script "js_filter_aws_unattached_volumes", type:"javascript" do
         }
       }
 
+      if(tagKeyValue === "" || tagKeyValue === " " || tagKeyValue == ""){
+          tagKeyValue = "   < No Value >";
+	  }
+
       //If the volume tag does not match with entered param_exlude_tags
       if(!(isTagMatched)){
         content.push({
@@ -249,9 +253,9 @@ script "js_aws_volumes_cloud_trail_logs", type:"javascript" do
 
   // To Delay Next Request
   // Due to AWS ThrottlingException (Rate Limit)
-  // Delaying the next request for 2 second.
+  // Delaying the next request for 1 second.
   var current_time = Math.round((new Date()).getTime())
-  var endTime   = current_time + ( 2000)
+  var endTime   = current_time + ( 1000)
   while (current_time <= endTime) {
     current_time = Math.round((new Date()).getTime())
   }
@@ -273,7 +277,7 @@ script "js_filter_volumes_unattached_for_long", type:"javascript" do
           var eventOccurDate = new Date(log['eventTime'] * 1000);
           var today = new Date();
           var time_difference = today.getTime() - eventOccurDate.getTime();
-          var days_difference = time_difference / (1000 * 3600 * 24);
+          var days_difference = (time_difference / (1000 * 3600 * 24)).toFixed(2);
             if(days_difference <= unattached_days){
               trail_logs.push({
                 volume_id : vol['vol_id'],
@@ -282,7 +286,8 @@ script "js_filter_volumes_unattached_for_long", type:"javascript" do
                 tagKeyValue : vol['tagKeyValue'],
                 eventName : log['eventName'],
                 volume_Type : vol['volume_Type']
-                eventTime : (eventOccurDate).toString()
+                eventTime : (eventOccurDate).toString(),
+                days_old : days_difference
               })
             }
           break;
@@ -291,6 +296,8 @@ script "js_filter_volumes_unattached_for_long", type:"javascript" do
     }
   }
   trail_logs = _.sortBy(trail_logs, 'region');
+  trail_logs = _.sortBy(trail_logs, 'days_old');
+  trail_logs = _.sortBy(trail_logs,'availability_zone');
   EOS
 end
 
@@ -303,10 +310,10 @@ policy "policy_unattached_volumes_list" do
   summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} Unattached Volumes Found in AWS"
   detail_template <<-EOS
 # List of Unattached Volumes
-| Region | Volume Id | Availability Zones | Volume Type | TAG Value | Volume Age |
+| Region | Volume Age In Days | Availability Zones | Volume Id | Volume Type | TAG Value |
 | ------ | ---------- | ------------ | -------- | -------- |---------------- |
 {{ range data -}}
-| {{.region}} | {{.volume_id}} | {{.availability_zone}} | {{.volume_Type}} | {{.tagKeyValue}} |  {{.eventTime }} |
+| {{.region}} | {{.days_old}} | {{.availability_zone}} | {{.volume_id}} | {{.volume_Type}} |  {{.tagKeyValue }} |
 {{ end -}}
 
   EOS
@@ -384,6 +391,7 @@ define create_volumes_snapshot($item) return $status_code do
       $condition_check = "completed"
 
       while $condition_check !~ $snapshot_status do
+        sleep(2)
         call get_snapshot_status(to_s($snapshotId)) retrieve $status
         $snapshot_status = $status
 
