@@ -1,4 +1,4 @@
-# Google Delete Old Snapshots
+# Google Old Snapshots
 
 ## What it does
 

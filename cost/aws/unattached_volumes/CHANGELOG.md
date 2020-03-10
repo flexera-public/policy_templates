@@ -1,8 +1,12 @@
 # Changelog
 
-## v3.0
+## v2.2
 
 - Bug fixes
+
+## v2.1
+
+- rename policy
 
 ## v2.0
 
