@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.6
+
+- Updated the metadata
+
 ## v1.5
 
 - Fixed the date format issue
@@ -20,6 +24,6 @@
 
 - Fixing Table
 
-v1.0
+## v1.0
 
 - Initial Release

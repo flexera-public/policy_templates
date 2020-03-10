@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.1
+
+- Added new datasource for google project ID
+
 ## v2.0
 
 - Removed the tagging escalation/action

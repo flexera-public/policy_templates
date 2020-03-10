@@ -53,6 +53,7 @@ Please contact sales@flexera.com to learn more.
 ##### Storage
 
 - [AWS Bucket Size Check](./cost/aws/s3_bucket_size/)
+- [AWS Delete Unattached Volumes](./cost/aws/unattached_volumes)
 - [AWS S3 Buckets without Server Access Logging](./security/storage/aws/s3_buckets_without_server_access_logging/)
 - [AWS Object Storage Optimization](./cost/aws/object_storage_optimization/)
 
@@ -93,6 +94,8 @@ Please contact sales@flexera.com to learn more.
 ##### Storage
 
 - [Google Object Storage Optimization](./cost/google/object_storage_optimization/)
+- [Google Delete Old Snapshots](./cost/google/old_snapshots/)
+- [Google Delete Unattached Volumes](./cost/google/unattached_volumes/)
 
 ##### Other
 
@@ -193,11 +196,13 @@ Please contact sales@flexera.com to learn more.
 - [AWS RDS Backup Settings](./operational/dbaas/aws/rds_backup)
 - [AWS Subnet Name Tag Sync](./operational/aws/subnet_name_sync)
 - [AWS VPC Name Tag Sync](./operational/aws/vpc_name_sync)
+- [AWS Long Running Instances](./operational/aws/long_running_instances/)
 
 #### Azure
 
 - [Azure VMs Not Using Managed Disks](./operational/azure/vms_without_managed_disks/)
 - [Azure Migrate Integration](./operational/azure/azure_migrate)
+- [AzureAD Group Sync](./operational/azure/azuread_group_sync/)
 
 #### VMWare
 

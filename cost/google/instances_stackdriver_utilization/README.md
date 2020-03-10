@@ -13,7 +13,6 @@ This Policy Template gathers Google StackDriver utilization for instances on 30 
 This policy has the following input parameters required when launching the policy.
 
 - *Email addresses to notify* - Email addresses of the recipients you wish to notify when new incidents are created
-- *Google Cloud Project* - a Google Cloud Project ID
 - *Average used memory percentage* - Utilization below this percentage will raise an incident to tag the instance.
 - *Average used CPU percentage* - Utilization below this percentage will raise an incident to tag the instance.
 - *Exclusion Tag Key* - An google-native instance tag to ignore instances that you don't want to consider for downsizing. Only supply the tag key
@@ -36,6 +35,8 @@ Provider tag value to match this policy: `gce`
 Required permissions in the provider:
 
 - The `Monitoring Viewer` Role
+- The `monitoring.timeSeries.list` permission
+- The `resourcemanager.projects.get` permission
 
 ## Supported Clouds
 
