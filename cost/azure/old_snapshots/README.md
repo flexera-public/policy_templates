@@ -1,4 +1,4 @@
-# Azure Delete Old Snapshots
+# Azure Old Snapshots
 
 ## What it does
 
