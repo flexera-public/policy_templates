@@ -17,19 +17,21 @@ info(
 
 parameter "param_email" do
   type "list"
-  label "Email addresses of the recipients you wish to notify"
+  label "Email Address"
+  description "Email addresses of the recipients you wish to notify"
 end
 
 parameter "param_snapshot_age" do
   type "number"
-  label "The number of days since the snapshot was created"
+  label "Snapshot Age"
+  description "The number of days since the snapshot was created"
 end
 
 parameter "param_exclusion_tag_key" do
   category "User Inputs"
   label "Exclusion Tag Key"
   description "Cloud native tag key to ignore instances. Example: exclude_utilization"
-  type "string"
+  type "list"
 end
 
 ###############################################################################
@@ -122,11 +124,19 @@ script "js_filter_snapshots", type: "javascript" do
    _.each(ds_azure_get_snapshots, function(snapshot){
       var tags='';
       var expectedDate=new Date();
+	  var is_tag_matched=false;
+	  var date1 = new Date(snapshot['timeCreated']);
+      var date2 = new Date(); 
+      var Difference_In_Time = date2.getTime() - date1.getTime(); 
+      var age = parseInt(Difference_In_Time / (1000 * 3600 * 24));
       var createdTime=new Date(snapshot['timeCreated']);
-      expectedDate.setDate(expectedDate.getDate()- parseInt(param_snapshot_age));
-      if (_.has(snapshot.tags, param_exclusion_tag_key)) {
-        // snapshot has exclusion tag, skip
-      }else{
+      expectedDate.setDate(expectedDate.getDate()- parseInt(param_snapshot_age));	  
+	  for(var k=0;k<param_exclusion_tag_key.length;k++){
+	     if (_.has(snapshot.tags, param_exclusion_tag_key[k])) {
+            is_tag_matched=true
+      }
+	  }	  
+      if (!is_tag_matched) {
          if(expectedDate.getTime()<createdTime.getTime()){
             res.push({
               snapshot_id:snapshot['id'],
@@ -134,13 +144,15 @@ script "js_filter_snapshots", type: "javascript" do
               location:snapshot['location'],
               timeCreated:snapshot['timeCreated'],
               subscriptionId:snapshot['subscriptionId'],
-              subscriptionName:snapshot['subscriptionName']
+              subscriptionName:snapshot['subscriptionName'],
+			  age:age
             })
         }
       }    
    })
    res = _.sortBy(res, 'subscriptionName');
    res = _.sortBy(res, 'location');
+   res = _.sortBy(res, 'age');
   EOS
 end
 
@@ -149,10 +161,10 @@ policy "pol_azure_delete_old_snapshots" do
     summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} Old Snapshots Found"
     detail_template <<-EOS
 The following {{ len data }} delete old snapshots, for Account: {{ rs_project_name }} (ID: {{ rs_project_id }}), have exceeded the specified age of: {{ parameters.param_unattached_days }} days old\n
-| Subscription Name | Snapshot ID | Name | Location | Creation Date |
-| ----------------- | ----------- | ---- | -------- | ------------- |
+| Subscription Name | Location | Age | Name | Snapshot ID |
+| ----------------- | -------- | --- | ---- | ----------- |
 {{ range data -}}
-| {{ .subscriptionName }} | {{ .snapshot_id }} | {{ .name }} | {{ .location }} | {{ .timeCreated }} |
+| {{ .subscriptionName }} | {{ .location }} | {{ .age }} | {{ .name }} | {{ .snapshot_id }} |
 {{ end -}}
 EOS
    # Send email report
@@ -218,7 +230,7 @@ define sys_log($subject, $detail) do
     notify: "None",
     audit_entry: {
       auditee_href: @@account,
-      summary: join(["Delete Old Snapshot Policy - ", $subject]),
+      summary: join(["Old Snapshot Policy - ", $subject]),
       detail: $detail
     }
   )
