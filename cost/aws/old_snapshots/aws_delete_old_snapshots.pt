@@ -14,18 +14,20 @@ info(
 parameter "param_email" do
   type "list"
   label "Email addresses"
+  description "A list of email addresses to notify."
 end
 
 parameter "snapshot_age" do
   type "number"
   label "Snapshot age"
+  description "The number of days since the snapshot was created."
 end
 
 parameter "param_exclude_tags" do
   type "list"
   category "User Inputs"
   label "Exclude Tags"
-  description "a list of tags used to excluded volumes from the incident."
+  description "A list of tags used to excluded volumes from the incident."
 end
 
 ###############################################################################
@@ -125,8 +127,10 @@ script "js_describe_snapshots", type: "javascript" do
     "query_params": {
       'Action': 'DescribeSnapshots',
       'Version': '2016-11-15',
-      'Filter.1.Name': 'owner-id',
-      'Filter.1.Value.1': ds_get_caller_identity[0]['account']
+      'Filter.1.Name': 'status',
+      'Filter.1.Value.1': 'completed',
+      'Filter.2.Name': 'owner-id',
+      'Filter.2.Value.1': ds_get_caller_identity[0]['account']
     }
   }
 EOS
@@ -136,23 +140,27 @@ script "js_filter_old_snapshots", type: "javascript" do
   result "results"
   parameters "snapshot_age", "ds_describe_snapshots", "param_exclude_tags"
   code <<-EOS
-      var param_exclude_tags_lower=[];
+    var param_exclude_tags_lower=[];
       for(var j=0;j<param_exclude_tags.length;j++){
         param_exclude_tags_lower[j] = param_exclude_tags[j].toString().toLowerCase();
       }
-  var results = [];
-  var start_date = new Date(new Date().setDate(new Date().getDate() - snapshot_age));
-  var start_date_time=start_date.getTime()
-  console.log(start_date_time);
-   _.each(ds_describe_snapshots,function(snapshot) {
+    var results = [];
+    var start_date = new Date(new Date().setDate(new Date().getDate() - snapshot_age));
+    var start_date_time=start_date.getTime()
+  
+    _.each(ds_describe_snapshots,function(snapshot) {
       var snapshot_time =  Date.parse(snapshot['startTime']);
-       console.log(snapshot_time);
-        // Check, if the tag present in entered param_exclude_tags, ignore the volume if the tag matches/present.
-        var tags = snapshot['tags'];
-        var isTagMatched = false;
-        var tagKeyValue = "";
-        for(var k=0; k < tags.length; k++){
-        tag = tags[k];
+      var snapshotDate = new Date(snapshot_time);
+      var timeDifference = new Date().getTime() - snapshotDate.getTime();
+      var daysOld = timeDifference / (1000 * 3600 * 24);
+      var snapshotMonth = snapshotDate.getMonth()+1;
+      var snapshotDateFormat = snapshotDate.getFullYear()+"-"+snapshotMonth+"-"+snapshotDate.getDate();
+      // Check, if the tag present in entered param_exclude_tags, ignore the volume if the tag matches/present.
+      var tags = snapshot['tags'];
+      var isTagMatched = false;
+      var tagKeyValue = "";
+      for(var k=0; k < tags.length; k++){
+      tag = tags[k];
         if((param_exclude_tags_lower.indexOf((tag['tagKey']).toLowerCase()) !== -1) || (param_exclude_tags_lower.indexOf((tag['tagKey']+'='+tag['tagValue']).toLowerCase()) !== -1)){
           isTagMatched = true;
         }
@@ -164,18 +172,26 @@ script "js_filter_old_snapshots", type: "javascript" do
           tagKeyValue = tagKeyValue+" , "+tag['tagKey'];
         }
       }
+
+      if(tagKeyValue === "" || tagKeyValue === " " || tagKeyValue == ""){
+        tagKeyValue = "   < No Value >";
+      }
+
       if(snapshot_time < start_date_time && !isTagMatched){
-           results.push({
-                snapshotId : snapshot['snapshotId'],
-                region : snapshot['region'],
-                tagKeyValue : (tagKeyValue.slice(2)),
-                status : snapshot['status'],
-				startTime : snapshot['startTime'],
-                ownerAlias : snapshot['ownerAlias']
-              })
+        results.push({
+          snapshotId : snapshot['snapshotId'],
+          region : snapshot['region'],
+          tagKeyValue : (tagKeyValue.slice(2)),
+          status : snapshot['status'],
+		  startTime : snapshot['startTime'],
+          ownerAlias : snapshot['ownerAlias'],
+          daysOld : daysOld.toFixed(2),
+          snapshotDateFormat : snapshotDateFormat
+         })
+         results = _.sortBy(results, 'region');
+         results = _.sortBy(results, 'daysOld');
       }
    });
-
 EOS
 end
 
@@ -188,12 +204,11 @@ policy "pol_utilization" do
     summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} rows containing AWS old snapshot data"
     detail_template <<-EOS
 # AWS Old Snapshot
-| Region | SnapshotId | Status | Created | Description | Tags |
+| Region | Days Old | Snapshot Id | Created Date | Description | Tags |
 | ------ | ---------- | ------ | ------- | ----------- | ---- |
 {{ range data -}}
-| {{.region}} | {{.snapshotId}} | {{.status}} |  {{.startTime }} | {{ .description }} | {{ .tagKeyValue }} |  
+| {{.region}} | {{.daysOld}} | {{.snapshotId}} | {{.snapshotDateFormat }} | {{ .description }} | {{ .tagKeyValue }} |  
 {{ end -}}
-___
 ###### Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }}) within Org: {{ rs_org_name }} (Org ID: {{ rs_org_id }})
 EOS
     escalate $ese_email
@@ -253,7 +268,7 @@ define sys_log($subject, $detail) do
       notify: "None",
       audit_entry: {
         auditee_href: @@account,
-        summary: "AWS Delete Old Snapshots"+ $subject,
+        summary: "AWS Old Snapshots"+ $subject,
         detail: $detail
       }
     )
