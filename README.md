@@ -76,7 +76,7 @@ Please contact sales@flexera.com to learn more.
 ##### Storage
 
 - [Azure Blob Storage Optimization](./cost/azure/object_storage_optimization/)
-- [Azure Delete Old Snapshots](./cost/azure/old_snapshots/)
+- [Azure Old Snapshots](./cost/azure/old_snapshots/)
 
 #### Google
 
