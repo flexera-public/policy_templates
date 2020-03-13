@@ -1,8 +1,12 @@
 # Changelog
 
-## v2.1
+## v2.2
 
 - adding incident resource table
+
+## v2.1
+
+- Fixed bug where Azure returns instance details without MemoryGB field
 
 ## v2.0
 
