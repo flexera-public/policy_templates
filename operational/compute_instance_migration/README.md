@@ -17,7 +17,7 @@ This policy has the following input parameters required when launching the polic
 - *RISC User ID* - Email address of the RISC User Account which will be used for authentication
 - *RISC Hashed Password* - Hashed password to be used for authentication
 - *RISC Assessment Code* - RISC Assessment Code to be used for authentication
-- *Included Provides* - A list of Cloud providers to include. If blank all providers available will be included
+- *Included Providers* - A list of Cloud providers to include. If blank all providers available will be included
 
 ## Supported Clouds
 
