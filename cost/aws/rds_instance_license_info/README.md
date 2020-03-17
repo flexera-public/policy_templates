@@ -1,12 +1,12 @@
-# AWS RDS Instance Report
+# AWS RDS Instance License Info
 
 ## What it does
 
-This Policy Template gathers AWS RDS Instance data.
+This Policy Template gathers AWS RDS Instance data related to licensing.
 
 ## Functional Details
 
-- This policy identifies all RDS instances and provides a report on engine and vCPU.
+- This policy identifies all RDS instances and provides details on engine, version, license, and vCPU.
 
 ## Input Parameters
 
