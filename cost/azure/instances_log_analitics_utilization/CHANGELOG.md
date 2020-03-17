@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.1
+
+- Fixed bug where Azure returns instance details without MemoryGB field
+
 ## v2.0
 
 - Removed the tagging escalation/action

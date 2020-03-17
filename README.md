@@ -77,6 +77,7 @@ Please contact sales@flexera.com to learn more.
 ##### Storage
 
 - [Azure Blob Storage Optimization](./cost/azure/object_storage_optimization/)
+- [Azure Old Snapshots](./cost/azure/old_snapshots/)
 
 #### Google
 
@@ -197,11 +198,13 @@ Please contact sales@flexera.com to learn more.
 - [AWS RDS Backup Settings](./operational/dbaas/aws/rds_backup)
 - [AWS Subnet Name Tag Sync](./operational/aws/subnet_name_sync)
 - [AWS VPC Name Tag Sync](./operational/aws/vpc_name_sync)
+- [AWS Long Running Instances](./operational/aws/long_running_instances/)
 
 #### Azure
 
 - [Azure VMs Not Using Managed Disks](./operational/azure/vms_without_managed_disks/)
 - [Azure Migrate Integration](./operational/azure/azure_migrate)
+- [AzureAD Group Sync](./operational/azure/azuread_group_sync/)
 
 #### VMWare
 
