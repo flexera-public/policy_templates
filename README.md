@@ -45,6 +45,7 @@ Please contact sales@flexera.com to learn more.
 
 - [AWS Unused RDS Instances](./cost/aws/unused_rds/)
 - [AWS RDS Instances RightSizing](./cost/aws/rds_instance_cloudwatch_utilization)
+- [AWS RDS Instances License Information](./cost/aws/rds_instance_license_info)
 
 ##### Load Balancers
 
@@ -76,6 +77,7 @@ Please contact sales@flexera.com to learn more.
 ##### Storage
 
 - [Azure Blob Storage Optimization](./cost/azure/object_storage_optimization/)
+- [Azure Old Snapshots](./cost/azure/old_snapshots/)
 
 #### Google
 
