@@ -90,15 +90,8 @@ datasource "ds_describe_snapshots" do
       end
         field "region",val(iter_item, "region")
         field "snapshotId", xpath(col_item,"snapshotId")
-        field "volumeId", xpath(col_item,"volumeId")
-        field "status", xpath(col_item, "status")
         field "startTime", xpath(col_item, "startTime")
-        field "progress", xpath(col_item, "progress")
         field "ownerId", xpath(col_item, "ownerId")
-        field "volumeSize", xpath(col_item, "volumeSize")
-        field "description", xpath(col_item, "description")
-        field "ownerAlias", xpath(col_item, "ownerAlias")
-        field "encrypted", xpath(col_item, "encrypted")
    end
  end
 end
@@ -129,8 +122,7 @@ script "js_describe_snapshots", type: "javascript" do
       'Version': '2016-11-15',
       'Filter.1.Name': 'status',
       'Filter.1.Value.1': 'completed',
-      'Filter.2.Name': 'owner-id',
-      'Filter.2.Value.1': ds_get_caller_identity[0]['account']
+      'MaxResults': '1000'
     }
   }
 EOS
@@ -140,59 +132,48 @@ script "js_filter_old_snapshots", type: "javascript" do
   result "results"
   parameters "snapshot_age", "ds_describe_snapshots", "param_exclude_tags"
   code <<-EOS
+    console.log("Snapshot Age "+snapshot_age);
     var param_exclude_tags_lower=[];
-      for(var j=0;j<param_exclude_tags.length;j++){
+    for(var j=0;j<param_exclude_tags.length;j++){
         param_exclude_tags_lower[j] = param_exclude_tags[j].toString().toLowerCase();
-      }
+    }
     var results = [];
-    var start_date = new Date(new Date().setDate(new Date().getDate() - snapshot_age));
-    var start_date_time=start_date.getTime()
-  
-    _.each(ds_describe_snapshots,function(snapshot) {
-      var snapshot_time =  Date.parse(snapshot['startTime']);
-      var snapshotDate = new Date(snapshot_time);
-      var timeDifference = new Date().getTime() - snapshotDate.getTime();
-      var daysOld = timeDifference / (1000 * 3600 * 24);
-      var snapshotMonth = snapshotDate.getMonth()+1;
-      var snapshotDateFormat = snapshotDate.getFullYear()+"-"+snapshotMonth+"-"+snapshotDate.getDate();
-      // Check, if the tag present in entered param_exclude_tags, ignore the volume if the tag matches/present.
+    for(var i=0; i < ds_describe_snapshots.length; i++){
+      var snapshot = ds_describe_snapshots[i];
+      // Check, if the tag present in entered param_exclude_tags, ignore the snapshot if tag matches/present
       var tags = snapshot['tags'];
       var isTagMatched = false;
       var tagKeyValue = "";
       for(var k=0; k < tags.length; k++){
-      tag = tags[k];
+        tag = tags[k];
         if((param_exclude_tags_lower.indexOf((tag['tagKey']).toLowerCase()) !== -1) || (param_exclude_tags_lower.indexOf((tag['tagKey']+'='+tag['tagValue']).toLowerCase()) !== -1)){
-          isTagMatched = true;
-        }
+          isTagMatched = true;  
+		}
 
         // Constructing tags with comma separated to display in detail_template
         if((tag['tagValue']).length > 0){
-          tagKeyValue = tagKeyValue+" , "+tag['tagKey']+'='+tag['tagValue'];
-        }else{
-          tagKeyValue = tagKeyValue+" , "+tag['tagKey'];
-        }
-      }
+          tagKeyValue = tagKeyValue+" , "+tag['tagKey']+'='+tag['tagValue'];  
+		}else{
+          tagKeyValue = tagKeyValue+" , "+tag['tagKey'];  
+		}
+	  }
 
-      if(tagKeyValue === "" || tagKeyValue === " " || tagKeyValue == ""){
-        tagKeyValue = "   < No Value >";
-      }
-
-      if(snapshot_time < start_date_time && !isTagMatched){
-        results.push({
-          snapshotId : snapshot['snapshotId'],
-          region : snapshot['region'],
-          tagKeyValue : (tagKeyValue.slice(2)),
-          status : snapshot['status'],
-		  startTime : snapshot['startTime'],
-          ownerAlias : snapshot['ownerAlias'],
-          daysOld : daysOld.toFixed(2),
-          snapshotDateFormat : snapshotDateFormat
-         })
-         results = _.sortBy(results, 'region');
-         results = _.sortBy(results, 'daysOld');
-      }
-   });
-EOS
+      if(!(isTagMatched)){
+        var snapshotTime = Date.parse(snapshot['startTime']);
+        var daysOld = (new Date().getTime() - new Date(snapshotTime).getTime()) / (1000 * 3600 * 24);
+        if(daysOld > snapshot_age){
+          results.push({
+            snapshotId : snapshot['snapshotId'],
+            region : snapshot['region'],
+            tagKeyValue : (tagKeyValue.slice(2)),
+            daysOld : daysOld.toFixed(2)
+		  })
+		}
+	  }
+	}
+    results = _.sortBy(results,'region');
+    results = _.sortBy(results,'daysOld');
+  EOS
 end
 
 ###############################################################################
@@ -204,10 +185,10 @@ policy "pol_utilization" do
     summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} rows containing AWS old snapshot data"
     detail_template <<-EOS
 # AWS Old Snapshot
-| Region | Days Old | Snapshot Id | Created Date | Description | Tags |
-| ------ | ---------- | ------ | ------- | ----------- | ---- |
+| Region | Days Old | Snapshot Id | Tags |
+| ------ | ---------- | ------ | ------- |
 {{ range data -}}
-| {{.region}} | {{.daysOld}} | {{.snapshotId}} | {{.snapshotDateFormat }} | {{ .description }} | {{ .tagKeyValue }} |  
+| {{.region}} | {{.daysOld}} | {{.snapshotId}} | {{ .tagKeyValue }} |  
 {{ end -}}
 ###### Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }}) within Org: {{ rs_org_name }} (Org ID: {{ rs_org_id }})
 EOS
