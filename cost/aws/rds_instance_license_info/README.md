@@ -1,4 +1,4 @@
-# AWS RDS Instance License Info
+# AWS RDS Instance License Information
 
 ## What it does
 
