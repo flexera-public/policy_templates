@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.1
+
+- Changes to add logs to the CM audit entries
+
 ## v2.0
 
 - Changes to support the Credential Service
