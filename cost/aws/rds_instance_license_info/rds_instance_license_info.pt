@@ -1,0 +1,170 @@
+name "AWS RDS Instances"
+rs_pt_ver 20180301
+type "policy"
+short_description "Collects all RDS instances in an account. See the [README](https://github.com/flexera/policy_templates/tree/master/cost/aws/rds_instance_license_info/) and [docs.rightscale.com/policies](https://docs.rightscale.com/policies/) to learn more."
+long_description ""
+severity "low"
+category "Cost"
+info(
+  version: "2.0",
+  provider: "AWS",
+  service: "RDS",
+  policy_set: ""
+)
+
+###############################################################################
+# Permissions
+###############################################################################
+
+###############################################################################
+# Parameters
+###############################################################################
+
+parameter "param_email" do
+  type "list"
+  label "Email addresses to notify"
+  description "Email addresses of the recipients you wish to notify when new incidents are created"
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+#authenticate with AWS
+credentials "auth_aws" do
+  schemes "aws","aws_sts"
+  label "AWS"
+  description "Select the AWS Credential from the list."
+  tags "provider=aws"
+end
+
+###############################################################################
+# Datasources
+###############################################################################
+
+#Generates list of Regions
+datasource "ds_regions_list" do
+  request do
+    verb "GET"
+    host "raw.githubusercontent.com"
+    path "/rightscale/policy_templates/master/data/aws/regions.json"
+    header "User-Agent", "RS Policies"
+  end
+end
+
+datasource "ds_instances_set" do
+  iterate $ds_regions_list
+  request do
+    auth $auth_aws
+    host join(["rds.", val(iter_item, "region"), ".amazonaws.com"])
+    path "/"
+    header "User-Agent", "RS Policies"
+    header "Content-Type", "text/xml"
+    query "Action", "DescribeDBInstances"
+    query "Version", "2014-10-31"
+  end
+  result do
+    encoding "xml"
+    collect xpath(response, "//DescribeDBInstancesResponse/DescribeDBInstancesResult/DBInstances/DBInstance[*]", "array") do
+      field "availabilityZone", xpath(col_item,"AvailabilityZone")
+      field "instanceId", xpath(col_item,"DbiResourceId")
+      field "dbInstanceArn", xpath(col_item,"DBInstanceArn")
+      field "dbInstanceIdentifier", xpath(col_item, "DBInstanceIdentifier")
+      field "dbInstanceClass", xpath(col_item, "DBInstanceClass")
+      field "engine", xpath(col_item, "Engine")
+      field "engineVersion", xpath(col_item, "EngineVersion")
+      field "region", val(iter_item, "region")
+      field "processorFeatures", xpath(col_item, "ProcessorFeatures")
+      field "licenseModel", xpath(col_item, "LicenseModel")
+      field "processorFeatures" do
+        collect xpath(col_item, "ProcessorFeatures/ProcessorFeature") do
+          field "name", xpath(col_item, "Name")
+          field "value", xpath(col_item, "Value")
+        end
+      end
+    end
+  end
+end
+
+datasource "ds_aws_instance_size_map" do
+  request do
+    verb "GET"
+    host "raw.githubusercontent.com"
+    path "/flexera/policy_templates/master/data/aws/instance_types.json"
+    header "User-Agent", "RS Policies"
+  end
+end
+
+datasource "ds_filtered_results" do
+  run_script $js_filtered_results, $ds_instances_set, $ds_aws_instance_size_map
+end
+
+###############################################################################
+# Scripts
+###############################################################################
+
+script "js_filtered_results", type: "javascript" do
+  parameters "ds_instances_set", "ds_aws_instance_size_map"
+  result "results"
+  code <<-EOS
+  var results = []
+
+  _.each(ds_instances_set, function(instance){
+    var vcpu = "Unknown"
+    
+    if (_.isEmpty(instance["processorFeatures"])){
+      vcpu = ds_aws_instance_size_map[instance["dbInstanceClass"]]["vcpu"]
+    } else {
+      var cores = _.findWhere(instance["processorFeatures"], {"name": "coreCount"})["value"]
+      var threads = _.findWhere(instance["processorFeatures"], {"name": "threadsPerCore"})["value"]
+      vcpu = cores * threads
+    }
+
+    results.push (
+      {
+        "region": instance["region"],
+        "availabilityZone": instance["availabilityZone"],
+        "dbInstanceArn": instance["dbInstanceArn"],
+        "dbInstanceIdentifier": instance["dbInstanceIdentifier"],
+        "dbInstanceClass": instance["dbInstanceClass"],
+        "engine": instance["engine"],
+        "engineVersion": instance["engineVersion"]
+        "vcpu": vcpu.toString()
+        "licenseModel": instance["licenseModel"]
+      }
+    )
+  })
+  results = _.sortBy(results, 'region');
+ EOS
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "pol_rds_instances" do
+  validate $ds_filtered_results do
+    summary_template "AWS RDS Instances"
+    detail_template <<-EOS
+# AWS RDS Instances
+| Region | Instance ID | Engine | Engine Version | Instance Class | Availability Zone | vCPUs | License Model |
+| ------ | ----------- | ------ | -------------- | -------------- | ----------------- | ----- | ------------- |
+{{ range data -}}
+| {{.region}} | {{.dbInstanceIdentifier}} | {{.engine}} | {{.engineVersion}} | {{.dbInstanceClass}} | {{.availabilityZone }} | {{.vcpu}} | {{.licenseModel}} |
+{{ end -}}
+
+###### Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }}) within Org: {{ rs_org_name }} (Org ID: {{ rs_org_id }})
+EOS
+    check eq(size(data),0)
+    escalate $email
+  end
+end
+
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "email" do
+  email $param_email
+end
