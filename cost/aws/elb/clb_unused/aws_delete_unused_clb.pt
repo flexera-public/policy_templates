@@ -6,20 +6,11 @@ long_description ""
 category "Cost"
 severity "low"
 info(
-  version: "2.0",
+  version: "2.1",
   provider: "AWS",
   service: "ELB",
   policy_set: ""
 )
-
-###############################################################################
-# Permissions
-###############################################################################
-
-permission "perm_read_creds" do
-  actions   "rs_cm.show_sensitive","rs_cm.index_sensitive"
-  resources "rs_cm.credentials"
-end
 
 ###############################################################################
 # User inputs
@@ -195,6 +186,7 @@ script "js_aws_clb_filter_map", type: "javascript" do
       //If the CLB tag does not match with entered param_exclude_tags, then check if any instance exists in the CLB and check for instances health.
       if(!(isTagMatched)){
         clb_details={
+          id: clb['loadBalancerName'],
           loadBalancerName: clb['loadBalancerName'],
           instanceId:(s_instanceIds.slice(2)),
           availabilityZones:(s_availabilityZones.slice(2)),
@@ -230,18 +222,27 @@ end
 policy "policy_delete_unused_CLB" do
   validate $ds_unused_clb_map do
     summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} Unused Classic Load Balancers Found in AWS"
-    detail_template <<-EOS
-## List of Unused Classic Load Balancers
-| LoadBalancer_Name | Region | Instance_ID | Availability_Zones | TAG_Value |
-| ----------------- | ------ | ----------- | ------------------ | --------- |
-{{ range data -}}
-| {{ .loadBalancerName }} | {{.region}} | {{ .instanceId }} | {{ .availabilityZones }} | {{.tagKeyValue}} |
-{{ end -}}
-###### Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }}) within Org: {{ rs_org_name }} (Org ID: {{ rs_org_id }})
-EOS
-    escalate $report_unused_CLB
-    escalate $approve_delete_CLB
+    export do
+      field "id" do
+        label "LoadBalancer_Name"
+      end
+      field "region" do
+        label "Region"
+      end
+      field "instanceId" do
+        label "Instance ID"
+      end
+      field "availabilityZones" do
+        label "Availability Zones"
+      end
+      field "tagKeyValue" do
+        label "Tag Value"
+      end
+    end
+
     check eq(size(data),0)
+    escalate $esc_email
+    escalate $esc_delete_clb
   end
 end
 
@@ -249,20 +250,17 @@ end
 # Escalations
 ###############################################################################
 
-escalation "report_unused_CLB" do
+escalation "esc_email" do
+  automatic true
+  label "Send Mail"
+  description "Sends incident email"
   email $param_email
 end
 
-escalation "approve_delete_CLB" do
-  request_approval  do
-    label "Approve Resource Deletion"
-    description "Approve escalation to run RightScale Cloud Workflow to delete unused CLB"
-    parameter "approval_reason" do
-      type "string"
-      label "Reason for Approval"
-      description "Explain why you are approving the action"
-    end
-  end
+escalation "esc_delete_clb" do
+  automatice false
+  label "Approve Resource Deletion"
+  description "Approve escalation to run RightScale Cloud Workflow to delete unused CLB"
   run "delete_CLB", data
 end
 
