@@ -1,13 +1,13 @@
-# AWS Unattached Volumes
+# AWS Unused Volumes
 
 ## What it does
 
-This Policy Template scans all volumes in the given account and identifies any unattached volumes that have been unattached for at least the number of user-specified days. The number of days the volumes have been unattached is determined by cloud trail logs. If any are found, an incident report will show the volumes, and related information and an email will be sent to the user-specified email address.
+This Policy Template scans all volumes in the given account and identifies any unused volumes and if no read/writes operations performed within the number of user-specified days. If any are found, an incident report will show the volumes, and related information and an email will be sent to the user-specified email address. Cloud watch metrics are used to find the volume read/write operations
 
 If the user approves that the volumes should be deleted, the policy will delete the volumes.
 If the volume is not able to be deleted, say, due to it being locked, the volume will be tagged to indicate the CloudException error that was received.
 If the issue causing the delete failure is removed, the next run of the policy will delete the volume.
-Note: The unattached volumes report will reflect the updated set of unattached volumes on the subsequent run.
+Note: The unused volumes report will reflect the updated set of unused volumes on the subsequent run.
 
 Optionally, the user can specify one or more tags that if found on a volume will exclude the volume from the list.
 
@@ -15,7 +15,7 @@ Optionally, the user can specify one or more tags that if found on a volume will
 
 This policy has the following input parameters required when launching the policy.
 
-- *Unattached days* - The number of days a volume has been unattached.
+- *Unused days* - The number of days a volume has been unused. The days should be greater than zero.
 - *Email addresses* - A list of email addresses to notify
 - *Exclude Tags.* - A list of tags used to excluded volumes from the incident.
 - *Create Final Snapshot* - Boolean for whether or not to take a final snapshot before deleting
@@ -24,7 +24,7 @@ This policy has the following input parameters required when launching the polic
 
 The following policy actions are taken on any resources found to be out of compliance.
 
-- Delete Unattached volumes after approval
+- Delete Unused volumes after approval
 - Send an email report
 
 ## Prerequisites
@@ -51,13 +51,17 @@ The following AWS permissions must be allowed for the policy to run.
 }
 
 {
-    "Version": "2012-10-17",
-    "Statement": [{
-    "Effect": "Allow",
-    "Action": ["cloudtrail:LookupEvents"],
-    "Resource": "*"
-    }
-  ]
+  "Version": "2012-10-17",
+  "Statement":[{
+    "Effect":"Allow",
+    "Action":["cloudwatch:GetMetricStatistics"],
+    "Resource":"*",
+    "Condition":{
+      "Bool":{
+        "aws:SecureTransport":"true"
+      }
+     }
+  }]
 }
 
 ```

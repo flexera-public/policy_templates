@@ -54,7 +54,7 @@ Please contact sales@flexera.com to learn more.
 ##### Storage
 
 - [AWS Bucket Size Check](./cost/aws/s3_bucket_size/)
-- [AWS Delete Unattached Volumes](./cost/aws/unattached_volumes)
+- [AWS Delete Unused Volumes](./cost/aws/unused_volumes)
 - [AWS S3 Buckets without Server Access Logging](./security/storage/aws/s3_buckets_without_server_access_logging/)
 - [AWS Object Storage Optimization](./cost/aws/object_storage_optimization/)
 
