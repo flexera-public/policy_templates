@@ -6,7 +6,7 @@ long_description ""
 severity "medium"
 category "Operational"
 info(
-  version: "1.7",
+  version: "1.8",
   provider: "Flexera Cloud Management",
   service: "",
   policy_set: ""
@@ -135,40 +135,35 @@ EOS
 end
 
 policy "pol_aws_key_update" do
-  
   validate_each $ds_aws_cloud_accounts do
-      # the ds_aws_cloud_accounts logic populates a needs rotation field which is used to decide if we need to rotate keys
-      check eq(val(item, "needs_rotation"), "false")
-	  escalate $email
-      escalate $update_connection
-
-      summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): AWS Cloud Credentials Updated"
-      detail_template <<-EOS
-AWS Key Update Report for RightScale Account: {{ rs_project_name }} (ID: {{ rs_project_id }})\n
-The following RightScale cloud account connections have been updated with new AWS keys.\n
-| Cloud Name | RightScale Cloud Account HREF |
-| ---------- | ----------------------------- |
-{{ range data -}}
-    | {{ .cloud_name }} | {{ .cloud_account_href }} |
-{{ end -}}
-EOS
-  end
-end
-
-escalation "email" do
-   email $param_email
-end
-
-escalation "update_connection" do
-  request_approval  do
-    label "Approve to Update cloud account connections"
-    description "Update cloud account connections"
-    parameter "approval_reason" do
-      type "string"
-      label "Reason for approval"
-      description "Explain why you are approving the action"
+  # the ds_aws_cloud_accounts logic populates a needs rotation field which is used to decide if we need to rotate keys
+    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): AWS Cloud Credentials Updated"
+    export do
+      resource_level true
+      field "cloud_name" do
+        label "Cloud Name"
+      end
+      field "cloud_account_href" do
+        label "RightScale Cloud Account HREF"
+      end
     end
+    check eq(val(item, "needs_rotation"), "false")
+	  escalate $esc_email
+    escalate $esc_update_connection
   end
+end
+
+escalation "esc_email" do
+  automatic true
+  label "Send Mail"
+  description "Sends incident email"
+  email $param_email
+end
+
+escalation "esc_update_connection" do
+  automatic false
+  label "Approve to Update cloud account connections"
+  description "Update cloud account connections"
   run "update_aws_connection", data, $param_rotation_period, $param_rotation_units
 end
 
