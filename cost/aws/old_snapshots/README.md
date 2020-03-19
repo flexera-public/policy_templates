@@ -2,7 +2,7 @@
 
 ## What it does
 
-This Policy finds AWS snapshots older than the specified days and deletes them.
+This Policy finds AWS snapshots that are created by the owner older than the specified days and deletes them. To get Owner-Id we are using the AWS credentials applied at the time of policy creation.
 
 ## Input Parameters
 
