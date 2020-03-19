@@ -6,7 +6,7 @@ long_description ""
 severity "medium"
 category "Cost"
 info(
-  version: "2.0",
+  version: "2.1",
   provider: "AWS",
   service: "S3",
   policy_set: ""
@@ -207,7 +207,7 @@ script "check_for_oversized_buckets", type: "javascript" do
 	  avg_size = bytesToSize(avg_size)
       results.push (
         {
-	      "bucket_name": bucket_name,
+	      "id": bucket_name,
 	      "average": avg_size
 	    }
 	  )
@@ -218,23 +218,25 @@ end
 
 policy "aws_oversized_buckets" do
   validate $aws_oversized_buckets do
-    escalate $send_email_report
-
     summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} Oversized Buckets Found in AWS"
-    detail_template <<-EOF
-# Oversized Buckets Found in AWS
-| Bucket Name | Bucket Size Average |
-| ----------- | ------------------- |
-{{ range data -}}
-| {{.bucket_name}} | {{.average}} |
-{{ end -}}
-EOF
-
+    export do
+      resource_level true
+      field "id" do
+        label "Bucket Name"
+      end
+      field "average" do
+        label "Bucket Size Average"
+      end
+    end
     #check if empty
     check eq(size(data), 0)
+    escalate $esc_email
   end
 end
 
-escalation "send_email_report" do
+escalation "esc_email" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
   email $param_email
 end
