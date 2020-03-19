@@ -5,7 +5,7 @@ short_description "Checks for snapshots older than specified number of days and,
 severity "low"
 category "Cost"
 info(
-  version: "2.0",
+  version: "2.1",
   provider: "Azure",
   service: "Storage",
   policy_set: "Old Snapshots"
@@ -139,7 +139,7 @@ script "js_filter_snapshots", type: "javascript" do
       if (!is_tag_matched) {
          if(expectedDate.getTime()<createdTime.getTime()){
             res.push({
-              snapshot_id:snapshot['id'],
+              id:snapshot['id'],
               name:snapshot['name'],
               location:snapshot['location'],
               timeCreated:snapshot['timeCreated'],
@@ -159,19 +159,29 @@ end
 policy "pol_azure_delete_old_snapshots" do
   validate $ds_filter_snapshots do
     summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} Old Snapshots Found"
-    detail_template <<-EOS
-The following {{ len data }} snapshots, for Account: {{ rs_project_name }} (ID: {{ rs_project_id }}), have exceeded the specified age of: {{ parameters.param_snapshot_age }} days old\n
-| Subscription Name | Location | Age | Name | Snapshot ID |
-| ----------------- | -------- | --- | ---- | ----------- |
-{{ range data -}}
-| {{ .subscriptionName }} | {{ .location }} | {{ .age }} | {{ .name }} | {{ .snapshot_id }} |
-{{ end -}}
-EOS
-   # Send email report
-   escalate $send_email_report
-   # Delete snapshot if user approves
-   escalate $process_snapshots
-   check eq(size(data), 0)
+    # Send email report
+    escalate $send_email_report
+    # Delete snapshot if user approves
+    escalate $process_snapshots
+    check eq(size(data), 0)
+    export do
+      resource_level true
+      field "subscriptionName" do
+        label "Subscription Name"
+      end
+      field ".location" do
+        label "Location"
+      end
+      field ".age" do
+        label "Age"
+      end
+      field ".name" do
+        label "Name"
+      end
+      field "id" do
+        label "Snapshot ID"
+      end
+    end   
   end
 end
 
@@ -202,12 +212,12 @@ define delete_old_snapshots($data) return $all_responses do
   $all_responses = []
   foreach $item in $data do
     sub on_error: skip do	  
-        call azure_delete_old_snapshots($item['snapshot_id'])
+        call azure_delete_old_snapshots($item['id'])
     end
   end
 end
 
-define azure_delete_old_snapshots($snapshot_id) do
+define azure_delete_old_snapshots($id) do
   $response={}
   $syslog_subject = "Azure delete old snapshots API response: "
   $response = http_request(
@@ -215,7 +225,7 @@ define azure_delete_old_snapshots($snapshot_id) do
           verb: "delete",
           host: "management.azure.com",
           https: true,
-          href: $snapshot_id,
+          href: $id,
           query_strings: {
             "api-version": "2019-07-01"
           }
