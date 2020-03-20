@@ -2,7 +2,7 @@
 
 ## v2.2
 
-- rename policy
+- rename policy and policy_set
 
 ## v2.1
 
