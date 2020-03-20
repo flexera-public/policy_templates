@@ -2,12 +2,10 @@
 
 ## What it does
 
-This Policy Template scans all volumes in the given account and identifies any unused volumes and if no read/writes operations performed within the number of user-specified days. If any are found, an incident report will show the volumes, and related information and an email will be sent to the user-specified email address. Cloud watch metrics are used to find the volume read/write operations
+This Policy finds unused volumes in the given account and deletes them after user approval. The user can optionally create a snapshot before deleting the volume. An unused volume is determined by checking for the state as available and uses CloudWatch to determine its use by checking if there are read or write operations within the number of user-specified days. A Policy Incident will be created with all of volumes that fall into these criteria
 
-If the user approves that the volumes should be deleted, the policy will delete the volumes.
-If the volume is not able to be deleted, say, due to it being locked, the volume will be tagged to indicate the CloudException error that was received.
 If the issue causing the delete failure is removed, the next run of the policy will delete the volume.
-Note: The unused volumes report will reflect the updated set of unused volumes on the subsequent run.
+Note: The unused volumes incident will reflect the updated set of unused volumes on the subsequent run.
 
 Optionally, the user can specify one or more tags that if found on a volume will exclude the volume from the list.
 
