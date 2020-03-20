@@ -2,18 +2,15 @@ name "AWS Instance Scheduled Events"
 rs_pt_ver 20180301
 type "policy"
 short_description "Report on any AWS scheduled event that will impact instance availability. \n See the [README](https://github.com/rightscale/policy_templates/tree/master/operational/aws/instance_scheduled_events) and [docs.rightscale.com/policies](http://docs.rightscale.com/policies/) to learn more."
-long_description "Version: 1.0"
+long_description ""
 category "Operational"
 severity "medium"
-
-###############################################################################
-# Permissions
-###############################################################################
-
-permission "perm_read_creds" do
-  actions   "rs_cm.show_sensitive","rs_cm.index_sensitive"
-  resources "rs_cm.credentials"
-end
+info(
+  version: "2.0",
+  provider: "AWS",
+  service: "EC2",
+  policy_set: ""
+)
 
 ###############################################################################
 # User inputs
@@ -35,11 +32,12 @@ end
 # Authentication
 ###############################################################################
 
-auth "auth_aws", type: "aws" do
-  version "4"
-  service "ec2"
-  access_key cred("AWS_ACCESS_KEY_ID")
-  secret_key cred("AWS_SECRET_ACCESS_KEY")
+#authenticate with AWS
+credentials "auth_aws" do
+  schemes "aws","aws_sts"
+  label "AWS"
+  description "Select the AWS Credential from the list"
+  tags "provider=aws"
 end
 
 ###############################################################################
@@ -72,7 +70,7 @@ datasource "ds_ec2_scheduled_instances_list" do
   end
   result do
    encoding "xml"
-    collect xpath(response, "//DescribeInstanceStatusResponse/instanceStatusSet/item", "array") do		  
+    collect xpath(response, "//DescribeInstanceStatusResponse/instanceStatusSet/item", "array") do
       field "instance_id", xpath(col_item, "instanceId")
       field "availability_zone", xpath(col_item, "availabilityZone")
       field "instance_state", xpath(col_item, "instanceState/name")
@@ -157,7 +155,7 @@ script "js_ec2_status_list", type: "javascript" do
         "Action": "DescribeInstanceStatus",
         "Version": "2016-11-15",
         "IncludeAllInstances": "true",
-      },     
+      },
     }
   EOS
 end
@@ -177,7 +175,7 @@ script "js_ec2_list_with_tags", type: "javascript" do
         "Version": "2016-11-15",
         "Filter.1.Name": "resource-id",
         "Filter.1.Value.1": instance_id
-      },    
+      },
     }
   EOS
 end
@@ -213,9 +211,9 @@ script "js_ec2_filter_map", type: "javascript" do
         }
       }
 
-      //If EC2 instance tag does not match with entered param_exclude_tags and then check if any of the scheduled event type exists  
+      //If EC2 instance tag does not match with entered param_exclude_tags and then check if any of the scheduled event type exists
       var scheduled_event_type_array = ["instance-retirement","instance-reboot","instance-stop","system-reboot","system-maintenance"]
-      var event_set_type = ec2['scheduled_event_type']	  
+      var event_set_type = ec2['scheduled_event_type']
       if(!(isTagMatched)  && scheduled_event_type_array.indexOf(event_set_type) !== -1){
         content.push({
           instance_id: ec2['instance_id'],
@@ -225,7 +223,7 @@ script "js_ec2_filter_map", type: "javascript" do
           tagKeyValue:(tagKeyValue.slice(2)),
           scheduled_event_type: ec2['scheduled_event_type'],
           scheduledevent_start_time: ec2['scheduledevent_start_time'],
-          scheduledevent_end_time: ec2['scheduledevent_end_time'],          
+          scheduledevent_end_time: ec2['scheduledevent_end_time'],
         })
       }
     }
@@ -248,7 +246,7 @@ policy "policy_ec2_scheduled_instance_list" do
 {{ end -}}
     EOS
     escalate $report_ec2_scheduled_instances
-    check eq(size(data),0)    
+    check eq(size(data),0)
   end
 end
 
