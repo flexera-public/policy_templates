@@ -1,0 +1,146 @@
+#!/usr/bin/env ruby
+
+#require 'pry-byebug'
+
+def print_usage
+	puts <<-EOF
+Converts a regular data table in detail to export style data table in place.
+Lots of stuff is done imperfectly, this is just meant to save some tedium.
+
+Usage: One file:
+ruby ./tools/bin/convert_table <path/to/file.pt>
+git diff
+
+All files in a dir
+find ./compliance -name '*.pt' -exec ruby ./tools/bin/convert_table {} \;
+git diff
+EOF
+end
+
+def sanitize(s)
+	s.gsub(/[^a-zA-z0-9_-]/,"_")
+end
+
+def extract_var(val)
+	if val.include?("}}")
+		bits = val.gsub('{{','').split(/\}\}/, 2)
+		return [bits[0].strip.gsub(/^\./,''),bits[1]]
+	end
+	return [val, ""]
+end
+
+def get_data_table(detail_template)
+	lines = detail_template.split("\n")
+	# example:
+	#|Range|Current|Budget|Overbudget|
+	#|:---:|------:|-----:|---------:|
+	#   | {{ .range }} | {{ .current }} | {{ .budget }} | {{ .overbudget }} |
+	stuff_in_columns = /^\s*\|.*\|.*\|\s*/
+	is_a_range = /^\s*{{\s*range\s+(data(\.[^ ]+)?)\s/
+	is_an_end = /\s*{{\s*end\s*/
+
+	export = []
+	subpath = ""
+	newlines = []
+	state = :begin
+	lines.each do |line|
+		if line =~ stuff_in_columns
+			vals = line.strip.gsub(/^\|/,'').gsub(/\|$/,'').split("|")
+			vals.map!(&:strip)
+			case state
+			when :begin
+				export = vals.map{|header| {label: header}}
+				state = :headers
+			when :headers
+				vals.each_with_index do |val, i|
+					if val =~ /^:.*:$/
+						export[i][:format] = "center"
+					elsif val =~ /:$/
+						export[i][:format] = "right"
+					end
+					# left is default in markdown
+				end
+				state = :align
+			when :align
+				vals.each_with_index do |val, i|
+					if val =~ /^{{/
+						val, remainder = extract_var(val)
+						if sanitize(val) != val
+							export[i][:field] = sanitize(val)
+							export[i][:path] = val
+						else
+							export[i][:field] = val
+						end
+						if remainder != ""
+							export[i][:format] = export[i][:format].to_s + " printf(%s#{remainder})"
+						end
+					else
+						export[i][:field] = sanitize(export[i][:field].downcase)
+					end
+				end
+			end
+		elsif line =~ is_a_range && state != :begin
+			var = $1
+			if var =~ /\./
+				subpath = var.split(".", 2)[1]
+			end
+		elsif line =~ is_an_end && state != :begin
+			state = :begin
+		elsif state == :begin
+			newlines << line
+		end
+	end
+
+	return [export, subpath, newlines.join("\n")]
+end
+
+def to_export_table(table, subpath, predent, indent)
+	output = ""
+	if subpath != ""
+		output << predent << indent << "export jmes_path(data, '#{subpath}') do" << "\n"
+	else
+		output << predent << indent << "export do" << "\n"
+	end
+	table.each do |f|
+			output << predent << indent << indent << "field \"#{f[:field]}\" do" << "\n"
+			output << predent << indent << indent << indent << "label \"#{f[:label]}\"" << "\n" if f[:label]
+			output << predent << indent << indent << indent << "path jmes_path(item, \"#{f[:path]}\")" << "\n" if f[:path]
+			output << predent << indent << indent << indent << "format \"#{f[:format].strip}\"" << "\n" if f[:format]
+			output << predent << indent << indent << "end" << "\n"
+	end
+	output << predent << indent << "end" << "\n"
+end
+
+
+file = ARGV[0]
+unless file && File.exist?(file)
+	print_usage
+	exit(1)
+end
+puts "Converting #{file}"
+new_source_lines = []
+source_lines = File.read(file).split("\n")
+eos = nil
+detail_template = []
+source_lines.each do |line|
+	if line =~ /\s*detail_template\s*<<-/
+		bits = line.split("<<-")
+		eos = bits[1]
+		detail_template << line
+	elsif eos != nil
+		detail_template << line
+		if line.strip == eos
+			eos = nil
+			table, subpath, new_detail = get_data_table(detail_template.join("\n"))
+			new_source_lines << new_detail.gsub("\n\n\n","\n\n")
+			new_source_lines << to_export_table(table, subpath,"  ","  ")
+		end
+	else
+		new_source_lines << line
+	end
+end
+File.write(file, new_source_lines.join("\n"))
+
+
+
+
