@@ -3,7 +3,7 @@
 ## v2.1
 
 - remove unnecessary permissions block
- 
+
 ## v2.0
 
 - Changes to support the Credential Service

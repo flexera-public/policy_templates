@@ -4,7 +4,6 @@
 
 - remove unnecessary permissions block
 
-
 ## v2.0
 
 - Added support for on-premise FlexNet Manager (NTLM auth).
