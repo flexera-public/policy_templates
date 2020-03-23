@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.10
+
+- Fix error when the policy run within the first 3 days of the month.
+
 ## v1.9
 
 - Fixed evaluation exceeded maximum time
