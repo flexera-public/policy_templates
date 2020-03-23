@@ -12,12 +12,9 @@ info(
   policy_set: ""
 )
 
-permission "general_permissions" do
-  resources "rs_cm.credentials", "rs_cm.audit_entries", "rs_cm.clouds"
-  actions   "rs_cm.*"
-end
-
-auth "auth_rs", type: "rightscale"
+###############################################################################
+# User inputs
+###############################################################################
 
 parameter "param_email" do
   type "list"
@@ -39,6 +36,32 @@ parameter "param_rotation_units" do
   allowed_values "Days", "Hours", "Minutes"
 end
 
+###############################################################################
+# Permissions
+###############################################################################
+
+permission "general_permissions" do
+  resources "rs_cm.credentials", "rs_cm.audit_entries", "rs_cm.clouds"
+  actions   "rs_cm.*"
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+auth "auth_rs", type: "rightscale"
+
+###############################################################################
+# Datasources
+###############################################################################
+
+# Get attached AWS clouds
+resources "aws_clouds", type: "rs_cm.clouds" do
+  filter do
+    cloud_type "amazon"
+  end
+end
+
 # We use a RightScale account tag to keep track of when to rotate the keys.
 # If it not found, the policy will rotate keys at that time and add the tag for the next rotation.
 datasource "ds_account_tags" do
@@ -49,13 +72,6 @@ datasource "ds_account_tags" do
     path "/api/tags/by_resource"
     header "X-Api-Version", "1.5"
     body_field "resource_hrefs", [join(["/api/accounts/",rs_project_id])]
-  end
-end
-
-# Get attached AWS clouds
-resources "aws_clouds", type: "rs_cm.clouds" do
-  filter do
-    cloud_type "amazon"
   end
 end
 
@@ -85,6 +101,11 @@ end
 datasource "ds_aws_cloud_accounts" do
   run_script $js_aws_cloud_accounts, $ds_aws_clouds, $ds_cloud_accounts, $ds_account_tags
 end
+
+###############################################################################
+# Scripts
+###############################################################################
+
 script "js_aws_cloud_accounts", type: "javascript" do
   parameters "ds_aws_clouds", "ds_cloud_accounts", "ds_account_tags"
   result "aws_cloud_accounts"
@@ -134,6 +155,33 @@ for (var i = 0; i < ds_aws_clouds.length; i++) {
 EOS
 end
 
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_email" do
+  label "Send Mail"
+  description "Sends incident email"
+  email $param_email
+end
+
+escalation "esc_update_connection" do
+  request_approval  do
+    label "Approve to Update cloud account connections"
+    description "Update cloud account connections"
+    parameter "approval_reason" do
+      type "string"
+      label "Reason for approval"
+      description "Explain why you are approving the action"
+    end
+  end
+  run "update_aws_connection", data, $param_rotation_period, $param_rotation_units
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
 policy "pol_aws_key_update" do
   validate_each $ds_aws_cloud_accounts do
   # the ds_aws_cloud_accounts logic populates a needs rotation field which is used to decide if we need to rotate keys
@@ -153,19 +201,9 @@ policy "pol_aws_key_update" do
   end
 end
 
-escalation "esc_email" do
-  automatic true
-  label "Send Mail"
-  description "Sends incident email"
-  email $param_email
-end
-
-escalation "esc_update_connection" do
-  automatic false
-  label "Approve to Update cloud account connections"
-  description "Update cloud account connections"
-  run "update_aws_connection", data, $param_rotation_period, $param_rotation_units
-end
+###############################################################################
+# Cloud Workflow
+###############################################################################
 
 define update_aws_connection($data, $param_rotation_period, $param_rotation_units) do
   
