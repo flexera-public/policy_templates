@@ -123,7 +123,7 @@ datasource "ds_unattached_volumes_list" do
 end
 
 datasource "ds_unattached_volumes_map" do
-  run_script $js_filter_aws_unattached_volumes, $ds_unattached_volumes_list, $param_exclude_tags
+  run_script $js_filter_aws_unattached_volumes, $ds_unattached_volumes_list, $param_exclude_tags, $param_unattached_days
 end
 
 datasource "ds_volume_read_bytes_metrics" do
@@ -183,7 +183,7 @@ script "js_aws_unattached_volumes_list", type:"javascript" do
 end
 
 script "js_filter_aws_unattached_volumes", type:"javascript" do
-  parameters "ds_unattached_volumes_list","param_exclude_tags"
+  parameters "ds_unattached_volumes_list","param_exclude_tags","unattachedDays"
   result "content"
   code <<-EOS
   var param_exclude_tags_lower=[];
@@ -198,36 +198,42 @@ script "js_filter_aws_unattached_volumes", type:"javascript" do
     var tags = vol['tags'];
     var isTagMatched = false;
     var tagKeyValue = "";
+    var startDate = new Date(vol['createdTime']); // Volume Created Date
+    var endDate = new Date();
+    var timeDifference = endDate.getTime() - startDate.getTime();
+    var daysDifference = (timeDifference / (1000 * 3600 * 24)).toFixed(2);
     for(var k=0; k < tags.length; k++){
-    tag = tags[k];
-    if((param_exclude_tags_lower.indexOf((tag['tagKey']).toLowerCase()) !== -1) || (param_exclude_tags_lower.indexOf((tag['tagKey']+'='+tag['tagValue']).toLowerCase()) !== -1)){
-      isTagMatched = true;
+      tag = tags[k];
+      if((param_exclude_tags_lower.indexOf((tag['tagKey']).toLowerCase()) !== -1) || (param_exclude_tags_lower.indexOf((tag['tagKey']+'='+tag['tagValue']).toLowerCase()) !== -1)){
+        isTagMatched = true;
+      }
+        
+      // Constructing tags with comma separated to display in detail_template
+      if((tag['tagValue']).length > 0){
+        tagKeyValue = tagKeyValue+" , "+tag['tagKey']+'='+tag['tagValue'];
+      }else{
+        tagKeyValue = tagKeyValue+" , "+tag['tagKey'];
+      }
     }
 
-    // Constructing tags with comma separated to display in detail_template
-    if((tag['tagValue']).length > 0){
-      tagKeyValue = tagKeyValue+" , "+tag['tagKey']+'='+tag['tagValue'];
-    }else{
-      tagKeyValue = tagKeyValue+" , "+tag['tagKey'];
+    if(tagKeyValue === "" || tagKeyValue === " " || tagKeyValue == ""){
+      tagKeyValue = "   < No Value >";
     }
-  }
 
-  if(tagKeyValue === "" || tagKeyValue === " " || tagKeyValue == ""){
-    tagKeyValue = "   < No Value >";
-  }
-
-  //If the volume tag does not match with entered param_exlude_tags
-    if(!(isTagMatched)){
-      content.push({
-        tagKeyValue : (tagKeyValue.slice(2)),
-        vol_id : vol['volume_id'],
-        availability_zone : vol['availability_zone'],
-        snapshot_id : vol['snapshot_id'],
-        volume_Type : vol['volume_Type']
-        region : vol['region'],
-        createdTime : vol['createdTime'],
-        size : vol['size']+" GB"
-      })
+    //If the volume tag does not match with entered param_exlude_tags
+    if(daysDifference > unattachedDays){
+      if(!(isTagMatched)){
+        content.push({
+          tagKeyValue : (tagKeyValue.slice(2)),
+          vol_id : vol['volume_id'],
+          availability_zone : vol['availability_zone'],
+          snapshot_id : vol['snapshot_id'],
+          volume_Type : vol['volume_Type']
+          region : vol['region'],
+          createdTime : vol['createdTime'],
+          size : vol['size']+" GB"
+        })
+      }
     }
   }
   EOS
@@ -366,7 +372,7 @@ script "js_check_volumes_read_or_write_operations", type:'javascript' do
   }
 
   unattachedVolumes = _.sortBy(unattachedVolumes,'region')
-  unattachedVolumes = _.sortBy(unattachedVolumes,'availabilityZone')
+
   EOS
 end  
 
