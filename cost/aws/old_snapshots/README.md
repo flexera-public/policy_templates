@@ -2,7 +2,7 @@
 
 ## What it does
 
-This policy finds AWS snapshots in the given account which are older than the specified days and deletes them after user approval.
+This policy finds AWS snapshots in the given account which are older than the specified days and deletes them after user approval. Account specific snapshots are determined by filtering based on the owner-id. The account number is used as an owner-id.
 
 ## Input Parameters
 
