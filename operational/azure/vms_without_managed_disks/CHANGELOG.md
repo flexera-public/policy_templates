@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.1
+
+- Added Resource table
+
 ## v2.0
 
 - Changed the authentication to credential services

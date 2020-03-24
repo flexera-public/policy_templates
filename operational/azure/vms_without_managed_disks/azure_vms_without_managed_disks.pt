@@ -6,7 +6,7 @@ long_description ""
 category "Operational"
 severity "low"
 info(
-  version: "2.0",
+  version: "2.1",
   provider: "Azure",
   service: "Compute",
   policy_set: ""
@@ -129,7 +129,7 @@ script "js_filter_virtual_machines", type: "javascript" do
           var storageAccount = vm.osDisk.vhd.uri.split('/')[2].split('.')[0]
           result.push({
 		    subscriptionName: vm.subscriptionName,
-            name: vm.name,
+            id: vm.name,
             resourceGroup: resourceGroup,
             location: vm.location,
             storageAccount: storageAccount,
@@ -149,18 +149,37 @@ end
 policy "azure_resource_policy" do
   validate_each $ds_filtered_virtual_machines do
     summary_template "Azure Subscription({{parameters.param_azure_sub}}) - {{ len data }} Azure VMs without managed disks"
-    detail_template <<-EOS
-# Azure Resources out of compliance
-| Subscription Name | Location | Instance Name | Resource Group | Storage Account | osDisk VHD |
-| ------------- | -------------- | -------- | --------------- | ---------- |
-{{ range data -}}
-|{{.subscriptionName}} | {{.location}} | {{.name}} | {{.resourceGroup}} | {{.storageAccount}} | {{.osDisk.vhd.uri}} |
-{{ end -}}
 
-###### Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }}) within Org: {{ rs_org_name }} (Org ID: {{ rs_org_id }})
-EOS
     escalate $email
     check eq(0,1)
+
+    export do
+        resource_level true
+
+        field "subscriptionName" do
+            label "Subscription Name"
+        end
+
+        field "location" do
+            label "Location"
+        end
+
+        filed "id" do
+            label "Instance Name"
+        end
+
+        field "resourceGroup" do
+            label "Resource Group"
+        end
+
+        field "storageAccount" do
+            label "storageAccount"
+        end
+
+        field "osDisk.vhd.uri"
+            label "osDisk vhd"
+        end
+    end
   end
 end
 
@@ -169,5 +188,8 @@ end
 ###############################################################################
 
 escalation "email" do
+   automatic true
+   label "Sends Email"
+   description "Sends incident Email"
    email $param_email
 end

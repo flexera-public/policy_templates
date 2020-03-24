@@ -7,7 +7,7 @@ severity "medium"
 category "Cost"
 tenancy "single"
 info(
-  version: "1.2",
+  version: "1.3",
   provider: "Azure",
   service: "Compute",
   policy_set: ""
@@ -145,25 +145,47 @@ script "group_results", type: "javascript" do
         used: sumUsed
       }
     })
+    groupings=_.sortBy(groupings, 'id');
+	groupings=_.sortBy(groupings, 'sku');
+	groupings=_.sortBy(groupings, 'reserved');
   EOS
 end
 
 policy "azure_superseded_instances_policy" do
   validate_each $grouped_utilizations do
     summary_template "(Enrollment ID: {{parameters.param_enrollment}}): {{ len data }} Underutilized Azure Reserved Instances"
-    detail_template <<-EOS
-# Azure RIs that are under-utilized
-| RI ID | SKU Name | Reserved Hours | Used Hours | Avg Util Pct | 
-| ------------- | ------------- | ------ | --- | --- |
-{{ range data -}}
-| {{.id}} | {{.sku}} | {{.reserved}} | {{.used}} | {{.util}} |
-{{ end -}}
-EOS
+ 
     escalate $email
     check gt(to_n(val(item,"util")),$param_utilization)
+
+    export do
+        resource_level true
+        field "id" do
+            label "Id"
+        end
+
+        field "sku" do
+            label "SKU Name"
+        end
+
+        field "reserved" do
+            label "Reserved Hours"
+        end
+
+        field "used" do
+            label "Used Hours"
+        end
+
+        field "util" do
+            label "Avg Util Pct"
+        end
+    end
   end
 end
 
 escalation "email" do
-   email $param_email
+  automatic true
+  label "Send Email"
+  description "Sends incident email"
+  email $param_email
 end

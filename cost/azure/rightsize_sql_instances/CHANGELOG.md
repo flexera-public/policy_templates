@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.1
+
+-	Adding Resource Table
+
 ## v2.0
 
 - Changes to support the Credential Service

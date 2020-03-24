@@ -8,7 +8,7 @@ severity "low"
 tenancy "single"
 default_frequency "hourly"
 info(
-    version: "2.0",
+    version: "2.1",
     provider: "Azure",
     service: "AzureAD"
 )
@@ -350,8 +350,8 @@ script "js_filtered_grs_groups", type: "javascript" do
       var aadGroupObject = _.where(ds_filtered_aad_groups, {displayName: group});
 
       groupsToCreate.push({
-        name: currentGroupObject[0]["displayName"],
-        id: "N/A",
+        id: currentGroupObject[0]["displayName"],
+        id_complete: "N/A",
         href: "N/A",
         action: "Create",
         objectId: aadGroupObject[0]["objectId"]
@@ -407,30 +407,44 @@ end
 policy "policy_azuread_group_sync" do
   validate $ds_combined_data do
     summary_template "{{ len data.groupsToUpdate }} AzureAD Groups to Synchronize"
-    detail_template <<-EOS
-## Groups that Will Be Synchronized from AzureAD
-| Name  | CMP Group Href  | AzureAD Object Id |
-| :---: | :-------------: | :---------------: |
-{{ range data.groupsToUpdate -}}
-  | {{ .name }} | {{ .href }} | {{ .objectId }} |
-{{ end -}}
-
-{{ $create_count := len data.groupsToCreate }}
-{{ if (gt $create_count 0) -}}
-{{ range data.groupsToCreate -}}
-<br />
-<br />
-### The following groups need to be created and have permissions assigned to them in Governance:
-{{ .name }}
-{{ end -}}
-{{ end -}}
-
-___
-###### Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }}) within Org: {{ rs_org_name }} (Org ID: {{ rs_org_id }})
-EOS
+  
     escalate $email
     escalate $update_groups
     check false
+
+    export do
+        resource_level true
+
+        field "name" do
+            label "Name"
+            path "groupsToUpdate.name"
+        end
+
+        field "href" do
+            label "CMP Group Href"
+            path "groupsToUpdate.href"
+        end
+
+        field "objectId" do
+            label "AzureAD Object Id"
+            path "groupsToUpdate.objectId"
+        end
+
+        field "id" do
+            label "Id"
+            path "groupsToUpdate.id"
+        end
+    end
+### The following groups need to be created and have permissions assigned to them in Governance:
+    export do
+        resource_level true
+
+        field "id" do
+            label "Name"
+            path "groupsToCreate.id"
+        end
+    end 
+###### Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }}) within Org: {{ rs_org_name }} (Org ID: {{ rs_org_id }})
   end
 end
 
@@ -439,10 +453,16 @@ end
 ###############################################################################
 
 escalation "email" do
+   automatic true
+   label "Sends Email"
+   description "Send incident email"
    email $param_email
 end
 
 escalation "update_groups" do
+  automatic false
+  label "Synchronize Groups"
+  description "Synchronized ADGroups to Flexera groups"
   run "group_sync", data, $param_purge_users, $param_idp_href, rs_cm_host, rs_org_id
 end
 
