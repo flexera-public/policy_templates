@@ -199,6 +199,7 @@ Please contact sales@flexera.com to learn more.
 - [AWS Subnet Name Tag Sync](./operational/aws/subnet_name_sync)
 - [AWS VPC Name Tag Sync](./operational/aws/vpc_name_sync)
 - [AWS Long Running Instances](./operational/aws/long_running_instances/)
+- [AWS Instance Scheduled Events](./operational/aws/instance_scheduled_events)
 
 #### Azure
 
