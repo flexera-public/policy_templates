@@ -1,6 +1,7 @@
 # AWS Instance Scheduled Events
 
 ## What it does
+
 This policy checks for any scheduled event on EC2 instances that could cause operational issues, such as an instance reboot, stop, retirement, system reboot and system maintenance.
 
 ## Functional Details
