@@ -1,14 +1,14 @@
-name "AWS Unattached Volumes"
+name "AWS Unused Volumes"
 rs_pt_ver 20180301
 type "policy"
-short_description "Checks for unattached volumes older than specified number of days and, optionally, deletes them. See the [README](https://github.com/flexera/policy_templates/tree/master/cost/aws/unattached_volumes) and [docs.rightscale.com/policies](https://docs.rightscale.com/policies/) to learn more."
+short_description "Checks for unused volumes and if no read/write operations performed within a specified number of days and, optionally, deletes them. See the [README](https://github.com/flexera/policy_templates/tree/master/cost/aws/unused_volumes) and [docs.rightscale.com/policies](https://docs.rightscale.com/policies/) to learn more."
 category "Cost"
 severity "low"
 info(
-  version: "2.1",
+  version: "2.2",
   provider: "AWS",
   service: "EBS",
-  policy_set: "Unattached Volumes"
+  policy_set: "Unused Volumes"
 )
 
 ###############################################################################
@@ -25,13 +25,14 @@ parameter "param_exclude_tags" do
   type "list"
     category "User Inputs"
     label "Exclude Tags"
-    description "a list of tags used to excluded volumes from the incident."
+    description "A list of tags used to excluded volumes from the incident."
 end
 
 parameter "param_unattached_days" do
   type "number"
-  label "Unattached days"
-  description "the number of days a volume has been unattached."
+  label "Unused days"
+  description "The number of days a volume has been unused. The days should be greater than zero"
+  default 30
 end
 
 parameter "param_take_snapshot" do
@@ -61,15 +62,6 @@ end
 pagination "aws_volumes_pagination_xml" do
   get_page_marker do
     body_path "//DescribeVolumesResponse/nextToken"
-  end
-  set_page_marker do
-    query "NextToken"
-  end
-end
-
-pagination "aws_cloudtrails_pagination_xml" do
-  get_page_marker do
-    body_path "NextToken"
   end
   set_page_marker do
     query "NextToken"
@@ -115,37 +107,46 @@ datasource "ds_unattached_volumes_list" do
     field "snapshot_id", xpath(col_item, "snapshotId")
     field "volume_Type", xpath(col_item, "volumeType")
     field "region", val(iter_item, "region")
+    field "createdTime", xpath(col_item,"createTime")
+    field "size", xpath(col_item,"size")
    end
   end
 end
 
 datasource "ds_unattached_volumes_map" do
-  run_script $js_filter_aws_unattached_volumes, $ds_unattached_volumes_list, $param_exclude_tags
+  run_script $js_filter_aws_unattached_volumes, $ds_unattached_volumes_list, $param_exclude_tags, $param_unattached_days
 end
 
-#To get volumes cloud trail logs.
-datasource "ds_volumes_cloud_tails_logs" do
+datasource "ds_volume_read_bytes_metrics" do
   iterate $ds_unattached_volumes_map
-    request do
-      run_script $js_aws_volumes_cloud_trail_logs, val(iter_item,"vol_id"), val(iter_item,"region"), $param_unattached_days
-    end
+  request do
+    run_script $js_aws_volumes_cloud_watch_read_byte_metrics, val(iter_item,"vol_id"), val(iter_item,"region"), $param_unattached_days
+  end
   result do
     encoding "json"
-      collect jmes_path(response,"Events[*]") do
-        field "eventName", jmes_path(col_item,"EventName")
-        field "eventTime", jmes_path(col_item,"EventTime")
-        field "region", val(iter_item,"region")
-        field "volume_id", val(iter_item,"vol_id")
-        field "availability_zone", val(iter_item,"availability_zone")
-        field "volume_type", val(iter_item,"volume_type")
-        field "tagKeyValue", val(iter_item, "tagKeyValue")
-      end
+    collect jmes_path(response,"GetMetricStatisticsResponse.GetMetricStatisticsResult") do
+      field "volumeId", val(iter_item,"vol_id")
+      field "dataPoints", jmes_path(col_item,"Datapoints")
     end
+  end
 end
 
-#To get unattached volumes more than specified Days
-datasource "ds_unattached_volumes_for_long" do
-  run_script $js_filter_volumes_unattached_for_long, $ds_volumes_cloud_tails_logs,$ds_unattached_volumes_map, $param_unattached_days
+datasource "ds_volume_write_bytes_metrics" do
+  iterate $ds_unattached_volumes_map
+  request do
+    run_script $js_aws_volumes_cloud_watch_write_byte_metrics, val(iter_item,"vol_id"), val(iter_item,"region"), $param_unattached_days
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response,"GetMetricStatisticsResponse.GetMetricStatisticsResult") do
+      field "volumeId", val(iter_item,"vol_id")
+      field "dataPoints", jmes_path(col_item,"Datapoints")
+    end
+  end
+end
+
+datasource "ds_check_volumes_read_or_write_operations" do
+  run_script $js_check_volumes_read_or_write_operations,$ds_unattached_volumes_map,$ds_volume_read_bytes_metrics,$ds_volume_write_bytes_metrics
 end
 
 ###############################################################################
@@ -173,36 +174,45 @@ script "js_aws_unattached_volumes_list", type:"javascript" do
 end
 
 script "js_filter_aws_unattached_volumes", type:"javascript" do
-  parameters "ds_unattached_volumes_list","param_exclude_tags"
+  parameters "ds_unattached_volumes_list","param_exclude_tags","unattachedDays"
   result "content"
   code <<-EOS
-    var param_exclude_tags_lower=[];
-      for(var j=0;j<param_exclude_tags.length;j++){
-        param_exclude_tags_lower[j] = param_exclude_tags[j].toString().toLowerCase();
+  var param_exclude_tags_lower=[];
+  for(var j=0;j<param_exclude_tags.length;j++){
+    param_exclude_tags_lower[j] = param_exclude_tags[j].toString().toLowerCase();
+  }
+
+  var content = [];
+  for(var i=0;i<ds_unattached_volumes_list.length;i++){
+    vol = ds_unattached_volumes_list[i];
+    // Check, if the tag present in entered param_exclude_tags, ignore the volume if the tag matches/present.
+    var tags = vol['tags'];
+    var isTagMatched = false;
+    var tagKeyValue = "";
+    var startDate = new Date(vol['createdTime']); // Volume Created Date
+    var endDate = new Date();
+    var timeDifference = endDate.getTime() - startDate.getTime();
+    var daysDifference = (timeDifference / (1000 * 3600 * 24)).toFixed(2);
+    for(var k=0; k < tags.length; k++){
+      tag = tags[k];
+      if((param_exclude_tags_lower.indexOf((tag['tagKey']).toLowerCase()) !== -1) || (param_exclude_tags_lower.indexOf((tag['tagKey']+'='+tag['tagValue']).toLowerCase()) !== -1)){
+        isTagMatched = true;
       }
-
-    var content = [];
-      for(var i=0;i<ds_unattached_volumes_list.length;i++){
-        vol = ds_unattached_volumes_list[i];
-        // Check, if the tag present in entered param_exclude_tags, ignore the volume if the tag matches/present.
-        var tags = vol['tags'];
-        var isTagMatched = false;
-        var tagKeyValue = "";
-        for(var k=0; k < tags.length; k++){
-        tag = tags[k];
-        if((param_exclude_tags_lower.indexOf((tag['tagKey']).toLowerCase()) !== -1) || (param_exclude_tags_lower.indexOf((tag['tagKey']+'='+tag['tagValue']).toLowerCase()) !== -1)){
-          isTagMatched = true;
-        }
-
-        // Constructing tags with comma separated to display in detail_template
-        if((tag['tagValue']).length > 0){
-          tagKeyValue = tagKeyValue+" , "+tag['tagKey']+'='+tag['tagValue'];
-        }else{
-          tagKeyValue = tagKeyValue+" , "+tag['tagKey'];
-        }
+        
+      // Constructing tags with comma separated to display in detail_template
+      if((tag['tagValue']).length > 0){
+        tagKeyValue = tagKeyValue+" , "+tag['tagKey']+'='+tag['tagValue'];
+      }else{
+        tagKeyValue = tagKeyValue+" , "+tag['tagKey'];
       }
+    }
 
-      //If the volume tag does not match with entered param_exlude_tags
+    if(tagKeyValue === "" || tagKeyValue === " " || tagKeyValue == ""){
+      tagKeyValue = "   < No Value >";
+    }
+
+    //If the volume tag does not match with entered param_exlude_tags
+    if(daysDifference > unattachedDays){
       if(!(isTagMatched)){
         content.push({
           tagKeyValue : (tagKeyValue.slice(2)),
@@ -210,106 +220,170 @@ script "js_filter_aws_unattached_volumes", type:"javascript" do
           availability_zone : vol['availability_zone'],
           snapshot_id : vol['snapshot_id'],
           volume_Type : vol['volume_Type']
-          region : vol['region']
+          region : vol['region'],
+          createdTime : vol['createdTime'],
+          size : vol['size']+" GB"
         })
       }
     }
-  EOS
-end
-
-script "js_aws_volumes_cloud_trail_logs", type:"javascript" do
-  parameters  "volume_id","region","unattachedDays"
-  result "logs"
-  code <<-EOS
-    var endDate = new Date();
-    var endDateInEpochTime = endDate.getTime() / 1000;
-    var startDate = new Date();
-    startDate.setDate(startDate.getDate() - unattachedDays);
-    var startDateInEpochTime = startDate.getTime() / 1000;
-    logs = {
-      auth: "auth_aws",
-      host: 'cloudtrail.'+region+'.amazonaws.com',
-      path: '/',
-      verb: 'POST',
-      pagination: "aws_cloudtrails_pagination_xml",
-      headers: {
-        "X-Amz-Target": "com.amazonaws.cloudtrail.v20131101.CloudTrail_20131101.LookupEvents",
-        "Content-Type": "application/x-amz-json-1.1",
-      },
-      body_fields:{
-        "StartTime" : startDateInEpochTime,
-        "LookupAttributes" :[{
-          "AttributeKey": "ResourceName",
-          "AttributeValue": volume_id
-        }],
-        "EndTime" : endDateInEpochTime
-      }
-    }
-
-  // To Delay Next Request
-  // Due to AWS ThrottlingException (Rate Limit)
-  // Delaying the next request for 1 second.
-  var current_time = Math.round((new Date()).getTime())
-  var endTime   = current_time + ( 1000)
-  while (current_time <= endTime) {
-    current_time = Math.round((new Date()).getTime())
   }
   EOS
 end
 
-script "js_filter_volumes_unattached_for_long", type:"javascript" do
-  parameters "cloud_trail_logs","unattached_volumes","unattached_days"
-  result "trail_logs"
+script "js_aws_volumes_cloud_watch_read_byte_metrics", type:"javascript" do
+  parameters "volume_id","region","unattachedDays"
+  result "metrics"
   code <<-EOS
-  var trail_logs = [];
-  for(var i =0 ; i < unattached_volumes.length; i++){
-    vol = unattached_volumes[i];
-    for(var j=0; j < cloud_trail_logs.length; j++){
-      log = cloud_trail_logs[j];
-      // Check, if the volume has been unattached for more than param_unattached_days, ignore the volume if the unattached for less than param_unattached_days
-      if(vol['vol_id'] === log['volume_id']){
-        if(log['eventName'] === 'DetachVolume' || log['eventName'] === 'CreateVolume'){
-          var eventOccurDate = new Date(log['eventTime'] * 1000);
-          var today = new Date();
-          var time_difference = today.getTime() - eventOccurDate.getTime();
-          var days_difference = time_difference / (1000 * 3600 * 24);
-            if(days_difference <= unattached_days){
-              trail_logs.push({
-                volume_id : vol['vol_id'],
-                region : log['region'],
-                availability_zone : log['availability_zone'],
-                tagKeyValue : vol['tagKeyValue'],
-                eventName : log['eventName'],
-                volume_Type : vol['volume_Type']
-                eventTime : (eventOccurDate).toString()
-              })
-            }
+    var endDate = new Date().toISOString();
+    var startDate = new Date(new Date().setDate(new Date().getDate() - unattachedDays)).toISOString();
+    var peroid = 2592000;
+    var datapoints = (unattachedDays / 30).toFixed(2);
+    if(datapoints > 1440){
+      peroid = peroid * 60;
+	}
+    console.log("Period "+peroid);
+    peroid = ""+peroid+"";
+    metrics = {
+     "auth": "auth_aws",
+     "host": 'monitoring.'+region+'.amazonaws.com',
+     "verb": "GET",
+     "path": "/",
+     "headers": {
+       "User-Agent": "RS Policies",
+       "Content-Type": "application/json",
+       "x-amz-target": "GraniteServiceVersion20100801.GetMetricStatistics",
+       "Accept": "application/json",
+       "Content-Encoding": "amz-1.0"
+     }
+     "query_params": {
+       'Action': 'GetMetricStatistics',
+       'Version': '2010-08-01',
+       'Namespace': 'AWS/EBS',
+       'MetricName': 'VolumeReadBytes',
+       'Dimensions.member.1.Name': 'VolumeId',
+       'Dimensions.member.1.Value': volume_id,
+       'StartTime': startDate,
+       'EndTime': endDate,
+       'Period': peroid,
+       'Statistics.member.1': 'Maximum',
+       'Statistics.member.2': 'Average',
+       'Statistics.member.3': 'Minimum'
+     }
+    }
+  EOS
+end
+
+script "js_aws_volumes_cloud_watch_write_byte_metrics", type:"javascript" do
+  parameters "volume_id","region","unattachedDays"
+  result "metrics"
+  code <<-EOS
+    var endDate = new Date().toISOString();
+    var startDate = new Date(new Date().setDate(new Date().getDate() - unattachedDays)).toISOString();
+    var period = 2592000;
+    var dataPoints = (unattachedDays/30).toFixed(2);
+    if(dataPoints > 1440){
+      period = period * 60;
+	}
+    period = ""+period+"";
+    console.log("Period "+period);
+    metrics = {
+     "auth": "auth_aws",
+     "host": 'monitoring.'+region+'.amazonaws.com',
+     "verb": "GET",
+     "path": "/",
+     "headers": {
+       "User-Agent": "RS Policies",
+       "Content-Type": "application/json",
+       "x-amz-target": "GraniteServiceVersion20100801.GetMetricStatistics",
+       "Accept": "application/json",
+       "Content-Encoding": "amz-1.0"
+     }
+     "query_params": {
+       'Action': 'GetMetricStatistics',
+       'Version': '2010-08-01',
+       'Namespace': 'AWS/EBS',
+       'MetricName': 'VolumeWriteBytes',
+       'Dimensions.member.1.Name': 'VolumeId',
+       'Dimensions.member.1.Value': volume_id,
+       'StartTime': startDate,
+       'EndTime': endDate,
+       'Period': period,
+       'Statistics.member.1': 'Maximum',
+       'Statistics.member.2': 'Average',
+       'Statistics.member.3': 'Minimum'
+     }
+    }
+  EOS
+end
+
+script "js_check_volumes_read_or_write_operations", type:'javascript' do
+  parameters "volumesList","volumesReadMetricsData","volumesWriteMetricsData"
+  result "unattachedVolumes"
+  code <<-EOS
+  var unattachedVolumes = [];
+  for(var i=0; i < volumesList.length; i++){
+    var volume = volumesList[i];
+    var readWriteOperationDone = false;
+
+    for(var j=0; j < volumesReadMetricsData.length; j++){
+      var readMetricData = volumesReadMetricsData[j];
+      if(volume['vol_id'] === readMetricData['volumeId']){
+        var readMetricDataPoints = readMetricData['dataPoints'];
+        if(readMetricDataPoints.length > 0){
+          readWriteOperationDone = true;  
+		}
+        break;
+	  }
+	}
+
+    if(!readWriteOperationDone){
+      for(var k=0; k < volumesWriteMetricsData.length; k++){
+        var writeMetricData = volumesWriteMetricsData[k];
+        if(volume['vol_id'] === writeMetricData['volumeId']){
+          var writeMetricDataPoints = writeMetricData['dataPoints'];
+          if(writeMetricDataPoints.length > 0){
+            readWriteOperationDone = true;  
+		  }
           break;
-        }
-      }
-    }
+		}
+	  }
+	}
+
+    if(!readWriteOperationDone){
+      unattachedVolumes.push({
+        volumeId : volume['vol_id'],
+        region : volume['region'],
+        availabilityZone : volume['availability_zone'],
+        volumeType : volume['volume_Type'],
+        tags : volume['tagKeyValue'],
+        createdTime : volume['createdTime'],
+        size : volume['size']
+	  })
+	}
   }
-  trail_logs = _.sortBy(trail_logs, 'region');
+
+  unattachedVolumes = _.sortBy(unattachedVolumes,'region')
+
   EOS
-end
+end  
 
 ###############################################################################
 # Policy
 ###############################################################################
 
 policy "policy_unattached_volumes_list" do
-  validate $ds_unattached_volumes_for_long do
-  summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} Unattached Volumes Found in AWS"
+  validate $ds_check_volumes_read_or_write_operations do
+  summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} Unused Volumes Found in AWS"
   detail_template <<-EOS
-# List of Unattached Volumes
-| Region | Volume_ID | Availability_Zones | Volume_Type | TAG_Value | Volume_UnAttached_Date |
-| ------ | ---------- | ------------ | -------- | -------- |---------------- |
+# List of Unused Volumes
+| Region | Volume Id | Volume Type | Size | TAG Value |
+| ------ | --------- | -------- | ------ | ---------------- |
 {{ range data -}}
-| {{.region}} | {{.volume_id}} | {{.availability_zone}} | {{.volume_Type}} | {{.tagKeyValue}} |  {{.eventTime }} |
+| {{.region}} | {{.volumeId}} | {{.volumeType}} | {{.size}} | {{.tags }} |
 {{ end -}}
 
   EOS
-  escalate $report_unattached_volumes
+  escalate $report_unused_volumes
   escalate $delete_volumes
   check eq(size(data),0)
   end
@@ -319,7 +393,7 @@ end
 # Escalations
 ###############################################################################
 
-escalation "report_unattached_volumes" do
+escalation "report_unused_volumes" do
   email $param_email
 end
 
@@ -341,7 +415,7 @@ end
 ###############################################################################
 
 define take_action($data,$param_take_snapshot) return $all_responses do
-  # If you see the audit entries. Please set $$debug = false
+  # If you want to see the audit entries. Please set $$debug = true
   $$debug = false
   $all_responses = []
   foreach $item in $data do
@@ -369,7 +443,7 @@ define create_volumes_snapshot($item) return $status_code do
     query_strings: {
       "Action": "CreateSnapshot",
       "Version": "2016-11-15",
-      "VolumeId": $item["volume_id"]
+      "VolumeId": $item["volumeId"]
     }
   )
   call sys_log("Create Volumes Snapshot Response ",to_s($response))
@@ -383,6 +457,7 @@ define create_volumes_snapshot($item) return $status_code do
       $condition_check = "completed"
 
       while $condition_check !~ $snapshot_status do
+        sleep(2)
         call get_snapshot_status(to_s($snapshotId)) retrieve $status
         $snapshot_status = $status
 
@@ -406,7 +481,7 @@ define delete_volume($item) return $status_code do
     query_strings: {
       "Action": "DeleteVolume",
       "Version": "2016-11-15",
-      "VolumeId": $item["volume_id"]
+      "VolumeId": $item["volumeId"]
     }
   )
   call sys_log("Delete Volumes Response ",to_s($delete_response))
@@ -415,7 +490,7 @@ define delete_volume($item) return $status_code do
     $volume_delete_body = $delete_response["body"]
     $split_body = split($volume_delete_body,"<Message>")
     $split_final_message = split($split_body[1],"</Message>");
-     call create_tag($item["region"],$item["volume_id"],to_s($split_final_message[0]))
+     call create_tag($item["region"],$item["volumeId"],to_s($split_final_message[0]))
   end
 end
 
@@ -461,7 +536,7 @@ define sys_log($subject, $detail) do
       notify: "None",
       audit_entry: {
         auditee_href: @@account,
-        summary: "AWS Delete Unattached Volumes Policy "+ $subject,
+        summary: "AWS Delete Unused Volumes Policy "+ $subject,
         detail: $detail
       }
     )
