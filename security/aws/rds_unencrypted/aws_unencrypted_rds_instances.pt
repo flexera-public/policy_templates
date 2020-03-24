@@ -6,7 +6,7 @@ long_description ""
 category "Security"
 severity "medium"
 info(
-  version: "2.0",
+  version: "2.1",
   provider: "AWS",
   service: "RDS",
   policy_set: ""
@@ -202,7 +202,7 @@ script "js_rds_filter_map", type: "javascript" do
       //If the RDS instance tag does not match with entered param_exclude_tags, then check if RDS instance is Unencrypted.
       if(!(is_tag_matched) && (rds['storage_encrypted'] === false)){
         content.push({
-          db_instance_identifier: rds['db_instance_identifier'],
+          id: rds['db_instance_identifier'],
           region: rds['region'],
           availability_zone: rds['availability_zone'],
           sec_availability_zone: rds['sec_availability_zone'],
@@ -217,6 +217,9 @@ script "js_rds_filter_map", type: "javascript" do
         })
       }
     }
+  content = _.sortBy(content,'id')
+  content = _.sortBy(content,'region')
+  content = _.sortBy(content,availability_zone)
   EOS
 end
 
@@ -227,15 +230,6 @@ end
 policy "policy_rds_instance_list" do
   validate_each $ds_rds_unencrypted_instance_list do
     summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} unencrypted RDS Instances Found in AWS"
-    detail_template <<-EOS
-# List of unencrypted RDS Instances
-| RDS Instance Name | Region | Availability Zone | Secondary Availability Zone | Publicly Accessible | DB Engine Name | DB Instance Status | Delete Protection Enabled | TAGs |
-| ----------------- | ------ | ----------------- | --------------------------- | ------------------- | -------------- | ------------------ | ------------------------- | ---- |
-{{ range data -}}
-| {{.db_instance_identifier}} | {{ .region }} | {{ .availability_zone }} |  {{ .sec_availability_zone }} |{{ .publicly_accessible }} | {{ .db_engine_name }} | {{ .db_instance_status }} | {{.delete_protection}} | {{.tag_key_value}} |
-{{ end -}}
-###### Note: Please refer to 'Enable Delete Action' section in the [README](https://github.com/rightscale/policy_templates/tree/master/security/aws/rds_unencrypted) file to perform delete operation.
-    EOS
     escalate $report_unencrypted_RDS_instances
     #Uncomment below five lines (remove '#') to enable Delete action.
     #escalate $delete_unencrypted_RDS_instances_approval
@@ -244,7 +238,37 @@ policy "policy_rds_instance_list" do
     #  ne(val(item, "db_instance_status"), "available")
     #)
 	check val(item, "storage_encrypted")
-	#And comment above line (add '#' at beginning) when you enable Delete action. 
+	#And comment above line (add '#' at beginning) when you enable Delete action.
+    export do
+      resource_level true
+      field "id" do
+        label "RDS Instance Name"
+      end
+      field "region" do
+        label "Region"
+      end
+      field "availability_zone" do
+        label "Availability Zone"
+      end
+      field "sec_availability_zone" do
+        label "Secondary Availability Zone"
+      end
+      field "publicly_accessible" do
+        label "Publicly Accessible"
+      end
+      field "db_engine_name" do
+        label "DB Engine Name"
+      end
+      field "db_instance_status" do
+        label "DB Instance Status"
+      end
+      field "delete_protection" do
+        label "Delete Protection Enabled"
+      end
+      field "tag_key_value" do
+        label "TAGs"
+      end
+    end
   end
 end
 ###############################################################################
@@ -326,12 +350,12 @@ define delete_unencrypted_RDS_instances($data) return $all_responses do
             query_strings: {
               "Action": "DeleteDBInstance",
               "Version": "2014-10-31",
-              "DeleteAutomatedBackups": $item["db_instance_identifier"]			
+              "DeleteAutomatedBackups": $item["id"]			
             }
           )
 		end  
       else
-        #Delete non-Aurora DB instances were a DB snapshot gets created with name '<--db_instance_identifier-->-finalSnapshot' Ex mySQL-DBinstance--finalSnapshot before deleting DB instance.
+        #Delete non-Aurora DB instances were a DB snapshot gets created with name '<--id-->-finalSnapshot' Ex mySQL-DBinstance--finalSnapshot before deleting DB instance.
         $response = http_request(
           auth: $$auth_aws,
           https: true,
@@ -342,8 +366,8 @@ define delete_unencrypted_RDS_instances($data) return $all_responses do
             "Action": "DeleteDBInstance",
             "Version": "2014-10-31",
             "DeleteAutomatedBackups": "false",
-            "DBInstanceIdentifier": $item["db_instance_identifier"],
-            "FinalDBSnapshotIdentifier": $item["db_instance_identifier"]+"-finalSnapshot"
+            "DBInstanceIdentifier": $item["id"],
+            "FinalDBSnapshotIdentifier": $item["id"]+"-finalSnapshot"
           }
         )
       end

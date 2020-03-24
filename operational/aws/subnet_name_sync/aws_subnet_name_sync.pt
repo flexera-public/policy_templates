@@ -6,7 +6,7 @@ long_description ""
 severity "medium"
 category "Operational"
 info(
-  version: "2.0",
+  version: "2.1",
   provider: "AWS",
   service: "VPC",
   policy_set: ""
@@ -169,12 +169,14 @@ script "script_subnets", type: "javascript" do
           "rs_name": ds_subnets[y]["name"],
           "aws_name":  aws_name,
           "href": ds_subnets[y]["href"],
-          "resource_uid": ds_subnets[y]["resource_uid"],
+          "id": ds_subnets[y]["resource_uid"],
           "region": region,
           "network_href": network_href
         })
       }
-    } 
+    }
+  updates = _.sortBy(updates,'id')
+  updates = _.sortBy(updates,'region')
   EOS
 end
 
@@ -185,17 +187,29 @@ end
 policy "policy_subnet_sync" do
   validate_each $ds_rs_updates do
     summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} Subnet Names Out of Sync"
-    detail_template <<-EOS
-# Subnet Name Validation between AWS and Cloud Management
-| SubnetId | Region | RS Name | AWS Name | Href | Network Href |
-| -------- | ------ | ------- | -------- | ---- | -------------|
-{{ range data -}}
-  | {{.resource_uid}} | {{.region}} | {{.rs_name}} | {{.aws_name}} | {{.href}} | {{.network_href}} |
-{{ end -}}
-EOS
     check equals?(val(item, "rs_name"), val(item, "aws_name"))
 	escalate $email
     escalate $escalate_resources
+    export do
+      resource_level true
+      field "id" do
+        label "Subnet Id"
+      end
+      field "region" do
+        label "Region"
+      end
+      field "rs_name" do
+        label "RS Name"
+      end
+      field "aws_name" do
+        label "AWS Name"
+      end
+      field "href" do
+        label "Href"
+      end
+      field "network_href" do
+        label "Network Href"
+      end
   end
 end
 
@@ -204,19 +218,16 @@ end
 ###############################################################################
 
 escalation "email" do
+  automatic true
+  label "Send Mail"
+  description "Sends incident email"
   email $param_email
 end
 
 escalation "escalate_resources" do
-  request_approval  do
-    label "Approve to Update subnets"
-    description "Update subnets"
-    parameter "approval_reason" do
-      type "string"
-      label "Reason for approval"
-      description "Explain why you are approving the action"
-    end
-  end
+  automatic false
+  label "Update Subnets"
+  description "Update selected subnets"
   run "update_subnets", data
 end
 
