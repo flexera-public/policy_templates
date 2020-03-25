@@ -1,0 +1,263 @@
+name "AWS Old Snapshots"
+rs_pt_ver 20180301
+type "policy"
+short_description "Checks for snapshots older than specified number of days and, optionally, deletes them. See the [README](https://github.com/flexera/policy_templates/tree/master/cost/aws/old_snapshots) and [docs.rightscale.com/policies](https://docs.rightscale.com/policies/) to learn more."
+category "Cost"
+severity "low"
+info(
+  version: "2.0",
+  provider:"AWS",
+  service: "EBS", 
+  policy_set: "Old Snapshots"
+  )
+
+parameter "param_email" do
+  type "list"
+  label "Email addresses"
+  description "A list of email addresses to notify."
+end
+
+parameter "snapshot_age" do
+  type "number"
+  label "Snapshot age"
+  default 30
+  description "The number of days since the snapshot was created."
+end
+
+parameter "param_exclude_tags" do
+  type "list"
+  category "User Inputs"
+  label "Exclude Tags"
+  description "A list of tags used to excluded volumes from the incident."
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+#authenticate with AWS
+credentials "auth_aws" do
+  schemes "aws","aws_sts"
+  label "AWS"
+  description "Select the AWS Credential from the list"
+  tags "provider=aws"
+end
+
+###############################################################################
+# Datasources
+###############################################################################
+
+#Generates list of Regions
+datasource "ds_regions_list" do
+  request do
+    verb "GET"
+    host "raw.githubusercontent.com"
+    path "/rightscale/policy_templates/master/data/aws/regions.json"
+    header "User-Agent", "RS Policies"
+  end
+end
+
+datasource "ds_get_caller_identity" do
+  request do
+    auth $auth_aws
+    verb "GET"
+    host "sts.amazonaws.com"
+    path "/"
+    header "User-Agent", "RS Policies"
+    query "Action", "GetCallerIdentity"
+    query "Version", "2011-06-15"
+  end
+  result do
+    encoding "xml"
+    collect xpath(response, "//GetCallerIdentityResponse/GetCallerIdentityResult") do
+      field "account",xpath(col_item, "Account")
+    end
+ end
+end
+
+datasource "ds_describe_snapshots" do
+  iterate $ds_regions_list
+  request do
+    run_script $js_describe_snapshots, val(iter_item,"region"), $ds_get_caller_identity
+  end
+  result do
+    encoding "xml"
+    collect xpath(response, "//DescribeSnapshotsResponse/snapshotSet/item", "array") do
+        field "tags" do
+          collect xpath(col_item,"tagSet/item") do
+            field "tagKey", xpath(col_item, "key")
+            field "tagValue", xpath(col_item, "value")
+        end
+      end
+        field "region",val(iter_item, "region")
+        field "snapshotId", xpath(col_item,"snapshotId")
+        field "startTime", xpath(col_item, "startTime")
+        field "ownerId", xpath(col_item, "ownerId")
+   end
+ end
+end
+
+datasource "ds_filter_old_snapshots" do
+  run_script $js_filter_old_snapshots, $snapshot_age, $ds_describe_snapshots, $param_exclude_tags
+end
+
+###############################################################################
+# Scripts
+###############################################################################
+
+script "js_describe_snapshots", type: "javascript" do
+  result "results"
+  parameters "region", "ds_get_caller_identity"
+  code <<-EOS
+  results = {
+    "auth": "auth_aws",
+    "host": 'ec2.'+region+'.amazonaws.com',
+    "verb": "GET",
+    "path": "/",
+    "headers": {
+      "User-Agent": "RS Policies",
+      "Content-Type": "text/xml"
+    },
+    "query_params": {
+      'Action': 'DescribeSnapshots',
+      'Version': '2016-11-15',
+      'Filter.1.Name': 'status',
+      'Filter.1.Value.1': 'completed',
+      'Filter.2.Name': 'owner-id',
+      'Filter.2.Value.1': ds_get_caller_identity[0]['account']
+    }
+  }
+EOS
+end
+
+script "js_filter_old_snapshots", type: "javascript" do
+  result "results"
+  parameters "snapshot_age", "ds_describe_snapshots", "param_exclude_tags"
+  code <<-EOS
+    var param_exclude_tags_lower=[];
+    for(var j=0;j<param_exclude_tags.length;j++){
+        param_exclude_tags_lower[j] = param_exclude_tags[j].toString().toLowerCase();
+    }
+    var results = [];
+    for(var i=0; i < ds_describe_snapshots.length; i++){
+      var snapshot = ds_describe_snapshots[i];
+      // Check, if the tag present in entered param_exclude_tags, ignore the snapshot if tag matches/present
+      var tags = snapshot['tags'];
+      var isTagMatched = false;
+      var tagKeyValue = "";
+      for(var k=0; k < tags.length; k++){
+        tag = tags[k];
+        if((param_exclude_tags_lower.indexOf((tag['tagKey']).toLowerCase()) !== -1) || (param_exclude_tags_lower.indexOf((tag['tagKey']+'='+tag['tagValue']).toLowerCase()) !== -1)){
+          isTagMatched = true;  
+		}
+
+        // Constructing tags with comma separated to display in detail_template
+        if((tag['tagValue']).length > 0){
+          tagKeyValue = tagKeyValue+" , "+tag['tagKey']+'='+tag['tagValue'];  
+		}else{
+          tagKeyValue = tagKeyValue+" , "+tag['tagKey'];  
+		}
+	  }
+
+      if(tagKeyValue === "" || tagKeyValue === " " || tagKeyValue == ""){
+        tagKeyValue = "   < No Value >";
+      }
+
+      if(!(isTagMatched)){
+        var snapshotTime = Date.parse(snapshot['startTime']);
+        var daysOld = (new Date().getTime() - new Date(snapshotTime).getTime()) / (1000 * 3600 * 24);
+        daysOld = Math.round(daysOld);
+        if(daysOld > snapshot_age){
+          results.push({
+            snapshotId : snapshot['snapshotId'],
+            region : snapshot['region'],
+            tagKeyValue : (tagKeyValue.slice(2)),
+            daysOld : daysOld
+		  })
+		}
+	  }
+	}
+    results = _.sortBy(results,'region');
+    results = _.sortBy(results,'daysOld');
+  EOS
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "pol_utilization" do
+  validate $ds_filter_old_snapshots do
+    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} rows containing AWS old snapshot data"
+    detail_template <<-EOS
+# AWS Old Snapshot
+| Region | Days Old | Snapshot Id | Tags |
+| ------ | ---------- | ------ | ------- |
+{{ range data -}}
+| {{.region}} | {{.daysOld}} | {{.snapshotId}} | {{ .tagKeyValue }} |  
+{{ end -}}
+###### Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }}) within Org: {{ rs_org_name }} (Org ID: {{ rs_org_id }})
+EOS
+    escalate $ese_email
+    escalate $esc_delete_snapshot
+    check eq(size(data), 0)
+  end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "ese_email" do
+  email $param_email
+end
+
+escalation "esc_delete_snapshot" do
+  request_approval do
+    label "Approve Snapshot Deletion"
+    description "Approve escalation to delete the snapshot(s)"
+    parameter "approval_reason" do
+      type "string"
+      label "Reason for Approval"
+      description "Expain why are you approving the action"
+    end
+  end
+  run "delete_snapshot",data
+end
+
+###############################################################################
+# Cloud Workflow
+###############################################################################
+
+ define delete_snapshot($data) do
+ foreach $item in $data do
+  $delete_response = http_request(
+    auth: $$auth_aws,
+    https: true,
+    verb: "get",
+    host: "ec2."+$item["region"]+".amazonaws.com",
+    href: "/",
+    query_strings: {
+      "Action": "DeleteSnapshot",
+      "Version": "2016-11-15",
+      "SnapshotId.1": $item["snapshotId"]
+    }
+  ) 
+  call sys_log("delete_snapshot  ", $item["snapshotId"])
+  call sys_log("delete_snapshot  ", to_s($delete_response))
+  end
+end
+
+
+define sys_log($subject, $detail) do
+  if $$debug
+    rs_cm.audit_entries.create(
+      notify: "None",
+      audit_entry: {
+        auditee_href: @@account,
+        summary: "AWS Old Snapshots"+ $subject,
+        detail: $detail
+      }
+    )
+    end
+end
