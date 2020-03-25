@@ -1,6 +1,6 @@
 # Changelog
 
-## V2.1
+## v2.1
 
 - fix provider tag for graph Credential
 
