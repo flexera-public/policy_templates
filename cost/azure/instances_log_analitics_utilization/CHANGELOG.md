@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.2
+
+- remove unnecessary permissions block
+
 ## v2.1
 
 - Fixed bug where Azure returns instance details without MemoryGB field
