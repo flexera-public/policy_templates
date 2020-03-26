@@ -2,7 +2,7 @@
 
 ## v2.1
 
-- remove unnecessary permissions block
+- fix provider tag for graph Credential
 
 ## v2.0
 
