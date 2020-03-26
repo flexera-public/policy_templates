@@ -9,7 +9,6 @@ If the volume is not able to be deleted, say, due to it being locked, the volume
 
 If the issue causing the delete failure is removed, the next run of the policy will delete the volume.
 Note: The unattached volumes report will reflect the updated set of unattached volumes on the subsequent run.
-
 Optionally, the user can specify one or more tags that if found on a volume will exclude the volume from the list.
 
 ## Input Parameters
