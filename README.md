@@ -97,8 +97,8 @@ Please contact sales@flexera.com to learn more.
 ##### Storage
 
 - [Google Object Storage Optimization](./cost/google/object_storage_optimization/)
-- [Google Delete Old Snapshots](./cost/google/old_snapshots/)
-- [Google Delete Unattached Volumes](./cost/google/unattached_volumes/)
+- [Google Old Snapshots](./cost/google/old_snapshots/)
+- [Google Unused Volumes](./cost/google/unattached_volumes/)
 
 ##### Other
 
@@ -200,6 +200,7 @@ Please contact sales@flexera.com to learn more.
 - [AWS Subnet Name Tag Sync](./operational/aws/subnet_name_sync)
 - [AWS VPC Name Tag Sync](./operational/aws/vpc_name_sync)
 - [AWS Long Running Instances](./operational/aws/long_running_instances/)
+- [AWS Instance Scheduled Events](./operational/aws/instance_scheduled_events)
 
 #### Azure
 
