@@ -54,9 +54,10 @@ Please contact sales@flexera.com to learn more.
 ##### Storage
 
 - [AWS Bucket Size Check](./cost/aws/s3_bucket_size/)
-- [AWS Unattached Volumes](./cost/aws/unattached_volumes)
+- [AWS Unused Volumes](./cost/aws/unused_volumes)
 - [AWS S3 Buckets without Server Access Logging](./security/storage/aws/s3_buckets_without_server_access_logging/)
 - [AWS Object Storage Optimization](./cost/aws/object_storage_optimization/)
+- [AWS Old Snapshots](./cost/aws/old_snapshots/)
 
 #### Azure
 
@@ -77,9 +78,8 @@ Please contact sales@flexera.com to learn more.
 ##### Storage
 
 - [Azure Blob Storage Optimization](./cost/azure/object_storage_optimization/)
-- [Azure Unused Volumes](./cost/azure/unattached_volumes)
 - [Azure Old Snapshots](./cost/azure/old_snapshots/)
-
+- [Azure Unused Volumes](./cost/azure/unattached_volumes)
 
 #### Google
 
@@ -99,7 +99,7 @@ Please contact sales@flexera.com to learn more.
 
 - [Google Object Storage Optimization](./cost/google/object_storage_optimization/)
 - [Google Old Snapshots](./cost/google/old_snapshots/)
-- [Google Unattached Volumes](./cost/google/unattached_volumes/)
+- [Google Unused Volumes](./cost/google/unattached_volumes/)
 
 ##### Other
 
@@ -201,6 +201,7 @@ Please contact sales@flexera.com to learn more.
 - [AWS Subnet Name Tag Sync](./operational/aws/subnet_name_sync)
 - [AWS VPC Name Tag Sync](./operational/aws/vpc_name_sync)
 - [AWS Long Running Instances](./operational/aws/long_running_instances/)
+- [AWS Instance Scheduled Events](./operational/aws/instance_scheduled_events)
 
 #### Azure
 
