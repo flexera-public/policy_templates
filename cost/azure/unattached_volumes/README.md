@@ -2,30 +2,30 @@
 
 ## What it does
 
-This Policy Template scans all volumes in the given account and identifies any unattached volumes that have been unattached for at least the number of user-specified days. Using log analytics, we will determine the number of days the disk has been ditached. If any are found, an incident report will show the volumes, and related information and an email will be sent to the user-specified email address.
+This Policy Template scans all volumes in the given account and identifies any volume that has been unused for at least the number of days specified by user. Using activity logs, we will determine the number of days the volume has been unused. If any are found, an incident report will show the volumes and related information. An email will be sent to the user-specified email address.
 
 If the user approves that the volumes should be deleted, the policy will delete the volumes.
-If the volume is not able to be deleted, say, due to it being locked, the volume will be tagged to indicate the error that was received.
+If the volume is not getting deleted, say, because it is locked, then the volume will be tagged to indicate the error that was received.
 
-If the issue causing the delete failure is removed, the next run of the policy will delete the volume.
-Note: The unattached volumes report will reflect the updated set of unattached volumes on the subsequent run.
+If the issue causing delete failure is removed, the next run of the policy will delete the volume.
+Note: Unused volumes report will reflect the updated set of unused volumes on the subsequent run.
+
 Optionally, the user can specify one or more tags that if found on a volume will exclude the volume from the list.
 
 ## Input Parameters
 
 This policy has the following input parameters required when launching the policy.
 
-- *Unattached days* - The number of days a volume has been unattached.
+- *Unused Age* - Number of days the volume is unused.
 - *Email addresses* - A list of email addresses to notify.
 - *Exclude Tags.* - A list of tags used to excluded volumes from the incident.
 - *Create Final Snapshot* - Boolean for whether or not to take a final snapshot before deleting.
-- *Workspace ID* - ID of the log analytics workspace which is created in the Azure portal.
 
 ## Policy Actions
 
 The following policy actions are taken on any resources found to be out of compliance.
 
-- Delete Unattached volumes after approval
+- Delete Unused volumes after approval
 - Send an email report
 
 ## Prerequisites
