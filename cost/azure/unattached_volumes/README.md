@@ -22,6 +22,13 @@ This policy has the following input parameters required when launching the polic
 - *Create Final Snapshot* - Boolean for whether or not to take a final snapshot before deleting.
 - *Workspace ID* - ID of the log analytics workspace which is created in the Azure portal.
 
+## Policy Actions
+
+The following policy actions are taken on any resources found to be out of compliance.
+
+- Delete Unattached volumes after approval
+- Send an email report
+
 ## Prerequisites
 
 This policy uses [credentials](https://docs.rightscale.com/policies/users/guides/credential_management.html) for connecting to the cloud -- in order to apply this policy you must have a credential registered in the system that is compatible with this policy. If there are no credentials listed when you apply the policy, please contact your cloud admin and ask them to register a credential that is compatible with this policy. The information below should be consulted when creating the credential.
@@ -40,13 +47,6 @@ Required permissions in the provider:
 - Microsoft.StorSimple/managers/devices/iscsiservers/disks/delete
 - Microsoft.StorSimple/managers/devices/iscsiservers/disks/write
 - Microsoft.Compute/snapshots/write
-
-## Policy Actions
-
-The following policy actions are taken on any resources found to be out of compliance.
-
-- Delete Unattached volumes after approval
-- Send an email report
 
 ## Supported Clouds
 
