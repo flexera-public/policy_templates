@@ -1,8 +1,12 @@
 # Changelog
 
+## v2.2
+
+- Added Resource table
+
 ## v2.1
 
-- Adding Resource Table
+- fix provider tag for graph Credential
 
 ## v2.0
 
