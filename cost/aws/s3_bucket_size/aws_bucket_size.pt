@@ -12,6 +12,10 @@ info(
   policy_set: ""
 )
 
+###############################################################################
+# User inputs
+###############################################################################
+
 parameter "param_email" do
   type "list"
   label "Email Address"
@@ -83,30 +87,30 @@ script "parse_buckets", type: "javascript" do
   parameters "buckets"
   result "results"
   code <<-EOS
-results = []
-for ( i = 0; i < buckets.length; i++ ) {
-  if ( !buckets[i]["region"] ){
-    results.push(
-    {
-      "bucket_name": buckets[i]["bucket_name"],
-      "creation_date": buckets[i]["creation_date"],
-      "region": "us-east-1",
-      "host": "s3-external-1.amazonaws.com",
-      "auth": "auth_aws"
+  results = []
+  for ( i = 0; i < buckets.length; i++ ) {
+    if ( !buckets[i]["region"] ){
+      results.push(
+      {
+        "bucket_name": buckets[i]["bucket_name"],
+        "creation_date": buckets[i]["creation_date"],
+        "region": "us-east-1",
+        "host": "s3-external-1.amazonaws.com",
+        "auth": "auth_aws"
+      }
+      )
+    } else {
+      if ( buckets[i]["region"] == "EU" ) { buckets[i]["region"] = "eu-west-1" }
+      results.push(
+      {
+        "bucket_name": buckets[i]["bucket_name"],
+        "creation_date": buckets[i]["creation_date"],
+        "region": buckets[i]["region"],
+        "host": "s3-" + buckets[i]["region"] + ".amazonaws.com"
+      }
+      )
     }
-    )
-  } else {
-    if ( buckets[i]["region"] == "EU" ) { buckets[i]["region"] = "eu-west-1" }
-    results.push(
-    {
-      "bucket_name": buckets[i]["bucket_name"],
-      "creation_date": buckets[i]["creation_date"],
-      "region": buckets[i]["region"],
-      "host": "s3-" + buckets[i]["region"] + ".amazonaws.com"
-    }
-    )
-  }
-};
+  };
 EOS
 end
 
@@ -208,6 +212,21 @@ script "check_for_oversized_buckets", type: "javascript" do
 EOS
 end
 
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_email" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
 policy "aws_oversized_buckets" do
   validate $aws_oversized_buckets do
     summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} Oversized Buckets Found in AWS"
@@ -227,11 +246,4 @@ policy "aws_oversized_buckets" do
     check eq(size(data), 0)
     escalate $esc_email
   end
-end
-
-escalation "esc_email" do
-  automatic true
-  label "Send Email"
-  description "Send incident email"
-  email $param_email
 end
