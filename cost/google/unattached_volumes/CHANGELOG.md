@@ -1,8 +1,12 @@
 # Changelog
 
-## v2.2
+## v2.3
 
 - adding incident resource table
+
+## v2.2
+
+- rename policy and policy_set
 
 ## v2.1
 

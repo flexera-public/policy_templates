@@ -1,8 +1,12 @@
 # Changelog
 
-## v2.2
+## v2.3
 
 - adding incident resource table
+
+## v2.2
+
+- remove unnecessary permissions block
 
 ## v2.1
 
