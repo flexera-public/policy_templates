@@ -79,6 +79,7 @@ Please contact sales@flexera.com to learn more.
 
 - [Azure Blob Storage Optimization](./cost/azure/object_storage_optimization/)
 - [Azure Old Snapshots](./cost/azure/old_snapshots/)
+- [Azure Unused Volumes](./cost/azure/unattached_volumes)
 
 #### Google
 
