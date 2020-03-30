@@ -7,7 +7,7 @@ severity "medium"
 category "SaaS Management"
 default_frequency "daily"
 info(
-  version: "1.1",
+  version: "1.2",
   provider: "Flexera SaaS Manager",
   service: "",
   policy_set: ""
@@ -31,10 +31,9 @@ parameter "param_email" do
   description "Email addresses of the recipients you wish to notify"
 end
 
-
 resources "refresh_token", type: "rs_cm.credentials" do
   filter do
-      name "FSM_TOKEN"
+    name "FSM_TOKEN"
   end
   view "sensitive"
 end
@@ -71,22 +70,21 @@ end
 datasource "ds_customer_select" do
   iterate $ds_global_auth
   request do
-      host "api.metasaas.com"
-      path "/auth/select-customer"
-      verb "POST"
-      header "Authorization", join(["Bearer", val(iter_item, "access_token")])
-      body_field "orgId", rs_org_id
+    host "api.metasaas.com"
+    path "/auth/select-customer"
+    verb "POST"
+    header "Authorization", join(["Bearer", val(iter_item, "access_token")])
+    body_field "orgId", rs_org_id
   end
   result do
-      encoding "json"
-      field "access_token", val(response, "token")
+    encoding "json"
+    field "access_token", val(response, "token")
   end
 end
 
 datasource "ds_num_products" do
   iterate $ds_customer_select
   request do
-    #auth $rs_auth
     host "api.metasaas.com"
     verb "GET"
     scheme "https"
@@ -108,11 +106,11 @@ datasource "ds_products" do
   result do
     encoding "json"
     collect jmes_path(response, "items[*]") do
-        field "application", jmes_path(col_item, "name")
-        field "pointOfContactEmail", jmes_path(col_item, "pointOfContactEmail")
-        field "contracts", jmes_path(col_item, "contracts")
-        field "vendor", jmes_path(col_item, "product.vendor.name")
-      end
+      field "application", jmes_path(col_item, "name")
+      field "pointOfContactEmail", jmes_path(col_item, "pointOfContactEmail")
+      field "contracts", jmes_path(col_item, "contracts")
+      field "vendor", jmes_path(col_item, "product.vendor.name")
+    end
   end
 end
 
@@ -186,19 +184,13 @@ script "js_cleanup_products", type: "javascript" do
 EOS
 end
 
-escalation "report_summary" do
-    email $param_email
+escalation "esc_email" do
+  email $param_email
 end
 
 policy "policy_fsm_renewal_reminder" do
   validate $ds_cleanup_products do
-      summary_template "{{ len data }} Expiring Contracts Found"
-      detail_template <<-EOS
-# SaaS Renewal Reminder
-
-
-###### Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }}) within Org: {{ rs_org_name }} (Org ID: {{ rs_org_id }})
-EOS
+    summary_template "{{ len data }} Expiring Contracts Found"
     export do
       field "endDate" do
         label "Contract Expiration Date (YYYY-MM-DD)"
@@ -220,7 +212,7 @@ EOS
       end
     end
 
-      escalate $report_summary
-      check eq(size(data), 0)
+    escalate $esc_email
+    check eq(size(data), 0)
   end
 end
