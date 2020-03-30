@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.0
+
+- remove permissions block
+
 ## v1.2
 
 - Updated the metadata
