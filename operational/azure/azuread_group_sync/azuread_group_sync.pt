@@ -8,7 +8,7 @@ severity "low"
 tenancy "single"
 default_frequency "hourly"
 info(
-    version: "2.1",
+    version: "2.0",
     provider: "Azure",
     service: "AzureAD"
 )
@@ -219,7 +219,6 @@ script "js_filtered_aad_groups", type: "javascript" do
   result "results"
   code <<-EOS
     var results = [];
-
     // Cleanup AzureAD group member list
     // Remove groups from members
     // Make list of members unique
@@ -228,7 +227,6 @@ script "js_filtered_aad_groups", type: "javascript" do
       var members = [];
       //members = _.where(_.unique(group["members"]), {"objectType": "#microsoft.graph.user"})
       members = _.where(group["members"], {"objectType": "#microsoft.graph.user"})
-
       results.push({
         objectId: group["objectId"],
         objectType: group["objectType"],
@@ -246,29 +244,23 @@ script "js_filtered_aad_users", type: "javascript" do
   code <<-EOS
     var results = [];
     var users = [];
-
     // Return unique list of all AzureAD users from the discovered groups
     // Update company name/phone number if null; used for creating new users
-
     _.each(ds_filtered_aad_groups, function(group){
       users = users.concat(group["members"])
     })
-
     users = _.unique(users, function(item, key, objectId){
       return item.objectId
     })
-
     _.each(users, function(user){
       var userPhone = param_default_phone;
       var userCompany = param_default_company;
       if (( user["businessPhones"][0] != null && user["businessPhones"][0] !== undefined)) {
         userPhone = user["businessPhones"][0]
       }
-
       if (( user["companyName"] != null && user["companyName"] !== undefined )) {
         userCompany = user["companyName"]
       }
-
       results.push({
         principalUIDAttribute: user["principalUIDAttribute"],
         objectId: user["objectId"],
@@ -292,10 +284,8 @@ script "js_filtered_grs_users", type: "javascript" do
     var usersToPurge = [];
     
     // Filter users to be created and removed
-
     var usersNotInGRS = _.difference(_.pluck(ds_filtered_aad_users, "email"), _.pluck(ds_grs_users, "email"))
     var usersNotInAAD = _.difference(_.pluck(ds_grs_users, "email"), _.pluck(ds_filtered_aad_users, "email"))
-
     _.each(usersNotInGRS, function(user) {
       var currentUserObject = _.where(ds_filtered_aad_users, {email: user});
       
@@ -311,11 +301,9 @@ script "js_filtered_grs_users", type: "javascript" do
         action: "Create"
       })
     })
-
     _.each(usersNotInAAD, function(user) {
       var currentUserObject = _.where(ds_grs_users, {email: user});
       var currentUserGroups = _.pluck(currentUserObject, "groups")[0]
-
       if ((_.size(currentUserGroups) == 0 || currentUserGroups == null || currentUserGroups === undefined)) {
         usersToPurge.push({
           email: currentUserObject[0]["email"],
@@ -324,7 +312,6 @@ script "js_filtered_grs_users", type: "javascript" do
         })
       }
     })
-
     results = {
       UsersToCreate: usersToCreate,
       UsersToPurge: usersToPurge
@@ -344,11 +331,9 @@ script "js_filtered_grs_groups", type: "javascript" do
     var groupsNotInGRS = _.difference(_.pluck(ds_filtered_aad_groups, "displayName"), _.pluck(ds_grs_groups, "name"))
     var groupsOnlyInGRS = _.difference(_.pluck(ds_grs_groups, "name"), _.pluck(ds_filtered_aad_groups, "displayName"))
     var groupsInGRS = _.difference(_.pluck(ds_grs_groups, "name"), groupsOnlyInGRS)
-
     _.each(groupsNotInGRS, function(group) {
       var currentGroupObject = _.where(ds_filtered_aad_groups, {displayName: group});
       var aadGroupObject = _.where(ds_filtered_aad_groups, {displayName: group});
-
       groupsToCreate.push({
         name: currentGroupObject[0]["displayName"],
         id: "N/A",
@@ -357,13 +342,11 @@ script "js_filtered_grs_groups", type: "javascript" do
         objectId: aadGroupObject[0]["objectId"]
       })
     })
-
     _.each(groupsInGRS, function(group) {
       var currentGroupObject = _.where(ds_grs_groups, {name: group});
       var aadGroupObject = _.where(ds_filtered_aad_groups, {displayName: group});
       var aadUserCount = _.size(aadGroupObject[0]["members"])
       cmpUserCount = _.size(currentGroupObject[0]["users"])
-
       groupsToUpdate.push({
         name: currentGroupObject[0]["name"],
         id: currentGroupObject[0]["id"],
@@ -374,7 +357,6 @@ script "js_filtered_grs_groups", type: "javascript" do
         objectId: aadGroupObject[0]["objectId"]
       })
     })
-
     results = {
       GroupsToCreate: groupsToCreate,
       GroupsToUpdate: groupsToUpdate
@@ -407,35 +389,28 @@ end
 policy "policy_azuread_group_sync" do
   validate $ds_combined_data do
     summary_template "{{ len data.groupsToUpdate }} AzureAD Groups to Synchronize"
+    detail_template <<-EOS
+## Groups that Will Be Synchronized from AzureAD
+| Name  | CMP Group Href  | AzureAD Object Id |
+| :---: | :-------------: | :---------------: |
+{{ range data.groupsToUpdate -}}
+  | {{ .name }} | {{ .href }} | {{ .objectId }} |
+{{ end -}}
+{{ $create_count := len data.groupsToCreate }}
+{{ if (gt $create_count 0) -}}
+{{ range data.groupsToCreate -}}
+<br />
+<br />
+### The following groups need to be created and have permissions assigned to them in Governance:
+{{ .name }}
+{{ end -}}
+{{ end -}}
+___
+###### Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }}) within Org: {{ rs_org_name }} (Org ID: {{ rs_org_id }})
+EOS
     escalate $email
     escalate $update_groups
     check false
-    export do
-      resource_level true
-      field "name" do
-        label "Name"
-        path "groupsToUpdate.name"
-      end
-      field "href" do
-        label "CMP Group Href"
-        path "groupsToUpdate.href"
-      end
-      field "objectId" do
-        label "AzureAD Object Id"
-        path "groupsToUpdate.objectId"
-      end
-      field "id" do
-        label "Id"
-        path "groupsToUpdate.id"
-      end
-    end
-    export do
-      resource_level true
-      field "id" do
-        label "Name"
-        path "groupsToCreate.name"
-      end
-    end 
   end
 end
 
@@ -444,16 +419,10 @@ end
 ###############################################################################
 
 escalation "email" do
-  automatic true
-  label "Sends Email"
-  description "Send incident email"
-  email $param_email
+   email $param_email
 end
 
 escalation "update_groups" do
-  automatic false
-  label "Synchronize Groups"
-  description "Synchronized ADGroups to Flexera groups"
   run "group_sync", data, $param_purge_users, $param_idp_href, rs_cm_host, rs_org_id
 end
 
