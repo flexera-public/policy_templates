@@ -1,8 +1,12 @@
 # Change log
 
-## v2.1
+## v2.2
 
 - Added Resource tabel
+
+## v2.1
+
+- remove unnecessary permissions block
 
 ## v2.0
 
