@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.0
+
+- remove permissions block and adding incident resource table
+
 ## v1.3
 
 - Updated the metadata
