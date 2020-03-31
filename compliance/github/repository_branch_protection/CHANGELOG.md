@@ -1,3 +1,7 @@
+v1.3
+----
+- Adding incident resource table
+
 v1.2
 ----
 - Added tenancy "single" in metadata

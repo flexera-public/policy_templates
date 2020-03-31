@@ -1,7 +1,7 @@
 name "GitHub.com Unpermitted Top-Level Teams"
 rs_pt_ver 20180301
 short_description "Gets the top-level / parent Teams for a GitHub.com Org and creates an incident if any do not match the whitelisted values.  See the [README](https://github.com/rightscale/policy_templates/tree/master/compliance/github/toplevel_teams) and [docs.rightscale.com/policies](http://docs.rightscale.com/policies/) to learn more."
-long_description "Version: 1.1"
+long_description "Version: 1.2"
 severity "low"
 category "Compliance"
 tenancy "single"
@@ -94,6 +94,7 @@ for (var index = 0; index < teams.length; index++) {
     if( typeof team.parent == "undefined" ) {
         // exclude white listed names
         if( !_.contains(param_whitelist, team.name) ){
+            team["teamName"] = "["+team.name+"](https://github.com/orgs/"+"team.org"+"/"+team.slug+"/members)";
             invalid_teams.push(team);
         }
     }
@@ -104,30 +105,34 @@ end
 policy "policy_toplevel_teams" do
   validate_each $ds_invalid_teams do
     summary_template "GitHub.com Top-Level Teams Report"
-    detail_template <<-EOS
-# GitHub.com Top-Level Teams Report
-
-The following top-level Teams do not match any of the Team names that have been whitelisted.
-
-| Organization | Team Name | Team Description | Team Privacy | 
-| ------------ | ---- | ------------ | ------ | 
-{{ range data -}}
-  | {{.org}} | [{{.name}}](https://github.com/orgs/{{.org}}/teams/{{.slug}}/members) | {{.description}} | {{.privacy}} |
-{{ end -}}
-
-#### Policy Organization(s): {{  parameters.param_orgs }}
-
-#### Policy Whitelisted Teams: {{  parameters.param_whitelist }}
-
-___
-###### Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }})
-
-EOS
     check lt(size($ds_invalid_teams),0)
     escalate $email_report
+    #### Policy Organization(s): {{  parameters.param_orgs }}
+    #### Policy Whitelisted Teams: {{  parameters.param_whitelist }}
+    export do
+      resource_level true
+      field "org" do
+        label "Organization"
+      end
+      field "teamName" do
+        label "Team Name"
+      end
+      field "description" do
+        label "Team Description"
+      end
+      field "privacy" do
+        label "Team Privacy"
+      end
+      field "id" do
+        label "ID"
+      end
+    end
   end
 end
 
 escalation "email_report" do
-    email $param_email
+  automatic true
+  label "Send Mail"
+  description "Sends incidents email"
+  email $param_email
 end

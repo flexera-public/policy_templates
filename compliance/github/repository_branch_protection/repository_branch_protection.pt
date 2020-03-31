@@ -1,7 +1,7 @@
 name "GitHub.com Repository Branches without Protection"
 rs_pt_ver 20180301
 short_description "Gets the repositories + branches under a GitHub.com Organization and creates incidents for any that do not have protection enabled.  See the [README](https://github.com/flexera/policy_templates/tree/master/compliance/github/repository_branch_protection) and [docs.rightscale.com/policies](http://docs.rightscale.com/policies/) to learn more."
-long_description "Version: 1.2"
+long_description "Version: 1.3"
 severity "medium"
 category "Compliance"
 tenancy "single"
@@ -89,6 +89,7 @@ datasource "ds_repos_branches" do
   result do
     encoding "json"
     collect jmes_path(response, "[*]") do
+      field "id", jmes_path(iter_item, "id")
       field "repo_name", jmes_path(iter_item, "name")
       field "repo_org", jmes_path(iter_item, "org")
       field "branch_name", jmes_path(col_item, "name")
@@ -111,6 +112,7 @@ for (var index = 0; index < repos_branches.length; index++) {
   var branch = repos_branches[index];
   // check if branch is in param_branches and if it's protected
   if( _.contains(param_branches, branch.branch_name) && !_.contains(param_whitelist, branch.repo_org+"/"+branch.repo_name) && branch.branch_protected != true){
+    branch["fullOrganizationName"] = "["+branch.repo_org+"/"+branch.repo_name+"](https://github.com/"+branch.repo_org+"/"+branch.repo_name+"/settings/branches)"
     invalid_repo_branches.push(branch);
   }
 }
@@ -120,30 +122,28 @@ end
 policy "invalid_repos" do
   validate $ds_invalid_repo_branches do
     summary_template "GitHub.com Unprotected Branches Report"
-    detail_template <<-EOS
-# GitHub.com Unprotected Branches Report
-
-The following repository branches do not meet the compliance standards of this policy.
-
-| Organization/Repository | Unprotected Branch |
-| ----------------------- | ------ |
-{{ range data -}}
-  | [{{.repo_org}}/{{.repo_name}}](https://github.com/{{.repo_org}}/{{.repo_name}}/settings/branches) | {{.branch_name}} |
-{{ end -}}
-
-#### Policy Organization(s): {{  parameters.param_orgs }}
-
-#### Policy Branches: {{  parameters.param_branches }}
-
-___
-###### Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }})
-
-EOS
     check eq(size(data), 0)
     escalate $email_report
+    #### Policy Organization(s): {{  parameters.param_orgs }}
+    #### Policy Branches: {{  parameters.param_branches }}
+    export do
+      resource_level true
+      field "fullOrganizationName" do
+        label "Organization / Repository"
+      end
+      field "branch_name" do
+        label "Unprotected Branch"
+      end
+      field "id" do
+        label "Id"
+      end
+    end
   end
 end
 
 escalation "email_report" do
-    email $param_email
+  automatic true
+  label "Send Mail"
+  description "Sends incidents email"
+  email $param_email
 end
