@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.1
+
+- fix provider tag for graph Credential
+
 ## v2.0
 
 - Changes to support the Credential Service
