@@ -1,8 +1,12 @@
 # Changelog
 
-## v1.5
+## v1.6
 
 - Added Resource table
+
+## v1.5
+
+- Fixed no data table report
 
 ## v1.4
 
