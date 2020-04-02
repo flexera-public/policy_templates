@@ -1,8 +1,8 @@
-# Azure Old Snapshots
+# AWS Old Snapshots
 
 ## What it does
 
-This Policy finds Azure snapshots older than the specified days and deletes them.
+This policy finds AWS snapshots in the given account which are older than the specified days and deletes them after user approval. Account specific snapshots are determined by filtering based on the owner-id. The account number is used as an owner-id.
 
 ## Input Parameters
 
@@ -27,16 +27,37 @@ This policy uses [credentials](https://docs.rightscale.com/policies/users/guides
 
 For administrators [creating and managing credentials](https://docs.rightscale.com/policies/users/guides/credential_management.html) to use with this policy, the following information is needed:
 
-Provider tag value to match this policy: `azure_rm`
+Provider tag value to match this policy: `aws`
 
-Required permissions in the provider:
+The following AWS permissions must be allowed for the policy to run.
 
-- Microsoft.Compute/snapshots/read
-- Microsoft.Compute/snapshots/delete
+```javascript
+{
+    "Version": "2016-11-15",
+    "Statement":[{
+    "Effect":"Allow",
+    "Action":["ec2:DescribeSnapshots","ec2:DeleteSnapshot"],
+    "Resource":"*"
+    }
+  ]
+}
+```
+
+```javascript
+{
+    "Version": "2011-06-15",
+    "Statement":[{
+    "Effect":"Allow",
+    "Action":["sts:GetCallerIdentity"],
+    "Resource":"*"
+    }
+  ]
+}
+```
 
 ## Supported Clouds
 
-- Azure
+- AWS
 
 ## Cost
 

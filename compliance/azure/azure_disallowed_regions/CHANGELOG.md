@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.2
+
+- remove unnecessary permissions block
+
 ## v2.1
 
 - Changes to add logs to the CM audit entries
