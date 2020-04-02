@@ -6,7 +6,7 @@ long_description ""
 category "Cost"
 severity "low"
 info(
-  version: "1.4",
+  version: "1.5",
   provider: "Flexera Cloud Management",
   service: "",
   policy_set: ""
@@ -120,7 +120,7 @@ script "js_instances_with_timestamp", type: "javascript" do
       }
       
       results.push({
-        resource_uid: instance.resource_uid,
+        id: instance.resource_uid,
         name: instance.name,
         href: instance.href
         cloud_href: instance.cloud_href,
@@ -140,20 +140,16 @@ end
 # Escalations
 ###############################################################################
 escalation "email" do
+  automatic true
+  label "Send Mail"
+  description "Sends incidents email"
   email $param_email
 end
 
 escalation "report_and_terminate_instances" do
-  request_approval  do
-    label "Escalation approval"
-    description "Approve Terminate action"
-    parameter "approval_reason" do
-      type "string"
-      label "Reason for approval"
-      description "Explain why you are approving the action"
-    end
-  end
-
+  automatic false
+  label "Terminate Instances"
+  description "Terminate Instances"
   run "terminate_instances", data
 end
 
@@ -168,18 +164,28 @@ end
 policy "pol_instances" do
   validate_each $ds_instances_with_timestamp do
     summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} Terminable Instances"
-    detail_template <<-EOS
-# Terminable Instances
-| Name | Terminate Date | Current Time | Locked |
-| ---- | -------------- | ------------ | ------ |
-{{ range data -}}
-| {{ .name }} | {{.terminate_date}} | {{.run_time}} | {{.locked}} |
-{{ end -}}
-EOS
     escalate $email
     escalate $report_and_terminate_instances
     check logic_not(val(item,"terminate"))
     resolve $report_resolution
+    export do
+      resource_level true
+      field "id" do
+        label "Resource UID"
+      end
+      field "name" do
+        label "Name"
+      end
+      field "terminate_date" do
+        label "Terminate Date"
+      end
+      field "run_time" do
+        label "Current Date"
+      end
+      field "locked" do
+        label "Locked"
+      end
+    end
   end
 end
 
