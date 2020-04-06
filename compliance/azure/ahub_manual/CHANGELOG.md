@@ -2,7 +2,7 @@
 
 ## v2.2
 
-- Bug fix
+- Bug fix on the formatting of email incident
 
 ## v2.1
 
