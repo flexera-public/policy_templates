@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.2
+
+- Bug fix on the formatting of email incident
+
 ## v2.1
 
 - remove unnecessary permissions block
