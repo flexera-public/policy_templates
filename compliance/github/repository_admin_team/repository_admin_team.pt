@@ -21,6 +21,32 @@ parameter "param_orgs" do
   label "Organization on GitHub.com to scan"
 end
 
+parameter "param_team_blacklist" do
+  type "list"
+  label "Teams to never grant Admin role."
+  default []
+end
+
+parameter "param_min_contrib_percent" do
+  type "number"
+  label "Grant teams Admin that have contributed to the repo this percentage of contributions, or more."
+  default 100
+end
+
+parameter "param_grant_admin_team_permission" do
+  type "string"
+  label "Grand existing teams Admin role if they are already added to repository explicitly with at least this permission."
+  default "push"
+  allowed_values ["pull","push"]
+end
+
+parameter "param_grant_admin_team_count" do
+  type "number"
+  label "Limit of Recommended Teams for a valid recommendation. Set to 0 to disable granting Admin based on number of Recommended Team"
+  default 0
+  allowed_values [0,1,2,3,4,5]
+end
+
 auth "auth_github", type: "api_key" do
   location "header"
   field "Authorization"
@@ -45,7 +71,7 @@ script "js_orgs_array", type: "javascript" do
   parameters "param_orgs"
   result "orgs_array"
   code <<-EOS
-var orgs_array = param_orgs;
+var orgs_array = _.uniq(param_orgs);
 EOS
 end
 
@@ -66,7 +92,74 @@ datasource "org_repos" do
   end
 end
 
+datasource "org_teams" do
+  iterate $ds_orgs_array
+  request do
+    auth $auth_github
+    pagination $github_pagination
+    host "api.github.com"
+    path join(["/orgs/",iter_item,"/teams"])
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "[*]") do
+      field "team_org", iter_item
+      field "team_name", jmes_path(col_item, "name")
+      field "team_slug", jmes_path(col_item, "slug")
+    end
+  end
+end
+
+datasource "org_team_membership" do
+  iterate $org_teams
+  request do
+    auth $auth_github
+    pagination $github_pagination
+    host "api.github.com"
+    path join(["/orgs/",val(iter_item,"team_org"),"/teams/",val(iter_item,"team_slug"),"/members"])
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "[@]") do
+      field "team_org", jmes_path(iter_item, "team_org")
+      field "team_name", jmes_path(iter_item, "team_name")
+      field "team_slug", jmes_path(iter_item, "team_slug")
+      field "team_members", jmes_path(col_item, "[].login")
+    end
+  end
+end
+
+datasource "org_team_membership_allowed" do
+  run_script $js_org_team_membership_allowed, $org_team_membership, $param_team_blacklist
+end
+
+script "js_org_team_membership_allowed", type: "javascript" do
+  parameters "teams","teams_blacklist"
+  result "result"
+  code <<-EOS
+  var result = _.reject(teams, function(team){ 
+    return _.contains(teams_blacklist,team.team_slug);
+    });
+EOS
+end
+
+# org_repos_dev - Used for development only
+datasource "org_repos_dev" do
+  run_script $js_org_repos_dev
+end
+script "js_org_repos_dev", type: "javascript" do
+  result "org_repos"
+  code <<-EOS
+  var org_repos = [
+    {"repo_org":"flexera","repo_name":"xcloud"},
+    {"repo_org":"flexera","repo_name":"trs-design"},
+    {"repo_org":"flexera","repo_name":"swm-api-data"}
+  ];
+EOS
+end # end orgs_repos_dev
+
 datasource "org_repos_teams" do
+  # use `iterate $org_repos_dev` for quicker policy execution and developement cycles
   iterate $org_repos
   request do
     auth $auth_github
@@ -93,7 +186,7 @@ script "js_invalid_repos", type: "javascript" do
     result "invalid_org_repos"
     code <<-EOS
 var invalid_org_repos = [];
-for (var index = 0; index < org_repos_teams.length; index++) {
+  for (var index = 0; index < org_repos_teams.length; index++) {
     admin_count = 0;
     var repo = org_repos_teams[index];
     if( repo.teams.length == 0 ){
@@ -115,30 +208,278 @@ for (var index = 0; index < org_repos_teams.length; index++) {
 EOS
 end
 
+datasource "invalid_repos_contributors" do
+  iterate $invalid_repos
+  request do
+    auth $auth_github
+    pagination $github_pagination
+    host "api.github.com"
+    path join(["/repos/",val(iter_item,"repo_org"),"/",val(iter_item,"repo_name"),"/contributors"])
+    #ignore_status [409] # Ignore 409 when no commits on repo
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response,"[@]") do
+      field "repo_name", jmes_path(iter_item, "repo_name")
+      field "repo_org", jmes_path(iter_item, "repo_org")
+      field "teams", jmes_path(iter_item, "teams")
+      field "failure_reason", jmes_path(iter_item, "failure_reason")
+      field "contributors_logins", jmes_path(col_item, "[].login")
+      #field "contributors_type", jmes_path(col_item, "[].type")
+      field "contributors_contributions", jmes_path(col_item, "[].contributions")
+      end
+  end
+end
+
+datasource "invalid_repos_contributors_scored" do
+  run_script $js_invalid_repos_contributors_scored, $invalid_repos_contributors, $org_team_membership_allowed, $param_grant_admin_team_permission, $param_min_contrib_percent, $param_grant_admin_team_count
+end
+
+script "js_invalid_repos_contributors_scored", type: "javascript" do
+  parameters "invalid_repos", "teams", "param_grant_admin_team_permission", "param_min_contrib_percent","param_grant_admin_team_count"
+  result "invalid_repos"
+  code <<-EOS
+//// TODO: Existing Admin User
+//// If users with Admin exist, their teams could be recommended.  Typically user who createss repo is granted "Admin" role, so it would be safe to assume the repo is associated with that user's team
+
+//// Existing Team based recommendation
+var param_permission =  param_grant_admin_team_permission;
+var param_permission =  "push"; // Workaround param_grant_admin_team_permission issue where `undefined` gets passed through unexpectedly
+switch(param_permission) {
+  case "pull":
+    param_permission = 1;
+    break;
+  case "push":
+    param_permission = 2;
+    break;
+  case "admin":
+    param_permission = 10;
+    break;
+  default:
+    param_permission = 0;
+}
+// Go through each invalid_repo
+_.each(invalid_repos, function (repo) {
+  
+  // Go through each team on repo and see if it meets the policy permission criteria
+  repo.recommended_teams_existing = [];
+  _.each(repo.teams, function (team) {
+    // Transform Team Permissions
+    var team_perm = team.permission;
+    switch(team_perm) {
+      case "pull":
+        team_perm = 1;
+        break;
+      case "push":
+        team_perm = 2;
+        break;
+      case "admin":
+        team_perm = 10;
+        break;
+      default:
+        team_perm = 0;
+    }
+    // Check Team Permission
+    if (team_perm >= param_permission) {
+      // Add to recommended_teams_existing[] if true
+      repo.recommended_teams_existing.push(team);
+    }
+  });
+
+
+  //// Contribution based recommendation
+  var team_scores = {};
+  repo.recommended_teams_contributors = [];
+  _.each(repo.contributors_logins, function (contributor,contrib_index) {
+    // Pluck the Contributor's Team(s) from full list of `teams`
+    var contributor_teams = _.pluck(
+      _.select(teams, function(team) {
+        return _.contains(team.team_members,contributor);
+      }),
+      "team_slug");
+    _.each(contributor_teams, function (team) {
+        if (!_.isObject(team_scores[team])) {
+          team_scores[team] = { "team": team, "contributions": 0 };
+        }
+        team_scores[team]["contributions"] = team_scores[team]["contributions"] + repo.contributors_contributions[contrib_index]
+    });
+  });
+  repo.total_contribs = _.reduce(repo.contributors_contributions, function(x, y){ return x + y; }, 0);
+  _.each(team_scores, function(team) {
+    team.percent_of_total_contribs = Math.floor(team.contributions / repo.total_contribs * 100);
+    if (team.percent_of_total_contribs >= param_min_contrib_percent) {
+      repo.recommended_teams_contributors.push(team);
+    }
+  });
+  team_scores = _.sortBy(team_scores, "percent_of_total_contribs").reverse();
+  repo.team_scores = team_scores;
+
+
+
+  //// Union of recommendations
+  repo.recommended_teams = _.union( _.pluck(repo.recommended_teams_existing,"slug") , _.pluck(repo.recommended_teams_contributors,"team") );
+
+  //// Cleanup unused data
+  delete(repo.contributors_contributions);
+  delete(repo.contributors_logins);
+
+  }); //end each invalid_repos
+EOS
+end
+
+datasource "invalid_repos_valid_recos" do
+  run_script $js_valid_recos, $invalid_repos_contributors_scored, $param_grant_admin_team_count
+end
+
+datasource "invalid_repos_invalid_recos" do
+  run_script $js_invalid_recos, $invalid_repos_contributors_scored, $param_grant_admin_team_count
+end
+
+script "js_valid_recos", type: "javascript" do
+  parameters "invalid_repos", "param_grant_admin_team_count"
+  result "results"
+  code <<-EOS
+  var results = [];
+_.each(invalid_repos, function (repo) {
+  if (repo.recommended_teams.length != 0 && repo.recommended_teams.length <= param_grant_admin_team_count) {
+    results.push(repo);
+  }
+});
+EOS
+end
+script "js_invalid_recos", type: "javascript" do
+  parameters "invalid_repos", "param_grant_admin_team_count"
+  result "results"
+  code <<-EOS
+  var results = [];
+_.each(invalid_repos, function (repo) {
+  if (repo.recommended_teams.length == 0 || repo.recommended_teams.length > param_grant_admin_team_count) {
+    results.push(repo);
+  }
+});
+EOS
+end
+
 policy "invalid_repos" do
-  validate $invalid_repos do
-    summary_template "GitHub.com Repository Ownership Report"
+# BK -- This works when only validation
+  validate $invalid_repos_valid_recos do
+    summary_template "GitHub.com Repositories with Admin Team Recommendations"
+    check eq(size(data),0)
+    escalate $email_report
+    escalate $github_repos_grant_admin_teams
     detail_template <<-EOS
-# GitHub.com Repository Ownership Report
+# GitHub.com Repositories with Admin Team Recommendations
 
-The following repositories are out of compliance and do not have a Team with "Admin" role on the repository which is considered the repository owner.
+The following repositories are out of compliance and do not have a Team with "Admin" role on the repository which is required, and how the repository owner(s) are identified.
 
-| Organization/Repository | Audit Log Link | Reason for non-compliance |
-| ----------------------- | -------------- | ------------------------- |
-{{ range data -}}
-| [{{.repo_org}}/{{.repo_name}}](https://github.com/{{.repo_org}}/{{.repo_name}}/settings/collaboration) | [Audit Log](https://github.com/organizations/{{.repo_org}}/settings/audit-log?utf8=%E2%9C%93&q=repo%3A{{.repo_org}}%2F{{.repo_name}}) | {{.failure_reason}} |
-{{ end -}}
+Total Repositories: {{ len data }}
 
-#### Policy Organization(s): {{  parameters.param_orgs }}
+| Organization/Repository | Audit Log Link | Existing Teams | Contributing Teams | Recommended Teams |
+| ----------------------- | -------------- | -------------- | ------------------ | ----------------- |
+{{ range data -}}| [{{.repo_org}}/{{.repo_name}}](https://github.com/{{.repo_org}}/{{.repo_name}}/settings/collaboration) | [Audit Log](https://github.com/organizations/{{.repo_org}}/settings/audit-log?utf8=%E2%9C%93&q=repo%3A{{.repo_org}}%2F{{.repo_name}}) | 
+{{- range .recommended_teams_existing }} <p>{{.slug}} - {{.permission}} permission</p>{{- else }} No recommended existing teams{{- end }} | 
+{{- range .recommended_teams_contributors }} <p>{{ .team }} - {{ .percent_of_total_contribs }}% contributions</p>{{- else }} No recommended {{- end }} | 
+{{- range .recommended_teams }} <p>{{.}}</p>{{- else }} No Teams match policy{{- end }} | 
+{{ end }}
+
 ___
-###### Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }})
+###### Policy Applied in Project: {{ rs_project_name }} (Account ID: {{ rs_project_id }})
+
+###### Policy Organization(s): {{  parameters.param_orgs }}
+
+###### Policy Team Blacklist: {{ parameters.param_team_blacklist }}
+
+###### Policy Threshold for minimum contribution percentage for recommendation: {{ parameters.param_min_contrib_percent }}%
+
+###### Policy Threshold for permission existing Teams required for recommendation:  {{ parameters.param_grant_admin_team_permission }}
+
+###### Policy Threshold for maximum Teams allowed for recommendation: {{ parameters.param_grant_admin_team_count }} Team(s)
 
 EOS
-    check eq(size(data), 0)
-    escalate $email_report
   end
+
+  validate $invalid_repos_invalid_recos do
+    summary_template "GitHub.com Repositories without valid Admin Team Recommendations"
+    check eq(size(data),0)
+    escalate $email_report
+    detail_template <<-EOS
+# GitHub.com Repositories without valid Admin Team Recommendations
+
+The following repositories are out of compliance and do not have a Team with "Admin" role on the repository which is required, and how the repository owner(s) are identified.
+
+#### Note: "Recommended Teams" below did NOT have escalation incidents created because the number of teams is greater than policy limit of {{ parameters.param_grant_admin_team_count }} Team(s).  Repository ownership may need to be identified manually, the policy thresholds modified to reduce the number of recommendations, or increase the policy's settings for the maximum Teams allowed for recommendation.
+
+Total Repositories: {{ len data }}
+
+| Organization/Repository | Audit Log Link | Existing Teams | Contributing Teams | Recommended Teams |
+| ----------------------- | -------------- | -------------- | ------------------ | ----------------- |
+{{ range data -}}| [{{.repo_org}}/{{.repo_name}}](https://github.com/{{.repo_org}}/{{.repo_name}}/settings/collaboration) | [Audit Log](https://github.com/organizations/{{.repo_org}}/settings/audit-log?utf8=%E2%9C%93&q=repo%3A{{.repo_org}}%2F{{.repo_name}}) | 
+{{- range .recommended_teams_existing }} <p>{{.slug}} - {{.permission}} permission</p>{{- else }} No existing Teams{{- end }} | 
+{{- range .recommended_teams_contributors }} <p>Contributing Team: {{ .team }} - {{ .percent_of_total_contribs }}% contributions</p>{{- else }} No contributors associated with a team{{- end }} | 
+{{- range .recommended_teams }} <p>{{.}}</p>{{- else }} No Teams match policy{{- end }} | 
+{{ end }}
+
+___
+###### Policy Applied in Project: {{ rs_project_name }} (Account ID: {{ rs_project_id }})
+
+###### Policy Organization(s): {{  parameters.param_orgs }}
+
+###### Policy Team Blacklist: {{ parameters.param_team_blacklist }}
+
+###### Policy Threshold for minimum contribution percentage for recommendation: {{ parameters.param_min_contrib_percent }}
+
+###### Policy Threshold for permission existing Teams required for recommendation:  {{ parameters.param_grant_admin_team_permission }}
+
+###### Policy Threshold for maximum Teams allowed for recommendation: {{ parameters.param_grant_admin_team_count }} Team(s)
+
+EOS
+  end
+
 end
 
 escalation "email_report" do
     email $param_email
+end
+
+escalation "github_repos_grant_admin_teams" do
+  request_approval  do
+    label "Approve granting Teams the \"Admin\" role"
+    description "Approve escalation to run Cloud Workflow automation which will grant the teams \"Admin\" role on the repositories below"
+  end
+  run "github_repos_grant_admin_teams", data
+  resolve_incident
+end
+
+define github_repos_grant_admin_teams($data) do
+  foreach $item in $data do
+    task_label( join(["Processing repository ",$item['repo_org'],"/",$item['repo_name']]) )
+    foreach $team in $item['recommended_teams'] do
+      call github_repos_grant_team_role($item['repo_org'], $item['repo_name'], $team, "admin") retrieve $github_repos_grant_team_role_response
+    end
+  end
+end
+
+define github_repos_grant_team_role($owner, $repo, $team, $permission) return $response do 
+  $attempt_count = 0
+  $response = { "code": 0 }
+  while $response["code"] != 204 && $attempt_count < 5 do
+    sleep($attempt_count * 10)
+    task_label("Attempting grant team "+$team+" the "+$permission+" permission on repo "+ join([$owner,"/",$repo]))
+    $response = http_request(
+      auth: $$auth_github,
+      https: true,
+      verb: "put",
+      host: "api.github.com",
+      href: join(["/orgs/",$owner,"/teams/",$team,"/repos/",$owner,"/",$repo]),
+      body: {
+        "permission": $permission
+      }
+    )
+    $attempt_count = $attempt_count +1
+  end
+  if $response["code"] == 204
+    task_label("Completed grant team "+$team+" the "+$permission+" permission on "+ join([$owner,"/",$repo]))
+  else
+    raise "unexpected response code trying ggrant team "+$team+" the "+$permission+" permission on "+ join([$owner,"/",$repo]) +": "+to_json($response)
+  end
 end
