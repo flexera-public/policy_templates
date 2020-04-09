@@ -2,7 +2,7 @@
 
 ## v2.3
 
-- Bug fixes on unhadled errors when executing
+- Bug fixes on unhandled errors when executing
 
 ## v2.2
 
