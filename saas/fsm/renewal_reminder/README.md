@@ -2,7 +2,7 @@
 
 ## What it does
 
-This policy will create an incident when Flexera SaaS Manager identifies applications whose contract expiration date is approaching.
+This policy will create an incident when Flexera SaaS Manager identifies applications whose expiration date is approaching.
 
 ## Functional Description
 
@@ -19,11 +19,21 @@ This policy has the following input parameters required when launching the polic
 - *Upcoming Number of Days* - If an application renewal is due in the upcoming time period, raise an incident
 - *Email addresses to notify* - Email addresses of the recipients you wish to notify
 
+## Prerequisites
+
+This policy uses [credentials](https://docs.rightscale.com/policies/users/guides/credential_management.html) for connecting to the cloud -- in order to apply this policy you must have a credential registered in the system that is compatible with this policy. If there are no credentials listed when you apply the policy, please contact your cloud admin and ask them to register a credential that is compatible with this policy. The information below should be consulted when creating the credential.
+In the log analytics workspace provided, Microsoft-Windows-Disk/Operational event log should be enabled.
+
+### Credential configuration
+
+For administrators [creating and managing credentials](https://docs.rightscale.com/policies/users/guides/credential_management.html) to use with this policy, the following information is needed:
+
+Provider tag value to match this policy: `flexera_fsm`
+
+Required permissions in the provider:
+
+- Administrator, Application Administrator, Viewer, or Security Administrator in FSM
+
 ## Policy Actions
 
 - Sends an email notification
-
-## Required Permissions
-
-- admin or credential_viewer in CMP
-- Administrator, Application Administrator, or Viewer in FSM
