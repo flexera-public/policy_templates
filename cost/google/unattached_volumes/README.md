@@ -4,7 +4,7 @@
 
 This Policy Template scans all volumes in the given account and identifies any unattached volumes that have been unattached for at least the number of user-specified days. If any are found, an incident report will show the volumes, and related information and an email will be sent to the user-specified email address.
 
-If APIs & Services are not enabled for a project, the policy will skip that particular project. On the next run if APIs & Services are enabled, then the project will be taken into consideration for execution.
+If APIs & Services are not enabled for a project, the policy will skip that particular project. On the next run if APIs & Services are enabled, then the project will be considered for execution.
 If the user approves that the volumes should be deleted, the policy will delete the volumes.
 If the volume is not able to be deleted, say, due to it being locked, the volume will be tagged to indicate the error that was received.
 
