@@ -1,0 +1,283 @@
+name "Google Unlabeled Resources"
+rs_pt_ver 20180301
+type "policy"
+short_description "Report on any google instances that are missing given tags for instances and volumes with the option to add these tags for selected resources. \n See the [README](https://github.com/flexera/policy_templates/tree/master/compliance/tags/google_unlabeled_resources) and [docs.rightscale.com/policies](https://docs.rightscale.com/policies/) to learn more."
+long_description ""
+category "Compliance"
+severity "low"
+info(
+      version: "1.0",
+      provider: "GCE",
+      service: "",
+      policy_set: "Unlabeled Resources"
+    )
+
+###############################################################################
+# Parameters
+###############################################################################
+
+parameter "param_email" do
+  type "list"
+  label "Email List"
+  description "Email addresses of the recipients you wish to notify"
+end
+
+parameter "param_tags" do
+  type "list"
+  label "Tags to check for"
+  description "Comma-separated list of tags to audit. Multiple tags are evaluated as an 'OR' condition. Tag keys or key/value pairs can be listed. Example: 'test,env=dev'"
+  # allow namespace:key
+  allowed_pattern /^([a-zA-Z0-9-_]+:[a-zA-Z0-9-_]+,*|)+$/
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+# authenticate with Google
+credentials "auth_google" do
+  schemes "oauth2"
+  label "Google"
+  description "Select the Google Cloud Credential from the list."
+  tags "provider=gce"
+end
+
+pagination "google_pagination" do
+  get_page_marker do
+    body_path "nextPageToken"
+  end
+  set_page_marker do
+    query "pageToken"
+  end
+end
+
+
+
+
+#get all google project
+datasource "ds_google_project" do
+  request do
+    auth $auth_google
+    pagination $google_pagination
+    host "cloudresourcemanager.googleapis.com"
+    path "/v1/projects/"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "projects[*]") do
+      field "projectNumber", jmes_path(col_item,"projectNumber")
+      field "projectId", jmes_path(col_item,"projectId")
+    end
+  end
+end
+
+#https://cloud.google.com/compute/docs/reference/rest/v1/zones/list
+datasource "ds_zone" do
+  iterate $ds_google_project
+  request do
+    auth $auth_google
+    pagination $google_pagination
+    host "compute.googleapis.com"
+    path join(["/compute/v1/projects/",val(iter_item, "projectId"),"/zones/"])
+  end
+  result do
+    encoding "json"
+      collect jmes_path(response, "items[*]") do
+      field "zone", jmes_path(col_item, "name")
+      field "projectId", val(iter_item, "projectId")
+    end
+  end
+end
+
+#https://cloud.google.com/compute/docs/reference/rest/v1/instances/list
+datasource "ds_stoped_instances" do
+  iterate $ds_zone
+  request do
+    auth $auth_google
+    pagination $google_pagination
+    host "compute.googleapis.com"
+    path join(["/compute/v1/projects/",val(iter_item, "projectId"),"/zones/",val(iter_item, "zone"),"/instances"])
+    query "filter", 'status="TERMINATED"'
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "items[*]") do
+      field "instance_id", jmes_path(col_item, "id")
+      field "instance_name", jmes_path(col_item, "name")
+      field "status", jmes_path(col_item, "status")
+      field "zone", val(iter_item, "zone")
+      field "tags", jmes_path(col_item, "tags")
+      field "projectId", val(iter_item, "projectId")
+    end
+  end
+end
+
+datasource "ds_stoped_instances_req_list" do
+  run_script $js_stoped_instances_req_list, $ds_stoped_instances, $param_stoped_days
+end
+
+#https://cloud.google.com/monitoring/api/ref_v3/rest/v3/projects.timeSeries/list
+datasource "ds_list_stoped_instances" do
+  iterate $ds_stoped_instances_req_list
+  request do
+    auth $auth_google
+    pagination $google_pagination
+    host "monitoring.googleapis.com"
+    path join(["/v3/projects/",val(iter_item, "projectId"),"/timeSeries/"])
+    query "filter", join(['metric.type = "compute.googleapis.com/instance/uptime" AND metric.labels.instance_name =', val(iter_item,"instance_name")])
+    query "interval.endTime", val(iter_item,"end_at")
+    query "interval.startTime", val(iter_item,"start_at")
+  end
+  result do
+    encoding "json"
+     encoding "json"
+      collect jmes_path(response, "timeSeries[*]") do
+      field "instance_name", val(iter_item,"instance_name")
+      field "instance_id", jmes_path(col_item, "resource.labels.instance_id")
+      field "zone", jmes_path(col_item, "resource.labels.zone")
+    end
+  end
+end
+
+datasource "ds_report" do
+  run_script $js_report, $ds_stoped_instances, $ds_list_stoped_instances, $param_exclude_tags
+end
+
+###############################################################################
+# Scripts
+###############################################################################
+script "js_stoped_instances_req_list", type: "javascript" do
+ parameters "ds_stoped_instances", "param_stoped_days"
+ result "request"
+  code <<-EOF
+  var request=[];
+ _.each(ds_stoped_instances, function(row){
+   if(row["instance_name"] != null){
+    var result = {
+        "start_at": new Date(new Date().setDate(new Date().getDate() - parseInt(param_stoped_days))).toISOString(),
+        "end_at": new Date().toISOString(),
+        "instance_name": row["instance_name"],
+        "projectId": row["projectId"]
+      }
+    request.push(result);
+    }
+   })
+EOF
+end
+
+script "js_report", type: "javascript" do
+  parameters "ds_stoped_instances", "ds_list_stoped_instances", "param_exclude_tags"
+  result "result"
+  code <<-EOF
+   var result=[];
+    var param_exclude_tags_lower=[];
+    for(var i=0; i < param_exclude_tags.length; i++){
+      param_exclude_tags_lower[i]=param_exclude_tags[i].toString().toLowerCase();
+    }
+  _.each(ds_list_stoped_instances, function(instance_uptime){
+      _.each(ds_stoped_instances, function(instance_stoped){
+	  var tags = instance_stoped['tags'];
+      var isTagMatched=false
+      var tagKeyValue=""
+      if(typeof(tags) !== "undefined"){
+        var tagKeys = Object.keys(tags);
+        for (var j = 0; j < tagKeys.length; j++){
+          var tagKey = tagKeys[j];
+          var tagValue = tags[tagKey];
+          //Check, if the tag present in entered param_exclude_tags, ignore the google bucket object if the tag matches/present.
+          if((param_exclude_tags_lower.indexOf(tagKey.toLowerCase()) !== -1) || (param_exclude_tags_lower.indexOf((tagKey+'='+tagValue).toLowerCase()) !== -1)){
+            isTagMatched = true;
+          }
+          if(tagValue.length > 0){
+            tagKeyValue = tagKeyValue + ', '+ tagKey+'='+tagValue
+          }else{
+            tagKeyValue = tagKeyValue + ', '+ tagKey
+          }
+        }
+      }
+	    if( instance_uptime["instance_name"] == instance_stoped["instance_name"] && instance_uptime["instance_id"] == null && !isTagMatched ){
+		  result.push({
+          "name": instance_stoped["instance_name"],
+          "status": instance_stoped["status"],
+          "instance_id": instance_stoped["instance_id"],
+          "zone": instance_stoped["zone"],
+          "projectId": instance_stoped["projectId"],
+          "tagKeyValue":(tagKeyValue.slice(2))
+        })
+		}
+	  })
+  })
+    result = _.sortBy(result, 'zone');
+    result = _.sortBy(result, 'projectId');
+EOF
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "pol_utilization" do
+  validate_each $ds_report do
+    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} google cloud instances in Stopped State for Over {{parameters.param_stoped_days}} Day(s)"
+    detail_template <<-EOS
+# Google Instance Out of Compliance
+| Project ID | Region | Instance ID | Name | Status |  Tags |
+|:----------:| ------:|:-----------:|-----:|-------:|------:|
+{{ range data -}}
+| {{.projectId}} | {{.zone}} | {{.instance_id}} | {{.name}} | {{.status}} | {{.tagKeyValue}}
+{{ end -}}
+___
+###### Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }}) within Org: {{ rs_org_name }} (Org ID: {{ rs_org_id }})
+EOS
+    check eq(0,1)
+    escalate $esc_email
+    escalate $esc_delete_instances
+  end
+end
+
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_email" do
+  email $param_email
+end
+
+escalation "esc_delete_instances" do
+   request_approval  do
+     label "Approve Instances Deletion"
+     description "Approve escalation to terminate the instance(s)"
+     parameter "approval_reason" do
+     type "string"
+     label "Reason for Approval"
+     description "Explain why you are approving the action"
+     end
+   end
+  run "delete_instances", data
+end
+
+###############################################################################
+# Cloud Workflow
+###############################################################################
+
+#https://cloud.google.com/compute/docs/reference/rest/v1/instances/delete
+define delete_instances($data) return $all_responses do
+  $all_responses = []
+  foreach $item in $data do
+   sub on_error: skip do
+      $response = http_request(
+        auth: $$auth_google,
+        verb: "delete",
+        host: "compute.googleapis.com",
+        href: join(["/compute/v1/projects/", $item["projectId"], "/zones/", $item["zone"], "/instances/",$item["name"]]),
+        https: true,
+        headers: {
+          "cache-control": "no-cache",
+          "content-type": "application/json"
+        }
+      )
+      $all_responses << $response
+    end
+  end
+end
