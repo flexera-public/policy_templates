@@ -1,4 +1,4 @@
-name "SaaS Manager - User Status Change RDL2"
+name "SaaS Manager - User Status Change"
 rs_pt_ver 20180301
 type "policy"
 short_description "This policy will create an incident when Flexera SaaS Manager identifies users whose status in the HR roster changes to inactive. See the [README](https://github.com/flexera/policy_templates/tree/master/saas/fsm/user_status_change/) and [docs.rightscale.com/policies](https://docs.rightscale.com/policies/) to learn more."
@@ -194,55 +194,18 @@ script "js_user_details", type: "javascript" do
   EOS
 end
 
-datasource "ds_users_details_groups" do
-  run_script $js_users_details_groups, $ds_users_details, $ds_group_members
-end
-
-script "js_users_details_groups", type: "javascript" do
-  parameters "users", "group_members"
-  result "result"
-  code <<-EOS
-  var result = [];
-  _.each(users, function(user){
-    console.log("User Object: "+user)
-    var user_email = user["email"]
-    _.each(group_members, function(group_member){
-      if (user_email === group_member["email"]){
-        user_group = group_member["groupName"]
-      }
-    })
-      result.push({
-        firstName: user["firstName"],
-        lastName: user["lastName"],
-        email: user["email"],
-        id: user["id"],
-        active: user["active"],
-        activeDate: user["activeDate"],
-        inactiveDate: user["inactiveDate"],
-        numberOfLicenses: user["numberOfLicenses"],
-        userGroup: user_group
-      })
-  })
-
-  result = _.sortBy(result, 'inactiveDate').reverse();
-EOS
-end
-
 datasource "ds_cleanup_users" do
-  #run_script $js_cleanup_users, $ds_users_details, $param_days
-  run_script $js_cleanup_users, $ds_users_details_groups, $param_days
+  run_script $js_cleanup_users, $ds_users_details, $ds_group_members, $param_days
 end
 
 script "js_cleanup_users", type: "javascript" do
-  parameters "users", "param_days"
+  parameters "users", "group_members", "param_days"
   result "result"
   code <<-EOS
   var result = [];
   var date = new Date();
   date = date.setHours(-24 * param_days);
   date = new Date(date);
-
-  //console.log("Target Date: "+date)
 
   // returns date formatted as string: YYYY-mm-dd
   function getFormattedDailyDate(date) {
@@ -255,21 +218,25 @@ script "js_cleanup_users", type: "javascript" do
   }
 
   _.each(users, function(user){
-    //console.log("User Object: "+user)
     var inactive_date = new Date(user["inactiveDate"]);
-    //console.log("Inactive Date: "+inactive_date)
     if (inactive_date > date){
+      _.each(group_members, function(group_member){
+        if (user["email"] === group_member["email"]){
+          user_group = group_member["groupName"]
+        }
+      })
       result.push({
         firstName: user["firstName"],
         lastName: user["lastName"],
         email: user["email"],
         numberOfLicenses: user["numberOfLicenses"],
-        inactiveDate: getFormattedDailyDate(inactive_date)
+        inactiveDate: getFormattedDailyDate(inactive_date),
+        userGroup: user_group
       })
     }
   })
 
-  result = _.sortBy(result, 'inactiveDate').reverse();
+  result = _.sortBy(result, 'userGroup');
 EOS
 end
 
@@ -283,10 +250,10 @@ policy "policy_fsm_inactive_users" do
     detail_template <<-EOS
 # Recently Deactivated Users
 
-| Email | First Name | Last Name | Inactive Date (YYYY-MM-DD) | Number of Licenses |
-| ----- | ---------- | --------- | -------------------------- | ------------------ |
+| Email | First Name | Last Name | Department | Inactive Date (YYYY-MM-DD) | Number of Licenses |
+| ----- | ---------- | --------- | ---------- | -------------------------- | ------------------ |
 {{ range data -}}
-| {{.email}} | {{.firstName}} | {{.lastName}} | {{.inactiveDate}} | {{.numberOfLicenses}} |
+| {{.email}} | {{.firstName}} | {{.lastName}} | {{.userGroup}} | {{.inactiveDate}} | {{.numberOfLicenses}} |
 {{ end -}}
 
 
