@@ -6,6 +6,7 @@ This policy checks all Google instances that are stopped and reports on any that
 
 ## Functional Details
 
+If APIs & Services are not enabled for a project, the policy will skip that particular project. On the next run if APIs & Services are enabled, then the project will be considered for execution.
 The policy leverages the Google API to check all instances that have been stopped for longer than the specified period. If the action is approved, the instance is terminated.
 
 ## Input Parameters
