@@ -9,8 +9,7 @@ This policy will create an incident when Flexera SaaS Manager identifies suspici
 This policy integrates with the Flexera SaaS Manager API to retrieve suspicious activities. Therefore the following are prerequisites for this policy to execute:
 
 - Flexera SaaS Manager implementation with HR roster connected
-- Retrieve a Flexera IAM refresh token for authentication
-- The Flexera IAM refresh token must then be stored as a RightScale Credential in the account in which this policy will be applied. The credential must be named `FSM_TOKEN`.
+- Please contact your Flexera Customer Success Manager for assistance to generate your FSM token.
 
 ## Input Parameters
 
