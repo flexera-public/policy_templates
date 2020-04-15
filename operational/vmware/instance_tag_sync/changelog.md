@@ -2,7 +2,7 @@
 
 ## v1.3
 
-- remove permissions block and adding incident resource table
+- remove approval block and adding incident resource table
 
 ## v1.1
 
