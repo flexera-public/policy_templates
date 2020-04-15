@@ -9,6 +9,8 @@ This Policy Template gets the top-level / parent Teams for a GitHub.com Org and 
 2. Branches that should be protected - Example: `master`
 3. Repositories that are whitelisted from the policy - Example: `flexera/repository-name`
 4. Email address to send escalation emails to - Example: `noreply@example.com`
+5. Protection Option: Enforce all configured restrictions for administrators. 
+6. Protection Option: Require at least this number of approving review on a pull request, before merging.
 
 
 ### Policy Actions
@@ -16,6 +18,7 @@ This Policy Template gets the top-level / parent Teams for a GitHub.com Org and 
 The following policy actions are taken on any resources found to be out of compliance.
 
 - Send an email report
+- After approval, updates branch protection rule on repositories
 
 
 ### Required Permissions
