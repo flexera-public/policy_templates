@@ -2,7 +2,7 @@
 
 ## What it does
 
-This policy uses a FlexNet Manger Cloud and looks up all FlexNet Manager Licenses that has lower than xx% available entitlement.
+This policy uses a FlexNet Manger Cloud and looks up all FlexNet Manager Licenses that has lower than user provided percentage.
 
 The report / Mail output looks like this:
 ![Alt text][emailoutput]
@@ -28,7 +28,7 @@ This policy has the following input parameters required when launching the polic
 - *FNMS Report URL* - Full FlexNet URL (e.g. <https://demo.flexnetmanager.com/Suite> )
 - *FNMS Report ID* - FlexNet manager Custom View ID
 - *Email addresses of the recipients you wish to notify* - A list of email addresse(s) to notify
-- *Watermark* in % of the Licenses to list with less than xx% Available Licenses left.
+- *Percentage Available* - Percentage threshold of available licenses
 
 ## Policy Actions
 
@@ -51,7 +51,6 @@ __NOTE__: You can use a normal interactive user for the API credentials, but it 
 This Policy Template does not incur any additional cloud costs.
 
 <!-- Image referances -->
-[emailoutput]: images/email_output.png "email output"
 [APIToken]: images/APIToken.png "APIToken"
 [CreateServeceAccount]: images/CreateServeceAccount.png "Create Service Account"
 [FNMSReport]: images/FNMS_cv_Report.png "FNMS Cloud Instance Report"
