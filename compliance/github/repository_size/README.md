@@ -5,11 +5,11 @@
 This Policy Template gets all the repositories under GitHub.com Organization(s) and creates an incident if any are smaller than the minimum repo size and older than the minimium repo age set by the policy.
 
 ## Input Parameters
+
 1. GitHub.com Organizations to check - Example: `flexera`
 1. Minimum Repo Age in days - Example: `7`
 1. Minimum Repo Size in bytes - Example: `0`
 1. Email address to send escalation emails to - Example: `noreply@example.com`
-
 
 ## Policy Actions
 
