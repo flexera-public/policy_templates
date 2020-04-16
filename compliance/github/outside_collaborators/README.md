@@ -6,9 +6,9 @@ This Policy Template will get all the Outside Collaborators (User that have been
 
 ## Input Parameters
 
-1. GitHub.com Organizations to check - Example: flexera.
-2. Whitelisted Outside Collaborators - Example: flexera-ci.
-3. Email address to send escalation emails to - Example: noreply@example.com.
+1. GitHub.com Organizations to check - Example: flexera
+1. Whitelisted Outside Collaborators - Example: flexera-ci
+1. Email address to send escalation emails to - Example: noreply@example.com
 
 ## Policy Actions
 
