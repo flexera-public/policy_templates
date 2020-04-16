@@ -7,8 +7,8 @@ This Policy Template gets all the repositories under GitHub.com Organization(s) 
 ## Input Parameters
 
 1. GitHub.com Organizations to check - Example: `flexera`
-2. Whitelisted Repository Regex - Example: `^[a-z\-]+$`
-3. Email address to send escalation emails to - Example: `noreply@example.com`
+1. Whitelisted Repository Regex - Example: `^[a-z\-]+$`
+1. Email address to send escalation emails to - Example: `noreply@example.com`
 
 ## Policy Actions
 

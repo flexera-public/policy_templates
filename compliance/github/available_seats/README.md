@@ -7,9 +7,9 @@ This Policy Template will get the total used/available seats for a GitHub.com Or
 ## Input Parameters
 
 1. GitHub.com Organizations to check - Example: flexera
-2. Allowed Minimum Available Seats - Example: 10
-3. Allowed Maximum Available Seats - Example: 50
-4. Email addresses of the recipients you wish to notify - Example: noreply@example.com
+1. Allowed Minimum Available Seats - Example: 10
+1. Allowed Maximum Available Seats - Example: 50
+1. Email addresses of the recipients you wish to notify - Example: noreply@example.com
 
 ## Policy Actions
 

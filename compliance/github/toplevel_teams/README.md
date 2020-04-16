@@ -7,8 +7,8 @@ This Policy Template gets the top-level / parent Teams for a GitHub.com Org and 
 ## Input Parameters
 
 1. GitHub.com Organizations to check - Example: `flexera`
-2. Whitelisted Top-Level Team Names - Example: `Engineering`, `Services`
-3. Email address to send escalation emails to - Example: `noreply@example.com`
+1. Whitelisted Top-Level Team Names - Example: `Engineering`, `Services`
+1. Email address to send escalation emails to - Example: `noreply@example.com`
 
 ## Policy Actions
 

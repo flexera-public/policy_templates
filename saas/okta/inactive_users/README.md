@@ -12,7 +12,7 @@ This Policy Template leverages the [Okta Users API](https://developer.okta.com/d
 
 This policy has the following input parameters required when launching the policy.
 
-- *Okta Organization Name* - The name of your Okta Organization.  For example, if you navigate to https://contoso.okta.com to login to Okta, the value in this parameter would be `contoso`.
+- *Okta Organization Name* - The name of your Okta Organization.  For example, if you navigate to <https://contoso.okta.com> to login to Okta, the value in this parameter would be `contoso`.
 - *Number of Days Since Last Login* - The number of days that a user has not logged in to Okta, which should raise an incident.
 - *Email addresses to notify* - A list of email addresses to notify
 

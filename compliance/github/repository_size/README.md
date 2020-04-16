@@ -6,9 +6,9 @@ This Policy Template gets all the repositories under GitHub.com Organization(s) 
 
 ## Input Parameters
 1. GitHub.com Organizations to check - Example: `flexera`
-2. Minimum Repo Age in days - Example: `7`
-3. Minimum Repo Size in bytes - Example: `0`
-4. Email address to send escalation emails to - Example: `noreply@example.com`
+1. Minimum Repo Age in days - Example: `7`
+1. Minimum Repo Size in bytes - Example: `0`
+1. Email address to send escalation emails to - Example: `noreply@example.com`
 
 
 ## Policy Actions
