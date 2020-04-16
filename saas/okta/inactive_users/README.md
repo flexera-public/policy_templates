@@ -1,19 +1,14 @@
-## Inactive Users - Okta
+# Inactive Users - Okta
 
-### What it does
-
-This Policy Template leverages the [Okta Users API](https://developer.okta.com/docs/reference/api/users/#list-users) to identify users that have not logged in for an extended period of time, and optionally will deactivate those users upon approval.  
-
-### Prerequesites
-
-- This Policy Template requires an Okta API Token to authenticate with the Okta API.  [This tutorial](https://developer.okta.com/docs/guides/create-an-api-token/overview/) describes how to create a new Token.
-- The Okta API Token must then be stored as a RightScale Credential in the account in which this policy will be applied. The credential must be named `OKTA_API_KEY`.
-
-### Functional Details
+## Functional Details
 
 - This policy will target a specific Okta organization
 
-#### Input Parameters
+## What it does
+
+This Policy Template leverages the [Okta Users API](https://developer.okta.com/docs/reference/api/users/#list-users) to identify users that have not logged in for an extended period of time, and optionally will deactivate those users upon approval.
+
+## Input Parameters
 
 This policy has the following input parameters required when launching the policy.
 
@@ -21,14 +16,26 @@ This policy has the following input parameters required when launching the polic
 - *Number of Days Since Last Login* - The number of days that a user has not logged in to Okta, which should raise an incident.
 - *Email addresses to notify* - A list of email addresses to notify
 
-### Required RightScale Roles
+## Prerequisites
 
-- credential_manager
+This policy uses [credentials](https://docs.rightscale.com/policies/users/guides/credential_management.html)
+for connecting to the cloud -- in order to apply this policy you must have a credential registered in the system that is compatible with this policy. If there are no
+credentials listed when you apply the policy, please contact your cloud admin and ask them to register a credential that is compatible with this policy. The information below should be consulted when creating the credential.
 
-### Supported Services
+### Credential configuration
+
+For administrators [creating and managing credentials](https://docs.rightscale.com/policies/users/guides/credential_management.html) to use with this policy, the following information is needed: 
+
+Provider tag value to match this policy: `okta`
+
+Required permissions in the provider:
+
+This policy requires permissions to access Okta.com API as the Owner of the Organization(s).
+
+## Supported Services
 
 - Okta
 
-### Cost
+## Cost
 
 This Policy Template does not incur any cloud costs.
