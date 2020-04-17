@@ -1,8 +1,12 @@
 # Changelog
 
-## v2.1
+## v2.2
 
 - Added resource table
+
+## v2.1
+
+- Ignore subscriptions with Azure Compliance disabled
 
 ## v2.0
 
