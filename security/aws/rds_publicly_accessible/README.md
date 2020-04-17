@@ -19,23 +19,7 @@ When a publicly accessible RDS instance is detected, an email action is triggere
 
 - Sends an email notification
 - Disable the publicly accessible RDS instances after approval
-- Delete publicly accessible RDS instances after approval (optional)
-
-Perform below steps to enable delete action.
-
-- Edit the file [AWS_Publicly_Accessible_RDS_Instances](/security/aws/rds_publicly_accessible/aws_publicly_accessible_rds_instances.pt)
-- uncomment below mentioned lines
-
-```javascript
-   escalate $delete_publicly_accessible_RDS_instances_approval
-     check logic_or(
-      eq(val(item, "delete_protection"), "YES"),
-      ne(val(item, "db_instance_status"), "available")
-    )
-```
-
-- And comment the line which contains 'check eq(val(item, "publicly_accessible"), "false")', save the changes.
-- upload the modified file and apply the policy.
+- Delete publicly accessible RDS instances after approval
 
 Note:
 

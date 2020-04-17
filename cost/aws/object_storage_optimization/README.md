@@ -18,15 +18,6 @@ This policy has the following input parameters required when launching the polic
 - *Days since last modified to move to Deep Archive* - Move to glacier deep archive after days last modified- leave blank to skip moving
 - *Exclude Tag* - List of tags that will exclude s3 objects from being evaluated by this policy. Multiple tags are evaluated as an 'OR' condition. Tag keys or key/value pairs can be listed. Example: 'test,env=dev'
 
-## Enable delete action
-
-Perform below steps to enable delete action.
-
-- Edit the file [AWS Object Storage Optimization](https://github.com/flexera/policy_templates/tree/master/cost/aws/object_storage_optimization/aws_object_storage_optimization.pt)
-- uncomment the line which contains 'escalate $esc_delete_s3_objects_approval'
-- comment the line which contains '$esc_modify_s3_object_storage_class_approval' and save the changes.
-- upload the modified file and apply the policy.
-
 ## Prerequisites
 
 This policy uses [credentials](https://docs.rightscale.com/policies/users/guides/credential_management.html) for connecting to the cloud -- in order to apply this policy you must have a credential registered in the system that is compatible with this policy. If there are no credentials listed when you apply the policy, please contact your cloud admin and ask them to register a credential that is compatible with this policy. The information below should be consulted when creating the credential.
