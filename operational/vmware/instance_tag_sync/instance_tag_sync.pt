@@ -95,6 +95,12 @@ end
 # Datasources
 ###############################################################################
 
+datasource "ds_clouds" do
+  iterate @clouds
+  field "href", href(iter_item)
+  field "name", val(iter_item, "display_name")
+end
+
 datasource "ds_instances_and_tags" do
    iterate @instances
    field "href",        href(iter_item)
@@ -102,23 +108,59 @@ datasource "ds_instances_and_tags" do
    field "name",        val(iter_item,'name')
    field "state",       val(iter_item,'state')
    field "tags",        val(iter_item,'tags')
+   field "cloud_href", jmes_path(iter_item, "links[?rel=='cloud'].href | [0]")
    field "type",        "instances"
+end
+
+datasource "ds_instances_and_tags_and_cloud" do
+  run_script $js_instances_and_tags_and_cloud, $ds_instances_and_tags, $ds_clouds
 end
 
 ###############################################################################
 # Scripts
 ###############################################################################
 
+script "js_instances_and_tags_and_cloud", type: "javascript" do
+  parameters "ds_instances_and_tags", "ds_clouds"
+  result "results"
+  code <<-EOF
+    var results = []  
+      // create a map of clouds with href key to get name
+      var cloud_map = {}
+      for (var i = 0; i < ds_clouds.length; i++) {
+          var cloud = ds_clouds[i]
+          cloud_map[cloud['href']]={'name': cloud['name']}
+      }
+
+      for ( i = 0; i < ds_instances_and_tags.length; i++ ) {
+        var instance = ds_instances_and_tags[i]
+        results.push({
+          id: instance.id,
+          name: instance.name,
+          href: instance.href,
+          state: instance.state,
+          cloud_name: cloud_map[instance.cloud_href]['name'],
+          tags: instance.tags,
+          type: instance.type,
+      })
+    }
+    results = _.sortBy(results, 'cloud_name');
+
+EOF
+end
 
 ###############################################################################
 # Policy
 ###############################################################################
 
 policy "policy_instance_sync" do
-  validate_each $ds_instances_and_tags do
+  validate_each $ds_instances_and_tags_and_cloud do
     summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} tags will be synced on {{ parameters.param_cloud_name }}"
     export do
       resource_level true
+      field "cloud_name" do
+        label "Cloud"
+      end
       field "name" do
         label "Name"
       end
