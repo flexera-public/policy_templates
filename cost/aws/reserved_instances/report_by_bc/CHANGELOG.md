@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.3
+
+- Added resource table
+
 ## v1.2
 
 - Updated the metadata

@@ -1,3 +1,9 @@
+# Changelog
+
+## v1.4
+
+- Added new resource table
+
 v1.3
 ----
 - Added tenancy "single" in metadata
