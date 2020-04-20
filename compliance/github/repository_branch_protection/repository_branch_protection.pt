@@ -1,15 +1,15 @@
 name "GitHub.com Repository Branches without Protection"
 rs_pt_ver 20180301
-short_description "Gets the repositories + branches under a GitHub.com Organization and creates incidents for any that do not have protection enabled.  See the [README](https://github.com/flexera/policy_templates/tree/master/compliance/github/repository_branch_protection) and [docs.rightscale.com/policies](http://docs.rightscale.com/policies/) to learn more."
-long_description "Version: 1.2"
+short_description "Gets the repositories + branches under a GitHub.com Organization and creates incidents for any that do not have protection enabled.  See the [README](https://github.com/flexera/policy_templates/tree/master/compliance/github/repository_branch_protection) and [docs.rightscale.com/policies](https://docs.rightscale.com/policies/) to learn more."
+long_description ""
 severity "medium"
 category "Compliance"
-tenancy "single"
-
-permission "read_creds" do
-  actions   "rs_cm.show_sensitive","rs_cm.index_sensitive"
-  resources "rs_cm.credentials"
-end
+info(
+  version: "2.0",
+  provider: "GitHub",
+  service: "",
+  policy_set: ""
+)
 
 parameter "param_email" do
   type "list"
@@ -32,11 +32,25 @@ parameter "param_whitelist" do
   label "Git org/repo(s) that are whitelisted from this policy"
 end
 
-auth "auth_github", type: "api_key" do
-  location "header"
-  field "Authorization"
-  type "token"
-  key cred("GITHUB_ORG_ADMIN_ACCESS_TOKEN")
+parameter "param_enforce_admins" do
+  type "string"
+  label "Protection Option: Enforce all configured restrictions for administrators. Set to true to enforce required status checks for repository administrators. Set to null to disable."
+  default "false"
+  allowed_values ["false","true"]
+end
+
+parameter "param_required_pull_request_reviews" do
+  type "string"
+  label "Protection Option: Require at least one approving review on a pull request, before merging. Set to null to disable."
+  default "1"
+  allowed_values ["1","2","3","4","5","null"]
+end
+
+credentials "auth_github" do
+  schemes "api_key"
+  label "GitHub"
+  description "Select the Github Credential from the list."
+  tags "provider=github"
 end
 
 pagination "github_pagination" do
@@ -141,9 +155,68 @@ ___
 EOS
     check eq(size(data), 0)
     escalate $email_report
+    escalate $github_repos_branch_add_protection
   end
 end
 
 escalation "email_report" do
     email $param_email
+end
+
+escalation "github_repos_branch_add_protection" do
+  request_approval  do
+    label "Approve Adding Branch Protection"
+    description "Approve escalation to run Cloud Workflow automation which will add branch protection rules"
+  end
+  run "github_repos_branch_add_protection", data, $param_enforce_admins, $param_required_pull_request_reviews
+end
+
+define github_repos_branch_add_protection($data, $param_enforce_admins, $param_required_pull_request_reviews) do
+  foreach $item in $data do
+    task_label( join(["Updating branch protection for ",$item['repo_org'],"/",$item['repo_name'],":",$item['branch_name']]) )
+    call github_repo_branch_protection_update($item['repo_org'],$item['repo_name'],$item['branch_name'],$param_enforce_admins, $param_required_pull_request_reviews) retrieve $github_repo_branch_protection_update_response
+  end
+end
+
+define github_repo_branch_protection_update($owner, $repo, $branch, $enforce_admins, $required_pull_request_reviews) return $response do 
+  $enforce_admins = to_b($enforce_admins)
+  if $required_pull_request_reviews == "null"
+    $required_pull_request_reviews = null
+  else
+    $required_pull_request_reviews = to_n($required_pull_request_reviews)
+  end
+
+  $attempt_count = 0
+  $response = { "code": 0 }
+  while $response["code"] != 200 && $attempt_count < 5 do
+    sleep($attempt_count * 1)
+    task_label("Attempting update branch protection for "+ join(["/repos/",$owner,"/",$repo,"/branches/",$branch,"/protection"]))
+    $response = http_request(
+      auth: $$auth_github,
+      https: true,
+      verb: "put",
+      host: "api.github.com",
+      href: join(["/repos/",$owner,"/",$repo,"/branches/",$branch,"/protection"]),
+      headers: {
+        "Accept": "application/vnd.github.luke-cage-preview+json"
+      },
+      body: {
+        "required_status_checks":         null,
+        "enforce_admins":                 $enforce_admins,
+        "required_pull_request_reviews":  {
+          "dismissal_restrictions":           {},
+          "dismiss_stale_reviews":            false,
+          "require_code_owner_reviews":       false,
+          "required_approving_review_count":  $required_pull_request_reviews
+        },
+        "restrictions":                   null
+      }
+    )
+    $attempt_count = $attempt_count +1
+  end
+  if $response["code"] == 200
+    task_label("Completed update branch protection for "+ join(["/repos/",$owner,"/",$repo,"/branches/",$branch,"/protection"]))
+  else
+    raise "unexpected response code trying update branch protection for "+join(["/repos/",$owner,"/",$repo,"/branches/",$branch,"/protection"])+": "+to_json($response)
+  end
 end
