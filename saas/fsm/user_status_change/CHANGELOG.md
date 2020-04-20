@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.2
+
+- Adding incident resource table
+
 ## v2.1
 
 - Add user department to output

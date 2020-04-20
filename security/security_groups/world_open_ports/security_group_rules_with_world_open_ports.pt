@@ -6,7 +6,7 @@ long_description ""
 severity "high"
 category "Security"
 info(
-  version: "1.2",
+  version: "1.3",
   provider: "Flexera Cloud Management",
   service: "",
   policy_set: ""
@@ -142,19 +142,16 @@ EOS
 end
 
 escalation "email" do
+  automatic true
+  label "Send Mail"
+  description "Sends incidents email"
   email $param_email
 end
 
 escalation "report_security_groups_with_world_open_ports_description" do
-request_approval  do
-  label "Escalation approval"
-  description "Approve delete action"
-  parameter "approval_reason" do
-    type "string"
-    label "Reason for approval"
-    description "Explain why you are approving the action"
-  end
-end
+  automatic false
+  label "Delete Resources"
+  description "Delete selected security group rules found to be violate the policy"
   run "delete_rules", data
 end
 
@@ -165,19 +162,21 @@ end
 policy "ports_open_to_the_world" do
   validate $ds_munged_security_groups do
     summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} Security Group Rules with Ports Open to the World"
-    detail_template <<-EOS
-# Security Rules with World Open Ports
-
-EOS
+    escalate $email
+    escalate $report_security_groups_with_world_open_ports_description
+    check eq(size(data), 0)
+    resolve $report_security_groups_with_world_open_ports_resolution
     export do
+      resource_level true
       field "security_group_name" do
         label "Security Group Name"
       end
       field "security_group_href" do
         label "Security Group Href"
       end
-      field "href" do
+      field "id" do
         label "Href"
+        path "href"
       end
       field "protocol" do
         label "Protocol"
@@ -197,13 +196,7 @@ EOS
       field "security_group_access_link_root" do
         label "Security Group Link"
       end
-    end
-
-
-    escalate $email
-    escalate $report_security_groups_with_world_open_ports_description
-    check eq(size(data), 0)
-    resolve $report_security_groups_with_world_open_ports_resolution
+    end  
   end
 end
 

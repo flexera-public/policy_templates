@@ -2,7 +2,7 @@
 
 ## v1.3
 
-- adding incident resource table
+- Adding incident resource table
 
 ## v1.2
 
