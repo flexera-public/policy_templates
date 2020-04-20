@@ -1,8 +1,12 @@
 # Changelog
 
-## v1.1
+## v2.1
 
 - Added resource table
+
+## v2.0
+
+- Added credential services
 
 ## v1.0
 
