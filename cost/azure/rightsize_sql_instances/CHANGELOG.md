@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.2
+
+- Skip resources that do not return a SKU value
+
 ## v2.1
 
 - remove unnecessary permissions block

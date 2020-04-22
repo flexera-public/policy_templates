@@ -7,16 +7,11 @@ severity "medium"
 category "SaaS Management"
 default_frequency "daily"
 info(
-  version: "1.1",
+  version: "2.1",
   provider: "Flexera SaaS Manager",
   service: "",
   policy_set: ""
 )
-
-permission "perm_read_creds" do
-  actions   "rs_cm.show_sensitive","rs_cm.index_sensitive"
-  resources "rs_cm.credentials"
-end
 
 parameter "param_days" do
   type "number"
@@ -30,67 +25,22 @@ parameter "param_email" do
   description "Email addresses of the recipients you wish to notify"
 end
 
-resources "refresh_token", type: "rs_cm.credentials" do
-  filter do
-      name "FSM_TOKEN"
-  end
-  view "sensitive"
-end
-
-datasource "ds_access_token" do
-  iterate @refresh_token
-  request do
-    host "login.flexera.com"
-    path "/oidc/token"
-    verb "POST"
-    body_field "grant_type", "refresh_token"
-    body_field "refresh_token", val(iter_item, "value")
-  end
-  result do
-    encoding "json"
-    field "access_token", val(response, "access_token")
-  end
-end
-
-datasource "ds_global_auth" do
-  iterate $ds_access_token
-  request do
-    host "api.metasaas.com"
-    path "/auth/external-token"
-    verb "POST"
-    body_field "token", val(iter_item, "access_token")
-  end
-  result do
-    encoding "json"
-    field "access_token", val(response, "token")
-  end
-end
-
-datasource "ds_customer_select" do
-  iterate $ds_global_auth
-  request do
-      host "api.metasaas.com"
-      path "/auth/select-customer"
-      verb "POST"
-      header "Authorization", join(["Bearer", val(iter_item, "access_token")])
-      body_field "orgId", rs_org_id
-  end
-  result do
-      encoding "json"
-      field "access_token", val(response, "token")
-  end
+#authenticate with FSM
+credentials "fsm_auth" do
+  schemes "oauth2"
+  label "FSM"
+  description "Select the FSM Resource Manager Credential from the list."
+  tags "provider=flexera_fsm"
 end
 
 datasource "ds_num_users" do
-  iterate $ds_customer_select
   request do
-    #auth $rs_auth
+    auth $fsm_auth
     host "api.metasaas.com"
     verb "GET"
     scheme "https"
-    path "/svc/customer-agents"
+    path join(["/svc/orgs/", rs_org_id, "/customer-agents"])
     header "content-type", "application/json"
-    header "Authorization", join(["Bearer ", val(iter_item, "access_token"), " "])
     query "includeInactive", "true"
     query "property", "totalItems"
   end
@@ -100,35 +50,87 @@ datasource "ds_num_users" do
   end
 end
 
-datasource "ds_users" do
-  iterate $ds_num_users
+datasource "ds_groups" do
   request do
-    run_script $js_users, val(iter_item, "totalItems"), $ds_customer_select
+    auth $fsm_auth
+    host "api.metasaas.com"
+    verb "GET"
+    scheme "https"
+    path join(["/svc/orgs/", rs_org_id, "/customer-group"])
+    header "content-type", "application/json"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "nodes[*]") do
+      field "id", val(col_item, "id")
+      field "groupName", val(col_item, "groupName")
+    end
+  end
+end
+
+datasource "ds_group_members" do
+  iterate $ds_groups
+  request do
+    run_script $js_group_members, val(iter_item, "id"), rs_org_id
   end
   result do
     encoding "json"
     collect jmes_path(response, "items[*]") do
-        field "firstName", val(col_item, "firstName")
-        field "lastName", val(col_item, "lastName")
-        field "email", val(col_item, "email")
-        field "id", val(col_item, "id")
-        field "active", val(col_item, "active")
-      end
+      field "groupId", val(iter_item, "id")
+      field "groupName", val(iter_item, "groupName")
+      field "email", val(col_item, "email")
+    end
+  end
+end
+
+script "js_group_members", type: "javascript" do
+  parameters "group_id", "rs_org_id"
+  result "request"
+  code <<-EOS
+  request = {
+    auth: "fsm_auth",
+    host: "api.metasaas.com",
+    verb: "GET",
+    scheme: "https",
+    path: "/svc/orgs/"+rs_org_id+"/customer-agents",
+    headers: {
+      "content-type": "application/json",
+    },
+    query_params: {
+      "groupId": group_id,
+    }
+  }
+EOS
+end
+
+datasource "ds_users" do
+  request do
+    run_script $js_users, val($ds_num_users, "totalItems"), rs_org_id
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "items[*]") do
+      field "firstName", val(col_item, "firstName")
+      field "lastName", val(col_item, "lastName")
+      field "email", val(col_item, "email")
+      field "id", val(col_item, "id")
+      field "active", val(col_item, "active")
+    end
   end
 end
 
 script "js_users", type: "javascript" do
-  parameters "num_items", "access_token"
+  parameters "num_items", "rs_org_id"
   result "request"
   code <<-EOS
   request = {
+    auth: "fsm_auth",
     host: "api.metasaas.com",
     verb: "GET",
     scheme: "https",
-    path: "/svc/customer-agents",
+    path: "/svc/orgs/"+rs_org_id+"/customer-agents",
     headers: {
       "content-type": "application/json",
-      "Authorization": "Bearer " + access_token[0]["access_token"] + " "
     },
     query_params: {
       "includeInactive": "true",
@@ -138,7 +140,6 @@ script "js_users", type: "javascript" do
   }
 EOS
 end
-
 
 datasource "ds_inactive_users" do
   run_script $js_filter_users, $ds_users
@@ -150,13 +151,13 @@ script "js_filter_users", type: "javascript" do
   code <<-EOS
     var inactive_users =
       _.reject(users, function(user){ return user.active == true });
-EOS
+  EOS
 end
 
 datasource "ds_users_details" do
   iterate $ds_inactive_users
   request do
-    run_script $js_user_details, val(iter_item, "id"), $ds_customer_select
+    run_script $js_user_details, val(iter_item, "id"), rs_org_id
   end
   result do
     encoding "json"
@@ -172,36 +173,34 @@ datasource "ds_users_details" do
 end
 
 script "js_user_details", type: "javascript" do
-  parameters "user", "access_token"
+  parameters "user", "rs_org_id"
   result "request"
   code <<-EOS
   request = {
+    auth: "fsm_auth",
     host: "api.metasaas.com",
     verb: "GET",
     scheme: "https",
-    path: "/svc/customer-agents/" + user,
+    path: "/svc/orgs/"+rs_org_id+"/customer-agents/" + user,
     headers: {
       "content-type": "application/json",
-      "Authorization": "Bearer " + access_token[0]["access_token"] + " "
     }
   }
   EOS
 end
 
 datasource "ds_cleanup_users" do
-  run_script $js_cleanup_users, $ds_users_details, $param_days
+  run_script $js_cleanup_users, $ds_users_details, $ds_group_members, $param_days
 end
 
 script "js_cleanup_users", type: "javascript" do
-  parameters "users", "param_days"
+  parameters "users", "group_members", "param_days"
   result "result"
   code <<-EOS
   var result = [];
   var date = new Date();
   date = date.setHours(-24 * param_days);
   date = new Date(date);
-
-  console.log("Target Date: "+date)
 
   // returns date formatted as string: YYYY-mm-dd
   function getFormattedDailyDate(date) {
@@ -212,23 +211,26 @@ script "js_cleanup_users", type: "javascript" do
     day = day.length > 1 ? day : '0' + day;
     return year + '-' + month + '-' + day;
   }
-
   _.each(users, function(user){
-    console.log("User Object: "+user)
     var inactive_date = new Date(user["inactiveDate"]);
-    console.log("Inactive Date: "+inactive_date)
     if (inactive_date > date){
+      _.each(group_members, function(group_member){
+        if (user["email"] === group_member["email"]){
+          user_group = group_member["groupName"]
+        }
+      })
       result.push({
         firstName: user["firstName"],
         lastName: user["lastName"],
         email: user["email"],
         numberOfLicenses: user["numberOfLicenses"],
-        inactiveDate: getFormattedDailyDate(inactive_date)
+        inactiveDate: getFormattedDailyDate(inactive_date),
+        userGroup: user_group
       })
     }
   })
 
-  result = _.sortBy(result, 'inactiveDate').reverse();
+  result = _.sortBy(result, 'userGroup');
 EOS
 end
 
@@ -238,20 +240,18 @@ end
 
 policy "policy_fsm_inactive_users" do
   validate $ds_cleanup_users do
-      summary_template "{{ len data }} Inactive Users Found"
-      detail_template <<-EOS
+    summary_template "{{ len data }} Inactive Users Found"
+    detail_template <<-EOS
 # Recently Deactivated Users
 
-| Email | First Name | Last Name | Inactive Date (YYYY-MM-DD) | Number of Licenses |
-| ----- | ---------- | --------- | -------------------------- | ------------------ |
+| Email | First Name | Last Name | Department | Inactive Date (YYYY-MM-DD) | Number of Licenses |
+| ----- | ---------- | --------- | ---------- | -------------------------- | ------------------ |
 {{ range data -}}
-| {{.email}} | {{.firstName}} | {{.lastName}} | {{.inactiveDate}} | {{.numberOfLicenses}} |
+| {{.email}} | {{.firstName}} | {{.lastName}} | {{.userGroup}} | {{.inactiveDate}} | {{.numberOfLicenses}} |
 {{ end -}}
-
-
 ###### Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }}) within Org: {{ rs_org_name }} (Org ID: {{ rs_org_id }})
 EOS
-      escalate $report_summary
-      check eq(size(data), 0)
+    escalate $report_summary
+    check eq(size(data), 0)
   end
 end

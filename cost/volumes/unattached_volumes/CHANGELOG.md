@@ -1,8 +1,12 @@
 # Changelog
 
+## v1.12
+
+- Adding incident resource table
+
 ## v.1.11
 
-- adding incident resource table
+- Included README link in the policy template
 
 ## v1.10
 
