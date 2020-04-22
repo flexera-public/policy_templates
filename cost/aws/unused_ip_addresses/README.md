@@ -41,16 +41,16 @@ Required permissions in the provider:
 
 {     
   "Version": "2012-10-17",     
-  "Statement": [         
-           {       
-              "Effect": "Allow",
-              "Action": [
-                     "ec2:DescribeAddresses",
-                     "ec2:ReleaseAddress"             
-               ],
-             "Resource": "*"
-           }         
-        ] 
+  "Statement": [
+        {
+        "Effect": "Allow", 
+        "Action": [
+          "ec2:DescribeAddresses",
+          "ec2:ReleaseAddress"
+        ],
+        "Resource": "*"
+        }
+  ] 
 }
 
 ## Supported Clouds
