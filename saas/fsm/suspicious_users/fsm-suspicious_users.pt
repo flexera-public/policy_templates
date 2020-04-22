@@ -7,83 +7,34 @@ severity "high"
 default_frequency "daily"
 category "SaaS Management"
 info(
-  version: "1.1",
+  version: "2.0",
   provider: "Flexera SaaS Manager",
   service: "",
   policy_set: ""
 )
 
-
 parameter "param_email" do
-    type "list"
-    label "Email addresses to notify"
-    description "Email addresses of the recipients you wish to notify"
+  type "list"
+  label "Email addresses to notify"
+  description "Email addresses of the recipients you wish to notify"
 end
 
-
-resources "refresh_token", type: "rs_cm.credentials" do
-  filter do
-      name "FSM_TOKEN"
-  end
-  view "sensitive"
+#authenticate with FSM
+credentials "fsm_auth" do
+  schemes "oauth2"
+  label "FSM"
+  description "Select the FSM Resource Manager Credential from the list."
+  tags "provider=flexera_fsm"
 end
-
-datasource "ds_access_token" do
-  iterate @refresh_token
-  request do
-    host "login.flexera.com"
-    path "/oidc/token"
-    verb "POST"
-    body_field "grant_type", "refresh_token"
-    body_field "refresh_token", val(iter_item, "value")
-  end
-  result do
-    encoding "json"
-    field "access_token", val(response, "access_token")
-  end
-end
-
-datasource "ds_global_auth" do
-  iterate $ds_access_token
-  request do
-    host "api.metasaas.com"
-    path "/auth/external-token"
-    verb "POST"
-    body_field "token", val(iter_item, "access_token")
-  end
-  result do
-    encoding "json"
-    field "access_token", val(response, "token")
-  end
-end
-
-datasource "ds_customer_select" do
-  iterate $ds_global_auth
-  request do
-      host "api.metasaas.com"
-      path "/auth/select-customer"
-      verb "POST"
-      header "Authorization", join(["Bearer", val(iter_item, "access_token")])
-      body_field "orgId", rs_org_id
-  end
-  result do
-      encoding "json"
-      field "access_token", val(response, "token")
-  end
-end
-
-
 
 datasource "ds_suspicious_users" do
-  iterate $ds_customer_select
   request do
-    #auth $rs_auth
+    auth $fsm_auth
     host "api.metasaas.com"
     verb "GET"
     scheme "https"
-    path "/svc/activity/suspicious-agents"
+    path join(["/svc/orgs/", rs_org_id, "/activity/suspicious-agents"])
     header "content-type", "application/json"
-    header "Authorization", join(["Bearer ", val(iter_item, "access_token"), " "])
     query "page", "1"
     query "pageSize", "100"
     query "asc", "false"
@@ -91,17 +42,17 @@ datasource "ds_suspicious_users" do
     query "includeUnrecognized", "true"
     query "includeRecognized", "false"
   end
-    result do
-       encoding "json"
-       collect jmes_path(response, "[*]") do
-           field "firstName", val(col_item, "firstName")
-           field "lastName", val(col_item, "lastName")
-           field "email", val(col_item, "email")
-           field "managedProductName", val(col_item, "managedProductName")
-           field "recognized", val(col_item, "recognized")
-           field "unauthorized", val(col_item, "unauthorized")
-        end
+  result do
+    encoding "json"
+    collect jmes_path(response, "[*]") do
+      field "firstName", val(col_item, "firstName")
+      field "lastName", val(col_item, "lastName")
+      field "email", val(col_item, "email")
+      field "managedProductName", val(col_item, "managedProductName")
+      field "recognized", val(col_item, "recognized")
+      field "unauthorized", val(col_item, "unauthorized")
     end
+  end
 end
 
 datasource "ds_users_cleanup" do
@@ -127,7 +78,6 @@ script "js_users_cleanup", type: "javascript" do
         activity_type: activity_type
       })
     })
-
   EOS
 end
 

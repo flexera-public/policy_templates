@@ -1,5 +1,9 @@
 # Change log
 
+## v2.1
+
+- Bug fixes on unhandled errors when executing
+
 ## v2.0
 
 - Changed the authentication to credential services

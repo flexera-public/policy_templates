@@ -6,6 +6,7 @@ Checks Google for Unutilized IP Addresses and deletes them after approval.
 
 ## Functional Details
 
+- If APIs & Services are not enabled for a project, the policy will skip that particular project. On the next run if APIs & Services are enabled, then the project will be considered for execution.
 - This policy uses Google Cloud to get a list of IP addresses, internal and external, that are not in use.
 
 ## Input Parameters

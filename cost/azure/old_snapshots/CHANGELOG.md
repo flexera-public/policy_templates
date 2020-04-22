@@ -1,8 +1,12 @@
 # Changelog
 
+## v2.2
+
+- Adding incident resource table
+
 ## v2.1
 
-- adding incident resource table
+- Resolved Age field mismatch issue
 
 ## v2.0
 
