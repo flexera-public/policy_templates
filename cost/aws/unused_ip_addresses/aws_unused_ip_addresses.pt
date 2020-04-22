@@ -17,25 +17,16 @@ info(
 # Parameters
 ###############################################################################
 
-parameter "exclusion_tag" do
+parameter "param_exlude_tags" do
   type "list"
-  label "Exclusion tag Key:Value"
-  description "AWS tag to ignore IPs. Format: Key:Value"
+  label "Exclusion Tags Key:Value"
+  description "AWS tag to ignore Elastic IPs. Format: Key:Value"
 end
 
 parameter "param_email" do
   type "list"
-  label "Email addresses to notify"
+  label "Email addresses"
   description "Email addresses of the recipients you wish to notify when new incidents are created"
-end
-
-###############################################################################
-# Permission
-###############################################################################
-
-permission "read_cred" do
-  actions "rs_cm.show_sensitive", "rs_cm.index_sensitive"
-  resources "rs_cm.credentials"
 end
 
 ###############################################################################
@@ -82,25 +73,25 @@ datasource "ds_aws_elastic_ip_address" do
 	query "Version", "2016-11-15"
   end
   result do
-	encoding "xml"
+    encoding "xml"
 	collect xpath(response, "//DescribeAddressesResponse/addressesSet/item") do
-		field "publicIp", xpath(col_item,"publicIp")
-		field "domain" , xpath(col_item,"domain")
-		field "instance_id", xpath(col_item, "instanceId")
-		field "region", xpath(col_item,"networkBorderGroup")
-		field "allocation_id", xpath(col_item,"allocationId")
-        	field "tags" do
-        		collect xpath(col_item, "tagSet/item") do
-        			field "tagKey", xpath(col_item, "key")
-        			field "tagValue", xpath(col_item, "value")
-        		end
-      		end
-    	end
+      field "publicIp", xpath(col_item,"publicIp")
+	  field "domain" , xpath(col_item,"domain")
+	  field "instance_id", xpath(col_item, "instanceId")
+	  field "region", xpath(col_item,"networkBorderGroup")
+	  field "allocation_id", xpath(col_item,"allocationId")
+      field "tags" do
+        collect xpath(col_item, "tagSet/item") do
+          field "tagKey", xpath(col_item, "key")
+          field "tagValue", xpath(col_item, "value")
+       	end
+      end
+    end
   end
 end
 
 datasource "ds_filter_ip" do
-  run_script $js_filter_ip_response, $ds_aws_elastic_ip_address, $exclusion_tag
+  run_script $js_filter_ip_response, $ds_aws_elastic_ip_address, $param_exlude_tags
 end
 
 ###############################################################################
@@ -122,27 +113,27 @@ script "js_filter_ip_response", type: "javascript" do
     var isTagMatched = false;
     var tagKeyValue = "";
     for(var k=0; k < tags.length; k++){
-       tag = tags[k];
-         if((param_exclude_tags_lower.indexOf((tag['tagKey']).toLowerCase()) !== -1) || (param_exclude_tags_lower.indexOf((tag['tagKey']+':'+tag['tagValue']).toLowerCase()) !== -1)){
-           isTagMatched = true;
-         }
-         // Constructing tags with comma separated to display in detail_template
-         if((tag['tagValue']).length > 0){
-           tagKeyValue = tagKeyValue+" , "+tag['tagKey']+':'+tag['tagValue'];
-         }
-	 else{
-           tagKeyValue = tagKeyValue+" , "+tag['tagKey'];
-         }
+      tag = tags[k];
+      if((param_exclude_tags_lower.indexOf((tag['tagKey']).toLowerCase()) !== -1) || (param_exclude_tags_lower.indexOf((tag['tagKey']+':'+tag['tagValue']).toLowerCase()) !== -1)){
+        isTagMatched = true;
+      }
+      // Constructing tags with comma separated to display in detail_template
+      if((tag['tagValue']).length > 0){
+        tagKeyValue = tagKeyValue+" , "+tag['tagKey']+':'+tag['tagValue'];
+      }
+	  else{
+        tagKeyValue = tagKeyValue+" , "+tag['tagKey'];
+      }
     }
     if(tagKeyValue === "" || tagKeyValue === " " || tagKeyValue == ""){
       tagKeyValue = "< No Value >";
     }
     else{
-       tagKeyValue=tagKeyValue.slice(2);
+      tagKeyValue=tagKeyValue.slice(2);
     }
-    //If the volume tag does not match with entered param_exlude_tags
+    //If the instance id is empty and IP tag does not match with entered param_exlude_tags
     if(instance['instance_id']==""){
-     if(!(isTagMatched)){
+      if(!(isTagMatched)){
         result.push({
           all_tags : (tagKeyValue),
 		  domain:instance['domain'],
@@ -150,8 +141,8 @@ script "js_filter_ip_response", type: "javascript" do
 		  region : instance["region"],
 		  allocation_id:instance["allocation_id"]
         })
+      }
     }
-   }
   }
   EOS
 end
@@ -212,34 +203,34 @@ define delete_unused_instances($data) return $all_responses do
   $all_responses = []
   foreach $item in $data do
     sub on_error: skip do
-		if $item["domain"]=="standard"
-		  $response = http_request(
-		  verb: "get",
-		  host: join(["ec2.", $item["region"],".amazonaws.com"]),
-		  auth: $$auth_aws,
-		  		  href: "/",
-		  query_strings:{
-		    "Action":"ReleaseAddress",
-			"PublicIp":$item["publicIp"],
-			"Version":"2016-11-15"
-			},
-		  https: true
-		 )
-		elsif $item["domain"]=="vpc"
-		  $response = http_request(
+	  if $item["domain"]=="standard"
+	    $response = http_request(
 		  verb: "get",
 		  host: join(["ec2.", $item["region"],".amazonaws.com"]),
 		  auth: $$auth_aws,
 		  href: "/",
 		  query_strings:{
 		    "Action":"ReleaseAddress",
-			"AllocationId":$item["allocation_id"],
-			"Version":"2016-11-15"
-			},
+		    "PublicIp":$item["publicIp"],
+		    "Version":"2016-11-15"
+		  },
 		  https: true
-		 )
-		end
-		$all_responses << $response
+	    )
+	  elsif $item["domain"]=="vpc"
+	    $response = http_request(
+		  verb: "get",
+		  host: join(["ec2.", $item["region"],".amazonaws.com"]),
+		  auth: $$auth_aws,
+		  href: "/",
+		  query_strings:{
+		    "Action":"ReleaseAddress",
+		    "AllocationId":$item["allocation_id"],
+			"Version":"2016-11-15"
+		  },
+		  https: true
+	    )
+	  end
+	  $all_responses << $response
 	end
   end
   call sys_log('Unused Elastic IPs response',to_s($all_responses))

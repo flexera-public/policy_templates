@@ -17,8 +17,8 @@ Please note that all new AWS accounts are automatically on the EC2-VPC platform.
 
 This policy has the following input parameters required when launching the policy.
 
-- *Email addresses* - A list of email addresses to notify 
-- *Exclusion Tags Key:Value* - list of tags that an EIP(Elastic IP) can have to exclude it from the list.
+- *Email addresses* - Email addresses of the recipients you wish to notify when new incidents are created 
+- *Exclusion Tags Key:Value* - AWS tag to ignore Elastic IPs. Format: Key:Value.
 
 ## Policy Actions
 
