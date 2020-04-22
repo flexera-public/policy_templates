@@ -39,8 +39,8 @@ Provider tag value to match this policy: `aws`
 
 Required permissions in the provider:
 
-{     
-  "Version": "2012-10-17",     
+{
+  "Version": "2012-10-17",
   "Statement": [
         {
         "Effect": "Allow", 
