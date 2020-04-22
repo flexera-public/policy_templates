@@ -8,8 +8,8 @@ This Policy finds AWS unused IP addresses and deletes them after approval.
 
 This policy gets a list of EIP(Elastic IPs) which can be on the following platforms:
 
-1. EC2-Classic- In this platform instances run in a single, flat network that is shared with other customers.
-2. EC2- VPC- In EC2-VPC, instances run in a virtual private cloud (VPC) that is logically isolated to only one AWS account.
+- EC2-Classic- In this platform instances run in a single, flat network that is shared with other customers.
+- EC2- VPC- In EC2-VPC, instances run in a virtual private cloud (VPC) that is logically isolated to only one AWS account.
 
 Please note that all new AWS accounts are automatically on the EC2-VPC platform.
 
