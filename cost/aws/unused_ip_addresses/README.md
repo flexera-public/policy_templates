@@ -35,6 +35,7 @@ For administrators [creating and managing credentials](https://docs.rightscale.c
 Provider tag value to match this policy: `aws`
 
 Required permissions in the provider:
+
 ```
 {
   "Version": "2012-10-17",
@@ -50,6 +51,7 @@ Required permissions in the provider:
   ] 
 }
 ```
+
 ## Supported Clouds
 
 - AWS
