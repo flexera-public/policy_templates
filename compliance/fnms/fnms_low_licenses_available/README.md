@@ -19,7 +19,10 @@ This policy uses [credentials](https://docs.rightscale.com/policies/users/guides
 
 For administrators [creating and managing credentials](https://docs.rightscale.com/policies/users/guides/credential_management.html) to use with this policy, the following information is needed:
 
-Required permissions in the provider: `flexera_fnms_api_key`
+Credential type must be:
+
+- *API Key* - For FNMS Cloud  -  (*Location*:header, *Type*: Bearer)
+- *NTLM* - For OnPrem FNMS
 
 ## Input Parameters
 
@@ -39,10 +42,11 @@ This policy has the following input parameters required when launching the polic
 ### How to setup FlexNet Manager for this policy
 
 1. Create a report in FlexNet manager that contains these fields:![Alt text][FNMSReport]Once saved, note the report number in the URL field:![Alt text][ReportNumber] you need it when activating the Policy.
-1. Retrieve the API Token in FlexNet Manager:
+1. Retrieve the API Token in FlexNet Manager (Cloud):
     1. On the Account page - Select Create Account -> Service Account and fill in the form ![Alt text][CreateServeceAccount]
     1. IMPORTANT: When you hit save you will see a API Token. This is the only time you will see it, so you need to save it at this point. ![Alt text][APIToken]
-    1. Add the new account to the Role ___Webservice___ ![Alt text][WebServiceRole]
+
+1. Ensure that the Account used has the Role ___Webservice___ assigned! [Alt text][WebServiceRole]
 
 __NOTE__: You can use a normal interactive user for the API credentials, but it is recommended to add a special service user for the API connection.
 
