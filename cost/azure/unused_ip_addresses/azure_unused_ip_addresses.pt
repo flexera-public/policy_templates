@@ -114,7 +114,8 @@ datasource "ds_public_ip_addresses" do
       field "ipAddressName", jmes_path(col_item,"name")
       field "location", jmes_path(col_item,"location")
       field "ipAddressId", jmes_path(col_item,"id")
-      field "properties", jmes_path(col_item,"properties") 
+      field "properties", jmes_path(col_item,"properties")
+      field "tags", jmes_path(col_item,"tags")
     end
   end
 end
@@ -137,11 +138,9 @@ script "js_exclude_tags", type: "javascript" do
       var tags = '';
       var isTagMatched = false;
       var properties = ipAddress.properties;
-      console.log(properties.ipAddress);
-      console.log(properties.tags);
       //Exclude tags
       for(var i=0;i<param_exclude_tags.length;i++){
-        if(_.has(properties.tags, param_exclude_tags[i])){
+        if(_.has(ipAddress.tags, param_exclude_tags[i])){
           isTagMatched = true;  
 		}
 	  }
@@ -154,10 +153,8 @@ script "js_exclude_tags", type: "javascript" do
             resourceGroupName:ipAddress["resourceGroupName"],
             ipAddressName:ipAddress["ipAddressName"],
             location:ipAddress["location"],
-            address:properties.ipAddress,
-            tags:properties.tags,
+            tags:ipAddress["tags"],
             ipAddressId:ipAddress["ipAddressId"],
-            ipconfigurations:properties.ipConfiguration
 		  })  
 		}
 	  }
@@ -186,17 +183,16 @@ policy "pol_unused_ip_addresses" do
       field "subscriptionName" do
         label "Subscription Name"
       end
-      field "ipAddressName" do
-        label "IP Address Name"
+      field "resourceGroupName" do
+        label "Resource Group Name"
       end
       field "id" do
-        label "Address"
-        path "address"
+        label "IP Address Name"
+        path "ipAddressName"
       end
     end
   end
 end
-
 
 ###############################################################################
 # Escalations
@@ -223,37 +219,41 @@ end
 # Cloud Workflow
 ###############################################################################
 
-define delete_ip_addresses($data) do
+define delete_ip_addresses($data) return $all_responses do
   $$debug = false
+  $all_responses = []
   foreach $item in $data do
     sub on_error: skip do
-      call azure_delete_ip_addresses($item['ipAddressId'])
+      call azure_delete_ip_addresses(to_s($item['ipAddressId']))
     end
   end
 end
 
 define azure_delete_ip_addresses($ipAddressId) do
-  $response = {}
-  $syslogSubject = "Azure delete unused ip addresses API response: "
+  $response={}
+  $syslog_subject = "Azure unused IP addresses : "
   $response = http_request(
-    auth: $azure_auth,
-    verb: "delete",
-    host: "management.azure.com",
-    https: true,
-    href: $ipAddressId,
-    query_strings: {
-      "api-version": "2020-03-01"
-	}
-  )
+          auth: $$azure_auth,
+          verb: "delete",
+          host: "management.azure.com",
+          https: true,
+          href: $ipAddressId,
+          query_strings: {
+            "api-version": "2020-03-01"
+          }
+        )    
+    call sys_log($syslog_subject,to_s($response))
 end
 
 define sys_log($subject, $detail) do
-  rs_cm.audit_entries.create(
-    notify: "None",
-    audit_entry: {
-      auditee_href: @@account,
-      summary: join(["Azure delete unused IP addresses policy - ", $subject]),
-      detail: $detail
-    }
-  )
+  if $$debug
+    rs_cm.audit_entries.create(
+      notify: "None",
+      audit_entry: {
+        auditee_href: @@account,
+        summary: join(["Azure unused IP addresses - ", $subject]),
+        detail: $detail
+      }
+    )
+  end
 end
