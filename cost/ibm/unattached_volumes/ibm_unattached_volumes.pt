@@ -1,0 +1,117 @@
+
+name "IBM Unused Volumes"
+rs_pt_ver 20180301
+type "policy"
+short_description "Checks for unused volumes and if no read/write operations performed within a specified number of days and, optionally, deletes them. See the [README](https://github.com/flexera/policy_templates/tree/master/cost/aws/unused_volumes) and [docs.rightscale.com/policies](https://docs.rightscale.com/policies/) to learn more."
+long_description ""
+severity "low"
+category "Cost"
+tenancy "single"
+default_frequency "daily"
+info(
+  version: "2.0",
+  provider: "IBM",
+  service: "Storage",
+  policy_set: "Unused Volumes"
+)
+
+###############################################################################
+# User inputs
+###############################################################################
+
+parameter "param_email" do
+  type "list"
+  label "Email addresses"
+  description "A list of email addresses to notify."
+end
+
+parameter "param_exclude_tags" do
+  type "list"
+  category "User Inputs"
+  label "Exclude Tags"
+  description "A list of tags used to excluded volumes from the incident."
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+#Authenticate with AWS
+credentials "auth_ibmcloud" do
+  schemes "oauth"
+  label "IBM"
+  description "Select the IBM Credential from the list"
+  tags "provider=ibm"
+end
+
+###############################################################################
+# Pagination
+###############################################################################
+
+###############################################################################
+# Datasource
+###############################################################################
+
+#Generates List Of Regions.
+datasource "ds_regions_list" do
+  run_script $js_region_list
+end
+
+datasource "ds_volumes" do
+  iterate ds_regions_list
+  request do
+    auth $auth_ibmcloud
+    host join([val(iter_item,"region"),".iaas.cloud.ibm.com"])
+    path "/v1/volumes"
+    verb "GET"
+    query "version", "2020-04-07"
+    query "generation", "2"
+    header "Accept", "application/json"
+  end
+end
+
+###############################################################################
+# Script
+###############################################################################
+
+script "js_region_list", type:"javascript" do
+  result "results"
+  code <<-EOS
+  var results = [
+    {region: 'us-south'},
+    {region: 'us-east'},
+    {region: 'eu-gb'},
+    {region: 'eu-de'}
+  ]
+EOS
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "report_unused_CLB" do
+  email $param_email
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "policy_delete_unused_volumes" do
+  validate $ds_volumes do
+    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} Unused Classic Load Balancers Found in AWS"
+    detail_template <<-EOS
+## List of Unused Classic Load Balancers
+| LoadBalancer_Name | Region | Instance_ID | Availability_Zones | TAG_Value |
+| ----------------- | ------ | ----------- | ------------------ | --------- |
+{{ range data -}}
+| {{ .loadBalancerName }} | {{.region}} | {{ .instanceId }} | {{ .availabilityZones }} | {{.tagKeyValue}} |
+{{ end -}}
+###### Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }}) within Org: {{ rs_org_name }} (Org ID: {{ rs_org_id }})
+EOS
+    escalate $report_unused_CLB
+    escalate $approve_delete_CLB
+    check eq(size(data),0)
+  end
+end
