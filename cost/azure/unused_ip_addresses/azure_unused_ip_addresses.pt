@@ -1,0 +1,259 @@
+name "Azure Unused IP Addresses"
+rs_pt_ver 20180301
+type "policy"
+short_description "Checks for unused IP addresses in the given account and, optionally deletes them. See the [README] (https://github.com/flexera/policy_templates/tree/master/cost/azure/unused_ip_addresses) and [docs.rightscale.com/policies] (https://docs.rightscale.com/policies/) to learn more"
+severity "low"
+category "Cost"
+info(
+  version: "2.0",
+  provider: "Azure",
+  service: "Compute",
+  policy_set: "Unused IP Addresses"
+)
+
+##################
+# User inputs    #
+##################
+
+parameter "param_email" do
+  type "list"
+  label "Email Addresses"
+  description "Email addresses of the recipients you wish to notify"
+end
+
+parameter "param_exclude_tags" do
+  type "list"
+  category "User Inputs"
+  label "Exclude Tags"
+  description "A list of tags used to excluded volumes from the incident."
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+#Authenticate with azure
+credentials "azure_auth" do
+  schemes "oauth2"
+  label "Azure"
+  description "Select the Azure Resource Manager Credential from the list."
+  tags "provider=azure_rm"
+end
+
+###############################################################################
+# Pagination
+###############################################################################
+
+pagination "azure_pagination" do
+  get_page_marker do
+    body_path "nextLink"
+  end
+  set_page_marker do
+    uri true
+  end
+end
+
+###############################################################################
+# Datasources
+###############################################################################
+
+#To get all subscriptions
+datasource "ds_subscriptions" do
+  request do
+    auth $azure_auth
+    pagination $azure_pagination
+    host "management.azure.com"
+    path "/subscriptions/"
+    query "api-version", "2020-01-01"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "value[*]") do
+      field "subscriptionId", jmes_path(col_item,"subscriptionId")
+      field "displayName", jmes_path(col_item,"displayName")
+    end
+  end
+end
+
+#To get all resource groups
+datasource "ds_resource_groups" do
+  iterate $ds_subscriptions
+  request do
+    auth $azure_auth
+    pagination $azure_pagination
+    host "management.azure.com"
+    path join(["/subscriptions/",val(iter_item,"subscriptionId"),"/resourcegroups"])
+    query "api-version","2019-10-01"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "value[*]") do
+      field "resourceGroupName", jmes_path(col_item,"name")
+      field "subscriptionId", val(iter_item,"subscriptionId")
+      field "subscriptionName", val(iter_item,"displayName")
+    end
+  end
+end
+
+#To get all public IP addresses
+datasource "ds_public_ip_addresses" do
+  iterate $ds_resource_groups
+  request do
+    auth $azure_auth
+    host "management.azure.com"
+    path join(["/subscriptions/",val(iter_item,"subscriptionId"),"/resourceGroups/",val(iter_item,"resourceGroupName"),"/providers/Microsoft.Network/publicIPAddresses"])
+    query "api-version","2020-03-01"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response,"value[*]") do
+      field "subscriptionId", val(iter_item,"subscriptionId")
+      field "subscriptionName", val(iter_item,"subscriptionName")
+      field "resourceGroupName", val(iter_item,"resourceGroupName")
+      field "ipAddressName", jmes_path(col_item,"name")
+      field "location", jmes_path(col_item,"location")
+      field "ipAddressId", jmes_path(col_item,"id")
+      field "properties", jmes_path(col_item,"properties") 
+    end
+  end
+end
+
+#Login to exclude tags and filter only unused IP addresses
+datasource "ds_unused_ip_addresses" do
+  run_script $js_exclude_tags, $ds_public_ip_addresses, $param_exclude_tags
+end
+
+###############################################################################
+# Scripts
+###############################################################################
+
+script "js_exclude_tags", type: "javascript" do
+  parameters "publicIPAddressesList","param_exclude_tags"
+  result "results"
+  code <<-EOS
+    var results = [];
+    _.each(publicIPAddressesList, function(ipAddress){
+      var tags = '';
+      var isTagMatched = false;
+      var properties = ipAddress.properties;
+      console.log(properties.ipAddress);
+      console.log(properties.tags);
+      //Exclude tags
+      for(var i=0;i<param_exclude_tags.length;i++){
+        if(_.has(properties.tags, param_exclude_tags[i])){
+          isTagMatched = true;  
+		}
+	  }
+
+      if(!isTagMatched){
+        if(properties.ipConfiguration == null){
+          results.push({
+            subscriptionId:ipAddress["subscriptionId"],
+            subscriptionName:ipAddress["subscriptionName"],
+            resourceGroupName:ipAddress["resourceGroupName"],
+            ipAddressName:ipAddress["ipAddressName"],
+            location:ipAddress["location"],
+            address:properties.ipAddress,
+            tags:properties.tags,
+            ipAddressId:ipAddress["ipAddressId"],
+            ipconfigurations:properties.ipConfiguration
+		  })  
+		}
+	  }
+	})
+
+    results = _.sortBy(results,"location");
+    results = _.sortBy(results,"subscriptionName");
+  EOS
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "pol_unused_ip_addresses" do
+  validate $ds_unused_ip_addresses do
+    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} Unused IP Addresses Found"
+    check eq(0,1)
+    escalate $send_email_report
+    escalate $delete_unused_ip_addresses
+    export do
+      resource_level true
+      field "location" do
+        label "Location"
+      end
+      field "subscriptionName" do
+        label "Subscription Name"
+      end
+      field "ipAddressName" do
+        label "IP Address Name"
+      end
+      field "id" do
+        label "Address"
+        path "address"
+      end
+    end
+  end
+end
+
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "send_email_report" do
+  email $param_email
+end
+
+escalation "delete_unused_ip_addresses" do
+  request_approval do
+    label "Approve Resource Deletion"
+    description "Approve escalation to run RightScale Cloud Workflow to delete unused IP addresses."
+    parameter "approval_reason" do
+      type "string"
+      label "Reason For Approval"
+      description "Explain why are you approving the action"
+    end
+  end
+  run "delete_ip_addresses", data
+end
+
+###############################################################################
+# Cloud Workflow
+###############################################################################
+
+define delete_ip_addresses($data) do
+  $$debug = false
+  foreach $item in $data do
+    sub on_error: skip do
+      call azure_delete_ip_addresses($item['ipAddressId'])
+    end
+  end
+end
+
+define azure_delete_ip_addresses($ipAddressId) do
+  $response = {}
+  $syslogSubject = "Azure delete unused ip addresses API response: "
+  $response = http_request(
+    auth: $azure_auth,
+    verb: "delete",
+    host: "management.azure.com",
+    https: true,
+    href: $ipAddressId,
+    query_strings: {
+      "api-version": "2020-03-01"
+	}
+  )
+end
+
+define sys_log($subject, $detail) do
+  rs_cm.audit_entries.create(
+    notify: "None",
+    audit_entry: {
+      auditee_href: @@account,
+      summary: join(["Azure delete unused IP addresses policy - ", $subject]),
+      detail: $detail
+    }
+  )
+end
