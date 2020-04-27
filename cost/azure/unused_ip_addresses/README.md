@@ -8,15 +8,15 @@ This Policy Template scans all IP addresses in the given account and identifies 
 
 This policy has the following input parameters required when launching the policy.
 
- - *Email Addresses* - A list of email addresses to notify 
- - *Exclude Tags* - A list of tags used to excluded IP addresses from the incident.
+- *Email Addresses* - A list of email addresses to notify 
+- *Exclude Tags* - A list of tags used to excluded IP addresses from the incident.
 
 ## Policy Actions  
 
 The following policy actions are taken on any resources found to be out of compliance.
 
-  - Send an email report    
-  - Delete Unused IP addresses after approval
+- Send an email report    
+- Delete Unused IP addresses after approval
 
 ## Prerequisites  
 
@@ -36,7 +36,7 @@ Required permissions in the provider:
 ## Supported Clouds  
 
 - Azure
-  
+
 ## Cost  
 
 This Policy Template does not incur any cloud costs.
