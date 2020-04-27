@@ -9,7 +9,7 @@ This Policy Template scans all IP addresses in the given account and identifies 
 This policy has the following input parameters required when launching the policy.
 
  - *Email addresses* - A list of email addresses to notify 
- - *Exclude Tags.* - A list of tags used to excluded IP addresses from the incident.
+ - *Exclude Tags* - A list of tags used to excluded IP addresses from the incident.
 
 ## Policy Actions  
 
