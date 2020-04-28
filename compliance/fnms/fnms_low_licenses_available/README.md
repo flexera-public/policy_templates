@@ -19,12 +19,12 @@ This policy uses [credentials](https://docs.rightscale.com/policies/users/guides
 
  For administrators [creating and managing credentials](https://docs.rightscale.com/policies/users/guides/credential_management.html) to use with this policy, the following information is needed:
 
-* Credential type:
+- Credential type:
 
-  + *API Key* - For FNMS Cloud  -  (*Location*:header, *Type*: Bearer)
+  - *API Key* - For FNMS Cloud  -  (*Location*:header, *Type*: Bearer)
 
   or
-  + *NTLM* - For On Premise FNMS
+  - *NTLM* - For On Premise FNMS
 
 - Provider : *flexera_fnms*
 
