@@ -1,4 +1,4 @@
-# FlexNet Manager Low Available Licenses - Cloud
+# FlexNet Manager Low Available Licenses
 
 ## What it does
 
@@ -17,12 +17,16 @@ This policy uses [credentials](https://docs.rightscale.com/policies/users/guides
 
 ### Credential configuration
 
-For administrators [creating and managing credentials](https://docs.rightscale.com/policies/users/guides/credential_management.html) to use with this policy, the following information is needed:
+ For administrators [creating and managing credentials](https://docs.rightscale.com/policies/users/guides/credential_management.html) to use with this policy, the following information is needed:
 
-Credential type must be:
+* Credential type:
 
-- *API Key* - For FNMS Cloud  -  (*Location*:header, *Type*: Bearer)
-- *NTLM* - For OnPrem FNMS
+  + *API Key* - For FNMS Cloud  -  (*Location*:header, *Type*: Bearer)
+
+  or
+  + *NTLM* - For On Premise FNMS
+
+- Provider : *flexera_fnms*
 
 ## Input Parameters
 
