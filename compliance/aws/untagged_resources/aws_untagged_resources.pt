@@ -1,0 +1,264 @@
+name "AWS Untagged Resources"
+rs_pt_ver 20180301  
+type "policy"
+short_description "Find all AWS resources missing any of the user provided tags with the option to update the resources with the missing tags. See the [README](https://github.com/flexera/policy_templates/tree/master/compliance/aws/untagged_resources/) and [docs.rightscale.com/policies](https://docs.rightscale.com/policies/) to learn more."  
+long_description ""
+category "Compliance"    
+severity "low"
+info(
+  version: "2.0",
+  provider: "AWS",
+  service: "",
+  policy_set:"Untagged resources"
+)
+
+###############################################################################
+# User inputs
+###############################################################################
+
+parameter "param_email" do
+  type "list"
+  label "Email addresses"
+  description "A list of email addresses to notify"
+end
+
+parameter "param_tags_to_check" do
+  type "list"
+  label "Tags Key=Value"
+  description "List of tags against which the resources will be compared"
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+credentials "auth_aws" do
+  schemes "aws","aws_sts"
+  label "AWS"
+  description "Select the AWS Cloud Credential from the list."
+  tags "provider=aws"
+end
+
+###############################################################################
+# Pagination
+###############################################################################
+
+pagination "aws_pagination" do
+  get_page_marker do
+    body_path jmes_path(response,"PaginationToken")
+  end
+  set_page_marker do
+    body_field "PaginationToken"
+  end
+end
+
+###############################################################################
+# Datasources
+###############################################################################
+
+datasource "ds_get_regions" do
+  request do
+    verb "GET"
+    host "raw.githubusercontent.com"
+    path "/rightscale/policy_templates/master/data/aws/regions.json"
+    header "User-Agent", "RS Policies"
+  end
+end
+
+datasource "ds_get_all_resources" do
+  iterate $ds_get_regions
+  request do
+    auth $auth_aws
+    pagination $aws_pagination
+    host join(["tagging.",val(iter_item, "region"),".amazonaws.com"])
+    verb "POST"
+    path "/"
+    header "X-Amz-Target","ResourceGroupsTaggingAPI_20170126.GetResources"
+    header "Content-Type","application/x-amz-json-1.1"
+    body_field "ExcludeCompliantResources","false"
+    body_field "IncludeComplianceDetails","true"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response,"ResourceTagMappingList[*]") do
+      field "arn", jmes_path(col_item,"ResourceARN")
+      field "tags" do
+        collect jmes_path(col_item,"Tags[*]") do
+          field "tagKey", jmes_path(col_item,"Key")
+          field "tagValue", jmes_path(col_item,"Value")
+        end
+      end
+      field "region", val(iter_item,"region")
+    end
+  end
+end
+
+datasource "ds_filter_resources" do
+  run_script $js_filter_resources, $ds_get_all_resources, $param_tags_to_check
+end
+
+###############################################################################
+# Scripts
+###############################################################################
+
+script "js_filter_resources", type: "javascript" do
+  parameters "ds_get_all_resources", "param_tags_to_check"
+  result "result"
+  code <<-EOS
+  var result=[];
+  for(var i=0;i<ds_get_all_resources.length;i++){
+    var missing_tags="";
+    var all_tags="";
+    var instance=ds_get_all_resources[i];
+    for(var j=0;j<param_tags_to_check.length;j++){
+      var param_lowerCase=param_tags_to_check[j].toLowerCase();
+      var notMatched=true;
+      if(param_lowerCase.indexOf("=")==-1)
+      {
+        for(var k=0;k<instance.tags.length;k++){
+          var current_tag=instance.tags[k]; 
+          if(current_tag["tagKey"].toLowerCase()==param_lowerCase || current_tag["tagValue"].toLowerCase()==param_lowerCase){
+            notMatched=false;
+            break;
+          }
+        }
+      }
+      else {
+        var arr=param_lowerCase.split("=");
+        for(var k=0;k<instance.tags.length;k++){
+          var current_tag=instance.tags[k];
+          if(current_tag["tagKey"].toLowerCase()==arr[0] && current_tag["tagValue"].toLowerCase()==arr[1]){
+            notMatched=false;
+            break;
+          }
+        }
+      }
+      if(notMatched){
+        missing_tags=missing_tags+", "+param_tags_to_check[j];
+      }
+    }
+    for(var j=0;j<instance.tags.length;j++){
+      var current_tag=instance.tags[j];
+      all_tags=all_tags+", "+current_tag["tagKey"]+"="+current_tag["tagValue"];
+    }
+    if(all_tags.length==0){
+      all_tags="< No Value >";
+    }
+    else{
+      all_tags=all_tags.slice(2);
+    }
+    var id="";
+    var arn_last=instance.arn.split(":");
+    if(arn_last[arn_last.length-1].indexOf("/")!=-1){
+      var arr=arn_last[arn_last.length-1].split("/")
+      id=arr[1];
+    }
+    else{
+      id=arn_last[arn_last.length-1];
+    }
+    if(missing_tags.length!=0){
+      result.push({
+        "arn":instance.arn,
+        "id": id,
+        "missing_tags":missing_tags.slice(2),
+        "available_tags":all_tags,
+        "region":instance.region
+      })
+    }
+  }
+  EOS
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_email" do
+  automatic true
+  label "Sends Email"
+  description "Sends Incident Email"
+  email $param_email
+end
+
+escalation "esc_add_tags" do
+  automatic false
+  parameter "tags_to_add" do
+    type "list"
+    label "Tags to Add Key=Value"
+    description "Enter the tags to be added"
+  end
+  run "cwf_add_tags", data, $tags_to_add
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "policy_untagged_resources" do
+  validate $ds_filter_resources do
+    summary_template "AWS untagged resources list"
+    escalate $esc_email
+    escalate $esc_add_tags
+    check eq(size(data),0)
+    export do
+      resource_level true
+      field "id" do
+        label "Resource ID"
+      end
+      field "region" do
+        label "Region"
+      end
+      field "available_tags" do
+        label "Available Tags"
+      end
+      field "missing_tags" do
+        label "Missing Tags"
+      end
+    end
+  end
+end
+
+###############################################################################
+# Cloud Workflow
+###############################################################################
+
+define cwf_add_tags($data,$tags_to_add) return $all_response do
+  $$debug=true
+  $all_response=[];
+  $tags_obj={}
+  foreach $tag in $tags_to_add do
+    $tags_obj[first(split($tag,"="))]=last(split($tag,"="))
+  end
+  foreach $item in $data do
+    $response=http_request(
+      verb: "post",
+      auth: $$auth_aws,
+      host: join(["tagging."+$item["region"]+".amazonaws.com"]),
+      href: "/",
+      https: true,
+      headers:{
+        "X-Amz-Target": "ResourceGroupsTaggingAPI_20170126.TagResources",
+        "content-type": "application/x-amz-json-1.1"
+      },
+      body: {
+        "ResourceARNList": [ $item["arn"] ],
+        "Tags": $tags_obj
+      }
+    )
+    $all_response << $response
+  end
+  call sys_log('Response',to_s($all_response))
+end
+
+define sys_log($subject, $detail) do
+  if $$debug
+    rs_cm.audit_entries.create(
+      notify: "None",
+      audit_entry: {
+        auditee_href: @@account,
+        summary: "AWS add Tags "+ $subject,
+        detail: $detail
+      }
+    )
+  end
+end
