@@ -8,8 +8,8 @@ Find all Azure resources missing any of the user provided tags with the option t
 
 This policy has the following input parameters required when launching the policy.
 
-- *Email addresses* - A list of email addresses to notify
-- *list of tags* - list of tags keys to find resources which are not tagged by given inputs.
+- *Email addresses to notify* - Email addresses of the recipients you wish to notify when new incidents are created
+- *List of tags* - List of tags keys to find resources which are not tagged by given inputs.
 
 ## Policy Actions
 

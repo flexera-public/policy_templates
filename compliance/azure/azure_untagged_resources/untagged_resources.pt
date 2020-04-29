@@ -12,12 +12,13 @@ info(
  )
 
 ###############################################################################
-# Parameters
+# User inputs 
 ###############################################################################
 
 parameter "param_email" do
   type "list"
-  label "Email addresses of the recipients you wish to notify"
+  label "Email addresses to notify"
+  description "Email addresses of the recipients you wish to notify when new incidents are created"
 end
 
 parameter "param_tag_key" do
@@ -25,10 +26,15 @@ parameter "param_tag_key" do
   label "Tag Key"
   category "Azure"
   allowed_pattern /\S/
+  description "List of tags keys to find resources which are not tagged by given inputs"
   constraint_description <<-EOS
     This is a mandatory field.
   EOS
 end 
+
+###############################################################################
+# Authentication
+###############################################################################
 
 credentials "azure_auth" do
   schemes "oauth2"
@@ -36,6 +42,10 @@ credentials "azure_auth" do
   description "Select the Azure Resource Manager Credential from the list."
   tags "provider=azure_rm"
 end
+
+###############################################################################
+# Pagination
+###############################################################################
 
 pagination "azure_pagination" do
   get_page_marker do
@@ -45,6 +55,10 @@ pagination "azure_pagination" do
     uri true
   end
 end
+
+###############################################################################
+# Datasources
+###############################################################################
 
 datasource "ds_subscriptions" do
   request do
@@ -91,6 +105,10 @@ datasource "ds_filtered_resources" do
   run_script $js_filter_resources, $ds_azure_resources, $param_tag_key
 end
 
+###############################################################################
+# Scripts
+###############################################################################
+
 script "js_filter_resources", type: "javascript" do
   parameters "ds_azure_resources", "param_tag_key"
   result "result"
@@ -121,40 +139,44 @@ script "js_filter_resources", type: "javascript" do
        if(_.isEmpty(resource_tags) || (resource_tags.toLowerCase().indexOf(param_tag_key_lower[j].toLowerCase()))==-1){
          isResMissedTag=true;
          all_missed_tag=all_missed_tag+" "+param_tag_key_lower[j];
-         all_tags[param_tag_key_lower[j]]="";
         }else{
          all_include_tag=all_include_tag+" "+param_tag_key_lower[j];
        }
       }
 
-       if(isResMissedTag){	  
-          result.push({
-            subscriptionId: ar["subscriptionId"],
-            subscriptionName : ar["subscriptionName"],
-            id: ar["id"],
-            region: ar["region"],
-            name: ar["name"],
-            resource_group: resource_group_name,
-            namespace: namespace,
-            resource_type: resource_type,
-            all_missed_tag: all_missed_tag,
-            all_include_tag: resource_tags,
-            all_tags: all_tags		
-          })
-        }		  
+    if(isResMissedTag){	  
+      result.push({
+        subscriptionId: ar["subscriptionId"],
+        subscriptionName : ar["subscriptionName"],
+        id: ar["id"],
+        region: ar["region"],
+        name: ar["name"],
+        resource_group: resource_group_name,
+        namespace: namespace,
+        resource_type: resource_type,
+        all_missed_tag: all_missed_tag,
+        all_include_tag: resource_tags,
+        all_tags: all_tags		
+        })
+      }		  
     })	
     result = _.sortBy(result, 'subscriptionName');
+    result = _.sortBy(result, 'resource_type');	
     result = _.sortBy(result, 'name');
 
 EOS
 end
 
+###############################################################################
+# Policy
+###############################################################################
+
 policy "policy_azure_resource" do
-  validate_each $ds_filtered_resources do
+  validate $ds_filtered_resources do
     summary_template "{{ len data }} Azure Resources out of compliance."
     escalate $esc_email
     escalate $esc_tag_resources
-    check eq(0,1)
+    check eq(size(data),0) 
     export do
       resource_level true
       field "subscriptionName" do
@@ -185,6 +207,10 @@ policy "policy_azure_resource" do
   end
 end
 
+###############################################################################
+# Escalations
+###############################################################################
+
 escalation "esc_email" do
    email $param_email
 end
@@ -206,6 +232,10 @@ escalation "esc_tag_resources" do
   end
   run "tag_resources", data, $param_tags_to_add
 end
+
+###############################################################################
+# Cloud Workflow
+###############################################################################
 
 define tag_resources($data, $param_tags_to_add) return $all_responses do
   $$log = []
@@ -246,11 +276,7 @@ define tag_resources($data, $param_tags_to_add) return $all_responses do
     $$log << "API Version: "+$api_version
 
     $new_tags = {}
-    if $item["tag"] == "none"
-      #skip
-    else
-      $new_tags = $item["all_tags"]
-    end 
+    $new_tags = $item["all_tags"] 
     foreach $tag in $param_tags_to_add do
       $new_tags[first(split($tag,"="))]=last(split($tag,"="))
     end
@@ -272,9 +298,7 @@ define tag_resources($data, $param_tags_to_add) return $all_responses do
       )
     end
     $all_responses << $update_resource_response
-
   end
-
 end
 
 define handle_error($response) do 
