@@ -9,7 +9,7 @@ This Policy finds all Azure vms and volumes which are not tagged by specified ta
 This policy has the following input parameters required when launching the policy.
 
 - *Email addresses* - A list of email addresses to notify
-- *list of tags* - list of tags to find vms/volumes which are not tagged by given inputs.
+- *List of tags* - list of tags to find vms/volumes which are not tagged by given inputs.
 
 ## Policy Actions
 
@@ -30,8 +30,8 @@ Provider tag value to match this policy: `azure_rm`
 
 Required permissions in the provider:
 
-- Microsoft.Compute/virtualMachines/read
-- Microsoft.Compute/virtualMachines/
+- Microsoft.Resources/subscriptions/resources/read
+- Microsoft.Resources/subscriptions/providers/read
 
 ## Supported Clouds
 
