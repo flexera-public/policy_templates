@@ -168,6 +168,7 @@ Please contact sales@flexera.com to learn more.
 - [Azure Regulatory Compliance](./compliance/azure/compliance_score/)
 - [Azure Subscription Access](./compliance/azure/subscription_access/)
 - [Azure Tag Resources with Resource Group Name](./compliance/tags/azure_rg_tags)
+- [Azure Untagged Resources](./compliance/azure/azure_untagged_resources)
 
 #### Google
 
