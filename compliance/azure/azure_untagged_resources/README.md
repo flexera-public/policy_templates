@@ -2,14 +2,14 @@
 
 ## What it does
 
-This Policy finds all Azure vms and volumes which are not tagged by specified tags and tagged them with given tags.
+Find all Azure resources missing any of the user provided tags with the option to update the resources with the missing tags.
 
 ## Input Parameters
 
 This policy has the following input parameters required when launching the policy.
 
 - *Email addresses* - A list of email addresses to notify
-- *List of tags* - list of tags to find vms/volumes which are not tagged by given inputs.
+- *list of tags* - list of tags keys to find resources which are not tagged by given inputs.
 
 ## Policy Actions
 
