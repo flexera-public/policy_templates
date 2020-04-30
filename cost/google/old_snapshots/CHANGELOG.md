@@ -1,8 +1,12 @@
 # Changelog
 
-## v2.2
+## v2.3
 
 - adding incident resource table
+
+## v2.2
+
+- rounded off Age in Days column to Whole number
 
 ## v2.1
 
