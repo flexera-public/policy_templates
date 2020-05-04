@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.11
+
+- Updated datasource to leverage new API URI
+
 ## v1.10
 
 - Updated the metadata
