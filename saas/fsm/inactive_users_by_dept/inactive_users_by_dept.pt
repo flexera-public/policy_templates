@@ -1,0 +1,78 @@
+name "SaaS Manager - Inactive Users by Department"
+rs_pt_ver 20180301
+type "policy"
+short_description "This policy will create an incident when Flexera SaaS Manager identifies inactive or never active users for managed applications. See the [README](https://github.com/flexera/policy_templates/tree/master/saas/fsm/inactive_users_by_dept/) and [docs.rightscale.com/policies](https://docs.rightscale.com/policies/) to learn more."
+long_description ""
+severity "medium"
+category "SaaS Management"
+default_frequency "daily"
+info(
+  version: "2.0",
+  provider: "Flexera SaaS Manager",
+  service: "",
+  policy_set: ""
+)
+
+parameter "param_email" do
+  type "list"
+  label "Email addresses to notify"
+  description "Email addresses of the recipients you wish to notify"
+end
+
+#authenticate with FSM
+credentials "fsm_auth" do
+  schemes "oauth2"
+  label "FSM"
+  description "Select the FSM Resource Manager Credential from the list."
+  tags "provider=flexera_fsm"
+end
+
+datasource "ds_licenses_summary" do
+  request do
+    auth $fsm_auth
+    host "api.metasaas.com"
+    verb "GET"
+    scheme "https"
+    #path join(["/svc/orgs/", rs_org_id, "/licenses/summaries"])
+    path "/svc/orgs/28010/analytics/product-abandoned-users"
+    header "content-type", "application/json"
+    query "pageSize", "100"
+    query "page", "1"
+   end
+  result do
+    encoding "json"
+    collect jmes_path(response, "[*]") do
+      field "department", jmes_path(col_item, "department")
+      field "email", jmes_path(col_item, "email")
+      field "employee_status", jmes_path(col_item, "employee_status")
+      field "firstName", jmes_path(col_item, "firstName")
+      field "lastName", jmes_path(col_item, "lastName")
+      field "managedProductName", jmes_path(col_item, "managedProductName")
+      field "daysSinceActive", jmes_path(col_item, "daysSinceActive")
+    end
+  end
+end
+
+escalation "report_summary" do
+    email $param_email
+end
+
+policy "policy_fsm_renewal_reminder" do
+  validate $ds_licenses_summary do
+      summary_template "{{ len data }} Expiring Applications Found"
+      detail_template <<-EOS
+# SaaS Renewal Reminder
+
+| Expiration Date (YYYY-MM-DD) | Vendor | Application | Point of Contact |  Annual Cost |
+| -----------------------------| ------ | ----------- | ------------- |------------| 
+{{ range data -}}
+| {{.endDate}} | {{.vendor}} | {{.application}} | {{.pointOfContactEmail}} | {{.annualCost}} |
+{{ end -}}
+
+
+###### Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }}) within Org: {{ rs_org_name }} (Org ID: {{ rs_org_id }})
+EOS
+      escalate $report_summary
+      check eq(size(data), 0)
+  end
+end
