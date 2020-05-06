@@ -1,4 +1,4 @@
-# SaaS Manager - User Status Change
+# SaaS Manager - Redundant Apps
 
 ## What it does
 
