@@ -1,0 +1,171 @@
+name "SaaS Manager - Duplicate User Accounts"
+rs_pt_ver 20180301
+type "policy"
+short_description "This policy will create an incident when Flexera SaaS Manager identifies duplicate user accounts within a single managed SaaS application. See the [README](https://github.com/flexera/policy_templates/tree/master/saas/fsm/duplicate_users/) and [docs.rightscale.com/policies](https://docs.rightscale.com/policies/) to learn more."
+long_description ""
+severity "medium"
+category "SaaS Management"
+default_frequency "daily"
+info(
+  version: "2.0",
+  provider: "Flexera SaaS Manager",
+  service: "",
+  policy_set: ""
+)
+
+parameter "param_email" do
+  type "list"
+  label "Email addresses to notify"
+  description "Email addresses of the recipients you wish to notify"
+end
+
+#authenticate with FSM
+credentials "fsm_auth" do
+  schemes "oauth2"
+  label "FSM"
+  description "Select the FSM Resource Manager Credential from the list."
+  tags "provider=flexera_fsm"
+end
+
+datasource "ds_num_products" do
+  request do
+    auth $fsm_auth
+    host "api.metasaas.com"
+    verb "GET"
+    scheme "https"
+    path join(["/svc/orgs/", rs_org_id, "/managed-products"])
+    header "content-type", "application/json"
+  end
+  result do
+    encoding "json"
+    field "totalItems", jmes_path(response, "totalItems")
+  end
+end
+
+datasource "ds_products" do
+  request do
+    run_script $js_products, val($ds_num_products,"totalItems"), rs_org_id
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "items[*]") do
+      field "application", jmes_path(col_item, "name")
+      field "pointOfContactEmail", jmes_path(col_item, "pointOfContactEmail")
+      field "vendor", jmes_path(col_item, "product.vendor.name")
+      field "annualCost", jmes_path(col_item, "annualCost")
+      field "licenses" do 
+        collect jmes_path(col_item, "licenses") do
+          field "lic_id", jmes_path(col_item, "id")
+        end
+      end  
+    end
+  end
+end
+
+
+datasource "ds_licenses_summary" do
+  request do
+    auth $fsm_auth
+    host "api.metasaas.com"
+    verb "GET"
+    scheme "https"
+    path join(["/svc/orgs/", rs_org_id, "/licenses/summaries"])
+    header "content-type", "application/json"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "[*]") do
+      field "lic_id", jmes_path(col_item, "id")
+      field "end_date", jmes_path(col_item, "endDate")
+    end
+  end
+end
+
+
+datasource "ds_products_with_enddate" do
+  run_script $js_products_with_enddate, $ds_products, $ds_licenses_summary, $param_days
+end
+
+script "js_products_with_enddate", type: "javascript" do
+  parameters "ds_products", "ds_licenses_summary", "param_days"
+  result "result"
+  code <<-EOS
+    var result = [];
+    var lic_enddate = {};
+    _.each(ds_licenses_summary, function(license){
+      if(license.end_date != null){
+        lic_enddate[license.lic_id]= license.end_date;
+      }
+    })
+    var end_date="";
+    _.each(ds_products, function(product){
+      _.each(product.licenses, function(license){
+        end_date=lic_enddate[license.lic_id];
+        console.log("end_date: "+end_date+" lic_id: "+license.lic_id)           		
+      })	  
+      var date = new Date();
+      date = date.setHours(24 * param_days);
+      date = new Date(date);
+      if(end_date != null){
+        var expiration_date = new Date(end_date);
+        console.log("Expiration Date: "+expiration_date)   
+        if(expiration_date < date){
+          result.push({
+            "application":product.application
+            "pointOfContactEmail":product.pointOfContactEmail
+            "vendor":product.vendor
+            "annualCost": product.annualCost
+            "endDate":end_date
+          })
+        }	  
+      } 
+    })
+    result = _.sortBy(result, 'endDate');
+  EOS
+end
+
+script "js_products", type: "javascript" do
+  parameters "num_items", "rs_org_id"
+  result "request"
+  code <<-EOS
+  console.log("ds_products"+rs_org_id)
+  request = {
+    auth: "fsm_auth",
+    host: "api.metasaas.com",
+    verb: "GET",
+    scheme: "https",
+    path: "/svc/orgs/"+rs_org_id+"/managed-products",
+    headers: {
+      "content-type": "application/json"
+    },
+     query_params: {
+      "pageSize": num_items.toString(),
+      "includeInactive": "false"
+    }
+  }
+EOS
+end
+
+escalation "report_summary" do
+    email $param_email
+end
+
+policy "policy_fsm_renewal_reminder" do
+  validate $ds_products_with_enddate do
+      summary_template "{{ len data }} Expiring Applications Found"
+      detail_template <<-EOS
+# SaaS Renewal Reminder
+
+| Expiration Date (YYYY-MM-DD) | Vendor | Application | Point of Contact |  Annual Cost |
+| -----------------------------| ------ | ----------- | ------------- |------------| 
+{{ range data -}}
+| {{.endDate}} | {{.vendor}} | {{.application}} | {{.pointOfContactEmail}} | {{.annualCost}} |
+{{ end -}}
+
+
+###### Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }}) within Org: {{ rs_org_name }} (Org ID: {{ rs_org_id }})
+EOS
+      escalate $report_summary
+      check eq(size(data), 0)
+  end
+end
