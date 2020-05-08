@@ -27,52 +27,150 @@ credentials "fsm_auth" do
   tags "provider=flexera_fsm"
 end
 
-datasource "ds_licenses_summary" do
+datasource "ds_total_items" do
   request do
     auth $fsm_auth
     host "api.metasaas.com"
     verb "GET"
     scheme "https"
-    #path join(["/svc/orgs/", rs_org_id, "/licenses/summaries"])
-    path "/svc/orgs/28010/analytics/product-abandoned-users"
+    path join(["/svc/orgs/", rs_org_id, "/analytics/product-abandoned-users"])
     header "content-type", "application/json"
-    query "pageSize", "100"
+    query "pageSize", "1"
     query "page", "1"
+    query "employeeFilter", "active"
+    query "sort", "department"
    end
+  result do
+    encoding "json"
+    field "totalItems", jmes_path(response, "[].totalItems")
+  end
+end
+
+datasource "ds_inactive_users" do
+  request do
+    run_script $js_inactive, val($ds_total_items,"totalItems"), rs_org_id
+  end
   result do
     encoding "json"
     collect jmes_path(response, "[*]") do
       field "department", jmes_path(col_item, "department")
+      field "location", jmes_path(col_item, "location")
       field "email", jmes_path(col_item, "email")
-      field "employee_status", jmes_path(col_item, "employee_status")
       field "firstName", jmes_path(col_item, "firstName")
       field "lastName", jmes_path(col_item, "lastName")
       field "managedProductName", jmes_path(col_item, "managedProductName")
       field "daysSinceActive", jmes_path(col_item, "daysSinceActive")
+      field "totalItems", jmes_path(col_item, "totalItems")
     end
   end
 end
+
+script "js_inactive", type: "javascript" do
+  parameters "num_items", "rs_org_id"
+  result "request"
+  code <<-EOS
+  console.log("ds_inactive_users"+rs_org_id)
+  request = {
+    auth: "fsm_auth",
+    host: "api.metasaas.com",
+    verb: "GET",
+    scheme: "https",
+    path: "/svc/orgs/"+rs_org_id+"/analytics/product-abandoned-users",
+    headers: {
+      "content-type": "application/json"
+    },
+     query_params: {
+      "pageSize": num_items.toString(),
+      "page": "1",
+      "sort": "department",
+      "asc": "true"
+    }
+  }
+EOS
+end
+
+datasource "ds_formatData" do
+  run_script $js_formatData, $ds_inactive_users
+end 
+
+script "js_formatData", type: "javascript" do 
+  result "result"
+  parameters "inactive_users"
+  code <<-EOS
+  var result = [];
+  var departments = _.uniq(_.pluck(inactive_users, 'department'));
+
+  _.each(departments, function(dept){
+    console.log("Department: "+dept)
+    var users = _.where(inactive_users, {department: dept});
+    console.log("Users: ")
+    console.log(users)
+    
+    var dept_users = [];
+    _.each(users, function(user){
+      if (user["daysSinceActive"] == 0){
+        var days = "Never Active";
+      } else {
+        var days = user["daysSinceActive"];
+      }
+      dept_users.push({
+        department: user["department"],
+        location: user["location"],
+        email: user["email"],
+        firstName: user["firstName"],
+        lastName: user["lastName"],
+        managedProductName: user["managedProductName"],
+        daysSinceActive: days,
+        totalItems: user["totalItems"],
+      })
+    })
+
+    var apps = _.uniq(_.pluck(dept_users, 'managedProductName'));
+    
+    var inactive_dept_users_by_app = [];
+    _.each(apps, function(app){
+      var dept_app_users = _.where(dept_users, {managedProductName: app});
+      var inactivity_by_app = {
+        managedProductName: app,
+        users: dept_app_users
+      }
+      inactive_dept_users_by_app.push(inactivity_by_app)
+    })
+    
+    var final_dept = {
+      department: dept,
+      inactivity: inactive_dept_users_by_app
+    }
+    result.push(final_dept)
+  })
+
+EOS
+end 
 
 escalation "report_summary" do
     email $param_email
 end
 
-policy "policy_fsm_renewal_reminder" do
-  validate $ds_licenses_summary do
-      summary_template "{{ len data }} Expiring Applications Found"
-      detail_template <<-EOS
-# SaaS Renewal Reminder
+policy "policy_fsm_inactive_users_by_dept" do
+  validate_each $ds_formatData do
+    summary_template "Inactive SaaS Users"
+    detail_template <<-EOS
 
-| Expiration Date (YYYY-MM-DD) | Vendor | Application | Point of Contact |  Annual Cost |
-| -----------------------------| ------ | ----------- | ------------- |------------| 
 {{ range data -}}
-| {{.endDate}} | {{.vendor}} | {{.application}} | {{.pointOfContactEmail}} | {{.annualCost}} |
+## Department: {{ .department }}
+{{ range .inactivity -}}
+### Application: {{.managedProductName}} 
+| Last Name | First Name  | Email | Days Since Last Active | Location | Department | Application |
+| --------- | ----------  | ----- | ---------------------- | -------- | ---------- | ----------- |
+{{ range .users -}}
+| {{.lastName}} | {{.firstName}} | {{.email}} | {{.daysSinceActive}} | {{.location}} | {{.department}} | {{.managedProductName}} |
 {{ end -}}
-
+{{ end -}}
+{{ end -}}
 
 ###### Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }}) within Org: {{ rs_org_name }} (Org ID: {{ rs_org_id }})
 EOS
-      escalate $report_summary
-      check eq(size(data), 0)
+    escalate $report_summary
+    check false
   end
 end
