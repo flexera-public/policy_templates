@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.3
+
+- Bug fixes on unhandled errors when executing
+
 ## v2.2
 
 - remove unnecessary permissions block

@@ -79,6 +79,7 @@ Please contact sales@flexera.com to learn more.
 
 - [Azure Blob Storage Optimization](./cost/azure/object_storage_optimization/)
 - [Azure Old Snapshots](./cost/azure/old_snapshots/)
+- [Azure Unused Volumes](./cost/azure/unattached_volumes)
 
 #### Google
 
@@ -225,6 +226,8 @@ Please contact sales@flexera.com to learn more.
 - [SaaS Manager - User Status Change](./saas/fsm/user_status_change)
 - [SaaS Manager - Suspicious Users](./saas/fsm/suspicious_users)
 - [SaaS Manager - Unsanctioned Spend](./saas/fsm/unsanctioned_spend)
+- [SaaS Manager - Redundant Apps](./saas/fsm/redundant_apps)
+- [SaaS Manager - Inactive Users](./saas/fsm/inactive_users_by_dept)
 
 ### Policy Data Sets
 

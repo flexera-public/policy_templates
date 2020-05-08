@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.11
+
+- Included README link in the policy template
+
 ## v1.10
 
 - Updated the metadata
