@@ -2,7 +2,7 @@
 
 ## What it does
 
-This Policy Template will check your account for Google Cloud Storage buckets with public permission.
+This Policy Template will check your account for Google Cloud Storage buckets with public permission. If APIs & Services are not enabled for a project, the policy will skip that particular project. On the next run if APIs & Services are enabled, then the project will be considered for execution.
 
 ## Input Parameters
 

@@ -1,8 +1,12 @@
 # Change log
 
+## v2.2
+
+- Added resource table
+
 ## v2.1
 
-- Added Resource table
+- Bug fixes on unhandled errors when executing
 
 ## v2.0
 

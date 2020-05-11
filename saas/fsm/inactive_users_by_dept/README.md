@@ -1,14 +1,14 @@
-# SaaS Manager - Suspicious Users
+# SaaS Manager - Inactive Users By Department
 
 ## What it does
 
-This policy will create an incident when Flexera SaaS Manager identifies suspicious users logging into SaaS applications.
+This policy will create an incident when Flexera SaaS Manager identifies inactive or never active users for managed applications.
 
 ## Functional Description
 
-This policy integrates with the Flexera SaaS Manager API to retrieve suspicious activities. Therefore the following are prerequisites for this policy to execute:
+This policy integrates with the Flexera SaaS Manager API to retrieve SaaS Applications and will generate reminders for applications whose renewals are approaching. Therefore the following are prerequisites for this policy to execute:
 
-- Flexera SaaS Manager implementation with HR roster connected
+- Flexera SaaS Manager implementation
 - Please contact your Flexera Customer Success Manager for assistance to generate your FSM token.
 
 ## Input Parameters

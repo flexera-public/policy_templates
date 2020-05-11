@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.11
+
+- Fix first day issue with month
+
 ## v1.10
 
 - Fix error when the policy run within the first 3 days of the month.

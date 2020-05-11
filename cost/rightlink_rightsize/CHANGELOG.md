@@ -1,8 +1,12 @@
 # Changelog
 
-## v1.14
+## v1.15
 
 - Added resource table
+
+## v1.14
+
+- Included README link in the policy template
 
 ## v1.13
 
