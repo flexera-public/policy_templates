@@ -7,6 +7,7 @@ This Policy checks Google buckets for older objects and can move old object to '
 
 ## Functional Details
 
+- If APIs & Services are not enabled for a project, the policy will skip that particular project. On the next run if APIs & Services are enabled, then the project will be considered for execution.
 - This policy identifies all Google storage objects last updated outside of the specified timeframe
 - For all objects identified as old, the user can choose to move the object to 'nearline' or 'coldline' after the specified timeframe.
 - The user can choose to delete old object by enabling 'delete action' option as mentioned in Enable delete action section below.

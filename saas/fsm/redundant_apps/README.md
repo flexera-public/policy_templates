@@ -1,12 +1,12 @@
-# SaaS Manager - Suspicious Users
+# SaaS Manager - Redundant Apps
 
 ## What it does
 
-This policy will create an incident when Flexera SaaS Manager identifies suspicious users logging into SaaS applications.
+This policy will create an incident when Flexera SaaS Manager identifies application categories with an excessive number of applications.
 
 ## Functional Description
 
-This policy integrates with the Flexera SaaS Manager API to retrieve suspicious activities. Therefore the following are prerequisites for this policy to execute:
+This policy integrates with the Flexera SaaS Manager API to retrieve Managed SaaS Application details. Therefore the following are prerequisites for this policy to execute:
 
 - Flexera SaaS Manager implementation with HR roster connected
 - Please contact your Flexera Customer Success Manager for assistance to generate your FSM token.
@@ -15,6 +15,7 @@ This policy integrates with the Flexera SaaS Manager API to retrieve suspicious 
 
 This policy has the following input parameters required when launching the policy.
 
+- *Excessive Number of Apps in a Single Category* - Threshold to trigger detection of excessive SaaS applications in a single category
 - *Email addresses to notify* - Email addresses of the recipients you wish to notify
 
 ## Prerequisites

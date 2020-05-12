@@ -1,8 +1,16 @@
 # Changelog
 
-## v1.3
+## v2.1
 
 - Adding incident resource table
+
+## v2.0
+
+- Added credential services
+
+## v1.3
+
+- Added escalation action to update branch protection rule
 
 ## v1.2
 
