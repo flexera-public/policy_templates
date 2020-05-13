@@ -177,6 +177,7 @@ Please contact sales@flexera.com to learn more.
 
 - [FlexNet Manager Licenses At Risk - Cloud](./compliance/fnms/fnms_licenses_at_risk/)
 - [FlexNet Manager Licenses At Risk - On Premise](./compliance/fnms/fnms_licenses_at_risk_on_premise/)
+- [FlexNet Manager Low Available Licenses](./compliance/fnms/fnms_low_licenses_available)
 - [GitHub.com Available Seats](./compliance/github/available_seats/)
 - [GitHub.com Unpermitted Outside Collaborators](./compliance/github/outside_collaborators/)
 - [GitHub.com Unpermitted Repository Names](./compliance/github/repository_naming/)
