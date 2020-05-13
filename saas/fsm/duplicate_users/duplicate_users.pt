@@ -50,14 +50,9 @@ datasource "ds_products" do
     encoding "json"
     collect jmes_path(response, "items[*]") do
       field "application", jmes_path(col_item, "name")
-      field "pointOfContactEmail", jmes_path(col_item, "pointOfContactEmail")
-      field "vendor", jmes_path(col_item, "product.vendor.name")
-      field "annualCost", jmes_path(col_item, "annualCost")
-      field "licenses" do 
-        collect jmes_path(col_item, "licenses") do
-          field "lic_id", jmes_path(col_item, "id")
-        end
-      end  
+      field "id", jmes_path(col_item, "id")
+      field "vendor", jmes_path(col_item, "product.vendor.name"),
+      field "totalUsers", jmes_path(col_item, "totalUsers")
     end
   end
 end
@@ -84,89 +79,204 @@ script "js_products", type: "javascript" do
 EOS
 end
 
-datasource "ds_product_user_count" do
+datasource "ds_product_users" do
   iterate $ds_products
+  request do
+    run_script $js_product_users, val(iter_item, "totalUsers"), rs_org_id, val(iter_item, "id")
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "items[*]") do
+      field "email", jmes_path(col_item, "email")
+      field "firstName", jmes_path(col_item, "firstName")
+      field "lastName", jmes_path(col_item, "lastName")
+      field "managedProductId", jmes_path(col_item, "managedProductId")
+      field "application", val(iter_item, "application")
+      field "vendor", val(iter_item, "vendor")
+      field "id", jmes_path(col_item, "id")
+    end
+  end
+end
+
+script "js_product_users", type: "javascript" do
+  parameters "num_items", "rs_org_id", "app_id"
+  result "request"
+  code <<-EOS
+  console.log("ds_product_users "+rs_org_id)
+  request = {
+    auth: "fsm_auth",
+    host: "api.metasaas.com",
+    verb: "GET",
+    scheme: "https",
+    path: "/svc/orgs/"+rs_org_id+"/managed-products/"+app_id+"/managed-product-agents",
+    headers: {
+      "content-type": "application/json"
+    },
+     query_params: {
+      "pageSize": num_items.toString(),
+      "page": "1",
+      "sort": "uniqueId",
+      "asc": "true"
+    }
+  }
+EOS
+end
+
+datasource "ds_filter_users" do
+  run_script $js_filter_users, $ds_product_users
+end
+
+script "js_filter_users", type: "javascript" do
+  parameters "ds_product_users"
+  result "result"
+  code <<-EOS
+    var result = [];
+
+    var app_ids = _.uniq(_.pluck(ds_product_users, 'managedProductId'));
+
+    _.each(app_ids, function(app_id){
+      console.log("Application ID: "+app_id)
+      
+      var app_users = _.where(ds_product_users, {managedProductId: app_id});
+      console.log("Application Users: ")
+      console.log(app_users)
+      
+      var last_names = _.uniq(_.pluck(app_users, 'lastName'));
+      _.each(last_names, function(last_name){
+        var last_name_users = _.where(app_users, {lastName: last_name});
+        if (_.size(last_name_users) > 1) {
+          // more than 1 user with this last name
+          var first_names = _.uniq(_.pluck(last_name_users, 'firstName'));
+
+          _.each(first_names, function(first_name){
+            var first_name_users = _.where(last_name_users, {firstName: first_name});
+            if (_.size(first_name_users) > 1) {
+              // more than 1 user with this first name & last name
+              var emails = _.uniq(_.pluck(first_name_users, 'email'));
+              if (_.size(emails) > 1){
+                // raise incident
+                result.push(first_name_users)
+              } else {
+                // more than 1 first name & last name combo, but 1 or less emails 
+                // this likely will never trigger
+              }
+            } else {
+              // only 1 app user with this first name & last name
+            }
+          })
+        } else {
+          // only 1 app user with this last name
+        }
+      })
+    })
+EOS
+end
+
+datasource "ds_num_departments" do
   request do
     auth $fsm_auth
     host "api.metasaas.com"
     verb "GET"
     scheme "https"
-    path join(["/svc/orgs/", rs_org_id, "/managed-products/", val(iter_item())])
+    path join(["/svc/orgs/", rs_org_id, "/customer-group"])
     header "content-type", "application/json"
+    query "groupTypeId", "1"
   end
   result do
     encoding "json"
-    collect jmes_path(response, "[*]") do
-      field "lic_id", jmes_path(col_item, "id")
-      field "end_date", jmes_path(col_item, "endDate")
+    field "numItems", jmes_path(response, "numItems")
+  end
+end
+
+datasource "ds_departments" do
+  request do
+    run_script $js_departments, val($ds_num_departments,"totalItems"), rs_org_id
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "nodes[*]") do
+      field "id", jmes_path(col_item, "id")
+      filed "groupName", jmes_path(col_item, "groupName")
     end
   end
 end
 
-
-datasource "ds_products_with_enddate" do
-  run_script $js_products_with_enddate, $ds_products, $ds_licenses_summary, $param_days
-end
-
-script "js_products_with_enddate", type: "javascript" do
-  parameters "ds_products", "ds_licenses_summary", "param_days"
-  result "result"
+script "js_departments", type: "javascript" do
+  parameters "num_items", "rs_org_id"
+  result "request"
   code <<-EOS
-    var result = [];
-    var lic_enddate = {};
-    _.each(ds_licenses_summary, function(license){
-      if(license.end_date != null){
-        lic_enddate[license.lic_id]= license.end_date;
-      }
-    })
-    var end_date="";
-    _.each(ds_products, function(product){
-      _.each(product.licenses, function(license){
-        end_date=lic_enddate[license.lic_id];
-        console.log("end_date: "+end_date+" lic_id: "+license.lic_id)           		
-      })	  
-      var date = new Date();
-      date = date.setHours(24 * param_days);
-      date = new Date(date);
-      if(end_date != null){
-        var expiration_date = new Date(end_date);
-        console.log("Expiration Date: "+expiration_date)   
-        if(expiration_date < date){
-          result.push({
-            "application":product.application
-            "pointOfContactEmail":product.pointOfContactEmail
-            "vendor":product.vendor
-            "annualCost": product.annualCost
-            "endDate":end_date
-          })
-        }	  
-      } 
-    })
-    result = _.sortBy(result, 'endDate');
-  EOS
+  console.log("ds_departments"+rs_org_id)
+  request = {
+    auth: "fsm_auth",
+    host: "api.metasaas.com",
+    verb: "GET",
+    scheme: "https",
+    path: "/svc/orgs/"+rs_org_id+"/customer-group",
+    headers: {
+      "content-type": "application/json"
+    },
+     query_params: {
+      "pageSize": num_items.toString(),
+      "groupTypeId": "1"
+    }
+  }
+EOS
 end
 
+datasource "ds_user_details" do 
+  iterate $ds_filter_users
+  request do
+    auth $fsm_auth
+    host "api.metasaas.com"
+    verb "GET"
+    scheme "https"
+    path join(["/svc/orgs/", rs_org_id, "/customer-agents/", val(iter_item, "id")])
+    header "content-type", "application/json"
+  end
+  result do
+    encoding "json"
+    field "email", val(iter_item, "email")
+    field "firstName", val(iter_item, "firstName")
+    field "lastName", val(iter_item, "lastName")
+    field "managedProductId", val(iter_item, "managedProductId")
+    field "application", val(iter_item, "application")
+    field "vendor", val(iter_item, "vendor")
+    field "id", val(iter_item, "id")
+    field "group_ids", 
+  end
+end
 
 
 escalation "report_summary" do
     email $param_email
 end
 
-policy "policy_fsm_renewal_reminder" do
-  validate $ds_products_with_enddate do
-      summary_template "{{ len data }} Expiring Applications Found"
-      detail_template <<-EOS
-# SaaS Renewal Reminder
-
-| Expiration Date (YYYY-MM-DD) | Vendor | Application | Point of Contact |  Annual Cost |
-| -----------------------------| ------ | ----------- | ------------- |------------| 
-{{ range data -}}
-| {{.endDate}} | {{.vendor}} | {{.application}} | {{.pointOfContactEmail}} | {{.annualCost}} |
-{{ end -}}
-
-
-###### Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }}) within Org: {{ rs_org_name }} (Org ID: {{ rs_org_id }})
-EOS
+policy "policy_fsm_duplicate_users" do
+  validate $ds_format_data do
+      summary_template "{{ len data }} Duplicate Application Users Found"
+      export do 
+        field "lastName" do
+          label "Last Name"
+        end 
+        field "firstName" do 
+          label "First Name"
+        end 
+        field "email" do 
+          label "Email"
+        end 
+        field "application" do 
+          label "Application"
+        end
+        field "vendor" do 
+          label "Vendor"
+        end
+        field "department" do 
+          label "Department"
+        end 
+        field "managedProductName" do 
+          label "Application"
+        end
+      end  
       escalate $report_summary
       check eq(size(data), 0)
   end
