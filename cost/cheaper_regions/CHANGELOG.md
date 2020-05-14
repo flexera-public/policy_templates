@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.8
+
+- adding incident resource table
+
 ## v1.7
 
 - Updated the metadata
