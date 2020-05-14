@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.5
+
+- Updated escalation block
+
 ## v2.4
 
 - Adding incident resource table
