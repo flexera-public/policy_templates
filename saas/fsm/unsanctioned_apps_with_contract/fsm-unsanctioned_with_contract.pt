@@ -1,0 +1,198 @@
+name "SaaS Manager - Unsanctioned Applications with Existing Contract"
+rs_pt_ver 20180301
+type "policy"
+short_description "This policy will create an incident when Flexera SaaS Manager identifies unsanctioned SaaS purchases for managed applications under an existing license contract. See the [README](https://github.com/flexera/policy_templates/tree/master/saas/fsm/unsanctioned_apps_with_contract/) and [docs.rightscale.com/policies](https://docs.rightscale.com/policies/) to learn more."
+long_description ""
+severity "high"
+category "SaaS Management"
+default_frequency "daily"
+info(
+  version: "2.0",
+  provider: "Flexera SaaS Manager",
+  service: "",
+  policy_set: ""
+)
+
+parameter "param_email" do
+  type "list"
+  label "Email addresses to notify"
+  description "Email addresses of the recipients you wish to notify"
+end
+
+#authenticate with FSM
+credentials "fsm_auth" do
+  schemes "oauth2"
+  label "FSM"
+  description "Select the FSM Resource Manager Credential from the list."
+  tags "provider=flexera_fsm"
+end
+
+datasource "ds_num_products" do
+  request do
+    auth $fsm_auth
+    host "api.metasaas.com"
+    verb "GET"
+    scheme "https"
+    path join(["/svc/orgs/", rs_org_id, "/managed-products"])
+    header "content-type", "application/json"
+  end
+  result do
+    encoding "json"
+    field "totalItems", jmes_path(response, "totalItems")
+  end
+end
+
+datasource "ds_products" do
+  request do
+    run_script $js_products, val($ds_num_products,"totalItems"), rs_org_id
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "items[*]") do
+      field "application", jmes_path(col_item, "name")
+      field "pointOfContactEmail", jmes_path(col_item, "pointOfContactEmail")
+      field "vendor", jmes_path(col_item, "product.vendor.name")
+      field "annualCost", jmes_path(col_item, "annualCost")
+    end
+  end
+end
+
+script "js_products", type: "javascript" do
+  parameters "num_items", "rs_org_id"
+  result "request"
+  code <<-EOS
+  console.log("ds_products "+rs_org_id)
+  request = {
+    auth: "fsm_auth",
+    host: "api.metasaas.com",
+    verb: "GET",
+    scheme: "https",
+    path: "/svc/orgs/"+rs_org_id+"/managed-products",
+    headers: {
+      "content-type": "application/json"
+    },
+     query_params: {
+      "pageSize": num_items.toString(),
+      "includeInactive": "false"
+    }
+  }
+EOS
+end
+
+datasource "ds_num_unsanctioned" do 
+  request do
+    auth $fsm_auth
+    host "api.metasaas.com"
+    verb "GET"
+    scheme "https"
+    path join(["/svc/orgs/", rs_org_id, "/financial-discovery"])
+    header "content-type", "application/json"
+  end
+  result do
+    encoding "json"
+    field "totalItems", jmes_path(response, "totalItems")
+  end
+end 
+
+datasource "ds_unsanctioned" do 
+  request do
+    run_script $js_unsanctioned, val($ds_num_unsanctioned,"totalItems"), rs_org_id
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "items[*]") do
+      field "latestExpenseDate", jmes_path(col_item, "latestExpenseDate")
+      field "department", jmes_path(col_item, "department")
+      field "purchaser", jmes_path(col_item, "purchaser")
+      field "expenseSum", jmes_path(col_item, "expenseSum")
+      field "vendor", jmes_path(col_item, "vendor.name")
+      field "product", jmes_path(col_item, "product.name")
+    end
+  end
+end
+
+script "js_unsanctioned", type: "javascript" do
+  parameters "num_items", "rs_org_id"
+  result "request"
+  code <<-EOS
+  console.log("ds_unsanctioned "+rs_org_id)
+  request = {
+    auth: "fsm_auth",
+    host: "api.metasaas.com",
+    verb: "GET",
+    scheme: "https",
+    path: "/svc/orgs/"+rs_org_id+"/financial-discovery",
+    headers: {
+      "content-type": "application/json"
+    },
+     query_params: {
+      "pageSize": num_items.toString()
+    }
+  }
+EOS
+end
+
+datasource "ds_format_data" do 
+  run_script $js_format_data, $ds_products, $ds_unsanctioned
+end 
+
+script "js_format_data", type: "javascript" do
+  parameters "ds_products", "ds_unsanctioned"
+  result "result"
+  code <<-EOS
+  var result = [];
+  var unsanctioned_product_names = _.pluck(ds_unsanctioned, 'product');
+
+  _.each(ds_products, function(prod){
+    if (_.contains(unsanctioned_product_names, prod["application"])){
+      var expenses = _.where(ds_unsanctioned, {product: prod["application"]});
+      var latest_expense = _.max(expenses, function(expense){ return expense.latestExpenseDate; });
+      result.push({
+        product: prod["application"],
+        vendor: prod["vendor"],
+        annualCost: "$"+prod["annualCost"],
+        licensePOC: prod["pointOfContactEmail"],
+        expenseSum: "$"+latest_expense["expenseSum"],
+        latestExpenseDate: Date(latest_expense["latestExpenseDate"]).toString(),
+        expensePurchaser: latest_expense["purchaser"]
+      })
+    }
+  })
+EOS
+end
+
+
+escalation "report_summary" do
+    email $param_email
+end
+
+policy "policy_fsm_unsanctioned_with_contract" do
+  validate $ds_format_data do
+      summary_template "{{ len data }} Unsanctioned SaaS Purchases with Existing Contracts"
+      export do 
+        field "product" do
+          label "Application"
+        end 
+        field "vendor" do 
+          label "Vendor"
+        end 
+        field "annualCost" do 
+          label "Annual Contract Cost"
+        end 
+        field "licensePOC" do 
+          label "Contract Point of Contact"
+        end
+        field "expenseSum" do 
+          label "Expense Cost"
+        end
+        field "latestExpenseDate" do 
+          label "Latest Expense Date"
+        end 
+        field "expensePurchaser" do 
+          label "Expense Purchaser"
+        end
+      end
+      escalate $report_summary
+      check eq(size(data), 0)
+  end
+end
