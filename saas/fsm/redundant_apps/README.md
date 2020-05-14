@@ -1,12 +1,12 @@
-# SaaS Manager - User Status Change
+# SaaS Manager - Redundant Apps
 
 ## What it does
 
-This policy will create an incident when Flexera SaaS Manager identifies users whose status in the HR roster changes to inactive. The data includes user details as well as department so a third party admin can forward the notification to managers responsible for a user in a particular department.
+This policy will create an incident when Flexera SaaS Manager identifies application categories with an excessive number of applications.
 
 ## Functional Description
 
-This policy integrates with the Flexera SaaS Manager API to retrieve user details. Therefore the following are prerequisites for this policy to execute:
+This policy integrates with the Flexera SaaS Manager API to retrieve Managed SaaS Application details. Therefore the following are prerequisites for this policy to execute:
 
 - Flexera SaaS Manager implementation with HR roster connected
 - Please contact your Flexera Customer Success Manager for assistance to generate your FSM token.
@@ -15,7 +15,7 @@ This policy integrates with the Flexera SaaS Manager API to retrieve user detail
 
 This policy has the following input parameters required when launching the policy.
 
-- *Number of Days Back* - If a user's status changes to inactive during this time period, those user accounts will raise an incident
+- *Excessive Number of Apps in a Single Category* - Threshold to trigger detection of excessive SaaS applications in a single category
 - *Email addresses to notify* - Email addresses of the recipients you wish to notify
 
 ## Prerequisites
@@ -35,4 +35,3 @@ Required permissions in the provider:
 ## Policy Actions
 
 - Sends an email notification
-
