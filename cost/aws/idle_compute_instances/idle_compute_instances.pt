@@ -6,7 +6,7 @@ long_description ""
 severity "low"
 category "Cost"
 info(
-  version: "2.1",
+  version: "2.2",
   provider: "AWS",
   service: "EC2",
   policy_set: "Idle Compute Instances"
@@ -368,6 +368,9 @@ script "js_merged_metrics", type: "javascript" do
         var mem_maximum = "101"
         var mem_average = "101"
         var mem_minimum = "101"
+        var mem_maximum_value = "NA"
+        var mem_minimum_value = "NA"
+        var mem_average_value = "NA"
       }
     } else {
       instance.platform = 'linux'
@@ -381,12 +384,15 @@ script "js_merged_metrics", type: "javascript" do
         var mem_maximum = "101"
         var mem_average = "101"
         var mem_minimum = "101"
+        var mem_maximum_value = "NA"
+        var mem_minimum_value = "NA"
+        var mem_average_value = "NA"
       }
     }
     merged_results.push(
       {
         "region": instance.region,
-        "instanceId": instance.instanceId,
+        "id": instance.instanceId,
         "platform": instance.platform,
         "privateDnsName": instance.privateDnsName,
         "hostname": instance.privateDnsName.split('.')[0],
@@ -396,7 +402,9 @@ script "js_merged_metrics", type: "javascript" do
         "cpu_average": parseFloat(instance.cpu_average).toFixed(2),
         "mem_maximum": mem_maximum,
         "mem_minimum": mem_minimum,
-        "mem_average": mem_average
+        "mem_average": mem_average,
+        "mem_maximum_value": mem_maximum_value,
+        "mem_average_value": mem_average_value
       }
     )
   }
@@ -412,20 +420,40 @@ end
 policy "pol_utilization" do
   validate_each $ds_merged_metrics do
     summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} rows containing AWS instance CloudWatch utilization data"
-    detail_template <<-EOS
-# AWS Instance Utilization
-| Region | instanceID | Platform | Hostname | Private DNS Name | CPU Maximum % | CPU Average % | Memory Maximum % | Memory Average % |
-| ------ | ---------- | -------- | -------- | ---------------- | ------------- | ------------- | ---------------- | ---------------- |
-{{ range data -}}
-| {{.region}} | {{.instanceId}} | {{.platform}} | {{.hostname}} |  {{.privateDnsName }} | {{ .cpu_maximum }} | {{ .cpu_average }} | {{if eq .mem_maximum "101"}}N/A{{else}}{{.mem_maximum}}{{end}} | {{if eq .mem_average "101"}}N/A{{else}}{{.mem_average}}{{end}} |
-{{ end -}}
-___
-###### Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }}) within Org: {{ rs_org_name }} (Org ID: {{ rs_org_id }})
-EOS
     escalate $email
     escalate $terminate_resources
     check logic_or(eq($param_avg_used_memory, -1), gt(to_n(val(item,"mem_average")), $param_avg_used_memory))
     check logic_or(eq($param_avg_cpu, -1), gt(to_n(val(item,"cpu_average")),$param_avg_cpu))
+    export do
+      resource_level true
+      field "region" do
+        label "Region"
+      end
+      field "id" do
+        label "Instance ID"
+      end
+      field "platform" do
+        label "Platform"
+      end
+      field "hostname" do
+        label "Hostname"
+      end
+      field "privateDnsName" do
+        label "Private DNS Name"
+      end
+      field "cpu_maximum" do
+        label "CPU Maximum %"
+      end
+      field "cpu_average" do
+        label "CPU Average %"
+      end
+      field "mem_maximum_value" do
+        label "Memory Maximum %"
+      end
+      field "mem_average_value" do
+        label "Memory Average %"
+      end
+    end
   end
 end
 
@@ -471,7 +499,7 @@ define terminate_resources($data) return $all_responses do
       query_strings: {
         "Action": "TerminateInstances",
         "Version": "2012-06-01",
-        "InstanceId.1": $item["instanceId"]
+        "InstanceId.1": $item["id"]
       }
     )
     $all_responses << $response
