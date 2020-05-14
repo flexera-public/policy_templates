@@ -1,21 +1,20 @@
-# SaaS Manager - User Status Change
+# SaaS Manager - Inactive Users By Department
 
 ## What it does
 
-This policy will create an incident when Flexera SaaS Manager identifies users whose status in the HR roster changes to inactive. The data includes user details as well as department so a third party admin can forward the notification to managers responsible for a user in a particular department.
+This policy will create an incident when Flexera SaaS Manager identifies inactive or never active users for managed applications.
 
 ## Functional Description
 
-This policy integrates with the Flexera SaaS Manager API to retrieve user details. Therefore the following are prerequisites for this policy to execute:
+This policy integrates with the Flexera SaaS Manager API to retrieve SaaS Applications and will generate reminders for applications whose renewals are approaching. Therefore the following are prerequisites for this policy to execute:
 
-- Flexera SaaS Manager implementation with HR roster connected
+- Flexera SaaS Manager implementation
 - Please contact your Flexera Customer Success Manager for assistance to generate your FSM token.
 
 ## Input Parameters
 
 This policy has the following input parameters required when launching the policy.
 
-- *Number of Days Back* - If a user's status changes to inactive during this time period, those user accounts will raise an incident
 - *Email addresses to notify* - Email addresses of the recipients you wish to notify
 
 ## Prerequisites
@@ -35,4 +34,3 @@ Required permissions in the provider:
 ## Policy Actions
 
 - Sends an email notification
-
