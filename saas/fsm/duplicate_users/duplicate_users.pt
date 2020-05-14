@@ -33,7 +33,8 @@ datasource "ds_num_products" do
     host "api.metasaas.com"
     verb "GET"
     scheme "https"
-    path join(["/svc/orgs/", rs_org_id, "/managed-products"])
+    #path join(["/svc/orgs/", rs_org_id, "/managed-products"])
+    path "/svc/orgs/28010/managed-products"
     header "content-type", "application/json"
   end
   result do
@@ -44,14 +45,15 @@ end
 
 datasource "ds_products" do
   request do
-    run_script $js_products, val($ds_num_products,"totalItems"), rs_org_id
+    #run_script $js_products, val($ds_num_products,"totalItems"), rs_org_id
+    run_script $js_products, val($ds_num_products,"totalItems"), "28010"
   end
   result do
     encoding "json"
     collect jmes_path(response, "items[*]") do
       field "application", jmes_path(col_item, "name")
       field "id", jmes_path(col_item, "id")
-      field "vendor", jmes_path(col_item, "product.vendor.name"),
+      field "vendor", jmes_path(col_item, "product.vendor.name")
       field "totalUsers", jmes_path(col_item, "totalUsers")
     end
   end
@@ -82,7 +84,8 @@ end
 datasource "ds_product_users" do
   iterate $ds_products
   request do
-    run_script $js_product_users, val(iter_item, "totalUsers"), rs_org_id, val(iter_item, "id")
+    #run_script $js_product_users, val(iter_item, "totalUsers"), rs_org_id, val(iter_item, "id")
+    run_script $js_product_users, val(iter_item, "totalUsers"), "28010", val(iter_item, "id")
   end
   result do
     encoding "json"
@@ -103,6 +106,11 @@ script "js_product_users", type: "javascript" do
   result "request"
   code <<-EOS
   console.log("ds_product_users "+rs_org_id)
+  if (num_items != null && num_items != "undefined"){
+    // skip
+  } else {
+    num_items = 1
+  }
   request = {
     auth: "fsm_auth",
     host: "api.metasaas.com",
@@ -112,7 +120,7 @@ script "js_product_users", type: "javascript" do
     headers: {
       "content-type": "application/json"
     },
-     query_params: {
+    query_params: {
       "pageSize": num_items.toString(),
       "page": "1",
       "sort": "uniqueId",
@@ -178,7 +186,8 @@ datasource "ds_num_departments" do
     host "api.metasaas.com"
     verb "GET"
     scheme "https"
-    path join(["/svc/orgs/", rs_org_id, "/customer-group"])
+    #path join(["/svc/orgs/", rs_org_id, "/customer-group"])
+    path "/svc/orgs/28010/customer-group"
     header "content-type", "application/json"
     query "groupTypeId", "1"
   end
@@ -190,13 +199,14 @@ end
 
 datasource "ds_departments" do
   request do
-    run_script $js_departments, val($ds_num_departments,"totalItems"), rs_org_id
+    #run_script $js_departments, val($ds_num_departments,"totalItems"), rs_org_id
+    run_script $js_departments, val($ds_num_departments,"numItems"), "28010"
   end
   result do
     encoding "json"
     collect jmes_path(response, "nodes[*]") do
       field "id", jmes_path(col_item, "id")
-      filed "groupName", jmes_path(col_item, "groupName")
+      field "groupName", jmes_path(col_item, "groupName")
     end
   end
 end
@@ -230,7 +240,8 @@ datasource "ds_user_details" do
     host "api.metasaas.com"
     verb "GET"
     scheme "https"
-    path join(["/svc/orgs/", rs_org_id, "/customer-agents/", val(iter_item, "id")])
+    #path join(["/svc/orgs/", rs_org_id, "/customer-agents/", val(iter_item, "id")])
+    path join(["/svc/orgs/28010/customer-agents/", val(iter_item, "id")])
     header "content-type", "application/json"
   end
   result do
@@ -242,8 +253,83 @@ datasource "ds_user_details" do
     field "application", val(iter_item, "application")
     field "vendor", val(iter_item, "vendor")
     field "id", val(iter_item, "id")
-    field "group_ids", 
+    field "groups" do
+      collect jmes_path(response, "customerAgentGroups[*]") do
+        field "groupId", jmes_path(col_item,"customerGroupId")
+        field "groupName", jmes_path(col_item,"displayName")
+      end
+    end
   end
+end
+
+datasource "ds_filter_users_dept" do
+  run_script $js_filter_users_dept, $ds_user_details, $ds_departments
+end
+
+script "js_filter_users_dept", type: "javascript" do
+  parameters "ds_user_details","ds_departments"
+  result "result"
+  code <<-EOS
+    var result = [];
+    var users_to_analyze = [];
+    var dept_ids = _.uniq(_.pluck(ds_departments, 'id'));
+    var app_ids = _.uniq(_.pluck(ds_user_details, 'managedProductId'));
+
+    _.each(app_ids, function(app_id){
+      console.log("Application ID: "+app_id)
+      
+      var app_users = _.where(ds_user_details, {managedProductId: app_id});
+      console.log("Application Users: ")
+      console.log(app_users)
+      
+      var last_names = _.uniq(_.pluck(app_users, 'lastName'));
+      _.each(last_names, function(last_name){
+        var last_name_users = _.where(app_users, {lastName: last_name});
+        
+        var first_names = _.uniq(_.pluck(last_name_users, 'firstName'));
+        _.each(first_names, function(first_name){
+            var first_name_users = _.where(last_name_users, {firstName: first_name});
+            
+            _.each(first_name_users, function(user){
+              _.each(user["groups"], function(group){
+                if(_.contains(dept_ids, group["id"])){
+                  var dept_id = group["groupId"]
+                  var dept_name = group["groupName"] 
+                  users_to_analyze.push({
+                    email: user["email"],
+                    firstName: user["firstName"],
+                    lastName: user["lastName"],
+                    managedProductId: user["managedProductId"],
+                    application: user["application"],
+                    vendor: user["vendor"],
+                    id: user["id"],
+                    deptName: dept_name,
+                    deptId: dept_id
+                  }) 
+                } 
+              })
+
+            })
+
+            _.each(dept_ids, function(user_dept_id){
+              var dept_users = _.where(users_to_analyze, {deptId: user_dept_id});
+
+              if (_.size(dept_users) > 1){
+                var user_emails = _.uniq(_.pluck(dept_users, 'email'));
+                if (_.size(user_emails) > 1){
+                  _.each(user_emails, function(user_email){
+                    var target_user = _.where(dept_users, {email: user_email});
+                    result.push(target_user)
+                  })
+                }
+              }
+
+            })
+            
+        })        
+      })
+    })
+EOS
 end
 
 
@@ -252,7 +338,7 @@ escalation "report_summary" do
 end
 
 policy "policy_fsm_duplicate_users" do
-  validate $ds_format_data do
+  validate $ds_filter_users_dept do
       summary_template "{{ len data }} Duplicate Application Users Found"
       export do 
         field "lastName" do
@@ -270,7 +356,7 @@ policy "policy_fsm_duplicate_users" do
         field "vendor" do 
           label "Vendor"
         end
-        field "department" do 
+        field "deptName" do 
           label "Department"
         end 
         field "managedProductName" do 
