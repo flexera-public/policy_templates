@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.3
+
+- Bug fix when metrics are absent in a project
+
 ## v2.2
 
 - Bug fixes on unhandled errors when executing
