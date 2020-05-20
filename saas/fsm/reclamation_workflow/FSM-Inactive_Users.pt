@@ -1,0 +1,114 @@
+name "SaaS Manager - Inactive Users"
+rs_pt_ver 20180301
+type "policy"
+short_description "This policy will call back into FSM APIs and retrieve information about reclamation opportunities. It will create an incident when inactive or never active users for given managed application are identified."
+category "testing"
+
+
+parameter "managedAppId" do
+  type "string"
+  label "managedAppId"
+  description "Managed App Id to retrieve inactive and never active users"
+end
+
+#authenticate with FSM
+credentials "fsm_auth" do
+  schemes "oauth2"
+  label "FSM Staging Test"
+  description "Select the FSM Resource Manager Credential from the list."
+  tags "provider=flexera_fsm_staging_test"
+end
+
+
+pagination "inactive_users_pagination" do
+  get_page_marker do
+    body_path jq(response, '.nextPage|select(.!=null)| capture("(?<k>skipToken=)(?<v>[^&]*)"; "i") | .v')
+  end
+  set_page_marker do
+    query "$skipToken"
+  end
+end
+
+datasource "ds_activity_threshold" do
+  request do
+    auth $fsm_auth
+    host "api.flexeratest.com"
+    verb "GET"
+    scheme "https"
+    path join(["/saas/v1/orgs/", rs_org_id, "/managed-apps/",$managedAppId])
+    header "content-type", "application/json"
+   end
+  result do
+    encoding "json"
+    field "activityThreshold", jmes_path(response, "activityThreshold")
+  end
+end
+
+datasource "ds_app_users" do
+  request do
+    auth $fsm_auth
+	pagination $inactive_users_pagination
+    host "api.flexeratest.com"
+    verb "GET"
+    scheme "https"
+    path join(["/saas/v1/orgs/", rs_org_id, "/managed-apps/",$managedAppId,"/app-users"])
+    header "content-type", "application/json"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "values[*]") do
+      field "id", jmes_path(col_item, "id")
+      field "uniqueId", jmes_path(col_item, "uniqueId")
+      field "email", jmes_path(col_item, "email")
+      field "sku", jmes_path(col_item, "sku")
+	  field "associatedManagedApp" do
+			collect jmes_path(col_item, "associatedManagedApp") do
+				field "id",(jmes_path(col_item, 'id'))
+				field "href",(jmes_path(col_item, 'href'))
+			end
+	  end
+      field "firstName", jmes_path(col_item, "firstName")
+      field "lastName", jmes_path(col_item, "lastName")
+      field "middleName", jmes_path(col_item, "middleName")
+      field "activatedAt", jmes_path(col_item, "activatedAt")
+	  field "deactivatedAt", jmes_path(col_item, "deactivatedAt")
+      field "modifiedAt", jmes_path(col_item, "modifiedAt")
+      field "lastActivityAt", jmes_path(col_item, "lastActivityAt")
+    end
+  end
+end
+
+datasource "ds_filtered_inactive_users" do
+  run_script $js_filtered_inactive_users, $ds_app_users, $ds_activity_threshold
+end
+
+script "js_filtered_inactive_users", type: "javascript" do
+  parameters "users","activity_threshold"
+  result "result"
+  code <<-EOS
+    var result = [];   
+    var date = new Date(new Date().setDate(new Date().getDate() - activity_threshold["activityThreshold"])).toISOString();
+	console.log("date",date)
+    _.each(users, function(user){	
+		if ((date > user["lastActivityAt"])||(user["deactivatedAt"]!=null) ){
+			console.log("user is inactive")
+			result.push(user)
+		}	
+    })
+  EOS
+end
+
+policy "policy_inactive_users" do
+  validate $ds_filtered_inactive_users do
+    summary_template "Inactive Users"
+    detail_template <<-EOS
+# Inactive Users
+| First Name | Last Name | Email Address | Managed App Agent ID | Last Active | 
+| ---------- | --------- | ------------- | ---------------------| ----------- |
+{{ range data -}}
+| {{ .firstName }} | {{.lastName}} | {{.email}} | {{.id}} | {{.lastActivityAt}} |
+{{ end -}}
+EOS
+    check eq(size(data), 0)
+  end
+end
