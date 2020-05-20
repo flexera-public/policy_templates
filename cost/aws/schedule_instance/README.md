@@ -29,7 +29,8 @@ This policy has the following input parameters required when launching the polic
 
 ## Policy Actions 
 
-The following policy actions are taken on any resources found to be out of compliance. 
+The following policy actions are taken on any resources found to be out of compliance.
+
 - Send an email report  
 - stop  - stop a selected instance
 - start - start a selected instance
@@ -43,7 +44,7 @@ This policy uses [credentials](https://docs.rightscale.com/policies/users/guides
 
 ### Credential configuration
 
-For administrators [creating and managing credentials] (https://docs.rightscale.com/policies/users/guides/credential_management.html) to use with this policy, the following information  is needed:
+For administrators [creating and managing credentials](https://docs.rightscale.com/policies/users/guides/credential_management.html) to use with this policy, the following information is needed:
 
 Provider tag value to match this policy: `aws`
 
