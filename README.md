@@ -178,6 +178,7 @@ Please contact sales@flexera.com to learn more.
 
 - [FlexNet Manager Licenses At Risk - Cloud](./compliance/fnms/fnms_licenses_at_risk/)
 - [FlexNet Manager Licenses At Risk - On Premise](./compliance/fnms/fnms_licenses_at_risk_on_premise/)
+- [FlexNet Manager Low Available Licenses](./compliance/fnms/fnms_low_licenses_available)
 - [GitHub.com Available Seats](./compliance/github/available_seats/)
 - [GitHub.com Unpermitted Outside Collaborators](./compliance/github/outside_collaborators/)
 - [GitHub.com Unpermitted Repository Names](./compliance/github/repository_naming/)
@@ -229,6 +230,7 @@ Please contact sales@flexera.com to learn more.
 - [SaaS Manager - Unsanctioned Spend](./saas/fsm/unsanctioned_spend)
 - [SaaS Manager - Redundant Apps](./saas/fsm/redundant_apps)
 - [SaaS Manager - Inactive Users](./saas/fsm/inactive_users_by_dept)
+- [SaaS Manager - Unsanctioned Applications with Existing Contract](./saas/fsm/unsanctioned_apps_with_contract)
 
 ### Policy Data Sets
 
