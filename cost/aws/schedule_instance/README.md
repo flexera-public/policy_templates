@@ -34,7 +34,7 @@ The following policy actions are taken on any resources found to be out of compl
 - stop  - stop a selected instance
 - start - start a selected instance
 - terminate - terminates or deletes the selected instance.
-- update schedule - change existing schedule tag.  input to provide a new stop/start schedule. The format is update=new_schedule
+- update schedule - change existing schedule tag.  input to provide a new stop/start schedule. The format is schedule=new_schedule
 - delete schedule - removes the schedule tag
 
 ## Prerequisites
