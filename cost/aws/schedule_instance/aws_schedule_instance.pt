@@ -139,7 +139,9 @@ script "js_filter_resources", type: "javascript" do
       }
     }
     if(notMatched){
+      var all_tags="";
       for(var j=0;j<instance.tags.length;j++){
+        all_tags=all_tags+", "+instance.tags[j].tagKey+"="+instance.tags[j].tagValue;
         if(instance.tags[j].tagKey== 'schedule'){
           schedule=instance.tags[j].tagValue;
         }
@@ -158,6 +160,7 @@ script "js_filter_resources", type: "javascript" do
           "state": instance.state,
           "region": instance.region,
           "schedule":schedule,
+          "tags":all_tags.slice(2),
           "next_start":next_start_iso,
           "next_stop":next_stop_iso	
         })
@@ -180,17 +183,38 @@ escalation "esc_email" do
   email $param_email
 end
 
-escalation "esc_action" do
+escalation "esc_schedule_instance" do
   automatic false
-  parameter "param_action_value" do
-    type "string"
-    label "Action(Yes for start or stop)"
-    description "Allowed format- Yes, schedule=new_schedule, terminate, delete"
-  end
-  run "schedule_instance", data, $param_action_value
+  label "Schedule"
+  description "Stop or Start the Instance"
+  run "schedule_instance", data
 end
 	
+escalation "esc_terminate_instance" do
+  automatic false
+  label "Terminate Instance"
+  description "Terminate or delete the Instance"
+  run "terminate_instance", data
+end
 
+escalation "esc_update_schedule" do
+  automatic false
+  label "Update Schedule"
+  description "Update the existing schedule Tag"
+  parameter "param_schedule" do
+    type "string"
+    label "New Schedule"
+    description "Provide Schedule Value"
+  end
+  run "update_schedule", data, $param_schedule
+end
+
+escalation "esc_delete_schedule" do
+  automatic false
+  label "Delete Schedule"
+  description "Delete Schedule Tag"
+  run "delete_schedule", data
+end
 ###############################################################################
 # Policy
 ###############################################################################
@@ -200,7 +224,10 @@ policy "policy_schedule_instance" do
     summary_template "AWS Schedule Instance list"
     hash_include "next_start", "next_stop"
     escalate $esc_email
-    escalate $esc_action
+    escalate $esc_schedule_instance
+    escalate $esc_terminate_instance
+    escalate $esc_update_schedule
+    escalate $esc_delete_schedule
     check eq(size(data),0)
     export do
       resource_level true
@@ -216,6 +243,9 @@ policy "policy_schedule_instance" do
       field "schedule" do
         label "Schedule"
       end
+      field "tags" do
+        label "Tags"
+      end
     end
   end
 end
@@ -224,44 +254,163 @@ end
 # Cloud Workflow
 ###############################################################################
 
-define schedule_instance($data, $action) return $all_response do
-  $$debug=true
-  $Yes=/^(YES|Yes|yes)$/
-  $Terminate=/^(TERMINATE|Terminate|terminate)$/
-  $Delete=/^(DELETE|delete|Delete)$/
-  $Schedule=/^(SCHEDULE|schedule|Schedule)$/
+define schedule_instance($data) return $all_response do
   foreach $item in $data do
-    if $action =~ $Yes
-      $rule = split($item['schedule'],';')[1]
-      $time_range = split($item['schedule'],';')[0]
-      $start_time = split($time_range,'-')[0]
-      $start_hour = split($start_time, ':')[0]
-      $start_minute = split($start_time, ':')[1]
-      $stop_time = split($time_range,'-')[1]
-      $stop_hour = split($stop_time, ':')[0]
-      $stop_minute = split($stop_time, ':')[1]
-      $start_rule = join(["FREQ=WEEKLY;BYDAY=",$rule])
-      $stop_rule = join(["FREQ=WEEKLY;BYDAY=",$rule])
-      $timezone = split($item['schedule'],';')[2]
-      if ! $timezone
-        $timezone = "UTC"
-      end
+    $rule = split($item['schedule'],';')[1]
+    $time_range = split($item['schedule'],';')[0]
+    $start_time = split($time_range,'-')[0]
+    $start_hour = split($start_time, ':')[0]
+    $start_minute = split($start_time, ':')[1]
+    $stop_time = split($time_range,'-')[1]
+    $stop_hour = split($stop_time, ':')[0]
+    $stop_minute = split($stop_time, ':')[1]
+    $start_rule = join(["FREQ=WEEKLY;BYDAY=",$rule])
+    $stop_rule = join(["FREQ=WEEKLY;BYDAY=",$rule])
+    $timezone = split($item['schedule'],';')[2]
+    if ! $timezone
+      $timezone = "UTC"
+    end
+    call window_active($start_hour, $start_minute, $start_rule, $stop_hour, $stop_minute, $stop_rule, $timezone) retrieve $window_active , $next_start, $next_stop
+
+    call sys_log('window_active',$window_active)
+    call sys_log('next_start',$next_start)
+    call sys_log('next_stop',$next_stop)
+
+    if ($window_active)
+      call sys_log($item['schedule'] + ' schedule window is currently active: Instances may be started.', '')
+    else
+      call sys_log($item['schedule'] + ' schedule window is currently in-active: Instances may be stopped.', '')
+    end
+
+    $stoppable = /^(running|pending)$/
+    $startable = /^(stopped|stopping)$/
 	
-      call window_active($start_hour, $start_minute, $start_rule, $stop_hour, $stop_minute, $stop_rule, $timezone) retrieve $window_active , $next_start, $next_stop
-
-      call sys_log('window_active',$window_active)
-      call sys_log('next_start',$next_start)
-      call sys_log('next_stop',$next_stop)
-
-      if ($window_active)
-        call sys_log($item['schedule'] + ' schedule window is currently active: Instances may be started.', '')
+    $response= http_request(
+      auth: $$auth_aws,
+      host: join(["ec2.", $item['region'], ".amazonaws.com"]),
+      href: "/",
+      https: true,
+      verb: "get",
+      query_strings:{
+        "Action": "CreateTags",
+        "ResourceId.1": $item['id'],
+        "Tag.1.Key": "next_start",
+        "Tag.1.Value": $next_start,
+        "Tag.2.Key": "next_stop",
+        "Tag.2.Value": $next_stop,
+        "Version": "2016-11-15"
+      }
+    )
+    if($window_active)
+      if($item['state']=~$startable)
+        call sys_log('> ' + $item['id'] + ': Starting ...', to_s($item))
+        sub on_error: skip do
+          $response= http_request(
+            auth: $$auth_aws,
+            host: join(["ec2.", $item['region'], ".amazonaws.com"]),
+            href: "/",
+            https: true,
+            verb: "get",
+            query_strings:{
+              "Action": "StartInstances",
+              "InstanceId.1":$item['id'],
+              "Version":"2016-11-15"
+            }
+          )
+          $all_response << $response
+        end
       else
-        call sys_log($item['schedule'] + ' schedule window is currently in-active: Instances may be stopped.', '')
+        call sys_log('> ' + $item['id'] + ': No action - Instance state is ' + $item['state'], '')
       end
+    else
+      if($item['state'] =~ $stoppable)
+        call sys_log('> ' + $item['id'] + ': Stopping ...', to_s($item))
+        sub on_error: skip do
+          $response= http_request(
+            auth: $$auth_aws,
+            host: join(["ec2.", $item['region'], ".amazonaws.com"]),
+            href: "/",
+            https: true,
+            verb: "get",
+            query_strings:{
+              "Action": "StopInstances",
+              "InstanceId.1":$item['id'],
+              "Version":"2016-11-15"
+            }
+          )
+          $all_response << $response
+        end
+      else
+        call sys_log('> ' + $item['id'] + ': No action - Instance state is ' + $item['state'], '')
+      end
+    end
+  end
+end
 
-      $stoppable = /^(running|pending)$/
-      $startable = /^(stopped|stopping)$/
-	
+define terminate_instance($data) return $all_response do
+  foreach $item in $data do
+    call sys_log('> ' + $item['id'] + ': Terminating ...', to_s($item))
+    sub on_error: skip do
+      $response= http_request(
+        auth: $$auth_aws,
+        host: join(["ec2.", $item['region'], ".amazonaws.com"]),
+        href: "/",
+        https: true,
+        verb: "get",
+        query_strings:{
+          "Action": "TerminateInstances",
+          "InstanceId.1":$item['id'],
+          "Version":"2016-11-15"
+        }
+      )
+      $all_response << $response
+    end
+  end
+end
+
+define delete_schedule($data) return $all_response do
+  foreach $item in $data do
+    call sys_log('> ' + $item['id'] + ': Deleting schedule Tag ...', to_s($item))
+    sub on_error: skip do
+      $response= http_request(
+        auth: $$auth_aws,
+        host: join(["ec2.", $item['region'], ".amazonaws.com"]),
+        href: "/",
+        https: true,
+        verb: "get",
+        query_strings:{
+          "Action": "DeleteTags",
+          "ResourceId.1": $item['id'],
+          "Tag.1.Key": "schedule",
+          "Tag.2.Key": "next_start",
+          "Tag.3.Key": "next_stop",
+          "Version": "2016-11-15"
+        }
+      )
+      $all_response << $response
+    end
+  end
+end
+
+define update_schedule($data, $param) return $all_response do
+  foreach $item in $data do
+    $rule = split($param,';')[1]
+    $time_range = split($param,';')[0]
+    $start_time = split($time_range,'-')[0]
+    $start_hour = split($start_time, ':')[0]
+    $start_minute = split($start_time, ':')[1]
+    $stop_time = split($time_range,'-')[1]
+    $stop_hour = split($stop_time, ':')[0]
+    $stop_minute = split($stop_time, ':')[1]
+    $start_rule = join(["FREQ=WEEKLY;BYDAY=",$rule])
+    $stop_rule = join(["FREQ=WEEKLY;BYDAY=",$rule])
+    $timezone = split($param,';')[2]
+    if ! $timezone
+      $timezone = "UTC"
+    end
+    call window_active($start_hour, $start_minute, $start_rule, $stop_hour, $stop_minute, $stop_rule, $timezone) retrieve $window_active , $next_start, $next_stop
+    call sys_log('> ' + $item['id'] + ': Updating schedule Tag ...', to_s($item))
+    sub on_error: skip do
       $response= http_request(
         auth: $$auth_aws,
         host: join(["ec2.", $item['region'], ".amazonaws.com"]),
@@ -275,127 +424,12 @@ define schedule_instance($data, $action) return $all_response do
           "Tag.1.Value": $next_start,
           "Tag.2.Key": "next_stop",
           "Tag.2.Value": $next_stop,
+          "Tag.3.Key": 'schedule',
+          "Tag.3.Value": $param,
           "Version": "2016-11-15"
         }
       )
-      if($window_active)
-        if($item['state']=~$startable)
-          call sys_log('> ' + $item['id'] + ': Starting ...', to_s($item))
-          sub on_error: skip do
-            $response= http_request(
-              auth: $$auth_aws,
-              host: join(["ec2.", $item['region'], ".amazonaws.com"]),
-              href: "/",
-              https: true,
-              verb: "get",
-              query_strings:{
-                "Action": "StartInstances",
-                "InstanceId.1":$item['id'],
-                "Version":"2016-11-15"
-              }
-            )
-          end
-        else
-          call sys_log('> ' + $item['id'] + ': No action - Instance state is ' + $item['state'], '')
-        end
-      else
-        if($item['state'] =~ $stoppable)
-          call sys_log('> ' + $item['id'] + ': Stopping ...', to_s($item))
-          sub on_error: skip do
-            $response= http_request(
-              auth: $$auth_aws,
-              host: join(["ec2.", $item['region'], ".amazonaws.com"]),
-              href: "/",
-              https: true,
-              verb: "get",
-              query_strings:{
-                "Action": "StopInstances",
-                "InstanceId.1":$item['id'],
-                "Version":"2016-11-15"
-              }
-            )
-          end
-        else
-          call sys_log('> ' + $item['id'] + ': No action - Instance state is ' + $item['state'], '')
-        end
-      end
-    elsif $action=~ $Terminate
-      call sys_log('> ' + $item['id'] + ': Terminating ...', to_s($item))
-      sub on_error: skip do
-        $response= http_request(
-          auth: $$auth_aws,
-          host: join(["ec2.", $item['region'], ".amazonaws.com"]),
-          href: "/",
-          https: true,
-          verb: "get",
-          query_strings:{
-            "Action": "TerminateInstances",
-            "InstanceId.1":$item['id'],
-            "Version":"2016-11-15"
-          }
-        )
-      end
-    elsif $action =~ $Delete
-      call sys_log('> ' + $item['id'] + ': Deleting schedule Tag ...', to_s($item))
-      sub on_error: skip do
-        $response= http_request(
-          auth: $$auth_aws,
-          host: join(["ec2.", $item['region'], ".amazonaws.com"]),
-          href: "/",
-          https: true,
-          verb: "get",
-          query_strings:{
-            "Action": "DeleteTags",
-            "ResourceId.1": $item['id'],
-            "Tag.1.Key": "schedule",
-            "Tag.2.Key": "next_start",
-            "Tag.3.Key": "next_stop",
-            "Version": "2016-11-15"
-          }
-        )
-      end
-    else
-      if(size(split($action, '='))==2 && first(split($action, '='))=~$Schedule)
-        $val=last(split($action, '='))
-        $rule = split($val,';')[1]
-        $time_range = split($val,';')[0]
-        $start_time = split($time_range,'-')[0]
-        $start_hour = split($start_time, ':')[0]
-        $start_minute = split($start_time, ':')[1]
-        $stop_time = split($time_range,'-')[1]
-        $stop_hour = split($stop_time, ':')[0]
-        $stop_minute = split($stop_time, ':')[1]
-        $start_rule = join(["FREQ=WEEKLY;BYDAY=",$rule])
-        $stop_rule = join(["FREQ=WEEKLY;BYDAY=",$rule])
-        $timezone = split($val,';')[2]
-        if ! $timezone
-          $timezone = "UTC"
-        end
-        call window_active($start_hour, $start_minute, $start_rule, $stop_hour, $stop_minute, $stop_rule, $timezone) retrieve $window_active , $next_start, $next_stop
-        call sys_log('window_active',$window_active)
-        call sys_log('next_start',$next_start)
-        call sys_log('next_stop',$next_stop)
-        $response= http_request(
-          auth: $$auth_aws,
-          host: join(["ec2.", $item['region'], ".amazonaws.com"]),
-          href: "/",
-          https: true,
-          verb: "get",
-          query_strings:{
-            "Action": "CreateTags",
-            "ResourceId.1": $item['id'],
-            "Tag.1.Key": "next_start",
-            "Tag.1.Value": $next_start,
-            "Tag.2.Key": "next_stop",
-            "Tag.2.Value": $next_stop,
-            "Tag.3.Key": 'schedule',
-            "Tag.3.Value": $val,
-            "Version": "2016-11-15"
-          }
-        )
-      else
-        call sys_log("Wrong Value", $action)
-      end
+      $all_response << $response
     end
   end
 end
@@ -431,14 +465,12 @@ define window_active($start_hour, $start_minute, $start_rule, $stop_hour, $stop_
 end
 
 define sys_log($subject, $detail) do
-  if $$debug
-    rs_cm.audit_entries.create(
-      notify: "None",
-      audit_entry: {
-        auditee_href: @@account,
-        summary: $subject,
-        detail: $detail
-      }
-    )
-  end
+  rs_cm.audit_entries.create(
+    notify: "None",
+    audit_entry: {
+      auditee_href: @@account,
+      summary: $subject,
+      detail: $detail
+    }
+  )
 end
