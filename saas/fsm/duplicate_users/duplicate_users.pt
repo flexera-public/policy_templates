@@ -33,8 +33,7 @@ datasource "ds_num_products" do
     host "api.metasaas.com"
     verb "GET"
     scheme "https"
-    #path join(["/svc/orgs/", rs_org_id, "/managed-products"])
-    path "/svc/orgs/28010/managed-products"
+    path join(["/svc/orgs/", rs_org_id, "/managed-products"])
     header "content-type", "application/json"
   end
   result do
@@ -45,8 +44,7 @@ end
 
 datasource "ds_products" do
   request do
-    #run_script $js_products, val($ds_num_products,"totalItems"), rs_org_id
-    run_script $js_products, val($ds_num_products,"totalItems"), "28010"
+    run_script $js_products, val($ds_num_products,"totalItems"), rs_org_id
   end
   result do
     encoding "json"
@@ -54,7 +52,6 @@ datasource "ds_products" do
       field "application", jmes_path(col_item, "name")
       field "id", jmes_path(col_item, "id")
       field "vendor", jmes_path(col_item, "product.vendor.name")
-      field "totalUsers", jmes_path(col_item, "totalUsers")
     end
   end
 end
@@ -81,11 +78,32 @@ script "js_products", type: "javascript" do
 EOS
 end
 
-datasource "ds_product_users" do
+datasource "ds_product_num_users" do 
   iterate $ds_products
   request do
-    #run_script $js_product_users, val(iter_item, "totalUsers"), rs_org_id, val(iter_item, "id")
-    run_script $js_product_users, val(iter_item, "totalUsers"), "28010", val(iter_item, "id")
+    auth $fsm_auth
+    host "api.metasaas.com"
+    verb "GET"
+    scheme "https"
+    path join(["/svc/orgs/", rs_org_id, "/managed-products"])
+    header "content-type", "application/json"
+    query "sort", "uniqueId"
+    query "asc", "true"
+  end
+  result do
+    encoding "json"
+    field "application", val(iter_item, "application")
+    field "id", val(iter_item, "id")
+    field "vendor", val(iter_item, "vendor")
+    field "totalItems", jmes_path(response, "totalItems")
+  end
+end
+
+
+datasource "ds_product_users" do
+  iterate $ds_product_num_users
+  request do
+    run_script $js_product_users, val(iter_item, "totalUsers"), rs_org_id, val(iter_item, "id")
   end
   result do
     encoding "json"
@@ -96,7 +114,8 @@ datasource "ds_product_users" do
       field "managedProductId", jmes_path(col_item, "managedProductId")
       field "application", val(iter_item, "application")
       field "vendor", val(iter_item, "vendor")
-      field "id", jmes_path(col_item, "id")
+      field "userId", jmes_path(col_item, "customerAgent.id")
+      field "department", jmes_path(col_item, "department")
     end
   end
 end
@@ -150,6 +169,7 @@ script "js_filter_users", type: "javascript" do
       console.log(app_users)
       
       var last_names = _.uniq(_.pluck(app_users, 'lastName'));
+      console.log("last names: "+last_names)
       _.each(last_names, function(last_name){
         var last_name_users = _.where(app_users, {lastName: last_name});
         if (_.size(last_name_users) > 1) {
@@ -160,13 +180,26 @@ script "js_filter_users", type: "javascript" do
             var first_name_users = _.where(last_name_users, {firstName: first_name});
             if (_.size(first_name_users) > 1) {
               // more than 1 user with this first name & last name
-              var emails = _.uniq(_.pluck(first_name_users, 'email'));
-              if (_.size(emails) > 1){
-                // raise incident
-                result.push(first_name_users)
+              var departments = _.uniq(_.pluck(first_name_users, 'department'));
+              if (_.size(departments) < 2) {
+                var emails = _.uniq(_.pluck(first_name_users, 'email'));
+                if (_.size(emails) > 1){
+                  // raise incident
+                  _.each(first_name_users, function(user){result.push(user)})
+                }
               } else {
-                // more than 1 first name & last name combo, but 1 or less emails 
-                // this likely will never trigger
+                // more than 1 department
+                _.each(departments, function(dept){
+                  var dept_users = _.filter(first_name_users, function(user) {return user.department == null || user.department === dept;});
+                  var emails = _.uniq(_.pluck(dept_users, 'email')); 
+                  if (_.size(emails) > 1){
+                    // raise incident
+                    _.each(first_name_users, function(user){result.push(user)})
+                  } else {
+                    // more than 1 first name & last name combo, but 1 or less emails 
+                    // this likely will never trigger
+                  }
+                })
               }
             } else {
               // only 1 app user with this first name & last name
@@ -180,165 +213,12 @@ script "js_filter_users", type: "javascript" do
 EOS
 end
 
-datasource "ds_num_departments" do
-  request do
-    auth $fsm_auth
-    host "api.metasaas.com"
-    verb "GET"
-    scheme "https"
-    #path join(["/svc/orgs/", rs_org_id, "/customer-group"])
-    path "/svc/orgs/28010/customer-group"
-    header "content-type", "application/json"
-    query "groupTypeId", "1"
-  end
-  result do
-    encoding "json"
-    field "numItems", jmes_path(response, "numItems")
-  end
-end
-
-datasource "ds_departments" do
-  request do
-    #run_script $js_departments, val($ds_num_departments,"totalItems"), rs_org_id
-    run_script $js_departments, val($ds_num_departments,"numItems"), "28010"
-  end
-  result do
-    encoding "json"
-    collect jmes_path(response, "nodes[*]") do
-      field "id", jmes_path(col_item, "id")
-      field "groupName", jmes_path(col_item, "groupName")
-    end
-  end
-end
-
-script "js_departments", type: "javascript" do
-  parameters "num_items", "rs_org_id"
-  result "request"
-  code <<-EOS
-  console.log("ds_departments"+rs_org_id)
-  request = {
-    auth: "fsm_auth",
-    host: "api.metasaas.com",
-    verb: "GET",
-    scheme: "https",
-    path: "/svc/orgs/"+rs_org_id+"/customer-group",
-    headers: {
-      "content-type": "application/json"
-    },
-     query_params: {
-      "pageSize": num_items.toString(),
-      "groupTypeId": "1"
-    }
-  }
-EOS
-end
-
-datasource "ds_user_details" do 
-  iterate $ds_filter_users
-  request do
-    auth $fsm_auth
-    host "api.metasaas.com"
-    verb "GET"
-    scheme "https"
-    #path join(["/svc/orgs/", rs_org_id, "/customer-agents/", val(iter_item, "id")])
-    path join(["/svc/orgs/28010/customer-agents/", val(iter_item, "id")])
-    header "content-type", "application/json"
-  end
-  result do
-    encoding "json"
-    field "email", val(iter_item, "email")
-    field "firstName", val(iter_item, "firstName")
-    field "lastName", val(iter_item, "lastName")
-    field "managedProductId", val(iter_item, "managedProductId")
-    field "application", val(iter_item, "application")
-    field "vendor", val(iter_item, "vendor")
-    field "id", val(iter_item, "id")
-    field "groups" do
-      collect jmes_path(response, "customerAgentGroups[*]") do
-        field "groupId", jmes_path(col_item,"customerGroupId")
-        field "groupName", jmes_path(col_item,"displayName")
-      end
-    end
-  end
-end
-
-datasource "ds_filter_users_dept" do
-  run_script $js_filter_users_dept, $ds_user_details, $ds_departments
-end
-
-script "js_filter_users_dept", type: "javascript" do
-  parameters "ds_user_details","ds_departments"
-  result "result"
-  code <<-EOS
-    var result = [];
-    var users_to_analyze = [];
-    var dept_ids = _.uniq(_.pluck(ds_departments, 'id'));
-    var app_ids = _.uniq(_.pluck(ds_user_details, 'managedProductId'));
-
-    _.each(app_ids, function(app_id){
-      console.log("Application ID: "+app_id)
-      
-      var app_users = _.where(ds_user_details, {managedProductId: app_id});
-      console.log("Application Users: ")
-      console.log(app_users)
-      
-      var last_names = _.uniq(_.pluck(app_users, 'lastName'));
-      _.each(last_names, function(last_name){
-        var last_name_users = _.where(app_users, {lastName: last_name});
-        
-        var first_names = _.uniq(_.pluck(last_name_users, 'firstName'));
-        _.each(first_names, function(first_name){
-            var first_name_users = _.where(last_name_users, {firstName: first_name});
-            
-            _.each(first_name_users, function(user){
-              _.each(user["groups"], function(group){
-                if(_.contains(dept_ids, group["id"])){
-                  var dept_id = group["groupId"]
-                  var dept_name = group["groupName"] 
-                  users_to_analyze.push({
-                    email: user["email"],
-                    firstName: user["firstName"],
-                    lastName: user["lastName"],
-                    managedProductId: user["managedProductId"],
-                    application: user["application"],
-                    vendor: user["vendor"],
-                    id: user["id"],
-                    deptName: dept_name,
-                    deptId: dept_id
-                  }) 
-                } 
-              })
-
-            })
-
-            _.each(dept_ids, function(user_dept_id){
-              var dept_users = _.where(users_to_analyze, {deptId: user_dept_id});
-
-              if (_.size(dept_users) > 1){
-                var user_emails = _.uniq(_.pluck(dept_users, 'email'));
-                if (_.size(user_emails) > 1){
-                  _.each(user_emails, function(user_email){
-                    var target_user = _.where(dept_users, {email: user_email});
-                    result.push(target_user)
-                  })
-                }
-              }
-
-            })
-            
-        })        
-      })
-    })
-EOS
-end
-
-
 escalation "report_summary" do
     email $param_email
 end
 
 policy "policy_fsm_duplicate_users" do
-  validate $ds_filter_users_dept do
+  validate $ds_filter_users do
       summary_template "{{ len data }} Duplicate Application Users Found"
       export do 
         field "lastName" do
@@ -356,12 +236,9 @@ policy "policy_fsm_duplicate_users" do
         field "vendor" do 
           label "Vendor"
         end
-        field "deptName" do 
+        field "department" do 
           label "Department"
         end 
-        field "managedProductName" do 
-          label "Application"
-        end
       end  
       escalate $report_summary
       check eq(size(data), 0)
