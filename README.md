@@ -222,6 +222,7 @@ Please contact sales@flexera.com to learn more.
 ### SaaS Management
 
 - [Okta Inactive Users](./saas/okta/inactive_users)
+- [ServiceNow Inactive Approvers](./saas/servicenow/inactive_approvers)
 - [Office 365 Security Alerts](./saas/office365/security_alerts)
 - [SaaS Manager - Renewal Reminder](./saas/fsm/renewal_reminder)
 - [SaaS Manager - User Status Change](./saas/fsm/user_status_change)
