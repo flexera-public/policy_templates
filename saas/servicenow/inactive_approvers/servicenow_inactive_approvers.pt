@@ -16,6 +16,13 @@ parameter "param_sn_instance_id" do
   type "string"
 end
 
+parameter "param_roles" do
+  label "Approval Roles"
+  description "ServiceNow Roles to target"
+  type "list"
+  default ["approver_user","itil"]
+end
+
 parameter "param_days" do
   label "Number of Days"
   description "Number of days without an approval action executed in ServiceNow"
@@ -33,111 +40,180 @@ end
 # Authentication
 ###############################################################################
 
-auth "auth_sn", type: "basic" do
-  username cred("SERVICENOW_USERNAME")
-  password cred("SERVICENOW_PASSWORD")
+credentials "auth_sn" do
+  schemes "basic"
+  label "ServiceNow Credential"
+  tags "provider=servicenow"
 end
 
 ###############################################################################
 # Datasources
 ###############################################################################
 
-datasource "ds_sn_active_approvers" do
+datasource "ds_sn_roles" do 
   request do
-    run_script $js_sn_approvers_request,$param_sn_instance_id
+    run_script $js_sn_roles, $param_roles, $param_sn_instance_id
   end
   result do
     encoding "json"
     collect jmes_path(response,"result[*]") do
-      field "sys_updated_on", jmes_path(col_item,"sys_updated_on")
-      field "sysapproval", jmes_path(col_item,"sysapproval")
-      field "state", jmes_path(col_item,"state")
-      field "approval_source", jmes_path(col_item,"approval_source")
-      field "group", jmes_path(col_item,"group")
-      field "approver", jmes_path(col_item,"approver")
+      field "role_name", jmes_path(col_item, "name")
+      field "role_id", jmes_path(col_item, "sys_id")
     end
   end
 end
 
-datasource "ds_sn_filter_approvers" do
-  run_script $js_sn_filter_approvers, $ds_sn_active_approvers, $param_days
+datasource "ds_sn_user_roles" do
+  iterate $ds_sn_roles 
+  request do 
+    auth $auth_sn
+    host join([$param_sn_instance_id,".service-now.com"])
+    path "/api/now/table/sys_user_has_role"
+    header "User-Agent", "RS Policies"
+    query "sysparm_fields", "role,sys_id,inherited,user"
+    query "sysparm_query", join(["role=",val(iter_item,"role_id")])
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response,"result[*]") do
+      field "role_user_id", jmes_path(col_item, "sys_id")
+      field "role_id", jmes_path(col_item, "role.value")
+      field "inherited", jmes_path(col_item, "inherited")
+      field "user_id", jmes_path(col_item, "user.value")
+    end
+  end
 end
 
-datasource "ds_sn_inactive_approvers" do
-  run_script $js_sn_inactive_approvers, $ds_sn_filter_approvers, $ds_sn_all_approvers
+datasource "ds_sn_approver_users" do 
+  iterate $ds_sn_user_roles
+  request do
+    auth $auth_sn
+    host join([$param_sn_instance_id, ".service-now.com"])
+    path "/api/now/table/sys_user"
+    header "User-Agent", "RS Policies"
+    query "sysparm_query", join(["sys_id=",val(iter_item,"user_id")])
+    query "sysparm_fields", "sys_id,name,user_name,last_login_time,vip,email"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response,"result[*]") do
+      field "user_id", val(iter_item, "user_id")
+      field "role_id", val(iter_item, "role_id")
+      field "inherited", val(iter_item, "inherited")
+      field "approver", jmes_path(col_item, "name")
+      field "username", jmes_path(col_item, "user_name")
+      field "last_login", jmes_path(col_item, "last_login_time")
+      field "vip", jmes_path(col_item, "vip")
+      field "email", jmes_path(col_item, "email")
+    end
+  end
+end
+
+datasource "ds_approvals" do 
+  iterate $ds_sn_approver_users
+  request do
+    auth $auth_sn
+    host join([$param_sn_instance_id, ".service-now.com"])
+    path "/api/now/table/sysapproval_approver"
+    header "User-Agent", "RS Policies"
+    query "sysparm_query", join(["sys_updated_by=",val(iter_item,"username")])
+    query "sysparm_fields", "approver,sys_updated_on,state,sys_updated_by"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response,"result[*]") do 
+      field "user_id", val(iter_item, "user_id")
+      field "role_id", val(iter_item, "role_id")
+      field "inherited", val(iter_item, "inherited")
+      field "approver", val(iter_item, "approver")
+      field "username", val(iter_item, "username")
+      field "last_login", val(iter_item, "last_login")
+      field "vip", val(iter_item, "vip")
+      field "email", val(iter_item, "email")
+      field "updated_by", jmes_path(col_item, "sys_updated_by")
+      field "updated_on", jmes_path(col_item, "sys_updated_on")
+    end
+  end
+end
+
+datasource "ds_latest_approval" do
+  run_script $js_latest_approval, $ds_approvals, $ds_sn_approver_users
 end
 
 ###############################################################################
 # Scripts
 ###############################################################################
 
-script "js_sn_approvers_request", type: "javascript" do
-  parameters "sn_instance"
+script "js_sn_roles", type: "javascript" do
+  parameters "param_roles", "param_sn_instance_id"
   result "request"
   code <<-EOS
-
-    var request_filter = "state=approved"
-    var display_value = "true"
-    var exclude_ref = "true"
-    var fields = "approver,state,sys_updated_on,sysapproval,group,approval_source"
-
-    var request = {
-      auth: "auth_sn",
-      verb: "GET",
-      host: sn_instance + ".service-now.com",
-      path: "/api/now/table/sysapproval_approver",
-      query_params: {
-        "sysparm_query": request_filter
-        "sysparm_display_value": display_value
-        "sysparm_exclude_reference_link": exclude_ref
-        "sysparm_fields": fields
-      },
-      headers: {
-        "User-Agent": "RS Policies",
-        "Accept": "application/json"
+  console.log(param_roles)
+  if (_.size(param_roles) > 1){
+    console.log("more than 1 role")
+    var query = "";
+    _.each(param_roles, function(role){
+      console.log(role)
+      if (_.last(param_roles) === role){
+        query = query.concat("name=",role)
+      } else {
+        query = query.concat("name=",role,"^OR")
       }
+    })
+  } else {
+    var query = "name="+param_roles[0] 
+  }
+  
+  var request = {
+    auth: "auth_sn",
+    host: param_sn_instance_id+".service-now.com",
+    path: "api/now/table/sys_user_role",
+    headers: {
+      "User-Agent": "RS Policies"
+    },
+    query_params: {
+      "sysparm_fields": "name,sys_id",
+      "sysparm_query": query
     }
+  } 
   EOS
 end
 
-script "js_sn_filter_approvers", type: "javascript" do
-  parameters "approvers","param_days"
+script "js_latest_approval", type: "javascript" do
+  parameters "ds_approvals", "ds_sn_approver_users"
   result "result"
   code <<-EOS
 
     var result = [];
+    var updaters = _.unique(_.pluck(ds_approvals, 'updated_by'));
+    var approver_users = _.pluck(ds_sn_approver_users, 'username');
 
-    var date = new Date(new Date().setDate(new Date().getDate() - param_days)).toISOString();
-
-    _.each(approvers, function(approver){
-      if (date > approver["sys_updated_on"]){
-        //skipapprover
+    _.each(approver_users, function(approver){
+      console.log("approver user: "+approver)
+      if (!_.contains(updaters, approver)){
+        // approver has no approvals
+        var user = _.first(_.where(ds_sn_approver_users, {"username": approver}));
+        console.log("no approvals!")
+        console.log(user)
+        result.push({
+          user_id: user['user_id'],
+          role_id: user['role_id'],
+          inherited: user['inherited'],
+          approver: user['approver'],
+          username: user['username'],
+          last_login: user['last_login'],
+          vip: user['vip'],
+          email: user['email'],
+          updated_by: 'N/A',
+          updated_on: 'N/A'
+        })
       } else {
-        result.push(approver)
+        var latest_approval = _.first(_.sortBy( _.where(ds_approvals, {"updated_by": approver}), "updated_on").reverse());
+        result.push(latest_approval)
       }
     })
 
-    result = _.sortBy(result, 'sys_updated_on').reverse();
-  EOS
-end
 
-script "js_sn_inactive_approvers", type: "javascript" do
-  parameters "active_approvers","all_approvers"
-  result "result"
-  code <<-EOS
-
-    var result = [];
-
-    _.each(all_approvers, function(checkapprover){
-      var tmpObject = _.findWhere(active_approvers, {approver : checkapprover.name})
-      if (typeof tmpObject == "object") {
-        //do nothing
-      } else {
-        result.push(checkapprover)
-      }
-    })
-
-    result = _.sortBy(result, 'name');
   EOS
 end
 
@@ -149,46 +225,23 @@ escalation "esc_email" do
   email $param_email
 end
 
-# escalation "remove_approver_user_role_approval" do
-#   request_approval  do
-#     label "Approve Role Removal"
-#     description "Approve escalation to run ServiceNow role removal of the approver_user role from the user."
-#     parameter "approval_reason" do
-#       type "string"
-#       label "Reason for Approval"
-#       description "Note: Users assigned to the approver_user role require an Approver license which incurs additional costs in ServiceNow."
-#     end
-#   end
-#   run "remove_user_from_approver_user_role", data
-# end
-
-# define remove_user_from_approver_user_role($data) return $all_responses do
-#   foreach $item in $data do
-#     sub on_error: skip do
-#       $instance_response = http_request(
-#         # Do some stuff
-#       )
-#     end
-#   end
-# end
-
 ###############################################################################
 # Policy
 ###############################################################################
 
 policy "policy_inactive_approvers" do
-  validate $ds_sn_inactive_approvers do
-    summary_template "Inactive ServiceNow Approvers with approver_user Role"
+  validate $ds_latest_approval do
+    summary_template "{{len data}} Inactive ServiceNow Approver Users"
     detail_template <<-EOS
 # Inactive ServiceNow Approvers
 
 ### ServiceNow Instance: {{ parameters.param_sn_instance_id }}
 ### Minimum Number of Days Since Last Approval: {{ parameters.param_days }}
 
-| Name | Email | ServiceNow ID |
-| ---- | ----- | ------------- |
+| Name | Last Approval |
+| ---- | ------------- |
 {{ range data -}}
-| {{ .name }} | {{.email}} | {{.sys_id}} |
+| {{ .approver }} | {{.updated_on}} |
 {{ end -}}
 
 EOS
