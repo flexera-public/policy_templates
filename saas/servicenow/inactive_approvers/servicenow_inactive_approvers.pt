@@ -137,7 +137,7 @@ datasource "ds_approvals" do
 end
 
 datasource "ds_latest_approval" do
-  run_script $js_latest_approval, $ds_approvals, $ds_sn_approver_users
+  run_script $js_latest_approval, $ds_approvals, $ds_sn_approver_users, $param_days
 end
 
 ###############################################################################
@@ -148,12 +148,9 @@ script "js_sn_roles", type: "javascript" do
   parameters "param_roles", "param_sn_instance_id"
   result "request"
   code <<-EOS
-  console.log(param_roles)
   if (_.size(param_roles) > 1){
-    console.log("more than 1 role")
     var query = "";
     _.each(param_roles, function(role){
-      console.log(role)
       if (_.last(param_roles) === role){
         query = query.concat("name=",role)
       } else {
@@ -180,21 +177,19 @@ script "js_sn_roles", type: "javascript" do
 end
 
 script "js_latest_approval", type: "javascript" do
-  parameters "ds_approvals", "ds_sn_approver_users"
+  parameters "ds_approvals", "ds_sn_approver_users", "param_days"
   result "result"
   code <<-EOS
 
     var result = [];
     var updaters = _.unique(_.pluck(ds_approvals, 'updated_by'));
     var approver_users = _.pluck(ds_sn_approver_users, 'username');
+    var target_date = new Date(new Date().setDate(new Date().getDate() - param_days)).toISOString();
 
     _.each(approver_users, function(approver){
-      console.log("approver user: "+approver)
       if (!_.contains(updaters, approver)){
         // approver has no approvals
         var user = _.first(_.where(ds_sn_approver_users, {"username": approver}));
-        console.log("no approvals!")
-        console.log(user)
         result.push({
           user_id: user['user_id'],
           role_id: user['role_id'],
@@ -209,7 +204,10 @@ script "js_latest_approval", type: "javascript" do
         })
       } else {
         var latest_approval = _.first(_.sortBy( _.where(ds_approvals, {"updated_by": approver}), "updated_on").reverse());
-        result.push(latest_approval)
+        var approval_date = new Date(latest_approval.updated_on.split(" ")[0]).toISOString();
+        if (target_date > approval_date){
+          result.push(latest_approval)
+        }
       }
     })
 
@@ -232,19 +230,24 @@ end
 policy "policy_inactive_approvers" do
   validate $ds_latest_approval do
     summary_template "{{len data}} Inactive ServiceNow Approver Users"
-    detail_template <<-EOS
-# Inactive ServiceNow Approvers
+    export do
+      field "approver" do
+        label "Approver User"
+      end
+      field "username" do
+        label "User Name"
+      end
+      field "updated_on" do
+        label "Last Approval"
+      end
+      field "last_login" do
+        label "Last Login"
+      end
+      field "email" do
+        label "Email"
+      end
+    end
 
-### ServiceNow Instance: {{ parameters.param_sn_instance_id }}
-### Minimum Number of Days Since Last Approval: {{ parameters.param_days }}
-
-| Name | Last Approval |
-| ---- | ------------- |
-{{ range data -}}
-| {{ .approver }} | {{.updated_on}} |
-{{ end -}}
-
-EOS
     escalate $esc_email
     check eq(size(data), 0)
   end
