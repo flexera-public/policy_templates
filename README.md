@@ -34,7 +34,7 @@ Please contact sales@flexera.com to learn more.
 - [AWS Burstable Instance CloudWatch Utilization](./cost/aws/burstable_instance_cloudwatch_credit_utilization/)
 - [AWS Expiring Reserved Instances](./cost/aws/reserved_instances/expiration/)
 - [AWS Idle Compute Instances](./cost/aws/idle_compute_instances/)
-- [AWS Instance CloudWatch Utilization](./cost/aws/instance_cloudwatch_utilization/)
+- [AWS Inefficient Instance Utilization using CloudWatch](./cost/aws/instance_cloudwatch_utilization/)
 - [AWS Reserved Instances Utilization](./cost/aws/reserved_instances/utilization/)
 - [AWS Reserved Instance Reservation Coverage](./cost/aws/reserved_instances/coverage/)
 - [AWS Reserved Instances Report by Billing Center](./cost/aws/reserved_instances/report_by_bc)
@@ -45,6 +45,7 @@ Please contact sales@flexera.com to learn more.
 
 - [AWS Unused RDS Instances](./cost/aws/unused_rds/)
 - [AWS RDS Instances RightSizing](./cost/aws/rds_instance_cloudwatch_utilization)
+- [AWS RDS Instances License Information](./cost/aws/rds_instance_license_info)
 
 ##### Load Balancers
 
@@ -53,8 +54,10 @@ Please contact sales@flexera.com to learn more.
 ##### Storage
 
 - [AWS Bucket Size Check](./cost/aws/s3_bucket_size/)
+- [AWS Unused Volumes](./cost/aws/unused_volumes)
 - [AWS S3 Buckets without Server Access Logging](./security/storage/aws/s3_buckets_without_server_access_logging/)
 - [AWS Object Storage Optimization](./cost/aws/object_storage_optimization/)
+- [AWS Old Snapshots](./cost/aws/old_snapshots/)
 
 #### Azure
 
@@ -62,7 +65,7 @@ Please contact sales@flexera.com to learn more.
 
 - [Azure Hybrid Use Benefit](./cost/azure/hybrid_use_benefit/)
 - [Azure Idle Compute Instances](./cost/azure/idle_compute_instances/)
-- [Azure Instances Utilization from Log Analytics](./cost/azure/instances_log_analitics_utilization/)
+- [Azure Inefficient Instance Utilization using Log Analytics](./cost/azure/instances_log_analitics_utilization/)
 - [Azure Expiring Reserved Instances](./cost/azure/reserved_instances/expiration)
 - [Azure Reserved Instance Utilization](./cost/azure/reserved_instances/utilization/)
 - [Azure Reserved Instance Recommendations](./cost/azure/reserved_instances/recommendations)
@@ -75,12 +78,14 @@ Please contact sales@flexera.com to learn more.
 ##### Storage
 
 - [Azure Blob Storage Optimization](./cost/azure/object_storage_optimization/)
+- [Azure Old Snapshots](./cost/azure/old_snapshots/)
+- [Azure Unused Volumes](./cost/azure/unattached_volumes)
 
 #### Google
 
 ##### Compute
 
-- [Google StackDriver Utilization](./cost/google/instances_stackdriver_utilization/)
+- [Google Inefficient Instance Utilization using StackDriver](./cost/google/instances_stackdriver_utilization/)
 - [Google Committed Use Discount (CUD)](./cost/google/cud_report/)
 - [Google Idle Compute Instances](./cost/google/idle_compute_instances/)
 - [Google Expiring Committed Use Discount (CUD)](./cost/google/cud_expiration/)
@@ -93,6 +98,8 @@ Please contact sales@flexera.com to learn more.
 ##### Storage
 
 - [Google Object Storage Optimization](./cost/google/object_storage_optimization/)
+- [Google Old Snapshots](./cost/google/old_snapshots/)
+- [Google Unused Volumes](./cost/google/unattached_volumes/)
 
 ##### Other
 
@@ -141,19 +148,22 @@ Please contact sales@flexera.com to learn more.
 - [Billing Center Access](./compliance/billing_center_access_report/)
 - [Untagged Resources](./compliance/tags/tag_checker)
 - [Unapproved Instance Types](./compliance/unapproved_instance_types/)
+- [Disallowed Cloud Images](./compliance/disallowed_images/)
 
 #### AWS
 
 - [AWS Disallowed Regions](./compliance/aws/disallowed_regions/)
 - [AWS Unused ECS Clusters](./compliance/aws/ecs_unused/)
-- [AWS EC2 Instances not running FlexNet Inventory Agent](./compliance/aws/instances_without_fnm_agent/)
+- [AWS EC2 Instances not running FlexNet Inventory Agent - Cloud](./compliance/aws/instances_without_fnm_agent/)
+- [AWS EC2 Instances not running FlexNet Inventory Agent - On Premise](./compliance/aws/instances_without_fnm_agent_on_premise/)
 - [AWS Long-stopped Instances](./compliance/aws/long_stopped_instances/)
 
 #### Azure
 
 - [Azure AHUB Utilization with Manual Entry](./compliance/azure/ahub_manual/)
 - [Azure Disallowed Regions](./compliance/azure/azure_disallowed_regions)
-- [Azure Instances not running FlexNet Inventory Agent](./compliance/azure/instances_without_fnm_agent/)
+- [Azure Instances not running FlexNet Inventory Agent - Cloud](./compliance/azure/instances_without_fnm_agent/)
+- [Azure Instances not running FlexNet Inventory Agent - On Premise](./compliance/azure/instances_without_fnm_agent_on_premise/)
 - [Azure Long Stopped Instances](./compliance/azure/azure_long_stopped_instances)
 - [Azure Regulatory Compliance](./compliance/azure/compliance_score/)
 - [Azure Subscription Access](./compliance/azure/subscription_access/)
@@ -165,7 +175,9 @@ Please contact sales@flexera.com to learn more.
 
 #### Other
 
-- [FlexNet Manager Licenses At Risk](./compliance/fnms/fnms_licenses_at_risk/)
+- [FlexNet Manager Licenses At Risk - Cloud](./compliance/fnms/fnms_licenses_at_risk/)
+- [FlexNet Manager Licenses At Risk - On Premise](./compliance/fnms/fnms_licenses_at_risk_on_premise/)
+- [FlexNet Manager Low Available Licenses](./compliance/fnms/fnms_low_licenses_available)
 - [GitHub.com Available Seats](./compliance/github/available_seats/)
 - [GitHub.com Unpermitted Outside Collaborators](./compliance/github/outside_collaborators/)
 - [GitHub.com Unpermitted Repository Names](./compliance/github/repository_naming/)
@@ -189,11 +201,14 @@ Please contact sales@flexera.com to learn more.
 - [AWS RDS Backup Settings](./operational/dbaas/aws/rds_backup)
 - [AWS Subnet Name Tag Sync](./operational/aws/subnet_name_sync)
 - [AWS VPC Name Tag Sync](./operational/aws/vpc_name_sync)
+- [AWS Long Running Instances](./operational/aws/long_running_instances/)
+- [AWS Instance Scheduled Events](./operational/aws/instance_scheduled_events)
 
 #### Azure
 
 - [Azure VMs Not Using Managed Disks](./operational/azure/vms_without_managed_disks/)
 - [Azure Migrate Integration](./operational/azure/azure_migrate)
+- [AzureAD Group Sync](./operational/azure/azuread_group_sync/)
 
 #### VMWare
 
@@ -201,12 +216,22 @@ Please contact sales@flexera.com to learn more.
 
 #### Other
 
-- [Schedule FlexNet Manager report](./operational/fnms/schedule_fnms_reports)
+- [Schedule FlexNet Manager Report - Cloud](./operational/fnms/schedule_fnms_reports/)
+- [Schedule FlexNet Manager Report - On Premise](./operational/fnms/schedule_fnms_reports_on_premise/)
 
 ### SaaS Management
 
 - [Okta Inactive Users](./saas/okta/inactive_users)
 - [ServiceNow Inactive Approvers](./saas/servicenow/inactive_approvers)
+- [Office 365 Security Alerts](./saas/office365/security_alerts)
+- [SaaS Manager - Renewal Reminder](./saas/fsm/renewal_reminder)
+- [SaaS Manager - User Status Change](./saas/fsm/user_status_change)
+- [SaaS Manager - Suspicious Users](./saas/fsm/suspicious_users)
+- [SaaS Manager - Unsanctioned Spend](./saas/fsm/unsanctioned_spend)
+- [SaaS Manager - Redundant Apps](./saas/fsm/redundant_apps)
+- [SaaS Manager - Inactive Users](./saas/fsm/inactive_users_by_dept)
+- [SaaS Manager - Duplicate User Accounts](./saas/fsm/duplicate_users)
+- [SaaS Manager - Unsanctioned Applications with Existing Contract](./saas/fsm/unsanctioned_apps_with_contract)
 
 ### Policy Data Sets
 

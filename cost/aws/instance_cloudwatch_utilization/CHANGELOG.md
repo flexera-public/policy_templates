@@ -1,26 +1,42 @@
-v1.5
-----
+# Changelog
+
+## v2.2
+
+- adding incident resource table
+
+## v2.1
+
+- remove unnecessary permissions block
+
+## v2.0
+
+- Changes to support the Credential Service
+- Removed tagging action
+- Added downsize action
+
+## v1.5
+
 - Added Approval block
 
-v1.4
-----
+## v1.4
+
 - Fixing Readme
 
-v1.3
------
+## v1.3
+
 - Adding in better regex
 - Updating inputs
 
-v1.2
------
+## v1.2
+
 - Adding windows support
 
-v1.1
------
+## v1.1
+
 - Adding Tag Exclusion
 - Adding Average used memory percentage, Average used CPU percentage, Action Tag Key:Value
 - Adding Action to tag instances
 
-v1.0.
------
+## v1.0
+
 - initial release

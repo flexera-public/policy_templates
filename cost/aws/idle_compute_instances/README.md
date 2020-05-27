@@ -12,6 +12,60 @@ This Policy Template checks for idle instance in AWS EC2 and then terminates the
 - If you get an **N/A** in a field you will need to install the [CloudWatch Agent](https://docs.aws.amazon.com/AmazonCloudWatch/latest/monitoring/Install-CloudWatch-Agent.html) on the instance to get those metrics.
 - This policy only pulls running instances, as it is unable to get correct monitoring metrics from instances in other states.
 
+## Input Parameters
+
+This policy has the following input parameters required when launching the policy.
+
+- *Email addresses to notify* - Email addresses of the recipients you wish to notify when new incidents are created
+- *Average used memory percentage* - Set to -1 to ignore memory utilization
+- *Average used CPU percentage* - Set to -1 to ignore CPU utilization
+- *Exclusion Tag Key:Value* - Cloud native tag to ignore instances. Format: Key:Value
+
+## Policy Actions
+
+- Sends an email notification
+- Terminates instances after approval
+
+## Prerequisites
+
+This policy uses [credentials](https://docs.rightscale.com/policies/users/guides/credential_management.html) for connecting to the cloud -- in order to apply this policy you must have a credential registered in the system that is compatible with this policy. If there are no credentials listed when you apply the policy, please contact your cloud admin and ask them to register a credential that is compatible with this policy. The information below should be consulted when creating the credential.
+
+### Credential configuration
+
+For administrators [creating and managing credentials](https://docs.rightscale.com/policies/users/guides/credential_management.html) to use with this policy, the following information is needed:
+
+Provider tag value to match this policy: `aws`
+
+Required permissions in the provider:
+
+```javascript
+{
+  "Version": "2012-10-17",
+  "Statement":[
+    {
+      "Effect":"Allow",
+      "Action":["cloudwatch:GetMetricStatistics","cloudwatch:ListMetrics"],
+      "Resource":"*",
+      "Condition":{
+         "Bool":{
+            "aws:SecureTransport":"true"
+            }
+         }
+      },
+      {
+      "Effect":"Allow",
+      "Action":["ec2:DescribeInstances","ec2:DescribeTags"],
+      "Resource":"*",
+      "Condition":{
+         "Bool":{
+            "aws:SecureTransport":"true"
+            }
+         }
+      }
+   ]
+}
+```
+
 ### Windows Support
 
 To enable windows support you will need to add the following to your cloudwatch config.json and restart cloudwatch agent
@@ -27,46 +81,10 @@ To enable windows support you will need to add the following to your cloudwatch 
 }
 ```
 
-### Input Parameters
-
-This policy has the following input parameters required when launching the policy.
-
-- *Email addresses of the recipients you wish to notify* - A list of email addresses to notify
-- *Average used memory percentage* - Utilization below this percentage will raise an incident to tag the instance. Providing -1 will turn off this metric for consideration.
-- *Average used CPU percentage* - Utilization below this percentage will raise an incident to tag the instance. Providing -1 will turn off this metric for consideration.
-- *Exclusion Tag Key:Value* - Cloud native tag to ignore instances. Format: Key:Value
-
-### Cloud Management Required Permissions/AWS Required Permissions
-
-- Cloud Management - The `credential_viewer`,`observer` roles
-- AWS - The `CloudWatchReadOnlyAccess` AWS IAM Policy
-
-### AWS Required Permissions
-
-This policy requires permissions to list Metrics and Get Metric Statistics from the AWS Cloudwatch API.
-The Cloud Management Platform automatically creates two Credentials when connecting AWS to Cloud Management; AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY. The IAM user credentials contained in those credentials will require the following permissions:
-
-```javascript
-{
-  "Version": "2012-10-17",
-  "Statement":[{
-      "Effect":"Allow",
-      "Action":["cloudwatch:GetMetricStatistics","cloudwatch:ListMetrics"],
-      "Resource":"*",
-      "Condition":{
-         "Bool":{
-            "aws:SecureTransport":"true"
-            }
-         }
-      }
-   ]
-}
-```
-
-### Supported Clouds
+## Supported Clouds
 
 - Amazon
 
-### Cost
+## Cost
 
 This Policy Template does not incur any cloud costs.

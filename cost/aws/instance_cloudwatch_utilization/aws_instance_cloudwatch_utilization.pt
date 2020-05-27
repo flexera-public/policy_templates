@@ -1,19 +1,16 @@
-name "AWS Instance CloudWatch Utilization"
+name "AWS Inefficient Instance Utilization using CloudWatch"
 rs_pt_ver 20180301
 type "policy"
-short_description "Gathers AWS CloudWatch data for instances on 30 day intervals. See the [README](https://github.com/rightscale/policy_templates/tree/master/cost/aws/instance_cloudwatch_utilization/) and [docs.rightscale.com/policies](http://docs.rightscale.com/policies/) to learn more."
-long_description "Version: 1.5"
+short_description "Checks inefficient instance utilization using provided CPU and Memory thresholds. Instances matching the criteria can be resized after user approval. See the [README](https://github.com/flexera/policy_templates/tree/master/cost/aws/instance_cloudwatch_utilization/) and [docs.rightscale.com/policies](https://docs.rightscale.com/policies/) to learn more."
+long_description ""
 severity "low"
 category "Cost"
-
-###############################################################################
-# Permissions
-###############################################################################
-
-permission "perm_read_creds" do
-  actions   "rs_cm.show_sensitive","rs_cm.index_sensitive"
-  resources "rs_cm.credentials"
-end
+info(
+  version: "2.2",
+  provider: "AWS",
+  service: "EC2",
+  policy_set: "Inefficient Instance Usage"
+)
 
 ###############################################################################
 # Parameters
@@ -51,30 +48,29 @@ parameter "param_exclusion_tag_key" do
   allowed_pattern /([\w]?)+\:([\w]?)+/
 end
 
-parameter "param_take_action_tag" do
-  category "User Inputs"
-  label "Action Tag Key:Value"
-  description "Cloud native instance tag key and value that will be added to an instance identified for action. Example: downsize:true"
-  type "string"
-  allowed_pattern /([\w]?)+\:([\w]?)+/
-end
-
 ###############################################################################
 # Authentication
 ###############################################################################
 
-auth "auth_aws", type: "aws" do
-  version 4
-  service "ec2"
-  access_key cred('AWS_ACCESS_KEY_ID')
-  secret_key cred('AWS_SECRET_ACCESS_KEY')
+#authenticate with AWS
+credentials "auth_aws" do
+  schemes "aws","aws_sts"
+  label "AWS"
+  description "Select the AWS Credential from the list"
+  tags "provider=aws"
 end
 
-auth "monitoring_auth_aws", type: "aws" do
-  version 4
-  service "monitoring"
-  access_key cred('AWS_ACCESS_KEY_ID')
-  secret_key cred('AWS_SECRET_ACCESS_KEY')
+###############################################################################
+# Pagination
+###############################################################################
+
+pagination "aws_pagination_xml" do
+  get_page_marker do
+    body_path "//DescribeInstancesResponse/nextToken"
+  end
+  set_page_marker do
+    query "NextToken"
+  end
 end
 
 ###############################################################################
@@ -91,14 +87,24 @@ datasource "ds_regions_list" do
   end
 end
 
-datasource "ds_instances" do 
+datasource "ds_instances" do
   run_script $js_instances, $ds_instances_set, $param_exclusion_tag_key
 end
 
 datasource "ds_instances_set" do
   iterate $ds_regions_list
   request do
-    run_script $js_instances_set, val(iter_item,"region")
+    verb "GET"
+	auth $auth_aws
+	pagination $aws_pagination_xml
+    host join(["ec2.", val(iter_item, "region"), ".amazonaws.com"])
+    path "/"
+	query "Action", "DescribeInstances"
+	query "Version", "2016-11-15"
+	query "Filter.1.Name", "instance-state-name"
+	query "Filter.1.Value.1", "running"
+    header "User-Agent", "RS Policies"
+	header "Content-Type", "text/xml"
   end
   result do
     encoding "xml"
@@ -133,6 +139,7 @@ datasource "ds_cloudwatch_cpu_usage" do
     collect jmes_path(response, "GetMetricStatisticsResponse.GetMetricStatisticsResult.Datapoints[*]") do
       field "region", val(iter_item, "region")
       field "instanceId", val(iter_item, "instanceId")
+	  field "instanceType", val(iter_item, "instanceType")
       field "platform", val(iter_item, "platform")
       field "privateDnsName", val(iter_item, "privateDnsName")
       field "tag_set", val(iter_item, "tag_set")
@@ -184,8 +191,22 @@ datasource "ds_cloudwatch_windows_mem_usage" do
   end
 end
 
+# get AWS instance size map
+datasource "ds_aws_instance_size_map" do
+  request do
+    verb "GET"
+    host "raw.githubusercontent.com"
+    path "/rightscale/policy_templates/master/data/aws/instance_types.json"
+    header "User-Agent", "RS Policies"
+  end
+end
+
 datasource "ds_merged_metrics" do
   run_script $js_merged_metrics, $ds_cloudwatch_cpu_usage, $ds_cloudwatch_mem_usage, $ds_cloudwatch_windows_mem_usage
+end
+
+datasource "ds_inefficient_utilization_metrics" do
+  run_script $js_inefficient_utilization_metrics, $ds_aws_instance_size_map, $ds_merged_metrics, $param_avg_used_memory, $param_avg_cpu
 end
 
 ###############################################################################
@@ -219,31 +240,9 @@ script "js_instances", type: "javascript" do
       }
     }
   }
-EOS
-end
 
-script "js_instances_set", type: "javascript" do
-  result "results"
-  parameters "region"
-  code <<-EOS
-  var end_date = new Date().toISOString()
-  var start_date = new Date(new Date().setDate(new Date().getDate() - 30)).toISOString();
-  results = {
-    "auth": "auth_aws",
-    "host": 'ec2.'+region+'.amazonaws.com',
-    "verb": "GET",
-    "path": "/",
-    "headers": {
-      "User-Agent": "RS Policies",
-      "Content-Type": "text/xml"
-    }
-    "query_params": {
-      'Action': 'DescribeInstances',
-      'Version': '2016-11-15',
-      'Filter.1.Name': 'instance-state-name',
-      'Filter.1.Value.1': 'running'
-    }
-  }
+  results = _.sortBy(results, 'region');
+
 EOS
 end
 
@@ -254,7 +253,7 @@ script "js_cloudwatch_cpu_usage", type: "javascript" do
   var end_date = new Date().toISOString()
   var start_date = new Date(new Date().setDate(new Date().getDate() - 30)).toISOString();
   results = {
-    "auth": "monitoring_auth_aws",
+    "auth": "auth_aws",
     "host": 'monitoring.'+region+'.amazonaws.com',
     "verb": "GET",
     "path": "/",
@@ -295,7 +294,7 @@ script "js_cloudwatch_mem_usage", type: "javascript" do
   var end_date = new Date().toISOString()
   var start_date = new Date(new Date().setDate(new Date().getDate() - 30)).toISOString();
   results = {
-    "auth": "monitoring_auth_aws",
+    "auth": "auth_aws",
     "host": 'monitoring.'+region+'.amazonaws.com',
     "verb": "GET",
     "path": "/",
@@ -331,7 +330,7 @@ script "js_cloudwatch_windows_memory_usage", type: "javascript" do
   var end_date = new Date().toISOString()
   var start_date = new Date(new Date().setDate(new Date().getDate() - 30)).toISOString();
   results = {
-    "auth": "monitoring_auth_aws",
+    "auth": "auth_aws",
     "host": 'monitoring.'+region+'.amazonaws.com',
     "verb": "GET",
     "path": "/",
@@ -376,7 +375,7 @@ code <<-EOS
     var instance_id = instance.instanceId
     if (instance.platform == 'windows'){
       var mem_usage_record = _.find(ds_cloudwatch_windows_mem_usage, function(record) { return record.instanceId == instance_id; })
-      
+
       if (mem_usage_record != null && mem_usage_record !== undefined) {
         var mem_maximum = parseFloat(mem_usage_record.mem_maximum).toFixed(2)
         var mem_average = parseFloat(mem_usage_record.mem_average).toFixed(2)
@@ -389,7 +388,7 @@ code <<-EOS
     } else {
       instance.platform = 'linux'
       var mem_usage_record = _.find(ds_cloudwatch_mem_usage, function(record) { return record.instanceId == instance_id; })
-      
+
       if (mem_usage_record != null && mem_usage_record !== undefined) {
         var mem_maximum = parseFloat(mem_usage_record.mem_maximum).toFixed(2)
         var mem_average = parseFloat(mem_usage_record.mem_average).toFixed(2)
@@ -413,35 +412,108 @@ code <<-EOS
         "cpu_average": parseFloat(instance.cpu_average).toFixed(2),
         "mem_maximum": mem_maximum,
         "mem_minimum": mem_minimum,
-        "mem_average": mem_average
+        "mem_average": mem_average,
+		"instanceType": instance.instanceType
       }
     )
   }
 EOS
 end
 
+script "js_inefficient_utilization_metrics", type: "javascript" do
+  result "inefficient_utilization_results"
+  parameters "ds_aws_instance_size_map", "ds_merged_metrics", "param_avg_used_memory", "param_avg_cpu"
+  code <<-EOS
+  var inefficient_utilization_results = []
+  for ( i = 0; i < ds_merged_metrics.length; i++){
+    var instance = ds_merged_metrics[i]
+	var cpu_average = instance.cpu_average
+	var mem_average = instance.mem_average
+	var next_instance_size = ds_aws_instance_size_map[instance.instanceType]["down"]
+	if(next_instance_size == null && typeof next_instance_size == "undefined" ){
+      next_instance_size="N/A";
+	}
+    var maximumMemoryField = instance.mem_maximum
+    if(maximumMemoryField == "101" || maximumMemoryField === "101"){
+       maximumMemoryField = "N/A"
+	}
+
+    var averageMemoryField = instance.mem_average
+    if(averageMemoryField == "101" || averageMemoryField === "101"){
+       averageMemoryField = "N/A"
+	}
+    if ((cpu_average < param_avg_cpu || mem_average < param_avg_used_memory)){
+      inefficient_utilization_results.push({
+        "region": instance.region,
+        "id": instance.instanceId,
+        "platform": instance.platform,
+        "privateDnsName": instance.privateDnsName,
+        "hostname": instance.privateDnsName.split('.')[0],
+        "tag_set": instance.tag_set,
+        "cpu_minimum": instance.cpu_minimum,
+        "cpu_maximum": instance.cpu_maximum,
+        "cpu_average": cpu_average,
+        "mem_maximum": instance.mem_maximum,
+        "mem_minimum": instance.mem_minimum,
+        "mem_average": mem_average,
+		"instanceType": instance.instanceType,
+		"next_instance_size": next_instance_size,
+        "maximumMemoryField": maximumMemoryField,
+        "averageMemoryField":averageMemoryField
+      })
+    }
+  }
+  inefficient_utilization_results = _.sortBy(inefficient_utilization_results, 'region');
+EOS
+end
 
 ###############################################################################
 # Policy
 ###############################################################################
 
 policy "pol_utilization" do
-  validate_each $ds_merged_metrics do
-    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} rows containing AWS instance CloudWatch utilization data"
-    detail_template <<-EOS
-# AWS Instance Utilization
-| Region | instanceID | Platform | Hostname | Private DNS Name | CPU Maximum % | CPU Average % | Memory Maximum % | Memory Average % |
-| ------ | ---------- | -------- | -------- | ---------------- | ------------- | ------------- | ---------------- | ---------------- |
-{{ range data -}}
-| {{.region}} | {{.instanceId}} | {{.platform}} | {{.hostname}} |  {{.privateDnsName }} | {{ .cpu_maximum }} | {{ .cpu_average }} | {{if eq .mem_maximum "101"}}N/A{{else}}{{.mem_maximum}}{{end}} | {{if eq .mem_average "101"}}N/A{{else}}{{.mem_average}}{{end}} |
-{{ end -}}
-___
-###### Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }}) within Org: {{ rs_org_name }} (Org ID: {{ rs_org_id }})
-EOS
+  validate_each $ds_inefficient_utilization_metrics do
+    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} AWS instances with inefficient utilization"
     escalate $email
-    escalate $tag_resources
     check logic_or(eq($param_avg_used_memory, -1), gt(to_n(val(item,"mem_average")), $param_avg_used_memory))
     check logic_or(eq($param_avg_cpu, -1), gt(to_n(val(item,"cpu_average")),$param_avg_cpu))
+	escalate $esc_downsize_instances
+    export do
+      resource_level true
+      field "region" do
+        label "Region"
+      end
+      field "id" do
+        label "Instance Id"
+      end
+      field "instanceType" do
+        label "Instance Type"
+      end
+      field "platform" do
+        label "platform"
+      end
+      field "hostname" do
+        label "Hostname"
+      end
+      field "privateDnsName" do
+        label "Private DNS Name"
+      end
+      field "cpu_maximum" do
+        label "CPU Maximum %"
+      end
+      field "cpu_average" do
+        label "CPU Average %"
+      end
+      field "maximumMemoryField" do
+        label "Memory Maximum %"
+      end
+      field "averageMemoryField" do
+        label "Memory Average %"
+      end
+      field "next_instance_size" do
+        label "Next Instance Size %"
+      end
+    end  
   end
 end
 
@@ -454,62 +526,194 @@ escalation "email" do
   email $param_email
 end
 
-escalation "tag_resources" do
+escalation "esc_downsize_instances" do
   request_approval  do
-    label "Approve to tag the Resources"
-    description "Tag the input key and value on Resources"
+    label "Approve Instances for downsizing"
+    description "Approve downsize action"
     parameter "approval_reason" do
       type "string"
       label "Reason for approval"
       description "Explain why you are approving the action"
     end
   end
-  run "tag_resources", data, $param_take_action_tag
+  run "downsize_instances", data
 end
 
 ###############################################################################
 # Cloud Workflow
 ###############################################################################
 
-define tag_resources($data, $param_take_action_tag) return $all_responses do
-  $$debug=true
-  $$log = []
-  $all_responses = []
-  $key = first(split($param_take_action_tag,':'))
-  $value = last(split($param_take_action_tag,':'))
-
-  $syslog_subject = "AWS Instance Utilization with CloudWatch: "
-  call sys_log(join([$syslog_subject, "Identified Instances"]),to_s($data))
+define downsize_instances($data) return $all_responses do
+  $status_code=''
+  $go_next = true
   foreach $item in $data do
-    $response = http_request(
-      https: true,
-      verb: "post",
-      host: "ec2."+$item["region"]+".amazonaws.com",
-      signature: { "type": "aws" },
-      query_strings: {
-        "Action": "CreateTags",
-        "Version": "2012-06-01",
-        "ResourceId.1": $item["instanceId"],
-        "Tag.1.Key": $key,
-        "Tag.1.Value": $value
-      }
-    )
-    $all_responses << $response
+    if $item["next_instance_size"]!= "N/A"
+      sub on_error: rollback($item) do
+        call stop_instances($item) retrieve $status_code
+        if(to_s($status_code)=="200")
+          call set_instance_type($item) retrieve $status_code
+        else
+          call rollback($item)
+          $go_next = false
+        end
+        if(to_s($status_code)=="200")
+          call start_instances($item) retrieve $status_code
+        elsif ($go_next)
+          call rollback($item)
+          $go_next = false
+        end
+        if($go_next && to_s($status_code)!="200")
+          call rollback($item)
+        end
+      end
+    end
   end
-  call sys_log(join([$syslog_subject, "Responses"]),to_s($all_responses))
 end
 
-define handle_error($response) do 
-  $status_code = $response["code"]
-  if $status_code == 404
-    $_error_behavior = "skip"
-  else 
-    $_error_behavior = "raise"
-  end 
-end 
+
+define stop_instances($item) return $status_code do
+  $status_code={}
+  $response={}
+  sub on_error: retry, timeout: 20m, on_timeout: skip do
+    $response = http_request(
+      verb: "post",
+      host: "ec2.amazonaws.com",
+      auth: $$auth_aws,
+      href: join(["/", "?Action=StopInstances", "&InstanceId.1=", $item["id"], "&Version=2016-11-15"]),
+      https: true,
+      headers:{
+        "cache-control": "no-cache",
+        "content-type": "application/json"
+      }
+    )
+    call sys_log("StopInstanceResponseCode", to_s($response["code"]))
+  end
+  $status_code=$response["code"]
+  if($response["code"]==200)
+    $wake_condition = "stopped"
+    $state = ''
+    while $state !~ $wake_condition do
+      sub on_error: skip do
+        call get_instance($item) retrieve $status_response
+        $status_responses=$status_response["body"]["DescribeInstancesResponse"]["reservationSet"]["item"]["instancesSet"]["item"]
+        $state = to_s($status_responses["instanceState"]["name"])
+        $status_code = to_s($status_response["code"])
+      end
+    end
+  end
+end
+
+define set_instance_type($item) return $status_code do
+  $response = {}
+  sub on_error: retry, timeout: 20m, on_timeout: skip do
+    $response = http_request(
+      verb: "post",
+      host: "ec2.amazonaws.com",
+      auth: $$auth_aws,
+      href: join(["/", "?Action=ModifyInstanceAttribute", "&InstanceId.1=", $item["id"], "&InstanceType.Value=", $item["next_instance_size"], "&Version=2016-11-15"]),
+      https: true,
+      headers: {
+        "cache-control": "no-cache",
+        "content-type": "application/json"
+      }
+    )
+    call sys_log("ModifyInstanceResponseCode", to_s($response["code"]))
+  end
+  $status_code=$response["code"]
+end
+
+define start_instances($item) return $status_code do
+  $response = {}
+  sub on_error: retry, timeout: 20m, on_timeout: skip do
+    $response = http_request(
+      verb: "post",
+      host: "ec2.amazonaws.com",
+      auth: $$auth_aws,
+      href: join(["/", "?Action=StartInstances", "&InstanceId.1=", $item["id"], "&Version=2016-11-15"]),
+      https: true,
+      headers: {
+        "cache-control": "no-cache",
+        "content-type": "application/json"
+      }
+    )
+    call sys_log("StartInstanceResponseCode", to_s($response["code"]))
+  end
+  $status_code=$response["code"]
+  if($response["code"]==200)
+    $wake_condition = "running"
+    $state = ''
+    while $state !~ $wake_condition do
+      sub on_error: skip do
+        call get_instance($item) retrieve $status_response
+        $status_responses=$status_response["body"]["DescribeInstancesResponse"]["reservationSet"]["item"]["instancesSet"]["item"]
+        $state = to_s($status_responses["instanceState"]["name"])
+        $status_code = $status_response["code"]
+      end
+    end
+  end
+end
+
+
+define get_instance($item) return $status_response do
+  $status_response = {}
+  sub on_error: retry, timeout: 20m, on_timeout: skip do
+    $response = http_request(
+      verb: "get",
+      host: "ec2.amazonaws.com",
+      auth: $$auth_aws,
+      href: join(["/", "?Action=DescribeInstances", "&InstanceId.1=", $item["id"], "&Version=2016-11-15"]),
+      https: true,
+      headers: {
+        "cache-control": "no-cache",
+        "Accept": "application/json"
+      }
+    )
+    $status_response=$response
+  end
+end
+
+define rollback($item) do
+  call get_instance($item) retrieve $status_response
+  $status_responses=$status_response["body"]["DescribeInstancesResponse"]["reservationSet"]["item"]["instancesSet"]["item"]
+  call sys_log("Rollback_statusResponse", to_s($status_responses))
+  $state = to_s($status_responses["instanceState"]["name"])
+  $started_condition = "running"
+  if include?(to_s($status_responses["instanceType"]), to_s($item["instanceType"]))
+    # Instance is still the original size, just make sure it's running
+    if $state =~ $started_condition
+      # instance is running nothing to do
+    else
+      # instance is not running, start it
+      call start_instances($item) retrieve $start_response
+    end
+  else
+    # Instance is the new size. Roll back
+    if $state == $started_condition
+      call stop_instances($item)
+    end
+    call rollback_instance_type($item)
+    call start_instances($item)
+  end
+end
+
+define rollback_instance_type($item) do
+   sub on_error: skip do
+      $response = http_request({
+        verb: "post",
+        host: "ec2.amazonaws.com",
+        auth: $$auth_aws,
+        href: join(["/", "?Action=ModifyInstanceAttribute", "&InstanceId.1=", $item["id"], "&InstanceType.Value=", $item["instanceType"], "&Version=2016-11-15"]),
+        https: true,
+        headers: {
+          "cache-control": "no-cache",
+          "content-type": "application/json"
+        }
+      })
+  end
+end
 
 define sys_log($subject, $detail) do
-  if $$debug
+
     rs_cm.audit_entries.create(
       notify: "None",
       audit_entry: {
@@ -518,5 +722,4 @@ define sys_log($subject, $detail) do
         detail: $detail
       }
     )
-  end
 end

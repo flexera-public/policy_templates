@@ -1,0 +1,332 @@
+name "AWS Unencrypted S3 Buckets"
+rs_pt_ver 20180301
+type "policy"
+short_description "Report any S3 buckets in AWS that are unencrypted and provide the option to set the default encryption after approval. \n See the [README](https://github.com/flexera/policy_templates/tree/master/security/aws/unencrypted_s3_buckets) and [docs.rightscale.com/policies](https://docs.rightscale.com/policies/) to learn more."
+long_description ""
+category "Security"
+severity "low"
+info(
+  version: "2.1",
+  provider: "AWS",
+  service: "S3",
+  policy_set: ""
+)
+
+###############################################################################
+# User inputs
+###############################################################################
+
+parameter "param_email" do
+  type "list"
+  label "Email addresses to notify"
+  description "Email addresses of the recipients you wish to notify when new incidents are created"
+end
+
+parameter "param_exclude_tags" do
+  type "list"
+  label "Tags to ignore"
+  description "List of tags that will exclude resources from being evaluated by this policy. Multiple tags are evaluated as an 'OR' condition. Tag keys or key/value pairs can be listed. Example: 'test,env=dev'"
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+credentials "auth_aws" do
+  schemes "aws","aws_sts"
+  label "AWS"
+  description "Select the AWS Credential from the list"
+  tags "provider=aws"
+end
+
+###############################################################################
+# Datasources
+###############################################################################
+
+#https://docs.aws.amazon.com/AmazonS3/latest/API/RESTServiceGET.html
+datasource "ds_aws_buckets" do
+  request do
+    auth $auth_aws
+    host "s3.amazonaws.com"
+    path "/"
+  end
+  result do
+    encoding "xml"
+    collect xpath(response, "//ListAllMyBucketsResult/Buckets/Bucket", "array") do
+      field "bucket_name", xpath(col_item,"Name")
+      field "creation_date", xpath(col_item, "CreationDate")
+    end
+  end
+end
+
+#https://docs.aws.amazon.com/AmazonS3/latest/API/RESTBucketGETlocation.html
+datasource "ds_aws_buckets_with_region" do
+  iterate $ds_aws_buckets
+  request do
+    auth $auth_aws
+    host "s3.amazonaws.com"
+    path join(["/", val(iter_item, "bucket_name")])
+    query "location", ""
+  end
+  result do
+    encoding "xml"
+    field "bucket_name", val(iter_item, "bucket_name")
+    field "creation_date", val(iter_item, "creation_date")
+    field "region", xpath(response, "//LocationConstraint")
+  end
+end
+
+datasource "ds_aws_sanitized_buckets" do
+  run_script $js_parse_buckets, $ds_aws_buckets_with_region
+end
+
+#https://docs.aws.amazon.com/AmazonS3/latest/API/RESTBucketGETtagging.html
+datasource "ds_aws_bucket_tags_list" do
+  iterate $ds_aws_sanitized_buckets
+  request do
+    auth $auth_aws
+    host val(iter_item, "host")
+    path join(["/", val(iter_item, "bucket_name"),"/"])
+    ignore_status [404]
+    query "tagging", ""
+  end
+  result do
+    encoding "xml"
+    collect xpath(response, "//Tagging/TagSet", "array") do
+      field "tags" do
+        collect xpath(col_item, "Tag") do
+          field "tagKey", xpath(col_item, "Key")
+          field "tagValue", xpath(col_item, "Value")
+        end
+      end
+      field "bucket_name", val(iter_item, "bucket_name")
+      field "creation_date", val(iter_item, "creation_date")
+      field "region", val(iter_item, "region")
+      field "host", val(iter_item, "host")
+    end
+  end
+end
+
+#https://docs.aws.amazon.com/AmazonS3/latest/API/RESTBucketGETencryption.html
+datasource "ds_aws_bucket_encrypted" do
+  iterate $ds_aws_sanitized_buckets
+  request do
+    auth $auth_aws
+    host val(iter_item, "host")
+    path join(["/", val(iter_item, "bucket_name"),"/"])
+    ignore_status [404]
+    query "encryption", ""
+  end
+  result do
+    encoding "xml"
+    collect xpath(response, "//ServerSideEncryptionConfiguration/Rule/ApplyServerSideEncryptionByDefault", "array") do
+      field "bucket_name", val(iter_item, "bucket_name")
+      field "creation_date", val(iter_item, "creation_date")
+      field "region", val(iter_item, "region")
+      field "server_side_encryption", xpath(col_item, "SSEAlgorithm")
+    end
+  end
+end
+
+datasource "ds_aws_bucket_unencrypted" do
+  run_script $js_aws_bucket_unencrypted, $ds_aws_sanitized_buckets, $ds_aws_bucket_encrypted, $ds_aws_bucket_tags_list, $param_exclude_tags
+end
+
+###############################################################################
+# Scripts
+###############################################################################
+
+script "js_parse_buckets", type: "javascript" do
+  parameters "buckets"
+  result "results"
+  code <<-EOS
+    results = []
+    for ( i = 0; i < buckets.length; i++ ) {
+      if ( !buckets[i]["region"] ){
+        results.push({
+          "bucket_name": buckets[i]["bucket_name"],
+          "creation_date": buckets[i]["creation_date"],
+          "region": "us-east-1",
+          "host": "s3.amazonaws.com",
+          "tagKeyValue": ""
+        })
+      }else{
+        if(buckets[i]["region"] == "EU" ) { buckets[i]["region"] = "eu-west-1" }
+        results.push({
+          "bucket_name": buckets[i]["bucket_name"],
+          "creation_date": buckets[i]["creation_date"],
+          "region": buckets[i]["region"],
+          "host": "s3-" + buckets[i]["region"] + ".amazonaws.com",
+          "tagKeyValue": ""
+        })
+      }
+    }
+  EOS
+end
+
+#Process the response data, check for the tags and generate a list of unencrypted S3 buckets
+script "js_aws_bucket_unencrypted", type: "javascript" do
+  parameters "ds_aws_sanitized_buckets", "ds_aws_bucket_encrypted", "ds_aws_bucket_tags_list", "param_exclude_tags"
+  result "results"
+  code <<-EOS
+    results = []
+    var param_exclude_tags_lower=[];
+    for(var i=0; i < param_exclude_tags.length; i++){
+      param_exclude_tags_lower[i]=param_exclude_tags[i].toString().toLowerCase();
+    }
+    for (var j=0; j<ds_aws_sanitized_buckets.length; j++) {
+      s3_bucket=ds_aws_sanitized_buckets[j]
+      is_encrypted=false;
+      _.each(ds_aws_bucket_encrypted, function(eb){
+        if(eb.bucket_name === s3_bucket.bucket_name && eb.creation_date === s3_bucket.creation_date){
+          is_encrypted=true;
+        }
+      })
+      if(!is_encrypted){
+        bucket_with_tag=false;
+        _.each(ds_aws_bucket_tags_list, function(tb){
+          if(tb.bucket_name === s3_bucket.bucket_name && tb.creation_date === s3_bucket.creation_date){
+            var tags = tb['tags']
+            var isTagMatched=false
+            for(var k=0; k < tags.length; k++){
+              tag = tags[k]
+              //Check, if the tag present in entered param_exclude_tags, ignore the S3 unencrypted buckets if the tag matches/present.
+              if((param_exclude_tags_lower.indexOf((tag['tagKey']).toLowerCase()) !== -1) || (param_exclude_tags_lower.indexOf((tag['tagKey']+'='+tag['tagValue']).toLowerCase()) !== -1)){
+                isTagMatched = true;
+              }
+            }
+            // Constructing Tags of individual S3 unencrypted buckets into key=value format and comma separated to display in detail_template
+            var tagKeyValue=""
+            if(!isTagMatched){
+              if((tag['tagValue']).length > 0){
+                tagKeyValue = tagKeyValue + ', '+ tag['tagKey']+'='+tag['tagValue']
+              }else{
+                tagKeyValue = tagKeyValue + ', '+ tag['tagKey']
+              }
+              results.push({
+                "bucket_name": tb["bucket_name"],
+                "creation_date": tb["creation_date"],
+                "region": tb["region"],
+                "host": tb["host"],
+                "tagKeyValue":(tagKeyValue.slice(2))
+              });
+            }
+            bucket_with_tag=true;
+          }
+        })
+        if(!bucket_with_tag) {
+          results.push(s3_bucket)
+        }
+      }
+    }
+  EOS
+end
+
+policy "policy_s3_unencrypted_list" do
+  validate $ds_aws_bucket_unencrypted do
+    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} List of Unencrypted S3 Buckets Found in AWS"
+    detail_template <<-EOS
+# List of Unencrypted S3 Buckets Found in AWS
+| Bucket Name| Creation Date | Region | TAGs |
+| ---------- | ------------- | ------ | ---- |
+{{ range data -}}
+| {{.bucket_name}} | {{ .creation_date }} |{{ .region }} | {{ .tagKeyValue }} |
+{{ end -}}
+    EOS
+    escalate $report_unencrypted_s3_buckets_list
+    escalate $modify_encryption_s3_buckets_approval
+    #Uncomment below line (remove '#') to enable Delete action.
+    #escalate $delete_unencrypted_s3_buckets_approval
+    check eq(size(data),0)
+  end
+end
+
+###############################################################################
+# Escalation
+###############################################################################
+
+escalation "report_unencrypted_s3_buckets_list" do
+  email $param_email
+end
+
+escalation "modify_encryption_s3_buckets_approval" do
+  request_approval  do
+    label "Approve S3 Buckets Encryption Config Change"
+    description "Approve escalation to run RightScale Cloud Workflow to update encryption for the Unencrypted S3 Buckets"
+    parameter "approval_reason" do
+      type "string"
+      label "Reason for Approval"
+      description "Default encryption will be enabled(AES-256) for the Unencrypted S3 Buckets After Approval"
+    end
+  end
+  run "enable_encryption_s3_buckets", data
+end
+
+escalation "delete_unencrypted_s3_buckets_approval" do
+  request_approval  do
+    label "Approve Resource Deletion"
+    description "Approve escalation to run RightScale Cloud Workflow to delete the Unencrypted S3 Buckets"
+    parameter "approval_reason" do
+      type "string"
+      label "Reason for Approval"
+      description "Unencrypted S3 Buckets will be deleted After Approval"
+    end
+  end
+  run "delete_unencrypted_s3_buckets", data
+end
+
+###############################################################################
+# Cloud Workflow
+###############################################################################
+
+#https://docs.aws.amazon.com/AmazonS3/latest/API/RESTBucketPUTencryption.html
+define enable_encryption_s3_buckets($data) return $all_responses do
+  $$debug=true
+  $body_string="<ServerSideEncryptionConfiguration xmlns='http://s3.amazonaws.com/doc/2006-03-01/'><Rule><ApplyServerSideEncryptionByDefault><SSEAlgorithm>AES256</SSEAlgorithm></ApplyServerSideEncryptionByDefault></Rule></ServerSideEncryptionConfiguration>"
+  $all_responses = []
+  foreach $item in $data do
+    $response = http_request(
+      auth: $$auth_aws,
+      https: true,
+      verb: "put",
+      host: $item['host'],
+      href: "/"+$item['bucket_name']+"/?encryption=true",
+      headers: {"content-type": "application/json"},
+      body:$body_string
+    )
+    $all_responses << $response
+    call sys_log('AWS Unencrypted S3 Buckets config change to encryption',to_s($response))
+  end
+end
+
+
+#https://docs.aws.amazon.com/AmazonS3/latest/API/RESTBucketDELETE.html
+define delete_unencrypted_s3_buckets($data) return $all_responses do
+  $$debug=true
+  $all_responses = []
+  foreach $item in $data do
+    $response = http_request(
+      auth: $$auth_aws,
+      https: true,
+      verb: "delete",
+      href: "/"+"/"+$item['bucket_name'],
+      host: $item['host']
+    )
+    $all_responses << $response
+    call sys_log('Delete AWS Unencrypted S3 Buckets',to_s($response))
+  end
+end
+
+
+define sys_log($subject, $detail) do
+  if $$debug
+    rs_cm.audit_entries.create(
+      notify: "None",
+      audit_entry: {
+        auditee_href: @@account,
+        summary: "AWS Unencrypted S3 Buckets Policy "+ $subject,
+        detail: $detail
+      }
+    )
+  end
+end

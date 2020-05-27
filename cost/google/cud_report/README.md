@@ -1,39 +1,38 @@
-## Google Committed Use Discount (CUD)
+# Google Committed Use Discount (CUD)
 
-### What it does
+## What it does
+
 This policy identifies all CUDs that exist in a given GCP project and sends a notification. It can optionally send a notification on all CUDs or only those that are active or expired.
 
-### Functional Details
+## Functional Details
 
+- If APIs & Services are not enabled for a project, the policy will skip that particular project. On the next run if APIs & Services are enabled, then the project will be considered for execution.
 - Uses the GCP API to get a list of all CUDs and sends a notification.
-- Create a service account (if not exists) with owner role under Google-cloud platform (IAM & admin -> service accounts). Generate key, a JSON file will get downloaded in which you can find 'client email' and 'private key' which has to be added as credentials in RightScale cloud management Design -> Credentials with name 'GC_SA_CLIENT_EMAIL' and 'GC_SA_PRIVATE_KEY' respectively.  
 
-#### Input Parameters
+## Input Parameters
 
 - *Email addresses of the recipients you wish to notify* - A list of email addresses to notify
-- *Google Cloud Project* - Google cloud project Id where CUD's exist.
 - *CUD Status* - Allow the user to choose from "All", "Active" or "Expired"
 
-### Required RightScale Roles
+## Prerequisites
 
-- policy_manager
-- credential_viewer
+This policy uses [credentials](https://docs.rightscale.com/policies/users/guides/credential_management.html) for connecting to the cloud -- in order to apply this policy you must have a credential registered in the system that is compatible with this policy. If there are no credentials listed when you apply the policy, please contact your cloud admin and ask them to register a credential that is compatible with this policy. The information below should be consulted when creating the credential.
 
-### Google Required Permissions
+### Credential configuration
 
-- compute.commitments.get
+For administrators [creating and managing credentials](https://docs.rightscale.com/policies/users/guides/credential_management.html) to use with this policy, the following information is needed:
 
-### Supported Clouds
+Provider tag value to match this policy: `gce`
+
+Required permissions in the provider:
+
+- The `compute.commitments.get` permission
+- The `resourcemanager.projects.get` permission
+
+## Supported Clouds
 
 - Google
 
-### Cost
+## Cost
 
 This Policy Template does not incur any cloud costs.
-
-### Prerequisite to apply this policy
-
-- Add New credentials (GC_SA_CLIENT_EMAIL and GC_SA_PRIVATE_KEY) *if does not exists* under RightScale cloud management Design -> Credentials.
-- The value for credentials can be found in IAM & admin -> service accounts under Google-cloud platform.
-
-Note: The Service Account in GCP should have *owner role*

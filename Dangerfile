@@ -1,11 +1,17 @@
-  require 'uri'
+require 'uri'
+require_relative 'tools/lib/policy_parser'
 # DangerFile
 # https://danger.systems/reference.html
-changed_files = (git.added_files + git.modified_files)
+# get list of old names that were renamed
+renamed_files = (git.renamed_files.collect{|r| r[:before]})
+# get list of all files changes minus the old files renamed
+# remove list of renamed files to prevent errors on files that don't exist
+changed_files = (git.added_files + git.modified_files - renamed_files)
 has_app_changes = changed_files.select{ |file| file.end_with? "pt" }
 has_new_policy_template = git.added_files.select{ |file| file.end_with? "pt" }
 md_files = changed_files.select{ |file| file.end_with? "md" }
 
+pp = PolicyParser.new
 # Changelog entries are required for changes to library files.
 no_changelog_entry = (changed_files.grep(/[\w]+CHANGELOG.md/i)+changed_files.grep(/CHANGELOG.md/i)).empty?
 if (has_app_changes.length != 0) && no_changelog_entry
@@ -38,7 +44,13 @@ exclude_hosts = [
   'management.core.windows.net',
   'login.microsoftonline.com',
   'oauth2.googleapis.com',
-  'www.googleapis.com'
+  'www.googleapis.com',
+  'image-charts.com',
+  'graph.microsoft.com',
+  'www.w3.org',
+  'tempuri.org',
+  'us-3.rightscale.com',
+  'us-4.rightscale.com'
 ]
 changed_files.each do |file|
  diff = git.diff_for_file(file)
@@ -49,7 +61,7 @@ changed_files.each do |file|
        URI.extract(line,['http','https']).each do |url|
          res = nil
          next if exclude_hosts.include?(url.scan(URI.regexp)[0][3])
-         url_string = url.to_s.gsub(/\)|\.$/,'') #remove extra chars
+         url_string = url.to_s.gsub(/[!@#$%^&*(),.?":{}|<>]/,'')  #remove extra chars
          url = URI(url_string) #convert to URL
          # check for a valid host.  skip urls that are dynamicly constructed may not have a valid hostname
          # for example http://ec2. + $region + .awsamazon.com/... does not have a valid hostname to query
@@ -84,18 +96,15 @@ categories = [
 ].sort
 #only check .pt files
 has_app_changes.each do |file|
- diff = git.diff_for_file(file)
- regex =/^\+category/
- if diff && diff.patch =~ regex
-   diff.patch.each_line do |line|
-     if line =~ regex
-       category = line.split(' ')[1..-1].join(' ').to_s.chomp('"').reverse.chomp('"').reverse
-       if !categories.include?(category.downcase)
-         fail "The Category is not valid: #{category}.  Valid Categories include #{categories.join(", ")}"
-       end
-    end
-   end
- end
+  pp.parse(file)
+  category = pp.parsed_category
+  if ! category
+    fail "Please add a category field. #{file}"
+  end
+  # check category meets the expected list
+  if category && !categories.include?(category.downcase)
+    fail "The Category is not valid: #{category}.  Valid Categories include #{categories.join(", ")}"
+  end
 end
 
 # check markdown of .md files with markdown lint
@@ -119,6 +128,20 @@ end
 has_app_changes.each do |file|
   if file.scan(/^[a-z0-9.\/_-]+$/).empty?
     fail "Policy Template path should be lowercase. #{file}"
+  end
+end
+
+# check for info field required fields
+has_app_changes.each do |file|
+  # get info field data
+  pp.parse(file)
+
+  fail "Please add the info field. #{file}" if pp.parsed_info.nil?
+  if pp.parsed_info
+    fail "Please add version to the info field. #{file} " if pp.parsed_info[:version].nil?
+    fail "Please add provider to the info field. #{file} " if pp.parsed_info[:provider].nil?
+    warn "Should this include service in the info field. #{file}"  if pp.parsed_info[:service].nil?
+    warn "Should this include policy_set in the info field. #{file}" if pp.parsed_info[:policy_set].nil?
   end
 end
 

@@ -1,0 +1,107 @@
+name "SaaS Manager - Suspicious Users"
+rs_pt_ver 20180301
+type "policy"
+short_description "This policy will create an incident when Flexera SaaS Manager identifies suspicious users logging into SaaS applications. See the [README](https://github.com/flexera/policy_templates/tree/master/saas/fsm/suspicious_users/) and [docs.rightscale.com/policies](https://docs.rightscale.com/policies/) to learn more."
+long_description ""
+severity "high"
+default_frequency "daily"
+category "SaaS Management"
+info(
+  version: "2.0",
+  provider: "Flexera SaaS Manager",
+  service: "",
+  policy_set: ""
+)
+
+parameter "param_email" do
+  type "list"
+  label "Email addresses to notify"
+  description "Email addresses of the recipients you wish to notify"
+end
+
+#authenticate with FSM
+credentials "fsm_auth" do
+  schemes "oauth2"
+  label "FSM"
+  description "Select the FSM Resource Manager Credential from the list."
+  tags "provider=flexera_fsm"
+end
+
+datasource "ds_suspicious_users" do
+  request do
+    auth $fsm_auth
+    host "api.metasaas.com"
+    verb "GET"
+    scheme "https"
+    path join(["/svc/orgs/", rs_org_id, "/activity/suspicious-agents"])
+    header "content-type", "application/json"
+    query "page", "1"
+    query "pageSize", "100"
+    query "asc", "false"
+    query "includeUnauthorized", "true"
+    query "includeUnrecognized", "true"
+    query "includeRecognized", "false"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "[*]") do
+      field "firstName", val(col_item, "firstName")
+      field "lastName", val(col_item, "lastName")
+      field "email", val(col_item, "email")
+      field "managedProductName", val(col_item, "managedProductName")
+      field "recognized", val(col_item, "recognized")
+      field "unauthorized", val(col_item, "unauthorized")
+    end
+  end
+end
+
+datasource "ds_users_cleanup" do
+  run_script $js_users_cleanup, $ds_suspicious_users
+end
+
+script "js_users_cleanup", type: "javascript" do
+  parameters "users"
+  result "result"
+  code <<-EOS
+    var result = [];
+    _.each(users, function(user){
+      if (user["unauthorized"] == true){
+        var activity_type = "Unauthorized";
+      } else {
+        var activity_type = "Unrecognized";
+      }
+      result.push({
+        firstName: user['firstName'],
+        lastName: user['lastName'],
+        email: user['email'],
+        managedProductName: user['managedProductName'],
+        activity_type: activity_type
+      })
+    })
+  EOS
+end
+
+
+escalation "report_summary" do
+    email $param_email
+end
+
+policy "policy_fsm_suspicious_users" do
+  validate $ds_users_cleanup do
+      summary_template "{{ len data }} Suspicious SaaS Users Found"
+      detail_template <<-EOS
+# Suspicious SaaS Users
+
+| Email | First Name | Last Name | Application | Activity Type |
+| ----- | ---------- | --------- | ----------- | ------------- |
+{{ range data -}}
+| {{.email}} | {{.firstName}} | {{.lastName}} | {{.managedProductName}} | {{.activity_type}} |
+{{ end -}}
+
+
+###### Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }}) within Org: {{ rs_org_name }} (Org ID: {{ rs_org_id }})
+EOS
+      escalate $report_summary
+      check eq(size(data), 0)
+  end
+end

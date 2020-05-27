@@ -1,67 +1,58 @@
-## Schedule FlexNet Manager report
+# Schedule Flexnet Manager Report - Cloud
 
-### What it does
-This policy will run a FlexNet Manager report (Custom view) and send the result via email.
+## What it does
+
+This policy runs on the Flexnet Manager Cloud instance and will run a FlexNet Manager report (Custom view) and send the result via email.
 The policy is a report only policy, no action is taken during the Policy Escalation.
 
 The report / Mail output looks like this:
 ![Alt text][emailoutput]
 
 Current limitations:
-- This only works with the FNMS Cloud
+
 - Output is limited to max 100.000 rows.
 
-### Pre-reqs
-- FlexNet Manager
-- The following RightScale Credentials
-  - 'FNMS_API_Token'
+## Prerequisites
 
-### Installation
+This policy uses [credentials](https://docs.rightscale.com/policies/users/guides/credential_management.html) for connecting to the cloud -- in order to apply this policy you must have a credential registered in the system that is compatible with this policy. If there are no credentials listed when you apply the policy, please contact your cloud admin and ask them to register a credential that is compatible with this policy. The information below should be consulted when creating the credential.
 
-#### How to setup FlexNet Manager Custom View for this policy:
+### Credential configuration
 
-1. Create a custom view in FlexNet manager that could look like this:
-![Alt text][FNMSReport]
-Once saved note the report number in thr URL field :
-![Alt text][ReportNumber] you need it when activating the Policy
+For administrators [creating and managing credentials](https://docs.rightscale.com/policies/users/guides/credential_management.html) to use with this policy, the following information is needed:
 
-1. Setup the API Token in FNMS:
-    1. On the Account page - Select Create Account -> Service Account and fill in the form
+Required permissions in the provider: `flexera_fnms_api_key`
 
-        ![Alt text][CreateServeceAccount]
-    1. IMPORTANT: When you hit save you will see a API Token.. This is the only time you will see it so you need to save it at this point
-    
-        ![Alt text][APIToken]
-    1. Add the new account to the Role ___Webservice___
+## Installation
 
-        ![Alt text][WebServiceRole]
+### How to setup FlexNet Manager Custom View for this policy
 
-#### Cloud manager
+1. Create a custom view in FlexNet manager that could look like this: ![Alt text][FNMSReport] Once saved note the report number in the URL field : ![Alt text][ReportNumber] you need it when activating the Policy
+1. Retrieve the API Token in FlexNet manager Cloud:
+    1. On the Account page - Select Create Account -> Service Account and fill in the form ![Alt text][CreateServeceAccount]
+    1. IMPORTANT: When you hit save you will see a API Token.. This is the only time you will see it so you need to save it at this point ![Alt text][APIToken]
+    1. Add the new account to the Role ___Webservice___ ![Alt text][WebServiceRole]
 
-1. Create RightScale Credentials with values that match the FlexNet Manager API Token (Credential name: `FNMS_API_Token`) 
+__NOTE__: You can use a normal interactive user for the API credentials, but it is recommended to add a
+special service user for the API connection.
 
-### Input Parameters
+## Input Parameters
 
 This policy has the following input parameters required when launching the policy.
 
-- *FNMS Report URL* - Full FlexNet URL (e.g. https://demo.flexnetmanager.com/Suite )
+- *FNMS Report URL* - Full FlexNet URL (e.g. [https://demo.flexnetmanager.com/Suite](https://demo.flexnetmanager.com/Suite) )
 - *FNMS Report ID* - FlexNet manager Custom View ID
 - *Report Title in the Mail* - Report header in the report result
-- *Email addresses of the recipients you wish to notify* - A list of email addresse(s) to notify
+- *Email addresses of the recipients you wish to notify* - A list of email addresses to notify
 
-### Policy Actions
-No actions
+## Policy Actions
 
-### Required RightScale Roles
- 
-- Cloud Management - Actor
-- Cloud Management - Observer
-- Cloud Management - credential_viewer
+- send an email
 
-### Cost
+## Cost
+
 This Policy Template does not launch any instances, and so does not incur any cloud costs.
 
-<!-- Image referances -->
+<!-- Image references -->
 [emailoutput]: images/email_output.png "email output"
 [APIToken]: images/APIToken.png "APIToken"
 [CreateServeceAccount]: images/CreateServeceAccount.png "Create Service Account"

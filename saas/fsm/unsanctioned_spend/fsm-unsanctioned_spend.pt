@@ -1,0 +1,172 @@
+name "SaaS Manager - Unsanctioned Spend"
+rs_pt_ver 20180301
+type "policy"
+short_description "This policy will create an incident when Flexera SaaS Manager identifies unsanctioned spend on SaaS applications. See the [README](https://github.com/flexera/policy_templates/tree/master/saas/fsm/unsanctioned_spend/) and [docs.rightscale.com/policies](https://docs.rightscale.com/policies/) to learn more."
+long_description ""
+severity "medium"
+category "SaaS Management"
+default_frequency "daily"
+info(
+  version: "2.1",
+  provider: "Flexera SaaS Manager",
+  service: "",
+  policy_set: ""
+)
+
+parameter "param_unsanctioned_apps" do 
+  type "list"
+  label "Unsanctioned Application Names"
+  description "List of SaaS Application names that the policy will target for identifying unsanctioned spend. Note: if left blank, the policy will detect all unsanctioned spend."
+end
+
+parameter "param_days" do
+  type "number"
+  label "Number of Days Back"
+  default 7
+  description "Unsanctioned expenses discovered during this time period will raise an incident"
+end
+
+parameter "param_email" do
+  type "list"
+  label "Email addresses to notify"
+  description "Email addresses of the recipients you wish to notify"
+end
+
+#authenticate with FSM
+credentials "fsm_auth" do
+  schemes "oauth2"
+  label "FSM"
+  description "Select the FSM Resource Manager Credential from the list."
+  tags "provider=flexera_fsm"
+end
+
+datasource "ds_num_expenses" do
+  request do
+    auth $fsm_auth
+    host "api.metasaas.com"
+    verb "GET"
+    scheme "https"
+    path join(["/svc/orgs/", rs_org_id, "/financial-discovery"])
+    header "content-type", "application/json"
+  end
+  result do
+    encoding "json"
+    field "totalItems", jmes_path(response, "totalItems")
+  end
+end
+
+datasource "ds_unsanctioned" do
+  request do
+    run_script $js_unsanctioned, val($ds_num_expenses, "totalItems"), rs_org_id
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "items[*]") do
+      field "active", jmes_path(col_item, "active")
+      field "currency", jmes_path(col_item, "currency")
+      field "expenseSum", jmes_path(col_item, "expenseSum")
+      field "id", jmes_path(col_item, "id")
+      field "purchaser_email", jmes_path(col_item, "purchaser")
+      field "purchaser_firstName", jmes_path(col_item, "customerAgent.firstName")
+      field "purchaser_lastName", jmes_path(col_item, "customerAgent.lastName")
+      field "vendor", jmes_path(col_item, "vendor.name")
+      field "application", jmes_path(col_item, "product.name")
+      field "expenseDate", jmes_path(col_item, "latestExpenseDate")
+    end
+  end
+end
+
+script "js_unsanctioned", type: "javascript" do
+  parameters "num_items", "rs_org_id"
+  result "request"
+  code <<-EOS
+  request = {
+    auth: "fsm_auth",
+    host: "api.metasaas.com",
+    verb: "GET",
+    scheme: "https",
+    path: "/svc/orgs/"+rs_org_id+"/financial-discovery",
+    headers: {
+      "content-type": "application/json"
+    },
+    query_params: {
+      "pageSize": num_items.toString()
+    }
+  }
+EOS
+end
+
+datasource "ds_cleanup_expenses" do
+  run_script $js_cleanup_expenses, $ds_unsanctioned, $param_days, $param_unsanctioned_apps
+end
+
+script "js_cleanup_expenses", type: "javascript" do
+  parameters "expenses", "param_days", "param_unsanctioned_apps"
+  result "result"
+  code <<-EOS
+  var result = [];
+  var date = new Date();
+  date = date.setHours(-24 * param_days);
+  date = new Date(date);
+
+  // returns date formatted as string: YYYY-mm-dd
+  function getFormattedDailyDate(date) {
+    var year = date.getFullYear();
+    var month = (1 + date.getMonth()).toString();
+    month = month.length > 1 ? month : '0' + month;
+    var day = date.getDate().toString();
+    day = day.length > 1 ? day : '0' + day;
+    return year + '-' + month + '-' + day;
+  }
+
+  _.each(expenses, function(expense){
+    var expense_date = new Date(expense["expenseDate"]);
+    if (expense_date > date){
+      if (_.contains(param_unsanctioned_apps, expense["application"]) || _.isEmpty(param_unsanctioned_apps)){
+        result.push({
+          active: expense["active"],
+          expenseSum: expense["currency"]+" "+expense["expenseSum"],
+          id: expense["id"],
+          purchaser_email: expense["purchaser_email"],
+          purchaser_firstName: expense["purchaser_firstName"],
+          purchaser_lastName: expense["purchaser_lastName"],
+          vendor: expense["vendor"],
+          application: expense["application"],
+          expenseDate: getFormattedDailyDate(expense_date)
+        })
+      }
+    }
+  })
+
+  result = _.sortBy(result, 'expenseDate').reverse();
+EOS
+end
+
+escalation "report_summary" do
+    email $param_email
+end
+
+policy "policy_fsm_unsanctioned_spend" do
+  validate $ds_cleanup_expenses do
+      summary_template "{{ len data }} Unsanctioned Expenses Found"
+      export do 
+        field "expenseDate" do
+          label "Expense Date"
+        end 
+        field "expenseSum" do 
+          label "Expense Sum"
+        end 
+        field "vendor" do 
+          label "Vendor"
+        end 
+        field "application" do 
+          label "Application"
+        end
+        field "purchaser_email" do 
+          label "Purchaser"
+        end
+      end
+      escalate $report_summary
+      check eq(size(data), 0)
+  end
+end
