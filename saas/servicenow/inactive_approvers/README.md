@@ -9,8 +9,7 @@ This policy will identify approver users in ServiceNow that have not approved an
 This policy integrates with the ServiceNow API to retrieve approval history. Therefore the following are prerequisites for this policy to execute:
 
 - ServiceNow implementation
-- ServiceNow user with the appropriate permissions to read approval history (sysapproval_approver table)
-- The ServiceNow user credentials must then be stored as RightScale Credentials in the account in which this policy will be applied. The credentials must be named `SERVICENOW_USERNAME` and `SERVICENOW_PASSWORD`.
+- ServiceNow user with the appropriate permissions to read approval history (sysapproval_approver table), read roles (sys_user_role table), and read users (sys_user table)
 
 ## Input Parameters
 
