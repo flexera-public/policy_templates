@@ -2,14 +2,14 @@
 
 ## What it does
 
-Find all Google cloud resources missing any of the user provided labels with the option to update the resources with the missing tags.
+Find all Google cloud resources(disks, images, instances, snapshots, buckets, vpnGateways) missing any of the user provided labels with the option to update the resources with the missing tags.
 
 ## Input Parameters
 
 This policy has the following input parameters required when launching the policy.
 
-- *Email addresses* - A list of email addresses to notify
-- *List of labels* - list of labels to find resources which are not labels by given inputs.
+- *Email addresses* - Email addresses of the recipients you wish to notify when new incidents are created.
+- *List of labels* - List of labels to find resources which are not labels by given inputs.
 
 ## Policy Actions
 
