@@ -2,7 +2,7 @@
 
 ## What it does
 
-Find all Google cloud resources(disks, images, instances, snapshots, buckets, vpnGateways) missing any of the user provided labels with the option to update the resources with the missing tags.
+Find all Google cloud resources(disks, images, instances, snapshots, buckets, vpnGateways) missing any of the user provided labels with the option to update the resources with the missing labels.
 
 ## Input Parameters
 
