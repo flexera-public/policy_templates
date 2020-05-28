@@ -30,7 +30,23 @@ Provider tag value to match this policy: `gce`
 
 Required permissions in the provider:
 
-[list all permissions here]
+- The `Monitoring Viewer` Role
+- The `compute.disks.list` permission
+- The `compute.instances.list` permission
+- The `compute.disks.setLabels` permission
+- The `compute.externalVpnGateways.list` permission
+- The `compute.images.list` permission
+- The `compute.externalVpnGateways.setLabels` permission
+- The `compute.images.setLabels` permission
+- The `compute.instances.setLabels` permission
+- The `compute.snapshots.list` permission
+- The `compute.snapshots.setLabels` permission
+- The `compute.vpnGateways.list` permission
+- The `compute.vpnGateways.setLabels` permission
+- The `compute.images.setLabels` permission
+- The `storage.buckets.list` permission
+- The `storage.buckets.update` permission
+- The `resourcemanager.projects.get` permission
 
 ## Supported Clouds
 
