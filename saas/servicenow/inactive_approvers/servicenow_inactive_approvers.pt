@@ -1,0 +1,260 @@
+
+name "ServiceNow Inactive Approvers"
+rs_pt_ver 20180301
+type "policy"
+short_description "This policy will identify ServiceNow Approvers that have not logged in within a specified number of days. See the [README](https://github.com/rightscale/policy_templates/tree/master/saas/servicenow/inactive_approvers/) and [docs.rightscale.com/policies](http://docs.rightscale.com/policies/) to learn more."
+long_description ""
+severity "medium"
+category "SaaS Management"
+info(
+  version: "2.0",
+  provider: "ServiceNow",
+  service: "",
+  policy_set: ""
+)
+
+###############################################################################
+# User inputs
+###############################################################################
+
+parameter "param_sn_instance_id" do
+  label "ServiceNow Instance Name"
+  type "string"
+end
+
+parameter "param_roles" do
+  label "Approval Roles"
+  description "ServiceNow Roles to target"
+  type "list"
+  default ["approver_user","itil"]
+end
+
+parameter "param_days" do
+  label "Number of Days"
+  description "Number of days without an approval action executed in ServiceNow"
+  type "number"
+  default 30
+end
+
+parameter "param_email" do
+  type "list"
+  label "Email addresses to notify"
+  description "Email addresses of the recipients you wish to notify when new incidents are created"
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+credentials "auth_sn" do
+  schemes "basic"
+  label "ServiceNow Credential"
+  tags "provider=servicenow"
+end
+
+###############################################################################
+# Datasources
+###############################################################################
+
+datasource "ds_sn_roles" do 
+  request do
+    run_script $js_sn_roles, $param_roles, $param_sn_instance_id
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response,"result[*]") do
+      field "role_name", jmes_path(col_item, "name")
+      field "role_id", jmes_path(col_item, "sys_id")
+    end
+  end
+end
+
+datasource "ds_sn_user_roles" do
+  iterate $ds_sn_roles 
+  request do 
+    auth $auth_sn
+    host join([$param_sn_instance_id,".service-now.com"])
+    path "/api/now/table/sys_user_has_role"
+    header "User-Agent", "RS Policies"
+    query "sysparm_fields", "role,sys_id,inherited,user"
+    query "sysparm_query", join(["role=",val(iter_item,"role_id")])
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response,"result[*]") do
+      field "role_user_id", jmes_path(col_item, "sys_id")
+      field "role_id", jmes_path(col_item, "role.value")
+      field "inherited", jmes_path(col_item, "inherited")
+      field "user_id", jmes_path(col_item, "user.value")
+    end
+  end
+end
+
+datasource "ds_sn_approver_users" do 
+  iterate $ds_sn_user_roles
+  request do
+    auth $auth_sn
+    host join([$param_sn_instance_id, ".service-now.com"])
+    path "/api/now/table/sys_user"
+    header "User-Agent", "RS Policies"
+    query "sysparm_query", join(["sys_id=",val(iter_item,"user_id")])
+    query "sysparm_fields", "sys_id,name,user_name,last_login_time,vip,email"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response,"result[*]") do
+      field "user_id", val(iter_item, "user_id")
+      field "role_id", val(iter_item, "role_id")
+      field "inherited", val(iter_item, "inherited")
+      field "approver", jmes_path(col_item, "name")
+      field "username", jmes_path(col_item, "user_name")
+      field "last_login", jmes_path(col_item, "last_login_time")
+      field "vip", jmes_path(col_item, "vip")
+      field "email", jmes_path(col_item, "email")
+    end
+  end
+end
+
+datasource "ds_approvals" do 
+  iterate $ds_sn_approver_users
+  request do
+    auth $auth_sn
+    host join([$param_sn_instance_id, ".service-now.com"])
+    path "/api/now/table/sysapproval_approver"
+    header "User-Agent", "RS Policies"
+    query "sysparm_query", join(["sys_updated_by=",val(iter_item,"username")])
+    query "sysparm_fields", "approver,sys_updated_on,state,sys_updated_by"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response,"result[*]") do 
+      field "user_id", val(iter_item, "user_id")
+      field "role_id", val(iter_item, "role_id")
+      field "inherited", val(iter_item, "inherited")
+      field "approver", val(iter_item, "approver")
+      field "username", val(iter_item, "username")
+      field "last_login", val(iter_item, "last_login")
+      field "vip", val(iter_item, "vip")
+      field "email", val(iter_item, "email")
+      field "updated_by", jmes_path(col_item, "sys_updated_by")
+      field "updated_on", jmes_path(col_item, "sys_updated_on")
+    end
+  end
+end
+
+datasource "ds_latest_approval" do
+  run_script $js_latest_approval, $ds_approvals, $ds_sn_approver_users, $param_days
+end
+
+###############################################################################
+# Scripts
+###############################################################################
+
+script "js_sn_roles", type: "javascript" do
+  parameters "param_roles", "param_sn_instance_id"
+  result "request"
+  code <<-EOS
+  if (_.size(param_roles) > 1){
+    var query = "";
+    _.each(param_roles, function(role){
+      if (_.last(param_roles) === role){
+        query = query.concat("name=",role)
+      } else {
+        query = query.concat("name=",role,"^OR")
+      }
+    })
+  } else {
+    var query = "name="+param_roles[0] 
+  }
+  
+  var request = {
+    auth: "auth_sn",
+    host: param_sn_instance_id+".service-now.com",
+    path: "api/now/table/sys_user_role",
+    headers: {
+      "User-Agent": "RS Policies"
+    },
+    query_params: {
+      "sysparm_fields": "name,sys_id",
+      "sysparm_query": query
+    }
+  } 
+  EOS
+end
+
+script "js_latest_approval", type: "javascript" do
+  parameters "ds_approvals", "ds_sn_approver_users", "param_days"
+  result "result"
+  code <<-EOS
+
+    var result = [];
+    var updaters = _.unique(_.pluck(ds_approvals, 'updated_by'));
+    var approver_users = _.pluck(ds_sn_approver_users, 'username');
+    var target_date = new Date(new Date().setDate(new Date().getDate() - param_days)).toISOString();
+
+    _.each(approver_users, function(approver){
+      if (!_.contains(updaters, approver)){
+        // approver has no approvals
+        var user = _.first(_.where(ds_sn_approver_users, {"username": approver}));
+        result.push({
+          user_id: user['user_id'],
+          role_id: user['role_id'],
+          inherited: user['inherited'],
+          approver: user['approver'],
+          username: user['username'],
+          last_login: user['last_login'],
+          vip: user['vip'],
+          email: user['email'],
+          updated_by: 'N/A',
+          updated_on: 'N/A'
+        })
+      } else {
+        var latest_approval = _.first(_.sortBy( _.where(ds_approvals, {"updated_by": approver}), "updated_on").reverse());
+        var approval_date = new Date(latest_approval.updated_on.split(" ")[0]).toISOString();
+        if (target_date > approval_date){
+          result.push(latest_approval)
+        }
+      }
+    })
+
+
+  EOS
+end
+
+###############################################################################
+# Escalation
+###############################################################################
+
+escalation "esc_email" do
+  email $param_email
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "policy_inactive_approvers" do
+  validate $ds_latest_approval do
+    summary_template "{{len data}} Inactive ServiceNow Approver Users"
+    export do
+      field "approver" do
+        label "Approver User"
+      end
+      field "username" do
+        label "User Name"
+      end
+      field "updated_on" do
+        label "Last Approval"
+      end
+      field "last_login" do
+        label "Last Login"
+      end
+      field "email" do
+        label "Email"
+      end
+    end
+
+    escalate $esc_email
+    check eq(size(data), 0)
+  end
+end
