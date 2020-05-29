@@ -6,7 +6,7 @@ long_description ""
 category "Cost"
 severity "low"
 info(
-  version: "2.1",
+  version: "2.2",
   provider: "Azure",
   service: "Compute",
   policy_set: "Idle Compute Instances"
@@ -161,7 +161,16 @@ script "js_filter_instances", type: "javascript" do
   var results = _.filter(ds_azure_virtualmachines, function(instance){
     if (_.has(instance.tags, param_exclusion_tag_key)) {
     }else{
-      return instance
+      var tagsList = "";
+      for(var prop in instance.tags){
+        tagsList = tagsList+prop+":"+instance.tags[prop]+", ";
+	  }
+      if(tagsList.length > 0){
+        instance.tags = tagsList.substring(0,tagsList.length-2);
+	   }else{
+         instance.tags = "< No Value >"
+	   }
+       return instance
     }
   })
  EOF
@@ -204,19 +213,33 @@ end
 policy "azure_resource_policy" do
   validate $ds_combineddata do
     summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): Azure idle compute instances found"
-    detail_template <<-EOS
-# Azure idle compute instances
-
-| Subscription Name | Region/Location | Name | CPU Average | Resource Group | Tags |
-| ------------------ | -------- | ---- | ----------- | -------------- | ---- |
-{{ range data -}}
-| {{.subscriptionName}} | {{ .location }} | {{.vmname}} | {{.averagecpu}} | {{.rg}} | {{range $i,$e := .tags}}{{$i}}:{{$e}},{{end}} |
-{{ end -}}
-
-EOS
     check eq(size(data), 0)
     escalate $email
     escalate $delete_resources
+    export do
+      resource_level true
+      field "subscriptionName" do
+        label "Subscription Name"
+      end
+      field "location" do
+        label "Location"
+      end
+      field "vmname" do
+        label "Name"
+      end
+      field "averagecpu" do
+        label "CPU Average"
+      end
+      field "rg" do
+        label "Resource Group"
+      end
+      field "tags" do
+        label "Tags"
+      end
+      field "id" do
+        label "ID"
+      end
+    end
   end
 end
 
@@ -225,7 +248,7 @@ end
 ###############################################################################
 
 escalation "email" do
-   email $param_email
+  email $param_email
 end
 
 escalation "delete_resources" do
@@ -233,12 +256,12 @@ escalation "delete_resources" do
     label "Approve Resource Deletion"
     description "Approve escalation to terminate the instance(s)"
     parameter "approval_reason" do
-    type "string"
+      type "string"
       label "Reason for Approval"
-     description "Explain why you are approving the action"
+      description "Explain why you are approving the action"
     end
   end
- run "delete_resources", data
+  run "delete_resources", data
 end
 
 ###############################################################################
