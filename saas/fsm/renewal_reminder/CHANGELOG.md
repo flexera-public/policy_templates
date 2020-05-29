@@ -2,7 +2,9 @@
 
 ## v2.1
 
-- Added new resource table
+- Update API endpoint
+- Add resource table
+
 
 ## v2.0
 
