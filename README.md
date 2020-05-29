@@ -223,6 +223,7 @@ Please contact sales@flexera.com to learn more.
 ### SaaS Management
 
 - [Okta Inactive Users](./saas/okta/inactive_users)
+- [ServiceNow Inactive Approvers](./saas/servicenow/inactive_approvers)
 - [Office 365 Security Alerts](./saas/office365/security_alerts)
 - [SaaS Manager - Renewal Reminder](./saas/fsm/renewal_reminder)
 - [SaaS Manager - User Status Change](./saas/fsm/user_status_change)
@@ -230,6 +231,7 @@ Please contact sales@flexera.com to learn more.
 - [SaaS Manager - Unsanctioned Spend](./saas/fsm/unsanctioned_spend)
 - [SaaS Manager - Redundant Apps](./saas/fsm/redundant_apps)
 - [SaaS Manager - Inactive Users](./saas/fsm/inactive_users_by_dept)
+- [SaaS Manager - Duplicate User Accounts](./saas/fsm/duplicate_users)
 - [SaaS Manager - Unsanctioned Applications with Existing Contract](./saas/fsm/unsanctioned_apps_with_contract)
 
 ### Policy Data Sets
