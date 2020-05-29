@@ -2,7 +2,8 @@
 
 ## v2.2
 
-- Adding incident resource table
+- Update API endpoint
+- Add resource table
 
 ## v2.1
 
