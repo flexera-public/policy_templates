@@ -1,0 +1,238 @@
+name "SaaS Manager - Duplicate User Accounts"
+rs_pt_ver 20180301
+type "policy"
+short_description "This policy will create an incident when Flexera SaaS Manager identifies duplicate user accounts within a single managed SaaS application. See the [README](https://github.com/flexera/policy_templates/tree/master/saas/fsm/duplicate_users/) and [docs.rightscale.com/policies](https://docs.rightscale.com/policies/) to learn more."
+long_description ""
+severity "medium"
+category "SaaS Management"
+default_frequency "daily"
+info(
+  version: "2.1",
+  provider: "Flexera SaaS Manager",
+  service: "",
+  policy_set: ""
+)
+
+parameter "param_email" do
+  type "list"
+  label "Email addresses to notify"
+  description "Email addresses of the recipients you wish to notify"
+end
+
+#authenticate with FSM
+credentials "fsm_auth" do
+  schemes "oauth2"
+  label "FSM"
+  description "Select the FSM Resource Manager Credential from the list."
+  tags "provider=flexera_fsm"
+end
+
+datasource "ds_num_products" do
+  request do
+    auth $fsm_auth
+    host "api.fsm.flexeraeng.com"
+    verb "GET"
+    scheme "https"
+    path join(["/svc/orgs/", rs_org_id, "/managed-products"])
+    header "content-type", "application/json"
+  end
+  result do
+    encoding "json"
+    field "totalItems", jmes_path(response, "totalItems")
+  end
+end
+
+datasource "ds_products" do
+  request do
+    run_script $js_products, val($ds_num_products,"totalItems"), rs_org_id
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "items[*]") do
+      field "application", jmes_path(col_item, "name")
+      field "id", jmes_path(col_item, "id")
+      field "vendor", jmes_path(col_item, "product.vendor.name")
+    end
+  end
+end
+
+script "js_products", type: "javascript" do
+  parameters "num_items", "rs_org_id"
+  result "request"
+  code <<-EOS
+  request = {
+    auth: "fsm_auth",
+    host: "api.fsm.flexeraeng.com",
+    verb: "GET",
+    scheme: "https",
+    path: "/svc/orgs/"+rs_org_id+"/managed-products",
+    headers: {
+      "content-type": "application/json"
+    },
+     query_params: {
+      "pageSize": num_items.toString(),
+      "includeInactive": "false"
+    }
+  }
+EOS
+end
+
+datasource "ds_product_num_users" do 
+  iterate $ds_products
+  request do
+    auth $fsm_auth
+    host "api.fsm.flexeraeng.com"
+    verb "GET"
+    scheme "https"
+    path join(["/svc/orgs/", rs_org_id, "/managed-products"])
+    header "content-type", "application/json"
+  end
+  result do
+    encoding "json"
+    field "application", val(iter_item, "application")
+    field "id", val(iter_item, "id")
+    field "vendor", val(iter_item, "vendor")
+    field "totalItems", jmes_path(response, "totalItems")
+  end
+end
+
+
+datasource "ds_product_users" do
+  iterate $ds_product_num_users
+  request do
+    run_script $js_product_users, val(iter_item, "totalUsers"), rs_org_id, val(iter_item, "id")
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "items[*]") do
+      field "email", jmes_path(col_item, "email")
+      field "firstName", jmes_path(col_item, "firstName")
+      field "lastName", jmes_path(col_item, "lastName")
+      field "managedProductId", jmes_path(col_item, "managedProductId")
+      field "application", val(iter_item, "application")
+      field "vendor", val(iter_item, "vendor")
+      field "userId", jmes_path(col_item, "customerAgent.id")
+      field "department", jmes_path(col_item, "department")
+    end
+  end
+end
+
+script "js_product_users", type: "javascript" do
+  parameters "num_items", "rs_org_id", "app_id"
+  result "request"
+  code <<-EOS
+  if (num_items != null && num_items != "undefined"){
+    // skip
+  } else {
+    num_items = 1
+  }
+  request = {
+    auth: "fsm_auth",
+    host: "api.fsm.flexeraeng.com",
+    verb: "GET",
+    scheme: "https",
+    path: "/svc/orgs/"+rs_org_id+"/managed-products/"+app_id+"/managed-product-agents",
+    headers: {
+      "content-type": "application/json"
+    },
+    query_params: {
+      "pageSize": num_items.toString(),
+      "page": "1",
+      "asc": "true",
+      "sort": "uniqueId"
+    }
+  }
+EOS
+end
+
+datasource "ds_filter_users" do
+  run_script $js_filter_users, $ds_product_users
+end
+
+script "js_filter_users", type: "javascript" do
+  parameters "ds_product_users"
+  result "result"
+  code <<-EOS
+    var result = [];
+
+    var app_ids = _.uniq(_.pluck(ds_product_users, 'managedProductId'));
+
+    _.each(app_ids, function(app_id){
+      
+      var app_users = _.where(ds_product_users, {managedProductId: app_id});
+      
+      var last_names = _.uniq(_.pluck(app_users, 'lastName'));
+      _.each(last_names, function(last_name){
+        var last_name_users = _.where(app_users, {lastName: last_name});
+        if (_.size(last_name_users) > 1) {
+          // more than 1 user with this last name
+          var first_names = _.uniq(_.pluck(last_name_users, 'firstName'));
+
+          _.each(first_names, function(first_name){
+            var first_name_users = _.where(last_name_users, {firstName: first_name});
+            if (_.size(first_name_users) > 1) {
+              // more than 1 user with this first name & last name
+              var departments = _.uniq(_.pluck(first_name_users, 'department'));
+              if (_.size(departments) < 2) {
+                var emails = _.uniq(_.pluck(first_name_users, 'email'));
+                if (_.size(emails) > 1){
+                  // raise incident
+                  _.each(first_name_users, function(user){result.push(user)})
+                }
+              } else {
+                // more than 1 department
+                _.each(departments, function(dept){
+                  var dept_users = _.filter(first_name_users, function(user) {return user.department == null || user.department === dept;});
+                  var emails = _.uniq(_.pluck(dept_users, 'email')); 
+                  if (_.size(emails) > 1){
+                    // raise incident
+                    _.each(first_name_users, function(user){result.push(user)})
+                  } else {
+                    // more than 1 first name & last name combo, but 1 or less emails 
+                    // this likely will never trigger
+                  }
+                })
+              }
+            } else {
+              // only 1 app user with this first name & last name
+            }
+          })
+        } else {
+          // only 1 app user with this last name
+        }
+      })
+    })
+EOS
+end
+
+escalation "report_summary" do
+    email $param_email
+end
+
+policy "policy_fsm_duplicate_users" do
+  validate $ds_filter_users do
+      summary_template "{{ len data }} Duplicate Application Users Found"
+      export do 
+        field "lastName" do
+          label "Last Name"
+        end 
+        field "firstName" do 
+          label "First Name"
+        end 
+        field "email" do 
+          label "Email"
+        end 
+        field "application" do 
+          label "Application"
+        end
+        field "vendor" do 
+          label "Vendor"
+        end
+        field "department" do 
+          label "Department"
+        end 
+      end  
+      escalate $report_summary
+      check eq(size(data), 0)
+  end
+end
