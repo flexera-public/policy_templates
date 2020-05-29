@@ -15,6 +15,7 @@ This policy integrates with the Flexera SaaS Manager API to retrieve the expense
 
 This policy has the following input parameters required when launching the policy.
 
+- *Unsanctioned Application Names* - List of SaaS Application names that the policy will target for identifying unsanctioned spend. Note: if left blank, the policy will detect all unsanctioned spend.
 - *Number of Days Back* - Any unsanctioned expenses discovered during this time period will raise an incident
 - *Email addresses to notify* - Email addresses of the recipients you wish to notify
 
