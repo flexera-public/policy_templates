@@ -15,6 +15,7 @@ This policy integrates with the Flexera SaaS Manager API to retrieve SaaS Applic
 
 This policy has the following input parameters required when launching the policy.
 
+- *Inactive Days Threshold* - Number of inactive days to trigger an incident
 - *Email addresses to notify* - Email addresses of the recipients you wish to notify
 
 ## Prerequisites

@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.21
+
+- Added "Billing Centers" as a reportable dimension
+
 ## v1.20
 
 - Fixed date value issue.
