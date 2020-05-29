@@ -5,7 +5,7 @@ short_description "Checks for snapshots older than specified number of days and,
 category "Cost"
 severity "low"
 info(
-  version: "2.1", 
+  version: "2.2", 
   provider:"Google",
   service: "Storage",
   policy_set: "Old Snapshots"
@@ -102,7 +102,7 @@ datasource "ds_snapshots" do
       field "creationTimestamp", jmes_path(col_item,"creationTimestamp")
       field "diskSizeGb", jmes_path(col_item, "diskSizeGb")
       field "labels", jmes_path(col_item, "labels")
-      field "name", jmes_path(col_item,"name")
+      field "id", jmes_path(col_item,"name")
       field "selfLink", jmes_path(col_item,"selfLink")
       field "status", jmes_path(col_item, "status")
     end
@@ -145,6 +145,13 @@ script "js_filter_snapshots", type: "javascript" do
       }
     )
     if (count == 0){
+      var labelsList = "";
+      for(var prop in snapshot.labels){
+         labelsList = labelsList + prop+" : "+snapshot.labels[prop]+", ";
+	  }
+      if(labelsList.length > 0){
+        snapshot.labels = labelsList.substring(0, labelsList.length - 2);
+	  }
       return snapshot
     }
   }
@@ -155,11 +162,13 @@ var one_day=1000*60*60*24
 _.each(filtered_snapshots, function(snapshot){
   var creation_time = new Date(snapshot.creationTimestamp)
   var difference = now.getTime() - creation_time.getTime()
-  var days_old=(difference/one_day).toFixed(2)
+  var days_old=(difference/one_day).toFixed(0)
   snapshot["days_old"] = days_old
 }
 )
-var filtered_snapshots = _.sortBy(filtered_snapshots, "name")
+var filtered_snapshots = _.sortBy(filtered_snapshots, "projectId")
+var filtered_snapshots = _.sortBy(filtered_snapshots, "id")
+var filtered_snapshots = _.sortBy(filtered_snapshots, "days_old")
 EOF
 end
 
@@ -170,18 +179,30 @@ end
 policy "policy_old_snapshots" do
   validate_each $ds_filtered_snapshots do
     summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} rows containing Old Snapshots"
-    detail_template <<-EOS
-# Google Old Snapshots
-| Project ID | Name | Size | Labels | Age In Days| Status |
-| ---------- | ---- | ---- | ------ | ------------- | ------ |
-{{ range data -}}
-| {{.projectId}} | {{.name}} | {{.diskSizeGb}} | {{ range $i, $e := .labels }}{{$i}}:{{ $e }}, {{ end }} | {{.days_old}} | {{.status}} |
-{{ end -}}
-###### Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }}) within Org: {{ rs_org_name }} (Org ID: {{ rs_org_id }})
-EOS
-    check lt(dec(now,to_d(val(item, "creationTimestamp"))), prod($param_snapshot_age, 24*3600))
+    check le(to_n(val(item, "days_old")), $param_snapshot_age)
     escalate $esc_email
     escalate $esc_approve_delete_snapshots
+    export do
+      resource_level true
+      field "projectId" do
+        label "Project ID"
+      end
+      field "id" do
+        label "Name"
+      end
+      field "days_old" do
+        label "Age In Days"
+      end
+      field "diskSizeGb" do
+        label "Size"
+      end
+      field "labels" do
+        label "Labels"
+      end
+      field "status" do
+        label "Status"
+      end
+    end
   end
 end
 

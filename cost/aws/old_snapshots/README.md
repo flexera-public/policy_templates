@@ -33,25 +33,19 @@ The following AWS permissions must be allowed for the policy to run.
 
 ```javascript
 {
-    "Version": "2016-11-15",
-    "Statement":[{
-    "Effect":"Allow",
-    "Action":["ec2:DescribeSnapshots","ec2:DeleteSnapshot"],
-    "Resource":"*"
-    }
-  ]
-}
-```
-
-```javascript
-{
-    "Version": "2011-06-15",
-    "Statement":[{
-    "Effect":"Allow",
-    "Action":["sts:GetCallerIdentity"],
-    "Resource":"*"
-    }
-  ]
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Sid": "VisualEditor0",
+            "Effect": "Allow",
+            "Action": [
+                "ec2:DeleteSnapshot",
+                "sts:GetCallerIdentity",
+                "ec2:DescribeSnapshots"
+            ],
+            "Resource": "*"
+        }
+    ]
 }
 ```
 

@@ -6,6 +6,7 @@ This policy identifies all active CUDs that exist in a given GCP project that wi
 
 ## Functional Details
 
+- If APIs & Services are not enabled for a project, the policy will skip that particular project. On the next run if APIs & Services are enabled, then the project will be considered for execution.
 - Uses the GCP API to get a list of all CUDs and sends a notification.
 
 ## Input Parameters

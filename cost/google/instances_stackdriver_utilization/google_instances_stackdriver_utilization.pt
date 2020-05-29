@@ -6,7 +6,7 @@ long_description ""
 severity "low"
 category "Cost"
 info(
-      version: "2.2",
+      version: "2.4",
       provider: "GCE",
       service: "Compute",
       policy_set: "Inefficient Instance Usage"
@@ -73,7 +73,7 @@ datasource "ds_time" do
   run_script $js_time
 end
 
-#get all google project
+#get all active google project
 datasource "ds_google_project" do
   iterate $ds_time
   request do
@@ -81,6 +81,7 @@ datasource "ds_google_project" do
     pagination $google_pagination
     host "cloudresourcemanager.googleapis.com"
     path "/v1/projects/"
+    query "filter", "lifecycleState=ACTIVE"
   end
   result do
     encoding "json"
@@ -103,6 +104,7 @@ datasource "ds_compute_utilization" do
     query "filter", 'metric.type="compute.googleapis.com/instance/cpu/utilization"'
     query "interval.endTime", val(iter_item,"end_date")
     query "interval.startTime", val(iter_item,"start_date")
+    ignore_status [403,404]
   end
   result do
     encoding "json"
@@ -128,6 +130,7 @@ datasource "ds_memory_utilization" do
     query "filter", 'metric.type="agent.googleapis.com/memory/percent_used" AND metric.label.state=used'
     query "interval.endTime", val(iter_item,"end_date")
     query "interval.startTime", val(iter_item,"start_date")
+    ignore_status [403,404]
   end
   result do
     encoding "json"
@@ -150,6 +153,7 @@ datasource "ds_disk_utilization" do
     query "filter", 'metric.type="agent.googleapis.com/disk/percent_used" AND metric.label.state=used'
     query "interval.endTime", val(iter_item,"end_date")
     query "interval.startTime", val(iter_item,"start_date")
+    ignore_status [403,404]
   end
   result do
     encoding "json"
@@ -204,6 +208,7 @@ datasource "ds_google_instance_size_map" do
     host "raw.githubusercontent.com"
     path "/rightscale/policy_templates/master/data/google/instance_types.json"
     header "User-Agent", "RS Policies"
+    ignore_status [403,404]
   end
 end
 
@@ -255,9 +260,15 @@ script "js_filtered_instances", type: "javascript" do
           next_instance_size="N/A";
           next_machine_type="N/A";
         }
+
+        var hostnameField = instance_data["hostname"]
+        if(hostnameField === "" || hostnameField === " " || hostnameField === undefined){
+          hostnameField = instance_data["instance_id"];  
+		}
+
         results.push({
-          instance_id: instance_data["instance_id"],
-          hostname: instance_data["hostname"],
+          id: instance_data["instance_id"],
+          hostname: hostnameField,
           selfLink: instance_data["selfLink"],
           machine_type: current_instance,
           machine_type_url: instance_data["machine_type"],
@@ -365,6 +376,7 @@ script "js_add_instance_data", type: "javascript" do
       "query_params": {
         "filter": "id="+instance_id
       }
+      "ignore_status": [403,404]
     }
   EOS
 end
@@ -375,19 +387,60 @@ end
 policy "pol_utilization" do
   validate_each $ds_filtered_instances do
     summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} rows containing Google instance StackDriver Utilization data"
-    detail_template <<-EOS
-# Google Instance StackDriver Utilization
-| Project ID | Region | instanceID | Hostname | Current Machine Type | Machine Type To Downsize | CPU Maximum % | CPU Minimum % | CPU Average % | Disk Maximum % | Disk Minimum % | Disk Average % | Memory Minimum % | Memory Maximum % | Memory Average % | Tags |
-| ---------- | ------ | ---------- | -------- | -------------------- | ------------------------ | ------------- | ------------- | ------------- | -------------- | -------------- | -------------- | ---------------- | ---------------- | ---------------- | ---- |
-{{ range data -}}
-| {{.projectId}} | {{.zone}} | {{.instance_id}} | {{if .hostname}} {{.hostname}} {{ else }} {{.instance_id}} {{end}} | {{.machine_type}} | {{.next_instance_size}} | {{ .cpu_maximum }} | {{.cpu_minimum}} | {{ .cpu_average }} | {{.disk_maximum}} | {{.disk_minimum}} | {{.disk_average}} | {{.mem_minimum}} | {{.mem_maximum}} | {{.mem_average}} | {{.tagKeyValue}} |
-{{ end -}}
-___
-###### Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }}) within Org: {{ rs_org_name }} (Org ID: {{ rs_org_id }})
-EOS
     check eq(0,1)
     escalate $email
     escalate $esc_downsize_instances
+    export do
+      resource_level true
+      field "projectId" do
+        label "Project Id"
+      end
+      field "zone" do
+        label "Zone"
+      end
+      field "id" do
+        label "Instance Id"
+      end
+      field "hostname" do
+        label "Hostname"
+      end
+      field "machine_type" do
+        label "Current Machine Type"
+      end
+      field "next_instance_size" do
+        label "Machine Type To Downsize" 
+      end
+      field "cpu_maximum" do
+        label "CPU Maximum %"
+      end
+      field "cpu_minimum" do
+        label "CPU Minimum %"
+      end
+      field "cpu_average" do
+        label "CPU Average %"
+      end
+      field "disk_maximum" do
+        label "Disk Maximum %"
+      end
+      field "disk_minimum" do
+        label "Disk Minimum %"
+      end
+      field "disk_average" do
+        label "Disk Average %"
+      end
+      field "mem_maximum" do
+        label "Memory Maximum %"
+      end
+      field "mem_minimum" do
+        label "Memory Minimum %"
+      end
+      field "mem_average" do
+        label "Memory Average %"
+      end
+      field "tagKeyValue" do
+        label "Tags"
+      end
+    end
   end
 end
 
