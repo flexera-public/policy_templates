@@ -5,7 +5,7 @@ short_description "Checks for unused volumes and if no read/write operations per
 category "Cost"
 severity "low"
 info(
-  version: "2.2",
+  version: "2.3",
   provider: "AWS",
   service: "EBS",
   policy_set: "Unused Volumes"
@@ -181,7 +181,6 @@ script "js_filter_aws_unattached_volumes", type:"javascript" do
   for(var j=0;j<param_exclude_tags.length;j++){
     param_exclude_tags_lower[j] = param_exclude_tags[j].toString().toLowerCase();
   }
-
   var content = [];
   for(var i=0;i<ds_unattached_volumes_list.length;i++){
     vol = ds_unattached_volumes_list[i];
@@ -206,11 +205,9 @@ script "js_filter_aws_unattached_volumes", type:"javascript" do
         tagKeyValue = tagKeyValue+" , "+tag['tagKey'];
       }
     }
-
     if(tagKeyValue === "" || tagKeyValue === " " || tagKeyValue == ""){
       tagKeyValue = "   < No Value >";
     }
-
     //If the volume tag does not match with entered param_exlude_tags
     if(daysDifference > unattachedDays){
       if(!(isTagMatched)){
@@ -324,7 +321,6 @@ script "js_check_volumes_read_or_write_operations", type:'javascript' do
   for(var i=0; i < volumesList.length; i++){
     var volume = volumesList[i];
     var readWriteOperationDone = false;
-
     for(var j=0; j < volumesReadMetricsData.length; j++){
       var readMetricData = volumesReadMetricsData[j];
       if(volume['vol_id'] === readMetricData['volumeId']){
@@ -335,7 +331,6 @@ script "js_check_volumes_read_or_write_operations", type:'javascript' do
         break;
 	  }
 	}
-
     if(!readWriteOperationDone){
       for(var k=0; k < volumesWriteMetricsData.length; k++){
         var writeMetricData = volumesWriteMetricsData[k];
@@ -348,7 +343,6 @@ script "js_check_volumes_read_or_write_operations", type:'javascript' do
 		}
 	  }
 	}
-
     if(!readWriteOperationDone){
       unattachedVolumes.push({
         volumeId : volume['vol_id'],
@@ -361,9 +355,7 @@ script "js_check_volumes_read_or_write_operations", type:'javascript' do
 	  })
 	}
   }
-
   unattachedVolumes = _.sortBy(unattachedVolumes,'region')
-
   EOS
 end  
 
@@ -373,19 +365,29 @@ end
 
 policy "policy_unattached_volumes_list" do
   validate $ds_check_volumes_read_or_write_operations do
-  summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} Unused Volumes Found in AWS"
-  detail_template <<-EOS
-# List of Unused Volumes
-| Region | Volume Id | Volume Type | Size | TAG Value |
-| ------ | --------- | -------- | ------ | ---------------- |
-{{ range data -}}
-| {{.region}} | {{.volumeId}} | {{.volumeType}} | {{.size}} | {{.tags }} |
-{{ end -}}
-
-  EOS
-  escalate $report_unused_volumes
-  escalate $delete_volumes
-  check eq(size(data),0)
+    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} Unused Volumes Found in AWS"
+    escalate $report_unused_volumes
+    escalate $delete_volumes
+    check eq(size(data),0)
+    export do
+      resource_level true
+      field "region" do
+        label "Region"
+      end
+      field "id" do
+        label "Volume Id"
+        path "volumeId"
+      end
+      field "volumeType" do
+        label "Volume Type"
+      end
+      field "size" do
+        label "Size"
+      end
+      field "tags" do
+        label "Tags"
+      end
+    end
   end
 end
 
