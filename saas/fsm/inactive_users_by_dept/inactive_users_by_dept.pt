@@ -7,11 +7,19 @@ severity "medium"
 category "SaaS Management"
 default_frequency "daily"
 info(
-  version: "2.0",
+  version: "2.2",
   provider: "Flexera SaaS Manager",
   service: "",
   policy_set: ""
 )
+
+parameter "param_num_days" do 
+  type "number"
+  label "Inactive Days Threshold"
+  description "Number of inactive days to trigger an incident"
+  default 60
+  min_value 60
+end 
 
 parameter "param_email" do
   type "list"
@@ -30,7 +38,7 @@ end
 datasource "ds_total_items" do
   request do
     auth $fsm_auth
-    host "api.metasaas.com"
+    host "api.fsm.flexeraeng.com"
     verb "GET"
     scheme "https"
     path join(["/svc/orgs/", rs_org_id, "/analytics/product-abandoned-users"])
@@ -72,7 +80,7 @@ script "js_inactive", type: "javascript" do
   console.log("ds_inactive_users"+rs_org_id)
   request = {
     auth: "fsm_auth",
-    host: "api.metasaas.com",
+    host: "api.fsm.flexeraeng.com",
     verb: "GET",
     scheme: "https",
     path: "/svc/orgs/"+rs_org_id+"/analytics/product-abandoned-users",
@@ -136,7 +144,7 @@ escalation "report_summary" do
 end
 
 policy "policy_fsm_inactive_users_by_dept" do
-  validate $ds_formatData do
+  validate_each $ds_formatData do
     summary_template "{{ len data }} Inactive SaaS Users"
     export do 
       field "lastName" do
@@ -163,6 +171,7 @@ policy "policy_fsm_inactive_users_by_dept" do
     end
     
     escalate $report_summary
-    check false
+    check ne(val(item, "daysSinceLastActive"), "Never Active")
+    check lt(val(item,"daysSinceLastActive"),$param_num_days)
   end
 end
