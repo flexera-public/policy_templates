@@ -5,7 +5,7 @@ short_description "Checks for snapshots older than specified number of days and,
 severity "low"
 category "Cost"
 info(
-  version: "2.0",
+  version: "2.2",
   provider: "Azure",
   service: "Storage",
   policy_set: "Old Snapshots"
@@ -120,35 +120,39 @@ script "js_filter_snapshots", type: "javascript" do
   parameters "param_exclusion_tag_key", "param_snapshot_age", "ds_azure_get_snapshots"
   result "res"
   code <<-EOS
-   var res = [];
-   _.each(ds_azure_get_snapshots, function(snapshot){
+    var res = [];
+    _.each(ds_azure_get_snapshots, function(snapshot){
       var tags='';
       var expectedDate=new Date();
-	  var is_tag_matched=false;
-	  var date1 = new Date(snapshot['timeCreated']);
-      var date2 = new Date(); 
-      var Difference_In_Time = date2.getTime() - date1.getTime(); 
-      var age = parseInt(Difference_In_Time / (1000 * 3600 * 24));
-      var createdTime=new Date(snapshot['timeCreated']);
-      expectedDate.setDate(expectedDate.getDate()- parseInt(param_snapshot_age));	  
-	  for(var k=0;k<param_exclusion_tag_key.length;k++){
-	     if (_.has(snapshot.tags, param_exclusion_tag_key[k])) {
-            is_tag_matched=true
+      var is_tag_matched=false;
+      var date1 = new Date(snapshot['timeCreated']);
+      var date2 = new Date();
+      var Difference_In_Time = date2.getTime() - date1.getTime();
+      var diffDays = Difference_In_Time / (1000 * 3600 * 24);
+      var age=Math.round(diffDays);
+      if(age<diffDays){
+        age++;
       }
-	  }	  
-      if (!is_tag_matched) {
-         if(expectedDate.getTime()<createdTime.getTime()){
-            res.push({
-              snapshot_id:snapshot['id'],
-              name:snapshot['name'],
-              location:snapshot['location'],
-              timeCreated:snapshot['timeCreated'],
-              subscriptionId:snapshot['subscriptionId'],
-              subscriptionName:snapshot['subscriptionName'],
-			  age:age
-            })
+      var createdTime=new Date(snapshot['timeCreated']);
+      expectedDate.setDate(expectedDate.getDate()- parseInt(param_snapshot_age));
+      for(var k=0;k<param_exclusion_tag_key.length;k++){
+        if(_.has(snapshot.tags, param_exclusion_tag_key[k])){
+          is_tag_matched=true
         }
-      }    
+      }
+      if (!is_tag_matched) {
+        if(createdTime.getTime()<expectedDate.getTime()){
+          res.push({
+            snapshot_id:snapshot['id'],
+            name:snapshot['name'],
+            location:snapshot['location'],
+            timeCreated:snapshot['timeCreated'],
+            subscriptionId:snapshot['subscriptionId'],
+            subscriptionName:snapshot['subscriptionName'],
+            age:age
+          })
+        }
+      }
    })
    res = _.sortBy(res, 'subscriptionName');
    res = _.sortBy(res, 'location');
@@ -159,19 +163,30 @@ end
 policy "pol_azure_delete_old_snapshots" do
   validate $ds_filter_snapshots do
     summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} Old Snapshots Found"
-    detail_template <<-EOS
-The following {{ len data }} snapshots, for Account: {{ rs_project_name }} (ID: {{ rs_project_id }}), have exceeded the specified age of: {{ parameters.param_snapshot_age }} days old\n
-| Subscription Name | Location | Age | Name | Snapshot ID |
-| ----------------- | -------- | --- | ---- | ----------- |
-{{ range data -}}
-| {{ .subscriptionName }} | {{ .location }} | {{ .age }} | {{ .name }} | {{ .snapshot_id }} |
-{{ end -}}
-EOS
-   # Send email report
-   escalate $send_email_report
-   # Delete snapshot if user approves
-   escalate $process_snapshots
-   check eq(size(data), 0)
+    # Send email report
+    escalate $send_email_report
+    # Delete snapshot if user approves
+    escalate $process_snapshots
+    check eq(size(data), 0)
+    export do
+      resource_level true
+      field "subscriptionName" do
+        label "Subscription Name"
+      end
+      field "location" do
+        label "Location"
+      end
+      field "age" do
+        label "Age In Days"
+      end
+      field "name" do
+        label "Name"
+      end
+      field "id" do
+        label "Snapshot Id"
+        path "snapshot_id"
+      end
+    end
   end
 end
 
@@ -201,7 +216,7 @@ define delete_old_snapshots($data) return $all_responses do
   $status_code=''
   $all_responses = []
   foreach $item in $data do
-    sub on_error: skip do	  
+    sub on_error: skip do
         call azure_delete_old_snapshots($item['snapshot_id'])
     end
   end
@@ -219,10 +234,10 @@ define azure_delete_old_snapshots($snapshot_id) do
           query_strings: {
             "api-version": "2019-07-01"
           }
-        ) 
+        )
     if $delete_status != 202
        call sys_log($syslog_subject,to_s($response))
-    end  
+    end
 end
 
 define sys_log($subject, $detail) do

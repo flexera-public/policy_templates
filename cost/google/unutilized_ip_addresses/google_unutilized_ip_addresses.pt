@@ -6,7 +6,7 @@ long_description ""
 severity "low"
 category "Cost"
 info(
-      version: "2.1",
+      version: "2.3",
       provider: "GCE",
       service: "",
       policy_set: "Unused IP Addresses"
@@ -59,13 +59,14 @@ end
 # Datasources
 ###############################################################################
 
-#get all google project
+#get all active google project
 datasource "ds_google_project" do
   request do
     auth $auth_google
     pagination $google_pagination
     host "cloudresourcemanager.googleapis.com"
     path "/v1/projects/"
+    query "filter", "lifecycleState=ACTIVE"
   end
   result do
     encoding "json"
@@ -84,6 +85,7 @@ datasource "ds_regions_list" do
     pagination $google_pagination
     host "compute.googleapis.com"
     path join(["/compute/v1/projects/",val(iter_item, "projectId"),"/regions/"])
+    ignore_status [403,404]
   end
   result do
     encoding "json"
@@ -136,6 +138,7 @@ script "js_get_addresses", type: "javascript" do
       "host": "www.googleapis.com",
       "verb": "GET",
       "path": "/compute/beta/projects/"+project+"/regions/"+region+"/addresses",
+      "ignore_status": [403,404]
       "headers": {
         "User-Agent": "RS Policies",
         "Content-Type": "application/json"
@@ -180,19 +183,42 @@ end
 policy "pol_unutilized_addresses" do
   validate_each $ds_sanitize_data do
     summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} Google Unutilized IP Addresses Discovered"
-    detail_template <<-EOS
-# Google Ununtilized Addresses
-| Project ID | Address | Name | ID   | Description | Address Type | Creation Timestamp | Purpose | Status | Subnetwork |
-| ---------- | ------ | ----- | ---- | ----------- | ------------ | ------------------ | ------- | ------ | ---------- |
-{{ range data -}}
-| {{.projectId}} | {{.address}} | {{.name}} | {{.id}} | {{.description}} | {{.addressType}} | {{.creationTimestamp}} | {{.purpose}} | {{.status}} | {{.subnetwork}} |
-{{ end -}}
-___
-###### Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }}) within Org: {{ rs_org_name }} (Org ID: {{ rs_org_id }})
-EOS
     check eq(0,1)
     escalate $email
     escalate $approve_delete_addresses
+    export do
+      resource_level true
+      field "projectId" do
+        label "Project ID"
+      end
+      field "address" do
+        label "Address"
+      end
+      field "name" do
+        label "Name"
+      end
+      field "id" do
+        label "ID"
+      end
+      field "description" do
+        label "Description"
+      end
+      field "addressType" do
+        label "Address Type"
+      end
+      field "creationTimestamp" do
+        label "Creation Timestamp"
+      end
+      field "purpose" do
+        label "Purpose"
+      end
+      field "status" do
+        label "Status"
+      end
+      field "subnetwork" do
+        label "Subnetwork"
+      end
+    end
   end
 end
 

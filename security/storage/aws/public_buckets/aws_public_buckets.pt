@@ -6,7 +6,7 @@ long_description ""
 severity "high"
 category "Security"
 info(
-  version: "2.0",
+  version: "2.1",
   provider: "AWS",
   service: "S3",
   policy_set: "Open Buckets"
@@ -129,7 +129,7 @@ datasource "aws_bucket_acls" do
   result do
     encoding "xml"
     collect xpath(response, "//AccessControlPolicy", "array") do
-      field "bucket_name", val(iter_item, "bucket_name")
+      field "id", val(iter_item, "bucket_name")
       field "creation_date", val(iter_item, "creation_date")
       field "region", val(iter_item, "region")
       field "grantee_uris", xpath(col_item, "AccessControlList/Grant/Grantee/URI","array")
@@ -161,23 +161,33 @@ end
 policy "public_buckets" do
   validate_each $aws_bucket_acls do
     summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} Public Buckets Found in AWS"
-    detail_template <<-EOS
-# Public Buckets Found in AWS
-| Bucket Name | CreationDate | GranteeURI | Owner | Region |
-| ----------- | ------------ | ---------- | ----- | ------ |
-{{ range data -}}
-| {{.bucket_name}} | {{.creation_date}} | {{.grantee_uris}} | {{.owner}} | {{.region}} |
-{{ end -}}
-EOS
     escalate $report_open_buckets
     escalate $slack_open_buckets
     check logic_not(contains(val(item, "grantee_uris"), "http://acs.amazonaws.com/groups/global/AllUsers"))
+    export do
+      resource_level true
+      field "region" do
+        label "Region"
+      end
+      field "id" do
+        label "Bucket Name"
+      end
+      field "creation_date" do
+        label "Creation Date"
+      end
+      field "grantee_uris" do
+        label "GranteeURI"
+      end
+      field "owner" do
+        label "Owner"
+      end
+    end
   end
 end
 
 
 escalation "report_open_buckets" do
-   email $param_email
+  email $param_email
 end
 
 escalation "slack_open_buckets" do
@@ -202,7 +212,7 @@ define send_slack($data, $account_name, $account_id, $param_slack_channel, $para
     # Build slack message from data
     $bucket_list = ""
     foreach $item in $data do
-      $bucket_name = $item["bucket_name"]
+      $bucket_name = $item["id"]
       if ($bucket_list != "")
         $bucket_list = $bucket_list + ", " + $bucket_name
       else

@@ -1,8 +1,12 @@
 # Changelog
 
-## v2.2
+## v2.3
 
 - adding incident resource table
+
+## v2.2
+
+- Bug fix on the formatting of email incident
 
 ## v2.1
 

@@ -1,5 +1,13 @@
 # Changelog
 
+## v2.3
+
+- Adding incident resource table
+
+## v2.2
+
+- Bug fixes on unhandled errors when executing
+
 ## v2.1
 
 - remove unncessary permissions block
