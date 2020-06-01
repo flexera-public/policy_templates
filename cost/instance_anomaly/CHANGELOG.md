@@ -8,7 +8,6 @@
 
 - Fix markdown in short description
 
-
 ## v1.1
 
 - Updated the metadata
