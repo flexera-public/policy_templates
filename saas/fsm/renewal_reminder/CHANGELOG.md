@@ -5,7 +5,6 @@
 - Update API endpoint
 - Add resource table
 
-
 ## v2.0
 
 - Updated Credential service and Endpoint
