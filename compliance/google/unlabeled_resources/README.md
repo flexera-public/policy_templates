@@ -9,7 +9,7 @@ Find all Google cloud resources(disks, images, instances, snapshots, buckets, vp
 This policy has the following input parameters required when launching the policy.
 
 - *Email addresses* - Email addresses of the recipients you wish to notify when new incidents are created.
-- *List of labels* - List of labels to find resources which are not labels by given inputs.
+- *List of labels* - List of labels to find resources which are not labeled by given inputs.
 
 ## Policy Actions
 
