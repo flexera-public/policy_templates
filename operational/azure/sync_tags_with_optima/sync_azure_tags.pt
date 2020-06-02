@@ -1,0 +1,236 @@
+name "Sync Azure Tags with Optima"
+rs_pt_ver 20180301
+type "policy"
+short_description "Identify all Azure Tag Keys and add them as custom dimensions in Flexera Optima. See the [README](https://github.com/flexera/policy_templates/tree/master/operational/azure/sync_tags_with_optima) and [docs.rightscale.com/policies](https://docs.rightscale.com/policies/) to learn more."
+severity "low"
+category "Operational"
+info(
+  version: "2.0",
+  provider: "Azure",
+  service: "",
+  policy_set: ""
+  )
+
+##################
+# User inputs    #
+##################
+
+parameter "param_email" do
+  type "list"
+  label "Email Address"
+  description "Email addresses of the recipients you wish to notify"
+end
+
+parameter "param_exclusion_tag_key" do
+  label "Exclusion Tag Keys"
+  description "Cloud native keys to ignore. Example: exclude_utilization"
+  type "list"
+end
+
+parameter "param_min_resources" do
+  type "number"
+  label "Minimum Number of Resources"
+  description "The minimum number of resources using a specific tag key which should trigger an incident"
+  default 50
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+#authenticate with Azure
+credentials "azure_auth" do
+  schemes "oauth2"
+  label "Azure"
+  description "Select the Azure Resource Manager Credential from the list."
+  tags "provider=azure_rm"
+end
+
+#authenticate with Optima
+auth "auth_rs", type: "rightscale"
+
+###############################################################################
+# Pagination
+###############################################################################
+
+#pagination support
+pagination "azure_pagination" do
+  get_page_marker do
+    body_path "nextLink"
+  end
+  set_page_marker do
+    uri true
+  end
+end
+
+###############################################################################
+# Datasources
+###############################################################################
+
+#get all subscription details.
+datasource "ds_subscriptions" do
+  request do
+    auth $azure_auth
+    pagination $azure_pagination
+    host "management.azure.com"
+    path "/subscriptions/"
+    query "api-version","2019-06-01"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "value[*]") do
+      field "subscriptionId", jmes_path(col_item,"subscriptionId")
+      field "displayName", jmes_path(col_item,"displayName")
+      field "state", jmes_path(col_item,"state")
+    end
+  end
+end
+
+#get all tag keys
+datasource "ds_azure_tags" do
+  iterate $ds_subscriptions
+  request do
+    auth $azure_auth
+    pagination $azure_pagination
+    host "management.azure.com"
+    path join(["/subscriptions/", val(iter_item,"subscriptionId"), "/tagNames"])
+    header "User-Agent", "RS Policies"
+    query "api-version","2019-10-01"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "value[*]") do
+      field "id", jmes_path(col_item,"id")
+      field "name", jmes_path(col_item,"tagName")
+      field "count", jmes_path(col_item, "count.value")
+    end
+  end
+end
+
+datasource "ds_optima_tag_dimensions" do
+  request do
+    auth $auth_rs
+    host rs_optima_host
+    path join(["bill-analysis/orgs/", rs_org_id, "/custom/dimensions"])
+    header "Api-Version", "0.1"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "[*]") do
+      field "tag_key", jmes_path(col_item, "tag_key")
+    end
+  end
+end
+
+datasource "ds_filtered_tags" do
+  run_script $js_filter_tags, $ds_azure_tags, $ds_optima_tag_dimensions, $param_exclusion_tag_key
+end
+
+script "js_filter_tags", type: "javascript" do
+  parameters "ds_azure_tags","ds_optima_tag_dimensions","param_exclusion_tag_key"
+  result "result"
+  code <<-EOS
+    var result = [];
+
+    var azure_keys = _.unique(_.pluck(ds_azure_tags, 'name'));
+    _.each(azure_keys, function(azure_key){
+      if (!_.contains(_.pluck(ds_optima_tag_dimensions,'tag_key'), azure_key)){
+        if (!_.contains(param_exclusion_tag_key, azure_key)){
+          var sum = _.reduce(_.pluck(_.where(ds_azure_tags, {"name": azure_key}), 'count'), function(memo, num){ return memo + num; }, 0)
+          result.push({
+            tag_key: azure_key,
+            count: sum
+          })
+        }
+      }
+    })
+  EOS
+end
+
+###############################################################################
+# Escalation
+###############################################################################
+
+escalation "esc_email" do
+  email $param_email
+end
+
+escalation "add_optima_tags" do
+  request_approval  do
+    label "Escalation approval"
+    description "Approve Adding Tags to Optima"
+    parameter "approval_reason" do
+      type "string"
+      label "Reason for approval"
+      description "Explain why you are approving the action"
+    end
+  end
+  run "add_tags", data, rs_org_id
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "policy_azure_tag_sync" do
+  validate_each $ds_filtered_tags do
+    summary_template "{{len data}} Azure Tags Missing from Optima"
+    export do
+      field "tag_key" do
+        label "Azure Tag Key"
+      end
+      field "count" do
+        label "Count of Resources"
+      end
+    end
+
+    escalate $esc_email
+    escalate $add_optima_tags
+    check lt(val(item, "count"), $param_min_resources)
+  end
+end
+
+
+###############################################################################
+# Cloud Workflow
+###############################################################################
+
+define add_tags($data, $rs_org_id) return $all_responses do
+  $$debug=true
+  $all_responses = []
+  foreach $item in $data do
+   sub on_error: skip do
+   $response = http_request(
+      verb: "post",
+      host: "optima.rightscale.com",
+      href: join(["/bill-analysis/orgs/",$rs_org_id,"/custom/dimensions"]),
+      https: true,
+      headers:{
+        "Api-Version": "0.1",
+        "content-type": "application/json"
+      },
+      body:{
+        "name": $item["tag_key"],
+        "tag_key": $item["tag_key"]
+      }
+    )
+    $all_responses << $response
+    call sys_log(join(['Add Azure Tag to Optima: ', $item["tag_key"]]),to_s($response))
+    end
+  end
+end
+
+define sys_log($subject, $detail) do
+  if $$debug
+    rs_cm.audit_entries.create(
+      notify: "None",
+      audit_entry: {
+        auditee_href: @@account,
+        summary: $subject,
+        detail: $detail
+      }
+    )
+  end
+end
