@@ -1,4 +1,4 @@
-# Sync Azure Tags with Optima
+# Azure Sync Tags with Optima
 
 ## What it does
 
@@ -32,6 +32,12 @@ Provider tag value to match this policy: `azure_rm`
 Required permissions in the provider:
 
 - `Reader`
+
+### Optima Permissions
+
+This policy inherits the Flexera Optima permissions of the user that applied the policy.  Users must have the following role(s):
+
+- `enterprise_manager`
 
 ## Supported Clouds
 
