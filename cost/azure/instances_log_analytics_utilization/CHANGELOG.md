@@ -3,6 +3,7 @@
 ## v2.5
 
 - Updated escalation block
+- fix spelling in path
 
 ## v2.4
 
