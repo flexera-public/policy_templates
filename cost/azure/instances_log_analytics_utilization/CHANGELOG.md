@@ -1,8 +1,12 @@
 # Changelog
 
-## v2.4
+## v2.5
 
 - Updated escalation block
+
+## v2.4
+
+- adjusted Log Analytics auth provider tag
 
 ## v2.3
 
