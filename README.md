@@ -157,6 +157,7 @@ Please contact sales@flexera.com to learn more.
 - [AWS EC2 Instances not running FlexNet Inventory Agent - Cloud](./compliance/aws/instances_without_fnm_agent/)
 - [AWS EC2 Instances not running FlexNet Inventory Agent - On Premise](./compliance/aws/instances_without_fnm_agent_on_premise/)
 - [AWS Long-stopped Instances](./compliance/aws/long_stopped_instances/)
+- [AWS Service Control Policy Audit](./compliance/aws/scp_audit/)
 
 #### Azure
 
