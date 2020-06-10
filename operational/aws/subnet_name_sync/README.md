@@ -1,39 +1,39 @@
-## AWS Subnet Name Tag Sync Policy Template
+# AWS Subnet Name Tag Sync
 
-### What it does
+## What it does
 
 This Policy Template is used to automatically synchronize the AWS Subnet names to Cloud Management.
 When applied, the policy will iterate through all VPCs in all AWS regions and ensure the matching subnet reference in Cloud Management has the correct name.
 
-### Functional Details
+## Functional Details
 
 This policy performs the following action:
+
 - Synchronizes AWS Subnet names to Subnets in Cloud Management
 
-### Input Parameters
+## Input Parameters
 
 This policy has the following input parameter required when launching the policy.
 
 - *Email addresses of the recipients you wish to notify* - A list of email addresses to notify
 
-### Policy Actions
+## Policy Actions
 
 The following policy actions are taken on any resources found to be out of compliance.
 
 - Subnet name in Cloud Management updated to match Subnet name in AWS
 
-### Cloud Management Required Permissions
+## Prerequisites
 
-This policy requires permissions to access Cloud Management resources; Clouds and Subnets.  Before applying this policy add the following roles to the user applying the policy.  The roles should be applied to all Accounts where the policy will run or at the Organization level. For more information on modifying roles visit the [Governance Docs](https://docs.rightscale.com/cm/ref/user_roles.html)
+This policy uses [credentials](https://docs.rightscale.com/policies/users/guides/credential_management.html) for connecting to the cloud -- in order to apply this policy you must have a credential registered in the system that is compatible with this policy. If there are no credentials listed when you apply the policy, please contact your cloud admin and ask them to register a credential that is compatible with this policy. The information below should be consulted when creating the credential.
 
-- Cloud Management - observer
-- Cloud Management - admin or credential_viewer
-- Cloud Management - security_manager
+### Credential configuration
 
-### AWS Required Permissions
+For administrators [creating and managing credentials](https://docs.rightscale.com/policies/users/guides/credential_management.html) to use with this policy, the following information is needed:
 
-This policy requires permissions to describe AWS Subnets and tags.
-The Cloud Management Platform automatically creates two Credentials when connecting AWS to Cloud Management; AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY. The IAM user credentials contained in those credentials will require the following permissions:
+Provider tag value to match this policy: `aws`
+
+Required permissions in the provider:
 
 ```javascript
 {
@@ -48,10 +48,10 @@ The Cloud Management Platform automatically creates two Credentials when connect
 }
 ```
 
-### Supported Clouds
+## Supported Clouds
 
 - AWS
 
-### Cost
+## Cost
 
 This Policy Template does not incur any cloud costs.

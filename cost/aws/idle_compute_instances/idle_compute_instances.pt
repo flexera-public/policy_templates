@@ -1,19 +1,16 @@
 name "AWS Idle Compute Instances"
 rs_pt_ver 20180301
 type "policy"
-short_description "Checks for AWS Compute Instances that are idle for the last 30 days and terminates them after approval. See the [README](https://github.com/rightscale/policy_templates/tree/master/cost/aws/idle_compute_instances/) and [docs.rightscale.com/policies](http://docs.rightscale.com/policies/) to learn more."
-long_description "Version: 1.2"
+short_description "Check for instances that are idle for the last 30 days and terminates them after approval. See the [README](https://github.com/flexera/policy_templates/tree/master/cost/aws/idle_compute_instances/) and [docs.rightscale.com/policies](https://docs.rightscale.com/policies/) to learn more."
+long_description ""
 severity "low"
 category "Cost"
-
-###############################################################################
-# Permissions
-###############################################################################
-
-permission "perm_read_creds" do
-  actions   "rs_cm.show_sensitive","rs_cm.index_sensitive"
-  resources "rs_cm.credentials"
-end
+info(
+  version: "2.2",
+  provider: "AWS",
+  service: "EC2",
+  policy_set: "Idle Compute Instances"
+)
 
 ###############################################################################
 # Parameters
@@ -55,18 +52,12 @@ end
 # Authentication
 ###############################################################################
 
-auth "auth_aws", type: "aws" do
-  version 4
-  service "ec2"
-  access_key cred('AWS_ACCESS_KEY_ID')
-  secret_key cred('AWS_SECRET_ACCESS_KEY')
-end
-
-auth "monitoring_auth_aws", type: "aws" do
-  version 4
-  service "monitoring"
-  access_key cred('AWS_ACCESS_KEY_ID')
-  secret_key cred('AWS_SECRET_ACCESS_KEY')
+#authenticate with AWS
+credentials "auth_aws" do
+  schemes "aws","aws_sts"
+  label "AWS"
+  description "Select the AWS Credential from the list"
+  tags "provider=aws"
 end
 
 ###############################################################################
@@ -246,7 +237,7 @@ script "js_cloudwatch_cpu_usage", type: "javascript" do
   var end_date = new Date().toISOString()
   var start_date = new Date(new Date().setDate(new Date().getDate() - 30)).toISOString();
   results = {
-    "auth": "monitoring_auth_aws",
+    "auth": "auth_aws",
     "host": 'monitoring.'+region+'.amazonaws.com',
     "verb": "GET",
     "path": "/",
@@ -287,7 +278,7 @@ script "js_cloudwatch_mem_usage", type: "javascript" do
   var end_date = new Date().toISOString()
   var start_date = new Date(new Date().setDate(new Date().getDate() - 30)).toISOString();
   results = {
-    "auth": "monitoring_auth_aws",
+    "auth": "auth_aws",
     "host": 'monitoring.'+region+'.amazonaws.com',
     "verb": "GET",
     "path": "/",
@@ -323,7 +314,7 @@ script "js_cloudwatch_windows_memory_usage", type: "javascript" do
   var end_date = new Date().toISOString()
   var start_date = new Date(new Date().setDate(new Date().getDate() - 30)).toISOString();
   results = {
-    "auth": "monitoring_auth_aws",
+    "auth": "auth_aws",
     "host": 'monitoring.'+region+'.amazonaws.com',
     "verb": "GET",
     "path": "/",
@@ -377,6 +368,9 @@ script "js_merged_metrics", type: "javascript" do
         var mem_maximum = "101"
         var mem_average = "101"
         var mem_minimum = "101"
+        var mem_maximum_value = "NA"
+        var mem_minimum_value = "NA"
+        var mem_average_value = "NA"
       }
     } else {
       instance.platform = 'linux'
@@ -390,12 +384,15 @@ script "js_merged_metrics", type: "javascript" do
         var mem_maximum = "101"
         var mem_average = "101"
         var mem_minimum = "101"
+        var mem_maximum_value = "NA"
+        var mem_minimum_value = "NA"
+        var mem_average_value = "NA"
       }
     }
     merged_results.push(
       {
         "region": instance.region,
-        "instanceId": instance.instanceId,
+        "id": instance.instanceId,
         "platform": instance.platform,
         "privateDnsName": instance.privateDnsName,
         "hostname": instance.privateDnsName.split('.')[0],
@@ -405,10 +402,13 @@ script "js_merged_metrics", type: "javascript" do
         "cpu_average": parseFloat(instance.cpu_average).toFixed(2),
         "mem_maximum": mem_maximum,
         "mem_minimum": mem_minimum,
-        "mem_average": mem_average
+        "mem_average": mem_average,
+        "mem_maximum_value": mem_maximum_value,
+        "mem_average_value": mem_average_value
       }
     )
   }
+  merged_results = _.sortBy(merged_results, 'region');
 EOS
 end
 
@@ -420,20 +420,40 @@ end
 policy "pol_utilization" do
   validate_each $ds_merged_metrics do
     summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} rows containing AWS instance CloudWatch utilization data"
-    detail_template <<-EOS
-# AWS Instance Utilization
-| Region | instanceID | Platform | Hostname | Private DNS Name | CPU Maximum % | CPU Average % | Memory Maximum % | Memory Average % |
-| ------ | ---------- | -------- | -------- | ---------------- | ------------- | ------------- | ---------------- | ---------------- |
-{{ range data -}}
-| {{.region}} | {{.instanceId}} | {{.platform}} | {{.hostname}} |  {{.privateDnsName }} | {{ .cpu_maximum }} | {{ .cpu_average }} | {{if eq .mem_maximum "101"}}N/A{{else}}{{.mem_maximum}}{{end}} | {{if eq .mem_average "101"}}N/A{{else}}{{.mem_average}}{{end}} |
-{{ end -}}
-___
-###### Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }}) within Org: {{ rs_org_name }} (Org ID: {{ rs_org_id }})
-EOS
     escalate $email
     escalate $terminate_resources
     check logic_or(eq($param_avg_used_memory, -1), gt(to_n(val(item,"mem_average")), $param_avg_used_memory))
     check logic_or(eq($param_avg_cpu, -1), gt(to_n(val(item,"cpu_average")),$param_avg_cpu))
+    export do
+      resource_level true
+      field "region" do
+        label "Region"
+      end
+      field "id" do
+        label "Instance ID"
+      end
+      field "platform" do
+        label "Platform"
+      end
+      field "hostname" do
+        label "Hostname"
+      end
+      field "privateDnsName" do
+        label "Private DNS Name"
+      end
+      field "cpu_maximum" do
+        label "CPU Maximum %"
+      end
+      field "cpu_average" do
+        label "CPU Average %"
+      end
+      field "mem_maximum_value" do
+        label "Memory Maximum %"
+      end
+      field "mem_average_value" do
+        label "Memory Average %"
+      end
+    end
   end
 end
 
@@ -471,14 +491,15 @@ define terminate_resources($data) return $all_responses do
   call sys_log(join([$syslog_subject, "Identified Instances"]),to_s($data))
   foreach $item in $data do
     $response = http_request(
+      auth: $$auth_aws,
       https: true,
       verb: "post",
+      href: "/",
       host: "ec2."+$item["region"]+".amazonaws.com",
-      signature: { "type": "aws" },
       query_strings: {
         "Action": "TerminateInstances",
         "Version": "2012-06-01",
-        "InstanceId.1": $item["instanceId"]
+        "InstanceId.1": $item["id"]
       }
     )
     $all_responses << $response

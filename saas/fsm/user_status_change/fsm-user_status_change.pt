@@ -1,0 +1,267 @@
+name "SaaS Manager - User Status Change"
+rs_pt_ver 20180301
+type "policy"
+short_description "This policy will create an incident when Flexera SaaS Manager identifies users whose status in the HR roster changes to inactive. See the [README](https://github.com/flexera/policy_templates/tree/master/saas/fsm/user_status_change/) and [docs.rightscale.com/policies](https://docs.rightscale.com/policies/) to learn more."
+long_description ""
+severity "medium"
+category "SaaS Management"
+default_frequency "daily"
+info(
+  version: "2.2",
+  provider: "Flexera SaaS Manager",
+  service: "",
+  policy_set: ""
+)
+
+parameter "param_days" do
+  type "number"
+  label "Number of Days Back"
+  description "If a user's status changes to inactive during this time period, those user accounts will raise an incident"
+end
+
+parameter "param_email" do
+  type "list"
+  label "Email addresses to notify"
+  description "Email addresses of the recipients you wish to notify"
+end
+
+#authenticate with FSM
+credentials "fsm_auth" do
+  schemes "oauth2"
+  label "FSM"
+  description "Select the FSM Resource Manager Credential from the list."
+  tags "provider=flexera_fsm"
+end
+
+datasource "ds_num_users" do
+  request do
+    auth $fsm_auth
+    host "api.fsm.flexeraeng.com"
+    verb "GET"
+    scheme "https"
+    path join(["/svc/orgs/", rs_org_id, "/customer-agents"])
+    header "content-type", "application/json"
+    query "includeInactive", "true"
+    query "property", "totalItems"
+  end
+  result do
+    encoding "json"
+    field "totalItems", jmes_path(response, "totalItems")
+  end
+end
+
+datasource "ds_groups" do
+  request do
+    auth $fsm_auth
+    host "api.fsm.flexeraeng.com"
+    verb "GET"
+    scheme "https"
+    path join(["/svc/orgs/", rs_org_id, "/customer-group"])
+    header "content-type", "application/json"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "nodes[*]") do
+      field "id", val(col_item, "id")
+      field "groupName", val(col_item, "groupName")
+    end
+  end
+end
+
+datasource "ds_group_members" do
+  iterate $ds_groups
+  request do
+    run_script $js_group_members, val(iter_item, "id"), rs_org_id
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "items[*]") do
+      field "groupId", val(iter_item, "id")
+      field "groupName", val(iter_item, "groupName")
+      field "email", val(col_item, "email")
+    end
+  end
+end
+
+script "js_group_members", type: "javascript" do
+  parameters "group_id", "rs_org_id"
+  result "request"
+  code <<-EOS
+  request = {
+    auth: "fsm_auth",
+    host: "api.fsm.flexeraeng.com",
+    verb: "GET",
+    scheme: "https",
+    path: "/svc/orgs/"+rs_org_id+"/customer-agents",
+    headers: {
+      "content-type": "application/json",
+    },
+    query_params: {
+      "groupId": group_id,
+    }
+  }
+EOS
+end
+
+datasource "ds_users" do
+  request do
+    run_script $js_users, val($ds_num_users, "totalItems"), rs_org_id
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "items[*]") do
+      field "firstName", val(col_item, "firstName")
+      field "lastName", val(col_item, "lastName")
+      field "email", val(col_item, "email")
+      field "id", val(col_item, "id")
+      field "active", val(col_item, "active")
+    end
+  end
+end
+
+script "js_users", type: "javascript" do
+  parameters "num_items", "rs_org_id"
+  result "request"
+  code <<-EOS
+  request = {
+    auth: "fsm_auth",
+    host: "api.fsm.flexeraeng.com",
+    verb: "GET",
+    scheme: "https",
+    path: "/svc/orgs/"+rs_org_id+"/customer-agents",
+    headers: {
+      "content-type": "application/json",
+    },
+    query_params: {
+      "includeInactive": "true",
+      "pageSize": num_items.toString(),
+      "property": "items.id,items.email,items.firstName,items.lastName,items.active"
+    }
+  }
+EOS
+end
+
+datasource "ds_inactive_users" do
+  run_script $js_filter_users, $ds_users
+end
+
+script "js_filter_users", type: "javascript" do
+  parameters "users"
+  result "inactive_users"
+  code <<-EOS
+    var inactive_users =
+      _.reject(users, function(user){ return user.active == true });
+  EOS
+end
+
+datasource "ds_users_details" do
+  iterate $ds_inactive_users
+  request do
+    run_script $js_user_details, val(iter_item, "id"), rs_org_id
+  end
+  result do
+    encoding "json"
+    field "firstName", jmes_path(response, "firstName")
+    field "lastName", jmes_path(response, "lastName")
+    field "email", jmes_path(response, "email")
+    field "id", jmes_path(response, "id")
+    field "active", jmes_path(response, "active")
+    field "activeDate", jmes_path(response, "activeDate")
+    field "inactiveDate", jmes_path(response, "inactiveDate")
+    field "numberOfLicenses", jmes_path(response, "numberOfLicenses")
+  end
+end
+
+script "js_user_details", type: "javascript" do
+  parameters "user", "rs_org_id"
+  result "request"
+  code <<-EOS
+  request = {
+    auth: "fsm_auth",
+    host: "api.fsm.flexeraeng.com",
+    verb: "GET",
+    scheme: "https",
+    path: "/svc/orgs/"+rs_org_id+"/customer-agents/" + user,
+    headers: {
+      "content-type": "application/json",
+    }
+  }
+  EOS
+end
+
+datasource "ds_cleanup_users" do
+  run_script $js_cleanup_users, $ds_users_details, $ds_group_members, $param_days
+end
+
+script "js_cleanup_users", type: "javascript" do
+  parameters "users", "group_members", "param_days"
+  result "result"
+  code <<-EOS
+  var result = [];
+  var date = new Date();
+  date = date.setHours(-24 * param_days);
+  date = new Date(date);
+
+  // returns date formatted as string: YYYY-mm-dd
+  function getFormattedDailyDate(date) {
+    var year = date.getFullYear();
+    var month = (1 + date.getMonth()).toString();
+    month = month.length > 1 ? month : '0' + month;
+    var day = date.getDate().toString();
+    day = day.length > 1 ? day : '0' + day;
+    return year + '-' + month + '-' + day;
+  }
+  _.each(users, function(user){
+    var inactive_date = new Date(user["inactiveDate"]);
+    if (inactive_date > date){
+      _.each(group_members, function(group_member){
+        if (user["email"] === group_member["email"]){
+          user_group = group_member["groupName"]
+        }
+      })
+      result.push({
+        firstName: user["firstName"],
+        lastName: user["lastName"],
+        email: user["email"],
+        numberOfLicenses: user["numberOfLicenses"],
+        inactiveDate: getFormattedDailyDate(inactive_date),
+        userGroup: user_group
+      })
+    }
+  })
+
+  result = _.sortBy(result, 'userGroup');
+EOS
+end
+
+escalation "report_summary" do
+    email $param_email
+end
+
+policy "policy_fsm_inactive_users" do
+  validate $ds_cleanup_users do
+    summary_template "{{ len data }} Inactive Users Found"
+    export do 
+      field "lastName" do
+        label "Last Name"
+      end 
+      field "firstName" do 
+        label "First Name"
+      end 
+      field "email" do 
+        label "Email"
+      end 
+      field "userGroup" do 
+        label "Department"
+      end
+      field "inactiveDate" do 
+        label "Inactive Date (YYYY-MM-DD)"
+      end
+      field "numberOfLicenses" do 
+        label "Number of Licenses"
+      end 
+    end  
+    escalate $report_summary
+    check eq(size(data), 0)
+  end
+end

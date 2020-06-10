@@ -14,17 +14,18 @@ _Note 1: The last 3 days of data in the current week or month will contain incom
 _Note 2: The account you apply the policy to is unimportant as Optima metrics are scoped to the Org._
 
 See [README](https://github.com/flexera/policy_templates/tree/master/cost/scheduled_reports) for more details"
-long_description "Version: 1.8"
+long_description ""
 severity "low"
 category "Cost"
+default_frequency "monthly"
 tenancy "single"
+info(
+  version: "1.21",
+  provider: "Flexera Optima",
+  service: "",
+  policy_set: ""
+  )
 
-## commented out until the optima resource is added to policies.
-# permission "optima" do
-#   label "Access Optima Resources"
-#   resources "rs_optima.costs"
-#   actions "rs_optima.aggregated"
-# end
 
 parameter "param_email" do
   type "list"
@@ -49,7 +50,7 @@ end
 parameter "param_graph_dimension" do
   type "string"
   label "Graph Dimension"
-  allowed_values "Category","Instance Type","Region","Resource Group","Resource Type","Service","Usage Type","Usage Unit","Cloud Vendor","Cloud Vendor Account","Cloud Vendor Account Name"
+  allowed_values "Category","Billing Centers","Instance Type","Region","Resource Group","Resource Type","Service","Usage Type","Usage Unit","Cloud Vendor","Cloud Vendor Account","Cloud Vendor Account Name"
   default "Category"
   description "Select which dimension you'd like to be broken out on the graph in the report."
 end
@@ -119,12 +120,12 @@ end
 
 datasource "ds_current_week_costs" do
   request do
-    run_script $js_current_week_cost_request, $param_billing_centers, $param_cost_metric, rs_org_id, rs_optima_host, $ds_billing_centers
+    run_script $js_current_week_cost_request, $param_billing_centers, $param_cost_metric, rs_org_id, rs_optima_host, $ds_billing_centers, $param_graph_dimension
   end
 end
 
 script "js_current_week_cost_request", type: "javascript" do
-  parameters "param_billing_centers", "param_cost_metric", "rs_org_id", "rs_optima_host", "ds_billing_centers"
+  parameters "param_billing_centers", "param_cost_metric", "rs_org_id", "rs_optima_host", "ds_billing_centers", "param_graph_dimension"
   result "request"
   code <<-EOS
     var range = "daily";
@@ -180,10 +181,15 @@ script "js_current_week_cost_request", type: "javascript" do
       billing_center_ids = _.map(top_billing_centers, function(value, key){ return value.id });
     } else {
       // get array of billing center id's that match the names in param_billing_centers.
-      billing_center_names = _.map(param_billing_centers, function(name){ return name.toLowerCase(); });
-      billing_center_ids = _.compact(_.map(ds_billing_centers, function(value){ if(_.contains(billing_center_names, value.name.toLowerCase())){return value.id} }));
+      if (param_graph_dimension === "Billing Centers"){
+        parent_billing_center_names = _.map(param_billing_centers, function(name){ return name.toLowerCase(); });
+        parent_billing_center_ids = _.compact(_.map(ds_billing_centers, function(value){ if(_.contains(parent_billing_center_names, value.name.toLowerCase())){return value.id} }));
+        billing_center_ids = _.compact(_.map(ds_billing_centers, function(value){ if(_.contains(parent_billing_center_ids, value.parent_id)){return value.id} }));
+      } else {
+        billing_center_names = _.map(param_billing_centers, function(name){ return name.toLowerCase(); });
+        billing_center_ids = _.compact(_.map(ds_billing_centers, function(value){ if(_.contains(billing_center_names, value.name.toLowerCase())){return value.id} }));
+      }
     }
-
     var body = {
       "dimensions":[]
       "granularity":"day",
@@ -210,12 +216,12 @@ end
 
 datasource "ds_previous_week_costs" do
   request do
-    run_script $js_previous_week_cost_request, $param_billing_centers, $param_cost_metric, rs_org_id, rs_optima_host, $ds_billing_centers
+    run_script $js_previous_week_cost_request, $param_billing_centers, $param_cost_metric, rs_org_id, rs_optima_host, $ds_billing_centers, $param_graph_dimension
   end
 end
 
 script "js_previous_week_cost_request", type: "javascript" do
-  parameters "param_billing_centers", "param_cost_metric", "rs_org_id", "rs_optima_host", "ds_billing_centers"
+  parameters "param_billing_centers", "param_cost_metric", "rs_org_id", "rs_optima_host", "ds_billing_centers", "param_graph_dimension"
   result "request"
   code <<-EOS
     var range = "daily";
@@ -270,8 +276,14 @@ script "js_previous_week_cost_request", type: "javascript" do
       billing_center_ids = _.map(top_billing_centers, function(value, key){ return value.id });
     } else {
       // get array of billing center id's that match the names in param_billing_centers.
-      billing_center_names = _.map(param_billing_centers, function(name){ return name.toLowerCase(); });
-      billing_center_ids = _.compact(_.map(ds_billing_centers, function(value){ if(_.contains(billing_center_names, value.name.toLowerCase())){return value.id} }));
+      if (param_graph_dimension === "Billing Centers"){
+        parent_billing_center_names = _.map(param_billing_centers, function(name){ return name.toLowerCase(); });
+        parent_billing_center_ids = _.compact(_.map(ds_billing_centers, function(value){ if(_.contains(parent_billing_center_names, value.name.toLowerCase())){return value.id} }));
+        billing_center_ids = _.compact(_.map(ds_billing_centers, function(value){ if(_.contains(parent_billing_center_ids, value.parent_id)){return value.id} }));
+      } else {
+        billing_center_names = _.map(param_billing_centers, function(name){ return name.toLowerCase(); });
+        billing_center_ids = _.compact(_.map(ds_billing_centers, function(value){ if(_.contains(billing_center_names, value.name.toLowerCase())){return value.id} }));
+      }
     }
 
     var body = {
@@ -300,12 +312,12 @@ end
 
 datasource "ds_current_month_costs" do
   request do
-    run_script $js_current_month_cost_request, $param_billing_centers, $param_cost_metric, rs_org_id, rs_optima_host, $ds_billing_centers
+    run_script $js_current_month_cost_request, $param_billing_centers, $param_cost_metric, rs_org_id, rs_optima_host, $ds_billing_centers, $param_graph_dimension
   end
 end
 
 script "js_current_month_cost_request", type: "javascript" do
-  parameters "param_billing_centers", "param_cost_metric", "rs_org_id", "rs_optima_host", "ds_billing_centers"
+  parameters "param_billing_centers", "param_cost_metric", "rs_org_id", "rs_optima_host", "ds_billing_centers", "param_graph_dimension"
   result "request"
   code <<-EOS
     var range = "monthly";
@@ -360,8 +372,14 @@ script "js_current_month_cost_request", type: "javascript" do
       billing_center_ids = _.map(top_billing_centers, function(value, key){ return value.id });
     } else {
       // get array of billing center id's that match the names in param_billing_centers.
-      billing_center_names = _.map(param_billing_centers, function(name){ return name.toLowerCase(); });
-      billing_center_ids = _.compact(_.map(ds_billing_centers, function(value){ if(_.contains(billing_center_names, value.name.toLowerCase())){return value.id} }));
+      if (param_graph_dimension === "Billing Centers"){
+        parent_billing_center_names = _.map(param_billing_centers, function(name){ return name.toLowerCase(); });
+        parent_billing_center_ids = _.compact(_.map(ds_billing_centers, function(value){ if(_.contains(parent_billing_center_names, value.name.toLowerCase())){return value.id} }));
+        billing_center_ids = _.compact(_.map(ds_billing_centers, function(value){ if(_.contains(parent_billing_center_ids, value.parent_id)){return value.id} }));
+      } else {
+        billing_center_names = _.map(param_billing_centers, function(name){ return name.toLowerCase(); });
+        billing_center_ids = _.compact(_.map(ds_billing_centers, function(value){ if(_.contains(billing_center_names, value.name.toLowerCase())){return value.id} }));
+      }
     }
 
     var body = {
@@ -390,12 +408,12 @@ end
 
 datasource "ds_previous_month_costs" do
   request do
-    run_script $js_previous_month_cost_request, $param_billing_centers, $param_cost_metric, rs_org_id, rs_optima_host, $ds_billing_centers
+    run_script $js_previous_month_cost_request, $param_billing_centers, $param_cost_metric, rs_org_id, rs_optima_host, $ds_billing_centers, $param_graph_dimension
   end
 end
 
 script "js_previous_month_cost_request", type: "javascript" do
-  parameters "param_billing_centers", "param_cost_metric", "rs_org_id", "rs_optima_host", "ds_billing_centers"
+  parameters "param_billing_centers", "param_cost_metric", "rs_org_id", "rs_optima_host", "ds_billing_centers", "param_graph_dimension"
   result "request"
   code <<-EOS
     var range = "monthly";
@@ -450,8 +468,14 @@ script "js_previous_month_cost_request", type: "javascript" do
       billing_center_ids = _.map(top_billing_centers, function(value, key){ return value.id });
     } else {
       // get array of billing center id's that match the names in param_billing_centers.
-      billing_center_names = _.map(param_billing_centers, function(name){ return name.toLowerCase(); });
-      billing_center_ids = _.compact(_.map(ds_billing_centers, function(value){ if(_.contains(billing_center_names, value.name.toLowerCase())){return value.id} }));
+      if (param_graph_dimension === "Billing Centers"){
+        parent_billing_center_names = _.map(param_billing_centers, function(name){ return name.toLowerCase(); });
+        parent_billing_center_ids = _.compact(_.map(ds_billing_centers, function(value){ if(_.contains(parent_billing_center_names, value.name.toLowerCase())){return value.id} }));
+        billing_center_ids = _.compact(_.map(ds_billing_centers, function(value){ if(_.contains(parent_billing_center_ids, value.parent_id)){return value.id} }));
+      } else {
+        billing_center_names = _.map(param_billing_centers, function(name){ return name.toLowerCase(); });
+        billing_center_ids = _.compact(_.map(ds_billing_centers, function(value){ if(_.contains(billing_center_names, value.name.toLowerCase())){return value.id} }));
+      }
     }
 
     var body = {
@@ -662,7 +686,7 @@ script "js_n_month_cost_request", type: "javascript" do
     // add months to date
     // returns date object
     function addMonths(date, months) {
-      date.setMonth(date.getMonth() + months);
+      date.setMonth(date.getMonth() + months, 1);
       return date;
     }
 
@@ -676,6 +700,7 @@ script "js_n_month_cost_request", type: "javascript" do
 
     var graph_dimension = {
       "Category": "category",
+      "Billing Centers": "billing_center_id",
       "Instance Type": "instance_type",
       "Region": "region",
       "Resource Group": "resource_group",
@@ -707,8 +732,14 @@ script "js_n_month_cost_request", type: "javascript" do
       billing_center_ids = _.map(top_billing_centers, function(value, key){ return value.id });
     } else {
       // get array of billing center id's that match the names in param_billing_centers.
-      billing_center_names = _.map(param_billing_centers, function(name){ return name.toLowerCase(); });
-      billing_center_ids = _.compact(_.map(ds_billing_centers, function(value){ if(_.contains(billing_center_names, value.name.toLowerCase())){return value.id} }));
+      if (param_graph_dimension === "Billing Centers"){
+        parent_billing_center_names = _.map(param_billing_centers, function(name){ return name.toLowerCase(); });
+        parent_billing_center_ids = _.compact(_.map(ds_billing_centers, function(value){ if(_.contains(parent_billing_center_names, value.name.toLowerCase())){return value.id} }));
+        billing_center_ids = _.compact(_.map(ds_billing_centers, function(value){ if(_.contains(parent_billing_center_ids, value.parent_id)){return value.id} }));
+      } else {
+        billing_center_names = _.map(param_billing_centers, function(name){ return name.toLowerCase(); });
+        billing_center_ids = _.compact(_.map(ds_billing_centers, function(value){ if(_.contains(billing_center_names, value.name.toLowerCase())){return value.id} }));
+      }
     }
 
     var request=[];
@@ -763,11 +794,11 @@ script "js_n_month_cost_request", type: "javascript" do
 end
 
 datasource "ds_generated_report" do
-  run_script $js_generate_report, $ds_previous_n_month_costs, $param_cost_metric, $param_billing_centers, $ds_report, $param_graph_dimension, $ds_currency_code, $ds_currency_reference, $param_date_range, $param_billing_term
+  run_script $js_generate_report, $ds_previous_n_month_costs, $param_cost_metric, $param_billing_centers, $ds_report, $param_graph_dimension, $ds_currency_code, $ds_currency_reference, $param_date_range, $param_billing_term, $ds_billing_centers
 end
 
 script "js_generate_report", type: "javascript" do
-  parameters "ds_previous_n_month_costs","param_cost_metric","param_billing_centers","ds_report","param_graph_dimension","ds_currency_code","ds_currency_reference", "param_date_range","param_billing_term"
+  parameters "ds_previous_n_month_costs","param_cost_metric","param_billing_centers","ds_report","param_graph_dimension","ds_currency_code","ds_currency_reference", "param_date_range","param_billing_term", "ds_billing_centers"
   result "report"
   code <<-EOS
     // format the date for the `monthly` API
@@ -791,6 +822,7 @@ script "js_generate_report", type: "javascript" do
 
     var graph_dimension = {
       "Category": "category",
+      "Billing Centers": "billing_center_id",
       "Instance Type": "instance_type",
       "Region": "region",
       "Resource Group": "resource_group",
@@ -820,6 +852,22 @@ script "js_generate_report", type: "javascript" do
     var weekNo=1;
     var tempDayNo=0;
     var stringWeek="";
+    if (param_graph_dimension === "Billing Centers"){
+      // create new datasource with BC name as available dimension
+      var new_data = []
+      _.each(ds_previous_n_month_costs, function(row){
+        bc_name = _.compact(_.map(ds_billing_centers, function(value){ if(value.id === row['dimensions']['billing_center_id']){return value.name} }));
+        new_data.push({
+          dimensions: {
+            billing_center_id: row['dimensions']['billing_center_id'],
+            billing_center_name: bc_name.toString()
+          },
+          metrics: row['metrics'],
+          timestamp: row['timestamp']
+        })
+      })
+      ds_previous_n_month_costs = new_data
+    }
     _.each(ds_previous_n_month_costs, function(row){
       var yearMonth = row['timestamp'].split('-')[0] + '-' + row['timestamp'].split('-')[1];
       var numberMonth = row['timestamp'].split('-')[1];
@@ -841,6 +889,10 @@ script "js_generate_report", type: "javascript" do
         stringWeek=stringMonth+"-"+dayNo;
 	    count=0;
       }
+      if (param_graph_dimension === "Billing Centers"){
+        // get the BC name from the datasource instead of the BC ID
+        dimension = 'billing_center_name'
+      }
       collated_data.push({
         stringMonth: stringMonth,
         stringDay:stringDay,
@@ -855,35 +907,39 @@ script "js_generate_report", type: "javascript" do
     var topValues;
     var categories=[];
     var otherData=[];
+    topValues = _.sortBy(_.filter(collated_data, function(x){ return (x.yearMonth==currentMonth &&  x.category != "")}),'cost').reverse();
+    _.each(topValues, function(topValue){
+      if(!_.contains(categories, topValue.category) && _.size(categories) < 10){
+        categories.push(topValue.category);	
+      }
+    })
     if(param_billing_term==="Month"){
-    topValues = _.last(_.sortBy(_.filter(collated_data, function(x){ return x.yearMonth==currentMonth}),'cost'),10);
-    categories = _.map(topValues, function(line) {return line.category});
-    // Get all of the data that is not in the top categories and sum it up by month
-    nonTopData = _.groupBy(_.reject(collated_data, function(d){ return _.contains(categories, d.category)}), function(d) { return d.yearMonth });
-    _.each(nonTopData, function(d, k){
-      total = _.reduce(d, function(total, el) {
-        return total + el.cost;
-      },0);
-      otherData.push({yearMonth:k,cost:total});
-    })
+      // Get all of the data that is not in the top categories and sum it up by month
+      nonTopData = _.groupBy(_.reject(collated_data, function(d){ return _.contains(categories, d.category)}), function(d) { return d.yearMonth });
+      _.each(nonTopData, function(d, k){
+        total = _.reduce(d, function(total, el) {
+          return total + el.cost;
+        },0);
+        otherData.push({yearMonth:k,cost:total});
+      })
     }else if(param_billing_term==="Day"){
-    // Get all of the data that is not in the top categories and sum it up by Day
-    nonTopData = _.groupBy(_.reject(collated_data, function(d){ return _.contains(categories, d.category)}), function(d) { return d.stringDay });
-    _.each(nonTopData, function(d, k){
-      total = _.reduce(d, function(total, el) {
-        return total + el.cost;
-      },0);
-      otherData.push({stringDay:k,cost:total});
-    })
+      // Get all of the data that is not in the top categories and sum it up by Day
+      nonTopData = _.groupBy(_.reject(collated_data, function(d){ return _.contains(categories, d.category)}), function(d) { return d.stringDay });
+      _.each(nonTopData, function(d, k){
+        total = _.reduce(d, function(total, el) {
+          return total + el.cost;
+        },0);
+        otherData.push({stringDay:k,cost:total});
+      })
     }else if(param_billing_term==="Week"){
-     // Get all of the data that is not in the top categories and sum it up by Day
-     nonTopData = _.groupBy(_.reject(collated_data, function(d){ return _.contains(categories, d.category)}), function(d) { return d.stringWeek });
-    _.each(nonTopData, function(d, k){
-      total = _.reduce(d, function(total, el) {
-        return total + el.cost;
-      },0);
-      otherData.push({stringWeek:k,cost:total});
-    })
+      // Get all of the data that is not in the top categories and sum it up by Day
+      nonTopData = _.groupBy(_.reject(collated_data, function(d){ return _.contains(categories, d.category)}), function(d) { return d.stringWeek });
+      _.each(nonTopData, function(d, k){
+        total = _.reduce(d, function(total, el) {
+          return total + el.cost;
+        },0);
+        otherData.push({stringWeek:k,cost:total});
+      })
     }
 
     // get unique dates
@@ -927,7 +983,19 @@ script "js_generate_report", type: "javascript" do
       })
       chartDataArray.push(seriesData.join())
     }
-     }else if(param_billing_term==="Day"){	
+     }else if(param_billing_term==="Day"){
+       _.each(categories, function(category){
+         var seriesData = [];
+         _.each(stringDays, function(day){
+           var tempTotal = _.where(collated_data, {stringDay: day, category: category});
+           if ( tempTotal.length === 0 ) {
+             seriesData.push("_")
+           } else {
+             seriesData.push(Math.round(tempTotal[0].cost))
+           }
+         })
+         chartDataArray.push(seriesData.join())
+       }) 
       // Add the "Other" category and associated data
       if ( otherData.length > 0 ) {
         categories.push("Other");
@@ -942,7 +1010,19 @@ script "js_generate_report", type: "javascript" do
         })
       chartDataArray.push(seriesData.join())	
       }
-    }else if(param_billing_term==="Week"){	
+    }else if(param_billing_term==="Week"){
+      _.each(categories, function(category){
+        var seriesData = [];
+        _.each(stringWeek, function(week){
+          var tempTotal = _.where(collated_data, {stringWeek: week, category: category});
+          if ( tempTotal.length === 0 ) {
+            seriesData.push("_")
+          } else {
+            seriesData.push(Math.round(tempTotal[0].cost))
+          }
+        })
+        chartDataArray.push(seriesData.join())
+      }) 
       // Add the "Other" category and associated data
       if( otherData.length > 0 ) {
         categories.push("Other");

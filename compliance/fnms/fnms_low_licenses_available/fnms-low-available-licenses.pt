@@ -1,0 +1,166 @@
+name "FlexNet Manager Low Available Licenses"
+rs_pt_ver 20180301
+type "policy"
+short_description "Looks up Flexnet Manager Licenses and finds all Flexnet Manager Licenses with available count less than user provide percentage, and sends the result as an email.  See the [README](https://github.com/flexera/policy_templates/tree/master/compliance/fnms/fnms_low_licenses_available) and [docs.rightscale.com/policies](https://docs.rightscale.com/policies/) to learn more."
+long_description ""
+severity "medium"
+category "Compliance"
+info(
+  version: "2.1",
+  provider: "Flexera FNMS",
+  service: "",
+  policy_set: "Low License Count"
+)
+
+parameter "param_fnms_url" do
+  type "string"
+  label "FNMS Report URL"
+  description "Full FlexNet URL (e.g. https://demo.flexnetmanager.com/Suite )"
+  allowed_pattern /^(http:\/\/|https:\/\/)+[a-z0-9]+([\-\.]{1}[a-z0-9]+)*\.[a-z0-9]{2,5}(:[0-9]{1,5})?(\/.*)?$/
+end
+
+parameter "param_available_watermark" do
+  type "number"
+  label "Percentage Available"
+  description "Percentage threshold of available licenses"
+end
+
+parameter "param_report_id" do
+  type "string"
+  label "FNMS Report ID"
+  description "FlexNet Manager Custom View ID"
+end
+
+parameter "param_email" do
+  type "list"
+  label "Email addresses of the recipients you wish to notify"
+  description "A list of email addresse(s) to notify"
+end
+
+credentials "api_auth" do
+  schemes "api_key","ntlm"
+  label "FNMS"
+  description "Select the FNMS Credential from the list."
+  tags "provider=flexera_fnms"
+end
+
+# Build the API request object dynamically because we need to find the right authentiocation model.
+script "fnms_request", type: "javascript" do
+  parameters "fnms_host", "report_id"
+  result "request"
+  code <<-EOS
+    var sHost = fnms_host.substr(fnms_host.indexOf('://')+3)
+    if (sHost.indexOf('/') > -1)  sHost = sHost.substr(0,sHost.indexOf('/'))
+
+    // Find the right schema
+    var sScheme = fnms_host.substr(0,fnms_host.indexOf('://'));
+
+    //Should we use User/password or Token to authenticate
+    var sAuth = "api_auth"
+
+    var sBody = '<?xml version="1.0" encoding="utf-8"?>'
+    sBody    += '<soap:Envelope xmlns:soap="http://www.w3.org/2003/05/soap-envelope" xmlns:tem="http://tempuri.org/">'
+    sBody    += '  <soap:Body>'
+    sBody    += '    <tem:GetCustomView>'
+    sBody    += '      <tem:customViewID>' +report_id+ '</tem:customViewID>'
+    sBody    += '     <tem:rowLimit>100000</tem:rowLimit>'
+    sBody    += '   </tem:GetCustomView>'
+    sBody    += '  </soap:Body>'
+    sBody    += '</soap:Envelope>'
+
+    var request = {
+      auth: sAuth,
+      scheme: sScheme,
+      host: sHost,
+      path: "/ManageSoftServices/ComplianceAPIService/ComplianceAPIService.asmx",
+      verb: "POST",
+      headers: {
+        "Content-Type": "text/xml;charset=utf-8"
+      },
+
+      body: sBody
+    }
+  EOS
+end
+
+datasource 'fnms_report' do
+  request do
+    run_script $fnms_request, $param_fnms_url, $param_report_id
+  end
+  result do
+    encoding "xml"
+    collect xpath(response,"//NewDataSet/SearchResults") do
+      field "name", xpath(col_item, "Name")
+      field "edition", xpath(col_item, "Edition")
+      field "version", xpath(col_item, "Version")
+      field "license_type", xpath(col_item, "LicenseType")
+      field "available_licenses", xpath(col_item, "NumberAvailable")
+      field "license_compliance", xpath(col_item, "LicenseCompliance")
+      field "number_purchased",  xpath(col_item, "NumberPurchased")
+    end
+  end
+end
+
+datasource "calculated_available_licenses", type: "javascript" do
+  run_script $js_calculated_available_licenses, $fnms_report
+end
+
+script "js_calculated_available_licenses", type: "javascript" do
+  parameters "fnms_report"
+  result "result"
+  code <<-EOS
+    var result = [];
+    _.each(fnms_report, function(rec) {
+      var res = {};
+      res = rec;
+      if (res.number_purchased > 0) {
+        res.available_percent = Math.round(res.available_licenses/res.number_purchased * 100);
+      } else {
+        res.available_percent = -0;
+      }
+      res.available_percent_txt = res.available_percent.toString().concat(' %');
+      result.push(res);
+    })
+    result = _.sortBy(result, 'name');
+  EOS
+end
+
+policy 'fnms_policy' do
+  validate_each $calculated_available_licenses do
+    summary_template 'FlexNet Manager - Low available licenses'
+    escalate $send_report
+    check le($param_available_watermark, val(item, "available_percent"))
+    export do
+      resource_level true
+      field "id" do
+        label "Name"
+        path "name"
+      end
+      field "edition" do
+        label "Edition"
+      end
+      field "version" do
+        label "Version"
+      end
+      field "license_type" do
+        label "License type"
+      end
+      field "number_purchased" do
+        label "Purchased"
+      end
+      field "available_licenses" do
+        label "Shortfall / Availability"
+      end
+      field "available_percent_txt" do
+        label "% Available"
+      end
+    end
+  end
+end
+
+escalation "send_report" do
+  automatic true
+  label "Send Email"
+  description "Sends incident email"
+  email $param_email
+end

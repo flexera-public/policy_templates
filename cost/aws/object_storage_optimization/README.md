@@ -1,41 +1,43 @@
-## AWS Object Storage Optimization
- 
-### What it does
+# AWS Object Storage Optimization
+
+## What it does
 
 This Policy checks S3 buckets for older objects and can move old object to 'glacier' or 'deep archive' after a given period of time. The user can choose to delete old object by enabling 'delete action' option as mentioned in Enable delete action section below.
 
-### Functional Details
- 
+## Functional Details
+
 - This policy identifies all S3 objects last updated outside of the specified timeframe
 - For all objects identified as old, the user can choose to move the object to Glacier or Glacier Deep Archive after the specified timeframe.
- 
-### Input Parameters
- 
+
+## Input Parameters
+
 This policy has the following input parameters required when launching the policy.
 
-- *Email addresses of the recipients you wish to notify* - A list of email addresses to notify
-- *Move to Glacier after days last modified* - leave blank to skip moving
-- *Move to Glacier Deep Archive after days last modified* - leave blank to skip moving
-- *Exclude Tag* - exclude object with the included tags 
- 
-### Required RightScale Roles
- 
-- Cloud Management - The `credential_viewer`,`observer` roles
-- Cloud Management - The `policy_designer`, `policy_manager` & `policy_publisher` roles
+- *Email addresses to notify* - Email addresses of the recipients you wish to notify when new incidents are created
+- *Days since last modified to move to Glacier* - Move to glacier after days last modified - leave blank to skip moving
+- *Days since last modified to move to Deep Archive* - Move to glacier deep archive after days last modified- leave blank to skip moving
+- *Exclude Tag* - List of tags that will exclude s3 objects from being evaluated by this policy. Multiple tags are evaluated as an 'OR' condition. Tag keys or key/value pairs can be listed. Example: 'test,env=dev'
 
-### Enable delete action
+## Enable delete action
 
 Perform below steps to enable delete action.
 
 - Edit the file [AWS Object Storage Optimization](https://github.com/flexera/policy_templates/tree/master/cost/aws/object_storage_optimization/aws_object_storage_optimization.pt)
-- uncomment the line which contains 'escalate $esc_delete_s3_objects_approval' 
+- uncomment the line which contains 'escalate $esc_delete_s3_objects_approval'
 - comment the line which contains '$esc_modify_s3_object_storage_class_approval' and save the changes.
 - upload the modified file and apply the policy.
 
-### AWS Required Permissions
+## Prerequisites
 
-This policy requires permissions to S3 bucket GET Service, GET Bucket location, GET Bucket (List Objects) Version 2, GET Object tagging, PUT Object - Copy, DELETE Object.
-The Cloud Management Platform automatically creates two Credentials when connecting AWS to Cloud Management; AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY. The IAM user credentials contained in those credentials will require the following permissions:
+This policy uses [credentials](https://docs.rightscale.com/policies/users/guides/credential_management.html) for connecting to the cloud -- in order to apply this policy you must have a credential registered in the system that is compatible with this policy. If there are no credentials listed when you apply the policy, please contact your cloud admin and ask them to register a credential that is compatible with this policy. The information below should be consulted when creating the credential.
+
+### Credential configuration
+
+For administrators [creating and managing credentials](https://docs.rightscale.com/policies/users/guides/credential_management.html) to use with this policy, the following information is needed:
+
+Provider tag value to match this policy: `aws`
+
+Required permissions in the provider:
 
 ```javascript
 {
@@ -51,16 +53,17 @@ The Cloud Management Platform automatically creates two Credentials when connect
                           "s3:DeleteObject"
                          ],
                 "Resource":"*"
-              }]
+              }
+              ]
 }
-
 ```
+
 Note: To get the list and modify S3-objects present in the S3 bucket, user must have READ and Write access to the bucket.
 
-### Supported Clouds
- 
+## Supported Clouds
+
 - AWS
- 
-### Cost
- 
+
+## Cost
+
 This Policy Template does not incur any cloud costs.

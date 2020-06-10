@@ -1,19 +1,16 @@
 name "AWS Rightsize RDS Instances"
 rs_pt_ver 20180301
 type "policy"
-short_description "Checks for AWS RDS Instances that are inside or outside the CPU threshold for the last 30 days and resizes them after approval. See the [README](https://github.com/rightscale/policy_templates/tree/master/cost/aws/rds_instance_cloudwatch_utilization/) and [docs.rightscale.com/policies](http://docs.rightscale.com/policies/) to learn more."
-long_description "Version: 1.1"
+short_description "Check for Inefficient database services that are inside or outside the CPU threshold for the last 30 days and resizes them after approval. See the [README](https://github.com/flexera/policy_templates/tree/master/cost/aws/rds_instance_cloudwatch_utilization/) and [docs.rightscale.com/policies](https://docs.rightscale.com/policies/) to learn more."
+long_description ""
 severity "low"
 category "Cost"
-
-###############################################################################
-# Permissions
-###############################################################################
-
-permission "perm_read_creds" do
-  actions   "rs_cm.show_sensitive","rs_cm.index_sensitive"
-  resources "rs_cm.credentials"
-end
+info(
+  version: "2.1",
+  provider: "AWS",
+  service: "RDS",
+  policy_set: "RightSize Database Services"
+)
 
 ###############################################################################
 # Parameters
@@ -53,18 +50,12 @@ end
 # Authentication
 ###############################################################################
 
-auth "rds_auth_aws", type: "aws" do
-  version 4
-  service "rds"
-  access_key cred('AWS_ACCESS_KEY_ID')
-  secret_key cred('AWS_SECRET_ACCESS_KEY')
-end
-
-auth "monitoring_auth_aws", type: "aws" do
-  version 4
-  service "monitoring"
-  access_key cred('AWS_ACCESS_KEY_ID')
-  secret_key cred('AWS_SECRET_ACCESS_KEY')
+#authenticate with AWS
+credentials "auth_aws" do
+  schemes "aws","aws_sts"
+  label "AWS"
+  description "Select the AWS Credential from the list."
+  tags "provider=aws"
 end
 
 ###############################################################################
@@ -153,7 +144,7 @@ datasource "ds_merged_metrics" do
   run_script $js_merged_metrics, $ds_instances, $ds_cloudwatch_cpu_usage
 end
 
-datasource "ds_filtered_results" do 
+datasource "ds_filtered_results" do
   run_script $js_filtered_results, $ds_merged_metrics, $param_avg_cpu_downsize, $param_avg_cpu_upsize
 end
 
@@ -168,7 +159,7 @@ script "js_instances", type: "javascript" do
   var tag_key = param_exclusion_tag_key.split(':')[0]
   var tag_value = param_exclusion_tag_key.split(':')[1]
   var results = []
-  
+
   for ( n=0; n < ds_instance_set.length; n++) {
       var instance = ds_instance_set[n]
 
@@ -179,7 +170,7 @@ script "js_instances", type: "javascript" do
         tag_set.push(instance.key+':'+instance.value)
       })
       instance_tags[instance.instanceId] = tag_set
-      
+
       if ( _.contains(instance_tags[instance.instanceId], param_exclusion_tag_key) ){
         continue
       } else {
@@ -197,7 +188,7 @@ script "js_instances", type: "javascript" do
           "downsize": size_down
         })
       }
-    
+
   }
 EOS
 end
@@ -207,7 +198,7 @@ script "js_instances_set", type: "javascript" do
   parameters "region"
   code <<-EOS
   results = {
-    "auth": "rds_auth_aws",
+    "auth": "auth_aws",
     "host": 'rds.'+region+'.amazonaws.com',
     "verb": "GET",
     "path": "/",
@@ -230,7 +221,7 @@ script "js_list_tags_for_resource", type: "javascript" do
   var end_date = new Date().toISOString()
   var start_date = new Date(new Date().setDate(new Date().getDate() - 30)).toISOString();
   results = {
-    "auth": "rds_auth_aws",
+    "auth": "auth_aws",
     "host": 'rds.'+region+'.amazonaws.com',
     "verb": "GET",
     "path": "/",
@@ -256,15 +247,15 @@ script "js_cloudwatch_cpu_mem_usage", type: "javascript" do
   end_date_tmp.setSeconds(0)
   end_date_tmp.setMinutes(0)
   var end_date = new Date(end_date_tmp).toISOString()
-  
+
   var start_date_tmp = new Date(new Date().setDate(new Date().getDate() - 30))
   start_date_tmp.setMilliseconds(0)
   start_date_tmp.setSeconds(0)
   start_date_tmp.setMinutes(0)
   var start_date = new Date(start_date_tmp).toISOString()
-  
+
   results = {
-    "auth": "monitoring_auth_aws",
+    "auth": "auth_aws",
     "host": 'monitoring.'+region+'.amazonaws.com',
     "verb": "GET",
     "path": "/",
@@ -304,14 +295,14 @@ script "js_merged_metrics", type: "javascript" do
    var dbInstanceIdentifier = instance["dbInstanceIdentifier"]
    //console.log("dbInstanceIdentifier is " + dbInstanceIdentifier)
    for (x=0; x < ds_cloudwatch_cpu_usage.length; x++) {
-     var cpu_data=ds_cloudwatch_cpu_usage[x]     
-     var cpu_instanceid=cpu_data["instanceId"]     
+     var cpu_data=ds_cloudwatch_cpu_usage[x]
+     var cpu_instanceid=cpu_data["instanceId"]
      //console.log("cpu_instanceid is " + cpu_instanceid)
      if (dbInstanceIdentifier == cpu_instanceid) {
       var cpu_average=parseFloat(cpu_data["cpu_average"]).toFixed(2)
       //console.log("cpu_average is " + cpu_average)
      }
-     
+
    }
    results.push (
      {
@@ -350,7 +341,7 @@ script "js_filtered_results", type: "javascript" do
             "dbInstanceClass": instance["dbInstanceClass"],
             "engine": instance["engine"],
             "percent_cpu_avg": instance["percent_cpu_avg"],
-            "recommended_size": instance["upsize"]        
+            "recommended_size": instance["upsize"]
           }
         )
       }
@@ -368,7 +359,7 @@ script "js_filtered_results", type: "javascript" do
             "dbInstanceClass": instance["dbInstanceClass"],
             "engine": instance["engine"],
             "percent_cpu_avg": instance["percent_cpu_avg"],
-            "recommended_size": instance["downsize"]        
+            "recommended_size": instance["downsize"]
           }
         )
       }
@@ -387,8 +378,8 @@ policy "pol_utilization" do
     summary_template "AWS RDS instances to Resize"
     detail_template <<-EOS
 # AWS RDS Instances to Resize
-| Region | instanceID | Engine | Current Instance Class | Recommended Instance Class | Availability Zone | CPU Average % | 
-| ------ | ---------- | ------ | ---------------------- | -------------------------- | ----------------- | ------------- | 
+| Region | instanceID | Engine | Current Instance Class | Recommended Instance Class | Availability Zone | CPU Average % |
+| ------ | ---------- | ------ | ---------------------- | -------------------------- | ----------------- | ------------- |
 {{ range data -}}
 | {{.region}} | {{.dbInstanceIdentifier}} | {{.engine}} | {{.dbInstanceClass}} |  {{.recommended_size}} | {{.availabilityZone }} | {{ .percent_cpu_avg }} |
 {{ end -}}
@@ -410,7 +401,7 @@ escalation "email" do
   email $param_email
 end
 
-escalation "resize_instances" do 
+escalation "resize_instances" do
   request_approval  do
     label "Escalation approval"
     description "Approve RDS RightSizing action"
@@ -433,10 +424,11 @@ define rightsize_rds($data) return $all_responses do
   foreach $item in $data do
     sub on_error: skip do
       $get_response = http_request(
-        https: true,
+        auth: $$auth_aws,
+		https: true,
         verb: "get",
         host: "rds."+$item["region"]+".amazonaws.com",
-        signature: { "type": "aws" },
+        href: "/",
         query_strings: {
           "Action": "DescribeDBInstances",
           "Version": "2014-10-31",
@@ -447,12 +439,13 @@ define rightsize_rds($data) return $all_responses do
 
       $state = $get_response["body"]["DescribeDBInstancesResponse"]["DescribeDBInstancesResult"]["DBInstances"]["DBInstance"]["DBInstanceStatus"]
 
-      if $state == "available" 
+      if $state == "available"
         $modify_response = http_request(
-          https: true,
+          auth: $$auth_aws,
+		  https: true,
           verb: "get",
           host: "rds."+$item["region"]+".amazonaws.com",
-          signature: { "type": "aws" },
+          href: "/",
           query_strings: {
             "Action": "ModifyDBInstance",
             "Version": "2014-10-31",

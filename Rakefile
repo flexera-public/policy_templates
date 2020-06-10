@@ -1,6 +1,7 @@
 require 'rubygems'
 require 'json'
 require 'fileutils'
+require_relative 'tools/lib/policy_parser'
 
 # the list of policies is consumed by the tools/policy_sync/policy_sync.pt
 # and the docs.rightscale.com build to generate the policies/user/policy_list.html
@@ -12,49 +13,54 @@ task :generate_policy_list do
   Dir['**/*.pt'].reject{ |f| f['msp/'] }.each do |file|
     change_log = ::File.join(file.split('/')[0...-1].join('/'),'CHANGELOG.md')
     readme = ::File.join(file.split('/')[0...-1].join('/'),'README.md')
-    @version = nil
+    publish = true
 
     if !file.match(/test_code/)
       f = File.open(file, "r:bom|utf-8")
-      f.each_line do |line|
-        if line =~ /^name/
-          @name = line.split(' ')[1..-1].join(' ').to_s.chomp('"').reverse.chomp('"').reverse
+
+      pp = PolicyParser.new
+      pp.parse(file)
+
+      if pp.parsed_info
+        version = pp.parsed_info[:version]
+        provider = pp.parsed_info[:provider]
+        service = pp.parsed_info[:service]
+        policy_set = pp.parsed_info[:policy_set]
+        publish = pp.parsed_info[:publish]
+        # not all templates have the publish key
+        # set these to true,
+        if publish.nil? || publish=='true' || publish==true
+          publish = true
+        else
+          publish = false
         end
-        if line =~ /long_description/
-          if line =~ /Version/
-            @version = line.split(':').last.strip.chomp("\"")
-          end
-        end
-        if line =~ /short_description/
-          @description = line.split(' ')[1..-1].join(' ').to_s.chomp('"').reverse.chomp('"').reverse.split('.').first
-        end
-        if line =~ /category \"(compliance|cost|operational|security|saas management)\"/i
-          @category = line.split(' ')[1..-1].join(' ').to_s.chomp('"').reverse.chomp('"').reverse
-          @category = @category.gsub(" ","_")
-          @category = @category.downcase
-        end
-        if line =~ /severity/
-          @severity = line.split(' ')[1..-1].join(' ').to_s.chomp('"').reverse.chomp('"').reverse
-        end
+      end
+
+      # get version from long description
+      if version.nil? && pp.parsed_long_description =~ /Version/
+        version = pp.parsed_long_description.split(':').last.strip.chomp("\"")
       end
 
       # skip policy if the version isn't supplied or if version is '0.0'
-      if ! @version || @version == '0.0'
-        puts "Skipping #{@name}, policy missing version"
+      if ! version || version == '0.0' || ! publish
+        puts "Skipping #{pp.parsed_name}, policy not published"
         next
       end
 
-      puts "Adding #{@name}"
+      puts "Adding #{pp.parsed_name}"
 
       file_list<<{
-        "name": @name,
+        "name": pp.parsed_name,
         "file_name": file,
-        "version": @version,
+        "version": version,
         "change_log": change_log,
-        "description": @description,
-        "category": @category,
-        "severity": @severity,
-        "readme": readme
+        "description": pp.parsed_short_description,
+        "category": pp.parsed_category,
+        "severity": pp.parsed_severity,
+        "readme": readme,
+        "provider": provider,
+        "service": service,
+        "policy_set": policy_set,
       }
     end
   end

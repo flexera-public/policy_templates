@@ -1,19 +1,16 @@
 name "Google Object Storage Optimization"
 rs_pt_ver 20180301
 type "policy"
-short_description "Checks Google Storage objects for last updated time and moves the object to 'nearline' or 'coldline' or delete(enable delete action as mentioned in README.md) after user approval [README](https://github.com/flexera/policy_templates/tree/master/cost/google/object_storage_optimization) and [docs.rightscale.com/policies](http://docs.rightscale.com/policies/) to learn more."
-long_description "Version: 1.0"
+short_description "Checks Google Storage objects for last updated time and moves the object to 'nearline' or 'coldline' or delete(enable delete action as mentioned in README.md) after user approval [README](https://github.com/flexera/policy_templates/tree/master/cost/google/object_storage_optimization) and [docs.rightscale.com/policies](https://docs.rightscale.com/policies/) to learn more."
+long_description ""
 category "Cost"
 severity "low"
-
-###############################################################################
-# Permissions
-###############################################################################
-
-permission "perm_read_creds" do
-  actions   "rs_cm.show_sensitive","rs_cm.index_sensitive"
-  resources "rs_cm.credentials"
-end
+info(
+      version: "2.2",
+      provider: "GCE",
+      service: "Storage",
+      policy_set: "Object Store Optimization"
+    )
 
 ###############################################################################
 # User inputs
@@ -23,12 +20,6 @@ parameter "param_email" do
   type "list"
   label "Email addresses to notify"
   description "Email addresses of the recipients you wish to notify when new incidents are created"
-end
-
-parameter "param_google_project" do
-  type "string"
-  label "Google Cloud Project Id"
-  allowed_pattern /^[0-9a-z:\.-]+$/
 end
 
 parameter "param_nearline_days" do
@@ -53,16 +44,12 @@ end
 # Authentication
 ###############################################################################
 
-auth "auth_google", type: "oauth2" do
-  token_url "https://www.googleapis.com/oauth2/v4/token"
-  grant type: "jwt_bearer" do
-    iss cred("GCE_PLUGIN_ACCOUNT")
-    aud "https://www.googleapis.com/oauth2/v4/token"
-    additional_claims do {
-      "scope" => "https://www.googleapis.com/auth/devstorage.full_control"
-    } end
-    signing_key cred("GCE_PLUGIN_PRIVATE_KEY")
-  end
+# authenticate with Google
+credentials "auth_google" do
+  schemes "oauth2"
+  label "Google"
+  description "Select the Google Cloud Credential from the list."
+  tags "provider=gce"
 end
 
 ###############################################################################
@@ -82,22 +69,43 @@ end
 # Datasources
 ###############################################################################
 
+#get all google project
+datasource "ds_google_project" do
+  request do
+    auth $auth_google
+    pagination $google_pagination
+    host "cloudresourcemanager.googleapis.com"
+    path "/v1/projects/"
+    query "filter", "lifecycleState=ACTIVE"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "projects[*]") do
+      field "projectNumber", jmes_path(col_item,"projectNumber")
+      field "projectId", jmes_path(col_item,"projectId")
+    end
+  end
+end
+
 #https://cloud.google.com/storage/docs/json_api/v1/buckets/list
 datasource "ds_list_google_buckets" do
+  iterate $ds_google_project
   request do
     auth $auth_google
     pagination $google_pagination
     verb "GET"
     host "www.googleapis.com"
     path "/storage/v1/b"
-    query "project", $param_google_project
+    query "project", val(iter_item,"projectId")
     query "projection", "noAcl"
+    ignore_status [403,404]
   end
   result do
     encoding "json"
     collect jmes_path(response, "items[*]") do
       field "bucket_name", jmes_path(col_item, "name")
       field "location", jmes_path(col_item, "location")
+      field "projectId", val(iter_item,"projectId")
     end
   end
 end
@@ -111,6 +119,7 @@ datasource "ds_list_google_buckets_objects" do
     verb "GET"
     host "www.googleapis.com"
     path join(["/storage/v1/b/",val(iter_item, "bucket_name"),"/o"])
+    ignore_status [403,404]
   end
   result do
     encoding "json"
@@ -123,6 +132,7 @@ datasource "ds_list_google_buckets_objects" do
       field "last_modified", jmes_path(col_item, "updated")
       field "object_size", jmes_path(col_item, "size")
       field "metadata", jmes_path(col_item, "metadata")
+      field "projectId", val(iter_item,"projectId")
     end
   end
 end
@@ -175,7 +185,7 @@ script "js_google_filtered_bucket_objects", type: "javascript" do
         }
       }
 
-      if(!isTagMatched && (bucket_object.storage_class).toLowerCase() !== "nearline" && (bucket_object.storage_class).toLowerCase() !== "coldline"){
+      if(!isTagMatched && (bucket_object.storage_class) != null && typeof (bucket_object.storage_class) !== 'undefined' &&(bucket_object.storage_class).toLowerCase() !== "nearline" && (bucket_object.storage_class).toLowerCase() !== "coldline"){
         var last_modified_date = (new Date(bucket_object["last_modified"])).setHours(23, 59, 59, 999);
         var modify_storage_class_to="";
         if(param_nearline_days.length > 0 && param_coldline_days.length == 0 &&  last_modified_date <= nearline_date){
@@ -209,11 +219,14 @@ script "js_google_filtered_bucket_objects", type: "javascript" do
             "last_modified": bucket_object["last_modified"],
             "modify_storage_class_to": modify_storage_class_to,
             "object_size": bucket_object["object_size"],
-            "tagKeyValue":(tagKeyValue.slice(2))
+            "tagKeyValue":(tagKeyValue.slice(2)),
+            "projectId": bucket_object["projectId"]
           });
         }
       }
     });
+	results = _.sortBy(results, 'region');
+    results= _.sortBy(results, 'projectId');
   EOS
 end
 
@@ -226,10 +239,10 @@ policy "google_object_storage_optimization" do
     summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): Google Object Storage Optimization."
     detail_template <<-EOS
 # Found {{ len data }} Google bucket objects which are last modified outside of the specified timeframe.
-| Bucket Name | Region | Object Name | Current Storage Class | Last Modified Date | Move Storage Class To | Tags |
-| ----------- | ------ | ----------- | --------------------- | ------------------ | --------------------- | ---- |
+| Project ID | Bucket Name | Region | Object Name | Current Storage Class | Last Modified Date | Move Storage Class To | Tags |
+| ---------- | ----------- | ------ | ----------- | --------------------- | ------------------ | --------------------- | ---- |
 {{ range data -}}
-| {{.bucket_name}} | {{.region}} | {{.object_name}} | {{.storage_class}} | {{.last_modified}} | {{.modify_storage_class_to}} | {{.tagKeyValue}}
+| {{.projectId}} | {{.bucket_name}} | {{.region}} | {{.object_name}} | {{.storage_class}} | {{.last_modified}} | {{.modify_storage_class_to}} | {{.tagKeyValue}}
 {{ end -}}
     EOS
     escalate $esc_report_bucket_Objects_list
@@ -289,6 +302,7 @@ define modify_bucket_object_storage_class($data) return $all_responses do
       call url_encode($item['object_name']) retrieve $object_name
       $response = http_request({
                                 verb: 'post',
+                                auth: $$auth_google,
                                 host: 'www.googleapis.com',
                                 href: join(['/storage/v1/b/', $bucket_name, '/o/', $object_name, '/rewriteTo/b/', $bucket_name, '/o/', $object_name]),
                                 https: true,
@@ -297,8 +311,7 @@ define modify_bucket_object_storage_class($data) return $all_responses do
                                       },
                                 headers: {
                                           "cache-control": "no-cache",
-                                          "content-type": "application/json",
-                                          "authorization": "Bearer " + $access_token
+                                          "content-type": "application/json"
                                          }
                               })
       $all_responses << $response
@@ -310,56 +323,26 @@ end
 #https://cloud.google.com/storage/docs/json_api/v1/objects/delete
 define delete_bucket_objects($data) return $all_responses do
   $$debug=true
-  call google_authenticate() retrieve $access_token
   $all_responses = []
   foreach $item in $data do
     sub on_error: skip do
       call url_encode($item['bucket_name']) retrieve $bucket_name
       call url_encode($item['object_name']) retrieve $object_name
-      $response = http_request({
+      $response = http_request(
+                                auth: $$auth_google,
                                 verb: 'delete',
                                 host: 'www.googleapis.com',
                                 href: join(['/storage/v1/b/', $bucket_name, '/o/', $object_name]),
                                 https: true,
                                 headers: {
                                             "cache-control": "no-cache",
-                                            "content-type": "application/json",
-                                            "authorization": "Bearer " + $access_token
+                                            "content-type": "application/json"
                                             }
-                              })
+                              )
       $all_responses << $response
       call sys_log('Google Storage optimization delete response ',to_s($response))
     end
   end
-end
-
-
-define google_authenticate() return $access_token do
-  #The scope below only counts for devstorage, you will want to change to accomodate your needs. 
-  $jwt = {
-    iss: cred("GCE_PLUGIN_ACCOUNT"),
-    aud: "https://oauth2.googleapis.com/token",
-    exp: to_n(strftime(now()+3600, "%s")),
-    iat: to_n(strftime(now(), "%s")),
-    scope: "https://www.googleapis.com/auth/cloud-platform https://www.googleapis.com/auth/devstorage.read_only https://www.googleapis.com/auth/devstorage.full_control https://www.googleapis.com/auth/devstorage.read_write"
-  }
-
-  $signed_sigurature = jwt_encode("RS256", $jwt, cred("GCE_PLUGIN_PRIVATE_KEY"),{typ:"JWT"})
-
-  $response = http_request({
-    verb: 'post',
-    href: '/token',
-    host: 'oauth2.googleapis.com',
-    https: true,
-    headers: {
-      "content-type": "application/json"
-    },
-    body:{
-      "grant_type": "urn:ietf:params:oauth:grant-type:jwt-bearer",
-      "assertion": $signed_sigurature
-    }
-  })
-  $access_token = $response["body"]["access_token"]
 end
 
 define sys_log($subject, $detail) do

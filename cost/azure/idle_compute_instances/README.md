@@ -8,26 +8,31 @@ This policy checks all the instances in the Azure Subscription for the average C
 
 The policy leverages the Azure API to check all instances and then checks the instance average CPU utilization over the past 30 days, finally recommending the low ones for deletion after approval.
 
-### Input Parameters
+## Input Parameters
 
 - *Email addresses of the recipients you wish to notify* - A list of email addresses to notify
 - *CPU Threshold* - Percentage of CPU utilization
-- *Azure Subscription ID* - Your Azure Subscription ID.  You can find it by following this guide: [Subscription ID](https://blogs.msdn.microsoft.com/mschray/2016/03/18/getting-your-azure-subscription-guid-new-portal/)
-- *Azure Tenant ID* - Your Azure tenant ID.  You can find it by following this guide: [Tenant ID](https://docs.microsoft.com/en-us/onedrive/find-your-office-365-tenant-id)
 - *Exclusion Tag Key* - An Azure-native instance tag to ignore instances that you don't want to consider for downsizing. Only supply the tag key
 
-### Required RightScale Roles
+## Prerequisites
 
-- `credential_viewer`
+This policy uses [credentials](https://docs.rightscale.com/policies/users/guides/credential_management.html) for connecting to the cloud -- in order to apply this policy you must have a credential registered in the system that is compatible with this policy. If there are no credentials listed when you apply the policy, please contact your cloud admin and ask them to register a credential that is compatible with this policy. The information below should be consulted when creating the credential.
 
-### Azure Required Permissions
+### Credential configuration
 
-- `Virtual Machine Contributor`
+For administrators [creating and managing credentials](https://docs.rightscale.com/policies/users/guides/credential_management.html) to use with this policy, the following information is needed:
 
-### Supported Clouds
+Provider tag value to match this policy: `azure_rm`
+
+Required permissions in the provider:
+
+- Microsoft.Compute/virtualMachines/read
+- Microsoft.Compute/virtualMachines/write
+
+## Supported Clouds
 
 - Azure
 
-### Cost
+## Cost
 
 This Policy Template does not incur any cloud costs.

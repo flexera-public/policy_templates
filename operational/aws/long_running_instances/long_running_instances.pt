@@ -1,0 +1,352 @@
+name "AWS Long Running Instances"
+rs_pt_ver 20180301
+type "policy"
+short_description "Checks for running instances that have been running longer than the `Days Old` parameter. See the [README](https://github.com/flexera/policy_templates/tree/master/operational/aws/long_running_instances/) and [docs.rightscale.com/policies](https://docs.rightscale.com/policies/) to learn more."
+long_description ""
+severity "low"
+category "Operational"
+info(
+  version: "2.1",
+  provider: "AWS",
+  service: "EC2",
+  policy_set: "Long Running Instances"
+)
+
+###############################################################################
+# Parameters
+###############################################################################
+
+parameter "param_email" do
+  type "list"
+  label "Email notify list"
+  description "Email addresses of the recipients you wish to notify when new incidents are created"
+end
+
+parameter "param_days_old" do
+  type "number"
+  label "Days Old"
+  description "Number of days to be running before included in list"
+  default 180
+end
+
+parameter "param_action" do
+  type "string"
+  label "Action to take"
+  allowed_values "stop", "terminate"
+  description "Either Stop or Terminate the instance"
+end
+
+parameter "param_exclude_tags" do
+  category "User Inputs"
+  label "Exclusion Tag Key:Value"
+  description "Cloud native tag key to ignore instances. Format: Key:Value"
+  type "list"
+  allowed_pattern /(^$)|([\w]?)+\:([\w]?)+/
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+#authenticate with AWS
+credentials "auth_aws" do
+  schemes "aws","aws_sts"
+  label "AWS"
+  description "Select the AWS Credential from the list"
+  tags "provider=aws"
+end
+
+###############################################################################
+# Pagination
+###############################################################################
+
+pagination "aws_pagination_xml" do
+  get_page_marker do
+    body_path "//DescribeInstancesResponse/nextToken"
+  end
+  set_page_marker do
+    query "NextToken"
+  end
+end
+
+###############################################################################
+# Datasources
+###############################################################################
+
+#Generates list of Regions
+datasource "ds_regions_list" do
+  request do
+    verb "GET"
+    host "raw.githubusercontent.com"
+    path "/rightscale/policy_templates/master/data/aws/regions.json"
+    header "User-Agent", "RS Policies"
+  end
+end
+
+datasource "ds_instances" do
+  run_script $js_instances, $ds_instances_set, $param_exclude_tags
+end
+
+datasource "ds_instances_set" do
+  iterate $ds_regions_list
+  request do
+    verb "GET"
+    auth $auth_aws
+    pagination $aws_pagination_xml
+    host join(["ec2.", val(iter_item, "region"), ".amazonaws.com"])
+    path "/"
+    query "Action", "DescribeInstances"
+    query "Version", "2016-11-15"
+    query "Filter.1.Name", "instance-state-name"
+    query "Filter.1.Value.1", "running"
+    header "User-Agent", "RS Policies"
+    header "Content-Type", "text/xml"
+  end
+  result do
+    encoding "xml"
+    collect xpath(response, "//DescribeInstancesResponse/reservationSet/item", "array") do
+      field "instances_set" do
+        collect xpath(col_item,"instancesSet/item","array") do
+          field "region",val(iter_item, "region")
+          field "instanceId", xpath(col_item,"instanceId")
+          field "imageId", xpath(col_item,"imageId")
+          field "instanceType", xpath(col_item, "instanceType")
+          field "platform", xpath(col_item, "platform")
+          field "privateDnsName", xpath(col_item, "privateDnsName")
+          field "launchTime", xpath(col_item, "launchTime")
+          field "tags" do
+            collect xpath(col_item,"tagSet/item","array") do
+              field "tagKey", xpath(col_item, "key")
+              field "tagValue", xpath(col_item, "value")
+            end
+          end
+        end
+      end
+    end
+  end
+end
+
+###############################################################################
+# Scripts
+###############################################################################
+
+script "js_instances", type: "javascript" do
+  result "results"
+  parameters "ds_instance_set", "param_exclude_tags"
+  code <<-EOS
+
+  var param_exclude_tags_lower=[];
+  for(var j=0;j<param_exclude_tags.length;j++){
+    param_exclude_tags_lower[j] = param_exclude_tags[j].toString().toLowerCase();
+  }
+  console.log(param_exclude_tags_lower)
+
+  var results = []
+  for ( n=0; n < ds_instance_set.length; n++) {
+    var instance_set = ds_instance_set[n].instances_set
+    for ( i=0; i < instance_set.length; i++) {
+      var instance = instance_set[i]
+      // Check, if the tag present in entered param_exclude_tags, ignore the volume if the tag matches/present.
+      var tags = instance['tags'];
+      console.log(tags)
+      var isTagMatched = false;
+      var tagKeyValue = "";
+      for(var k=0; k < tags.length; k++){
+        tag = tags[k];
+        if((param_exclude_tags_lower.indexOf((tag['tagKey']).toLowerCase()) !== -1) || (param_exclude_tags_lower.indexOf((tag['tagKey']+':'+tag['tagValue']).toLowerCase()) !== -1)){
+          isTagMatched = true;
+        }
+        // Constructing tags with comma separated to display in detail_template
+        if((tag['tagValue']).length > 0){
+          tagKeyValue = tagKeyValue+" , "+tag['tagKey']+'='+tag['tagValue'];
+        }else{
+          tagKeyValue = tagKeyValue+" , "+tag['tagKey'];
+        }
+      }
+      var instance_tags = []
+      _.each(tags, function(tag){
+        instance_tags.push(tag.tagKey+':'+tag.tagValue)
+      })
+      if(!(isTagMatched)){
+        var now = new Date()
+        var one_day=1000*60*60*24
+        var launchTime = new Date(instance.launchTime)
+        var difference = now.getTime() - launchTime.getTime()
+        var days_old=(difference/one_day).toFixed(2)
+        instance["hostname"] = instance.privateDnsName.split('.')[0]
+        instance["instance_tags"] = instance_tags
+        instance["days_old"] = days_old
+        results.push(instance)
+      }
+    }
+  }
+
+  results = _(results)
+    .chain()
+    .sortBy(function(result){
+      return result.instanceType;
+    }).sortBy(function(result){
+      return result.region;
+    }).value();
+EOS
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "pol_utilization" do
+  validate_each $ds_instances do
+    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} AWS instances running longer than {{ parameters.param_days_old}} days"
+    detail_template <<-EOS
+# AWS Long Running Instances
+| Region | instanceID | Instance Type | Hostname | Private DNS Name | Days Old | Tags |
+| ------ | ---------- | ------------ | -------- |----------------- | -------- | ---- |
+{{ range data -}}
+| {{.region}} | {{.instanceId}} | {{.instanceType}} | {{.hostname}} |  {{.privateDnsName }} | {{.days_old}} | {{range $i,$e := .instance_tags }}{{$e}},{{end}} |
+{{ end -}}
+___
+###### Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }}) within Org: {{ rs_org_name }} (Org ID: {{ rs_org_id }})
+EOS
+    escalate $email
+    escalate $esc_stop_or_terminate
+    check lt(to_n(val(item, "days_old")),$param_days_old)
+  end
+end
+
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "email" do
+  email $param_email
+end
+
+escalation "esc_stop_or_terminate" do
+  request_approval  do
+    label "Approve Instances for Stop/Terminate"
+    description "Approve Stop/Terminate action"
+    parameter "approval_reason" do
+      type "string"
+      label "Reason for approval"
+      description "Explain why you are approving the action"
+    end
+  end
+  run "stop_or_terminate_instances", data, $param_action
+end
+
+###############################################################################
+# Cloud Workflow
+###############################################################################
+
+define stop_or_terminate_instances($data, $param_action) return $all_responses do
+  $status_code=''
+  $all_responses = []
+  foreach $item in $data do
+    if $param_action == "stop"
+      sub on_error: skip do
+        call stop_instances($item) retrieve $status_code
+        $all_responses << $status_code
+      end
+    else
+      sub on_error: skip do
+        call terminate_instances($item) retrieve $status_code
+        $all_responses << $status_code
+      end
+    end
+  end
+end
+
+define stop_instances($item) return $status_code do
+  $status_code={}
+  $response={}
+  sub on_error: retry, timeout: 20m, on_timeout: skip do
+    $response = http_request(
+      verb: "post",
+      host: join(["ec2.",$item["region"],".amazonaws.com"]),
+      auth: $$auth_aws,
+      href: join(["/", "?Action=StopInstances", "&InstanceId.1=", $item["instanceId"], "&Version=2016-11-15"]),
+      https: true,
+      headers:{
+        "cache-control": "no-cache",
+        "content-type": "application/json"
+      }
+    )
+    call sys_log("StopInstanceResponseCode", to_s($response["code"]))
+  end
+  $status_code=$response["code"]
+  if($response["code"]==200)
+    $wake_condition = "stopped"
+    $state = ''
+    while $state !~ $wake_condition do
+      sub on_error: skip do
+        call get_instance($item) retrieve $status_response
+        $status_responses=$status_response["body"]["DescribeInstancesResponse"]["reservationSet"]["item"]["instancesSet"]["item"]
+        $state = to_s($status_responses["instanceState"]["name"])
+        $status_code = to_s($status_response["code"])
+      end
+    end
+  end
+end
+
+define terminate_instances($item) return $status_code do
+  $status_code={}
+  $response={}
+  sub on_error: retry, timeout: 20m, on_timeout: skip do
+    $response = http_request(
+      verb: "post",
+      host: join(["ec2.",$item["region"],".amazonaws.com"]),
+      auth: $$auth_aws,
+      href: join(["/", "?Action=TerminateInstances", "&InstanceId.1=", $item["instanceId"], "&Version=2016-11-15"]),
+      https: true,
+      headers:{
+        "cache-control": "no-cache",
+        "content-type": "application/json"
+      }
+    )
+    call sys_log("TerminateInstancesResponseCode", to_s($response["code"]))
+  end
+  $status_code=$response["code"]
+  if($response["code"]==200)
+    $wake_condition = "terminated"
+    $state = ''
+    while $state !~ $wake_condition do
+      sub on_error: skip do
+        call get_instance($item) retrieve $status_response
+        $status_responses=$status_response["body"]["DescribeInstancesResponse"]["reservationSet"]["item"]["instancesSet"]["item"]
+        $state = to_s($status_responses["instanceState"]["name"])
+        $status_code = to_s($status_response["code"])
+      end
+    end
+  end
+end
+
+define get_instance($item) return $status_response do
+  $status_response = {}
+  sub on_error: retry, timeout: 20m, on_timeout: skip do
+    $response = http_request(
+      verb: "get",
+      host: join(["ec2.",$item["region"],".amazonaws.com"]),
+      auth: $$auth_aws,
+      href: join(["/", "?Action=DescribeInstances", "&InstanceId.1=", $item["instanceId"], "&Version=2016-11-15"]),
+      https: true,
+      headers: {
+        "cache-control": "no-cache",
+        "Accept": "application/json"
+      }
+    )
+    $status_response=$response
+  end
+end
+
+define sys_log($subject, $detail) do
+  rs_cm.audit_entries.create(
+    notify: "None",
+    audit_entry: {
+      auditee_href: @@account,
+      summary: $subject,
+      detail: $detail
+    }
+  )
+end
