@@ -38,6 +38,7 @@ You can elect to automatically remove users from your organization that are no l
 - A [configured Identity Provider](https://docs.rightscale.com/platform/guides/configuring_sso/) in the Cloud Management Platform.
 - [Groups need to be created](https://docs.rightscale.com/gov/getting_started/gov_groups.html), and have [permissions assigned](https://docs.rightscale.com/gov/getting_started/gov_groups.html#roles), for each one that you want to synchronize from AzureAD. This policy will NOT create groups, or assign permissions to them, in the CMP.
 - This policy uses [credentials](https://docs.rightscale.com/policies/users/guides/credential_management.html) for connecting to the cloud -- in order to apply this policy you must have a credential registered in the system that is compatible with this policy. If there are no credentials listed when you apply the policy, please contact your cloud admin and ask them to register a credential that is compatible with this policy. [The information below](#Credential-Configuration) should be consulted when creating the credential.
+- The policy must be applied by a user with the `enterprise_manager` role.
 
 ### Credential Configuration
 
@@ -54,19 +55,6 @@ Resource: `Azure Active Directory`
 Required permissions in the provider:
 
 - Tenant > Azure Active Directory Graph > Directory.Read.All (Application with Admin Consent)
-
-### Credential #2
-
-Type: `Oauth2`  
-Grant Type: `Refresh Token`  
-Token URL: `https://us-3.rightscale.com/api/oauth2` or `https://us-4.rightscale.com/api/oauth2` (based on where token was generated)  
-Token: [Value of refresh token](https://docs.rightscale.com/cm/dashboard/settings/account/enable_oauth)  
-Additional Headers: `X-API-Version: 1.5`  
-Provider tag value to match this policy: `flexera_cmp`
-
-Required permissions in the provider:
-
-- enterprise_manager
 
 ## Supported Services
 
