@@ -1,0 +1,266 @@
+name "AWS Service Control Policy Audit"
+rs_pt_ver 20180301
+type "policy"
+short_description "This policy checks to see if the provided service control policy is applied across all accounts in an AWS organization. \n See the [README](https://github.com/flexera/policy_templates/tree/master/compliance/aws/scp_audit) and [docs.rightscale.com/policies](https://docs.rightscale.com/policies/) to learn more."
+category "Compliance"
+severity "medium"
+info(
+  version: "2.0",
+  provider:"AWS",
+  service: "Org", 
+  policy_set: ""
+)
+
+###############################################################################
+# Parameters
+###############################################################################
+
+parameter "param_email" do
+  type "list"
+  label "Email addresses"
+  description "A list of email addresses to notify."
+end
+
+parameter "param_policy_name" do
+  type "string"
+  label "Service Control Policy Name"
+  description "The name of the Service Control Policy to audit."
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+#authenticate with AWS
+credentials "auth_aws" do
+  schemes "aws","aws_sts"
+  label "AWS"
+  description "Select the AWS Credential from the list"
+  tags "provider=aws"
+end
+
+###############################################################################
+# Pagination
+###############################################################################
+
+pagination "pagination_aws_json" do
+  get_page_marker do
+    body_path jmes_path(response, "NextToken")
+  end
+  set_page_marker do
+    query "NextToken"
+  end
+end
+
+###############################################################################
+# Datasources
+###############################################################################
+
+# Get all accounts in an org
+# https://docs.aws.amazon.com/organizations/latest/APIReference/API_DescribeAccount.html
+datasource "ds_org_accounts" do
+  request do
+    auth $auth_aws
+    pagination $pagination_aws_json
+    verb "POST"
+    host "organizations.us-east-1.amazonaws.com"
+    path "/"
+    header "User-Agent", "RS Policies"
+    header "X-Amz-Target", "AWSOrganizationsV20161128.ListAccounts"
+    header "Content-Type", "application/x-amz-json-1.1"
+    body_field "empty", "empty"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "Accounts[*]") do
+      field "arn", jmes_path(col_item, "Arn")
+      field "joinedMethod", jmes_path(col_item, "JoinedMethod")
+      field "joinedTimestamp", jmes_path(col_item, "JoinedTimestamp")
+      field "id", jmes_path(col_item, "Id")
+      field "name", jmes_path(col_item, "Name")
+      field "email", jmes_path(col_item, "Email")
+      field "status", jmes_path(col_item, "Status")
+    end
+  end
+end
+
+# Get service control policies
+# https://docs.aws.amazon.com/organizations/latest/APIReference/API_ListPolicies.html
+datasource "ds_service_control_policies" do
+  request do
+    auth $auth_aws
+    pagination $pagination_aws_json
+    verb "POST"
+    host "organizations.us-east-1.amazonaws.com"
+    path "/"
+    header "User-Agent", "RS Policies"
+    header "X-Amz-Target", "AWSOrganizationsV20161128.ListPolicies"
+    header "Content-Type", "application/x-amz-json-1.1"
+    body_field "Filter", "SERVICE_CONTROL_POLICY"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "Policies[*]") do
+      field "arn", jmes_path(col_item, "Arn")
+      field "type", jmes_path(col_item, "Type")
+      field "awsManaged", jmes_path(col_item, "AwsManaged")
+      field "id", jmes_path(col_item, "Id")
+      field "name", jmes_path(col_item, "Name")
+      field "description", jmes_path(col_item, "Description")
+    end
+  end
+end
+
+# Get service control policies for each account
+# https://docs.aws.amazon.com/organizations/latest/APIReference/API_ListPoliciesForTarget.html
+datasource "ds_account_policies" do
+  iterate $ds_org_accounts
+  request do
+    auth $auth_aws
+    pagination $pagination_aws_json
+    verb "POST"
+    host "organizations.us-east-1.amazonaws.com"
+    path "/"
+    header "User-Agent", "RS Policies"
+    header "X-Amz-Target", "AWSOrganizationsV20161128.ListPoliciesForTarget"
+    header "Content-Type", "application/x-amz-json-1.1"
+    body_field "Filter", "SERVICE_CONTROL_POLICY"
+    body_field "TargetId", val(iter_item, "id")
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "Policies[*]") do
+      field "accountId", val(iter_item, "id")
+      field "arn", jmes_path(col_item, "Arn")
+      field "type", jmes_path(col_item, "Type")
+      field "awsManaged", jmes_path(col_item, "AwsManaged")
+      field "id", jmes_path(col_item, "Id")
+      field "name", jmes_path(col_item, "Name")
+      field "description", jmes_path(col_item, "Description")
+    end
+  end
+end
+
+datasource "ds_filter_accounts" do
+  run_script $js_filter_accounts, $ds_org_accounts, $ds_service_control_policies, $ds_account_policies, $param_policy_name
+end
+
+###############################################################################
+# Scripts
+###############################################################################
+
+script "js_filter_accounts", type: "javascript" do
+  parameters "ds_org_accounts", "ds_service_control_policies", "ds_account_policies", "param_policy_name"
+  result "result"
+  code <<-EOS
+  var result=[];
+  var policy = _.findWhere(ds_service_control_policies, {name: param_policy_name})
+
+  if ( policy !== undefined ) {
+    _.each(ds_org_accounts, function(account){
+      var applied_policies = _.where(ds_account_policies, {accountId: account["id"]})
+      var unix_timestamp = account["joinedTimestamp"]
+      var date = new Date(unix_timestamp * 1000);
+      if ( applied_policies !== undefined ) {
+        var account_policy = _.findWhere(applied_policies, {name: policy["name"]})
+        if ( account_policy == undefined) {
+          var applied_policies_string = ""
+          _.each(applied_policies, function(applied_policy){
+            if (applied_policies_string == "") {
+              applied_policies_string = applied_policy["name"]
+            } else {
+              applied_policies_string = applied_policies_string + ", " + applied_policy["name"]
+            }
+          })
+          result.push({
+            id: account["id"],
+            name: account["name"],
+            email: account["email"],
+            arn: account["arn"],
+            joinedMethod: account["joinedMethod"],
+            joinedTimestamp: date.toString(),
+            status: account["status"],
+            applied_policies: _.pluck(applied_policies, 'name').join(", ")
+          })
+        }
+      } else {
+        result.push({
+          id: account["id"],
+          name: account["name"],
+          email: account["email"],
+          arn: account["arn"],
+          joinedMethod: account["joinedMethod"],
+          joinedTimestamp: date.toString(),
+          status: account["status"],
+          applied_policies: "None"
+        })
+      }
+    })
+  }
+EOS
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "pol_scp_audit" do
+  validate $ds_filter_accounts do
+    summary_template "{{ len data }} AWS Accounts without '{{ parameters.param_policy_name }}' Service Control Policy applied"
+
+    escalate $esc_email
+
+    check eq(size(data), 0)
+    export do
+      field "id" do
+        label "Account Id"
+      end
+      field "name" do
+        label "Account Name"
+      end
+      field "email" do
+        label "Owner Email"
+      end
+      field "arn" do
+        label "ARN"
+      end
+      field "joinedMethod" do
+        label "Join Method"
+      end
+      field "joinedTimestamp" do
+        label "Join Timestamp"
+      end
+      field "status" do
+        label "Status"
+      end
+      field "applied_policies" do
+        label "Currently Applied Policies"
+      end
+    end
+  end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_email" do
+  email $param_email
+end
+
+###############################################################################
+# Cloud Workflow
+###############################################################################
+
+define sys_log($subject, $detail) do
+  if $$debug
+    rs_cm.audit_entries.create(
+      notify: "None",
+      audit_entry: {
+        auditee_href: @@account,
+        summary: "AWS Old Snapshots"+ $subject,
+        detail: $detail
+      }
+    )
+    end
+end
