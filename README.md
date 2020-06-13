@@ -12,6 +12,7 @@ Please contact sales@flexera.com to learn more.
 
 - [Billing Center Cost Anomaly](./cost/billing_center_cost_anomaly/)
 - [Budget Alerts](./cost/budget_alerts/)
+- [Budget Alerts by Cloud Account](./cost/budget_alerts_by_account/)
 - [Cheaper Regions](./cost/cheaper_regions/)
 - [Downsize Instances](./cost/downsize_instance/)
 - [Inefficient Instance Utilization using RightLink](./cost/rightlink_rightsize)
