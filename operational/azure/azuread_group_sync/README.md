@@ -6,7 +6,7 @@ This policy collects groups and their members from AzureAD and synchronizes them
 
 ## Functional Details
 
-This policy leverages the Azure AD Graph API to collect groups and their members based on a filter prefix. It then compares them to the groups and members that currently exist in the Flexera CMP and updates the CMP groups to reflect the current membership in AzureAD.
+This policy leverages the [Microsoft Graph API](https://docs.microsoft.com/en-us/graph/api/overview?toc=./ref/toc.json&view=graph-rest-1.0) to collect groups and their members based on a filter prefix. It then compares them to the groups and members that currently exist in the Flexera CMP and updates the CMP groups to reflect the current membership in AzureAD.
 
 The policy will recurse through all child groups and flatten their membership in the matching parent CMP group.
 
