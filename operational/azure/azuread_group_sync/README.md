@@ -54,7 +54,10 @@ Resource: `Azure Active Directory`
 
 Required permissions in the provider:
 
-- Tenant > Azure Active Directory Graph > Directory.Read.All (Application with Admin Consent)
+- Tenant > Microsoft Graph > User.Read.All (Application with Admin Consent)
+- Tenant > Microsoft Graph > Group.Read.All (Application with Admin Consent)
+
+![Enterprise Application Permissions](./enterprise_app_permissions.png)
 
 ## Supported Services
 
