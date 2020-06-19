@@ -235,6 +235,7 @@ Please contact sales@flexera.com to learn more.
 - [SaaS Manager - Inactive Users](./saas/fsm/inactive_users_by_dept)
 - [SaaS Manager - Duplicate User Accounts](./saas/fsm/duplicate_users)
 - [SaaS Manager - Unsanctioned Applications with Existing Contract](./saas/fsm/unsanctioned_apps_with_contract)
+- [SaaS Manager - SaaS App User Report by Category](./saas/fsm/users_by_category)
 
 ### Policy Data Sets
 
