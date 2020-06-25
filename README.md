@@ -12,6 +12,7 @@ Please contact sales@flexera.com to learn more.
 
 - [Billing Center Cost Anomaly](./cost/billing_center_cost_anomaly/)
 - [Budget Alerts](./cost/budget_alerts/)
+- [Budget Alerts by Cloud Account](./cost/budget_alerts_by_account/)
 - [Cheaper Regions](./cost/cheaper_regions/)
 - [Downsize Instances](./cost/downsize_instance/)
 - [Inefficient Instance Utilization using RightLink](./cost/rightlink_rightsize)
@@ -157,6 +158,7 @@ Please contact sales@flexera.com to learn more.
 - [AWS EC2 Instances not running FlexNet Inventory Agent - Cloud](./compliance/aws/instances_without_fnm_agent/)
 - [AWS EC2 Instances not running FlexNet Inventory Agent - On Premise](./compliance/aws/instances_without_fnm_agent_on_premise/)
 - [AWS Long-stopped Instances](./compliance/aws/long_stopped_instances/)
+- [AWS Service Control Policy Audit](./compliance/aws/scp_audit/)
 
 #### Azure
 
@@ -233,6 +235,7 @@ Please contact sales@flexera.com to learn more.
 - [SaaS Manager - Inactive Users](./saas/fsm/inactive_users_by_dept)
 - [SaaS Manager - Duplicate User Accounts](./saas/fsm/duplicate_users)
 - [SaaS Manager - Unsanctioned Applications with Existing Contract](./saas/fsm/unsanctioned_apps_with_contract)
+- [SaaS Manager - SaaS App User Report by Category](./saas/fsm/users_by_category)
 
 ### Policy Data Sets
 
