@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.4
+
+- adjusted Log Analytics auth provider tag
+
 ## v2.3
 
 - adding incident resource table

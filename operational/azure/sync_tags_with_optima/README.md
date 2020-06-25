@@ -1,23 +1,23 @@
-# AWS Old Snapshots
+# Azure Sync Tags with Optima
 
 ## What it does
 
-This policy finds AWS snapshots in the given account which are older than the specified days and deletes them after user approval. Account specific snapshots are determined by filtering based on the owner-id. The account number is used as an owner-id.
+This Policy identifies all Azure tag keys that are not being used as custom dimensions in Flexera Optima.
 
 ## Input Parameters
 
 This policy has the following input parameters required when launching the policy.
 
 - *Email addresses* - A list of email addresses to notify
-- *Snapshot age* - The number of days since the snapshot was created.
-- *Exclusion Tags* - list of tags that a snapshot can have to exclude it from the list.
+- *Exclusion Tag Keys* - list of tag keys that should be excluded from incidents.
+- *Minimum Number of Resources* - The minimum number of resources using a specific tag key which should trigger an incident.
 
 ## Policy Actions
 
 The following policy actions are taken on any resources found to be out of compliance.
 
 - Send an email report
-- Delete old snapshots after an approval
+- Add tags as custom dimensions to Flexera Optima, after an approval
 
 ## Prerequisites
 
@@ -27,32 +27,22 @@ This policy uses [credentials](https://docs.rightscale.com/policies/users/guides
 
 For administrators [creating and managing credentials](https://docs.rightscale.com/policies/users/guides/credential_management.html) to use with this policy, the following information is needed:
 
-Provider tag value to match this policy: `aws`
+Provider tag value to match this policy: `azure_rm`
 
-The following AWS permissions must be allowed for the policy to run.
+Required permissions in the provider:
 
-```javascript
-{
-    "Version": "2012-10-17",
-    "Statement": [
-        {
-            "Sid": "VisualEditor0",
-            "Effect": "Allow",
-            "Action": [
-                "ec2:DeleteSnapshot",
-                "sts:GetCallerIdentity",
-                "ec2:DescribeSnapshots"
-            ],
-            "Resource": "*"
-        }
-    ]
-}
-```
+- `Reader`
+
+### Optima Permissions
+
+This policy inherits the Flexera Optima permissions of the user that applied the policy.  Users must have the following role(s):
+
+- `enterprise_manager`
 
 ## Supported Clouds
 
-- AWS
+- Azure
 
 ## Cost
 
-This Policy Template does not launch any instances, and so does not incur any cloud costs.
+This Policy Template does not incur any cloud costs.
