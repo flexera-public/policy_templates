@@ -24,6 +24,14 @@ parameter "snapshot_age" do
   description "The number of days since the snapshot was created."
 end
 
+parameter "param_deregister_image" do
+  type "string"
+  label "Deregister Image"
+  description "If Yes, the snapshot will be deleted along with the images, and if No the snapshot will not be considered for deletion."
+  allowed_values "Yes","No"
+  default "Yes"
+end
+
 parameter "param_exclude_tags" do
   type "list"
   category "User Inputs"
@@ -306,33 +314,48 @@ escalation "esc_delete_snapshot" do
       description "Expain why are you approving the action"
     end
   end
-  run "take_action",data
+  run "take_action",data,$param_deregister_image
 end
 
 ###############################################################################
 # Cloud Workflow
 ###############################################################################
 
-define take_action($data) return $all_responses do
+define take_action($data,$param_deregister_image) return $all_responses do
   $all_responses = []
+  $image_ids = []
   foreach $item in $data do
-    call deregisterImageFromSnapshot($item)
-    call delete_snapshot($item)
+    sub on_error: skip do
+      if $item["snapshotImageIdFormat"] != ""
+        $image_ids = split($item["snapshotImageIdFormat"], ",")
+      end
+
+      if $param_deregister_image == "Yes"
+        call deregisterImageFromSnapshot($image_ids, $item["region"])
+        call delete_snapshot($item)
+      elsif $param_deregister_image == "No"
+        if empty?($image_ids)
+          call delete_snapshot($item)
+        end
+      end
+    end
+
+    $image_ids = []
   end
 end
 
-define deregisterImageFromSnapshot($item) do
-  foreach $image in $item["imageId"] do
+define deregisterImageFromSnapshot($item, $region) do
+  foreach $image in $item do
     $deregister_response = http_request(
       auth: $$auth_aws,
       https: true,
       verb: "get",
-      host: "ec2."+$item["region"]+".amazonaws.com",
+      host: "ec2."+$region+".amazonaws.com",
       href: "/",
       query_strings: {
       "Action": "DeregisterImage",
       "Version": "2016-11-15",
-      "ImageId": $image
+      "ImageId": strip($image)
       }
    )
   $deregisterResponseResult = $deregister_response["code"]
@@ -352,7 +375,7 @@ define delete_snapshot($item) do
     query_strings: {
       "Action": "DeleteSnapshot",
       "Version": "2016-11-15",
-      "SnapshotId.1": $item["snapshotId"]
+      "SnapshotId.1": strip($item["id"])
     }
   )
   $splitResult = $delete_response["code"]
@@ -366,7 +389,7 @@ define sys_log($subject, $detail) do
     notify: "None",
     audit_entry: {
       auditee_href: @@account,
-      summary: "AWS Old Snapshots"+ $subject,
+      summary: "AWS Old Snapshots :- "+ $subject,
       detail: $detail
     }
   )

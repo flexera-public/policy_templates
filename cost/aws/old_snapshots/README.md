@@ -2,7 +2,7 @@
 
 ## What it does
 
-This policy finds AWS snapshots in the given account which are older than the specified days and deletes them after user approval. Account specific snapshots are determined by filtering based on the owner-id. The account number is used as an owner-id.
+This policy finds AWS snapshots in the given account which are older than the specified days and deletes them after user approval. For a snapshot, if images are created then we can't delete the snapshot without deleting the images. So if the user selects Yes, the snapshot will be deleted along with the images, and if No the snapshot will not be considered for deletion. Account specific snapshots are determined by filtering based on the owner-id. The account number is used as an owner-id.
 
 ## Input Parameters
 
@@ -10,7 +10,8 @@ This policy has the following input parameters required when launching the polic
 
 - *Email addresses* - A list of email addresses to notify
 - *Snapshot age* - The number of days since the snapshot was created.
-- *Exclusion Tags* - list of tags that a snapshot can have to exclude it from the list.
+- *Deregister Image* - If Yes, the snapshot will be deleted along with the images, and if No the snapshot will not be considered for deletion. 
+- *Exclusion Tags* - List of tags that a snapshot can have to exclude it from the list.
 
 ## Policy Actions
 
