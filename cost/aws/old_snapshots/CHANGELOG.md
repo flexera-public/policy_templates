@@ -1,8 +1,12 @@
 # Changelog
 
-## v2.2
+## v2.3
 
 - Updated escalation block
+
+## v2.2
+
+- Bug fix on when the snapshot was unable to delete when attached to AMI
 
 ## v2.1
 
