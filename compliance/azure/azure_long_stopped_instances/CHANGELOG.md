@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.2
+
+- Modified policy for handling 404 error
+
 ## v2.1
 
 - remove unnecessary permissions block
