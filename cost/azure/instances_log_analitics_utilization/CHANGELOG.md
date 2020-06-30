@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.5
+
+- modified policy for handling 404 error
+
 ## v2.4
 
 - adjusted Log Analytics auth provider tag
