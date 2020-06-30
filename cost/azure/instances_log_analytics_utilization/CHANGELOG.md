@@ -1,9 +1,12 @@
 # Changelog
 
-## v2.5
+## v2.6
 
 - Updated escalation block
 - fix spelling in path
+
+## v2.5
+- modified policy for handling 404 error
 
 ## v2.4
 
