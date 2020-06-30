@@ -42,6 +42,14 @@ parameter "param_exclusion_tag_key" do
   type "list"
 end
 
+parameter "param_azure_endpoint" do
+  type "string"
+  label "Azure Endpoint"
+  description "Azure Endpoint to access resources"
+  allowed_values "management.azure.com", "management.chinacloudapi.cn"
+  default "management.azure.com"
+end
+
 ###############################################################################
 # Authentication
 ###############################################################################
@@ -78,7 +86,7 @@ datasource "ds_subscriptions" do
   request do
     auth $azure_auth
     pagination $azure_pagination
-    host "management.azure.com"
+    host $param_azure_endpoint
     path "/subscriptions/"
     query "api-version","2019-06-01"
     header "User-Agent", "RS Policies"
@@ -99,7 +107,7 @@ datasource "ds_azure_disks" do
   request do
     auth $azure_auth
     pagination $azure_pagination
-    host "management.azure.com"
+    host $param_azure_endpoint
     path join(["/subscriptions/", val(iter_item,"subscriptionId"), "/providers/Microsoft.Compute/disks"])
     query "api-version","2019-07-01"
   end
@@ -126,7 +134,7 @@ end
 datasource "ds_azure_log_activity" do
   iterate $ds_subscriptions
   request do
-    run_script $js_get_logactivity, val(iter_item,"subscriptionId"), $param_unattached_days
+    run_script $js_get_logactivity, val(iter_item,"subscriptionId"), $param_unattached_days, $param_azure_endpoint
   end
   result do
     encoding "json"
@@ -150,7 +158,7 @@ end
 ###############################################################################
 
 script "js_get_logactivity", type: "javascript" do
-  parameters "subscriptionId", "param_unattached_days"
+  parameters "subscriptionId", "param_unattached_days", "param_azure_endpoint"
   result "results"
   code <<-EOS
 
@@ -163,7 +171,7 @@ script "js_get_logactivity", type: "javascript" do
     console.log("filter= "+filter);
     
 	results = {
-      host: "management.azure.com",
+      host: param_azure_endpoint,
       path: "/subscriptions/"+subscriptionId+"/providers/microsoft.insights/eventtypes/management/values",
       verb: 'GET',
       auth: "azure_auth",
@@ -217,11 +225,11 @@ script "js_filter_disks", type: "javascript" do
           name:disk['name'],
           location:disk['location'],
           diskState:disk['diskState'],
-		  diskSize:disk['diskSize'],
+          diskSize:disk['diskSize'],
           timeCreated:disk['timeCreated'],
           subscriptionId:disk['subscriptionId'],
           subscriptionName:disk['subscriptionName'],
-		  tags:disk['tags']
+          tags:disk['tags']
         })
       }
    })
@@ -266,7 +274,7 @@ code <<-EOS
           snapshotName:snapshot,
           subscriptionId:disk['subscriptionId'],
           subscriptionName:disk['subscriptionName'],
-		  tags:tags
+          tags:tags
         })
     }
   }
