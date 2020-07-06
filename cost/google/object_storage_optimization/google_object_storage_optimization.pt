@@ -40,6 +40,13 @@ parameter "param_exclude_tags" do
   description "List of tags(Key or Key, value mentioned in object metadata.) that will exclude objects from being evaluated by this policy. Multiple tags are evaluated as an 'OR' condition. Tag keys or key/value pairs can be listed. Example: 'test,env=dev'"
 end
 
+parameter "param_automatic_action" do
+  type "list"
+  label "Automatic Actions"
+  description "When this value is set, this policy will automatically take the selected action(s)"
+  allowed_values ["Update Storage Buckets"]
+end
+
 ###############################################################################
 # Authentication
 ###############################################################################
@@ -285,16 +292,16 @@ escalation "esc_report_bucket_Objects_list" do
 end
 
 escalation "esc_modify_bucket_object_storage_class_approval" do
-  automatic false
+  automatic contains($param_automatic_action, "Update Storage Buckets")
   label "Modify Google Buckets"
-  description "Modified selected google storage buckets"
+  description "Modify selected google storage buckets"
   run "modify_bucket_object_storage_class", data
 end
 
 escalation "esc_delete_bucket_objects_approval" do
   automatic false
   label "Delete Google Buckets"
-  description "Deleted selected google storage buckets"
+  description "Delete selected google storage buckets"
   run "delete_bucket_objects", data
 end
 
@@ -312,19 +319,19 @@ define modify_bucket_object_storage_class($data) return $all_responses do
       call url_encode($item['bucket_name']) retrieve $bucket_name
       call url_encode($item['object_name']) retrieve $object_name
       $response = http_request({
-                                verb: 'post',
-                                auth: $$auth_google,
-                                host: 'www.googleapis.com',
-                                href: join(['/storage/v1/b/', $bucket_name, '/o/', $object_name, '/rewriteTo/b/', $bucket_name, '/o/', $object_name]),
-                                https: true,
-                                body: {
-                                       "storageClass": $item['modify_storage_class_to']
-                                      },
-                                headers: {
-                                          "cache-control": "no-cache",
-                                          "content-type": "application/json"
-                                         }
-                              })
+        verb: 'post',
+        auth: $$auth_google,
+        host: 'www.googleapis.com',
+        href: join(['/storage/v1/b/', $bucket_name, '/o/', $object_name, '/rewriteTo/b/', $bucket_name, '/o/', $object_name]),
+        https: true,
+        body: {
+          "storageClass": $item['modify_storage_class_to']
+        },
+        headers: {
+          "cache-control": "no-cache",
+          "content-type": "application/json"
+        }
+      })
       $all_responses << $response
       call sys_log('Google object storage optimization response ',to_s($response))
     end
@@ -333,23 +340,22 @@ end
 
 #https://cloud.google.com/storage/docs/json_api/v1/objects/delete
 define delete_bucket_objects($data) return $all_responses do
-  $$debug=true
   $all_responses = []
   foreach $item in $data do
     sub on_error: skip do
       call url_encode($item['bucket_name']) retrieve $bucket_name
       call url_encode($item['object_name']) retrieve $object_name
       $response = http_request(
-                                auth: $$auth_google,
-                                verb: 'delete',
-                                host: 'www.googleapis.com',
-                                href: join(['/storage/v1/b/', $bucket_name, '/o/', $object_name]),
-                                https: true,
-                                headers: {
-                                            "cache-control": "no-cache",
-                                            "content-type": "application/json"
-                                            }
-                              )
+        auth: $$auth_google,
+        verb: 'delete',
+        host: 'www.googleapis.com',
+        href: join(['/storage/v1/b/', $bucket_name, '/o/', $object_name]),
+        https: true,
+        headers: {
+          "cache-control": "no-cache",
+          "content-type": "application/json"
+        }
+      )
       $all_responses << $response
       call sys_log('Google Storage optimization delete response ',to_s($response))
     end
@@ -357,16 +363,14 @@ define delete_bucket_objects($data) return $all_responses do
 end
 
 define sys_log($subject, $detail) do
-  if $$debug
-    rs_cm.audit_entries.create(
-      notify: "None",
-      audit_entry: {
-        auditee_href: @@account,
-        summary: "Google Storage optimization Policy "+ $subject,
-        detail: $detail
-      }
-    )
-  end
+  rs_cm.audit_entries.create(
+    notify: "None",
+    audit_entry: {
+      auditee_href: @@account,
+      summary: "Google Storage optimization Policy "+ $subject,
+      detail: $detail
+    }
+  )
 end
 
 define url_encode($string) return $encoded_string do
