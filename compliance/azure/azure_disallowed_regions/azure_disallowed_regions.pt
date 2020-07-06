@@ -23,6 +23,13 @@ parameter "param_approved_region" do
   category "Azure"
 end
 
+parameter "param_automatic_action" do
+  type "list"
+  label "Automatic Actions"
+  description "When this value is set, this policy will automatically take the selected action(s)"
+  allowed_values ["Terminate disallowed region Instances"]
+end
+
 #authenticate with Azure
 credentials "azure_auth" do
   schemes "oauth2"
@@ -66,7 +73,7 @@ datasource "azure_resources" do
     auth $azure_auth
     pagination $azure_pagination
     host "management.azure.com"
-	path join(["/subscriptions/", val(iter_item,"subscriptionId"), "/resources"])
+    path join(["/subscriptions/", val(iter_item,"subscriptionId"), "/resources"])
     query "api-version","2018-02-01"
     header "User-Agent", "RS Policies"
   end
@@ -76,8 +83,8 @@ datasource "azure_resources" do
       field "id", jmes_path(col_item,"id")
       field "region", jmes_path(col_item,"location")
       field "name", jmes_path(col_item,"name")
-	  field "managedBy",jmes_path(col_item,"managedBy")
-	  field "subscriptionId",val(iter_item,"subscriptionId")
+      field "managedBy",jmes_path(col_item,"managedBy")
+      field "subscriptionId",val(iter_item,"subscriptionId")
       field "subscriptionName",val(iter_item,"displayName")
     end
   end
@@ -99,28 +106,28 @@ script "js_filter_resources", type: "javascript" do
       if (_.contains(param_approved_region, ar.region)) {
 
       } else {
-	    if(ar.managedBy==null){
-	      result.push({
-          id: ar["id"],
-          region: ar["region"],
-          name: ar["name"],
-		  subscriptionName: ar["subscriptionName"],
-		  managedBy: "NA"
-	      })
-	    }else{
+        if(ar.managedBy==null){
+          result.push({
+            id: ar["id"],
+            region: ar["region"],
+            name: ar["name"],
+            subscriptionName: ar["subscriptionName"],
+            managedBy: "NA"
+          })
+        }else{
           result.push({
            id: ar["id"],
            region: ar["region"],
            name: ar["name"],
-		   subscriptionName: ar["subscriptionName"],
-		   managedBy: ar["managedBy"]
+           subscriptionName: ar["subscriptionName"],
+           managedBy: ar["managedBy"]
          })
-        }
-	  }
+       }
+     }
     })
     result = _.sortBy(result, 'subscriptionName');
     result = _.sortBy(result, 'region');
-EOS
+  EOS
 end
 
 policy "azure_resource_policy" do
@@ -143,6 +150,9 @@ policy "azure_resource_policy" do
       field "id" do
         label "Resource ID"
       end
+      field "managedBy" do
+        label "Managed By"
+      end
     end
   end
 end
@@ -155,7 +165,7 @@ escalation "email" do
 end
 
 escalation "delete_resources" do
-  automatic false
+  automatic contains($param_automatic_action, "Terminate disallowed region Instances")
   label "Delete Resource"
   description "Delete the selected instance"
   run "delete_resources", data
@@ -166,45 +176,43 @@ end
 ###############################################################################
 
 define delete_resources($data) return $all_responses do
-
   $all_responses = []
   foreach $item in $data do
     sub on_error: reporterror($item) do
-	if($item["managedBy"]=="NA")
-	$resourceName = $item["name"]
-      $response = http_request(
-        verb: "delete",
-        host: "management.azure.com",
-		auth: $$azure_auth,
-        https: true,
-        href: $item["id"],
-        query_strings: {
-          "api-version": "2019-07-01"
-        },
-        headers: {
-          "cache-control": "no-cache",
-          "content-type": "application/json"
-        }
-      )
-	  $statusCode=to_s($response["code"])
-	  if(!($statusCode=="200"||$statusCode=="202"||$statusCode=="204"))
-	    $errorMessage=$response["body"]
-		call sys_log('Error:Failed to delete the resource ',to_s($errorMessage))
-	  end
-      $all_responses << $response
-	  call sys_log('Azure Disallowed Regions ',to_s($response))
-	  end
-	end
-end
-
-foreach $item in $data do
+      if($item["managedBy"]=="NA")
+        $resourceName = $item["name"]
+        $response = http_request(
+          verb: "delete",
+          host: "management.azure.com",
+          auth: $$azure_auth,
+          https: true,
+          href: $item["id"],
+          query_strings: {
+            "api-version": "2019-07-01"
+          },
+          headers: {
+            "cache-control": "no-cache",
+            "content-type": "application/json"
+          }
+        )
+        $statusCode=to_s($response["code"])
+        if(!($statusCode=="200"||$statusCode=="202"||$statusCode=="204"))
+          $errorMessage=$response["body"]
+          call sys_log('Error:Failed to delete the resource ',to_s($errorMessage))
+        end
+        $all_responses << $response
+        call sys_log('Azure Disallowed Regions ',to_s($response))
+      end
+    end
+  end
+  foreach $item in $data do
     sub on_error: reporterror($item) do
-	if($item["managedBy"]!="NA")
-	$resourceName = $item["name"]
-      $response = http_request(
+      if($item["managedBy"]!="NA")
+        $resourceName = $item["name"]
+        $response = http_request(
         verb: "delete",
         host: "management.azure.com",
-		auth: $$azure_auth,
+        auth: $$azure_auth,
         https: true,
         href: $item["id"],
         query_strings: {
@@ -215,14 +223,14 @@ foreach $item in $data do
           "content-type": "application/json"
         }
       )
-	  $statusCode=to_s($response["code"])
-	  if(!($statusCode=="200"||$statusCode=="202"||$statusCode=="204"))
-	    $errorMessage=$response["body"]
-		call sys_log('Error:Failed to delete the resource ',to_s($errorMessage))
-	  end
+      $statusCode=to_s($response["code"])
+      if(!($statusCode=="200"||$statusCode=="202"||$statusCode=="204"))
+        $errorMessage=$response["body"]
+        call sys_log('Error:Failed to delete the resource ',to_s($errorMessage))
+      end
       $all_responses << $response
-	  call sys_log('Azure Disallowed Regions ',to_s($response))
-	end
+      call sys_log('Azure Disallowed Regions ',to_s($response))
+    end
   end
  end
 end
@@ -232,12 +240,12 @@ define reporterror($item) do
 end
 
 define sys_log($subject, $detail) do
-    rs_cm.audit_entries.create(
-      notify: "None",
-      audit_entry: {
-        auditee_href: @@account,
-        summary: "Azure Disallowed Regions "+ $subject,
-        detail: $detail
-      }
-    )
+  rs_cm.audit_entries.create(
+    notify: "None",
+    audit_entry: {
+      auditee_href: @@account,
+      summary: "Azure Disallowed Regions "+ $subject,
+      detail: $detail
+    }
+  )
 end
