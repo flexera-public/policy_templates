@@ -39,6 +39,13 @@ parameter "param_exclusion_tag_key" do
   allowed_pattern /(^$)|([\w]?)+\:([\w]?)+/
 end
 
+parameter "param_automatic_action" do
+  type "list"
+  label "Automatic Actions"
+  description "When this value is set, this policy will automatically take the selected action(s)"
+  allowed_values ["Terminate Resource"]
+end
+
 ###############################################################################
 # Authentication
 ###############################################################################
@@ -177,15 +184,15 @@ script "js_clean_instance_data", type: "javascript" do
    if( param_exclusion_tag_key != null && typeof param_exclusion_tag_key !== 'undefined' ){
     tag_key = param_exclusion_tag_key.split(':')[0]
     tag_value = param_exclusion_tag_key.split(':')[1]
-	}
-
+  }
     _.each(ds_add_instance_data, function(result){
       var connection = _.filter(ds_connections, function(conn){
-        if ( conn != null &&  typeof conn != null && conn.database_id != null && typeof (conn.database_id) !== 'undefined' && conn.database_id.split(':')[2] == result.name){
+        if ( conn != null &&  typeof conn != null && conn.database_id != null && typeof (conn.database_id) !== 'undefined' && conn.database_id.split(':')[2] == 
+
+result.name){
           return conn
         }
       })
-
       var c = connection[0]
       if ( c != null && c !== undefined){
         if ( c.points != null && c.points !== undefined){
@@ -199,7 +206,6 @@ script "js_clean_instance_data", type: "javascript" do
         result["avg_connections"] = 0
       }
     })
-
     tag_results = _.filter(ds_add_instance_data, function(data){
       if ( data.state == "RUNNABLE" ){
         if ( data.userLabels != null && data.userLabels !== undefined ){
@@ -224,16 +230,16 @@ script "js_clean_instance_data", type: "javascript" do
       var taglist="";
       for(var prop in instance.userLabels){
         taglist=taglist+prop+":"+instance.userLabels["prop"]+", ";
-	  }
+    }
       if(taglist.length>0){
         instance.userLabels=taglist.substring(0,taglist.length-2);
-	  }
+    }
       else{
         instance.tags="< No Value >";
-	  }
-	}
-    results = _.sortBy(results, 'region');
-    results= _.sortBy(results, 'projectId');
+    }
+  }
+  results = _.sortBy(results, 'region');
+  results= _.sortBy(results, 'projectId');
   EOS
 end
 ###############################################################################
@@ -242,9 +248,13 @@ end
 
 policy "pol_utilization" do
   validate_each $ds_clean_instance_data do
+
     summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} rows containing Google Unused CloudSQL Instances"
+
     check gt(to_n(val(item,"avg_connections")),$param_connections)
+
     escalate $email
+
     escalate $terminate_resources
     export do
       resource_level true
@@ -273,6 +283,9 @@ policy "pol_utilization" do
       field "userLabels" do
         label "Tags"
       end
+      field "selfLink" do
+        label "Self Link"
+      end
     end
   end
 end
@@ -290,7 +303,7 @@ escalation "email" do
 end
 
 escalation "terminate_resources" do
-  automatic false
+  automatic contains($param_automatic_action, "Terminate Resource")
   label "Terminate resource"
   description "Terminated the selected resource"
   run "terminate_resources", data
@@ -301,7 +314,6 @@ end
 ###############################################################################
 
 define terminate_resources($data) return $all_responses do
-  $$debug=true
   $$log = []
   $all_responses = []
   $syslog_subject = "Google Unused CloudSQL: "
@@ -330,14 +342,12 @@ define handle_error($response) do
 end
 
 define sys_log($subject, $detail) do
-  if $$debug
-    rs_cm.audit_entries.create(
-      notify: "None",
-      audit_entry: {
-        auditee_href: @@account,
-        summary: $subject,
-        detail: $detail
-      }
-    )
-  end
+  rs_cm.audit_entries.create(
+    notify: "None",
+    audit_entry: {
+      auditee_href: @@account,
+      summary: $subject,
+      detail: $detail
+    }
+  )
 end
