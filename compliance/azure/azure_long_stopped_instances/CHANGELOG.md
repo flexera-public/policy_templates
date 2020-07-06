@@ -1,8 +1,12 @@
 # Changelog
 
-## v2.2
+## v2.3
 
 - Added resource table
+
+## v2.2
+
+- Modified policy for handling 404 error
 
 ## v2.1
 
