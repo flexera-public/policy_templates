@@ -1,0 +1,126 @@
+name "SaaS Manager - SaaS App User Report by Category"
+rs_pt_ver 20180301
+type "policy"
+short_description "This policy will create an incident when Flexera SaaS Manager identifies users entitled to SaaS apps within a specified department. See the [README](https://github.com/flexera/policy_templates/tree/master/saas/fsm/users_by_category/) and [docs.rightscale.com/policies](https://docs.rightscale.com/policies/) to learn more."
+long_description ""
+severity "medium"
+category "SaaS Management"
+default_frequency "daily"
+info(
+  version: "2.0",
+  provider: "Flexera SaaS Manager",
+  service: "",
+  policy_set: "",
+)
+
+parameter "param_category" do
+  type "string"
+  label "Department to report entitled SaaS users"
+  description "Enter Department for SaaS User Report"
+end
+
+parameter "param_email" do
+  type "list"
+  label "Email addresses to notify"
+  description "Email addresses of the recipients you wish to notify"
+end
+
+#authenticate with FSM
+credentials "fsm_auth" do
+  schemes "oauth2"
+  label "FSM"
+  description "Select the FSM Resource Manager Credential from the list."
+  tags "provider=flexera_fsm"
+end
+
+datasource "ds_managed_products" do
+  request do
+    auth $fsm_auth
+    host "api.fsm.flexeraeng.com"
+    verb "GET"
+    scheme "https"
+    path join(["/svc/orgs/", rs_org_id, "/managed-products"])
+    header "content-type", "application/json"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "items[*]") do
+      field "appId", val(col_item, "id")
+      field "appName", val(col_item, "name")
+      field "appVendor", jmes_path(col_item, "product.vendor.name")
+    end
+  end
+end
+
+datasource "ds_managed_product_agents" do
+  iterate $ds_managed_products
+  request do
+    run_script $js_managed_product_agents, val(iter_item, "appId"), $param_category, rs_org_id
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "items[*]") do
+      field "appId", val(iter_item, "appId")
+      field "appName", val(iter_item, "appName")
+      field "appVendor", val(iter_item, "appVendor")
+      field "appUsage", val(col_item, "usage")
+      field "userId", val(col_item, "id")
+      field "userEmail", val(col_item, "email")
+      field "userFname", val(col_item, "firstName")
+      field "userLname", val(col_item, "lastName")
+    end
+  end
+end
+
+script "js_managed_product_agents", type: "javascript" do
+  parameters "appId", "param_category", "rs_org_id"
+  result "request"
+  code <<-EOS
+  request = {
+    auth: "fsm_auth",
+    host: "api.fsm.flexeraeng.com",
+    verb: "GET",
+    scheme: "https",
+    path: "/svc/orgs/"+rs_org_id+"/managed-products/"+appId+"/managed-product-agents",
+    headers: {
+      "content-type": "application/json",
+    },
+    query_params: {
+      "sort": "uniqueId",
+      "deptFilter": param_category
+    }
+  }
+EOS
+end
+
+escalation "report_summary" do
+  email $param_email
+end
+
+policy "policy_dept_app_users" do
+  validate $ds_managed_product_agents do
+    summary_template "{{ len data }} SaaS Subscribers for {{ parameters.param_category }} Found"
+    export do
+      field "appName" do
+        label "Application"
+      end
+      field "appVendor" do
+        label "Vendor"
+      end
+      field "appUsage" do
+        label "Usage Status"
+      end
+      field "userFname" do
+        label "First Name"
+      end
+      field "userLname" do
+        label "Last Name"
+      end
+      field "userEmail" do
+        label "Email"
+      end
+    end
+    escalate $report_summary
+    check eq(size(data), 0)
+  end
+end
