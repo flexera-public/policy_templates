@@ -12,6 +12,10 @@ The policy leverages the Azure API to check all instances that have been stopped
 
 - *Email addresses of the recipients you wish to notify* - A list of email addresses to notify
 - *Stopped days* - Number of days an instance is stopped before it is added to the report
+- *Automatic Actions* - When this value is set, this policy will automatically take the selected action(s).
+
+Please note that the "*Automatic Actions*" parameter contains a list of action(s) that can be performed on the resources. When it is selected, the policy will automatically execute the corresponding action on the data that failed the checks, post incident generation. Please leave it blank for *manual* action.
+For example if a user selects the "Terminate Resources" action while applying the policy, all the resources that didn't satisfy the policy condition will be terminated.
 
 ## Prerequisites
 
