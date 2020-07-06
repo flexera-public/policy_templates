@@ -41,6 +41,13 @@ parameter "param_archivetier_days" do
   description "Move to Archive tier after days last modified- leave blank to skip moving"
 end
 
+parameter "param_automatic_action" do
+  type "list"
+  label "Automatic Actions"
+  description "When this value is set, this policy will automatically take the selected action(s)"
+  allowed_values ["Modify Blob storage"]
+end
+
 ###############################################################################
 # Authentication
 ###############################################################################
@@ -231,7 +238,7 @@ escalation "report_blobs_list" do
 end
 
 escalation "modify_accesstier_approval" do
-  automatic false
+  automatic contains($param_automatic_action, "Modify Blob storage")
   label "Update Storage Tier"
   description "Update Storage tier on selected blog storage"
   run "update_accesstier_blobs", data, $param_azure_storage_account
@@ -246,21 +253,21 @@ define update_accesstier_blobs($data, $param_azure_storage_account) return $all_
   $all_responses = []
   foreach $item in $data do
     sub on_error: skip do
-	call url_encode($item['blobname']) retrieve $blob_name
+	call url_encode($item['id']) retrieve $blob_name
 	$response = http_request(
-        verb: "put",
-        host: $param_azure_storage_account,
-		auth: $$azure_auth,
-        https: true,
-		href: join([".blob.core.windows.net/", $item['containername'], "/", $blob_name, "?comp=tier"]),
-        headers: {
-          "x-ms-version": "2019-02-02",
-          "content-type": "application/json",
-          "x-ms-access-tier": $item['modify_accesstier_to']
-        }
-      )
-      $all_responses << $response
-      call sys_log('Azure object storage optimization ',to_s($response))
+      verb: "put",
+      host: $param_azure_storage_account,
+      auth: $$azure_auth,
+      https: true,
+      href: join([".blob.core.windows.net/", $item['containername'], "/", $blob_name, "?comp=tier"]),
+      headers: {
+        "x-ms-version": "2019-02-02",
+        "content-type": "application/json",
+        "x-ms-access-tier": $item['modify_accesstier_to']
+      }
+    )
+    $all_responses << $response
+    call sys_log('Azure object storage optimization ',to_s($response))
     end
   end
 end
