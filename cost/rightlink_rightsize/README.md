@@ -27,7 +27,6 @@ Inefficient Instance Utilization using RightLink is used to actually resize inst
 - Email address to send escalation emails to - Example: noreply@example.com
 - Days to cooldown between checks of same machine - Number of days to cooldown between checks of the same instance. This drives the `Inefficient Instance Utilization using RightLink Add Tags`
 
-
 #### Policy Actions
 
 The following policy actions are taken on any resources found to be out of compliance.
