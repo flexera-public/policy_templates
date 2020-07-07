@@ -1,17 +1,17 @@
 # Stranded Servers
- 
+
 ## What it does
 
 This policy checks all Servers in Cloud Management and reports on any that have stranded during the boot process. It provides the option to terminate any stranded servers after approval.
 
 ## Functional Details
- 
+
 The policy leverages Cloud Management APIs to identify servers that have not successfully completed their boot sequence (i.e. have "stranded in booting"). Servers can optionally be terminated after approval.
 
 Note: Locked instances will not be terminated.
- 
+
 ## Input Parameters
- 
+
 - *Email addresses of the recipients you wish to notify* - A list of email addresses to notify.
 - *Ignore tags* - Instances with any of these tags will be ignored.
 - *Automatic Actions* - When this value is set, this policy will automatically take the selected action(s).
@@ -31,9 +31,9 @@ This policy requires permissions to access RightScale resources (instances and t
 - Cloud Management - Observer
 
 ## Supported Clouds
- 
+
 - All
- 
+
 ## Cost
- 
+
 This Policy Template does not incur any cloud costs.
