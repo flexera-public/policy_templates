@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.7
+
+- Updating path for ds_cloud_vendor_accounts
+
 ## v1.6
 
 - Updated the metadata
