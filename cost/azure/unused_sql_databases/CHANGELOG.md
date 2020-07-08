@@ -1,6 +1,6 @@
 # Changelog
 
-# v2.2
+## v2.2
 
 - fixed null error in script
 
