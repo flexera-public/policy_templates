@@ -52,6 +52,12 @@ parameter "param_cooldown_days" do
   default 30
 end
 
+parameter "param_automatic_action" do
+  type "list"
+  label "Automatic Actions"
+  description "When this value is set, this policy will automatically take the selected action(s)"
+  allowed_values ["Re-Size Instances"]
+end
 ###############################################################################
 # Authentication
 ###############################################################################
@@ -559,7 +565,7 @@ escalation "esc_email" do
 end
 
 escalation "esc_resize_instance" do
-  automatic false
+  automatic contains($param_automatic_action, "Re-Size Instances")
   label "Resize Instances"
   description "Resize selected instances"
   run "resize_instances", data, $param_cooldown_days
@@ -578,7 +584,7 @@ policy "pol_utilization" do
         label "Region"
       end
       field "id" do
-        label "instanceID"
+        label "Instance ID"
       end
       field "instanceType" do
         label "Instance Type"
@@ -627,16 +633,16 @@ define resize_instances($data,$param_cooldown_days) do
   foreach $item in $data do
 
     @current_instance = rs_cm.instances.empty()
-    @instance = rs_cm.instances.index(filter: ["resource_uid=="+$item["instanceId"]])
+    @instance = rs_cm.instances.index(filter: ["resource_uid=="+$item["id"]])
     @cloud = @instance.cloud()
     @next_instance = @instance
 
     if $item["next_instance_size"] != "N/A"
       sub on_error: rollback($item, @next_instance, @cloud) do
-        call sys_log('Instance Resizing',$item['instanceId'])
+        call sys_log('Instance Resizing',$item['id'])
         call stop_instance(@instance, @cloud, $item) retrieve @next_instance
 
-        @next_instance = first(@cloud.instances(filter: ['resource_uid=='+$item['instanceId']]))
+        @next_instance = first(@cloud.instances(filter: ['resource_uid=='+$item['id']]))
         @new_instance_type = first(@cloud.instance_types(filter: ["name=="+$item["next_instance_size"]]))
         @next_instance.update(instance: { instance_type_href: @new_instance_type.href })
 
@@ -654,7 +660,7 @@ define resize_instances($data,$param_cooldown_days) do
         call sys_log('cooldown_tag',$cooldown_tag)
 
         if !$cooldown_tag
-          task_label("Adding Cooldown Tag " + $item['instanceId'])
+          task_label("Adding Cooldown Tag " + $item['id'])
           rs_cm.tags.multi_add(resource_hrefs: [@next_instance.href], tags: ["rs_downsize:cooldown="+$formatted_time])
           call sys_log('Adding Cooldown Tag',$formatted_time)
         end
@@ -667,8 +673,8 @@ end
 define rollback($item, @instance, @cloud) do
   sub task_label:"Rolling Back to Original Instance Type" do
     ## Logic to revert the instance back to its original instance type
-    call sys_log('Instance Rollingback', $item['instanceId'])
-    @instance = first(@cloud.instances(filter: ['resource_uid=='+$item['instanceId'] ]))
+    call sys_log('Instance Rollingback', $item['id'])
+    @instance = first(@cloud.instances(filter: ['resource_uid=='+$item['id'] ]))
 
     sub task_label:"Setting Error Tag" do
       $msg = split($_error["message"], "\n")
@@ -684,7 +690,7 @@ define rollback($item, @instance, @cloud) do
     $state = @instance.state
     $current_instance_type = @instance.instance_type().name
     $started_condition = "/^(stranded|stranded in booting|error|operational|running)$/"
-    if $current_instance_type == $item["instance_type"]
+    if $current_instance_type == $item["instanceType"]
       # Instance is still the original size, just make sure it's running
       if $state =~ $started_condition
         # instance is running nothing to do
@@ -694,11 +700,11 @@ define rollback($item, @instance, @cloud) do
       end
     else
       # Instance is the new size, roll back
-      call sys_log('Instance Resizing', $item['instanceId'])
+      call sys_log('Instance Resizing', $item['id'])
       call stop_instance(@instance, @cloud, $item) retrieve @instance
 
-      @instance = first(@cloud.instances(filter: ['resource_uid=='+$item['instanceId']]))
-      @new_instance_type = first(@cloud.instance_types(filter: ["name=="+$item["instance_type"]]))
+      @instance = first(@cloud.instances(filter: ['resource_uid=='+$item['id']]))
+      @new_instance_type = first(@cloud.instance_types(filter: ["name=="+$item["instanceType"]]))
       @instance.update(instance: { instance_type_href: @new_instance_type.href })
 
       call sys_log('Instance Resized', @new_instance_type.name)
@@ -709,26 +715,26 @@ define rollback($item, @instance, @cloud) do
 end
 
 define stop_instance(@instance, @cloud, $item) return @instance do
-  task_label("Stopping instance " + $item['instanceId'])
+  task_label("Stopping instance " + $item['id'])
   @instance.stop()
-  task_label("Sleeping until instance stopped " + $item['instanceId'])
+  task_label("Sleeping until instance stopped " + $item['id'])
   $wake_condition = "/^(stopped|terminated|inactive|error|provisioned)$/"
   $state = ''
   while $state !~ $wake_condition do
     sub on_error: retry, timeout: 20m, on_timeout: skip do
       # find the resource by resource_uid because the href may have changed after resize.
-      @instance = first(@cloud.instances(filter: ['resource_uid=='+$item['instanceId']]))
+      @instance = first(@cloud.instances(filter: ['resource_uid=='+$item['id']]))
       call sys_log('Waiting for instance stop state: ' + @instance.name,to_s(to_object(@instance)))
       $state = @instance.state
       call sys_log('Instance stop state',$state)
     end
   end
-  task_label("Instance Stopped " + $item['instanceId'])
-  call sys_log('Instance Stopped', $item['instanceId'])
+  task_label("Instance Stopped " + $item['id'])
+  call sys_log('Instance Stopped', $item['id'])
 end
 
 define start_instance(@instance, @cloud, $item) return @instance do
-  task_label("Starting instance " + $item['instanceId'])
+  task_label("Starting instance " + $item['id'])
   @instance.start()
   $wake_condition = "/^(stranded|stranded in booting|error|operational|running)$/"
   $state = ''
@@ -736,14 +742,14 @@ define start_instance(@instance, @cloud, $item) return @instance do
   while $state !~ $wake_condition do
     sub on_error: retry, timeout: 20m, on_timeout: skip do
       # find the resource by resource_uid because the href may have changed after resize.
-      @instance = first(@cloud.instances(filter: ['resource_uid=='+$item['instanceId']]))
+      @instance = first(@cloud.instances(filter: ['resource_uid=='+$item['id']]))
       call sys_log('waiting for instance start state', to_s(to_object(@instance)))
       $state = @instance.state
       call sys_log('Instance start state', $state)
     end
   end
-  task_label("Instance Started " + $item['instanceId'])
-  call sys_log('Instance Started', $item['instanceId'])
+  task_label("Instance Started " + $item['id'])
+  call sys_log('Instance Started', $item['id'])
 end
 
 # remove the cooldown tag if the $param_cooldown_days has exceeded
