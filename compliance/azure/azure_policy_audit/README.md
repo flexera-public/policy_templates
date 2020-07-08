@@ -14,7 +14,7 @@ This Policy Template accepts an input that defines which Azure Policies are to b
 
 This policy has the following input parameters required when launching the policy.
 
-- *Policy Names* - A list of Azure Policies. **Case sensitive.**
+- *Policy Names* - A list of Azure Policies.
 - *Email addresses of the recipients you wish to notify* - A list of email addresses to notify
 
 ## Prerequisites
