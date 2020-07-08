@@ -1,8 +1,12 @@
 # Changelog
 
-## v1.4
+## v1.5
 
 - Added new resource table
+
+## v1.4
+
+- Updating path for ds_cloud_vendor_accounts
 
 ## v1.3
 
@@ -18,7 +22,7 @@
 
 - Adding Billing Center
 - Adding Minimum Savings threshold
-- changing from sum to run rate. 
+- changing from sum to run rate.
 
 ## v1.0
 
