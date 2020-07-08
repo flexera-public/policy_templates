@@ -1,5 +1,9 @@
 # Changelog
 
+# v2.2
+
+- fixed null error in script
+
 ## v2.1
 
 - remove unnecessary permissions block
