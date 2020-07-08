@@ -49,6 +49,13 @@ parameter "param_exclude_tags" do
   label "Exclude Tags"
 end
 
+parameter "param_automatic_action" do
+  type "list"
+  label "Automatic Actions"
+  description "When this value is set, this policy will automatically take the selected action(s)"
+  allowed_values ["Take Snapshots"]
+end
+
 permission "perm_resources" do
   label "Access"
   resources "rs_cm.clouds", "rs_cm.volume_snapshots",'rs_cm.instances','rs_cm.volumes'
@@ -194,7 +201,7 @@ escalation "report_outdated_snapshots" do
 end
 
 escalation "take_snapshots" do
-  automatic false
+  automatic contains($param_automatic_action, "Take Snapshots")
   label "Create Snapshot"
   description "Approve to take the snapshots"
   run "take_snapshot", data, $param_alert_options
@@ -223,15 +230,15 @@ define take_snapshot($data,$param_alert_options) return $data,$instance_hash,$sn
   $snapshot_list = []
   if $param_alert_options != "Email"
     foreach $item in $data do
-      if $instance_hash[$item["instance_href"]]
+      if $instance_hash[$item["id"]]
         $new_array = []
-        foreach $new_item in $instance_hash[$item["instance_href"]] do
+        foreach $new_item in $instance_hash[$item["id"]] do
           $new_array << $new_item
         end
         $new_array << $item
-        $instance_hash[$item["instance_href"]] = $new_array
+        $instance_hash[$item["id"]] = $new_array
       else
-        $instance_hash[$item["instance_href"]] = [$item]
+        $instance_hash[$item["id"]] = [$item]
       end
     end
     foreach $item in keys($instance_hash) do
@@ -279,12 +286,15 @@ policy "pol_snapshot_age" do
       field "snapshot_name" do
         label "Snapshot Name"
       end
-      field "id" do
+      field "snapshot_resource_uid" do
         label "Snapshot ID"
-        path "snapshot_resource_uid"
       end
       field "snapshot_updated_at" do
         label "Updated At"
+      end
+      field "id" do
+        label "Instance Href"
+        path "instance_href"
       end
     end
   end
