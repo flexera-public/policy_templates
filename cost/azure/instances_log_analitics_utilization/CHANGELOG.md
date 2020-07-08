@@ -1,5 +1,17 @@
 # Changelog
 
+## v2.5
+
+- modified policy for handling 404 error
+
+## v2.4
+
+- adjusted Log Analytics auth provider tag
+
+## v2.3
+
+- adding incident resource table
+
 ## v2.2
 
 - remove unnecessary permissions block

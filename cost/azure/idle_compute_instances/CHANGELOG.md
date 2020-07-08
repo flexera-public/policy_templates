@@ -1,5 +1,13 @@
 # Changelog
 
+## v2.3
+
+- Fixed unhandled error
+
+## v2.2
+
+- adding incident resource table
+
 ## v2.1
 
 - Changes to replicate Subscription Name in the final response

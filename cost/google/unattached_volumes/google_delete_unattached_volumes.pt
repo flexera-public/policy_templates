@@ -5,7 +5,7 @@ short_description "Checks for unattached volumes older than specified number of 
 category "Cost"
 severity "low"
 info(
-  version: "2.3",
+  version: "2.4",
   provider:"Google",
   service: "Storage",
   policy_set: "Unused Volumes"
@@ -182,6 +182,13 @@ script "js_unattached_volumes", type: "javascript" do
       }
     )
     if (count == 0){
+      var labelsList = "";
+      for(var prop in volume.labels){
+         labelsList = labelsList + prop+" : "+volume.labels[prop]+", ";
+	  }
+      if(labelsList.length > 0){
+        volume.labels = labelsList.substring(0, labelsList.length - 2);
+	  }
       return volume
     }
   }
@@ -217,19 +224,33 @@ end
 policy 'policy_google_unattached_volumes' do
   validate_each $ds_unattached_volumes do
     summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} Google unattached volumes discovered"
-    detail_template <<-EOS
-# Unattached volumes from the Google Cloud
-| Project ID | Zone | Name | Size | Labels | Age In Days |
-| ---------- | ---- | ---- | ---- | ------ | ----------- |
-{{ range data -}}
-| {{.projectId}} | {{.zone}} | {{.name}} | {{.diskSizeGb}} | {{ range $i, $e := .labels }}{{$i}}:{{ $e }}, {{ end }} | {{.days_old}} |
-{{ end -}}
-###### Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }}) within Org: {{ rs_org_name }} (Org ID: {{ rs_org_id }})
-EOS
-
-  check lt(to_n(val(item, "days_old")), $param_unattached_days)
-  escalate $esc_email
-  escalate $esc_approve_delete_volumes
+    check lt(to_n(val(item, "days_old")), $param_unattached_days)
+    escalate $esc_email
+    escalate $esc_approve_delete_volumes
+    export do
+      resource_level true
+      field "projectId" do
+        label "Project ID"
+      end
+      field "zone" do
+        label "Zone"
+      end
+      field "name" do
+        label "Name"
+      end
+      field "days_old" do
+        label "Age In Days"
+      end
+      field "diskSizeGb" do
+        label "Size"
+      end
+      field "labels" do
+        label "Labels"
+      end
+      field "id" do
+        label "ID"
+      end
+    end 
   end
 end
 
