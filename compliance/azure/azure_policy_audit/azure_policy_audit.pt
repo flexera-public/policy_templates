@@ -1,0 +1,270 @@
+name "Azure Policy Audit"
+rs_pt_ver 20180301
+type "policy"
+short_description "Check for policies applied to Azure Subscriptions. See the [README](https://github.com/flexera/policy_templates/tree/master/compliance/azure/azure_policy_audit) and [docs.rightscale.com/policies](https://docs.rightscale.com/policies/) to learn more."
+long_description ""
+severity "medium"
+category "Compliance"
+info(
+  version: "2.0",
+  provider: "Azure",
+  service: "Policy",
+  policy_set: ""
+  )
+
+###############################################################################
+# Parameters
+###############################################################################
+
+parameter "param_email" do
+  type "list"
+  label "Email addresses of the recipients you wish to notify"
+end
+
+parameter "param_policy_names" do
+  type "list"
+  label "Policy Names"
+  description "A list of Azure Policy names to audit. Case sensitive"
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+credentials "auth_azure" do
+  schemes "oauth2"
+  label "Azure"
+  description "Select the Azure Resource Manager Credential from the list."
+  tags "provider=azure_rm"
+end
+
+###############################################################################
+# Pagination
+###############################################################################
+
+pagination "pagination_azure" do
+  get_page_marker do
+    body_path "nextLink"
+  end
+  set_page_marker do
+    uri true
+  end
+end
+
+###############################################################################
+# Datasources
+###############################################################################
+
+datasource "ds_subscriptions" do
+  request do
+    auth $auth_azure
+    pagination $pagination_azure
+    host "management.azure.com"
+    path "/subscriptions/"
+    query "api-version","2019-06-01"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "value[*]") do
+      field "subscriptionId", jmes_path(col_item,"subscriptionId")
+      field "displayName", jmes_path(col_item,"displayName")
+      field "state", jmes_path(col_item,"state")
+    end
+  end
+end
+
+datasource "ds_azure_policy_definitions" do
+  iterate $ds_subscriptions
+  request do
+    auth $auth_azure
+    pagination $pagination_azure
+    host "management.azure.com"
+    path join(["/subscriptions/", val(iter_item,"subscriptionId"), "/providers/Microsoft.Authorization/policyDefinitions"])
+    query "api-version","2019-09-01"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "value[*]") do
+      field "id", jmes_path(col_item,"id")
+      field "name", jmes_path(col_item,"name")
+      field "displayName",jmes_path(col_item,"properties.displayName")
+      field "description",jmes_path(col_item,"properties.description")
+      field "policyType",jmes_path(col_item,"properties.policyType")
+      field "mode",jmes_path(col_item,"properties.mode")
+      field "subscriptionId",val(iter_item,"subscriptionId")
+      field "subscriptionName",val(iter_item,"displayName")
+    end
+  end
+end
+
+datasource "ds_azure_policy_assignments" do
+  iterate $ds_subscriptions
+  request do
+    auth $auth_azure
+    pagination $pagination_azure
+    host "management.azure.com"
+    path join(["/subscriptions/", val(iter_item,"subscriptionId"), "/providers/Microsoft.Authorization/policyAssignments"])
+    query "api-version","2019-09-01"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "value[*]") do
+      field "id", jmes_path(col_item,"id")
+      field "region", jmes_path(col_item,"location")
+      field "name", jmes_path(col_item,"name")
+      field "displayName",jmes_path(col_item,"properties.displayName")
+      field "description",jmes_path(col_item,"properties.description")
+      field "policyDefinitionId",jmes_path(col_item,"properties.policyDefinitionId")
+      field "scope",jmes_path(col_item,"properties.scope")
+      field "notScopes",jmes_path(col_item,"properties.notScopes")
+      field "subscriptionId",val(iter_item,"subscriptionId")
+      field "subscriptionName",val(iter_item,"displayName")
+    end
+  end
+end
+
+datasource "ds_filtered_resources" do
+  run_script $js_filter_resources, $ds_subscriptions, $ds_azure_policy_definitions, $ds_azure_policy_assignments, $param_policy_names
+end
+
+###############################################################################
+# Scripts
+###############################################################################
+
+script "js_filter_resources", type: "javascript" do
+  parameters "ds_subscriptions", "ds_azure_policy_definitions", "ds_azure_policy_assignments", "param_policy_names"
+  result "result"
+  code <<-EOS
+  var result=[];
+
+  _.each(ds_subscriptions, function(subscription){
+    var subscription_id = subscription.subscriptionId
+    var subscription_name = subscription.displayName
+    var sub_policies = _.where(ds_azure_policy_assignments, {subscriptionId: subscription_id})
+    var sub_policy_definitions = _.where(ds_azure_policy_definitions, {subscriptionId: subscription_id})
+    
+    _.each(param_policy_names, function(policyName){
+      var policy = undefined
+      var policy_definition = undefined
+      var policy_definition = _.findWhere(sub_policy_definitions, {displayName: policyName})
+
+      if ( policy_definition !== undefined ) {
+        policy = _.findWhere(sub_policies, {policyDefinitionId: policy_definition["id"]})
+      }
+      
+      if ( policy !== undefined ) {
+        if (policy.notScopes.length > 0) {
+          var pol_notScopes = policy.notScopes.join(", ")
+        } else {
+          var pol_notScopes = null
+        }
+        result.push({
+          subscriptionId: subscription_id,
+          subscriptionName: subscription_name,
+          id: policy.id,
+          region: policy.region,
+          name: policy.name,
+          displayName: policy.displayName,
+          description: policy.description,
+          policyDefinitionId: policy_definition.name,
+          policyDefinitionName: policy_definition.displayName,
+          policyType: policy_definition.policyType,
+          scope: policy.scope,
+          notScopes: pol_notScopes,
+          found: true
+        })
+      } else {
+        result.push({
+          subscriptionId: subscription_id,
+          subscriptionName: subscription_name,
+          id: null,
+          region: null,
+          name: null,
+          displayName: null,
+          description: null,
+          policyDefinitionId: null,
+          policyDefinitionName: policyName,
+          policyType: null,
+          scope: null,
+          notScopes: null,
+          found: false
+        })
+      }
+    })
+  })
+  
+  result = _.sortBy(result, 'subscriptionName');
+EOS
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "pol_policy_audit" do
+  validate $ds_filtered_resources do
+    summary_template "{{ len data }} item(s) found in Azure Policy Audit"
+
+    escalate $esc_email
+
+    check eq(size(data), 0)
+    export do
+      field "subscriptionName" do
+        label "Subscription Name"
+      end
+      field "subscriptionId" do
+        label "Subscription Id"
+      end
+      field "name" do
+        label "Assignment Id"
+      end
+      field "displayName" do
+        label "Policy Assignment Name"
+      end
+      field "policyDefinitionName" do
+        label "Policy Definition Name"
+      end
+      field "policyDefinitionId" do
+        label "Policy Definition Id"
+      end
+      field "policyType" do
+        label "Policy Type"
+      end
+      field "scope" do
+        label "Scope"
+      end
+      field "notScopes" do
+        label "Exclusions"
+      end
+      field "found" do
+        label "Assigned?"
+      end
+    end
+  end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_email" do
+  email $param_email
+end
+
+###############################################################################
+# Cloud Workflow
+###############################################################################
+
+define sys_log($subject, $detail) do
+    rs_cm.audit_entries.create(
+      notify: "None",
+      audit_entry: {
+        auditee_href: @@account,
+        summary: "Azure Disallowed Regions "+ $subject,
+        detail: $detail
+      }
+    )
+end
