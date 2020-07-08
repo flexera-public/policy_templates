@@ -1,8 +1,12 @@
 # Changelog
 
-## v2.3
+## v2.4
 
 - Updated escalation block
+
+## v2.3
+
+- Fixed unhandled error
 
 ## v2.2
 
