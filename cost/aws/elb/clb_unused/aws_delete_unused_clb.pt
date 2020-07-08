@@ -27,6 +27,13 @@ parameter "param_exclude_tags" do
   allowed_pattern /([\w]?)+\=([\w]?)+/
 end
 
+parameter "param_automatic_action" do
+  type "list"
+  label "Automatic Actions"
+  description "When this value is set, this policy will automatically take the selected action(s)"
+  allowed_values ["Delete Load balancers"]
+end
+
 ###############################################################################
 # Authentication
 ###############################################################################
@@ -187,7 +194,6 @@ script "js_aws_clb_filter_map", type: "javascript" do
       if(!(isTagMatched)){
         clb_details={
           id: clb['loadBalancerName'],
-          loadBalancerName: clb['loadBalancerName'],
           instanceId:(s_instanceIds.slice(2)),
           availabilityZones:(s_availabilityZones.slice(2)),
           tagKeyValue:(tagKeyValue.slice(2)),
@@ -227,7 +233,7 @@ escalation "esc_email" do
 end
 
 escalation "esc_delete_clb" do
-  automatic false
+  automatic contains($param_automatic_action, "Delete Load balancers")
   label "Delete CLB"
   description "Delete selected unused CLB"
   run "delete_CLB", data
@@ -242,7 +248,7 @@ policy "policy_delete_unused_CLB" do
     summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} Unused Classic Load Balancers Found in AWS"
     export do
       field "id" do
-        label "LoadBalancer_Name"
+        label "LoadBalancer Name"
       end
       field "region" do
         label "Region"
@@ -278,7 +284,7 @@ define delete_CLB($data) return $all_responses do
       verb: "get",
       host: join(["elasticloadbalancing.",$item["region"],".amazonaws.com"]),
       auth: $$auth_aws,
-      href: join(["/", "?Action=DeleteLoadBalancer", "&LoadBalancerName=", $item["loadBalancerName"], "&Version=2012-06-01"]),
+      href: join(["/", "?Action=DeleteLoadBalancer", "&LoadBalancerName=", $item["id"], "&Version=2012-06-01"]),
       https: true,
       headers:{
         "cache-control": "no-cache",
