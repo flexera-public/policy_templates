@@ -1,4 +1,4 @@
-## No Recent Snapshots Policy Template
+# No Recent Snapshots Policy Template
 
 ### What it does
 
