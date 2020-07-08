@@ -17,6 +17,10 @@ When an instance is downsized a new tag *rs_downsize:cooldown* is added which va
 - Tags to find instances - List of tags used to filter instances that must validate policy. (e.g.: ec2:downsize:true, azure:downsize:true, gce:downsize=true)
 - Tags to ignore instances - List of tags that will exclude instances from being evaluated by this policy. Multiple tags are evaluated as an 'OR' condition. Tag keys or key/value pairs can be listed. Example: 'test,env=dev'
 - Cooldown Days - Days to cooldown between checks of same instance.
+- *Automatic Actions* - When this value is set, this policy will automatically take the selected action(s).
+
+Please note that the "Automatic Actions" parameter contains a list of action(s) that can be performed on the resources. When it is selected, the policy will automatically execute the corresponding action on the data that failed the checks, post incident generation. Please leave it blank for *manual* action.
+For example if a user selects the "Downsize Instances" action while applying the policy, all the resources that didn't satisfy the policy condition will be instances.
 
 ## Policy Actions
 
