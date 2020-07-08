@@ -36,6 +36,13 @@ parameter "param_rotation_units" do
   allowed_values "Days", "Hours", "Minutes"
 end
 
+parameter "param_automatic_action" do
+  type "list"
+  label "Automatic Actions"
+  description "When this value is set, this policy will automatically take the selected action(s)"
+  allowed_values ["Update Credentials"]
+end
+
 ###############################################################################
 # Permissions
 ###############################################################################
@@ -150,7 +157,6 @@ for (var i = 0; i < ds_aws_clouds.length; i++) {
   if (cloud_account_href) {
     var aws_cloud_account_info = {
       id: cloud_account_href,
-      "cloud_account_href" : cloud_account_href,
       "cloud_href" : aws_cloud_href,
       "cloud_name" : aws_cloud_name,
       "needs_rotation" : needs_rotation }
@@ -172,7 +178,7 @@ escalation "esc_email" do
 end
 
 escalation "esc_update_connection" do
-  automatic false
+  automatic contains($param_automatic_action, "Update Credentials")
   label "Update cloud account"
   description "Update selected cloud account connections"
   run "update_aws_connection", data, $param_rotation_period, $param_rotation_units
@@ -220,7 +226,7 @@ define update_aws_connection($data, $param_rotation_period, $param_rotation_unit
   sub on_error: retry do # This is to handle the possiblity of an update failing, in which case, just try again
     call log("AWS Key Rotation Policy: Updating cloud account connections.", "")
     foreach $item in $data do
-      @cloud_account = rs_cm.get(href: $item["cloud_account_href"])
+      @cloud_account = rs_cm.get(href: $item["id"])
       @cloud_account.update(cloud_account: $cloud_account_params)
     end
   end
