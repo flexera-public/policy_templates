@@ -1,8 +1,12 @@
 # Changelog
 
+## v2.4
+
+- Bug fix for when metrics are absent in a project
+
 ## v2.3
 
-- Bug fix when metrics are absent in a project
+- Adding incident resource table
 
 ## v2.2
 

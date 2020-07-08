@@ -6,7 +6,7 @@ long_description ""
 severity "low"
 category "Cost"
 info(
-      version: "2.3",
+      version: "2.4",
       provider: "GCE",
       service: "Compute",
       policy_set: "Idle Compute Instances"
@@ -111,7 +111,7 @@ datasource "ds_compute_utilization" do
   result do
     encoding "json"
     collect jmes_path(response, "timeSeries[*]") do
-      #field "label_instance_name", jmes_path(col_item, "metric.labels.instance_name")
+      field "label_instance_name", jmes_path(col_item, "metric.labels.instance_name")
       field "instance_id", jmes_path(col_item, "resource.labels.instance_id")
       field "zone", jmes_path(col_item, "resource.labels.zone")
       field "projectId", val(iter_item,"projectId")
@@ -138,7 +138,7 @@ datasource "ds_memory_utilization" do
   result do
     encoding "json"
     collect jmes_path(response, "timeSeries[*]") do
-      #field "label_instance_name", jmes_path(col_item, "metric.labels.instance_name")
+      field "label_instance_name", jmes_path(col_item, "metric.labels.instance_name")
       field "instance_id", jmes_path(col_item, "resource.labels.instance_id")
       field "zone", jmes_path(col_item, "resource.labels.zone")
       field "mem_points", jmes_path(col_item, "points[*].value.doubleValue")
@@ -154,10 +154,10 @@ datasource "ds_add_instance_data" do
   result do
     encoding "json"
     collect jmes_path(response,"items[*]") do
-      field "instance_id", val(iter_item, "instance_id")
+      field "id", val(iter_item, "instance_id")
       field "hostname", jmes_path(col_item,"name || instance_id")
       field "selfLink", jmes_path(col_item, "selfLink")
-      #field "label_instance_name",val(iter_item, "label_instance_name")
+      field "label_instance_name",val(iter_item, "label_instance_name")
       field "status", jmes_path(col_item, "status")
       field "zone", val(iter_item, "zone")
       field "labels", jmes_path(col_item,"labels")
@@ -196,54 +196,33 @@ script "js_calculated_utilization", type: "javascript" do
     results = []
     for ( i =0; i < ds_compute_utilization.length; i++ ){
       var instance_id = ds_compute_utilization[i].instance_id
-      console.log("Instance ID: " + instance_id)
       if ( instance_id === null || instance_id === undefined ) {
         // No instance id, continue
       } else {
         var points = ds_compute_utilization[i].cpu_points
-        console.log("CPU Section")
-        console.log("CPU Object: ", ds_compute_utilization[i])
         if ( points === null || points === undefined ) {
-          console.log("CPU If: True")
           var cpu_maximum = "101"
           var cpu_average = "101"
           var cpu_minimum = "101"
         } else {
-          console.log("CPU If: False")
-          console.log("Points: ", points)
           var cpu_maximum = parseFloat( points.reduce( function (x, y) { return Math.max(x, y) } )).toFixed(2)
-          //var cpu_maximum = parseFloat(Math.max.apply(points)).toFixed(2)
           var cpu_sum = _.reduce(points, function(memo, num){ return memo + num; }, 0);
           var cpu_average = parseFloat(cpu_sum / points.length).toFixed(2)
           var cpu_minimum = parseFloat( points.reduce( function (x, y) { return Math.min(x, y) } )).toFixed(2)
-          //var cpu_minimum = parseFloat(Math.min.apply(points)).toFixed(2)
         }
-        console.log("CPU Min: " + cpu_minimum)
-        console.log("CPU Average: " + cpu_average)
-        console.log("CPU Max: " + cpu_maximum)
-        
-        console.log("Memory Section")
         var memory_record = _.find(ds_memory_utilization, function(record) { return record.instance_id == instance_id; })
-        console.log("Memory Object: ", memory_record)
         var memory_maximum = "101"
           var memory_average = "101"
           var memory_minimum = "101"
         if ( memory_record === null || memory_record === undefined ) {
-          console.log("Memory If: True")
           // No memory records, continue
         } else {
-          console.log("Memory If: False")
-          console.log("Points: ", memory_record.mem_points)
           if ( memory_record.mem_points === null || memory_record.mem_points === undefined ) {
-            console.log("Memory Point If: True")
             // No memory records, continue
           } else {
-            console.log("Memory Points If: False")
             var memory_maximum = parseFloat( memory_record.mem_points.reduce( function (x, y) { return Math.max(x, y) } )).toFixed(2)
-            //var memory_maximum = parseFloat(Math.max.apply(memory_record.mem_points)).toFixed(2)
             var memory_sum = _.reduce(memory_record.mem_points, function(memo, num){ return memo + num; }, 0);
             var memory_average = parseFloat(memory_sum/memory_record.mem_points.length).toFixed(2)
-            //var memory_minimum = parseFloat(Math.min.apply(memory_record.mem_points)).toFixed(2)
             var memory_minimum = parseFloat( memory_record.mem_points.reduce( function (x, y) { return Math.min(x, y) } )).toFixed(2)
           }
         }
@@ -253,7 +232,6 @@ script "js_calculated_utilization", type: "javascript" do
             zone: ds_compute_utilization[i].zone,
             projectId: ds_compute_utilization[i].projectId,
             instance_id: instance_id,
-            //label_instance_name: ds_compute_utilization[i].label_instance_name,
             cpu_average: cpu_average,
             cpu_maximum: cpu_maximum,
             cpu_minimum: cpu_minimum,
@@ -300,12 +278,48 @@ script "js_clean_instance_data", type: "javascript" do
         if ( data.labels != null && data.labels !== undefined ){
           if ( data.labels[tag_key] != null && data.labels[tag_key] !== undefined ){
             if ( data.labels[tag_key] != tag_value ){
+              var labelsList = "";
+              for(var prop in data.labels){
+                labelsList = labelsList+prop+":"+data.labels[prop]+", ";
+	           }
+               if(labelsList.length > 0){
+                 data.labels = labelsList.substring(0,labelsList.length-2);
+	           }else{
+                 data.labels = "< No Value >";
+	           }
+               if(data.hostname == undefined){
+                 data.hostname = data.id;     
+			   }
               return data
             }
           } else {
+            var labelsList = "";
+            for(var prop in data.labels){
+              labelsList = labelsList+prop+":"+data.labels[prop]+", ";
+	        }
+            if(labelsList.length > 0){
+              data.labels = labelsList.substring(0,labelsList.length-2);
+	        }else{
+              data.labels = "< No Value >";
+	        }
+            if(data.hostname == undefined){
+              data.hostname = data.id;     
+			}
             return data
           }
         }else{
+          var labelsList = "";
+          for(var prop in data.labels){
+            labelsList = labelsList+prop+":"+data.labels[prop]+", ";
+          }
+          if(labelsList.length > 0){
+            data.labels = labelsList.substring(0,labelsList.length-2);
+          }else{
+            data.labels = "< No Value >";  
+		  }
+          if(data.hostname == undefined){
+            data.hostname = data.id;  
+		  }
           return data
         }
       }
@@ -321,20 +335,46 @@ end
 policy "pol_utilization" do
   validate_each $ds_clean_instance_data do
     summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} rows containing Google instance StackDriver Utilization data"
-    detail_template <<-EOS
-# Google Instance StackDriver Utilization
-| Project ID | Region | instanceID | Hostname | CPU Maximum % | CPU Minimum % | CPU Average % | Memory Minimum % | Memory Maximum % | Memory Average % | Labels |
-| ---------- | ------ | ---------- | -------- | ------------- | ------------- | ------------- | ---------------- | ---------------- | ---------------- | ------ |
-{{ range data -}}
-| {{.projectId}} | {{.zone}} | {{.instance_id}} | {{if .hostname}} {{.hostname}} {{ else }} {{.instance_id}} {{end}} | {{ .cpu_maximum }} | {{.cpu_minimum}} | {{ .cpu_average }} | {{.mem_minimum}} | {{.mem_maximum}} | {{.mem_average}} | {{ range $i, $e := .labels }}{{$i}}:{{ $e }}, {{ end }} |
-{{ end -}}
-___
-###### Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }}) within Org: {{ rs_org_name }} (Org ID: {{ rs_org_id }})
-EOS
     check logic_or(eq($param_avg_used_memory, -1), gt(to_n(val(item,"mem_average")), $param_avg_used_memory))
     check logic_or(eq($param_avg_cpu, -1), gt(to_n(val(item,"cpu_average")),$param_avg_cpu))
     escalate $email
     escalate $terminate_resources
+    export do
+      resource_level true
+      field "projectId" do
+        label "Project ID"
+      end
+      field "zone" do
+        label "Region"
+      end
+      field "id" do
+        label "Instance ID"
+      end
+      field "hostname" do
+        label "Hostname"
+      end
+      field "cpu_maximum" do
+        label "CPU Maximum %"
+      end
+      field "cpu_minimum" do
+        label "CPU Minimum %"
+      end
+      field "cpu_average" do
+        label "CPU Average %"
+      end
+      field "mem_maximum" do
+        label "Memory Maximum %"
+      end
+      field "mem_minimum" do
+        label "Memory Minimum %"
+      end
+      field "mem_average" do
+        label "Memory Average %"
+      end
+      field "labels" do
+        label "Labels"
+      end
+    end    
   end
 end
 
