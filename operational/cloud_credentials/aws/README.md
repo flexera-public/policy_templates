@@ -1,4 +1,4 @@
-# AWS Cloud Credentials Rotation Policy Template
+# AWS Cloud Credentials Rotation
 
 ## What it does
 
