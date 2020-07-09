@@ -1,4 +1,4 @@
-# Untagged Resources Policy Template
+# Untagged Resources
 
 ## What it does
 
