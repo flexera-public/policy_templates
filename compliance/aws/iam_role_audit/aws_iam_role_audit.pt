@@ -1,0 +1,266 @@
+name "AWS IAM Role Audit"
+rs_pt_ver 20180301
+type "policy"
+short_description "This policy checks to see if the provided roles exist in an account. \n See the [README](https://github.com/flexera/policy_templates/tree/master/compliance/aws/iam_role_audit) and [docs.rightscale.com/policies](https://docs.rightscale.com/policies/) to learn more."
+category "Compliance"
+severity "medium"
+info(
+  version: "2.0",
+  provider:"AWS",
+  service: "IAM", 
+  policy_set: ""
+)
+
+###############################################################################
+# Parameters
+###############################################################################
+
+parameter "param_email" do
+  type "list"
+  label "Email addresses"
+  description "A list of email addresses to notify."
+end
+
+parameter "param_role_names" do
+  type "list"
+  label "IAM Role Names"
+  description "A list of IAM Role names to audit."
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+#authenticate with AWS
+credentials "auth_aws" do
+  schemes "aws","aws_sts"
+  label "AWS"
+  description "Select the AWS Credential from the list"
+  tags "provider=aws"
+end
+
+###############################################################################
+# Pagination
+###############################################################################
+
+pagination "pagination_aws_iam_role_json" do
+  get_page_marker do
+    body_path jmes_path(response, "ListRolesResponse.ListRolesResult.Marker")
+  end
+  set_page_marker do
+    query "Marker"
+  end
+end
+
+pagination "pagination_aws_iam_role_tag_json" do
+  get_page_marker do
+    body_path jmes_path(response, "ListRoleTagsResponse.ListRoleTagsResult.Marker")
+  end
+  set_page_marker do
+    query "Marker"
+  end
+end
+
+###############################################################################
+# Datasources
+###############################################################################
+
+datasource "ds_get_caller_identity" do
+  request do
+    auth $auth_aws
+    verb "GET"
+    host "sts.amazonaws.com"
+    path "/"
+    header "User-Agent", "RS Policies"
+    query "Action", "GetCallerIdentity"
+    query "Version", "2011-06-15"
+  end
+  result do
+    encoding "xml"
+    collect xpath(response, "//GetCallerIdentityResponse/GetCallerIdentityResult") do
+      field "account",xpath(col_item, "Account")
+    end
+ end
+end
+
+datasource "ds_iam_roles" do
+  request do
+    auth $auth_aws
+    pagination $pagination_aws_iam_role_json
+    verb "GET"
+    host "iam.amazonaws.com"
+    path "/"
+    header "Accept", "application/json"
+    header "User-Agent", "RS Policies"
+    query "Action", "ListRoles"
+    query "Version", "2010-05-08"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "ListRolesResponse.ListRolesResult.Roles[*]") do
+      field "path", jmes_path(col_item, "Path")
+      field "arn", jmes_path(col_item, "Arn")
+      field "roleName", jmes_path(col_item, "RoleName")
+      field "createDate", jmes_path(col_item, "CreateDate")
+      field "roleId", jmes_path(col_item, "RoleId")
+      field "description", jmes_path(col_item, "Description")
+      field "maxSessionDuration", jmes_path(col_item, "MaxSessionDuration")
+    end
+  end
+end
+
+datasource "ds_iam_role_tags" do
+  iterate $ds_iam_roles
+  request do
+    auth $auth_aws
+    pagination $pagination_aws_iam_role_tag_json
+    verb "GET"
+    host "iam.amazonaws.com"
+    path "/"
+    header "Accept", "application/json"
+    header "User-Agent", "RS Policies"
+    query "Action", "ListRoleTags"
+    query "Version", "2010-05-08"
+    query "RoleName", val(iter_item, "roleName")
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "ListRoleTagsResponse.ListRoleTagsResult") do
+      field "path", val(iter_item, "path")
+      field "arn", val(iter_item, "arn")
+      field "roleName", val(iter_item, "roleName")
+      field "createDate", val(iter_item, "createDate")
+      field "roleId", val(iter_item, "roleId")
+      field "description", val(iter_item, "description")
+      field "maxSessionDuration", val(iter_item, "maxSessionDuration")
+      field "tags" do
+        collect jmes_path(col_item,"Tags") do
+          field "tagKey", jmes_path(col_item,"Key")
+          field "tagValue", jmes_path(col_item,"Value")
+        end
+      end
+    end
+  end
+end
+
+datasource "ds_filter_roles" do
+  run_script $js_filter_roles, $ds_get_caller_identity, $ds_iam_role_tags, $param_role_names
+end
+
+###############################################################################
+# Scripts
+###############################################################################
+
+script "js_filter_roles", type: "javascript" do
+  parameters "ds_get_caller_identity", "ds_iam_role_tags", "param_role_names"
+  result "result"
+  code <<-EOS
+  var result=[];
+
+  _.each(param_role_names, function(roleName){
+    var role = _.findWhere(ds_iam_role_tags, {roleName: roleName})
+
+    if ( role !== undefined ) {
+      var unix_timestamp = role["createDate"]
+      var date = new Date(unix_timestamp * 1000);
+      
+      var tags = role['tags']
+      var tagKeyValue=""
+      if( typeof(tags) !== undefined ){
+        for(var j=0; j < tags.length; j++){
+          tag = tags[j]
+          if( tag['tagValue'] != null ){
+            if((tag['tagValue']).length > 0){
+              tagKeyValue = tagKeyValue + ', '+ tag['tagKey']+'='+tag['tagValue']
+            }else{
+              tagKeyValue = tagKeyValue + ', '+ tag['tagKey']
+            }
+          }
+        }
+      }
+
+      result.push({
+        id: ds_get_caller_identity[0]['account'],
+        roleName: role.roleName,
+        description: role.description
+        found: true,
+        arn: role.arn,
+        createDate: date.toString(),
+        tagKeyValue:(tagKeyValue.slice(2)),
+      })
+    } else {
+      result.push({
+        id: ds_get_caller_identity[0]['account'],
+        roleName: roleName,
+        description: null
+        found: false,
+        arn: null,
+        createDate: null,
+        tagKeyValue: null
+      })
+    }
+  })
+EOS
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "pol_iam_role_audit" do
+  validate $ds_filter_roles do
+    summary_template "AWS IAM Role Audit for Account Id {{with(index data 0)}}{{.id}}{{end}}"
+
+    escalate $esc_email
+
+    check eq(size(data), 0)
+    export do
+      field "id" do
+        label "Account Id"
+      end
+      field "roleName" do
+        label "Role Name"
+      end
+      field "description" do
+        label "Description"
+      end
+      field "found" do
+        label "Exists?"
+      end
+      field "arn" do
+        label "ARN"
+      end
+      field "createDate" do
+        label "Create Date"
+      end
+      field "tagKeyValue" do
+        label "Tags"
+      end
+    end
+  end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_email" do
+  email $param_email
+end
+
+###############################################################################
+# Cloud Workflow
+###############################################################################
+
+define sys_log($subject, $detail) do
+  if $$debug
+    rs_cm.audit_entries.create(
+      notify: "None",
+      audit_entry: {
+        auditee_href: @@account,
+        summary: "AWS Old Snapshots"+ $subject,
+        detail: $detail
+      }
+    )
+    end
+end
