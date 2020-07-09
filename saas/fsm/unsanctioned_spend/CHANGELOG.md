@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.2
+
+- Update API endpoint
+
 ## v2.1
 
 - support new incident table
