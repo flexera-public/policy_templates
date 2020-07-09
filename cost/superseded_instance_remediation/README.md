@@ -8,15 +8,15 @@ This Policy Template is used to automatically resize instances based on user-def
 
 The following RightScale Permissions
 
-  - Cloud Management - `Actor`
-  - Cloud Management - `Observer`
+- Cloud Management - `Actor`
+- Cloud Management - `Observer`
 
 ## Functional Details
 
 - This policy supports a single old-to-new instance type mapping.  To apply this policy for multiple old-to-new instance type scenarios, the policy will need to be applied multiple times.  This will allow for flexibility in managing applied policies.
 - For Example:
-  - Old Instance Type: `c1.medium`, Superseded Instance Type: `c5.large`
-  - Old Instance Type: `Standard_A1`, Superseded Instance Type: `Standard_A1_v2`
+- Old Instance Type: `c1.medium`, Superseded Instance Type: `c5.large`
+- Old Instance Type: `Standard_A1`, Superseded Instance Type: `Standard_A1_v2`
 - The Exclude Tag parameter is a list value. Supply tags for instances you want excluded from the policy
 - Upon Approval, the Instances that appear in the Incident will be immediately stopped, resized, and started via Cloud Workflow. 
 
