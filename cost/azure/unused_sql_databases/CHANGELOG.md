@@ -2,7 +2,7 @@
 
 ## v2.2
 
-- fixed null error in script
+- fix null error for sku.name
 
 ## v2.1
 
