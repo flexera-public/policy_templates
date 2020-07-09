@@ -37,21 +37,18 @@ Example JSON:
 
 ```
 {
-  "rs_agent:type":
-  {
+  "rs_agent:type": {
     "description":"Validate the tag using a array of possible values",
     "validation-type": "array",
     "validation": ["right_link_lite", "bar"]
   },
-  "rs_login:state":
-  {
-    "description":"Validate the tag value using a string",		
+  "rs_login:state": {
+    "description":"Validate the tag value using a string",
     "validation-type": "string",
     "validation": "user"
   },
-  "rs_id:user":
-  {
-    "description":"Validate the tag value using a regex",		
+  "rs_id:user":{
+    "description":"Validate the tag value using a regex",
     "validation-type": "regex",
     "validation": "^sp",
     "default-value":"none",
