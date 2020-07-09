@@ -2,7 +2,7 @@
 
 ## What it does
 
-This policy checks all Azure SQL Managed instances and reports on any that are publicly accessible. When such an instance is detected, the user can choose to disable public data endpoint or delete it. For deleting the user needs to enable 'delete action' option as mentioned in "To enable delete action" section below.
+This policy checks all Azure SQL Managed instances and reports on any that are publicly accessible. When such an instance is detected, the user can choose to disable public data endpoint or delete it.
 
 ## Functional Details
 
@@ -20,7 +20,7 @@ This policy has the following input parameters required when launching the polic
 - *Automatic Actions* - When this value is set, this policy will automatically take the selected action(s).
 
 Please note that the "*Automatic Actions*" parameter contains a list of action(s) that can be performed on the resources. When it is selected, the policy will automatically execute the corresponding action on the data that failed the checks, post incident generation. Please leave it blank for *manual* action.
-For example if a user selects the "Terminate Resources" action while applying the policy, all the resources that didn't satisfy the policy condition will be terminated.
+For example if a user selects the "Disable Public endpoint" action while applying the policy, the public data endpoint would be deleted for the identified instances.
 
 ## Prerequesites
 
@@ -35,14 +35,6 @@ Provider tag value to match this policy: `azure_rm`
 Required permissions in the provider:
 
 - Microsoft.Sql/managedInstances/*
-
-## To enable delete action
-
-Perform below steps to enable delete action.
-
-- Edit the file [Check_for_publicly_accessible_Azure_SQL_Managed_Instance](https://github.com/flexera/policy_templates/tree/master/security/azure/sql_publicly_accessible_managed_instance)
-- uncomment the line which conatins 'escalate $esc_delete_Managed_instances_approval' and save the changes.
-- upload the modified file and apply the policy.
 
 ## Supported Clouds
 
