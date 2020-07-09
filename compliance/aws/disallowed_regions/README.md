@@ -19,7 +19,7 @@ This policy checks all instances in a set of disallowed regions. The user is giv
 Note:Refer Region column under Amazon Elastic Compute Cloud (Amazon EC2) in below link for AWS supported regions \n See the [README](https://docs.aws.amazon.com/general/latest/gr/rande.html).
 
 Also please note that the "*Automatic Actions*" parameter contains a list of action(s) that can be performed on the resources. When it is selected, the policy will automatically execute the corresponding action on the data that failed the checks, post incident generation. Please leave it blank for *manual* action.
-For example if a user selects the "Terminate Resources" action while applying the policy, all the resources that didn't satisfy the policy condition will be terminated.
+For example if a user selects the "Terminate Instances" action while applying the policy, all the identified instances that didn't satisfy the policy condition will be terminated.
 
 ## Policy Actions
 
