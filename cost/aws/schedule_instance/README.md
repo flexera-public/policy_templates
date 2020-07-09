@@ -26,6 +26,10 @@ This policy has the following input parameters required when launching the polic
 
 - *Email addresses* - A list of email addresses to notify  
 - *Tags Key=Value* - List of tags that an Instance can have to exclude it from the list. 
+- *Automatic Actions* - When this value is set, this policy will automatically take the selected action(s).
+
+Please note that the "*Automatic Actions*" parameter contains a list of action(s) that can be performed on the resources. When it is selected, the policy will automatically execute the corresponding action on the data that failed the checks, post incident generation. Please leave it blank for *manual* action.
+For example if a user selects the "Schedule Instances" action while applying the policy, the identified resources will be stopped or started as per the schedule.
 
 ## Policy Actions 
 
