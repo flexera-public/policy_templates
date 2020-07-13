@@ -29,13 +29,6 @@ parameter "param_days_old" do
   default 180
 end
 
-parameter "param_action" do
-  type "string"
-  label "Action to take"
-  allowed_values "stop", "terminate"
-  description "Either Stop or Terminate the instance"
-end
-
 parameter "param_exclude_tags" do
   category "User Inputs"
   label "Exclusion Tag Key:Value"
@@ -45,10 +38,11 @@ parameter "param_exclude_tags" do
 end
 
 parameter "param_automatic_action" do
-  type "list"
+  type "string"
   label "Automatic Actions"
   description "When this value is set, this policy will automatically take the selected action(s)"
-  allowed_values ["Stop/Terminate Instances"]
+  default "Select Action"
+  allowed_values "Select Action","Stop Instances", "Terminate Instances"
 end
 
 ###############################################################################
@@ -211,7 +205,8 @@ policy "pol_utilization" do
   validate_each $ds_instances do
     summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} AWS instances running longer than {{ parameters.param_days_old}} days"
     escalate $email
-    escalate $esc_stop_or_terminate
+    escalate $esc_stop_instances
+    escalate $esc_terminate_instances
     check lt(to_n(val(item, "days_old")),$param_days_old)
     export do
       resource_level true
@@ -252,31 +247,42 @@ escalation "email" do
   email $param_email
 end
 
-escalation "esc_stop_or_terminate" do
-  automatic contains($param_automatic_action, "Stop/Terminate Instances")
+escalation "esc_stop_instances" do
+  automatic eq($param_automatic_action, "Stop Instances")
+  label "Stop Instances"
+  description "Stop selected instances"
+  run "stop_instances_cwf", data
+end
+
+escalation "esc_terminate_instances" do
+  automatic eq($param_automatic_action, "Terminate Instances")
   label "Terminate Instances"
-  description "Stop / Terminate selected instances"
-  run "stop_or_terminate_instances", data, $param_action
+  description "Terminate selected instances"
+  run "terminate_instances_cwf", data
 end
 
 ###############################################################################
 # Cloud Workflow
 ###############################################################################
 
-define stop_or_terminate_instances($data, $param_action) return $all_responses do
+define stop_instances_cwf($data) return $all_responses do
   $status_code=''
   $all_responses = []
   foreach $item in $data do
-    if $param_action == "stop"
-      sub on_error: skip do
-        call stop_instances($item) retrieve $status_code
-        $all_responses << $status_code
-      end
-    else
-      sub on_error: skip do
-        call terminate_instances($item) retrieve $status_code
-        $all_responses << $status_code
-      end
+    sub on_error: skip do
+      call stop_instances($item) retrieve $status_code
+      $all_responses << $status_code
+    end
+  end
+end
+
+define terminate_instances_cwf($data) return $all_responses do
+  $status_code=''
+  $all_responses = []
+  foreach $item in $data do
+    sub on_error: skip do
+      call terminate_instances($item) retrieve $status_code
+      $all_responses << $status_code
     end
   end
 end
