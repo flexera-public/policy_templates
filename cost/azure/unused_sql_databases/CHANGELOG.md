@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.2
+
+- fix null error for sku.name
+
 ## v2.1
 
 - remove unnecessary permissions block
