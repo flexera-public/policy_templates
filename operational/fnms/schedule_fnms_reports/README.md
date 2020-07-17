@@ -1,8 +1,8 @@
-# Schedule Flexnet Manager Report - Cloud
+# Schedule Flexnet Manager Report
 
 ## What it does
 
-This policy runs on the Flexnet Manager Cloud instance and will run a FlexNet Manager report (Custom view) and send the result via email.
+This policy runs on the Flexnet Manager Cloud/On-premise instance and will run a FlexNet Manager report (Custom view) and send the result via email.
 The policy is a report only policy, no action is taken during the Policy Escalation.
 
 The report / Mail output looks like this:
@@ -14,22 +14,34 @@ Current limitations:
 
 ## Prerequisites
 
+Fot on-premise If FlexNet Manager Suite is not accessible from the Internet, you will need to setup a wstunnel to provide a secure connection into the FlexNet manager system.  For more details on wstunnel please refer to this: [https://github.com/rightscale/wstunnel](https://github.com/rightscale/wstunnel)
 This policy uses [credentials](https://docs.rightscale.com/policies/users/guides/credential_management.html) for connecting to the cloud -- in order to apply this policy you must have a credential registered in the system that is compatible with this policy. If there are no credentials listed when you apply the policy, please contact your cloud admin and ask them to register a credential that is compatible with this policy. The information below should be consulted when creating the credential.
 
 ### Credential configuration
 
 For administrators [creating and managing credentials](https://docs.rightscale.com/policies/users/guides/credential_management.html) to use with this policy, the following information is needed:
 
-Required permissions in the provider: `flexera_fnms_api_key`
+Required permissions in the provider: `flexera_fnms`
 
 ## Installation
 
 ### How to setup FlexNet Manager Custom View for this policy
 
+a. Cloud
+
 1. Create a custom view in FlexNet manager that could look like this: ![Alt text][FNMSReport] Once saved note the report number in the URL field : ![Alt text][ReportNumber] you need it when activating the Policy
 1. Retrieve the API Token in FlexNet manager Cloud:
     1. On the Account page - Select Create Account -> Service Account and fill in the form ![Alt text][CreateServeceAccount]
     1. IMPORTANT: When you hit save you will see a API Token.. This is the only time you will see it so you need to save it at this point ![Alt text][APIToken]
+    1. Add the new account to the Role ___Webservice___ ![Alt text][WebServiceRole]
+
+b. On Premise
+
+1. Create a custom view in FlexNet manager that could look like this: ![Alt text][FNMSReport] Once saved note the report number in the URL field : ![Alt text][ReportNumber] you need it when activating the Policy
+1. Set Up user for FlexNet manager on-premise:
+    1. In your user management add the new user and assign it a password.
+    1. On the Account page - Select Create Account -> Service Account ![Alt text][CreateServeceAccount]
+    1. in the Account field; select the newly created account and fill in the form.
     1. Add the new account to the Role ___Webservice___ ![Alt text][WebServiceRole]
 
 __NOTE__: You can use a normal interactive user for the API credentials, but it is recommended to add a
