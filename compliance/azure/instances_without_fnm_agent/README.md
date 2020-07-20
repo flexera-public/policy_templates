@@ -19,7 +19,7 @@ This policy has the following input parameters required when launching the polic
 
 - *Email addresses to notify* - Email addresses of the recipients you wish to notify when new incidents are created
 - *Exclusion Tag Key* - Azure-native Virtual machines tag to ignore VM's which has FNMS inventory agent running. Only supply the tag key. The policy assumes that the tag value is irrelevant.
-- *FNMS Report URL* - Full FlexNet URL (e.g. <https://demo.flexnetmanager.com/Suite> or WStunnel tunnel URL https://wstunnel1-1.rightscale.com/_token/<token>/)
+- *FNMS Report URL* - Full FlexNet URL (e.g. <https://demo.flexnetmanager.com/Suite> or WStunnel tunnel URL <https://wstunnel1-1.rightscale.com/_token/<token>/>)
 - *FNMS Report ID* - FlexNet manager Custom View ID.
 
 ## Policy Actions

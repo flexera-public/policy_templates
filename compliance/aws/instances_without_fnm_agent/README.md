@@ -17,7 +17,7 @@ Current limitations:
 
 This policy has the following input parameters required when launching the policy.
 
-- *FNMS Report URL* - Full FlexNet URL (e.g. <https://demo.flexnetmanager.com/Suite> or WStunnel tunnel URL https://wstunnel1-1.rightscale.com/_token/<token>/)
+- *FNMS Report URL* - Full FlexNet URL (e.g. <https://demo.flexnetmanager.com/Suite> or WStunnel tunnel URL <https://wstunnel1-1.rightscale.com/_token/<token>/>)
 - *FNMS Report ID* - FlexNet Manager System Custom View ID.
 - *Email addresses to notify* - Email addresses of the recipients you wish to notify when new incidents are created
 - *Tags to ignore* - List of tags that will exclude EC2 instance from being evaluated by this policy. Multiple tags are evaluated as an 'OR' condition. Tag keys or key/value pairs can be listed. Example: 'test,env=dev'.

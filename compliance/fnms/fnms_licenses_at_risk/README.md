@@ -15,7 +15,7 @@ Current limitations:
 
 This policy has the following input parameters required when launching the policy.
 
-- *FNMS Report URL* - Full FlexNet URL (e.g. <https://demo.flexnetmanager.com/Suite>  or WStunnel tunnel URL https://wstunnel1-1.rightscale.com/_token/<token>/)
+- *FNMS Report URL* - Full FlexNet URL (e.g. <https://demo.flexnetmanager.com/Suite>  or WStunnel tunnel URL <https://wstunnel1-1.rightscale.com/_token/<token>/>)
 - *FNMS Report ID* - FlexNet manager Custom View ID
 - *Email addresses of the recipients you wish to notify* - A list of email addresse(s) to notify
 
