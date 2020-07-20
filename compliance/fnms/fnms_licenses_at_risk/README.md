@@ -11,6 +11,18 @@ Current limitations:
 
 - Output is limited to max 100000 rows.
 
+## Input Parameters
+
+This policy has the following input parameters required when launching the policy.
+
+- *FNMS Report URL* - Full FlexNet URL (e.g. <https://demo.flexnetmanager.com/Suite>  or WStunnel tunnel URL https://wstunnel1-1.rightscale.com/_token/<token>/)
+- *FNMS Report ID* - FlexNet manager Custom View ID
+- *Email addresses of the recipients you wish to notify* - A list of email addresse(s) to notify
+
+## Policy Actions
+
+- Send an email report
+
 ## Prerequisites
 
 For on-premise If FlexNet Manager Suite is not accessible from the Internet, you will need to setup a wstunnel to provide a secure connection into the FlexNet manager system.  For more details on wstunnel please refer to this: [https://github.com/rightscale/wstunnel](https://github.com/rightscale/wstunnel)
@@ -21,19 +33,14 @@ This policy uses [credentials](https://docs.rightscale.com/policies/users/guides
 
 For administrators [creating and managing credentials](https://docs.rightscale.com/policies/users/guides/credential_management.html) to use with this policy, the following information is needed:
 
+- Credential type:
+
+  - *API Key* - For FNMS Cloud  -  (*Location*:header, *Type*: Bearer)
+
+  or
+  - *NTLM* - For On Premise FNMS
+
 Required permissions in the provider: `flexera_fnms`
-
-## Input Parameters
-
-This policy has the following input parameters required when launching the policy.
-
-- *FNMS Report URL* - Full FlexNet URL (e.g. <https://demo.flexnetmanager.com/Suite>  or WStunnel tunnel URL with token)
-- *FNMS Report ID* - FlexNet manager Custom View ID
-- *Email addresses of the recipients you wish to notify* - A list of email addresse(s) to notify
-
-## Policy Actions
-
-- Send an email report
 
 ## Installation
 

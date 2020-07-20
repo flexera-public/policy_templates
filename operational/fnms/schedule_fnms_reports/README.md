@@ -12,14 +12,35 @@ Current limitations:
 
 - Output is limited to max 100.000 rows.
 
+## Input Parameters
+
+This policy has the following input parameters required when launching the policy.
+
+- *FNMS Report URL* - Full FlexNet URL (e.g. [https://demo.flexnetmanager.com/Suite](https://demo.flexnetmanager.com/Suite) or WStunnel tunnel URL https://wstunnel1-1.rightscale.com/_token/<token>/)
+- *FNMS Report ID* - FlexNet manager Custom View ID
+- *Report Title in the Mail* - Report header in the report result
+- *Email addresses of the recipients you wish to notify* - A list of email addresses to notify
+
+## Policy Actions
+
+- send an email
+
 ## Prerequisites
 
 Fot on-premise If FlexNet Manager Suite is not accessible from the Internet, you will need to setup a wstunnel to provide a secure connection into the FlexNet manager system.  For more details on wstunnel please refer to this: [https://github.com/rightscale/wstunnel](https://github.com/rightscale/wstunnel)
+
 This policy uses [credentials](https://docs.rightscale.com/policies/users/guides/credential_management.html) for connecting to the cloud -- in order to apply this policy you must have a credential registered in the system that is compatible with this policy. If there are no credentials listed when you apply the policy, please contact your cloud admin and ask them to register a credential that is compatible with this policy. The information below should be consulted when creating the credential.
 
 ### Credential configuration
 
 For administrators [creating and managing credentials](https://docs.rightscale.com/policies/users/guides/credential_management.html) to use with this policy, the following information is needed:
+
+- Credential type:
+
+  - *API Key* - For FNMS Cloud  -  (*Location*:header, *Type*: Bearer)
+
+  or
+  - *NTLM* - For On Premise FNMS
 
 Required permissions in the provider: `flexera_fnms`
 
@@ -46,19 +67,6 @@ b. On Premise
 
 __NOTE__: You can use a normal interactive user for the API credentials, but it is recommended to add a
 special service user for the API connection.
-
-## Input Parameters
-
-This policy has the following input parameters required when launching the policy.
-
-- *FNMS Report URL* - Full FlexNet URL (e.g. [https://demo.flexnetmanager.com/Suite](https://demo.flexnetmanager.com/Suite) )
-- *FNMS Report ID* - FlexNet manager Custom View ID
-- *Report Title in the Mail* - Report header in the report result
-- *Email addresses of the recipients you wish to notify* - A list of email addresses to notify
-
-## Policy Actions
-
-- send an email
 
 ## Cost
 

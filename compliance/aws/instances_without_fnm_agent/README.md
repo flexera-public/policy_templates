@@ -13,6 +13,19 @@ Current limitations:
 
 - Output is limited to max 100000 rows.
 
+## Input Parameters
+
+This policy has the following input parameters required when launching the policy.
+
+- *FNMS Report URL* - Full FlexNet URL (e.g. <https://demo.flexnetmanager.com/Suite> or WStunnel tunnel URL https://wstunnel1-1.rightscale.com/_token/<token>/)
+- *FNMS Report ID* - FlexNet Manager System Custom View ID.
+- *Email addresses to notify* - Email addresses of the recipients you wish to notify when new incidents are created
+- *Tags to ignore* - List of tags that will exclude EC2 instance from being evaluated by this policy. Multiple tags are evaluated as an 'OR' condition. Tag keys or key/value pairs can be listed. Example: 'test,env=dev'.
+
+## Policy Actions
+
+- Send an email report
+
 ## Prerequisites
 
 For On Premise If FlexNet Manager Suite is not accessible from the Internet, you will need to setup a wstunnel to provide a secure connection into the FlexNet manager system.For more details on wstunnel please refer to this: [https://github.com/rightscale/wstunnel](https://github.com/rightscale/wstunnel)
@@ -25,7 +38,14 @@ For administrators [creating and managing credentials](https://docs.rightscale.c
 
 Provider tag value to match this policy: `aws` , `flexera_fnms`
 
-Required permissions in the provider:
+- Credential type for fnms:
+
+  - *API Key* - For FNMS Cloud  -  (*Location*:header, *Type*: Bearer)
+
+  or
+  - *NTLM* - For On Premise FNMS
+
+Required permissions in the provider aws:
 
 ```javascript
  {
@@ -37,19 +57,6 @@ Required permissions in the provider:
                 }]
  }
 ```
-
-## Input Parameters
-
-This policy has the following input parameters required when launching the policy.
-
-- *FNMS Report URL* - Full FlexNet URL (e.g. <https://demo.flexnetmanager.com/Suite> or WStunnel tunnel URL)
-- *FNMS Report ID* - FlexNet Manager System Custom View ID.
-- *Email addresses to notify* - Email addresses of the recipients you wish to notify when new incidents are created
-- *Tags to ignore* - List of tags that will exclude EC2 instance from being evaluated by this policy. Multiple tags are evaluated as an 'OR' condition. Tag keys or key/value pairs can be listed. Example: 'test,env=dev'.
-
-## Policy Actions
-
-- Send an email report
 
 ## Installation
 
