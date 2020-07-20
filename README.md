@@ -158,6 +158,7 @@ Please contact sales@flexera.com to learn more.
 - [AWS EC2 Instances not running FlexNet Inventory Agent](./compliance/aws/instances_without_fnm_agent/)
 - [AWS Long-stopped Instances](./compliance/aws/long_stopped_instances/)
 - [AWS Service Control Policy Audit](./compliance/aws/scp_audit/)
+- [AWS IAM Role Audit](./compliance/aws/iam_role_audit/)
 
 #### Azure
 
@@ -168,6 +169,7 @@ Please contact sales@flexera.com to learn more.
 - [Azure Regulatory Compliance](./compliance/azure/compliance_score/)
 - [Azure Subscription Access](./compliance/azure/subscription_access/)
 - [Azure Tag Resources with Resource Group Name](./compliance/tags/azure_rg_tags)
+- [Azure Policy Audit](./compliance/azure/azure_policy_audit)
 
 #### Google
 
