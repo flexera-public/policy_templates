@@ -24,6 +24,8 @@ This policy uses [credentials](https://docs.rightscale.com/policies/users/guides
 
 ### Credential configuration
 
+Please create separate credentials for each storage account by selecting Credential Type as OAuth2 and mention the storage account name in the Additional Parameters resource for myaccount. Example resource: https://<myaccount>.blob.core.windows.net/
+
 For administrators [creating and managing credentials](https://docs.rightscale.com/policies/users/guides/credential_management.html) to use with this policy, the following information is needed:
 
 Provider tag value to match this policy: `azure_rm`
