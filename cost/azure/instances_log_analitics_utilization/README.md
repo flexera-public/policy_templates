@@ -25,7 +25,7 @@ This policy has the following input parameters required when launching the polic
 
 ## Prerequisites
 
-Azure Service Principal (AKA Azure Active Directory Application) with the below mentioned role and permissions are required in the target subscription.
+Azure Service Principal (AKA Azure Active Directory Application) with the below mentioned role and permission are required in the target subscription.
 
 Virtual Machines must have the Log Analytics/OMS Agent installed for sending performance metrics to a Azure Log Analytics workspace.
 
@@ -44,9 +44,8 @@ Role:
 
 - [Log Analytics Reader](https://docs.microsoft.com/en-us/azure/azure-monitor/platform/manage-access)
 
-Permissions:
+Permission:
 
-- [Microsoft.Compute/virtualMachines/read](https://docs.microsoft.com/en-us/azure/role-based-access-control/resource-provider-operations#microsoftcompute)
 - [Microsoft.Compute/virtualMachines/write](https://docs.microsoft.com/en-us/azure/role-based-access-control/resource-provider-operations#microsoftcompute)
 
 ## Supported Clouds
