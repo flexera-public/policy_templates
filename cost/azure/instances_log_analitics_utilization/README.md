@@ -38,7 +38,7 @@ Two provider tags needs to be created using the same credentials for running thi
 
 Provider tag value to match this policy: `azure_rm` and `azure_log`
 
-Required role and permissions in the provider:
+Required role and permission in the provider:
 
 Role:
 
