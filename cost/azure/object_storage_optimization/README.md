@@ -27,7 +27,7 @@ This policy uses [credentials](https://docs.rightscale.com/policies/users/guides
 Please create separate credentials for each storage account by selecting Credential Type as OAuth2 and mention the storage account name in the Additional Parameters resource URL.
 Example resource : `https://my_azure_storage_account.blob.core.windows.net/` , replace my_azure_storage_account with the name of the storage account.
 
-For more details, please refer API Usage section to create Azure RM credentials with oauth2.
+For more details, please refer [API Usage](https://docs.rightscale.com/policies/users/guides/credential_management.html#provider-specific-credentials--azure--) to create Azure RM credentials with oauth2.
 
 For administrators [creating and managing credentials](https://docs.rightscale.com/policies/users/guides/credential_management.html) to use with this policy, the following information is needed:
 
