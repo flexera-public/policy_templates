@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.5
+
+- move cpu calculations from jmespath to javascript
+
 ## v2.4
 
 - Adding incident resource table
