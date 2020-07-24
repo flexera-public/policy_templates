@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.12
+
+- Fixed missing budget alert incident graph
+
 ## v1.11
 
 - Fix first day issue with month
