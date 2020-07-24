@@ -3,6 +3,8 @@
 ## v2.5
 
 - move cpu calculations from jmespath to javascript
+- removed disk utilization metrics
+- added additional filter to StackDriver API call to increase efficiency
 
 ## v2.4
 
