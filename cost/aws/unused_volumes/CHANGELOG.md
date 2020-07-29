@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.4
+
+- add Estimated Monthly Savings
+
 ## v2.3
 
 - adding incident resource table

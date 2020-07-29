@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.2
+
+- Added support to WStunnel host.
+
 ## v2.1
 
 - Added resource table
