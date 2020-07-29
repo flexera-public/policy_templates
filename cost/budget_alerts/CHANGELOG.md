@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.13
+
+- Added the filteration logic for getting only the Parent BC details
+
 ## v1.12
 
 - Fixed missing budget alert incident graph
