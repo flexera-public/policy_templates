@@ -20,8 +20,8 @@ parameter "param_monthly_budget" do
 end
 
 parameter "param_bc_name" do
-  label "Billing Center Name"
-  description "(Optional) Provide the name of a Billing Center if the Budget Scope is 'Billing Center'"
+  label "Billing Center Name or ID"
+  description "(Optional) Provide the name or id of a Billing Center if the Budget Scope is 'Billing Center'"
   type "string"
 end
 
@@ -206,12 +206,13 @@ script "js_bc_costs", type: "javascript" do
    _.each(billing_centers, function(bc){
     var type = cost_type[param_cost_metric];
     var cost = bc[type];
-	if(param_bc_name === bc.name){
-      bc_name = param_bc_name;
+	if(param_bc_name === bc.name || param_bc_name===bc.id){
+	  bc_name = bc["name"];
       totalCost=totalCost + cost;
       bc_id = bc["id"];
 	  count++;
-    }else{
+	}
+	else{
     costs.push({
         name: bc["name"],
         total: cost,
@@ -219,7 +220,7 @@ script "js_bc_costs", type: "javascript" do
     })
     }
    })
-   if(param_bc_name === bc_name){
+   if(count>0){
     costs.push({
         name: bc_name,
         total: totalCost,
@@ -257,12 +258,22 @@ end
 
 script "js_filtered_billing_centers", type: "javascript" do
   parameters "billing_centers", "param_bc_name"
-  result "filtered_billing_centers_new"
+  result "filtered_billing_centers"
   code <<-EOS
-  var filtered_billing_centers =
-    _.reject(billing_centers, function(bc){ return (param_bc_name !== bc.name) });
-  var filtered_billing_centers_new =
-    _.reject(filtered_billing_centers, function(bc){ return (bc.parent_id != null) })
+  var filtered_billing_centers=[];
+    _.each(billing_centers, function(bc){ 
+      if(param_bc_name==="Unallocated" && param_bc_name===bc.name){
+        if(bc.parent_id==null){
+          filtered_billing_centers.push(bc);
+		}
+	  }
+      else if(param_bc_name===bc.name){
+        filtered_billing_centers.push(bc);
+      }
+      else if(param_bc_name===bc.id){
+        filtered_billing_centers.push(bc);
+	  }
+	});
 EOS
 end
 
@@ -299,7 +310,7 @@ script "js_combine_ds", type: "javascript" do
   var result = [] ;
 
   _.each(billing_centers, function(bc){
-  if (param_bc_name === bc.name){
+  if(param_bc_name === bc.name || param_bc_name==bc.id){
     result.push(bc);
 	}
   })
@@ -430,7 +441,7 @@ script "js_filter_target", type: "javascript" do
            overBudgetAmountCur=cur;
          }
          var forecastedSpend = cur+formatNumber((Math.round(( runrate -bc["total"]) * 100) / 100), separator);
-	  if (param_bc_name === bc.name){
+	  if (param_bc_name === bc.name  || bc.id===param_bc_name){
 	    selected_bc=bc;
         if (param_type === "Forecasted Spend"){
          var overBudgetAmount = overBudgetAmountCur+formatNumber((Math.round((runrate - param_monthly_budget) * 100) / 100), separator);

@@ -2,7 +2,7 @@
 
 ## v1.13
 
-- Added the filteration logic for getting only the Parent BC details
+- Added the ability to provide either Billing center name or Id.
 
 ## v1.12
 
