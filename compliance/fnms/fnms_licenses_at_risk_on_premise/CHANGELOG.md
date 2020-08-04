@@ -1,12 +1,8 @@
 # Changelog
 
-## v2.2
-
-- Adding incident resource table
-
 ## v2.1
 
-- Merged Cloud and On premise into one policy.
+- Adding incident resource table
 
 ## v2.0
 
