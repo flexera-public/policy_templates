@@ -66,7 +66,7 @@ Please contact sales@flexera.com to learn more.
 
 - [Azure Hybrid Use Benefit](./cost/azure/hybrid_use_benefit/)
 - [Azure Idle Compute Instances](./cost/azure/idle_compute_instances/)
-- [Azure Inefficient Instance Utilization using Log Analytics](./cost/azure/instances_log_analitics_utilization/)
+- [Azure Inefficient Instance Utilization using Log Analytics](./cost/azure/instances_log_analytics_utilization/)
 - [Azure Expiring Reserved Instances](./cost/azure/reserved_instances/expiration)
 - [Azure Reserved Instance Utilization](./cost/azure/reserved_instances/utilization/)
 - [Azure Reserved Instance Recommendations](./cost/azure/reserved_instances/recommendations)
