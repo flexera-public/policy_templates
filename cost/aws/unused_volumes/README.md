@@ -41,31 +41,29 @@ The following AWS permissions must be allowed for the policy to run.
 ```json
 {
   "Version": "2012-10-17",
-  "Statement":[{
-    "Effect":"Allow",
-    "Action":[
-      "ec2:DescribeVolumes",
-      "ec2:CreateTags",
-      "ec2:CreateSnapshot",
-      "ec2:DescribeSnapshots",
-      "ec2:DeleteVolume"
-    ],
-    "Resource":"*"
-  }]
-}
-
-{
-  "Version": "2012-10-17",
-  "Statement":[{
-    "Effect":"Allow",
-    "Action":["cloudwatch:GetMetricStatistics"],
-    "Resource":"*",
-    "Condition":{
-      "Bool":{
-        "aws:SecureTransport":"true"
+  "Statement":[
+    {
+      "Effect":"Allow",
+      "Action":[
+        "ec2:DescribeVolumes",
+        "ec2:CreateTags",
+        "ec2:CreateSnapshot",
+        "ec2:DescribeSnapshots",
+        "ec2:DeleteVolume"
+      ],
+      "Resource":"*"
+    },
+    {
+      "Effect":"Allow",
+      "Action":["cloudwatch:GetMetricStatistics"],
+      "Resource":"*",
+      "Condition":{
+        "Bool":{
+          "aws:SecureTransport":"true"
+        }
       }
-     }
-  }]
+    }
+  ]
 }
 ```
 
