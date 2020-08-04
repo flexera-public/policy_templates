@@ -1,12 +1,8 @@
 # Changelog
 
-## v2.3
-
-- Added resource table
-
 ## v2.2
 
-- Merged Cloud and On premise into one policy.
+- Added resource table
 
 ## v2.1
 
