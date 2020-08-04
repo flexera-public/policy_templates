@@ -158,6 +158,7 @@ Please contact sales@flexera.com to learn more.
 - [AWS Unused ECS Clusters](./compliance/aws/ecs_unused/)
 - [AWS EC2 Instances not running FlexNet Inventory Agent](./compliance/aws/instances_without_fnm_agent/)
 - [AWS Long-stopped Instances](./compliance/aws/long_stopped_instances/)
+- [AWS Untagged Resources](./compliance/aws/untagged_resources/)
 - [AWS Service Control Policy Audit](./compliance/aws/scp_audit/)
 - [AWS IAM Role Audit](./compliance/aws/iam_role_audit/)
 
