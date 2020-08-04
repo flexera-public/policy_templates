@@ -6,7 +6,7 @@ long_description ""
 severity "medium"
 category "Cost"
 info(
-  version: "2.1",
+  version: "2.2",
   provider: "AWS",
   service: "",
   policy_set: ""
@@ -186,6 +186,13 @@ script "js_sp_cleanup", type: "javascript" do
           offeringId: reco["offeringId"],
           region: reco["region"],
           upfrontCost: (Math.round(reco["upfrontCost"] * 100) / 100).toString(10),
+          estimatedMonthlySavingsAmountWithCurrencyCode : (Math.round(reco["estimatedMonthlySavingsAmount"] * 100) / 100).toString(10)+" "+reco["currencyCode"],
+          estimatedSavingsPlanCostWithCurrencyCode : (Math.round(reco["estimatedSavingsPlanCost"] * 100) / 100).toString(10)+" "+reco["currencyCode"],
+          hourlyCommitmentToPurchaseWithCurrencyCode : (Math.round(reco["hourlyCommitmentToPurchase"] * 100) / 100).toString(10)+" "+reco["currencyCode"],
+          upfrontCostWithCurrencyCode : (Math.round(reco["upfrontCost"] * 100) / 100).toString(10)+" "+reco["currencyCode"],
+          currentAverageHourlyOnDemandSpendWithCurrencyCode : (Math.round(reco["currentAverageHourlyOnDemandSpend"] * 100) / 100).toString(10)+" "+reco["currencyCode"],
+          currentMaximumHourlyOnDemandSpendWithCurrencyCode : (Math.round(reco["currentMaximumHourlyOnDemandSpend"] * 100) / 100).toString(10)+" "+reco["currencyCode"],
+          currentMinimumHourlyOnDemandSpendWithCurrencyCode : (Math.round(reco["currentMinimumHourlyOnDemandSpend"] * 100) / 100).toString(10)+" "+reco["currencyCode"]
         })
       })
 EOS
@@ -195,27 +202,60 @@ end
 policy "aws_sp_recommendations" do
   validate_each $ds_sp_normalization do
     summary_template "AWS Savings Plan Purchase Recommendations"
-    detail_template <<-EOS
-# AWS Savings Plan Purchase Recommendations
-
-### Savings Plan Term: {{parameters.param_term}}
-### Savings Plan Type: {{parameters.param_savings_plan_type}}
-### Savings Plan Purchase Option: {{parameters.param_payment_option}}
-### Lookback Period: {{parameters.param_days}}
-
-| Estimated Monthly Savings | Estimated Savings Percentage | Estimated Savings Plan Cost | Hourly Commitment to Purchase | Upfront Cost | Instance Family | Region | Current Avg Hourly OnDemand Spend | Current Max Hourly OnDemand Spend | Current Min Hourly OnDemand Spend | Offering ID |
-| ------------------------- | ---------------------------- | --------------------------- | ----------------------------- | ------------ | --------------- | ------ | --------------------------------- | --------------------------------- | --------------------------------- | ----------- |
-{{ range data -}}
-| {{.estimatedMonthlySavingsAmount}} ({{.currencyCode}}) | {{.estimatedSavingsPercentage}}% | {{.estimatedSavingsPlanCost}} ({{.currencyCode}}) | {{.hourlyCommitmentToPurchase}} ({{.currencyCode}}) | {{.upfrontCost}} ({{.currencyCode}}) | {{.instanceFamily}} | {{.region}} | {{.currentAverageHourlyOnDemandSpend}} ({{.currencyCode}}) | {{.currentMaximumHourlyOnDemandSpend}} ({{.currencyCode}}) | {{.currentMinimumHourlyOnDemandSpend}} ({{.currencyCode}}) | {{.offeringId}}
-{{ end -}}
-
-###### Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }}) within Org: {{ rs_org_name }} (Org ID: {{ rs_org_id }})
-EOS
     escalate $email
     check lt(to_n(val(item,"estimatedMonthlySavingsAmount")),$param_savings_threshold)
+    # AWS Savings Plan Purchase Recommendations
+
+    ### Savings Plan Term: {{parameters.param_term}}
+    ### Savings Plan Type: {{parameters.param_savings_plan_type}}
+    ### Savings Plan Purchase Option: {{parameters.param_payment_option}}
+    ### Lookback Period: {{parameters.param_days}}
+    export do
+      resource_level true
+      field "region" do
+        label "Region"
+      end
+      field "estimatedMonthlySavingsAmountWithCurrencyCode" do
+        label "Estimated Monthly Savings"
+      end
+      field "estimatedSavingsPercentage" do
+        label "Estimated Savings Percentage"
+      end
+      field "estimatedSavingsPlanCostWithCurrencyCode" do
+        label "Estimated Savings Plan Cost"
+      end
+      field "hourlyCommitmentToPurchaseWithCurrencyCode" do
+        label "Hourly Commitment To Purchase"
+      end
+      field "upfrontCostWithCurrencyCode" do
+        label "Upfront Cost"
+      end
+      field "instanceFamily" do
+        label "Instance Family"
+      end
+      field "currentAverageHourlyOnDemandSpendWithCurrencyCode" do
+        label "Current Avg Hourly OnDemand Spend"
+      end
+      field "currentMaximumHourlyOnDemandSpendWithCurrencyCode" do
+        label "Current Max Hourly OnDemand Spend"
+      end
+      field "currentMinimumHourlyOnDemandSpendWithCurrencyCode" do
+        label "Current Min Hourly OnDemand Spend"
+      end
+      field "offeringId" do
+        label "Offering Id"
+      end
+      field "id" do
+        label "Account Id"
+        path "accountId"
+      end 
+    end
   end
 end
 
 escalation "email" do
-   email $param_email
+  automatic true
+  label "Send Mail"
+  description "Sends incidents email"
+  email $param_email
 end

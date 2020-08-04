@@ -6,7 +6,7 @@ long_description ""
 severity "medium"
 category "Compliance"
 info(
-  version: "2.0",
+  version: "2.1",
   provider: "Azure",
   service: "",
   policy_set: ""
@@ -35,6 +35,13 @@ parameter "param_tag_key" do
     This is a mandatory field.
   EOS
 end 
+
+parameter "param_automatic_action" do
+  type "list"
+  label "Automatic Actions"
+  description "When this value is set, this policy will automatically take the selected action(s)"
+  allowed_values ["Tag Resources"]
+end
 
 credentials "azure_auth" do
   schemes "oauth2"
@@ -65,7 +72,7 @@ datasource "ds_subscriptions" do
     encoding "json"
     collect jmes_path(response, "value[*]") do
       field "subscriptionId", jmes_path(col_item,"subscriptionId")
-	  field "subscriptionName", jmes_path(col_item,"displayName")
+      field "subscriptionName", jmes_path(col_item,"displayName")
     end
   end
 end
@@ -76,7 +83,7 @@ datasource "ds_azure_resources" do
     auth $azure_auth
     pagination $azure_pagination
     host "management.azure.com"
-      path join(["/subscriptions/", val(iter_item,"subscriptionId"), "/resources"])
+    path join(["/subscriptions/", val(iter_item,"subscriptionId"), "/resources"])
     query "api-version","2018-02-01"
     header "User-Agent", "RS Policies"
   end
@@ -84,7 +91,7 @@ datasource "ds_azure_resources" do
     encoding "json"
     collect jmes_path(response, "value[*]") do
       field "subscriptionId", val(iter_item,"subscriptionId")
-	  field "subscriptionName", val(iter_item,"subscriptionName")
+      field "subscriptionName", val(iter_item,"subscriptionName")
       field "id", jmes_path(col_item,"id")
       field "region", jmes_path(col_item,"location")
       field "name", jmes_path(col_item,"name")
@@ -109,8 +116,8 @@ script "js_filter_resources", type: "javascript" do
       var resource_group_name = rg_split[4] ;
       var namespace = rg_split[6] ;
       var resource_type = rg_split[7] ;
-
       var resource_tags = JSON.stringify(ar.tags);
+      var tags_obj=ar.tags;
       if (namespace.match(/(Classic)/g)) {
         // Skip Azure Classic
         console.log('Skipping Azure Classic resource. ID: '+id)
@@ -118,7 +125,7 @@ script "js_filter_resources", type: "javascript" do
         if (_.isEmpty(resource_tags)) {
           result.push({
             subscriptionId: ar["subscriptionId"],
-			subscriptionName : ar["subscriptionName"],
+            subscriptionName : ar["subscriptionName"],
             id: ar["id"],
             region: ar["region"],
             name: ar["name"],
@@ -129,13 +136,24 @@ script "js_filter_resources", type: "javascript" do
             all_tags: 'none'
           })
         } else {
+          var entire_tags="";
+          var taglist="";
+	  for(var instance in tags_obj){
+	    taglist=taglist+instance+":"+tags_obj[instance]+", ";
+	  }
+	  if(taglist.length>0){
+	    entire_tags=taglist.substring(0, taglist.length-2);
+	  }
+	  else{
+	    entire_tags="< No Value >";
+	  }
           if ((resource_tags.toLowerCase().indexOf(param_tag_key.toLowerCase()))>-1) {
             var rg_tag_value = resource_tags[param_tag_key] ;
             console.log('TAG KEY FOUND')
             console.log('Tag Value: '+rg_tag_value)
             result.push({
               subscriptionId: ar["subscriptionId"],
-			  subscriptionName : ar["subscriptionName"],
+              subscriptionName : ar["subscriptionName"],
               id: ar["id"],
               region: ar["region"],
               name: ar["name"],
@@ -143,65 +161,89 @@ script "js_filter_resources", type: "javascript" do
               namespace: namespace,
               resource_type: resource_type,
               tag: rg_tag_value,
-              all_tags: resource_tags
+              all_tags: entire_tags,
+              tags_obj: tags_obj
             })
           } else {
             console.log('Tag Key Not Found')
             result.push({
               subscriptionId: ar["subscriptionId"],
-			  subscriptionName : ar["subscriptionName"],
+              subscriptionName : ar["subscriptionName"],
               id: ar["id"],
               region: ar["region"],
               name: ar["name"],
               resource_group: resource_group_name,
               namespace: namespace,
               resource_type: resource_type,
-              tag: 'N/A',
-              all_tags: resource_tags
+              tag: 'none',
+              all_tags: entire_tags,
+              tags_obj: tags_obj
             })
           }
         }
       }
     })
-	result = _.sortBy(result, 'subscriptionName');
+    result = _.sortBy(result, 'subscriptionName');
     result = _.sortBy(result, 'name');
-
-EOS
+  EOS
 end
 
 policy "policy_azure_resource" do
   validate_each $ds_filtered_resources do
     summary_template "{{ len data }} Azure Resources out of compliance."
-    detail_template <<-EOS
-# Azure Resources Incorrectly Tagged
-| Subscription Name | Resource Name | Resource Group | Azure Region | Resource ID | Tag Value | 
-| ------------- | -------------- | ------------ | ----------- | --------- | ------------ |
-{{ range data -}}
-| {{.subscriptionName}} | {{.name}} | {{.resource_group}} | {{.region}} | {{.id}} | {{.tag}}
-{{ end -}}
-
-###### Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }})
-EOS
     escalate $email
     escalate $tag_resources
     check eq(val(item, "resource_group"), val(item, "tag"))
+    export do
+      resource_level true
+      field "subscriptionName" do
+        label "Subscription Name" 
+      end
+      field "name" do
+        label "Resource Name"
+      end
+      field "resource_group" do
+        label "Resource Group"
+      end
+      field "region" do
+        label "Location"
+      end
+      field "id" do
+        label "Resource ID"
+      end
+      field "all_tags" do
+        label "Tags"
+      end
+      field "subscriptionId" do
+        label "Subscription ID"
+      end
+      field "namespace" do
+        label "Namespace"
+      end
+      field "resource_type" do
+        label "Resource Type"
+      end
+      field "tag" do
+        label "Tag"
+      end
+      field "tags_obj" do
+        label "Tag Array"
+      end
+    end
   end
 end
 
 escalation "email" do
-   email $param_email
+  automatic true
+  label "Send Email"
+  description "Sends incident email"
+  email $param_email
 end
 
 escalation "tag_resources" do
-  request_approval  do
-    label "Approve to tag the Resources"
-    description "Tag the input key and value on Resources"
-    parameter "approval_reason" do
-      type "string"
-      label "Reason for approval"
-      description "Explain why you are approving the action"
-    end
-  end
+  automatic contains($param_automatic_action, "Tag Resources")
+  label "Resource Tagging"
+  description "Tagged the untagged resources"
   run "tag_resources", data, $param_tag_key
 end
 
@@ -211,22 +253,21 @@ define tag_resources($data, $param_tag_key) return $all_responses do
   
   foreach $item in $data do
     $subscriptionId = $item["subscriptionId"]
-	
-	$providers_response = http_request(
-    auth: $$azure_auth,
-    verb: "get",
-    host: "management.azure.com",
-    https: true,
-    href: "/subscriptions/" + $subscriptionId +"/providers",
-    query_strings: {
-      "api-version": "2018-05-01"
-    },
-    headers: {
-      "cache-control": "no-cache",
-      "content-type": "application/json"
-    }    
-  )
-  $providers_array = $providers_response["body"]["value"]
+    $providers_response = http_request(
+      auth: $$azure_auth,
+      verb: "get",
+      host: "management.azure.com",
+      https: true,
+      href: "/subscriptions/" + $subscriptionId +"/providers",
+      query_strings: {
+        "api-version": "2018-05-01"
+      },
+      headers: {
+        "cache-control": "no-cache",
+        "content-type": "application/json"
+      }    
+    )
+    $providers_array = $providers_response["body"]["value"]
     $$log << "ID: "+$item["id"]
     $namespace = $item["namespace"]
     $$log << "Namespace: "+$namespace
@@ -245,12 +286,12 @@ define tag_resources($data, $param_tag_key) return $all_responses do
     if $item["tag"] == "none"
       #skip
     else
-      $new_tags = $item["all_tags"]
+      $new_tags = $item["tags_obj"]
     end 
     $new_tags[$param_tag_key] = $item["resource_group"]
     sub on_error: handle_error($update_resource_response) do 
       $update_resource_response = http_request(
-	    auth: $$azure_auth,
+	auth: $$azure_auth,
         verb: "patch",
         host: "management.azure.com",
         https: true,
@@ -268,7 +309,6 @@ define tag_resources($data, $param_tag_key) return $all_responses do
     $all_responses << $update_resource_response
 
   end
-
 end
 
 define handle_error($response) do 
@@ -281,13 +321,12 @@ define handle_error($response) do
 end 
 
 define sys_log($subject, $detail) do
-
-    rs_cm.audit_entries.create(
-      notify: "None",
-      audit_entry: {
-        auditee_href: @@account,
-        summary: $subject,
-        detail: $detail
-      }
-    )
+  rs_cm.audit_entries.create(
+    notify: "None",
+    audit_entry: {
+      auditee_href: @@account,
+      summary: $subject,
+      detail: $detail
+    }
+  )
 end

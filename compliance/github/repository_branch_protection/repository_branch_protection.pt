@@ -5,7 +5,7 @@ long_description ""
 severity "medium"
 category "Compliance"
 info(
-  version: "2.0",
+  version: "2.1",
   provider: "GitHub",
   service: "",
   policy_set: ""
@@ -44,6 +44,13 @@ parameter "param_required_pull_request_reviews" do
   label "Protection Option: Require at least one approving review on a pull request, before merging. Set to null to disable."
   default "1"
   allowed_values ["1","2","3","4","5","null"]
+end
+
+parameter "param_automatic_action" do
+  type "list"
+  label "Automatic Actions"
+  description "When this value is set, this policy will automatically take the selected action(s)"
+  allowed_values ["Protect Branches"]
 end
 
 credentials "auth_github" do
@@ -103,6 +110,7 @@ datasource "ds_repos_branches" do
   result do
     encoding "json"
     collect jmes_path(response, "[*]") do
+      field "id", jmes_path(iter_item, "id")
       field "repo_name", jmes_path(iter_item, "name")
       field "repo_org", jmes_path(iter_item, "org")
       field "branch_name", jmes_path(col_item, "name")
@@ -123,8 +131,9 @@ script "js_invalid_repo_branches", type: "javascript" do
 var invalid_repo_branches = [];
 for (var index = 0; index < repos_branches.length; index++) {
   var branch = repos_branches[index];
-  // check if branch is in param_branches and if it's protected
+  // check if branch is in param_branches and if its protected
   if( _.contains(param_branches, branch.branch_name) && !_.contains(param_whitelist, branch.repo_org+"/"+branch.repo_name) && branch.branch_protected != true){
+    branch["fullOrganizationName"] = "["+branch.repo_org+"/"+branch.repo_name+"](https://github.com/"+branch.repo_org+"/"+branch.repo_name+"/settings/branches)"
     invalid_repo_branches.push(branch);
   }
 }
@@ -134,40 +143,43 @@ end
 policy "invalid_repos" do
   validate $ds_invalid_repo_branches do
     summary_template "GitHub.com Unprotected Branches Report"
-    detail_template <<-EOS
-# GitHub.com Unprotected Branches Report
-
-The following repository branches do not meet the compliance standards of this policy.
-
-| Organization/Repository | Unprotected Branch |
-| ----------------------- | ------ |
-{{ range data -}}
-  | [{{.repo_org}}/{{.repo_name}}](https://github.com/{{.repo_org}}/{{.repo_name}}/settings/branches) | {{.branch_name}} |
-{{ end -}}
-
-#### Policy Organization(s): {{  parameters.param_orgs }}
-
-#### Policy Branches: {{  parameters.param_branches }}
-
-___
-###### Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }})
-
-EOS
     check eq(size(data), 0)
     escalate $email_report
     escalate $github_repos_branch_add_protection
+    #### Policy Organization(s): {{  parameters.param_orgs }}
+    #### Policy Branches: {{  parameters.param_branches }}
+    export do
+      resource_level true
+      field "fullOrganizationName" do
+        label "Organization / Repository"
+      end
+      field "branch_name" do
+        label "Unprotected Branch"
+      end
+      field "id" do
+        label "Id"
+      end
+      field "repo_org" do
+        label "Repository Organization"
+      end
+      field "repo_name" do
+        label "Repository Name"
+      end
+    end
   end
 end
 
 escalation "email_report" do
-    email $param_email
+  automatic true
+  label "Send Mail"
+  description "Sends incidents email"
+  email $param_email
 end
 
 escalation "github_repos_branch_add_protection" do
-  request_approval  do
-    label "Approve Adding Branch Protection"
-    description "Approve escalation to run Cloud Workflow automation which will add branch protection rules"
-  end
+  automatic contains($param_automatic_action, "Protect Branches")
+  label "Add Branch Protection"
+  description "All selected branches will be updated with protection rules"
   run "github_repos_branch_add_protection", data, $param_enforce_admins, $param_required_pull_request_reviews
 end
 
