@@ -5,7 +5,7 @@ long_description ""
 severity "medium"
 category "Compliance"
 info(
-  version: "2.0",
+  version: "2.1",
   provider: "GitHub",
   service: "",
   policy_set: ""
@@ -83,6 +83,7 @@ datasource "ds_github_org_collaborators" do
   result do
       encoding "json"
       collect jmes_path(response, "[*]") do
+        field "id", jmes_path(col_item, "id")
         field "username", jmes_path(col_item, "login")
         field "repo_org", val(iter_item, "repo_org")
         field "repo_name", val(iter_item, "repo_name")
@@ -103,6 +104,8 @@ for (var index = 0; index < collaborators.length; index++) {
     var user = collaborators[index];
     // exclude white listed names
     if( !_.contains(param_whitelist, user.username) ){
+        user["fullRepositoryName"] = "["+user.repo_org+"/"+user.repo_name+"](https://github.com/"+user.repo_org+"/"+user.repo_name+"/settings/collaboration)";
+        user["fullAuditLogLink"] = "[Audittt Log](https://github.com/organizations/"+user.repo_org+"/settings/audit-log?utf8=%E2%9C%93&q=repo%3A"+user.repo_org+"%2F"+user.repo_name+")"
         invalid_collab.push(user)
     }
 }
@@ -112,30 +115,29 @@ end
 policy "policy_outside_collaborator" do
   validate_each $ds_invalid_collab do
     summary_template "GitHub.com Outside Collaborator Report"
-    detail_template <<-EOS
-# GitHub.com Outside Collaborator Report
-
-The following user accounts have been granted access to repositories, are classified as outside collaborators [not a member of the Org], and do not match the usernames that have been whitelisted by this policy.
-
-| User | Organization/Repository | Audit Log Link |
-| ---- | ----------------------- | -------------- |
-{{ range data -}}
-  | {{.username}} | [{{.repo_org}}/{{.repo_name}}](https://github.com/{{.repo_org}}/{{.repo_name}}/settings/collaboration) | [Audit Log](https://github.com/organizations/{{.repo_org}}/settings/audit-log?utf8=%E2%9C%93&q=repo%3A{{.repo_org}}%2F{{.repo_name}}) |
-{{ end -}}
-
-#### Policy Organization(s): {{  parameters.param_orgs }}
-
-#### Policy Whitelisted Users: {{  parameters.param_whitelist }}
-
-___
-###### Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }})
-
-EOS
     check lt(size($ds_invalid_collab),0)
     escalate $email_report
+    export do
+      resource_level true
+      field "username" do
+        label "User"
+      end
+      field "fullRepositoryName" do
+        label "Organization / Repository"
+      end
+      field "fullAuditLogLink" do
+        label "Audit Log Link"
+      end
+      field "id" do
+        label "ID"
+      end
+    end
   end
 end
 
 escalation "email_report" do
-    email $param_email
+  automatic true
+  label "Send Mail"
+  description "Sends incidents email"
+  email $param_email
 end

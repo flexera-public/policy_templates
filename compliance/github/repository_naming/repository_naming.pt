@@ -5,7 +5,7 @@ long_description ""
 severity "low"
 category "Compliance"
 info(
-  version: "2.0",
+  version: "2.1",
   provider: "GitHub",
   service: "",
   policy_set: ""
@@ -66,6 +66,7 @@ datasource "org_repos" do
   result do
     encoding "json"
     collect jmes_path(response, "[*]") do
+      field "id", jmes_path(col_item, "id")
       field "name", jmes_path(col_item, "name")
       field "repo_name", jmes_path(col_item, "name")
       field "repo_org", jmes_path(col_item, "owner.login")
@@ -87,6 +88,8 @@ for (var index = 0; index < org_repos.length; index++) {
     var repo = org_repos[index];
     // exclude white listed names
     if( !repo.repo_name.match(param_whitelist) ){
+        repo["repositoryFullName"] = "["+repo.repo_name+"](https://github.com/"+repo.full_name+")";
+        repo["auditLogFullName"] = "[Audit Log](https://github.com/organizations/"+repo.repo_org+"/settings/audit-log?utf8=%E2%9C%93&q=repo%3A"+repo.repo_org+"%2F"+repo.repo_name+")";
         invalid_org_repos.push(repo)
     }
 }
@@ -96,28 +99,31 @@ end
 policy "invalid_repos" do
   validate $invalid_repos do
     summary_template "GitHub.com Repository Naming Report"
-    detail_template <<-EOS
-# GitHub.com Repository Naming Report    
-
-| Organization | Repository | Audit Log Link |
-| ------------ | ---------- | ----------------- |
-{{ range data -}}
-  | {{.repo_org}} | [{{.repo_name}}](https://github.com/{{.full_name}}) | [Audit Log](https://github.com/organizations/{{.repo_org}}/settings/audit-log?utf8=%E2%9C%93&q=repo%3A{{.repo_org}}%2F{{.repo_name}}) |
-{{ end -}}
-
-#### Policy Organization(s): {{  parameters.param_orgs }}
-
-#### Policy Whitelisted Repo Names: {{  parameters.param_whitelist }}
-
-___
-###### Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }})
-
-EOS
     check eq(size(data), 0)
     escalate $report_repositories
+    #### Policy Organization(s): {{  parameters.param_orgs }}
+    #### Policy Whitelisted Repo Names: {{  parameters.param_whitelist }}
+    export do
+      resource_level true
+      field "repo_org" do
+        label "Organization"
+      end
+      field "repositoryFullName" do
+        label "Repository"
+      end
+      field "auditLogFullName" do
+        label "Audit Log Link"
+      end
+      field "id" do
+        label "ID"
+      end
+    end
   end
 end
 
 escalation "report_repositories" do
-    email $param_email
+  automatic true
+  label "Send Mail"
+  description "Sends incidents email"
+  email $param_email
 end
