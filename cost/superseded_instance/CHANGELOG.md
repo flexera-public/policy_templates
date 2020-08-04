@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.8
+
+- adding incident resource table
+
 ## v1.7
 
 - Updating path for ds_cloud_vendor_accounts

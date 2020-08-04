@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.5
+
+- Updated escalation block
+
 ## v2.4
 
 - Updating logic to only fire an incident on external IPs

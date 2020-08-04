@@ -1,6 +1,6 @@
-## Unattached Volumes Policy Template
+# Unattached Volumes Policy Template
 
-### What it does
+## What it does
 
 This Policy Template scans all volumes in the given account and identifies any unattached volumes that have been unattached for at least the number of user-specified days. If any are found, an incident report will show the volumes, and related information and an email will be sent to the user-specified email address.
 
@@ -11,7 +11,7 @@ Note: The unattached volumes report will reflect the updated set of unattached v
 
 Optionally, the user can specify one or more RightScale tags that if found on a volume will exclude the volume from the list.
 
-### Input Parameters
+## Input Parameters
 
 This policy has the following input parameters required when launching the policy.
 
@@ -19,8 +19,12 @@ This policy has the following input parameters required when launching the polic
 - *Email addresses of the recipients you wish to notify* - A list of email addresses to notify
 - *List of RightScale volume tags to exclude from policy.* - a list of tags used to excluded volumes from the incident.
 - *Create Final Snapshot* - Boolean for whether or not to take a final snapshot before deleting
+- *Automatic Actions* - When this value is set, this policy will automatically take the selected action(s).
 
-### Policy Actions
+Please note that the "Automatic Actions" parameter contains a list of action(s) that can be performed on the resources. When it is selected, the policy will automatically execute the corresponding action on the data that failed the checks, post incident generation. Please leave it blank for *manual* action.
+For example if a user selects the "Delete Volumes" action while applying the policy, all the volumes that didn't satisfy the policy condition will be deleted.
+
+## Policy Actions
 
 The following policy actions are taken on any resources found to be out of compliance.
 
@@ -34,7 +38,7 @@ This policy requires permissions to access RightScale resources (clouds, volumes
 - Cloud Management - Actor
 - Cloud Management - Observer
 
-### Supported Clouds
+## Supported Clouds
 
 - AWS
 - Azure

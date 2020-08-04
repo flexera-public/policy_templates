@@ -41,6 +41,7 @@ Please contact sales@flexera.com to learn more.
 - [AWS Reserved Instances Report by Billing Center](./cost/aws/reserved_instances/report_by_bc)
 - [AWS Reserved Instance Recommendations](./cost/aws/reserved_instances/recommendations)
 - [AWS Savings Plan Recommendations](./cost/aws/savings_plan/recommendations)
+- [AWS Unused IP Addresses](./cost/aws/unused_ip_addresses)
 
 ##### Database
 
@@ -66,7 +67,7 @@ Please contact sales@flexera.com to learn more.
 
 - [Azure Hybrid Use Benefit](./cost/azure/hybrid_use_benefit/)
 - [Azure Idle Compute Instances](./cost/azure/idle_compute_instances/)
-- [Azure Inefficient Instance Utilization using Log Analytics](./cost/azure/instances_log_analitics_utilization/)
+- [Azure Inefficient Instance Utilization using Log Analytics](./cost/azure/instances_log_analytics_utilization/)
 - [Azure Expiring Reserved Instances](./cost/azure/reserved_instances/expiration)
 - [Azure Reserved Instance Utilization](./cost/azure/reserved_instances/utilization/)
 - [Azure Reserved Instance Recommendations](./cost/azure/reserved_instances/recommendations)

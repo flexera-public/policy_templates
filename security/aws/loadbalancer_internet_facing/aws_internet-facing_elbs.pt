@@ -6,7 +6,7 @@ long_description ""
 category "Security"
 severity "high"
 info(
-  version: "2.1",
+  version: "2.2",
   provider: "AWS",
   service: "ELB",
   policy_set: ""
@@ -28,6 +28,13 @@ parameter "param_exclude_tags" do
   description "List of tags that will exclude load Balancers from being evaluated by this policy. Multiple tags are evaluated as an 'OR' condition. Tag keys or Key/value pairs can be listed. Example: 'test,env=dev'"
 end
 
+parameter "param_automatic_action" do
+  type "list"
+  label "Automatic Actions"
+  description "When this value is set, this policy will automatically take the selected action(s)"
+  allowed_values ["Delete ELBs and ALBs"]
+end
+
 ###############################################################################
 # Authentication
 ###############################################################################
@@ -39,7 +46,6 @@ credentials "auth_aws" do
   description "Select the AWS Credential from the list"
   tags "provider=aws"
 end
-
 
 ###############################################################################
 # Pagination
@@ -175,7 +181,7 @@ script "js_elb_list_with_tags", type: "javascript" do
 end
 
 
-#Process the response data, check for the tags and generate a list of internetfacing ELB's
+#Process the response data, check for the tags and generate a list of internetfacing ELBs
 script "js_elb_filter_map", type: "javascript" do
   parameters "ds_elb_list_with_tags", "param_exclude_tags"
   result "content"
@@ -242,18 +248,34 @@ end
 policy "policy_internet_facing_ELB" do
   validate $ds_internet_facing_elb_map do
     summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} Internet-facing ELBs & ALBs Found in AWS"
-    detail_template <<-EOS
-## List of internet-facing Classic and Application Load Balancers
-| LoadBalancer Name | LoadBalancer Type |  Region  | Availability Zones |    TAGs   |
-| ----------------- | ----------------- | ---------| ------------------ | --------- |
-{{ range data -}}
-| {{ .loadBalancerName }} | {{.loadBalancerType}} | {{.region}} | {{ .availabilityZones }} | {{.tagKeyValue}} |
-{{ end -}}
-###### Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }}) within Org: {{ rs_org_name }} (Org ID: {{ rs_org_id }})
-    EOS
     escalate $report_internet_facing_ELB
     escalate $approve_delete_internet_facing_ELB
     check eq(size(data),0)
+    export do
+      resource_level true
+      field "region" do
+        label "Region"
+      end
+      field "id" do
+        label "LoadBalancer Name"
+        path "loadBalancerName"
+      end
+      field "loadBalancerType" do
+        label "LoadBalancer Type"
+      end
+      field "availabilityZones" do
+        label "Availability Zones"
+      end
+      field "tagKeyValue" do
+        label "Tags"
+      end
+      field "loadBalancerArn" do
+        label "LoadBalancer ARN"
+      end
+      field "api_version" do
+        label "API Version"
+      end
+    end
   end
 end
 
@@ -262,19 +284,16 @@ end
 ###############################################################################
 
 escalation "report_internet_facing_ELB" do
+  automatic true
+  label "Send Mail"
+  description "Sends incidents email"
   email $param_email
 end
 
 escalation "approve_delete_internet_facing_ELB" do
-  request_approval  do
-    label "Approve Resource Deletion"
-    description "Approve escalation to run RightScale Cloud Workflow to delete Internet-facing ELB's & ALB's"
-    parameter "approval_reason" do
-      type "string"
-      label "Reason for Approval"
-      description "Explain why you are approving the action"
-    end
-  end
+  automatic contains($param_automatic_action, "Delete ELBs and ALBs")
+  label "Delete Resource"
+  description "Delete selected ELB's & ALB's"
   run "delete_internet_facing_ELB", data
 end
 
@@ -290,7 +309,7 @@ define delete_internet_facing_ELB($data) return $all_responses do
   $LoadBalancer= ""
   foreach $item in $data do
     if $item["loadBalancerType"] == "Classic"
-      $LoadBalancer= "LoadBalancerName="+ $item["loadBalancerName"]
+      $LoadBalancer= "LoadBalancerName="+ $item["id"]
     else
       $LoadBalancer="LoadBalancerArn="+ $item["loadBalancerArn"]
     end

@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.4
+
+- Updated escalation block
+
 ## v2.3
 
 - add ignore_status block to snapshot API call
