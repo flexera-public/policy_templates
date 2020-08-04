@@ -122,9 +122,7 @@ datasource "ds_compute_utilization" do
       field "instance_id", jmes_path(col_item, "resource.labels.instance_id")
       field "zone", jmes_path(col_item, "resource.labels.zone")
       field "projectId", val(iter_item,"projectId")
-      field "avg_cpu_points", jmes_path(col_item, "points[*].value.doubleValue | avg(@)")
-      field "max_cpu_points", jmes_path(col_item, "points[*].value.doubleValue | max(@)")
-      field "min_cpu_points", jmes_path(col_item, "points[*].value.doubleValue | min(@)")
+      field "cpu_points", jmes_path(col_item, "points[*].value.doubleValue")
     end
   end
 end
@@ -205,34 +203,51 @@ script "js_calculated_utilization", type: "javascript" do
     results = []
     for ( i =0; i < ds_compute_utilization.length; i++ ){
       var instance_id = ds_compute_utilization[i].instance_id
-      var points = ds_compute_utilization[i].points
-      var memory_record = _.find(ds_memory_utilization, function(record) { return record.instance_id == instance_id; })
-      if (memory_record != null && memory_record !== undefined ) {
-        var memory_maximum = parseFloat(Math.max(memory_record.mem_points)).toFixed(2)
-        var memory_sum = _.reduce(memory_record.mem_points, function(memo, num){ return memo + num; }, 0);
-        var memory_average = parseFloat(memory_sum/memory_record.mem_points.length).toFixed(2)
-        var memory_minimum = parseFloat(Math.min(memory_record.mem_points)).toFixed(2)
+      if ( instance_id === null || instance_id === undefined ) {
+        // No instance id, continue
       } else {
-        var memory_maximum = "101"
-        var memory_average = "101"
-        var memory_minimum = "101"
-      }
-
-      results.push(
-        {
-          zone: ds_compute_utilization[i].zone,
-          projectId: ds_compute_utilization[i].projectId,
-          instance_id: instance_id,
-          points: points,
-          label_instance_name: ds_compute_utilization[i].label_instance_name,
-          cpu_average: parseFloat(ds_compute_utilization[i].avg_cpu_points).toFixed(2),
-          cpu_maximum: parseFloat(ds_compute_utilization[i].max_cpu_points).toFixed(2),
-          cpu_minimum: parseFloat(ds_compute_utilization[i].min_cpu_points).toFixed(2),
-          mem_average: memory_average,
-          mem_maximum: memory_maximum,
-          mem_minimum: memory_minimum
+        var points = ds_compute_utilization[i].cpu_points
+        if ( points === null || points === undefined ) {
+          var cpu_maximum = "101"
+          var cpu_average = "101"
+          var cpu_minimum = "101"
+        } else {
+          var cpu_maximum = parseFloat( points.reduce( function (x, y) { return Math.max(x, y) } )).toFixed(2)
+          var cpu_sum = _.reduce(points, function(memo, num){ return memo + num; }, 0);
+          var cpu_average = parseFloat(cpu_sum / points.length).toFixed(2)
+          var cpu_minimum = parseFloat( points.reduce( function (x, y) { return Math.min(x, y) } )).toFixed(2)
         }
-      )
+        var memory_record = _.find(ds_memory_utilization, function(record) { return record.instance_id == instance_id; })
+        var memory_maximum = "101"
+          var memory_average = "101"
+          var memory_minimum = "101"
+        if ( memory_record === null || memory_record === undefined ) {
+          // No memory records, continue
+        } else {
+          if ( memory_record.mem_points === null || memory_record.mem_points === undefined ) {
+            // No memory records, continue
+          } else {
+            var memory_maximum = parseFloat( memory_record.mem_points.reduce( function (x, y) { return Math.max(x, y) } )).toFixed(2)
+            var memory_sum = _.reduce(memory_record.mem_points, function(memo, num){ return memo + num; }, 0);
+            var memory_average = parseFloat(memory_sum/memory_record.mem_points.length).toFixed(2)
+            var memory_minimum = parseFloat( memory_record.mem_points.reduce( function (x, y) { return Math.min(x, y) } )).toFixed(2)
+          }
+        }
+
+        results.push(
+          {
+            zone: ds_compute_utilization[i].zone,
+            projectId: ds_compute_utilization[i].projectId,
+            instance_id: instance_id,
+            cpu_average: cpu_average,
+            cpu_maximum: cpu_maximum,
+            cpu_minimum: cpu_minimum,
+            mem_average: memory_average,
+            mem_maximum: memory_maximum,
+            mem_minimum: memory_minimum
+          }
+        )
+      }
     }
   EOS
 end

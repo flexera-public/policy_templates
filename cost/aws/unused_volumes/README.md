@@ -27,7 +27,8 @@ The following policy actions are taken on any resources found to be out of compl
 
 ## Prerequisites
 
-This policy uses [credentials](https://docs.rightscale.com/policies/users/guides/credential_management.html) for connecting to the cloud -- in order to apply this policy you must have a credential registered in the system that is compatible with this policy. If there are no credentials listed when you apply the policy, please contact your cloud admin and ask them to register a credential that is compatible with this policy. The information below should be consulted when creating the credential.
+- This policy uses [credentials](https://docs.rightscale.com/policies/users/guides/credential_management.html) for connecting to the cloud -- in order to apply this policy you must have a credential registered in the system that is compatible with this policy. If there are no credentials listed when you apply the policy, please contact your cloud admin and ask them to register a credential that is compatible with this policy. The information below should be consulted when creating the credential.
+- billing_center_viewer (note: this role must be applied at the Organization level)
 
 ### Credential configuration
 
@@ -37,31 +38,33 @@ Provider tag value to match this policy: `aws`
 
 The following AWS permissions must be allowed for the policy to run.
 
-```javascript
+```json
 {
-    "Version": "2016-11-15",
-    "Statement":[{
-    "Effect":"Allow",
-    "Action":["ec2:DescribeVolumes","ec2:CreateTags","ec2:CreateSnapshot","ec2:DescribeSnapshots","ec2:DeleteVolume"],
-    "Resource":"*"
+  "Version": "2012-10-17",
+  "Statement":[
+    {
+      "Effect":"Allow",
+      "Action":[
+        "ec2:DescribeVolumes",
+        "ec2:CreateTags",
+        "ec2:CreateSnapshot",
+        "ec2:DescribeSnapshots",
+        "ec2:DeleteVolume"
+      ],
+      "Resource":"*"
+    },
+    {
+      "Effect":"Allow",
+      "Action":["cloudwatch:GetMetricStatistics"],
+      "Resource":"*",
+      "Condition":{
+        "Bool":{
+          "aws:SecureTransport":"true"
+        }
+      }
     }
   ]
 }
-
-{
-  "Version": "2012-10-17",
-  "Statement":[{
-    "Effect":"Allow",
-    "Action":["cloudwatch:GetMetricStatistics"],
-    "Resource":"*",
-    "Condition":{
-      "Bool":{
-        "aws:SecureTransport":"true"
-      }
-     }
-  }]
-}
-
 ```
 
 ## Supported Clouds

@@ -1,25 +1,21 @@
-# Google Unutilized IP Addresses
+# Azure: Policy Audit
 
 ## What it does
 
-Checks Google for Unutilized IP Addresses and deletes them after approval.
+This Policy Template accepts an input that defines which Azure Policies are to be audited.
 
 ## Functional Details
 
-- If APIs & Services are not enabled for a project, the policy will skip that particular project. On the next run if APIs & Services are enabled, then the project will be considered for execution.
-- This policy uses Google Cloud to get a list of external IP addresses that are not in use.
+- The policy leverages the Azure API to check for assigned policies in all subscriptions the service principal has access to.
+- Assigned policies are compared against the list of policies provided.
+- An email is sent with details on which policies are assigned and not assigned to each subscription.
 
 ## Input Parameters
 
 This policy has the following input parameters required when launching the policy.
 
+- *Policy Names* - A list of Azure Policies.
 - *Email addresses of the recipients you wish to notify* - A list of email addresses to notify
-- *Exclusion Label Key:Value* - A Google native label to ignore IP addresses that you don't want to consider for deletion
-
-## Policy Actions
-
-- Sends an email notification
-- Delete the IP Addresses after approval
 
 ## Prerequisites
 
@@ -29,20 +25,23 @@ This policy uses [credentials](https://docs.rightscale.com/policies/users/guides
 
 For administrators [creating and managing credentials](https://docs.rightscale.com/policies/users/guides/credential_management.html) to use with this policy, the following information is needed:
 
-Provider tag value to match this policy: `gce`
+Provider tag value to match this policy: `azure_rm`
 
 Required permissions in the provider:
 
-- The `compute.addresses.delete` permission
-- The `compute.addresses.list` permission
-- The `compute.addresses.get` permission
-- The `compute.regions.list` permission
-- The `resourcemanager.projects.get` permission
+- Microsoft.Authorization/policyAssignments/read
+- Microsoft.Authorization/policyDefinitions/read
+
+## Policy Actions
+
+The following policy actions are taken on any resources found to be out of compliance.
+
+- A list of resources is sent to the email addresses provided.
 
 ## Supported Clouds
 
-- Google
+- Azure
 
 ## Cost
 
-This Policy Template does not incur any cloud costs.
+This Policy Template does not launch any instances, and so does not incur any cloud costs.

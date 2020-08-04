@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.2
+
+- Merged Cloud and On premise into one policy.
+
 ## v2.1
 
 - remove unnecessary permissions block

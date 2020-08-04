@@ -6,11 +6,12 @@
 
 ## v2.3
 
-- adding incident resource table
+- add ignore_status block to snapshot API call
 
 ## v2.2
 
 - rounded off Age in Days column to Whole number
+- adding incident resource table
 
 ## v2.1
 

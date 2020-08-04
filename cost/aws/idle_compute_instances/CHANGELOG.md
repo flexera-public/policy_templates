@@ -1,8 +1,12 @@
 # Changelog
 
-## v2.3
+## v2.4
 
 - Updated escalation block
+
+## v2.3
+
+- add Estimated Monthly Savings
 
 ## v2.2
 
