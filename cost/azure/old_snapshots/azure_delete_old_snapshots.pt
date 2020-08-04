@@ -5,7 +5,7 @@ short_description "Checks for snapshots older than specified number of days and,
 severity "low"
 category "Cost"
 info(
-  version: "2.2",
+  version: "2.3",
   provider: "Azure",
   service: "Storage",
   policy_set: "Old Snapshots"
@@ -32,6 +32,13 @@ parameter "param_exclusion_tag_key" do
   label "Exclusion Tag Key"
   description "Cloud native tag key to ignore instances. Example: exclude_utilization"
   type "list"
+end
+
+parameter "param_automatic_action" do
+  type "list"
+  label "Automatic Actions"
+  description "When this value is set, this policy will automatically take the selected action(s)"
+  allowed_values ["Delete Snapshots"]
 end
 
 ###############################################################################
@@ -191,19 +198,16 @@ policy "pol_azure_delete_old_snapshots" do
 end
 
 escalation "send_email_report" do
+  automatic true
+  label "Send Mail"
+  description "Sends incidents email"
   email $param_email
 end
 
 escalation "process_snapshots" do
-  request_approval  do
-    label "Escalation approval"
-    description "Approve delete snapshot action"
-    parameter "approval_reason" do
-      type "string"
-      label "Reason for approval"
-      description "Explain why you are approving the action"
-    end
-  end
+  automatic contains($param_automatic_action, "Delete Snapshots")
+  label "Delete Snapshots"
+  description "Approval to delete all selected snapshots"
   run "delete_old_snapshots", data
 end
 
@@ -217,7 +221,7 @@ define delete_old_snapshots($data) return $all_responses do
   $all_responses = []
   foreach $item in $data do
     sub on_error: skip do
-        call azure_delete_old_snapshots($item['snapshot_id'])
+        call azure_delete_old_snapshots($item['id'])
     end
   end
 end

@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.1
+
+- Adding incident resource table
+
 ## v2.0
 
 - Added credential services

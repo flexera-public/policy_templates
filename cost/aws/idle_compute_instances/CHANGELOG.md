@@ -1,5 +1,13 @@
 # Changelog
 
+## v2.4
+
+- Updated escalation block
+
+## v2.3
+
+- add Estimated Monthly Savings
+
 ## v2.2
 
 - adding incident resource table
