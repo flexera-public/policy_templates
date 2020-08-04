@@ -71,6 +71,7 @@ Please contact sales@flexera.com to learn more.
 - [Azure Expiring Reserved Instances](./cost/azure/reserved_instances/expiration)
 - [Azure Reserved Instance Utilization](./cost/azure/reserved_instances/utilization/)
 - [Azure Reserved Instance Recommendations](./cost/azure/reserved_instances/recommendations)
+- [Azure Unused IP Addresses](./cost/azure/unused_ip_addresses)
 
 ##### Database
 
