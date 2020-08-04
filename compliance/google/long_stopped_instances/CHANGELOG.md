@@ -1,5 +1,9 @@
 # Change log
 
+## v2.3
+
+- Added Resource tabel
+
 ## v2.2
 
 - Bug fixes on unhandled errors when executing
