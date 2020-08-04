@@ -6,7 +6,7 @@ long_description ""
 category "Security"
 severity "low"
 info(
-  version: "2.1",
+  version: "2.2",
   provider: "AWS",
   service: "EBS",
   policy_set: ""
@@ -169,7 +169,7 @@ script "js_unencrypted_vol_filter_map", type: "javascript" do
           content.push({
           instanceId:instanceId,
           tagKeyValue:(tagKeyValue.slice(2)),
-          volume_id:vol['volume_id'],
+          id:vol['volume_id'],
           availability_zone:vol['availability_zone'],
           snapshot_id:vol['snapshot_id'],
           encrypted:vol['encrypted'],
@@ -179,6 +179,9 @@ script "js_unencrypted_vol_filter_map", type: "javascript" do
          })
       }
     }
+  content = _.sortBy(content,'id')
+  content = _.sortBy(content,'region')
+  content = _.sortBy(content,'availability_zone')
   EOS
 end
 
@@ -188,16 +191,38 @@ end
 policy "policy_unencrypted_volumes_list" do
   validate $ds_unencrypted_volumes_map do
     summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} Unencrypted Volumes Found in AWS"
-    detail_template <<-EOS
-# List of Unencrypted Volumes
-| Volume_ID | Region | Availability_Zones | Instance_ID | Snapshot_ID | Encrypted | Volume_Status | Volume_Type | TAG_Value |
-| --------- | ------ | ------------------ | ----------- | ----------- | ----------| ------------- | ----------- | --------- |
-{{ range data -}}
-| {{.volume_id}} | {{ .region }} | {{ .availability_zone }} | {{ .instanceId }} | {{ .snapshot_id }} | {{ .encrypted }} | {{.vol_status}} | {{.vol_type}} | {{.tagKeyValue}} |
-{{ end -}}
-    EOS
     escalate $report_unencrypted_volumes
     check eq(size(data),0)
+    export do
+      resource_level true
+      field "id" do
+        label "Volume Id"
+      end
+      field "region" do
+        label "Region"
+      end
+      field "availability_zone" do
+        label "Availability Zone"
+      end
+      field "instanceId" do
+        label "Instance Id"
+      end
+      field "snapshot_id" do
+        label "Snaphot Id"
+      end
+      field "encrypted" do
+        label "Encrypted"
+      end
+      field "vol_status" do
+        label "Volume Status"
+      end
+      field "vol_type" do
+        label "Volume Type"
+      end
+      field "tagKeyValue" do
+        label "TAGs"
+      end
+    end
   end
 end
 ###############################################################################
@@ -205,5 +230,8 @@ end
 ###############################################################################
 
 escalation "report_unencrypted_volumes" do
+  automatic true
+  label "Send Mail"
+  description "Sends incidents email"  
   email $param_email
 end

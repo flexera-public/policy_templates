@@ -9,8 +9,6 @@ This Policy Template will check your account for Amazon S3 buckets with public p
 This policy has the following input parameters required when launching the policy.
 
 - *param_email* - Email addresses of the recipients you wish to notify
-- *param_slack_channel* - (Optional) Slack channel name including the \"#\"
-- *param_slack_webhook_cred* - (Optional) Name of RightScale credential that contains the Slack webhook credential
 
 ## Policy Actions
 
@@ -45,14 +43,6 @@ Required permissions in the provider:
     ]
 }
 ```
-
-## Slack Channel Notification Support
-
-The policy includes optional support to send a notification to a slack channel when an anomaly is detected.
-The policy accepts two optional input parameters to support this capability:
-
-- `Slack Channel Name`: This is the slack channel name, e.g. #policy_alerts
-- `RightScale Credential for Slack Channel Webhook`: This is the name of a RightScale credential in the account that contains the Slack webhook URL.
 
 ## Supported Clouds
 

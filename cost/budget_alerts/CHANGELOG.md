@@ -1,5 +1,13 @@
 # Changelog
 
+## v1.13
+
+- Added the ability to provide either Billing center name or Id.
+
+## v1.12
+
+- Fixed missing budget alert incident graph
+
 ## v1.11
 
 - Fix first day issue with month
