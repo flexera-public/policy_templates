@@ -40,19 +40,19 @@ Provider tag value to match this policy: `aws`
 
 Required permissions in the provider:
 
-```
+```json
 {
   "Version": "2012-10-17",
   "Statement": [
-        {
-        "Effect": "Allow", 
-        "Action": [
-          "ec2:DescribeAddresses",
-          "ec2:ReleaseAddress"
-        ],
-        "Resource": "*"
-        }
-  ] 
+    {
+      "Effect": "Allow",
+      "Action": [
+        "ec2:DescribeAddresses",
+        "ec2:ReleaseAddress"
+      ],
+      "Resource": "*"
+    }
+  ]
 }
 ```
 
