@@ -5,7 +5,7 @@ short_description "Checks for unused volumes and if no read/write operations per
 category "Cost"
 severity "low"
 info(
-  version: "2.4",
+  version: "2.5",
   provider: "AWS",
   service: "EBS",
   policy_set: "Unused Volumes"
@@ -23,9 +23,9 @@ end
 
 parameter "param_exclude_tags" do
   type "list"
-    category "User Inputs"
-    label "Exclude Tags"
-    description "A list of tags used to excluded volumes from the incident."
+  category "User Inputs"
+  label "Exclude Tags"
+  description "A list of tags used to excluded volumes from the incident."
 end
 
 parameter "param_unattached_days" do
@@ -41,6 +41,13 @@ parameter "param_take_snapshot" do
   description "Boolean for whether or not to take a final snapshot before deleting."
   allowed_values "Yes","No"
   default "Yes"
+end
+
+parameter "param_automatic_action" do
+  type "list"
+  label "Automatic Actions"
+  description "When this value is set, this policy will automatically take the selected action(s)"
+  allowed_values ["Delete Volumes"]
 end
 
 ###############################################################################
@@ -216,8 +223,8 @@ datasource "ds_get_caller_identity" do
  end
 end
 
-datasource "ds_volume_costs" do 
-  request do 
+datasource "ds_volume_costs" do
+  request do
     run_script $js_get_costs, $ds_get_caller_identity, $ds_top_level_billing_centers, rs_org_id
   end
   result do
@@ -229,7 +236,7 @@ datasource "ds_volume_costs" do
   end
 end
 
-datasource "ds_volume_cost_mapping" do 
+datasource "ds_volume_cost_mapping" do
   run_script $js_volume_cost_mapping, $ds_check_volumes_read_or_write_operations, $ds_volume_costs, $ds_currency_reference, $ds_currency_reference
 end
 
@@ -281,7 +288,7 @@ script "js_filter_aws_unattached_volumes", type:"javascript" do
       if((param_exclude_tags_lower.indexOf((tag['tagKey']).toLowerCase()) !== -1) || (param_exclude_tags_lower.indexOf((tag['tagKey']+'='+tag['tagValue']).toLowerCase()) !== -1)){
         isTagMatched = true;
       }
-        
+
       // Constructing tags with comma separated to display in detail_template
       if((tag['tagValue']).length > 0){
         tagKeyValue = tagKeyValue+" , "+tag['tagKey']+'='+tag['tagValue'];
@@ -410,7 +417,7 @@ script "js_check_volumes_read_or_write_operations", type:'javascript' do
       if(volume['vol_id'] === readMetricData['volumeId']){
         var readMetricDataPoints = readMetricData['dataPoints'];
         if(readMetricDataPoints.length > 0){
-          readWriteOperationDone = true;  
+          readWriteOperationDone = true;
 		}
         break;
 	  }
@@ -421,7 +428,7 @@ script "js_check_volumes_read_or_write_operations", type:'javascript' do
         if(volume['vol_id'] === writeMetricData['volumeId']){
           var writeMetricDataPoints = writeMetricData['dataPoints'];
           if(writeMetricDataPoints.length > 0){
-            readWriteOperationDone = true;  
+            readWriteOperationDone = true;
 		  }
           break;
 		}
@@ -441,7 +448,7 @@ script "js_check_volumes_read_or_write_operations", type:'javascript' do
   }
   unattachedVolumes = _.sortBy(unattachedVolumes,'region')
   EOS
-end  
+end
 
 script "js_top_level_bc", type: "javascript" do
   parameters "billing_centers"
@@ -485,18 +492,18 @@ script "js_get_costs", type:"javascript" do
         "filter": {
           "expressions": [
             {
-              "dimension": "service", 
-              "type": "equal", 
+              "dimension": "service",
+              "type": "equal",
               "value": "AmazonEC2"
             },
             {
-              "dimension": "resource_type", 
+              "dimension": "resource_type",
               "type": "equal",
               "value": "Storage"
             },
             {
-              "dimension": "vendor_account", 
-              "type": "equal", 
+              "dimension": "vendor_account",
+              "type": "equal",
               "value": account_id[0]["account"]
             }
           ],
@@ -626,19 +633,16 @@ end
 ###############################################################################
 
 escalation "report_unused_volumes" do
+  automatic true
+  label "Send Mail"
+  description "Sends incidents email"
   email $param_email
 end
 
 escalation "delete_volumes" do
-  request_approval do
-    label "Approve Volume Deletion"
-    description "Approve escalation to delete the volume(s)"
-    parameter "approval_reason" do
-      type "string"
-      label "Reason for Approval"
-      description "Expain why are you approving the action"
-    end
-  end
+  automatic contains($param_automatic_action, "Delete Volumes")
+  label "Delete Volumes"
+  description "Approval to delete all selected volumes"
   run "take_action",data,$param_take_snapshot
 end
 
@@ -675,7 +679,7 @@ define create_volumes_snapshot($item) return $status_code do
     query_strings: {
       "Action": "CreateSnapshot",
       "Version": "2016-11-15",
-      "VolumeId": $item["volumeId"]
+      "VolumeId": $item["id"]
     }
   )
   call sys_log("Create Volumes Snapshot Response ",to_s($response))
@@ -713,7 +717,7 @@ define delete_volume($item) return $status_code do
     query_strings: {
       "Action": "DeleteVolume",
       "Version": "2016-11-15",
-      "VolumeId": $item["volumeId"]
+      "VolumeId": $item["id"]
     }
   )
   call sys_log("Delete Volumes Response ",to_s($delete_response))
@@ -722,7 +726,7 @@ define delete_volume($item) return $status_code do
     $volume_delete_body = $delete_response["body"]
     $split_body = split($volume_delete_body,"<Message>")
     $split_final_message = split($split_body[1],"</Message>");
-     call create_tag($item["region"],$item["volumeId"],to_s($split_final_message[0]))
+     call create_tag($item["region"],$item["id"],to_s($split_final_message[0]))
   end
 end
 

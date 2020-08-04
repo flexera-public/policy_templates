@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.6
+
+- Updated escalation block
+
 ## v2.5
 
 - move cpu calculations from jmespath to javascript
