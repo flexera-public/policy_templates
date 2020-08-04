@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.5
+
+- remove approval block and adding incident resource table
+
 ## v1.4
 
 - Updated the metadata

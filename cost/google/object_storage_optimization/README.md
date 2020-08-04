@@ -10,7 +10,7 @@ This Policy checks Google buckets for older objects and can move old object to '
 - If APIs & Services are not enabled for a project, the policy will skip that particular project. On the next run if APIs & Services are enabled, then the project will be considered for execution.
 - This policy identifies all Google storage objects last updated outside of the specified timeframe
 - For all objects identified as old, the user can choose to move the object to 'nearline' or 'coldline' after the specified timeframe.
-- The user can choose to delete old object by enabling 'delete action' option as mentioned in Enable delete action section below.
+- The user can also choose to delete old object.
 
 ## Input Parameters
 
@@ -20,15 +20,10 @@ This policy has the following input parameters required when launching the polic
 - *Move to Nearline after days last modified* - leave blank to skip moving
 - *Move to coldline after days last modified* - leave blank to skip moving
 - *Exclude Tag* - exclude object with the included tags
+- *Automatic Actions* - When this value is set, this policy will automatically take the selected action(s).
 
-## Enable delete action
-
-Perform below steps to enable delete action.
-
-- Edit the file [Google Object Storage Optimization](https://github.com/flexera/policy_templates/tree/master/cost/google/object_storage_optimization/google_object_storage_optimization.pt)
-- uncomment the line which conatins 'escalate $esc_delete_bucket_objects_approval'
-- comment the line which contains 'escalate $esc_modify_bucket_object_storage_class_approval' and save the changes. and save the changes.
-- upload the modified file and apply the policy.
+Please note that the "Automatic Actions" parameter contains a list of action(s) that can be performed on the resources. When it is selected, the policy will automatically execute the corresponding action on the data that failed the checks, post incident generation. Please leave it blank for *manual* action.
+For example if a user selects the "Update Bucket storage" action while applying the policy, all the identified old resources will be moved to 'nearline' or 'coldline'.
 
 ## Prerequisites
 

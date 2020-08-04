@@ -16,6 +16,10 @@ The policy leverages the AWS S3 API to find all buckets and check for any that d
 - *Target Bucket* - An existing bucket in same reason as source to be used for logging.
 - *Target Bucket Prefix* - If using a Target Bucket, this element lets you specify a prefix for the keys that the log files will be stored under.
 - *Exclude Target Bucket* - Exclude target bucket as additional fees may incur.
+- *Automatic Actions* - When this value is set, this policy will automatically take the selected action(s).
+
+Please note that the "Automatic Actions" parameter contains a list of action(s) that can be performed on the resources. When it is selected, the policy will automatically execute the corresponding action on the data that failed the checks, post incident generation. Please leave it blank for *manual* action.
+For example if a user selects the "Enable Bucket Logging" action while applying the policy, logging will be enabled for buckets.
 
 ## Policy Actions
 

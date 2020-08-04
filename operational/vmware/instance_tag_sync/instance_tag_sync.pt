@@ -2,7 +2,7 @@ name "VMWare Instance Tag Sync"
 rs_pt_ver 20180301
 type "policy"
 short_description "Adds tags to vmware instances from CMP. See the [README](https://github.com/rightscale/policy_templates/tree/master/operational/vmware/instance_tag_sync) and [docs.rightscale.com/policies](http://docs.rightscale.com/policies/) to learn more."
-long_description "Version: 1.1"
+long_description "Version: 1.3"
 severity "medium"
 category "Operational"
 
@@ -28,7 +28,8 @@ end
 
 parameter "param_email" do
   type "list"
-  label "Email addresses of the recipients you wish to notify"
+  label "Email addresses"
+  description "A list of email addresses to notify"
 end
 
 parameter "param_cloud_name" do
@@ -66,6 +67,13 @@ parameter "param_tag_category" do
   default "RightScale"
 end
 
+parameter "param_automatic_action" do
+  type "list"
+  label "Automatic Actions"
+  description "When this value is set, this policy will automatically take the selected action(s)"
+  allowed_values ["Synchronize Tags"]
+end
+
 ###############################################################################
 # Authentication
 ###############################################################################
@@ -95,6 +103,12 @@ end
 # Datasources
 ###############################################################################
 
+datasource "ds_clouds" do
+  iterate @clouds
+  field "href", href(iter_item)
+  field "name", val(iter_item, "display_name")
+end
+
 datasource "ds_instances_and_tags" do
    iterate @instances
    field "href",        href(iter_item)
@@ -102,30 +116,74 @@ datasource "ds_instances_and_tags" do
    field "name",        val(iter_item,'name')
    field "state",       val(iter_item,'state')
    field "tags",        val(iter_item,'tags')
+   field "cloud_href", jmes_path(iter_item, "links[?rel=='cloud'].href | [0]")
    field "type",        "instances"
+end
+
+datasource "ds_instances_and_tags_and_cloud" do
+  run_script $js_instances_and_tags_and_cloud, $ds_instances_and_tags, $ds_clouds
 end
 
 ###############################################################################
 # Scripts
 ###############################################################################
 
+script "js_instances_and_tags_and_cloud", type: "javascript" do
+  parameters "ds_instances_and_tags", "ds_clouds"
+  result "results"
+  code <<-EOF
+    var results = []  
+      // create a map of clouds with href key to get name
+      var cloud_map = {}
+      for (var i = 0; i < ds_clouds.length; i++) {
+          var cloud = ds_clouds[i]
+          cloud_map[cloud['href']]={'name': cloud['name']}
+      }
+
+      for ( i = 0; i < ds_instances_and_tags.length; i++ ) {
+        var instance = ds_instances_and_tags[i]
+        results.push({
+          id: instance.id,
+          name: instance.name,
+          href: instance.href,
+          state: instance.state,
+          cloud_name: cloud_map[instance.cloud_href]['name'],
+          tags: instance.tags,
+          type: instance.type,
+      })
+    }
+    results = _.sortBy(results, 'cloud_name');
+
+EOF
+end
 
 ###############################################################################
 # Policy
 ###############################################################################
 
 policy "policy_instance_sync" do
-  validate_each $ds_instances_and_tags do
+  validate_each $ds_instances_and_tags_and_cloud do
     summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} tags will be synced on {{ parameters.param_cloud_name }}"
-    detail_template <<-EOS
-# tags synced on {{ parameters.param_cloud_name }}
-| instanceId | name | state | tags |
-| -------- | ------ | ------- | -------- |
-{{ range data -}}
-  | {{.id}} | {{.name}} | {{.state}} | {{ range $i, $e := .tags }}{{ if $i }}, {{ end }}{{ $e }}{{ end }} |
-{{ end -}}
-EOS
+    export do
+      resource_level true
+      field "cloud_name" do
+        label "Cloud"
+      end
+      field "name" do
+        label "Name"
+      end
+      field "state" do
+        label "State"
+      end
+      field "tags" do
+        label "Tags"
+      end
+      field "id" do
+        label "Instance Id"
+      end
+    end 
     check equals?(1,0)
+    escalate $esc_email
     escalate $escalate_resources
   end
 end
@@ -135,16 +193,17 @@ end
 ###############################################################################
 
 escalation "escalate_resources" do
-  request_approval  do
-    label "Approve to Update tags"
-    description "Update tags"
-    parameter "approval_reason" do
-      type "string"
-      label "Reason for approval"
-      description "Explain why you are approving the action"
-    end
-  end
+  automatic contains($param_automatic_action, "Synchronize Tags")
+  label "Sync Tags"
+  description "Sync Tags"
   run "update_tags", data, $param_wstunnel_host, $param_wstunnel_token, $param_vsphere_username, $param_vsphere_password, $param_tag_category
+end
+
+escalation "esc_email" do
+  automatic true
+  label "Sends Email"
+  description "Sends Incident Email"
+  email $param_email
 end
 
 ###############################################################################

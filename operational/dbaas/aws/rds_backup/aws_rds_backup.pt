@@ -6,7 +6,7 @@ long_description ""
 severity "medium"
 category "Operational"
 info(
-  version: "2.0",
+  version: "2.1",
   provider: "AWS",
   service: "RDS",
   policy_set: ""
@@ -136,20 +136,34 @@ end
 policy "rds_backup" do
   validate_each $all_rds do
     summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} RDS Instances out of compliance"
-    detail_template <<-EOS
-# RDS Instances out of compliance in AWS
-| RDS Instance Identifier | Backup Retention (Days) | Backup Window | Availability Zone |
-| ----------------------- | ----------------------- | ------------- | ----------------- |
-{{ range data -}}
-| {{.identifier}} | {{.retention_period}} | {{.window}} | {{.az}} |
-{{ end -}}
-EOS
     escalate $report_rds_instances
     check eq(val(item, "retention_period"), $param_retention_period)
     check eq(val(item, "window"), $param_backup_window)
+    export do
+      resource_level true
+      field "region" do
+        label "Region"
+      end
+      field "id" do
+        label "RDS Instance Identifier"
+        path "identifier"
+      end
+      field "retention_period" do
+        label "Backup Retention (Days)"
+      end
+      field "window" do
+        label "Backup Window"
+      end
+      field "az" do
+        label "Availability Zone"
+      end
+    end
   end
 end
 
 escalation "report_rds_instances" do
-   email $param_email
+  automatic true
+  label "Send Mail"
+  description "Sends incidents email"
+  email $param_email
 end

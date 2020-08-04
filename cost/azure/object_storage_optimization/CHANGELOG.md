@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.2
+
+- Added Resource table
+
 ## v2.1
 
 - remove unnecessary permissions block

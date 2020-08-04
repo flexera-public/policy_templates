@@ -1,20 +1,24 @@
-## Unapproved Instance Types
+# Unapproved Instance Types
 
-### What it does
+## What it does
 
 This policy checks for instances that are using instance types that are not in the specified list and stops them after approval.
 
-### Functional Details
+## Functional Details
 
 The policy leverages the RightScale APIs to check instances across all supported clouds. When a non-approved instance type is detected, a report is emailed and the user can choose to Stop the instance after manual approval.
 
-##### Note: You can find Instance Types of all Supported Clouds under 'Policy Data Sets' section of root [README.md](https://github.com/flexera/policy_templates/blob/master/README.md)
+## Note: You can find Instance Types of all Supported Clouds under 'Policy Data Sets' section of root [README.md](https://github.com/flexera/policy_templates/blob/master/README.md)
 
-### Input Parameters
+## Input Parameters
 
 - *Email addresses to notify* - Email addresses of the recipients you wish to notify when new incidents are created
 - *Tags to ignore* - List of tags that will exclude Servers from being evaluated by this policy. Multiple tags are evaluated as an 'OR' condition. Tag must be of the format 'namespace:predicate=value'. Example: 'rs_agent:type=right_link_lite,rs_monitoring:state=auth'
 - *Approved Instance Types* - List of approved instance types of AWS, Azure and Google cloud, separated by comma. Example: 'a1.medium,a1.large,a1.xlarge,Standard_A0,Standard_A6,f1-micro,n1-highcpu-2 etc..'.
+- *Automatic Actions* - When this value is set, this policy will automatically take the selected action(s).
+
+Please note that the "*Automatic Actions*" parameter contains a list of action(s) that can be performed on the resources. When it is selected, the policy will automatically execute the corresponding action on the data that failed the checks, post incident generation. Please leave it blank for *manual* action.
+For example if a user selects the "Stop Instances" action while applying the policy, the identified instances which are not in the list will be stopped.
 
 ### Resource Names
 
