@@ -6,7 +6,7 @@ long_description ""
 severity "low"
 category "Cost"
 info(
-  version: "2.3",
+  version: "2.4",
   provider: "AWS",
   service: "EC2",
   policy_set: "Idle Compute Instances"
@@ -46,6 +46,13 @@ parameter "param_exclusion_tag_key" do
   description "Cloud native tag to ignore instances. Format: Key:Value"
   type "string"
   allowed_pattern /(^$)|([\w]?)+\:([\w]?)+/
+end
+
+parameter "param_automatic_action" do
+  type "list"
+  label "Automatic Actions"
+  description "When this value is set, this policy will automatically take the selected action(s)"
+  allowed_values ["Terminate Instances"]
 end
 
 ###############################################################################
@@ -238,8 +245,8 @@ datasource "ds_get_caller_identity" do
  end
 end
 
-datasource "ds_instances_costs" do 
-  request do 
+datasource "ds_instances_costs" do
+  request do
     run_script $js_get_costs, $ds_get_caller_identity, $ds_top_level_billing_centers, rs_org_id
   end
   result do
@@ -251,7 +258,7 @@ datasource "ds_instances_costs" do
   end
 end
 
-datasource "ds_instance_cost_mapping" do 
+datasource "ds_instance_cost_mapping" do
   run_script $js_instance_cost_mapping, $ds_merged_metrics, $ds_instances_costs, $ds_currency_reference, $ds_currency_reference
 end
 
@@ -536,18 +543,18 @@ script "js_get_costs", type:"javascript" do
         "filter": {
           "expressions": [
             {
-              "dimension": "service", 
-              "type": "equal", 
+              "dimension": "service",
+              "type": "equal",
               "value": "AmazonEC2"
             },
             {
-              "dimension": "resource_type", 
+              "dimension": "resource_type",
               "type": "equal",
               "value": "Compute Instance"
             },
             {
-              "dimension": "vendor_account", 
-              "type": "equal", 
+              "dimension": "vendor_account",
+              "type": "equal",
               "value": account_id[0]["account"]
             }
           ],
@@ -701,19 +708,16 @@ end
 ###############################################################################
 
 escalation "email" do
+  automatic true
+  label "Send Mail"
+  description "Sends incidents email"
   email $param_email
 end
 
 escalation "terminate_resources" do
-  request_approval do
-    label "Approve resource termination"
-    description "Approve esclation to run RightScale Cloud Workflow instance termination"
-    parameter "approval_resion" do
-      type "string"
-      label "Reason for Approval"
-      description "Explain why are you approving the action."
-    end
-  end
+  automatic contains($param_automatic_action, "Terminate Instances")
+  label "Terminate Instances"
+  description "Approval to terminate all selected instances"
   run "terminate_resources", data
 end
 
