@@ -6,7 +6,7 @@ long_description ""
 category "Operational"
 severity "medium"
 info(
-  version: "2.0",
+  version: "2.1",
   provider: "AWS",
   service: "EC2",
   policy_set: ""
@@ -57,8 +57,8 @@ end
 # Datasources
 ###############################################################################
 
-#Generates list of Regions
-datasource "ec2_regions_list" do
+#Generates list of Regions.
+datasource "ds_regions_list" do
   request do
     verb "GET"
     host "raw.githubusercontent.com"
@@ -69,7 +69,7 @@ end
 
 #To get list of All Scheduled EC2 Instances.
 datasource "ds_ec2_scheduled_instances_list" do
-  iterate $ec2_regions_list
+  iterate $ds_regions_list
   request do
     run_script $js_ec2_status_list, val(iter_item,"region")
   end
@@ -120,31 +120,6 @@ end
 ###############################################################################
 # Scripts
 ###############################################################################
-
-script "js_regions_map", type: "javascript" do
-  result "regions_map"
-  code <<-EOS
-    var regions_map=[]
-    regions_map.push(
-      {"region": "us-east-1"},
-      {"region": "us-east-2"},
-      {"region": "us-west-1"},
-      {"region": "us-west-2"},
-      {"region": "ap-south-1"},
-      {"region": "ap-northeast-2"},
-      {"region": "ap-southeast-1"},
-      {"region": "ap-southeast-2"},
-      {"region": "ap-northeast-1"},
-      {"region": "ca-central-1"},
-      {"region": "eu-central-1"},
-      {"region": "eu-west-1"},
-      {"region": "eu-west-2"},
-      {"region": "eu-west-3"},
-      {"region": "sa-east-1"},
-      {"region": "eu-north-1"}
-    )
-  EOS
-end
 
 #https://docs.aws.amazon.com/AWSEC2/latest/APIReference/API_DescribeInstanceStatus.html
 script "js_ec2_status_list", type: "javascript" do
@@ -221,7 +196,7 @@ script "js_ec2_filter_map", type: "javascript" do
       var event_set_type = ec2['scheduled_event_type']
       if(!(isTagMatched)  && scheduled_event_type_array.indexOf(event_set_type) !== -1){
         content.push({
-          instance_id: ec2['instance_id'],
+          id: ec2['instance_id'],
           region: ec2['region'],
           availability_zone: ec2['availability_zone'],
           instance_state: ec2['instance_state'],
@@ -232,7 +207,19 @@ script "js_ec2_filter_map", type: "javascript" do
         })
       }
     }
+    var content = _.sortBy(content,'region')
   EOS
+end
+
+###############################################################################
+# Escalation
+###############################################################################
+
+escalation "esc_email" do
+  automatic true
+  label "Send Mail"
+  description "Sends incident email"
+  email $param_email
 end
 
 ###############################################################################
@@ -242,23 +229,32 @@ end
 policy "policy_ec2_scheduled_instance_list" do
   validate $ds_ec2_scheduled_instance_map do
     summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} Scheduled Events on EC2 Instances Found in AWS"
-    detail_template <<-EOS
-# List of Scheduled Events on EC2 Instances
-| Instance Id | Region | Availability Zone | Instance State | Scheduled Event Type  | Scheduled Event StartTime | Scheduled Event EndTime | TAG Value |
-| ----------- | ------ | ----------------- | ---------------| --------------------- | --------------------------| ------------------------| --------- |
-{{ range data -}}
-| {{.instance_id}} | {{ .region }} | {{ .availability_zone }} |  {{ .instance_state }} |{{ .scheduled_event_type }} | {{ .scheduledevent_start_time }} | {{ .scheduledevent_end_time }} | {{.tagKeyValue}} |
-{{ end -}}
-    EOS
-    escalate $report_ec2_scheduled_instances
-    check eq(size(data),0)
+    
+    export do
+      field "region" do
+        label "Region"
+      end
+      field "id" do
+        label "Instance Id"
+      end
+      field "instance_state" do
+        label "Instance State"
+      end
+      field "scheduled_event_type" do
+        label "Scheduled Event Type"
+      end
+      field "scheduledevent_start_time" do
+        label "Scheduled Event StartTime"
+      end
+      field "scheduledevent_end_time" do
+        label "Scheduled Event EndTime"
+      end
+      field "tagKeyValue" do
+        label "Tags"
+      end
+    end
+
+    escalate $esc_email
+    check eq(size(data),0)    
   end
-end
-
-###############################################################################
-# Escalation
-###############################################################################
-
-escalation "report_ec2_scheduled_instances" do
-  email $param_email
 end
