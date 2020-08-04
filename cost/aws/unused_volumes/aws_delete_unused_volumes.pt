@@ -5,7 +5,7 @@ short_description "Checks for unused volumes and if no read/write operations per
 category "Cost"
 severity "low"
 info(
-  version: "2.4",
+  version: "2.5",
   provider: "AWS",
   service: "EBS",
   policy_set: "Unused Volumes"
@@ -61,6 +61,8 @@ credentials "auth_aws" do
   description "Select the AWS Credential from the list"
   tags "provider=aws"
 end
+
+auth "auth_rs", type: "rightscale"
 
 ###############################################################################
 # Pagination
@@ -156,6 +158,88 @@ datasource "ds_check_volumes_read_or_write_operations" do
   run_script $js_check_volumes_read_or_write_operations,$ds_unattached_volumes_map,$ds_volume_read_bytes_metrics,$ds_volume_write_bytes_metrics
 end
 
+datasource "ds_currency_reference" do
+  request do
+    host "raw.githubusercontent.com"
+    path "/rightscale/policy_templates/master/cost/scheduled_reports/currency_reference.json"
+    header "User-Agent", "RS Policies"
+  end
+end
+
+datasource "ds_currency_code" do
+  request do
+    auth $auth_rs
+    host rs_optima_host
+    path join(["/bill-analysis/orgs/",rs_org_id,"/settings/currency_code"])
+    header "Api-Version", "0.1"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+    field "id", jmes_path(response,"id")
+    field "value", jmes_path(response,"value")
+  end
+end
+
+datasource "ds_billing_centers" do
+  request do
+    auth $auth_rs
+    host rs_optima_host
+    path join(["/analytics/orgs/",rs_org_id,"/billing_centers"])
+    header "Api-Version", "1.0"
+    header "User-Agent", "RS Policies"
+    query "view", "allocation_table"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response,"[*]") do
+      field "href", jmes_path(col_item,"href")
+      field "id", jmes_path(col_item,"id")
+      field "name", jmes_path(col_item,"name")
+      field "parent_id", jmes_path(col_item,"parent_id")
+    end
+  end
+end
+
+datasource "ds_top_level_billing_centers" do
+  run_script $js_top_level_bc, $ds_billing_centers
+end
+
+datasource "ds_get_caller_identity" do
+  request do
+    auth $auth_aws
+    verb "GET"
+    host "sts.amazonaws.com"
+    path "/"
+    header "User-Agent", "RS Policies"
+    query "Action", "GetCallerIdentity"
+    query "Version", "2011-06-15"
+  end
+  result do
+    encoding "xml"
+    collect xpath(response, "//GetCallerIdentityResponse/GetCallerIdentityResult") do
+      field "account",xpath(col_item, "Account")
+    end
+ end
+end
+
+datasource "ds_volume_costs" do
+  request do
+    run_script $js_get_costs, $ds_get_caller_identity, $ds_top_level_billing_centers, rs_org_id
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response,"rows[*]") do
+      field "resource_id", jmes_path(col_item,"dimensions.resource_id")
+      field "cost_nonamortized_unblended_adj", jmes_path(col_item,"metrics.cost_nonamortized_unblended_adj")
+    end
+  end
+end
+
+datasource "ds_volume_cost_mapping" do
+  run_script $js_volume_cost_mapping, $ds_check_volumes_read_or_write_operations, $ds_volume_costs, $ds_currency_reference, $ds_currency_reference
+end
+
 ###############################################################################
 # Script
 ###############################################################################
@@ -204,7 +288,7 @@ script "js_filter_aws_unattached_volumes", type:"javascript" do
       if((param_exclude_tags_lower.indexOf((tag['tagKey']).toLowerCase()) !== -1) || (param_exclude_tags_lower.indexOf((tag['tagKey']+'='+tag['tagValue']).toLowerCase()) !== -1)){
         isTagMatched = true;
       }
-        
+
       // Constructing tags with comma separated to display in detail_template
       if((tag['tagValue']).length > 0){
         tagKeyValue = tagKeyValue+" , "+tag['tagKey']+'='+tag['tagValue'];
@@ -333,7 +417,7 @@ script "js_check_volumes_read_or_write_operations", type:'javascript' do
       if(volume['vol_id'] === readMetricData['volumeId']){
         var readMetricDataPoints = readMetricData['dataPoints'];
         if(readMetricDataPoints.length > 0){
-          readWriteOperationDone = true;  
+          readWriteOperationDone = true;
 		}
         break;
 	  }
@@ -344,7 +428,7 @@ script "js_check_volumes_read_or_write_operations", type:'javascript' do
         if(volume['vol_id'] === writeMetricData['volumeId']){
           var writeMetricDataPoints = writeMetricData['dataPoints'];
           if(writeMetricDataPoints.length > 0){
-            readWriteOperationDone = true;  
+            readWriteOperationDone = true;
 		  }
           break;
 		}
@@ -364,14 +448,157 @@ script "js_check_volumes_read_or_write_operations", type:'javascript' do
   }
   unattachedVolumes = _.sortBy(unattachedVolumes,'region')
   EOS
-end  
+end
+
+script "js_top_level_bc", type: "javascript" do
+  parameters "billing_centers"
+  result "filtered_billing_centers"
+  code <<-EOS
+  var filtered_billing_centers =
+    _.reject(billing_centers, function(bc){ return bc.parent_id != null });
+EOS
+end
+
+script "js_get_costs", type:"javascript" do
+  parameters  "account_id","billing_centers","org"
+  result "request"
+  code <<-EOS
+    // returns date formatted as string: YYYY-mm-dd
+    function getFormattedDailyDate(date) {
+      var year = date.getFullYear();
+      var month = (1 + date.getMonth()).toString();
+      month = month.length > 1 ? month : '0' + month;
+      var day = date.getDate().toString();
+      day = day.length > 1 ? day : '0' + day;
+      return year + '-' + month + '-' + day;
+    }
+
+    var start_date = getFormattedDailyDate(new Date(new Date().setDate(new Date().getDate() - 3)));
+    var end_date = getFormattedDailyDate(new Date(new Date().setDate(new Date().getDate() - 2)));
+
+    var request = {
+      auth: "auth_rs",
+      host: "optima.rightscale.com",
+      verb: "POST",
+      path: "/bill-analysis/orgs/" + org + "/costs/select",
+      body_fields: {
+        "dimensions": ["resource_id"],
+        "granularity": "day",
+        "start_at": start_date,
+        "end_at": end_date,
+        "metrics": ["cost_nonamortized_unblended_adj"],
+        "billing_center_ids": _.compact(_.map(billing_centers, function(value){ return value.id})),
+        "limit": 10000,
+        "filter": {
+          "expressions": [
+            {
+              "dimension": "service",
+              "type": "equal",
+              "value": "AmazonEC2"
+            },
+            {
+              "dimension": "resource_type",
+              "type": "equal",
+              "value": "Storage"
+            },
+            {
+              "dimension": "vendor_account",
+              "type": "equal",
+              "value": account_id[0]["account"]
+            }
+          ],
+          "type": "and"
+        }
+      },
+      headers: {
+        "User-Agent": "RS Policies",
+        "Api-Version": "1.0"
+      }
+    }
+  EOS
+end
+
+script "js_volume_cost_mapping", type:"javascript" do
+  parameters  "volumes","volume_costs","ds_currency_code","ds_currency_reference"
+  result "result"
+  code <<-EOS
+
+  var result = [];
+
+  function formatNumber(number, separator){
+    var numString =number.toString();
+    var values=numString.split(".");
+    var result = ''
+    while (values[0].length > 3){
+      var chunk = values[0].substr(-3)
+      values[0] = values[0].substr(0, values[0].length - 3)
+      result = separator + chunk + result
+    }
+    if (values[0].length > 0){
+      result = values[0] + result
+    }
+    if(values[1]==undefined){
+      return result;
+    }
+    return result+"."+values[1];
+  }
+
+  // Format costs with currency symbol and thousands separator
+  if( ds_currency_code['value'] !== undefined ) {
+    if (ds_currency_reference[ds_currency_code['value']] !== undefined ) {
+      var cur = ds_currency_reference[ds_currency_code['value']]['symbol']
+      if( ds_currency_reference[ds_currency_code['value']]['t_separator'] !== undefined ) {
+        var separator = ds_currency_reference[ds_currency_code['value']]['t_separator']
+      } else {
+        var separator = ""
+      }
+    } else {
+      var cur = ""
+      var separator = ""
+    }
+  } else {
+    var cur = "$"
+    var separator = ","
+  }
+
+  _.each(volumes, function(volume){
+    var cost_objects = _.where(volume_costs, {resource_id: volume["volumeId"]});
+    console.log(cost_objects)
+    if (_.size(cost_objects) > 0){
+      var sum = _.reduce(_.compact(_.map(cost_objects, function(value){ return value.cost_nonamortized_unblended_adj})), function(memo, num){ return memo + num; }, 0);
+      var monthly_savings = sum*30;
+      result.push({
+        volumeId : volume['volumeId'],
+        region : volume['region'],
+        availabilityZone : volume['availabilityZone'],
+        volumeType : volume['volumeType'],
+        tags : volume['tags'],
+        createdTime : volume['createdTime'],
+        size : volume['size'],
+        savings: cur + ' '+formatNumber((Math.round(monthly_savings * 100) / 100), separator),
+      })
+    } else {
+      result.push({
+        volumeId : volume['volumeId'],
+        region : volume['region'],
+        availabilityZone : volume['availabilityZone'],
+        volumeType : volume['volumeType'],
+        tags : volume['tags'],
+        createdTime : volume['createdTime'],
+        size : volume['size'],
+        savings: "N/A",
+      })
+    }
+  })
+  EOS
+end
 
 ###############################################################################
 # Policy
 ###############################################################################
 
 policy "policy_unattached_volumes_list" do
-  validate $ds_check_volumes_read_or_write_operations do
+  validate $ds_volume_cost_mapping do
     summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} Unused Volumes Found in AWS"
     escalate $report_unused_volumes
     escalate $delete_volumes
@@ -393,6 +620,9 @@ policy "policy_unattached_volumes_list" do
       end
       field "tags" do
         label "Tags"
+      end
+      field "savings" do
+        label "Estimated Monthly Savings"
       end
     end
   end

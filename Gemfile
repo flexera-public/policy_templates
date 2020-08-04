@@ -10,7 +10,7 @@ git_source(:github) {|repo_name| "https://github.com/#{repo_name}" }
 gem "rake", "~> 12.3"
 
 # Added at 2018-06-14 16:08:27 -0500 by rshade:
-gem "json", "~> 2.1"
+gem "json", "~> 2.3"
 
 # Added at 2018-06-19 14:10:27 -0500 by rshade:
 gem "danger", "~> 6.0.0"

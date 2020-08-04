@@ -1,8 +1,12 @@
 # Changelog
 
-## v2.4
+## v2.5
 
 - Updated escalation block
+
+## v2.4
+
+- Updating logic to only fire an incident on external IPs
 
 ## v2.3
 
@@ -14,13 +18,13 @@
 
 ## v2.1
 
-- remove unncessary permissions block
+- remove unnecessary permissions block
 
 ## v2.0
 
 - Changed the authentication to credential services
 - Added new datasource for google project ID
-- Removed hard coded regions and quering using API
+- Removed hard coded regions and querying using API
 
 ## v1.1
 
