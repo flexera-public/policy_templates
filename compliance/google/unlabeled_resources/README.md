@@ -1,4 +1,4 @@
-# Google unlabeled Resources
+# Google Unlabeled Resources
 
 ## What it does
 
