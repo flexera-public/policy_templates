@@ -6,7 +6,7 @@ long_description ""
 severity "low"
 category "Cost"
 info(
-  version: "2.2",
+  version: "2.4",
   provider: "Azure",
   service: "SQL",
   policy_set: "Unused Database Services"
@@ -104,7 +104,7 @@ datasource "ds_azure_sql_databases" do
         field "kind", jmes_path(col_item,"kind")
         field "sku" , jmes_path(col_item,"sku")
         field "tags", jmes_path(col_item,"tags")
-		field "subscriptionId",val(iter_item,"subscriptionId")
+        field "subscriptionId",val(iter_item,"subscriptionId")
         field "subscriptionName",val(iter_item,"displayName")
     end
   end
@@ -126,8 +126,9 @@ datasource "ds_azure_sql_database_metrics" do
         field "sku" , val(iter_item,"sku")
         field "unit", jmes_path(col_item,"unit")
         field "timeseries", jmes_path(col_item,"timeseries")
-		field "subscriptionId",val(iter_item,"subscriptionId")
+        field "subscriptionId",val(iter_item,"subscriptionId")
         field "subscriptionName",val(iter_item,"subscriptionName")
+        field "tags", val(iter_item,"tags")
     end
   end
 end
@@ -200,24 +201,33 @@ script "js_merged_metrics", type: "javascript" do
         }
         //now find the metrics for the devices
         var objMetric = databases_metrics[i];
-		var total = 0;
+        var total = 0;
         if (typeof objMetric == "object" && typeof objMetric.timeseries[0].data == "object"){
           var ts_data =  objMetric.timeseries[0].data;
           for (x=0; x < ts_data.length; x++) {
             total += ts_data[x].count;
           }
           if(total == 0){
+            if(databases_metrics[i].sku === null || typeof databases_metrics[i].sku === "undefined"){
+              var sku={
+                "capacity": "Not available",
+                "name": "Not available",
+                "tier": "Not available"
+              }
+            } else {
+              var sku=databases_metrics[i].sku;
+            }
             result.push({
               id: databases_metrics[i].id,
-		      location: databases_metrics[i].location,
+              location: databases_metrics[i].location,
               name: databases_metrics[i].name,
               resource_group: resource_group,
               kind: databases_metrics[i].kind,
               type: databases_metrics[i].type,
-              sku: databases_metrics[i].sku,
+              sku: sku,
               unit: databases_metrics[i].unit,
-			  subscriptionName: databases_metrics[i].subscriptionName,
-			  subscriptionId: databases_metrics[i].subscriptionId
+              subscriptionName: databases_metrics[i].subscriptionName,
+              subscriptionId: databases_metrics[i].subscriptionId
             })
           }
         }
@@ -307,7 +317,7 @@ define delete_unused_sql_databases($data) return $all_responses do
       $response = http_request(
         verb: "delete",
         host: "management.azure.com",
-		auth: $$azure_auth,
+        auth: $$azure_auth,
         https: true,
         href: $item["id"],
         query_strings: {
