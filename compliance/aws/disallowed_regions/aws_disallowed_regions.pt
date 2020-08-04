@@ -6,12 +6,11 @@ long_description ""
 category "Compliance"
 severity "low"
 info(
-  version: "2.1",
+  version: "2.2",
   provider: "AWS",
   service: "EC2",
   policy_set: "Disallowed Regions"
 )
-
 
 ###############################################################################
 # User inputs
@@ -35,6 +34,13 @@ parameter "param_disallowed_region" do
   label "Disallowed Regions(s)"
   allowed_pattern /([a-z])+\-([a-z])+\-([\d]?)+/
   description "List of regions to disallow."
+end
+
+parameter "param_automatic_action" do
+  type "list"
+  label "Automatic Actions"
+  description "When this value is set, this policy will automatically take the selected action(s)"
+  allowed_values ["Terminate Instances"]
 end
 
 ###############################################################################
@@ -113,41 +119,41 @@ script "js_filter_aws_instances", type: "javascript" do
   parameters "ds_disallowed_instances_list","param_exclude_tags"
   result "res"
   code <<-EOS
-   res = []
-   var param_exclude_tags_lower=[];
+    res = []
+    var param_exclude_tags_lower=[];
     for(var i=0; i < param_exclude_tags.length; i++){
       param_exclude_tags_lower[i]=param_exclude_tags[i].toString().toLowerCase();
     }
     for (var j = 0; j < ds_disallowed_instances_list.length; j++) {
       var instance = ds_disallowed_instances_list[j];
       var tags=instance['tags'];
-	  var is_tag_matched=false
-	  var tag_key_value=""
-        if(typeof(tags) != "undefined"){
+      var is_tag_matched=false
+      var tag_key_value=""
+      if(typeof(tags) != "undefined"){
 	      for(var k=0;k<tags.length;k++){
-            var tag=tags[k];
-              if((param_exclude_tags_lower.indexOf((tag['tagKey']).toLowerCase()) !== -1) || (param_exclude_tags_lower.indexOf((tag['tagKey']+'='+tag['tagValue']).toLowerCase()) !== -1)){
-               is_tag_matched = true;
-                  }
-        // Constructing tags with comma separated to display in detail_template
-        if((tag['tagValue']).length > 0){
-              tag_key_value = tag_key_value + ', '+ tag['tagKey']+'='+tag['tagValue']
-        }else{
-              tag_key_value = tag_key_value + ', '+ tag['tagKey']
-             }
-		    }
+          var tag=tags[k];
+          if((param_exclude_tags_lower.indexOf((tag['tagKey']).toLowerCase()) !== -1) || (param_exclude_tags_lower.indexOf((tag['tagKey']+'='+tag['tagValue']).toLowerCase()) !== -1)){
+            is_tag_matched = true;
+          }
+          // Constructing tags with comma separated to display in detail_template
+          if((tag['tagValue']).length > 0){
+            tag_key_value = tag_key_value + ', '+ tag['tagKey']+'='+tag['tagValue']
+          }else{
+            tag_key_value = tag_key_value + ', '+ tag['tagKey']
+          }
         }
+      }
 	    if(!is_tag_matched && instance['instance_state']!="terminated"){
-            res.push({
-              instance_id:instance['instance_id'],
-              region:instance['region'],
-              instance_state:instance['instance_state'],
-              tagKeyValue:(tag_key_value.slice(1)),
-              instance_type:instance['instance_type']
-            })
-        }
+        res.push({
+          id: instance['instance_id'],
+          region: instance['region'],
+          instance_state: instance['instance_state'],
+          tagKeyValue: (tag_key_value.slice(1)),
+          instance_type: instance['instance_type']
+        })
+      }
     }
-	res = _.sortBy(res, 'region');
+    res = _.sortBy(res, 'region');
   EOS
 end
 
@@ -162,9 +168,9 @@ script "js_regions_map", type: "javascript" do
     }
     for (var j = 0; j < param_disallowed_region_lower.length; j++){
       disallowed_region = param_disallowed_region_lower[j];
-        regions_map.push({
-         "region": disallowed_region
-        })
+      regions_map.push({
+        "region": disallowed_region
+      })
     }
   EOS
 end
@@ -173,20 +179,17 @@ end
 # Escalations
 ###############################################################################
 
-escalation "esc_report_disallowed_instances" do
+escalation "esc_email" do
+  automatic true
+  label "Send Mail"
+  description "Sends incident email"
   email $param_email
 end
 
 escalation "esc_terminate_instances_disallowed_region" do
-  request_approval  do
-    label "Approve Termination of Instances in Disallowed Region"
-    description "Approve escalation to run RightScale Cloud Workflow to terminate instances in disallowed region"
-    parameter "approval_reason" do
-      type "string"
-      label "Reason for Approval"
-      description "Explain why you are approving the action"
-    end
-  end
+  automatic contains($param_automatic_action, "Terminate Instances")
+  label "Delete Instances"
+  description "Delete instances found in disallowd regions."
   run "terminate_instances", data
 end
 
@@ -197,17 +200,27 @@ end
 policy "pol_list_aws_instances" do
   validate $ds_list_aws_instances do
     summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} AWS Instances in Disallowed regions"
-    detail_template <<-EOS
-# AWS Instance Details
-| Instance ID | Instance State | Region | Instance Type | Tags |
-| ----------- | -------------- | ------ | ------------- | ---- |
-{{ range data -}}
-| {{.instance_id}} | {{.instance_state}}  | {{.region}} | {{.instance_type}} | {{.tagKeyValue}} |
-{{ end -}}
-    EOS
-    escalate $esc_report_disallowed_instances
-    escalate $esc_terminate_instances_disallowed_region
+    export do
+      resource_level true
+      field "id" do
+        label "Instance ID"
+      end
+      field "instance_state" do
+        label "Instance State"
+      end
+      field "region" do
+        label "Region"
+      end
+      field "instance_type" do
+        label "Instance Type"
+      end
+      field "tagKeyValue" do
+        label "Tags"
+      end
+    end
     check eq(size(data),0)
+    escalate $esc_email
+    escalate $esc_terminate_instances_disallowed_region
   end
 end
 
@@ -225,7 +238,7 @@ define terminate_instances($data) return $all_responses do
       verb: "get",
       host: join(["ec2.",$item["region"],".amazonaws.com"]),
       auth: $$auth_aws,
-      href: join(["/", "?Action=TerminateInstances", "&InstanceId.1=", $item["instance_id"], "&Version=2016-11-15"]),
+      href: join(["/", "?Action=TerminateInstances", "&InstanceId.1=", $item["id"], "&Version=2016-11-15"]),
       https: true,
       headers:{
         "cache-control": "no-cache",

@@ -6,7 +6,7 @@ long_description ""
 severity "high"
 category "Security"
 info(
-      version: "2.1",
+      version: "2.2",
       provider: "GCE",
       service: "Storage",
       policy_set: "Open Buckets"
@@ -79,34 +79,70 @@ datasource "ds_storage_buckets" do
         collect jmes_path(col_item, "acl") do
           field "entity", jmes_path(col_item, "entity")
           field "role", jmes_path(col_item, "role")
-          field "projectId", val(iter_item,"projectId")		  
+          field "projectId", val(iter_item,"projectId")
+          field "id", jmes_path(col_item,"id")
         end
       end
     end
   end
 end
 
+datasource "ds_storage_buckets_filter" do
+  run_script $js_google_storage_buckets_filter, $ds_storage_buckets
+end
+
+script "js_google_storage_buckets_filter", type: "javascript" do
+  parameters "ds_storage_buckets"
+  result "result"
+  code <<-EOS
+  var result=[];
+  var array=[];
+  for(var i=0;i<ds_storage_buckets.length;i++){
+      array=ds_storage_buckets[i].acl;
+      for(var j=0;j<array.length;j++){
+        if(array[j].entity=="allUsers" || array[j].entity==="allUsers"){
+          result.push({"name":ds_storage_buckets[i].name, "acl":array[j]});
+	   }
+	  }
+  }
+  result=_.sortBy(result, 'acl.projectId')
+  result=_.sortBy(result, 'name')
+  EOS
+end
+
 escalation "report_open_buckets" do
-   email $param_email
+  automatic true
+  label "Sends Email"
+  description "Send Incident email"
+  email $param_email
 end
 
 policy "public_buckets" do
-  validate_each $ds_storage_buckets do
+  validate_each $ds_storage_buckets_filter do
     summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} Public Buckets Found in Google"
-    detail_template <<-EOS
-# Public Buckets Found in Google
-| Project ID | Bucket Name | Entity | Role |
-| ---------- | ----------- | ------ | ---- |
-{{ range data -}}
-{{ $name := .name -}}
-{{ range .acl -}}
-{{ if (eq .entity "allUsers") -}}
-| {{.projectId}} | {{$name}} | {{.entity}} | {{.role}} |
-{{ end -}}
-{{ end -}}
-{{ end -}}
-EOS
     escalate $report_open_buckets
-    check logic_not(contains(jmes_path(item, "acl[*].entity"), "allUsers"))
+    check logic_not(eq(jmes_path(item, "acl.entity"), "allUsers"))
+    export do
+      resource_level true
+      field "projectId" do
+        label "Project ID"
+        path "acl.projectId"
+      end
+      field "name" do
+        label "Name"
+      end
+      field "entity" do
+        label "Entity"
+        path "acl.entity"
+      end
+      field "role" do
+        label "Role"
+        path "acl.role"
+      end
+      field "id" do
+        label "Bucket Id"
+        path "acl.id"
+      end
+    end
   end
 end

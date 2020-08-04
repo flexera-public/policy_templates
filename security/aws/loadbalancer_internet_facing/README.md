@@ -14,6 +14,10 @@ Using this may result in instances with no load balancers.
 
 - *Email addresses to notify* - Email addresses of the recipients you wish to notify when new incidents are created
 - *Tags to ignore* - List of tags that will exclude load Balancers from being evaluated by this policy. Multiple tags are evaluated as an 'OR' condition. Tag keys or Key/value pairs can be listed. Example: 'test,env=dev'
+- *Automatic Actions* - When this value is set, this policy will automatically take the selected action(s).
+
+Please note that the "Automatic Actions" parameter contains a list of action(s) that can be performed on the resources. When it is selected, the policy will automatically execute the corresponding action on the data that failed the checks, post incident generation. Please leave it blank for *manual* action.
+For example if a user selects the "Delete ELBs and ALBs" action while applying the policy, all the resources that didn't satisfy the policy condition will be deleted.
 
 ## Policy Actions
 

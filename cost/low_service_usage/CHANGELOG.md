@@ -1,4 +1,8 @@
-# ChangeLog
+# Changelog
+
+## v1.5
+
+- Added new resource table
 
 ## v1.4
 

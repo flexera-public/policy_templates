@@ -1,4 +1,4 @@
-name "FlexNet Manager Licenses At Risk - Cloud"
+name "FlexNet Manager Licenses At Risk"
 rs_pt_ver 20180301
 type "policy"
 short_description "Looks up Flexnet Manager Licenses \"At Risk\" and sends the result as an email.  See the [README](https://github.com/flexera/policy_templates/tree/master/compliance/fnms/fnms_licenses_at_risk) and [docs.rightscale.com/policies](https://docs.rightscale.com/policies/) to learn more." 
@@ -6,7 +6,7 @@ long_description ""
 severity "medium"
 category "Compliance"
 info(
-  version: "2.0",
+  version: "2.1",
   provider: "Flexera FNMS",
   service: "",
   policy_set: "FlexNet Manager Licenses At Risk"
@@ -20,8 +20,8 @@ end
 parameter "param_fnms_url" do
   type "string"
   label "FNMS Report URL"
-  description "Full FlexNet URL (e.g. https://demo.flexnetmanager.com/Suite )"
-  allowed_pattern /^(https:\/\/)+[a-z0-9]+([\-\.]{1}[a-z0-9]+)*\.[a-z0-9]{2,5}(:[0-9]{1,5})?(\/.*)?$/
+  description "Full FlexNet URL (e.g. https://demo.flexnetmanager.com/Suite or WStunnel tunnel URL https://wstunnel1-1.rightscale.com/_token/<token>/)"
+  allowed_pattern /^(http:\/\/|https:\/\/)+[a-z0-9]+([\-\.]{1}[a-z0-9]+)*\.[a-z0-9]{2,5}(:[0-9]{1,5})?(\/.*)?$/
 end
 
 parameter "param_report_id" do
@@ -36,11 +36,11 @@ parameter "param_email" do
   description "A list of email addresse(s) to notify"
 end
 
-credentials "api_token_auth" do
-  schemes "api_key"
+credentials "api_auth" do
+  schemes "api_key","ntlm"
   label "FNMS"
-  description "Select the FNMS Token Credential from the list."
-  tags "provider=flexera_fnms_api_key"
+  description "Select the FNMS Credential from the list."
+  tags "provider=flexera_fnms"
 end
 
 # Build the API request object dynamically because we need to find the right authentiocation model.
@@ -49,13 +49,18 @@ script "fnms_request", type: "javascript" do
   result "request"
   code <<-EOS
     var sHost = fnms_host.substr(fnms_host.indexOf('://')+3)
+     if (sHost.indexOf('/') > -1 && sHost.indexOf('_token') > -1){
+      var path=sHost.substr(sHost.indexOf('/'))+'ManageSoftServices/ComplianceAPIService/ComplianceAPIService.asmx';
+    } else{
+      var path='/ManageSoftServices/ComplianceAPIService/ComplianceAPIService.asmx';
+	 }
     if (sHost.indexOf('/') > -1)  sHost = sHost.substr(0,sHost.indexOf('/'))
 
     // Find the right schema
-    var sScheme = "https"
+    var sScheme = fnms_host.substr(0,fnms_host.indexOf('://'));
     
     //Should we use User/password or Token to authenticate
-    var sAuth = "api_token_auth"
+    var sAuth = "api_auth"
 
     var sBody = '<?xml version="1.0" encoding="utf-8"?>'
     sBody    += '<soap:Envelope xmlns:soap="http://www.w3.org/2003/05/soap-envelope" xmlns:tem="http://tempuri.org/">'
@@ -71,7 +76,7 @@ script "fnms_request", type: "javascript" do
       auth: sAuth,
       scheme: sScheme,
       host: sHost,
-      path: "/ManageSoftServices/ComplianceAPIService/ComplianceAPIService.asmx",
+      path: path,
       verb: "POST",
       headers: {
         "Content-Type": "text/xml;charset=utf-8"
@@ -103,18 +108,30 @@ end
 policy 'fnms_policy' do
   validate_each $fnms_report do
     summary_template 'FlexNet Manager - Software Licenses At Risk'
-    detail_template <<-EOS
-| Name | Edition | Version | License type | Shortfall / Availability |
-| ---- | ------- | ------- | ------------ | ------------------------ |
-{{ range data -}}
-| {{ .name }} | {{ .edition }} | {{ .version }} | {{ .license_type }} | {{ .available_licenses }} |
-{{ end -}}
-EOS
     escalate $send_report
     check ne(val(item,"license_compliance"),"At risk")
+    export do
+      resource_level true
+      field "id" do
+        label "Name"
+        path "name"
+      end
+      field "edition" do
+        label "Edition"
+      end
+      field "version" do
+        label "license_type"
+      end
+      field "available_licenses" do
+        label "Shortfall / Availability"
+      end
+    end
   end
 end
 
-escalation "send_report" do 
+escalation "send_report" do
+  automatic true
+  label "Send Mail"
+  description "Sends incidents email"
   email $param_email
 end 

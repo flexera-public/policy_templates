@@ -1,5 +1,14 @@
 # Changelog
 
+## v2.3
+
+- Added Resource table
+
+## v2.2
+
+- Fix incident table rendering issue
+- Add VM tags to incident table
+
 ## v2.1
 
 - remove unnecessary permissions block

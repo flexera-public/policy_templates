@@ -6,7 +6,7 @@ long_description ""
 severity "low"
 category "Cost"
 info(
-      version: "2.4",
+      version: "2.6",
       provider: "GCE",
       service: "Compute",
       policy_set: "Inefficient Instance Usage"
@@ -40,6 +40,13 @@ parameter "param_exclude_tags" do
   description "An google-native instance tag to ignore instances that you don't want to consider for downsizing. Only supply the tag key"
 end
 
+parameter "param_automatic_action" do
+  type "list"
+  label "Automatic Actions"
+  description "When this value is set, this policy will automatically take the selected action(s)"
+  allowed_values ["Downsize Instances"]
+end
+
 ###############################################################################
 # Authentication
 ###############################################################################
@@ -69,6 +76,7 @@ end
 ###############################################################################
 # Datasources
 ###############################################################################
+
 datasource "ds_time" do
   run_script $js_time
 end
@@ -101,7 +109,7 @@ datasource "ds_compute_utilization" do
     pagination $google_pagination
     host "monitoring.googleapis.com"
     path join(["/v3/projects/",val(iter_item,"projectId"),"/timeSeries/"])
-    query "filter", 'metric.type="compute.googleapis.com/instance/cpu/utilization"'
+    query "filter", 'metric.type="compute.googleapis.com/instance/cpu/utilization" AND resource.labels.instance_id != ""'
     query "interval.endTime", val(iter_item,"end_date")
     query "interval.startTime", val(iter_item,"start_date")
     ignore_status [403,404]
@@ -113,9 +121,7 @@ datasource "ds_compute_utilization" do
       field "instance_id", jmes_path(col_item, "resource.labels.instance_id")
       field "zone", jmes_path(col_item, "resource.labels.zone")
       field "projectId", val(iter_item,"projectId")
-      field "avg_cpu_points", jmes_path(col_item, "points[*].value.doubleValue | avg(@)")
-      field "max_cpu_points", jmes_path(col_item, "points[*].value.doubleValue | max(@)")
-      field "min_cpu_points", jmes_path(col_item, "points[*].value.doubleValue | min(@)")
+      field "cpu_points", jmes_path(col_item, "points[*].value.doubleValue")
     end
   end
 end
@@ -127,7 +133,7 @@ datasource "ds_memory_utilization" do
     pagination $google_pagination
     host "monitoring.googleapis.com"
     path join(["/v3/projects/",val(iter_item,"projectId"),"/timeSeries/"])
-    query "filter", 'metric.type="agent.googleapis.com/memory/percent_used" AND metric.label.state=used'
+    query "filter", 'metric.type="agent.googleapis.com/memory/percent_used" AND metric.label.state=used AND resource.labels.instance_id != ""'
     query "interval.endTime", val(iter_item,"end_date")
     query "interval.startTime", val(iter_item,"start_date")
     ignore_status [403,404]
@@ -143,31 +149,8 @@ datasource "ds_memory_utilization" do
   end
 end
 
-datasource "ds_disk_utilization" do
-  iterate $ds_google_project
-  request do
-    auth $auth_google
-    pagination $google_pagination
-    host "monitoring.googleapis.com"
-    path join(["/v3/projects/",val(iter_item,"projectId"),"/timeSeries/"])
-    query "filter", 'metric.type="agent.googleapis.com/disk/percent_used" AND metric.label.state=used'
-    query "interval.endTime", val(iter_item,"end_date")
-    query "interval.startTime", val(iter_item,"start_date")
-    ignore_status [403,404]
-  end
-  result do
-    encoding "json"
-    collect jmes_path(response, "timeSeries[*]") do
-      field "label_instance_name", jmes_path(col_item, "metric.labels.instance_name")
-      field "instance_id", jmes_path(col_item, "resource.labels.instance_id")
-      field "zone", jmes_path(col_item, "resource.labels.zone")
-      field "disk_points", jmes_path(col_item, "points[*].value.doubleValue")
-    end
-  end
-end
-
 datasource "ds_calculated_utilization" do
-  run_script $js_calculated_utilization, $ds_compute_utilization, $ds_memory_utilization, $ds_disk_utilization
+  run_script $js_calculated_utilization, $ds_compute_utilization, $ds_memory_utilization
 end
 
 datasource "ds_add_instance_data" do
@@ -185,16 +168,12 @@ datasource "ds_add_instance_data" do
       field "instance_status", jmes_path(col_item, "status")
       field "label_instance_name",val(iter_item, "label_instance_name")
       field "zone", val(iter_item, "zone")
-      field "points", val(iter_item, "points")
       field "cpu_average", val(iter_item, "cpu_average")
       field "cpu_maximum", val(iter_item, "cpu_maximum")
       field "cpu_minimum", val(iter_item, "cpu_minimum")
       field "mem_average", val(iter_item, "mem_average")
       field "mem_maximum", val(iter_item, "mem_maximum")
       field "mem_minimum", val(iter_item, "mem_minimum")
-      field "disk_average", val(iter_item, "disk_average")
-      field "disk_maximum", val(iter_item, "disk_maximum")
-      field "disk_minimum", val(iter_item, "disk_minimum")
       field "projectId", val(iter_item,"projectId")
       field "tags", jmes_path(col_item, "tags")
     end
@@ -206,7 +185,7 @@ datasource "ds_google_instance_size_map" do
   request do
     verb "GET"
     host "raw.githubusercontent.com"
-    path "/rightscale/policy_templates/master/data/google/instance_types.json"
+    path "/flexera/policy_templates/master/data/google/instance_types.json"
     header "User-Agent", "RS Policies"
     ignore_status [403,404]
   end
@@ -252,9 +231,11 @@ script "js_filtered_instances", type: "javascript" do
       if(!isTagMatched && instance_data["instance_status"] === "RUNNING" && (null !== instance_data["machine_type"] && typeof instance_data["machine_type"] !== "undefined") && (instance_data["cpu_average"] < param_avg_used_cpu_percentage || instance_data["mem_average"] < param_avg_used_mem_percentage )){
         var res = instance_data["machine_type"].split("/");
         var current_instance=res[res.length-1].trim();
-        if(current_instance != null && !_.contains(current_instance, "custom")){
-          var next_instance_size = ds_google_instance_size_map[current_instance]["down"] ;
-          var next_machine_type= instance_data["machine_type"].replace(current_instance, next_instance_size);
+        var next_instance_size = "N/A";
+        var next_machine_type = "N/A";
+        if(current_instance != null && !_.contains(current_instance, "custom") && ds_google_instance_size_map[current_instance] !== undefined && ds_google_instance_size_map[current_instance] != null){
+          next_instance_size = ds_google_instance_size_map[current_instance]["down"] ;
+          next_machine_type = instance_data["machine_type"].replace(current_instance, next_instance_size);
         }
         if(next_instance_size == null && typeof next_instance_size == "undefined" ){
           next_instance_size="N/A";
@@ -263,8 +244,8 @@ script "js_filtered_instances", type: "javascript" do
 
         var hostnameField = instance_data["hostname"]
         if(hostnameField === "" || hostnameField === " " || hostnameField === undefined){
-          hostnameField = instance_data["instance_id"];  
-		}
+          hostnameField = instance_data["instance_id"];
+        }
 
         results.push({
           id: instance_data["instance_id"],
@@ -274,16 +255,12 @@ script "js_filtered_instances", type: "javascript" do
           machine_type_url: instance_data["machine_type"],
           name: instance_data["label_instance_name"],
           zone: instance_data["zone"],
-          points: instance_data["points"],
           cpu_average: instance_data["cpu_average"],
           cpu_maximum: instance_data["cpu_maximum"],
           cpu_minimum: instance_data["cpu_minimum"],
           mem_average: instance_data["mem_average"],
           mem_maximum: instance_data["mem_maximum"],
           mem_minimum: instance_data["mem_minimum"],
-          disk_average: instance_data["disk_average"],
-          disk_maximum: instance_data["disk_maximum"],
-          disk_minimum: instance_data["disk_minimum"],
           projectId: instance_data["projectId"],
           next_instance_size: next_instance_size,
           next_machine_type: next_machine_type,
@@ -292,10 +269,9 @@ script "js_filtered_instances", type: "javascript" do
       }
     })
     results = _.sortBy(results, 'zone');
-	results= _.sortBy(results, 'projectId');
+    results= _.sortBy(results, 'projectId');
   EOS
 end
-
 
 script "js_time", type: "javascript" do
   result "time"
@@ -309,53 +285,53 @@ end
 
 script "js_calculated_utilization", type: "javascript" do
   result "results"
-  parameters "ds_compute_utilization", "ds_memory_utilization", "ds_disk_utilization"
+  parameters "ds_compute_utilization", "ds_memory_utilization"
   code <<-EOS
     results = []
     for ( i =0; i < ds_compute_utilization.length; i++ ){
       var instance_id = ds_compute_utilization[i].instance_id
-      var points = ds_compute_utilization[i].points
-      var memory_record = _.find(ds_memory_utilization, function(record) { return record.instance_id == instance_id; })
-      if (memory_record != null && memory_record !== undefined ) {
-        var memory_maximum = parseFloat(Math.max(memory_record.mem_points)).toFixed(2)
-        var memory_sum = _.reduce(memory_record.mem_points, function(memo, num){ return memo + num; }, 0);
-        var memory_average = parseFloat(memory_sum/memory_record.mem_points.length).toFixed(2)
-        var memory_minimum = parseFloat(Math.min(memory_record.mem_points)).toFixed(2)
+      if ( instance_id === null || instance_id === undefined ) {
+        // No instance id, continue
       } else {
-        var memory_maximum = "N/A"
-        var memory_average = "N/A"
-        var memory_minimum = "N/A"
-      }
-
-      var disk_record = _.find(ds_disk_utilization, function(record) { return record.instance_id == instance_id; })
-      if (disk_record != null && disk_record !== undefined) {
-        var disk_sum = _.reduce(disk_record.disk_points, function(memo, num){ return memo + num; }, 0);
-        var disk_average = parseFloat(disk_sum/disk_record.disk_points.length).toFixed(2)
-        var disk_maximum = parseFloat(Math.max(disk_record.disk_points)).toFixed(2)
-        var disk_minimum = parseFloat(Math.min(disk_record.disk_points)).toFixed(2)
-      } else {
-        var disk_maximum = "N/A"
-        var disk_average = "N/A"
-        var disk_minimum = "N/A"
-      }
-      results.push(
-        {
-          zone: ds_compute_utilization[i].zone,
-		  projectId: ds_compute_utilization[i].projectId,
-          instance_id: instance_id,
-          points: points,
-          label_instance_name: ds_compute_utilization[i].label_instance_name,
-          cpu_average: parseFloat(ds_compute_utilization[i].avg_cpu_points).toFixed(2),
-          cpu_maximum: parseFloat(ds_compute_utilization[i].max_cpu_points).toFixed(2),
-          cpu_minimum: parseFloat(ds_compute_utilization[i].min_cpu_points).toFixed(2),
-          mem_average: memory_average,
-          mem_maximum: memory_maximum,
-          mem_minimum: memory_minimum,
-          disk_average: disk_average,
-          disk_maximum: disk_maximum,
-          disk_minimum: disk_minimum
+        var points = ds_compute_utilization[i].cpu_points
+        if ( points === null || points === undefined ) {
+          var cpu_maximum = "101"
+          var cpu_average = "101"
+          var cpu_minimum = "101"
+        } else {
+          var cpu_maximum = parseFloat( points.reduce( function (x, y) { return Math.max(x, y) } )).toFixed(2)
+          var cpu_sum = _.reduce(points, function(memo, num){ return memo + num; }, 0);
+          var cpu_average = parseFloat(cpu_sum / points.length).toFixed(2)
+          var cpu_minimum = parseFloat( points.reduce( function (x, y) { return Math.min(x, y) } )).toFixed(2)
         }
-      )
+
+        var memory_record = _.find(ds_memory_utilization, function(record) { return record.instance_id == instance_id; })
+        if (memory_record != null && memory_record !== undefined ) {
+          var memory_maximum = parseFloat(Math.max(memory_record.mem_points)).toFixed(2)
+          var memory_sum = _.reduce(memory_record.mem_points, function(memo, num){ return memo + num; }, 0);
+          var memory_average = parseFloat(memory_sum/memory_record.mem_points.length).toFixed(2)
+          var memory_minimum = parseFloat(Math.min(memory_record.mem_points)).toFixed(2)
+        } else {
+          var memory_maximum = "N/A"
+          var memory_average = "N/A"
+          var memory_minimum = "N/A"
+        }
+
+        results.push(
+          {
+            zone: ds_compute_utilization[i].zone,
+            projectId: ds_compute_utilization[i].projectId,
+            instance_id: instance_id,
+            label_instance_name: ds_compute_utilization[i].label_instance_name,
+            cpu_average: cpu_average,
+            cpu_maximum: cpu_maximum,
+            cpu_minimum: cpu_minimum,
+            mem_average: memory_average,
+            mem_maximum: memory_maximum,
+            mem_minimum: memory_minimum,
+          }
+        )
+      }
     }
   EOS
 end
@@ -380,6 +356,7 @@ script "js_add_instance_data", type: "javascript" do
     }
   EOS
 end
+
 ###############################################################################
 # Policy
 ###############################################################################
@@ -407,8 +384,11 @@ policy "pol_utilization" do
       field "machine_type" do
         label "Current Machine Type"
       end
+      field "next_machine_type" do
+        label "Next Machine Type"
+      end
       field "next_instance_size" do
-        label "Machine Type To Downsize" 
+        label "Machine Type To Downsize"
       end
       field "cpu_maximum" do
         label "CPU Maximum %"
@@ -418,15 +398,6 @@ policy "pol_utilization" do
       end
       field "cpu_average" do
         label "CPU Average %"
-      end
-      field "disk_maximum" do
-        label "Disk Maximum %"
-      end
-      field "disk_minimum" do
-        label "Disk Minimum %"
-      end
-      field "disk_average" do
-        label "Disk Average %"
       end
       field "mem_maximum" do
         label "Memory Maximum %"
@@ -440,29 +411,31 @@ policy "pol_utilization" do
       field "tagKeyValue" do
         label "Tags"
       end
+      field "name" do
+        label "Name"
+      end
+      field "machine_type_url" do
+        label "Machine Type URL"
+      end
     end
   end
 end
-
 
 ###############################################################################
 # Escalations
 ###############################################################################
 
 escalation "email" do
+  automatic true
+  label "Send Mail"
+  description "Sends incidents email"
   email $param_email
 end
 
 escalation "esc_downsize_instances" do
-  request_approval  do
-    label "Approve Instances to downsizing"
-    description "Approve escalation to downsize the instance(s)"
-    parameter "approval_reason" do
-      type "string"
-      label "Reason for Approval"
-      description "Explain why you are approving the action"
-    end
-  end
+  automatic contains($param_automatic_action, "Downsize Instances")
+  label "Downsize Instances"
+  description "Approval to downsize all selected instances"
   run "downsize_instances", data
 end
 
@@ -614,7 +587,7 @@ define rollback($item, $param_google_project) do
   call get_instance($item, $param_google_project) retrieve $status_response
   $state = $status_response["status"]
   if include?($status_response["machineType"], $item["machine_type"])
-    # Instance is still the original size, just make sure it's running
+    # Instance is still the original size, just make sure its running
     if $state != "RUNNING"
       # instance is not running, start it
       call start_instances($item, $param_google_project) retrieve $status_code

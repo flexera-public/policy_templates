@@ -14,28 +14,16 @@ When a publicly accessible RDS instance is detected, an email action is triggere
 
 - *Email addresses to notify* - Email addresses of the recipients you wish to notify when new incidents are created
 - *Tags to ignore* - List of tags that will exclude resources from being evaluated by this policy. Multiple tags are evaluated as an 'OR' condition. Tag keys or key/value pairs can be listed. Example: 'test,env=dev'
+- *Automatic Actions* - When this value is set, this policy will automatically take the selected action(s).
+
+Please note that the "Automatic Actions" parameter contains a list of action(s) that can be performed on the resources. When it is selected, the policy will automatically execute the corresponding action on the data that failed the checks, post incident generation. Please leave it blank for *manual* action.
+For example if a user selects the "Update RDS Instances" action while applying the policy, all the resources that didn't satisfy the policy condition will be updated.
 
 ## Policy Actions
 
 - Sends an email notification
 - Disable the publicly accessible RDS instances after approval
-- Delete publicly accessible RDS instances after approval (optional)
-
-Perform below steps to enable delete action.
-
-- Edit the file [AWS_Publicly_Accessible_RDS_Instances](/security/aws/rds_publicly_accessible/aws_publicly_accessible_rds_instances.pt)
-- uncomment below mentioned lines
-
-```javascript
-   escalate $delete_publicly_accessible_RDS_instances_approval
-     check logic_or(
-      eq(val(item, "delete_protection"), "YES"),
-      ne(val(item, "db_instance_status"), "available")
-    )
-```
-
-- And comment the line which contains 'check eq(val(item, "publicly_accessible"), "false")', save the changes.
-- upload the modified file and apply the policy.
+- Delete publicly accessible RDS instances after approval
 
 Note:
 

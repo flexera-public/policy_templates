@@ -1,4 +1,8 @@
-# ChangeLog
+# Changelog
+
+## v1.5
+
+- Added Resource tabel
 
 ## v1.4
 

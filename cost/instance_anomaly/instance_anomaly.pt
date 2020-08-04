@@ -6,7 +6,7 @@ long_description ""
 severity "medium"
 category "Cost"
 info(
-  version: "1.2",
+  version: "1.3",
   provider: "Flexera Cloud Management",
   service: "",
   policy_set: ""
@@ -113,6 +113,7 @@ script "js_check_instances", type: "javascript" do
 
   	for (var i = 0; i < ds_instances.length; i++ ) {
   		var instance = ds_instances[i]
+		var uid=Instance["in_id"]
   		var links = instance["in_links"]
   		var cloud = instance["in_cloudName"]
   		var region = instance["in_cloudRegion"]
@@ -128,7 +129,7 @@ script "js_check_instances", type: "javascript" do
 
 	  		// First, ensure that the cloud is in the hash
 	  		if (hash[key] == null) {
-	  			hash[key] = {"cloud": cloud, "region":region, "pretty_30":ago_30_pretty, "pretty_60":ago_60_pretty, "ago_30":0, "ago_60":0 }
+	  			hash[key] = {"cloud": cloud, "id":uid, "region":region, "pretty_30":ago_30_pretty, "pretty_60":ago_60_pretty, "ago_30":0, "ago_60":0 }
 	  		}
 
   			if (created <= ago_30) {
@@ -176,21 +177,28 @@ end
 ###############################################################################
 
 policy "check_percent_change" do
-	validate_each $ds_check_instances do
+  validate_each $ds_check_instances do
    	summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): Instance count threshold exceeded"
-  	detail_template <<-EOS
-Instance count report: {{ rs_project_name }} (ID: {{ rs_project_id }})\n
-Date span [30 days ago: {{with(index data 0)}}{{.pretty_30}}{{end}}] - [60 days ago: {{with(index data 0)}}{{.pretty_60}}{{end}}] \n
-			
-| Cloud | Region | Instances Last 30 days | Instances Previous 30 days |
-| ----- | ------ | ----------- | ----------- |
-{{ range data -}}
-| {{.cloud}} | {{.region}} | {{.ago_30}} | {{.ago_60}} |
-{{ end -}}
-EOS
-		check false
-		escalate $email_threshold_report
-	end # validate
+    check false
+	escalate $email_threshold_report
+	export do
+	  field "cloud" do
+	    label "Cloud"
+	  end
+	  field "region" do
+	    label "Region"
+	  end
+	  field "ago_30" do
+	    label "Instances Last 30 days"
+	  end
+	  field "ago_60" do
+	    label "Instances Previous 30 days"
+	  end
+	  field "id" do
+	    label "ID"
+	  end
+	end
+  end # validate
 end # policy
 
 ###############################################################################
@@ -198,7 +206,9 @@ end # policy
 ###############################################################################
 
 escalation "email_threshold_report" do
-  # Let the identified folks know that instance count is out of range
+  automatic true
+  label "Sends Email"
+  description "Sends Incident Email"
   email $param_emails
-end # escalation
+end
 

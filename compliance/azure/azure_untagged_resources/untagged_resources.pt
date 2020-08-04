@@ -1,0 +1,329 @@
+name "Azure Untagged Resources"
+rs_pt_ver 20180301
+type "policy"
+short_description "Find all Azure resources missing any of the user provided tags with the option to update the resources with the missing tags. See the [README (https://github.com/flexera/policy_templates/tree/master/compliance/azure_untagged_resources) and [docs.rightscale.com/policies](https://docs.rightscale.com/policies/) to learn more."
+category "compliance"
+severity "low"
+info(
+   version: "2.0", 
+   provider: "Azure", 
+   service: "",
+   policy_set: "Untagged Resources"
+ )
+
+###############################################################################
+# User inputs 
+###############################################################################
+
+parameter "param_email" do
+  type "list"
+  label "Email addresses to notify"
+  description "Email addresses of the recipients you wish to notify when new incidents are created"
+end
+
+parameter "param_tag_key" do
+  type "list"
+  label "Tag Key"
+  category "Azure"
+  allowed_pattern /\S/
+  description "List of tags keys to find resources which are not tagged by given inputs"
+  constraint_description <<-EOS
+    This is a mandatory field.
+  EOS
+end 
+
+###############################################################################
+# Authentication
+###############################################################################
+
+credentials "azure_auth" do
+  schemes "oauth2"
+  label "Azure"
+  description "Select the Azure Resource Manager Credential from the list."
+  tags "provider=azure_rm"
+end
+
+###############################################################################
+# Pagination
+###############################################################################
+
+pagination "azure_pagination" do
+  get_page_marker do
+    body_path "nextLink"
+  end
+  set_page_marker do
+    uri true
+  end
+end
+
+###############################################################################
+# Datasources
+###############################################################################
+
+datasource "ds_subscriptions" do
+  request do
+    auth $azure_auth
+    pagination $azure_pagination
+    host "management.azure.com"
+    path "/subscriptions/"
+    query "api-version","2018-06-01"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "value[*]") do
+      field "subscriptionId", jmes_path(col_item,"subscriptionId")
+      field "subscriptionName", jmes_path(col_item,"displayName")
+    end
+  end
+end
+
+datasource "ds_azure_resources" do
+  iterate $ds_subscriptions
+  request do
+    auth $azure_auth
+    pagination $azure_pagination
+    host "management.azure.com"
+      path join(["/subscriptions/", val(iter_item,"subscriptionId"), "/resources"])
+    query "api-version","2018-02-01"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "value[*]") do
+      field "subscriptionId", val(iter_item,"subscriptionId")
+      field "subscriptionName", val(iter_item,"subscriptionName")
+      field "id", jmes_path(col_item,"id")
+      field "region", jmes_path(col_item,"location")
+      field "name", jmes_path(col_item,"name")
+      field "tags", jmes_path(col_item,"tags")
+    end
+  end
+end
+
+datasource "ds_filtered_resources" do
+  run_script $js_filter_resources, $ds_azure_resources, $param_tag_key
+end
+
+###############################################################################
+# Scripts
+###############################################################################
+
+script "js_filter_resources", type: "javascript" do
+  parameters "ds_azure_resources", "param_tag_key"
+  result "result"
+  code <<-EOS
+    var result = [];	
+    var param_tag_key_lower=[];
+    var all_input_tags;
+    for(var j=0; j < param_tag_key.length; j++){
+      param_tag_key_lower[j]=param_tag_key[j].toString().toLowerCase();
+      all_input_tags=all_input_tags+','+param_tag_key_lower[j];
+    }
+    // Iterate through all resources
+    _.each(ds_azure_resources, function(ar){
+      var id = ar.id ;
+      var rg_split = id.split('/') ;
+      var resource_group_name = rg_split[4] ;
+      var namespace = rg_split[6] ;
+      var resource_type = rg_split[7] ;
+      var resource_tags = JSON.stringify(ar.tags);
+      var isResMissedTag=false;
+      var all_include_tag='';
+      var all_missed_tag=''; 
+      var all_tags={};
+      if(!(_.isEmpty(resource_tags))){
+      all_tags=ar.tags;
+      }
+      for(var j=0; j < param_tag_key_lower.length; j++){		  
+       if(_.isEmpty(resource_tags) || (resource_tags.toLowerCase().indexOf(param_tag_key_lower[j].toLowerCase()))==-1){
+         isResMissedTag=true;
+         all_missed_tag=all_missed_tag+" "+param_tag_key_lower[j];
+        }else{
+         all_include_tag=all_include_tag+" "+param_tag_key_lower[j];
+       }
+      }
+
+    if(isResMissedTag){	  
+      result.push({
+        subscriptionId: ar["subscriptionId"],
+        subscriptionName : ar["subscriptionName"],
+        id: ar["id"],
+        region: ar["region"],
+        name: ar["name"],
+        resource_group: resource_group_name,
+        namespace: namespace,
+        resource_type: resource_type,
+        all_missed_tag: all_missed_tag,
+        all_include_tag: resource_tags,
+        all_tags: all_tags		
+        })
+      }		  
+    })	
+    result = _.sortBy(result, 'subscriptionName');
+    result = _.sortBy(result, 'resource_type');	
+    result = _.sortBy(result, 'name');
+
+EOS
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "policy_azure_resource" do
+  validate $ds_filtered_resources do
+    summary_template "{{ len data }} Azure Resources out of compliance."
+    escalate $esc_email
+    escalate $esc_tag_resources
+    check eq(size(data),0) 
+    export do
+      resource_level true
+      field "subscriptionName" do
+        label "Subscription Name"
+      end
+      field "resource_type" do
+        label "Resource Type"
+      end	  
+      field "name" do
+        label "Resource Name"
+      end	  
+      field "resource_group" do
+        label "Resource Group"
+      end
+      field "region" do
+        label "Azure Region"
+      end
+     field "id" do
+        label "Resource ID"
+      end
+      field "all_include_tag" do
+        label "Existing Tags"
+      end
+      field "all_missed_tag" do
+        label "Missing Tags"
+      end
+      field "subscriptionId" do
+        label "Subscription ID"
+      end
+      field "namespace" do
+        label "Namespace"
+      end
+      field "all_tags" do
+        label "All Tags"
+      end
+    end	
+  end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_email" do
+   automatic true
+   label "Sends Email"
+   description "Sends Incident Email"
+   email $param_email
+end
+
+escalation "esc_tag_resources" do
+   automatic false
+   label "Tag Resources"
+   description "Add Tags to the selected resources"
+   parameter "param_tags_to_add" do
+      type "list"
+      label "Add Tags"
+      description "Add Tags to the selected resource"
+   end 
+  run "tag_resources", data, $param_tags_to_add
+end
+
+###############################################################################
+# Cloud Workflow
+###############################################################################
+
+define tag_resources($data, $param_tags_to_add) return $all_responses do
+  $$log = []
+  $all_responses = []
+
+   $subscriptionId = first($data)["subscriptionId"]
+    $$log << "SubscriptionId: "+$subscriptionId
+	
+    $providers_response = http_request(
+    auth: $$azure_auth,
+    verb: "get",
+    host: "management.azure.com",
+    https: true,
+    href: "/subscriptions/" + $subscriptionId +"/providers",
+    query_strings: {
+      "api-version": "2018-05-01"
+    },
+    headers: {
+      "cache-control": "no-cache",
+      "content-type": "application/json"
+    }    
+  )  
+  
+  foreach $item in $data do 
+    $providers_array = $providers_response["body"]["value"]
+    $$log << "ID: "+$item["id"]
+    $namespace = $item["namespace"]
+    $$log << "Namespace: "+$namespace
+    $resource_type = $item["resource_type"]
+    $$log << "Resource Type: "+$resource_type
+    $namespace_obj = select($providers_array, {"namespace": $namespace})
+    if $namespace_obj == []
+      $namespace_obj = select($providers_array, {"namespace": downcase($namespace)})
+    end 
+    $resource_type_obj = select($namespace_obj[0]["resourceTypes"], {"resourceType": $resource_type})
+    $api_versions = $resource_type_obj[0]["apiVersions"]
+    $api_version = first($api_versions)
+    $$log << "API Version: "+$api_version
+
+    $new_tags = {}
+    $new_tags = $item["all_tags"] 
+    foreach $tag in $param_tags_to_add do
+      $new_tags[first(split($tag,"="))]=last(split($tag,"="))
+    end
+    sub on_error: handle_error($update_resource_response) do 
+      $update_resource_response = http_request(
+      auth: $$azure_auth,
+        verb: "patch",
+        host: "management.azure.com",
+        https: true,
+        href: $item["id"],
+        query_strings: {
+          "api-version": $api_version
+        },
+        headers: {
+          "cache-control": "no-cache",
+          "content-type": "application/json"
+        },
+        body: {"tags": $new_tags}
+      )
+    end
+    $all_responses << $update_resource_response
+  end
+end
+
+define handle_error($response) do 
+  $status_code = $response["code"]
+  if $status_code == 404
+    $_error_behavior = "skip"
+  else 
+    $_error_behavior = "raise"
+  end 
+end 
+
+define sys_log($subject, $detail) do
+
+    rs_cm.audit_entries.create(
+      notify: "None",
+      audit_entry: {
+        auditee_href: @@account,
+        summary: $subject,
+        detail: $detail
+      }
+    )
+end
