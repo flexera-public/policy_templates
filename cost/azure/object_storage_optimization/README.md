@@ -17,12 +17,21 @@ This policy has the following input parameters required when launching the polic
 - *Email addresses to notify* - Email addresses of the recipients you wish to notify when new incidents are created
 - *Move to Cool tier after days last modified* - leave blank to skip moving
 - *Move to Archive tier after days last modified* - leave blank to skip moving
+- *Automatic Actions* - When this value is set, this policy will automatically take the selected action(s).
+
+Please note that the "*Automatic Actions*" parameter contains a list of action(s) that can be performed on the resources. When it is selected, the policy will automatically execute the corresponding action on the data that failed the checks, post incident generation. Please leave it blank for *manual* action.
+For example if a user selects the "Modify Blob storage" action while applying the policy, all the identified older objects can be moved to Cool or Archive tier.
 
 ## Prerequisites
 
 This policy uses [credentials](https://docs.rightscale.com/policies/users/guides/credential_management.html) for connecting to the cloud -- in order to apply this policy you must have a credential registered in the system that is compatible with this policy. If there are no credentials listed when you apply the policy, please contact your cloud admin and ask them to register a credential that is compatible with this policy. The information below should be consulted when creating the credential.
 
 ### Credential configuration
+
+Please create separate credentials for each storage account by selecting Credential Type as OAuth2 and mention the storage account name in the Additional Parameters resource URL.
+Example resource : `https://my_azure_storage_account.blob.core.windows.net/` , replace my_azure_storage_account with the name of the storage account.
+
+For more details, please refer [API Usage](https://docs.rightscale.com/policies/users/guides/credential_management.html#provider-specific-credentials--azure--) to create Azure RM credentials with oauth2.
 
 For administrators [creating and managing credentials](https://docs.rightscale.com/policies/users/guides/credential_management.html) to use with this policy, the following information is needed:
 

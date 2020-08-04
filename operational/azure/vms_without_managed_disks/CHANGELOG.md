@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.3
+
+- Added Resource table
+
 ## v2.2
 
 - Fix incident table rendering issue

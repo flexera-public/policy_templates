@@ -41,6 +41,7 @@ Please contact sales@flexera.com to learn more.
 - [AWS Reserved Instances Report by Billing Center](./cost/aws/reserved_instances/report_by_bc)
 - [AWS Reserved Instance Recommendations](./cost/aws/reserved_instances/recommendations)
 - [AWS Savings Plan Recommendations](./cost/aws/savings_plan/recommendations)
+- [AWS Unused IP Addresses](./cost/aws/unused_ip_addresses)
 
 ##### Database
 
@@ -66,10 +67,11 @@ Please contact sales@flexera.com to learn more.
 
 - [Azure Hybrid Use Benefit](./cost/azure/hybrid_use_benefit/)
 - [Azure Idle Compute Instances](./cost/azure/idle_compute_instances/)
-- [Azure Inefficient Instance Utilization using Log Analytics](./cost/azure/instances_log_analitics_utilization/)
+- [Azure Inefficient Instance Utilization using Log Analytics](./cost/azure/instances_log_analytics_utilization/)
 - [Azure Expiring Reserved Instances](./cost/azure/reserved_instances/expiration)
 - [Azure Reserved Instance Utilization](./cost/azure/reserved_instances/utilization/)
 - [Azure Reserved Instance Recommendations](./cost/azure/reserved_instances/recommendations)
+- [Azure Unused IP Addresses](./cost/azure/unused_ip_addresses)
 
 ##### Database
 
@@ -155,9 +157,9 @@ Please contact sales@flexera.com to learn more.
 
 - [AWS Disallowed Regions](./compliance/aws/disallowed_regions/)
 - [AWS Unused ECS Clusters](./compliance/aws/ecs_unused/)
-- [AWS EC2 Instances not running FlexNet Inventory Agent - Cloud](./compliance/aws/instances_without_fnm_agent/)
-- [AWS EC2 Instances not running FlexNet Inventory Agent - On Premise](./compliance/aws/instances_without_fnm_agent_on_premise/)
+- [AWS EC2 Instances not running FlexNet Inventory Agent](./compliance/aws/instances_without_fnm_agent/)
 - [AWS Long-stopped Instances](./compliance/aws/long_stopped_instances/)
+- [AWS Untagged Resources](./compliance/aws/untagged_resources/)
 - [AWS Service Control Policy Audit](./compliance/aws/scp_audit/)
 - [AWS IAM Role Audit](./compliance/aws/iam_role_audit/)
 
@@ -165,13 +167,13 @@ Please contact sales@flexera.com to learn more.
 
 - [Azure AHUB Utilization with Manual Entry](./compliance/azure/ahub_manual/)
 - [Azure Disallowed Regions](./compliance/azure/azure_disallowed_regions)
-- [Azure Instances not running FlexNet Inventory Agent - Cloud](./compliance/azure/instances_without_fnm_agent/)
-- [Azure Instances not running FlexNet Inventory Agent - On Premise](./compliance/azure/instances_without_fnm_agent_on_premise/)
+- [Azure Instances not running FlexNet Inventory Agent](./compliance/azure/instances_without_fnm_agent/)
 - [Azure Long Stopped Instances](./compliance/azure/azure_long_stopped_instances)
+- [Azure Policy Audit](./compliance/azure/azure_policy_audit)
 - [Azure Regulatory Compliance](./compliance/azure/compliance_score/)
 - [Azure Subscription Access](./compliance/azure/subscription_access/)
 - [Azure Tag Resources with Resource Group Name](./compliance/tags/azure_rg_tags)
-- [Azure Policy Audit](./compliance/azure/azure_policy_audit)
+- [Azure Untagged Resources](./compliance/azure/azure_untagged_resources)
 
 #### Google
 
@@ -180,8 +182,7 @@ Please contact sales@flexera.com to learn more.
 
 #### Other
 
-- [FlexNet Manager Licenses At Risk - Cloud](./compliance/fnms/fnms_licenses_at_risk/)
-- [FlexNet Manager Licenses At Risk - On Premise](./compliance/fnms/fnms_licenses_at_risk_on_premise/)
+- [FlexNet Manager Licenses At Risk](./compliance/fnms/fnms_licenses_at_risk/)
 - [FlexNet Manager Low Available Licenses](./compliance/fnms/fnms_low_licenses_available)
 - [GitHub.com Available Seats](./compliance/github/available_seats/)
 - [GitHub.com Unpermitted Outside Collaborators](./compliance/github/outside_collaborators/)
@@ -222,8 +223,7 @@ Please contact sales@flexera.com to learn more.
 
 #### Other
 
-- [Schedule FlexNet Manager Report - Cloud](./operational/fnms/schedule_fnms_reports/)
-- [Schedule FlexNet Manager Report - On Premise](./operational/fnms/schedule_fnms_reports_on_premise/)
+- [Schedule FlexNet Manager Report](./operational/fnms/schedule_fnms_reports/)
 
 ### SaaS Management
 

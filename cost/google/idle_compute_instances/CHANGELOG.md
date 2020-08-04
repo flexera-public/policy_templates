@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.5
+
+- Updated escalation block
+
 ## v2.4
 
 - Bug fix for when metrics are absent in a project

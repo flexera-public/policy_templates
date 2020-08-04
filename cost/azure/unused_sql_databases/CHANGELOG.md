@@ -1,5 +1,12 @@
 # Changelog
 
+## v2.4
+
+- Added Resource table
+## v2.3
+
+- fix tag exclusion logic
+
 ## v2.2
 
 - fix null error for sku.name

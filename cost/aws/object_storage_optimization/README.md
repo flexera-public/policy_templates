@@ -17,15 +17,10 @@ This policy has the following input parameters required when launching the polic
 - *Days since last modified to move to Glacier* - Move to glacier after days last modified - leave blank to skip moving
 - *Days since last modified to move to Deep Archive* - Move to glacier deep archive after days last modified- leave blank to skip moving
 - *Exclude Tag* - List of tags that will exclude s3 objects from being evaluated by this policy. Multiple tags are evaluated as an 'OR' condition. Tag keys or key/value pairs can be listed. Example: 'test,env=dev'
+- *Automatic Actions* - When this value is set, this policy will automatically take the selected action(s).
 
-## Enable delete action
-
-Perform below steps to enable delete action.
-
-- Edit the file [AWS Object Storage Optimization](https://github.com/flexera/policy_templates/tree/master/cost/aws/object_storage_optimization/aws_object_storage_optimization.pt)
-- uncomment the line which contains 'escalate $esc_delete_s3_objects_approval'
-- comment the line which contains '$esc_modify_s3_object_storage_class_approval' and save the changes.
-- upload the modified file and apply the policy.
+Please note that the "Automatic Actions" parameter contains a list of action(s) that can be performed on the resources. When it is selected, the policy will automatically execute the corresponding action on the data that failed the checks, post incident generation. Please leave it blank for *manual* action.
+For example if a user selects the "Update S3 Object Class" action while applying the policy, all the objects that didn't satisfy the policy condition will be updated.
 
 ## Prerequisites
 
