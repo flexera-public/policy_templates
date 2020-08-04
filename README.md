@@ -169,10 +169,11 @@ Please contact sales@flexera.com to learn more.
 - [Azure Disallowed Regions](./compliance/azure/azure_disallowed_regions)
 - [Azure Instances not running FlexNet Inventory Agent](./compliance/azure/instances_without_fnm_agent/)
 - [Azure Long Stopped Instances](./compliance/azure/azure_long_stopped_instances)
+- [Azure Policy Audit](./compliance/azure/azure_policy_audit)
 - [Azure Regulatory Compliance](./compliance/azure/compliance_score/)
 - [Azure Subscription Access](./compliance/azure/subscription_access/)
 - [Azure Tag Resources with Resource Group Name](./compliance/tags/azure_rg_tags)
-- [Azure Policy Audit](./compliance/azure/azure_policy_audit)
+- [Azure Untagged Resources](./compliance/azure/azure_untagged_resources)
 
 #### Google
 
