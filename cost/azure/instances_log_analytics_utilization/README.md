@@ -17,6 +17,10 @@ This policy has the following input parameters required when launching the polic
 - *Average used CPU percentage* - Utilization below this percentage will raise an incident to tag the instance. Providing -1 will turn off this metric for consideration.
 - *Exclusion Tag Key* - An Azure-native instance tag to ignore instances that you don't want to consider for downsizing. Only supply the tag key
 - *Email addresses of the recipients you wish to notify* - A list of email addresses to notify
+- *Automatic Actions* - When this value is set, this policy will automatically take the selected action(s).
+
+Please note that the "Automatic Actions" parameter contains a list of action(s) that can be performed on the resources. When it is selected, the policy will automatically execute the corresponding action on the data that failed the checks, post incident generation. Please leave it blank for *manual* action.
+For example if a user selects the "Downsize Instances" action while applying the policy, all the resources that didn't satisfy the policy condition will be downsized.
 
 ## Policy Actions
 
@@ -25,9 +29,7 @@ This policy has the following input parameters required when launching the polic
 
 ## Prerequisites
 
-Azure Service Principal (AKA Azure Active Directory Application) with the appropriate permissions to manage resources in the target subscription.
-
-In addition, the Service Principal will need the `Log Analytics Reader` role on all Log Analytics Workspaces the VMs in the subscription are sending performance metrics to.
+Azure Service Principal (AKA Azure Active Directory Application) with the below mentioned role and permission are required in the target subscription.
 
 Virtual Machines must have the Log Analytics/OMS Agent installed for sending performance metrics to a Azure Log Analytics workspace.
 
@@ -36,13 +38,19 @@ This policy uses [credentials](https://docs.rightscale.com/policies/users/guides
 ### Credential configuration
 
 For administrators [creating and managing credentials](https://docs.rightscale.com/policies/users/guides/credential_management.html) to use with this policy, the following information is needed:
+Two provider tags needs to be created using the same credentials for running this policy.
 
-Provider tag value to match this policy: `azure_rm`
+Provider tag value to match this policy: `azure_rm` and `azure_log`
 
-Required permissions in the provider:
+Required role and permission in the provider:
 
-- Microsoft.Compute/skus/read
-- Microsoft.OperationalInsights/workspaces/analytics/query/action
+Role:
+
+- [Log Analytics Reader](https://docs.microsoft.com/en-us/azure/azure-monitor/platform/manage-access)
+
+Permission:
+
+- [Microsoft.Compute/virtualMachines/write](https://docs.microsoft.com/en-us/azure/role-based-access-control/resource-provider-operations#microsoftcompute)
 
 ## Supported Clouds
 
