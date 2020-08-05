@@ -1,0 +1,258 @@
+name "AWS Unused IP Addresses" 
+rs_pt_ver 20180301 
+type "policy" 
+short_description "Checks AWS for unused IP Addresses and deletes them. See the [README](https://github.com/flexera/policy_templates/tree/master/cost/aws/unused_ip_addresses/) and [docs.rightscale.com/policies](https://docs.rightscale.com/policies/) to learn more." 
+long_description ""  
+severity "low" 
+category "Cost" 
+info(
+    version: "2.1",
+    provider: "AWS",
+    service: "EC2",
+    policy_set: "Unused IP Addresses"
+  )
+	
+
+###############################################################################
+# Parameters
+###############################################################################
+
+parameter "param_exclude_tags" do
+  type "list"
+  label "Exclusion Tags Key:Value"
+  description "AWS tag to ignore Elastic IPs. Format: Key:Value"
+end
+
+parameter "param_email" do
+  type "list"
+  label "Email addresses"
+  description "Email addresses of the recipients you wish to notify when new incidents are created"
+end
+
+
+parameter "param_automatic_action" do
+  type "list"
+  label "Automatic Actions"
+  description "When this value is set, this policy will automatically take the selected action(s)"
+  allowed_values ["Delete Unused IPs"]
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+credentials "auth_aws" do
+  schemes "aws","aws_sts"
+  label "AWS"
+  description "Select the AWS Cloud Credential from the list."
+  tags "provider=aws"
+end
+
+pagination "aws_pagination" do
+  get_page_marker do
+    body_path "//DescribeAddressesResponse/nextToken"
+  end
+  set_page_marker do
+    query "nextToken"
+  end
+end
+
+###############################################################################
+# Datasources
+###############################################################################
+
+datasource "ds_regions_list" do
+  request do
+    verb "GET"
+    host "raw.githubusercontent.com"
+    path "/rightscale/policy_templates/master/data/aws/regions.json"
+    header "User-Agent", "RS Policies"
+  end
+end
+
+datasource "ds_aws_elastic_ip_address" do
+  iterate $ds_regions_list
+  request do
+    auth $auth_aws
+    pagination $aws_pagination
+    host join(["ec2.",val(iter_item,"region"), ".amazonaws.com"])
+    path "/"
+    query "Action", "DescribeAddresses"
+    query "Version", "2016-11-15"
+  end
+  result do
+    encoding "xml"
+    collect xpath(response, "//DescribeAddressesResponse/addressesSet/item") do
+      field "publicIp", xpath(col_item,"publicIp")
+      field "domain" , xpath(col_item,"domain")
+      field "instance_id", xpath(col_item, "instanceId")
+      field "region", xpath(col_item,"networkBorderGroup")
+      field "allocation_id", xpath(col_item,"allocationId")
+      field "tags" do
+        collect xpath(col_item, "tagSet/item") do
+          field "tagKey", xpath(col_item, "key")
+          field "tagValue", xpath(col_item, "value")
+        end
+      end
+    end
+  end
+end
+
+datasource "ds_filter_ip" do
+  run_script $js_filter_ip_response, $ds_aws_elastic_ip_address, $param_exclude_tags
+end
+
+###############################################################################
+# Scripts
+###############################################################################
+
+script "js_filter_ip_response", type: "javascript" do
+  parameters "ds_aws_elastic_ip_address", "exclusion_tag"
+  result "result"
+  code <<-EOS
+  var result=[];
+  var param_exclude_tags_lower=[];
+  for(var j=0;j<exclusion_tag.length;j++){
+    param_exclude_tags_lower[j] = exclusion_tag[j].toString().toLowerCase();
+  }
+  for(var i=0;i<ds_aws_elastic_ip_address.length;i++){
+    instance = ds_aws_elastic_ip_address[i];  
+    var tags = instance['tags'];
+    var isTagMatched = false;
+    var tagKeyValue = "";
+    for(var k=0; k < tags.length; k++){
+      tag = tags[k];
+      if((param_exclude_tags_lower.indexOf((tag['tagKey']).toLowerCase()) !== -1) || (param_exclude_tags_lower.indexOf((tag['tagKey']+':'+tag['tagValue']).toLowerCase()) !== -1)){
+        isTagMatched = true;
+      }
+      // Constructing tags with comma separated to display in detail_template
+      if((tag['tagValue']).length > 0){
+        tagKeyValue = tagKeyValue+" , "+tag['tagKey']+':'+tag['tagValue'];
+      }
+      else{
+        tagKeyValue = tagKeyValue+" , "+tag['tagKey'];
+      }
+    }
+    if(tagKeyValue === "" || tagKeyValue === " " || tagKeyValue == ""){
+      tagKeyValue = "< No Value >";
+    }
+    else{
+      tagKeyValue=tagKeyValue.slice(2);
+    }
+    //If the instance id is empty and IP tag does not match with entered param_exclude_tags
+    if(instance['instance_id']==""){
+      if(!(isTagMatched)){
+        result.push({
+          all_tags : (tagKeyValue),
+          domain:instance['domain'],
+          publicIp: instance['publicIp'],
+          region : instance["region"],
+          allocation_id:instance["allocation_id"]
+        })
+      }
+    }
+  }
+  EOS
+end
+
+###############################################################################
+# Escalations
+###############################################################################   
+	
+escalation "esc_email" do
+  automatic true
+  label "Sends Email"
+  description "Sends Incident Email"
+  email $param_email
+end
+
+escalation "esc_delete_ip_address" do
+  automatic contains($param_automatic_action, "Delete Unused IPs")
+  label "Delete IP"
+  description "Delete Selected Unused IP"
+  run "delete_unused_instances", data
+end
+
+###############################################################################
+# Policy
+##############################################################################
+
+policy "policy_unused_ip_addresses" do
+  validate $ds_filter_ip do
+    summary_template "Unused Elastic IP addresses in AWS"
+    check eq(size(data),0)
+    escalate $esc_email
+    escalate $esc_delete_ip_address
+    export do
+      resource_level true
+      field "id" do
+        label "Public IP"
+        path "publicIp"
+      end
+      field "domain" do
+        label "Domain"
+      end
+      field "region" do
+        label "Region"
+      end
+      field "all_tags" do
+        label "Tags"
+      end
+      field "allocation_id" do
+        label "Allocation Id"
+      end
+    end
+  end
+end
+
+###############################################################################
+# Cloud Workflow
+###############################################################################
+
+define delete_unused_instances($data) return $all_responses do
+  $all_responses = []
+  foreach $item in $data do
+    sub on_error: skip do
+      if $item["domain"]=="standard"
+        $response = http_request(
+          verb: "get",
+          host: join(["ec2.", $item["region"],".amazonaws.com"]),
+          auth: $$auth_aws,
+          href: "/",
+          query_strings:{
+            "Action":"ReleaseAddress",
+            "PublicIp":$item["publicIp"],
+            "Version":"2016-11-15"
+          },
+          https: true
+        )
+      elsif $item["domain"]=="vpc"
+        $response = http_request(
+          verb: "get",
+          host: join(["ec2.", $item["region"],".amazonaws.com"]),
+          auth: $$auth_aws,
+          href: "/",
+          query_strings:{
+            "Action":"ReleaseAddress",
+            "AllocationId":$item["allocation_id"],
+            "Version":"2016-11-15"
+          },
+          https: true
+        )
+      end
+      $all_responses << $response
+    end
+  end
+  call sys_log('Unused Elastic IPs response',to_s($all_responses))
+end
+
+define sys_log($subject, $detail) do
+  rs_cm.audit_entries.create(
+    notify: "None",
+    audit_entry: {
+      auditee_href: @@account,
+      summary: "AWS Delete "+ $subject,
+      detail: $detail
+    }
+  )
+end

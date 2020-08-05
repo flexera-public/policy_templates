@@ -6,7 +6,7 @@ long_description ""
 category "Cost"
 severity "low"
 info(
-  version: "2.2",
+  version: "2.4",
   provider: "Azure",
   service: "Compute",
   policy_set: "Idle Compute Instances"
@@ -37,6 +37,13 @@ parameter "param_exclusion_tag_key" do
   label "Exclusion Tag Key"
   description "Cloud native tag key to ignore instances. Example: exclude_utilization"
   type "string"
+end
+
+parameter "param_automatic_action" do
+  type "list"
+  label "Automatic Actions"
+  description "When this value is set, this policy will automatically take the selected action(s)"
+  allowed_values ["Terminate Instances"]
 end
 
 ###############################################################################
@@ -98,6 +105,7 @@ datasource "ds_azure_virtualmachines" do
 	path join(["/subscriptions/", val(iter_item,"subscriptionId"), "/providers/Microsoft.Compute/virtualMachines"])
     query "api-version","2019-03-01"
     header "User-Agent", "RS Policies"
+    ignore_status [404]
   end
   result do
     encoding "json"
@@ -128,6 +136,7 @@ datasource "ds_azure_instance_performance" do
     query "api-version","2016-09-01"
     query "timespan","P30D"
     header "User-Agent", "RS Policies"
+    ignore_status [404]
   end 
   result do
     encoding "json"
@@ -221,6 +230,9 @@ policy "azure_resource_policy" do
       field "subscriptionName" do
         label "Subscription Name"
       end
+      field "subscriptionId" do
+        label "Subscription Id"
+      end
       field "location" do
         label "Location"
       end
@@ -248,19 +260,16 @@ end
 ###############################################################################
 
 escalation "email" do
+  automatic true
+  label "Send Mail"
+  description "Sends incidents email"
   email $param_email
 end
 
 escalation "delete_resources" do
-  request_approval  do
-    label "Approve Resource Deletion"
-    description "Approve escalation to terminate the instance(s)"
-    parameter "approval_reason" do
-      type "string"
-      label "Reason for Approval"
-      description "Explain why you are approving the action"
-    end
-  end
+  automatic contains($param_automatic_action, "Terminate Instances")
+  label "Terminate Instances"
+  description "Approval to terminate all selected instances"
   run "delete_resources", data
 end
 

@@ -8,7 +8,7 @@ severity "low"
 default_frequency "daily"
 tenancy "single"
 info(
-  version: "1.6",
+  version: "1.7",
   provider: "Flexera Optima",
   service: "",
   policy_set: ""
@@ -105,8 +105,8 @@ datasource "ds_cloud_vendor_accounts" do
   request do
     auth $auth_rs
     host rs_optima_host
-    path join(["/analytics/orgs/",rs_org_id,"/cloud_vendor_accounts"])
-    header "Api-Version", "1.0"
+    path join(["/bill-analysis/orgs/",rs_org_id,"/cloud_vendor_accounts"])
+    header "Api-Version", "0.1"
     header "User-Agent", "RS Policies"
     query "cloud_vendor", "aws"
   end
@@ -396,6 +396,9 @@ end
 # Escalations
 ###############################################################################
 escalation "report_instances" do
+  automatic true
+  label "Send Mail"
+  description "Sends incidents email"
   email $param_email
 end
 
@@ -410,20 +413,36 @@ end
 policy "pol_aws_superseded_instance" do
   validate_each $ds_combined_instance_data do
     summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} possible superseded instances"
-    detail_template <<-EOS
-# Superseded Instances
-
-| Resource UID | Name | Current Instance Type | Region | New Instance Type | VPC Required | ENA Required | Monthly Estimated Cost |
-| ------------ | ---- | --------------------- | ------ | ----------------- | ------------ | ------------ | ---------------------- |
-{{ range data -}}
-| {{ if .warn }}**_{{ end -}}{{ .resource_id }}{{ if .warn }}_**{{ end -}} | {{ .name }} | {{.instance_type}} | {{.region}} | {{.new_instance_type}} | {{ if .vpc_incompatible_move }} **_TRUE_** {{else}} false {{end}} |  {{ if .ena_incompatible }} **_TRUE_** {{else}} false {{end}} | {{.run_rate}} |
-{{ end -}}
-
-___
-###### Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }}) within Org: {{ rs_org_name }} (Org ID: {{ rs_org_id }})
-EOS
     check logic_or(lt(to_n(val(item,"run_rate")),$param_threshold), lt(to_n(val(item,"run_rate")),$param_minimum_savings_threshold))
     escalate $report_instances
+    export do
+      # no actions so resource_level can be false				       
+      resource_level false
+      field "region" do
+        label "Region"
+      end
+      field "resource_id" do
+        label "Resource UID"
+      end
+      field "name" do
+        label "Name"
+      end
+      field "instance_type" do
+        label "Current Instance Type"
+      end
+      field "new_instance_type" do
+        label "New Instance Type"
+      end
+      field "vpc_incompatible_move" do
+        label "VPC Required"
+      end
+      field "ena_incompatible" do
+        label "ENA Required"
+      end
+      field "run_rate" do
+        label "ENA Required"
+      end
+    end 
   end
 end
 

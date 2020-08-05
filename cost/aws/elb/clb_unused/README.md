@@ -16,6 +16,10 @@ When an unused CLB is detected, an email action is triggered automatically to no
 
 - *Email addresses of the recipients you wish to notify* - A list of email addresses to notify
 - *Ignore tags* - CLB with any of these tags will be ignored
+- *Automatic Actions* - When this value is set, this policy will automatically take the selected action(s).
+
+Please note that the "*Automatic Actions*" parameter contains a list of action(s) that can be performed on the resources. When it is selected, the policy will automatically execute the corresponding action on the data that failed the checks, post incident generation. Please leave it blank for *manual* action.
+For example if a user selects the "Delete Load Balancers" action while applying the policy, all the identified unused load balancers will get deleted.
 
 ## Policy Actions
 
