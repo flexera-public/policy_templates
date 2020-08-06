@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.4
+
+- corrected the Exclude Tags parameter description
+
 ## v2.3
 
 - corrected the tag format
