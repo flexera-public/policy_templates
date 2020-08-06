@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.3
+
+- corrected the tag format
+
 ## v2.2
 
 - fix description
