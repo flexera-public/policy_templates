@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.3
+
+- fix description
+
 ## v2.2
 
 - adding incident resource table
