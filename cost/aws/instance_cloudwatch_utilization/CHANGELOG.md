@@ -1,5 +1,10 @@
 # Changelog
 
+## v2.4
+
+- Updated regex for param_exclusion_tag_key to allow for null
+- Updated next instance size logic to account for missing instance type in instance_types.json
+
 ## v2.3
 
 - Updated escalation block
