@@ -34,28 +34,26 @@ Required permissions in the provider:
 ```javascript
 {
   "Version": "2012-10-17",
-  "Statement":[
+  "Statement": [
     {
-      "Effect":"Allow",
-      "Action":["cloudwatch:GetMetricStatistics","cloudwatch:ListMetrics"],
-      "Resource":"*",
-      "Condition":{
-         "Bool":{
-            "aws:SecureTransport":"true"
-            }
-         }
-      },
-      {
-      "Effect":"Allow",
-      "Action":["ec2:DescribeInstances","ec2:DescribeTags"],
-      "Resource":"*",
-      "Condition":{
-         "Bool":{
-            "aws:SecureTransport":"true"
-            }
-         }
+      "Effect": "Allow",
+      "Action": [
+        "cloudwatch:GetMetricStatistics",
+        "cloudwatch:ListMetrics",
+        "ec2:DescribeInstances",
+        "ec2:DescribeTags",
+        "ec2:StopInstances",
+        "ec2:StartInstances",
+        "ec2:ModifyInstanceAttribute"
+      ],
+      "Resource": "*",
+      "Condition": {
+        "Bool": {
+          "aws:SecureTransport": "true"
+        }
       }
-   ]
+    }
+  ]
 }
 ```
 
