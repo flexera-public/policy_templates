@@ -26,7 +26,12 @@ This policy uses [credentials](https://docs.rightscale.com/policies/users/guides
 
 For administrators [creating and managing credentials](https://docs.rightscale.com/policies/users/guides/credential_management.html) to use with this policy, the following information is needed:
 
-Provider tag value to match this policy: `azure_rm`
+This policy requires two Microsoft Azure Resource Manager Credentials.  One credential
+must be created for the Resource `Resource Management` and one credential must be created for the Resource `Azure Active Directory`
+
+Resource Management Provider tag value to match this policy: `azure_rm`
+
+Azure Active Directory Provider tag value to match this policy: `azure_graph`
 
 Required permissions in the provider:
 

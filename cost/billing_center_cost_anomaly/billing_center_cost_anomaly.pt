@@ -8,7 +8,7 @@ category "Cost"
 tenancy "single"
 default_frequency "daily"
 
-info( version: "1.4",
+info( version: "1.6",
   provider: "Flexera Optima",
   service: "",
   policy_set:"")
@@ -387,40 +387,56 @@ script "js_format_costs", type: "javascript" do
     } else {
       var billingCenters = param_billing_centers.join()
     }
+ if(formatted_data.length != 0){
   report={
    formatted_data: formatted_data,
    billingCenters: billingCenters,
    currencyCode: cur
   }
-
+ }
 EOS
 end
 
 escalation "esc_budget_alert" do
+  automatic true
+  label "Sends Email"
+  description "Send incident email"
   email $param_email
 end
 
 policy "budget_alert" do
   validate $format_costs do
-    summary_template "Cost Anomaly Detected"
-    detail_template <<-EOS
-# Cost Anomaly Detected
-
+    summary_template "Cost Anomaly Detected
 ## Billing Centers: {{ data.billingCenters }}
 ### Bill Currency: {{ data.currencyCode }}
 ### Cost Metric: {{ parameters.param_cost_metric }}
-### Anomaly Threshold: {{ parameters.param_threshold }}
+### Anomaly Threshold: {{ parameters.param_threshold }}	
 ### Time Period: {{ parameters.param_days }}
-### Minimum Spend for Period:  {{ parameters.param_min_spend}}
-
-| Billing Center Name | Latest Period | Previous Period | Percent Change | Billing Center ID |
-| ------------------- | ------------: | --------------: | -------------- | ----------------- |
-{{ range data.formatted_data -}}
-| {{.name}} | {{.new_sum}} | {{.old_sum}} | {{.per_change}} | {{.id}}
-{{ end -}}
-
-EOS
+### Minimum Spend for Period:  {{ parameters.param_min_spend}}"
     escalate $esc_budget_alert
     check eq(1,0)
+    export do
+      resource_level true
+      field "name" do
+        label "Billing Center Name"
+        path "formatted_data.name"
+      end
+      field "new_sum" do
+        label "Latest Period"
+        path "formatted_data.new_sum"
+      end
+      field "old_sum" do
+        label "Previous Period"
+        path "formatted_data.old_sum"
+      end
+      field "per_change" do
+        label "Percent Change"
+        path "formatted_data.per_change"
+      end
+      field "id" do
+        label "Billing Center ID"
+        path "formatted_data.id"
+      end
+    end
   end
 end

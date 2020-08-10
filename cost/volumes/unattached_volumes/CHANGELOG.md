@@ -1,5 +1,17 @@
 # Changelog
 
+## v1.13
+
+- Updated escalation block
+
+## v1.12
+
+- Adding incident resource table
+
+## v.1.11
+
+- Included README link in the policy template
+
 ## v1.10
 
 - Updated the metadata

@@ -1,15 +1,15 @@
 name "GitHub.com Unpermitted Repository Names"
 rs_pt_ver 20180301
-short_description "Gets the names of all repositories under GitHub.com Organization(s) and creates incidents for any that do not match any of the whitelisted regex strings.  See the [README](https://github.com/rightscale/policy_templates/tree/master/compliance/github/repository_naming) and [docs.rightscale.com/policies](http://docs.rightscale.com/policies/) to learn more."
-long_description "Version: 1.1"
+short_description "Gets the names of all repositories under GitHub.com Organization(s) and creates incidents for any that do not match any of the whitelisted regex strings.  See the [README](https://github.com/flexera/policy_templates/tree/master/compliance/github/repository_naming) and [docs.rightscale.com/policies](https://docs.rightscale.com/policies/) to learn more."
+long_description ""
 severity "low"
 category "Compliance"
-tenancy "single"
-
-permission "read_creds" do
-  actions   "rs_cm.show_sensitive","rs_cm.index_sensitive"
-  resources "rs_cm.credentials"
-end
+info(
+  version: "2.1",
+  provider: "GitHub",
+  service: "",
+  policy_set: ""
+)
 
 parameter "param_email" do
   label "Email addresses of the recipients you wish to notify"
@@ -27,12 +27,11 @@ parameter "param_orgs" do
   label "Organizations on GitHub.com to scan"
 end
 
-
-auth "auth_github", type: "api_key" do
-  location "header"
-  field "Authorization"
-  type "token"
-  key cred("GITHUB_ORG_ADMIN_ACCESS_TOKEN")
+credentials "auth_github" do
+  schemes "api_key"
+  label "GitHub"
+  description "Select the Github Credential from the list."
+  tags "provider=github"
 end
 
 pagination "github_pagination" do
@@ -67,6 +66,7 @@ datasource "org_repos" do
   result do
     encoding "json"
     collect jmes_path(response, "[*]") do
+      field "id", jmes_path(col_item, "id")
       field "name", jmes_path(col_item, "name")
       field "repo_name", jmes_path(col_item, "name")
       field "repo_org", jmes_path(col_item, "owner.login")
@@ -88,6 +88,8 @@ for (var index = 0; index < org_repos.length; index++) {
     var repo = org_repos[index];
     // exclude white listed names
     if( !repo.repo_name.match(param_whitelist) ){
+        repo["repositoryFullName"] = "["+repo.repo_name+"](https://github.com/"+repo.full_name+")";
+        repo["auditLogFullName"] = "[Audit Log](https://github.com/organizations/"+repo.repo_org+"/settings/audit-log?utf8=%E2%9C%93&q=repo%3A"+repo.repo_org+"%2F"+repo.repo_name+")";
         invalid_org_repos.push(repo)
     }
 }
@@ -97,28 +99,31 @@ end
 policy "invalid_repos" do
   validate $invalid_repos do
     summary_template "GitHub.com Repository Naming Report"
-    detail_template <<-EOS
-# GitHub.com Repository Naming Report    
-
-| Organization | Repository | Audit Log Link |
-| ------------ | ---------- | ----------------- |
-{{ range data -}}
-  | {{.repo_org}} | [{{.repo_name}}](https://github.com/{{.full_name}}) | [Audit Log](https://github.com/organizations/{{.repo_org}}/settings/audit-log?utf8=%E2%9C%93&q=repo%3A{{.repo_org}}%2F{{.repo_name}}) |
-{{ end -}}
-
-#### Policy Organization(s): {{  parameters.param_orgs }}
-
-#### Policy Whitelisted Repo Names: {{  parameters.param_whitelist }}
-
-___
-###### Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }})
-
-EOS
     check eq(size(data), 0)
     escalate $report_repositories
+    #### Policy Organization(s): {{  parameters.param_orgs }}
+    #### Policy Whitelisted Repo Names: {{  parameters.param_whitelist }}
+    export do
+      resource_level true
+      field "repo_org" do
+        label "Organization"
+      end
+      field "repositoryFullName" do
+        label "Repository"
+      end
+      field "auditLogFullName" do
+        label "Audit Log Link"
+      end
+      field "id" do
+        label "ID"
+      end
+    end
   end
 end
 
 escalation "report_repositories" do
-    email $param_email
+  automatic true
+  label "Send Mail"
+  description "Sends incidents email"
+  email $param_email
 end

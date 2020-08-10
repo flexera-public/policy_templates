@@ -1,9 +1,10 @@
-# Google Unattached Volumes
+# Google Unused Volumes
 
 ## What it does
 
 This Policy Template scans all volumes in the given account and identifies any unattached volumes that have been unattached for at least the number of user-specified days. If any are found, an incident report will show the volumes, and related information and an email will be sent to the user-specified email address.
 
+If APIs & Services are not enabled for a project, the policy will skip that particular project. On the next run if APIs & Services are enabled, then the project will be considered for execution.
 If the user approves that the volumes should be deleted, the policy will delete the volumes.
 If the volume is not able to be deleted, say, due to it being locked, the volume will be tagged to indicate the error that was received.
 
@@ -20,6 +21,10 @@ This policy has the following input parameters required when launching the polic
 - *Email addresses* - A list of email addresses to notify
 - *Exclude Label List* - a list of tags used to excluded volumes from the incident.
 - *Create Final Snapshot* - Boolean for whether or not to take a final snapshot before deleting
+- *Automatic Actions* - When this value is set, this policy will automatically take the selected action(s).
+
+Please note that the "Automatic Actions" parameter contains a list of action(s) that can be performed on the resources. When it is selected, the policy will automatically execute the corresponding action on the data that failed the checks, post incident generation. Please leave it blank for *manual* action.
+For example if a user selects the "Delete Volumes" action while applying the policy, all the volumes that didn't satisfy the policy condition will be deleted.
 
 ## Policy Actions
 

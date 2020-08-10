@@ -6,20 +6,11 @@ long_description ""
 severity "low"
 category "Cost"
 info(
-  version: "2.0",
+  version: "2.4",
   provider: "AWS",
   service: "EC2",
   policy_set: "Idle Compute Instances"
 )
-
-###############################################################################
-# Permissions
-###############################################################################
-
-permission "perm_read_creds" do
-  actions   "rs_cm.show_sensitive","rs_cm.index_sensitive"
-  resources "rs_cm.credentials"
-end
 
 ###############################################################################
 # Parameters
@@ -57,6 +48,13 @@ parameter "param_exclusion_tag_key" do
   allowed_pattern /(^$)|([\w]?)+\:([\w]?)+/
 end
 
+parameter "param_automatic_action" do
+  type "list"
+  label "Automatic Actions"
+  description "When this value is set, this policy will automatically take the selected action(s)"
+  allowed_values ["Terminate Instances"]
+end
+
 ###############################################################################
 # Authentication
 ###############################################################################
@@ -68,6 +66,8 @@ credentials "auth_aws" do
   description "Select the AWS Credential from the list"
   tags "provider=aws"
 end
+
+auth "auth_rs", type: "rightscale"
 
 ###############################################################################
 # Datasources
@@ -178,6 +178,88 @@ end
 
 datasource "ds_merged_metrics" do
   run_script $js_merged_metrics, $ds_cloudwatch_cpu_usage, $ds_cloudwatch_mem_usage, $ds_cloudwatch_windows_mem_usage
+end
+
+datasource "ds_currency_reference" do
+  request do
+    host "raw.githubusercontent.com"
+    path "/rightscale/policy_templates/master/cost/scheduled_reports/currency_reference.json"
+    header "User-Agent", "RS Policies"
+  end
+end
+
+datasource "ds_currency_code" do
+  request do
+    auth $auth_rs
+    host rs_optima_host
+    path join(["/bill-analysis/orgs/",rs_org_id,"/settings/currency_code"])
+    header "Api-Version", "0.1"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+    field "id", jmes_path(response,"id")
+    field "value", jmes_path(response,"value")
+  end
+end
+
+datasource "ds_billing_centers" do
+  request do
+    auth $auth_rs
+    host rs_optima_host
+    path join(["/analytics/orgs/",rs_org_id,"/billing_centers"])
+    header "Api-Version", "1.0"
+    header "User-Agent", "RS Policies"
+    query "view", "allocation_table"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response,"[*]") do
+      field "href", jmes_path(col_item,"href")
+      field "id", jmes_path(col_item,"id")
+      field "name", jmes_path(col_item,"name")
+      field "parent_id", jmes_path(col_item,"parent_id")
+    end
+  end
+end
+
+datasource "ds_top_level_billing_centers" do
+  run_script $js_top_level_bc, $ds_billing_centers
+end
+
+datasource "ds_get_caller_identity" do
+  request do
+    auth $auth_aws
+    verb "GET"
+    host "sts.amazonaws.com"
+    path "/"
+    header "User-Agent", "RS Policies"
+    query "Action", "GetCallerIdentity"
+    query "Version", "2011-06-15"
+  end
+  result do
+    encoding "xml"
+    collect xpath(response, "//GetCallerIdentityResponse/GetCallerIdentityResult") do
+      field "account",xpath(col_item, "Account")
+    end
+ end
+end
+
+datasource "ds_instances_costs" do
+  request do
+    run_script $js_get_costs, $ds_get_caller_identity, $ds_top_level_billing_centers, rs_org_id
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response,"rows[*]") do
+      field "resource_id", jmes_path(col_item,"dimensions.resource_id")
+      field "cost_nonamortized_unblended_adj", jmes_path(col_item,"metrics.cost_nonamortized_unblended_adj")
+    end
+  end
+end
+
+datasource "ds_instance_cost_mapping" do
+  run_script $js_instance_cost_mapping, $ds_merged_metrics, $ds_instances_costs, $ds_currency_reference, $ds_currency_reference
 end
 
 ###############################################################################
@@ -377,6 +459,9 @@ script "js_merged_metrics", type: "javascript" do
         var mem_maximum = "101"
         var mem_average = "101"
         var mem_minimum = "101"
+        var mem_maximum_value = "NA"
+        var mem_minimum_value = "NA"
+        var mem_average_value = "NA"
       }
     } else {
       instance.platform = 'linux'
@@ -390,12 +475,15 @@ script "js_merged_metrics", type: "javascript" do
         var mem_maximum = "101"
         var mem_average = "101"
         var mem_minimum = "101"
+        var mem_maximum_value = "NA"
+        var mem_minimum_value = "NA"
+        var mem_average_value = "NA"
       }
     }
     merged_results.push(
       {
         "region": instance.region,
-        "instanceId": instance.instanceId,
+        "id": instance.instanceId,
         "platform": instance.platform,
         "privateDnsName": instance.privateDnsName,
         "hostname": instance.privateDnsName.split('.')[0],
@@ -405,7 +493,9 @@ script "js_merged_metrics", type: "javascript" do
         "cpu_average": parseFloat(instance.cpu_average).toFixed(2),
         "mem_maximum": mem_maximum,
         "mem_minimum": mem_minimum,
-        "mem_average": mem_average
+        "mem_average": mem_average,
+        "mem_maximum_value": mem_maximum_value,
+        "mem_average_value": mem_average_value
       }
     )
   }
@@ -413,28 +503,202 @@ script "js_merged_metrics", type: "javascript" do
 EOS
 end
 
+script "js_top_level_bc", type: "javascript" do
+  parameters "billing_centers"
+  result "filtered_billing_centers"
+  code <<-EOS
+  var filtered_billing_centers =
+    _.reject(billing_centers, function(bc){ return bc.parent_id != null });
+EOS
+end
+
+script "js_get_costs", type:"javascript" do
+  parameters  "account_id","billing_centers","org"
+  result "request"
+  code <<-EOS
+    // returns date formatted as string: YYYY-mm-dd
+    function getFormattedDailyDate(date) {
+      var year = date.getFullYear();
+      var month = (1 + date.getMonth()).toString();
+      month = month.length > 1 ? month : '0' + month;
+      var day = date.getDate().toString();
+      day = day.length > 1 ? day : '0' + day;
+      return year + '-' + month + '-' + day;
+    }
+    var start_date = getFormattedDailyDate(new Date(new Date().setDate(new Date().getDate() - 3)));
+    var end_date = getFormattedDailyDate(new Date(new Date().setDate(new Date().getDate() - 2)));
+    var request = {
+      auth: "auth_rs",
+      host: "optima.rightscale.com",
+      verb: "POST",
+      path: "/bill-analysis/orgs/" + org + "/costs/select",
+      body_fields: {
+        "dimensions": ["resource_id"],
+        "granularity": "day",
+        "start_at": start_date,
+        "end_at": end_date,
+        "metrics": ["cost_nonamortized_unblended_adj"],
+        "billing_center_ids": _.compact(_.map(billing_centers, function(value){ return value.id})),
+        "limit": 10000,
+        "filter": {
+          "expressions": [
+            {
+              "dimension": "service",
+              "type": "equal",
+              "value": "AmazonEC2"
+            },
+            {
+              "dimension": "resource_type",
+              "type": "equal",
+              "value": "Compute Instance"
+            },
+            {
+              "dimension": "vendor_account",
+              "type": "equal",
+              "value": account_id[0]["account"]
+            }
+          ],
+          "type": "and"
+        }
+      },
+      headers: {
+        "User-Agent": "RS Policies",
+        "Api-Version": "1.0"
+      }
+    }
+  EOS
+end
+
+script "js_instance_cost_mapping", type:"javascript" do
+  parameters  "instances","instance_costs","ds_currency_code","ds_currency_reference"
+  result "result"
+  code <<-EOS
+  var result = [];
+  function formatNumber(number, separator){
+    var numString =number.toString();
+    var values=numString.split(".");
+    var result = ''
+    while (values[0].length > 3){
+      var chunk = values[0].substr(-3)
+      values[0] = values[0].substr(0, values[0].length - 3)
+      result = separator + chunk + result
+    }
+    if (values[0].length > 0){
+      result = values[0] + result
+    }
+    if(values[1]==undefined){
+      return result;
+    }
+    return result+"."+values[1];
+  }
+
+  // Format costs with currency symbol and thousands separator
+  if( ds_currency_code['value'] !== undefined ) {
+    if (ds_currency_reference[ds_currency_code['value']] !== undefined ) {
+      var cur = ds_currency_reference[ds_currency_code['value']]['symbol']
+      if( ds_currency_reference[ds_currency_code['value']]['t_separator'] !== undefined ) {
+        var separator = ds_currency_reference[ds_currency_code['value']]['t_separator']
+      } else {
+        var separator = ""
+      }
+    } else {
+      var cur = ""
+      var separator = ""
+    }
+  } else {
+    var cur = "$"
+    var separator = ","
+  }
+  _.each(instances, function(instance){
+    var cost_objects = _.where(instance_costs, {resource_id: instance["id"]});
+    console.log(cost_objects)
+    if (_.size(cost_objects) > 0){
+      var sum = _.reduce(_.compact(_.map(cost_objects, function(value){ return value.cost_nonamortized_unblended_adj})), function(memo, num){ return memo + num; }, 0);
+      var monthly_savings = sum*30;
+      result.push({
+        "region": instance["region"],
+        "id": instance["id"],
+        "platform": instance["platform"],
+        "privateDnsName": instance["privateDnsName"],
+        "hostname": instance["hostname"],
+        "tag_set": instance["tag_set"],
+        "cpu_minimum": instance["cpu_minimum"],
+        "cpu_maximum": instance["cpu_maximum"],
+        "cpu_average": instance["cpu_average"],
+        "mem_maximum": instance["mem_maximum"],
+        "mem_minimum": instance["mem_minimum"],
+        "mem_average": instance["mem_average"],
+        "mem_maximum_value": instance["mem_maximum_value"],
+        "mem_average_value": instance["mem_average_value"]
+        savings: cur + ' '+formatNumber((Math.round(monthly_savings * 100) / 100), separator)
+      })
+    } else {
+      result.push({
+        "region": instance["region"],
+        "id": instance["id"],
+        "platform": instance["platform"],
+        "privateDnsName": instance["privateDnsName"],
+        "hostname": instance["hostname"],
+        "tag_set": instance["tag_set"],
+        "cpu_minimum": instance["cpu_minimum"],
+        "cpu_maximum": instance["cpu_maximum"],
+        "cpu_average": instance["cpu_average"],
+        "mem_maximum": instance["mem_maximum"],
+        "mem_minimum": instance["mem_minimum"],
+        "mem_average": instance["mem_average"],
+        "mem_maximum_value": instance["mem_maximum_value"],
+        "mem_average_value": instance["mem_average_value"]
+        savings: "N/A"
+      })
+    }
+  })
+  EOS
+end
 
 ###############################################################################
 # Policy
 ###############################################################################
 
 policy "pol_utilization" do
-  validate_each $ds_merged_metrics do
+  validate_each $ds_instance_cost_mapping do
     summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} rows containing AWS instance CloudWatch utilization data"
-    detail_template <<-EOS
-# AWS Instance Utilization
-| Region | instanceID | Platform | Hostname | Private DNS Name | CPU Maximum % | CPU Average % | Memory Maximum % | Memory Average % |
-| ------ | ---------- | -------- | -------- | ---------------- | ------------- | ------------- | ---------------- | ---------------- |
-{{ range data -}}
-| {{.region}} | {{.instanceId}} | {{.platform}} | {{.hostname}} |  {{.privateDnsName }} | {{ .cpu_maximum }} | {{ .cpu_average }} | {{if eq .mem_maximum "101"}}N/A{{else}}{{.mem_maximum}}{{end}} | {{if eq .mem_average "101"}}N/A{{else}}{{.mem_average}}{{end}} |
-{{ end -}}
-___
-###### Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }}) within Org: {{ rs_org_name }} (Org ID: {{ rs_org_id }})
-EOS
     escalate $email
     escalate $terminate_resources
     check logic_or(eq($param_avg_used_memory, -1), gt(to_n(val(item,"mem_average")), $param_avg_used_memory))
     check logic_or(eq($param_avg_cpu, -1), gt(to_n(val(item,"cpu_average")),$param_avg_cpu))
+    export do
+      resource_level true
+      field "region" do
+        label "Region"
+      end
+      field "id" do
+        label "Instance ID"
+      end
+      field "platform" do
+        label "Platform"
+      end
+      field "hostname" do
+        label "Hostname"
+      end
+      field "privateDnsName" do
+        label "Private DNS Name"
+      end
+      field "cpu_maximum" do
+        label "CPU Maximum %"
+      end
+      field "cpu_average" do
+        label "CPU Average %"
+      end
+      field "mem_maximum_value" do
+        label "Memory Maximum %"
+      end
+      field "mem_average_value" do
+        label "Memory Average %"
+      end
+      field "savings" do
+        label "Estimated Monthly Savings"
+      end
+    end
   end
 end
 
@@ -444,19 +708,16 @@ end
 ###############################################################################
 
 escalation "email" do
+  automatic true
+  label "Send Mail"
+  description "Sends incidents email"
   email $param_email
 end
 
 escalation "terminate_resources" do
-  request_approval do
-    label "Approve resource termination"
-    description "Approve esclation to run RightScale Cloud Workflow instance termination"
-    parameter "approval_resion" do
-      type "string"
-      label "Reason for Approval"
-      description "Explain why are you approving the action."
-    end
-  end
+  automatic contains($param_automatic_action, "Terminate Instances")
+  label "Terminate Instances"
+  description "Approval to terminate all selected instances"
   run "terminate_resources", data
 end
 
@@ -480,7 +741,7 @@ define terminate_resources($data) return $all_responses do
       query_strings: {
         "Action": "TerminateInstances",
         "Version": "2012-06-01",
-        "InstanceId.1": $item["instanceId"]
+        "InstanceId.1": $item["id"]
       }
     )
     $all_responses << $response

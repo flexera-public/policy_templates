@@ -1,5 +1,13 @@
 # Changelog
 
+## v1.12
+
+- Adding incident resource table
+
+## v1.11
+
+- Updated datasource to leverage new API URI
+
 ## v1.10
 
 - Updated the metadata

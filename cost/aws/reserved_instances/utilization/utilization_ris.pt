@@ -7,7 +7,7 @@ severity "high"
 category "Cost"
 tenancy "single"
 info(
-  version: "1.10",
+  version: "1.12",
   provider: "Flexera Optima",
   service: "",
   policy_set: ""
@@ -40,7 +40,7 @@ datasource "ds_reservations" do
   request do
     auth $rs
     host rs_optima_host
-    path join(["/api/reco/orgs/",rs_org_id,"/aws_reserved_instances"])
+    path join(["/reserved_instances/orgs/",rs_org_id,"/clouds/aws"])
   end
   result do
     encoding "json"
@@ -85,28 +85,49 @@ script "js_round_utilization", type: "javascript" do
       }
     )
   }
+  modified_reservations = _.sortBy(modified_reservations, 'region');
 EOS
 end
 
 escalation "report_reserved_instances_utilization" do
+  automatic true
+  label "Send Mail"
+  description "Sends incidents email"
   email $param_email
 end
 
 policy "ri_utilization" do
   validate_each $ds_reservations_rounded do
     summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): Reserved Instance Utilization"
-    detail_template <<-EOS
-# Reserved Instance Utilization
-
-| Account | Scope | Type | Region | Instance Type | Instance Count | Utilization Percentage |
-| ------- | ----- | ---- | ------ | ------------- | -------------- | ---------------------- |
-{{ range data -}}
-| {{ .account_name }}({{ .account_id }}) | {{.scope}} | {{.type}} | {{.region}} | {{.instance_type}} | {{.instance_count}} | {{ .utilization_percentage }}% |
-{{ end -}}
-
-EOS
-
     escalate $report_reserved_instances_utilization
     check gt(to_n(val(item,"utilization_percentage")),$param_utilization)
+    export do
+      resource_level true
+      field "region" do
+        label "Region"
+      end
+      field "account_name" do
+        label "Account Name"
+      end
+      field "id" do
+        label "Account Id"
+        path "account_id"
+      end
+      field "scope" do
+        label "Scope"
+      end
+      field "type" do
+        label "Type"
+      end
+      field "instance_type" do
+        label "Instance Type"
+      end
+      field "instance_count" do
+        label "Instance Count"
+      end
+      field "utilization_percentage" do
+        label "Utilization Percentage"
+      end
+     end
   end
 end

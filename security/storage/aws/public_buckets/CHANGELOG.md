@@ -1,5 +1,14 @@
 # Changelog
 
+## v2.2
+
+- Updated escalation block
+- Support to send a notification to a slack channel is removed
+
+## v2.1
+
+- adding incident resource table
+
 ## v2.0
 
 - Changes to support the Credential Service

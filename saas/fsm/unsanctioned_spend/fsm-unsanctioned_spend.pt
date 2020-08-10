@@ -7,22 +7,23 @@ severity "medium"
 category "SaaS Management"
 default_frequency "daily"
 info(
-  version: "1.1",
+  version: "2.2",
   provider: "Flexera SaaS Manager",
   service: "",
   policy_set: ""
 )
 
-permission "perm_read_creds" do
-  actions   "rs_cm.show_sensitive","rs_cm.index_sensitive"
-  resources "rs_cm.credentials"
+parameter "param_unsanctioned_apps" do 
+  type "list"
+  label "Unsanctioned Application Names"
+  description "List of SaaS Application names that the policy will target for identifying unsanctioned spend. Note: if left blank, the policy will detect all unsanctioned spend."
 end
 
 parameter "param_days" do
   type "number"
   label "Number of Days Back"
   default 7
-  description "Any unsanctioned expenses discovered during this time period will raise an incident"
+  description "Unsanctioned expenses discovered during this time period will raise an incident"
 end
 
 parameter "param_email" do
@@ -31,68 +32,22 @@ parameter "param_email" do
   description "Email addresses of the recipients you wish to notify"
 end
 
-resources "refresh_token", type: "rs_cm.credentials" do
-  filter do
-      name "FSM_TOKEN"
-  end
-  view "sensitive"
+#authenticate with FSM
+credentials "fsm_auth" do
+  schemes "oauth2"
+  label "FSM"
+  description "Select the FSM Resource Manager Credential from the list."
+  tags "provider=flexera_fsm"
 end
-
-datasource "ds_access_token" do
-  iterate @refresh_token
-  request do
-    host "login.flexera.com"
-    path "/oidc/token"
-    verb "POST"
-    body_field "grant_type", "refresh_token"
-    body_field "refresh_token", val(iter_item, "value")
-  end
-  result do
-    encoding "json"
-    field "access_token", val(response, "access_token")
-  end
-end
-
-datasource "ds_global_auth" do
-  iterate $ds_access_token
-  request do
-    host "api.metasaas.com"
-    path "/auth/external-token"
-    verb "POST"
-    body_field "token", val(iter_item, "access_token")
-  end
-  result do
-    encoding "json"
-    field "access_token", val(response, "token")
-  end
-end
-
-datasource "ds_customer_select" do
-  iterate $ds_global_auth
-  request do
-      host "api.metasaas.com"
-      path "/auth/select-customer"
-      verb "POST"
-      header "Authorization", join(["Bearer", val(iter_item, "access_token")])
-      body_field "orgId", rs_org_id
-  end
-  result do
-      encoding "json"
-      field "access_token", val(response, "token")
-  end
-end
-
 
 datasource "ds_num_expenses" do
-  iterate $ds_customer_select
   request do
-    #auth $rs_auth
-    host "api.metasaas.com"
+    auth $fsm_auth
+    host "api.fsm.flexeraeng.com"
     verb "GET"
     scheme "https"
-    path "/svc/financial-discovery"
+    path join(["/svc/orgs/", rs_org_id, "/financial-discovery"])
     header "content-type", "application/json"
-    header "Authorization", join(["Bearer ", val(iter_item, "access_token"), " "])
   end
   result do
     encoding "json"
@@ -101,38 +56,38 @@ datasource "ds_num_expenses" do
 end
 
 datasource "ds_unsanctioned" do
-  iterate $ds_num_expenses
   request do
-    run_script $js_unsanctioned, val(iter_item, "totalItems"), $ds_customer_select
+    run_script $js_unsanctioned, val($ds_num_expenses, "totalItems"), rs_org_id
   end
   result do
     encoding "json"
     collect jmes_path(response, "items[*]") do
-        field "active", jmes_path(col_item, "active")
-        field "currency", jmes_path(col_item, "currency")
-        field "expenseSum", jmes_path(col_item, "expenseSum")
-        field "id", jmes_path(col_item, "id")
-        field "purchaser_email", jmes_path(col_item, "purchaser")
-        field "purchaser_firstName", jmes_path(col_item, "customerAgent.firstName")
-        field "purchaser_lastName", jmes_path(col_item, "customerAgent.lastName")
-        field "vendor", jmes_path(col_item, "vendor.name")
-        field "application", jmes_path(col_item, "product.name")
-      end
+      field "active", jmes_path(col_item, "active")
+      field "currency", jmes_path(col_item, "currency")
+      field "expenseSum", jmes_path(col_item, "expenseSum")
+      field "id", jmes_path(col_item, "id")
+      field "purchaser_email", jmes_path(col_item, "purchaser")
+      field "purchaser_firstName", jmes_path(col_item, "customerAgent.firstName")
+      field "purchaser_lastName", jmes_path(col_item, "customerAgent.lastName")
+      field "vendor", jmes_path(col_item, "vendor.name")
+      field "application", jmes_path(col_item, "product.name")
+      field "expenseDate", jmes_path(col_item, "latestExpenseDate")
+    end
   end
 end
 
 script "js_unsanctioned", type: "javascript" do
-  parameters "num_items", "access_token"
+  parameters "num_items", "rs_org_id"
   result "request"
   code <<-EOS
   request = {
-    host: "api.metasaas.com",
+    auth: "fsm_auth",
+    host: "api.fsm.flexeraeng.com",
     verb: "GET",
     scheme: "https",
-    path: "/svc/financial-discovery",
+    path: "/svc/orgs/"+rs_org_id+"/financial-discovery",
     headers: {
-      "content-type": "application/json",
-      "Authorization": "Bearer " + access_token[0]["access_token"] + " "
+      "content-type": "application/json"
     },
     query_params: {
       "pageSize": num_items.toString()
@@ -141,59 +96,18 @@ script "js_unsanctioned", type: "javascript" do
 EOS
 end
 
-datasource "ds_expense_details" do
-  iterate $ds_unsanctioned
-  request do
-    run_script $js_expense_details, val(iter_item, "id"), $ds_customer_select
-  end
-  result do
-    encoding "json"
-    collect jmes_path(response, "discoveredProductExpenses[*]") do
-      field "active", val(iter_item, "active")
-      field "currency", val(iter_item, "currency")
-      field "expenseSum", val(iter_item, "expenseSum")
-      field "id", val(iter_item, "id")
-      field "purchaser_email", val(iter_item, "purchaser_email")
-      field "purchaser_firstName", val(iter_item, "purchaser_firstName")
-      field "purchaser_lastName", val(iter_item, "purchaser_lastName")
-      field "vendor", val(iter_item, "vendor")
-      field "application", val(iter_item, "application")
-      field "expenseDate", jmes_path(col_item, "expenseDate")
-    end
-  end
-end
-
-script "js_expense_details", type: "javascript" do
-  parameters "expense", "access_token"
-  result "request"
-  code <<-EOS
-  request = {
-    host: "api.metasaas.com",
-    verb: "GET",
-    scheme: "https",
-    path: "/svc/financial-discovery/" + expense,
-    headers: {
-      "content-type": "application/json",
-      "Authorization": "Bearer " + access_token[0]["access_token"] + " "
-    }
-  }
-EOS
-end
-
 datasource "ds_cleanup_expenses" do
-  run_script $js_cleanup_expenses, $ds_expense_details, $param_days
+  run_script $js_cleanup_expenses, $ds_unsanctioned, $param_days, $param_unsanctioned_apps
 end
 
 script "js_cleanup_expenses", type: "javascript" do
-  parameters "expenses", "param_days"
+  parameters "expenses", "param_days", "param_unsanctioned_apps"
   result "result"
   code <<-EOS
   var result = [];
   var date = new Date();
   date = date.setHours(-24 * param_days);
   date = new Date(date);
-
-  console.log("Target Date: "+date)
 
   // returns date formatted as string: YYYY-mm-dd
   function getFormattedDailyDate(date) {
@@ -206,22 +120,21 @@ script "js_cleanup_expenses", type: "javascript" do
   }
 
   _.each(expenses, function(expense){
-    console.log("Expense Object: "+expense)
     var expense_date = new Date(expense["expenseDate"]);
-    console.log("Expense Date: "+expense_date)
     if (expense_date > date){
-      result.push({
-        active: expense["active"],
-        currency: expense["currency"],
-        expenseSum: expense["expenseSum"],
-        id: expense["id"],
-        purchaser_email: expense["purchaser_email"],
-        purchaser_firstName: expense["purchaser_firstName"],
-        purchaser_lastName: expense["purchaser_lastName"],
-        vendor: expense["vendor"],
-        application: expense["application"],
-        expenseDate: getFormattedDailyDate(expense_date)
-      })
+      if (_.contains(param_unsanctioned_apps, expense["application"]) || _.isEmpty(param_unsanctioned_apps)){
+        result.push({
+          active: expense["active"],
+          expenseSum: expense["currency"]+" "+expense["expenseSum"],
+          id: expense["id"],
+          purchaser_email: expense["purchaser_email"],
+          purchaser_firstName: expense["purchaser_firstName"],
+          purchaser_lastName: expense["purchaser_lastName"],
+          vendor: expense["vendor"],
+          application: expense["application"],
+          expenseDate: getFormattedDailyDate(expense_date)
+        })
+      }
     }
   })
 
@@ -230,24 +143,32 @@ EOS
 end
 
 escalation "report_summary" do
-    email $param_email
+  automatic true
+  label "Send Mail"
+  description "Sends incidents email"
+  email $param_email
 end
 
 policy "policy_fsm_unsanctioned_spend" do
   validate $ds_cleanup_expenses do
       summary_template "{{ len data }} Unsanctioned Expenses Found"
-      detail_template <<-EOS
-# Recent Unsanctioned Expenses
-
-| Expense Date (YYYY-MM-DD) | Expense Sum (Currency) | Vendor | Application | Purchaser | Purchaser Email |
-| ------------------------- | ---------------------- | ------ | ----------- | --------- | --------------- |
-{{ range data -}}
-| {{.expenseDate}} | {{.expenseSum}} ({{.currency}}) | {{.vendor}} | {{.application}} | {{.purchaser_firstName}} {{.purchaser_lastName}} | {{.purchaser_email}} |
-{{ end -}}
-
-
-###### Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }}) within Org: {{ rs_org_name }} (Org ID: {{ rs_org_id }})
-EOS
+      export do 
+        field "expenseDate" do
+          label "Expense Date"
+        end 
+        field "expenseSum" do 
+          label "Expense Sum"
+        end 
+        field "vendor" do 
+          label "Vendor"
+        end 
+        field "application" do 
+          label "Application"
+        end
+        field "purchaser_email" do 
+          label "Purchaser"
+        end
+      end
       escalate $report_summary
       check eq(size(data), 0)
   end

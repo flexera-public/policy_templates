@@ -6,20 +6,11 @@ long_description ""
 category "Cost"
 severity "low"
 info(
-      version: "2.0",
+      version: "2.3",
       provider: "GCE",
       service: "Storage",
       policy_set: "Object Store Optimization"
     )
-
-###############################################################################
-# Permissions
-###############################################################################
-
-permission "perm_read_creds" do
-  actions   "rs_cm.show_sensitive","rs_cm.index_sensitive"
-  resources "rs_cm.credentials"
-end
 
 ###############################################################################
 # User inputs
@@ -47,6 +38,13 @@ parameter "param_exclude_tags" do
   type "list"
   label "Tags to ignore"
   description "List of tags(Key or Key, value mentioned in object metadata.) that will exclude objects from being evaluated by this policy. Multiple tags are evaluated as an 'OR' condition. Tag keys or key/value pairs can be listed. Example: 'test,env=dev'"
+end
+
+parameter "param_automatic_action" do
+  type "list"
+  label "Automatic Actions"
+  description "When this value is set, this policy will automatically take the selected action(s)"
+  allowed_values ["Update Storage Buckets"]
 end
 
 ###############################################################################
@@ -85,6 +83,7 @@ datasource "ds_google_project" do
     pagination $google_pagination
     host "cloudresourcemanager.googleapis.com"
     path "/v1/projects/"
+    query "filter", "lifecycleState=ACTIVE"
   end
   result do
     encoding "json"
@@ -97,7 +96,7 @@ end
 
 #https://cloud.google.com/storage/docs/json_api/v1/buckets/list
 datasource "ds_list_google_buckets" do
-  iterate $ds_google_project 
+  iterate $ds_google_project
   request do
     auth $auth_google
     pagination $google_pagination
@@ -106,6 +105,7 @@ datasource "ds_list_google_buckets" do
     path "/storage/v1/b"
     query "project", val(iter_item,"projectId")
     query "projection", "noAcl"
+    ignore_status [403,404]
   end
   result do
     encoding "json"
@@ -126,6 +126,7 @@ datasource "ds_list_google_buckets_objects" do
     verb "GET"
     host "www.googleapis.com"
     path join(["/storage/v1/b/",val(iter_item, "bucket_name"),"/o"])
+    ignore_status [403,404]
   end
   result do
     encoding "json"
@@ -243,19 +244,38 @@ end
 policy "google_object_storage_optimization" do
   validate $ds_google_filtered_bucket_objects do
     summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): Google Object Storage Optimization."
-    detail_template <<-EOS
-# Found {{ len data }} Google bucket objects which are last modified outside of the specified timeframe.
-| Project ID | Bucket Name | Region | Object Name | Current Storage Class | Last Modified Date | Move Storage Class To | Tags |
-| ---------- | ----------- | ------ | ----------- | --------------------- | ------------------ | --------------------- | ---- |
-{{ range data -}}
-| {{.projectId}} | {{.bucket_name}} | {{.region}} | {{.object_name}} | {{.storage_class}} | {{.last_modified}} | {{.modify_storage_class_to}} | {{.tagKeyValue}}
-{{ end -}}
-    EOS
     escalate $esc_report_bucket_Objects_list
     escalate $esc_modify_bucket_object_storage_class_approval
-    #Uncomment below line (remove '#') to enable Delete action and comment above line(add '#').
-    #escalate $esc_delete_bucket_objects_approval
+    escalate $esc_delete_bucket_objects_approval
     check eq(size(data),0)
+    export do
+      resource_level true
+      field "projectId" do
+        label "Project ID"
+      end
+      field "bucket_name" do
+        label "Bucket Name"
+      end
+      field "region" do
+        label "Zone"
+      end
+      field "id" do
+        label "Object Name"
+        path "object_name"
+      end
+      field "storage_class" do
+        label "Current Storage Class"
+      end
+      field "last_modified" do
+        label "Last Modified Date"
+      end
+      field "modify_storage_class_to" do
+        label "Move Storage Class To"
+      end
+      field "tagKeyValue" do
+        label "Tags"
+      end
+    end
   end
 end
 
@@ -264,32 +284,23 @@ end
 ###############################################################################
 
 escalation "esc_report_bucket_Objects_list" do
+  automatic true
+  label "Sends Email"
+  description "Send Incident email"
   email $param_email
 end
 
 escalation "esc_modify_bucket_object_storage_class_approval" do
-  request_approval  do
-    label "Approve Google Bucket object storage class Change"
-    description "Approve escalation to run RightScale Cloud Workflow to update storage class for bucket objects"
-    parameter "approval_reason" do
-      type "string"
-      label "Reason for Approval"
-      description "Explain why you are approving the action."
-    end
-  end
+  automatic contains($param_automatic_action, "Update Storage Buckets")
+  label "Modify Google Buckets"
+  description "Modify selected google storage buckets"
   run "modify_bucket_object_storage_class", data
 end
 
 escalation "esc_delete_bucket_objects_approval" do
-  request_approval  do
-    label "Approve Google Bucket object Deletion"
-    description "Approve escalation to run RightScale Cloud Workflow to delete the Google Bucket objects"
-    parameter "approval_reason" do
-      type "string"
-      label "Reason for Approval"
-      description "Explain why you are approving the action."
-    end
-  end
+  automatic false
+  label "Delete Google Buckets"
+  description "Delete selected google storage buckets"
   run "delete_bucket_objects", data
 end
 
@@ -305,21 +316,21 @@ define modify_bucket_object_storage_class($data) return $all_responses do
   foreach $item in $data do
     sub on_error: skip do
       call url_encode($item['bucket_name']) retrieve $bucket_name
-      call url_encode($item['object_name']) retrieve $object_name
+      call url_encode($item['id']) retrieve $object_name
       $response = http_request({
-                                verb: 'post',
-                                auth: $$auth_google,
-                                host: 'www.googleapis.com',
-                                href: join(['/storage/v1/b/', $bucket_name, '/o/', $object_name, '/rewriteTo/b/', $bucket_name, '/o/', $object_name]),
-                                https: true,
-                                body: {
-                                       "storageClass": $item['modify_storage_class_to']
-                                      },
-                                headers: {
-                                          "cache-control": "no-cache",
-                                          "content-type": "application/json"
-                                         }
-                              })
+        verb: 'post',
+        auth: $$auth_google,
+        host: 'www.googleapis.com',
+        href: join(['/storage/v1/b/', $bucket_name, '/o/', $object_name, '/rewriteTo/b/', $bucket_name, '/o/', $object_name]),
+        https: true,
+        body: {
+          "storageClass": $item['modify_storage_class_to']
+        },
+        headers: {
+          "cache-control": "no-cache",
+          "content-type": "application/json"
+        }
+      })
       $all_responses << $response
       call sys_log('Google object storage optimization response ',to_s($response))
     end
@@ -328,23 +339,22 @@ end
 
 #https://cloud.google.com/storage/docs/json_api/v1/objects/delete
 define delete_bucket_objects($data) return $all_responses do
-  $$debug=true
   $all_responses = []
   foreach $item in $data do
     sub on_error: skip do
       call url_encode($item['bucket_name']) retrieve $bucket_name
-      call url_encode($item['object_name']) retrieve $object_name
+      call url_encode($item['id']) retrieve $object_name
       $response = http_request(
-                                auth: $$auth_google,
-                                verb: 'delete',
-                                host: 'www.googleapis.com',
-                                href: join(['/storage/v1/b/', $bucket_name, '/o/', $object_name]),
-                                https: true,
-                                headers: {
-                                            "cache-control": "no-cache",
-                                            "content-type": "application/json"
-                                            }
-                              )
+        auth: $$auth_google,
+        verb: 'delete',
+        host: 'www.googleapis.com',
+        href: join(['/storage/v1/b/', $bucket_name, '/o/', $object_name]),
+        https: true,
+        headers: {
+          "cache-control": "no-cache",
+          "content-type": "application/json"
+        }
+      )
       $all_responses << $response
       call sys_log('Google Storage optimization delete response ',to_s($response))
     end
@@ -352,16 +362,14 @@ define delete_bucket_objects($data) return $all_responses do
 end
 
 define sys_log($subject, $detail) do
-  if $$debug
-    rs_cm.audit_entries.create(
-      notify: "None",
-      audit_entry: {
-        auditee_href: @@account,
-        summary: "Google Storage optimization Policy "+ $subject,
-        detail: $detail
-      }
-    )
-  end
+  rs_cm.audit_entries.create(
+    notify: "None",
+    audit_entry: {
+      auditee_href: @@account,
+      summary: "Google Storage optimization Policy "+ $subject,
+      detail: $detail
+    }
+  )
 end
 
 define url_encode($string) return $encoded_string do

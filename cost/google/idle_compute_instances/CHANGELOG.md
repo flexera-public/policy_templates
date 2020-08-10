@@ -1,5 +1,25 @@
 # Changelog
 
+## v2.5
+
+- Updated escalation block
+
+## v2.4
+
+- Bug fix for when metrics are absent in a project
+
+## v2.3
+
+- Adding incident resource table
+
+## v2.2
+
+- Bug fixes on unhandled errors when executing
+
+## v2.1
+
+- remove unnecessary permissions block
+
 ## v2.0
 
 - Changed the authentication to credential services

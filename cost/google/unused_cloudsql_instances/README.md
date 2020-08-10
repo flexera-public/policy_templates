@@ -6,6 +6,7 @@ This Policy Template checks for unused CloudSQL instance in Google Compute Engin
 
 ## Functional Details
 
+- If APIs & Services are not enabled for a project, the policy will skip that particular project. On the next run if APIs & Services are enabled, then the project will be considered for execution.
 - This policy uses the GCP API to identify unused CloudSQL instances using performance metrics from Google StackDriver and delivers a report for instances whose connections are below the thresholds set in the **DB Connections Threshold** parameter. These thresholds are what you would consider to be an used instance.
 - This policy can terminate instances after approval for instances that match the criteria.
 - This policy only pulls running CloudSQL instances, as it is unable to get correct monitoring metrics from instances in other states
@@ -17,6 +18,10 @@ This policy has the following input parameters required when launching the polic
 - *Email addresses of the recipients you wish to notify* - A list of email addresses to notify
 - *DB Connections Threshold* - Number of database connections to consider a db is unused.
 - *Exclusion label Key:Value* - Cloud native label to ignore instances. Format: Key:Value
+- *Automatic Actions* - When this value is set, this policy will automatically take the selected action(s).
+
+Please note that the "*Automatic Actions*" parameter contains a list of action(s) that can be performed on the resources. When it is selected, the policy will automatically execute the corresponding action on the data that failed the checks, post incident generation. Please leave it blank for *manual* action.
+For example if a user selects the "Terminate Resources" action while applying the policy, all the resources that didn't satisfy the policy condition will be terminated.
 
 ## Policy Actions
 

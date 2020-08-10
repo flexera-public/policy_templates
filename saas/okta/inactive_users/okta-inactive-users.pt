@@ -1,20 +1,16 @@
 name "Okta Inactive Users"
 rs_pt_ver 20180301
 type "policy"
-short_description "This policy will identify Okta users that have not logged in within a specified number of days and deactivate the users upon approval. See the [README](https://github.com/flexera/policy_templates/tree/master/saas/okta/inactive_users/) and [docs.rightscale.com/policies](http://docs.rightscale.com/policies/) to learn more."
-long_description "Version: 1.3"
+short_description "This policy will identify Okta users that have not logged in within a specified number of days and deactivate the users upon approval. See the [README](https://github.com/flexera/policy_templates/tree/master/saas/okta/inactive_users/) and [docs.rightscale.com/policies](https://docs.rightscale.com/policies/) to learn more."
+long_description ""
 severity "medium"
 category "SaaS Management"
-tenancy "single"
-
-###############################################################################
-# Permissions
-###############################################################################
-
-permission "perm_read_creds" do
-  actions   "rs_cm.show_sensitive","rs_cm.index_sensitive"
-  resources "rs_cm.credentials"
-end
+info(
+  version: "2.1",
+  provider: "Okta",
+  service: "",
+  policy_set: ""
+)
 
 parameter "param_okta_org_name" do
   label "Okta Organization Name"
@@ -35,11 +31,18 @@ parameter "param_email" do
   description "Email addresses of the recipients you wish to notify when new incidents are created"
 end
 
-auth "auth_okta", type: "api_key" do
-  location "header"
-  field "Authorization"
-  type "SSWS"
-  key cred("OKTA_API_KEY")
+parameter "param_automatic_action" do
+  type "list"
+  label "Automatic Actions"
+  description "When this value is set, this policy will automatically take the selected action(s)"
+  allowed_values ["Deactivate Users"]
+end
+
+credentials "auth_okta" do
+  schemes "api_key"
+  label "Okta"
+  description "Select the Okta Credential from the list."
+  tags "provider=okta"
 end
 
 datasource "ds_okta_users" do
@@ -87,41 +90,43 @@ script "js_filtered_users", type: "javascript" do
 end
 
 escalation "esc_email" do
+  automatic true
+  label "Sends Email"
+  description "Sends Incident Email"
   email $param_email
 end
 
 escalation "esc_deactivate_users" do
-  request_approval  do
-    label "Approve User Deactivation"
-    description "Approve escalation to run RightScale Cloud Workflow to deactivate the inactive Okta Users"
-    parameter "approval_reason" do
-      type "string"
-      label "Reason for Approval"
-      description "Explain why you are approving the action"
-    end
-  end
+  automatic contains($param_automatic_action, "Deactivate Users")
+  label "Deactivate User"
+  description "Deactivate inactive Okta Users"
   run "deactivate_users", data, $param_okta_org_name
 end
 
 policy "policy_inactive_users" do
   validate $ds_filtered_users do
     summary_template "Inactive Okta Users"
-    detail_template <<-EOS
-# Inactive Okta Users
-
-### Okta Org: {{ parameters.param_okta_org_name }}
-### Minimum Number of Days Since Last Login: {{ parameters.param_days }}
-
-| First Name | Last Name | Email Address | Last Login | 
-| ---------- | --------- | ------------- | ---------- |
-{{ range data -}}
-| {{ .firstName }} | {{.lastName}} | {{.email}} | {{.lastLogin}} |
-{{ end -}}
-
-EOS
     escalate $esc_email
     escalate $esc_deactivate_users
     check eq(size(data), 0)
+    export do
+      resource_level true
+      field "firstName" do
+        label "First Name"
+      end
+      field "lastName" do
+        label "Last Name"
+      end
+      field "email" do
+        label "Email Address"
+      end
+      field "lastLogin" do
+        label "Last Login"
+      end
+      field "id" do
+        label "ID"
+      end
+    end
   end
 end
 
@@ -130,13 +135,13 @@ define deactivate_users($data, $param_okta_org_name) do
   foreach $user in $data do 
     http_request(
       verb: "post",
+      auth: $$auth_okta,
       host: join([$param_okta_org_name,".okta.com"]),
       https: true,
-      href: join(["api/v1/users/",$user["id"],"/lifecycle/deactivate"]),
+      href: join(["/api/v1/users/",$user["id"],"/lifecycle/deactivate"]),
       headers: {
         "Content-Type": "application/json",
-        "Accept": "application/json",
-        "Authorization": "SSWS " + cred("OKTA_API_KEY")
+        "Accept": "application/json"
       }
     )
   end 

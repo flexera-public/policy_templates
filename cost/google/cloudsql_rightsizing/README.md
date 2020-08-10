@@ -7,6 +7,7 @@ This Policy Template checks Google Cloud SQL instances based on provided CPU thr
 ## Functional Details
 
 - This policy identifies all Google CloudSQL instances reporting performance metrics to stackdriver whose CPU utilization is below the thresholds set in the **Average used CPU % - Downsize Threshold** and **Average used CPU % - Upsize Threshold** parameters.
+- If APIs & Services are not enabled for a project, the policy will skip that particular project. On the next run if APIs & Services are enabled, then the project will be considered for execution.
 - The **Exclusion Tag Key:Value** parameter is a string value.  Supply the Tag Key & Value.  If the exclusion tag is used on an CloudSQL Instance, that Instance is presumed to be exempt from this policy.
 - The rightsizing escalation can be automated, executed after approval, or skipped.
 
@@ -18,6 +19,10 @@ This policy has the following input parameters required when launching the polic
 - *Average used CPU % - Upsize threshold* - Utilization below this percentage will raise an incident to tag the instance. Providing -1 will turn off this metric for consideration.
 - *Average used CPU % - Downsize Threshold* - Utilization below this percentage will raise an incident to tag the instance. Providing -1 will turn off this metric for consideration.
 - *Exclusion Tag Key:Value* - Cloud native label to ignore instances. Format: Key:Value
+- *Automatic Actions* - When this value is set, this policy will automatically take the selected action(s).
+
+Please note that the "Automatic Actions" parameter contains a list of action(s) that can be performed on the resources. When it is selected, the policy will automatically execute the corresponding action on the data that failed the checks, post incident generation. Please leave it blank for *manual* action.
+For example if a user selects the "Resize Instances" action while applying the policy, all the identified instances will be resized.
 
 ## Policy Actions
 

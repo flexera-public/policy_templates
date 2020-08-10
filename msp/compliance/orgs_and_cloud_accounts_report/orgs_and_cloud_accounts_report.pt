@@ -1,0 +1,279 @@
+name "Orgs and Clouds Vendor Accounts"
+rs_pt_ver 20180301
+type "policy"
+short_description "This policy generates a list of cross organization Cloud Vendor Accounts connected to Flexera Optima based on
+the bill connection settings for Azure and Google, as well as full list of AWS accounts under the payer account connected for each Flexera Organization.\n
+See [README] for more details"
+long_description ""
+severity "low"
+category "Compliance"
+info(
+  version: "1.3",
+  provider: "Flexera Optima",
+  service: "",
+  policy_set: "",
+  publish: "false"
+)
+
+###############################################################################
+# Permissions
+###############################################################################
+
+###############################################################################
+# Parameters
+###############################################################################
+parameter "param_email" do
+  type "list"
+  label "Email List"
+  description "Email addresses of the recipients you wish to notify"
+end
+
+parameter "param_exclude_organizations" do
+  type "list"
+  label "Excluded Organizations"
+  description "Names of organizations to exclude. \n
+  NOTE: use only either 'Excluded Organizations' or 'Exclucded organizations IDs', not both"
+end
+
+parameter "param_exclude_organizations_ids" do
+  type "list"
+  label "Excluded Organizations IDs"
+  description "IDs of organizations to exclude. \n
+  NOTE: use only either 'Excluded Organizations' or 'Exclucded organizations IDs', not both"
+end
+
+
+###############################################################################
+# Authentication
+###############################################################################
+
+auth "auth_rs", type: "rightscale"
+
+###############################################################################
+# Resources
+###############################################################################
+
+###############################################################################
+# Datasources
+###############################################################################
+
+datasource "ds_session" do
+  request do
+    auth $auth_rs
+    verb "GET"
+    host rs_cm_host
+    path "/api/sessions"
+    header "X-Api-Version", "1.5"
+    query "view", "whoami"
+  end
+  result do
+    field "userid", join(["/grs/users/",last(split(first(jmes_path(response, "links[?rel == 'user'].href")),'/'))])
+  end
+end
+
+datasource "ds_current_user_organizations" do
+  request do
+    run_script $js_current_user_organizations, $ds_session
+  end
+  result do
+    collect jmes_path(response, "orgs") do
+      field "href", jmes_path(col_item, "href")
+      field "org_id", last(split(jmes_path(col_item, "href"),"/"))
+      field "name", jmes_path(col_item, "name")
+      field "cluster", jmes_path(col_item, "starts_with(legacy.account_url, 'https://us-3') && '3' || starts_with(legacy.account_url, 'https://us-4') && '4'")
+    end
+  end
+end
+
+datasource "ds_filtered_user_organizations" do
+  run_script $js_filter_organizations, $ds_current_user_organizations, $param_exclude_organizations, $param_exclude_organizations_ids
+end
+
+datasource "ds_bill_connects" do
+  iterate $ds_filtered_user_organizations
+  request do
+    auth $auth_rs
+    host "onboarding.rightscale.com"
+    path join(["/api/onboarding/orgs/",val(iter_item,"org_id"),"/bill_connects"])
+    header "Api-Version", "1.0"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response,"[*]") do
+      field "id", jmes_path(col_item,"id")
+      field "cloud_vendor_id", jmes_path(col_item, "cloud_vendor_id")
+      field "org_id", val(iter_item,"org_id")
+      field "aws_cloud_vendor_account_name", ""
+    end
+  end
+end
+
+datasource "ds_bill_connects_csp" do
+  iterate $ds_filtered_user_organizations
+  request do
+    auth $auth_rs
+    host rs_optima_host
+    path join(["/analytics/orgs/",val(iter_item,"org_id"),"/azure_csp_partners"])
+    header "Api-Version", "1.0"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response,"[*]") do
+      field "id", jmes_path(col_item,"id")
+      field "cloud_vendor_id", "azure_csp_partners"
+      field "org_id", val(iter_item,"org_id")
+      field "aws_cloud_vendor_account_name", ""
+    end
+  end
+end
+
+datasource "ds_aws_cloud_vendor_accounts" do
+  iterate $ds_filtered_user_organizations
+  request do
+    auth $auth_rs
+    host rs_optima_host
+    path join(["/bill-analysis/orgs/",val(iter_item,"org_id"),"/cloud_vendor_accounts"])
+    header "Api-Version", "0.1"
+    header "User-Agent", "RS Policies"
+    query "cloud_vendor", "aws"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response,"[*]") do
+      field "id", join(["aws-",jmes_path(col_item,"id")])
+      field "cloud_vendor_id", "aws"
+      field "org_id", val(iter_item,"org_id")
+      field "aws_cloud_vendor_account_name", jmes_path(col_item,"name")
+    end
+  end
+end
+
+datasource "ds_bill_connects_without_aws_payer" do
+  run_script $js_bill_connects_without_aws_payer, $ds_bill_connects
+end
+
+datasource "ds_combined_cloud_accounts" do
+  run_script $js_combine_cloud_accounts, $ds_bill_connects_without_aws_payer, $ds_bill_connects_csp, $ds_aws_cloud_vendor_accounts
+end
+
+datasource "ds_normalized_cloud_vendor_ids" do
+  run_script $js_normalize_cloud_vendor_ids, $ds_combined_cloud_accounts
+end
+
+
+###############################################################################
+# Scripts
+###############################################################################
+script "js_current_user_organizations", type: "javascript" do
+  parameters "ds_session"
+  result "request"
+  code <<-EOF
+    var request = {
+      "auth": "auth_rs",
+      "verb": "GET",
+      "host": "governance.rightscale.com",
+      "path": ds_session["userid"],
+      "headers": {"X-Api-Version": "2.0" },
+      "query_params":{"view":"extended"}
+    }
+  EOF
+end
+
+script "js_filter_organizations", type: "javascript" do
+  parameters "ds_current_user_organizations", "param_exclude_organizations", "param_exclude_organizations_ids"
+  result "results"
+  code <<-EOF
+    var results = _.reject(ds_current_user_organizations, function(org){
+      return _.contains(param_exclude_organizations, org["name"])
+    })
+  if ( param_exclude_organizations_ids.length > 0) {
+    var results = _.reject(ds_current_user_organizations, function(org){
+      return _.contains(param_exclude_organizations_ids, org["org_id"])
+    })
+  }
+  EOF
+end
+
+script "js_generate_report", type: "javascript" do
+  parameters "ds_previous_six_month_costs","param_cost_metric","ds_report","param_graph_dimension","ds_currency_code","ds_currency_reference"
+  result "report"
+  code <<-EOS
+  EOS
+end
+
+# We exclude AWS account from the bill connection as it will later already be listed already in ds_aws_cloud_vendor_accounts
+script "js_bill_connects_without_aws_payer", type: "javascript" do
+  parameters "ds_bill_connects"
+  result "result"
+  code <<-EOF
+    var cloud_vendor_to_exclude = ["aws"]
+    var result = _.reject(ds_bill_connects, function(account){
+      return _.contains(cloud_vendor_to_exclude, account["cloud_vendor_id"])
+    })
+  EOF
+end
+
+script "js_combine_cloud_accounts", type: "javascript" do
+  parameters "ds_bill_connects_csp", "ds_bill_connects_without_aws_payer", "ds_aws_cloud_vendor_accounts"
+  result "result"
+  code <<-EOF
+    var result = ""
+    if ( ds_bill_connects_csp.length > 0 ) {
+      result = ds_bill_connects_csp.concat(ds_bill_connects_without_aws_payer)
+    }
+    else {
+      result = ds_bill_connects_without_aws_payer
+    }
+    result = result.concat(ds_aws_cloud_vendor_accounts)
+  EOF
+end
+
+script "js_normalize_cloud_vendor_ids", type: "javascript" do
+  parameters "ds_combined_cloud_accounts"
+  result "result"
+  code <<-EOF
+  function dedup(arr) {
+    var hashTable = {};
+    return arr.filter(function (el) {
+      var key = JSON.stringify(el);
+      var match = Boolean(hashTable[key]);
+      return (match ? false : hashTable[key] = true);
+    });
+  }
+  for (var i = 0; i < ds_combined_cloud_accounts.length; i++) {
+    ds_combined_cloud_accounts[i].id = ds_combined_cloud_accounts[i].id.replace(/^(aws|azure-ea|azure-mca-enterprise|google)-/g, "")
+  }
+  var result = dedup(ds_combined_cloud_accounts);
+  result = _.sortBy(result, 'org_id');
+  EOF
+end
+
+ policy "policy_scheduled_report" do
+  validate_each $ds_normalized_cloud_vendor_ids do
+  	summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} Cloud Accounts Found"
+  	detail_template <<-EOS
+{{ len data }} Cloud Accounts have been generated from: {{ rs_project_name }} (ID: {{ rs_project_id }}) \n
+| Flexera Org ID | Cloud Vendor | Cloud Account ID | AWS Account Name |
+| -------------- | ------------ | -----------------| -----------------|
+{{ range data -}}
+| {{ .org_id }} | {{ .cloud_vendor_id }} | {{ .id}} | {{ .aws_cloud_vendor_account_name }} |
+{{ end -}}
+EOS
+    escalate $escalation_send_email
+    check eq(0,1)
+  end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "escalation_send_email" do
+  email $param_email
+end
+
+###############################################################################
+# Cloud Workflow
+###############################################################################

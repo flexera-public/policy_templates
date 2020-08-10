@@ -1,14 +1,14 @@
-name "Google Unattached Volumes"
+name "Google Unused Volumes"
 rs_pt_ver 20180301
 type "policy"
 short_description "Checks for unattached volumes older than specified number of days and, optionally, deletes them. See the [README](https://github.com/flexera/policy_templates/tree/master/cost/google/unattached_volumes) and [docs.rightscale.com/policies](https://docs.rightscale.com/policies/) to learn more."
 category "Cost"
 severity "low"
 info(
-  version: "2.1",
+  version: "2.5",
   provider:"Google",
   service: "Storage",
-  policy_set: "Unattached Volumes"
+  policy_set: "Unused Volumes"
 )
 
 ###############################################################################
@@ -42,6 +42,12 @@ parameter "param_create_final_snapshot" do
   allowed_values "true", "false"
 end
 
+parameter "param_automatic_action" do
+  type "list"
+  label "Automatic Actions"
+  description "When this value is set, this policy will automatically take the selected action(s)"
+  allowed_values ["Delete Volumes"]
+end
 
 ###############################################################################
 # Authentication
@@ -78,6 +84,7 @@ datasource "ds_projects" do
     host "cloudresourcemanager.googleapis.com"
     verb "GET"
     path "/v1/projects"
+    query "filter", "lifecycleState=ACTIVE"
     pagination $google_pagination
   end
   result do
@@ -97,6 +104,7 @@ datasource "ds_zones" do
     path join(["/compute/v1/projects/", val(iter_item, "projectId"), "/zones"])
     query "project", val(iter_item, "projectId")
     pagination $google_pagination
+    ignore_status [403,404]
   end
   result do
     encoding "json"
@@ -117,6 +125,7 @@ datasource "ds_volumes" do
     path join(["/compute/v1/projects/", val(iter_item, "projectId"), "/zones/", val(iter_item, "zone"), "/disks"])
     query "project", val(iter_item, "project_name")
     pagination $google_pagination
+    ignore_status [403,404]
   end
   result do
     encoding "json"
@@ -128,8 +137,8 @@ datasource "ds_volumes" do
       field "name", jmes_path(col_item, "name")
       field "diskSizeGb", jmes_path(col_item, "sizeGb")
       field "status", jmes_path(col_item, "status")
-	    field "creationTimestamp", jmes_path(col_item, "creationTimestamp")
-	    field "lastAttachTimestamp", jmes_path(col_item, "lastAttachTimestamp")
+	  field "creationTimestamp", jmes_path(col_item, "creationTimestamp")
+	  field "lastAttachTimestamp", jmes_path(col_item, "lastAttachTimestamp")
       field "lastDetachTimestamp", jmes_path(col_item, "lastDetachTimestamp")
       field "labels", jmes_path(col_item, "labels")
     end
@@ -179,6 +188,13 @@ script "js_unattached_volumes", type: "javascript" do
       }
     )
     if (count == 0){
+      var labelsList = "";
+      for(var prop in volume.labels){
+         labelsList = labelsList + prop+" : "+volume.labels[prop]+", ";
+	  }
+      if(labelsList.length > 0){
+        volume.labels = labelsList.substring(0, labelsList.length - 2);
+	  }
       return volume
     }
   }
@@ -214,19 +230,36 @@ end
 policy 'policy_google_unattached_volumes' do
   validate_each $ds_unattached_volumes do
     summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} Google unattached volumes discovered"
-    detail_template <<-EOS
-# Unattached volumes from the Google Cloud
-| Project ID | Zone | Name | Size | Labels | Age In Days |
-| ---------- | ---- | ---- | ---- | ------ | ----------- |
-{{ range data -}}
-| {{.projectId}} | {{.zone}} | {{.name}} | {{.diskSizeGb}} | {{ range $i, $e := .labels }}{{$i}}:{{ $e }}, {{ end }} | {{.days_old}} |
-{{ end -}}
-###### Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }}) within Org: {{ rs_org_name }} (Org ID: {{ rs_org_id }})
-EOS
-
-  check lt(to_n(val(item, "days_old")), $param_unattached_days)
-  escalate $esc_email
-  escalate $esc_approve_delete_volumes
+    check lt(to_n(val(item, "days_old")), $param_unattached_days)
+    escalate $esc_email
+    escalate $esc_approve_delete_volumes
+    export do
+      resource_level true
+      field "projectId" do
+        label "Project ID"
+      end
+      field "zone" do
+        label "Zone"
+      end
+      field "name" do
+        label "Name"
+      end
+      field "days_old" do
+        label "Age In Days"
+      end
+      field "diskSizeGb" do
+        label "Size"
+      end
+      field "labels" do
+        label "Labels"
+      end
+      field "id" do
+        label "ID"
+      end
+      field "selfLink" do
+        label "Self Link"
+      end
+    end 
   end
 end
 
@@ -235,19 +268,16 @@ end
 ###############################################################################
 
 escalation "esc_email" do
+  automatic true
+  label "Send Mail"
+  description "Sends incidents email"
   email $param_email
 end
 
 escalation "esc_approve_delete_volumes" do
-  request_approval  do
-    label "Approve Resource Deletion"
-    description "Approve escalation to run RightScale Cloud Workflow to delete unattached volumes"
-    parameter "approval_reason" do
-      type "string"
-      label "Reason for Approval"
-      description "Explain why you are approving the action"
-    end
-  end
+  automatic contains($param_automatic_action, "Delete Volumes")
+  label "Delete Volumes"
+  description "Approval to delete all selected volumes"
   run "delete_volumes", data, $param_create_final_snapshot
 end
 

@@ -6,20 +6,11 @@ long_description ""
 severity "low"
 category "Cost"
 info(
-  version: "2.0",
+  version: "2.2",
   provider: "AWS",
   service: "RDS",
   policy_set: "RightSize Database Services"
 )
-
-###############################################################################
-# Permissions
-###############################################################################
-
-permission "perm_read_creds" do
-  actions   "rs_cm.show_sensitive","rs_cm.index_sensitive"
-  resources "rs_cm.credentials"
-end
 
 ###############################################################################
 # Parameters
@@ -53,6 +44,13 @@ parameter "param_exclusion_tag_key" do
   label "Exclusion Tag Key:Value"
   description "AWS tag key to ignore instances. Format: Key:Value"
   type "string"
+end
+
+parameter "param_automatic_action" do
+  type "list"
+  label "Automatic Actions"
+  description "When this value is set, this policy will automatically take the selected action(s)"
+  allowed_values ["Resize Instances"]
 end
 
 ###############################################################################
@@ -374,7 +372,7 @@ script "js_filtered_results", type: "javascript" do
       }
     }
   })
-
+  results = _.sortBy(results, 'region');
  EOS
 end
 
@@ -385,19 +383,34 @@ end
 policy "pol_utilization" do
   validate $ds_filtered_results do
     summary_template "AWS RDS instances to Resize"
-    detail_template <<-EOS
-# AWS RDS Instances to Resize
-| Region | instanceID | Engine | Current Instance Class | Recommended Instance Class | Availability Zone | CPU Average % |
-| ------ | ---------- | ------ | ---------------------- | -------------------------- | ----------------- | ------------- |
-{{ range data -}}
-| {{.region}} | {{.dbInstanceIdentifier}} | {{.engine}} | {{.dbInstanceClass}} |  {{.recommended_size}} | {{.availabilityZone }} | {{ .percent_cpu_avg }} |
-{{ end -}}
-
-###### Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }}) within Org: {{ rs_org_name }} (Org ID: {{ rs_org_id }})
-EOS
     check eq(size(data),0)
     escalate $email
     escalate $resize_instances
+    export do
+      resource_level true
+      field "region" do
+        label "Region"
+      end
+      field "id" do
+        label "Instance Id"
+        path "dbInstanceIdentifier"
+      end
+      field "engine" do
+        label "Engine"
+      end
+      field "dbInstanceClass" do
+        label "Current Instance Class"
+      end
+      field "recommended_size" do
+        label "Recommended Instance Class"
+      end
+      field "availabilityZone" do
+        label "Availability Zone"
+      end
+      field "percent_cpu_avg" do
+        label "CPU Average %"
+      end
+    end  
   end
 end
 
@@ -407,19 +420,16 @@ end
 ###############################################################################
 
 escalation "email" do
+  automatic true
+  label "Send Mail"
+  description "Sends incidents email"
   email $param_email
 end
 
 escalation "resize_instances" do
-  request_approval  do
-    label "Escalation approval"
-    description "Approve RDS RightSizing action"
-    parameter "approval_reason" do
-      type "string"
-      label "Reason for approval"
-      description "Explain why you are approving the action"
-    end
-  end
+  automatic contains($param_automatic_action, "Resize Instances")
+  label "Update Instance"
+  description "Approve selected RDS RightSizing"
   run "rightsize_rds", data
 end
 
@@ -441,7 +451,7 @@ define rightsize_rds($data) return $all_responses do
         query_strings: {
           "Action": "DescribeDBInstances",
           "Version": "2014-10-31",
-          "DBInstanceIdentifier": $item["dbInstanceIdentifier"]
+          "DBInstanceIdentifier": $item["id"]
         }
       )
       $all_responses << $get_response
@@ -458,7 +468,7 @@ define rightsize_rds($data) return $all_responses do
           query_strings: {
             "Action": "ModifyDBInstance",
             "Version": "2014-10-31",
-            "DBInstanceIdentifier": $item["dbInstanceIdentifier"],
+            "DBInstanceIdentifier": $item["id"],
             "DBInstanceClass": $item["recommended_size"]
           }
         )

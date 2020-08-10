@@ -1,5 +1,22 @@
 # Changelog
 
+## v2.4
+
+- Updated regex for param_exclusion_tag_key to allow for null
+- Updated next instance size logic to account for missing instance type in instance_types.json
+
+## v2.3
+
+- Updated escalation block
+
+## v2.2
+
+- adding incident resource table
+
+## v2.1
+
+- remove unnecessary permissions block
+
 ## v2.0
 
 - Changes to support the Credential Service

@@ -4,9 +4,9 @@ type "policy"
 short_description "Checks for running instances that have been running longer than the `Days Old` parameter. See the [README](https://github.com/flexera/policy_templates/tree/master/operational/aws/long_running_instances/) and [docs.rightscale.com/policies](https://docs.rightscale.com/policies/) to learn more."
 long_description ""
 severity "low"
-category "Cost"
+category "Operational"
 info(
-  version: "2.0",
+  version: "2.2",
   provider: "AWS",
   service: "EC2",
   policy_set: "Long Running Instances"
@@ -29,19 +29,20 @@ parameter "param_days_old" do
   default 180
 end
 
-parameter "param_action" do
-  type "string"
-  label "Action to take"
-  allowed_values "stop", "terminate"
-  description "Either Stop or Terminate the instance"
-end
-
 parameter "param_exclude_tags" do
   category "User Inputs"
   label "Exclusion Tag Key:Value"
   description "Cloud native tag key to ignore instances. Format: Key:Value"
   type "list"
   allowed_pattern /(^$)|([\w]?)+\:([\w]?)+/
+end
+
+parameter "param_automatic_action" do
+  type "string"
+  label "Automatic Actions"
+  description "When this value is set, this policy will automatically take the selected action(s)"
+  default "Select Action"
+  allowed_values "Select Action","Stop Instances", "Terminate Instances"
 end
 
 ###############################################################################
@@ -163,10 +164,15 @@ script "js_instances", type: "javascript" do
           tagKeyValue = tagKeyValue+" , "+tag['tagKey'];
         }
       }
-      var instance_tags = []
+      var instance_tags = "";
       _.each(tags, function(tag){
-        instance_tags.push(tag.tagKey+':'+tag.tagValue)
+        instance_tags = instance_tags + tag.tagKey+" : "+tag.tagValue+", ";
       })
+
+      if(instance_tags.length > 0){
+        instance_tags = instance_tags.substring(0, instance_tags - 2);
+	  }
+
       if(!(isTagMatched)){
         var now = new Date()
         var one_day=1000*60*60*24
@@ -184,9 +190,9 @@ script "js_instances", type: "javascript" do
   results = _(results)
     .chain()
     .sortBy(function(result){
-      return result.instanceType;
-    }).sortBy(function(result){
       return result.region;
+    }).sortBy(function(result){
+      return result.instanceType;
     }).value();
 EOS
 end
@@ -198,62 +204,85 @@ end
 policy "pol_utilization" do
   validate_each $ds_instances do
     summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} AWS instances running longer than {{ parameters.param_days_old}} days"
-    detail_template <<-EOS
-# AWS Long Running Instances
-| Region | instanceID | Instance Type | Hostname | Private DNS Name | Days Old | Tags |
-| ------ | ---------- | ------------ | -------- |----------------- | -------- | ---- |
-{{ range data -}}
-| {{.region}} | {{.instanceId}} | {{.instanceType}} | {{.hostname}} |  {{.privateDnsName }} | {{.days_old}} | {{range $i,$e := .instance_tags }}{{$e}},{{end}} |
-{{ end -}}
-___
-###### Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }}) within Org: {{ rs_org_name }} (Org ID: {{ rs_org_id }})
-EOS
     escalate $email
-    escalate $esc_stop_or_terminate
+    escalate $esc_stop_instances
+    escalate $esc_terminate_instances
     check lt(to_n(val(item, "days_old")),$param_days_old)
+    export do
+      resource_level true
+      field "region" do
+        label "Region"
+      end
+      field "instanceType" do
+        label "Instance Type"
+      end
+      field "id" do
+        label "Instance Id"
+        path "instanceId"
+      end
+      field "days_old" do
+        label "Days Old"
+      end
+      field "hostname" do
+        label "Hostname"
+      end
+      field "privateDnsName" do
+        label "Private DNS Name"
+      end
+      field "instance_tags" do
+        label "Tags"
+      end
+    end
   end
 end
-
 
 ###############################################################################
 # Escalations
 ###############################################################################
 
 escalation "email" do
+  automatic true
+  label "Send Mail"
+  description "Sends incidents email"
   email $param_email
 end
 
-escalation "esc_stop_or_terminate" do
-  request_approval  do
-    label "Approve Instances for Stop/Terminate"
-    description "Approve Stop/Terminate action"
-    parameter "approval_reason" do
-      type "string"
-      label "Reason for approval"
-      description "Explain why you are approving the action"
-    end
-  end
-  run "stop_or_terminate_instances", data, $param_action
+escalation "esc_stop_instances" do
+  automatic eq($param_automatic_action, "Stop Instances")
+  label "Stop Instances"
+  description "Stop selected instances"
+  run "stop_instances_cwf", data
+end
+
+escalation "esc_terminate_instances" do
+  automatic eq($param_automatic_action, "Terminate Instances")
+  label "Terminate Instances"
+  description "Terminate selected instances"
+  run "terminate_instances_cwf", data
 end
 
 ###############################################################################
 # Cloud Workflow
 ###############################################################################
 
-define stop_or_terminate_instances($data, $param_action) return $all_responses do
+define stop_instances_cwf($data) return $all_responses do
   $status_code=''
   $all_responses = []
   foreach $item in $data do
-    if $param_action == "stop"
-      sub on_error: skip do
-        call stop_instances($item) retrieve $status_code
-        $all_responses << $status_code
-      end
-    else
-      sub on_error: skip do
-        call terminate_instances($item) retrieve $status_code
-        $all_responses << $status_code
-      end
+    sub on_error: skip do
+      call stop_instances($item) retrieve $status_code
+      $all_responses << $status_code
+    end
+  end
+end
+
+define terminate_instances_cwf($data) return $all_responses do
+  $status_code=''
+  $all_responses = []
+  foreach $item in $data do
+    sub on_error: skip do
+      call terminate_instances($item) retrieve $status_code
+      $all_responses << $status_code
     end
   end
 end
@@ -266,7 +295,7 @@ define stop_instances($item) return $status_code do
       verb: "post",
       host: join(["ec2.",$item["region"],".amazonaws.com"]),
       auth: $$auth_aws,
-      href: join(["/", "?Action=StopInstances", "&InstanceId.1=", $item["instanceId"], "&Version=2016-11-15"]),
+      href: join(["/", "?Action=StopInstances", "&InstanceId.1=", $item["id"], "&Version=2016-11-15"]),
       https: true,
       headers:{
         "cache-control": "no-cache",
@@ -298,7 +327,7 @@ define terminate_instances($item) return $status_code do
       verb: "post",
       host: join(["ec2.",$item["region"],".amazonaws.com"]),
       auth: $$auth_aws,
-      href: join(["/", "?Action=TerminateInstances", "&InstanceId.1=", $item["instanceId"], "&Version=2016-11-15"]),
+      href: join(["/", "?Action=TerminateInstances", "&InstanceId.1=", $item["id"], "&Version=2016-11-15"]),
       https: true,
       headers:{
         "cache-control": "no-cache",
@@ -329,7 +358,7 @@ define get_instance($item) return $status_response do
       verb: "get",
       host: join(["ec2.",$item["region"],".amazonaws.com"]),
       auth: $$auth_aws,
-      href: join(["/", "?Action=DescribeInstances", "&InstanceId.1=", $item["instanceId"], "&Version=2016-11-15"]),
+      href: join(["/", "?Action=DescribeInstances", "&InstanceId.1=", $item["id"], "&Version=2016-11-15"]),
       https: true,
       headers: {
         "cache-control": "no-cache",

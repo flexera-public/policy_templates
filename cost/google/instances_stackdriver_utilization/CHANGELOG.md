@@ -1,5 +1,27 @@
 # Changelog
 
+## v2.6
+
+- Updated escalation block
+
+## v2.5
+
+- move cpu calculations from jmespath to javascript
+- removed disk utilization metrics
+- added additional filter to StackDriver API call to increase efficiency
+
+## v2.4
+
+- Adding incident resource table
+
+## v2.3
+
+- Bug fixes on unhandled errors when executing
+
+## v2.2
+
+- remove unnecessary permissions block
+
 ## v2.1
 
 - Added new datasource for google project ID

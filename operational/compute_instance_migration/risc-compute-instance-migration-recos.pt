@@ -1,13 +1,13 @@
 name "Application Migration Recommendations"
 rs_pt_ver 20180301
 type "policy"
-short_description "This Policy Template will analyze RISC CloudScape data and will generate recommendations for migrating application stacks to the most cost effective cloud providers & regions.  See the [README](https://github.com/rightscale/policy_templates/tree/master/operational/compute_instance_migration) and [docs.rightscale.com/policies](http://docs.rightscale.com/policies/) to learn more."
+short_description "This Policy Template will analyze RISC CloudScape data and will generate recommendations for migrating application stacks to the most cost effective for each cloud providers & regions.  See the [README](https://github.com/flexera/policy_templates/tree/master/operational/compute_instance_migration) and [docs.rightscale.com/policies](https://docs.rightscale.com/policies/) to learn more."
 long_description ""
 category "Operational"
 severity "low"
 tenancy "single"
 info(
-  version: "1.1",
+  version: "1.2",
   provider: "Flexera RISC",
   service: "",
   policy_set: ""
@@ -17,6 +17,13 @@ parameter "param_email" do
   type "list"
   label "Email addresses to notify"
   description "Email addresses of the recipients you wish to notify when new incidents are created"
+end
+
+parameter "param_prov_list" do
+  type "list"
+  label "List providers to include"
+  description "List the Providers to include, blank means all"
+  default ["AWS", "Azure", "Google"]
 end
 
 #Provide your RISC user name. E.g. (somebody@flexera.com)
@@ -134,14 +141,16 @@ script "js_getSummaryWithCost", type: "javascript" do
 end
 
 datasource "ds_formatStacks" do
-  run_script $js_formatStacks, $ds_getSummaryWithCost
+  run_script $js_formatStacks, $ds_getSummaryWithCost, $param_prov_list
 end 
 
 script "js_formatStacks", type: "javascript" do 
   result "result"
-  parameters "summaries"
+  parameters "summaries", "provider_list"
   code <<-EOS
-  var result = [];
+  var result = {};
+  result.data = [];
+  result.header = {};
   var stack_ids = _.uniq(_.pluck(summaries, 'stackid'));
   var stacks = [];
 
@@ -152,56 +161,162 @@ script "js_formatStacks", type: "javascript" do
       stackid: stack_id,
       costs: []
     }
+
     _.each(stack_summaries, function(stack_summary){
+      // Split provider_name in to provider and location.
+      var location = '';
+      var cloud_provider = stack_summary["provider_name"];
+      var i = cloud_provider.indexOf(" - ");
+      if (i == -1) i = cloud_provider.indexOf(".- ");
+      if (i > 0) {
+        location = cloud_provider.substring(i+3);
+        cloud_provider = cloud_provider.substring(0,i);
+      }
+  
       if (stack_summary["cost_usage_total_hour"] == 0) {
-        // skip
-      } else {
         var cost = {
+          provider: cloud_provider,
+          location: location,
           provider_name: stack_summary["provider_name"],
           provider_id: stack_summary["providerid"],
-          cost: stack_summary["cost_usage_total_hour"]
+          cost: 100000                                        //Flag that it is not a real value.. But not to mess with th elower cost detection
         }
         stack.costs.push(cost)
+      } else {
+        var prov_included =false
+        if (provider_list.length == 0) {
+          prov_included = true;
+        } else {
+          _.each(provider_list, function(prov) {if (cloud_provider.indexOf(prov) > -1) prov_included = true}) 
+        }
+
+        if (prov_included) {
+          var cost = {
+            provider: cloud_provider,
+            location: location,
+            provider_name: stack_summary["provider_name"],
+            provider_id: stack_summary["providerid"],
+            cost: stack_summary["cost_usage_total_hour"]
+          }
+          stack.costs.push(cost)
+        }
       }
     })
     stacks.push(stack)
   })
 
+  // Now we have all the data now go through each Stack to find the cheapest 
   _.each(stacks, function(stack){
-    var target = _.min(stack.costs, function(stack_cost){ return stack_cost.cost; });
-    if (target.cost == null){
-      // skip 
-    } else {
-      result.push({
-        cost: "$" + target.cost.toString(),
+    // Check for each Cloud Provider..
+    var lowcost = [];
+
+    var providers = _.uniq(_.pluck(stack.costs, 'provider'));
+    _.each(providers, function(prov) {
+      var prov_summary = _.where(stack.costs, {provider: prov});
+      var target = _.min(prov_summary, function(provider_cost){ return provider_cost.cost; });
+      lowcost.push({
+        provider: target.provider,
+        location: target.location,
+        cost: target.cost,
         provider_name: target.provider_name,
         provider_id: target.provider_id,
         stack_name: stack["stack_name"],
         stackid: stack["stackid"]
       })
-    }
-  })
+    })
 
+    //Find the overall lowest price
+    var lowest = _.min(lowcost, function(provider_cost){ return provider_cost.cost; });
+    if (lowest.cost != null){
+      var lowest_cost = lowest.cost; 
+    } 
+
+    // lastley go through the data for output and mark the lowast with Bold and Italic
+    var result_rec = {}
+    result_rec["Stack Name"] = stack["stack_name"];
+    _.each( lowcost, function(cost) {
+      var highlight = "";
+      if (cost.cost == lowest_cost) highlight = "***";
+      if (cost.cost !==  100000) {
+        result_rec[cost.provider + " location"] = (cost.location.length > 1) ? highlight + cost.location + highlight : '';
+        result_rec[cost.provider + " cost"] = highlight + "$" + parseFloat(cost.cost).toFixed(2) + highlight;        
+      } else {
+        result_rec[cost.provider + " location"] = '';
+        result_rec[cost.provider + " cost"] = '$0';  
+      }
+    })
+
+    result.data.push(result_rec);
+    result.header = _.keys(result_rec);
+  })
 
 EOS
 end 
 
+#
+#  This function will dynamically build the markdown table for the ecalation 
+#  The reason for this is that you can select up to 7 different Cloud providers 
+#  default is 3 (AWS, Azure and GCP).
+#
+script "parse_report", type: "javascript" do
+  parameters "data"
+  result "result"
+  code <<-EOS
+    var result = {};
+    result.sResult = "";
+
+    console.log(data.header);
+
+    //Function repeats a character a number of times
+    function pad(input, times) {
+        sRet = "";
+        for (i=0; i < times; i++) sRet += input;
+        return sRet;
+    }
+
+    //format the Report output
+    result.sResult = "| ";
+    var sSeparator = "| ";
+    for (x=0; x < data.header.length; x++) {
+      result.sResult += data.header[x] + " | ";
+      sSeparator += pad('-',data.header[x].length) + " | ";
+    }
+    result.sResult = result.sResult.trim() + "\\n";
+    result.sResult += sSeparator.trim() + "\\n";
+    
+    //now the data
+    for (i=0; i < data.data.length; i++) {
+      if (data.data[i][data.header[0]] != "") {
+        sLine = "| ";
+        for (x=0; x < data.header.length; x++) {
+          sLine += data.data[i][data.header[x]] + " | ";
+        }
+        result.sResult += sLine.trim() + "\\n";     
+      } 
+    }
+  EOS
+end
+
+datasource "output_report" do 
+  run_script $parse_report, $ds_formatStacks
+end
+
+#
+#  NOTE: The markdown table is dunammically build based on the selected Cloud providers.
+#  This will most likely not be adaptable for the resource table.  
+#
 policy "stack_migration_recos" do
-  validate_each $ds_formatStacks do
+  validate $output_report do
     summary_template "Application Migration Recommendations"
     detail_template <<-EOS
 
-| Application Stack | Recommended Provider/Region | Estimated Hourly Cost | Stack ID | Provider ID |
-| ----------------- | --------------------------- | --------------------- | -------- | ----------- |
-{{ range data -}}
-| {{.stack_name}} | {{.provider_name}} | {{.cost}} | {{.stackid}} | {{.provider_id}} |
-{{ end -}}
+{{data.sResult}}
 
 ###### Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }}) within Org: {{ rs_org_name }} (Org ID: {{ rs_org_id }})
 
 EOS
     escalate $email
-    check eq(val(item, "cost"), 0)
+    check eq(1, 0)
   end
 end
 
