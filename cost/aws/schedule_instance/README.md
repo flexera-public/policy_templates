@@ -25,7 +25,7 @@ Instances are off during the weekend and start back up on Monday morning at 8:15
 This policy has the following input parameters required when launching the policy.
 
 - *Email addresses* - A list of email addresses to notify  
-- *Tags Key=Value* - List of tags that an Instance can have to exclude it from the list. 
+- *Exclusion Tags* - A list of AWS tags to ignore instances. Format: Key=Value. 
 - *Automatic Actions* - When this value is set, this policy will automatically take the selected action(s).
 
 Please note that the "*Automatic Actions*" parameter contains a list of action(s) that can be performed on the resources. When it is selected, the policy will automatically execute the corresponding action on the data that failed the checks, post incident generation. Please leave it blank for *manual* action.
@@ -42,6 +42,11 @@ The following policy actions are taken on any resources found to be out of compl
 - delete schedule - removes the schedule tag
 
 ## Prerequisites
+
+### Schedule Tag Format
+
+The policy uses `schedule` tag value for scheduling the instance. The format should be like `8:15-17:30;MO,TU,WE,TH,FR;America/New_York`. Please refer to `Schedule Tag Example` section for more details.
+On leaving the minute field blank, policy will consider the minute as `00`.
 
 This policy uses [credentials](https://docs.rightscale.com/policies/users/guides/credential_management.html) for connecting to the  cloud -- in order to apply this policy you must have a credential registered in the system that is compatible with this policy. If  there are no credentials listed when you apply the policy, please contact your cloud admin and ask them to register a credential  that is compatible with this policy. The information below should be consulted when creating the credential.   
 
