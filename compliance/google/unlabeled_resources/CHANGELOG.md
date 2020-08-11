@@ -1,6 +1,6 @@
 # Changelog
 
-## v.2.1
+## v2.1
 
 - Fixed README link in short_description
 
