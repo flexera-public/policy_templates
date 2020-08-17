@@ -6,13 +6,13 @@ This Policy Template allows you to schedule start and stop times for your instan
 
 ## How to Use
 
-This policy relies on a label with format 'schedule' to stop and start instances based on a schedule. The label value defines the schedule with a start hour, stop hour and days of the week. The start and stop hour are in 24 hour format, and the days of the week are two character abbreviation for example: mo, tu, we. See full example below.. Use a Timezone TZ value to indicate a timezone to stop/start the instance(s) 
+This policy relies on a label with format 'schedule' to stop and start instances based on a schedule. The label value defines the schedule with a start time(start hour and start minute), stop time(stop hour and stop minute), days of the week and timezone. The start and stop time are in 24 hour format, and the days of the week are two character abbreviation for example: mo, tu, we. See full example below.. Use a Timezone TZ value to indicate a timezone to stop/start the instance(s) 
 
 ## schedule Label Example
 
-Since label supports only `-`, `_`, lowercase characters, numbers and International characters, We are replacing `:` with `m` in start and stop time, and ASCII code for special character `/` and `+` in timezone surrounded by `_`.
+Since label supports only `-`, `_`, lowercase characters, numbers and International characters, We are replacing `:` with `m` in start and stop time, and ASCII code for special character `/` and `+` in timezone, surrounded by `_`.
 
-Start and Stop hours are 24 hour format: for example 8m30-17m15 is start at 8:30am, and stop at 5:15pm.
+Start and Stop time are 24 hour format: for example 8m30-17m15 is start at 8:30am, and stop at 5:15pm.
 
 Days of the week: su-mo-tu-we-th-fr-sa
 
@@ -22,6 +22,8 @@ Example: schedule=8m30-17m15_mo-tu-we-th-fr_america_47_new_york. Stops instances
 Please note that `_` is being used for separating the start-stop time, days of the week and the timezone.
 
 Instances are off during the weekend and start back up on Monday morning at 8:30am and are off at 5:15pm every weekday. Times are UTC unless the Timezone field is provided.
+
+Note: On leaving the minute field blank, policy will consider the minute as `00` and same will be added to the schedule label value.
 
 ## Input Parameters
 
