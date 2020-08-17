@@ -93,7 +93,7 @@ datasource "ds_azure_virtualmachines" do
     auth $azure_auth
     pagination $azure_pagination
     host "management.azure.com"
-	path join(["/subscriptions/", val(iter_item,"subscriptionId"), "/providers/Microsoft.Compute/virtualMachines"])
+    path join(["/subscriptions/", val(iter_item,"subscriptionId"), "/providers/Microsoft.Compute/virtualMachines"])
     query "api-version","2019-03-01"
     header "User-Agent", "RS Policies"
     ignore_status [404]
@@ -106,7 +106,7 @@ datasource "ds_azure_virtualmachines" do
       field "name", jmes_path(col_item,"name")
       field "location", jmes_path(col_item, "location")
       field "tags", jmes_path(col_item,"tags")
-	  field "subscriptionId",val(iter_item,"subscriptionId")
+      field "subscriptionId",val(iter_item,"subscriptionId")
       field "subscriptionName",val(iter_item,"displayName")
     end
   end
@@ -174,14 +174,14 @@ script "js_filter_instances", type: "javascript" do
           next_stop=new Date(instance.tags[prop]);
           next_stop_iso=next_stop.toISOString();
         }	  
-	  }
+      }
       var resource_tags = JSON.stringify(instance.tags);
       var all_tags={};
       if(!(_.isEmpty(resource_tags))){
       all_tags=instance.tags;
       delete all_tags.schedule;
       }
-      if(now > next_start || now > next_stop || next_start==null || next_stop==null){
+      if((now > next_start || now > next_stop || next_start==null || next_stop==null) && (schedule !== "")){
         results.push({
           "id":instance.id,
           "state": instance.status,
@@ -191,6 +191,7 @@ script "js_filter_instances", type: "javascript" do
           "name":instance.name,
           "subscriptionId":instance.subscriptionId,
           "subscriptionName":instance.subscriptionName,
+          "all_tags": resource_tags,
           "tags":all_tags,
           "next_start":next_start_iso,
           "next_stop":next_stop_iso	
@@ -218,7 +219,7 @@ escalation "esc_schedule_instance" do
   description "Stop or Start the Instance"
   run "schedule_instance", data
 end
-	
+
 escalation "esc_terminate_instance" do
   automatic false
   label "Terminate Instance"
@@ -272,18 +273,24 @@ policy "policy_schedule_instance" do
       end
       field "location" do
         label "Location"
-      end
-      field "tags" do
+      end  
+      field "all_tags" do
         label "Tags"
       end
       field "state" do
         label "State"
+      end
+      field "schedule" do
+        label "schedule"
       end
       field "subscriptionId" do
         label "SubscriptionId"
       end
       field "subscriptionName" do
         label "SubscriptionName"
+      end
+      field "tags" do
+        label "Tags Object"
       end
     end
   end
@@ -331,6 +338,12 @@ define schedule_instance($data) return $all_responses do
     $start_rule = join(["FREQ=WEEKLY;BYDAY=",$rule])
     $stop_rule = join(["FREQ=WEEKLY;BYDAY=",$rule])
     $timezone = split($item['schedule'],';')[2]
+    if $start_minute == null
+      $start_minute = "00"
+    end
+    if $stop_minute == null
+       $stop_minute = "00"
+    end
     if ! $timezone
       $timezone = "UTC"
     end
@@ -414,6 +427,12 @@ define update_schedule($data, $param) return $all_responses do
     $start_rule = join(["FREQ=WEEKLY;BYDAY=",$rule])
     $stop_rule = join(["FREQ=WEEKLY;BYDAY=",$rule])
     $timezone = split($param,';')[2]
+    if $start_minute == null
+      $start_minute = "00"
+    end
+    if $stop_minute == null
+       $stop_minute = "00"
+    end
     if ! $timezone
       $timezone = "UTC"
     end
@@ -444,10 +463,10 @@ define tag_resources($item, $param, $next_start, $next_stop) return $update_reso
     $new_tags["schedule"]= $param
   end
     $$log << to_s($new_tags)	
-	$$log << $next_start
-	$$log << $next_stop	
-	$$log << $param
-  call sys_log('all tags ', to_s($new_tags))
+    $$log << $next_start
+    $$log << $next_stop	
+    $$log << $param
+    call sys_log('all tags ', to_s($new_tags))
     sub on_error: handle_error($update_resource_response) do 
       $update_resource_response = http_request(
       auth: $$azure_auth,

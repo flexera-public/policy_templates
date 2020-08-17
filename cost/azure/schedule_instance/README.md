@@ -53,6 +53,12 @@ Provider tag value to match this policy: `azure`
 
 Required permissions in the provider:
 
+- Microsoft.Compute/virtualMachines/read
+- Microsoft.Compute/virtualMachines/write
+- Microsoft.Compute/virtualMachines/delete
+- Microsoft.Compute/virtualMachines/start/action
+- Microsoft.Compute/virtualMachines/powerOff/action
+
 ## Supported Clouds
 
 - Azure
