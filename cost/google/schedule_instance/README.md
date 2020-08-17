@@ -35,7 +35,8 @@ This policy has the following input parameters required when launching the polic
 
 ## Policy Actions 
 
-The following policy actions are taken on any resources found to be out of compliance. 
+The following policy actions are taken on any resources found to be out of compliance.
+
 - Send an email report  
 - stop  - stop a selected instance
 - start - start a selected instance
