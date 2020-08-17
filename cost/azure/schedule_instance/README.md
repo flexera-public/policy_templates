@@ -6,15 +6,15 @@ This Policy Template allows you to schedule start and stop times for your instan
 
 ## How to Use
 
-This policy relies on a tag with format 'schedule' to stop and start instances based on a schedule. The tag value defines the schedule with a start time(start hour and start minute), stop time(stop hour and stop minute) and days of the week and timezone. The start and stop time are in 24 hour format, and the days of the week are two character abbreviation for example: MO, TU, WE. See full example below.. Use a Timezone TZ value to indicate a timezone to stop/start the instance(s) 
+This policy relies on a tag with format 'schedule' to stop and start instances based on a schedule. The tag value defines the schedule with a start time (start hour and start minute), stop time (stop hour and stop minute) and days of the week and timezone. The start and stop time are in 24-hour format, and the days of the week are two character abbreviation for example: MO, TU, WE. See full example below. Use a Timezone TZ value to indicate a timezone to stop/start the instance(s) 
 
 ## Schedule Tag Example
 
-Start and Stop hours are 24 hour format: for example 8:15-17:30 is start at 8:15am, and stop at 5:30pm.
+Start and Stop hours are 24-hour format: for example 8:15-17:30 is start at 8:15am, and stop at 5:30pm.
 
-Days of the week: SU,MO,TU,WE,TH,FR,SA
+Days of the week: SU, MO, TU, WE, TH, FR, SA
 
-Timezone: Use the TZ database name from the timezone list. For example use America/New_York for Eastern time.
+Timezone: Use the TZ database name from the timezone list. For example, use America/New_York for Eastern time.
 
 Example: schedule=8:15-17:30;MO,TU,WE,TH,FR;America/New_York. Starts instances at 8:15am, stops instance at 5:30pm, Monday - Friday, Eastern Time.
 
@@ -29,14 +29,14 @@ This policy has the following input parameters required when launching the polic
 
 - *Email addresses* - A list of email addresses to notify  
 - *Exclusion Tags* - List of tags that an Instance can have to exclude it from the list. Format: Key=Value.
-- *Automatic Actions(s)* -(Optional)When this value is set, this policy will automatically take the selected action(s).
+- *Automatic Actions(s)* - (Optional)When this value is set, this policy will automatically take the selected action(s).
 
 ## Policy Actions 
 
 The following policy actions are taken on any resources found to be out of compliance.
  
 - Send an email report  
-- stop  - stop a selected instance
+- stop - stop a selected instance
 - start - start a selected instance
 - terminate - terminates or deletes the selected instance.
 - update schedule - change existing schedule tag.  input to provide a new stop/start schedule
@@ -49,7 +49,7 @@ The following policy actions are taken on any resources found to be out of compl
 This policy uses `schedule` tag value for scheduling the instance. The format should be like `8:15-17:30;MO,TU,WE,TH,FR;America/New_York`. Please refer to `Schedule Tag Example` section for more details.
 On leaving the minute field blank, policy will consider the minute as `00` and same will be added to the schedule tag value.
 								
-This policy uses [credentials](https://docs.rightscale.com/policies/users/guides/credential_management.html) for connecting to the  cloud -- in order to apply this policy you must have a credential registered in the system that is compatible with this policy. If  there are no credentials listed when you apply the policy, please contact your cloud admin and ask them to register a credential  that is compatible with this policy. The information below should be consulted when creating the credential.   
+This policy uses [credentials](https://docs.rightscale.com/policies/users/guides/credential_management.html) for connecting to the cloud -- in order to apply this policy, you must have a credential registered in the system that is compatible with this policy. If there are no credentials listed when you apply the policy, please contact your cloud admin, and ask them to register a credential that is compatible with this policy. The information below should be consulted when creating the credential.   
 
 ### Credential configuration
 
