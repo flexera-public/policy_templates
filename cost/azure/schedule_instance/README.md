@@ -48,7 +48,7 @@ The following policy actions are taken on any resources found to be out of compl
 
 This policy uses `schedule` tag value for scheduling the instance. The format should be like `8:15-17:30;MO,TU,WE,TH,FR;America/New_York`. Please refer to `Schedule Tag Example` section for more details.
 On leaving the minute field blank, policy will consider the minute as `00` and same will be added to the schedule tag value.
-								
+
 This policy uses [credentials](https://docs.rightscale.com/policies/users/guides/credential_management.html) for connecting to the cloud -- in order to apply this policy, you must have a credential registered in the system that is compatible with this policy. If there are no credentials listed when you apply the policy, please contact your cloud admin, and ask them to register a credential that is compatible with this policy. The information below should be consulted when creating the credential.   
 
 ### Credential configuration
