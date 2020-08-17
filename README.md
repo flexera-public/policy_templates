@@ -93,6 +93,7 @@ Please contact sales@flexera.com to learn more.
 - [Google Committed Use Discount (CUD)](./cost/google/cud_report/)
 - [Google Idle Compute Instances](./cost/google/idle_compute_instances/)
 - [Google Expiring Committed Use Discount (CUD)](./cost/google/cud_expiration/)
+- [Google Schedule Instance](./cost/google/schedule_instance/)
 
 ##### Database
 
