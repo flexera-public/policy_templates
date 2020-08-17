@@ -1,0 +1,518 @@
+name "Azure Schedule Instance"
+rs_pt_ver 20180301
+type "policy"
+short_description "This Policy Template allows you to schedule start and stop times for your instance, along with the option to terminate instance, update and delete schedule. See the [README](https://github.com/flexera/policy_templates/tree/master/cost/azure/schedule_instance/) and [docs.rightscale.com/policies]https://docs.rightscale.com/policies/) to learn more."
+long_description ""
+category "Cost"
+severity "low"
+info(
+  version: "2.0",
+  provider: "Azure",
+  service: "azure",
+  policy_set:"Schedule Instance"
+)
+
+###############################################################################
+# User inputs
+###############################################################################
+
+parameter "param_email" do
+  type "list"
+  label "Email addresses"
+  description "A list of email addresses to notify"
+end
+
+parameter "param_exclusion_tag_key" do
+  category "User Inputs"
+  label "Exclusion Tag Key"
+  description "Cloud native tag key to ignore instances. Example: exclude_utilization"
+  type "list"
+end
+
+parameter "param_automatic_action" do
+  type "list"
+  label "Automatic Actions"
+  description "When this value is set, this policy will automatically take the selected action(s)"
+  allowed_values ["Schedule Instances"]
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+#authenticate with Azure
+credentials "azure_auth" do
+  schemes "oauth2"
+  label "Azure"
+  description "Select the Azure Resource Manager Credential from the list."
+  tags "provider=azure_rm"
+end
+
+###############################################################################
+# Pagination
+###############################################################################
+
+#pagination support
+pagination "azure_pagination" do
+  get_page_marker do
+    body_path "nextLink"
+  end
+  set_page_marker do
+    uri true
+  end
+end
+
+###############################################################################
+# Datasources
+###############################################################################
+
+#get all subscription details.
+datasource "ds_subscriptions" do
+  request do
+    auth $azure_auth
+    pagination $azure_pagination
+    host "management.azure.com"
+    path "/subscriptions/"
+    query "api-version","2019-06-01"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "value[*]") do
+      field "subscriptionId", jmes_path(col_item,"subscriptionId")
+      field "displayName", jmes_path(col_item,"displayName")
+      field "state", jmes_path(col_item,"state")
+    end
+  end
+end
+
+#get all virtual machines 
+datasource "ds_azure_virtualmachines" do
+  iterate $ds_subscriptions
+  request do
+    auth $azure_auth
+    pagination $azure_pagination
+    host "management.azure.com"
+	path join(["/subscriptions/", val(iter_item,"subscriptionId"), "/providers/Microsoft.Compute/virtualMachines"])
+    query "api-version","2019-03-01"
+    header "User-Agent", "RS Policies"
+    ignore_status [404]
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "value[*]") do
+      field "id", jmes_path(col_item,"id")
+      field "rg", get(4,split(jmes_path(col_item,"id"),'/'))
+      field "name", jmes_path(col_item,"name")
+      field "location", jmes_path(col_item, "location")
+      field "tags", jmes_path(col_item,"tags")
+	  field "subscriptionId",val(iter_item,"subscriptionId")
+      field "subscriptionName",val(iter_item,"displayName")
+    end
+  end
+end
+
+#get all deeper instance data from those machines
+datasource "ds_azure_instances" do
+  iterate $ds_azure_virtualmachines
+  request do
+    auth $azure_auth
+    pagination $azure_pagination
+    host "management.azure.com"
+    path join(["/subscriptions/", val(iter_item,"subscriptionId"), "/resourceGroups/", val(iter_item,"rg"), "/providers/Microsoft.Compute/virtualMachines/",val(iter_item,"name"),"/instanceView"])
+    ignore_status [404]
+    query "api-version","2018-06-01"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+    field "status", jq(response,'.statuses[1].code/"/"|.[1]')
+    field "id", val(iter_item,"id")
+    field "rg", val(iter_item,"rg")
+    field "name", val(iter_item,"name")
+    field "location", val(iter_item, "location")
+    field "tags", val(iter_item,"tags")	     
+    field "subscriptionId",val(iter_item,"subscriptionId")
+    field "subscriptionName",val(iter_item,"subscriptionName")
+  end
+end
+
+datasource "ds_filter_instances" do
+  run_script $js_filter_instances, $ds_azure_instances, $param_exclusion_tag_key
+end
+
+###############################################################################
+# Scripts
+###############################################################################
+
+script "js_filter_instances", type: "javascript" do
+  parameters "ds_azure_instances", "param_exclusion_tag_key"
+  result "results"
+  code <<-EOF
+  var results =[];
+  _.each(ds_azure_instances, function(instance){
+    if (_.has(instance.tags, param_exclusion_tag_key)) {
+    }else{
+      var tagsList = "";
+      var notMatched=true;
+      var next_start=null;
+      var next_stop=null;
+      var next_start_iso=null;
+      var next_stop_iso=null;
+      var now=new Date();
+      var schedule="";
+      for(var prop in instance.tags){
+        tagsList = tagsList+prop+":"+instance.tags[prop]+", ";
+        if(prop== 'schedule'){
+          schedule=instance.tags[prop];
+        }
+        else if(prop== 'next_start'){
+          next_start=new Date(instance.tags[prop]);
+          next_start_iso=next_start.toISOString();
+        }
+        else if(prop== 'next_stop'){
+          next_stop=new Date(instance.tags[prop]);
+          next_stop_iso=next_stop.toISOString();
+        }	  
+	  }
+      var resource_tags = JSON.stringify(instance.tags);
+      var all_tags={};
+      if(!(_.isEmpty(resource_tags))){
+      all_tags=instance.tags;
+      delete all_tags.schedule;
+      }
+      if(now > next_start || now > next_stop || next_start==null || next_stop==null){
+        results.push({
+          "id":instance.id,
+          "state": instance.status,
+          "location": instance.location,
+          "schedule":schedule,
+          "rg":instance.rg,
+          "name":instance.name,
+          "subscriptionId":instance.subscriptionId,
+          "subscriptionName":instance.subscriptionName,
+          "tags":all_tags,
+          "next_start":next_start_iso,
+          "next_stop":next_stop_iso	
+        })
+      }
+    }
+  })
+ EOF
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_email" do
+  automatic true
+  label "Sends Email"
+  description "Sends Incident Email"
+  email $param_email
+end
+
+escalation "esc_schedule_instance" do
+  automatic contains($param_automatic_action, "Schedule Instances")
+  label "Schedule"
+  description "Stop or Start the Instance"
+  run "schedule_instance", data
+end
+	
+escalation "esc_terminate_instance" do
+  automatic false
+  label "Terminate Instance"
+  description "Terminate or delete the Instance"
+  run "terminate_instance", data
+end
+
+escalation "esc_update_schedule" do
+  automatic false
+  label "Update Schedule"
+  description "Update the existing schedule Tag"
+  parameter "param_schedule" do
+    type "string"
+    label "New Schedule"
+    description "Provide Schedule Value"
+  end
+  run "update_schedule", data, $param_schedule
+end
+
+escalation "esc_delete_schedule" do
+  automatic false
+  label "Delete Schedule"
+  description "Delete Schedule Tag"
+  run "delete_schedule", data
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "policy_schedule_instance" do
+  validate $ds_filter_instances do
+    summary_template "Azure Schedule Instance list"
+    hash_include "next_start", "next_stop"
+    escalate $esc_email
+    escalate $esc_schedule_instance
+    escalate $esc_terminate_instance
+    escalate $esc_update_schedule
+    escalate $esc_delete_schedule
+    check eq(size(data),0)
+    export do
+      resource_level true
+      field "id" do
+        label "Instance ID"
+      end
+      field "name" do
+        label "Instance Name"
+      end
+      field "rg" do
+        label "Resource Group"
+      end
+      field "location" do
+        label "Location"
+      end
+      field "tags" do
+        label "Tags"
+      end
+      field "state" do
+        label "State"
+      end
+      field "subscriptionId" do
+        label "SubscriptionId"
+      end
+      field "subscriptionName" do
+        label "SubscriptionName"
+      end
+    end
+  end
+end
+
+###############################################################################
+# Cloud Workflow
+###############################################################################
+
+define terminate_instance($data) return $all_response do
+  $all_responses = []
+  foreach $item in $data do
+    call sys_log('> ' + $item['id'] + ': Terminating ...', to_s($item))
+    sub on_error: skip do
+        $response= http_request(
+          auth: $$azure_auth,
+          verb: "delete",
+          host: "management.azure.com",
+          https: true,
+          href: $item['id'],
+          query_strings: {
+          "api-version": "2019-12-01"
+        },
+        headers: {
+          "cache-control": "no-cache",
+          "content-type": "application/json"
+        }
+      )
+      $all_responses << $response
+    end
+  end
+end
+
+define schedule_instance($data) return $all_responses do
+  $all_responses = []
+  foreach $item in $data do
+    $rule = split($item['schedule'],';')[1]
+    $time_range = split($item['schedule'],';')[0]
+    $start_time = split($time_range,'-')[0]
+    $start_hour = split($start_time, ':')[0]
+    $start_minute = split($start_time, ':')[1]
+    $stop_time = split($time_range,'-')[1]
+    $stop_hour = split($stop_time, ':')[0]
+    $stop_minute = split($stop_time, ':')[1]
+    $start_rule = join(["FREQ=WEEKLY;BYDAY=",$rule])
+    $stop_rule = join(["FREQ=WEEKLY;BYDAY=",$rule])
+    $timezone = split($item['schedule'],';')[2]
+    if ! $timezone
+      $timezone = "UTC"
+    end
+    call window_active($start_hour, $start_minute, $start_rule, $stop_hour, $stop_minute, $stop_rule, $timezone) retrieve $window_active , $next_start, $next_stop
+
+    call sys_log('window_active',$window_active)
+    call sys_log('next_start',$next_start)
+    call sys_log('next_stop',$next_stop)
+
+    if ($window_active)
+      call sys_log($item['schedule'] + ' schedule window is currently active: Instances may be started.', '')
+    else
+      call sys_log($item['schedule'] + ' schedule window is currently in-active: Instances may be stopped.', '')
+    end
+
+    $stoppable = /^(running|starting|deallocating|deallocated)$/
+    $startable = /^(stopped|stopping|deallocating|deallocated)$/
+    call tag_resources($item, $item['schedule'], $next_start, $next_stop) retrieve $responses	
+    if($window_active)
+      if($item['state']=~$startable)
+        call sys_log('> ' + $item['id'] + ': Starting ...', to_s($item))
+        sub on_error: skip do
+        $response= http_request(
+          auth: $$azure_auth,
+          verb: "post",
+          host: "management.azure.com",
+          https: true,
+          href: join([$item['id'],"/start"]),
+          query_strings: {
+          "api-version": "2019-12-01"
+        },
+        headers: {
+          "cache-control": "no-cache",
+          "content-type": "application/json"
+        }
+      )
+          $all_responses << $response
+        end
+      else
+        call sys_log('> ' + $item['id'] + ': No action - Instance state is ' + $item['state'], '')
+      end
+    else
+      if($item['state'] =~ $stoppable)
+        call sys_log('> ' + $item['id'] + ': Stopping ...', to_s($item))
+        sub on_error: skip do
+        $response= http_request(
+          auth: $$azure_auth,
+          verb: "post",
+          host: "management.azure.com",
+          https: true,
+          href: join([$item['id'],"/powerOff"]),
+          query_strings: {
+          "api-version": "2019-12-01"
+        },
+        headers: {
+          "cache-control": "no-cache",
+          "content-type": "application/json"
+        }
+      )
+          $all_responses << $response
+        end
+      else
+        call sys_log('> ' + $item['id'] + ': No action - Instance state is ' + $item['state'], '')
+      end
+    end
+  end
+end
+
+
+define update_schedule($data, $param) return $all_responses do
+  $all_responses = []
+  foreach $item in $data do
+    $rule = split($param,';')[1]
+    $time_range = split($param,';')[0]
+    $start_time = split($time_range,'-')[0]
+    $start_hour = split($start_time, ':')[0]
+    $start_minute = split($start_time, ':')[1]
+    $stop_time = split($time_range,'-')[1]
+    $stop_hour = split($stop_time, ':')[0]
+    $stop_minute = split($stop_time, ':')[1]
+    $start_rule = join(["FREQ=WEEKLY;BYDAY=",$rule])
+    $stop_rule = join(["FREQ=WEEKLY;BYDAY=",$rule])
+    $timezone = split($param,';')[2]
+    if ! $timezone
+      $timezone = "UTC"
+    end
+    call window_active($start_hour, $start_minute, $start_rule, $stop_hour, $stop_minute, $stop_rule, $timezone) retrieve $window_active , $next_start, $next_stop
+    call sys_log('> ' + $item['id'] + ': Updating schedule Tag ...', to_s($item))
+    call tag_resources($item, $param, $next_start, $next_stop) retrieve $response
+    $all_responses << $response
+  end
+end
+
+define delete_schedule($data) return $all_responses do
+  $all_responses = []
+  foreach $item in $data do
+    call sys_log('> ' + $item['id'] + ': Deleting schedule Tag ...', to_s($item))
+      $delete_tag = "delete"
+      call tag_resources($item, $delete_tag, $next_start, $next_stop) retrieve $response    
+      $all_responses << $response
+  end
+end
+
+define tag_resources($item, $param, $next_start, $next_stop) return $update_resource_response do
+  $$log = [] 
+    $new_tags = {}
+    $new_tags = $item["tags"] 
+  if $param != "delete" 
+    $new_tags["next_start"]= $next_start
+    $new_tags["next_stop"]= $next_stop
+    $new_tags["schedule"]= $param
+  end
+    $$log << to_s($new_tags)	
+	$$log << $next_start
+	$$log << $next_stop	
+	$$log << $param
+  call sys_log('all tags ', to_s($new_tags))
+    sub on_error: handle_error($update_resource_response) do 
+      $update_resource_response = http_request(
+      auth: $$azure_auth,
+        verb: "patch",
+        host: "management.azure.com",
+        https: true,
+        href: $item["id"],
+        query_strings: {
+          "api-version": "2020-06-01"
+        },
+        headers: {
+          "cache-control": "no-cache",
+          "content-type": "application/json"
+        },
+        body: {"tags": $new_tags}
+      )
+    end
+end
+
+define window_active($start_hour, $start_minute, $start_rule, $stop_hour, $stop_minute, $stop_rule, $tz) return $window_active, $next_start, $next_stop do
+  $params = {
+    verb: 'post',
+    host: 'bjlaftw4kh.execute-api.us-east-1.amazonaws.com',
+    https: true,
+    href: '/production',
+    headers:{
+      'content-type': 'application/json'
+    },
+    body: {
+      'start_hour': $start_hour,
+      'start_minute': $start_minute,
+      'start_rule': $start_rule,
+      'stop_minute': $stop_minute,
+      'stop_hour': $stop_hour,
+      'stop_rule': $stop_rule,
+      'tz': $tz
+    }
+  }
+  call sys_log('window active $params', to_s($params))
+  $response = http_request($params)
+  call sys_log('window active $response', to_s($response))
+  $body = $response['body']
+  call sys_log('window active $body', to_s($body))
+
+  $window_active = to_b($body['event_active'])
+  $next_start   = $body['next_start']
+  $next_stop    = $body['next_stop']
+end
+
+define handle_error($response) do 
+  $status_code = $response["code"]
+  if $status_code == 404
+    $_error_behavior = "skip"
+  else 
+    $_error_behavior = "raise"
+  end 
+end 
+
+define sys_log($subject, $detail) do
+  rs_cm.audit_entries.create(
+    notify: "None",
+    audit_entry: {
+      auditee_href: @@account,
+      summary: $subject,
+      detail: $detail
+    }
+  )
+end
