@@ -6,7 +6,7 @@ This Policy Template allows you to schedule start and stop times for your instan
 
 ## How to Use
 
-This policy relies on a tag with format 'schedule' to stop and start instances based on a schedule. The tag value defines the schedule with a start hour, stop hour and days of the week. The start and stop hour are in 24 hour format, and the days of the week are two character abbreviation for example: MO, TU, WE. See full example below.. Use a Timezone TZ value to indicate a timezone to stop/start the instance(s) 
+This policy relies on a tag with format 'schedule' to stop and start instances based on a schedule. The tag value defines the schedule with a start time(start hour and start minute), stop time(stop hour and stop minute) and days of the week and timezone. The start and stop time are in 24 hour format, and the days of the week are two character abbreviation for example: MO, TU, WE. See full example below.. Use a Timezone TZ value to indicate a timezone to stop/start the instance(s) 
 
 ## Schedule Tag Example
 
@@ -20,28 +20,31 @@ Example: schedule=8:15-17:30;MO,TU,WE,TH,FR;America/New_York. Starts instances a
 
 Instances are off during the weekend and start back up on Monday morning at 8:15am and are off at 5:30pm every weekday. Times are UTC unless the Timezone field is provided.
 
+Note: On leaving the minute field blank, policy will consider the minute as `00`
+and same will be added to the schedule label value.
+
 ## Input Parameters
 
 This policy has the following input parameters required when launching the policy.
 
 - *Email addresses* - A list of email addresses to notify  
-- *Tags Key=Value* - List of tags that an Instance can have to exclude it from the list. 
-- *Automatic Actions* - When this value is set, this policy will automatically take the selected action(s).
-
-Please note that the "*Automatic Actions*" parameter contains a list of action(s) that can be performed on the resources. When it is selected, the policy will automatically execute the corresponding action on the data that failed the checks, post incident generation. Please leave it blank for *manual* action.
-For example if a user selects the "Schedule Instances" action while applying the policy, the identified resources will be stopped or started as per the schedule.
+- *Exclusion Tags* - List of tags that an Instance can have to exclude it from the list. Format: Key=Value.
+- *Automatic Actions(s)* -(Optional)When this value is set, this policy will automatically take the selected action(s).
 
 ## Policy Actions 
 
 The following policy actions are taken on any resources found to be out of compliance.
-
+ 
 - Send an email report  
-- schedule  - start or stop a selected instance
+- stop  - stop a selected instance
+- start - start a selected instance
 - terminate - terminates or deletes the selected instance.
-- update schedule - change existing schedule tag.  input to provide a new stop/start schedule. The format is schedule=new_schedule
+- update schedule - change existing schedule tag.  input to provide a new stop/start schedule
 - delete schedule - removes the schedule tag
 
 ## Prerequisites
+
+### Schedule Label Format
 
 This policy uses `schedule` tag value for scheduling the instance. The format should be like `8:15-17:30;MO,TU,WE,TH,FR;America/New_York`. Please refer to `Schedule Tag Example` section for more details.
 On leaving the minute field blank, policy will consider the minute as `00` and same will be added to the schedule tag value.
