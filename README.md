@@ -73,6 +73,7 @@ Please contact sales@flexera.com to learn more.
 - [Azure Reserved Instance Utilization](./cost/azure/reserved_instances/utilization/)
 - [Azure Reserved Instance Recommendations](./cost/azure/reserved_instances/recommendations)
 - [Azure Unused IP Addresses](./cost/azure/unused_ip_addresses)
+- [Azure Schedule Instance](./cost/azure/schedule_instance/)
 
 ##### Database
 
