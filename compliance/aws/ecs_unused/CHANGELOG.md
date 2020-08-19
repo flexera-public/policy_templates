@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.3
+
+- Updated Regions API to get only enabled Regions for an account
+
 ## v2.2
 
 - adding incident resource table
