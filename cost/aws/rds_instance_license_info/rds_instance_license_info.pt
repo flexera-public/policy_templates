@@ -6,7 +6,7 @@ long_description ""
 severity "low"
 category "Cost"
 info(
-  version: "2.0",
+  version: "2.1",
   provider: "AWS",
   service: "RDS",
   policy_set: ""
@@ -42,7 +42,7 @@ end
 # Datasources
 ###############################################################################
 
-#Generates list of Regions
+#Get list of enabled regions for an account
 datasource "ds_regions_list" do
   request do
     auth $auth_aws
@@ -60,8 +60,27 @@ datasource "ds_regions_list" do
   end
 end
 
-datasource "ds_instances_set" do
+# Get only SCP enabled regions
+datasource "ds_regions" do
   iterate $ds_regions_list
+    request do
+      auth $auth_aws
+      verb "GET"
+      host "ec2.amazonaws.com"
+      host join(["ec2.",val(iter_item,"region"),".amazonaws.com"])
+      path "/"
+      query "Action", "DescribeRegions"
+      query "Version", "2016-11-15"
+      ignore_status [403]
+    end
+    result do
+      encoding "xml"
+      field "region", val(iter_item, "region")
+    end
+end
+
+datasource "ds_instances_set" do
+  iterate $ds_regions
   request do
     auth $auth_aws
     host join(["rds.", val(iter_item, "region"), ".amazonaws.com"])

@@ -6,7 +6,7 @@ long_description ""
 category "Compliance"    
 severity "low"
 info(
-  version: "2.0",
+  version: "2.1",
   provider: "AWS",
   service: "",
   policy_set:"Untagged resources"
@@ -56,7 +56,8 @@ end
 # Datasources
 ###############################################################################
 
-datasource "ds_get_regions" do
+#Get list of enabled regions for an account
+datasource "ds_regions_list" do
   request do
     auth $auth_aws
     verb "GET"
@@ -73,8 +74,27 @@ datasource "ds_get_regions" do
   end
 end
 
+# Get only SCP enabled regions
+datasource "ds_regions" do
+  iterate $ds_regions_list
+    request do
+      auth $auth_aws
+      verb "GET"
+      host "ec2.amazonaws.com"
+      host join(["ec2.",val(iter_item,"region"),".amazonaws.com"])
+      path "/"
+      query "Action", "DescribeRegions"
+      query "Version", "2016-11-15"
+      ignore_status [403]
+    end
+    result do
+      encoding "xml"
+      field "region", val(iter_item, "region")
+    end
+end
+
 datasource "ds_get_all_resources" do
-  iterate $ds_get_regions
+  iterate $ds_regions
   request do
     auth $auth_aws
     pagination $aws_pagination

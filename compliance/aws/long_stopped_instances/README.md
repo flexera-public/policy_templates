@@ -40,7 +40,8 @@ Required permissions in the provider:
   "Version": "2016-11-15",
   "Statement":[{
   "Effect":"Allow",
-  "Action":["ec2: DescribeInstances"],
+  "Action":["ec2: DescribeInstances",
+            "ec2:DescribeRegions"],
     "Resource":"*"
     }
   ]

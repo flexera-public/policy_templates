@@ -46,9 +46,12 @@ Required permissions in the provider:
     "Resource":"*"
     }
   ]
-},
+}
+```
+
+```javascript
 {
-  "Version": "2012-10-17",
+  "Version": "2016-11-15",
   "Statement":[{
   "Effect":"Allow",
   "Action":["ec2:DescribeRegions"],

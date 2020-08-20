@@ -6,7 +6,7 @@ long_description ""
 category "Compliance"
 severity "low"
 info(
-  version: "2.2",
+  version: "2.3",
   provider: "AWS",
   service: "EC2",
   policy_set: "Long Stopped Instances"
@@ -72,7 +72,7 @@ end
 # Datasources
 ###############################################################################
 
-#Generates list of Regions
+#Get list of enabled regions for an account
 datasource "ds_regions_list" do
   request do
     auth $auth_aws
@@ -90,10 +90,29 @@ datasource "ds_regions_list" do
   end
 end
 
+# Get only SCP enabled regions
+datasource "ds_regions" do
+  iterate $ds_regions_list
+    request do
+      auth $auth_aws
+      verb "GET"
+      host "ec2.amazonaws.com"
+      host join(["ec2.",val(iter_item,"region"),".amazonaws.com"])
+      path "/"
+      query "Action", "DescribeRegions"
+      query "Version", "2016-11-15"
+      ignore_status [403]
+    end
+    result do
+      encoding "xml"
+      field "region", val(iter_item, "region")
+    end
+end
+
 #Get the list of all EC2 Instances across all regions.
 #https://docs.aws.amazon.com/AWSEC2/latest/APIReference/API_DescribeInstances.html
 datasource "ds_ec2_stopped_instances_list" do
-  iterate $ds_regions_list
+  iterate $ds_regions
   request do
     auth $auth_aws
     pagination $aws_pagination_xml

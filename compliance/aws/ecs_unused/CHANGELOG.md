@@ -2,7 +2,7 @@
 
 ## v2.3
 
-- Updated Regions API to get only enabled Regions for an account
+- Updated Regions API to get only SCP enabled Regions
 
 ## v2.2
 
