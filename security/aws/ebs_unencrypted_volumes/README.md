@@ -35,7 +35,7 @@ Required permissions in the provider:
     "Statement":[{
     "Effect":"Allow",
     "Action":["ec2:DescribeVolumes",
-    			"ec2:DescribeRegions"],
+                "ec2:DescribeRegions"],
     "Resource":"*"
     }
   ]
