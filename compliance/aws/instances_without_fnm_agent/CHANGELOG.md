@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.4
+
+- Updated Regions API to get only SCP enabled Regions
+
 ## v2.3
 
 - adding incident resource table

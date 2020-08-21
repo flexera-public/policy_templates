@@ -57,6 +57,18 @@ Required permissions in the provider:
 }
 ```
 
+```javascript
+{
+  "Version": "2016-11-15",
+  "Statement":[{
+  "Effect":"Allow",
+  "Action":["ec2:DescribeRegions"],
+    "Resource":"*"
+    }
+  ]
+}
+```
+
 ## Input Parameters
 
 This policy has the following input parameters required when launching the policy.

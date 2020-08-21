@@ -35,7 +35,8 @@ Provider tag value to match this policy: `aws`
   "Statement":[{
   "Effect":"Allow",
   "Action":["ec2:DescribeInstanceStatus",
-            "ec2:DescribeTags"],
+            "ec2:DescribeTags",
+            "ec2:DescribeRegions"],
     "Resource":"*"
     }
   ]

@@ -6,7 +6,7 @@ long_description ""
 severity "low"
 category "Cost"
 info(
-  version: "2.4",
+  version: "2.5",
   provider: "AWS",
   service: "EC2",
   policy_set: "Idle Compute Instances"
@@ -73,7 +73,7 @@ auth "auth_rs", type: "rightscale"
 # Datasources
 ###############################################################################
 
-#Generates list of Regions
+#Get list of enabled regions for an account
 datasource "ds_regions_list" do
   request do
     auth $auth_aws
@@ -91,12 +91,31 @@ datasource "ds_regions_list" do
   end
 end
 
+# Get only SCP enabled regions
+datasource "ds_regions" do
+  iterate $ds_regions_list
+    request do
+      auth $auth_aws
+      verb "GET"
+      host "ec2.amazonaws.com"
+      host join(["ec2.",val(iter_item,"region"),".amazonaws.com"])
+      path "/"
+      query "Action", "DescribeRegions"
+      query "Version", "2016-11-15"
+      ignore_status [403]
+    end
+    result do
+      encoding "xml"
+      field "region", val(iter_item, "region")
+    end
+end
+
 datasource "ds_instances" do
   run_script $js_instances, $ds_instances_set, $param_exclusion_tag_key
 end
 
 datasource "ds_instances_set" do
-  iterate $ds_regions_list
+  iterate $ds_regions
   request do
     run_script $js_instances_set, val(iter_item,"region")
   end

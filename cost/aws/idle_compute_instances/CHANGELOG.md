@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.5
+
+- Updated Regions API to get only SCP enabled Regions
+
 ## v2.4
 
 - Updated escalation block

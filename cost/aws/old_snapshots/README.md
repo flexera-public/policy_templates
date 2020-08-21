@@ -56,6 +56,18 @@ The following AWS permissions must be allowed for the policy to run.
 }
 ```
 
+```javascript
+{
+  "Version": "2016-11-15",
+  "Statement":[{
+  "Effect":"Allow",
+  "Action":["ec2:DescribeRegions"],
+    "Resource":"*"
+    }
+  ]
+}
+```
+
 ## Supported Clouds
 
 - AWS

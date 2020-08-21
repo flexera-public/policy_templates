@@ -71,6 +71,18 @@ Required permissions in the provider:
 }
 ```
 
+```javascript
+{
+  "Version": "2016-11-15",
+  "Statement":[{
+  "Effect":"Allow",
+  "Action":["ec2:DescribeRegions"],
+    "Resource":"*"
+    }
+  ]
+}
+```
+
 ### Windows Support
 
 To enable windows support you will need to add the following to your cloudwatch config.json and restart cloudwatch agent
