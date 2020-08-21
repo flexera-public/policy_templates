@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.4
+
+- Removed recommendation capacity for minimun capacity value.
+
 ## v2.3
 
 - Added Resource table
