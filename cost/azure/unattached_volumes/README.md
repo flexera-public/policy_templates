@@ -25,7 +25,6 @@ This policy has the following input parameters required when launching the polic
 Please note that the "*Automatic Actions*" parameter contains a list of action(s) that can be performed on the resources. When it is selected, the policy will automatically execute the corresponding action on the data that failed the checks, post incident generation. Please leave it blank for *manual* action.
 For example if a user selects the "Delete Unused Volumes" action while applying the policy, the identified resources will be deleted.
 
-
 ## Policy Actions
 
 The following policy actions are taken on any resources found to be out of compliance.
