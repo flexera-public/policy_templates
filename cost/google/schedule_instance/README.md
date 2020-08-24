@@ -2,7 +2,7 @@
 
 ## What it does
 
-This Policy Template allows you to schedule start and stop times for your instance, along with the option to terminate instance, update and delete schedule.         
+This Policy Template allows you to schedule start and stop times for your Google instance, along with the option to terminate instance, update and delete schedule.         
 
 ## How to Use
 
@@ -10,20 +10,21 @@ This policy relies on a label with format 'schedule' to stop and start instances
 
 ## schedule Label Example
 
-Since label supports only `-`, `_`, lowercase characters, numbers and International characters, We are replacing `:` with `m` in start and stop time, and ASCII code for special character `/` and `+` in timezone, surrounded by `_`.
+Since label supports only `-`, `_`, lowercase characters, numbers and International characters, The special characters in timezone should be replaced like `/` with `-`, `+` with `p` and `-`(minus) with `m` and all characters should be lowercase.
+For example, the timezone `Etc/Gmt+10` should be used as `etc-gmtp10`, `Etc/GMT-4` as `etc-gmtm4`, `America/North_Dakota/New_Salem` as `america-north_dakota-new_salem`, `America/Port-au-Prince` as `america-port-au-prince` etc.
 
-Start and Stop time are 24 hour format: for example 8m30-17m15 is start at 8:30am, and stop at 5:15pm.
+Start and Stop time are 24 hour format: for example 0830-1715 is start at 8:30am, and stop at 5:15pm.
 
 Days of the week: su-mo-tu-we-th-fr-sa
 
-Timezone: Use the TZ database name from the timezone list in the mentioned format. For example use America/New_York as america_47_new_york for Eastern time and Etc/GMT+7 as etc_47_gmt_43_7.
+Timezone: Use the TZ database name from the [timezone list](https://en.wikipedia.org/wiki/List_of_tz_database_time_zones) in the above mentioned format.
 
-Example: schedule=8m30-17m15_mo-tu-we-th-fr_america_47_new_york. Stops instances at 5:15pm, starts instance at 8:30am, Monday - Friday, Eastern Time.
+Example: schedule=0830-1715_mo-tu-we-th-fr_america-new_york. Stops instances at 5:15pm, starts instance at 8:30am, Monday - Friday, Eastern Time(America/New_York).
 Please note that `_` is being used for separating the start-stop time, days of the week and the timezone.
 
 Instances are off during the weekend and start back up on Monday morning at 8:30am and are off at 5:15pm every weekday. Times are UTC unless the Timezone field is provided.
 
-Note: On leaving the minute field blank, policy will consider the minute as `00` and same will be added to the schedule label value.
+Note: Please note that the time is in 24 hour format. For Example `8am` should be written as `0800` and `5:30pm` should be as `1730`.
 
 ## Input Parameters
 
@@ -48,8 +49,8 @@ The following policy actions are taken on any resources found to be out of compl
 
 ### Schedule Label Format
 
-This policy uses `schedule` label value for scheduling the instance. The format should be like `8m30-17m15_mo-tu-we-th-fr_america_47_new_york`. Please refer to `Schedule Label Example` section for more details.
-On leaving the minute field blank, policy will consider the minute as `00` and same will be added to the schedule label value.
+This policy uses `schedule` label value for scheduling the instance. The format should be like `0800-1715_mo-tu-we-th-fr_america-new_york`. Please refer to `Schedule Label Example` section for more details.
+Please note that the time is in 24 hour format. For Example `8am` should be written as `0800` and `5:30pm` should be as `1730`.
 
 This policy uses [credentials](https://docs.rightscale.com/policies/users/guides/credential_management.html) for connecting to the  cloud -- in order to apply this policy you must have a credential registered in the system that is compatible with this policy. If  there are no credentials listed when you apply the policy, please contact your cloud admin and ask them to register a credential  that is compatible with this policy. The information below should be consulted when creating the credential.   
 

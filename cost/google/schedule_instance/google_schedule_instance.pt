@@ -63,15 +63,6 @@ end
 # Datasources
 ###############################################################################
 
-datasource "ds_get_timezones_list" do
-  request do
-    verb "GET"
-    host "raw.githubusercontent.com"
-    path "/rightscale/policy_templates/master/data/tz_database/timezones_list.json"
-    header "User-Agent", "RS Policies"
-  end
-end
-
 datasource "ds_get_projectId" do
   request do
     auth $google_auth
@@ -125,40 +116,22 @@ datasource "ds_get_all_instances" do
       field "state", jmes_path(col_item,"status")
       field "labels", jmes_path(col_item, "labels")
       field "zone", val(iter_item,"zone")
-      field "labelFingerprint", jmes_path(col_item, "labelFingerprint")
       field "selfLink", jmes_path(col_item, "selfLink")
     end
   end
 end
 
-datasource "ds_get_timezones" do
-  run_script $js_get_timezones , $ds_get_timezones_list
-end
-
 datasource "ds_filter_resources" do
-  run_script $js_filter_resources, $ds_get_timezones, $ds_get_all_instances, $param_tags_to_exclude
+  run_script $js_filter_resources, $ds_get_all_instances, $param_tags_to_exclude
 end
 
 ###############################################################################
 # Scripts
 ###############################################################################
 
-script "js_get_timezones", type: "javascript" do
-  parameters "timezones_list"
-  result "result"
-  code <<-EOS
-  var result ={};
-  for(var j =0; j< timezones_list.timezone.length;j++){
-    var tz=timezones_list.timezone[j];
-    tz=tz.split("/").join("_47_").toLowerCase();
-    tz=tz.split("+").join("_43_");
-    result[tz]=timezones_list.timezone[j];
-  }
-  EOS
-end
   
 script "js_filter_resources", type: "javascript" do
-  parameters "timezones","ds_get_all_instances", "param_tags_to_exclude"
+  parameters "ds_get_all_instances", "param_tags_to_exclude"
   result "result"
   code <<-EOS
   var result=[];
@@ -186,25 +159,14 @@ script "js_filter_resources", type: "javascript" do
         for(var prop in instance.labels){
           all_labels=all_labels+", "+prop+"="+instance.labels[prop];
           if(prop== 'schedule'){
-            var format_data=instance.labels[prop].split("_");
-            if(format_data.length>3){
-              var timezone=format_data[2];
-              for(var k=3;k<format_data.length;k++){
-                timezone=timezone+"_"+format_data[k];
-              }
-              format_data[2]=timezone;
-            }
-            var schedule_new=format_data[1]+"_"+format_data[2];
-            format_data[0]=format_data[0].split("m").join(":");
-            format_data[1]=format_data[1].split("-").join(",").toUpperCase();
-            format_data[2]=timezones[format_data[2]];
-            schedule=format_data[0]+";"+format_data[1]+";"+format_data[2];
+            var schedule=instance.labels[prop];
           }
           else if(prop== 'next_start'){
             var start_time=instance.labels[prop];
             start_time=start_time.split("t");
-            start_time[1]=start_time[1].split("_43_").join("+");
-            start_time[1]=start_time[1].split("m").join(":");
+            start_time[1]=start_time[1].split("p").join("+");
+            start_time[1]=start_time[1].split("-").join(":");
+            start_time[1]=start_time[1].split("m").join("-");
             start_time=start_time.join("T");
             next_start=new Date(start_time);
             next_start_iso=next_start.toISOString();
@@ -212,8 +174,9 @@ script "js_filter_resources", type: "javascript" do
           else if(prop== 'next_stop'){
             var stop_time=instance.labels[prop];
             stop_time=stop_time.split("t");
-            stop_time[1]=stop_time[1].split("_43_").join("+");
-            stop_time[1]=stop_time[1].split("m").join(":");
+            stop_time[1]=stop_time[1].split("p").join("+");
+            stop_time[1]=stop_time[1].split("-").join(":");
+            stop_time[1]=stop_time[1].split("m").join("-");
             stop_time=stop_time.join("T");
             next_stop=new Date(stop_time);
             next_stop_iso=next_stop.toISOString();
@@ -228,10 +191,7 @@ script "js_filter_resources", type: "javascript" do
             "labels":all_labels.slice(2),
             "next_start":next_start_iso,
             "next_stop":next_stop_iso,
-            "labels_obj": instance.labels,
-            "schedule_new":schedule_new,
-            "selfLink": instance.selfLink,
-            "labelFingerprint":instance.labelFingerprint
+            "selfLink": instance.selfLink
           })
         }
       }
@@ -315,17 +275,8 @@ policy "policy_schedule_instance" do
       field "labels" do
         label "Labels"
       end
-      field "labelFingerprint" do
-        label "LabelFingerprint"
-      end
-      field "selfLink" do
+	  field "selfLink" do
         label "SelfLink"
-      end
-      field "labels_obj" do
-        label "Labels OBJ"
-      end
-      field "schedule_new" do
-        label "Days and Timezone"
       end
     end
   end
@@ -338,15 +289,20 @@ end
 define schedule_instance($data) return $all_response do
   $all_response=[]
   foreach $item in $data do
-    $rule = split($item['schedule'],';')[1]
-    $time_range = split($item['schedule'],';')[0]
+    $rule = split($item['schedule'],'_')[1]
+    $rule= split($rule, "-")
+    $rule= join($rule, ",")
+    $rule= upcase($rule)
+    $time_range = split($item['schedule'],'_')[0]
     $start_time = split($time_range,'-')[0]
+    $start_time = insert($start_time, 2, ":")
     $start_hour = split($start_time, ':')[0]
     $start_minute = split($start_time, ':')[1]
     if $start_minute==null
       $start_minute='00';
     end
     $stop_time = split($time_range,'-')[1]
+    $stop_time= insert($stop_time, 2, ":")
     $stop_hour = split($stop_time, ':')[0]
     $stop_minute = split($stop_time, ':')[1]
     if $stop_minute==null
@@ -354,10 +310,29 @@ define schedule_instance($data) return $all_response do
     end
     $start_rule = join(["FREQ=WEEKLY;BYDAY=",$rule])
     $stop_rule = join(["FREQ=WEEKLY;BYDAY=",$rule])
-    $timezone = split($item['schedule'],';')[2]
+    $timezone = split($item['schedule'],'_')[2]
     if ! $timezone
       $timezone = "UTC"
     end
+    $size=size(split($item['schedule'], "_"))
+    if $size > 3
+      $count = 3
+      $arr_val=split($item['schedule'], "_")
+      while $count < $size do
+        $timezone=$timezone+"_"+$arr_val[$count]
+        $count=$count+1
+      end
+    end
+	call get_tzlist() retrieve $timezones
+	$tz_list={}
+	$timezones=from_json($timezones)
+	foreach $obj in $timezones do
+	  $val=to_a($obj)
+	  foreach $arr in $val do
+	  $tz_list[$arr[0]]=$arr[1]
+	  end
+	end
+	$timezone=$tz_list[$timezone]
     call window_active($start_hour, $start_minute, $start_rule, $stop_hour, $stop_minute, $stop_rule, $timezone) retrieve $window_active , $next_start, $next_stop
 
     call sys_log('window_active',$window_active)
@@ -374,20 +349,29 @@ define schedule_instance($data) return $all_response do
     $startable = /^(STOPPING|TERMINATED)$/
 	
     $next_start=split($next_start, "T")
-    $next_start[1]=split($next_start[1],":")
+    $next_start[1]=split($next_start[1],"-")
     $next_start[1]=join($next_start[1], "m")
+    $next_start[1]=split($next_start[1],":")
+    $next_start[1]=join($next_start[1], "-")
     $next_start[1]=split($next_start[1], "+")
-    $next_start[1]=join($next_start[1], "_43_")
+    $next_start[1]=join($next_start[1], "p")
     $next_start=join($next_start, "t")
+	
     $next_stop=split($next_stop,"T")
-    $next_stop[1]=split($next_stop[1],":")
+    $next_stop[1]=split($next_stop[1],"-")
     $next_stop[1]=join($next_stop[1], "m")
+    $next_stop[1]=split($next_stop[1],":")
+    $next_stop[1]=join($next_stop[1], "-")
     $next_stop[1]=split($next_stop[1], "+")
-    $next_stop[1]=join($next_stop[1], "_43_")
+    $next_stop[1]=join($next_stop[1], "p")
     $next_stop=join($next_stop, "t")
-    $item['labels_obj']['next_start']=$next_start
-    $item['labels_obj']['next_stop']=$next_stop
-    $item['labels_obj']['schedule']=join([$start_hour, "m", $start_minute, "-", $stop_hour, "m", $stop_minute, "_",$item['schedule_new']])
+	
+	call get_labelfingerprint($item) retrieve $labelFingerprint, $labels_obj
+	
+    $labels_obj['next_start']=$next_start
+    $labels_obj['next_stop']=$next_stop
+    $labels_obj['schedule']=$item['schedule']
+	
     $response= http_post(
       auth: $$google_auth,
       url: join([$item['selfLink'], "/setLabels"]),
@@ -396,8 +380,8 @@ define schedule_instance($data) return $all_response do
         "content-type": "application/json"
       },
       body:{
-        "labels": $item['labels_obj'],
-        "labelFingerprint": $item['labelFingerprint']
+        "labels": $labels_obj,
+        "labelFingerprint": $labelFingerprint
       }
     )
     if($window_active)
@@ -459,15 +443,16 @@ end
 define delete_schedule($data) return $all_response do
   $all_response=[]
   foreach $item in $data do
+    call get_labelfingerprint($item) retrieve $labelFingerprint, $labels_obj
     $new_label={}
-    $item['labels_obj']=to_a($item['labels_obj'])
-    foreach $label in $item['labels_obj'] do
+    $labels_obj=to_a($labels_obj)
+    foreach $label in $labels_obj do
       if $label[0]!='schedule' && $label[0]!='next_start' && $label[0]!='next_stop'
         $new_label[$label[0]]=$label[1];
       end
     end
     call sys_log('> ' + $item['id'] + ': Deleting schedule Tag ...', to_s($item))
-    call get_labelfingerprint($item) retrieve $labelFingerprint
+    
     sub on_error: handle_error($response) do
       $response= http_post(
         auth: $$google_auth,
@@ -489,15 +474,20 @@ end
 define update_schedule($data, $param) return $all_response do
   $all_response=[]
   foreach $item in $data do
-    $rule = split($param,';')[1]
-    $time_range = split($param,';')[0]
+    $rule = split($param,'_')[1]
+    $rule= split($rule, "-")
+    $rule= join($rule, ",")
+    $rule= upcase($rule)
+    $time_range = split($param,'_')[0]
     $start_time = split($time_range,'-')[0]
+    $start_time = insert($start_time, 2, ":")
     $start_hour = split($start_time, ':')[0]
     $start_minute = split($start_time, ':')[1]
     if $start_minute==null
       $start_minute='00';
     end
     $stop_time = split($time_range,'-')[1]
+    $stop_time= insert($stop_time, 2, ":")
     $stop_hour = split($stop_time, ':')[0]
     $stop_minute = split($stop_time, ':')[1]
     if $stop_minute==null
@@ -505,40 +495,54 @@ define update_schedule($data, $param) return $all_response do
     end
     $start_rule = join(["FREQ=WEEKLY;BYDAY=",$rule])
     $stop_rule = join(["FREQ=WEEKLY;BYDAY=",$rule])
-    $timezone = split($param,';')[2]
+    $timezone = split($param,'_')[2]
     if ! $timezone
       $timezone = "UTC"
     end
+    $size=size(split($param, "_"))
+    if $size > 3
+      $count = 3
+      $arr_val=split($param, "_")
+      while $count < $size do
+        $timezone=$timezone+"_"+$arr_val[$count]
+        $count=$count+1
+      end
+    end
+	call get_tzlist() retrieve $timezones
+	$tz_list={}
+	$timezones=from_json($timezones)
+	foreach $obj in $timezones do
+	  $val=to_a($obj)
+	  foreach $arr in $val do
+	  $tz_list[$arr[0]]=$arr[1]
+	  end
+	end 
+	$timezone=$tz_list[$timezone]
     call window_active($start_hour, $start_minute, $start_rule, $stop_hour, $stop_minute, $stop_rule, $timezone) retrieve $window_active , $next_start, $next_stop
     
     $next_start=split($next_start, "T")
-    $next_start[1]=split($next_start[1],":")
+    $next_start[1]=split($next_start[1],"-")
     $next_start[1]=join($next_start[1], "m")
+    $next_start[1]=split($next_start[1],":")
+    $next_start[1]=join($next_start[1], "-")
     $next_start[1]=split($next_start[1], "+")
-    $next_start[1]=join($next_start[1], "_43_")
+    $next_start[1]=join($next_start[1], "p")
     $next_start=join($next_start, "t")
+	
     $next_stop=split($next_stop,"T")
-    $next_stop[1]=split($next_stop[1],":")
+    $next_stop[1]=split($next_stop[1],"-")
     $next_stop[1]=join($next_stop[1], "m")
+    $next_stop[1]=split($next_stop[1],":")
+    $next_stop[1]=join($next_stop[1], "-")
     $next_stop[1]=split($next_stop[1], "+")
-    $next_stop[1]=join($next_stop[1], "_43_")
+    $next_stop[1]=join($next_stop[1], "p")
     $next_stop=join($next_stop, "t")
 	
-    $schedule=split($rule, ",")
-    $schedule=join($schedule, "-")
-    $schedule=downcase($schedule)
-    $timezone=downcase($timezone)
-    $timezone=split($timezone, "/")
-    $timezone=join($timezone, "_47_")
-    $timezone=split($timezone, "+")
-    $timezone=join($timezone, "_43_")
+    call get_labelfingerprint($item) retrieve $labelFingerprint, $labels_obj
 	
-    $schedule=join([$start_hour, "m", $start_minute, "-", $stop_hour, "m", $stop_minute, "_", $schedule, "_", $timezone])
-    call get_labelfingerprint($item) retrieve $labelFingerprint
-	
-    $item['labels_obj']['schedule']=$schedule
-    $item['labels_obj']['next_start']=$next_start
-    $item['labels_obj']['next_stop']=$next_stop
+    $labels_obj['schedule']=$param
+    $labels_obj['next_start']=$next_start
+    $labels_obj['next_stop']=$next_stop
     call sys_log('> ' + $item['id'] + ': Updating schedule Tag ...', to_s($item))
     sub on_error: handle_error($response) do
       $response= http_post(
@@ -549,7 +553,7 @@ define update_schedule($data, $param) return $all_response do
           "content-type": "application/json"
         },
         body:{
-          "labels" : $item['labels_obj'],
+          "labels" : $labels_obj,
           "labelFingerprint" : $labelFingerprint
         }
       )
@@ -586,7 +590,7 @@ define window_active($start_hour, $start_minute, $start_rule, $stop_hour, $stop_
   $next_stop    = $body['next_stop']
 end
 
-define get_labelfingerprint($instance) return $labelFingerprint do
+define get_labelfingerprint($instance) return $labelFingerprint, $labels_obj do
   $response = http_get(
     auth: $$google_auth,
     url: $instance['selfLink'],
@@ -597,6 +601,22 @@ define get_labelfingerprint($instance) return $labelFingerprint do
   )
   $body = $response['body']
   $labelFingerprint   = $body['labelFingerprint']
+  $labels_obj= $body['labels']
+end
+
+define get_tzlist() return $timezones do
+  $params = {
+    verb: 'get',
+    host: 'raw.githubusercontent.com',
+    https: true,
+    href: '/rightscale/policy_templates/POL-352-Google-Schedule-Instance/data/tz_database/timezones_list.json',
+    headers:{
+      'User-Agent': 'RS Policies',
+	  'content-type': 'application/json'
+    }
+  }
+  $response = http_request($params)
+  $timezones = $response['body']
 end
 
 define handle_error($response) do
