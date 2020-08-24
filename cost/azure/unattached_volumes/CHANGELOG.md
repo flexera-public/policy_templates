@@ -2,7 +2,9 @@
 
 ## v2.1
 
-- added cost for each resource and updated the export and escalation block
+- Include Estimated Monthly Cost to each resource
+- Include Total Estimated Monthly Cost in the incident summary
+- Added Selectable resources and actions
 
 ## v2.0
 

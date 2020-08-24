@@ -295,7 +295,6 @@ script "js_get_logactivity", type: "javascript" do
     expectedDate.setDate(expectedDate.getDate()- parseInt(param_unattached_days));
     var date2=expectedDate.getFullYear()+'-'+(expectedDate.getMonth()+1)+'-'+expectedDate.getDate();
     var filter= "eventTimestamp ge '"+date2+"T00:00:00.6407898Z' and eventTimestamp le '"+date1+"T11:59:59.6407898Z'"
-    console.log("filter= "+filter);
     
 	results = {
       host: "management.azure.com",
@@ -342,10 +341,16 @@ script "js_filter_disks", type: "javascript" do
    _.each(ds_azure_disks, function(disk){
       var is_tag_matched=false;
       for(var k=0;k<param_exclusion_tag_key.length;k++){
-        if (_.has((disk.tags).toLowerCase(), param_exclusion_tag_key[k].toLowerCase())) {
-            is_tag_matched=true
+        for(key in disk.tags){
+		  if(key.toLowerCase()==param_exclusion_tag_key[k].toLowerCase()){
+            is_tag_matched=true;
+		    break;
+		  }
         }
-      }
+		if(is_tag_matched){
+		  break;
+        }
+	  }
       if(disk['diskState']=="Unattached" && (!is_tag_matched)){
         res.push({
           disk_id:disk['id'],
@@ -370,7 +375,6 @@ result "results"
 code <<-EOS
   var results = []
   var activities= ds_filter_activities;
-  console.log("activities length: "+activities.length);
   for(i in ds_filter_disks){
     var ismatched=false;
     var disk= ds_filter_disks[i];
@@ -380,8 +384,6 @@ code <<-EOS
     var diskId=disk['disk_id'];
     var diskName=disk['name'];
 	var tags = JSON.stringify(disk['tags']);
-    var snapshot=diskId.substring(0,diskId.indexOf("Microsoft.Compute")+17)+"/snapshots/"+diskName+"Snapshot"
-    console.log("snapshot name"+snapshot);
     for(var i=0;i<activities.length;i++){
       var activity=activities[i].toString();
       if(activity.indexOf(diskId)>-1 && activity.indexOf('toBeDetached')>-1){
@@ -398,7 +400,6 @@ code <<-EOS
           name:disk['name'],
           location:disk['location'],
           diskSize:disk['diskSize'],
-          snapshotName:snapshot,
           subscriptionId:disk['subscriptionId'],
           subscriptionName:disk['subscriptionName'],
 		  tags:tags
@@ -415,7 +416,8 @@ script "js_volume_cost_mapping", type:"javascript" do
   parameters  "volumes","volume_costs","ds_currency_code","ds_currency_reference"
   result "result"
   code <<-EOS
-  var result = [];
+  var instances = [];
+  var result={};
   function formatNumber(number, separator){
     var numString =number.toString();
     var values=numString.split(".");
@@ -450,62 +452,61 @@ script "js_volume_cost_mapping", type:"javascript" do
     var cur = "$"
     var separator = ","
   }
+  var total=0;
   _.each(volumes, function(volume){
     var cost_objects = _.where(volume_costs, {resource_id: volume["disk_id"]});
-    console.log(cost_objects)
     if (_.size(cost_objects) > 0){
       var sum = _.reduce(_.compact(_.map(cost_objects, function(value){ return value.cost_nonamortized_unblended_adj})), function(memo, num){ return memo + num; }, 0);
-      var monthly_cost = sum*30;
-      result.push({
+      var monthly_savings = sum*30;
+      total=total+monthly_savings;
+      instances.push({
         disk_id:volume['disk_id'],
         name:volume['name'],
         location:volume['location'],
         diskSize:volume['diskSize'],
-        snapshotName:volume['snapshotName'],
         subscriptionId:volume['subscriptionId'],
         subscriptionName:volume['subscriptionName'],
         tags:volume['tags'],
-        cost: cur + ' '+formatNumber((Math.round(monthly_cost * 100) / 100), separator)
+        savings: cur + ' '+formatNumber((Math.round(monthly_savings * 100) / 100), separator)
       })
     } else {
-      result.push({
+      instances.push({
         disk_id:volume['disk_id'],
         name:volume['name'],
         location:volume['location'],
         diskSize:volume['diskSize'],
-        snapshotName:volume['snapshotName'],
         subscriptionId:volume['subscriptionId'],
         subscriptionName:volume['subscriptionName'],
         tags:volume['tags'],
-        cost: "N/A"
+        savings: "N/A"
       })
     }
   })
+  var total_savings=cur + ' '+formatNumber((Math.round(total * 100) / 100), separator);
+  result={"instances": instances,
+    "total_savings": total_savings
+	};
   EOS
 end
 
 policy "pol_azure_unattached_volumes" do
   validate $ds_volume_cost_mapping do
-    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} Unused Volumes Found"
+    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data.instances }} Unused Volumes Found"
     detail_template <<-EOS
-    The following {{ len data }} unused volumes, for Account: {{ rs_project_name }} (ID: {{ rs_project_id }}), have exceeded the specified age of: {{ parameters.param_unattached_days }} days old\n
+    The following {{ len data.instances }} unused volumes with a total estimated monthly savings of {{data.total_savings}}, for Account: {{ rs_project_name }} (ID: {{ rs_project_id }}), have exceeded the specified age of: {{ parameters.param_unattached_days }} days old\n
     EOS
 	# Send email report
     escalate $send_email_report
     # Delete the volume if user selected the delete option
     escalate $process_volumes
-    check eq(size(data), 0)
-    export do
+    check eq(size(val(data, "instances")), 0)
+    export "instances" do
       resource_level true
 	  field "subscriptionName" do
 	    label "Subscription Name"
 	  end
 	  field "location" do
 	    label "Location"
-	  end
-	  field "id" do
-	    label "Disk Id"
-		path "disk_id"
 	  end
 	  field "name" do
 	    label "Name"
@@ -516,11 +517,12 @@ policy "pol_azure_unattached_volumes" do
 	  field "tags" do
 	    label "Tags"
 	  end
-	  field "cost" do
-	    label "Cost"
+	  field "savings" do
+	    label "Estimated Monthly Savings"
 	  end
-	  field "snapshotName" do
-	   label "Snapshot Name"
+      field "id" do
+	    label "Disk Id"
+		path "disk_id"
 	  end
     end
   end
@@ -569,12 +571,14 @@ define create_snapshot($item) return $status_code do
   $response={}
   $syslog_subject = "Azure create snapshot API response: "
   call sys_log($syslog_subject,to_s($item))
+  $snapshotName=split($item['id'], "Microsoft.Compute")
+  $snapshotName=join([$snapshotName[0], "Microsoft.Compute", "/snapshots/", $item['name'], "Snapshot"])
     $response = http_request(
        auth: $$azure_auth,
        verb: "put",
        host: "management.azure.com",
        https: true,
-       href: $item['snapshotName'],
+       href: $snapshotName,
        query_strings: {
          "api-version": "2019-07-01"
        },
@@ -600,7 +604,7 @@ define create_snapshot($item) return $status_code do
        $expected_status = "Succeeded"
        while $expected_status !~ $snapshotstatus do
          call sys_log("In while snapshotstatus",to_s($disksnapshot_status))
-         call get_disksnapshot($item['snapshotName']) retrieve $status
+         call get_disksnapshot($snapshotName) retrieve $status
          $disksnapshot_status = $status
          call sys_log("disksnapshot_status",to_s($disksnapshot_status))
          if $disksnapshot_status == "Creating"
