@@ -27,7 +27,7 @@ This policy uses [credentials](https://docs.rightscale.com/policies/users/guides
 
 For administrators [creating and managing credentials](https://docs.rightscale.com/policies/users/guides/credential_management.html) to use with this policy, the following information is needed:
 
-Provider tag value to match this policy: `aws`
+Provider tag value to match this policy: `aws` , `aws_sts`
 
 Required permissions in the provider:
 
@@ -44,7 +44,8 @@ Required permissions in the provider:
         "ec2:DescribeTags",
         "ec2:StopInstances",
         "ec2:StartInstances",
-        "ec2:ModifyInstanceAttribute"
+        "ec2:ModifyInstanceAttribute",
+        "ec2:DescribeRegions"
       ],
       "Resource": "*",
       "Condition": {
@@ -52,18 +53,6 @@ Required permissions in the provider:
           "aws:SecureTransport": "true"
         }
       }
-    }
-  ]
-}
-```
-
-```javascript
-{
-  "Version": "2016-11-15",
-  "Statement":[{
-  "Effect":"Allow",
-  "Action":["ec2:DescribeRegions"],
-    "Resource":"*"
     }
   ]
 }
@@ -99,7 +88,7 @@ To enable windows support you will need to add the following to your cloudwatch 
 
 ## Supported Clouds
 
-- Amazon
+- AWS
 
 ## Observation Period
 

@@ -35,7 +35,7 @@ This policy uses [credentials](https://docs.rightscale.com/policies/users/guides
 
 For administrators [creating and managing credentials](https://docs.rightscale.com/policies/users/guides/credential_management.html) to use with this policy, the following information is needed:
 
-Provider tag value to match this policy: `aws`
+Provider tag value to match this policy: `aws` , `aws_sts`
 
 Required permissions in the provider:
 
@@ -45,19 +45,8 @@ Required permissions in the provider:
     "Statement":[{
     "Effect":"Allow",
     "Action":["ec2:DescribeSubnets",
-              "ec2:DescribeTags"],
-    "Resource":"*"
-    }
-  ]
-}
-```
-
-```javascript
-{
-  "Version": "2016-11-15",
-  "Statement":[{
-  "Effect":"Allow",
-  "Action":["ec2:DescribeRegions"],
+              "ec2:DescribeTags",
+              "ec2:DescribeRegions"],
     "Resource":"*"
     }
   ]

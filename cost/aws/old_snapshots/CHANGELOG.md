@@ -2,7 +2,7 @@
 
 ## v2.4
 
-- Updated Regions API to get only SCP enabled Regions
+- Added EC2 DescribeRegions API action to get only Service Control Policy enabled Regions
 
 ## v2.3
 

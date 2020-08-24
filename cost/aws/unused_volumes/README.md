@@ -38,7 +38,7 @@ The following policy actions are taken on any resources found to be out of compl
 
 For administrators [creating and managing credentials](https://docs.rightscale.com/policies/users/guides/credential_management.html) to use with this policy, the following information is needed:
 
-Provider tag value to match this policy: `aws`
+Provider tag value to match this policy: `aws` , `aws_sts`
 
 The following AWS permissions must be allowed for the policy to run.
 
@@ -53,7 +53,8 @@ The following AWS permissions must be allowed for the policy to run.
         "ec2:CreateTags",
         "ec2:CreateSnapshot",
         "ec2:DescribeSnapshots",
-        "ec2:DeleteVolume"
+        "ec2:DeleteVolume",
+        "ec2:DescribeRegions"
       ],
       "Resource":"*"
     },
@@ -66,18 +67,6 @@ The following AWS permissions must be allowed for the policy to run.
           "aws:SecureTransport":"true"
         }
       }
-    }
-  ]
-}
-```
-
-```javascript
-{
-  "Version": "2016-11-15",
-  "Statement":[{
-  "Effect":"Allow",
-  "Action":["ec2:DescribeRegions"],
-    "Resource":"*"
     }
   ]
 }
