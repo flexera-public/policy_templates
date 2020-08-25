@@ -1,5 +1,10 @@
 # Changelog
 
+## v2.4
+
+- Include Estimated Monthly Savings to each resource
+- Include Total Estimated Monthly Savings in the incident summary
+
 ## v2.3
 
 - Updated escalation block

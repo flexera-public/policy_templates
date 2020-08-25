@@ -5,11 +5,15 @@ short_description "Checks for snapshots older than specified number of days and,
 category "Cost"
 severity "low"
 info(
-  version: "2.3",
+  version: "2.4",
   provider:"AWS",
   service: "EBS", 
   policy_set: "Old Snapshots"
 )
+
+###############################################################################
+# User inputs
+###############################################################################
 
 parameter "param_email" do
   type "list"
@@ -36,7 +40,7 @@ parameter "param_exclude_tags" do
   type "list"
   category "User Inputs"
   label "Exclude Tags"
-  description "A list of tags used to excluded volumes from the incident."
+  description "A list of tags used to excluded snapshots from the incident."
 end
 
 parameter "param_automatic_action" do
@@ -58,9 +62,84 @@ credentials "auth_aws" do
   tags "provider=aws"
 end
 
+auth "auth_rs", type: "rightscale"
+
+###############################################################################
+# Pagination
+###############################################################################
+
+pagination "aws_pagination_xml" do
+  get_page_marker do
+    body_path "//DescribeSnapshotsResponse/nextToken"
+  end
+  set_page_marker do
+    query "NextToken"
+  end
+end
+
 ###############################################################################
 # Datasources
 ###############################################################################
+
+datasource "ds_currency_reference" do
+  request do
+    host "raw.githubusercontent.com"
+    path "/rightscale/policy_templates/master/cost/scheduled_reports/currency_reference.json"
+    header "User-Agent", "RS Policies"
+  end
+end
+
+datasource "ds_currency_code" do
+  request do
+    auth $auth_rs
+    host rs_optima_host
+    path join(["/bill-analysis/orgs/",rs_org_id,"/settings/currency_code"])
+    header "Api-Version", "0.1"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+    field "id", jmes_path(response,"id")
+    field "value", jmes_path(response,"value")
+  end
+end
+
+datasource "ds_billing_centers" do
+  request do
+    auth $auth_rs
+    host rs_optima_host
+    path join(["/analytics/orgs/",rs_org_id,"/billing_centers"])
+    header "Api-Version", "1.0"
+    header "User-Agent", "RS Policies"
+    query "view", "allocation_table"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response,"[*]") do
+      field "href", jmes_path(col_item,"href")
+      field "id", jmes_path(col_item,"id")
+      field "name", jmes_path(col_item,"name")
+      field "parent_id", jmes_path(col_item,"parent_id")
+    end
+  end
+end
+
+datasource "ds_top_level_billing_centers" do
+  run_script $js_top_level_bc, $ds_billing_centers
+end
+
+datasource "ds_snapshot_costs" do
+  request do
+    run_script $js_get_costs, $ds_get_caller_identity, $ds_top_level_billing_centers, rs_org_id
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response,"rows[*]") do
+      field "resource_id", jmes_path(col_item,"dimensions.resource_id")
+      field "cost_nonamortized_unblended_adj", jmes_path(col_item,"metrics.cost_nonamortized_unblended_adj")
+    end
+  end
+end
 
 #Generates list of Regions
 datasource "ds_regions_list" do
@@ -135,11 +214,161 @@ end
 
 datasource "ds_filter_ami_snapshots" do
   run_script $js_filter_ami_snapshots, $ds_get_snapshot_ami, $ds_filter_old_snapshots
-end  
+end
+
+datasource "ds_snapshots_cost_mapping" do
+  run_script $js_snapshots_cost_mapping, $ds_filter_ami_snapshots, $ds_snapshot_costs, $ds_currency_reference, $ds_currency_reference
+end 
 
 ###############################################################################
 # Scripts
 ###############################################################################
+
+script "js_top_level_bc", type: "javascript" do
+  parameters "billing_centers"
+  result "filtered_billing_centers"
+  code <<-EOS
+  var filtered_billing_centers =
+    _.reject(billing_centers, function(bc){ return bc.parent_id != null });
+EOS
+end
+
+script "js_get_costs", type:"javascript" do
+  parameters  "account_id","billing_centers","org"
+  result "request"
+  code <<-EOS
+    // returns date formatted as string: YYYY-mm-dd
+    function getFormattedDailyDate(date) {
+      var year = date.getFullYear();
+      var month = (1 + date.getMonth()).toString();
+      month = month.length > 1 ? month : '0' + month;
+      var day = date.getDate().toString();
+      day = day.length > 1 ? day : '0' + day;
+      return year + '-' + month + '-' + day;
+    }
+
+    var start_date = getFormattedDailyDate(new Date(new Date().setDate(new Date().getDate() - 3)));
+    var end_date = getFormattedDailyDate(new Date(new Date().setDate(new Date().getDate() - 2)));
+
+    var request = {
+      auth: "auth_rs",
+      host: "optima.rightscale.com",
+      verb: "POST",
+      path: "/bill-analysis/orgs/" + org + "/costs/select",
+      body_fields: {
+        "dimensions": ["resource_id"],
+        "granularity": "day",
+        "start_at": start_date,
+        "end_at": end_date,
+        "metrics": ["cost_nonamortized_unblended_adj"],
+        "billing_center_ids": _.compact(_.map(billing_centers, function(value){ return value.id})),
+        "limit": 10000,
+        "filter": {
+          "expressions": [
+            {
+              "dimension": "service",
+              "type": "equal",
+              "value": "AmazonEC2"
+            },
+            {
+              "dimension": "resource_type",
+              "type": "equal",
+              "value": "Storage Snapshot"
+            },
+            {
+              "dimension": "vendor_account",
+              "type": "equal",
+              "value": account_id[0]["account"]
+            }
+          ],
+          "type": "and"
+        }
+      },
+      headers: {
+        "User-Agent": "RS Policies",
+        "Api-Version": "1.0"
+      }
+    }
+  EOS
+end
+
+script "js_snapshots_cost_mapping", type:"javascript" do
+  parameters  "snapshots","snapshot_costs","ds_currency_code","ds_currency_reference"
+  result "results"
+  code <<-EOS
+
+  var result = [];
+  var results={};
+
+  function formatNumber(number, separator){
+    var numString =number.toString();
+    var values=numString.split(".");
+    var result = ''
+    while (values[0].length > 3){
+      var chunk = values[0].substr(-3)
+      values[0] = values[0].substr(0, values[0].length - 3)
+      result = separator + chunk + result
+    }
+    if (values[0].length > 0){
+      result = values[0] + result
+    }
+    if(values[1]==undefined){
+      return result;
+    }
+    return result+"."+values[1];
+  }
+
+  // Format costs with currency symbol and thousands separator
+  if( ds_currency_code['value'] !== undefined ) {
+    if (ds_currency_reference[ds_currency_code['value']] !== undefined ) {
+      var cur = ds_currency_reference[ds_currency_code['value']]['symbol']
+      if( ds_currency_reference[ds_currency_code['value']]['t_separator'] !== undefined ) {
+        var separator = ds_currency_reference[ds_currency_code['value']]['t_separator']
+      } else {
+        var separator = ""
+      }
+    } else {
+      var cur = ""
+      var separator = ""
+    }
+  } else {
+    var cur = "$"
+    var separator = ","
+  }
+  var total=0;
+  _.each(snapshots, function(snapshot){
+    var cost_objects = _.where(snapshot_costs, {resource_id: snapshot["formatSnapId"]});
+    if (_.size(cost_objects) > 0){
+      var sum = _.reduce(_.compact(_.map(cost_objects, function(value){ return value.cost_nonamortized_unblended_adj})), function(memo, num){ return memo + num; }, 0);
+      var monthly_savings = sum*30;
+      total=total+monthly_savings;	  
+      result.push({
+        snapshotId : snapshot['snapshotId'],
+        region : snapshot['region'],
+        tagKeyValue : snapshot['tagKeyValue'],
+        daysOld : snapshot['daysOld'],
+        imageId : snapshot['imageId'],
+        snapshotImageIdFormat : snapshot['snapshotImageIdFormat'],
+        savings: cur + ' '+formatNumber((Math.round(monthly_savings * 100) / 100), separator)
+      })
+    } else {
+      result.push({
+        snapshotId : snapshot['snapshotId'],
+        region : snapshot['region'],
+        tagKeyValue : snapshot['tagKeyValue'],
+        daysOld : snapshot['daysOld'],
+        imageId : snapshot['imageId'],
+        snapshotImageIdFormat : snapshot['snapshotImageIdFormat'],
+        savings: "N/A"
+      })
+    }
+  })
+  var total_savings=cur + ' '+formatNumber((Math.round(total * 100) / 100), separator);
+  results={"result": result,
+    "total_savings": total_savings
+	};
+  EOS
+end
 
 script "js_describe_snapshots", type: "javascript" do
   result "results"
@@ -150,6 +379,7 @@ script "js_describe_snapshots", type: "javascript" do
     "host": 'ec2.'+region+'.amazonaws.com',
     "verb": "GET",
     "path": "/",
+    "pagination": "aws_pagination_xml",
     "headers": {
       "User-Agent": "RS Policies",
       "Content-Type": "text/xml"
@@ -259,6 +489,7 @@ script "js_filter_ami_snapshots", type:"javascript" do
 	  }
       results.push({
         snapshotId : snapshot['snapshotId'],
+        formatSnapId : "snapshot/"+snapshot['snapshotId'],
         region : snapshot['region'],
         tagKeyValue : snapshot['tagKeyValue'],
         daysOld : snapshot['daysOld'],
@@ -276,12 +507,16 @@ end
 ###############################################################################
 
 policy "pol_utilization" do
-  validate $ds_filter_ami_snapshots do
-    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} rows containing AWS old snapshot data"
+  validate $ds_snapshots_cost_mapping do
+    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data.result }} rows containing AWS old snapshot data"
+    detail_template <<-EOS
+    The following {{ len data.result }} old snapshots, for Account: {{ rs_project_name }} (ID: {{ rs_project_id }}), have exceeded the specified age of: {{ parameters.snapshot_age }} days old.\n
+    The total estimated monthly savings are {{data.total_savings}}.\n
+    EOS
     escalate $ese_email
     escalate $esc_delete_snapshot
-    check eq(size(data), 0)
-    export do
+    check eq(size(val(data, "result")), 0)
+    export "result" do
       resource_level true
       field "region" do
         label "Region"
@@ -298,6 +533,9 @@ policy "pol_utilization" do
       end
       field "snapshotImageIdFormat" do
         label "AMI"
+      end
+      field "savings" do
+        label "Estimated Monthly Savings"
       end
     end
   end
