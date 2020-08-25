@@ -45,12 +45,11 @@ for connecting to the cloud -- in order to apply this policy you must have a
 For administrators [creating and managing credentials](https://docs.rightscale.com/policies/users/guides/credential_management.html)
 to use with this policy, the following information is needed:
 
-Provider tag value to match this policy: `aws`
+Provider tag value to match this policy: `aws` , `aws_sts`
 
 Required permissions in the provider:
 
 ```javascript
-
 {
     "Version": "2012-10-17",
     "Statement": [
@@ -65,12 +64,12 @@ Required permissions in the provider:
         },
         {
             "Effect": "Allow",
-            "Action": "ec2:DescribeInstances",
+            "Action": ["ec2:DescribeInstances",
+                        "ec2:DescribeRegions"]
             "Resource": "*"
         }
     ]
 }
-
 ```
 
 ## Supported Clouds

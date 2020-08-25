@@ -6,7 +6,7 @@ long_description ""
 severity "low"
 category "Operational"
 info(
-  version: "2.2",
+  version: "2.3",
   provider: "AWS",
   service: "EC2",
   policy_set: "Long Running Instances"
@@ -74,14 +74,41 @@ end
 # Datasources
 ###############################################################################
 
-#Generates list of Regions
+#Get list of enabled regions for an account
 datasource "ds_regions_list" do
   request do
+    auth $auth_aws
     verb "GET"
-    host "raw.githubusercontent.com"
-    path "/rightscale/policy_templates/master/data/aws/regions.json"
-    header "User-Agent", "RS Policies"
+    host "ec2.amazonaws.com"
+    path "/"
+    query "Action", "DescribeRegions"
+    query "Version", "2016-11-15"
   end
+  result do
+    encoding "xml"
+    collect xpath(response, "//DescribeRegionsResponse/regionInfo/item", "array") do
+      field "region", xpath(col_item, "regionName")
+    end
+  end
+end
+
+# Get only SCP enabled regions
+datasource "ds_regions" do
+  iterate $ds_regions_list
+    request do
+      auth $auth_aws
+      verb "GET"
+      host "ec2.amazonaws.com"
+      host join(["ec2.",val(iter_item,"region"),".amazonaws.com"])
+      path "/"
+      query "Action", "DescribeRegions"
+      query "Version", "2016-11-15"
+      ignore_status [403]
+    end
+    result do
+      encoding "xml"
+      field "region", val(iter_item, "region")
+    end
 end
 
 datasource "ds_instances" do
@@ -89,7 +116,7 @@ datasource "ds_instances" do
 end
 
 datasource "ds_instances_set" do
-  iterate $ds_regions_list
+  iterate $ds_regions
   request do
     verb "GET"
     auth $auth_aws
@@ -140,8 +167,6 @@ script "js_instances", type: "javascript" do
   for(var j=0;j<param_exclude_tags.length;j++){
     param_exclude_tags_lower[j] = param_exclude_tags[j].toString().toLowerCase();
   }
-  console.log(param_exclude_tags_lower)
-
   var results = []
   for ( n=0; n < ds_instance_set.length; n++) {
     var instance_set = ds_instance_set[n].instances_set
@@ -149,7 +174,6 @@ script "js_instances", type: "javascript" do
       var instance = instance_set[i]
       // Check, if the tag present in entered param_exclude_tags, ignore the volume if the tag matches/present.
       var tags = instance['tags'];
-      console.log(tags)
       var isTagMatched = false;
       var tagKeyValue = "";
       for(var k=0; k < tags.length; k++){
@@ -170,8 +194,8 @@ script "js_instances", type: "javascript" do
       })
 
       if(instance_tags.length > 0){
-        instance_tags = instance_tags.substring(0, instance_tags - 2);
-	  }
+        instance_tags = instance_tags.substring(0, instance_tags.length - 2);
+	    }
 
       if(!(isTagMatched)){
         var now = new Date()

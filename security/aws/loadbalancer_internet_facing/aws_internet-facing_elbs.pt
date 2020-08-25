@@ -6,7 +6,7 @@ long_description ""
 category "Security"
 severity "high"
 info(
-  version: "2.2",
+  version: "2.3",
   provider: "AWS",
   service: "ELB",
   policy_set: ""
@@ -64,9 +64,45 @@ end
 # Datasources
 ###############################################################################
 
+datasource "ds_region_list" do
+  request do
+    auth $auth_aws
+    verb "GET"
+    host "ec2.amazonaws.com"
+    path "/"
+    query "Action", "DescribeRegions"
+    query "Version", "2016-11-15"
+  end
+  result do
+    encoding "xml"
+    collect xpath(response, "//DescribeRegionsResponse/regionInfo/item", "array") do
+      field "region", xpath(col_item, "regionName")
+    end
+  end
+end
+
+# Get only SCP enabled regions
+datasource "ds_regions" do
+  iterate $ds_region_list
+    request do
+      auth $auth_aws
+      verb "GET"
+      host "ec2.amazonaws.com"
+      host join(["ec2.",val(iter_item,"region"),".amazonaws.com"])
+      path "/"
+      query "Action", "DescribeRegions"
+      query "Version", "2016-11-15"
+      ignore_status [403]
+    end
+    result do
+      encoding "xml"
+      field "region", val(iter_item, "region")
+    end
+end
+
 #Generates list of Regions with Load Balancer type and API version.
 datasource "ds_regions_list" do
-  run_script $js_regions_map
+  run_script $js_regions_map, $ds_regions
 end
 
 #Get the list of all Classic and application load Balancers
@@ -125,11 +161,22 @@ end
 
 #Generates list of Regions with Load Balancer type and API version.
 script "js_regions_map", type: "javascript" do
+  parameters "regions"
   result "regions_map"
   code <<-EOS
-    var regions_map=[]
-    regions_map.push({"region": "us-east-1", "API_version": "2012-06-01", "LBtype": "Classic"}, {"region": "us-east-2", "API_version": "2012-06-01", "LBtype": "Classic"}, {"region": "us-west-1", "API_version": "2012-06-01", "LBtype": "Classic"}, {"region": "us-west-2", "API_version": "2012-06-01", "LBtype": "Classic"}, {"region": "ap-south-1", "API_version": "2012-06-01", "LBtype": "Classic"}, {"region": "ap-northeast-2", "API_version": "2012-06-01", "LBtype": "Classic"}, {"region": "ap-southeast-1", "API_version": "2012-06-01", "LBtype": "Classic"}, {"region": "ap-southeast-2", "API_version": "2012-06-01", "LBtype": "Classic"}, {"region": "ap-northeast-1", "API_version": "2012-06-01", "LBtype": "Classic"}, {"region": "ca-central-1", "API_version": "2012-06-01", "LBtype": "Classic"}, {"region": "eu-central-1", "API_version": "2012-06-01", "LBtype": "Classic"}, {"region": "eu-west-1", "API_version": "2012-06-01", "LBtype": "Classic"}, {"region": "eu-west-2", "API_version": "2012-06-01", "LBtype": "Classic"}, {"region": "eu-west-3", "API_version": "2012-06-01", "LBtype": "Classic"}, {"region": "sa-east-1", "API_version": "2012-06-01", "LBtype": "Classic"}, {"region": "eu-north-1", "API_version": "2012-06-01", "LBtype": "Classic"},
-                     {"region": "us-east-1", "API_version": "2015-12-01", "LBtype": "Application"}, {"region": "us-east-2", "API_version": "2015-12-01", "LBtype": "Application"}, {"region": "us-west-1", "API_version": "2015-12-01", "LBtype": "Application"}, {"region": "us-west-2", "API_version": "2015-12-01", "LBtype": "Application"}, {"region": "ap-south-1", "API_version": "2015-12-01", "LBtype": "Application"}, {"region": "ap-northeast-2", "API_version": "2015-12-01", "LBtype": "Application"}, {"region": "ap-southeast-1", "API_version": "2015-12-01", "LBtype": "Application"}, {"region": "ap-southeast-2", "API_version": "2015-12-01", "LBtype": "Application"}, {"region": "ap-northeast-1", "API_version": "2015-12-01", "LBtype": "Application"}, {"region": "ca-central-1", "API_version": "2015-12-01", "LBtype": "Application"}, {"region": "eu-central-1", "API_version": "2015-12-01", "LBtype": "Application"}, {"region": "eu-west-1", "API_version": "2015-12-01", "LBtype": "Application"}, {"region": "eu-west-2", "API_version": "2015-12-01", "LBtype": "Application"}, {"region": "eu-west-3", "API_version": "2015-12-01", "LBtype": "Application"}, {"region": "sa-east-1", "API_version": "2015-12-01", "LBtype": "Application"}, {"region": "eu-north-1", "API_version": "2015-12-01", "LBtype": "Application"})
+    var regions_map=[];
+    for(var i=0; i < regions.length; i++){
+      regions_map.push({
+        "region": regions[i].region,
+        "API_version": "2012-06-01",
+        "LBtype": "Classic"
+      })
+      regions_map.push({
+        "region": regions[i].region,
+        "API_version": "2015-12-01",
+        "LBtype": "Application"
+      })
+    }
   EOS
 end
 
