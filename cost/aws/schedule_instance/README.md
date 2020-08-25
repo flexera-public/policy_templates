@@ -54,11 +54,11 @@ This policy uses [credentials](https://docs.rightscale.com/policies/users/guides
 
 For administrators [creating and managing credentials](https://docs.rightscale.com/policies/users/guides/credential_management.html) to use with this policy, the following information is needed:
 
-Provider tag value to match this policy: `aws`
+Provider tag value to match this policy: `aws` , `aws_sts`
 
 Required permissions in the provider:
 
-```
+```javascript
 {   
   "Version": "2012-10-17",   
   "Statement": [{      
@@ -69,7 +69,8 @@ Required permissions in the provider:
       "ec2:StopInstances",
       "ec2:TerminateInstances",
       "ec2:CreateTags",
-      "ec2:DeleteTags"
+      "ec2:DeleteTags",
+      "ec2:DescribeRegions"
     ],
     "Resource": "*" 
   }]

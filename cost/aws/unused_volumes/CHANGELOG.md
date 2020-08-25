@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.6
+
+- Added EC2 DescribeRegions API action to get only Service Control Policy enabled Regions
+
 ## v2.5
 
 - Updated escalation block

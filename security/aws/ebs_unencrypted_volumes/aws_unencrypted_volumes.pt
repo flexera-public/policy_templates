@@ -6,7 +6,7 @@ long_description ""
 category "Security"
 severity "low"
 info(
-  version: "2.2",
+  version: "2.3",
   provider: "AWS",
   service: "EBS",
   policy_set: ""
@@ -57,19 +57,46 @@ end
 # Datasource
 ###############################################################################
 
-#Generates list of Regions
+#Get list of enabled regions for an account
 datasource "ds_regions_list" do
   request do
+    auth $auth_aws
     verb "GET"
-    host "raw.githubusercontent.com"
-    path "/rightscale/policy_templates/master/data/aws/regions.json"
-    header "User-Agent", "RS Policies"
+    host "ec2.amazonaws.com"
+    path "/"
+    query "Action", "DescribeRegions"
+    query "Version", "2016-11-15"
   end
+  result do
+    encoding "xml"
+    collect xpath(response, "//DescribeRegionsResponse/regionInfo/item", "array") do
+      field "region", xpath(col_item, "regionName")
+    end
+  end
+end
+
+# Get only SCP enabled regions
+datasource "ds_regions" do
+  iterate $ds_regions_list
+    request do
+      auth $auth_aws
+      verb "GET"
+      host "ec2.amazonaws.com"
+      host join(["ec2.",val(iter_item,"region"),".amazonaws.com"])
+      path "/"
+      query "Action", "DescribeRegions"
+      query "Version", "2016-11-15"
+      ignore_status [403]
+    end
+    result do
+      encoding "xml"
+      field "region", val(iter_item, "region")
+    end
 end
 
 #To get list of All Unencrypted Volumes.
 datasource "ds_unencrypted_volume_list" do
-  iterate $ds_regions_list
+  iterate $ds_regions
   request do
     run_script $js_aws_unencrypted_volumes_list, val(iter_item,"region")
   end
