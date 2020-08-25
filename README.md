@@ -251,6 +251,7 @@ Please contact sales@flexera.com to learn more.
 - [Google Instance Types](./data/google/instance_types.json)
 - [Currency Reference](./cost/scheduled_reports/currency_reference.json)
 - [Azure SQL Service Tier Types](./data/azure/sql_service_tier_types.json)
+- [TZ database Timezone List](./data/tz_database/timezones_list.json)
 
 ## Instructions to upload policy templates to Flexera CMP Policies
 
