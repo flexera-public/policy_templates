@@ -10,7 +10,7 @@ This policy relies on a label with format 'schedule' to stop and start instances
 
 ## schedule Label Example
 
-Since label supports only `-`, `_`, lowercase characters, numbers and International characters, The special characters in timezone should be replaced like `/` with `-`, `+` with `p` and `-`(minus) with `m` and all characters should be lowercase.
+Since google label supports only `-`, `_`, lowercase characters, numbers and International characters, The special characters in timezone should be replaced like `/` with `-`, `+` with `p` and `-`(minus) with `m` and all characters should be lowercase.
 For example, the timezone `Etc/Gmt+10` should be used as `etc-gmtp10`, `Etc/GMT-4` as `etc-gmtm4`, `America/North_Dakota/New_Salem` as `america-north_dakota-new_salem`, `America/Port-au-Prince` as `america-port-au-prince` etc.
 
 Start and Stop time are 24 hour format: for example 0830-1715 is start at 8:30am, and stop at 5:15pm.
@@ -24,7 +24,8 @@ Please note that `_` is being used for separating the start-stop time, days of t
 
 Instances are off during the weekend and start back up on Monday morning at 8:30am and are off at 5:15pm every weekday. Times are UTC unless the Timezone field is provided.
 
-Note: Please note that the time is in 24 hour format. For Example `8am` should be written as `0800` and `5:30pm` should be as `1730`.
+Note: Please note that for this policy to work, the time should be in 24 hour format and both hours and minutes must have 2 digits: `0800`for `8am` or `2130` for `9:30pm`.
+Please refer the [formatted timezones list](https://github.com/flexera/policy_templates/blob/master/data/tz_database/timezones_list.json) having timezone in the above mentioned format as key and corresponding TZ database timezone as value.
 
 ## Input Parameters
 
@@ -50,7 +51,7 @@ The following policy actions are taken on any resources found to be out of compl
 ### Schedule Label Format
 
 This policy uses `schedule` label value for scheduling the instance. The format should be like `0800-1715_mo-tu-we-th-fr_america-new_york`. Please refer to `Schedule Label Example` section for more details.
-Please note that the time is in 24 hour format. For Example `8am` should be written as `0800` and `5:30pm` should be as `1730`.
+Please note that for this policy to work, the time should be in 24 hour format and both hours and minutes must have 2 digits: `0800`for `8am` or `2130` for `9:30pm`.
 
 This policy uses [credentials](https://docs.rightscale.com/policies/users/guides/credential_management.html) for connecting to the  cloud -- in order to apply this policy you must have a credential registered in the system that is compatible with this policy. If  there are no credentials listed when you apply the policy, please contact your cloud admin and ask them to register a credential  that is compatible with this policy. The information below should be consulted when creating the credential.   
 
