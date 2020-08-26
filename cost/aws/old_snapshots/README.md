@@ -34,7 +34,7 @@ For administrators [creating and managing credentials](https://docs.rightscale.c
 
 Required Flexera Role: billing_center_viewer (note: this role must be applied at the Organization level).
 
-Provider tag value to match this policy: `aws`
+Provider tag value to match this policy: `aws` , `aws_sts`
 
 The following AWS permissions must be allowed for the policy to run.
 
@@ -50,7 +50,8 @@ The following AWS permissions must be allowed for the policy to run.
                 "ec2:DescribeSnapshots"
                 "ec2:DescribeImages",
                 "ec2:DeregisterImage",
-                "sts:GetCallerIdentity",                
+                "sts:GetCallerIdentity",
+                "ec2:DescribeRegions"                
             ],
             "Resource": "*"
         }

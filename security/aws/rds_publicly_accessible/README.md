@@ -40,13 +40,13 @@ This policy uses [credentials](https://docs.rightscale.com/policies/users/guides
 
 For administrators [creating and managing credentials](https://docs.rightscale.com/policies/users/guides/credential_management.html) to use with this policy, the following information is needed:
 
-Provider tag value to match this policy: `aws`
+Provider tag value to match this policy: `aws` , `aws_sts`
 
 Required permissions in the provider:
 
 ```javascript
 {
-  "Version": "2014-10-31",
+  "Version": "2012-10-17",
   "Statement":[{
   "Effect":"Allow",
   "Action":["rds:DescribeDBInstances",
@@ -56,6 +56,11 @@ Required permissions in the provider:
             "rds:DescribeDBClusterSnapshots",
             "rds:DeleteDBInstance"],
     "Resource":"*"
+    },
+    {
+      "Effect":"Allow",
+      "Action":["ec2:DescribeRegions"],
+      "Resource":"*",
     }
   ]
 }
