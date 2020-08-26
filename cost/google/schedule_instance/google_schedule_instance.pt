@@ -326,91 +326,95 @@ define schedule_instance($data) return $all_response do
 	call get_tzlist() retrieve $timezones
 	$timezones=from_json($timezones)
 	$timezone=$timezones[$timezone]
-    call window_active($start_hour, $start_minute, $start_rule, $stop_hour, $stop_minute, $stop_rule, $timezone) retrieve $window_active , $next_start, $next_stop
+    if $timezone != null
+      call window_active($start_hour, $start_minute, $start_rule, $stop_hour, $stop_minute, $stop_rule, $timezone) retrieve $window_active , $next_start, $next_stop
 
-    call sys_log('window_active',$window_active)
-    call sys_log('next_start',$next_start)
-    call sys_log('next_stop',$next_stop)
+      call sys_log('window_active',$window_active)
+      call sys_log('next_start',$next_start)
+      call sys_log('next_stop',$next_stop)
 
-    if ($window_active)
-      call sys_log($item['schedule'] + ' schedule window is currently active: Instances may be started.', '')
-    else
-      call sys_log($item['schedule'] + ' schedule window is currently in-active: Instances may be stopped.', '')
-    end
+      if ($window_active)
+        call sys_log($item['schedule'] + ' schedule window is currently active: Instances may be started.', '')
+      else
+        call sys_log($item['schedule'] + ' schedule window is currently in-active: Instances may be stopped.', '')
+      end
 
-    $stoppable = /^(RUNNING|STAGING)$/
-    $startable = /^(STOPPING|TERMINATED)$/
+      $stoppable = /^(RUNNING|STAGING)$/
+      $startable = /^(STOPPING|TERMINATED)$/
 	
-    $next_start=split($next_start, "T")
-    $next_start[1]=split($next_start[1],"-")
-    $next_start[1]=join($next_start[1], "m")
-    $next_start[1]=split($next_start[1],":")
-    $next_start[1]=join($next_start[1], "-")
-    $next_start[1]=split($next_start[1], "+")
-    $next_start[1]=join($next_start[1], "p")
-    $next_start=join($next_start, "t")
+      $next_start=split($next_start, "T")
+      $next_start[1]=split($next_start[1],"-")
+      $next_start[1]=join($next_start[1], "m")
+      $next_start[1]=split($next_start[1],":")
+      $next_start[1]=join($next_start[1], "-")
+      $next_start[1]=split($next_start[1], "+")
+      $next_start[1]=join($next_start[1], "p")
+      $next_start=join($next_start, "t")
 	
-    $next_stop=split($next_stop,"T")
-    $next_stop[1]=split($next_stop[1],"-")
-    $next_stop[1]=join($next_stop[1], "m")
-    $next_stop[1]=split($next_stop[1],":")
-    $next_stop[1]=join($next_stop[1], "-")
-    $next_stop[1]=split($next_stop[1], "+")
-    $next_stop[1]=join($next_stop[1], "p")
-    $next_stop=join($next_stop, "t")
+      $next_stop=split($next_stop,"T")
+      $next_stop[1]=split($next_stop[1],"-")
+      $next_stop[1]=join($next_stop[1], "m")
+      $next_stop[1]=split($next_stop[1],":")
+      $next_stop[1]=join($next_stop[1], "-")
+      $next_stop[1]=split($next_stop[1], "+")
+      $next_stop[1]=join($next_stop[1], "p")
+      $next_stop=join($next_stop, "t")
 	
-	call get_labelfingerprint($item) retrieve $labelFingerprint, $labels_obj
+	  call get_labelfingerprint($item) retrieve $labelFingerprint, $labels_obj
 	
-    $labels_obj['next_start']=$next_start
-    $labels_obj['next_stop']=$next_stop
-    $labels_obj['schedule']=$item['schedule']
+      $labels_obj['next_start']=$next_start
+      $labels_obj['next_stop']=$next_stop
+      $labels_obj['schedule']=$item['schedule']
 	
-    $response= http_post(
-      auth: $$google_auth,
-      url: join([$item['selfLink'], "/setLabels"]),
-      headers:{
-        "cache-control": "no-cache",
-        "content-type": "application/json"
-      },
-      body:{
-        "labels": $labels_obj,
-        "labelFingerprint": $labelFingerprint
-      }
-    )
-    if($window_active)
-      if($item['state']=~$startable)
-        call sys_log('> ' + $item['id'] + ': Starting ...', to_s($item))
-        sub on_error: handle_error($response) do
-          $response= http_post(
-            auth: $$google_auth,
-            url : join([$item['selfLink'], "/start"]),
-            headers:{
-              "cache-control": "no-cache",
-              "content-type": "application/json"
-            }
-          )
-          $all_response << $response
+      $response= http_post(
+        auth: $$google_auth,
+        url: join([$item['selfLink'], "/setLabels"]),
+        headers:{
+          "cache-control": "no-cache",
+          "content-type": "application/json"
+        },
+        body:{
+          "labels": $labels_obj,
+          "labelFingerprint": $labelFingerprint
+        }
+      )
+      if($window_active)
+        if($item['state']=~$startable)
+          call sys_log('> ' + $item['id'] + ': Starting ...', to_s($item))
+          sub on_error: handle_error($response) do
+            $response= http_post(
+              auth: $$google_auth,
+              url : join([$item['selfLink'], "/start"]),
+              headers:{
+                "cache-control": "no-cache",
+                "content-type": "application/json"
+              }
+            )
+            $all_response << $response
+          end
+        else
+          call sys_log('> ' + $item['id'] + ': No action - Instance state is ' + $item['state'], '')
         end
       else
-        call sys_log('> ' + $item['id'] + ': No action - Instance state is ' + $item['state'], '')
+        if($item['state'] =~ $stoppable)
+          call sys_log('> ' + $item['id'] + ': Stopping ...', to_s($item))
+          sub on_error: handle_error($response) do
+            $response= http_post(
+              auth: $$google_auth,
+              url: join([$item['selfLink'], "/stop"]),
+              headers:{
+                "cache-control": "no-cache",
+                "content-type": "application/json"
+              }
+            )
+            $all_response << $response
+          end
+        else
+          call sys_log('> ' + $item['id'] + ': No action - Instance state is ' + $item['state'], '')
+        end
       end
     else
-      if($item['state'] =~ $stoppable)
-        call sys_log('> ' + $item['id'] + ': Stopping ...', to_s($item))
-        sub on_error: handle_error($response) do
-          $response= http_post(
-            auth: $$google_auth,
-            url: join([$item['selfLink'], "/stop"]),
-            headers:{
-              "cache-control": "no-cache",
-              "content-type": "application/json"
-            }
-          )
-          $all_response << $response
-        end
-      else
-        call sys_log('> ' + $item['id'] + ': No action - Instance state is ' + $item['state'], '')
-      end
+      call sys_log('Incorrect Timezone in schedule label', to_s($item['schedule']))
     end
   end
 end
@@ -504,46 +508,50 @@ define update_schedule($data, $param) return $all_response do
 	call get_tzlist() retrieve $timezones
 	$timezones=from_json($timezones)
 	$timezone=$timezones[$timezone]
-    call window_active($start_hour, $start_minute, $start_rule, $stop_hour, $stop_minute, $stop_rule, $timezone) retrieve $window_active , $next_start, $next_stop
+    if $timezone != null
+      call window_active($start_hour, $start_minute, $start_rule, $stop_hour, $stop_minute, $stop_rule, $timezone) retrieve $window_active , $next_start, $next_stop
     
-    $next_start=split($next_start, "T")
-    $next_start[1]=split($next_start[1],"-")
-    $next_start[1]=join($next_start[1], "m")
-    $next_start[1]=split($next_start[1],":")
-    $next_start[1]=join($next_start[1], "-")
-    $next_start[1]=split($next_start[1], "+")
-    $next_start[1]=join($next_start[1], "p")
-    $next_start=join($next_start, "t")
+      $next_start=split($next_start, "T")
+      $next_start[1]=split($next_start[1],"-")
+      $next_start[1]=join($next_start[1], "m")
+      $next_start[1]=split($next_start[1],":")
+      $next_start[1]=join($next_start[1], "-")
+      $next_start[1]=split($next_start[1], "+")
+      $next_start[1]=join($next_start[1], "p")
+      $next_start=join($next_start, "t")
 	
-    $next_stop=split($next_stop,"T")
-    $next_stop[1]=split($next_stop[1],"-")
-    $next_stop[1]=join($next_stop[1], "m")
-    $next_stop[1]=split($next_stop[1],":")
-    $next_stop[1]=join($next_stop[1], "-")
-    $next_stop[1]=split($next_stop[1], "+")
-    $next_stop[1]=join($next_stop[1], "p")
-    $next_stop=join($next_stop, "t")
+      $next_stop=split($next_stop,"T")
+      $next_stop[1]=split($next_stop[1],"-")
+      $next_stop[1]=join($next_stop[1], "m")
+      $next_stop[1]=split($next_stop[1],":")
+      $next_stop[1]=join($next_stop[1], "-")
+      $next_stop[1]=split($next_stop[1], "+")
+      $next_stop[1]=join($next_stop[1], "p")
+      $next_stop=join($next_stop, "t")
 	
-    call get_labelfingerprint($item) retrieve $labelFingerprint, $labels_obj
+      call get_labelfingerprint($item) retrieve $labelFingerprint, $labels_obj
 	
-    $labels_obj['schedule']=$param
-    $labels_obj['next_start']=$next_start
-    $labels_obj['next_stop']=$next_stop
-    call sys_log('> ' + $item['id'] + ': Updating schedule Tag ...', to_s($item))
-    sub on_error: handle_error($response) do
-      $response= http_post(
-        auth: $$google_auth,
-        url: join([$item['selfLink'], "/setLabels"]),
-        headers:{
-          "cache-control": "no-cache",
-          "content-type": "application/json"
-        },
-        body:{
-          "labels" : $labels_obj,
-          "labelFingerprint" : $labelFingerprint
-        }
-      )
-      $all_response << $response
+      $labels_obj['schedule']=$param
+      $labels_obj['next_start']=$next_start
+      $labels_obj['next_stop']=$next_stop
+      call sys_log('> ' + $item['id'] + ': Updating schedule Tag ...', to_s($item))
+      sub on_error: handle_error($response) do
+        $response= http_post(
+          auth: $$google_auth,
+          url: join([$item['selfLink'], "/setLabels"]),
+          headers:{
+            "cache-control": "no-cache",
+            "content-type": "application/json"
+          },
+          body:{
+            "labels" : $labels_obj,
+            "labelFingerprint" : $labelFingerprint
+          }
+        )
+        $all_response << $response
+      end
+    else
+      call sys_log('Incorrect Timezone for schedule label', to_s($param))
     end
   end
 end
