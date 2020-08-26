@@ -2,7 +2,8 @@
 
 ## v2.1
 
-- modified timezones_list.json file and optimized the code
+- converted list of timezone objects to one object in timezones_list.json
+- modified policy for getting timezone value from updated timezones_list.json and handled incorrect timezone format
 
 ## v2.0
 
