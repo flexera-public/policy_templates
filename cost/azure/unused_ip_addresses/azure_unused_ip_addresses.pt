@@ -25,7 +25,7 @@ parameter "param_exclude_tags" do
   type "list"
   category "User Inputs"
   label "Exclude Tags"
-  description "A list of tags used to excluded volumes from the incident."
+  description "A list of tags used to exclude IP addresses from the incident."
 end
 
 parameter "param_automatic_action" do
@@ -227,46 +227,46 @@ script "js_get_costs", type:"javascript" do
     var start_date = getFormattedDailyDate(new Date(new Date().setDate(new Date().getDate() - 3)));
     var end_date = getFormattedDailyDate(new Date(new Date().setDate(new Date().getDate() - 2)));
     for(var j in account_id){
-    var request = {
-      auth: "auth_rs",
-      host: "optima.rightscale.com",
-      verb: "POST",
-      path: "/bill-analysis/orgs/" + org + "/costs/select",
-      body_fields: {
-        "dimensions": ["resource_id"],
-        "granularity": "day",
-        "start_at": start_date,
-        "end_at": end_date,
-        "metrics": ["cost_nonamortized_unblended_adj"],
-        "billing_center_ids": _.compact(_.map(billing_centers, function(value){ return value.id})),
-        "limit": 10000,
-        "filter": {
-          "expressions": [
-            {
-              "dimension": "service",
-              "type": "equal",
-              "value": "Microsoft.Network"
-            },
-            {
-              "dimension": "vendor_account",
-              "type": "equal",
-              "value": account_id[j]["subscriptionId"]
-            },
-			{
-              "dimension": "resource_type",
-              "type": "equal",
-              "value": "Virtual Network-IP Addresses"
-            }
-          ],
-          "type": "and"
+      var request = {
+        auth: "auth_rs",
+        host: "optima.rightscale.com",
+        verb: "POST",
+        path: "/bill-analysis/orgs/" + org + "/costs/select",
+        body_fields: {
+          "dimensions": ["resource_id"],
+          "granularity": "day",
+          "start_at": start_date,
+          "end_at": end_date,
+          "metrics": ["cost_nonamortized_unblended_adj"],
+          "billing_center_ids": _.compact(_.map(billing_centers, function(value){ return value.id})),
+          "limit": 10000,
+          "filter": {
+            "expressions": [
+              {
+                "dimension": "service",
+                "type": "equal",
+                "value": "Microsoft.Network"
+              },
+              {
+                "dimension": "vendor_account",
+                "type": "equal",
+                "value": account_id[j]["subscriptionId"]
+              },
+              {
+                "dimension": "resource_type",
+                "type": "equal",
+                "value": "Virtual Network-IP Addresses"
+              }
+            ],
+            "type": "and"
+          }
+        },
+        headers: {
+          "User-Agent": "RS Policies",
+          "Api-Version": "1.0"
         }
-      },
-      headers: {
-        "User-Agent": "RS Policies",
-        "Api-Version": "1.0"
       }
     }
-	}
   EOS
 end
 
@@ -300,9 +300,6 @@ script "js_exclude_tags", type: "javascript" do
 		}
 	  }
 	})
-
-    results = _.sortBy(results,"location");
-    results = _.sortBy(results,"subscriptionName");
   EOS
 end
 
@@ -379,7 +376,27 @@ script "js_ip_cost_mapping", type:"javascript" do
   total_savings=cur + ' '+formatNumber((Math.round(total_savings * 100) / 100), separator)
   result={ "ip_list": unused_ip_list,
     "total_savings": total_savings}
+  result.ip_list = _.sortBy(result.ip_list,"location");
+  result.ip_list = _.sortBy(result.ip_list,"subscriptionName");
   EOS
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "send_email_report" do
+  automatic true
+  label "Send Mail"
+  description "Sends incidents email"
+  email $param_email
+end
+
+escalation "delete_unused_ip_addresses" do
+  automatic contains($param_automatic_action, "Delete Unused IP Addresses")
+  label "Delete Resources"
+  description "Delete selected unused IP addresses"
+  run "delete_ip_addresses", data
 end
 
 ###############################################################################
@@ -408,6 +425,7 @@ policy "pol_unused_ip_addresses" do
       end
       field "savings" do
         label "Estimated Monthly Savings"
+        format "currency"
       end
       field "id" do
         label "IP Address Name"
@@ -418,24 +436,6 @@ policy "pol_unused_ip_addresses" do
       end
     end
   end
-end
-
-###############################################################################
-# Escalations
-###############################################################################
-
-escalation "send_email_report" do
-  automatic true
-  label "Send Mail"
-  description "Sends incidents email"
-  email $param_email
-end
-
-escalation "delete_unused_ip_addresses" do
-  automatic contains($param_automatic_action, "Delete Unused IP Addresses")
-  label "Delete Resources"
-  description "Delete selected unused IP addresses"
-  run "delete_ip_addresses", data
 end
 
 ###############################################################################
