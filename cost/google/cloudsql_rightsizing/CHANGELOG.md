@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.4
+
+- Move cpu and memory calculations from jmespath to jq inside datasource
+
 ## v2.3
 
 - Added resource table
