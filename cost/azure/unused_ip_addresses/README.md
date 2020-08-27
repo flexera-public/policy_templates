@@ -2,7 +2,8 @@
 
 ## What it does  
 
-This Policy Template scans all IP addresses in the given account and identifies any unused IP addresses. If any are found, an incident report will show the IP addresses, and related information, and an email will be sent to the user-specified email address. If the user approves that the IP addresses should be deleted, the policy will delete the IP addresses. Optionally, the user can specify one or more tags that if found on an IP address will exclude the IP address from the list.
+This Policy Template scans all IP addresses in the given account and identifies any unused IP addresses. If any are found, an incident report will show the IP addresses, and related information along with the estimated monthly savings for each resource, and an email will be sent to the user-specified email address. If the user approves that the IP addresses should be deleted, the policy will delete the IP addresses. Optionally, the user can specify one or more tags that if found on an IP address will exclude the IP address from the list.
+The email will also contain Total Estimated Monthly Savings in the incident message details.
 
 ## Input Parameters  
 
@@ -24,7 +25,8 @@ The following policy actions are taken on any resources found to be out of compl
 
 ## Prerequisites  
 
-This policy requires the Azure Credential. When applying the policy select the appropriate credentials from the list for your tenant.  If such credential doesn't exist please contact your cloud admin to create the Credential. The credential must contain the value *Azure RM* in the Provider field. Refer to our documentation for more details on the [Credential Service](https://docs.rightscale.com/credentials/)
+- This policy requires the Azure Credential. When applying the policy select the appropriate credentials from the list for your tenant.  If such credential doesn't exist please contact your cloud admin to create the Credential. The credential must contain the value *Azure RM* in the Provider field. Refer to our documentation for more details on the [Credential Service](https://docs.rightscale.com/credentials/)
+- billing_center_viewer (note: this role must be applied at the Organization level).
 
 ### Credential configuration
 
