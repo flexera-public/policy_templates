@@ -2,7 +2,7 @@
 
 ## What it does
 
-This policy will look at Utilization of Azure SQL single databases and recommend up or down sizing after user approval.
+This policy will look at Utilization of Azure SQL single database and recommend up or down sizing after user approval.
 
 ## Functional Details
 
