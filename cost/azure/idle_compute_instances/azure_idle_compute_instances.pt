@@ -6,7 +6,7 @@ long_description ""
 category "Cost"
 severity "low"
 info(
-  version: "2.4",
+  version: "2.5",
   provider: "Azure",
   service: "Compute",
   policy_set: "Idle Compute Instances"
@@ -19,8 +19,8 @@ info(
 #pass in the email address to notify
 parameter "param_email" do
   type "list"
-  label "Email address"
-  description "Please enter the email address to use for the escalation"
+  label "Email addresses"
+  description "Email addresses of the recipients you wish to notify when new incidents are created"
 end
 
 #pass in the CPU in percentage
@@ -35,7 +35,7 @@ end
 parameter "param_exclusion_tag_key" do
   category "User Inputs"
   label "Exclusion Tag Key"
-  description "Cloud native tag key to ignore instances. Example: exclude_utilization"
+  description "An Azure-native instance tag key to ignore instances that you don't want to consider for downsizing. Example: exclude_utilization"
   type "string"
 end
 
@@ -57,6 +57,8 @@ credentials "azure_auth" do
   description "Select the Azure Resource Manager Credential from the list."
   tags "provider=azure_rm"
 end
+
+auth "auth_rs", type: "rightscale"
 
 ###############################################################################
 # Pagination
@@ -155,13 +157,141 @@ datasource "ds_azure_instance_performance" do
   end
 end
 
+datasource "ds_currency_reference" do
+  request do
+    host "raw.githubusercontent.com"
+    path "/rightscale/policy_templates/master/cost/scheduled_reports/currency_reference.json"
+    header "User-Agent", "RS Policies"
+  end
+end
+
+datasource "ds_currency_code" do
+  request do
+    auth $auth_rs
+    host rs_optima_host
+    path join(["/bill-analysis/orgs/",rs_org_id,"/settings/currency_code"])
+    header "Api-Version", "0.1"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+    field "id", jmes_path(response,"id")
+    field "value", jmes_path(response,"value")
+  end
+end
+
+datasource "ds_billing_centers" do
+  request do
+    auth $auth_rs
+    host rs_optima_host
+    path join(["/analytics/orgs/",rs_org_id,"/billing_centers"])
+    header "Api-Version", "1.0"
+    header "User-Agent", "RS Policies"
+    query "view", "allocation_table"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response,"[*]") do
+      field "href", jmes_path(col_item,"href")
+      field "id", jmes_path(col_item,"id")
+      field "name", jmes_path(col_item,"name")
+      field "parent_id", jmes_path(col_item,"parent_id")
+    end
+  end
+end
+
+datasource "ds_instance_costs" do
+  request do
+    run_script $js_get_costs, $ds_subscriptions, $ds_top_level_billing_centers, rs_org_id
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response,"rows[*]") do
+      field "resource_id", jmes_path(col_item, "dimensions.resource_id")
+      field "resource_type", jmes_path(col_item, "dimensions.resource_type")
+      field "cost_nonamortized_unblended_adj", jmes_path(col_item,"metrics.cost_nonamortized_unblended_adj")
+    end
+  end
+end
+
+datasource "ds_top_level_billing_centers" do
+  run_script $js_top_level_bc, $ds_billing_centers
+end
+
 datasource "ds_combineddata" do
   run_script $js_combineddata, $param_cpu_average_percentage, $ds_azure_instance_performance
+end
+
+datasource "ds_instance_cost_mapping" do
+  run_script $js_instance_cost_mapping, $ds_combineddata, $ds_instance_costs, $ds_currency_code, $ds_currency_reference
 end
 
 ###############################################################################
 # Scripts
 ###############################################################################
+
+script "js_top_level_bc", type: "javascript" do
+  parameters "billing_centers"
+  result "filtered_billing_centers"
+  code <<-EOS
+  var filtered_billing_centers =
+    _.reject(billing_centers, function(bc){ return bc.parent_id != null });
+EOS
+end
+
+script "js_get_costs", type:"javascript" do
+  parameters  "account_id","billing_centers","org"
+  result "request"
+  code <<-EOS
+    // returns date formatted as string: YYYY-mm-dd
+    function getFormattedDailyDate(date) {
+      var year = date.getFullYear();
+      var month = (1 + date.getMonth()).toString();
+      month = month.length > 1 ? month : '0' + month;
+      var day = date.getDate().toString();
+      day = day.length > 1 ? day : '0' + day;
+      return year + '-' + month + '-' + day;
+    }
+    var start_date = getFormattedDailyDate(new Date(new Date().setDate(new Date().getDate() - 3)));
+    var end_date = getFormattedDailyDate(new Date(new Date().setDate(new Date().getDate() - 2)));
+    for(var j in account_id){
+      var request = {
+        auth: "auth_rs",
+        host: "optima.rightscale.com",
+        verb: "POST",
+        path: "/bill-analysis/orgs/" + org + "/costs/select",
+        body_fields: {
+          "dimensions": ["resource_id", "resource_type"],
+          "granularity": "day",
+          "start_at": start_date,
+          "end_at": end_date,
+          "metrics": ["cost_nonamortized_unblended_adj"],
+          "billing_center_ids": _.compact(_.map(billing_centers, function(value){ return value.id})),
+          "limit": 10000,
+          "filter": {
+            "expressions": [
+              {
+                "dimension": "service",
+                "type": "equal",
+                "value": "Microsoft.Compute"
+              },
+              {
+                "dimension": "vendor_account",
+                "type": "equal",
+                "value": account_id[j]["subscriptionId"]
+              }
+            ],
+            "type": "and"
+          }
+        },
+        headers: {
+          "User-Agent": "RS Policies",
+          "Api-Version": "1.0"
+        }
+      }
+	}
+  EOS
+end
 
 script "js_filter_instances", type: "javascript" do
   parameters "ds_azure_virtualmachines", "param_exclusion_tag_key"
@@ -209,23 +339,85 @@ code <<-EOS
       results.push(result)
     }
   })
-  results = _.sortBy(results, 'subscriptionName');
-  results = _.sortBy(results, 'location');
 EOS
 end
 
+script "js_instance_cost_mapping", type:"javascript" do
+  parameters  "instance_list","instance_costs","ds_currency_code","ds_currency_reference"
+  result "result"
+  code <<-EOS
+    var result = {};
+    var idle_instance_list=[];
+    function formatNumber(number, separator){
+      var numString =number.toString();
+      var values=numString.split(".");
+      var result = ''
+      while (values[0].length > 3){
+        var chunk = values[0].substr(-3)
+        values[0] = values[0].substr(0, values[0].length - 3)
+        result = separator + chunk + result
+      }
+      if (values[0].length > 0){
+        result = values[0] + result
+      }
+      if(values[1]==undefined){
+        return result;
+      }
+      return result+"."+values[1];
+    }
+    // Format costs with currency symbol and thousands separator
+    if( ds_currency_code['value'] !== undefined ) {
+      if (ds_currency_reference[ds_currency_code['value']] !== undefined ) {
+        var cur = ds_currency_reference[ds_currency_code['value']]['symbol']
+        if( ds_currency_reference[ds_currency_code['value']]['t_separator'] !== undefined ) {
+          var separator = ds_currency_reference[ds_currency_code['value']]['t_separator']
+        } else {
+          var separator = ""
+        }
+      } else {
+        var cur = ""
+        var separator = ""
+      }
+    } else {
+      var cur = "$"
+      var separator = ","
+    }
+    var total_savings=0;
+    _.each(instance_list, function(instance){
+      var cost_objects = _.where(instance_costs, {resource_id: instance['id']});
+      if (_.size(cost_objects) > 0){
+        var sum = _.reduce(_.compact(_.map(cost_objects, function(value){if (value.resource_type.indexOf("Virtual Machines")==0) return value.cost_nonamortized_unblended_adj})), function(memo, num){ return memo + num; }, 0);
+        var monthly_savings = sum*30;
+        total_savings=total_savings+monthly_savings;
+        instance['savings']=cur + ' '+formatNumber((Math.round(monthly_savings * 100) / 100), separator);
+        idle_instance_list.push(instance);
+      } else {
+        instance['savings']= "N/A";
+        idle_instance_list.push(instance);
+      }
+    })
+    total_savings=cur + ' '+formatNumber((Math.round(total_savings * 100) / 100), separator)
+    result={ "instance_list": idle_instance_list,
+      "total_savings": total_savings}
+    result.instance_list = _.sortBy(result.instance_list,"location");
+    result.instance_list = _.sortBy(result.instance_list,"subscriptionName");
+  EOS
+end
 
 ###############################################################################
 # Policy
 ###############################################################################
 
 policy "azure_resource_policy" do
-  validate $ds_combineddata do
+  validate $ds_instance_cost_mapping do
     summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): Azure idle compute instances found"
-    check eq(size(data), 0)
+    detail_template <<-EOS
+    The total estimated monthly savings are {{data.total_savings}}.\n
+    EOS
+    check eq(size(val(data, "instance_list")), 0)
     escalate $email
     escalate $delete_resources
-    export do
+    export "instance_list" do
       resource_level true
       field "subscriptionName" do
         label "Subscription Name"
@@ -238,6 +430,10 @@ policy "azure_resource_policy" do
       end
       field "vmname" do
         label "Name"
+      end
+      field "savings" do
+        label "Estimated Monthly Savings"
+        format "currency"
       end
       field "averagecpu" do
         label "CPU Average"
