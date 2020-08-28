@@ -1,12 +1,12 @@
 name "Azure Rightsize SQL Databases"
 rs_pt_ver 20180301
 type "policy"
-short_description "Check for Inefficient database services that are inside or outside the CPU threshold for the last 30 days and resizes them after approval. See the [README](https://github.com/flexera/policy_templates/tree/master/cost/azure/rightsize_sql_instances/) and [docs.rightscale.com/policies](https://docs.rightscale.com/policies/) to learn more."
+short_description "Check for Inefficient Azure SQL single database services that are inside or outside the CPU threshold for the last 30 days and resizes them after approval. See the [README](https://github.com/flexera/policy_templates/tree/master/cost/azure/rightsize_sql_instances/) and [docs.rightscale.com/policies](https://docs.rightscale.com/policies/) to learn more."
 long_description ""
 severity "low"
 category "Cost"
 info(
-  version: "2.3",
+  version: "2.5",
   provider: "Azure",
   service: "SQL",
   policy_set: "RightSize Database Services"
@@ -217,6 +217,9 @@ script "js_merged_metrics", type: "javascript" do
       if (databases_metrics[i].sku !== undefined && databases_metrics[i].sku != null){
         if(!(_.has(databases_metrics[i].tags, exclusion_tag) || databases_metrics[i].kind.toLowerCase().indexOf(",system") > -1)){
           //Find the Resource group
+          var capacity = "";
+          var recommended_capacity = "";
+          var recommendation = "";
           var aTemp = databases_metrics[i].id.split("/resourceGroups/")
           var resource_group="";
           if(aTemp.length > 1){
@@ -240,78 +243,55 @@ script "js_merged_metrics", type: "javascript" do
           }else{
             average_cpu = "n/a";
           }
-
           var sku = databases_metrics[i].sku;
-          console.log("Database metrics:")
-          console.log(databases_metrics[i])
-          var recommended_capacity = "";
-          var recommendation = "";
           //Now check for recommendation
           if(average_cpu !== "n/a"){
-            //Upsize
             if(Number(average_cpu) >= Number(up_threshold)){
-              if (databases_metrics[i].sku !== undefined && databases_metrics[i].sku != null){
-                console.log("1")
-                if (sku.tier !== undefined && sku.tier != null){
-                  console.log("2")
-                  if (ds_azure_sql_resize_map[sku.tier] !== undefined && ds_azure_sql_resize_map[sku.tier] != null){
-                    console.log("3")
-                    var json_tier = ds_azure_sql_resize_map[sku.tier];
-                    if (json_tier[sku.name+"_"+sku.capacity] !== undefined && json_tier[sku.name+"_"+sku.capacity] != null){
-                      var json_name = json_tier[sku.name+"_"+sku.capacity];
-                      if (json_name["up"] !== undefined && json_name["up"] != null){
-                        var capacity = json_name["up"];
-                      }
-                    }
-                  }
-                }
-              }
-              if(capacity != null){
-              recommended_capacity = capacity;
-              }else{
-              recommended_capacity = "n/a";
-              }
+              //Upsize
               recommendation = "Upsize";
-            }else if(Number(average_cpu) <= Number(down_threshold)){
-            //Downsize
-              var recommended_capacity = "";
-              if (databases_metrics[i].sku !== undefined && databases_metrics[i].sku != null){
-                console.log("4")
-                if (sku.tier !== undefined && sku.tier != null){
-                  console.log("5")
-                  if (ds_azure_sql_resize_map[sku.tier] !== undefined && ds_azure_sql_resize_map[sku.tier] != null){
-                    console.log("6")
-                    var json_tier = ds_azure_sql_resize_map[sku["tier"]];
-                    if (json_tier[sku.name+"_"+sku.capacity] !== undefined && json_tier[sku.name+"_"+sku.capacity] != null){
-                      var json_name = json_tier[sku.name+"_"+sku.capacity];
-                      if (json_name["down"] !== undefined && json_name["down"] != null){
-                        var capacity = json_name["down"];
-                      }
-                    }
+              if (databases_metrics[i].sku !== undefined && databases_metrics[i].sku != null && ds_azure_sql_resize_map[sku.tier] !== undefined && ds_azure_sql_resize_map[sku.tier] != null){
+                var json_tier = ds_azure_sql_resize_map[sku.tier];
+                if (json_tier[sku.name+"_"+sku.capacity] !== undefined && json_tier[sku.name+"_"+sku.capacity] != null){
+                  var json_name = json_tier[sku.name+"_"+sku.capacity];
+                  if (json_name["up"] !== undefined && json_name["up"] != null){
+                    capacity = json_name["up"];
                   }
                 }
-              }
-              if(capacity != null){
-              recommended_capacity = capacity;
+              }		  
+              if(capacity != null && capacity.length > 0){
+                recommended_capacity = capacity;
               }else{
-              recommended_capacity = "n/a";
+                recommended_capacity = "n/a";
               }
+            }else if(Number(average_cpu) <= Number(down_threshold)){
+              //Downsize
               recommendation = "Downsize";
-              console.log("7")
-              if (databases_metrics[i].sku !== undefined && databases_metrics[i].sku != null){
-                if (sku.tier !== undefined && sku.tier != null){
-                  console.log("8")
-                  if (sku.tier === "Basic"){
-                    recommendation = "-";
+              if (databases_metrics[i].sku !== undefined && databases_metrics[i].sku != null && ds_azure_sql_resize_map[sku.tier] !== undefined && ds_azure_sql_resize_map[sku.tier] != null){
+                if (sku.tier === "Basic"){
+                  recommendation = "-";
+                }
+                var json_tier = ds_azure_sql_resize_map[sku["tier"]];
+                if (json_tier[sku.name+"_"+sku.capacity] !== undefined && json_tier[sku.name+"_"+sku.capacity] != null){
+                  var json_name = json_tier[sku.name+"_"+sku.capacity];
+                  if (json_name["down"] !== undefined && json_name["down"] != null){
+                    capacity = json_name["down"];
                   }
                 }
+              }
+              if(capacity != null && capacity.length > 0){
+                recommended_capacity = capacity;
+              }else{
+                recommended_capacity = "n/a";
               }
             }
           }else{
             recommendation = "-";
             recommended_capacity = "n/a";
           }
-          if(average_cpu !== "n/a"){
+          if (recommended_capacity === "n/a" && recommendation !== "-"){
+            recommendation = "Change tier"
+          }
+          if(average_cpu !== "n/a" && sku.name !== "ElasticPool"){
             result.push({
               id: databases_metrics[i].id,
               location: databases_metrics[i].location,
@@ -344,10 +324,12 @@ end
 
 policy 'policy_azure_db_utilization' do
   validate $ds_merged_metrics do
-    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} Azure Rightsize SQL Databases\n
-    ### Thresholds for Consideration
-    - Upsize Average CPU% threshold   : {{ parameters.param_avg_cpu_upsize }}
-    - Downsize Average CPU% threshold : {{ parameters.param_avg_cpu_downsize }}"
+    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): Found {{ len data }} Azure Rightsize SQL single Database"
+	detail_template <<-EOS
+      ### Thresholds for Consideration
+      - Upsize Average CPU% threshold   : {{ parameters.param_avg_cpu_upsize }}
+      - Downsize Average CPU% threshold : {{ parameters.param_avg_cpu_downsize }}
+    EOS
     escalate $email_report
     escalate $esc_update_rightsize_sql_databases_approval
     check eq(size(data),0)

@@ -9,6 +9,10 @@ Note: The unused volumes incident will reflect the updated set of unused volumes
 
 Optionally, the user can specify one or more tags that if found on a volume will exclude the volume from the list.
 
+### Policy savings details
+
+The policy includes the estimated savings.  The estimated savings is recognized if the resource is terminated.   Optima is used to receive the estimated savings which is the product of the most recent full day’s cost of the resource * 30.  The savings is displayed in the Estimated Monthly Savings column.  If the resource can not be found in Optima the value is n/a.  The incident header includes the sum of each resource Estimated Monthly Savings in the Incident Header as Total Estimated Monthly Savings.
+
 ## Input Parameters
 
 This policy has the following input parameters required when launching the policy.
@@ -38,7 +42,7 @@ The following policy actions are taken on any resources found to be out of compl
 
 For administrators [creating and managing credentials](https://docs.rightscale.com/policies/users/guides/credential_management.html) to use with this policy, the following information is needed:
 
-Provider tag value to match this policy: `aws`
+Provider tag value to match this policy: `aws` , `aws_sts`
 
 The following AWS permissions must be allowed for the policy to run.
 
@@ -53,7 +57,8 @@ The following AWS permissions must be allowed for the policy to run.
         "ec2:CreateTags",
         "ec2:CreateSnapshot",
         "ec2:DescribeSnapshots",
-        "ec2:DeleteVolume"
+        "ec2:DeleteVolume",
+        "ec2:DescribeRegions"
       ],
       "Resource":"*"
     },

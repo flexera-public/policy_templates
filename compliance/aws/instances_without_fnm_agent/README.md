@@ -36,7 +36,7 @@ This policy uses [credentials](https://docs.rightscale.com/policies/users/guides
 
 For administrators [creating and managing credentials](https://docs.rightscale.com/policies/users/guides/credential_management.html) to use with this policy, the following information is needed:
 
-Provider tag value to match this policy: `aws` , `flexera_fnms`
+Provider tag value to match this policy: `aws` , `aws_sts` , `flexera_fnms`
 
 - Credential type for fnms:
 
@@ -49,10 +49,11 @@ Required permissions in the provider aws:
 
 ```javascript
  {
-    "Version": "2016-11-15",
+    "Version": "2012-10-17",
     "Statement":[{
                   "Effect":"Allow",
-                  "Action":["ec2:DescribeInstances"],
+                  "Action":["ec2:DescribeInstances",
+                              "ec2:DescribeRegions"],
                   "Resource":"*"
                 }]
  }

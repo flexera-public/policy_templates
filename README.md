@@ -73,6 +73,7 @@ Please contact sales@flexera.com to learn more.
 - [Azure Reserved Instance Utilization](./cost/azure/reserved_instances/utilization/)
 - [Azure Reserved Instance Recommendations](./cost/azure/reserved_instances/recommendations)
 - [Azure Unused IP Addresses](./cost/azure/unused_ip_addresses)
+- [Azure Schedule Instance](./cost/azure/schedule_instance/)
 
 ##### Database
 
@@ -93,6 +94,7 @@ Please contact sales@flexera.com to learn more.
 - [Google Committed Use Discount (CUD)](./cost/google/cud_report/)
 - [Google Idle Compute Instances](./cost/google/idle_compute_instances/)
 - [Google Expiring Committed Use Discount (CUD)](./cost/google/cud_expiration/)
+- [Google Schedule Instance](./cost/google/schedule_instance/)
 
 ##### Database
 
@@ -249,6 +251,7 @@ Please contact sales@flexera.com to learn more.
 - [Google Instance Types](./data/google/instance_types.json)
 - [Currency Reference](./cost/scheduled_reports/currency_reference.json)
 - [Azure SQL Service Tier Types](./data/azure/sql_service_tier_types.json)
+- [TZ database Timezone List](./data/tz_database/timezones_list.json)
 
 ## Instructions to upload policy templates to Flexera CMP Policies
 
