@@ -6,7 +6,7 @@ long_description ""
 severity "low"
 category "Cost"
 info(
-    version: "2.5",
+    version: "2.6",
     provider: "AWS",
     service: "EC2",
     policy_set: "Unused IP Addresses"
@@ -18,7 +18,7 @@ info(
 
 parameter "param_exclude_tags" do
   type "list"
-  label "Exclusion Tags Key=Value"
+  label "Exclusion Tags"
   description "A list of AWS tags to ignore Elastic IPs. Format: Key=Value"
 end
 
@@ -46,6 +46,8 @@ credentials "auth_aws" do
   description "Select the AWS Cloud Credential from the list."
   tags "provider=aws"
 end
+
+auth "auth_rs", type: "rightscale"
 
 pagination "aws_pagination" do
   get_page_marker do
@@ -125,60 +127,268 @@ datasource "ds_aws_elastic_ip_address" do
   end
 end
 
+datasource "ds_currency_reference" do
+  request do
+    host "raw.githubusercontent.com"
+    path "/rightscale/policy_templates/master/cost/scheduled_reports/currency_reference.json"
+    header "User-Agent", "RS Policies"
+  end
+end
+
+datasource "ds_currency_code" do
+  request do
+    auth $auth_rs
+    host rs_optima_host
+    path join(["/bill-analysis/orgs/",rs_org_id,"/settings/currency_code"])
+    header "Api-Version", "0.1"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+    field "id", jmes_path(response,"id")
+    field "value", jmes_path(response,"value")
+  end
+end
+
+datasource "ds_billing_centers" do
+  request do
+    auth $auth_rs
+    host rs_optima_host
+    path join(["/analytics/orgs/",rs_org_id,"/billing_centers"])
+    header "Api-Version", "1.0"
+    header "User-Agent", "RS Policies"
+    query "view", "allocation_table"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response,"[*]") do
+      field "href", jmes_path(col_item,"href")
+      field "id", jmes_path(col_item,"id")
+      field "name", jmes_path(col_item,"name")
+      field "parent_id", jmes_path(col_item,"parent_id")
+    end
+  end
+end
+
+datasource "ds_top_level_billing_centers" do
+  run_script $js_top_level_bc, $ds_billing_centers
+end
+
+datasource "ds_get_caller_identity" do
+  request do
+    auth $auth_aws
+    verb "GET"
+    host "sts.amazonaws.com"
+    path "/"
+    header "User-Agent", "RS Policies"
+    query "Action", "GetCallerIdentity"
+    query "Version", "2011-06-15"
+  end
+  result do
+    encoding "xml"
+    collect xpath(response, "//GetCallerIdentityResponse/GetCallerIdentityResult") do
+      field "account",xpath(col_item, "Account")
+    end
+ end
+end
+
+datasource "ds_ip_costs" do
+  request do
+    run_script $js_get_costs, $ds_get_caller_identity, $ds_top_level_billing_centers, rs_org_id
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response,"rows[*]") do
+      field "cost_nonamortized_unblended_adj", jmes_path(col_item,"metrics.cost_nonamortized_unblended_adj")
+    end
+  end
+end
+
 datasource "ds_filter_ip" do
   run_script $js_filter_ip_response, $ds_aws_elastic_ip_address, $param_exclude_tags
+end
+
+datasource "ds_ip_cost_mapping" do
+  run_script $js_ip_cost_mapping, $ds_filter_ip, $ds_ip_costs, $ds_currency_code, $ds_currency_reference
 end
 
 ###############################################################################
 # Scripts
 ###############################################################################
 
+script "js_top_level_bc", type: "javascript" do
+  parameters "billing_centers"
+  result "filtered_billing_centers"
+  code <<-EOS
+  var filtered_billing_centers =
+    _.reject(billing_centers, function(bc){ return bc.parent_id != null });
+EOS
+end
+
+script "js_get_costs", type:"javascript" do
+  parameters  "account_id","billing_centers","org"
+  result "request"
+  code <<-EOS
+    // returns date formatted as string: YYYY-mm-dd
+    function getFormattedDailyDate(date) {
+      var year = date.getFullYear();
+      var month = (1 + date.getMonth()).toString();
+      month = month.length > 1 ? month : '0' + month;
+      var day = date.getDate().toString();
+      day = day.length > 1 ? day : '0' + day;
+      return year + '-' + month + '-' + day;
+    }
+    var start_date = getFormattedDailyDate(new Date(new Date().setDate(new Date().getDate() - 3)));
+    var end_date = getFormattedDailyDate(new Date(new Date().setDate(new Date().getDate() - 2)));
+    var request = {
+      auth: "auth_rs",
+      host: "optima.rightscale.com",
+      verb: "POST",
+      path: "/bill-analysis/orgs/" + org + "/costs/select",
+      body_fields: {
+        "dimensions": ["resource_id"],
+        "granularity": "day",
+        "start_at": start_date,
+        "end_at": end_date,
+        "metrics": ["cost_nonamortized_unblended_adj"],
+        "billing_center_ids": _.compact(_.map(billing_centers, function(value){ return value.id})),
+        "limit": 10000,
+        "filter": {
+          "expressions": [
+            {
+              "dimension": "vendor_account",
+              "type": "equal",
+              "value": account_id[0]["account"]
+            },
+			{
+              "dimension": "service",
+              "type": "equal",
+              "value": "AmazonEC2"
+            },
+			{
+              "dimension": "resource_type",
+              "type": "equal",
+              "value": "IP Address"
+            }
+			
+          ],
+          "type": "and"
+        }
+      },
+      headers: {
+        "User-Agent": "RS Policies",
+        "Api-Version": "1.0"
+      }
+    }
+  EOS
+end
+
 script "js_filter_ip_response", type: "javascript" do
   parameters "ds_aws_elastic_ip_address", "exclusion_tag"
   result "result"
   code <<-EOS
-  var result=[];
-  var param_exclude_tags_lower=[];
-  for(var j=0;j<exclusion_tag.length;j++){
-    param_exclude_tags_lower[j] = exclusion_tag[j].toString().toLowerCase();
-  }
-  for(var i=0;i<ds_aws_elastic_ip_address.length;i++){
-    instance = ds_aws_elastic_ip_address[i];
-    var tags = instance['tags'];
-    var isTagMatched = false;
-    var tagKeyValue = "";
-    for(var k=0; k < tags.length; k++){
-      tag = tags[k];
-      if((param_exclude_tags_lower.indexOf((tag['tagKey']).toLowerCase()) !== -1) || (param_exclude_tags_lower.indexOf((tag['tagKey']+'='+tag['tagValue']).toLowerCase()) !== -1)){
-        isTagMatched = true;
+    var result=[];
+    var param_exclude_tags_lower=[];
+    for(var j=0;j<exclusion_tag.length;j++){
+      param_exclude_tags_lower[j] = exclusion_tag[j].toString().toLowerCase();
+    }
+    for(var i=0;i<ds_aws_elastic_ip_address.length;i++){
+      instance = ds_aws_elastic_ip_address[i];
+      var tags = instance['tags'];
+      var isTagMatched = false;
+      var tagKeyValue = "";
+      for(var k=0; k < tags.length; k++){
+        tag = tags[k];
+        if((param_exclude_tags_lower.indexOf((tag['tagKey']).toLowerCase()) !== -1) || (param_exclude_tags_lower.indexOf((tag['tagKey']+'='+tag['tagValue']).toLowerCase()) !== -1)){
+          isTagMatched = true;
+        }
+        // Constructing tags with comma separated to display in detail_template
+        if((tag['tagValue']).length > 0){
+          tagKeyValue = tagKeyValue+" , "+tag['tagKey']+'='+tag['tagValue'];
+        }
+        else{
+          tagKeyValue = tagKeyValue+" , "+tag['tagKey'];
+        }
       }
-      // Constructing tags with comma separated to display in detail_template
-      if((tag['tagValue']).length > 0){
-        tagKeyValue = tagKeyValue+" , "+tag['tagKey']+'='+tag['tagValue'];
+      if(tagKeyValue === "" || tagKeyValue === " " || tagKeyValue == ""){
+        tagKeyValue = "< No Value >";
       }
       else{
-        tagKeyValue = tagKeyValue+" , "+tag['tagKey'];
+        tagKeyValue=tagKeyValue.slice(2);
+      }
+      //If the instance id is empty and IP tag does not match with entered param_exclude_tags
+      if(instance['instance_id']==""){
+        if(!(isTagMatched)){
+          result.push({
+            all_tags : (tagKeyValue),
+            domain:instance['domain'],
+            publicIp: instance['publicIp'],
+            region : instance["region"],
+            allocation_id:instance["allocation_id"]
+          })
+        }
       }
     }
-    if(tagKeyValue === "" || tagKeyValue === " " || tagKeyValue == ""){
-      tagKeyValue = "< No Value >";
-    }
-    else{
-      tagKeyValue=tagKeyValue.slice(2);
-    }
-    //If the instance id is empty and IP tag does not match with entered param_exclude_tags
-    if(instance['instance_id']==""){
-      if(!(isTagMatched)){
-        result.push({
-          all_tags : (tagKeyValue),
-          domain:instance['domain'],
-          publicIp: instance['publicIp'],
-          region : instance["region"],
-          allocation_id:instance["allocation_id"]
-        })
+  EOS
+end
+
+script "js_ip_cost_mapping", type:"javascript" do
+  parameters  "ip_list","ip_costs","ds_currency_code","ds_currency_reference"
+  result "result"
+  code <<-EOS
+    var result = {};
+    var unused_ip_list=[];
+    function formatNumber(number, separator){
+      var numString =number.toString();
+      var values=numString.split(".");
+      var result = ''
+      while (values[0].length > 3){
+        var chunk = values[0].substr(-3)
+        values[0] = values[0].substr(0, values[0].length - 3)
+        result = separator + chunk + result
       }
+      if (values[0].length > 0){
+        result = values[0] + result
+      }
+      if(values[1]==undefined){
+        return result;
+      }
+      return result+"."+values[1];
     }
-  }
+    // Format costs with currency symbol and thousands separator
+    if( ds_currency_code['value'] !== undefined ) {
+      if (ds_currency_reference[ds_currency_code['value']] !== undefined ) {
+        var cur = ds_currency_reference[ds_currency_code['value']]['symbol']
+        if( ds_currency_reference[ds_currency_code['value']]['t_separator'] !== undefined ) {
+          var separator = ds_currency_reference[ds_currency_code['value']]['t_separator']
+        } else {
+          var separator = ""
+        }
+      } else {
+        var cur = ""
+        var separator = ""
+      }
+    } else {
+      var cur = "$"
+      var separator = ","
+    }
+    var total_savings=0;
+    _.each(ip_costs, function(ip){
+      total_savings=total_savings+ip.cost_nonamortized_unblended_adj
+    })
+    _.each(ip_list, function(ip){
+      unused_ip_list.push({
+        all_tags : ip['all_tags'],
+        domain:ip['domain'],
+        publicIp: ip['publicIp'],
+        region : ip["region"],
+        allocation_id:ip["allocation_id"]
+      })
+    })
+    total_savings=cur + ' '+formatNumber((Math.round(total_savings * 100) / 100), separator)
+    result={ "ip_list": unused_ip_list,
+      "total_savings": total_savings}
+    result.ip_list=_.sortBy(result.ip_list,"region")
   EOS
 end
 
@@ -205,12 +415,15 @@ end
 ##############################################################################
 
 policy "policy_unused_ip_addresses" do
-  validate $ds_filter_ip do
-    summary_template "Unused Elastic IP addresses in AWS"
-    check eq(size(data),0)
+  validate $ds_ip_cost_mapping do
+    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data.ip_list }} AWS Unused IP Addresses Found"
+    detail_template <<-EOS
+    The total estimated monthly savings are {{data.total_savings}}.\n
+    EOS
+    check eq(size(val(data, "ip_list")),0)
     escalate $esc_email
     escalate $esc_delete_ip_address
-    export do
+    export "ip_list" do
       resource_level true
       field "id" do
         label "Public IP"
