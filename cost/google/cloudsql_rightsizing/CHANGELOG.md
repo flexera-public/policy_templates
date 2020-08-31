@@ -2,7 +2,7 @@
 
 ## v2.4
 
-- Move cpu calculations and memory calculations from jmespath to jq inside datasource
+- Moved CPU calculations and memory calculations from jmespath to jq inside datasource
 
 ## v2.3
 
