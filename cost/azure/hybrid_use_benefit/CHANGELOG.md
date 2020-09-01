@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.3
+
+- modified policy to check for AHUB in Windows Server Instances only
+
 ## v2.2
 
 - Added resource Table
