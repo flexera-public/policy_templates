@@ -14,7 +14,7 @@ This Policy Template is used to automatically apply the Azure Hybrid Use Benefit
 
 This policy has the following input parameters required when launching the policy.
 
-- *Exclusion Tag Key* - an Azure-native instance tag to ignore instances that are not using AHUB/BYOL. Only supply the tag key. The policy assumes that the tag value is irrelevant.
+- *Exclusion Tag Key* - An Azure-native instance tag to ignore instances that are not using AHUB/BYOL. Only supply the tag key. The policy assumes that the tag value is irrelevant.
 - *Email addresses* - A list of email addresses of the recipients you wish to notify
 - *Automatic Actions* - When this value is set, this policy will automatically take the selected action(s).
 
