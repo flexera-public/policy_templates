@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.7
+
+- Updating resource table to iterate thru data and show all items in incident.
+
 ## v1.6
 
 - Added Resource table
