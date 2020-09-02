@@ -1,6 +1,6 @@
 # Changelog
 
-## v1.7
+## v1.8
 
 - Modified Instance resources filter to get running instances having attached volumes that do not have a snapshot
 
