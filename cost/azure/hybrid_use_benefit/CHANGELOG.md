@@ -1,5 +1,13 @@
 # Changelog
 
+## v2.4
+
+- updated the policy to check for AHUB in Windows Server using licenseType
+
+## v2.3
+
+- modified policy to check for AHUB in Windows Server Instances only
+
 ## v2.2
 
 - Added resource Table
