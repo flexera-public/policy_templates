@@ -11,6 +11,10 @@ An Elastic IP (EIP) is an IP address that can be reserved from AWS for an accoun
 The reserved IP in an account which is not associated with a running EC2 instance or an Elastic Network Interface (ENI) is known as Unused Elastic IP and it incur charges.
 If EIP is not needed, charges can be stopped by releasing the unused EIP.
 
+### Policy savings details
+
+The policy includes the estimated savings. The estimated savings is recognized if the resource is terminated. Optima is used to receive the estimated savings which is the product of the most recent full day's cost of the resource * 30. The incident header includes the sum of each resource Estimated Monthly Savings in the Incident Header as Total Estimated Monthly Savings.
+
 ## Input Parameters
 
 This policy has the following input parameters required when launching the policy.

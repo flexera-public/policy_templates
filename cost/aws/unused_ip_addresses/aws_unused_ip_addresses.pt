@@ -142,6 +142,7 @@ datasource "ds_currency_code" do
     path join(["/bill-analysis/orgs/",rs_org_id,"/settings/currency_code"])
     header "Api-Version", "0.1"
     header "User-Agent", "RS Policies"
+    ignore_status [403]
   end
   result do
     encoding "json"
@@ -158,6 +159,7 @@ datasource "ds_billing_centers" do
     header "Api-Version", "1.0"
     header "User-Agent", "RS Policies"
     query "view", "allocation_table"
+    ignore_status [403]
   end
   result do
     encoding "json"
@@ -209,7 +211,7 @@ datasource "ds_filter_ip" do
 end
 
 datasource "ds_ip_cost_mapping" do
-  run_script $js_ip_cost_mapping, $ds_filter_ip, $ds_ip_costs, $ds_currency_code, $ds_currency_reference
+  run_script $js_ip_cost_mapping, $ds_filter_ip, $ds_ip_costs, $ds_currency_code, $ds_currency_reference, $ds_billing_centers
 end
 
 ###############################################################################
@@ -278,7 +280,8 @@ script "js_get_costs", type:"javascript" do
       headers: {
         "User-Agent": "RS Policies",
         "Api-Version": "1.0"
-      }
+      },
+      ignore_status: [400]
     }
   EOS
 end
@@ -333,11 +336,12 @@ script "js_filter_ip_response", type: "javascript" do
 end
 
 script "js_ip_cost_mapping", type:"javascript" do
-  parameters  "ip_list","ip_costs","ds_currency_code","ds_currency_reference"
+  parameters  "ip_list","ip_costs","ds_currency_code","ds_currency_reference", "ds_billing_centers"
   result "result"
   code <<-EOS
     var result = {};
     var unused_ip_list=[];
+    var message='';
     function formatNumber(number, separator){
       var numString =number.toString();
       var values=numString.split(".");
@@ -356,38 +360,35 @@ script "js_ip_cost_mapping", type:"javascript" do
       return result+"."+values[1];
     }
     // Format costs with currency symbol and thousands separator
-    if( ds_currency_code['value'] !== undefined ) {
-      if (ds_currency_reference[ds_currency_code['value']] !== undefined ) {
-        var cur = ds_currency_reference[ds_currency_code['value']]['symbol']
-        if( ds_currency_reference[ds_currency_code['value']]['t_separator'] !== undefined ) {
-          var separator = ds_currency_reference[ds_currency_code['value']]['t_separator']
+    if(ds_billing_centers.length!=0){
+      if( ds_currency_code['value'] !== undefined ) {
+        if (ds_currency_reference[ds_currency_code['value']] !== undefined ) {
+          var cur = ds_currency_reference[ds_currency_code['value']]['symbol']
+          if( ds_currency_reference[ds_currency_code['value']]['t_separator'] !== undefined ) {
+            var separator = ds_currency_reference[ds_currency_code['value']]['t_separator']
+          } else {
+            var separator = ""
+          }
         } else {
+          var cur = ""
           var separator = ""
         }
       } else {
-        var cur = ""
-        var separator = ""
+        var cur = "$"
+        var separator = ","
       }
-    } else {
-      var cur = "$"
-      var separator = ","
-    }
-    var total_savings=0;
-    _.each(ip_costs, function(ip){
-      total_savings=total_savings+ip.cost_nonamortized_unblended_adj
-    })
-    _.each(ip_list, function(ip){
-      unused_ip_list.push({
-        all_tags : ip['all_tags'],
-        domain:ip['domain'],
-        publicIp: ip['publicIp'],
-        region : ip["region"],
-        allocation_id:ip["allocation_id"]
+      var total_savings=0;
+      _.each(ip_costs, function(ip){
+        total_savings=total_savings+ip.cost_nonamortized_unblended_adj
       })
-    })
-    total_savings=cur + ' '+formatNumber((Math.round((total_savings*30) * 100) / 100), separator)
-    result={ "ip_list": unused_ip_list,
-      "total_savings": total_savings}
+      total_savings=cur + ' '+formatNumber((Math.round((total_savings*30) * 100) / 100), separator);
+      message = "The total estimated monthly savings are "+ total_savings;
+    }
+    else{
+      message="You do not have the least required role of billing_center_viewer to view the savings"
+    }
+    result={ "ip_list": ip_list,
+      "message": message}
     result.ip_list=_.sortBy(result.ip_list,"region")
   EOS
 end
@@ -418,7 +419,7 @@ policy "policy_unused_ip_addresses" do
   validate $ds_ip_cost_mapping do
     summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data.ip_list }} AWS Unused IP Addresses Found"
     detail_template <<-EOS
-    The total estimated monthly savings are {{data.total_savings}}.\n
+    {{data.message}}
     EOS
     check eq(size(val(data, "ip_list")),0)
     escalate $esc_email
