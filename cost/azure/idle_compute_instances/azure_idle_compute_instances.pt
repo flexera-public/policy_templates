@@ -172,6 +172,7 @@ datasource "ds_currency_code" do
     path join(["/bill-analysis/orgs/",rs_org_id,"/settings/currency_code"])
     header "Api-Version", "0.1"
     header "User-Agent", "RS Policies"
+    ignore_status [403]
   end
   result do
     encoding "json"
@@ -188,6 +189,7 @@ datasource "ds_billing_centers" do
     header "Api-Version", "1.0"
     header "User-Agent", "RS Policies"
     query "view", "allocation_table"
+    ignore_status [403]
   end
   result do
     encoding "json"
@@ -223,7 +225,7 @@ datasource "ds_combineddata" do
 end
 
 datasource "ds_instance_cost_mapping" do
-  run_script $js_instance_cost_mapping, $ds_combineddata, $ds_instance_costs, $ds_currency_code, $ds_currency_reference
+  run_script $js_instance_cost_mapping, $ds_combineddata, $ds_instance_costs, $ds_currency_code, $ds_currency_reference, $ds_billing_centers
 end
 
 ###############################################################################
@@ -287,7 +289,8 @@ script "js_get_costs", type:"javascript" do
         headers: {
           "User-Agent": "RS Policies",
           "Api-Version": "1.0"
-        }
+        },
+        ignore_status: [400]
       }
 	}
   EOS
@@ -336,6 +339,7 @@ code <<-EOS
 
     if (final_average < param_cpu_average_percentage && final_average != 0) {
       result["averagecpu"] = final_average
+      result['savings']="N/A";
       results.push(result)
     }
   })
@@ -343,11 +347,12 @@ EOS
 end
 
 script "js_instance_cost_mapping", type:"javascript" do
-  parameters  "instance_list","instance_costs","ds_currency_code","ds_currency_reference"
+  parameters  "instance_list","instance_costs","ds_currency_code","ds_currency_reference", "ds_billing_centers"
   result "result"
   code <<-EOS
     var result = {};
     var idle_instance_list=[];
+    var message=''
     function formatNumber(number, separator){
       var numString =number.toString();
       var values=numString.split(".");
@@ -365,40 +370,47 @@ script "js_instance_cost_mapping", type:"javascript" do
       }
       return result+"."+values[1];
     }
-    // Format costs with currency symbol and thousands separator
-    if( ds_currency_code['value'] !== undefined ) {
-      if (ds_currency_reference[ds_currency_code['value']] !== undefined ) {
-        var cur = ds_currency_reference[ds_currency_code['value']]['symbol']
-        if( ds_currency_reference[ds_currency_code['value']]['t_separator'] !== undefined ) {
-          var separator = ds_currency_reference[ds_currency_code['value']]['t_separator']
+    if(ds_billing_centers.length!=0){
+      // Format costs with currency symbol and thousands separator
+      if( ds_currency_code['value'] !== undefined ) {
+        if (ds_currency_reference[ds_currency_code['value']] !== undefined ) {
+          var cur = ds_currency_reference[ds_currency_code['value']]['symbol']
+          if( ds_currency_reference[ds_currency_code['value']]['t_separator'] !== undefined ) {
+            var separator = ds_currency_reference[ds_currency_code['value']]['t_separator']
+          } else {
+            var separator = ""
+          }
         } else {
+          var cur = ""
           var separator = ""
         }
       } else {
-        var cur = ""
-        var separator = ""
+        var cur = "$"
+        var separator = ","
       }
-    } else {
-      var cur = "$"
-      var separator = ","
+      var total_savings=0;
+      _.each(instance_list, function(instance){
+        var cost_objects = _.where(instance_costs, {resource_id: instance['id']});
+        if (_.size(cost_objects) > 0){
+          var sum = _.reduce(_.compact(_.map(cost_objects, function(value){return value.cost_nonamortized_unblended_adj})), function(memo, num){ return memo + num; }, 0);
+          var monthly_savings = sum*30;
+          total_savings=total_savings+monthly_savings;
+          instance['savings']=cur + ' '+formatNumber((Math.round(monthly_savings * 100) / 100), separator);
+          idle_instance_list.push(instance);
+        } else {
+          instance['savings']= "N/A";
+          idle_instance_list.push(instance);
+        }
+      })
+      total_savings=cur + ' '+formatNumber((Math.round(total_savings * 100) / 100), separator);
+      message="The total estimated monthly savings are " +total_savings;
     }
-    var total_savings=0;
-    _.each(instance_list, function(instance){
-      var cost_objects = _.where(instance_costs, {resource_id: instance['id']});
-      if (_.size(cost_objects) > 0){
-        var sum = _.reduce(_.compact(_.map(cost_objects, function(value){if (value.resource_type.indexOf("Virtual Machines")==0) return value.cost_nonamortized_unblended_adj})), function(memo, num){ return memo + num; }, 0);
-        var monthly_savings = sum*30;
-        total_savings=total_savings+monthly_savings;
-        instance['savings']=cur + ' '+formatNumber((Math.round(monthly_savings * 100) / 100), separator);
-        idle_instance_list.push(instance);
-      } else {
-        instance['savings']= "N/A";
-        idle_instance_list.push(instance);
-      }
-    })
-    total_savings=cur + ' '+formatNumber((Math.round(total_savings * 100) / 100), separator)
+    else{
+      message="You do not have the minimum required role of billing_center_viewer to view the savings";
+      idle_instance_list=instance_list;
+    }
     result={ "instance_list": idle_instance_list,
-      "total_savings": total_savings}
+      "message": message}
     result.instance_list = _.sortBy(result.instance_list,"location");
     result.instance_list = _.sortBy(result.instance_list,"subscriptionName");
   EOS
@@ -412,7 +424,7 @@ policy "azure_resource_policy" do
   validate $ds_instance_cost_mapping do
     summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): Azure idle compute instances found"
     detail_template <<-EOS
-    The total estimated monthly savings are {{data.total_savings}}.\n
+    {{data.message}}
     EOS
     check eq(size(val(data, "instance_list")), 0)
     escalate $email
@@ -433,7 +445,6 @@ policy "azure_resource_policy" do
       end
       field "savings" do
         label "Estimated Monthly Savings"
-        format "currency"
       end
       field "averagecpu" do
         label "CPU Average"
