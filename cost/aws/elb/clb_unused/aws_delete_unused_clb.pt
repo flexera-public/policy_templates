@@ -6,7 +6,7 @@ long_description ""
 category "Cost"
 severity "low"
 info(
-  version: "2.4",
+  version: "2.5",
   provider: "AWS",
   service: "ELB",
   policy_set: ""
@@ -187,6 +187,7 @@ datasource "ds_currency_code" do
     path join(["/bill-analysis/orgs/",rs_org_id,"/settings/currency_code"])
     header "Api-Version", "0.1"
     header "User-Agent", "RS Policies"
+    ignore_status [403]
   end
   result do
     encoding "json"
@@ -203,6 +204,7 @@ datasource "ds_billing_centers" do
     header "Api-Version", "1.0"
     header "User-Agent", "RS Policies"
     query "view", "allocation_table"
+    ignore_status [403]
   end
   result do
     encoding "json"
@@ -252,7 +254,7 @@ datasource "ds_clbs_costs" do
 end
 
 datasource "ds_clbs_cost_mapping" do 
-  run_script $js_clbs_cost_mapping, $ds_unused_clb_map, $ds_clbs_costs, $ds_currency_reference, $ds_currency_reference
+  run_script $js_clbs_cost_mapping, $ds_unused_clb_map, $ds_clbs_costs, $ds_currency_reference, $ds_currency_reference, $ds_billing_centers
 end
 
 ###############################################################################
@@ -308,7 +310,8 @@ script "js_aws_clb_filter_map", type: "javascript" do
           instanceId:(s_instanceIds.slice(2)),
           availabilityZones:(s_availabilityZones.slice(2)),
           tagKeyValue:(tagKeyValue.slice(2)),
-          region: clb['region']
+          region: clb['region'],
+          savings:"N/A"
         }
         if(instancesList.length > 0){
           var isInstanceNotHealthy=false
@@ -392,18 +395,20 @@ script "js_get_costs", type:"javascript" do
       headers: {
         "User-Agent": "RS Policies",
         "Api-Version": "1.0"
-      }
+      },
+      ignore_status: [400]
     }
   EOS
 end
 
 script "js_clbs_cost_mapping", type:"javascript" do
-  parameters  "clbs","clbs_cost","ds_currency_code","ds_currency_reference"
+  parameters  "clbs","clbs_cost","ds_currency_code","ds_currency_reference", "ds_billing_centers"
   result "result"
   code <<-EOS
   var total=0;
-  var result = [];
+  var result = {};
   var loadbalancers = [];
+  var message='';
   function formatNumber(number, separator){
     var numString =number.toString();
     var values=numString.split(".");
@@ -421,51 +426,58 @@ script "js_clbs_cost_mapping", type:"javascript" do
     }
     return result+"."+values[1];
   }
-  // Format costs with currency symbol and thousands separator
-  if( ds_currency_code['value'] !== undefined ) {
-    if (ds_currency_reference[ds_currency_code['value']] !== undefined ) {
-      var cur = ds_currency_reference[ds_currency_code['value']]['symbol']
-      if( ds_currency_reference[ds_currency_code['value']]['t_separator'] !== undefined ) {
-        var separator = ds_currency_reference[ds_currency_code['value']]['t_separator']
+  if(ds_billing_centers.length!=0){
+    // Format costs with currency symbol and thousands separator
+    if( ds_currency_code['value'] !== undefined ) {
+      if (ds_currency_reference[ds_currency_code['value']] !== undefined ) {
+        var cur = ds_currency_reference[ds_currency_code['value']]['symbol']
+        if( ds_currency_reference[ds_currency_code['value']]['t_separator'] !== undefined ) {
+          var separator = ds_currency_reference[ds_currency_code['value']]['t_separator']
+        } else {
+          var separator = ""
+        }
       } else {
+        var cur = ""
         var separator = ""
       }
     } else {
-      var cur = ""
-      var separator = ""
+      var cur = "$"
+      var separator = ","
     }
-  } else {
-    var cur = "$"
-    var separator = ","
+    _.each(clbs, function(clb){
+      var cost_objects = _.where(clbs_cost, {resource_id: "loadbalancer/".concat(clb["id"])});
+      if (_.size(cost_objects) > 0){
+        var sum = _.reduce(_.compact(_.map(cost_objects, function(value){ return value.cost_nonamortized_unblended_adj})), function(memo, num){ return memo + num; }, 0);
+        var monthly_savings = sum*30;
+        total=total+monthly_savings;
+        loadbalancers.push({
+          id : clb['id'],
+          region : clb['region'],
+          availabilityZones : clb['availabilityZones'],
+          instanceId : clb['instanceId'],
+          tagKeyValue : clb['tagKeyValue'],
+          savings: cur + ' '+formatNumber((Math.round(monthly_savings * 100) / 100), separator),
+        })
+      } else {
+        loadbalancers.push({
+          id : clb['id'],
+          region : clb['region'],
+          availabilityZones : clb['availabilityZones'],
+          instanceId : clb['instanceId'],
+          tagKeyValue : clb['tagKeyValue'],
+          savings: "N/A",
+        })
+      }
+    })
+    var total_savings=cur + ' '+formatNumber((Math.round(total * 100) / 100), separator);
+    message=message="The total estimated monthly savings are "+total_savings;
   }
-  _.each(clbs, function(clb){
-    var cost_objects = _.where(clbs_cost, {resource_id: "loadbalancer/".concat(clb["id"])});
-    if (_.size(cost_objects) > 0){
-      var sum = _.reduce(_.compact(_.map(cost_objects, function(value){ return value.cost_nonamortized_unblended_adj})), function(memo, num){ return memo + num; }, 0);
-      var monthly_savings = sum*30;
-      total=total+monthly_savings;
-      loadbalancers.push({
-        id : clb['id'],
-        region : clb['region'],
-        availabilityZones : clb['availabilityZones'],
-        instanceId : clb['instanceId'],
-        tagKeyValue : clb['tagKeyValue'],
-        savings: cur + ' '+formatNumber((Math.round(monthly_savings * 100) / 100), separator),
-      })
-    } else {
-      loadbalancers.push({
-        id : clb['id'],
-        region : clb['region'],
-        availabilityZones : clb['availabilityZones'],
-        instanceId : clb['instanceId'],
-        tagKeyValue : clb['tagKeyValue'],
-        savings: "N/A",
-      })
-    }
-  })
-  var total_savings=cur + ' '+formatNumber((Math.round(total * 100) / 100), separator);
+  else{
+    loadbalancers=clbs;
+    message="You do not have the minimum required role of billing_center_viewer to view the savings";
+  }
   result={"clbs": loadbalancers,
-    "total_savings": total_savings
+    "message": message
   };
   EOS
 end
@@ -499,7 +511,7 @@ policy "policy_delete_unused_CLB" do
     escalate $esc_delete_clb
     summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data.clbs }} Unused Classic Load Balancers Found in AWS"
     detail_template <<-EOS
-      The total estimated monthly savings are {{data.total_savings}}.\n
+    {{data.message}}
     EOS
     export "clbs" do
       resource_level true

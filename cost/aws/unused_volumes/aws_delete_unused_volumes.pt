@@ -5,7 +5,7 @@ short_description "Checks for unused volumes and if no read/write operations per
 category "Cost"
 severity "low"
 info(
-  version: "2.6",
+  version: "2.7",
   provider: "AWS",
   service: "EBS",
   policy_set: "Unused Volumes"
@@ -200,6 +200,7 @@ datasource "ds_currency_code" do
     path join(["/bill-analysis/orgs/",rs_org_id,"/settings/currency_code"])
     header "Api-Version", "0.1"
     header "User-Agent", "RS Policies"
+    ignore_status [403]
   end
   result do
     encoding "json"
@@ -216,6 +217,7 @@ datasource "ds_billing_centers" do
     header "Api-Version", "1.0"
     header "User-Agent", "RS Policies"
     query "view", "allocation_table"
+    ignore_status [403]
   end
   result do
     encoding "json"
@@ -264,7 +266,7 @@ datasource "ds_volume_costs" do
 end
 
 datasource "ds_volume_cost_mapping" do
-  run_script $js_volume_cost_mapping, $ds_check_volumes_read_or_write_operations, $ds_volume_costs, $ds_currency_reference, $ds_currency_reference
+  run_script $js_volume_cost_mapping, $ds_check_volumes_read_or_write_operations, $ds_volume_costs, $ds_currency_code, $ds_currency_reference, $ds_billing_centers
 end
 
 ###############################################################################
@@ -469,11 +471,11 @@ script "js_check_volumes_read_or_write_operations", type:'javascript' do
         volumeType : volume['volume_Type'],
         tags : volume['tagKeyValue'],
         createdTime : volume['createdTime'],
-        size : volume['size']
+        size : volume['size'],
+        savings:"N/A"
 	  })
 	}
   }
-  unattachedVolumes = _.sortBy(unattachedVolumes,'region')
   EOS
 end
 
@@ -540,18 +542,19 @@ script "js_get_costs", type:"javascript" do
       headers: {
         "User-Agent": "RS Policies",
         "Api-Version": "1.0"
-      }
+      },
+      ignore_status: [400]
     }
   EOS
 end
 
 script "js_volume_cost_mapping", type:"javascript" do
-  parameters  "volumes","volume_costs","ds_currency_code","ds_currency_reference"
+  parameters  "volumes","volume_costs","ds_currency_code","ds_currency_reference", "ds_billing_centers"
   result "result"
   code <<-EOS
-
-  var result = [];
-
+  var unused_volumes=[];
+  var result = {};
+  var message='';
   function formatNumber(number, separator){
     var numString =number.toString();
     var values=numString.split(".");
@@ -569,54 +572,65 @@ script "js_volume_cost_mapping", type:"javascript" do
     }
     return result+"."+values[1];
   }
-
-  // Format costs with currency symbol and thousands separator
-  if( ds_currency_code['value'] !== undefined ) {
-    if (ds_currency_reference[ds_currency_code['value']] !== undefined ) {
-      var cur = ds_currency_reference[ds_currency_code['value']]['symbol']
-      if( ds_currency_reference[ds_currency_code['value']]['t_separator'] !== undefined ) {
-        var separator = ds_currency_reference[ds_currency_code['value']]['t_separator']
+  if(ds_billing_centers.length!=0){
+    // Format costs with currency symbol and thousands separator
+    if( ds_currency_code['value'] !== undefined ) {
+      if (ds_currency_reference[ds_currency_code['value']] !== undefined ) {
+        var cur = ds_currency_reference[ds_currency_code['value']]['symbol']
+        if( ds_currency_reference[ds_currency_code['value']]['t_separator'] !== undefined ) {
+          var separator = ds_currency_reference[ds_currency_code['value']]['t_separator']
+        } else {
+          var separator = ""
+        }
       } else {
+        var cur = ""
         var separator = ""
       }
     } else {
-      var cur = ""
-      var separator = ""
+      var cur = "$"
+      var separator = ","
     }
-  } else {
-    var cur = "$"
-    var separator = ","
+    var total_savings=0;
+    _.each(volumes, function(volume){
+      var cost_objects = _.where(volume_costs, {resource_id: volume["volumeId"]});
+      console.log(cost_objects)
+      if (_.size(cost_objects) > 0){
+        var sum = _.reduce(_.compact(_.map(cost_objects, function(value){ return value.cost_nonamortized_unblended_adj})), function(memo, num){ return memo + num; }, 0);
+        var monthly_savings = sum*30;
+        total_savings=total_savings+monthly_savings;
+        unused_volumes.push({
+          volumeId : volume['volumeId'],
+          region : volume['region'],
+          availabilityZone : volume['availabilityZone'],
+          volumeType : volume['volumeType'],
+          tags : volume['tags'],
+          createdTime : volume['createdTime'],
+          size : volume['size'],
+          savings: cur + ' '+formatNumber((Math.round(monthly_savings * 100) / 100), separator),
+        })
+      } else {
+        unused_volumes.push({
+          volumeId : volume['volumeId'],
+          region : volume['region'],
+          availabilityZone : volume['availabilityZone'],
+          volumeType : volume['volumeType'],
+          tags : volume['tags'],
+          createdTime : volume['createdTime'],
+          size : volume['size'],
+          savings: "N/A",
+        })
+      }
+    })
+    total_savings=cur + ' '+formatNumber((Math.round(total_savings * 100) / 100), separator);
+    message="The total estimated monthly savings are "+total_savings;
   }
-
-  _.each(volumes, function(volume){
-    var cost_objects = _.where(volume_costs, {resource_id: volume["volumeId"]});
-    console.log(cost_objects)
-    if (_.size(cost_objects) > 0){
-      var sum = _.reduce(_.compact(_.map(cost_objects, function(value){ return value.cost_nonamortized_unblended_adj})), function(memo, num){ return memo + num; }, 0);
-      var monthly_savings = sum*30;
-      result.push({
-        volumeId : volume['volumeId'],
-        region : volume['region'],
-        availabilityZone : volume['availabilityZone'],
-        volumeType : volume['volumeType'],
-        tags : volume['tags'],
-        createdTime : volume['createdTime'],
-        size : volume['size'],
-        savings: cur + ' '+formatNumber((Math.round(monthly_savings * 100) / 100), separator),
-      })
-    } else {
-      result.push({
-        volumeId : volume['volumeId'],
-        region : volume['region'],
-        availabilityZone : volume['availabilityZone'],
-        volumeType : volume['volumeType'],
-        tags : volume['tags'],
-        createdTime : volume['createdTime'],
-        size : volume['size'],
-        savings: "N/A",
-      })
-    }
-  })
+  else{
+    unused_volumes=volumes;
+    message="You do not have the minimum required role of billing_center_viewer to view the savings";
+  }
+  result={ "unused_volumes": unused_volumes,
+    "message": message}
+  result.unused_volumes=_.sortBy(result.unused_volumes,'region')
   EOS
 end
 
@@ -626,11 +640,14 @@ end
 
 policy "policy_unattached_volumes_list" do
   validate $ds_volume_cost_mapping do
-    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} Unused Volumes Found in AWS"
+    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data.unused_volumes }} Unused Volumes Found in AWS"
+    detail_template <<-EOS
+    {{data.message}}
+    EOS
     escalate $report_unused_volumes
     escalate $delete_volumes
-    check eq(size(data),0)
-    export do
+    check eq(size(val(data,"unused_volumes")),0)
+    export "unused_volumes" do
       resource_level true
       field "region" do
         label "Region"

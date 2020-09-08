@@ -1,5 +1,10 @@
 # Changelog
 
+## v2.7
+
+- added total estimated monthly savings in the incident detail message
+- updated policy to handle and show the error if the user is not having permission for fetching cost data from Optima
+
 ## v2.6
 
 - Added EC2 DescribeRegions API action to get only Service Control Policy enabled Regions
