@@ -23,7 +23,7 @@ This policy has the following input parameters required when launching the polic
 
 - *Unused Age* - Number of days the volume is unused.
 - *Email addresses* - A list of email addresses to notify.
-- *Exclude Tags.* - A list of tags used to excluded volumes from the incident.
+- *Exclusion Tag Key* - A list of tags used to excluded volumes from the incident.
 - *Create Final Snapshot* - Boolean for whether or not to take a final snapshot before deleting.
 - *Automatic Actions* - When this value is set, this policy will automatically take the selected action(s).
 
