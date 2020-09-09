@@ -96,6 +96,7 @@ datasource "ds_currency_code" do
     path join(["/bill-analysis/orgs/",rs_org_id,"/settings/currency_code"])
     header "Api-Version", "0.1"
     header "User-Agent", "RS Policies"
+	ignore_status [403]
   end
   result do
     encoding "json"
@@ -112,6 +113,7 @@ datasource "ds_billing_centers" do
     header "Api-Version", "1.0"
     header "User-Agent", "RS Policies"
     query "view", "allocation_table"
+	ignore_status [403]
   end
   result do
     encoding "json"
@@ -244,7 +246,7 @@ datasource "ds_filter_ami_snapshots" do
 end
 
 datasource "ds_snapshots_cost_mapping" do
-  run_script $js_snapshots_cost_mapping, $ds_filter_ami_snapshots, $ds_snapshot_costs, $ds_currency_reference, $ds_currency_reference
+  run_script $js_snapshots_cost_mapping, $ds_filter_ami_snapshots, $ds_snapshot_costs, $ds_currency_reference, $ds_currency_reference, $ds_billing_centers
 end 
 
 ###############################################################################
@@ -313,13 +315,14 @@ script "js_get_costs", type:"javascript" do
       headers: {
         "User-Agent": "RS Policies",
         "Api-Version": "1.0"
-      }
+      },
+	   ignore_status: [400]
     }
   EOS
 end
 
 script "js_snapshots_cost_mapping", type:"javascript" do
-  parameters  "snapshots","snapshot_costs","ds_currency_code","ds_currency_reference"
+  parameters  "snapshots","snapshot_costs","ds_currency_code","ds_currency_reference","ds_billing_centers"
   result "results"
   code <<-EOS
 
@@ -343,7 +346,7 @@ script "js_snapshots_cost_mapping", type:"javascript" do
     }
     return result+"."+values[1];
   }
-
+  if (ds_billing_centers.length!=0){
   // Format costs with currency symbol and thousands separator
   if( ds_currency_code['value'] !== undefined ) {
     if (ds_currency_reference[ds_currency_code['value']] !== undefined ) {
@@ -357,14 +360,15 @@ script "js_snapshots_cost_mapping", type:"javascript" do
       var cur = ""
       var separator = ""
     }
-  } else {
-    var cur = "$"
-    var separator = ","
+    } else {
+      var cur = "$"
+      var separator = ","
+    }
   }
   var total=0;
   _.each(snapshots, function(snapshot){
     var cost_objects = _.where(snapshot_costs, {resource_id: snapshot["formatSnapId"]});
-    if (_.size(cost_objects) > 0){
+    if (ds_billing_centers.length != 0 && _.size(cost_objects) > 0){
       var sum = _.reduce(_.compact(_.map(cost_objects, function(value){ return value.cost_nonamortized_unblended_adj})), function(memo, num){ return memo + num; }, 0);
       var monthly_savings = sum*30;
       total=total+monthly_savings;	  
@@ -389,9 +393,15 @@ script "js_snapshots_cost_mapping", type:"javascript" do
       })
     }
   })
-  var total_savings=cur + ' '+formatNumber((Math.round(total * 100) / 100), separator);
+
+  if (ds_billing_centers.length!=0){
+    var total_savings=cur + ' '+formatNumber((Math.round(total * 100) / 100), separator);
+    var message="The total estimated monthly savings are "+ total_savings;
+  }else{
+    var message="You do not have the minimum required role of billing_center_viewer to view the savings";
+  }
   results={"result": result,
-    "total_savings": total_savings
+    "message": message
 	};
   EOS
 end
@@ -537,7 +547,7 @@ policy "pol_utilization" do
     summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data.result }} rows containing AWS old snapshot data"
     detail_template <<-EOS
     The following {{ len data.result }} old snapshots, for Account: {{ rs_project_name }} (ID: {{ rs_project_id }}), have exceeded the specified age of: {{ parameters.snapshot_age }} days old.\n
-    The total estimated monthly savings are {{data.total_savings}}.\n
+    {{data.message}}
     EOS
     escalate $ese_email
     escalate $esc_delete_snapshot
