@@ -2,7 +2,7 @@
 
 ## v2.6
 
-- Bugfix on duplicate records was displayed in the detail template
+- Fix issue with duplicate records displayed in the detail template
 
 ## v2.5
 
