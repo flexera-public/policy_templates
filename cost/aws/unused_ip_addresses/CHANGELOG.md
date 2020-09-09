@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.6
+
+- Included Total Estimated Monthly Savings in the incident detail messages
+
 ## v2.5
 
 - Added EC2 DescribeRegions API action to get only Service Control Policy enabled Regions
