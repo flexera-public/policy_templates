@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.6
+
+- Fix issue with duplicate records displayed in the detail template
+
 ## v2.5
 
 - Added EC2 DescribeRegions API action to get only Service Control Policy enabled Regions

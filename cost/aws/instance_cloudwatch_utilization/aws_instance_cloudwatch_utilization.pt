@@ -6,7 +6,7 @@ long_description ""
 severity "low"
 category "Cost"
 info(
-  version: "2.5",
+  version: "2.6",
   provider: "AWS",
   service: "EC2",
   policy_set: "Inefficient Instance Usage"
@@ -121,10 +121,6 @@ datasource "ds_regions" do
     end
 end
 
-datasource "ds_instances" do
-  run_script $js_instances, $ds_instances_set, $param_exclusion_tag_key
-end
-
 datasource "ds_instances_set" do
   iterate $ds_regions
   request do
@@ -163,6 +159,10 @@ datasource "ds_instances_set" do
   end
 end
 
+datasource "ds_instances" do
+  run_script $js_instances, $ds_instances_set, $param_exclusion_tag_key
+end
+
 datasource "ds_cloudwatch_cpu_usage" do
   iterate $ds_instances
   request do
@@ -185,6 +185,10 @@ datasource "ds_cloudwatch_cpu_usage" do
   end
 end
 
+datasource "ds_cloudwatch_cpu_highest_usage_value" do
+  run_script $js_cloudwatch_cpu_highest_usage_value, $ds_cloudwatch_cpu_usage
+end
+
 datasource "ds_cloudwatch_mem_usage" do
   iterate $ds_instances
   request do
@@ -203,6 +207,10 @@ datasource "ds_cloudwatch_mem_usage" do
       field "mem_average", jmes_path(col_item, "Average")
     end
   end
+end
+
+datasource "ds_cloudwatch_mem_highest_usage_value" do
+  run_script $js_cloudwatch_memory_highest_usage_value, $ds_cloudwatch_mem_usage
 end
 
 datasource "ds_cloudwatch_windows_mem_usage" do
@@ -225,6 +233,10 @@ datasource "ds_cloudwatch_windows_mem_usage" do
   end
 end
 
+datasource "ds_cloudwatch_windows_mem_highest_usage_value" do
+  run_script $js_cloudwatch_windows_memory_highest_usage_value, $ds_cloudwatch_windows_mem_usage
+end
+
 # get AWS instance size map
 datasource "ds_aws_instance_size_map" do
   request do
@@ -236,7 +248,7 @@ datasource "ds_aws_instance_size_map" do
 end
 
 datasource "ds_merged_metrics" do
-  run_script $js_merged_metrics, $ds_cloudwatch_cpu_usage, $ds_cloudwatch_mem_usage, $ds_cloudwatch_windows_mem_usage
+  run_script $js_merged_metrics, $ds_cloudwatch_cpu_highest_usage_value, $ds_cloudwatch_mem_highest_usage_value, $ds_cloudwatch_windows_mem_highest_usage_value
 end
 
 datasource "ds_inefficient_utilization_metrics" do
@@ -316,6 +328,36 @@ script "js_cloudwatch_cpu_usage", type: "javascript" do
 EOS
 end
 
+script "js_cloudwatch_cpu_highest_usage_value", type: "javascript" do
+  result "instances"
+  parameters "datapoints"
+  code <<-EOS
+    var instances = [];
+    var instanceIds = [];
+    var distinctInstances = [];
+    datapoints.forEach(function(datapoint){
+      if(instanceIds.indexOf(datapoint.instanceId) === -1){
+        instanceIds.push(datapoint.instanceId)
+        distinctInstances.push(datapoint)
+      }
+    })
+    _.each(distinctInstances, function(currentInstance){
+      var max_cpu_value = currentInstance.cpu_maximum; var min_cpu_value = currentInstance.cpu_minimum; var avg_cpu_value = currentInstance.cpu_average;
+      _.each(datapoints, function(instance){
+        if(currentInstance.instanceId == instance.instanceId){
+          if(instance.cpu_average > avg_cpu_value){
+            max_cpu_value = instance.cpu_maximum;
+            min_cpu_value = instance.cpu_minimum;
+            avg_cpu_value = instance.cpu_average;
+          }
+        }
+      })
+      currentInstance.cpu_maximum = max_cpu_value; currentInstance.cpu_minimum = min_cpu_value; currentInstance.cpu_average = avg_cpu_value;
+      instances.push(currentInstance)     
+    })
+  EOS
+end
+
 script "js_cloudwatch_mem_usage", type: "javascript" do
   result "results"
   parameters "region","instance_id","privateDnsName"
@@ -355,6 +397,36 @@ script "js_cloudwatch_mem_usage", type: "javascript" do
     }
   }
 EOS
+end
+
+script "js_cloudwatch_memory_highest_usage_value", type: "javascript" do
+  result "instances"
+  parameters "datapoints"
+  code <<-EOS
+    var instances = [];
+    var instanceIds = [];
+    var distinctInstances = [];
+    datapoints.forEach(function(datapoint){
+      if(instanceIds.indexOf(datapoint.instanceId) === -1){
+        instanceIds.push(datapoint.instanceId)
+        distinctInstances.push(datapoint)
+      }
+    })
+    _.each(distinctInstances, function(currentInstance){
+      var max_mem_value = currentInstance.mem_maximum; var min_mem_value = currentInstance.mem_minimum; var avg_mem_value = currentInstance.mem_average;
+      _.each(datapoints, function(instance){
+        if(currentInstance.instanceId == instance.instanceId){
+          if(instance.mem_average > avg_mem_value){
+            max_mem_value = instance.mem_maximum;
+            min_mem_value = instance.mem_minimum;
+            avg_mem_value = instance.mem_average;
+          }
+        }
+      })
+      currentInstance.mem_maximum = max_mem_value; currentInstance.mem_minimum = min_mem_value; currentInstance.mem_average = avg_mem_value;
+      instances.push(currentInstance)     
+    })
+  EOS
 end
 
 script "js_cloudwatch_windows_memory_usage", type: "javascript" do
@@ -399,10 +471,40 @@ script "js_cloudwatch_windows_memory_usage", type: "javascript" do
 EOS
 end
 
+script "js_cloudwatch_windows_memory_highest_usage_value", type: "javascript" do
+  result "instances"
+  parameters "datapoints"
+  code <<-EOS
+    var instances = [];
+    var instanceIds = [];
+    var distinctInstances = [];
+    datapoints.forEach(function(datapoint){
+      if(instanceIds.indexOf(datapoint.instanceId) === -1){
+        instanceIds.push(datapoint.instanceId)
+        distinctInstances.push(datapoint)
+      }
+    })
+    _.each(distinctInstances, function(currentInstance){
+      var max_mem_value = currentInstance.mem_maximum; var min_mem_value = currentInstance.mem_minimum; var avg_mem_value = currentInstance.mem_average;
+      _.each(datapoints, function(instance){
+        if(currentInstance.instanceId == instance.instanceId){
+          if(instance.mem_average > avg_mem_value){
+            max_mem_value = instance.mem_maximum;
+            min_mem_value = instance.mem_minimum;
+            avg_mem_value = instance.mem_average;
+          }
+        }
+      })
+      currentInstance.mem_maximum = max_mem_value; currentInstance.mem_minimum = min_mem_value; currentInstance.mem_average = avg_mem_value;
+      instances.push(currentInstance)     
+    })
+  EOS
+end
+
 script "js_merged_metrics", type: "javascript" do
   parameters "ds_cloudwatch_cpu_usage", "ds_cloudwatch_mem_usage", "ds_cloudwatch_windows_mem_usage"
   result "merged_results"
-code <<-EOS
+  code <<-EOS
   var merged_results = []
   for ( i = 0; i < ds_cloudwatch_cpu_usage.length; i++){
     var instance = ds_cloudwatch_cpu_usage[i]
