@@ -6,7 +6,7 @@ long_description ""
 severity "low"
 category "Cost"
 info(
-  version: "2.3",
+  version: "2.4",
   provider: "AWS",
   service: "RDS",
   policy_set: "Unused Database Services"
@@ -46,6 +46,8 @@ credentials "auth_aws" do
   description "Select the AWS Credential from the list."
   tags "provider=aws"
 end
+
+auth "auth_rs", type: "rightscale"
 
 ###############################################################################
 # Datasources
@@ -147,9 +149,156 @@ datasource "ds_cloudwatch_connections" do
   end
 end
 
+datasource "ds_currency_reference" do
+  request do
+    host "raw.githubusercontent.com"
+    path "/rightscale/policy_templates/master/cost/scheduled_reports/currency_reference.json"
+    header "User-Agent", "RS Policies"
+  end
+end
+
+datasource "ds_currency_code" do
+  request do
+    auth $auth_rs
+    host rs_optima_host
+    path join(["/bill-analysis/orgs/",rs_org_id,"/settings/currency_code"])
+    header "Api-Version", "0.1"
+    header "User-Agent", "RS Policies"
+    ignore_status [403]
+  end
+  result do
+    encoding "json"
+    field "id", jmes_path(response,"id")
+    field "value", jmes_path(response,"value")
+  end
+end
+
+datasource "ds_billing_centers" do
+  request do
+    auth $auth_rs
+    host rs_optima_host
+    path join(["/analytics/orgs/",rs_org_id,"/billing_centers"])
+    header "Api-Version", "1.0"
+    header "User-Agent", "RS Policies"
+    query "view", "allocation_table"
+    ignore_status [403]
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response,"[*]") do
+      field "href", jmes_path(col_item,"href")
+      field "id", jmes_path(col_item,"id")
+      field "name", jmes_path(col_item,"name")
+      field "parent_id", jmes_path(col_item,"parent_id")
+    end
+  end
+end
+
+datasource "ds_get_caller_identity" do
+  request do
+    auth $auth_aws
+    verb "GET"
+    host "sts.amazonaws.com"
+    path "/"
+    header "User-Agent", "RS Policies"
+    query "Action", "GetCallerIdentity"
+    query "Version", "2011-06-15"
+  end
+  result do
+    encoding "xml"
+    collect xpath(response, "//GetCallerIdentityResponse/GetCallerIdentityResult") do
+      field "account",xpath(col_item, "Account")
+    end
+ end
+end
+
+datasource "ds_top_level_billing_centers" do
+  run_script $js_top_level_bc, $ds_billing_centers
+end
+
+datasource "ds_instance_costs" do
+  request do
+    run_script $js_get_costs, $ds_get_caller_identity, $ds_top_level_billing_centers, rs_org_id
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response,"rows[*]") do
+      field "resource_id", jmes_path(col_item, "dimensions.resource_id")
+      field "resource_type", jmes_path(col_item, "dimensions.resource_type")
+      field "cost_nonamortized_unblended_adj", jmes_path(col_item,"metrics.cost_nonamortized_unblended_adj")
+    end
+  end
+end
+
+datasource "ds_instance_cost_mapping" do
+  run_script $js_instance_cost_mapping, $ds_rds_instances, $ds_instance_costs, $ds_currency_code, $ds_currency_reference, $ds_billing_centers
+end
+
 ###############################################################################
 # Scripts
 ###############################################################################
+
+script "js_top_level_bc", type: "javascript" do
+  parameters "billing_centers"
+  result "filtered_billing_centers"
+  code <<-EOS
+  var filtered_billing_centers =
+    _.reject(billing_centers, function(bc){ return bc.parent_id != null });
+EOS
+end
+
+script "js_get_costs", type:"javascript" do
+  parameters  "account_id","billing_centers","org"
+  result "request"
+  code <<-EOS
+    // returns date formatted as string: YYYY-mm-dd
+    function getFormattedDailyDate(date) {
+      var year = date.getFullYear();
+      var month = (1 + date.getMonth()).toString();
+      month = month.length > 1 ? month : '0' + month;
+      var day = date.getDate().toString();
+      day = day.length > 1 ? day : '0' + day;
+      return year + '-' + month + '-' + day;
+    }
+    var start_date = getFormattedDailyDate(new Date(new Date().setDate(new Date().getDate() - 3)));
+    var end_date = getFormattedDailyDate(new Date(new Date().setDate(new Date().getDate() - 2)));
+      var request = {
+        auth: "auth_rs",
+        host: "optima.rightscale.com",
+        verb: "POST",
+        path: "/bill-analysis/orgs/" + org + "/costs/select",
+        body_fields: {
+          "dimensions": ["resource_id", "resource_type"],
+          "granularity": "day",
+          "start_at": start_date,
+          "end_at": end_date,
+          "metrics": ["cost_nonamortized_unblended_adj"],
+          "billing_center_ids": _.compact(_.map(billing_centers, function(value){ return value.id})),
+          "limit": 10000,
+          "filter": {
+            "expressions": [
+              {
+                "dimension": "service",
+                "type": "equal",
+                "value": "AmazonRDS"
+              },
+              {
+                "dimension": "vendor_account",
+                "type": "equal",
+                "value": account_id[0]["account"]
+              }
+            ],
+            "type": "and"
+          }
+        },
+        headers: {
+          "User-Agent": "RS Policies",
+          "Api-Version": "1.0"
+        },
+        ignore_status: [400]
+      }
+  EOS
+end
 
 # merge the instances and tags and remove instances that have the exclusion tag
 script "js_rds_instances", type: "javascript" do
@@ -178,7 +327,7 @@ script "js_rds_instances", type: "javascript" do
     var connections = _.reduce(sample_count, function(memo, num){ return memo + num; }, 0);
 
     //check instance for exclusion tag
-    if ( _.contains(instance_tags[instance.instanceId], param_exclusion_tag_key) ){
+    if ( _.contains(instance_tags[instance.instanceId], param_exclusion_tag_key) || connections>0){
       continue
     } else {
       results.push({
@@ -190,12 +339,11 @@ script "js_rds_instances", type: "javascript" do
         privateDnsName: instance.privateDnsName,
         status: instance.status,
         connections: connections,
-        tag_set: instance_tags[instance.instanceId]
+        tag_set: instance_tags[instance.instanceId],
+        savings:"N/A"
       })
     }
   }
-results = _.sortBy(results,'region')
-results = _.sortBy(results,'name')
 EOS
 end
 
@@ -284,17 +432,90 @@ script "js_cloudwatch_connections", type: "javascript" do
 EOS
 end
 
+script "js_instance_cost_mapping", type:"javascript" do
+  parameters  "instance_list","instance_costs","ds_currency_code","ds_currency_reference", "ds_billing_centers"
+  result "result"
+  code <<-EOS
+    var result = {};
+    var unused_rds_instance_list=[];
+    var message='';
+    function formatNumber(number, separator){
+      var numString =number.toString();
+      var values=numString.split(".");
+      var result = ''
+      while (values[0].length > 3){
+        var chunk = values[0].substr(-3)
+        values[0] = values[0].substr(0, values[0].length - 3)
+        result = separator + chunk + result
+      }
+      if (values[0].length > 0){
+        result = values[0] + result
+      }
+      if(values[1]==undefined){
+        return result;
+      }
+      return result+"."+values[1];
+    }
+    if(ds_billing_centers.length!=0){
+      // Format costs with currency symbol and thousands separator
+      if( ds_currency_code['value'] !== undefined ) {
+        if (ds_currency_reference[ds_currency_code['value']] !== undefined ) {
+          var cur = ds_currency_reference[ds_currency_code['value']]['symbol']
+          if( ds_currency_reference[ds_currency_code['value']]['t_separator'] !== undefined ) {
+            var separator = ds_currency_reference[ds_currency_code['value']]['t_separator']
+          } else {
+            var separator = ""
+          }
+        } else {
+          var cur = ""
+          var separator = ""
+        }
+      } else {
+        var cur = "$"
+        var separator = ","
+      }
+      var total_savings=0;
+      _.each(instance_list, function(instance){
+        var cost_objects = _.where(instance_costs, {resource_id: "db:"+instance['name']});
+        if (_.size(cost_objects) > 0){
+          var sum = _.reduce(_.compact(_.map(cost_objects, function(value){return value.cost_nonamortized_unblended_adj})), function(memo, num){ return memo + num; }, 0);
+          var monthly_savings = sum*30;
+          total_savings=total_savings+monthly_savings;
+          instance['savings']=cur + ' '+formatNumber(monthly_savings.toFixed(3), separator);
+          unused_rds_instance_list.push(instance);
+        } else {
+          instance['savings']= "N/A";
+          unused_rds_instance_list.push(instance);
+        }
+      })
+      total_savings=cur + ' '+formatNumber(total_savings.toFixed(3), separator);
+      message="The total estimated monthly savings are "+total_savings;
+    }
+    else{
+      unused_rds_instance_list=instance_list;
+      message="You do not have the minimum required role of billing_center_viewer to view the savings";
+    }
+    result={ "instance_list": unused_rds_instance_list,
+      "message": message}
+    result.instance_list = _.sortBy(result.instance_list,"region");
+    result.instance_list = _.sortBy(result.instance_list,"id");
+  EOS
+end
+
 ###############################################################################
 # Policy
 ###############################################################################
 
 policy "pol_unused_rds" do
-  validate_each $ds_rds_instances do
-    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} rows containing AWS RDS Unused Instances"
+  validate $ds_instance_cost_mapping do
+    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data.instance_list }} rows containing AWS RDS Unused Instances"
+    detail_template <<-EOS
+    {{data.message}}
+    EOS
     escalate $email
     escalate $decommision_rds
-    check gt(to_n(val(item,"connections")),0)
-    export do
+    check eq(size(val(data,"instance_list")),0)
+    export "instance_list" do
       resource_level true
       field "region" do
         label "Region"
@@ -304,6 +525,9 @@ policy "pol_unused_rds" do
       end
       field "status" do
         label "Status"
+      end
+      field "savings" do
+        label "Estimated Monthly Savings"
       end
       field "id" do
         label "Instance Id"
@@ -360,7 +584,7 @@ define decommision_rds($data) return $all_responses do
   foreach $item in $data do
     $response = http_request(
       auth: $$auth_aws,
-	  https: true,
+      https: true,
       verb: "get",
       host: "rds."+$item["region"]+".amazonaws.com",
       href: "/",
@@ -371,8 +595,7 @@ define decommision_rds($data) return $all_responses do
         "SkipFinalSnapshot":"true"
       }
     )
-
-	$all_responses << $response
+    $all_responses << $response
   end
   call sys_log(join([$syslog_subject, "Responses"]),to_s($all_responses))
 end
