@@ -194,6 +194,7 @@ Please contact sales@flexera.com to learn more.
 - [GitHub.com Unpermitted Sized Repositories](./compliance/github/repository_size/)
 - [GitHub.com Repository Branches without Protection](./compliance/github/repository_branch_protection/)
 - [GitHub.com Repositories without Admin Team](./compliance/github/repository_admin_team/)
+- [GitHub.com Policy Update Notification](./compliance/policy_update_notification/)
 
 ### Operational
 
