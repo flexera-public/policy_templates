@@ -6,7 +6,7 @@ long_description ""
 severity "low"
 category "Cost"
 info(
-  version: "2.5",
+  version: "2.6",
   provider: "AWS",
   service: "EC2",
   policy_set: "Idle Compute Instances"
@@ -204,7 +204,7 @@ datasource "ds_cloudwatch_windows_mem_usage" do
 end
 
 datasource "ds_merged_metrics" do
-  run_script $js_merged_metrics, $ds_cloudwatch_cpu_usage, $ds_cloudwatch_mem_usage, $ds_cloudwatch_windows_mem_usage
+  run_script $js_merged_metrics, $ds_cloudwatch_cpu_usage, $ds_cloudwatch_mem_usage, $ds_cloudwatch_windows_mem_usage, $param_avg_used_memory, $param_avg_cpu
 end
 
 datasource "ds_currency_reference" do
@@ -222,6 +222,7 @@ datasource "ds_currency_code" do
     path join(["/bill-analysis/orgs/",rs_org_id,"/settings/currency_code"])
     header "Api-Version", "0.1"
     header "User-Agent", "RS Policies"
+    ignore_status [403]
   end
   result do
     encoding "json"
@@ -238,6 +239,7 @@ datasource "ds_billing_centers" do
     header "Api-Version", "1.0"
     header "User-Agent", "RS Policies"
     query "view", "allocation_table"
+    ignore_status [403]
   end
   result do
     encoding "json"
@@ -286,7 +288,7 @@ datasource "ds_instances_costs" do
 end
 
 datasource "ds_instance_cost_mapping" do
-  run_script $js_instance_cost_mapping, $ds_merged_metrics, $ds_instances_costs, $ds_currency_reference, $ds_currency_reference
+  run_script $js_instance_cost_mapping, $ds_merged_metrics, $ds_instances_costs, $ds_currency_code, $ds_currency_reference, $ds_billing_centers
 end
 
 ###############################################################################
@@ -468,7 +470,7 @@ EOS
 end
 
 script "js_merged_metrics", type: "javascript" do
-  parameters "ds_cloudwatch_cpu_usage", "ds_cloudwatch_mem_usage", "ds_cloudwatch_windows_mem_usage"
+  parameters "ds_cloudwatch_cpu_usage", "ds_cloudwatch_mem_usage", "ds_cloudwatch_windows_mem_usage", "param_avg_used_memory", "param_avg_cpu"
   result "merged_results"
   code <<-EOS
   var merged_results = []
@@ -507,26 +509,28 @@ script "js_merged_metrics", type: "javascript" do
         var mem_average_value = "NA"
       }
     }
-    merged_results.push(
-      {
-        "region": instance.region,
-        "id": instance.instanceId,
-        "platform": instance.platform,
-        "privateDnsName": instance.privateDnsName,
-        "hostname": instance.privateDnsName.split('.')[0],
-        "tag_set": instance.tag_set,
-        "cpu_minimum": parseFloat(instance.cpu_minimum).toFixed(2),
-        "cpu_maximum": parseFloat(instance.cpu_maximum).toFixed(2),
-        "cpu_average": parseFloat(instance.cpu_average).toFixed(2),
-        "mem_maximum": mem_maximum,
-        "mem_minimum": mem_minimum,
-        "mem_average": mem_average,
-        "mem_maximum_value": mem_maximum_value,
-        "mem_average_value": mem_average_value
-      }
-    )
+    if((param_avg_used_memory >= mem_average && param_avg_used_memory != -1) || (param_avg_cpu >= parseFloat(instance.cpu_average).toFixed(2) && param_avg_cpu != -1)){
+      merged_results.push(
+        {
+          "region": instance.region,
+          "id": instance.instanceId,
+          "platform": instance.platform,
+          "privateDnsName": instance.privateDnsName,
+          "hostname": instance.privateDnsName.split('.')[0],
+          "tag_set": instance.tag_set,
+          "cpu_minimum": parseFloat(instance.cpu_minimum).toFixed(2),
+          "cpu_maximum": parseFloat(instance.cpu_maximum).toFixed(2),
+          "cpu_average": parseFloat(instance.cpu_average).toFixed(2),
+          "mem_maximum": mem_maximum,
+          "mem_minimum": mem_minimum,
+          "mem_average": mem_average,
+          "mem_maximum_value": mem_maximum_value,
+          "mem_average_value": mem_average_value,
+          "savings":"N/A"
+        }
+      )
+    }
   }
-  merged_results = _.sortBy(merged_results, 'region');
 EOS
 end
 
@@ -591,16 +595,19 @@ script "js_get_costs", type:"javascript" do
       headers: {
         "User-Agent": "RS Policies",
         "Api-Version": "1.0"
-      }
+      },
+      ignore_status: [400]
     }
   EOS
 end
 
 script "js_instance_cost_mapping", type:"javascript" do
-  parameters  "instances","instance_costs","ds_currency_code","ds_currency_reference"
+  parameters  "instances","instance_costs","ds_currency_code","ds_currency_reference", "ds_billing_centers"
   result "result"
   code <<-EOS
-  var result = [];
+  var result = {};
+  var message='';
+  var idle_instance=[];
   function formatNumber(number, separator){
     var numString =number.toString();
     var values=numString.split(".");
@@ -618,67 +625,78 @@ script "js_instance_cost_mapping", type:"javascript" do
     }
     return result+"."+values[1];
   }
-
-  // Format costs with currency symbol and thousands separator
-  if( ds_currency_code['value'] !== undefined ) {
-    if (ds_currency_reference[ds_currency_code['value']] !== undefined ) {
-      var cur = ds_currency_reference[ds_currency_code['value']]['symbol']
-      if( ds_currency_reference[ds_currency_code['value']]['t_separator'] !== undefined ) {
-        var separator = ds_currency_reference[ds_currency_code['value']]['t_separator']
+  if(ds_billing_centers.length!=0){
+    // Format costs with currency symbol and thousands separator
+    if( ds_currency_code['value'] !== undefined ) {
+      if (ds_currency_reference[ds_currency_code['value']] !== undefined ) {
+        var cur = ds_currency_reference[ds_currency_code['value']]['symbol']
+        if( ds_currency_reference[ds_currency_code['value']]['t_separator'] !== undefined ) {
+          var separator = ds_currency_reference[ds_currency_code['value']]['t_separator']
+        } else {
+          var separator = ""
+        }
       } else {
+        var cur = ""
         var separator = ""
       }
     } else {
-      var cur = ""
-      var separator = ""
+      var cur = "$"
+      var separator = ","
     }
-  } else {
-    var cur = "$"
-    var separator = ","
+    var total_savings=0;
+    _.each(instances, function(instance){
+      var cost_objects = _.where(instance_costs, {resource_id: instance["id"]});
+      if (_.size(cost_objects) > 0){
+        var sum = _.reduce(_.compact(_.map(cost_objects, function(value){ return value.cost_nonamortized_unblended_adj})), function(memo, num){ return memo + num; }, 0);
+        var monthly_savings = sum*30;
+        total_savings=total_savings+monthly_savings;
+        idle_instance.push({
+          "region": instance["region"],
+          "id": instance["id"],
+          "platform": instance["platform"],
+          "privateDnsName": instance["privateDnsName"],
+          "hostname": instance["hostname"],
+          "tag_set": instance["tag_set"],
+          "cpu_minimum": instance["cpu_minimum"],
+          "cpu_maximum": instance["cpu_maximum"],
+          "cpu_average": instance["cpu_average"],
+          "mem_maximum": instance["mem_maximum"],
+          "mem_minimum": instance["mem_minimum"],
+          "mem_average": instance["mem_average"],
+          "mem_maximum_value": instance["mem_maximum_value"],
+          "mem_average_value": instance["mem_average_value"]
+          "savings": cur + ' '+formatNumber(monthly_savings.toFixed(3), separator)
+        })
+      } else {
+        idle_instance.push({
+          "region": instance["region"],
+          "id": instance["id"],
+          "platform": instance["platform"],
+          "privateDnsName": instance["privateDnsName"],
+          "hostname": instance["hostname"],
+          "tag_set": instance["tag_set"],
+          "cpu_minimum": instance["cpu_minimum"],
+          "cpu_maximum": instance["cpu_maximum"],
+          "cpu_average": instance["cpu_average"],
+          "mem_maximum": instance["mem_maximum"],
+          "mem_minimum": instance["mem_minimum"],
+          "mem_average": instance["mem_average"],
+          "mem_maximum_value": instance["mem_maximum_value"],
+          "mem_average_value": instance["mem_average_value"]
+          "savings": "N/A"
+        })
+      }
+    })
+    total_savings=cur + ' '+formatNumber(total_savings.toFixed(3), separator);
+    message="The total estimated monthly savings are "+total_savings;
   }
-  _.each(instances, function(instance){
-    var cost_objects = _.where(instance_costs, {resource_id: instance["id"]});
-    console.log(cost_objects)
-    if (_.size(cost_objects) > 0){
-      var sum = _.reduce(_.compact(_.map(cost_objects, function(value){ return value.cost_nonamortized_unblended_adj})), function(memo, num){ return memo + num; }, 0);
-      var monthly_savings = sum*30;
-      result.push({
-        "region": instance["region"],
-        "id": instance["id"],
-        "platform": instance["platform"],
-        "privateDnsName": instance["privateDnsName"],
-        "hostname": instance["hostname"],
-        "tag_set": instance["tag_set"],
-        "cpu_minimum": instance["cpu_minimum"],
-        "cpu_maximum": instance["cpu_maximum"],
-        "cpu_average": instance["cpu_average"],
-        "mem_maximum": instance["mem_maximum"],
-        "mem_minimum": instance["mem_minimum"],
-        "mem_average": instance["mem_average"],
-        "mem_maximum_value": instance["mem_maximum_value"],
-        "mem_average_value": instance["mem_average_value"]
-        savings: cur + ' '+formatNumber((Math.round(monthly_savings * 100) / 100), separator)
-      })
-    } else {
-      result.push({
-        "region": instance["region"],
-        "id": instance["id"],
-        "platform": instance["platform"],
-        "privateDnsName": instance["privateDnsName"],
-        "hostname": instance["hostname"],
-        "tag_set": instance["tag_set"],
-        "cpu_minimum": instance["cpu_minimum"],
-        "cpu_maximum": instance["cpu_maximum"],
-        "cpu_average": instance["cpu_average"],
-        "mem_maximum": instance["mem_maximum"],
-        "mem_minimum": instance["mem_minimum"],
-        "mem_average": instance["mem_average"],
-        "mem_maximum_value": instance["mem_maximum_value"],
-        "mem_average_value": instance["mem_average_value"]
-        savings: "N/A"
-      })
-    }
-  })
+  else{
+    idle_instance=instances;
+    message="You do not have the minimum required role of billing_center_viewer to view the savings";
+  }
+  result={"idle_instances":idle_instance,
+    "message":message}
+  result.idle_instances=_.sortBy(result.idle_instances, 'region');
   EOS
 end
 
@@ -687,25 +705,27 @@ end
 ###############################################################################
 
 policy "pol_utilization" do
-  validate_each $ds_instance_cost_mapping do
-    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} rows containing AWS instance CloudWatch utilization data"
+  validate $ds_instance_cost_mapping do
+    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data.idle_instances}} rows containing AWS instance CloudWatch utilization data"
+    detail_template <<-EOS
+    {{data.message}}
+    EOS
     escalate $email
     escalate $terminate_resources
-    check logic_or(eq($param_avg_used_memory, -1), gt(to_n(val(item,"mem_average")), $param_avg_used_memory))
-    check logic_or(eq($param_avg_cpu, -1), gt(to_n(val(item,"cpu_average")),$param_avg_cpu))
-    export do
+    check eq(size(val(data, "idle_instances")), 0)
+    export "idle_instances" do
       resource_level true
       field "region" do
         label "Region"
-      end
-      field "id" do
-        label "Instance ID"
       end
       field "platform" do
         label "Platform"
       end
       field "hostname" do
         label "Hostname"
+      end
+      field "savings" do
+        label "Estimated Monthly Savings"
       end
       field "privateDnsName" do
         label "Private DNS Name"
@@ -722,8 +742,8 @@ policy "pol_utilization" do
       field "mem_average_value" do
         label "Memory Average %"
       end
-      field "savings" do
-        label "Estimated Monthly Savings"
+      field "id" do
+        label "Instance ID"
       end
     end
   end
