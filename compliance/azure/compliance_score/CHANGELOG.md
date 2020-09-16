@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.3
+
+-Changed ignore_status from 400 to 404 
+
 ## v2.2
 
 - Added resource table
