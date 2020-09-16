@@ -6,7 +6,7 @@ long_description ""
 severity "low"
 category "Cost"
 info(
-  version: "2.1",
+  version: "2.2",
   provider: "Azure",
   service: "Storage",
   policy_set: "Unused Volumes"
@@ -18,7 +18,8 @@ info(
 
 parameter "param_email" do
   type "list"
-  label "Email addresses of the recipients you wish to notify"
+  label "Email addresses"
+  description "A list of email addresses to notify"
 end
 
 parameter "param_unattached_days" do
@@ -31,14 +32,14 @@ end
 parameter "param_create_snapshot" do
   type "string"
   label "Create Final Snapshot"
-  description "Determines whether to create final snapshot"
+  description "Boolean for whether or not to take a final snapshot before deleting"
   allowed_values "true", "false"
 end
 
 parameter "param_exclusion_tag_key" do
   category "User Inputs"
   label "Exclusion Tag Key"
-  description "Cloud native tag key to ignore disk. Example: exclude_utilization"
+  description "A list of tags used to excluded volumes from the incident."
   type "list"
 end
 
@@ -160,6 +161,7 @@ datasource "ds_currency_code" do
     path join(["/bill-analysis/orgs/",rs_org_id,"/settings/currency_code"])
     header "Api-Version", "0.1"
     header "User-Agent", "RS Policies"
+    ignore_status [403]
   end
   result do
     encoding "json"
@@ -176,6 +178,7 @@ datasource "ds_billing_centers" do
     header "Api-Version", "1.0"
     header "User-Agent", "RS Policies"
     query "view", "allocation_table"
+    ignore_status [403]
   end
   result do
     encoding "json"
@@ -214,7 +217,7 @@ datasource "ds_combineddata" do
 end
 
 datasource "ds_volume_cost_mapping" do
-  run_script $js_volume_cost_mapping, $ds_combineddata, $ds_volume_costs, $ds_currency_code, $ds_currency_reference
+  run_script $js_volume_cost_mapping, $ds_combineddata, $ds_volume_costs, $ds_currency_code, $ds_currency_reference, $ds_billing_centers
 end
 
 ###############################################################################
@@ -278,7 +281,8 @@ script "js_get_costs", type:"javascript" do
       headers: {
         "User-Agent": "RS Policies",
         "Api-Version": "1.0"
-      }
+      },
+      ignore_status: [400]
     }
 	}
   EOS
@@ -402,22 +406,21 @@ code <<-EOS
           diskSize:disk['diskSize'],
           subscriptionId:disk['subscriptionId'],
           subscriptionName:disk['subscriptionName'],
-		  tags:tags
+		  tags:tags,
+          savings:"N/A"
         })
     }
   }
-  results = _.sortBy(results, 'subscriptionName');
-  results = _.sortBy(results, 'location');
-
 EOS
 end
 
 script "js_volume_cost_mapping", type:"javascript" do
-  parameters  "volumes","volume_costs","ds_currency_code","ds_currency_reference"
+  parameters  "volumes","volume_costs","ds_currency_code","ds_currency_reference", "ds_billing_centers"
   result "result"
   code <<-EOS
   var instances = [];
   var result={};
+  var message='';
   function formatNumber(number, separator){
     var numString =number.toString();
     var values=numString.split(".");
@@ -435,57 +438,65 @@ script "js_volume_cost_mapping", type:"javascript" do
     }
     return result+"."+values[1];
   }
-  // Format costs with currency symbol and thousands separator
-  if( ds_currency_code['value'] !== undefined ) {
-    if (ds_currency_reference[ds_currency_code['value']] !== undefined ) {
-      var cur = ds_currency_reference[ds_currency_code['value']]['symbol']
-      if( ds_currency_reference[ds_currency_code['value']]['t_separator'] !== undefined ) {
-        var separator = ds_currency_reference[ds_currency_code['value']]['t_separator']
+  if(ds_billing_centers.length!=0){
+    // Format costs with currency symbol and thousands separator
+    if( ds_currency_code['value'] !== undefined ) {
+      if (ds_currency_reference[ds_currency_code['value']] !== undefined ) {
+        var cur = ds_currency_reference[ds_currency_code['value']]['symbol']
+        if( ds_currency_reference[ds_currency_code['value']]['t_separator'] !== undefined ) {
+          var separator = ds_currency_reference[ds_currency_code['value']]['t_separator']
+        } else {
+          var separator = ""
+        }
       } else {
+        var cur = ""
         var separator = ""
       }
     } else {
-      var cur = ""
-      var separator = ""
+      var cur = "$"
+      var separator = ","
     }
-  } else {
-    var cur = "$"
-    var separator = ","
+    var total=0;
+    _.each(volumes, function(volume){
+      var cost_objects = _.where(volume_costs, {resource_id: volume["disk_id"]});
+      if (_.size(cost_objects) > 0){
+        var sum = _.reduce(_.compact(_.map(cost_objects, function(value){ return value.cost_nonamortized_unblended_adj})), function(memo, num){ return memo + num; }, 0);
+        var monthly_savings = sum*30;
+        total=total+monthly_savings;
+        instances.push({
+          disk_id:volume['disk_id'],
+          name:volume['name'],
+          location:volume['location'],
+          diskSize:volume['diskSize'],
+          subscriptionId:volume['subscriptionId'],
+          subscriptionName:volume['subscriptionName'],
+          tags:volume['tags'],
+          savings: cur + ' '+formatNumber(monthly_savings.toFixed(3), separator)
+        })
+      } else {
+        instances.push({
+          disk_id:volume['disk_id'],
+          name:volume['name'],
+          location:volume['location'],
+          diskSize:volume['diskSize'],
+          subscriptionId:volume['subscriptionId'],
+          subscriptionName:volume['subscriptionName'],
+          tags:volume['tags'],
+          savings: "N/A"
+        })
+      }
+    })
+    total=cur + ' '+formatNumber(total.toFixed(3), separator);
+    message="The total estimated monthly savings are "+total;
   }
-  var total=0;
-  _.each(volumes, function(volume){
-    var cost_objects = _.where(volume_costs, {resource_id: volume["disk_id"]});
-    if (_.size(cost_objects) > 0){
-      var sum = _.reduce(_.compact(_.map(cost_objects, function(value){ return value.cost_nonamortized_unblended_adj})), function(memo, num){ return memo + num; }, 0);
-      var monthly_savings = sum*30;
-      total=total+monthly_savings;
-      instances.push({
-        disk_id:volume['disk_id'],
-        name:volume['name'],
-        location:volume['location'],
-        diskSize:volume['diskSize'],
-        subscriptionId:volume['subscriptionId'],
-        subscriptionName:volume['subscriptionName'],
-        tags:volume['tags'],
-        savings: cur + ' '+formatNumber((Math.round(monthly_savings * 100) / 100), separator)
-      })
-    } else {
-      instances.push({
-        disk_id:volume['disk_id'],
-        name:volume['name'],
-        location:volume['location'],
-        diskSize:volume['diskSize'],
-        subscriptionId:volume['subscriptionId'],
-        subscriptionName:volume['subscriptionName'],
-        tags:volume['tags'],
-        savings: "N/A"
-      })
-    }
-  })
-  var total_savings=cur + ' '+formatNumber((Math.round(total * 100) / 100), separator);
+  else{
+    instances=volumes;
+    message="You do not have the minimum required role of billing_center_viewer to view the savings";
+  }
   result={"instances": instances,
-    "total_savings": total_savings
-	};
+    "message": message};
+  result.instances = _.sortBy(result.instances, 'subscriptionName');
+  result.instances = _.sortBy(result.instances, 'location');
   EOS
 end
 
@@ -494,7 +505,7 @@ policy "pol_azure_unattached_volumes" do
     summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data.instances }} Unused Volumes Found"
     detail_template <<-EOS
     The following {{ len data.instances }} unused volumes, for Account: {{ rs_project_name }} (ID: {{ rs_project_id }}), have exceeded the specified age of: {{ parameters.param_unattached_days }} days old.\n
-    The total estimated monthly savings are {{data.total_savings}}.\n
+    {{data.message}}
     EOS
 	# Send email report
     escalate $send_email_report
