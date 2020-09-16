@@ -6,7 +6,7 @@ long_description ""
 severity "low"
 category "Cost"
 info(
-  version: "2.4",
+  version: "2.5",
   provider: "AWS",
   service: "RDS",
   policy_set: "Unused Database Services"
@@ -308,10 +308,8 @@ script "js_rds_instances", type: "javascript" do
   var tag_key = param_exclusion_tag_key.split(':')[0]
   var tag_value = param_exclusion_tag_key.split(':')[1]
   var results = []
-
   for ( n=0; n < ds_rds_instance_set.length; n++) {
     var instance = ds_rds_instance_set[n]
-
     // get tags for instance
     var instances_w_tags = _.where(ds_list_tags_for_resource, {instanceId: instance.instanceId})
     var instance_tags = {}
@@ -320,12 +318,10 @@ script "js_rds_instances", type: "javascript" do
       tag_set.push(instance.key+':'+instance.value)
     })
     instance_tags[instance.instanceId] = tag_set
-
     // get dbconnection metrics for instance
     var metrics = _.where(ds_cloudwatch_connections, {instanceId: instance.instanceId})
     var sample_count = _.pluck(metrics, 'sample_count')
     var connections = _.reduce(sample_count, function(memo, num){ return memo + num; }, 0);
-
     //check instance for exclusion tag
     if ( _.contains(instance_tags[instance.instanceId], param_exclusion_tag_key) || connections>0){
       continue
@@ -383,7 +379,6 @@ script "js_list_tags_for_resource", type: "javascript" do
     "host": 'rds.'+region+'.amazonaws.com',
     "verb": "GET",
     "path": "/",
-
     "headers": {
       "User-Agent": "RS Policies",
       "Content-Type": "text/xml"
@@ -439,6 +434,7 @@ script "js_instance_cost_mapping", type:"javascript" do
     var result = {};
     var unused_rds_instance_list=[];
     var message='';
+    var count=0;
     function formatNumber(number, separator){
       var numString =number.toString();
       var values=numString.split(".");
@@ -478,18 +474,24 @@ script "js_instance_cost_mapping", type:"javascript" do
       _.each(instance_list, function(instance){
         var cost_objects = _.where(instance_costs, {resource_id: "db:"+instance['name']});
         if (_.size(cost_objects) > 0){
+          count++;
           var sum = _.reduce(_.compact(_.map(cost_objects, function(value){return value.cost_nonamortized_unblended_adj})), function(memo, num){ return memo + num; }, 0);
           var monthly_savings = sum*30;
           total_savings=total_savings+monthly_savings;
-          instance['savings']=cur + ' '+formatNumber(monthly_savings.toFixed(3), separator);
+          instance['savings']=cur + ' '+formatNumber((Math.round(monthly_savings * 100) / 100), separator);
           unused_rds_instance_list.push(instance);
         } else {
           instance['savings']= "N/A";
           unused_rds_instance_list.push(instance);
         }
       })
-      total_savings=cur + ' '+formatNumber(total_savings.toFixed(3), separator);
-      message="The total estimated monthly savings are "+total_savings;
+      if(count){
+        total_savings=cur + ' '+formatNumber((Math.round(total_savings * 100) / 100), separator);
+        message="The total estimated monthly savings are "+total_savings;
+      }
+      else{
+        message="The data received from Optima is not enough to calculate the savings";
+      }
     }
     else{
       unused_rds_instance_list=instance_list;

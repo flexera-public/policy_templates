@@ -1,5 +1,10 @@
 # Changelog
 
+## v2.8
+
+- formatted the incident detail message to display if no savings data available
+- reverted the toFixed() to Math.random() for displaying savings data
+
 ## v2.7
 
 - added total estimated monthly savings in the incident detail message

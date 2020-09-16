@@ -5,7 +5,7 @@ short_description "Checks for unused IP addresses in the given account and, opti
 severity "low"
 category "Cost"
 info(
-  version: "2.2",
+  version: "2.3",
   provider: "Azure",
   service: "Compute",
   policy_set: "Unused IP Addresses"
@@ -314,6 +314,7 @@ script "js_ip_cost_mapping", type:"javascript" do
   var result = {};
   var unused_ip_list=[];
   var message='';
+  var count=0;
   function formatNumber(number, separator){
     var numString =number.toString();
     var values=numString.split(".");
@@ -353,6 +354,7 @@ script "js_ip_cost_mapping", type:"javascript" do
     _.each(ip_list, function(ip){
       var cost_objects = _.where(ip_costs, {resource_id: ip["ipAddressId"]});
       if (_.size(cost_objects) > 0){
+        count++;
         var sum = _.reduce(_.compact(_.map(cost_objects, function(value){ return value.cost_nonamortized_unblended_adj})), function(memo, num){ return memo + num; }, 0);
         var monthly_savings = sum*30;
         total_savings=total_savings+monthly_savings;
@@ -364,7 +366,7 @@ script "js_ip_cost_mapping", type:"javascript" do
           location:ip["location"],
           tags:ip["tags"],
           ipAddressId:ip["ipAddressId"],
-          savings: cur + ' '+formatNumber(monthly_savings.toFixed(3), separator)
+          savings: cur + ' '+formatNumber((Math.round(monthly_savings * 100) / 100), separator)
         })
       } else {
         unused_ip_list.push({
@@ -379,8 +381,13 @@ script "js_ip_cost_mapping", type:"javascript" do
         })
       }
     })
-    total_savings=cur + ' '+formatNumber(total_savings.toFixed(3), separator);
-    message="The total estimated monthly savings are "+total_savings;
+    if(count){
+      total_savings=cur + ' '+formatNumber((Math.round(total_savings * 100) / 100), separator);
+      message="The total estimated monthly savings are "+total_savings;
+    }
+    else{
+      message="The data received from Optima is not enough to calculate the savings";
+    }
   }
   else{
     unused_ip_list=ip_list;
