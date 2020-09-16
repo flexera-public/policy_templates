@@ -8,7 +8,7 @@ This policy finds AWS snapshots in the given account which are older than the sp
 
 The policy includes the estimated savings. The estimated savings is recognized if the resource is terminated. Optima is used to receive the estimated savings which is the product of the most recent full day’s cost of the resource * 30. The savings is displayed in the Estimated Monthly Savings column. If the resource can not be found in Optima the value is n/a. The incident header includes the sum of each resource Estimated Monthly Savings in the Incident Header as Total Estimated Monthly Savings.
 
-The Estimated Savings and Estimated Monthly Savings rounded to 3 decimal places, so the savings value will display $0.000 if estimated savings is less than $0.0005.
+The Estimated Monthly Savings and Total Estimated Monthly Savings rounded to 3 decimal places, so the savings value will display $0.000 if estimated savings is less than $0.0005.
 
 ## Input Parameters
 
