@@ -3,7 +3,7 @@
 ## v2.6
 
 - formatted the incident detail message to display if no savings data available
-- reverted the toFixed() to Math.random() for displaying savings data
+- reverted the toFixed() to Math.round() for displaying savings data
 
 ## v2.5
 
