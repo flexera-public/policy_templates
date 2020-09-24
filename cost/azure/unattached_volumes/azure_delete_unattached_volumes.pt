@@ -6,7 +6,7 @@ long_description ""
 severity "low"
 category "Cost"
 info(
-  version: "2.2",
+  version: "2.3",
   provider: "Azure",
   service: "Storage",
   policy_set: "Unused Volumes"
@@ -421,6 +421,7 @@ script "js_volume_cost_mapping", type:"javascript" do
   var instances = [];
   var result={};
   var message='';
+  var count=0;
   function formatNumber(number, separator){
     var numString =number.toString();
     var values=numString.split(".");
@@ -460,6 +461,7 @@ script "js_volume_cost_mapping", type:"javascript" do
     _.each(volumes, function(volume){
       var cost_objects = _.where(volume_costs, {resource_id: volume["disk_id"]});
       if (_.size(cost_objects) > 0){
+        count++;
         var sum = _.reduce(_.compact(_.map(cost_objects, function(value){ return value.cost_nonamortized_unblended_adj})), function(memo, num){ return memo + num; }, 0);
         var monthly_savings = sum*30;
         total=total+monthly_savings;
@@ -471,7 +473,7 @@ script "js_volume_cost_mapping", type:"javascript" do
           subscriptionId:volume['subscriptionId'],
           subscriptionName:volume['subscriptionName'],
           tags:volume['tags'],
-          savings: cur + ' '+formatNumber(monthly_savings.toFixed(3), separator)
+          savings: cur + ' '+formatNumber((Math.round(monthly_savings * 100) / 100), separator)
         })
       } else {
         instances.push({
@@ -486,8 +488,13 @@ script "js_volume_cost_mapping", type:"javascript" do
         })
       }
     })
-    total=cur + ' '+formatNumber(total.toFixed(3), separator);
-    message="The total estimated monthly savings are "+total;
+    if(count){
+      total=cur + ' '+formatNumber((Math.round(total * 100) / 100), separator);
+      message="The total estimated monthly savings are "+total;
+    }
+    else{
+      message="The Flexera Optima system does not have any data to calculate savings for these resources";
+    }
   }
   else{
     instances=volumes;
