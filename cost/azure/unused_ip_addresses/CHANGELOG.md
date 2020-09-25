@@ -1,5 +1,10 @@
 # Changelog
 
+## v2.3
+
+- formatted the incident detail message to display if no savings data available
+- reverted the toFixed() to Math.round() for displaying savings data
+
 ## v2.2
 
 - Include Estimated Monthly Savings to each resource.

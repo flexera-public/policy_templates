@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.7
+
+- formatted the incident detail message to display if no savings data available
+
 ## v2.6
 
 - Include Total Estimated Monthly Savings in the incident message details
