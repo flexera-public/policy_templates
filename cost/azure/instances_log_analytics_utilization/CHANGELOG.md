@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.7
+
+- updated policy to check for log analytics and diagnostic enabled VM using resources' properties field
+
 ## v2.6
 
 - Updated escalation block
