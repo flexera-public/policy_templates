@@ -2,7 +2,7 @@
 
 ## v2.7
 
-- updated policy to check for log analytics and diagnostic enabled VM using resources' properties field
+- updated policy to check for log analytics and diagnostic enabled VM using resource properties field
 
 ## v2.6
 
