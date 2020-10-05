@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.5
+
+- Changed the default deregister image action from Yes to No.
+
 ## v2.4
 
 - Added EC2 DescribeRegions API action to get only Service Control Policy enabled Regions
