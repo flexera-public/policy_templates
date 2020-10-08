@@ -1,9 +1,13 @@
 # Changelog
 
-## v2.5
+## v2.6
 
 - Include Estimated Monthly Savings to each resource
 - Include Total Estimated Monthly Savings in the incident summary
+
+## v2.5
+
+- Changed the default deregister image action from Yes to No.
 
 ## v2.4
 
