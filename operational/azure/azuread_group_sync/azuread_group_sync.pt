@@ -39,6 +39,7 @@ parameter "param_default_phone" do
   label "Default Phone Number for New Users"
   category "Azure"
   description "Use this phone number if the user doesn't have one set in AzureAD"
+  min_length 1
   allowed_pattern /^[\.()\s\d+-]+$/
 end
 
@@ -46,6 +47,7 @@ parameter "param_default_company" do
   type "string"
   label "Default Company Name for New Users"
   category "Azure"
+  min_length 1
   description "Use this Company Name if the user doesn't have one set in AzureAD"
 end
 
@@ -54,7 +56,7 @@ parameter "param_idp_href" do
   label "Identity Provider Href"
   category "CMP"
   description "The Href for the Identity Provider to associate to new users"
-  allowed_pattern /^\/api\/identity_providers\/\d*$/
+  #allowed_pattern /^\/api\/identity_providers\/\d*$/
 end
 
 parameter "param_purge_users" do
@@ -62,6 +64,7 @@ parameter "param_purge_users" do
   label "Remove Users?"
   category "CMP"
   description "Remove users from the Organization that are no longer members of a group"
+  default "false"
   allowed_values "true", "false"
 end
 
@@ -139,8 +142,8 @@ datasource "ds_azure_group_members" do
         field "surname", jmes_path(col_item,"surname")
         field "givenName", jmes_path(col_item,"givenName")
         field "email", jmes_path(col_item,"userPrincipalName")
-        field "businessPhones", jmes_path(col_item, "businessPhones")
-        field "companyName", jmes_path(col_item, "companyName")
+        # field "businessPhones", jmes_path(col_item, "businessPhones")
+        # field "companyName", jmes_path(col_item, "companyName")
       end
     end
   end
@@ -215,6 +218,7 @@ script "js_filtered_aad_groups", type: "javascript" do
   result "results"
   code <<-EOS
     var results = [];
+    var _results = [];
     // Cleanup AzureAD group member list
     // Remove groups from members
     // Make list of members unique
@@ -223,13 +227,21 @@ script "js_filtered_aad_groups", type: "javascript" do
       var members = [];
       //members = _.where(_.unique(group["members"]), {"objectType": "#microsoft.graph.user"})
       members = _.where(group["members"], {"objectType": "#microsoft.graph.user"})
-      results.push({
+      _results.push({
         objectId: group["objectId"],
-        objectType: group["objectType"],
+        //objectType: group["objectType"],
         displayName: group["displayName"],
         description: group["description"],
         members: members
       })
+    })
+    var results = _.map(_.groupBy(_results,'displayName'), function(group){
+      return {
+        objectId: group[0]["objectId"],
+        displayName: group[0]["displayName"],
+        description: group[0]["description"],
+        members: group["0"].members
+      }
     })
 EOS
 end
@@ -249,6 +261,7 @@ script "js_filtered_aad_users", type: "javascript" do
       return item.objectId
     })
     _.each(users, function(user){
+      /**
       var userPhone = param_default_phone;
       var userCompany = param_default_company;
       if (( user["businessPhones"][0] != null && user["businessPhones"][0] !== undefined)) {
@@ -257,15 +270,16 @@ script "js_filtered_aad_users", type: "javascript" do
       if (( user["companyName"] != null && user["companyName"] !== undefined )) {
         userCompany = user["companyName"]
       }
+      */
       results.push({
         principalUIDAttribute: user["principalUIDAttribute"],
         objectId: user["objectId"],
-        objectType: user["objectType"],
+        //objectType: user["objectType"],
         surname: user["surname"],
         givenName: user["givenName"],
         email: user["email"],
-        telephoneNumber: userPhone,
-        companyName: userCompany
+        //telephoneNumber: userPhone,
+        //companyName: userCompany
       })
     })
 EOS
@@ -287,13 +301,13 @@ script "js_filtered_grs_users", type: "javascript" do
       
       usersToCreate.push({
         principalUIDAttribute: currentUserObject[0]["principalUIDAttribute"],
-        objectId: currentUserObject[0]["objectId"],
-        objectType: currentUserObject[0]["objectType"],
+        //objectId: currentUserObject[0]["objectId"],
+        //objectType: currentUserObject[0]["objectType"],
         surname: currentUserObject[0]["surname"],
         givenName: currentUserObject[0]["givenName"],
         email: currentUserObject[0]["email"],
-        telephoneNumber: currentUserObject[0]["telephoneNumber"],
-        companyName: currentUserObject[0]["companyName"],
+        //telephoneNumber: currentUserObject[0]["telephoneNumber"],
+        //companyName: currentUserObject[0]["companyName"],
         action: "Create"
       })
     })
@@ -367,16 +381,17 @@ script "js_combined_data", type: "javascript" do
     var results = {};
     results= {
       aadGroups: _.sortBy(ds_filtered_aad_groups, 'displayName'),
-      aadUsers: _.sortBy(ds_filtered_aad_users, 'surname'),
+      //aadUsers: _.sortBy(ds_filtered_aad_users, 'surname'),
       grsGroups: _.sortBy(ds_grs_groups, 'name'),
       grsUsers: _.sortBy(ds_grs_users, 'email'),
       groupsToCreate: _.sortBy(ds_filtered_grs_groups["GroupsToCreate"], 'name'),
       groupsToUpdate: _.sortBy(ds_filtered_grs_groups["GroupsToUpdate"], 'name'),
       usersToCreate: _.sortBy(ds_filtered_grs_users["UsersToCreate"], 'surname'),
-      usersToPurge: _.sortBy(ds_filtered_grs_users["UsersToPurge"], 'email')
+      //usersToPurge: _.sortBy(ds_filtered_grs_users["UsersToPurge"], 'email')
     }
 EOS
 end
+
 
 ###############################################################################
 # Policy
@@ -387,10 +402,10 @@ policy "policy_azuread_group_sync" do
     summary_template "{{ len data.groupsToUpdate }} AzureAD Groups to Synchronize"
     detail_template <<-EOS
 ## Groups that Will Be Synchronized from AzureAD
-| Name  | CMP Group Href  | AzureAD Object Id |
-| :---: | :-------------: | :---------------: |
+| Name  | CMP Group Href  | AzureAD Object Id | UsersToCreate |
+| :---: | :-------------: | :---------------: | ------------- |
 {{ range data.groupsToUpdate -}}
-  | {{ .name }} | {{ .href }} | {{ .objectId }} |
+  | {{ .name }} | {{ .href }} | {{ .objectId }} | {{with(index data.aadGroups 0)}}{{len .members}}{{end}} |
 {{ end -}}
 {{ $create_count := len data.groupsToCreate }}
 {{ if (gt $create_count 0) -}}
@@ -419,14 +434,14 @@ escalation "email" do
 end
 
 escalation "update_groups" do
-  run "group_sync", data, $param_purge_users, $param_idp_href, rs_cm_host, rs_org_id
+  run "group_sync", data, $param_purge_users, $param_idp_href, rs_cm_host, rs_org_id, $param_default_company, $param_default_phone
 end
 
 ###############################################################################
 # Cloud Workflow
 ###############################################################################
 
-define group_sync($data, $param_purge_users, $param_idp_href, $rs_cm_host, $rs_org_id) return $responses do
+define group_sync($data, $param_purge_users, $param_idp_href, $rs_cm_host, $rs_org_id, $param_default_company, $param_default_phone) return $responses do
   $$debug = true
   $$log = ""
   $usersToCreate = $data["usersToCreate"]
@@ -434,7 +449,7 @@ define group_sync($data, $param_purge_users, $param_idp_href, $rs_cm_host, $rs_o
   $grsGroups = $data["grsGroups"]
   $grsUsers = $data["grsUsers"]
   $aadGroups = $data["aadGroups"]
-  $aadUsers = $data["aadUsers"]
+  # $aadUsers = $data["aadUsers"]
   $newUsersCreated = []
   $newUsersNotCreated = []
   $usersDeleted = []
@@ -461,9 +476,9 @@ define group_sync($data, $param_purge_users, $param_idp_href, $rs_cm_host, $rs_o
             "user": {
               "first_name": $user["surname"],
               "last_name": $user["givenName"],
-              "company": $user["companyName"],
+              "company": $param_default_company,
               "email": $user["email"],
-              "phone": $user["telephoneNumber"],
+              "phone": $param_default_phone,
               "identity_provider_href": $param_idp_href,
               "principal_uid": $user["principalUIDAttribute"]
             }
@@ -555,7 +570,7 @@ define group_sync($data, $param_purge_users, $param_idp_href, $rs_cm_host, $rs_o
             $user_id = first(select($grsUsers, { "email": $user_email }))
             $user_id = $user_id["id"]
             if $user_id == null
-              call write_log(join(["* Error retrieving User ID for '", $user_email,"' (AzureAD ObjectID: ", $member["objectId"], "). Skipping..."]))
+              # call write_log(join(["* Error retrieving User ID for '", $user_email,"' (AzureAD ObjectID: ", $member["objectId"], "). Skipping..."]))
             else
               call write_log(join(["* Member: ", $user_email," (Id: ", $user_id,")"]))
               $userObject = {}
@@ -608,83 +623,83 @@ define group_sync($data, $param_purge_users, $param_idp_href, $rs_cm_host, $rs_o
     end
   end
 
-  sub task_label: "Preparing to Remove Users from Organization" do
-    call write_log("Preparing to Remove Users from Organization...")
-    sub task_label: "Collecting Current Organization Users" do
-      call write_log("Collecting Current Organization Users...")
-      $users_response = http_request(
-        auth: $$auth_rs,
-        verb: "get",
-        https: true,
-        host: $rs_cm_host,
-        href: join(["/grs/orgs/", $rs_org_id, "/users"]),
-        headers: { "X-Api-Version": "2.0", "User-Agent": "RS Policies" },
-        query_strings: { "view": "extended" }
-      )
-      $responses << $users_response
+  # sub task_label: "Preparing to Remove Users from Organization" do
+  #   call write_log("Preparing to Remove Users from Organization...")
+  #   sub task_label: "Collecting Current Organization Users" do
+  #     call write_log("Collecting Current Organization Users...")
+  #     $users_response = http_request(
+  #       auth: $$auth_rs,
+  #       verb: "get",
+  #       https: true,
+  #       host: $rs_cm_host,
+  #       href: join(["/grs/orgs/", $rs_org_id, "/users"]),
+  #       headers: { "X-Api-Version": "2.0", "User-Agent": "RS Policies" },
+  #       query_strings: { "view": "extended" }
+  #     )
+  #     $responses << $users_response
 
-      if $users_response["code"] == 200
-        $currentUsers = $users_response["body"]
-        $updatedUsersToPurge = []
-        foreach $orgUser in $currentUsers do
-          if size($orgUser["groups"]) == 0
-            $updatedUsersToPurge << $orgUser
-          end
-        end
-        if size($updatedUsersToPurge) > 0
-          call write_log("Identified users to purge! Updating purge list...")
-        end
-        $usersToPurge = $updatedUsersToPurge
-      else
-        call write_log("Unable to retrieve current Org Users! Using predetermined purge list.")
-      end
-    end
+  #     if $users_response["code"] == 200
+  #       $currentUsers = $users_response["body"]
+  #       $updatedUsersToPurge = []
+  #       foreach $orgUser in $currentUsers do
+  #         if size($orgUser["groups"]) == 0
+  #           $updatedUsersToPurge << $orgUser
+  #         end
+  #       end
+  #       if size($updatedUsersToPurge) > 0
+  #         call write_log("Identified users to purge! Updating purge list...")
+  #       end
+  #       $usersToPurge = $updatedUsersToPurge
+  #     else
+  #       call write_log("Unable to retrieve current Org Users! Using predetermined purge list.")
+  #     end
+  #   end
 
-    if size($usersToPurge) > 0
-      call write_log(join([size($usersToPurge), " user(s) to purge..."]))
-      $usersToPurgeDetails = "Users will be purged? " + $param_purge_users + "\n"
-      $usersToPurgeDetails = $usersToPurgeDetails + "The following users have been identified for removal from the Organization: \n"
-      $usersToPurgeDetails = $usersToPurgeDetails + to_s($usersToPurge)
-      call sys_log("User(s) identified for Removal", $usersToPurgeDetails)
-      if $param_purge_users == "true" || $param_purge_users == true
-        call write_log("Purging users...")
-        foreach $user in $usersToPurge do
-          $delete_response = null
-          sub task_label: join(["Purging user '", $user["email"],"'..."]), on_error: remove_user_error_handler($user, $delete_response) do
-            $userId = $user["id"]
-            $userEmail = $user["email"]
-            call write_log(join(["Removing '", $userEmail, "' (Id: ", $userId, ") affiliation with organization..."]))
+  #   if size($usersToPurge) > 0
+  #     call write_log(join([size($usersToPurge), " user(s) to purge..."]))
+  #     $usersToPurgeDetails = "Users will be purged? " + $param_purge_users + "\n"
+  #     $usersToPurgeDetails = $usersToPurgeDetails + "The following users have been identified for removal from the Organization: \n"
+  #     $usersToPurgeDetails = $usersToPurgeDetails + to_s($usersToPurge)
+  #     call sys_log("User(s) identified for Removal", $usersToPurgeDetails)
+  #     if $param_purge_users == "true" || $param_purge_users == true
+  #       call write_log("Purging users...")
+  #       foreach $user in $usersToPurge do
+  #         $delete_response = null
+  #         sub task_label: join(["Purging user '", $user["email"],"'..."]), on_error: remove_user_error_handler($user, $delete_response) do
+  #           $userId = $user["id"]
+  #           $userEmail = $user["email"]
+  #           call write_log(join(["Removing '", $userEmail, "' (Id: ", $userId, ") affiliation with organization..."]))
 
-            $delete_response = http_request(
-              auth: $$auth_rs,
-              verb: "delete",
-              https: true,
-              host: $rs_cm_host,
-              href: join(["/grs/orgs/", $rs_org_id, "/users/", $userId]),
-              headers: { "X-API-Version": "2.0", "User-Agent": "RS Policies" }
-            )
-            $responses << $delete_response
+  #           $delete_response = http_request(
+  #             auth: $$auth_rs,
+  #             verb: "delete",
+  #             https: true,
+  #             host: $rs_cm_host,
+  #             href: join(["/grs/orgs/", $rs_org_id, "/users/", $userId]),
+  #             headers: { "X-API-Version": "2.0", "User-Agent": "RS Policies" }
+  #           )
+  #           $responses << $delete_response
 
-            if $delete_response["code"] == 204
-              $usersDeleted << $user
-              call write_log(join(["Successfully Removed '", $userEmail, "' (Id: ", $userId, ") affiliation with organization!"]))
-              call sys_log(join(["Successfully Removed ", $userEmail, " Affiliation!"]), join(["Flexera CMP User ID: ", $userId]))
-            else
-              $usersNotDeleted = $usersNotDeleted + $user
-              $errorDetail = "Status Code: " + $delete_response["code"] + "\n"
-              $errorDetail = $errorDetail + to_s($delete_response)
-              call write_log(join(["Error Removing '", $userEmail, "' (Id: ", $userId, ") affiliation with organization!"]))
-              call sys_log(join(["Error Removing ", $userEmail, " Affiliation!"]), to_s($errorDetail))
-            end
-          end
-        end
-      else
-        call write_log("Skip purging users! param_purge_users is set to 'false'")
-      end
-    else
-      call write_log("Skip purging users! No users to purge.")
-    end
-  end
+  #           if $delete_response["code"] == 204
+  #             $usersDeleted << $user
+  #             call write_log(join(["Successfully Removed '", $userEmail, "' (Id: ", $userId, ") affiliation with organization!"]))
+  #             call sys_log(join(["Successfully Removed ", $userEmail, " Affiliation!"]), join(["Flexera CMP User ID: ", $userId]))
+  #           else
+  #             $usersNotDeleted = $usersNotDeleted + $user
+  #             $errorDetail = "Status Code: " + $delete_response["code"] + "\n"
+  #             $errorDetail = $errorDetail + to_s($delete_response)
+  #             call write_log(join(["Error Removing '", $userEmail, "' (Id: ", $userId, ") affiliation with organization!"]))
+  #             call sys_log(join(["Error Removing ", $userEmail, " Affiliation!"]), to_s($errorDetail))
+  #           end
+  #         end
+  #       end
+  #     else
+  #       call write_log("Skip purging users! param_purge_users is set to 'false'")
+  #     end
+  #   else
+  #     call write_log("Skip purging users! No users to purge.")
+  #   end
+  # end
 
   call write_log("Group Sync Complete!")
   call sys_log("Complete", to_s($$log))
