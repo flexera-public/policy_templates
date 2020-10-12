@@ -2,7 +2,7 @@
 
 ## v2.8
 
-- Added 404 ignore to azure instances datasource
+- Added handling for log analytics workspaces that don't exist
 
 ## v2.7
 
