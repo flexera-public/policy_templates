@@ -105,6 +105,9 @@ has_app_changes.each do |file|
   if category && !categories.include?(category.downcase)
     fail "The Category is not valid: #{category}.  Valid Categories include #{categories.join(", ")}"
   end
+  if category !~ /^[A-Z]/
+    fail "The First letter of Category is not capitalised: #{category}."
+  end
 end
 
 # check markdown of .md files with markdown lint
