@@ -18,7 +18,8 @@ info(
 
 parameter "param_email" do
   type "list"
-  label "Email addresses of the recipients you wish to notify"
+  label "Email addresses to notify"
+  description "Email addresses of the recipients you wish to notify when new incidents are created"
 end
 
 #################
@@ -31,123 +32,130 @@ auth "auth_rs", type: "rightscale"
 # Datasources
 ##############
 
-datasource "ds_get_applied_policy_templates" do
+datasource "ds_get_catalog_policy_templates" do
   request do
     auth $auth_rs
     verb "GET"
     host rs_governance_host
-    path join(["/api/governance/orgs/",rs_org_id,"/policy_aggregates"])
+    path join(["/api/governance/orgs/",rs_org_id,"/published_templates"])
     header "Api-Version", "1.0"
-    header "view", "default"
+    header "view", "extended"
   end
   result do
+    encoding "json"
     collect jmes_path(response,"items[*]") do
-      field "name", jmes_path(col_item, "name")
-      field "applied_version", jmes_path(col_item, "info.version")
-	  field "published_template_id", jmes_path(col_item, "published_template.id")
+      field "catalog_id", jmes_path(col_item, "id")
+      field "policy_name", jmes_path(col_item, "name")
+      field "catalog_version", jmes_path(col_item, "info.version")
+      field "policy_update_date", jmes_path(col_item, "updated_at")
+      field "short_description", jmes_path(col_item, "short_description")
     end
   end
 end
 
-datasource "ds_get_catalog_policy_templates" do
+datasource "ds_get_project_details" do
+  request do
+    auth $auth_rs
+    verb "GET"
+    host "governance.rightscale.com"
+    path join(["/grs/orgs/",rs_org_id,"/projects"])
+    header "X-Api-Version", "2.0"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response,"[*]") do
+      field "project_id", jmes_path(col_item, "id")
+      field "project_name", jmes_path(col_item, "name")
+    end
+  end
+end
+
+datasource "ds_get_account_details" do
+  iterate $ds_get_project_details
     request do
       auth $auth_rs
       verb "GET"
       host rs_governance_host
-      path join(["/api/governance/orgs/",rs_org_id,"/published_templates"])
+      path join(["/api/governance/projects/",val(iter_item, "project_id"),"/applied_policies"])
       header "Api-Version", "1.0"
-      header "view", "extended"
+      header "view", "default"
+      ignore_status [401]
     end
     result do
       encoding "json"
-      field "catalog_id", jmes_path(response, "items[*].id")
+      collect jmes_path(response,"items[*]") do
+        field "published_template_id", jmes_path(col_item, "published_template.id")
+        field "project_id", val(iter_item,"project_id")
+        field "project_name", val(iter_item,"project_name")
+        field "applied_version", jmes_path(col_item, "info.version")
     end
+  end
 end
 
-datasource "ds_get_policy_versions" do
-  run_script $js_get_policy_versions, $ds_get_catalog_policy_templates, $ds_get_applied_policy_templates
-end
-
-datasource "ds_get_policy_details" do
-  iterate $ds_get_policy_versions
-    request do
-      auth $auth_rs
-      verb "GET"
-      host rs_governance_host
-      path join(["/api/governance/orgs/",rs_org_id,"/published_templates/",val(iter_item,"templateId")])
-      header "Api-Version", "1.0"
-      header "view", "extended"
-    end
-    result do
-      encoding "json"
-      field "name", jmes_path(response, "name")
-      field "catalog_version", jmes_path(response, "info.version")
-      field "applied_version", val(iter_item,"applied_version")
-      field "policy_update_date", jmes_path(response, "updated_at")
-      field "short_description", jmes_path(response, "short_description")
-    end
+datasource "ds_get_applied_policy_templates" do
+  run_script $js_get_applied_policy_templates, $ds_get_account_details
 end
 
 datasource "ds_get_update_notification" do
-  run_script $js_get_update_notification, $ds_get_policy_details
+  run_script $js_get_update_notification, $ds_get_applied_policy_templates, $ds_get_catalog_policy_templates
 end
 
 ##############
 # Script
 ##############
 
-script "js_get_policy_versions", type:"javascript" do
-  parameters "ds_get_catalog_policy_templates", "ds_get_applied_policy_templates"
+script "js_get_applied_policy_templates", type:"javascript" do
+  parameters "ds_get_account_details"
   result "content"
   code <<-EOS
   var content=[];
-  var catalog_id = ds_get_catalog_policy_templates.catalog_id;
-  for(var i = 0; i< ds_get_applied_policy_templates.length;i++){
-    published_template_id = ds_get_applied_policy_templates[i].published_template_id;
-    if(catalog_id.indexOf(published_template_id) != -1){
-      content.push({templateId:published_template_id, applied_version:ds_get_applied_policy_templates[i].applied_version});
-    }
+  for(var i = 0; i < ds_get_account_details.length; i++){
+    if(ds_get_account_details[i].published_template_id != null){
+      content.push({published_template_id:ds_get_account_details[i].published_template_id, project_id:ds_get_account_details[i].project_id, project_name:ds_get_account_details[i].project_name, applied_version:ds_get_account_details[i].applied_version});
+    }  
   }
  EOS
 end
 
 script "js_get_update_notification", type:"javascript" do
-  parameters "ds_get_policy_details"
+  parameters "ds_get_applied_policy_templates", "ds_get_catalog_policy_templates"
   result "content"
   code <<-EOS
   var content=[];
-  var readmeLink;
-  var changelogLink;
-  var descriptionLink;
-  var linkString ;
-  var index;
-  for(var i = 0; i< ds_get_policy_details.length;i++){
-    var short_description = ds_get_policy_details[i].short_description;
-    if(short_description.indexOf("README")>-1){
-      index = short_description.indexOf("README");
-      linkString = short_description.substr(index+8);
-      descriptionLink = linkString.substr(0,linkString.indexOf(")"));
-	  var length = descriptionLink.length;
-	  var descriptionEnd = descriptionLink.substr(length-1);
-      if(descriptionEnd === "/"){
-        readmeLink = descriptionLink + "README.md";
-        changelogLink = descriptionLink + "CHANGELOG.md";
-      }else{
-        readmeLink = descriptionLink + "/README.md";
-        changelogLink = descriptionLink + "/CHANGELOG.md";
-      } 
-    }else {
-      readmeLink = "";
-      changelogLink = "";
+  var applied_temp_id;
+  var catalog_temp_id;
+  for(var i=0 ; i<ds_get_applied_policy_templates.length ; i++){
+    applied_temp_id = ds_get_applied_policy_templates[i].published_template_id;
+    for(var j=0 ; j<ds_get_catalog_policy_templates.length ; j++){
+      if(applied_temp_id == ds_get_catalog_policy_templates[j].catalog_id){
+        applied_version = ds_get_applied_policy_templates[i].applied_version;
+        catalog_version = ds_get_catalog_policy_templates[j].catalog_version;
+        if(catalog_version !== applied_version){
+          var short_description = ds_get_catalog_policy_templates[i].short_description;
+          if(short_description.indexOf("README")>-1){
+        index = short_description.indexOf("README");
+        linkString = short_description.substr(index+8);
+        descriptionLink = linkString.substr(0,linkString.indexOf(")"));
+        var length = descriptionLink.length;
+        var descriptionEnd = descriptionLink.substr(length-1);
+        if(descriptionEnd === "/"){
+          readmeLink = descriptionLink + "README.md";
+          changelogLink = descriptionLink + "CHANGELOG.md";
+        }else{
+          readmeLink = descriptionLink + "/README.md";
+          changelogLink = descriptionLink + "/CHANGELOG.md";
+        }
+        }else{
+        readmeLink = "";
+        changelogLink = "";
+        }
+        content.push({project_id:ds_get_applied_policy_templates[i].project_id, project_name:ds_get_applied_policy_templates[i].project_name, applied_version:applied_version,catalog_version:catalog_version,policy_update_date:ds_get_catalog_policy_templates[j].policy_update_date,short_description:ds_get_catalog_policy_templates[j].short_description,name:ds_get_catalog_policy_templates[j].policy_name, readmeLink:readmeLink, changelogLink:changelogLink});
+        }
+      }
     }
-    content.push({name:ds_get_policy_details[i].name, catalog_version : ds_get_policy_details[i].catalog_version, applied_version: ds_get_policy_details[i].applied_version, policy_update_date: ds_get_policy_details[i].policy_update_date, short_description:ds_get_policy_details[i].short_description, readmeLink:readmeLink, changelogLink:changelogLink});
   }
  EOS
 end
-
-##########
-# Policy
-##########
 
 policy 'update_notification_policy' do
   validate $ds_get_update_notification do
@@ -157,13 +165,16 @@ policy 'update_notification_policy' do
     export "result" do
       resource_level false
       field "name" do
-        label "Name"
+        label "Policy Template Name"
       end
       field "catalog_version" do
         label "Catalog Version"
       end
       field "applied_version" do
         label "Applied Version"
+      end
+      field "project_name" do
+        label "Account Name"
       end
       field "policy_update_date" do
         label "Policy Template Date Change"
@@ -176,6 +187,9 @@ policy 'update_notification_policy' do
       end
       field "changelogLink" do
         label "Changelog Link"
+      end
+      field "project_id" do
+        label "Account Id"
       end
     end
   end
