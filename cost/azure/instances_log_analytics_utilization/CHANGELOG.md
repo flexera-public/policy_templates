@@ -1,11 +1,20 @@
 # Changelog
 
+## v2.8
+
+- Added handling for log analytics workspaces that don't exist
+
+## v2.7
+
+- updated policy to check for log analytics and diagnostic enabled VM using resource properties field
+
 ## v2.6
 
 - Updated escalation block
 - fix spelling in path
 
 ## v2.5
+
 - modified policy for handling 404 error
 
 ## v2.4
