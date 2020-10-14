@@ -12,7 +12,7 @@ Identifies the current version of applied policy and that of respective policy i
 
 This policy has the following input parameters required when launching the policy.
 
-- *Email addresses to notify* - Email addresses of the recipients you wish to notify
+- *Email addresses to notify* - Email addresses of the recipients you wish to notify when new incidents are created
 
 ## Policy Actions
 
