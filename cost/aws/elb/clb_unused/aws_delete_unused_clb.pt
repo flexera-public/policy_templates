@@ -6,7 +6,7 @@ long_description ""
 category "Cost"
 severity "low"
 info(
-  version: "2.6",
+  version: "2.7",
   provider: "AWS",
   service: "ELB",
   policy_set: ""
@@ -256,7 +256,7 @@ datasource "ds_clbs_costs" do
 end
 
 datasource "ds_clbs_cost_mapping" do 
-  run_script $js_clbs_cost_mapping, $ds_unused_clb_map, $ds_clbs_costs, $ds_currency_code, $ds_currency_reference, $ds_billing_centers
+  run_script $js_clbs_cost_mapping, $ds_unused_clb_map, $ds_clbs_costs, $ds_currency_code, $ds_currency_reference, $ds_billing_centers, $ds_get_caller_identity
 end
 
 ###############################################################################
@@ -404,7 +404,7 @@ script "js_get_costs", type:"javascript" do
 end
 
 script "js_clbs_cost_mapping", type:"javascript" do
-  parameters  "clbs","clbs_cost","ds_currency_code","ds_currency_reference", "ds_billing_centers"
+  parameters  "clbs","clbs_cost","ds_currency_code","ds_currency_reference", "ds_billing_centers", "ds_get_caller_identity"
   result "result"
   code <<-EOS
   var total=0;
@@ -455,6 +455,7 @@ script "js_clbs_cost_mapping", type:"javascript" do
         var monthly_savings = sum*30;
         total=total+monthly_savings;
         loadbalancers.push({
+          accountId: ds_get_caller_identity[0]['account'],
           id : clb['id'],
           region : clb['region'],
           availabilityZones : clb['availabilityZones'],
@@ -464,6 +465,7 @@ script "js_clbs_cost_mapping", type:"javascript" do
         })
       } else {
         loadbalancers.push({
+          accountId: ds_get_caller_identity[0]['account'],
           id : clb['id'],
           region : clb['region'],
           availabilityZones : clb['availabilityZones'],
@@ -485,7 +487,8 @@ script "js_clbs_cost_mapping", type:"javascript" do
     loadbalancers=clbs;
     message="You do not have the minimum required role of billing_center_viewer to view the savings";
   }
-  result={"clbs": loadbalancers,
+  result={
+    "clbs": loadbalancers,
     "message": message
   };
   EOS
@@ -518,12 +521,15 @@ policy "policy_delete_unused_CLB" do
     check eq(size(val(data, "clbs")), 0)
     escalate $esc_email
     escalate $esc_delete_clb
-    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data.clbs }} Unused Classic Load Balancers Found in AWS"
+    summary_template "AWS Account ID: {{ data.clbs[0].accountId }}: {{ len data.clbs }} Unused Classic Load Balancers Found in AWS"
     detail_template <<-EOS
     {{data.message}}
     EOS
     export "clbs" do
       resource_level true
+      field "accountId" do
+        label "Account Id"
+      end
       field "id" do
         label "LoadBalancer Name"
       end
