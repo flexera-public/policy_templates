@@ -6,7 +6,7 @@ long_description ""
 severity "low"
 category "Cost"
 info(
-  version: "2.3",
+  version: "2.4",
   provider: "AWS",
   service: "RDS",
   policy_set: "RightSize Database Services"
@@ -68,6 +68,24 @@ end
 ###############################################################################
 # Datasources
 ###############################################################################
+
+datasource "ds_get_caller_identity" do
+  request do
+    auth $auth_aws
+    verb "GET"
+    host "sts.amazonaws.com"
+    path "/"
+    header "User-Agent", "RS Policies"
+    query "Action", "GetCallerIdentity"
+    query "Version", "2011-06-15"
+  end
+  result do
+    encoding "xml"
+    collect xpath(response, "//GetCallerIdentityResponse/GetCallerIdentityResult") do
+      field "account",xpath(col_item, "Account")
+    end
+ end
+end
 
 #Get list of enabled regions for an account
 datasource "ds_regions_list" do
@@ -179,7 +197,7 @@ datasource "ds_merged_metrics" do
 end
 
 datasource "ds_filtered_results" do
-  run_script $js_filtered_results, $ds_merged_metrics, $param_avg_cpu_downsize, $param_avg_cpu_upsize
+  run_script $js_filtered_results, $ds_merged_metrics, $param_avg_cpu_downsize, $param_avg_cpu_upsize, $ds_get_caller_identity
 end
 
 ###############################################################################
@@ -357,7 +375,7 @@ end
 
 
 script "js_filtered_results", type: "javascript" do
-  parameters "ds_merged_metrics", "param_avg_cpu_downsize", "param_avg_cpu_upsize"
+  parameters "ds_merged_metrics", "param_avg_cpu_downsize", "param_avg_cpu_upsize", "ds_get_caller_identity"
   result "results"
   code <<-EOS
   var results = []
@@ -368,6 +386,7 @@ script "js_filtered_results", type: "javascript" do
       } else {
         results.push (
           {
+            "accountId": ds_get_caller_identity[0]['account'],
             "region": instance["region"],
             "availabilityZone": instance["availabilityZone"],
             "dbInstanceArn": instance["dbInstanceArn"],
@@ -386,6 +405,7 @@ script "js_filtered_results", type: "javascript" do
       } else {
         results.push (
           {
+            "accountId": ds_get_caller_identity[0]['account'],
             "region": instance["region"],
             "availabilityZone": instance["availabilityZone"],
             "dbInstanceArn": instance["dbInstanceArn"],
@@ -409,12 +429,15 @@ end
 
 policy "pol_utilization" do
   validate $ds_filtered_results do
-    summary_template "AWS RDS instances to Resize"
+    summary_template "AWS Account ID: {{ data[0].accountId }}: {{ len data }} AWS RDS instances with inefficient utilization"
     check eq(size(data),0)
     escalate $email
     escalate $resize_instances
     export do
       resource_level true
+      field "accountId" do
+        label "Account Id"
+      end
       field "region" do
         label "Region"
       end
