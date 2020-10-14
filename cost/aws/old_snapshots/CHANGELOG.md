@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.7
+
+- Added AWS Account ID to resource table
+
 ## v2.6
 
 - Include Estimated Monthly Savings to each resource
