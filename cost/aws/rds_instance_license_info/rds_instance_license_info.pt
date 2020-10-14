@@ -6,7 +6,7 @@ long_description ""
 severity "low"
 category "Cost"
 info(
-  version: "2.1",
+  version: "2.2",
   provider: "AWS",
   service: "RDS",
   policy_set: ""
@@ -41,6 +41,24 @@ end
 ###############################################################################
 # Datasources
 ###############################################################################
+
+datasource "ds_get_caller_identity" do
+  request do
+    auth $auth_aws
+    verb "GET"
+    host "sts.amazonaws.com"
+    path "/"
+    header "User-Agent", "RS Policies"
+    query "Action", "GetCallerIdentity"
+    query "Version", "2011-06-15"
+  end
+  result do
+    encoding "xml"
+    collect xpath(response, "//GetCallerIdentityResponse/GetCallerIdentityResult") do
+      field "account",xpath(col_item, "Account")
+    end
+ end
+end
 
 #Get list of enabled regions for an account
 datasource "ds_regions_list" do
@@ -123,7 +141,7 @@ datasource "ds_aws_instance_size_map" do
 end
 
 datasource "ds_filtered_results" do
-  run_script $js_filtered_results, $ds_instances_set, $ds_aws_instance_size_map
+  run_script $js_filtered_results, $ds_instances_set, $ds_aws_instance_size_map, $ds_get_caller_identity
 end
 
 ###############################################################################
@@ -131,7 +149,7 @@ end
 ###############################################################################
 
 script "js_filtered_results", type: "javascript" do
-  parameters "ds_instances_set", "ds_aws_instance_size_map"
+  parameters "ds_instances_set", "ds_aws_instance_size_map", "ds_get_caller_identity"
   result "results"
   code <<-EOS
   var results = []
@@ -149,6 +167,7 @@ script "js_filtered_results", type: "javascript" do
 
     results.push (
       {
+        "accountId": ds_get_caller_identity[0]['account'],
         "region": instance["region"],
         "availabilityZone": instance["availabilityZone"],
         "dbInstanceArn": instance["dbInstanceArn"],
@@ -174,10 +193,10 @@ policy "pol_rds_instances" do
     summary_template "AWS RDS Instances"
     detail_template <<-EOS
 # AWS RDS Instances
-| Region | Instance ID | Engine | Engine Version | Instance Class | Availability Zone | vCPUs | License Model |
-| ------ | ----------- | ------ | -------------- | -------------- | ----------------- | ----- | ------------- |
+| Account Id | Region | Instance ID | Engine | Engine Version | Instance Class | Availability Zone | vCPUs | License Model |
+| ---------- | ------ | ----------- | ------ | -------------- | -------------- | ----------------- | ----- | ------------- |
 {{ range data -}}
-| {{.region}} | {{.dbInstanceIdentifier}} | {{.engine}} | {{.engineVersion}} | {{.dbInstanceClass}} | {{.availabilityZone }} | {{.vcpu}} | {{.licenseModel}} |
+| {{.accountId}} | {{.region}} | {{.dbInstanceIdentifier}} | {{.engine}} | {{.engineVersion}} | {{.dbInstanceClass}} | {{.availabilityZone }} | {{.vcpu}} | {{.licenseModel}} |
 {{ end -}}
 
 ###### Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }}) within Org: {{ rs_org_name }} (Org ID: {{ rs_org_id }})
