@@ -2,8 +2,8 @@
 
 ## v1.3
 
-- Fixed READMe link
-- Bug fix for the name is undefined error for vendor account name
+- Updated the README link path
+- Updated the logic for getting the account name for AWS cloud vendor
 
 ## v1.2
 
