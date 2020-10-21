@@ -2,7 +2,7 @@
 
 ## v1.3
 
-- Updated the README link path
+- Updated the README link path in Policy template
 - Updated the logic for getting the account name for AWS cloud vendor
 
 ## v1.2
