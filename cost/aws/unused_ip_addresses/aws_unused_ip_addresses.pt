@@ -6,7 +6,7 @@ long_description ""
 severity "low"
 category "Cost"
 info(
-    version: "2.7",
+    version: "2.8",
     provider: "AWS",
     service: "EC2",
     policy_set: "Unused IP Addresses"
@@ -207,11 +207,11 @@ datasource "ds_ip_costs" do
 end
 
 datasource "ds_filter_ip" do
-  run_script $js_filter_ip_response, $ds_aws_elastic_ip_address, $param_exclude_tags
+  run_script $js_filter_ip_response, $ds_aws_elastic_ip_address, $param_exclude_tags, $ds_get_caller_identity
 end
 
 datasource "ds_ip_cost_mapping" do
-  run_script $js_ip_cost_mapping, $ds_filter_ip, $ds_ip_costs, $ds_currency_code, $ds_currency_reference, $ds_billing_centers
+  run_script $js_ip_cost_mapping, $ds_filter_ip, $ds_ip_costs, $ds_currency_code, $ds_currency_reference, $ds_billing_centers, $ds_get_caller_identity
 end
 
 ###############################################################################
@@ -262,17 +262,16 @@ script "js_get_costs", type:"javascript" do
               "type": "equal",
               "value": account_id[0]["account"]
             },
-			{
+            {
               "dimension": "service",
               "type": "equal",
               "value": "AmazonEC2"
             },
-			{
+            {
               "dimension": "resource_type",
               "type": "equal",
               "value": "IP Address"
             }
-			
           ],
           "type": "and"
         }
@@ -287,7 +286,7 @@ script "js_get_costs", type:"javascript" do
 end
 
 script "js_filter_ip_response", type: "javascript" do
-  parameters "ds_aws_elastic_ip_address", "exclusion_tag"
+  parameters "ds_aws_elastic_ip_address", "exclusion_tag", "ds_get_caller_identity"
   result "result"
   code <<-EOS
     var result=[];
@@ -323,11 +322,12 @@ script "js_filter_ip_response", type: "javascript" do
       if(instance['instance_id']==""){
         if(!(isTagMatched)){
           result.push({
-            all_tags : (tagKeyValue),
-            domain:instance['domain'],
+            accountId: ds_get_caller_identity[0]['account'],
+            all_tags: (tagKeyValue),
+            domain: instance['domain'],
             publicIp: instance['publicIp'],
-            region : instance["region"],
-            allocation_id:instance["allocation_id"]
+            region: instance["region"],
+            allocation_id: instance["allocation_id"]
           })
         }
       }
@@ -336,7 +336,7 @@ script "js_filter_ip_response", type: "javascript" do
 end
 
 script "js_ip_cost_mapping", type:"javascript" do
-  parameters  "ip_list","ip_costs","ds_currency_code","ds_currency_reference", "ds_billing_centers"
+  parameters  "ip_list","ip_costs","ds_currency_code","ds_currency_reference", "ds_billing_centers", "ds_get_caller_identity"
   result "result"
   code <<-EOS
     var result = {};
@@ -394,8 +394,11 @@ script "js_ip_cost_mapping", type:"javascript" do
     else{
       message="You do not have the least required role of billing_center_viewer to view the savings"
     }
-    result={ "ip_list": ip_list,
-      "message": message}
+    result={
+      "ip_list": ip_list,
+      "message": message,
+      "accountId": ds_get_caller_identity[0]['account']
+    }
     result.ip_list=_.sortBy(result.ip_list,"region")
   EOS
 end
@@ -424,7 +427,7 @@ end
 
 policy "policy_unused_ip_addresses" do
   validate $ds_ip_cost_mapping do
-    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data.ip_list }} AWS Unused IP Addresses Found"
+    summary_template "AWS Account ID: {{ data.accountId }} - {{ len data.ip_list }} Unused IP Addresses Found"
     detail_template <<-EOS
     {{data.message}}
     EOS
@@ -433,6 +436,9 @@ policy "policy_unused_ip_addresses" do
     escalate $esc_delete_ip_address
     export "ip_list" do
       resource_level true
+      field "accountId" do
+        label "Account Id"
+      end
       field "id" do
         label "Public IP"
         path "publicIp"
