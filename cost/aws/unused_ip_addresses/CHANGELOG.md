@@ -9,6 +9,11 @@
 - Use `DescribeAddresses` instead of `DescribeRegions` to more accurately check if the call is enabled by the
   Service Control Policy in each region
 
+## v2.8
+
+- Use `DescribeAddresses` instead of `DescribeRegions` to more accurately check if the call is enabled by the
+  Service Control Policy in each region
+
 ## v2.7
 
 - formatted the incident detail message to display if no savings data available
