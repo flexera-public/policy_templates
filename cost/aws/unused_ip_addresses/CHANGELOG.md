@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.9
+
+- Exclude EIPs associated with network devices
+
 ## v2.8
 
 - Use `DescribeAddresses` instead of `DescribeRegions` to more accurately check if the call is enabled by the
