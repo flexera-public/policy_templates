@@ -3,6 +3,7 @@
 ## v2.8
 
 - Added AWS Account ID to resource table
+- Excluding EIP's associated with network devices
 
 ## v2.7
 
