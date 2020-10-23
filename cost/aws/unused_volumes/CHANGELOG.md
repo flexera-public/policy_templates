@@ -1,8 +1,13 @@
 # Changelog
 
-## v2.9
+## v2.10
 
 - Adding AWS Account Id
+
+## v2.9
+
+- Use `DescribeVolumes` instead of `DescribeRegions` to more accurately check if the call is enabled by the
+  Service Control Policy in each region
 
 ## v2.8
 

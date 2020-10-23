@@ -1,8 +1,13 @@
 # Changelog
 
-## v2.7
+## v2.8
 
 - Added AWS Account ID to resource table
+
+## v2.7
+
+- Use `DescribeSnapshots` instead of `DescribeRegions` to more accurately check if the call is enabled by the
+  Service Control Policy in each region
 
 ## v2.6
 

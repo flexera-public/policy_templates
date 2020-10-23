@@ -5,7 +5,7 @@ short_description "Checks for unused volumes and if no read/write operations per
 category "Cost"
 severity "low"
 info(
-  version: "2.9",
+  version: "2.10",
   provider: "AWS",
   service: "EBS",
   policy_set: "Unused Volumes"
@@ -105,11 +105,11 @@ datasource "ds_regions" do
     request do
       auth $auth_aws
       verb "GET"
-      host "ec2.amazonaws.com"
       host join(["ec2.",val(iter_item,"region"),".amazonaws.com"])
       path "/"
-      query "Action", "DescribeRegions"
+      query "Action", "DescribeVolumes"
       query "Version", "2016-11-15"
+      query "MaxResults", "5"
       ignore_status [403]
     end
     result do
@@ -276,21 +276,21 @@ end
 #https://docs.aws.amazon.com/AWSEC2/latest/APIReference/API_DescribeVolumes.html
 script "js_aws_unattached_volumes_list", type:"javascript" do
   parameters  "region"
-    result "results"
-    code <<-EOS
-    results = {
-      auth: "auth_aws",
-      host: 'ec2.'+region+'.amazonaws.com',
-      path: '/',
-      pagination: "aws_volumes_pagination_xml",
-      query_params: {
-        "Action": "DescribeVolumes",
-        "Version": "2016-11-15",
-        "Filter.1.Name": "status",
-        "Filter.1.Value.1": "available"
-      }
+  result "results"
+  code <<-EOS
+  results = {
+    auth: "auth_aws",
+    host: 'ec2.'+region+'.amazonaws.com',
+    path: '/',
+    pagination: "aws_volumes_pagination_xml",
+    query_params: {
+      "Action": "DescribeVolumes",
+      "Version": "2016-11-15",
+      "Filter.1.Name": "status",
+      "Filter.1.Value.1": "available"
     }
-    EOS
+  }
+  EOS
 end
 
 script "js_filter_aws_unattached_volumes", type:"javascript" do
@@ -353,13 +353,13 @@ script "js_aws_volumes_cloud_watch_read_byte_metrics", type:"javascript" do
   code <<-EOS
     var endDate = new Date().toISOString();
     var startDate = new Date(new Date().setDate(new Date().getDate() - unattachedDays)).toISOString();
-    var peroid = 2592000;
+    var period = 2592000;
     var datapoints = (unattachedDays / 30).toFixed(2);
     if(datapoints > 1440){
-      peroid = peroid * 60;
+      period = period * 60;
 	}
-    console.log("Period "+peroid);
-    peroid = ""+peroid+"";
+    console.log("Period "+period);
+    period = ""+period+"";
     metrics = {
      "auth": "auth_aws",
      "host": 'monitoring.'+region+'.amazonaws.com',
@@ -373,18 +373,18 @@ script "js_aws_volumes_cloud_watch_read_byte_metrics", type:"javascript" do
        "Content-Encoding": "amz-1.0"
      }
      "query_params": {
-      'Action': 'GetMetricStatistics',
-      'Version': '2010-08-01',
-      'Namespace': 'AWS/EBS',
-      'MetricName': 'VolumeReadBytes',
-      'Dimensions.member.1.Name': 'VolumeId',
-      'Dimensions.member.1.Value': volume_id,
-      'StartTime': startDate,
-      'EndTime': endDate,
-      'Period': peroid,
-      'Statistics.member.1': 'Maximum',
-      'Statistics.member.2': 'Average',
-      'Statistics.member.3': 'Minimum'
+       'Action': 'GetMetricStatistics',
+       'Version': '2010-08-01',
+       'Namespace': 'AWS/EBS',
+       'MetricName': 'VolumeReadBytes',
+       'Dimensions.member.1.Name': 'VolumeId',
+       'Dimensions.member.1.Value': volume_id,
+       'StartTime': startDate,
+       'EndTime': endDate,
+       'Period': period,
+       'Statistics.member.1': 'Maximum',
+       'Statistics.member.2': 'Average',
+       'Statistics.member.3': 'Minimum'
      }
     }
   EOS
