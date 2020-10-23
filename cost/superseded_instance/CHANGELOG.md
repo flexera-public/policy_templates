@@ -2,7 +2,9 @@
 
 ## v1.9
 
-- Fixing "undefined" error in account.name
+- Added description for parameter "Billing Center Name".
+- Removed few of the unused fields which are not displayed in incident and were causing Error in policy execution for some use cases.
+- Changed label and description for "report_instances" escalation to maintaining the consistency.
 
 ## v1.8
 
