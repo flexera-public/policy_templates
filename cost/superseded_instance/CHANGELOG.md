@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.9
+
+- Fixing "undefined" error in account.name
+
 ## v1.8
 
 - adding incident resource table

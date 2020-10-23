@@ -8,19 +8,16 @@ severity "low"
 default_frequency "daily"
 tenancy "single"
 info(
-  version: "1.7",
+  version: "1.9",
   provider: "Flexera Optima",
   service: "",
   policy_set: ""
 )
 
 ###############################################################################
-# Permissions
-###############################################################################
-
-###############################################################################
 # Parameters
 ###############################################################################
+
 parameter "param_email" do
   label "Email addresses"
   description "Email addresses of the recipients you wish to notify"
@@ -63,12 +60,9 @@ end
 auth "auth_rs", type: "rightscale"
 
 ###############################################################################
-# Resources
-###############################################################################
-
-###############################################################################
 # Datasources
 ###############################################################################
+
 datasource "ds_dimensions" do
   request do
     auth $auth_rs
@@ -142,6 +136,36 @@ datasource "ds_new_bc_costs" do
     end
   end
 end
+
+datasource "ds_format_costs" do
+  run_script $js_format_costs, $ds_new_bc_costs, $ds_cloud_vendor_accounts, $ds_billing_centers
+end
+
+datasource "ds_aws_instance_size_map" do
+  request do
+    verb "GET"
+    host "raw.githubusercontent.com"
+    path "/rightscale/policy_templates/master/data/aws/instance_types.json"
+    header "User-Agent", "RS Policies"
+  end
+end
+
+datasource "ds_azure_instance_size_map" do
+  request do
+    verb "GET"
+    host "raw.githubusercontent.com"
+    path "/rightscale/policy_templates/master/data/azure/instance_types.json"
+    header "User-Agent", "RS Policies"
+  end
+end
+
+datasource "ds_combined_instance_data" do
+  run_script $js_merge_instance_data, $ds_format_costs, $ds_aws_instance_size_map, $ds_azure_instance_size_map, $param_new_instancetype_category
+end
+
+###############################################################################
+# Scripts
+###############################################################################
 
 script "js_new_costs_request", type: "javascript" do
   parameters "org_id","ds_billing_centers", "param_billing_centers"
@@ -221,10 +245,6 @@ script "js_new_costs_request", type: "javascript" do
 EOS
 end
 
-datasource "ds_format_costs" do
-  run_script $js_format_costs, $ds_new_bc_costs, $ds_cloud_vendor_accounts, $ds_billing_centers
-end
-
 script "js_format_costs", type: "javascript" do
   parameters "new_bc_costs", "ds_cloud_vendor_accounts", "ds_billing_centers"
   result "formatted_data"
@@ -252,30 +272,15 @@ script "js_format_costs", type: "javascript" do
     var new_bc_cost_objs = _.reject(new_bc_costs, function(new_bc_cost){ return new_bc_cost.id != bc_id });
     _.each(new_bc_cost_objs, function(new_bc_cost_obj){
       var billing_center = _.reject(ds_billing_centers, function(bc){ return bc.id != new_bc_cost_obj.id })[0];
-      if (new_bc_cost_obj.vendor == "AWS" ) {
-        var account = _.reject(ds_cloud_vendor_accounts, function(ds_cloud_vendor_account){ return ds_cloud_vendor_account.id != new_bc_cost_obj.vendor_account_name });
-        var vendor_account_name = account[0].name
-      } else {
-        var vendor_account_name = new_bc_cost_obj.vendor_account_name
-      }
       cost = new_bc_cost_obj.cost_amortized_unblended_adj
       run_rate = cost / monthcomplete
       if (new_bc_cost_obj.cost_amortized_unblended_adj != 0){
         arr_results.push({
           name: billing_center.name,
-          id: bc_id,
-          new_sum: new_bc_cost_obj.cost_amortized_unblended_adj,
-          service: new_bc_cost_obj.service,
-          vendor: new_bc_cost_obj.vendor,
-          vendor_account_name: vendor_account_name,
-          usage_amount: new_bc_cost_obj.usage_amount,
           region: new_bc_cost_obj.region,
           instance_type: new_bc_cost_obj.instance_type,
           resource_id: new_bc_cost_obj.resource_id,
-          resource_type: new_bc_cost_obj.resource_type,
-          timestamp: new_bc_cost_obj.timestamp,
           run_rate: parseFloat(run_rate).toFixed(2),
-          run_rate_for_calc: run_rate
         })
       }
     })
@@ -288,32 +293,6 @@ script "js_format_costs", type: "javascript" do
 EOS
 end
 
-datasource "ds_aws_instance_size_map" do
-  request do
-    verb "GET"
-    host "raw.githubusercontent.com"
-    path "/rightscale/policy_templates/master/data/aws/instance_types.json"
-    header "User-Agent", "RS Policies"
-  end
-end
-
-datasource "ds_azure_instance_size_map" do
-  request do
-    verb "GET"
-    host "raw.githubusercontent.com"
-    path "/rightscale/policy_templates/master/data/azure/instance_types.json"
-    header "User-Agent", "RS Policies"
-  end
-end
-
-datasource "ds_combined_instance_data" do
-  run_script $js_merge_instance_data, $ds_format_costs, $ds_aws_instance_size_map, $ds_azure_instance_size_map, $param_new_instancetype_category
-end
-
-###############################################################################
-# Scripts
-###############################################################################
-
 script "js_merge_instance_data", type: "javascript" do
   parameters "ds_format_costs", "ds_aws_instance_size_map", "ds_azure_instance_size_map", "param_new_instancetype_category"
   result "results"
@@ -321,11 +300,9 @@ script "js_merge_instance_data", type: "javascript" do
     var results = []
     var superseded_instance_map = _.extend(ds_aws_instance_size_map,ds_azure_instance_size_map)
     var ds_instances = ds_format_costs
-
     for ( i=0; i < ds_instances.length; i++) {
       var instance = ds_instances[i]
       var instance_type = instance.instance_type
-      console.log(instance_type)
       if (instance_type == "None" ) {continue;}
       var found_instance_type = superseded_instance_map[instance_type]
       if ( typeof(found_instance_type) === "undefined" || found_instance_type == null ){
@@ -337,10 +314,8 @@ script "js_merge_instance_data", type: "javascript" do
         if ( typeof(superseded) === "undefined" || superseded == null ){
           continue
         } else {
-          console.log("superseded: " +JSON.stringify(superseded))
           var new_instance_type = superseded[param_new_instancetype_category]
           if (new_instance_type === "undefined" || new_instance_type == null || new_instance_type == "") {continue;}
-          console.log("nit: "+ new_instance_type)
           var new_instance_type_info = superseded_instance_map[new_instance_type]
           if ( new_instance_type_info === "undefined" ) {continue;}
           old_instance_ena = found_instance_type.enhanced_networking || false
@@ -367,23 +342,14 @@ script "js_merge_instance_data", type: "javascript" do
           results.push(
             {
               name: instance.name,
-              id: instance.id,
-              new_sum: instance.new_sum,
-              service: instance.service,
-              vendor: instance.vendor,
-              vendor_account_name: instance.vendor_account_name,
-              usage_amount: instance.usage_amount,
               region: instance.region,
               instance_type: instance.instance_type,
               new_instance_type: new_instance_type,
               resource_id: instance.resource_id,
-              timestamp: instance.timestamp,
               run_rate: instance.run_rate,
-              run_rate_for_calc: instance.run_rate_for_calc,
               vpc_incompatible_move: vpc_incompatible_move,
               ena_incompatible: ena_incompatible,
               warn: warn,
-              total: instance.total
             }
           )
         }
@@ -395,6 +361,7 @@ end
 ###############################################################################
 # Escalations
 ###############################################################################
+
 escalation "report_instances" do
   automatic true
   label "Send Mail"
@@ -445,7 +412,3 @@ policy "pol_aws_superseded_instance" do
     end 
   end
 end
-
-###############################################################################
-# Cloud Workflow
-###############################################################################
