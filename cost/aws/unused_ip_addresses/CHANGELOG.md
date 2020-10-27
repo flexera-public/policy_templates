@@ -2,7 +2,7 @@
 
 ## v2.9
 
-- Exclude EIPs associated with network devices
+- Exclude Elastic IPs associated with network devices
 
 ## v2.8
 
