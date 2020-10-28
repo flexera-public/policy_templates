@@ -2,7 +2,7 @@
 
 ## v2.9
 
-- Exclude Elastic IPs associated with network devices
+- Exclude Elastic IPs that have an Association ID
 
 ## v2.8
 
