@@ -3,6 +3,7 @@
 ## v2.4
 
 - Updated policy to fetch cost details for multiple subscription ids from Optima
+- updated escalation label for consistency
 
 ## v2.3
 
