@@ -248,7 +248,7 @@ datasource "ds_filter_ami_snapshots" do
 end
 
 datasource "ds_snapshots_cost_mapping" do
-  run_script $js_snapshots_cost_mapping, $ds_filter_ami_snapshots, $ds_snapshot_costs, $ds_currency_reference, $ds_currency_reference, $ds_billing_centers
+  run_script $js_snapshots_cost_mapping, $ds_filter_ami_snapshots, $ds_snapshot_costs, $ds_currency_reference, $ds_currency_reference, $ds_billing_centers, $ds_get_caller_identity
 end
 
 ###############################################################################
@@ -324,7 +324,7 @@ script "js_get_costs", type:"javascript" do
 end
 
 script "js_snapshots_cost_mapping", type:"javascript" do
-  parameters  "snapshots","snapshot_costs","ds_currency_code","ds_currency_reference","ds_billing_centers"
+  parameters  "snapshots","snapshot_costs","ds_currency_code","ds_currency_reference","ds_billing_centers","ds_get_caller_identity"
   result "results"
   code <<-EOS
 
@@ -375,6 +375,7 @@ script "js_snapshots_cost_mapping", type:"javascript" do
       var monthly_savings = sum*30;
       total=total+monthly_savings;
       result.push({
+        accountId: ds_get_caller_identity[0]['account'],
         snapshotId : snapshot['snapshotId'],
         region : snapshot['region'],
         tagKeyValue : snapshot['tagKeyValue'],
@@ -386,6 +387,7 @@ script "js_snapshots_cost_mapping", type:"javascript" do
       })
     } else {
       result.push({
+        accountId: ds_get_caller_identity[0]['account'],
         snapshotId : snapshot['snapshotId'],
         region : snapshot['region'],
         tagKeyValue : snapshot['tagKeyValue'],
@@ -552,9 +554,9 @@ end
 
 policy "pol_utilization" do
   validate $ds_snapshots_cost_mapping do
-    summary_template "AWS Account ID: {{with index data 0}}{{ .accountId }}{{end}} - {{ len data.result }} rows containing AWS old snapshot data"
+    summary_template "AWS Account ID: {{with index data.result 0}}{{ .accountId }}{{end}} - {{ len data.result }} rows containing AWS old snapshot data"
     detail_template <<-EOS
-    The following {{ len data.result }} old snapshots, for AWS Account: {{with index data 0}}{{ .accountId }}{{end}}, have exceeded the specified age of: {{ parameters.snapshot_age }} days old.\n
+    The following {{ len data.result }} old snapshots, for AWS Account: {{with index data.result 0}}{{ .accountId }}{{end}}, have exceeded the specified age of: {{ parameters.snapshot_age }} days old.\n
     {{data.message}}
     EOS
     escalate $ese_email
