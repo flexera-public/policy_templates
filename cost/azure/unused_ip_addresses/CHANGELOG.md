@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.4
+
+- Updated policy to fetch cost details for multiple subscription ids from Optima
+
 ## v2.3
 
 - formatted the incident detail message to display if no savings data available
