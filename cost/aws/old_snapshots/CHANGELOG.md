@@ -1,5 +1,10 @@
 # Changelog
 
+## v2.7
+
+- Use `DescribeSnapshots` instead of `DescribeRegions` to more accurately check if the call is enabled by the
+  Service Control Policy in each region
+
 ## v2.6
 
 - Include Estimated Monthly Savings to each resource
