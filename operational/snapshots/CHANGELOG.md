@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.9
+
+- Modified escalation label and description for consistency
+
 ## v1.8
 
 - Modified Instance resources filter to get running instances having attached volumes that do not have a snapshot

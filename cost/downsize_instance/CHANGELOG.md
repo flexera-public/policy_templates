@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.18
+
+- Modified escalation label and description for consistency
+
 ## v1.17
 
 - Updated escalation block

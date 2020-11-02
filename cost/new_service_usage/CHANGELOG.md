@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.4
+
+- Modified escalation label and description for consistency
+
 ## v1.3
 
 - Updated the README link path in Policy template

@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.7
+
+- Modified escalation label and description for consistency
+
 ## v2.6
 
 - Fix issue with duplicate records displayed in the detail template
