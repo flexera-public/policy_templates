@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.4
+
+- modified policy to capture logs
+
 ## v1.3
 
 - remove approval block and adding incident resource table
