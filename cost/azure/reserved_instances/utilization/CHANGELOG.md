@@ -2,7 +2,7 @@
 
 ## v2.2
 
-- Adjust check condition so RIs with 100 utilization are incorrectly identified
+- Adjust check condition so RIs with 100 utilization are not incorrectly identified
 - Added min(1) and max(100) value validation to param_utilization parameter
 
 ## v2.1
