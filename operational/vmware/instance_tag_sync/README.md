@@ -11,7 +11,7 @@ This policy has the following requirements to function properly. You will need t
 - RCAV
 - The cloud configured inside of CMP
 - [WS-Tunnel](https://github.com/rightscale/wstunnel)
-- `/usr/local/bin/wstunnel cli -token $WSTUNNEL_TOKEN -tunnel wss://wstunnel10-1.rightscale.com -server $VSPHERE_HTTPS -logfile /var/log/wstuncli-policy.log -pidfile /var/run/wstunnel-policy.pid`
+- `/usr/local/bin/wstunnel cli -token $WSTUNNEL_TOKEN -tunnel wss://wstunnel10-1.rightscale.com -server $VSPHERE_HTTPS -logfile /var/log/wstuncli-policy.log -pidfile /var/run/wstunnel-policy.pid --insecure`
 
 This policy performs the following action:
 
