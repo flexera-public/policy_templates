@@ -11,7 +11,7 @@ This Policy Template leverages the [Azure EA API for Reserved Instance Utilizati
 This policy has the following input parameters required when launching the policy.
 
 - *Enrollment ID* - the Azure EA enrollment ID
-- *Show RI's with utilization below this value*
+- *Show RI's with utilization below this value* - Number between 1 and 100
 - *Email addresses of the recipients you wish to notify* - A list of email addresses to notify
 
 ## Policy Actions
@@ -28,7 +28,7 @@ credentials listed when you apply the policy, please contact your cloud admin an
 
 ### Credential configuration
 
-For administrators [creating and managing credentials](https://docs.rightscale.com/policies/users/guides/credential_management.html) to use with this policy, the following information is needed: 
+For administrators [creating and managing credentials](https://docs.rightscale.com/policies/users/guides/credential_management.html) to use with this policy, the following information is needed:
 
 Provider tag value to match this policy: `azure_ea`
 
