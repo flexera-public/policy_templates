@@ -222,9 +222,10 @@ script "js_filtered_aad_groups", type: "javascript" do
     // Cleanup AzureAD group member list
     // Remove groups from members
     // Make list of members unique
-    
+
     _.each(ds_azure_group_members, function(group){
       var members = [];
+      console.log("TRS: Group("+ group['displayName'] + ") Members" + _.size(group["members"]))
       //members = _.where(_.unique(group["members"]), {"objectType": "#microsoft.graph.user"})
       members = _.where(group["members"], {"objectType": "#microsoft.graph.user"})
       _results.push({
@@ -235,14 +236,7 @@ script "js_filtered_aad_groups", type: "javascript" do
         members: members
       })
     })
-    var results = _.map(_.groupBy(_results,'displayName'), function(group){
-      return {
-        objectId: group[0]["objectId"],
-        displayName: group[0]["displayName"],
-        description: group[0]["description"],
-        members: group["0"].members
-      }
-    })
+    _.extend(results,_results)
 EOS
 end
 
@@ -292,13 +286,13 @@ script "js_filtered_grs_users", type: "javascript" do
     var results = {};
     var usersToCreate = [];
     var usersToPurge = [];
-    
+
     // Filter users to be created and removed
     var usersNotInGRS = _.difference(_.pluck(ds_filtered_aad_users, "email"), _.pluck(ds_grs_users, "email"))
-    var usersNotInAAD = _.difference(_.pluck(ds_grs_users, "email"), _.pluck(ds_filtered_aad_users, "email"))
+    // var usersNotInAAD = _.difference(_.pluck(ds_grs_users, "email"), _.pluck(ds_filtered_aad_users, "email"))
     _.each(usersNotInGRS, function(user) {
       var currentUserObject = _.where(ds_filtered_aad_users, {email: user});
-      
+
       usersToCreate.push({
         principalUIDAttribute: currentUserObject[0]["principalUIDAttribute"],
         //objectId: currentUserObject[0]["objectId"],
@@ -311,6 +305,7 @@ script "js_filtered_grs_users", type: "javascript" do
         action: "Create"
       })
     })
+    /**
     _.each(usersNotInAAD, function(user) {
       var currentUserObject = _.where(ds_grs_users, {email: user});
       var currentUserGroups = _.pluck(currentUserObject, "groups")[0]
@@ -322,9 +317,10 @@ script "js_filtered_grs_users", type: "javascript" do
         })
       }
     })
+    */
     results = {
       UsersToCreate: usersToCreate,
-      UsersToPurge: usersToPurge
+      //UsersToPurge: usersToPurge
     }
 EOS
 end
@@ -336,7 +332,7 @@ script "js_filtered_grs_groups", type: "javascript" do
     var results = {};
     var groupsToCreate = [];
     var groupsToUpdate = [];
-    
+
     // Filter groups to be updated/created
     var groupsNotInGRS = _.difference(_.pluck(ds_filtered_aad_groups, "displayName"), _.pluck(ds_grs_groups, "name"))
     var groupsOnlyInGRS = _.difference(_.pluck(ds_grs_groups, "name"), _.pluck(ds_filtered_aad_groups, "displayName"))
@@ -472,7 +468,7 @@ define group_sync($data, $param_purge_users, $param_idp_href, $rs_cm_host, $rs_o
           $newUserResult = {}
           $errorDetail = ""
 
-          $newUserBodyPayload = { 
+          $newUserBodyPayload = {
             "user": {
               "first_name": $user["surname"],
               "last_name": $user["givenName"],
@@ -506,7 +502,7 @@ define group_sync($data, $param_purge_users, $param_idp_href, $rs_cm_host, $rs_o
               "href": $newUserHref,
               "groups": {}
             }
-            
+
             $grsUsers << $newUserResult
             $newUsersCreated << $newUserResult
             call write_log(join(["Successfully created new Flexera CMP user: ", $user["email"], " (ID: ", $newUserId,")!"]))
@@ -553,7 +549,7 @@ define group_sync($data, $param_purge_users, $param_idp_href, $rs_cm_host, $rs_o
           verb: "patch",
           https: true,
           host: $rs_cm_host,
-          href: $group_href, 
+          href: $group_href,
           headers: { "X-Api-Version": "2.0", "User-Agent": "RS Policies" },
           body: {
             "description": "The membership of this group is maintained by the ‘AzureAD Group Sync’ policy. Any changes you make will be invalidated the next time the policy runs. Please update the group in AzureAD directly."
@@ -589,7 +585,7 @@ define group_sync($data, $param_purge_users, $param_idp_href, $rs_cm_host, $rs_o
               },
               "users": $userPayload
           }
-          
+
           call sys_log(join(["Updating Group: ", $group_name]), join(["Desired membership:\n" + to_s($membershipBodyPayload)]))
 
           $update_response = http_request(
@@ -597,7 +593,7 @@ define group_sync($data, $param_purge_users, $param_idp_href, $rs_cm_host, $rs_o
             verb: "put",
             https: true,
             host: $rs_cm_host,
-            href: join(["/grs/orgs/", $rs_org_id, "/memberships"]), 
+            href: join(["/grs/orgs/", $rs_org_id, "/memberships"]),
             headers: { "X-Api-Version": "2.0", "User-Agent": "RS Policies" },
             body: $membershipBodyPayload
           )
