@@ -31,7 +31,7 @@ This policy has the following input parameter required when launching the policy
 - *Automatic Actions* - When this value is set, this policy will automatically take the selected action(s).
 
 Please note that the "*Automatic Actions*" parameter contains a list of action(s) that can be performed on the resources. When it is selected, the policy will automatically execute the corresponding action on the data that failed the checks, post incident generation. Please leave it blank for *manual* action.
-For example if a user selects the "Synchronize Tags" action while applying the policy, the identified resources tags will be synchronized from CMP to VMWare.
+For example, if a user selects the "Synchronize Tags" action while applying the policy, the identified resources tags will be synchronized from CMP to VMWare.
 
 ## Policy Actions
 
@@ -55,8 +55,8 @@ This policy requires permissions to access Cloud Management resources; Clouds an
 - Delete vSphere Tag Category
 - Edit vSphere Tag
 - Edit vSphere Tag Category
-- Modify UsedBy Field For Category
-- Modify UsedBy Field For Tag
+- Modify UsedBy Field for Category
+- Modify UsedBy Field for Tag
 
 ## Supported Clouds
 
