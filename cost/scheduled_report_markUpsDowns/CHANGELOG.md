@@ -7,3 +7,4 @@
 ## v1.0
 
 - Initial Release
+- Not included in the Catalog
