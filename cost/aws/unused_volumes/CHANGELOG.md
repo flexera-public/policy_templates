@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.11
+
+- Require a minimum value of `1` on the `param_unattached_days` parameter
+
 ## v2.10
 
 - Adding AWS Account Id
