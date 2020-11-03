@@ -14,7 +14,7 @@
 
 ## v1.3
 
-- Updated README URL 
+- Updated README URL
 
 ## v1.2
 
