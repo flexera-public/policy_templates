@@ -16,6 +16,7 @@
 
 - Updating Policy Template Name
 - Removing security_group_href and cloud restriction
+
 ## v1.6
 
 - Update email subject with account name and ID, and change actions and/or resolution name to be more descriptive. Issues #75 & #83
