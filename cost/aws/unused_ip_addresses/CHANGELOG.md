@@ -1,8 +1,17 @@
 # Changelog
 
-## v2.8
+## v3.0
 
 - Modified escalation label and description for consistency
+
+## v2.9
+
+- Exclude Elastic IPs that have an Association ID
+
+## v2.8
+
+- Use `DescribeAddresses` instead of `DescribeRegions` to more accurately check if the call is enabled by the
+  Service Control Policy in each region
 
 ## v2.7
 
