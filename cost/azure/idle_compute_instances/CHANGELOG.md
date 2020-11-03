@@ -1,9 +1,5 @@
 # Changelog
 
-## v2.7
-
-- Modified escalation label and description for consistency
-
 ## v2.6
 
 - formatted the incident detail message to display if no savings data available
