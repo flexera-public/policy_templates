@@ -179,8 +179,9 @@ datasource "ds_top_level_billing_centers" do
 end
 
 datasource "ds_ip_costs" do
+  iterate $ds_subscriptions
   request do
-    run_script $js_get_costs, $ds_subscriptions, $ds_top_level_billing_centers, rs_org_id
+    run_script $js_get_costs, val(iter_item,"subscriptionId"), $ds_top_level_billing_centers, rs_org_id
   end
   result do
     encoding "json"
@@ -228,47 +229,45 @@ script "js_get_costs", type:"javascript" do
     }
     var start_date = getFormattedDailyDate(new Date(new Date().setDate(new Date().getDate() - 3)));
     var end_date = getFormattedDailyDate(new Date(new Date().setDate(new Date().getDate() - 2)));
-    for(var j in account_id){
-      var request = {
-        auth: "auth_rs",
-        host: "optima.rightscale.com",
-        verb: "POST",
-        path: "/bill-analysis/orgs/" + org + "/costs/select",
-        body_fields: {
-          "dimensions": ["resource_id"],
-          "granularity": "day",
-          "start_at": start_date,
-          "end_at": end_date,
-          "metrics": ["cost_nonamortized_unblended_adj"],
-          "billing_center_ids": _.compact(_.map(billing_centers, function(value){ return value.id})),
-          "limit": 10000,
-          "filter": {
-            "expressions": [
-              {
-                "dimension": "service",
-                "type": "equal",
-                "value": "Microsoft.Network"
-              },
-              {
-                "dimension": "vendor_account",
-                "type": "equal",
-                "value": account_id[j]["subscriptionId"]
-              },
-              {
-                "dimension": "resource_type",
-                "type": "equal",
-                "value": "Virtual Network-IP Addresses"
-              }
-            ],
-            "type": "and"
-          }
-        },
-        headers: {
-          "User-Agent": "RS Policies",
-          "Api-Version": "1.0"
-        },
-        ignore_status: [400]
-      }
+    var request = {
+      auth: "auth_rs",
+      host: "optima.rightscale.com",
+      verb: "POST",
+      path: "/bill-analysis/orgs/" + org + "/costs/select",
+      body_fields: {
+        "dimensions": ["resource_id"],
+        "granularity": "day",
+        "start_at": start_date,
+        "end_at": end_date,
+        "metrics": ["cost_nonamortized_unblended_adj"],
+        "billing_center_ids": _.compact(_.map(billing_centers, function(value){ return value.id})),
+        "limit": 10000,
+        "filter": {
+          "expressions": [
+            {
+              "dimension": "service",
+              "type": "equal",
+              "value": "Microsoft.Network"
+            },
+            {
+              "dimension": "vendor_account",
+              "type": "equal",
+              "value": account_id
+            },
+            {
+              "dimension": "resource_type",
+              "type": "equal",
+              "value": "Virtual Network-IP Addresses"
+            }
+          ],
+          "type": "and"
+        }
+      },
+      headers: {
+        "User-Agent": "RS Policies",
+        "Api-Version": "1.0"
+      },
+      ignore_status: [400]
     }
   EOS
 end
