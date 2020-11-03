@@ -1,5 +1,13 @@
 # Changelog
 
+## v2.11
+
+- Require a minimum value of `1` on the `param_unattached_days` parameter
+
+## v2.10
+
+- Adding AWS Account Id
+
 ## v2.9
 
 - Use `DescribeVolumes` instead of `DescribeRegions` to more accurately check if the call is enabled by the
