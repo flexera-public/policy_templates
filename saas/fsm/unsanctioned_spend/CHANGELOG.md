@@ -14,7 +14,6 @@
 - add parameter to target specific Applications
 - cleanup unnecessary datasource
 
-
 ## v2.0
 
 - Updated Credential service and Endpoint
