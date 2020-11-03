@@ -26,7 +26,7 @@
 
 ## v1.12
 
-- Separate the Utilization from the downsize actions.  The Utilization policy is now [RightLink Utilization](/cost/rightlink_rightsize/README.md)
+- Separate the Utilization from the downsize actions.  The Utilization policy is now [RightLink Utilization](https://github.com/flexera/policy_templates/blob/master/cost/rightlink_rightsize/README.md)
 
 ## v1.11
 
