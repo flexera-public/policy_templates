@@ -2,7 +2,7 @@
 
 ## v2.11
 
-- Use a `min_value` of `1` on the `param_unattached_days` parameter
+- Require a minimum value of `1` on the `param_unattached_days` parameter
 
 ## v2.10
 
