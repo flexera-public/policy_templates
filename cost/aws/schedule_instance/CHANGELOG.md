@@ -12,7 +12,7 @@
 
 - modified the policy to handle start or stop time without minute value
 
-## v2.1 
+## v2.1
 
 - fix description
 
