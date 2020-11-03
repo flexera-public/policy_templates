@@ -6,7 +6,7 @@ long_description ""
 severity "low"
 category "Cost"
 info(
-  version: "2.5",
+  version: "2.6",
   provider: "AWS",
   service: "RDS",
   policy_set: "Unused Database Services"
@@ -230,7 +230,7 @@ datasource "ds_instance_costs" do
 end
 
 datasource "ds_instance_cost_mapping" do
-  run_script $js_instance_cost_mapping, $ds_rds_instances, $ds_instance_costs, $ds_currency_code, $ds_currency_reference, $ds_billing_centers
+  run_script $js_instance_cost_mapping, $ds_rds_instances, $ds_instance_costs, $ds_currency_code, $ds_currency_reference, $ds_billing_centers, $ds_get_caller_identity
 end
 
 ###############################################################################
@@ -427,7 +427,7 @@ EOS
 end
 
 script "js_instance_cost_mapping", type:"javascript" do
-  parameters  "instance_list","instance_costs","ds_currency_code","ds_currency_reference", "ds_billing_centers"
+  parameters  "instance_list","instance_costs","ds_currency_code","ds_currency_reference", "ds_billing_centers","ds_get_caller_identity"
   result "result"
   code <<-EOS
     var result = {};
@@ -496,8 +496,11 @@ script "js_instance_cost_mapping", type:"javascript" do
       unused_rds_instance_list=instance_list;
       message="You do not have the minimum required role of billing_center_viewer to view the savings";
     }
-    result={ "instance_list": unused_rds_instance_list,
-      "message": message}
+    result={
+      "instance_list": unused_rds_instance_list,
+      "message": message,
+      "accountId": ds_get_caller_identity[0]['account']
+    }
     result.instance_list = _.sortBy(result.instance_list,"region");
     result.instance_list = _.sortBy(result.instance_list,"id");
   EOS
@@ -509,7 +512,7 @@ end
 
 policy "pol_unused_rds" do
   validate $ds_instance_cost_mapping do
-    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data.instance_list }} rows containing AWS RDS Unused Instances"
+    summary_template "AWS Account ID: {{ data.accountId }} - {{ len data.instance_list }} rows containing AWS RDS Unused Instances"
     detail_template <<-EOS
     {{data.message}}
     EOS
@@ -518,6 +521,9 @@ policy "pol_unused_rds" do
     check eq(size(val(data,"instance_list")),0)
     export "instance_list" do
       resource_level true
+      field "accountId" do
+        label "Account Id"
+      end
       field "region" do
         label "Region"
       end

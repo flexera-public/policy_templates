@@ -1,7 +1,12 @@
 # Changelog
 
+## v2.10
+
+- Uncommenting allowed_values for `param_automatic_action`
+
 ## v2.9
 
+- Added AWS Account ID to resource table
 - Exclude Elastic IPs that have an Association ID
 
 ## v2.8
