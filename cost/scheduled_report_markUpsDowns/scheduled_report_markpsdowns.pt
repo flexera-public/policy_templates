@@ -8,7 +8,7 @@ category "Cost"
 tenancy "single"
 default_frequency "monthly"
 info(
-  version: "1.2",
+  version: "1.1",
   provider: "Flexera Optima",
   service: "",
   policy_set: "",
@@ -223,15 +223,12 @@ script "js_previous_month_cost_request", type: "javascript" do
         
     function getFormattedDailyDate(date) {
       var year = date.getFullYear();
-
       var month = (1 + date.getMonth()).toString();
       month = month.length > 1 ? month : '0' + month;
-
       var day = date.getDate().toString();
       day = day.length > 1 ? day : '0' + day;
       return year + '-' + month;
     }
-
     // adds day(s) to the current day
     function addDays(date, days) {
       var result = new Date(date);
@@ -245,7 +242,6 @@ script "js_previous_month_cost_request", type: "javascript" do
     start_at = getFormattedDailyDate(new Date(now.getFullYear(), now.getMonth() - 1, 1))
     // end_at to end of last month
     end_at = getFormattedDailyDate(addDays(new Date(now.setDate(0)),1))
-
     var billing_center_ids = []
     if (param_billing_centers.length === 0){
       var top_billing_centers = _.reject(ds_billing_centers, function(bc){ return bc.parent_id != null });
@@ -255,7 +251,6 @@ script "js_previous_month_cost_request", type: "javascript" do
       billing_center_names = _.map(param_billing_centers, function(name){ return name.toLowerCase(); });
       billing_center_ids = _.compact(_.map(ds_billing_centers, function(value){ if(_.contains(billing_center_names, value.name.toLowerCase())){return value.id} }));
     }
-
     var body = {
       "dimensions":["billing_center_id","vendor","category","service"],
       "granularity":"month",
@@ -290,12 +285,10 @@ script "js_do_markups", type: "javascript" do
   code <<-EOS
     var result = [];
     // Iterate through all Services
-
     _.each(ds_previous_month_costs, function(ar){
       
       console.log('service: '+ar.service)
       console.log('service: '+ar.category)
-
       var MarkedUpValue = 0;
       var OriginalValue = 0;
       
@@ -316,7 +309,6 @@ script "js_do_markups", type: "javascript" do
       }
       
       //switch to select markup based on category
-
       var markupToUse=ds_param_markUD_Percentage
       switch (ar.category) {
         case "Admin":
@@ -365,7 +357,6 @@ script "js_do_markups", type: "javascript" do
           markupToUse = Number(ds_param_application_markup).toFixed(2)
         break;   
       }
-
       //If markup is still 0 apply default markup
       if (markupToUse == 0){
         markupToUse = Number(ds_param_markUD_Percentage).toFixed(2)
@@ -398,16 +389,12 @@ script "js_do_markups", type: "javascript" do
         markedUpValue: MarkedUpValue,
         currencyCode: cur
       })
-
     })
   EOS
 end
 
 
 escalation "escalation_send_email" do
-  automatic true
-  label "Send Email"
-  description "Send incident email"
   email $param_email
 end
 
@@ -418,35 +405,17 @@ policy "policy_Scheduled_Report_with_markups" do
   validate_each $ds_marked_up_results do
     summary_template "{{ rs_org_name }} (Org ID: {{ rs_org_id }}): Cost Report with markups"
     detail_template <<-EOS
-      ## Billing Centers: {{ parameters.param_billing_centers }}
-      ### Cost Metric: {{ parameters.param_cost_metric }}
-      ___
-      ###### Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }}) within Org: {{ rs_org_name }} (Org ID: {{ rs_org_id }})
-    EOS
+## Billing Centers: {{ parameters.param_billing_centers }}
+### Cost Metric: {{ parameters.param_cost_metric }}
+|Billing Center     |Vendor     |Category      |Percentage applied |Service      |Original cost   |Marked up or down Cost|
+|:-----------------:|----------:|-------------:|------------------:|------------:|---------------:|---------------------:|
+{{ range data -}}
+  | {{ .billingCenter }} | {{ .vendor }} | {{ .category}} | {{ .percentage }} | {{ .service }} |{{ .originalValue }} |{{ .markedUpValue }} |
+{{ end -}}
+___
+###### Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }}) within Org: {{ rs_org_name }} (Org ID: {{ rs_org_id }})
+EOS
     escalate $escalation_send_email
     check eq(0,1)
-    export do
-      field "billingCenter" do
-        label "Billing Center"
-      end
-      field "vendor" do
-        label "Vendor"
-      end
-      field "category" do
-        label "Category"
-      end
-      field "percentage" do
-        label "Percentage Applied"
-      end
-      field "service" do
-        label "Service"
-      end
-      field "originalValue" do
-        label "Original Cost"
-      end
-      field "markedUpValue" do
-        label "Marked up or down Cost"
-      end
-    end
   end
 end
