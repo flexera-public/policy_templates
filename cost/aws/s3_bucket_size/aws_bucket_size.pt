@@ -6,7 +6,7 @@ long_description ""
 severity "medium"
 category "Cost"
 info(
-  version: "2.3",
+  version: "2.4",
   provider: "AWS",
   service: "S3",
   policy_set: ""
@@ -43,6 +43,24 @@ end
 ###############################################################################
 # Datasources
 ###############################################################################
+
+datasource "ds_get_caller_identity" do
+  request do
+    auth $auth_aws
+    verb "GET"
+    host "sts.amazonaws.com"
+    path "/"
+    header "User-Agent", "RS Policies"
+    query "Action", "GetCallerIdentity"
+    query "Version", "2011-06-15"
+  end
+  result do
+    encoding "xml"
+    collect xpath(response, "//GetCallerIdentityResponse/GetCallerIdentityResult") do
+      field "account",xpath(col_item, "Account")
+    end
+ end
+end
 
 # Reference: https://docs.aws.amazon.com/AmazonS3/latest/API/RESTServiceGET.html
 datasource "aws_buckets" do
@@ -170,11 +188,11 @@ script "aws_bucket_sizes_request", type: "javascript" do
 end
 
 datasource "aws_oversized_buckets" do
-  run_script $check_for_oversized_buckets, $aws_bucket_sizes, $param_size
+  run_script $check_for_oversized_buckets, $aws_bucket_sizes, $param_size, $ds_get_caller_identity
 end
 
 script "check_for_oversized_buckets", type: "javascript" do
-  parameters "buckets", "paramsize2check"
+  parameters "buckets", "paramsize2check", "ds_get_caller_identity"
   result "results"
   code <<-EOS
   var results = []
@@ -188,7 +206,7 @@ script "check_for_oversized_buckets", type: "javascript" do
     } else {
       var size = i
     }
-	
+
     if (i === 0) return bytes + " " + sizes[size]
     return ( bytes / Math.pow(1000, i) ).toFixed(1) + " " + sizes[size]
   }
@@ -201,6 +219,7 @@ script "check_for_oversized_buckets", type: "javascript" do
       avg_size = bytesToSize(avg_size)
       results.push (
         {
+          accountId: ds_get_caller_identity[0]['account'],
           region: bucket.region
           id: bucket.bucket_name,
           average: avg_size
@@ -229,9 +248,12 @@ end
 
 policy "aws_oversized_buckets" do
   validate $aws_oversized_buckets do
-    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} Oversized Buckets Found in AWS"
+    summary_template "{{ len data }} Oversized Buckets Found in AWS Account ID: {{with index data 0}}{{ .accountId }}{{end}}"
     export do
       resource_level true
+      field "accountId" do
+        label "Account Id"
+      end
       field "region" do
         label "Region"
       end

@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.4
+
+- Adding AWS Account Id
+
 ## v2.3
 
 - fix description

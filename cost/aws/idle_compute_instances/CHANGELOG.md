@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.8
+
+- Added AWS Account ID to resource table
+
 ## v2.7
 
 - formatted the incident detail message to display if no savings data available
