@@ -264,7 +264,7 @@ Please contact sales@flexera.com to learn more.
 ## Policy Template Documentation
 
 - [Getting Started](http://docs.rightscale.com/policies/getting_started/)
-- [Reference Documentation](http://docs.rightscale.com/policies/reference/)
+- [Reference Documentation](https://docs.rightscale.com/policies/reference/)
 - [Policy Template Language](http://docs.rightscale.com/policies/reference/policy_template_language.html)
 - [Markdown Editor](https://jbt.github.io/markdown-editor/) - Use this to test Markdown Syntax
 - [Libraries](./libraries/README.md)
