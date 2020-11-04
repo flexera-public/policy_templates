@@ -5,7 +5,7 @@ short_description "Checks for unused IP addresses in the given account and, opti
 severity "low"
 category "Cost"
 info(
-  version: "2.1",
+  version: "2.4",
   provider: "Azure",
   service: "Compute",
   policy_set: "Unused IP Addresses"
@@ -25,7 +25,7 @@ parameter "param_exclude_tags" do
   type "list"
   category "User Inputs"
   label "Exclude Tags"
-  description "A list of tags used to excluded volumes from the incident."
+  description "A list of tags used to exclude IP addresses from the incident."
 end
 
 parameter "param_automatic_action" do
@@ -46,6 +46,8 @@ credentials "azure_auth" do
   description "Select the Azure Resource Manager Credential from the list."
   tags "provider=azure_rm"
 end
+
+auth "auth_rs", type: "rightscale"
 
 ###############################################################################
 # Pagination
@@ -127,14 +129,148 @@ datasource "ds_public_ip_addresses" do
   end
 end
 
+datasource "ds_currency_reference" do
+  request do
+    host "raw.githubusercontent.com"
+    path "/rightscale/policy_templates/master/cost/scheduled_reports/currency_reference.json"
+    header "User-Agent", "RS Policies"
+  end
+end
+
+datasource "ds_currency_code" do
+  request do
+    auth $auth_rs
+    host rs_optima_host
+    path join(["/bill-analysis/orgs/",rs_org_id,"/settings/currency_code"])
+    header "Api-Version", "0.1"
+    header "User-Agent", "RS Policies"
+    ignore_status [403]
+  end
+  result do
+    encoding "json"
+    field "id", jmes_path(response,"id")
+    field "value", jmes_path(response,"value")
+  end
+end
+
+datasource "ds_billing_centers" do
+  request do
+    auth $auth_rs
+    host rs_optima_host
+    path join(["/analytics/orgs/",rs_org_id,"/billing_centers"])
+    header "Api-Version", "1.0"
+    header "User-Agent", "RS Policies"
+    query "view", "allocation_table"
+    ignore_status [403]
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response,"[*]") do
+      field "href", jmes_path(col_item,"href")
+      field "id", jmes_path(col_item,"id")
+      field "name", jmes_path(col_item,"name")
+      field "parent_id", jmes_path(col_item,"parent_id")
+    end
+  end
+end
+
+datasource "ds_top_level_billing_centers" do
+  run_script $js_top_level_bc, $ds_billing_centers
+end
+
+datasource "ds_ip_costs" do
+  iterate $ds_subscriptions
+  request do
+    run_script $js_get_costs, val(iter_item,"subscriptionId"), $ds_top_level_billing_centers, rs_org_id
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response,"rows[*]") do
+      field "resource_id", jmes_path(col_item,"dimensions.resource_id")
+      field "cost_nonamortized_unblended_adj", jmes_path(col_item,"metrics.cost_nonamortized_unblended_adj")
+    end
+  end
+end
+
 #Login to exclude tags and filter only unused IP addresses
 datasource "ds_unused_ip_addresses" do
   run_script $js_exclude_tags, $ds_public_ip_addresses, $param_exclude_tags
 end
 
+datasource "ds_ip_cost_mapping" do
+  run_script $js_ip_cost_mapping, $ds_unused_ip_addresses, $ds_ip_costs, $ds_currency_code, $ds_currency_reference, $ds_billing_centers
+end
+
 ###############################################################################
 # Scripts
 ###############################################################################
+
+script "js_top_level_bc", type: "javascript" do
+  parameters "billing_centers"
+  result "filtered_billing_centers"
+  code <<-EOS
+  var filtered_billing_centers =
+    _.reject(billing_centers, function(bc){ return bc.parent_id != null });
+EOS
+end
+
+script "js_get_costs", type:"javascript" do
+  parameters  "account_id","billing_centers","org"
+  result "request"
+  code <<-EOS
+    // returns date formatted as string: YYYY-mm-dd
+    function getFormattedDailyDate(date) {
+      var year = date.getFullYear();
+      var month = (1 + date.getMonth()).toString();
+      month = month.length > 1 ? month : '0' + month;
+      var day = date.getDate().toString();
+      day = day.length > 1 ? day : '0' + day;
+      return year + '-' + month + '-' + day;
+    }
+    var start_date = getFormattedDailyDate(new Date(new Date().setDate(new Date().getDate() - 3)));
+    var end_date = getFormattedDailyDate(new Date(new Date().setDate(new Date().getDate() - 2)));
+    var request = {
+      auth: "auth_rs",
+      host: "optima.rightscale.com",
+      verb: "POST",
+      path: "/bill-analysis/orgs/" + org + "/costs/select",
+      body_fields: {
+        "dimensions": ["resource_id"],
+        "granularity": "day",
+        "start_at": start_date,
+        "end_at": end_date,
+        "metrics": ["cost_nonamortized_unblended_adj"],
+        "billing_center_ids": _.compact(_.map(billing_centers, function(value){ return value.id})),
+        "limit": 10000,
+        "filter": {
+          "expressions": [
+            {
+              "dimension": "service",
+              "type": "equal",
+              "value": "Microsoft.Network"
+            },
+            {
+              "dimension": "vendor_account",
+              "type": "equal",
+              "value": account_id
+            },
+            {
+              "dimension": "resource_type",
+              "type": "equal",
+              "value": "Virtual Network-IP Addresses"
+            }
+          ],
+          "type": "and"
+        }
+      },
+      headers: {
+        "User-Agent": "RS Policies",
+        "Api-Version": "1.0"
+      },
+      ignore_status: [400]
+    }
+  EOS
+end
 
 script "js_exclude_tags", type: "javascript" do
   parameters "publicIPAddressesList","param_exclude_tags"
@@ -162,14 +298,123 @@ script "js_exclude_tags", type: "javascript" do
             location:ipAddress["location"],
             tags:ipAddress["tags"],
             ipAddressId:ipAddress["ipAddressId"],
+            savings:"N/A"
 		  })  
 		}
 	  }
 	})
-
-    results = _.sortBy(results,"location");
-    results = _.sortBy(results,"subscriptionName");
   EOS
+end
+
+script "js_ip_cost_mapping", type:"javascript" do
+  parameters  "ip_list","ip_costs","ds_currency_code","ds_currency_reference", "ds_billing_centers"
+  result "result"
+  code <<-EOS
+  var result = {};
+  var unused_ip_list=[];
+  var message='';
+  var count=0;
+  function formatNumber(number, separator){
+    var numString =number.toString();
+    var values=numString.split(".");
+    var result = ''
+    while (values[0].length > 3){
+      var chunk = values[0].substr(-3)
+      values[0] = values[0].substr(0, values[0].length - 3)
+      result = separator + chunk + result
+    }
+    if (values[0].length > 0){
+      result = values[0] + result
+    }
+    if(values[1]==undefined){
+      return result;
+    }
+    return result+"."+values[1];
+  }
+  if(ds_billing_centers.length!=0){
+    // Format costs with currency symbol and thousands separator
+    if( ds_currency_code['value'] !== undefined ) {
+      if (ds_currency_reference[ds_currency_code['value']] !== undefined ) {
+        var cur = ds_currency_reference[ds_currency_code['value']]['symbol']
+        if( ds_currency_reference[ds_currency_code['value']]['t_separator'] !== undefined ) {
+          var separator = ds_currency_reference[ds_currency_code['value']]['t_separator']
+        } else {
+          var separator = ""
+        }
+      } else {
+        var cur = ""
+        var separator = ""
+      }
+    } else {
+      var cur = "$"
+      var separator = ","
+    }
+    var total_savings=0;
+    _.each(ip_list, function(ip){
+      var cost_objects = _.where(ip_costs, {resource_id: ip["ipAddressId"]});
+      if (_.size(cost_objects) > 0){
+        count++;
+        var sum = _.reduce(_.compact(_.map(cost_objects, function(value){ return value.cost_nonamortized_unblended_adj})), function(memo, num){ return memo + num; }, 0);
+        var monthly_savings = sum*30;
+        total_savings=total_savings+monthly_savings;
+        unused_ip_list.push({
+          subscriptionId:ip["subscriptionId"],
+          subscriptionName:ip["subscriptionName"],
+          resourceGroupName:ip["resourceGroupName"],
+          ipAddressName:ip["ipAddressName"],
+          location:ip["location"],
+          tags:ip["tags"],
+          ipAddressId:ip["ipAddressId"],
+          savings: cur + ' '+formatNumber((Math.round(monthly_savings * 100) / 100), separator)
+        })
+      } else {
+        unused_ip_list.push({
+          subscriptionId:ip["subscriptionId"],
+          subscriptionName:ip["subscriptionName"],
+          resourceGroupName:ip["resourceGroupName"],
+          ipAddressName:ip["ipAddressName"],
+          location:ip["location"],
+          tags:ip["tags"],
+          ipAddressId:ip["ipAddressId"],
+          savings: "N/A"
+        })
+      }
+    })
+    if(count){
+      total_savings=cur + ' '+formatNumber((Math.round(total_savings * 100) / 100), separator);
+      message="The total estimated monthly savings are "+total_savings;
+    }
+    else{
+      message="The Flexera Optima system does not have any data to calculate savings for these resources";
+    }
+  }
+  else{
+    unused_ip_list=ip_list;
+    message="You do not have the minimum required role of billing_center_viewer to view the savings";
+  }
+  result={ "ip_list": unused_ip_list,
+    "message": message}
+  result.ip_list = _.sortBy(result.ip_list,"location");
+  result.ip_list = _.sortBy(result.ip_list,"subscriptionName");
+  EOS
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "send_email_report" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
+end
+
+escalation "delete_unused_ip_addresses" do
+  automatic contains($param_automatic_action, "Delete Unused IP Addresses")
+  label "Delete Resources"
+  description "Delete selected unused IP addresses"
+  run "delete_ip_addresses", data
 end
 
 ###############################################################################
@@ -177,12 +422,15 @@ end
 ###############################################################################
 
 policy "pol_unused_ip_addresses" do
-  validate $ds_unused_ip_addresses do
-    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} Unused IP Addresses Found"
-    check eq(0,1)
+  validate $ds_ip_cost_mapping do
+    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data.ip_list }} Unused IP Addresses Found"
+	detail_template <<-EOS
+	{{data.message}}
+	EOS
+    check eq(size(val(data, "ip_list")), 0)
     escalate $send_email_report
     escalate $delete_unused_ip_addresses
-    export do
+    export "ip_list" do
       resource_level true
       field "location" do
         label "Location"
@@ -193,6 +441,9 @@ policy "pol_unused_ip_addresses" do
       field "resourceGroupName" do
         label "Resource Group Name"
       end
+      field "savings" do
+        label "Estimated Monthly Savings"
+      end
       field "id" do
         label "IP Address Name"
         path "ipAddressName"
@@ -202,24 +453,6 @@ policy "pol_unused_ip_addresses" do
       end
     end
   end
-end
-
-###############################################################################
-# Escalations
-###############################################################################
-
-escalation "send_email_report" do
-  automatic true
-  label "Send Mail"
-  description "Sends incidents email"
-  email $param_email
-end
-
-escalation "delete_unused_ip_addresses" do
-  automatic contains($param_automatic_action, "Delete Unused IP Addresses")
-  label "Delete Resources"
-  description "Delete selected unused IP addresses"
-  run "delete_ip_addresses", data
 end
 
 ###############################################################################

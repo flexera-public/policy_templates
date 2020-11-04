@@ -1,5 +1,18 @@
 # Changelog
 
+## v2.7
+
+- Added AWS Account ID to resource table
+
+## v2.6
+
+- formatted the incident detail message to display if no savings data available
+- reverted the toFixed() to Math.round() for displaying savings data
+
+## v2.5
+
+- updated policy to handle and show the error if the user is not having permission for fetching cost data from Optima
+
 ## v2.4
 
 - Include Estimated Monthly Savings to each resource

@@ -1,5 +1,14 @@
 # Changelog
 
+## v2.3
+
+- formatted the incident detail message to display if no savings data available
+- reverted the toFixed() to Math.round() for displaying savings data
+
+## v2.2
+
+- updated policy to handle and show the error if the user is not having permission for fetching cost data from Optima
+
 ## v2.1
 
 - Include Estimated Monthly Savings to each resource

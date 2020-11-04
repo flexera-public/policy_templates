@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.7
+
+- Added AWS Account ID to resource table
+
 ## v2.6
 
 - Fix issue with duplicate records displayed in the detail template

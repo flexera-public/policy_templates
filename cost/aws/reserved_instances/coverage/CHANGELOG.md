@@ -1,5 +1,10 @@
 # Changelog
 
+## v2.3
+
+- updated minimum required permission in the README
+- modified label and description in both Policy Template and README files to be similar
+
 ## v2.2
 
 - Added resource table

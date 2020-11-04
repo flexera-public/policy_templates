@@ -6,7 +6,7 @@ long_description ""
 severity "low"
 category "Cost"
 info(
-  version: "2.6",
+  version: "2.7",
   provider: "AWS",
   service: "EC2",
   policy_set: "Inefficient Instance Usage"
@@ -84,6 +84,24 @@ end
 # Datasources
 ###############################################################################
 
+datasource "ds_get_caller_identity" do
+  request do
+    auth $auth_aws
+    verb "GET"
+    host "sts.amazonaws.com"
+    path "/"
+    header "User-Agent", "RS Policies"
+    query "Action", "GetCallerIdentity"
+    query "Version", "2011-06-15"
+  end
+  result do
+    encoding "xml"
+    collect xpath(response, "//GetCallerIdentityResponse/GetCallerIdentityResult") do
+      field "account",xpath(col_item, "Account")
+    end
+ end
+end
+
 #Get list of enabled regions for an account
 datasource "ds_regions_list" do
   request do
@@ -108,7 +126,6 @@ datasource "ds_regions" do
     request do
       auth $auth_aws
       verb "GET"
-      host "ec2.amazonaws.com"
       host join(["ec2.",val(iter_item,"region"),".amazonaws.com"])
       path "/"
       query "Action", "DescribeRegions"
@@ -252,7 +269,7 @@ datasource "ds_merged_metrics" do
 end
 
 datasource "ds_inefficient_utilization_metrics" do
-  run_script $js_inefficient_utilization_metrics, $ds_aws_instance_size_map, $ds_merged_metrics, $param_avg_used_memory, $param_avg_cpu
+  run_script $js_inefficient_utilization_metrics, $ds_aws_instance_size_map, $ds_merged_metrics, $param_avg_used_memory, $param_avg_cpu, $ds_get_caller_identity
 end
 
 ###############################################################################
@@ -353,7 +370,7 @@ script "js_cloudwatch_cpu_highest_usage_value", type: "javascript" do
         }
       })
       currentInstance.cpu_maximum = max_cpu_value; currentInstance.cpu_minimum = min_cpu_value; currentInstance.cpu_average = avg_cpu_value;
-      instances.push(currentInstance)     
+      instances.push(currentInstance)
     })
   EOS
 end
@@ -424,7 +441,7 @@ script "js_cloudwatch_memory_highest_usage_value", type: "javascript" do
         }
       })
       currentInstance.mem_maximum = max_mem_value; currentInstance.mem_minimum = min_mem_value; currentInstance.mem_average = avg_mem_value;
-      instances.push(currentInstance)     
+      instances.push(currentInstance)
     })
   EOS
 end
@@ -496,7 +513,7 @@ script "js_cloudwatch_windows_memory_highest_usage_value", type: "javascript" do
         }
       })
       currentInstance.mem_maximum = max_mem_value; currentInstance.mem_minimum = min_mem_value; currentInstance.mem_average = avg_mem_value;
-      instances.push(currentInstance)     
+      instances.push(currentInstance)
     })
   EOS
 end
@@ -558,7 +575,7 @@ end
 
 script "js_inefficient_utilization_metrics", type: "javascript" do
   result "inefficient_utilization_results"
-  parameters "ds_aws_instance_size_map", "ds_merged_metrics", "param_avg_used_memory", "param_avg_cpu"
+  parameters "ds_aws_instance_size_map", "ds_merged_metrics", "param_avg_used_memory", "param_avg_cpu", "ds_get_caller_identity"
   code <<-EOS
   var inefficient_utilization_results = []
   for ( i = 0; i < ds_merged_metrics.length; i++){
@@ -582,6 +599,7 @@ script "js_inefficient_utilization_metrics", type: "javascript" do
     }
     if ((cpu_average < param_avg_cpu || mem_average < param_avg_used_memory)){
       inefficient_utilization_results.push({
+        "accountId": ds_get_caller_identity[0]['account'],
         "region": instance.region,
         "id": instance.instanceId,
         "platform": instance.platform,
@@ -611,13 +629,16 @@ end
 
 policy "pol_utilization" do
   validate_each $ds_inefficient_utilization_metrics do
-    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} AWS instances with inefficient utilization"
+    summary_template "AWS Account ID: {{with index data 0}}{{ .accountId }}{{end}} - {{ len data }} AWS instances with inefficient utilization"
     escalate $email
     check logic_or(eq($param_avg_used_memory, -1), gt(to_n(val(item,"mem_average")), $param_avg_used_memory))
     check logic_or(eq($param_avg_cpu, -1), gt(to_n(val(item,"cpu_average")),$param_avg_cpu))
     escalate $esc_downsize_instances
     export do
       resource_level true
+      field "accountId" do
+        label "Account Id"
+      end
       field "region" do
         label "Region"
       end

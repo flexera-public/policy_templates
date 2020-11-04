@@ -1,5 +1,23 @@
 # Changelog
 
+## v2.10
+
+- Uncommenting allowed_values for `param_automatic_action`
+
+## v2.9
+
+- Added AWS Account ID to resource table
+- Exclude Elastic IPs that have an Association ID
+
+## v2.8
+
+- Use `DescribeAddresses` instead of `DescribeRegions` to more accurately check if the call is enabled by the
+  Service Control Policy in each region
+
+## v2.7
+
+- formatted the incident detail message to display if no savings data available
+
 ## v2.6
 
 - Included Total Estimated Monthly Savings in the incident detail messages

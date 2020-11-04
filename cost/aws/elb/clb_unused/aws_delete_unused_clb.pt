@@ -6,7 +6,7 @@ long_description ""
 category "Cost"
 severity "low"
 info(
-  version: "2.4",
+  version: "2.7",
   provider: "AWS",
   service: "ELB",
   policy_set: ""
@@ -18,12 +18,14 @@ info(
 
 parameter "param_email" do
   type "list"
-  label "Email addresses of the recipients you wish to notify"
+  label "Email addresses"
+  description "A list of email addresses to notify"
 end
 
 parameter "param_exclude_tags" do
   type "list"
-  label "List of one or more Tags that will exclude Classic Load Balancer from actions being taken. Format: Key=Value"
+  label "Ignore tags"
+  description "List of one or more Tags that will exclude Classic Load Balancer from actions being taken. Format: Key=Value"
   allowed_pattern /([\w]?)+\=([\w]?)+/
 end
 
@@ -76,7 +78,6 @@ datasource "ds_regions" do
     request do
       auth $auth_aws
       verb "GET"
-      host "ec2.amazonaws.com"
       host join(["ec2.",val(iter_item,"region"),".amazonaws.com"])
       path "/"
       query "Action", "DescribeRegions"
@@ -187,6 +188,7 @@ datasource "ds_currency_code" do
     path join(["/bill-analysis/orgs/",rs_org_id,"/settings/currency_code"])
     header "Api-Version", "0.1"
     header "User-Agent", "RS Policies"
+    ignore_status [403]
   end
   result do
     encoding "json"
@@ -203,6 +205,7 @@ datasource "ds_billing_centers" do
     header "Api-Version", "1.0"
     header "User-Agent", "RS Policies"
     query "view", "allocation_table"
+    ignore_status [403]
   end
   result do
     encoding "json"
@@ -237,8 +240,8 @@ datasource "ds_get_caller_identity" do
  end
 end
 
-datasource "ds_clbs_costs" do 
-  request do 
+datasource "ds_clbs_costs" do
+  request do
     run_script $js_get_costs, $ds_get_caller_identity, $ds_top_level_billing_centers, rs_org_id
   end
   result do
@@ -251,8 +254,8 @@ datasource "ds_clbs_costs" do
   end
 end
 
-datasource "ds_clbs_cost_mapping" do 
-  run_script $js_clbs_cost_mapping, $ds_unused_clb_map, $ds_clbs_costs, $ds_currency_reference, $ds_currency_reference
+datasource "ds_clbs_cost_mapping" do
+  run_script $js_clbs_cost_mapping, $ds_unused_clb_map, $ds_clbs_costs, $ds_currency_code, $ds_currency_reference, $ds_billing_centers, $ds_get_caller_identity
 end
 
 ###############################################################################
@@ -308,7 +311,8 @@ script "js_aws_clb_filter_map", type: "javascript" do
           instanceId:(s_instanceIds.slice(2)),
           availabilityZones:(s_availabilityZones.slice(2)),
           tagKeyValue:(tagKeyValue.slice(2)),
-          region: clb['region']
+          region: clb['region'],
+          savings:"N/A"
         }
         if(instancesList.length > 0){
           var isInstanceNotHealthy=false
@@ -371,8 +375,8 @@ script "js_get_costs", type:"javascript" do
         "filter": {
           "expressions": [
             {
-              "dimension": "service", 
-              "type": "equal", 
+              "dimension": "service",
+              "type": "equal",
               "value": "AWSELB"
             },
             {
@@ -381,8 +385,8 @@ script "js_get_costs", type:"javascript" do
               "value": "Load Balancer"
             },
             {
-              "dimension": "vendor_account", 
-              "type": "equal", 
+              "dimension": "vendor_account",
+              "type": "equal",
               "value": account_id[0]["account"]
             }
           ],
@@ -392,18 +396,21 @@ script "js_get_costs", type:"javascript" do
       headers: {
         "User-Agent": "RS Policies",
         "Api-Version": "1.0"
-      }
+      },
+      ignore_status: [400]
     }
   EOS
 end
 
 script "js_clbs_cost_mapping", type:"javascript" do
-  parameters  "clbs","clbs_cost","ds_currency_code","ds_currency_reference"
+  parameters  "clbs","clbs_cost","ds_currency_code","ds_currency_reference", "ds_billing_centers", "ds_get_caller_identity"
   result "result"
   code <<-EOS
   var total=0;
-  var result = [];
+  var result = {};
   var loadbalancers = [];
+  var message='';
+  var count=0;
   function formatNumber(number, separator){
     var numString =number.toString();
     var values=numString.split(".");
@@ -421,51 +428,67 @@ script "js_clbs_cost_mapping", type:"javascript" do
     }
     return result+"."+values[1];
   }
-  // Format costs with currency symbol and thousands separator
-  if( ds_currency_code['value'] !== undefined ) {
-    if (ds_currency_reference[ds_currency_code['value']] !== undefined ) {
-      var cur = ds_currency_reference[ds_currency_code['value']]['symbol']
-      if( ds_currency_reference[ds_currency_code['value']]['t_separator'] !== undefined ) {
-        var separator = ds_currency_reference[ds_currency_code['value']]['t_separator']
+  if(ds_billing_centers.length!=0){
+    // Format costs with currency symbol and thousands separator
+    if( ds_currency_code['value'] !== undefined ) {
+      if (ds_currency_reference[ds_currency_code['value']] !== undefined ) {
+        var cur = ds_currency_reference[ds_currency_code['value']]['symbol']
+        if( ds_currency_reference[ds_currency_code['value']]['t_separator'] !== undefined ) {
+          var separator = ds_currency_reference[ds_currency_code['value']]['t_separator']
+        } else {
+          var separator = ""
+        }
       } else {
+        var cur = ""
         var separator = ""
       }
     } else {
-      var cur = ""
-      var separator = ""
+      var cur = "$"
+      var separator = ","
     }
-  } else {
-    var cur = "$"
-    var separator = ","
+    _.each(clbs, function(clb){
+      var cost_objects = _.where(clbs_cost, {resource_id: "loadbalancer/".concat(clb["id"])});
+      if (_.size(cost_objects) > 0){
+        count++;
+        var sum = _.reduce(_.compact(_.map(cost_objects, function(value){ return value.cost_nonamortized_unblended_adj})), function(memo, num){ return memo + num; }, 0);
+        var monthly_savings = sum*30;
+        total=total+monthly_savings;
+        loadbalancers.push({
+          accountId: ds_get_caller_identity[0]['account'],
+          id : clb['id'],
+          region : clb['region'],
+          availabilityZones : clb['availabilityZones'],
+          instanceId : clb['instanceId'],
+          tagKeyValue : clb['tagKeyValue'],
+          savings: cur + ' '+formatNumber((Math.round(monthly_savings * 100) / 100), separator),
+        })
+      } else {
+        loadbalancers.push({
+          accountId: ds_get_caller_identity[0]['account'],
+          id : clb['id'],
+          region : clb['region'],
+          availabilityZones : clb['availabilityZones'],
+          instanceId : clb['instanceId'],
+          tagKeyValue : clb['tagKeyValue'],
+          savings: "N/A",
+        })
+      }
+    })
+    if(count){
+      var total_savings=cur + ' '+formatNumber((Math.round(total * 100) / 100), separator);
+      message=message="The total estimated monthly savings are "+total_savings;
+    }
+    else{
+      message="The Flexera Optima system does not have any data to calculate savings for these resources";
+    }
   }
-  _.each(clbs, function(clb){
-    var cost_objects = _.where(clbs_cost, {resource_id: "loadbalancer/".concat(clb["id"])});
-    if (_.size(cost_objects) > 0){
-      var sum = _.reduce(_.compact(_.map(cost_objects, function(value){ return value.cost_nonamortized_unblended_adj})), function(memo, num){ return memo + num; }, 0);
-      var monthly_savings = sum*30;
-      total=total+monthly_savings;
-      loadbalancers.push({
-        id : clb['id'],
-        region : clb['region'],
-        availabilityZones : clb['availabilityZones'],
-        instanceId : clb['instanceId'],
-        tagKeyValue : clb['tagKeyValue'],
-        savings: cur + ' '+formatNumber((Math.round(monthly_savings * 100) / 100), separator),
-      })
-    } else {
-      loadbalancers.push({
-        id : clb['id'],
-        region : clb['region'],
-        availabilityZones : clb['availabilityZones'],
-        instanceId : clb['instanceId'],
-        tagKeyValue : clb['tagKeyValue'],
-        savings: "N/A",
-      })
-    }
-  })
-  var total_savings=cur + ' '+formatNumber((Math.round(total * 100) / 100), separator);
-  result={"clbs": loadbalancers,
-    "total_savings": total_savings
+  else{
+    loadbalancers=clbs;
+    message="You do not have the minimum required role of billing_center_viewer to view the savings";
+  }
+  result={
+    "clbs": loadbalancers,
+    "message": message
   };
   EOS
 end
@@ -497,12 +520,15 @@ policy "policy_delete_unused_CLB" do
     check eq(size(val(data, "clbs")), 0)
     escalate $esc_email
     escalate $esc_delete_clb
-    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data.clbs }} Unused Classic Load Balancers Found in AWS"
+    summary_template "AWS Account ID: {{with index data.clbs 0}}{{ .accountId }}{{end}} - {{ len data.clbs }} Unused Classic Load Balancers Found in AWS"
     detail_template <<-EOS
-      The total estimated monthly savings are {{data.total_savings}}.\n
+    {{data.message}}
     EOS
     export "clbs" do
       resource_level true
+      field "accountId" do
+        label "Account Id"
+      end
       field "id" do
         label "LoadBalancer Name"
       end
