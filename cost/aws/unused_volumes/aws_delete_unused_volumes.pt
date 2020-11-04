@@ -5,7 +5,7 @@ short_description "Checks for unused volumes and if no read/write operations per
 category "Cost"
 severity "low"
 info(
-  version: "3.0",
+  version: "2.12",
   provider: "AWS",
   service: "EBS",
   policy_set: "Unused Volumes"
@@ -33,6 +33,7 @@ parameter "param_unattached_days" do
   label "Unused days"
   description "The number of days a volume has been unused. The days should be greater than zero"
   default 30
+  min_value 1
 end
 
 parameter "param_take_snapshot" do
@@ -266,7 +267,7 @@ datasource "ds_volume_costs" do
 end
 
 datasource "ds_volume_cost_mapping" do
-  run_script $js_volume_cost_mapping, $ds_check_volumes_read_or_write_operations, $ds_volume_costs, $ds_currency_code, $ds_currency_reference, $ds_billing_centers
+  run_script $js_volume_cost_mapping, $ds_check_volumes_read_or_write_operations, $ds_volume_costs, $ds_currency_code, $ds_currency_reference, $ds_billing_centers, $ds_get_caller_identity
 end
 
 ###############################################################################
@@ -276,21 +277,21 @@ end
 #https://docs.aws.amazon.com/AWSEC2/latest/APIReference/API_DescribeVolumes.html
 script "js_aws_unattached_volumes_list", type:"javascript" do
   parameters  "region"
-    result "results"
-    code <<-EOS
-    results = {
-      auth: "auth_aws",
-      host: 'ec2.'+region+'.amazonaws.com',
-      path: '/',
-      pagination: "aws_volumes_pagination_xml",
-      query_params: {
-        "Action": "DescribeVolumes",
-        "Version": "2016-11-15",
-        "Filter.1.Name": "status",
-        "Filter.1.Value.1": "available"
-      }
+  result "results"
+  code <<-EOS
+  results = {
+    auth: "auth_aws",
+    host: 'ec2.'+region+'.amazonaws.com',
+    path: '/',
+    pagination: "aws_volumes_pagination_xml",
+    query_params: {
+      "Action": "DescribeVolumes",
+      "Version": "2016-11-15",
+      "Filter.1.Name": "status",
+      "Filter.1.Value.1": "available"
     }
-    EOS
+  }
+  EOS
 end
 
 script "js_filter_aws_unattached_volumes", type:"javascript" do
@@ -549,7 +550,7 @@ script "js_get_costs", type:"javascript" do
 end
 
 script "js_volume_cost_mapping", type:"javascript" do
-  parameters  "volumes","volume_costs","ds_currency_code","ds_currency_reference", "ds_billing_centers"
+  parameters  "volumes","volume_costs","ds_currency_code","ds_currency_reference", "ds_billing_centers", "ds_get_caller_identity"
   result "result"
   code <<-EOS
   var unused_volumes=[];
@@ -601,6 +602,7 @@ script "js_volume_cost_mapping", type:"javascript" do
         var monthly_savings = sum*30;
         total_savings=total_savings+monthly_savings;
         unused_volumes.push({
+          accountId: ds_get_caller_identity[0]['account'],
           volumeId : volume['volumeId'],
           region : volume['region'],
           availabilityZone : volume['availabilityZone'],
@@ -612,6 +614,7 @@ script "js_volume_cost_mapping", type:"javascript" do
         })
       } else {
         unused_volumes.push({
+          accountId: ds_get_caller_identity[0]['account'],
           volumeId : volume['volumeId'],
           region : volume['region'],
           availabilityZone : volume['availabilityZone'],
@@ -636,8 +639,11 @@ script "js_volume_cost_mapping", type:"javascript" do
     unused_volumes=volumes;
     message="You do not have the minimum required role of billing_center_viewer to view the savings";
   }
-  result={ "unused_volumes": unused_volumes,
-    "message": message}
+  result={
+    "unused_volumes": unused_volumes,
+    "message": message,
+    "accountId": ds_get_caller_identity[0]['account']
+  }
   result.unused_volumes=_.sortBy(result.unused_volumes,'region')
   EOS
 end
@@ -648,7 +654,7 @@ end
 
 policy "policy_unattached_volumes_list" do
   validate $ds_volume_cost_mapping do
-    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data.unused_volumes }} Unused Volumes Found in AWS"
+    summary_template "AWS Account ID: {{ data.accountId }} - {{ len data.unused_volumes }} Unused Volumes Found"
     detail_template <<-EOS
     {{data.message}}
     EOS
@@ -657,6 +663,9 @@ policy "policy_unattached_volumes_list" do
     check eq(size(val(data,"unused_volumes")),0)
     export "unused_volumes" do
       resource_level true
+      field "accountId" do
+        label "Account Id"
+      end
       field "region" do
         label "Region"
       end

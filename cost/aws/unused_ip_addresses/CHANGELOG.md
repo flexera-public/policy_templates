@@ -1,11 +1,16 @@
 # Changelog
 
-## v3.0
+## v2.11
 
 - Modified escalation label and description for consistency
 
+## v2.10
+
+- Uncommenting allowed_values for `param_automatic_action`
+
 ## v2.9
 
+- Added AWS Account ID to resource table
 - Exclude Elastic IPs that have an Association ID
 
 ## v2.8

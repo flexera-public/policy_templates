@@ -287,7 +287,7 @@ datasource "ds_instances_costs" do
 end
 
 datasource "ds_instance_cost_mapping" do
-  run_script $js_instance_cost_mapping, $ds_merged_metrics, $ds_instances_costs, $ds_currency_code, $ds_currency_reference, $ds_billing_centers
+  run_script $js_instance_cost_mapping, $ds_merged_metrics, $ds_instances_costs, $ds_currency_code, $ds_currency_reference, $ds_billing_centers, $ds_get_caller_identity
 end
 
 ###############################################################################
@@ -601,7 +601,7 @@ script "js_get_costs", type:"javascript" do
 end
 
 script "js_instance_cost_mapping", type:"javascript" do
-  parameters  "instances","instance_costs","ds_currency_code","ds_currency_reference", "ds_billing_centers"
+  parameters  "instances","instance_costs","ds_currency_code","ds_currency_reference", "ds_billing_centers", "ds_get_caller_identity"
   result "result"
   code <<-EOS
   var result = {};
@@ -652,6 +652,7 @@ script "js_instance_cost_mapping", type:"javascript" do
         var monthly_savings = sum*30;
         total_savings=total_savings+monthly_savings;
         idle_instance.push({
+          "accountId": ds_get_caller_identity[0]['account']
           "region": instance["region"],
           "id": instance["id"],
           "platform": instance["platform"],
@@ -670,6 +671,7 @@ script "js_instance_cost_mapping", type:"javascript" do
         })
       } else {
         idle_instance.push({
+          "accountId": ds_get_caller_identity[0]['account']
           "region": instance["region"],
           "id": instance["id"],
           "platform": instance["platform"],
@@ -700,8 +702,10 @@ script "js_instance_cost_mapping", type:"javascript" do
     idle_instance=instances;
     message="You do not have the minimum required role of billing_center_viewer to view the savings";
   }
-  result={"idle_instances":idle_instance,
-    "message":message}
+  result={
+    "idle_instances":idle_instance,
+    "message":message
+  }
   result.idle_instances=_.sortBy(result.idle_instances, 'region');
   EOS
 end
@@ -712,7 +716,7 @@ end
 
 policy "pol_utilization" do
   validate $ds_instance_cost_mapping do
-    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data.idle_instances}} rows containing AWS instance CloudWatch utilization data"
+    summary_template "AWS Account ID: {{with index data.idle_instances 0}}{{ .accountId }}{{end}} - {{ len data.idle_instances}} rows containing AWS instance CloudWatch utilization data"
     detail_template <<-EOS
     {{data.message}}
     EOS
@@ -721,6 +725,9 @@ policy "pol_utilization" do
     check eq(size(val(data, "idle_instances")), 0)
     export "idle_instances" do
       resource_level true
+      field "accountId" do
+        label "Account Id"
+      end
       field "region" do
         label "Region"
       end

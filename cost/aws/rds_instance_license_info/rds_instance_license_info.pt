@@ -6,7 +6,7 @@ long_description ""
 severity "low"
 category "Cost"
 info(
-  version: "2.2",
+  version: "2.3",
   provider: "AWS",
   service: "RDS",
   policy_set: ""
@@ -41,6 +41,24 @@ end
 ###############################################################################
 # Datasources
 ###############################################################################
+
+datasource "ds_get_caller_identity" do
+  request do
+    auth $auth_aws
+    verb "GET"
+    host "sts.amazonaws.com"
+    path "/"
+    header "User-Agent", "RS Policies"
+    query "Action", "GetCallerIdentity"
+    query "Version", "2011-06-15"
+  end
+  result do
+    encoding "xml"
+    collect xpath(response, "//GetCallerIdentityResponse/GetCallerIdentityResult") do
+      field "account",xpath(col_item, "Account")
+    end
+ end
+end
 
 #Get list of enabled regions for an account
 datasource "ds_regions_list" do
@@ -122,7 +140,7 @@ datasource "ds_aws_instance_size_map" do
 end
 
 datasource "ds_filtered_results" do
-  run_script $js_filtered_results, $ds_instances_set, $ds_aws_instance_size_map
+  run_script $js_filtered_results, $ds_instances_set, $ds_aws_instance_size_map, $ds_get_caller_identity
 end
 
 ###############################################################################
@@ -130,14 +148,14 @@ end
 ###############################################################################
 
 script "js_filtered_results", type: "javascript" do
-  parameters "ds_instances_set", "ds_aws_instance_size_map"
+  parameters "ds_instances_set", "ds_aws_instance_size_map", "ds_get_caller_identity"
   result "results"
   code <<-EOS
   var results = []
 
   _.each(ds_instances_set, function(instance){
     var vcpu = "Unknown"
-    
+
     if (_.isEmpty(instance["processorFeatures"])){
       vcpu = ds_aws_instance_size_map[instance["dbInstanceClass"]]["vcpu"]
     } else {
@@ -148,6 +166,7 @@ script "js_filtered_results", type: "javascript" do
 
     results.push (
       {
+        "accountId": ds_get_caller_identity[0]['account'],
         "region": instance["region"],
         "availabilityZone": instance["availabilityZone"],
         "dbInstanceArn": instance["dbInstanceArn"],
@@ -170,8 +189,39 @@ end
 
 policy "pol_rds_instances" do
   validate $ds_filtered_results do
-    summary_template "AWS RDS Instances"
+    summary_template "AWS Account ID: {{with index data 0}}{{ .accountId }}{{end}} - RDS Instances"
     check eq(size(data),0)
+    export do
+      resource_level true
+      field "accountId" do
+        label "Account Id"
+      end
+      field "region" do
+        label "Region"
+      end
+      field "id" do
+        path "dbInstanceIdentifier"
+        label "Instance ID"
+      end
+      field "engine" do
+        label "Engine"
+      end
+      field "engineVersion" do
+        label "Engine Version"
+      end
+      field "dbInstanceClass" do
+        label "Instance Class"
+      end
+      field "availabilityZone" do
+        label "Availability Zone"
+      end
+      field "vcpu" do
+        label "vCPUs"
+      end
+      field "licenseModel" do
+        label "License Model"
+      end
+    end
     escalate $email
     detail_template <<-EOS
       ###### Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }}) within Org: {{ rs_org_name }} (Org ID: {{ rs_org_id }})

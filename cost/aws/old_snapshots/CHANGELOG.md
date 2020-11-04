@@ -1,8 +1,16 @@
 # Changelog
 
-## v2.8
+## v3.0
 
 - Modified escalation label and description for consistency
+
+## v2.9
+
+- Require a minimum value of `1` on the `snapshot_age` parameter
+
+## v2.8
+
+- Added AWS Account ID to resource table
 
 ## v2.7
 

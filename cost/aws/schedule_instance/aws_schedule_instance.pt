@@ -63,6 +63,24 @@ end
 # Datasources
 ###############################################################################
 
+datasource "ds_get_caller_identity" do
+  request do
+    auth $auth_aws
+    verb "GET"
+    host "sts.amazonaws.com"
+    path "/"
+    header "User-Agent", "RS Policies"
+    query "Action", "GetCallerIdentity"
+    query "Version", "2011-06-15"
+  end
+  result do
+    encoding "xml"
+    collect xpath(response, "//GetCallerIdentityResponse/GetCallerIdentityResult") do
+      field "account",xpath(col_item, "Account")
+    end
+ end
+end
+
 #Get list of enabled regions for an account
 datasource "ds_regions_list" do
   request do
@@ -84,19 +102,19 @@ end
 # Get only SCP enabled regions
 datasource "ds_regions" do
   iterate $ds_regions_list
-    request do
-      auth $auth_aws
-      verb "GET"
-      host join(["ec2.",val(iter_item,"region"),".amazonaws.com"])
-      path "/"
-      query "Action", "DescribeRegions"
-      query "Version", "2016-11-15"
-      ignore_status [403]
-    end
-    result do
-      encoding "xml"
-      field "region", val(iter_item, "region")
-    end
+  request do
+    auth $auth_aws
+    verb "GET"
+    host join(["ec2.",val(iter_item,"region"),".amazonaws.com"])
+    path "/"
+    query "Action", "DescribeRegions"
+    query "Version", "2016-11-15"
+    ignore_status [403]
+  end
+  result do
+    encoding "xml"
+    field "region", val(iter_item, "region")
+  end
 end
 
 datasource "ds_get_all_instances" do
@@ -129,7 +147,7 @@ datasource "ds_get_all_instances" do
 end
 
 datasource "ds_filter_resources" do
-  run_script $js_filter_resources, $ds_get_all_instances, $param_tags_to_exclude
+  run_script $js_filter_resources, $ds_get_all_instances, $param_tags_to_exclude, $ds_get_caller_identity
 end
 
 ###############################################################################
@@ -137,7 +155,7 @@ end
 ###############################################################################
 
 script "js_filter_resources", type: "javascript" do
-  parameters "ds_get_all_instances", "param_tags_to_exclude"
+  parameters "ds_get_all_instances", "param_tags_to_exclude", "ds_get_caller_identity"
   result "result"
   code <<-EOS
   var result=[];
@@ -154,7 +172,7 @@ script "js_filter_resources", type: "javascript" do
       if(param_lowerCase.indexOf("=")==-1)
       {
         for(var k=0;k<instance.tags.length;k++){
-          var current_tag=instance.tags[k]; 
+          var current_tag=instance.tags[k];
           if(current_tag["tagKey"].toLowerCase()==param_lowerCase){
             notMatched=false;
             break;
@@ -190,13 +208,14 @@ script "js_filter_resources", type: "javascript" do
       }
       if(now > next_start || now > next_stop || next_start==null || next_stop==null){
         result.push({
+          "accountId": ds_get_caller_identity[0]['account'],
           "id":instance.id,
           "state": instance.state,
           "region": instance.region,
           "schedule":schedule,
           "tags":all_tags.slice(2),
           "next_start":next_start_iso,
-          "next_stop":next_stop_iso	
+          "next_stop":next_stop_iso
         })
       }
     }
@@ -223,7 +242,7 @@ escalation "esc_schedule_instance" do
   description "Stop or Start the Instance"
   run "schedule_instance", data
 end
-	
+
 escalation "esc_terminate_instance" do
   automatic false
   label "Terminate Instance"
@@ -255,7 +274,7 @@ end
 
 policy "policy_schedule_instance" do
   validate $ds_filter_resources do
-    summary_template "AWS Schedule Instance list"
+    summary_template "AWS Account ID: {{with index data 0}}{{ .accountId }}{{end}} - Schedule Instance list"
     hash_include "next_start", "next_stop"
     escalate $esc_email
     escalate $esc_schedule_instance
@@ -265,6 +284,9 @@ policy "policy_schedule_instance" do
     check eq(size(data),0)
     export do
       resource_level true
+      field "accountId" do
+        label "Account Id"
+      end
       field "region" do
         label "Region"
       end
@@ -324,7 +346,7 @@ define schedule_instance($data) return $all_response do
 
     $stoppable = /^(running|pending)$/
     $startable = /^(stopped|stopping)$/
-	
+
     $response= http_request(
       auth: $$auth_aws,
       host: join(["ec2.", $item['region'], ".amazonaws.com"]),

@@ -1,8 +1,12 @@
 # Changelog
 
-## v2.8
+## v2.9
 
 - Modified escalation label and description for consistency
+
+## v2.8
+
+- Added AWS Account ID to resource table
 
 ## v2.7
 
