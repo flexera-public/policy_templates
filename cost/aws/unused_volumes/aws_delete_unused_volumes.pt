@@ -5,7 +5,7 @@ short_description "Checks for unused volumes and if no read/write operations per
 category "Cost"
 severity "low"
 info(
-  version: "2.6",
+  version: "2.11",
   provider: "AWS",
   service: "EBS",
   policy_set: "Unused Volumes"
@@ -33,6 +33,7 @@ parameter "param_unattached_days" do
   label "Unused days"
   description "The number of days a volume has been unused. The days should be greater than zero"
   default 30
+  min_value 1
 end
 
 parameter "param_take_snapshot" do
@@ -105,11 +106,11 @@ datasource "ds_regions" do
     request do
       auth $auth_aws
       verb "GET"
-      host "ec2.amazonaws.com"
       host join(["ec2.",val(iter_item,"region"),".amazonaws.com"])
       path "/"
-      query "Action", "DescribeRegions"
+      query "Action", "DescribeVolumes"
       query "Version", "2016-11-15"
+      query "MaxResults", "5"
       ignore_status [403]
     end
     result do
@@ -200,6 +201,7 @@ datasource "ds_currency_code" do
     path join(["/bill-analysis/orgs/",rs_org_id,"/settings/currency_code"])
     header "Api-Version", "0.1"
     header "User-Agent", "RS Policies"
+    ignore_status [403]
   end
   result do
     encoding "json"
@@ -216,6 +218,7 @@ datasource "ds_billing_centers" do
     header "Api-Version", "1.0"
     header "User-Agent", "RS Policies"
     query "view", "allocation_table"
+    ignore_status [403]
   end
   result do
     encoding "json"
@@ -264,7 +267,7 @@ datasource "ds_volume_costs" do
 end
 
 datasource "ds_volume_cost_mapping" do
-  run_script $js_volume_cost_mapping, $ds_check_volumes_read_or_write_operations, $ds_volume_costs, $ds_currency_reference, $ds_currency_reference
+  run_script $js_volume_cost_mapping, $ds_check_volumes_read_or_write_operations, $ds_volume_costs, $ds_currency_code, $ds_currency_reference, $ds_billing_centers, $ds_get_caller_identity
 end
 
 ###############################################################################
@@ -274,21 +277,21 @@ end
 #https://docs.aws.amazon.com/AWSEC2/latest/APIReference/API_DescribeVolumes.html
 script "js_aws_unattached_volumes_list", type:"javascript" do
   parameters  "region"
-    result "results"
-    code <<-EOS
-    results = {
-      auth: "auth_aws",
-      host: 'ec2.'+region+'.amazonaws.com',
-      path: '/',
-      pagination: "aws_volumes_pagination_xml",
-      query_params: {
-        "Action": "DescribeVolumes",
-        "Version": "2016-11-15",
-        "Filter.1.Name": "status",
-        "Filter.1.Value.1": "available"
-      }
+  result "results"
+  code <<-EOS
+  results = {
+    auth: "auth_aws",
+    host: 'ec2.'+region+'.amazonaws.com',
+    path: '/',
+    pagination: "aws_volumes_pagination_xml",
+    query_params: {
+      "Action": "DescribeVolumes",
+      "Version": "2016-11-15",
+      "Filter.1.Name": "status",
+      "Filter.1.Value.1": "available"
     }
-    EOS
+  }
+  EOS
 end
 
 script "js_filter_aws_unattached_volumes", type:"javascript" do
@@ -351,13 +354,13 @@ script "js_aws_volumes_cloud_watch_read_byte_metrics", type:"javascript" do
   code <<-EOS
     var endDate = new Date().toISOString();
     var startDate = new Date(new Date().setDate(new Date().getDate() - unattachedDays)).toISOString();
-    var peroid = 2592000;
+    var period = 2592000;
     var datapoints = (unattachedDays / 30).toFixed(2);
     if(datapoints > 1440){
-      peroid = peroid * 60;
+      period = period * 60;
 	}
-    console.log("Period "+peroid);
-    peroid = ""+peroid+"";
+    console.log("Period "+period);
+    period = ""+period+"";
     metrics = {
      "auth": "auth_aws",
      "host": 'monitoring.'+region+'.amazonaws.com',
@@ -379,7 +382,7 @@ script "js_aws_volumes_cloud_watch_read_byte_metrics", type:"javascript" do
        'Dimensions.member.1.Value': volume_id,
        'StartTime': startDate,
        'EndTime': endDate,
-       'Period': peroid,
+       'Period': period,
        'Statistics.member.1': 'Maximum',
        'Statistics.member.2': 'Average',
        'Statistics.member.3': 'Minimum'
@@ -469,11 +472,11 @@ script "js_check_volumes_read_or_write_operations", type:'javascript' do
         volumeType : volume['volume_Type'],
         tags : volume['tagKeyValue'],
         createdTime : volume['createdTime'],
-        size : volume['size']
+        size : volume['size'],
+        savings:"N/A"
 	  })
 	}
   }
-  unattachedVolumes = _.sortBy(unattachedVolumes,'region')
   EOS
 end
 
@@ -540,18 +543,20 @@ script "js_get_costs", type:"javascript" do
       headers: {
         "User-Agent": "RS Policies",
         "Api-Version": "1.0"
-      }
+      },
+      ignore_status: [400]
     }
   EOS
 end
 
 script "js_volume_cost_mapping", type:"javascript" do
-  parameters  "volumes","volume_costs","ds_currency_code","ds_currency_reference"
+  parameters  "volumes","volume_costs","ds_currency_code","ds_currency_reference", "ds_billing_centers", "ds_get_caller_identity"
   result "result"
   code <<-EOS
-
-  var result = [];
-
+  var unused_volumes=[];
+  var result = {};
+  var message='';
+  var count=0;
   function formatNumber(number, separator){
     var numString =number.toString();
     var values=numString.split(".");
@@ -569,54 +574,77 @@ script "js_volume_cost_mapping", type:"javascript" do
     }
     return result+"."+values[1];
   }
-
-  // Format costs with currency symbol and thousands separator
-  if( ds_currency_code['value'] !== undefined ) {
-    if (ds_currency_reference[ds_currency_code['value']] !== undefined ) {
-      var cur = ds_currency_reference[ds_currency_code['value']]['symbol']
-      if( ds_currency_reference[ds_currency_code['value']]['t_separator'] !== undefined ) {
-        var separator = ds_currency_reference[ds_currency_code['value']]['t_separator']
+  if(ds_billing_centers.length!=0){
+    // Format costs with currency symbol and thousands separator
+    if( ds_currency_code['value'] !== undefined ) {
+      if (ds_currency_reference[ds_currency_code['value']] !== undefined ) {
+        var cur = ds_currency_reference[ds_currency_code['value']]['symbol']
+        if( ds_currency_reference[ds_currency_code['value']]['t_separator'] !== undefined ) {
+          var separator = ds_currency_reference[ds_currency_code['value']]['t_separator']
+        } else {
+          var separator = ""
+        }
       } else {
+        var cur = ""
         var separator = ""
       }
     } else {
-      var cur = ""
-      var separator = ""
+      var cur = "$"
+      var separator = ","
     }
-  } else {
-    var cur = "$"
-    var separator = ","
-  }
+    var total_savings=0;
+    _.each(volumes, function(volume){
+      var cost_objects = _.where(volume_costs, {resource_id: volume["volumeId"]});
+      console.log(cost_objects)
+      if (_.size(cost_objects) > 0){
+        count++;
+        var sum = _.reduce(_.compact(_.map(cost_objects, function(value){ return value.cost_nonamortized_unblended_adj})), function(memo, num){ return memo + num; }, 0);
+        var monthly_savings = sum*30;
+        total_savings=total_savings+monthly_savings;
+        unused_volumes.push({
+          accountId: ds_get_caller_identity[0]['account'],
+          volumeId : volume['volumeId'],
+          region : volume['region'],
+          availabilityZone : volume['availabilityZone'],
+          volumeType : volume['volumeType'],
+          tags : volume['tags'],
+          createdTime : volume['createdTime'],
+          size : volume['size'],
+          savings: cur + ' '+formatNumber((Math.round(monthly_savings * 100) / 100), separator),
+        })
+      } else {
+        unused_volumes.push({
+          accountId: ds_get_caller_identity[0]['account'],
+          volumeId : volume['volumeId'],
+          region : volume['region'],
+          availabilityZone : volume['availabilityZone'],
+          volumeType : volume['volumeType'],
+          tags : volume['tags'],
+          createdTime : volume['createdTime'],
+          size : volume['size'],
+          savings: "N/A",
+        })
+      }
+    })
 
-  _.each(volumes, function(volume){
-    var cost_objects = _.where(volume_costs, {resource_id: volume["volumeId"]});
-    console.log(cost_objects)
-    if (_.size(cost_objects) > 0){
-      var sum = _.reduce(_.compact(_.map(cost_objects, function(value){ return value.cost_nonamortized_unblended_adj})), function(memo, num){ return memo + num; }, 0);
-      var monthly_savings = sum*30;
-      result.push({
-        volumeId : volume['volumeId'],
-        region : volume['region'],
-        availabilityZone : volume['availabilityZone'],
-        volumeType : volume['volumeType'],
-        tags : volume['tags'],
-        createdTime : volume['createdTime'],
-        size : volume['size'],
-        savings: cur + ' '+formatNumber((Math.round(monthly_savings * 100) / 100), separator),
-      })
-    } else {
-      result.push({
-        volumeId : volume['volumeId'],
-        region : volume['region'],
-        availabilityZone : volume['availabilityZone'],
-        volumeType : volume['volumeType'],
-        tags : volume['tags'],
-        createdTime : volume['createdTime'],
-        size : volume['size'],
-        savings: "N/A",
-      })
+    if(count){
+      total_savings=cur + ' '+formatNumber((Math.round(total_savings * 100) / 100), separator);
+      message="The total estimated monthly savings are "+total_savings;
     }
-  })
+    else{
+      message="The Flexera Optima system does not have any data to calculate savings for these resources";
+    }
+  }
+  else{
+    unused_volumes=volumes;
+    message="You do not have the minimum required role of billing_center_viewer to view the savings";
+  }
+  result={
+    "unused_volumes": unused_volumes,
+    "message": message,
+    "accountId": ds_get_caller_identity[0]['account']
+  }
+  result.unused_volumes=_.sortBy(result.unused_volumes,'region')
   EOS
 end
 
@@ -626,12 +654,18 @@ end
 
 policy "policy_unattached_volumes_list" do
   validate $ds_volume_cost_mapping do
-    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} Unused Volumes Found in AWS"
+    summary_template "AWS Account ID: {{ data.accountId }} - {{ len data.unused_volumes }} Unused Volumes Found"
+    detail_template <<-EOS
+    {{data.message}}
+    EOS
     escalate $report_unused_volumes
     escalate $delete_volumes
-    check eq(size(data),0)
-    export do
+    check eq(size(val(data,"unused_volumes")),0)
+    export "unused_volumes" do
       resource_level true
+      field "accountId" do
+        label "Account Id"
+      end
       field "region" do
         label "Region"
       end

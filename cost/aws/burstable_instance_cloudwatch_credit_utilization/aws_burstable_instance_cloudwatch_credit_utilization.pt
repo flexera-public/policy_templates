@@ -6,7 +6,7 @@ long_description ""
 severity "low"
 category "Cost"
 info(
-  version: "2.3",
+  version: "2.4",
   provider: "AWS",
   service: "EC2",
   policy_set: ""
@@ -74,6 +74,24 @@ end
 # Datasources
 ###############################################################################
 
+datasource "ds_get_caller_identity" do
+  request do
+    auth $auth_aws
+    verb "GET"
+    host "sts.amazonaws.com"
+    path "/"
+    header "User-Agent", "RS Policies"
+    query "Action", "GetCallerIdentity"
+    query "Version", "2011-06-15"
+  end
+  result do
+    encoding "xml"
+    collect xpath(response, "//GetCallerIdentityResponse/GetCallerIdentityResult") do
+      field "account",xpath(col_item, "Account")
+    end
+ end
+end
+
 #Get list of enabled regions for an account
 datasource "ds_regions_list" do
   request do
@@ -98,7 +116,6 @@ datasource "ds_regions" do
     request do
       auth $auth_aws
       verb "GET"
-      host "ec2.amazonaws.com"
       host join(["ec2.",val(iter_item,"region"),".amazonaws.com"])
       path "/"
       query "Action", "DescribeRegions"
@@ -237,7 +254,7 @@ datasource "ds_merged_metrics" do
 end
 
 datasource "ds_check_merged_metrics" do
-  run_script $js_check_merged_metrics, $ds_merged_metrics, $param_bool_cpu_burst_credit_balance, $param_num_cpu_surplus_credits
+  run_script $js_check_merged_metrics, $ds_merged_metrics, $param_bool_cpu_burst_credit_balance, $param_num_cpu_surplus_credits, $ds_get_caller_identity
 end
 
 ###############################################################################
@@ -513,18 +530,16 @@ EOS
 end
 
 script "js_check_merged_metrics", type: "javascript" do
-  parameters "ds_merged_metrics", "param_bool_cpu_burst_credit_balance", "param_num_cpu_surplus_credits"
+  parameters "ds_merged_metrics", "param_bool_cpu_burst_credit_balance", "param_num_cpu_surplus_credits", "ds_get_caller_identity"
   result "merged_results"
   code <<-EOS
     var merged_results = []
     _.each(ds_merged_metrics,function(result) {
-      console.log(result)
       if ( result.instance_type_info.burst_info !== undefined ){
-        console.log("here")
         if ( param_bool_cpu_burst_credit_balance == "true" && (result.cloudwatch_cpu_credit_balance_min != "N/A") && (result.cloudwatch_cpu_credit_balance_min == result.instance_type_info.burst_info.max_earnable_credits)){
-          console.log("2")
           merged_results.push(
             {
+              "accountId": ds_get_caller_identity[0]['account'],
               "region": result.region,
               "id": result.instanceId,
               "instanceType": result.instanceType,
@@ -553,6 +568,7 @@ script "js_check_merged_metrics", type: "javascript" do
       if ( param_num_cpu_surplus_credits != -1 && (result.cloudwatch_cpu_surplus_credit_balance_min != "N/A") && (result.cloudwatch_cpu_surplus_credit_balance_min >= param_num_cpu_surplus_credits)){
         merged_results.push(
           {
+            "accountId": ds_get_caller_identity[0]['account'],
             "region": result.region,
             "id": result.instanceId,
             "instanceType": result.instanceType,
@@ -604,9 +620,12 @@ end
 
 policy "pol_utilization" do
   validate $ds_check_merged_metrics do
-    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} rows containing AWS instance CloudWatch utilization data"
+    summary_template "AWS Account ID: {{with index data 0}}{{ .accountId }}{{end}} - {{ len data }} rows containing instance CloudWatch utilization data"
     export do
       resource_level true
+      field "accountId" do
+        label "Account Id"
+      end
       field "region" do
         label "Region"
       end

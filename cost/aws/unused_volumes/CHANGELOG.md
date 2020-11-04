@@ -1,5 +1,28 @@
 # Changelog
 
+## v2.11
+
+- Require a minimum value of `1` on the `param_unattached_days` parameter
+
+## v2.10
+
+- Adding AWS Account Id
+
+## v2.9
+
+- Use `DescribeVolumes` instead of `DescribeRegions` to more accurately check if the call is enabled by the
+  Service Control Policy in each region
+
+## v2.8
+
+- formatted the incident detail message to display if no savings data available
+- reverted the toFixed() to Math.round() for displaying savings data
+
+## v2.7
+
+- added total estimated monthly savings in the incident detail message
+- updated policy to handle and show the error if the user is not having permission for fetching cost data from Optima
+
 ## v2.6
 
 - Added EC2 DescribeRegions API action to get only Service Control Policy enabled Regions

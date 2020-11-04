@@ -5,11 +5,15 @@ short_description "Checks for snapshots older than specified number of days and,
 category "Cost"
 severity "low"
 info(
-  version: "2.4",
+  version: "2.9",
   provider:"AWS",
-  service: "EBS", 
+  service: "EBS",
   policy_set: "Old Snapshots"
 )
+
+###############################################################################
+# User inputs
+###############################################################################
 
 parameter "param_email" do
   type "list"
@@ -22,6 +26,7 @@ parameter "snapshot_age" do
   label "Snapshot age"
   default 30
   description "The number of days since the snapshot was created."
+  min_value 1
 end
 
 parameter "param_deregister_image" do
@@ -29,14 +34,14 @@ parameter "param_deregister_image" do
   label "Deregister Image"
   description "If Yes, the snapshot will be deleted along with the images, and if No the snapshot will not be considered for deletion."
   allowed_values "Yes","No"
-  default "Yes"
+  default "No"
 end
 
 parameter "param_exclude_tags" do
   type "list"
   category "User Inputs"
   label "Exclude Tags"
-  description "A list of tags used to excluded volumes from the incident."
+  description "List of tags that a snapshot can have to exclude it from the list."
 end
 
 parameter "param_automatic_action" do
@@ -58,9 +63,86 @@ credentials "auth_aws" do
   tags "provider=aws"
 end
 
+auth "auth_rs", type: "rightscale"
+
+###############################################################################
+# Pagination
+###############################################################################
+
+pagination "aws_pagination_xml" do
+  get_page_marker do
+    body_path "//DescribeSnapshotsResponse/nextToken"
+  end
+  set_page_marker do
+    query "NextToken"
+  end
+end
+
 ###############################################################################
 # Datasources
 ###############################################################################
+
+datasource "ds_currency_reference" do
+  request do
+    host "raw.githubusercontent.com"
+    path "/rightscale/policy_templates/master/cost/scheduled_reports/currency_reference.json"
+    header "User-Agent", "RS Policies"
+  end
+end
+
+datasource "ds_currency_code" do
+  request do
+    auth $auth_rs
+    host rs_optima_host
+    path join(["/bill-analysis/orgs/",rs_org_id,"/settings/currency_code"])
+    header "Api-Version", "0.1"
+    header "User-Agent", "RS Policies"
+	ignore_status [403]
+  end
+  result do
+    encoding "json"
+    field "id", jmes_path(response,"id")
+    field "value", jmes_path(response,"value")
+  end
+end
+
+datasource "ds_billing_centers" do
+  request do
+    auth $auth_rs
+    host rs_optima_host
+    path join(["/analytics/orgs/",rs_org_id,"/billing_centers"])
+    header "Api-Version", "1.0"
+    header "User-Agent", "RS Policies"
+    query "view", "allocation_table"
+	ignore_status [403]
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response,"[*]") do
+      field "href", jmes_path(col_item,"href")
+      field "id", jmes_path(col_item,"id")
+      field "name", jmes_path(col_item,"name")
+      field "parent_id", jmes_path(col_item,"parent_id")
+    end
+  end
+end
+
+datasource "ds_top_level_billing_centers" do
+  run_script $js_top_level_bc, $ds_billing_centers
+end
+
+datasource "ds_snapshot_costs" do
+  request do
+    run_script $js_get_costs, $ds_get_caller_identity, $ds_top_level_billing_centers, rs_org_id
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response,"rows[*]") do
+      field "resource_id", jmes_path(col_item,"dimensions.resource_id")
+      field "cost_nonamortized_unblended_adj", jmes_path(col_item,"metrics.cost_nonamortized_unblended_adj")
+    end
+  end
+end
 
 #Get list of enabled regions for an account
 datasource "ds_regions_list" do
@@ -86,11 +168,11 @@ datasource "ds_regions" do
     request do
       auth $auth_aws
       verb "GET"
-      host "ec2.amazonaws.com"
       host join(["ec2.",val(iter_item,"region"),".amazonaws.com"])
       path "/"
-      query "Action", "DescribeRegions"
+      query "Action", "DescribeSnapshots"
       query "Version", "2016-11-15"
+      query "MaxResults", "5"
       ignore_status [403]
     end
     result do
@@ -125,18 +207,19 @@ datasource "ds_describe_snapshots" do
   result do
     encoding "xml"
     collect xpath(response, "//DescribeSnapshotsResponse/snapshotSet/item", "array") do
-        field "tags" do
-          collect xpath(col_item,"tagSet/item") do
-            field "tagKey", xpath(col_item, "key")
-            field "tagValue", xpath(col_item, "value")
+      field "tags" do
+        collect xpath(col_item,"tagSet/item") do
+          field "tagKey", xpath(col_item, "key")
+          field "tagValue", xpath(col_item, "value")
         end
       end
-        field "region",val(iter_item, "region")
-        field "snapshotId", xpath(col_item,"snapshotId")
-        field "startTime", xpath(col_item, "startTime")
-        field "ownerId", xpath(col_item, "ownerId")
-   end
- end
+      field "region",val(iter_item, "region")
+      field "snapshotId", xpath(col_item,"snapshotId")
+      field "startTime", xpath(col_item, "startTime")
+      field "ownerId", xpath(col_item, "ownerId")
+      field "volumeSize", xpath(col_item, "volumeSize")
+    end
+  end
 end
 
 datasource "ds_filter_old_snapshots" do
@@ -156,41 +239,205 @@ datasource "ds_get_snapshot_ami" do
       field "snapshotId", val(iter_item, "snapshotId")
       field "tagKeyValue", val(iter_item, "tagKeyValue")
       field "daysOld", val(iter_item, "daysOld")
+      field "volumeSize", val(iter_item, "volumeSize")
     end
   end
 end
 
 datasource "ds_filter_ami_snapshots" do
-  run_script $js_filter_ami_snapshots, $ds_get_snapshot_ami, $ds_filter_old_snapshots
-end  
+  run_script $js_filter_ami_snapshots, $ds_get_snapshot_ami, $ds_filter_old_snapshots, $ds_get_caller_identity
+end
+
+datasource "ds_snapshots_cost_mapping" do
+  run_script $js_snapshots_cost_mapping, $ds_filter_ami_snapshots, $ds_snapshot_costs, $ds_currency_reference, $ds_currency_reference, $ds_billing_centers, $ds_get_caller_identity
+end
 
 ###############################################################################
 # Scripts
 ###############################################################################
 
+script "js_top_level_bc", type: "javascript" do
+  parameters "billing_centers"
+  result "filtered_billing_centers"
+  code <<-EOS
+     var filtered_billing_centers =_.reject(billing_centers, function(bc){ return bc.parent_id != null });
+  EOS
+end
+
+script "js_get_costs", type:"javascript" do
+  parameters  "account_id","billing_centers","org"
+  result "request"
+  code <<-EOS
+    // returns date formatted as string: YYYY-mm-dd
+    function getFormattedDailyDate(date) {
+      var year = date.getFullYear();
+      var month = (1 + date.getMonth()).toString();
+      month = month.length > 1 ? month : '0' + month;
+      var day = date.getDate().toString();
+      day = day.length > 1 ? day : '0' + day;
+      return year + '-' + month + '-' + day;
+    }
+
+    var start_date = getFormattedDailyDate(new Date(new Date().setDate(new Date().getDate() - 3)));
+    var end_date = getFormattedDailyDate(new Date(new Date().setDate(new Date().getDate() - 2)));
+
+    var request = {
+      auth: "auth_rs",
+      host: "optima.rightscale.com",
+      verb: "POST",
+      path: "/bill-analysis/orgs/" + org + "/costs/select",
+      body_fields: {
+        "dimensions": ["resource_id"],
+        "granularity": "day",
+        "start_at": start_date,
+        "end_at": end_date,
+        "metrics": ["cost_nonamortized_unblended_adj"],
+        "billing_center_ids": _.compact(_.map(billing_centers, function(value){ return value.id})),
+        "limit": 10000,
+        "filter": {
+          "expressions": [
+            {
+              "dimension": "service",
+              "type": "equal",
+              "value": "AmazonEC2"
+            },
+            {
+              "dimension": "resource_type",
+              "type": "equal",
+              "value": "Storage Snapshot"
+            },
+            {
+              "dimension": "vendor_account",
+              "type": "equal",
+              "value": account_id[0]["account"]
+            }
+          ],
+          "type": "and"
+        }
+      },
+      headers: {
+        "User-Agent": "RS Policies",
+        "Api-Version": "1.0"
+      },
+	   ignore_status: [400]
+    }
+  EOS
+end
+
+script "js_snapshots_cost_mapping", type:"javascript" do
+  parameters  "snapshots","snapshot_costs","ds_currency_code","ds_currency_reference","ds_billing_centers","ds_get_caller_identity"
+  result "results"
+  code <<-EOS
+
+  var result = [];
+  var results={};
+
+  function formatNumber(number, separator){
+    var numString =number.toString();
+    var values=numString.split(".");
+    var result = ''
+    while (values[0].length > 3){
+      var chunk = values[0].substr(-3)
+      values[0] = values[0].substr(0, values[0].length - 3)
+      result = separator + chunk + result
+    }
+    if (values[0].length > 0){
+      result = values[0] + result
+    }
+    if(values[1]==undefined){
+      return result;
+    }
+    return result+"."+values[1];
+  }
+  if (ds_billing_centers.length!=0){
+  // Format costs with currency symbol and thousands separator
+  if( ds_currency_code['value'] !== undefined ) {
+    if (ds_currency_reference[ds_currency_code['value']] !== undefined ) {
+      var cur = ds_currency_reference[ds_currency_code['value']]['symbol']
+      if( ds_currency_reference[ds_currency_code['value']]['t_separator'] !== undefined ) {
+        var separator = ds_currency_reference[ds_currency_code['value']]['t_separator']
+      } else {
+        var separator = ""
+      }
+    } else {
+      var cur = ""
+      var separator = ""
+    }
+    } else {
+      var cur = "$"
+      var separator = ","
+    }
+  }
+  var total=0;
+  _.each(snapshots, function(snapshot){
+    var cost_objects = _.where(snapshot_costs, {resource_id: snapshot["formatSnapId"]});
+    if (ds_billing_centers.length != 0 && _.size(cost_objects) > 0){
+      var sum = _.reduce(_.compact(_.map(cost_objects, function(value){ return value.cost_nonamortized_unblended_adj})), function(memo, num){ return memo + num; }, 0);
+      var monthly_savings = sum*30;
+      total=total+monthly_savings;
+      result.push({
+        accountId: ds_get_caller_identity[0]['account'],
+        snapshotId : snapshot['snapshotId'],
+        region : snapshot['region'],
+        tagKeyValue : snapshot['tagKeyValue'],
+        daysOld : snapshot['daysOld'],
+        imageId : snapshot['imageId'],
+        snapshotImageIdFormat : snapshot['snapshotImageIdFormat'],
+        savings : cur + ' '+formatNumber(monthly_savings.toFixed(3), separator),
+        volumeSize : snapshot['volumeSize']
+      })
+    } else {
+      result.push({
+        accountId: ds_get_caller_identity[0]['account'],
+        snapshotId : snapshot['snapshotId'],
+        region : snapshot['region'],
+        tagKeyValue : snapshot['tagKeyValue'],
+        daysOld : snapshot['daysOld'],
+        imageId : snapshot['imageId'],
+        snapshotImageIdFormat : snapshot['snapshotImageIdFormat'],
+        savings: "N/A",
+        volumeSize : snapshot['volumeSize']
+      })
+    }
+  })
+
+  if (ds_billing_centers.length!=0){
+    var total_savings=cur + ' '+formatNumber(total.toFixed(3), separator);
+    var message="The total estimated monthly savings are "+ total_savings;
+  } else {
+    var message="You do not have the minimum required role of billing_center_viewer to view the savings";
+  }
+  results={
+    "result": result,
+    "message": message
+  };
+  EOS
+end
+
 script "js_describe_snapshots", type: "javascript" do
   result "results"
   parameters "region", "ds_get_caller_identity"
   code <<-EOS
-  results = {
-    "auth": "auth_aws",
-    "host": 'ec2.'+region+'.amazonaws.com',
-    "verb": "GET",
-    "path": "/",
-    "headers": {
-      "User-Agent": "RS Policies",
-      "Content-Type": "text/xml"
-    },
-    "query_params": {
-      'Action': 'DescribeSnapshots',
-      'Version': '2016-11-15',
-      'Filter.1.Name': 'status',
-      'Filter.1.Value.1': 'completed',
-      'Filter.2.Name': 'owner-id',
-      'Filter.2.Value.1': ds_get_caller_identity[0]['account']
+    results = {
+        "auth": "auth_aws",
+        "host": 'ec2.'+region+'.amazonaws.com',
+        "verb": "GET",
+        "path": "/",
+        "pagination": "aws_pagination_xml",
+        "headers": {
+           "User-Agent": "RS Policies",
+           "Content-Type": "text/xml"
+        },
+        "query_params": {
+           'Action': 'DescribeSnapshots',
+           'Version': '2016-11-15',
+           'Filter.1.Name': 'status',
+           'Filter.1.Value.1': 'completed',
+           'Filter.2.Name': 'owner-id',
+           'Filter.2.Value.1': ds_get_caller_identity[0]['account']
+        }
     }
-  }
-EOS
+  EOS
 end
 
 script "js_filter_old_snapshots", type: "javascript" do
@@ -211,14 +458,14 @@ script "js_filter_old_snapshots", type: "javascript" do
       for(var k=0; k < tags.length; k++){
         tag = tags[k];
         if((param_exclude_tags_lower.indexOf((tag['tagKey']).toLowerCase()) !== -1) || (param_exclude_tags_lower.indexOf((tag['tagKey']+'='+tag['tagValue']).toLowerCase()) !== -1)){
-          isTagMatched = true;  
+          isTagMatched = true;
 		}
 
         // Constructing tags with comma separated to display in detail_template
         if((tag['tagValue']).length > 0){
-          tagKeyValue = tagKeyValue+" , "+tag['tagKey']+'='+tag['tagValue'];  
+          tagKeyValue = tagKeyValue+" , "+tag['tagKey']+'='+tag['tagValue'];
 		}else{
-          tagKeyValue = tagKeyValue+" , "+tag['tagKey'];  
+          tagKeyValue = tagKeyValue+" , "+tag['tagKey'];
 		}
 	  }
 
@@ -235,7 +482,8 @@ script "js_filter_old_snapshots", type: "javascript" do
             snapshotId : snapshot['snapshotId'],
             region : snapshot['region'],
             tagKeyValue : (tagKeyValue.slice(2)),
-            daysOld : daysOld
+            daysOld : daysOld,
+            volumeSize : snapshot['volumeSize']
 		  })
 		}
 	  }
@@ -250,27 +498,27 @@ script "js_get_snapshot_ami", type:"javascript" do
   parameters "snapshotId", "region"
   code <<-EOS
     results = {
-    "auth": "auth_aws",
-    "host": 'ec2.'+region+'.amazonaws.com',
-    "verb": "GET",
-    "path": "/",
-    "headers": {
-      "User-Agent": "RS Policies",
-      "Content-Type": "text/xml"
-    },
-    "query_params": {
-      'Action': 'DescribeImages',
-      'Version': '2016-11-15',
-      'Filter.1.Name': 'block-device-mapping.snapshot-id',
-      'Filter.1.Value.1': snapshotId
-    }
-  }
-  EOS
+      "auth": "auth_aws",
+      "host": 'ec2.'+region+'.amazonaws.com',
+      "verb": "GET",
+      "path": "/",
+      "headers": {
+         "User-Agent": "RS Policies",
+         "Content-Type": "text/xml"
+      },
+      "query_params": {
+         'Action': 'DescribeImages',
+         'Version': '2016-11-15',
+         'Filter.1.Name': 'block-device-mapping.snapshot-id',
+         'Filter.1.Value.1': snapshotId
+        }
+     }
+   EOS
 end
 
 script "js_filter_ami_snapshots", type:"javascript" do
   result "results"
-  parameters "snapshotImagesList", "snapshotsList"
+  parameters "snapshotImagesList", "snapshotsList", "ds_get_caller_identity"
   code <<-EOS
     var results = [];
     var snapshotImageIds = [];
@@ -282,19 +530,22 @@ script "js_filter_ami_snapshots", type:"javascript" do
         if(snapshot['snapshotId'] === snapshotImage['snapshotId']){
           snapshotImageIdFormat += snapshotImage['imageId']+", ";
           snapshotImageIds.push(snapshotImage['imageId'])
-		}
-	  }
+        }
+      }
       results.push({
         snapshotId : snapshot['snapshotId'],
+        formatSnapId : "snapshot/"+snapshot['snapshotId'],
         region : snapshot['region'],
         tagKeyValue : snapshot['tagKeyValue'],
         daysOld : snapshot['daysOld'],
+        accountId: ds_get_caller_identity[0]['account'],
         imageId : snapshotImageIds,
-        snapshotImageIdFormat : (snapshotImageIdFormat.slice(0,snapshotImageIdFormat.length - 2))
-	  })
+        snapshotImageIdFormat : (snapshotImageIdFormat.slice(0,snapshotImageIdFormat.length - 2)),
+        volumeSize: snapshot['volumeSize']
+      })
       snapshotImageIds = [];
       snapshotImageIdFormat = "";
-	}
+    }
   EOS
 end
 
@@ -303,28 +554,41 @@ end
 ###############################################################################
 
 policy "pol_utilization" do
-  validate $ds_filter_ami_snapshots do
-    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} rows containing AWS old snapshot data"
+  validate $ds_snapshots_cost_mapping do
+    summary_template "AWS Account ID: {{with index data.result 0}}{{ .accountId }}{{end}} - {{ len data.result }} rows containing AWS old snapshot data"
+    detail_template <<-EOS
+    The following {{ len data.result }} old snapshots, for AWS Account: {{with index data.result 0}}{{ .accountId }}{{end}}, have exceeded the specified age of: {{ parameters.snapshot_age }} days old.\n
+    {{data.message}}
+    EOS
     escalate $ese_email
     escalate $esc_delete_snapshot
-    check eq(size(data), 0)
-    export do
+    check eq(size(val(data, "result")), 0)
+    export "result" do
       resource_level true
+      field "accountId" do
+        label "Account Id"
+      end
       field "region" do
         label "Region"
       end
       field "daysOld" do
         label "Days Old"
       end
+      field "volumeSize" do
+        label "Size"
+      end
       field "id" do
         label "Snapshot Id"
         path "snapshotId"
       end
-      field "tagKeyValue" do
-        label "Tags"
-      end
       field "snapshotImageIdFormat" do
         label "AMI"
+      end
+      field "savings" do
+        label "Estimated Monthly Savings"
+      end
+      field "tagKeyValue" do
+        label "Tags"
       end
     end
   end
@@ -411,7 +675,7 @@ define delete_snapshot($item) do
   )
   $splitResult = $delete_response["code"]
   if $splitResult != 200
-   call sys_log("Inside delete_snapshot  defination", to_s($delete_response))
+   call sys_log("Inside delete_snapshot definition", to_s($delete_response))
   end
 end
 
