@@ -1,6 +1,6 @@
 # Changelog
 
-## v2.0
+## v1.10
 
 - Modified escalation label and description for consistency
 
