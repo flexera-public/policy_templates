@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.9
+
+- Fixed access of 'name' issue
+
 ## v1.8
 
 - adding incident resource table
