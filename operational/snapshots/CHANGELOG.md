@@ -20,7 +20,7 @@
 
 - Added Approval block
 
-## V1.4
+## v1.4
 
 - Fix 'undefined' href error for excluded tagged resources.
 
@@ -38,4 +38,4 @@
 
 ## v1.0
 
-- Initial Release
+- initial release

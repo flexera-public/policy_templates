@@ -26,4 +26,4 @@
 
 ## v1.0
 
-- Initial Release
+- initial release
