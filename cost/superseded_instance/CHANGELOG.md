@@ -1,5 +1,10 @@
 # Changelog
 
+## v1.9
+
+- Bug fix for Optima cloud vendor account name API changes
+- Added currency reference to incident table
+
 ## v1.8
 
 - adding incident resource table

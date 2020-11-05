@@ -1,14 +1,14 @@
 name "Superseded Instances"
 rs_pt_ver 20180301
 type "policy"
-short_description "This Policy Template is used to automatically resize instances based on user-defined standards. \n See the [README](https://github.com/rightscale/policy_templates/tree/master/cost/superseded_instance) and [docs.rightscale.com/policies](http://docs.rightscale.com/policies/) to learn more."
+short_description "This Policy Template is used to identify instance sizes that have been superseded. \n See the [README](https://github.com/rightscale/policy_templates/tree/master/cost/superseded_instance) and [docs.rightscale.com/policies](http://docs.rightscale.com/policies/) to learn more."
 long_description ""
 category "Cost"
 severity "low"
 default_frequency "daily"
 tenancy "single"
 info(
-  version: "1.7",
+  version: "1.9",
   provider: "Flexera Optima",
   service: "",
   policy_set: ""
@@ -30,7 +30,7 @@ end
 parameter "param_billing_centers" do
   label "Billing Center Name"
   type "list"
-  min_length 1
+  description "List of Billing Center names you want to report on.  Leave blank to select all top level Billing Centers."
 end
 
 parameter "param_threshold" do
@@ -69,6 +69,7 @@ auth "auth_rs", type: "rightscale"
 ###############################################################################
 # Datasources
 ###############################################################################
+
 datasource "ds_dimensions" do
   request do
     auth $auth_rs
@@ -143,18 +144,72 @@ datasource "ds_new_bc_costs" do
   end
 end
 
+datasource "ds_currency_reference" do
+  request do
+    host "raw.githubusercontent.com"
+    path "/rightscale/policy_templates/master/cost/scheduled_reports/currency_reference.json"
+    header "User-Agent", "RS Policies"
+  end
+end
+
+datasource "ds_currency_code" do
+  request do
+    auth $auth_rs
+    host rs_optima_host
+    path join(["/bill-analysis/orgs/",rs_org_id,"/settings/currency_code"])
+    header "Api-Version", "0.1"
+    header "User-Agent", "RS Policies"
+    ignore_status [403]
+  end
+  result do
+    encoding "json"
+    field "id", jmes_path(response,"id")
+    field "value", jmes_path(response,"value")
+  end
+end
+
+datasource "ds_format_costs" do
+  run_script $js_format_costs, $ds_new_bc_costs, $ds_cloud_vendor_accounts, $ds_billing_centers
+end
+
+datasource "ds_aws_instance_size_map" do
+  request do
+    verb "GET"
+    host "raw.githubusercontent.com"
+    path "/rightscale/policy_templates/master/data/aws/instance_types.json"
+    header "User-Agent", "RS Policies"
+  end
+end
+
+datasource "ds_azure_instance_size_map" do
+  request do
+    verb "GET"
+    host "raw.githubusercontent.com"
+    path "/rightscale/policy_templates/master/data/azure/instance_types.json"
+    header "User-Agent", "RS Policies"
+  end
+end
+
+datasource "ds_combined_instance_data" do
+  run_script $js_merge_instance_data, $ds_format_costs, $ds_aws_instance_size_map, $ds_azure_instance_size_map, $param_new_instancetype_category, $ds_currency_code, $ds_currency_reference
+end
+
+###############################################################################
+# Scripts
+###############################################################################
+
 script "js_new_costs_request", type: "javascript" do
   parameters "org_id","ds_billing_centers", "param_billing_centers"
   result "request"
-  code <<-EOS  
+  code <<-EOS
     var date = new Date();
     var year = date.getUTCFullYear();
-	var month =  (date.getUTCMonth()==11)?1:2 + date.getUTCMonth();
+    var month =  (date.getUTCMonth()==11)?1:2 + date.getUTCMonth();
 
     if (month == 1){
       var lmonth = 12;
       var lyear = year ;
-	  year=year+1;
+      year=year+1;
     } else {
       var lmonth = month-1;
       var lyear = year ;
@@ -221,10 +276,6 @@ script "js_new_costs_request", type: "javascript" do
 EOS
 end
 
-datasource "ds_format_costs" do
-  run_script $js_format_costs, $ds_new_bc_costs, $ds_cloud_vendor_accounts, $ds_billing_centers
-end
-
 script "js_format_costs", type: "javascript" do
   parameters "new_bc_costs", "ds_cloud_vendor_accounts", "ds_billing_centers"
   result "formatted_data"
@@ -252,12 +303,7 @@ script "js_format_costs", type: "javascript" do
     var new_bc_cost_objs = _.reject(new_bc_costs, function(new_bc_cost){ return new_bc_cost.id != bc_id });
     _.each(new_bc_cost_objs, function(new_bc_cost_obj){
       var billing_center = _.reject(ds_billing_centers, function(bc){ return bc.id != new_bc_cost_obj.id })[0];
-      if (new_bc_cost_obj.vendor == "AWS" ) {
-        var account = _.reject(ds_cloud_vendor_accounts, function(ds_cloud_vendor_account){ return ds_cloud_vendor_account.id != new_bc_cost_obj.vendor_account_name });
-        var vendor_account_name = account[0].name
-      } else {
-        var vendor_account_name = new_bc_cost_obj.vendor_account_name
-      }
+      var vendor_account_name = new_bc_cost_obj.vendor_account_name
       cost = new_bc_cost_obj.cost_amortized_unblended_adj
       run_rate = cost / monthcomplete
       if (new_bc_cost_obj.cost_amortized_unblended_adj != 0){
@@ -288,44 +334,53 @@ script "js_format_costs", type: "javascript" do
 EOS
 end
 
-datasource "ds_aws_instance_size_map" do
-  request do
-    verb "GET"
-    host "raw.githubusercontent.com"
-    path "/rightscale/policy_templates/master/data/aws/instance_types.json"
-    header "User-Agent", "RS Policies"
-  end
-end
-
-datasource "ds_azure_instance_size_map" do
-  request do
-    verb "GET"
-    host "raw.githubusercontent.com"
-    path "/rightscale/policy_templates/master/data/azure/instance_types.json"
-    header "User-Agent", "RS Policies"
-  end
-end
-
-datasource "ds_combined_instance_data" do
-  run_script $js_merge_instance_data, $ds_format_costs, $ds_aws_instance_size_map, $ds_azure_instance_size_map, $param_new_instancetype_category
-end
-
-###############################################################################
-# Scripts
-###############################################################################
-
 script "js_merge_instance_data", type: "javascript" do
-  parameters "ds_format_costs", "ds_aws_instance_size_map", "ds_azure_instance_size_map", "param_new_instancetype_category"
+  parameters "ds_format_costs", "ds_aws_instance_size_map", "ds_azure_instance_size_map", "param_new_instancetype_category","ds_currency_code","ds_currency_reference"
   result "results"
   code <<-EOS
     var results = []
     var superseded_instance_map = _.extend(ds_aws_instance_size_map,ds_azure_instance_size_map)
     var ds_instances = ds_format_costs
 
+    function formatNumber(number, separator){
+      var numString =number.toString();
+      var values=numString.split(".");
+      var result = ''
+      while (values[0].length > 3){
+        var chunk = values[0].substr(-3)
+        values[0] = values[0].substr(0, values[0].length - 3)
+        result = separator + chunk + result
+      }
+      if (values[0].length > 0){
+        result = values[0] + result
+      }
+      if(values[1]==undefined){
+        return result;
+      }
+      return result+"."+values[1];
+    }
+
+    // Format costs with currency symbol and thousands separator
+    if( ds_currency_code['value'] !== undefined ) {
+      if (ds_currency_reference[ds_currency_code['value']] !== undefined ) {
+        var cur = ds_currency_reference[ds_currency_code['value']]['symbol']
+        if( ds_currency_reference[ds_currency_code['value']]['t_separator'] !== undefined ) {
+          var separator = ds_currency_reference[ds_currency_code['value']]['t_separator']
+        } else {
+          var separator = ""
+        }
+      } else {
+        var cur = ""
+        var separator = ""
+      }
+    } else {
+      var cur = "$"
+      var separator = ","
+    }
+
     for ( i=0; i < ds_instances.length; i++) {
       var instance = ds_instances[i]
       var instance_type = instance.instance_type
-      console.log(instance_type)
       if (instance_type == "None" ) {continue;}
       var found_instance_type = superseded_instance_map[instance_type]
       if ( typeof(found_instance_type) === "undefined" || found_instance_type == null ){
@@ -337,10 +392,8 @@ script "js_merge_instance_data", type: "javascript" do
         if ( typeof(superseded) === "undefined" || superseded == null ){
           continue
         } else {
-          console.log("superseded: " +JSON.stringify(superseded))
           var new_instance_type = superseded[param_new_instancetype_category]
           if (new_instance_type === "undefined" || new_instance_type == null || new_instance_type == "") {continue;}
-          console.log("nit: "+ new_instance_type)
           var new_instance_type_info = superseded_instance_map[new_instance_type]
           if ( new_instance_type_info === "undefined" ) {continue;}
           old_instance_ena = found_instance_type.enhanced_networking || false
@@ -349,15 +402,15 @@ script "js_merge_instance_data", type: "javascript" do
           new_instance_vpc = !new_instance_type_info.ec2_classic || false
 
           if ( !old_instance_ena && new_instance_ena ) {
-            var ena_incompatible = true
+            var ena_incompatible = "true"
           } else {
-            var ena_incompatible = false
+            var ena_incompatible = "false"
           }
 
           if ((!old_instance_vpc) && (new_instance_vpc)) {
-            var vpc_incompatible_move = true
+            var vpc_incompatible_move = "true"
           } else {
-            var vpc_incompatible_move = false
+            var vpc_incompatible_move = "false"
           }
 
           var warn = false
@@ -380,6 +433,7 @@ script "js_merge_instance_data", type: "javascript" do
               timestamp: instance.timestamp,
               run_rate: instance.run_rate,
               run_rate_for_calc: instance.run_rate_for_calc,
+              table_cost: cur + ' '+formatNumber(instance.run_rate, separator)
               vpc_incompatible_move: vpc_incompatible_move,
               ena_incompatible: ena_incompatible,
               warn: warn,
@@ -395,6 +449,7 @@ end
 ###############################################################################
 # Escalations
 ###############################################################################
+
 escalation "report_instances" do
   automatic true
   label "Send Mail"
@@ -416,8 +471,13 @@ policy "pol_aws_superseded_instance" do
     check logic_or(lt(to_n(val(item,"run_rate")),$param_threshold), lt(to_n(val(item,"run_rate")),$param_minimum_savings_threshold))
     escalate $report_instances
     export do
-      # no actions so resource_level can be false				       
       resource_level false
+      field "vendor" do
+        label "Cloud Vendor"
+      end
+      field "vendor_account_name" do
+        label "Cloud Vendor Account Name"
+      end
       field "region" do
         label "Region"
       end
@@ -439,10 +499,10 @@ policy "pol_aws_superseded_instance" do
       field "ena_incompatible" do
         label "ENA Required"
       end
-      field "run_rate" do
-        label "ENA Required"
+      field "table_cost" do
+        label "Monthly Estimated Cost"
       end
-    end 
+    end
   end
 end
 
