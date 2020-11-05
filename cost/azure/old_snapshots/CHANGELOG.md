@@ -1,9 +1,5 @@
 # Changelog
 
-## v2.4
-
-- Modified escalation label and description for consistency
-
 ## v2.3
 
 - Updated escalation block
