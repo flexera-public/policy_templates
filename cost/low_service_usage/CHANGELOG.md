@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.6
+
+- Updated date format logic which was causing Error in policy execution on specific date.
+- Removed extra code which was causing Error in policy execution for some use cases.
+- Changed label and description for "report_instances" escalation to maintaining the consistency.
+
 ## v1.5
 
 - Added new resource table
