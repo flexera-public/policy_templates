@@ -39,6 +39,8 @@ The following policy actions are taken on any resources found to be out of compl
 
 - VMware instances are tagged
 
+Please note that wstunnel should be running for the action to complete successfully.
+
 ## Cloud Management Required Permissions
 
 This policy requires permissions to access Cloud Management resources; Clouds and Subnets.  Before applying this policy add the following roles to the user applying the policy.  The roles should be applied to all Accounts where the policy will run or at the Organization level. For more information on modifying roles visit the [Governance Docs](https://docs.rightscale.com/cm/ref/user_roles.html)
