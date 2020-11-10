@@ -6,7 +6,7 @@ long_description ""
 severity "medium"
 category "Operational"
 info(
-  version: "1.4",
+  version: "1.5",
   provider: "Flexera Cloud Management",
   service: "",
   policy_set: ""
@@ -285,233 +285,266 @@ end
 define generate_session_token($param_wstunnel_host, $tunnel_token, $username, $password) return $token do
   $$str = $username + ":" + $password
   $$encoded_auth = to_base64($$str)
-  $response = http_post(
-    insecure: true,
-    url: "https://"+$param_wstunnel_host+"/_token/"+$tunnel_token+"/rest/com/vmware/cis/session",
-    headers: {
-      "Accept": "application/json",
-      "Authorization": "Basic " + $$encoded_auth
-    }
-  )
-  call sys_log("Response", to_s($response))
-  $token = $response["body"]["value"]
+  sub on_error: handle_error("Session token error:", $response) do
+    $response = http_post(
+      insecure: true,
+      url: "https://"+$param_wstunnel_host+"/_token/"+$tunnel_token+"/rest/com/vmware/cis/session",
+      headers: {
+        "Accept": "application/json",
+        "Authorization": "Basic " + $$encoded_auth
+      }
+    )
+    call sys_log("Response", to_s($response))
+    $token = $response["body"]["value"]
+  end
 end
 
 # https://vdc-repo.vmware.com/vmwb-repository/dcr-public/1cd28284-3b72-4885-9e31-d1c6d9e26686/71ef7304-a6c9-43b3-a3cd-868b2c236c81/doc/operations/com/vmware/cis/tagging/category.create-operation.html
 define create_category($param_wstunnel_host, $tunnel_token, $session_token, $cardinality, $description, $name) return $category_id do
-  $response = http_post(
-    insecure: true,
-    url: "https://"+$param_wstunnel_host+"/_token/"+$tunnel_token+"/rest/com/vmware/cis/tagging/category",
-    headers: {
-      "Accept": "application/json",
-      "Content-Type": "application/json",
-      "vmware-api-session-id": $session_token
-    },
-    body: {
-      "create_spec": {
-        "associable_types": [],
-        "cardinality": $cardinality,
-        "description": $description,
-        "name": $name
+  sub on_error: handle_error("Create category error :", $response) do
+    $response = http_post(
+      insecure: true,
+      url: "https://"+$param_wstunnel_host+"/_token/"+$tunnel_token+"/rest/com/vmware/cis/tagging/category",
+      headers: {
+        "Accept": "application/json",
+        "Content-Type": "application/json",
+        "vmware-api-session-id": $session_token
+      },
+      body: {
+        "create_spec": {
+          "associable_types": [],
+          "cardinality": $cardinality,
+          "description": $description,
+          "name": $name
+        }
       }
-    }
-  )
-  $category_id = $response["body"]["value"]
+    )
+    $category_id = $response["body"]["value"]
+  end
 end
 
 # https://vdc-repo.vmware.com/vmwb-repository/dcr-public/1cd28284-3b72-4885-9e31-d1c6d9e26686/71ef7304-a6c9-43b3-a3cd-868b2c236c81/doc/operations/com/vmware/cis/tagging/category.list-operation.html
 define list_categories($param_wstunnel_host, $tunnel_token, $session_token) return $category_ids do
-  $response = http_get(
-    insecure: true,
-    url: "https://"+$param_wstunnel_host+"/_token/"+$tunnel_token+"/rest/com/vmware/cis/tagging/category",
-    headers: {
-      "Accept": "application/json",
-      "Content-Type": "application/json",
-      "vmware-api-session-id": $session_token
-    }
-  )
-  $category_ids = $response["body"]["value"]
+  sub on_error: handle_error("List category error :", $response) do
+    $response = http_get(
+      insecure: true,
+      url: "https://"+$param_wstunnel_host+"/_token/"+$tunnel_token+"/rest/com/vmware/cis/tagging/category",
+      headers: {
+        "Accept": "application/json",
+        "Content-Type": "application/json",
+        "vmware-api-session-id": $session_token
+      }
+    )
+    $category_ids = $response["body"]["value"]
+  end
 end
 
 # https://vdc-repo.vmware.com/vmwb-repository/dcr-public/1cd28284-3b72-4885-9e31-d1c6d9e26686/71ef7304-a6c9-43b3-a3cd-868b2c236c81/doc/operations/com/vmware/cis/tagging/category.get-operation.html
 define get_category($param_wstunnel_host, $tunnel_token, $session_token, $category_id) return $spec do
-  $response = http_get(
-    insecure: true,
-    url: "https://"+$param_wstunnel_host+"/_token/"+$tunnel_token+"/rest/com/vmware/cis/tagging/category/id:"+$category_id,
-    headers: {
-      "Accept": "application/json",
-      "Content-Type": "application/json",
-      "vmware-api-session-id": $session_token
-    }
-  )
-  $spec = $response["body"]["value"]
+  sub on_error: handle_error("Get category error :", $response) do
+    $response = http_get(
+      insecure: true,
+      url: "https://"+$param_wstunnel_host+"/_token/"+$tunnel_token+"/rest/com/vmware/cis/tagging/category/id:"+$category_id,
+      headers: {
+        "Accept": "application/json",
+        "Content-Type": "application/json",
+        "vmware-api-session-id": $session_token
+      }
+    )
+    $spec = $response["body"]["value"]
+  end
 end
 
 # https://vdc-repo.vmware.com/vmwb-repository/dcr-public/1cd28284-3b72-4885-9e31-d1c6d9e26686/71ef7304-a6c9-43b3-a3cd-868b2c236c81/doc/operations/com/vmware/cis/tagging/category.update-operation.html
 define update_category($param_wstunnel_host, $tunnel_token, $session_token, $category_id, $cardinality, $description, $name) return $response do
-  $response = http_patch(
-    insecure: true,
-    url: "https://"+$param_wstunnel_host+"/_token/"+$tunnel_token+"/rest/com/vmware/cis/tagging/category/id:"+$category_id,
-    headers: {
-      "Accept": "application/json",
-      "Content-Type": "application/json",
-      "vmware-api-session-id": $session_token
-    },
-    body: {
-      "update_spec": {
-        "associable_types": [],
-        "cardinality": $cardinality,
-        "description": $description,
-        "name": $name
+  sub on_error: handle_error("Update category error :", $response) do
+    $response = http_patch(
+      insecure: true,
+      url: "https://"+$param_wstunnel_host+"/_token/"+$tunnel_token+"/rest/com/vmware/cis/tagging/category/id:"+$category_id,
+      headers: {
+        "Accept": "application/json",
+        "Content-Type": "application/json",
+        "vmware-api-session-id": $session_token
+      },
+      body: {
+        "update_spec": {
+          "associable_types": [],
+          "cardinality": $cardinality,
+          "description": $description,
+          "name": $name
+        }
       }
-    }
-  )
+    )
+  end
 end
 
 # https://vdc-repo.vmware.com/vmwb-repository/dcr-public/1cd28284-3b72-4885-9e31-d1c6d9e26686/71ef7304-a6c9-43b3-a3cd-868b2c236c81/doc/operations/com/vmware/cis/tagging/category.delete-operation.html
 define delete_category($param_wstunnel_host, $tunnel_token, $session_token, $category_id) return $response do
-  $response = http_delete(
-    insecure: true,
-    url: "https://"+$param_wstunnel_host+"/_token/"+$tunnel_token+"/rest/com/vmware/cis/tagging/category/id:"+$category_id,
-    headers: {
-      "Accept": "application/json",
-      "Content-Type": "application/json",
-      "vmware-api-session-id": $session_token
-    }
-  )
+  sub on_error: handle_error("Delete category error :", $response) do
+    $response = http_delete(
+      insecure: true,
+      url: "https://"+$param_wstunnel_host+"/_token/"+$tunnel_token+"/rest/com/vmware/cis/tagging/category/id:"+$category_id,
+      headers: {
+        "Accept": "application/json",
+        "Content-Type": "application/json",
+        "vmware-api-session-id": $session_token
+      }
+    )
+  end
 end
 
 # https://vdc-repo.vmware.com/vmwb-repository/dcr-public/1cd28284-3b72-4885-9e31-d1c6d9e26686/71ef7304-a6c9-43b3-a3cd-868b2c236c81/doc/operations/com/vmware/cis/tagging/tag.create-operation.html
 define create_tag($param_wstunnel_host, $tunnel_token, $session_token, $category_id, $description, $name) return $tag_id do
-  $response = http_post(
-    insecure: true,
-    url: "https://"+$param_wstunnel_host+"/_token/"+$tunnel_token+"/rest/com/vmware/cis/tagging/tag",
-    headers: {
-      "Accept": "application/json",
-      "Content-Type": "application/json",
-      "vmware-api-session-id": $session_token
-    },
-    body: {
-      "create_spec": {
-        "category_id": $category_id,
-        "description": $description,
-        "name": $name
+  sub on_error: handle_error("Create tag error :", $response) do
+    $response = http_post(
+      insecure: true,
+      url: "https://"+$param_wstunnel_host+"/_token/"+$tunnel_token+"/rest/com/vmware/cis/tagging/tag",
+      headers: {
+        "Accept": "application/json",
+        "Content-Type": "application/json",
+        "vmware-api-session-id": $session_token
+      },
+      body: {
+        "create_spec": {
+          "category_id": $category_id,
+          "description": $description,
+          "name": $name
+        }
       }
-    }
-  )
-  $tag_id = $response["body"]["value"]
+    )
+    $tag_id = $response["body"]["value"]
+  end
 end
 
 # https://vdc-repo.vmware.com/vmwb-repository/dcr-public/1cd28284-3b72-4885-9e31-d1c6d9e26686/71ef7304-a6c9-43b3-a3cd-868b2c236c81/doc/operations/com/vmware/cis/tagging/tag.list-operation.html
 define list_tags($param_wstunnel_host, $tunnel_token, $session_token) return $tag_ids do
-  $response = http_get(
-    insecure: true,
-    url: "https://"+$param_wstunnel_host+"/_token/"+$tunnel_token+"/rest/com/vmware/cis/tagging/tag",
-    headers: {
-      "Accept": "application/json",
-      "Content-Type": "application/json",
-      "vmware-api-session-id": $session_token
-    }
-  )
-  $tag_ids = $response["body"]["value"]
+  sub on_error: handle_error("List Tags error :", $response) do
+    $response = http_get(
+      insecure: true,
+      url: "https://"+$param_wstunnel_host+"/_token/"+$tunnel_token+"/rest/com/vmware/cis/tagging/tag",
+      headers: {
+        "Accept": "application/json",
+        "Content-Type": "application/json",
+        "vmware-api-session-id": $session_token
+      }
+    )
+    $tag_ids = $response["body"]["value"]
+  end
 end
 
 # https://vdc-repo.vmware.com/vmwb-repository/dcr-public/1cd28284-3b72-4885-9e31-d1c6d9e26686/71ef7304-a6c9-43b3-a3cd-868b2c236c81/doc/operations/com/vmware/cis/tagging/tag.list-operation.html
 define list_tags_by_category($param_wstunnel_host, $tunnel_token, $session_token, $category_id) return $tag_ids do
-  $response = http_post(
-    insecure: true,
-    url: "https://"+$param_wstunnel_host+"/_token/"+$tunnel_token+"/rest/com/vmware/cis/tagging/tag/id:"+$category_id+"?~action=list-tags-for-category",
-    headers: {
-      "Accept": "application/json",
-      "Content-Type": "application/json",
-      "vmware-api-session-id": $session_token
-    }
-  )
-  $tag_ids = $response["body"]["value"]
+  sub on_error: handle_error("List tags by category error :", $response) do
+    $response = http_post(
+      insecure: true,
+      url: "https://"+$param_wstunnel_host+"/_token/"+$tunnel_token+"/rest/com/vmware/cis/tagging/tag/id:"+$category_id+"?~action=list-tags-for-category",
+      headers: {
+        "Accept": "application/json",
+        "Content-Type": "application/json",
+        "vmware-api-session-id": $session_token
+      }
+    )
+    $tag_ids = $response["body"]["value"]
+  end
 end
 
 # https://vdc-repo.vmware.com/vmwb-repository/dcr-public/1cd28284-3b72-4885-9e31-d1c6d9e26686/71ef7304-a6c9-43b3-a3cd-868b2c236c81/doc/operations/com/vmware/cis/tagging/tag.get-operation.html
 define get_tag($param_wstunnel_host, $tunnel_token, $session_token, $tag_id) return $spec do
-  $response = http_get(
-    insecure: true,
-    url: "https://"+$param_wstunnel_host+"/_token/"+$tunnel_token+"/rest/com/vmware/cis/tagging/tag/id:"+$tag_id,
-    headers: {
-      "Accept": "application/json",
-      "Content-Type": "application/json",
-      "vmware-api-session-id": $session_token
-    }
-  )
-  $spec = $response["body"]["value"]
+  sub on_error: handle_error("Get tag error :", $response) do
+    $response = http_get(
+      insecure: true,
+      url: "https://"+$param_wstunnel_host+"/_token/"+$tunnel_token+"/rest/com/vmware/cis/tagging/tag/id:"+$tag_id,
+      headers: {
+        "Accept": "application/json",
+        "Content-Type": "application/json",
+        "vmware-api-session-id": $session_token
+      }
+    )
+    $spec = $response["body"]["value"]
+  end
 end
 
 # https://vdc-repo.vmware.com/vmwb-repository/dcr-public/1cd28284-3b72-4885-9e31-d1c6d9e26686/71ef7304-a6c9-43b3-a3cd-868b2c236c81/doc/operations/com/vmware/cis/tagging/tag.update-operation.html
 define update_tag($param_wstunnel_host, $tunnel_token, $session_token, $tag_id, $description, $name) return $response do
-  $response = http_post(
-    insecure: true,
-    url: "https://"+$param_wstunnel_host+"/_token/"+$tunnel_token+"/rest/com/vmware/cis/tagging/tag/id:"+$tag_id,
-    headers: {
-      "Accept": "application/json",
-      "Content-Type": "application/json",
-      "vmware-api-session-id": $session_token
-    },
-    body: {
-      "update_spec": {
-        "description": $description,
-        "name": $name
+  sub on_error: handle_error("Update tag error :", $response) do
+    $response = http_post(
+      insecure: true,
+      url: "https://"+$param_wstunnel_host+"/_token/"+$tunnel_token+"/rest/com/vmware/cis/tagging/tag/id:"+$tag_id,
+      headers: {
+        "Accept": "application/json",
+        "Content-Type": "application/json",
+        "vmware-api-session-id": $session_token
+      },
+      body: {
+        "update_spec": {
+          "description": $description,
+          "name": $name
+        }
       }
-    }
-  )
+    )
+  end
 end
 
 # https://vdc-repo.vmware.com/vmwb-repository/dcr-public/1cd28284-3b72-4885-9e31-d1c6d9e26686/71ef7304-a6c9-43b3-a3cd-868b2c236c81/doc/operations/com/vmware/cis/tagging/tag.delete-operation.html
 define delete_tag($param_wstunnel_host, $tunnel_token, $session_token, $tag_id) return $response do
-  $response = http_delete(
-    insecure: true,
-    url: "https://"+$param_wstunnel_host+"/_token/"+$tunnel_token+"/rest/com/vmware/cis/tagging/tag/id:"+$tag_id,
-    headers: {
-      "Accept": "application/json",
-      "Content-Type": "application/json",
-      "vmware-api-session-id": $session_token
-    }
-  )
+  sub on_error: handle_error("Delete tag error :", $response) do
+    $response = http_delete(
+      insecure: true,
+      url: "https://"+$param_wstunnel_host+"/_token/"+$tunnel_token+"/rest/com/vmware/cis/tagging/tag/id:"+$tag_id,
+      headers: {
+        "Accept": "application/json",
+        "Content-Type": "application/json",
+        "vmware-api-session-id": $session_token
+      }
+    )
+  end
 end
 
 # https://vdc-repo.vmware.com/vmwb-repository/dcr-public/1cd28284-3b72-4885-9e31-d1c6d9e26686/71ef7304-a6c9-43b3-a3cd-868b2c236c81/doc/operations/com/vmware/cis/tagging/tag_association.attach-operation.html
 define attach_tag($param_wstunnel_host, $tunnel_token, $session_token, $tag_id, $resource_id) return $response do
-  $response = http_post(
-    insecure: true,
-    url: "https://"+$param_wstunnel_host+"/_token/"+$tunnel_token+"/rest/com/vmware/cis/tagging/tag-association/id:"+$tag_id+"?~action=attach",
-    headers: {
-      "Accept": "application/json",
-      "Content-Type": "application/json",
-      "vmware-api-session-id": $session_token
-    },
-    body: {
-      "object_id": {
-        "id": $resource_id,
-        "type": "VirtualMachine"
+  sub on_error: handle_error("Attach tag error :", $response) do
+    $response = http_post(
+      insecure: true,
+      url: "https://"+$param_wstunnel_host+"/_token/"+$tunnel_token+"/rest/com/vmware/cis/tagging/tag-association/id:"+$tag_id+"?~action=attach",
+      headers: {
+        "Accept": "application/json",
+        "Content-Type": "application/json",
+        "vmware-api-session-id": $session_token
+      },
+      body: {
+        "object_id": {
+          "id": $resource_id,
+          "type": "VirtualMachine"
+        }
       }
-    }
-  )
+    )
+  end
 end
 
 # https://vdc-repo.vmware.com/vmwb-repository/dcr-public/1cd28284-3b72-4885-9e31-d1c6d9e26686/71ef7304-a6c9-43b3-a3cd-868b2c236c81/doc/operations/com/vmware/cis/tagging/tag_association.detach-operation.html
 define detach_tag($param_wstunnel_host, $tunnel_token, $session_token, $tag_id, $resource_id) return $response do
-  $response = http_post(
-    insecure: true,
-    url: "https://"+$param_wstunnel_host+"/_token/"+$tunnel_token+"/rest/com/vmware/cis/tagging/tag-association/id:"+$tag_id+"?~action=detach",
-    headers: {
-      "Accept": "application/json",
-      "Content-Type": "application/json",
-      "vmware-api-session-id": $session_token
-    },
-    body: {
-      "object_id": {
-        "id": $resource_id,
-        "type": "VirtualMachine"
+  sub on_error: handle_error("Detach tag error :", $response) do
+    $response = http_post(
+      insecure: true,
+      url: "https://"+$param_wstunnel_host+"/_token/"+$tunnel_token+"/rest/com/vmware/cis/tagging/tag-association/id:"+$tag_id+"?~action=detach",
+      headers: {
+        "Accept": "application/json",
+        "Content-Type": "application/json",
+        "vmware-api-session-id": $session_token
+      },
+      body: {
+        "object_id": {
+          "id": $resource_id,
+          "type": "VirtualMachine"
+        }
       }
-    }
-  )
+    )
+  end
+end
+
+define handle_error($subject, $response) do
+  call sys_log($subject,to_s($response))
+  $_error_behavior = "raise"
 end
 
 define sys_log($subject, $detail) do
