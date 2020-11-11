@@ -1,5 +1,10 @@
 # Changelog
 
+## v1.14
+
+- Modified escalation label and description for consistency
+- Added incident resource table
+
 ## v1.13
 
 - Added the ability to provide either Billing center name or Id.

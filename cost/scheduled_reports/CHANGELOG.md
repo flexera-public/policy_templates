@@ -1,5 +1,10 @@
 # Changelog
 
+## v1.22
+
+- Modified escalation label and description for consistency
+- Added incident resource table
+
 ## v1.21
 
 - Added "Billing Centers" as a reportable dimension

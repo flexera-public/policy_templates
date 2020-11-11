@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.12
+
+- Modified escalation label and description for consistency
+
 ## v2.11
 
 - Require a minimum value of `1` on the `param_unattached_days` parameter
