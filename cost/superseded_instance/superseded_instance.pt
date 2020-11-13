@@ -21,6 +21,7 @@ info(
 ###############################################################################
 # Parameters
 ###############################################################################
+
 parameter "param_email" do
   label "Email addresses"
   description "Email addresses of the recipients you wish to notify"
@@ -70,54 +71,23 @@ auth "auth_rs", type: "rightscale"
 # Datasources
 ###############################################################################
 
-datasource "ds_dimensions" do
+datasource "ds_session" do
   request do
     auth $auth_rs
-    host rs_optima_host
-    path join(["/bill-analysis/orgs/",rs_org_id,"/costs/dimensions"])
-    header "Api-Version", "1.0"
-    header "User-Agent", "RS Policies"
+    verb "GET"
+    host rs_cm_host
+    path "/api/sessions"
+    header "X-Api-Version", "1.5"
+    query "view", "whoami"
+  end
+  result do
+    field "user_id", last(split(first(jmes_path(response, "links[?rel == 'user'].href")),'/'))
   end
 end
 
 datasource "ds_billing_centers" do
   request do
-    auth $auth_rs
-    host rs_optima_host
-    path join(["/analytics/orgs/",rs_org_id,"/billing_centers"])
-    header "Api-Version", "1.0"
-    header "User-Agent", "RS Policies"
-    query "view", "allocation_table"
-  end
-  result do
-    encoding "json"
-    collect jmes_path(response,"[*]") do
-      field "href", jmes_path(col_item,"href")
-      field "id", jmes_path(col_item,"id")
-      field "name", jmes_path(col_item,"name")
-      field "parent_id", jmes_path(col_item,"parent_id")
-      field "ancestor_ids", jmes_path(col_item,"ancestor_ids")
-      field "allocation_table", jmes_path(col_item,"allocation_table")
-    end
-  end
-end
-
-datasource "ds_cloud_vendor_accounts" do
-  request do
-    auth $auth_rs
-    host rs_optima_host
-    path join(["/bill-analysis/orgs/",rs_org_id,"/cloud_vendor_accounts"])
-    header "Api-Version", "0.1"
-    header "User-Agent", "RS Policies"
-    query "cloud_vendor", "aws"
-  end
-  result do
-    encoding "json"
-    collect jmes_path(response,"[*]") do
-      field "id", jmes_path(col_item,"id")
-      field "name", jmes_path(col_item,"name")
-      field "vendor_name", jmes_path(col_item,"vendor_name")
-    end
+    run_script $js_get_billing_centers, $ds_session,rs_org_id,rs_optima_host
   end
 end
 
@@ -132,14 +102,10 @@ datasource "ds_new_bc_costs" do
       field "vendor_account", jmes_path(col_item,"dimensions.vendor_account")
       field "vendor_account_name", jmes_path(col_item,"dimensions.vendor_account_name")
       field "cost_amortized_unblended_adj", jmes_path(col_item,"metrics.cost_amortized_unblended_adj")
-      field "usage_amount", jmes_path(col_item, "metrics.usage_amount")
       field "region", jmes_path(col_item, "dimensions.region")
       field "instance_type", jmes_path(col_item, "dimensions.instance_type")
-      field "service", jmes_path(col_item, "dimensions.service")
-      field "resource_type", jmes_path(col_item, "dimensions.resource_type")
       field "id", jmes_path(col_item,"dimensions.billing_center_id")
       field "resource_id", jmes_path(col_item, "dimensions.resource_id")
-      field "timestamp", jmes_path(col_item,"timestamp")
     end
   end
 end
@@ -169,7 +135,7 @@ datasource "ds_currency_code" do
 end
 
 datasource "ds_format_costs" do
-  run_script $js_format_costs, $ds_new_bc_costs, $ds_cloud_vendor_accounts, $ds_billing_centers
+  run_script $js_format_costs, $ds_new_bc_costs, $ds_billing_centers
 end
 
 datasource "ds_aws_instance_size_map" do
@@ -197,6 +163,21 @@ end
 ###############################################################################
 # Scripts
 ###############################################################################
+
+script "js_get_billing_centers", type: "javascript" do
+  parameters "ds_session","rs_org_id","rs_optima_host"
+  result "request"
+  code <<-EOS
+    request = {
+      "auth": "auth_rs",
+      "verb": "GET",
+      "host": rs_optima_host
+      "path": "/analytics/users/"+ds_session["user_id"]+"/orgs/"+rs_org_id+"/billing_centers"
+      "headers": {"Api-Version": "1.0" },
+      "query_params":{"view":"allocation_table"}
+    }
+  EOS
+end
 
 script "js_new_costs_request", type: "javascript" do
   parameters "org_id","ds_billing_centers", "param_billing_centers"
@@ -277,7 +258,7 @@ EOS
 end
 
 script "js_format_costs", type: "javascript" do
-  parameters "new_bc_costs", "ds_cloud_vendor_accounts", "ds_billing_centers"
+  parameters "new_bc_costs", "ds_billing_centers"
   result "formatted_data"
   code <<-EOS
   //https://www.w3resource.com/javascript-exercises/javascript-date-exercise-3.php
@@ -295,7 +276,6 @@ script "js_format_costs", type: "javascript" do
 
   var formatted_data = [];
   var unsorted_results = [];
-  var arr_results = [];
   var bcs = [];
   _.each(new_bc_costs, function(bcc){bcs.push(bcc.id)})
   bcs = _.uniq(bcs) ;
@@ -307,29 +287,18 @@ script "js_format_costs", type: "javascript" do
       cost = new_bc_cost_obj.cost_amortized_unblended_adj
       run_rate = cost / monthcomplete
       if (new_bc_cost_obj.cost_amortized_unblended_adj != 0){
-        arr_results.push({
+        formatted_data.push({
           name: billing_center.name,
           id: bc_id,
-          new_sum: new_bc_cost_obj.cost_amortized_unblended_adj,
-          service: new_bc_cost_obj.service,
           vendor: new_bc_cost_obj.vendor,
           vendor_account_name: vendor_account_name,
-          usage_amount: new_bc_cost_obj.usage_amount,
           region: new_bc_cost_obj.region,
           instance_type: new_bc_cost_obj.instance_type,
           resource_id: new_bc_cost_obj.resource_id,
-          resource_type: new_bc_cost_obj.resource_type,
-          timestamp: new_bc_cost_obj.timestamp,
           run_rate: parseFloat(run_rate).toFixed(2),
-          run_rate_for_calc: run_rate
         })
       }
     })
-  })
-  var total =  parseFloat(_.reduce(_.pluck(arr_results, "run_rate_for_calc"), function(memo, num){ return memo + num; }, 0)).toFixed(2);
-  _.each(arr_results, function(result){
-    result["total"] = total
-    formatted_data.push(result)
   })
 EOS
 end
@@ -385,7 +354,6 @@ script "js_merge_instance_data", type: "javascript" do
       var found_instance_type = superseded_instance_map[instance_type]
       if ( typeof(found_instance_type) === "undefined" || found_instance_type == null ){
         instance["new_instance_type"] = "Unavailable"
-        instance["warn"] = true
         results.push(instance)
       } else {
         var superseded = found_instance_type["superseded"]
@@ -413,31 +381,19 @@ script "js_merge_instance_data", type: "javascript" do
             var vpc_incompatible_move = "false"
           }
 
-          var warn = false
-          if ( vpc_incompatible_move || ena_incompatible ) {
-            warn = true
-          }
           results.push(
             {
               name: instance.name,
-              id: instance.id,
-              new_sum: instance.new_sum,
-              service: instance.service,
               vendor: instance.vendor,
               vendor_account_name: instance.vendor_account_name,
-              usage_amount: instance.usage_amount,
               region: instance.region,
               instance_type: instance.instance_type,
               new_instance_type: new_instance_type,
               resource_id: instance.resource_id,
-              timestamp: instance.timestamp,
               run_rate: instance.run_rate,
-              run_rate_for_calc: instance.run_rate_for_calc,
               table_cost: cur + ' '+formatNumber(instance.run_rate, separator)
               vpc_incompatible_move: vpc_incompatible_move,
               ena_incompatible: ena_incompatible,
-              warn: warn,
-              total: instance.total
             }
           )
         }
@@ -485,7 +441,7 @@ policy "pol_aws_superseded_instance" do
         label "Resource UID"
       end
       field "name" do
-        label "Name"
+        label "Billing Center"
       end
       field "instance_type" do
         label "Current Instance Type"
@@ -500,7 +456,7 @@ policy "pol_aws_superseded_instance" do
         label "ENA Required"
       end
       field "table_cost" do
-        label "Monthly Estimated Cost"
+        label "Current Monthly Estimated Cost"
       end
     end
   end
