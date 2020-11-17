@@ -12,6 +12,7 @@ Using this may result in instances with no load balancers.
 
 ## Input Parameters
 
+- *Allowed Regions* - A list of allowed regions for an AWS account. Click [here](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/using-regions-availability-zones.html#concepts-regions) to check regions in AWS. If this field is left empty, then the policy will throw an error.
 - *Email addresses to notify* - Email addresses of the recipients you wish to notify when new incidents are created
 - *Tags to ignore* - List of tags that will exclude load Balancers from being evaluated by this policy. Multiple tags are evaluated as an 'OR' condition. Tag keys or Key/value pairs can be listed. Example: 'test,env=dev'
 - *Automatic Actions* - When this value is set, this policy will automatically take the selected action(s).

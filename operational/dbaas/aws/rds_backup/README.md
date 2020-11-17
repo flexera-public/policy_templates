@@ -8,6 +8,7 @@ This Policy Template will check your account for Amazon RDS Instances with non-c
 
 This policy has the following input parameters required when launching the policy.
 
+- *Allowed Regions* - A list of allowed regions for an AWS account. Click [here](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/using-regions-availability-zones.html#concepts-regions) to check regions in AWS. If this field is left empty, then the policy will throw an error.
 - *Email addresses of the recipients you wish to notify* - Email to alert when it finds S3 buckets that meet the criteria.
 - *Backup Retention Period* - Example value: `7`
 - *Preferred Backup Window* - Example value: `08:00-08:30`

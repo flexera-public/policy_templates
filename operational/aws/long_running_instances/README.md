@@ -13,6 +13,7 @@ This policy checks for running instances that have been running longer than the 
 This policy template has the following Input parameters which require value before
 the policy can be applied.
 
+- *Allowed Regions* - A list of allowed regions for an AWS account. Click [here](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/using-regions-availability-zones.html#concepts-regions) to check regions in AWS. If this field is left empty, then the policy will throw an error.
 - *Email notify list* - Email addresses of the recipients you wish to notify.
 - *Days Old* - Number of days to be running before included in list.
 - *Exclusion Tag Key:Value* - Cloud native tag key to ignore instances. Format: Key:Value

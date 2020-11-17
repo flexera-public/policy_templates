@@ -10,6 +10,7 @@ The policy leverages the AWS API to check all instances that have been stopped f
 
 ## Input Parameters
 
+- *Allowed Regions* - A list of allowed regions for an AWS account. Click [here](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/using-regions-availability-zones.html#concepts-regions) to check regions in AWS. If this field is left empty, then the policy will throw an error.
 - *Email addresses to notify* - Email addresses of the recipients you wish to notify when new incidents are created.
 - *Exclusion Tag* - List of tags that will exclude EC2 instances from being evaluated by this policy. Multiple tags are evaluated as an 'OR' condition. Tag keys or key/value pairs can be listed. Example: 'test,env=dev'.
 - *Stopped days* - Number of days an instance is stopped before it is added to the report.

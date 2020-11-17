@@ -12,6 +12,7 @@ The policy leverages the AWS elasticloadbalancing API to examine listener detail
 
 ## Input Parameters
 
+- *Allowed Regions* - A list of allowed regions for an AWS account. Click [here](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/using-regions-availability-zones.html#concepts-regions) to check regions in AWS. If this field is left empty, then the policy will throw an error.
 - *Email addresses of the recipients you wish to notify* - A list of email addresses to notify
 - *Ignore tags* - ALB/NLB with any of these tags will be ignored
 
