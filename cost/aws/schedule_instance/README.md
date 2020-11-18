@@ -25,8 +25,8 @@ Instances are off during the weekend and start back up on Monday morning at 8:15
 This policy has the following input parameters required when launching the policy.
 
 - *Allowed Regions* - A list of allowed regions for an AWS account. Click [here](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/using-regions-availability-zones.html#concepts-available-regions) to check regions in AWS and enter the region code. If this field is left empty, then the policy will throw an error.
-- *Email addresses* - A list of email addresses to notify  
-- *Exclusion Tags* - A list of AWS tags to ignore instances. Format: Key=Value. 
+- *Email addresses* - A list of email addresses to notify.
+- *Exclusion Tags* - A list of AWS tags to ignore instances. Format: Key=Value.
 - *Automatic Actions* - When this value is set, this policy will automatically take the selected action(s).
 
 Please note that the "*Automatic Actions*" parameter contains a list of action(s) that can be performed on the resources. When it is selected, the policy will automatically execute the corresponding action on the data that failed the checks, post incident generation. Please leave it blank for *manual* action.
