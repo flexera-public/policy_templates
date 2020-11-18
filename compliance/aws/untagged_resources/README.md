@@ -2,7 +2,7 @@
 
 ## What it does
 
-This Policy finds all AWS resources missing any of the user provided tags with the option to update the resources with the missing tags. 
+This Policy finds all AWS resources missing any of the user provided tags with the option to update the resources with the missing tags.
 
 ## Input Parameters
 
@@ -45,7 +45,7 @@ Required permissions in the provider:
                "Resource": "*"
             }
    ]
- } 
+ }
 ```
 
 ## Supported Clouds
