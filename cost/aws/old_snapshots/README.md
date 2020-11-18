@@ -14,7 +14,7 @@ The Estimated Monthly Savings and Total Estimated Monthly Savings rounded to 3 d
 
 This policy has the following input parameters required when launching the policy.
 
-- *Allowed Regions* - A list of allowed regions for an AWS account. Click [here](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/using-regions-availability-zones.html#concepts-regions) to check regions in AWS. If this field is left empty, then the policy will throw an error.
+- *Allowed Regions* - A list of allowed regions for an AWS account. Click [here](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/using-regions-availability-zones.html#concepts-available-regions) to check regions in AWS and enter the region code. If this field is left empty, then the policy will throw an error.
 - *Email addresses* - A list of email addresses to notify
 - *Snapshot age* - The number of days since the snapshot was created.
 - *Deregister Image* - If Yes, the snapshot will be deleted along with the images, and if No the snapshot will not be considered for deletion. 
