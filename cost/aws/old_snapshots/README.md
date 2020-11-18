@@ -58,7 +58,7 @@ The following AWS permissions must be allowed for the policy to run.
                 "ec2:DescribeImages",
                 "ec2:DeregisterImage",
                 "sts:GetCallerIdentity",
-                "ec2:DescribeRegions"                
+                "ec2:DescribeRegions"      
             ],
             "Resource": "*"
         }
