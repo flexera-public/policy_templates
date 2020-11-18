@@ -74,9 +74,9 @@ Required permissions in the provider:
       "ec2:DeleteTags",
       "ec2:DescribeRegions"
     ],
-    "Resource": "*" 
+    "Resource": "*"
   }]
-} 
+}
 ```
 
 ## Supported Clouds
