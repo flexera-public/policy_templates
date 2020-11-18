@@ -48,7 +48,7 @@ Provider tag value to match this policy: `aws` , `aws_sts`
 
 Required permissions in the provider:
 
-```json
+```javascript
 {
   "Version": "2012-10-17",
   "Statement": [
