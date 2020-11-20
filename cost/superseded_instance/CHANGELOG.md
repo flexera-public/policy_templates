@@ -1,8 +1,12 @@
 # Changelog
 
-## v1.9
+## v1.10
 
 - Fixed access of 'name' issue
+
+## v1.9
+
+- Modified escalation label and description for consistency
 
 ## v1.8
 
