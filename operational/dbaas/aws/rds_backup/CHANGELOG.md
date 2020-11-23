@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.3
+
+- Modified escalation label and description for consistency
+
 ## v2.2
 
 - Added EC2 DescribeRegions API action to get only Service Control Policy enabled Regions
@@ -22,4 +26,4 @@
 
 ## v1.0
 
-- Initial Release
+- initial release

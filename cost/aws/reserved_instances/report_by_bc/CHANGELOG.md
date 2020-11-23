@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.5
+
+- Modified escalation label and description for consistency
+
 ## v1.4
 
 - Added resource table
