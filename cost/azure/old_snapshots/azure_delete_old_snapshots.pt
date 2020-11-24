@@ -9,7 +9,7 @@ info(
   provider: "Azure",
   service: "Storage",
   policy_set: "Old Snapshots"
-  )
+)
 
 ##################
 # User inputs    #
@@ -132,7 +132,7 @@ datasource "ds_currency_code" do
     path join(["/bill-analysis/orgs/",rs_org_id,"/settings/currency_code"])
     header "Api-Version", "0.1"
     header "User-Agent", "RS Policies"
-	ignore_status [403]
+    ignore_status [403]
   end
   result do
     encoding "json"
@@ -149,7 +149,7 @@ datasource "ds_billing_centers" do
     header "Api-Version", "1.0"
     header "User-Agent", "RS Policies"
     query "view", "allocation_table"
-	ignore_status [403]
+    ignore_status [403]
   end
   result do
     encoding "json"
@@ -197,7 +197,7 @@ script "js_top_level_bc", type: "javascript" do
   parameters "billing_centers"
   result "filtered_billing_centers"
   code <<-EOS
-  var filtered_billing_centers =
+    var filtered_billing_centers =
     _.reject(billing_centers, function(bc){ return bc.parent_id != null });
   EOS
 end
@@ -301,76 +301,76 @@ script "js_snapshot_cost_mapping", type:"javascript" do
   parameters  "snapshots","snapshots_costs","ds_currency_code","ds_currency_reference", "ds_billing_centers"
   result "result"
   code <<-EOS
-  var instances = [];
-  var result={};
-  var message=''
-  var count=0;
-  function formatNumber(number, separator){
-    var numString =number.toString();
-    var values=numString.split(".");
-    var result = ''
-    while (values[0].length > 3){
-      var chunk = values[0].substr(-3)
-      values[0] = values[0].substr(0, values[0].length - 3)
-      result = separator + chunk + result
+    var instances = [];
+    var result={};
+    var message=''
+    var count=0;
+    function formatNumber(number, separator){
+      var numString =number.toString();
+      var values=numString.split(".");
+      var result = ''
+      while (values[0].length > 3){
+        var chunk = values[0].substr(-3)
+        values[0] = values[0].substr(0, values[0].length - 3)
+        result = separator + chunk + result
+      }
+      if (values[0].length > 0){
+        result = values[0] + result
+      }
+      if(values[1]==undefined){
+        return result;
+      }
+      return result+"."+values[1];
     }
-    if (values[0].length > 0){
-      result = values[0] + result
-    }
-    if(values[1]==undefined){
-      return result;
-    }
-    return result+"."+values[1];
-  }
-  // Format costs with currency symbol and thousands separator
-  if(ds_billing_centers.length!=0){
-    if( ds_currency_code['value'] !== undefined ) {
-      if (ds_currency_reference[ds_currency_code['value']] !== undefined ) {
-        var cur = ds_currency_reference[ds_currency_code['value']]['symbol']
-        if( ds_currency_reference[ds_currency_code['value']]['t_separator'] !== undefined ) {
-          var separator = ds_currency_reference[ds_currency_code['value']]['t_separator']
+    // Format costs with currency symbol and thousands separator
+    if(ds_billing_centers.length!=0){
+      if( ds_currency_code['value'] !== undefined ) {
+        if (ds_currency_reference[ds_currency_code['value']] !== undefined ) {
+          var cur = ds_currency_reference[ds_currency_code['value']]['symbol']
+          if( ds_currency_reference[ds_currency_code['value']]['t_separator'] !== undefined ) {
+            var separator = ds_currency_reference[ds_currency_code['value']]['t_separator']
+          } else {
+            var separator = ""
+          }
         } else {
+          var cur = ""
           var separator = ""
         }
       } else {
-        var cur = ""
-        var separator = ""
+        var cur = "$"
+        var separator = ","
       }
-    } else {
-      var cur = "$"
-      var separator = ","
-    }
-    var total=0;
-    _.each(snapshots, function(snapshot){
-      var cost_objects = _.where(snapshots_costs, {resource_id: snapshot["snapshot_id"]});
-      if (_.size(cost_objects) > 0){
-        count++;
-        var sum = _.reduce(_.compact(_.map(cost_objects, function(value){ return value.cost_nonamortized_unblended_adj})), function(memo, num){ return memo + num; }, 0);
-        var monthly_savings = sum*30;
-        total=total+monthly_savings;
-        snapshot['savings']= cur + ' '+formatNumber((Math.round(monthly_savings * 100) / 100), separator)
-        instances.push(snapshot)
+      var total=0;
+      _.each(snapshots, function(snapshot){
+        var cost_objects = _.where(snapshots_costs, {resource_id: snapshot["snapshot_id"]});
+        if (_.size(cost_objects) > 0){
+          count++;
+          var sum = _.reduce(_.compact(_.map(cost_objects, function(value){ return value.cost_nonamortized_unblended_adj})), function(memo, num){ return memo + num; }, 0);
+          var monthly_savings = sum*30;
+          total=total+monthly_savings;
+          snapshot['savings']= cur + ' '+formatNumber((Math.round(monthly_savings * 100) / 100), separator)
+          instances.push(snapshot)
+        } else {
+          snapshot['savings']= "N/A";
+          instances.push(snapshot)
+        }
+      })
+      if(count){
+        total=cur + ' '+formatNumber((Math.round(total * 100) / 100), separator);
+        message="The total estimated monthly savings are " +total;
       } else {
-        snapshot['savings']= "N/A";
-        instances.push(snapshot)
-      }
-    })
-    if(count){
-      total=cur + ' '+formatNumber((Math.round(total * 100) / 100), separator);
-      message="The total estimated monthly savings are " +total;
-    }
-    else{
         message="The Flexera Optima system does not have any data to calculate savings for these resources";
-    }
+      }
     }else{
-    message="You do not have the minimum required role of billing_center_viewer to view the savings";
-    instances=snapshots;
+      message="You do not have the minimum required role of billing_center_viewer to view the savings";
+      instances=snapshots;
     }
-    result={"instances": instances,
-    "message": message
-   };
-  result.instances = _.sortBy(result.instances,"location");
-  result.instances = _.sortBy(result.instances,"subscriptionName");
+    result={
+      "instances": instances,
+      "message": message
+    };
+    result.instances = _.sortBy(result.instances,"location");
+    result.instances = _.sortBy(result.instances,"subscriptionName");
   EOS
 end
 
@@ -378,13 +378,8 @@ policy "pol_azure_delete_old_snapshots" do
   validate $ds_snapshot_cost_mapping do
     summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data.instances }} Old Snapshots Found"
     detail_template <<-EOS
-{{data.message}}.
-EOS
-    # Send email report
-    escalate $send_email_report
-    # Delete snapshot if user approves
-    escalate $process_snapshots
-    check eq(size(val(data, "instances")), 0)
+      {{data.message}}.
+    EOS
     export "instances" do
       resource_level true
       field "subscriptionName" do
@@ -407,6 +402,12 @@ EOS
         path "snapshot_id"
       end
     end
+    hash_include "instances"
+    # Send email report
+    escalate $send_email_report
+    # Delete snapshot if user approves
+    escalate $process_snapshots
+    check eq(size(val(data, "instances")), 0)
   end
 end
 
@@ -434,7 +435,7 @@ define delete_old_snapshots($data) return $all_responses do
   $all_responses = []
   foreach $item in $data do
     sub on_error: skip do
-        call azure_delete_old_snapshots($item['id'])
+      call azure_delete_old_snapshots($item['id'])
     end
   end
 end
@@ -452,9 +453,9 @@ define azure_delete_old_snapshots($snapshot_id) do
             "api-version": "2019-07-01"
           }
         )
-    if $delete_status != 202
-       call sys_log($syslog_subject,to_s($response))
-    end
+  if $delete_status != 202
+    call sys_log($syslog_subject,to_s($response))
+  end
 end
 
 define sys_log($subject, $detail) do
