@@ -24,7 +24,7 @@ Instances are off during the weekend and start back up on Monday morning at 8:15
 
 This policy has the following input parameters required when launching the policy.
 
-- *Allowed Regions* - A list of allowed regions for an AWS account. Click [here](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/using-regions-availability-zones.html#concepts-available-regions) to check regions in AWS and enter the region code. If this field is left empty, then the policy will throw an error.
+- *Allowed Regions* - A list of allowed regions for an AWS account. See [Available Regions](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/using-regions-availability-zones.html#concepts-available-regions) in AWS and enter the region code. If SCP is enabled for an AWS account, then enter only the enabled regions if in case disabled regions are entered then the policy will throw an error. If this field is left blank, then the policy evaluates all the regions fetched using the **DescribeRegions** API call.
 - *Email addresses* - A list of email addresses to notify.
 - *Exclusion Tags* - A list of AWS tags to ignore instances. Format: Key=Value.
 - *Automatic Actions* - When this value is set, this policy will automatically take the selected action(s).
