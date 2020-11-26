@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.23
+
+- Fixed markdown block.
+
 ## v1.22
 
 - Modified escalation label and description for consistency
