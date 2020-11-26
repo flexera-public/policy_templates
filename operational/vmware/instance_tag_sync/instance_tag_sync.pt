@@ -6,7 +6,7 @@ long_description ""
 severity "medium"
 category "Operational"
 info(
-  version: "1.5",
+  version: "1.6",
   provider: "Flexera Cloud Management",
   service: "",
   policy_set: ""
@@ -234,19 +234,18 @@ define update_tags($data, $param_wstunnel_host, $param_wstunnel_token, $param_vs
   if $category_id == null
     call create_category($param_wstunnel_host, $param_wstunnel_token, $session_token,"MULTIPLE", "rightscale tag category", $param_tag_category) retrieve $category_id
   end
-
   $$tag_array = []
   foreach $instance in $data do
     call sys_log('VMWare Instance sync: ',to_s($instance))
     $data_tags = $instance["tags"]
     $$c_tag_ids = []
-    call list_tags_by_category($param_wstunnel_host, $param_wstunnel_token, $session_token, $category_id) retrieve $tag_ids
-    $$c_tag_ids = $tag_ids
+    call list_tags_by_category($param_wstunnel_host, $param_wstunnel_token, $session_token, $category_id) retrieve $tag_ids_cat
+    $$c_tag_ids = $tag_ids_cat
     $$detach_response = []
-    if size($tag_ids) > 0
-      foreach $tag_id in $tag_ids do
-        call detach_tag($param_wstunnel_host,$param_wstunnel_token, $session_token, $tag_id, $instance["id"]) retrieve $response
-        $$detach_response << $response
+    if size($tag_ids_cat) > 0
+      foreach $tag_id in $tag_ids_cat do
+        call detach_tag($param_wstunnel_host,$param_wstunnel_token, $session_token, $tag_id, $instance["id"]) retrieve $response_detach
+        $$detach_response << $response_detach
       end
     end
     call list_tags($param_wstunnel_host, $param_wstunnel_token, $session_token) retrieve $tag_ids
@@ -255,14 +254,13 @@ define update_tags($data, $param_wstunnel_host, $param_wstunnel_token, $param_vs
     foreach $tag_id in $tag_ids do
       $match_tag = first(select($$tag_array, { "id": $tag_id }))
       if $match_tag == null
-        call get_tag($param_wstunnel_host, $param_wstunnel_token, $session_token, $tag_id) retrieve $spec
-        $$tag_array << { "name": $spec["name"], "id": $spec["id"] }
+        call get_tag($param_wstunnel_host, $param_wstunnel_token, $session_token, $tag_id) retrieve $spec_tag
+        $$tag_array << { "name": $spec_tag["name"], "id": $spec_tag["id"] }
       end
     end
-    
+    $$matching_tag = []
     foreach $tag in $data_tags do
       task_label('instance:' + $instance["name"] + ', tag: '+ $tag)
-      $$matching_tag = []
       $match_tag = first(select($$tag_array, { "name": $tag }))
       if $match_tag == null
         $$matching_id = null
@@ -276,7 +274,7 @@ define update_tags($data, $param_wstunnel_host, $param_wstunnel_token, $param_vs
       else
         $tag_id = $$matching_id
       end
-      call attach_tag($param_wstunnel_host, $param_wstunnel_token, $session_token, $tag_id, $instance["id"]) retrieve $response
+      call attach_tag($param_wstunnel_host, $param_wstunnel_token, $session_token, $tag_id, $instance["id"]) retrieve $response_attach
     end
   end
 end
