@@ -1,5 +1,10 @@
 # Changelog
 
+## v2.4
+
+- Updated policy to fetch cost details for multiple subscription IDs from Optima
+- Updated escalation label for consistency
+
 ## v2.3
 
 - Updated escalation block
