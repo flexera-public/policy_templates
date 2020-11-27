@@ -50,7 +50,7 @@ This policy uses `schedule` tag value for scheduling the instance. The format sh
 On leaving the minute field blank, policy will consider the minute as `00` and same will be added to the schedule tag value.
 
 This policy uses [credentials](https://docs.rightscale.com/policies/users/guides/credential_management.html) for connecting to the  cloud
--- in order to apply this policy you must have a credential registered in the system that is compatible with this policy. If  there are no credentials listed when you apply the policy, please contact your cloud admin and ask them to register a credential  that is compatible with this policy. The information below should be consulted when creating the credential.   
+-- in order to apply this policy you must have a credential registered in the system that is compatible with this policy. If  there are no credentials listed when you apply the policy, please contact your cloud admin and ask them to register a credential  that is compatible with this policy. The information below should be consulted when creating the credential.
 
 ### Credential configuration
 
@@ -65,8 +65,8 @@ Required permissions in the provider:
   "Version": "2012-10-17",
   "Statement": [{
     "Effect": "Allow",
-    "Action": [    
-      "ec2:DescribeInstances",  
+    "Action": [
+      "ec2:DescribeInstances",
       "ec2:StartInstances",
       "ec2:StopInstances",
       "ec2:TerminateInstances",
