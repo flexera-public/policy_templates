@@ -54,7 +54,7 @@ The following AWS permissions must be allowed for the policy to run.
             "Effect": "Allow",
             "Action": [
                 "ec2:DeleteSnapshot",
-                "ec2:DescribeSnapshots"
+                "ec2:DescribeSnapshots",
                 "ec2:DescribeImages",
                 "ec2:DeregisterImage",
                 "sts:GetCallerIdentity",
