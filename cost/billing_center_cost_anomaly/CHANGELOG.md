@@ -3,6 +3,7 @@
 ## v1.9
 
 - Fixed `report` variable type in js_format_costs script
+- Added back in detail template to more easily show billing centers, currency, and the provided parameters
 
 ## v1.8
 
