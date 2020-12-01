@@ -7,11 +7,20 @@ severity "high"
 category "Cost"
 tenancy "single"
 default_frequency "daily"
-
-info( version: "1.9",
+info(
+  version: "1.9",
   provider: "Flexera Optima",
   service: "",
-  policy_set:"")
+  policy_set:""
+)
+
+###############################################################################
+# Permissions
+###############################################################################
+
+###############################################################################
+# Parameters
+###############################################################################
 
 parameter "param_days" do
   label "Time Period"
@@ -30,13 +39,12 @@ parameter "param_threshold" do
 end
 
 parameter "param_min_spend" do
-    label "Minimum Period Spend"
-    description "Minimum spend for the specified period required to trigger incidents"
-    type "number"
-    default 1000
-    min_value 0
+  label "Minimum Period Spend"
+  description "Minimum spend for the specified period required to trigger incidents"
+  type "number"
+  default 1000
+  min_value 0
 end
-
 
 parameter "param_cost_metric" do
   type "string"
@@ -57,7 +65,19 @@ parameter "param_email" do
   type "list"
 end
 
+###############################################################################
+# Authentication
+###############################################################################
+
 auth "auth_rs", type: "rightscale"
+
+###############################################################################
+# Resources
+###############################################################################
+
+###############################################################################
+# Datasources
+###############################################################################
 
 datasource "ds_currency_reference" do
   request do
@@ -105,39 +125,7 @@ datasource "billing_centers" do
 end
 
 datasource "ds_listed_billing_centers" do
-    run_script $js_listed_billing_centers, $param_billing_centers, $billing_centers
-end
-
-script "js_listed_billing_centers", type: "javascript" do
-  parameters "param_billing_centers","billing_centers"
-  result "billing_center_list"
-  code <<-EOS
-     var billing_center_list = [];
-    if (param_billing_centers.length === 0){
-      _.map(billing_centers, function(value, key){
-         billing_center_list.push(value);
-    });
-    } else {
-      billing_center_names = _.map(param_billing_centers, function(name){ return name.toLowerCase(); });
-      _.compact(_.map(billing_centers, function(value){
-    if(_.contains(billing_center_names, value.name.toLowerCase())){
-        billing_center_list.push(value);
-     }
-    }));
-    }
-  billing_center_list.sort(GetSortOrder("name"));
-  function GetSortOrder(prop) {
-    return function(a, b) {
-        if (a[prop] > b[prop]) {
-            return 1;
-        } else if (a[prop] < b[prop]) {
-            return -1;
-        }
-        return 0;
-     }
-   }
-
-  EOS
+  run_script $js_listed_billing_centers, $param_billing_centers, $billing_centers
 end
 
 datasource "new_bc_costs" do
@@ -157,6 +145,67 @@ datasource "new_bc_costs" do
       field "timestamp", jmes_path(col_item,"timestamp")
     end
   end
+end
+
+datasource "old_bc_costs" do
+  iterate $ds_listed_billing_centers
+  request do
+    run_script $old_costs_request,rs_org_id,val(iter_item,"id"),$param_cost_metric,$param_days
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response,"rows[*]") do
+      field "name", val(iter_item, "name")
+      field "cost_amortized_unblended_adj", jmes_path(col_item,"metrics.cost_amortized_unblended_adj")
+      field "cost_amortized_blended_adj", jmes_path(col_item,"metrics.cost_amortized_blended_adj")
+      field "cost_nonamortized_unblended_adj", jmes_path(col_item,"metrics.cost_nonamortized_unblended_adj")
+      field "cost_nonamortized_blended_adj", jmes_path(col_item,"metrics.cost_nonamortized_blended_adj")
+      field "id", jmes_path(col_item,"dimensions.billing_center_id")
+      field "timestamp", jmes_path(col_item,"timestamp")
+    end
+  end
+end
+
+datasource "format_costs" do
+  run_script $js_format_costs, $old_bc_costs, $new_bc_costs, $param_cost_metric, $ds_currency_code, $ds_currency_reference, $param_billing_centers, $param_threshold, $param_min_spend
+end
+
+###############################################################################
+# Scripts
+###############################################################################
+
+script "js_listed_billing_centers", type: "javascript" do
+  parameters "param_billing_centers","billing_centers"
+  result "billing_center_list"
+  code <<-EOS
+    var billing_center_list = [];
+
+    function GetSortOrder(prop) {
+      return function(a, b) {
+        if (a[prop] > b[prop]) {
+          return 1;
+        } else if (a[prop] < b[prop]) {
+          return -1;
+        }
+        return 0;
+      }
+    }
+
+    if (param_billing_centers.length === 0){
+      _.map(billing_centers, function(value, key){
+        billing_center_list.push(value);
+      });
+    } else {
+      billing_center_names = _.map(param_billing_centers, function(name){ return name.toLowerCase(); });
+      _.compact(_.map(billing_centers, function(value){
+        if(_.contains(billing_center_names, value.name.toLowerCase())){
+          billing_center_list.push(value);
+        }
+      }));
+    }
+
+    billing_center_list.sort(GetSortOrder("name"));
+  EOS
 end
 
 script "new_costs_request", type: "javascript" do
@@ -216,25 +265,6 @@ script "new_costs_request", type: "javascript" do
       }
     }
   EOS
-end
-
-datasource "old_bc_costs" do
-  iterate $ds_listed_billing_centers
-  request do
-    run_script $old_costs_request,rs_org_id,val(iter_item,"id"),$param_cost_metric,$param_days
-  end
-  result do
-    encoding "json"
-    collect jmes_path(response,"rows[*]") do
-      field "name", val(iter_item, "name")
-      field "cost_amortized_unblended_adj", jmes_path(col_item,"metrics.cost_amortized_unblended_adj")
-      field "cost_amortized_blended_adj", jmes_path(col_item,"metrics.cost_amortized_blended_adj")
-      field "cost_nonamortized_unblended_adj", jmes_path(col_item,"metrics.cost_nonamortized_unblended_adj")
-      field "cost_nonamortized_blended_adj", jmes_path(col_item,"metrics.cost_nonamortized_blended_adj")
-      field "id", jmes_path(col_item,"dimensions.billing_center_id")
-      field "timestamp", jmes_path(col_item,"timestamp")
-    end
-  end
 end
 
 script "old_costs_request", type: "javascript" do
@@ -298,28 +328,26 @@ script "old_costs_request", type: "javascript" do
   EOS
 end
 
-datasource "format_costs" do
-  run_script $js_format_costs, $old_bc_costs, $new_bc_costs, $param_cost_metric, $ds_currency_code, $ds_currency_reference, $param_billing_centers, $param_threshold, $param_min_spend
-end
-
 script "js_format_costs", type: "javascript" do
   parameters "bc_costs","new_bc_costs","param_cost_metric", "ds_currency_code", "ds_currency_reference", "param_billing_centers", "param_threshold", "param_min_spend"
   result "report"
   code <<-EOS
-  var cost_metric = {
-    "Unamortized Unblended":"cost_nonamortized_unblended_adj",
-    "Amortized Unblended":"cost_amortized_unblended_adj",
-    "Unamortized Blended": "cost_nonamortized_blended_adj",
-    "Amortized Blended":"cost_amortized_blended_adj"
-  }
-  var type = cost_metric[param_cost_metric];
-  var formatted_data = [];
-  var report = [];
-  var bcs = [];
-  function formatNumber(number, separator){
-       var numString =number.toString();
-       var values=numString.split(".");
-       var result = ''
+    var cost_metric = {
+      "Unamortized Unblended":"cost_nonamortized_unblended_adj",
+      "Amortized Unblended":"cost_amortized_unblended_adj",
+      "Unamortized Blended": "cost_nonamortized_blended_adj",
+      "Amortized Blended":"cost_amortized_blended_adj"
+    }
+
+    var type = cost_metric[param_cost_metric];
+    var formatted_data = [];
+    var report = [];
+    var bcs = [];
+
+    function formatNumber(number, separator){
+      var numString =number.toString();
+      var values=numString.split(".");
+      var result = ''
       while (values[0].length > 3){
         var chunk = values[0].substr(-3)
         values[0] = values[0].substr(0, values[0].length - 3)
@@ -329,7 +357,7 @@ script "js_format_costs", type: "javascript" do
         result = values[0] + result
       }
       if(values[1]==undefined){
-       return result;
+        return result;
       }
       return result+"."+values[1];
     }
@@ -352,50 +380,55 @@ script "js_format_costs", type: "javascript" do
       var separator = ","
     }
 
+    _.each(bc_costs, function(bcc){bcs.push(bcc.id)})
+    bcs = _.uniq(bcs) ;
 
-  _.each(bc_costs, function(bcc){bcs.push(bcc.id)})
-  bcs = _.uniq(bcs) ;
+    _.each(bcs, function(bc_id){
+      var bc_cost_objs = _.reject(bc_costs, function(bc_cost){ return bc_cost.id != bc_id });
+      var costs = [];
+      _.each(bc_cost_objs, function(cost){costs.push(cost[type])})
+      var sum = _.reduce(costs, function(memo, num){ return memo + num; }, 0)
 
-  _.each(bcs, function(bc_id){
-    var bc_cost_objs = _.reject(bc_costs, function(bc_cost){ return bc_cost.id != bc_id });
-    var costs = [];
-    _.each(bc_cost_objs, function(cost){costs.push(cost[type])})
-    var sum = _.reduce(costs, function(memo, num){ return memo + num; }, 0)
+      var new_bc_cost_objs = _.reject(new_bc_costs, function(new_bc_cost){ return new_bc_cost.id != bc_id });
+      var new_costs = [];
+      _.each(new_bc_cost_objs, function(cost){new_costs.push(cost[type])})
+      var new_sum = _.reduce(new_costs, function(memo, num){ return memo + num; }, 0)
 
-    var new_bc_cost_objs = _.reject(new_bc_costs, function(new_bc_cost){ return new_bc_cost.id != bc_id });
-    var new_costs = [];
-    _.each(new_bc_cost_objs, function(cost){new_costs.push(cost[type])})
-    var new_sum = _.reduce(new_costs, function(memo, num){ return memo + num; }, 0)
+      var per_change = new_sum / sum ;
+      per_change = per_change-1
+      per_change = per_change * 100
 
-    var per_change = new_sum / sum ;
-    per_change = per_change-1
-    per_change = per_change * 100
-
-    if(per_change > param_threshold && (new_sum >= param_min_spend || sum >= param_min_spend)) {
-    formatted_data.push({
-      name: bc_cost_objs[0]["name"],
-      id: bc_id,
-      old_sum: cur + ' '+formatNumber((Math.round(sum * 100) / 100), separator),
-      new_sum: cur + ' '+formatNumber((Math.round(new_sum * 100) / 100), separator),
-      per_change: (Math.round(per_change * 100) / 100).toString(10) + "%",
-      percent: per_change
+      if(per_change > param_threshold && (new_sum >= param_min_spend || sum >= param_min_spend)) {
+        formatted_data.push({
+          name: bc_cost_objs[0]["name"],
+          id: bc_id,
+          old_sum: cur + ' '+formatNumber((Math.round(sum * 100) / 100), separator),
+          new_sum: cur + ' '+formatNumber((Math.round(new_sum * 100) / 100), separator),
+          per_change: (Math.round(per_change * 100) / 100).toString(10) + "%",
+          percent: per_change
+        })
+      }
     })
-  }
-  })
+
     if (param_billing_centers.length === 0){
       var billingCenters = "All";
     } else {
       var billingCenters = param_billing_centers.join()
     }
- if(formatted_data.length != 0){
-  _.each(formatted_data, function(item){
-    item["billingCenters"] = billingCenters
-    item["currencyCode"] = cur
-  })
-  report= formatted_data
- }
-EOS
+
+    if(formatted_data.length != 0){
+      _.each(formatted_data, function(item){
+        item["billingCenters"] = billingCenters
+        item["currencyCode"] = cur
+      })
+      report= formatted_data
+    }
+  EOS
 end
+
+###############################################################################
+# Escalations
+###############################################################################
 
 escalation "esc_budget_alert" do
   automatic true
@@ -404,16 +437,21 @@ escalation "esc_budget_alert" do
   email $param_email
 end
 
+###############################################################################
+# Policy
+###############################################################################
+
 policy "budget_alert" do
   validate_each $format_costs do
     summary_template "Cost Anomaly Detected"
-    detail_template "
-## Billing Centers: {{with(index data 0)}}{{.billingCenters}}{{end}}
-### Bill Currency: {{with(index data 0)}}{{.currencyCode}}{{end}}
-### Cost Metric: {{ parameters.param_cost_metric }}
-### Anomaly Threshold: {{ parameters.param_threshold }}
-### Time Period: {{ parameters.param_days }}
-### Minimum Spend for Period:  {{ parameters.param_min_spend}}"
+    detail_template <<-EOS
+      ## Billing Centers: {{with(index data 0)}}{{.billingCenters}}{{end}}
+      ### Bill Currency: {{with(index data 0)}}{{.currencyCode}}{{end}}
+      ### Cost Metric: {{ parameters.param_cost_metric }}
+      ### Anomaly Threshold: {{ parameters.param_threshold }}
+      ### Time Period: {{ parameters.param_days }}
+      ### Minimum Spend for Period:  {{ parameters.param_min_spend}}
+    EOS
     escalate $esc_budget_alert
     check eq(1,0)
     export do
@@ -441,3 +479,7 @@ policy "budget_alert" do
     end
   end
 end
+
+###############################################################################
+# Cloud Workflow
+###############################################################################
