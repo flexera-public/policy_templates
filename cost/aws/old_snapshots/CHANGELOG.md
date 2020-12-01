@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.10
+
+- Modified escalation label and description for consistency
+
 ## v2.9
 
 - Require a minimum value of `1` on the `snapshot_age` parameter

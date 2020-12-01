@@ -4,6 +4,7 @@
 
 - Bug fix for Optima cloud vendor account name API changes
 - Added currency reference to incident table
+- Modified escalation label and description for consistency
 
 ## v1.8
 

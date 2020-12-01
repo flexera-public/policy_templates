@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.11
+
+- Modified escalation label and description for consistency
+
 ## v2.10
 
 - Uncommenting allowed_values for `param_automatic_action`

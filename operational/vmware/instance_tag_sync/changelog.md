@@ -1,5 +1,13 @@
 # Changelog
 
+## v1.6
+
+- updated policy to prevent tag creation for the already existing tags
+
+## v1.5
+
+- modified policy to capture and print audit logs for errors in cwf
+
 ## v1.4
 
 - modified policy to capture logs
