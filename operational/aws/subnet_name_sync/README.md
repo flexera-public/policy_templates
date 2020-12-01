@@ -15,7 +15,7 @@ This policy performs the following action:
 
 This policy has the following input parameter required when launching the policy.
 
-- *Allowed Regions* - A list of allowed regions for an AWS account. Please enter the allowed regions code if SCP is enabled, see [Available Regions](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/using-regions-availability-zones.html#concepts-available-regions) in AWS. If in case disabled regions are entered then the policy will throw an error. Leave blank to consider all the regions.
+- *Allowed Regions* - A list of allowed regions for an AWS account. Please enter the allowed regions code if SCP is enabled, see [Available Regions](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/using-regions-availability-zones.html#concepts-available-regions) in AWS; otherwise, the policy may fail on regions that are disabled via SCP. Leave blank to consider all the regions.
 - *Email addresses of the recipients you wish to notify* - A list of email addresses to notify
 - *Automatic Actions* - When this value is set, this policy will automatically take the selected action(s).
 

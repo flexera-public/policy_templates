@@ -19,7 +19,7 @@ If the user is missing the minimum required role of `billing_center_viewer`or if
 
 This policy has the following input parameters required when launching the policy.
 
-- *Allowed Regions* - A list of allowed regions for an AWS account. Please enter the allowed regions code if SCP is enabled, see [Available Regions](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/using-regions-availability-zones.html#concepts-available-regions) in AWS. If in case disabled regions are entered then the policy will throw an error. Leave blank to consider all the regions.
+- *Allowed Regions* - A list of allowed regions for an AWS account. Please enter the allowed regions code if SCP is enabled, see [Available Regions](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/using-regions-availability-zones.html#concepts-available-regions) in AWS; otherwise, the policy may fail on regions that are disabled via SCP. Leave blank to consider all the regions.
 - *Email addresses* - Email addresses of the recipients you wish to notify when new incidents are created
 - *Exclusion Tags* - A list of AWS tags to ignore Elastic IPs. Format: Key=Value.
 - *Automatic Actions* - When this value is set, this policy will automatically take the selected action(s).
