@@ -1,9 +1,13 @@
 # Changelog
 
-## v1.9
+## v2.0
 
 - Bug fix for Optima cloud vendor account name API changes
 - Added currency reference to incident table
+- Updated Billing Centers index call to get BCs a user has access to
+
+## v1.9
+
 - Modified escalation label and description for consistency
 
 ## v1.8
