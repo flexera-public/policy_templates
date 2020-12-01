@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.9
+
+- Fixed `report` variable type in js_format_costs script
+
 ## v1.8
 
 - Modified escalation label and description for consistency
