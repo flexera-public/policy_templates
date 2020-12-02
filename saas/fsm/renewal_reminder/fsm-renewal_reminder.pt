@@ -7,11 +7,15 @@ severity "medium"
 category "SaaS Management"
 default_frequency "daily"
 info(
-  version: "2.2",
+  version: "2.3",
   provider: "Flexera SaaS Manager",
   service: "",
   policy_set: ""
 )
+
+###############################################################################
+# User inputs
+###############################################################################
 
 parameter "param_days" do
   type "number"
@@ -26,6 +30,10 @@ parameter "param_email" do
   description "Email addresses of the recipients you wish to notify"
 end
 
+###############################################################################
+# Authentication
+###############################################################################
+
 #authenticate with FSM
 credentials "fsm_auth" do
   schemes "oauth2"
@@ -34,10 +42,19 @@ credentials "fsm_auth" do
   tags "provider=flexera_fsm"
 end
 
+###############################################################################
+# Datasources
+###############################################################################
+
+datasource "ds_get_host" do
+  run_script $js_get_host, rs_governance_host
+end
+
 datasource "ds_num_products" do
+  iterate $ds_get_host
   request do
     auth $fsm_auth
-    host "api.fsm.flexeraeng.com"
+    host val(iter_item,"host")
     verb "GET"
     scheme "https"
     path join(["/svc/orgs/", rs_org_id, "/managed-products"])
@@ -46,12 +63,13 @@ datasource "ds_num_products" do
   result do
     encoding "json"
     field "totalItems", jmes_path(response, "totalItems")
+    field "saas_host", val(iter_item,"host")
   end
 end
 
 datasource "ds_products" do
   request do
-    run_script $js_products, val($ds_num_products,"totalItems"), rs_org_id
+    run_script $js_products, $ds_num_products, rs_org_id
   end
   result do
     encoding "json"
@@ -69,11 +87,11 @@ datasource "ds_products" do
   end
 end
 
-
 datasource "ds_licenses_summary" do
+  iterate $ds_get_host
   request do
     auth $fsm_auth
-    host "api.fsm.flexeraeng.com"
+    host val(iter_item,"host")
     verb "GET"
     scheme "https"
     path join(["/svc/orgs/", rs_org_id, "/licenses/summaries"])
@@ -88,9 +106,25 @@ datasource "ds_licenses_summary" do
   end
 end
 
-
 datasource "ds_products_with_enddate" do
   run_script $js_products_with_enddate, $ds_products, $ds_licenses_summary, $param_days
+end
+
+###############################################################################
+# Scripts
+###############################################################################
+
+script "js_get_host", type: "javascript" do
+  parameters "rs_governance_host"
+  result "result"
+  code <<-EOS
+    var result = [];
+    if(rs_governance_host.indexOf(".eu") !== -1 || rs_governance_host.indexOf("-eu") !== -1){
+      result.push({host: "api.fsm-eu.flexeraeng.com"});
+    }else{
+      result.push({host: "api.fsm.flexeraeng.com"});
+    }
+  EOS
 end
 
 script "js_products_with_enddate", type: "javascript" do
@@ -107,15 +141,13 @@ script "js_products_with_enddate", type: "javascript" do
     var end_date="";
     _.each(ds_products, function(product){
       _.each(product.licenses, function(license){
-        end_date=lic_enddate[license.lic_id];
-        console.log("end_date: "+end_date+" lic_id: "+license.lic_id)           		
+        end_date=lic_enddate[license.lic_id];          		
       })	  
       var date = new Date();
       date = date.setHours(24 * param_days);
       date = new Date(date);
       if(end_date != null){
-        var expiration_date = new Date(end_date);
-        console.log("Expiration Date: "+expiration_date)   
+        var expiration_date = new Date(end_date);  
         if(expiration_date < date){
           result.push({
             "application":product.application
@@ -132,13 +164,12 @@ script "js_products_with_enddate", type: "javascript" do
 end
 
 script "js_products", type: "javascript" do
-  parameters "num_items", "rs_org_id"
+  parameters "ds_num_products", "rs_org_id"
   result "request"
   code <<-EOS
-  console.log("ds_products"+rs_org_id)
   request = {
     auth: "fsm_auth",
-    host: "api.fsm.flexeraeng.com",
+    host: ds_num_products[0]["saas_host"].toString(),
     verb: "GET",
     scheme: "https",
     path: "/svc/orgs/"+rs_org_id+"/managed-products",
@@ -146,12 +177,16 @@ script "js_products", type: "javascript" do
       "content-type": "application/json"
     },
      query_params: {
-      "pageSize": num_items.toString(),
+      "pageSize": ds_num_products[0]["totalItems"].toString(),
       "includeInactive": "false"
     }
   }
 EOS
 end
+
+###############################################################################
+# Escalations
+###############################################################################
 
 escalation "report_summary" do
   automatic true
@@ -159,6 +194,10 @@ escalation "report_summary" do
   description "Send incident email"
   email $param_email
 end
+
+###############################################################################
+# Policy
+###############################################################################
 
 policy "policy_fsm_renewal_reminder" do
   validate $ds_products_with_enddate do
