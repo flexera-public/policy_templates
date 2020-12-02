@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.8
+
+- Added a new input parameter to enter regions in order to support SCP (Service Control Policy) and CIS Standards
+
 ## v2.7
 
 - Modified escalation label and description for consistency
