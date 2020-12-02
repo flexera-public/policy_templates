@@ -14,9 +14,10 @@ The Estimated Monthly Savings and Total Estimated Monthly Savings rounded to 3 d
 
 This policy has the following input parameters required when launching the policy.
 
-- *Email addresses* - A list of email addresses to notify
+- *Allowed Regions* - A list of allowed regions for an AWS account. Please enter the allowed regions code if SCP is enabled, see [Available Regions](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/using-regions-availability-zones.html#concepts-available-regions) in AWS; otherwise, the policy may fail on regions that are disabled via SCP. Leave blank to consider all the regions.
+- *Email addresses* - A list of email addresses to notify.
 - *Snapshot age* - The number of days since the snapshot was created.
-- *Deregister Image* - If Yes, the snapshot will be deleted along with the images, and if No the snapshot will not be considered for deletion. 
+- *Deregister Image* - If Yes, the snapshot will be deleted along with the images, and if No the snapshot will not be considered for deletion.
 - *Exclude Tags* - List of tags that a snapshot can have to exclude it from the list.
 - *Automatic Actions* - When this value is set, this policy will automatically take the selected action(s).
 
@@ -53,11 +54,11 @@ The following AWS permissions must be allowed for the policy to run.
             "Effect": "Allow",
             "Action": [
                 "ec2:DeleteSnapshot",
-                "ec2:DescribeSnapshots"
+                "ec2:DescribeSnapshots",
                 "ec2:DescribeImages",
                 "ec2:DeregisterImage",
                 "sts:GetCallerIdentity",
-                "ec2:DescribeRegions"                
+                "ec2:DescribeRegions"
             ],
             "Resource": "*"
         }

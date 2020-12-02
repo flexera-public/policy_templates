@@ -19,6 +19,7 @@ If the user is missing the minimum required role of `billing_center_viewer`or if
 
 This policy has the following input parameters required when launching the policy.
 
+- *Allowed Regions* - A list of allowed regions for an AWS account. Please enter the allowed regions code if SCP is enabled, see [Available Regions](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/using-regions-availability-zones.html#concepts-available-regions) in AWS; otherwise, the policy may fail on regions that are disabled via SCP. Leave blank to consider all the regions.
 - *Email addresses* - Email addresses of the recipients you wish to notify when new incidents are created
 - *Exclusion Tags* - A list of AWS tags to ignore Elastic IPs. Format: Key=Value.
 - *Automatic Actions* - When this value is set, this policy will automatically take the selected action(s).
@@ -35,8 +36,8 @@ The following policy actions are taken on any resources found to be out of compl
 
 ## Prerequisites
 
-- This policy uses [credentials](https://docs.rightscale.com/policies/users/guides/credential_management.html) for connecting to the cloud -- in order to apply this policy you must have a credential registered in the system that is compatible with this policy. If there are no credentials listed when you apply the policy, please contact your cloud admin and ask them to register a credential that is compatible with this policy. The information below should be consulted when creating the credential.  
-- billing_center_viewer (note: this role must be applied at the Organization level).
+- This policy uses [credentials](https://docs.rightscale.com/policies/users/guides/credential_management.html) for connecting to the cloud in order to apply this policy you must have a credential registered in the system that is compatible with this policy. If there are no credentials listed when you apply the policy, please contact your cloud admin and ask them to register a credential that is compatible with this policy. The information below should be consulted when creating the credential.
+- billing_center_viewer (note: this role must be applied at the Organization level)
 
 ### Credential configuration
 
@@ -46,7 +47,7 @@ Provider tag value to match this policy: `aws` , `aws_sts`
 
 Required permissions in the provider:
 
-```json
+```javascript
 {
   "Version": "2012-10-17",
   "Statement": [

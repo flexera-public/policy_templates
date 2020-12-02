@@ -18,6 +18,7 @@ If the user is not having the minimum required role of `billing_center_viewer` o
 
 This policy has the following input parameters required when launching the policy.
 
+- *Allowed Regions* - A list of allowed regions for an AWS account. Please enter the allowed regions code if SCP is enabled, see [Available Regions](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/using-regions-availability-zones.html#concepts-available-regions) in AWS; otherwise, the policy may fail on regions that are disabled via SCP. Leave blank to consider all the regions.
 - *Unused days* - The number of days a volume has been unused. The days should be greater than zero.
 - *Email addresses* - A list of email addresses to notify
 - *Exclude Tags.* - A list of tags used to excluded volumes from the incident.
