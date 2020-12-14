@@ -49,7 +49,7 @@ The following permissions must be allowed for the policy to run.
   - Microsoft.Compute/locations/vmSizes/read
 
 - Google
-   - The `compute.machineTypes.list` permission
+  - The `compute.machineTypes.list` permission
 
 ## Supported Clouds
 
