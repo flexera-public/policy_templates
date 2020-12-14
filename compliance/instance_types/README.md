@@ -6,13 +6,13 @@ The Policy finds instance/machine types across the AWS, Azure, Google cloud vend
 
 ## Input Parameters
 
-This policy has the following input parameters required when launching the policy.
+This policy has the following input parameter required when launching the policy.
 
-- *Email addresses* - A list of email addresses to notify
+- *Email addresses to notify* - Email addresses of the recipients you wish to notify when new incidents are created
 
 ## Policy Actions
 
-The following policy actions are taken on any resources found to be out of compliance.
+The following policy action is taken on any resources found to be out of compliance.
 
 - Send an email report
 
@@ -32,16 +32,16 @@ The following permissions must be allowed for the policy to run.
 
     ```json
     {
-    "Version": "2012-10-17",
-    "Statement":[
-        {
+      "Version": "2012-10-17",
+      "Statement":[
+      {
         "Effect":"Allow",
         "Action":[
-            "ec2:DescribeInstances"
+          "ec2:DescribeInstances"
         ],
         "Resource":"*"
-        }
-    ]
+      }
+      ]
     }
     ```
 
