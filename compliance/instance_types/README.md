@@ -29,6 +29,7 @@ Provider tag value to match this policy: `aws` , `aws_sts`, `azure_rm`, `gce`
 The following permissions must be allowed for the policy to run.
 
 - AWS
+
     ```json
     {
     "Version": "2012-10-17",
