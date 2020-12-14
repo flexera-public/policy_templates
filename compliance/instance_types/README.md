@@ -1,4 +1,4 @@
-# List New Instance Types
+# New Instance Types
 
 ## What it does
 
