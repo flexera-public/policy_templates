@@ -46,11 +46,9 @@ The following permissions must be allowed for the policy to run.
     ```
 
 - Azure
-
     - Microsoft.Compute/locations/vmSizes/read
 
 - Google
-
     - The `compute.machineTypes.list` permission
 
 ## Supported Clouds
