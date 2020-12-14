@@ -1,5 +1,26 @@
 # Changelog
 
+## v2.13
+
+- Added a new input parameter to enter regions in order to support SCP (Service Control Policy) and CIS Standards
+
+## v2.12
+
+- Modified escalation label and description for consistency
+
+## v2.11
+
+- Require a minimum value of `1` on the `param_unattached_days` parameter
+
+## v2.10
+
+- Adding AWS Account Id
+
+## v2.9
+
+- Use `DescribeVolumes` instead of `DescribeRegions` to more accurately check if the call is enabled by the
+  Service Control Policy in each region
+
 ## v2.8
 
 - formatted the incident detail message to display if no savings data available

@@ -6,7 +6,7 @@ long_description ""
 severity "low"
 category "Cost"
 info(
-  version: "2.5",
+  version: "2.8",
   provider: "AWS",
   service: "RDS",
   policy_set: "Unused Database Services"
@@ -15,6 +15,13 @@ info(
 ###############################################################################
 # Parameters
 ###############################################################################
+
+parameter "param_allowed_regions" do
+  type "list"
+  label "Allowed Regions"
+  allowed_pattern /^([a-zA-Z-_]+-[a-zA-Z0-9-_]+-[0-9-_]+,*|)+$/
+  description "A list of allowed regions. See the README for more details"
+end
 
 parameter "param_email" do
   type "list"
@@ -73,21 +80,7 @@ end
 
 # Get only SCP enabled regions
 datasource "ds_regions" do
-  iterate $ds_regions_list
-    request do
-      auth $auth_aws
-      verb "GET"
-      host "ec2.amazonaws.com"
-      host join(["ec2.",val(iter_item,"region"),".amazonaws.com"])
-      path "/"
-      query "Action", "DescribeRegions"
-      query "Version", "2016-11-15"
-      ignore_status [403]
-    end
-    result do
-      encoding "xml"
-      field "region", val(iter_item, "region")
-    end
+  run_script $js_regions, $param_allowed_regions, $ds_regions_list
 end
 
 # get all the RDS instances merged together with the tags and CloudWatch
@@ -231,12 +224,44 @@ datasource "ds_instance_costs" do
 end
 
 datasource "ds_instance_cost_mapping" do
-  run_script $js_instance_cost_mapping, $ds_rds_instances, $ds_instance_costs, $ds_currency_code, $ds_currency_reference, $ds_billing_centers
+  run_script $js_instance_cost_mapping, $ds_rds_instances, $ds_instance_costs, $ds_currency_code, $ds_currency_reference, $ds_billing_centers, $ds_get_caller_identity
 end
 
 ###############################################################################
 # Scripts
 ###############################################################################
+
+script "js_regions", type:"javascript" do
+  parameters "user_entered_regions", "all_regions"
+  result "regions"
+  code <<-EOS
+    if(_.isEmpty(user_entered_regions)){
+      regions = all_regions;
+    }else{
+      //Filter unique regions
+      var uniqueRegions = _.uniq(user_entered_regions);
+      var all_regions_list = [];
+      all_regions.forEach(function(all_region){
+        all_regions_list.push(all_region.region)
+      })
+
+      //Filter valid regions
+      var valid_regions = [];
+      _.map(uniqueRegions, function(uniqueRegion){
+        if(all_regions_list.indexOf(uniqueRegion) > -1){
+          valid_regions.push({"region": uniqueRegion})
+        }
+      })
+
+      //Throw an error if no valid regions found
+      if (_.isEmpty(valid_regions)) {
+        regions = all_regions;
+      }else{
+        regions = valid_regions
+      }
+    }
+  EOS
+end
 
 script "js_top_level_bc", type: "javascript" do
   parameters "billing_centers"
@@ -428,7 +453,7 @@ EOS
 end
 
 script "js_instance_cost_mapping", type:"javascript" do
-  parameters  "instance_list","instance_costs","ds_currency_code","ds_currency_reference", "ds_billing_centers"
+  parameters  "instance_list","instance_costs","ds_currency_code","ds_currency_reference", "ds_billing_centers","ds_get_caller_identity"
   result "result"
   code <<-EOS
     var result = {};
@@ -497,8 +522,11 @@ script "js_instance_cost_mapping", type:"javascript" do
       unused_rds_instance_list=instance_list;
       message="You do not have the minimum required role of billing_center_viewer to view the savings";
     }
-    result={ "instance_list": unused_rds_instance_list,
-      "message": message}
+    result={
+      "instance_list": unused_rds_instance_list,
+      "message": message,
+      "accountId": ds_get_caller_identity[0]['account']
+    }
     result.instance_list = _.sortBy(result.instance_list,"region");
     result.instance_list = _.sortBy(result.instance_list,"id");
   EOS
@@ -510,7 +538,7 @@ end
 
 policy "pol_unused_rds" do
   validate $ds_instance_cost_mapping do
-    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data.instance_list }} rows containing AWS RDS Unused Instances"
+    summary_template "AWS Account ID: {{ data.accountId }} - {{ len data.instance_list }} rows containing AWS RDS Unused Instances"
     detail_template <<-EOS
     {{data.message}}
     EOS
@@ -519,6 +547,9 @@ policy "pol_unused_rds" do
     check eq(size(val(data,"instance_list")),0)
     export "instance_list" do
       resource_level true
+      field "accountId" do
+        label "Account Id"
+      end
       field "region" do
         label "Region"
       end
@@ -560,8 +591,8 @@ end
 
 escalation "email" do
   automatic true
-  label "Send Mail"
-  description "Sends incidents email"
+  label "Send Email"
+  description "Send incident email"
   email $param_email
 end
 

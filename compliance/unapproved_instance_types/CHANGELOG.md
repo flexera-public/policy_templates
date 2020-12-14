@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.5
+
+- Modified escalation label and description for consistency
+
 ## 1.4
 
 - remove permissions block and adding incident resource table

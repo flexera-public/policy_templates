@@ -1,5 +1,26 @@
 # Changelog
 
+## v2.11
+
+- Added a new input parameter to enter regions in order to support SCP (Service Control Policy) and CIS Standards
+
+## v2.10
+
+- Modified escalation label and description for consistency
+
+## v2.9
+
+- Require a minimum value of `1` on the `snapshot_age` parameter
+
+## v2.8
+
+- Added AWS Account ID to resource table
+
+## v2.7
+
+- Use `DescribeSnapshots` instead of `DescribeRegions` to more accurately check if the call is enabled by the
+  Service Control Policy in each region
+
 ## v2.6
 
 - Include Estimated Monthly Savings to each resource

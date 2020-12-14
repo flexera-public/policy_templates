@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.5
+
+- Modified escalation label and description for consistency
+
 ## v2.4
 
 - Moved CPU calculations and memory calculations from jmespath to jq inside datasource

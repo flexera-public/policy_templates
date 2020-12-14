@@ -194,6 +194,7 @@ Please contact sales@flexera.com to learn more.
 - [GitHub.com Unpermitted Sized Repositories](./compliance/github/repository_size/)
 - [GitHub.com Repository Branches without Protection](./compliance/github/repository_branch_protection/)
 - [GitHub.com Repositories without Admin Team](./compliance/github/repository_admin_team/)
+- [Policy Update Notification](./compliance/policy_update_notification/)
 
 ### Operational
 
@@ -257,14 +258,14 @@ Please contact sales@flexera.com to learn more.
 
 - The policy templates in the repo are the files that have a .pt extension.
 - Select the desired policy template, click on the “Raw” button, and then right-click and choose “Save As” to save the file to your computer.
-- To upload the template to your account, navigate over to the Templates page in the left nav bar in [Governance](https://governance.rightscale.com). Ensure you have the role to access policy management in RightScale. Learn More about [Policy Access Control](http://docs.rightscale.com/policies/#how-policies-work-access-control).
+- To upload the template to your account, navigate over to the Templates page in the left nav bar in [Governance](https://governance.rightscale.com). Ensure you have the role to access policy management in RightScale. Learn More about [Policy Access Control](https://docs.rightscale.com/policies/#how-policies-work-access-control).
 - Click the “Upload Policy Template” button in the account you wish to test the policy and follow the instructions to upload the template you just downloaded.
 
 ## Policy Template Documentation
 
-- [Getting Started](http://docs.rightscale.com/policies/getting_started/)
-- [Reference Documentation](http://docs.rightscale.com/policies/reference/)
-- [Policy Template Language](http://docs.rightscale.com/policies/reference/policy_template_language.html)
+- [Getting Started](https://docs.rightscale.com/policies/users/getting_started/)
+- [Reference Documentation](https://docs.rightscale.com/policies/developers/)
+- [Policy Template Language](https://docs.rightscale.com/policies/developers/reference/v20180301/policy_template_language.html)
 - [Markdown Editor](https://jbt.github.io/markdown-editor/) - Use this to test Markdown Syntax
 - [Libraries](./libraries/README.md)
 - [README GUIDELINE](./README_GUIDELINE.md)

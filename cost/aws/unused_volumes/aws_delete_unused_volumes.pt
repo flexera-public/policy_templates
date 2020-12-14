@@ -5,7 +5,7 @@ short_description "Checks for unused volumes and if no read/write operations per
 category "Cost"
 severity "low"
 info(
-  version: "2.8",
+  version: "2.13",
   provider: "AWS",
   service: "EBS",
   policy_set: "Unused Volumes"
@@ -14,6 +14,13 @@ info(
 ###############################################################################
 # User inputs
 ###############################################################################
+
+parameter "param_allowed_regions" do
+  type "list"
+  label "Allowed Regions"
+  allowed_pattern /^([a-zA-Z-_]+-[a-zA-Z0-9-_]+-[0-9-_]+,*|)+$/
+  description "A list of allowed regions. See the README for more details"
+end
 
 parameter "param_email" do
   type "list"
@@ -33,6 +40,7 @@ parameter "param_unattached_days" do
   label "Unused days"
   description "The number of days a volume has been unused. The days should be greater than zero"
   default 30
+  min_value 1
 end
 
 parameter "param_take_snapshot" do
@@ -101,21 +109,7 @@ end
 
 # Get only SCP enabled regions
 datasource "ds_regions" do
-  iterate $ds_regions_list
-    request do
-      auth $auth_aws
-      verb "GET"
-      host "ec2.amazonaws.com"
-      host join(["ec2.",val(iter_item,"region"),".amazonaws.com"])
-      path "/"
-      query "Action", "DescribeRegions"
-      query "Version", "2016-11-15"
-      ignore_status [403]
-    end
-    result do
-      encoding "xml"
-      field "region", val(iter_item, "region")
-    end
+  run_script $js_regions, $param_allowed_regions, $ds_regions_list
 end
 
 #To get list of Unattached Volumes.
@@ -266,31 +260,63 @@ datasource "ds_volume_costs" do
 end
 
 datasource "ds_volume_cost_mapping" do
-  run_script $js_volume_cost_mapping, $ds_check_volumes_read_or_write_operations, $ds_volume_costs, $ds_currency_code, $ds_currency_reference, $ds_billing_centers
+  run_script $js_volume_cost_mapping, $ds_check_volumes_read_or_write_operations, $ds_volume_costs, $ds_currency_code, $ds_currency_reference, $ds_billing_centers, $ds_get_caller_identity
 end
 
 ###############################################################################
 # Script
 ###############################################################################
 
+script "js_regions", type:"javascript" do
+  parameters "user_entered_regions", "all_regions"
+  result "regions"
+  code <<-EOS
+    if(_.isEmpty(user_entered_regions)){
+      regions = all_regions;
+    }else{
+      //Filter unique regions
+      var uniqueRegions = _.uniq(user_entered_regions);
+      var all_regions_list = [];
+      all_regions.forEach(function(all_region){
+        all_regions_list.push(all_region.region)
+      })
+
+      //Filter valid regions
+      var valid_regions = [];
+      _.map(uniqueRegions, function(uniqueRegion){
+        if(all_regions_list.indexOf(uniqueRegion) > -1){
+          valid_regions.push({"region": uniqueRegion})
+        }
+      })
+
+      //Throw an error if no valid regions found
+      if (_.isEmpty(valid_regions)) {
+        regions = all_regions;
+      }else{
+        regions = valid_regions
+      }
+    }
+  EOS
+end
+
 #https://docs.aws.amazon.com/AWSEC2/latest/APIReference/API_DescribeVolumes.html
 script "js_aws_unattached_volumes_list", type:"javascript" do
   parameters  "region"
-    result "results"
-    code <<-EOS
-    results = {
-      auth: "auth_aws",
-      host: 'ec2.'+region+'.amazonaws.com',
-      path: '/',
-      pagination: "aws_volumes_pagination_xml",
-      query_params: {
-        "Action": "DescribeVolumes",
-        "Version": "2016-11-15",
-        "Filter.1.Name": "status",
-        "Filter.1.Value.1": "available"
-      }
+  result "results"
+  code <<-EOS
+  results = {
+    auth: "auth_aws",
+    host: 'ec2.'+region+'.amazonaws.com',
+    path: '/',
+    pagination: "aws_volumes_pagination_xml",
+    query_params: {
+      "Action": "DescribeVolumes",
+      "Version": "2016-11-15",
+      "Filter.1.Name": "status",
+      "Filter.1.Value.1": "available"
     }
-    EOS
+  }
+  EOS
 end
 
 script "js_filter_aws_unattached_volumes", type:"javascript" do
@@ -353,13 +379,13 @@ script "js_aws_volumes_cloud_watch_read_byte_metrics", type:"javascript" do
   code <<-EOS
     var endDate = new Date().toISOString();
     var startDate = new Date(new Date().setDate(new Date().getDate() - unattachedDays)).toISOString();
-    var peroid = 2592000;
+    var period = 2592000;
     var datapoints = (unattachedDays / 30).toFixed(2);
     if(datapoints > 1440){
-      peroid = peroid * 60;
+      period = period * 60;
 	}
-    console.log("Period "+peroid);
-    peroid = ""+peroid+"";
+    console.log("Period "+period);
+    period = ""+period+"";
     metrics = {
      "auth": "auth_aws",
      "host": 'monitoring.'+region+'.amazonaws.com',
@@ -381,7 +407,7 @@ script "js_aws_volumes_cloud_watch_read_byte_metrics", type:"javascript" do
        'Dimensions.member.1.Value': volume_id,
        'StartTime': startDate,
        'EndTime': endDate,
-       'Period': peroid,
+       'Period': period,
        'Statistics.member.1': 'Maximum',
        'Statistics.member.2': 'Average',
        'Statistics.member.3': 'Minimum'
@@ -549,7 +575,7 @@ script "js_get_costs", type:"javascript" do
 end
 
 script "js_volume_cost_mapping", type:"javascript" do
-  parameters  "volumes","volume_costs","ds_currency_code","ds_currency_reference", "ds_billing_centers"
+  parameters  "volumes","volume_costs","ds_currency_code","ds_currency_reference", "ds_billing_centers", "ds_get_caller_identity"
   result "result"
   code <<-EOS
   var unused_volumes=[];
@@ -601,6 +627,7 @@ script "js_volume_cost_mapping", type:"javascript" do
         var monthly_savings = sum*30;
         total_savings=total_savings+monthly_savings;
         unused_volumes.push({
+          accountId: ds_get_caller_identity[0]['account'],
           volumeId : volume['volumeId'],
           region : volume['region'],
           availabilityZone : volume['availabilityZone'],
@@ -612,6 +639,7 @@ script "js_volume_cost_mapping", type:"javascript" do
         })
       } else {
         unused_volumes.push({
+          accountId: ds_get_caller_identity[0]['account'],
           volumeId : volume['volumeId'],
           region : volume['region'],
           availabilityZone : volume['availabilityZone'],
@@ -636,8 +664,11 @@ script "js_volume_cost_mapping", type:"javascript" do
     unused_volumes=volumes;
     message="You do not have the minimum required role of billing_center_viewer to view the savings";
   }
-  result={ "unused_volumes": unused_volumes,
-    "message": message}
+  result={
+    "unused_volumes": unused_volumes,
+    "message": message,
+    "accountId": ds_get_caller_identity[0]['account']
+  }
   result.unused_volumes=_.sortBy(result.unused_volumes,'region')
   EOS
 end
@@ -648,7 +679,7 @@ end
 
 policy "policy_unattached_volumes_list" do
   validate $ds_volume_cost_mapping do
-    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data.unused_volumes }} Unused Volumes Found in AWS"
+    summary_template "AWS Account ID: {{ data.accountId }} - {{ len data.unused_volumes }} Unused Volumes Found"
     detail_template <<-EOS
     {{data.message}}
     EOS
@@ -657,6 +688,9 @@ policy "policy_unattached_volumes_list" do
     check eq(size(val(data,"unused_volumes")),0)
     export "unused_volumes" do
       resource_level true
+      field "accountId" do
+        label "Account Id"
+      end
       field "region" do
         label "Region"
       end
@@ -686,8 +720,8 @@ end
 
 escalation "report_unused_volumes" do
   automatic true
-  label "Send Mail"
-  description "Sends incidents email"
+  label "Send Email"
+  description "Send incident email"
   email $param_email
 end
 

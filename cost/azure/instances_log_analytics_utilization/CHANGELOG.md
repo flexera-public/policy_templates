@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.9
+
+- Modified escalation label and description for consistency
+
 ## v2.8
 
 - Added handling for log analytics workspaces that don't exist

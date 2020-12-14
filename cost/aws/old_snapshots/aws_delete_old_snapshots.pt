@@ -5,15 +5,22 @@ short_description "Checks for snapshots older than specified number of days and,
 category "Cost"
 severity "low"
 info(
-  version: "2.5",
+  version: "2.11",
   provider:"AWS",
-  service: "EBS", 
+  service: "EBS",
   policy_set: "Old Snapshots"
 )
 
 ###############################################################################
 # User inputs
 ###############################################################################
+
+parameter "param_allowed_regions" do
+  type "list"
+  label "Allowed Regions"
+  allowed_pattern /^([a-zA-Z-_]+-[a-zA-Z0-9-_]+-[0-9-_]+,*|)+$/
+  description "A list of allowed regions. See the README for more details"
+end
 
 parameter "param_email" do
   type "list"
@@ -26,6 +33,7 @@ parameter "snapshot_age" do
   label "Snapshot age"
   default 30
   description "The number of days since the snapshot was created."
+  min_value 1
 end
 
 parameter "param_deregister_image" do
@@ -163,21 +171,7 @@ end
 
 # Get only SCP enabled regions
 datasource "ds_regions" do
-  iterate $ds_regions_list
-    request do
-      auth $auth_aws
-      verb "GET"
-      host "ec2.amazonaws.com"
-      host join(["ec2.",val(iter_item,"region"),".amazonaws.com"])
-      path "/"
-      query "Action", "DescribeRegions"
-      query "Version", "2016-11-15"
-      ignore_status [403]
-    end
-    result do
-      encoding "xml"
-      field "region", val(iter_item, "region")
-    end
+  run_script $js_regions, $param_allowed_regions, $ds_regions_list
 end
 
 datasource "ds_get_caller_identity" do
@@ -206,19 +200,19 @@ datasource "ds_describe_snapshots" do
   result do
     encoding "xml"
     collect xpath(response, "//DescribeSnapshotsResponse/snapshotSet/item", "array") do
-        field "tags" do
-          collect xpath(col_item,"tagSet/item") do
-            field "tagKey", xpath(col_item, "key")
-            field "tagValue", xpath(col_item, "value")
+      field "tags" do
+        collect xpath(col_item,"tagSet/item") do
+          field "tagKey", xpath(col_item, "key")
+          field "tagValue", xpath(col_item, "value")
         end
       end
-        field "region",val(iter_item, "region")
-        field "snapshotId", xpath(col_item,"snapshotId")
-        field "startTime", xpath(col_item, "startTime")
-        field "ownerId", xpath(col_item, "ownerId")
-        field "volumeSize", xpath(col_item, "volumeSize")
-   end
- end
+      field "region",val(iter_item, "region")
+      field "snapshotId", xpath(col_item,"snapshotId")
+      field "startTime", xpath(col_item, "startTime")
+      field "ownerId", xpath(col_item, "ownerId")
+      field "volumeSize", xpath(col_item, "volumeSize")
+    end
+  end
 end
 
 datasource "ds_filter_old_snapshots" do
@@ -244,16 +238,48 @@ datasource "ds_get_snapshot_ami" do
 end
 
 datasource "ds_filter_ami_snapshots" do
-  run_script $js_filter_ami_snapshots, $ds_get_snapshot_ami, $ds_filter_old_snapshots
+  run_script $js_filter_ami_snapshots, $ds_get_snapshot_ami, $ds_filter_old_snapshots, $ds_get_caller_identity
 end
 
 datasource "ds_snapshots_cost_mapping" do
-  run_script $js_snapshots_cost_mapping, $ds_filter_ami_snapshots, $ds_snapshot_costs, $ds_currency_reference, $ds_currency_reference, $ds_billing_centers
-end 
+  run_script $js_snapshots_cost_mapping, $ds_filter_ami_snapshots, $ds_snapshot_costs, $ds_currency_reference, $ds_currency_reference, $ds_billing_centers, $ds_get_caller_identity
+end
 
 ###############################################################################
 # Scripts
 ###############################################################################
+
+script "js_regions", type:"javascript" do
+  parameters "user_entered_regions", "all_regions"
+  result "regions"
+  code <<-EOS
+    if(_.isEmpty(user_entered_regions)){
+      regions = all_regions;
+    }else{
+      //Filter unique regions
+      var uniqueRegions = _.uniq(user_entered_regions);
+      var all_regions_list = [];
+      all_regions.forEach(function(all_region){
+        all_regions_list.push(all_region.region)
+      })
+
+      //Filter valid regions
+      var valid_regions = [];
+      _.map(uniqueRegions, function(uniqueRegion){
+        if(all_regions_list.indexOf(uniqueRegion) > -1){
+          valid_regions.push({"region": uniqueRegion})
+        }
+      })
+
+      //Throw an error if no valid regions found
+      if (_.isEmpty(valid_regions)) {
+        regions = all_regions;
+      }else{
+        regions = valid_regions
+      }
+    }
+  EOS
+end
 
 script "js_top_level_bc", type: "javascript" do
   parameters "billing_centers"
@@ -324,7 +350,7 @@ script "js_get_costs", type:"javascript" do
 end
 
 script "js_snapshots_cost_mapping", type:"javascript" do
-  parameters  "snapshots","snapshot_costs","ds_currency_code","ds_currency_reference","ds_billing_centers"
+  parameters  "snapshots","snapshot_costs","ds_currency_code","ds_currency_reference","ds_billing_centers","ds_get_caller_identity"
   result "results"
   code <<-EOS
 
@@ -373,8 +399,9 @@ script "js_snapshots_cost_mapping", type:"javascript" do
     if (ds_billing_centers.length != 0 && _.size(cost_objects) > 0){
       var sum = _.reduce(_.compact(_.map(cost_objects, function(value){ return value.cost_nonamortized_unblended_adj})), function(memo, num){ return memo + num; }, 0);
       var monthly_savings = sum*30;
-      total=total+monthly_savings;	  
+      total=total+monthly_savings;
       result.push({
+        accountId: ds_get_caller_identity[0]['account'],
         snapshotId : snapshot['snapshotId'],
         region : snapshot['region'],
         tagKeyValue : snapshot['tagKeyValue'],
@@ -386,6 +413,7 @@ script "js_snapshots_cost_mapping", type:"javascript" do
       })
     } else {
       result.push({
+        accountId: ds_get_caller_identity[0]['account'],
         snapshotId : snapshot['snapshotId'],
         region : snapshot['region'],
         tagKeyValue : snapshot['tagKeyValue'],
@@ -401,12 +429,13 @@ script "js_snapshots_cost_mapping", type:"javascript" do
   if (ds_billing_centers.length!=0){
     var total_savings=cur + ' '+formatNumber(total.toFixed(3), separator);
     var message="The total estimated monthly savings are "+ total_savings;
-  }else{
+  } else {
     var message="You do not have the minimum required role of billing_center_viewer to view the savings";
   }
-  results={"result": result,
+  results={
+    "result": result,
     "message": message
-	};
+  };
   EOS
 end
 
@@ -454,14 +483,14 @@ script "js_filter_old_snapshots", type: "javascript" do
       for(var k=0; k < tags.length; k++){
         tag = tags[k];
         if((param_exclude_tags_lower.indexOf((tag['tagKey']).toLowerCase()) !== -1) || (param_exclude_tags_lower.indexOf((tag['tagKey']+'='+tag['tagValue']).toLowerCase()) !== -1)){
-          isTagMatched = true;  
+          isTagMatched = true;
 		}
 
         // Constructing tags with comma separated to display in detail_template
         if((tag['tagValue']).length > 0){
-          tagKeyValue = tagKeyValue+" , "+tag['tagKey']+'='+tag['tagValue'];  
+          tagKeyValue = tagKeyValue+" , "+tag['tagKey']+'='+tag['tagValue'];
 		}else{
-          tagKeyValue = tagKeyValue+" , "+tag['tagKey'];  
+          tagKeyValue = tagKeyValue+" , "+tag['tagKey'];
 		}
 	  }
 
@@ -514,7 +543,7 @@ end
 
 script "js_filter_ami_snapshots", type:"javascript" do
   result "results"
-  parameters "snapshotImagesList", "snapshotsList"
+  parameters "snapshotImagesList", "snapshotsList", "ds_get_caller_identity"
   code <<-EOS
     var results = [];
     var snapshotImageIds = [];
@@ -526,21 +555,22 @@ script "js_filter_ami_snapshots", type:"javascript" do
         if(snapshot['snapshotId'] === snapshotImage['snapshotId']){
           snapshotImageIdFormat += snapshotImage['imageId']+", ";
           snapshotImageIds.push(snapshotImage['imageId'])
-		}
-	  }
+        }
+      }
       results.push({
         snapshotId : snapshot['snapshotId'],
         formatSnapId : "snapshot/"+snapshot['snapshotId'],
         region : snapshot['region'],
         tagKeyValue : snapshot['tagKeyValue'],
         daysOld : snapshot['daysOld'],
+        accountId: ds_get_caller_identity[0]['account'],
         imageId : snapshotImageIds,
         snapshotImageIdFormat : (snapshotImageIdFormat.slice(0,snapshotImageIdFormat.length - 2)),
         volumeSize: snapshot['volumeSize']
-	  })
+      })
       snapshotImageIds = [];
       snapshotImageIdFormat = "";
-	}
+    }
   EOS
 end
 
@@ -550,9 +580,9 @@ end
 
 policy "pol_utilization" do
   validate $ds_snapshots_cost_mapping do
-    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data.result }} rows containing AWS old snapshot data"
+    summary_template "AWS Account ID: {{with index data.result 0}}{{ .accountId }}{{end}} - {{ len data.result }} rows containing AWS old snapshot data"
     detail_template <<-EOS
-    The following {{ len data.result }} old snapshots, for Account: {{ rs_project_name }} (ID: {{ rs_project_id }}), have exceeded the specified age of: {{ parameters.snapshot_age }} days old.\n
+    The following {{ len data.result }} old snapshots, for AWS Account: {{with index data.result 0}}{{ .accountId }}{{end}}, have exceeded the specified age of: {{ parameters.snapshot_age }} days old.\n
     {{data.message}}
     EOS
     escalate $ese_email
@@ -560,6 +590,9 @@ policy "pol_utilization" do
     check eq(size(val(data, "result")), 0)
     export "result" do
       resource_level true
+      field "accountId" do
+        label "Account Id"
+      end
       field "region" do
         label "Region"
       end
@@ -592,8 +625,8 @@ end
 
 escalation "ese_email" do
   automatic true
-  label "Send Mail"
-  description "Sends incidents email"
+  label "Send Email"
+  description "Send incident email"
   email $param_email
 end
 
@@ -667,7 +700,7 @@ define delete_snapshot($item) do
   )
   $splitResult = $delete_response["code"]
   if $splitResult != 200
-   call sys_log("Inside delete_snapshot  defination", to_s($delete_response))
+   call sys_log("Inside delete_snapshot definition", to_s($delete_response))
   end
 end
 
