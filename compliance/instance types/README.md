@@ -2,7 +2,7 @@
 
 ## What it does
 
-The Policy finds instance/machine types across the AWS, Azure, Google cloud vendors and compares them with the existing machine/instance types in our data file. Incident will be created if any new  machine/instance type if found, containing missing machine/instance type name and vendor details.
+The Policy finds instance/machine types across the AWS, Azure, Google cloud vendors and compares them with the existing machine/instance types in our data file. Incident will be created if any new machine/instance type if found, containing missing machine/instance type name and vendor details.
 
 ## Input Parameters
 
@@ -26,7 +26,7 @@ For administrators [creating and managing credentials](https://docs.rightscale.c
 
 Provider tag value to match this policy: `aws` , `aws_sts`, `azure_rm`, `gce`
 
-The following  permissions must be allowed for the policy to run.
+The following permissions must be allowed for the policy to run.
 
 - AWS
     ```json
