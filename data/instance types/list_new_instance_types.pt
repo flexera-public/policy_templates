@@ -1,0 +1,395 @@
+name "List New Instance Types"
+rs_pt_ver 20180301
+type "policy"
+short_description "Checks for new instance types available in AWS, Azure and Google Cloud. See the [docs.rightscale.com/policies](https://docs.rightscale.com/policies/) to learn more."
+category ""
+severity "low"
+info(
+  version: "2.0",
+  provider: "",
+  service: "",
+  policy_set: ""
+)
+
+###############################################################################
+# User inputs
+###############################################################################
+
+parameter "param_email" do
+  type "list"
+  label "Email addresses"
+  description "A list of email addresses to notify."
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+credentials "auth_aws" do
+  schemes "aws","aws_sts"
+  label "AWS"
+  description "Select the AWS Credential from the list"
+  tags "provider=aws"
+end
+
+credentials "azure_auth" do
+  schemes "oauth2"
+  label "Azure"
+  description "Select the Azure Resource Manager Credential from the list."
+  tags "provider=azure_rm"
+end
+
+credentials "auth_google" do
+  schemes "oauth2"
+  label "Google"
+  description "Select the Google Cloud Credential from the list."
+  tags "provider=gce"
+end
+
+###############################################################################
+# Pagination
+###############################################################################
+
+pagination "aws_pagination" do
+  get_page_marker do
+    body_path "//DescribeInstanceTypesResponse/nextToken"
+  end
+  set_page_marker do
+    query "NextToken"
+  end
+end
+
+pagination "azure_pagination" do
+  get_page_marker do
+    body_path "nextLink"
+  end
+  set_page_marker do
+    uri true
+  end
+end
+
+pagination "google_pagination" do
+  get_page_marker do
+    body_path "nextPageToken"
+  end
+  set_page_marker do
+    query "pageToken"
+  end
+end
+
+###############################################################################
+# Datasource
+###############################################################################
+
+datasource "ds_github_aws_instance_types" do
+  request do
+    verb "GET"
+      host "raw.githubusercontent.com"
+      path "/rightscale/policy_templates/master/data/aws/instance_types.json"
+      header "User-Agent","RS Policies"
+    end
+end
+
+datasource "ds_github_azure_instance_types" do
+  request do
+    verb "GET"
+      host "raw.githubusercontent.com"
+      path "/rightscale/policy_templates/master/data/azure/instance_types.json"
+      header "User-Agent","RS Policies"
+    end
+end
+
+datasource "ds_github_google_instance_types" do
+  request do
+    verb "GET"
+      host "raw.githubusercontent.com"
+      path "/rightscale/policy_templates/master/data/google/instance_types.json"
+      header "User-Agent","RS Policies"
+    end
+end
+
+datasource "ds_aws_instance_types" do
+  request do
+    auth $auth_aws
+    verb "GET"
+    host "ec2.amazonaws.com"
+    path "/"
+    query "Action", "DescribeInstanceTypes"
+    query "Version", "2016-11-15"
+    pagination $aws_pagination
+  end
+  result do
+    encoding "xml"
+    collect xpath(response, "//DescribeInstanceTypesResponse/instanceTypeSet/item", "array") do
+      field "instanceType", xpath(col_item, "instanceType")
+    end
+  end
+end
+
+datasource "ds_subscriptions" do
+  request do
+    auth $azure_auth
+    host "management.azure.com"
+    path "/subscriptions/"
+    query "api-version","2019-06-01"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "value[*]") do
+      field "subscriptionId", jmes_path(col_item,"subscriptionId")
+    end
+  end
+end
+
+datasource "ds_filter_one_subscription" do
+  run_script $js_filter_one_subscription, $ds_subscriptions
+end
+
+datasource "ds_azure_locations" do
+  iterate $ds_filter_one_subscription
+  request do
+    auth $azure_auth
+    host "management.azure.com"
+    path join(["/subscriptions/", val(iter_item,"subscriptionId"), "/locations"])
+    query "api-version","2020-01-01"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "value[*]") do
+      field "locationName", jmes_path(col_item,"name")
+      field "displayName", jmes_path(col_item, "displayName")
+      field "subscriptionId",val(iter_item,"subscriptionId")
+    end
+  end
+end
+
+datasource "ds_azure_instance_types" do
+  iterate $ds_azure_locations
+  request do
+    auth $azure_auth
+    host "management.azure.com"
+    path join(["/subscriptions/", val(iter_item,"subscriptionId"), "/providers/Microsoft.Compute/locations/", val(iter_item,"locationName"),"/vmSizes"])
+    query "api-version","2020-06-01"
+    ignore_status [400]
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "value[*]") do
+      field "instanceType", jmes_path(col_item,"name")
+      field "locationName", val(iter_item,"locationName")
+      field "subscriptionId", val(iter_item,"subscriptionId")
+    end
+  end
+end
+
+datasource "ds_google_project" do
+  request do
+    auth $auth_google
+    pagination $google_pagination
+    host "cloudresourcemanager.googleapis.com"
+    path "/v1/projects/"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "projects[*]") do
+      field "projectNumber", jmes_path(col_item,"projectNumber")
+      field "projectId", jmes_path(col_item,"projectId")
+    end
+  end
+end
+
+datasource "ds_filter_one_project" do
+  run_script $js_filter_one_project, $ds_google_project
+end
+
+datasource "ds_google_zones" do
+  iterate $ds_filter_one_project
+  request do
+    auth $auth_google
+    pagination $google_pagination
+    host "compute.googleapis.com"
+    path join(["/compute/v1/projects/",val(iter_item, "projectId"),"/zones"])
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response,"items[*]") do
+      field "zone", jmes_path(col_item, "name")
+	  field "projectId", val(iter_item, "projectId")
+    end
+  end
+end
+
+datasource "ds_google_machines_list" do
+  iterate $ds_google_zones
+  request do
+    auth $auth_google
+    pagination $google_pagination
+    host "compute.googleapis.com"
+    path join(["/compute/v1/projects/",val(iter_item, "projectId"),"/zones/", val(iter_item, "zone"),"/machineTypes"])
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response,"items[*]") do
+      field "name", jmes_path(col_item, "name")
+    end
+  end
+end
+
+datasource "ds_google_SQL_tier_list" do
+  iterate $ds_filter_one_project
+  request do
+    auth $auth_google
+    host "sqladmin.googleapis.com"
+    path join(["/sql/v1beta4/projects/",val(iter_item, "projectId"),"/tiers"])
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response,"items[*]") do
+      field "name", jmes_path(col_item, "tier")
+    end
+  end
+end
+
+
+datasource "ds_filter_new_instance_types" do
+  run_script $js_filter_new_instance_types, $ds_aws_instance_types, $ds_github_aws_instance_types, $ds_azure_instance_types, $ds_github_azure_instance_types, $ds_google_machines_list, $ds_google_SQL_tier_list, $ds_github_google_instance_types
+end
+
+###############################################################################
+# Script
+###############################################################################
+
+script "js_filter_one_subscription", type: "javascript" do
+  parameters "subscriptions"
+  result "filtered_subscriptions"
+  code <<-EOS
+    var subscriptionsList = [];
+    if(subscriptions.length > 0){
+      subscriptionsList.push({
+        "subscriptionId": subscriptions[0].subscriptionId
+      })
+    }
+    filtered_subscriptions = subscriptionsList;
+  EOS
+end
+
+script "js_filter_one_project", type: "javascript" do
+  parameters "projects"
+  result "filtered_projects"
+  code <<-EOS
+    var projectsList = [];
+    if(projects.length > 0){
+      projectsList.push({
+        "projectId": projects[0].projectId
+      })
+    }
+    filtered_projects = projectsList;
+  EOS
+end
+
+script "js_filter_new_instance_types", type:"javascript" do
+  parameters "aws_instance_types", "github_aws_instance_types", "azure_instance_types", "github_azure_instance_types", "google_instance_type", "google_SQL_tyres_list", "github_google_instance_types"
+  result "instance_types"
+  code <<-EOS
+    var new_instance_types_found = [];
+    
+    // Finding new instance types in AWS
+    _.each(aws_instance_types, function(value, key){
+      var aws_instance_type_check_in_github = github_aws_instance_types[value.instanceType]
+      if(aws_instance_type_check_in_github == null){
+        new_instance_types_found.push({
+          "instanceType": value.instanceType,
+          "cloudProvider": "AWS"
+        })
+      }
+    })
+
+    // Finding new instance types in Azure
+    var  azure_unique_instance_types =     _.uniq(_.map(azure_instance_types, function(d){return d.instanceType}));
+    _.each(azure_unique_instance_types, function(value, key){
+      var azure_instance_type_check_in_github = github_azure_instance_types[value]
+      if(azure_instance_type_check_in_github == null){
+        new_instance_types_found.push({
+          "instanceType": value,
+          "cloudProvider": "Azure"
+        })
+      }
+    })
+
+    // Finding new instance types for google
+    //combining the vm types and db tiers
+    var machines_list_obj={}
+    var github_list_machines = []
+    _.each(google_instance_type, function(machine){
+      if(machines_list_obj[machine.name]==null){
+	      machines_list_obj[machine.name]=machine;
+	    }
+    })
+
+    _.each(google_SQL_tyres_list, function(sql){
+      if(machines_list_obj[sql.name]==null){
+	      //filtering out 1st gen db tiers
+	      if(sql.name.indexOf("D")==0){
+        }
+		    else{
+		      machines_list_obj[sql.name]=sql;
+		    }
+	    }
+	  })
+
+    github_list_machines = _.keys(github_google_instance_types)
+    for(machine in machines_list_obj){
+	    if(_.contains(github_list_machines, machine)){
+	      continue;
+	    }
+	    else{
+	      //filtering out the n1 machine types which are renamed to m1
+		    //https://cloud.google.com/compute/docs/machine-types#m1_machine_types
+	      if( machine == "n1-megamem-96" || machine == "n1-ultramem-160" || machine == "n1-ultramem-40" || machine == "n1-ultramem-80"){
+		      continue;
+		    }
+        console.log(machine);
+        new_instance_types_found.push({
+          "instanceType": machine,
+          "cloudProvider": "Google"
+        })
+	    }
+	  }
+
+    instance_types=_.sortBy(new_instance_types_found, "cloudProvider")
+  EOS
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "policy_new_instance_types" do
+  validate $ds_filter_new_instance_types do
+    summary_template "{{ len data }} New Instance Types Found"
+    escalate $report_new_instance_types
+    check eq(size(data),0)
+    export "new_instance_types" do
+      resource_level false
+      field "cloudProvider" do
+        label "Cloud Vendor"
+      end
+      field "instanceType" do
+        label "Instance Type"
+      end
+    end
+  end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "report_new_instance_types" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
+end
+
