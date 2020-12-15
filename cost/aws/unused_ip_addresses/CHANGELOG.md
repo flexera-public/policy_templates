@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.13
+
+- Modified policy to only use Idle IP costs for calculating total estimated savings.
+
 ## v2.12
 
 - Added a new input parameter to enter regions in order to support SCP (Service Control Policy) and CIS Standards
