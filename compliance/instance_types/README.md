@@ -6,8 +6,9 @@ The Policy finds instance/machine types across the AWS, Azure, Google cloud vend
 
 ## Input Parameters
 
-This policy has the following input parameter required when launching the policy.
+This policy has the following input parameters required when launching the policy.
 
+- *Allowed Regions* - A list of allowed regions for an AWS account. Please enter the allowed regions code if SCP is enabled, see [Available Regions](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/using-regions-availability-zones.html#concepts-available-regions) in AWS; otherwise, the policy may fail on regions that are disabled via SCP. Leave blank to consider all the regions.
 - *Email addresses to notify* - Email addresses of the recipients you wish to notify when new incidents are created
 
 ## Policy Actions
@@ -37,7 +38,8 @@ The following permissions must be allowed for the policy to run.
       {
         "Effect":"Allow",
         "Action":[
-          "ec2:DescribeInstances"
+          "ec2:DescribeInstances",
+          "ec2:DescribeRegions"
         ],
         "Resource":"*"
       }
