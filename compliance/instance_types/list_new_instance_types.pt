@@ -15,6 +15,13 @@ info(
 # User inputs
 ###############################################################################
 
+parameter "param_allowed_regions" do
+  type "list"
+  label "Allowed Regions"
+  allowed_pattern /^([a-zA-Z-_]+-[a-zA-Z0-9-_]+-[0-9-_]+,*|)+$/
+  description "A list of allowed regions. See the README for more details"
+end
+
 parameter "param_email" do
   type "list"
   label "Email addresses to notify"
@@ -81,6 +88,29 @@ end
 # Datasource
 ###############################################################################
 
+#Get list of enabled regions for an account
+datasource "ds_regions_list" do
+  request do
+    auth $auth_aws
+    verb "GET"
+    host "ec2.amazonaws.com"
+    path "/"
+    query "Action", "DescribeRegions"
+    query "Version", "2016-11-15"
+  end
+  result do
+    encoding "xml"
+    collect xpath(response, "//DescribeRegionsResponse/regionInfo/item", "array") do
+      field "region", xpath(col_item, "regionName")
+    end
+  end
+end
+
+# Get only SCP enabled regions
+datasource "ds_regions" do
+  run_script $js_regions, $param_allowed_regions, $ds_regions_list
+end
+
 datasource "ds_github_aws_instance_types" do
   request do
     verb "GET"
@@ -109,10 +139,11 @@ datasource "ds_github_google_instance_types" do
 end
 
 datasource "ds_aws_instance_types" do
+  iterate $ds_regions
   request do
     auth $auth_aws
     verb "GET"
-    host "ec2.amazonaws.com"
+    host join(["ec2.",val(iter_item,"region"), ".amazonaws.com"])
     path "/"
     query "Action", "DescribeInstanceTypes"
     query "Version", "2016-11-15"
@@ -259,6 +290,38 @@ end
 # Script
 ###############################################################################
 
+script "js_regions", type:"javascript" do
+  parameters "user_entered_regions", "all_regions"
+  result "regions"
+  code <<-EOS
+    if(_.isEmpty(user_entered_regions)){
+      regions = all_regions;
+    }else{
+      //Filter unique regions
+      var uniqueRegions = _.uniq(user_entered_regions);
+      var all_regions_list = [];
+      all_regions.forEach(function(all_region){
+        all_regions_list.push(all_region.region)
+      })
+
+      //Filter valid regions
+      var valid_regions = [];
+      _.map(uniqueRegions, function(uniqueRegion){
+        if(all_regions_list.indexOf(uniqueRegion) > -1){
+          valid_regions.push({"region": uniqueRegion})
+        }
+      })
+
+      //Throw an error if no valid regions found
+      if (_.isEmpty(valid_regions)) {
+        regions = all_regions;
+      }else{
+        regions = valid_regions
+      }
+    }
+  EOS
+end
+
 script "js_filter_one_subscription", type: "javascript" do
   parameters "subscriptions"
   result "filtered_subscriptions"
@@ -293,11 +356,12 @@ script "js_filter_new_instance_types", type:"javascript" do
   code <<-EOS
     var new_instance_types_found = [];
     // Finding new instance types in AWS
-    _.each(aws_instance_types, function(value, key){
-      var aws_instance_type_check_in_github = github_aws_instance_types[value.instanceType]
+    var aws_unique_instance_types =  _.uniq(_.map(aws_instance_types, function(d){return d.instanceType}));
+    _.each(aws_unique_instance_types, function(value, key){
+      var aws_instance_type_check_in_github = github_aws_instance_types[value]
       if(aws_instance_type_check_in_github == null){
         new_instance_types_found.push({
-          "instanceType": value.instanceType,
+          "instanceType": value,
           "cloudProvider": "AWS"
         })
       }
