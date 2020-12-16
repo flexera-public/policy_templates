@@ -1,4 +1,4 @@
-# New Instance Types
+# Check For New Instance Types
 
 ## What it does
 
