@@ -155,7 +155,6 @@ Please contact sales@flexera.com to learn more.
 - [Untagged Resources](./compliance/tags/tag_checker)
 - [Unapproved Instance Types](./compliance/unapproved_instance_types/)
 - [Disallowed Cloud Images](./compliance/disallowed_images/)
-- [New Instance Types](./compliance/instance_types)
 
 #### AWS
 
