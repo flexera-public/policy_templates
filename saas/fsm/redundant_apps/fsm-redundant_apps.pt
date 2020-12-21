@@ -7,11 +7,15 @@ severity "low"
 category "SaaS Management"
 default_frequency "weekly"
 info(
-  version: "2.3",
+  version: "2.4",
   provider: "Flexera SaaS Manager",
   service: "",
   policy_set: ""
 )
+
+###############################################################################
+# User inputs
+###############################################################################
 
 parameter "param_too_many_apps" do
   type "number"
@@ -25,6 +29,10 @@ parameter "param_email" do
   description "Email addresses of the recipients you wish to notify"
 end
 
+###############################################################################
+# Authentication
+###############################################################################
+
 #authenticate with FSM
 credentials "fsm_auth" do
   schemes "oauth2"
@@ -33,10 +41,25 @@ credentials "fsm_auth" do
   tags "provider=flexera_fsm"
 end
 
+
+###############################################################################
+# Datasources
+###############################################################################
+
+datasource "ds_get_host" do
+  run_script $js_get_host, rs_governance_host
+end
+
+
+datasource "ds_filtered_apps" do
+  run_script $js_filtered_apps, $ds_managed_products, $param_too_many_apps
+end
+
 datasource "ds_managed_products" do
+  iterate $ds_get_host
   request do
     auth $fsm_auth
-    host "api.fsm.flexeraeng.com"
+    host val(iter_item,"host")
     verb "GET"
     scheme "https"
     path join(["/svc/orgs/", rs_org_id, "/managed-products"])
@@ -51,6 +74,10 @@ datasource "ds_managed_products" do
     end
   end
 end
+
+###############################################################################
+# Scripts
+###############################################################################
 
 script "js_filtered_apps", type: "javascript" do
   parameters "apps", "param_too_many_apps"
@@ -96,9 +123,33 @@ script "js_filtered_apps", type: "javascript" do
 EOS
 end
 
-datasource "ds_filtered_apps" do
-  run_script $js_filtered_apps, $ds_managed_products, $param_too_many_apps
+script "js_get_host", type: "javascript" do
+  parameters "rs_governance_host"
+  result "result"
+  code <<-EOS
+    var result = [];
+    if(rs_governance_host.indexOf(".eu") !== -1 || rs_governance_host.indexOf("-eu") !== -1){
+        result.push({host: "api.fsm-eu.flexeraeng.com"});
+	}else{
+        result.push({host: "api.fsm.flexeraeng.com"});
+	}
+  EOS
 end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "report_summary" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
+end
+
+###############################################################################
+# Policy
+###############################################################################
 
 policy "policy_fsm_excessive_apps" do
   validate $ds_filtered_apps do
@@ -114,11 +165,4 @@ policy "policy_fsm_excessive_apps" do
       end
     end
   end
-end
-
-escalation "report_summary" do
-  automatic true
-  label "Send Email"
-  description "Send incident email"
-  email $param_email
 end
