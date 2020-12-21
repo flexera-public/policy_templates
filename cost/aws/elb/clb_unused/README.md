@@ -19,6 +19,7 @@ When an unused CLB is detected, an email action is triggered automatically to no
 
 ## Input Parameters
 
+- *Allowed Regions* - A list of allowed regions for an AWS account. Please enter the allowed regions code if SCP is enabled, see [Available Regions](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/using-regions-availability-zones.html#concepts-available-regions) in AWS; otherwise, the policy may fail on regions that are disabled via SCP. Leave blank to consider all the regions.
 - *Email addresses* - A list of email addresses to notify
 - *Ignore tags* - List of one or more Tags that will exclude Classic Load Balancer from actions being taken. Format: Key=Value
 - *Automatic Actions* - When this value is set, this policy will automatically take the selected action(s).
