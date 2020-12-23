@@ -7,11 +7,15 @@ severity "medium"
 category "SaaS Management"
 default_frequency "daily"
 info(
-  version: "2.3",
+  version: "2.4",
   provider: "Flexera SaaS Manager",
   service: "",
   policy_set: ""
 )
+
+###############################################################################
+# User inputs
+###############################################################################
 
 parameter "param_unsanctioned_apps" do 
   type "list"
@@ -32,6 +36,10 @@ parameter "param_email" do
   description "Email addresses of the recipients you wish to notify"
 end
 
+###############################################################################
+# Authentication
+###############################################################################
+
 #authenticate with FSM
 credentials "fsm_auth" do
   schemes "oauth2"
@@ -40,10 +48,19 @@ credentials "fsm_auth" do
   tags "provider=flexera_fsm"
 end
 
+###############################################################################
+# Datasources
+###############################################################################
+
+datasource "ds_get_host" do
+  run_script $js_get_host, rs_governance_host
+end
+
 datasource "ds_num_expenses" do
+  iterate $ds_get_host
   request do
     auth $fsm_auth
-    host "api.fsm.flexeraeng.com"
+    host val(iter_item,"host")
     verb "GET"
     scheme "https"
     path join(["/svc/orgs/", rs_org_id, "/financial-discovery"])
@@ -52,12 +69,13 @@ datasource "ds_num_expenses" do
   result do
     encoding "json"
     field "totalItems", jmes_path(response, "totalItems")
+    field "saas_host", val(iter_item,"host")
   end
 end
 
 datasource "ds_unsanctioned" do
   request do
-    run_script $js_unsanctioned, val($ds_num_expenses, "totalItems"), rs_org_id
+    run_script $js_unsanctioned, $ds_num_expenses, rs_org_id
   end
   result do
     encoding "json"
@@ -76,13 +94,34 @@ datasource "ds_unsanctioned" do
   end
 end
 
+datasource "ds_cleanup_expenses" do
+  run_script $js_cleanup_expenses, $ds_unsanctioned, $param_days, $param_unsanctioned_apps
+end
+
+###############################################################################
+# Scripts
+###############################################################################
+
+script "js_get_host", type: "javascript" do
+  parameters "host"
+  result "result"
+  code <<-EOS
+    var result = [];
+    if(host.indexOf(".eu") !== -1 || host.indexOf("-eu") !== -1){
+      result.push({host: "api.fsm-eu.flexeraeng.com"});
+    }else{
+      result.push({host: "api.fsm.flexeraeng.com"});
+    }
+  EOS
+end
+
 script "js_unsanctioned", type: "javascript" do
-  parameters "num_items", "rs_org_id"
+  parameters "ds_num_expenses", "rs_org_id"
   result "request"
   code <<-EOS
   request = {
     auth: "fsm_auth",
-    host: "api.fsm.flexeraeng.com",
+    host: ds_num_expenses[0]["saas_host"],
     verb: "GET",
     scheme: "https",
     path: "/svc/orgs/"+rs_org_id+"/financial-discovery",
@@ -90,14 +129,10 @@ script "js_unsanctioned", type: "javascript" do
       "content-type": "application/json"
     },
     query_params: {
-      "pageSize": num_items.toString()
+      "pageSize": ds_num_expenses[0]["totalItems"].toString()
     }
   }
 EOS
-end
-
-datasource "ds_cleanup_expenses" do
-  run_script $js_cleanup_expenses, $ds_unsanctioned, $param_days, $param_unsanctioned_apps
 end
 
 script "js_cleanup_expenses", type: "javascript" do
@@ -142,12 +177,20 @@ script "js_cleanup_expenses", type: "javascript" do
 EOS
 end
 
+###############################################################################
+# Escalations
+###############################################################################
+
 escalation "report_summary" do
   automatic true
   label "Send Email"
   description "Send incident email"
   email $param_email
 end
+
+###############################################################################
+# Policy
+###############################################################################
 
 policy "policy_fsm_unsanctioned_spend" do
   validate $ds_cleanup_expenses do
