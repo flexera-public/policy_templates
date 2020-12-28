@@ -7,17 +7,25 @@ severity "high"
 default_frequency "daily"
 category "SaaS Management"
 info(
-  version: "2.2",
+  version: "2.3",
   provider: "Flexera SaaS Manager",
   service: "",
   policy_set: ""
 )
+
+###############################################################################
+# User inputs
+###############################################################################
 
 parameter "param_email" do
   type "list"
   label "Email addresses to notify"
   description "Email addresses of the recipients you wish to notify"
 end
+
+###############################################################################
+# Authentication
+###############################################################################
 
 #authenticate with FSM
 credentials "fsm_auth" do
@@ -27,10 +35,19 @@ credentials "fsm_auth" do
   tags "provider=flexera_fsm"
 end
 
+###############################################################################
+# Datasources
+###############################################################################
+
+datasource "ds_get_host" do
+  run_script $js_get_host, rs_governance_host
+end
+
 datasource "ds_suspicious_users" do
+  iterate $ds_get_host
   request do
     auth $fsm_auth
-    host "api.fsm.flexeraeng.com"
+    host val(iter_item,"host")
     verb "GET"
     scheme "https"
     path join(["/svc/orgs/", rs_org_id, "/activity/suspicious-agents"])
@@ -59,6 +76,23 @@ datasource "ds_users_cleanup" do
   run_script $js_users_cleanup, $ds_suspicious_users
 end
 
+###############################################################################
+# Scripts
+###############################################################################
+
+script "js_get_host", type: "javascript" do
+  parameters "rs_governance_host"
+  result "result"
+  code <<-EOS
+    var result=[];
+    if(rs_governance_host.indexOf(".eu") !== -1 || rs_governance_host.indexOf("-eu") !== -1){
+      result.push({host: "api.fsm-eu.flexeraeng.com"});
+    }else{
+      result.push({host: "api.fsm.flexeraeng.com"});
+    }
+  EOS
+end
+
 script "js_users_cleanup", type: "javascript" do
   parameters "users"
   result "result"
@@ -81,6 +115,9 @@ script "js_users_cleanup", type: "javascript" do
   EOS
 end
 
+###############################################################################
+# Escalations
+###############################################################################
 
 escalation "report_summary" do
   automatic true
@@ -88,6 +125,10 @@ escalation "report_summary" do
   description "Send incident email"
   email $param_email
 end
+
+###############################################################################
+# Policy
+###############################################################################
 
 policy "policy_fsm_suspicious_users" do
   validate $ds_users_cleanup do
