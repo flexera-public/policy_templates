@@ -47,7 +47,7 @@ parameter "param_take_snapshot" do
   type "string"
   label "Create Final Snapshot"
   description "Boolean for whether or not to take a final snapshot before deleting."
-  allowed_values "Yes","No"
+  allowed_values "Yes", "No"
   default "Yes"
 end
 
@@ -58,13 +58,21 @@ parameter "param_automatic_action" do
   allowed_values ["Delete Volumes"]
 end
 
+parameter "param_flexera_org_id_for_optima" do
+  type "string"
+  label "Flexera One Org ID for Optima"
+  description "The Flexera One org ID for Optima queries used to determine estimated costs, by default the current org is used"
+  default "current"
+  allowed_pattern /^(current|[0-9]+)$/
+end
+
 ###############################################################################
 # Authentication
 ###############################################################################
 
 #Authenticate with AWS
 credentials "auth_aws" do
-  schemes "aws","aws_sts"
+  schemes "aws", "aws_sts"
   label "AWS"
   description "Select the AWS Credential from the list"
   tags "provider=aws"
@@ -116,13 +124,13 @@ end
 datasource "ds_unattached_volumes_list" do
   iterate $ds_regions
     request do
-      run_script $js_aws_unattached_volumes_list, val(iter_item,"region")
+      run_script $js_aws_unattached_volumes_list, val(iter_item, "region")
     end
   result do
   encoding "xml"
-  collect xpath(response, "//DescribeVolumesResponse/volumeSet/item","array") do
+  collect xpath(response, "//DescribeVolumesResponse/volumeSet/item", "array") do
     field "tags" do
-      collect xpath(col_item,"tagSet/item") do
+      collect xpath(col_item, "tagSet/item") do
         field "tagKey", xpath(col_item, "key")
         field "tagValue", xpath(col_item, "value")
       end
@@ -137,8 +145,8 @@ datasource "ds_unattached_volumes_list" do
     field "snapshot_id", xpath(col_item, "snapshotId")
     field "volume_Type", xpath(col_item, "volumeType")
     field "region", val(iter_item, "region")
-    field "createdTime", xpath(col_item,"createTime")
-    field "size", xpath(col_item,"size")
+    field "createdTime", xpath(col_item, "createTime")
+    field "size", xpath(col_item, "size")
    end
   end
 end
@@ -150,13 +158,13 @@ end
 datasource "ds_volume_read_bytes_metrics" do
   iterate $ds_unattached_volumes_map
   request do
-    run_script $js_aws_volumes_cloud_watch_read_byte_metrics, val(iter_item,"vol_id"), val(iter_item,"region"), $param_unattached_days
+    run_script $js_aws_volumes_cloud_watch_read_byte_metrics, val(iter_item, "vol_id"), val(iter_item, "region"), $param_unattached_days
   end
   result do
     encoding "json"
-    collect jmes_path(response,"GetMetricStatisticsResponse.GetMetricStatisticsResult") do
-      field "volumeId", val(iter_item,"vol_id")
-      field "dataPoints", jmes_path(col_item,"Datapoints")
+    collect jmes_path(response, "GetMetricStatisticsResponse.GetMetricStatisticsResult") do
+      field "volumeId", val(iter_item, "vol_id")
+      field "dataPoints", jmes_path(col_item, "Datapoints")
     end
   end
 end
@@ -164,19 +172,19 @@ end
 datasource "ds_volume_write_bytes_metrics" do
   iterate $ds_unattached_volumes_map
   request do
-    run_script $js_aws_volumes_cloud_watch_write_byte_metrics, val(iter_item,"vol_id"), val(iter_item,"region"), $param_unattached_days
+    run_script $js_aws_volumes_cloud_watch_write_byte_metrics, val(iter_item, "vol_id"), val(iter_item, "region"), $param_unattached_days
   end
   result do
     encoding "json"
-    collect jmes_path(response,"GetMetricStatisticsResponse.GetMetricStatisticsResult") do
-      field "volumeId", val(iter_item,"vol_id")
-      field "dataPoints", jmes_path(col_item,"Datapoints")
+    collect jmes_path(response, "GetMetricStatisticsResponse.GetMetricStatisticsResult") do
+      field "volumeId", val(iter_item, "vol_id")
+      field "dataPoints", jmes_path(col_item, "Datapoints")
     end
   end
 end
 
 datasource "ds_check_volumes_read_or_write_operations" do
-  run_script $js_check_volumes_read_or_write_operations,$ds_unattached_volumes_map,$ds_volume_read_bytes_metrics,$ds_volume_write_bytes_metrics
+  run_script $js_check_volumes_read_or_write_operations, $ds_unattached_volumes_map, $ds_volume_read_bytes_metrics, $ds_volume_write_bytes_metrics
 end
 
 datasource "ds_currency_reference" do
@@ -187,19 +195,23 @@ datasource "ds_currency_reference" do
   end
 end
 
+datasource "ds_flexera_optima" do
+  run_script $js_flexera_optima, $param_flexera_org_id_for_optima, rs_org_id
+end
+
 datasource "ds_currency_code" do
   request do
     auth $auth_rs
     host rs_optima_host
-    path join(["/bill-analysis/orgs/",rs_org_id,"/settings/currency_code"])
+    path join(["/bill-analysis/orgs/", val($ds_flexera_optima, "org_id"), "/settings/currency_code"])
     header "Api-Version", "0.1"
     header "User-Agent", "RS Policies"
     ignore_status [403]
   end
   result do
     encoding "json"
-    field "id", jmes_path(response,"id")
-    field "value", jmes_path(response,"value")
+    field "id", jmes_path(response, "id")
+    field "value", jmes_path(response, "value")
   end
 end
 
@@ -207,7 +219,7 @@ datasource "ds_billing_centers" do
   request do
     auth $auth_rs
     host rs_optima_host
-    path join(["/analytics/orgs/",rs_org_id,"/billing_centers"])
+    path join(["/analytics/orgs/", val($ds_flexera_optima, "org_id"), "/billing_centers"])
     header "Api-Version", "1.0"
     header "User-Agent", "RS Policies"
     query "view", "allocation_table"
@@ -215,11 +227,11 @@ datasource "ds_billing_centers" do
   end
   result do
     encoding "json"
-    collect jmes_path(response,"[*]") do
-      field "href", jmes_path(col_item,"href")
-      field "id", jmes_path(col_item,"id")
-      field "name", jmes_path(col_item,"name")
-      field "parent_id", jmes_path(col_item,"parent_id")
+    collect jmes_path(response, "[*]") do
+      field "href", jmes_path(col_item, "href")
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+      field "parent_id", jmes_path(col_item, "parent_id")
     end
   end
 end
@@ -241,20 +253,20 @@ datasource "ds_get_caller_identity" do
   result do
     encoding "xml"
     collect xpath(response, "//GetCallerIdentityResponse/GetCallerIdentityResult") do
-      field "account",xpath(col_item, "Account")
+      field "account", xpath(col_item, "Account")
     end
  end
 end
 
 datasource "ds_volume_costs" do
   request do
-    run_script $js_get_costs, $ds_get_caller_identity, $ds_top_level_billing_centers, rs_org_id
+    run_script $js_get_costs, $ds_get_caller_identity, $ds_top_level_billing_centers, val($ds_flexera_optima, "org_id")
   end
   result do
     encoding "json"
-    collect jmes_path(response,"rows[*]") do
-      field "resource_id", jmes_path(col_item,"dimensions.resource_id")
-      field "cost_nonamortized_unblended_adj", jmes_path(col_item,"metrics.cost_nonamortized_unblended_adj")
+    collect jmes_path(response, "rows[*]") do
+      field "resource_id", jmes_path(col_item, "dimensions.resource_id")
+      field "cost_nonamortized_unblended_adj", jmes_path(col_item, "metrics.cost_nonamortized_unblended_adj")
     end
   end
 end
@@ -267,7 +279,7 @@ end
 # Script
 ###############################################################################
 
-script "js_regions", type:"javascript" do
+script "js_regions", type: "javascript" do
   parameters "user_entered_regions", "all_regions"
   result "regions"
   code <<-EOS
@@ -300,8 +312,8 @@ script "js_regions", type:"javascript" do
 end
 
 #https://docs.aws.amazon.com/AWSEC2/latest/APIReference/API_DescribeVolumes.html
-script "js_aws_unattached_volumes_list", type:"javascript" do
-  parameters  "region"
+script "js_aws_unattached_volumes_list", type: "javascript" do
+  parameters "region"
   result "results"
   code <<-EOS
   results = {
@@ -319,8 +331,8 @@ script "js_aws_unattached_volumes_list", type:"javascript" do
   EOS
 end
 
-script "js_filter_aws_unattached_volumes", type:"javascript" do
-  parameters "ds_unattached_volumes_list","param_exclude_tags","unattachedDays"
+script "js_filter_aws_unattached_volumes", type: "javascript" do
+  parameters "ds_unattached_volumes_list", "param_exclude_tags", "unattachedDays"
   result "content"
   code <<-EOS
   var param_exclude_tags_lower=[];
@@ -373,8 +385,8 @@ script "js_filter_aws_unattached_volumes", type:"javascript" do
   EOS
 end
 
-script "js_aws_volumes_cloud_watch_read_byte_metrics", type:"javascript" do
-  parameters "volume_id","region","unattachedDays"
+script "js_aws_volumes_cloud_watch_read_byte_metrics", type: "javascript" do
+  parameters "volume_id", "region", "unattachedDays"
   result "metrics"
   code <<-EOS
     var endDate = new Date().toISOString();
@@ -383,7 +395,7 @@ script "js_aws_volumes_cloud_watch_read_byte_metrics", type:"javascript" do
     var datapoints = (unattachedDays / 30).toFixed(2);
     if(datapoints > 1440){
       period = period * 60;
-	}
+    }
     console.log("Period "+period);
     period = ""+period+"";
     metrics = {
@@ -416,8 +428,8 @@ script "js_aws_volumes_cloud_watch_read_byte_metrics", type:"javascript" do
   EOS
 end
 
-script "js_aws_volumes_cloud_watch_write_byte_metrics", type:"javascript" do
-  parameters "volume_id","region","unattachedDays"
+script "js_aws_volumes_cloud_watch_write_byte_metrics", type: "javascript" do
+  parameters "volume_id", "region", "unattachedDays"
   result "metrics"
   code <<-EOS
     var endDate = new Date().toISOString();
@@ -426,7 +438,7 @@ script "js_aws_volumes_cloud_watch_write_byte_metrics", type:"javascript" do
     var dataPoints = (unattachedDays/30).toFixed(2);
     if(dataPoints > 1440){
       period = period * 60;
-	}
+    }
     period = ""+period+"";
     console.log("Period "+period);
     metrics = {
@@ -459,8 +471,8 @@ script "js_aws_volumes_cloud_watch_write_byte_metrics", type:"javascript" do
   EOS
 end
 
-script "js_check_volumes_read_or_write_operations", type:'javascript' do
-  parameters "volumesList","volumesReadMetricsData","volumesWriteMetricsData"
+script "js_check_volumes_read_or_write_operations", type: 'javascript' do
+  parameters "volumesList", "volumesReadMetricsData", "volumesWriteMetricsData"
   result "unattachedVolumes"
   code <<-EOS
   var unattachedVolumes = [];
@@ -473,10 +485,10 @@ script "js_check_volumes_read_or_write_operations", type:'javascript' do
         var readMetricDataPoints = readMetricData['dataPoints'];
         if(readMetricDataPoints.length > 0){
           readWriteOperationDone = true;
-		}
+        }
         break;
-	  }
-	}
+      }
+    }
     if(!readWriteOperationDone){
       for(var k=0; k < volumesWriteMetricsData.length; k++){
         var writeMetricData = volumesWriteMetricsData[k];
@@ -484,11 +496,11 @@ script "js_check_volumes_read_or_write_operations", type:'javascript' do
           var writeMetricDataPoints = writeMetricData['dataPoints'];
           if(writeMetricDataPoints.length > 0){
             readWriteOperationDone = true;
-		  }
+          }
           break;
-		}
-	  }
-	}
+        }
+      }
+    }
     if(!readWriteOperationDone){
       unattachedVolumes.push({
         volumeId : volume['vol_id'],
@@ -499,9 +511,19 @@ script "js_check_volumes_read_or_write_operations", type:'javascript' do
         createdTime : volume['createdTime'],
         size : volume['size'],
         savings:"N/A"
-	  })
-	}
+      })
+    }
   }
+  EOS
+end
+
+script "js_flexera_optima", type: "javascript" do
+  parameters "flexera_org_id_for_optima", "current_flexera_org_id"
+  result "flexera_optima"
+  code <<-EOS
+  var flexera_optima = {
+    org_id: flexera_org_id_for_optima == "current" ? current_flexera_org_id : flexera_org_id_for_optima,
+  };
   EOS
 end
 
@@ -511,11 +533,11 @@ script "js_top_level_bc", type: "javascript" do
   code <<-EOS
   var filtered_billing_centers =
     _.reject(billing_centers, function(bc){ return bc.parent_id != null });
-EOS
+  EOS
 end
 
-script "js_get_costs", type:"javascript" do
-  parameters  "account_id","billing_centers","org"
+script "js_get_costs", type: "javascript" do
+  parameters "account_id", "billing_centers", "org"
   result "request"
   code <<-EOS
     // returns date formatted as string: YYYY-mm-dd
@@ -575,7 +597,7 @@ script "js_get_costs", type:"javascript" do
 end
 
 script "js_volume_cost_mapping", type:"javascript" do
-  parameters  "volumes","volume_costs","ds_currency_code","ds_currency_reference", "ds_billing_centers", "ds_get_caller_identity"
+  parameters "volumes", "volume_costs", "ds_currency_code", "ds_currency_reference", "ds_billing_centers", "ds_get_caller_identity"
   result "result"
   code <<-EOS
   var unused_volumes=[];
@@ -685,7 +707,7 @@ policy "policy_unattached_volumes_list" do
     EOS
     escalate $report_unused_volumes
     escalate $delete_volumes
-    check eq(size(val(data,"unused_volumes")),0)
+    check eq(size(val(data, "unused_volumes")), 0)
     export "unused_volumes" do
       resource_level true
       field "accountId" do
@@ -729,14 +751,14 @@ escalation "delete_volumes" do
   automatic contains($param_automatic_action, "Delete Volumes")
   label "Delete Volumes"
   description "Approval to delete all selected volumes"
-  run "take_action",data,$param_take_snapshot
+  run "take_action", data, $param_take_snapshot
 end
 
 ###############################################################################
 # Cloud Workflow
 ###############################################################################
 
-define take_action($data,$param_take_snapshot) return $all_responses do
+define take_action($data, $param_take_snapshot) return $all_responses do
   # If you want to see the audit entries. Please set $$debug = true
   $$debug = false
   $all_responses = []
@@ -760,7 +782,7 @@ define create_volumes_snapshot($item) return $status_code do
     auth: $$auth_aws,
     https: true,
     verb: "get",
-    host: "ec2."+$item["region"]+".amazonaws.com",
+    host: "ec2." + $item["region"] + ".amazonaws.com",
     href: "/",
     query_strings: {
       "Action": "CreateSnapshot",
@@ -768,7 +790,7 @@ define create_volumes_snapshot($item) return $status_code do
       "VolumeId": $item["id"]
     }
   )
-  call sys_log("Create Volumes Snapshot Response ",to_s($response))
+  call sys_log("Create Volumes Snapshot Response ", to_s($response))
   $status_code = $response["code"]
 
   if $status_code == 200
@@ -787,7 +809,6 @@ define create_volumes_snapshot($item) return $status_code do
           $status_code = 400
           $snapshot_status = "completed"
         end
-
       end
     end
   end
@@ -798,7 +819,7 @@ define delete_volume($item) return $status_code do
     auth: $$auth_aws,
     https: true,
     verb: "get",
-    host: "ec2."+$item["region"]+".amazonaws.com",
+    host: "ec2." + $item["region"] + ".amazonaws.com",
     href: "/",
     query_strings: {
       "Action": "DeleteVolume",
@@ -806,23 +827,23 @@ define delete_volume($item) return $status_code do
       "VolumeId": $item["id"]
     }
   )
-  call sys_log("Delete Volumes Response ",to_s($delete_response))
+  call sys_log("Delete Volumes Response ", to_s($delete_response))
   $volume_delete_status = $delete_response["code"]
   if $volume_delete_status != 200
     $volume_delete_body = $delete_response["body"]
-    $split_body = split($volume_delete_body,"<Message>")
-    $split_final_message = split($split_body[1],"</Message>");
-     call create_tag($item["region"],$item["id"],to_s($split_final_message[0]))
+    $split_body = split($volume_delete_body, "<Message>")
+    $split_final_message = split($split_body[1], "</Message>");
+     call create_tag($item["region"], $item["id"], to_s($split_final_message[0]))
   end
 end
 
 define get_snapshot_status($snapshotId) return $snapshot_status do
-  call sys_log("Inside Get Snapshot Details Snapshot Id ",$snapshotId)
+  call sys_log("Inside Get Snapshot Details Snapshot Id ", $snapshotId)
   $snapshot_response = http_request(
     auth: $$auth_aws,
     https: true,
     verb: "get",
-    host: "ec2."+$item["region"]+".amazonaws.com",
+    host: "ec2." + $item["region"] + ".amazonaws.com",
     href: "/",
     query_strings: {
       "Action": "DescribeSnapshots",
@@ -830,17 +851,17 @@ define get_snapshot_status($snapshotId) return $snapshot_status do
       "SnapshotId": $snapshotId
     }
   )
-  call sys_log("Get Snapshot Details ",to_s($snapshot_response))
+  call sys_log("Get Snapshot Details ", to_s($snapshot_response))
   $snapshot_status = $snapshot_response["body"]["DescribeSnapshotsResponse"]["snapshotSet"]["item"]["status"]
 end
 
-define create_tag($region,$volumeId,$message) do
-  call sys_log("Create Tag  ",$volumeId)
+define create_tag($region, $volumeId, $message) do
+  call sys_log("Create Tag  ", $volumeId)
   $snapshot_response = http_request(
     auth: $$auth_aws,
     https: true,
     verb: "get",
-    host: "ec2."+$region+".amazonaws.com",
+    host: "ec2." + $region + ".amazonaws.com",
     href: "/",
     query_strings: {
       "Action": "CreateTags",
@@ -858,7 +879,7 @@ define sys_log($subject, $detail) do
       notify: "None",
       audit_entry: {
         auditee_href: @@account,
-        summary: "AWS Delete Unused Volumes Policy "+ $subject,
+        summary: "AWS Delete Unused Volumes Policy " + $subject,
         detail: $detail
       }
     )
