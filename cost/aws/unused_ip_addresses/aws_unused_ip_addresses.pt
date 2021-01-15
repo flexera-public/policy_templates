@@ -120,30 +120,6 @@ datasource "ds_aws_elastic_ip_address" do
   end
 end
 
-datasource "ds_currency_reference" do
-  request do
-    host "raw.githubusercontent.com"
-    path "/rightscale/policy_templates/master/cost/scheduled_reports/currency_reference.json"
-    header "User-Agent", "RS Policies"
-  end
-end
-
-datasource "ds_currency_code" do
-  request do
-    auth $auth_rs
-    host rs_optima_host
-    path join(["/bill-analysis/orgs/",rs_org_id,"/settings/currency_code"])
-    header "Api-Version", "0.1"
-    header "User-Agent", "RS Policies"
-    ignore_status [403]
-  end
-  result do
-    encoding "json"
-    field "id", jmes_path(response,"id")
-    field "value", jmes_path(response,"value")
-  end
-end
-
 datasource "ds_get_caller_identity" do
   request do
     auth $auth_aws
@@ -162,7 +138,7 @@ datasource "ds_get_caller_identity" do
  end
 end
 
-datasource "ds_get_eip_rate" do
+datasource "ds_get_aws_offer_page" do
   request do
     auth $auth_aws
     verb "GET"
@@ -172,26 +148,12 @@ datasource "ds_get_eip_rate" do
   end
 end
 
-datasource "ds_get_currency_rates" do
-  request do
-    verb "GET"
-    host "api.currencyfreaks.com"
-    path "/latest"
-    query "apikey", "5f996aab23fb4f368057a28bc91b83b1"
-  end
-  result do
-    encoding "json"
-    field "base", jmes_path(response, "base")
-    field "rates",jmes_path(response, "rates")
-  end
-end
-
 datasource "ds_filter_ip" do
   run_script $js_filter_ip_response, $ds_aws_elastic_ip_address, $param_exclude_tags, $ds_get_caller_identity
 end
 
 datasource "ds_ip_cost_mapping" do
-  run_script $js_ip_cost_mapping, $ds_filter_ip, $ds_get_currency_rates, $ds_currency_code, $ds_currency_reference, $ds_get_caller_identity, $ds_get_eip_rate
+  run_script $js_ip_cost_mapping, $ds_filter_ip, $ds_get_caller_identity, $ds_get_aws_offer_page
 end
 
 ###############################################################################
@@ -281,15 +243,13 @@ script "js_filter_ip_response", type: "javascript" do
 end
 
 script "js_ip_cost_mapping", type:"javascript" do
-  parameters  "ip_list","currency_rates", "ds_currency_code", "ds_currency_reference", "ds_get_caller_identity", "offer_page"
+  parameters  "ip_list", "ds_get_caller_identity", "offer_page"
   result "result"
   code <<-EOS
     var result = {};
     var unused_ip_list=[];
     var message='';
     var doc_rate=0;
-    var rate=0;
-    var doc_curr_code='';
     var total_savings = 0;
     var savings_per_resource = 0;
     var sku = '';
@@ -304,8 +264,8 @@ script "js_ip_cost_mapping", type:"javascript" do
       price_dim = item.priceDimensions;
       _.each(price_dim, function(price_item){
         if(price_item.description.indexOf('Elastic IP address not attached to a running instance per hour') != -1){
-          doc_curr_code=_.keys(price_item.pricePerUnit);
-          doc_rate=price_item.pricePerUnit[doc_curr_code];
+          doc_curr_val=_.values(price_item.pricePerUnit);
+          doc_rate=doc_curr_val[0];
         }
       })
     })
@@ -326,37 +286,10 @@ script "js_ip_cost_mapping", type:"javascript" do
       }
       return result+"."+values[1];
     }
-    // Format costs with currency symbol and thousands separator
-    if( ds_currency_code['value'] !== undefined ) {
-      if (ds_currency_reference[ds_currency_code['value']] !== undefined ) {
-        var cur = ds_currency_reference[ds_currency_code['value']]['symbol']
-        if( ds_currency_reference[ds_currency_code['value']]['t_separator'] !== undefined ) {
-          var separator = ds_currency_reference[ds_currency_code['value']]['t_separator']
-        } else {
-          var separator = ""
-        }
-      } else {
-        var cur = ""
-        var separator = ""
-      }
-    } else {
-      var cur = "$"
-      var separator = ","
-    }
-    if(currency_rates.base=='USD' && doc_curr_code == 'USD'){
-      rate=doc_rate*currency_rates.rates[ds_currency_code['value']];
-    }
-    else{
-      if( ds_currency_code['value'] !== undefined ) {
-        var ref_rate = currency_rates.rates[ds_currency_code['value']];
-        var ref_val = currency_rates.rates[doc_curr_code];
-        rate = doc_rate * (ref_rate/ref_val);
-      }
-      else{
-        rate=doc_rate;
-      }
-    }
-    savings_per_resource = Math.round((rate * 24 * 30) * 100) / 100;
+    var cur = "$"
+    var separator = ","
+    //The savings is calculated and displayed in USD
+    savings_per_resource = Math.round((doc_rate * 24 * 30) * 100) / 100;
     total_savings = savings_per_resource * ip_list.length;
     total_savings = cur + ' '+formatNumber((Math.round((total_savings) * 100) / 100) , separator);
     savings_per_resource = cur + ' '+formatNumber(savings_per_resource, separator);

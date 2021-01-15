@@ -2,7 +2,7 @@
 
 ## v2.13
 
-- Modified policy to only use Idle IP costs for calculating total estimated savings.
+- Modified policy to use per hour cost for unused IP from AWS pricing document for calculating estimated savings.
 
 ## v2.12
 
