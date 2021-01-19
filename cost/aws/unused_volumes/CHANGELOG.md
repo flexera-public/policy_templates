@@ -1,5 +1,10 @@
 # Changelog
 
+## v2.14
+
+- Add a parameter to override the Flexera One org ID to use when querying Optima for cases when the project is not
+  in the same org where the AWS bill is registered in Optima
+
 ## v2.13
 
 - Added a new input parameter to enter regions in order to support SCP (Service Control Policy) and CIS Standards
