@@ -2,7 +2,7 @@
 
 ## What it does
 
-This Policy Template leverages the [Azure API](https://docs.microsoft.com/en-us/rest/api/consumption/reservationrecommendations/list). It will raise incidents if Azure MCA has any RI Purchase Recommendations, whose net savings exceeds the *Net Savings Threshold* parameter in the Policy.
+This Policy Template leverages the [Azure API](https://docs.microsoft.com/en-us/rest/api/consumption/reservationrecommendations/list). It will raise incidents if Azure MCA has any RI Purchase Recommendations, whose net savings exceeds the `Net Savings Threshold` parameter in the Policy.
 
 ## Input Parameters
 
