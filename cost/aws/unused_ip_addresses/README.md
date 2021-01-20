@@ -13,7 +13,7 @@ If EIP is not needed, charges can be stopped by releasing the unused EIP.
 ### Policy savings details
 
 The policy includes the estimated savings. The estimated savings is recognized if the resource is terminated. The savings is calculated using the per hour cost of unused IPs for a period of 30 days and is displayed in the Estimated Monthly Savings column and the total estimated sum of all the unused IPs is displayed in the incident detail message.
-Please note that the estimated savings is calculated and displayed in USD($), excluding the discounts.
+Please note that the estimated savings is calculated and displayed in USD($), excluding any discounts.
 
 ## Input Parameters
 
