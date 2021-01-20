@@ -8,7 +8,7 @@ This Policy Template leverages the [Azure EA API](https://docs.microsoft.com/en-
 
 This policy has the following input parameters required when launching the policy.
 
-- *Email addresses of the recipients you wish to notify* - A list of email addresses to notify
+- *Email addresses of the recipients you wish to notify* - Email addresses of the recipients you wish to notify
 - *Number of days to prior to expiration date to trigger incident* - Number of days before a RI expires to alert on
 
 ## Policy Actions

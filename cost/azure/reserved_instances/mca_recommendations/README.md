@@ -8,9 +8,9 @@ This Policy Template leverages the [Azure API](https://docs.microsoft.com/en-us/
 
 This policy has the following input parameters required when launching the policy.
 
-- *Look Back Period* - Specify the number of days of past usage to analyze.
-- *Net Savings Threshold* - Specify the minimum Net Savings that should result in an RI purchase recommendation
-- *Email addresses to notify* - A list of email addresses to notify
+- *Look Back Period* - Number of days of prior usage to analyze.
+- *Net Savings Threshold* - Specify the minimum net savings that should result in a recommendation
+- *Email addresses to notify* - Email addresses of the recipients you wish to notify
 
 ## Policy Actions
 
