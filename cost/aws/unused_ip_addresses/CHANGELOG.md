@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.13
+
+- Modified policy to use per hour cost for unused IP from AWS pricing document for calculating estimated savings.
+
 ## v2.12
 
 - Added a new input parameter to enter regions in order to support SCP (Service Control Policy) and CIS Standards
