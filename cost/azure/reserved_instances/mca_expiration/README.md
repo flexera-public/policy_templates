@@ -2,7 +2,7 @@
 
 ## What it does
 
-This Policy Template leverages the [Azure EA API](https://docs.microsoft.com/en-us/rest/api/reserved-vm-instances/reservationorder/list). It will notify only if expiration is within the time frame specified in `Number of days to prior to expiration date to trigger incident` field. It will email the user specified in Email addresses of the recipients you wish to notify.
+This Policy Template leverages the [Azure API](https://docs.microsoft.com/en-us/rest/api/reserved-vm-instances/reservationorder/list). It will notify only if expiration is within the time frame specified in `Number of days to prior to expiration date to trigger incident` field. It will email the user specified in Email addresses of the recipients you wish to notify.
 
 ## Input Parameters
 
