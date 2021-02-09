@@ -3,8 +3,10 @@
 ## v1.2
 
 - Fixed aws account name lookup bug that lead to an error
-- added section headers
-- removed debugging console.log statements
+- Added section headers
+- Removed debugging console.log statements
+- Refactored Billing Center index call to return Billing Centers the user has access to
+- Fixed budget column heading in export table
 
 ## v1.1
 

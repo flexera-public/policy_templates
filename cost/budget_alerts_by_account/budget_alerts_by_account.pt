@@ -64,6 +64,20 @@ auth "auth_rs", type: "rightscale"
 # Datasources
 ###############################################################################
 
+datasource "ds_session" do
+  request do
+    auth $auth_rs
+    verb "GET"
+    host rs_cm_host
+    path "/api/sessions"
+    header "X-Api-Version", "1.5"
+    query "view", "whoami"
+  end
+  result do
+    field "user_id", last(split(first(jmes_path(response, "links[?rel == 'user'].href")),'/'))
+  end
+end
+
 datasource "ds_currency_reference" do
   request do
     host "raw.githubusercontent.com"
@@ -89,33 +103,13 @@ end
 
 datasource "ds_billing_centers" do
   request do
-    auth $auth_rs
-    host rs_optima_host
-    path join(["/analytics/orgs/",rs_org_id,"/billing_centers"])
-    header "Api-Version", "1.0"
-    header "User-Agent", "RS Policies"
-    query "view", "allocation_table"
+    run_script $js_get_billing_centers, $ds_session,rs_org_id,rs_optima_host
   end
-  result do
-    encoding "json"
-    collect jmes_path(response,"[*]") do
-      field "href", jmes_path(col_item,"href")
-      field "id", jmes_path(col_item,"id")
-      field "name", jmes_path(col_item,"name")
-      field "parent_id", jmes_path(col_item,"parent_id")
-      field "ancestor_ids", jmes_path(col_item,"ancestor_ids")
-      field "allocation_table", jmes_path(col_item,"allocation_table")
-    end
-  end
-end
-
-datasource "ds_top_level_billing_centers" do
-  run_script $js_top_level_bc, $ds_billing_centers
 end
 
 datasource "ds_top_bc_costs" do
   request do
-    run_script $js_costs_request, rs_org_id, $param_cost_metric, $ds_top_level_billing_centers
+    run_script $js_costs_request, rs_org_id, $param_cost_metric, $ds_billing_centers
   end
   result do
     encoding "json"
@@ -143,13 +137,18 @@ end
 # Scripts
 ###############################################################################
 
-script "js_top_level_bc", type: "javascript" do
-  parameters "ds_billing_centers"
-  result "filtered_billing_centers"
+script "js_get_billing_centers", type: "javascript" do
+  parameters "ds_session","rs_org_id","rs_optima_host"
+  result "request"
   code <<-EOS
-  var filtered_billing_centers =
-    _.reject(ds_billing_centers, function(bc){ return bc.parent_id != null });
-EOS
+    request = {
+      "auth": "auth_rs",
+      "verb": "GET",
+      "host": rs_optima_host
+      "path": "/analytics/users/"+ds_session["user_id"]+"/orgs/"+rs_org_id+"/billing_centers"
+      "headers": {"Api-Version": "1.0" },
+    }
+  EOS
 end
 
 script "js_costs_request", type: "javascript" do
@@ -424,7 +423,7 @@ policy "budget_alert" do
         label "Cloud Vendor"
       end
       field "budgetDisplay" do
-        label "budgetDisplay"
+        label "Budget"
       end
       field "actualDisplay" do
         label "Month to Date Spend"
