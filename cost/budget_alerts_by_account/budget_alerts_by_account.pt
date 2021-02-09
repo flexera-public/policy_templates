@@ -109,24 +109,6 @@ datasource "ds_billing_centers" do
   end
 end
 
-datasource "ds_aws_acct_names" do
-  request do
-    auth $auth_rs
-    host rs_optima_host
-    path join(["bill-analysis/orgs/",rs_org_id,"/cloud_vendor_accounts"])
-    header "Api-Version", "0.1"
-    header "User-Agent", "RS Policies"
-    query "cloud_vendor", "aws"
-  end
-  result do
-    encoding "json"
-    collect jmes_path(response,"[*]") do
-      field "id", jmes_path(col_item,"id")
-      field "name", jmes_path(col_item,"name")
-    end
-  end
-end
-
 datasource "ds_top_level_billing_centers" do
   run_script $js_top_level_bc, $ds_billing_centers
 end
@@ -150,7 +132,7 @@ datasource "ds_top_bc_costs" do
 end
 
 datasource "ds_formatted_costs" do
-  run_script $js_formatted_costs, $ds_top_bc_costs, $ds_aws_acct_names, $param_cost_metric, $param_acct_name
+  run_script $js_formatted_costs, $ds_top_bc_costs, $param_cost_metric, $param_acct_name
 end
 
 datasource "ds_filtered_target" do
@@ -233,7 +215,7 @@ script "js_costs_request", type: "javascript" do
 end
 
 script "js_formatted_costs", type: "javascript" do
-  parameters "ds_top_bc_costs", "aws_names", "param_cost_metric", "param_acct_name"
+  parameters "ds_top_bc_costs", "param_cost_metric", "param_acct_name"
   result "result"
   code <<-EOS
   var result = [];
@@ -250,28 +232,7 @@ script "js_formatted_costs", type: "javascript" do
   var bc_name= "";
   var type = cost_type[param_cost_metric];
 
-  var aws_rows = _.filter(ds_top_bc_costs, function(cost){
-    if (cost.vendor === "AWS"){ return cost }
-    if (cost.vendor === "Amazon Web Services"){ return cost }
-  });
-
-  var non_aws_accts = _.difference(ds_top_bc_costs.vendor_account_name, aws_rows.vendor_account_name);
-  var non_aws_rows = _.each(ds_top_bc_costs, function(row){ if (_.contains(non_aws_accts, row["vendor_account_name"])){ return row } });
-
-  _.each(aws_rows, function(row){
-    var acct = _.where(aws_names, {"id": row["vendor_account_name"]});
-    var acct_name = acct[0]["name"];
-    var cost = row[type];
-    if (param_acct_name == acct_name){
-      costs.push({
-        account_name: acct_name,
-        vendor: "AWS",
-        total: cost
-      })
-    }
-  })
-
-  _.each(non_aws_rows, function(row){
+  _.each(ds_top_bc_costs, function(row){
     var cost = row[type];
     if (param_acct_name == row["vendor_account_name"]){
       costs.push({
@@ -281,8 +242,6 @@ script "js_formatted_costs", type: "javascript" do
       })
     }
   })
-  console.log("costs array:")
-  console.log(costs)
 
   var sum = _.reduce(_.pluck(costs, 'total'), function(memo, num){ return memo + num; }, 0);
   result.push({
@@ -361,13 +320,8 @@ script "js_filter_target", type: "javascript" do
     var target = [];
     _.each(ds_formatted_costs, function(obj){
       var runrate = obj["total"] / monthcomplete ;
-      console.log("runrate")
-      console.log(runrate)
       var forecastedSpend = Math.round(( runrate -obj["total"]) * 100) / 100 ;
-      console.log("forecastedSpend:")
-      console.log(forecastedSpend)
       var forecastedSpendDisplay = cur+' '+formatNumber(forecastedSpend, separator);
-
 
       if (param_type === "Forecasted Spend"){
         var overBudgetAmount= Math.round((runrate - param_monthly_budget) * 100) / 100 ;
@@ -390,8 +344,6 @@ script "js_filter_target", type: "javascript" do
           forecastedSpend: forecastedSpend,
           forecastedSpendDisplay: forecastedSpendDisplay
         })
-        console.log("forecasted target")
-        console.log(target)
       } else {
         var overBudgetAmount= Math.round((runrate - param_monthly_budget) * 100) / 100 ;
         var overBudgetAmountDisplay= cur+' '+formatNumber(overBudgetAmount, separator);
@@ -413,8 +365,6 @@ script "js_filter_target", type: "javascript" do
           forecastedSpend: forecastedSpend,
           forecastedSpendDisplay: forecastedSpendDisplay
         })
-        console.log("actual target")
-        console.log(target)
       }
     })
 
@@ -437,8 +387,6 @@ script "js_filter_target", type: "javascript" do
       chartDataValue: 'chl=' + target[0]["actualDisplay"].replace(" ","%20") + '||' + target[0]["forecastedSpendDisplay"].replace(" ","%20") + '|||' + target[0]["budgetDisplay"].replace(" ","%20") + '||' + target[0]["overBudgetAmountDisplay"].replace(" ","%20"),
       reportData: target
     }
-    console.log("report")
-    console.log(report)
   } else {
     report = {
       total: param_monthly_budget-1,
