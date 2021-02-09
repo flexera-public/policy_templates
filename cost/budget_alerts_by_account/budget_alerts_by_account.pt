@@ -8,11 +8,19 @@ category "Cost"
 tenancy "single"
 default_frequency "daily"
 info(
-  version: "1.1",
+  version: "1.2",
   provider: "Flexera Optima",
   service: "",
   policy_set: ""
 )
+
+###############################################################################
+# Permissions
+###############################################################################
+
+###############################################################################
+# Parameters
+###############################################################################
 
 parameter "param_monthly_budget" do
   label "Monthly Budget"
@@ -46,7 +54,15 @@ parameter "param_email" do
   type "list"
 end
 
+###############################################################################
+# Authentication
+###############################################################################
+
 auth "auth_rs", type: "rightscale"
+
+###############################################################################
+# Datasources
+###############################################################################
 
 datasource "ds_currency_reference" do
   request do
@@ -93,7 +109,7 @@ datasource "ds_billing_centers" do
   end
 end
 
-datasource "ds_aws_acct_names" do 
+datasource "ds_aws_acct_names" do
   request do
     auth $auth_rs
     host rs_optima_host
@@ -115,15 +131,6 @@ datasource "ds_top_level_billing_centers" do
   run_script $js_top_level_bc, $ds_billing_centers
 end
 
-script "js_top_level_bc", type: "javascript" do
-  parameters "ds_billing_centers"
-  result "filtered_billing_centers"
-  code <<-EOS
-  var filtered_billing_centers =
-    _.reject(ds_billing_centers, function(bc){ return bc.parent_id != null });
-EOS
-end
-
 datasource "ds_top_bc_costs" do
   request do
     run_script $js_costs_request, rs_org_id, $param_cost_metric, $ds_top_level_billing_centers
@@ -140,6 +147,27 @@ datasource "ds_top_bc_costs" do
       field "nonamortized_blended_costs", jmes_path(col_item,"metrics.cost_nonamortized_blended_adj")
     end
   end
+end
+
+datasource "ds_formatted_costs" do
+  run_script $js_formatted_costs, $ds_top_bc_costs, $ds_aws_acct_names, $param_cost_metric, $param_acct_name
+end
+
+datasource "ds_filtered_target" do
+  run_script $js_filter_target, $ds_formatted_costs, $param_acct_name, $param_monthly_budget, $param_type, $ds_currency_code, $ds_currency_reference
+end
+
+###############################################################################
+# Scripts
+###############################################################################
+
+script "js_top_level_bc", type: "javascript" do
+  parameters "ds_billing_centers"
+  result "filtered_billing_centers"
+  code <<-EOS
+  var filtered_billing_centers =
+    _.reject(ds_billing_centers, function(bc){ return bc.parent_id != null });
+EOS
 end
 
 script "js_costs_request", type: "javascript" do
@@ -168,7 +196,7 @@ script "js_costs_request", type: "javascript" do
     mo = month.toString().length > 1 ? month : '0' + month;
     lmo = lmonth.toString().length > 1 ? lmonth : '0' + lmonth;
 
-    // wait for all the bill data to be collected, usually takes about 3 days	   
+    // wait for all the bill data to be collected, usually takes about 3 days
     var dt = new Date();
     if (dt.getDate() > 4){
       // start collecting bill data after its retrieved by Optima, roughly 3 days
@@ -204,10 +232,6 @@ script "js_costs_request", type: "javascript" do
   EOS
 end
 
-datasource "ds_formatted_costs" do
-  run_script $js_formatted_costs, $ds_top_bc_costs, $ds_aws_acct_names, $param_cost_metric, $param_acct_name
-end
-
 script "js_formatted_costs", type: "javascript" do
   parameters "ds_top_bc_costs", "aws_names", "param_cost_metric", "param_acct_name"
   result "result"
@@ -225,7 +249,7 @@ script "js_formatted_costs", type: "javascript" do
   var count=0;
   var bc_name= "";
   var type = cost_type[param_cost_metric];
-  
+
   var aws_rows = _.filter(ds_top_bc_costs, function(cost){
     if (cost.vendor === "AWS"){ return cost }
     if (cost.vendor === "Amazon Web Services"){ return cost }
@@ -267,10 +291,6 @@ script "js_formatted_costs", type: "javascript" do
     total: sum
   })
   EOS
-end
-
-datasource "ds_filtered_target" do
-  run_script $js_filter_target, $ds_formatted_costs, $param_acct_name, $param_monthly_budget, $param_type, $ds_currency_code, $ds_currency_reference
 end
 
 script "js_filter_target", type: "javascript" do
@@ -429,12 +449,9 @@ script "js_filter_target", type: "javascript" do
   EOS
 end
 
-escalation "esc_budget_alert" do
-  automatic true
-  label "Send Email"
-  description "Send incident email"
-  email $param_email
-end
+###############################################################################
+# Policy
+###############################################################################
 
 policy "budget_alert" do
   validate $ds_filtered_target do
@@ -478,4 +495,15 @@ policy "budget_alert" do
       end
     end
   end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_budget_alert" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
 end
