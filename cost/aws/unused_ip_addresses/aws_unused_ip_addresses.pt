@@ -42,6 +42,14 @@ parameter "param_automatic_action" do
   allowed_values ["Delete Unused IPs"]
 end
 
+parameter "param_log_to_cm_audit_entries" do
+  type "string"
+  label "Log to CM Audit Entries"
+  description "Boolean for whether or not to log any debugging information from actions to CM Audit Entries, this should be left turned off on Flexera EU"
+  default "No"
+  allowed_values "Yes", "No"
+end
+
 ###############################################################################
 # Authentication
 ###############################################################################
@@ -321,7 +329,7 @@ escalation "esc_delete_ip_address" do
   automatic contains($param_automatic_action, "Delete Unused IPs")
   label "Delete IP"
   description "Delete Selected Unused IP"
-  run "delete_unused_instances", data
+  run "delete_unused_instances", data, $param_log_to_cm_audit_entries
 end
 
 ###############################################################################
@@ -332,8 +340,8 @@ policy "policy_unused_ip_addresses" do
   validate $ds_ip_cost_mapping do
     summary_template "AWS Account ID: {{ data.accountId }} - {{ len data.ip_list }} Unused IP Addresses Found"
     detail_template <<-EOS
-    {{data.message}}
-    EOS
+{{data.message}}
+EOS
     check eq(size(val(data, "ip_list")),0)
     escalate $esc_email
     escalate $esc_delete_ip_address
@@ -369,50 +377,71 @@ end
 # Cloud Workflow
 ###############################################################################
 
-define delete_unused_instances($data) return $all_responses do
+define delete_unused_instances($data, $param_log_to_cm_audit_entries) do
+  $$debug = $param_log_to_cm_audit_entries == "Yes"
+  $$errors = []
   $all_responses = []
   foreach $item in $data do
-    sub on_error: skip do
+    sub on_error: skip_error_and_append($item["id"]) do
       if $item["domain"]=="standard"
         $response = http_request(
           verb: "get",
-          host: join(["ec2.", $item["region"],".amazonaws.com"]),
+          host: join(["ec2.", $item["region"], ".amazonaws.com"]),
           auth: $$auth_aws,
           href: "/",
           query_strings:{
-            "Action":"ReleaseAddress",
-            "PublicIp":$item["publicIp"],
-            "Version":"2016-11-15"
+            "Action": "ReleaseAddress",
+            "PublicIp": $item["id"],
+            "Version": "2016-11-15"
           },
           https: true
         )
       elsif $item["domain"]=="vpc"
         $response = http_request(
           verb: "get",
-          host: join(["ec2.", $item["region"],".amazonaws.com"]),
+          host: join(["ec2.", $item["region"], ".amazonaws.com"]),
           auth: $$auth_aws,
           href: "/",
           query_strings:{
-            "Action":"ReleaseAddress",
-            "AllocationId":$item["allocation_id"],
-            "Version":"2016-11-15"
+            "Action": "ReleaseAddress",
+            "AllocationId": $item["allocation_id"],
+            "Version": "2016-11-15"
           },
           https: true
         )
       end
+      call check_response_and_append_if_error($response, "Release Address " + $item["id"], $$errors) retrieve $$errors
       $all_responses << $response
     end
   end
-  call sys_log('Unused Elastic IPs response',to_s($all_responses))
+  call sys_log("Responses", to_s($all_responses))
+  if size($$errors) > 0
+    $error = join($$errors, "\n")
+    call sys_log("Errors", $error)
+    raise $error
+  end
+end
+
+define skip_error_and_append($subject) do
+  $$errors << "Unexpected error for " + $subject + "\n  " + to_s($_error)
+  $_error_behavior = "skip"
+end
+
+define check_response_and_append_if_error($response, $request_description, $errors) return $errors do
+  if $response["code"] > 299 || $response["code"] < 200
+    $errors << "Unexpected status code from " + $request_description + " request\n  " + to_s($response)
+  end
 end
 
 define sys_log($subject, $detail) do
-  rs_cm.audit_entries.create(
-    notify: "None",
-    audit_entry: {
-      auditee_href: @@account,
-      summary: "AWS Delete "+ $subject,
-      detail: $detail
-    }
-  )
+  if $$debug
+    rs_cm.audit_entries.create(
+      notify: "None",
+      audit_entry: {
+        auditee_href: @@account,
+        summary: "AWS Unused IP Addresses Policy :- " + $subject,
+        detail: $detail
+      }
+    )
+  end
 end
