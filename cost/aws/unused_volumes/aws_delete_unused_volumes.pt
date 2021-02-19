@@ -814,12 +814,15 @@ define create_volumes_snapshot($item, $errors) return $status_code, $errors do
 
       while $condition_check !~ $snapshot_status do
         sleep(2)
-        call get_snapshot_status(to_s($snapshotId)) retrieve $status
+        call get_snapshot_status(to_s($snapshotId), []) retrieve $status, $snapshot_errors
         $snapshot_status = $status
 
-        if $snapshot_status == "error"
+        if $snapshot_status == "error" || size($snapshot_errors) > 0
           $status_code = 400
           $snapshot_status = "completed"
+          foreach $error in $snapshot_errors do
+            $errors << $error
+          end
         end
       end
     end
@@ -850,7 +853,7 @@ define delete_volume($item, $errors) return $status_code, $errors do
   end
 end
 
-define get_snapshot_status($snapshotId) return $snapshot_status do
+define get_snapshot_status($snapshotId, $errors) return $snapshot_status, $errors do
   call sys_log("Inside Get Snapshot Details Snapshot Id ", $snapshotId)
   $snapshot_response = http_request(
     auth: $$auth_aws,
@@ -864,6 +867,7 @@ define get_snapshot_status($snapshotId) return $snapshot_status do
       "SnapshotId": $snapshotId
     }
   )
+  call check_response_and_append_if_error($snapshot_response, "Describe Snapshot " + $snapshotId, $errors) retrieve $errors
   call sys_log("Get Snapshot Details ", to_s($snapshot_response))
   $snapshot_status = $snapshot_response["body"]["DescribeSnapshotsResponse"]["snapshotSet"]["item"]["status"]
 end
