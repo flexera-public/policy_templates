@@ -4,7 +4,7 @@
 
 - Improve error handling and debug logging so that errors from taking action are actually surfaced
 - Add a `param_log_to_cm_audit_entries` parameter to control whether action debug logging is sent to CM Audit
-  Entries; this should be left turned off on Flexera EU
+  Entries; this should be left set to No on Flexera EU
 
 ## v2.12
 
