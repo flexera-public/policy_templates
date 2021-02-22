@@ -1,5 +1,10 @@
 # Changelog
 
+## v3.0
+
+- Use GitHub GraphQL API to decrease the number of API calls
+- Remove "branches" parameter and check the protection on the default branch
+
 ## v2.2
 
 - Modified escalation label and description for consistency
