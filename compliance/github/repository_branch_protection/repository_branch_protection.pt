@@ -1,6 +1,6 @@
 name "GitHub.com Repository Branches without Protection"
 rs_pt_ver 20180301
-short_description "Gets the repositories + branches under a GitHub.com Organization and creates incidents for any that do not have protection enabled.  See the [README](https://github.com/flexera/policy_templates/tree/master/compliance/github/repository_branch_protection) and [docs.rightscale.com/policies](https://docs.rightscale.com/policies/) to learn more."
+short_description "Gets the repositories under a GitHub.com Organization and creates incidents for any that do not have protection enabled for default branch.  See the [README](https://github.com/flexera/policy_templates/tree/master/compliance/github/repository_branch_protection) and [docs.rightscale.com/policies](https://docs.rightscale.com/policies/) to learn more."
 long_description ""
 severity "medium"
 category "Compliance"
@@ -19,12 +19,6 @@ end
 parameter "param_orgs" do
   type "list"
   label "Organizations on GitHub.com to scan"
-end
-
-parameter "param_branches" do
-  type "list"
-  label "Git branches that should be protected"
-  default ["master"]
 end
 
 parameter "param_whitelist" do
@@ -62,81 +56,106 @@ end
 
 pagination "github_pagination" do
   get_page_marker do
-    header "Link"
+    body_path jq(response, 'if .data.search.pageInfo.hasNextPage then "{ \"currentCursor\" :\"" + .data.search.pageInfo.endCursor + "\" }" else null end')
   end
   set_page_marker do
-    uri true
+    body_field "variables"
   end
 end
 
-datasource "ds_orgs_array" do
-  run_script $js_orgs_array, $param_orgs
+datasource "ds_github_query" do
+  run_script $js_github_query, $param_orgs
 end
-script "js_orgs_array", type: "javascript" do
-  parameters "param_orgs"
-  result "orgs_array"
+
+script "js_github_query", type: "javascript" do
+  parameters "orgNames"
+  result "result"
   code <<-EOS
-var orgs_array = param_orgs;
+  var query = 'query getRepositories($currentCursor: String) { \
+    search(query: "%orgNames% archived:false", type: REPOSITORY, first: 100, after: $currentCursor) { \
+      edges { \
+        node { \
+          ... on Repository { \
+            id \
+            name \
+            nameWithOwner \
+            owner { \
+              login \
+            } \
+            defaultBranchRef { \
+              name \
+              branchProtectionRule { \
+                isAdminEnforced \
+                requiredApprovingReviewCount \
+                dismissesStaleReviews \
+                requiresCodeOwnerReviews \
+              } \
+            } \
+          } \
+        } \
+      } \
+      pageInfo { \
+        endCursor \
+        hasNextPage \
+      } \
+    } \
+    rateLimit { \
+      limit \
+      cost \
+      remaining \
+      resetAt \
+    } \
+  }';
+
+  var org_names_string = "";
+  _.each(orgNames, function(org) {
+    org_names_string = org_names_string + " org:" + org;
+  });
+
+  var result = [query.replace("%orgNames%", org_names_string)]
+
 EOS
 end
 
-datasource "ds_orgs_repos" do
-  iterate $ds_orgs_array
+datasource "ds_github_repos" do
+  iterate $ds_github_query # always one item
   request do
     auth $auth_github
+    verb "POST"
     pagination $github_pagination
     host "api.github.com"
-    path join(["/orgs/",iter_item,"/repos"])
+    path "graphql"
+    body_field "query", iter_item
   end
   result do
     encoding "json"
-    collect jmes_path(response, "[*]") do
-      field "id", jmes_path(col_item, "id")
-      field "name", jmes_path(col_item, "name")
-      field "full_name", jmes_path(col_item, "full_name")
-      field "org", jmes_path(col_item, "owner.login")
-    end
-  end
-end
-
-datasource "ds_repos_branches" do
-  iterate $ds_orgs_repos
-  request do
-    auth $auth_github
-    pagination $github_pagination
-    host "api.github.com"
-    path join(["/repos/",val(iter_item,"org"),"/",val(iter_item,"name"),"/branches"])
-  end
-  result do
-    encoding "json"
-    collect jmes_path(response, "[*]") do
-      field "id", jmes_path(iter_item, "id")
-      field "repo_name", jmes_path(iter_item, "name")
-      field "repo_org", jmes_path(iter_item, "org")
-      field "branch_name", jmes_path(col_item, "name")
-      field "branch_protected", jmes_path(col_item, "protected")
-      field "branch_protection", jmes_path(col_item, "protection")
+    collect jmes_path(response, "data.search.edges[*]") do
+      field "id", jmes_path(col_item, "node.id")
+      field "repo_name", jmes_path(col_item, "node.name")
+      field "full_name", jmes_path(col_item, "node.nameWithOwner")
+      field "default_branch", jmes_path(col_item, "node.defaultBranchRef.name")
+      field "branch_protection_rule", jmes_path(col_item, "node.defaultBranchRef.branchProtectionRule")
+      field "repo_org", jmes_path(col_item, "node.owner.login")
     end
   end
 end
 
 datasource "ds_invalid_repo_branches" do
-    run_script $js_invalid_repo_branches, $ds_repos_branches, $param_branches, $param_whitelist
+    run_script $js_invalid_repo_branches, $ds_github_repos, $param_whitelist
 end
 
 script "js_invalid_repo_branches", type: "javascript" do
-    parameters "repos_branches", "param_branches", "param_whitelist"
-    result "invalid_repo_branches"
+    parameters "repos", "param_whitelist"
+    result "invalid_repos"
     code <<-EOS
-var invalid_repo_branches = [];
-for (var index = 0; index < repos_branches.length; index++) {
-  var branch = repos_branches[index];
-  // check if branch is in param_branches and if its protected
-  if( _.contains(param_branches, branch.branch_name) && !_.contains(param_whitelist, branch.repo_org+"/"+branch.repo_name) && branch.branch_protected != true){
-    branch["fullOrganizationName"] = "["+branch.repo_org+"/"+branch.repo_name+"](https://github.com/"+branch.repo_org+"/"+branch.repo_name+"/settings/branches)"
-    invalid_repo_branches.push(branch);
+var invalid_repos = [];
+
+_.each(repos, function(repo) {
+  if(!_.contains(param_whitelist, repo.full_name) && repo.branch_protection_rule == null) {
+    invalid_repos.push(repo);
   }
-}
+});
+
 EOS
 end
 
@@ -150,11 +169,11 @@ policy "invalid_repos" do
     #### Policy Branches: {{  parameters.param_branches }}
     export do
       resource_level true
-      field "fullOrganizationName" do
+      field "full_name" do
         label "Organization / Repository"
       end
-      field "branch_name" do
-        label "Unprotected Branch"
+      field "default_branch" do
+        label "Unprotected default branch"
       end
       field "id" do
         label "Id"
@@ -185,12 +204,12 @@ end
 
 define github_repos_branch_add_protection($data, $param_enforce_admins, $param_required_pull_request_reviews) do
   foreach $item in $data do
-    task_label( join(["Updating branch protection for ",$item['repo_org'],"/",$item['repo_name'],":",$item['branch_name']]) )
-    call github_repo_branch_protection_update($item['repo_org'],$item['repo_name'],$item['branch_name'],$param_enforce_admins, $param_required_pull_request_reviews) retrieve $github_repo_branch_protection_update_response
+    task_label( join(["Updating branch protection for ",$item['repo_org'],"/",$item['repo_name'],":",$item['default_branch']]) )
+    call github_repo_branch_protection_update($item['repo_org'],$item['repo_name'],$item['default_branch'],$param_enforce_admins, $param_required_pull_request_reviews) retrieve $github_repo_branch_protection_update_response
   end
 end
 
-define github_repo_branch_protection_update($owner, $repo, $branch, $enforce_admins, $required_pull_request_reviews) return $response do 
+define github_repo_branch_protection_update($owner, $repo, $branch, $enforce_admins, $required_pull_request_reviews) return $response do
   $enforce_admins = to_b($enforce_admins)
   if $required_pull_request_reviews == "null"
     $required_pull_request_reviews = null
