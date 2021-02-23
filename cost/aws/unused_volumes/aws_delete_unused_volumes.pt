@@ -768,19 +768,19 @@ end
 
 define take_action($data, $param_take_snapshot, $param_log_to_cm_audit_entries) do
   $$debug = $param_log_to_cm_audit_entries == "Yes"
-  $errors = []
+  $$errors = []
   foreach $item in $data do
     $snapshot_status_code = 200
     if $param_take_snapshot == "Yes"
-      call create_volumes_snapshot($item, $errors) retrieve $status_code, $errors
+      call create_volumes_snapshot($item, $$errors) retrieve $status_code, $$errors
       $snapshot_status_code = $status_code
     end
     if $snapshot_status_code == 200
-      call delete_volume($item, $errors) retrieve $status_code, $errors
+      call delete_volume($item, $$errors) retrieve $status_code, $$errors
     end
   end
-  if size($errors) > 0
-    $error = join($errors, "\n")
+  if size($$errors) > 0
+    $error = join($$errors, "\n")
     call sys_log("Errors", $error)
     raise $error
   end
@@ -891,13 +891,18 @@ define create_tag($region, $volumeId, $message, $errors) return $errors do
   call check_response_and_append_if_error($response, "Create Tag", $errors) retrieve $errors
 end
 
+define skip_error_and_append($subject) do
+  $$errors << "Unexpected error for " + $subject + "\n  " + to_s($_error)
+  $_error_behavior = "skip"
+end
+
 define check_response_and_append_if_error($response, $request_description, $errors) return $errors do
   if $response["code"] > 299 || $response["code"] < 200
     $errors << "Unexpected status code from " + $request_description + " request\n  " + to_s($response)
   end
 end
 
-define sys_log($subject, $detail) do
+define sys_log($subject, $detail) on_error: skip_error_and_append("Creating audit entry for " + $subject) do
   if $$debug
     rs_cm.audit_entries.create(
       notify: "None",
