@@ -1,9 +1,9 @@
 # Changelog
 
-## v3.0
+## v2.3
 
 - Use GitHub GraphQL API to decrease the number of API calls
-- Remove "branches" parameter and check the protection on the default branch
+- Add option to include default branch regardless of branch selection
 
 ## v2.2
 

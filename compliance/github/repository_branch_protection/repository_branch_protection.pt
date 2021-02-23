@@ -1,11 +1,11 @@
 name "GitHub.com Repository Branches without Protection"
 rs_pt_ver 20180301
-short_description "Gets the repositories under a list of GitHub.com Organizations and creates incidents for any that do not have protection enabled for their default branch.  See the [README](https://github.com/flexera/policy_templates/tree/master/compliance/github/repository_branch_protection) and [docs.rightscale.com/policies](https://docs.rightscale.com/policies/) to learn more."
+short_description "Gets the repositories under a list of GitHub.com Organizations and creates incidents for any that do not have protection enabled for selected branches.  See the [README](https://github.com/flexera/policy_templates/tree/master/compliance/github/repository_branch_protection) and [docs.rightscale.com/policies](https://docs.rightscale.com/policies/) to learn more."
 long_description ""
 severity "medium"
 category "Compliance"
 info(
-  version: "3.0",
+  version: "2.3",
   provider: "GitHub",
   service: "",
   policy_set: ""
@@ -19,6 +19,19 @@ end
 parameter "param_orgs" do
   type "list"
   label "Organizations on GitHub.com to scan"
+end
+
+parameter "param_branches" do
+  type "list"
+  label "Git branches that should be protected"
+  default ["master"]
+end
+
+parameter "param_include_default_branch" do
+  type "string"
+  label "Protect default branch"
+  default "true"
+  allowed_values ["false","true"]
 end
 
 parameter "param_whitelist" do
@@ -64,11 +77,11 @@ pagination "github_pagination" do
 end
 
 datasource "ds_github_query" do
-  run_script $js_github_query, $param_orgs
+  run_script $js_github_query, $param_orgs, $param_branches
 end
 
 script "js_github_query", type: "javascript" do
-  parameters "orgNames"
+  parameters "orgNames", "branches"
   result "result"
   code <<-EOS
   var query = 'query getRepositories($currentCursor: String) { \
@@ -83,14 +96,9 @@ script "js_github_query", type: "javascript" do
               login \
             } \
             defaultBranchRef { \
-              name \
-              branchProtectionRule { \
-                isAdminEnforced \
-                requiredApprovingReviewCount \
-                dismissesStaleReviews \
-                requiresCodeOwnerReviews \
-              } \
+              ...brancheData \
             } \
+            %branches% \
           } \
         } \
       } \
@@ -105,6 +113,16 @@ script "js_github_query", type: "javascript" do
       remaining \
       resetAt \
     } \
+  } \
+  fragment brancheData on Ref { \
+    name \
+    branchProtectionRule { \
+      pattern \
+      isAdminEnforced \
+      requiredApprovingReviewCount \
+      dismissesStaleReviews \
+      requiresCodeOwnerReviews \
+    } \
   }';
 
   var org_names_string = "";
@@ -112,7 +130,15 @@ script "js_github_query", type: "javascript" do
     org_names_string = org_names_string + " org:" + org;
   });
 
-  var result = [query.replace("%orgNames%", org_names_string)]
+  var branches_string = " ";
+
+  var branch_template = ' %branch%: refs(first: 100, refPrefix: "refs/heads/", query: "%branch%") { nodes { ...brancheData } } ';
+
+  _.each(branches, function(branch) {
+    branches_string = branches_string + branch_template.replace("%branch%", branch).replace("%branch%", branch);
+  });
+
+  var result = [query.replace("%orgNames%", org_names_string).replace("%branches%", branches_string)]
 
 EOS
 end
@@ -131,28 +157,55 @@ datasource "ds_github_repos" do
     encoding "json"
     collect jmes_path(response, "data.search.edges[*]") do
       field "id", jmes_path(col_item, "node.id")
-      field "repo_name", jmes_path(col_item, "node.name")
+      field "name", jmes_path(col_item, "node.name")
       field "full_name", jmes_path(col_item, "node.nameWithOwner")
       field "default_branch", jmes_path(col_item, "node.defaultBranchRef.name")
       field "branch_protection_rule", jmes_path(col_item, "node.defaultBranchRef.branchProtectionRule")
-      field "repo_org", jmes_path(col_item, "node.owner.login")
+      field "owner", jmes_path(col_item, "node.owner.login")
+      field "full_data", jmes_path(col_item, "node")
     end
   end
 end
 
 datasource "ds_invalid_repo_branches" do
-    run_script $js_invalid_repo_branches, $ds_github_repos, $param_whitelist
+    run_script $js_invalid_repo_branches, $ds_github_repos, $param_whitelist, $param_branches, $param_include_default_branch
 end
 
 script "js_invalid_repo_branches", type: "javascript" do
-    parameters "repos", "param_whitelist"
-    result "invalid_repos"
+    parameters "repos", "param_whitelist", "branches", "include_default_branch"
+    result "invalid_repos_branches"
     code <<-EOS
-var invalid_repos = [];
+var invalid_repos_branches = [];
 
 _.each(repos, function(repo) {
-  if(!_.contains(param_whitelist, repo.full_name) && repo.branch_protection_rule == null) {
-    invalid_repos.push(repo);
+  if(!_.contains(param_whitelist, repo.full_name)) {
+    if (include_default_branch == "true" && repo.default_branch != null && repo.branch_protection_rule == null) {
+      var i_repo = {};
+      i_repo.id = repo.id;
+      i_repo.full_name = repo.full_name;
+      i_repo.branch_name = repo.default_branch;
+      i_repo.repo_org = repo.owner;
+      i_repo.repo_name = repo.name;
+
+      invalid_repos_branches.push(i_repo);
+    }
+
+    _.each(branches, function(branch) {
+      if(branch != repo.default_branch) {
+        _.each(repo.full_data[branch].nodes, function(item) {
+          if(item.name == branch && item.branchProtectionRule == null) {
+            var i_repo = {};
+            i_repo.id = repo.id;
+            i_repo.full_name = repo.full_name;
+            i_repo.branch_name = branch;
+            i_repo.repo_org = repo.owner;
+            i_repo.repo_name = repo.name;
+
+            invalid_repos_branches.push(i_repo);
+          }
+        });
+      }
+    });
   }
 });
 
@@ -172,8 +225,8 @@ policy "invalid_repos" do
       field "full_name" do
         label "Organization / Repository"
       end
-      field "default_branch" do
-        label "Unprotected default branch"
+      field "branch_name" do
+        label "Unprotected Branch"
       end
       field "id" do
         label "Id"

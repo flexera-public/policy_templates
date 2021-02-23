@@ -7,6 +7,8 @@ Gets the repositories under a list of GitHub.com Organizations and creates incid
 ## Input Parameters
 
 1. GitHub.com Organizations to check - Example: `flexera`
+1. Branches that should be protected - Example: `master`
+1. Include default branch regardless of branches list.
 1. Repositories that are whitelisted from the policy - Example: `flexera/repository-name`
 1. Email address to send escalation emails to - Example: `noreply@example.com`
 1. Protection Option: Enforce all configured restrictions for administrators.
