@@ -1,11 +1,11 @@
 name "AWS Old Snapshots"
 rs_pt_ver 20180301
 type "policy"
-short_description "Checks for snapshots older than specified number of days and, optionally, deletes them. See the [README](https://github.com/flexera/policy_templates/tree/master/cost/aws/old_snapshots) and [docs.rightscale.com/policies](https://docs.rightscale.com/policies/) to learn more."
+short_description "Checks for snapshots older than a specified number of days and, optionally, deletes them. See the [README](https://github.com/flexera/policy_templates/tree/master/cost/aws/old_snapshots) and [docs.rightscale.com/policies](https://docs.rightscale.com/policies/) to learn more."
 category "Cost"
 severity "low"
 info(
-  version: "2.12",
+  version: "2.13",
   provider: "AWS",
   service: "EBS",
   policy_set: "Old Snapshots"
@@ -64,6 +64,14 @@ parameter "param_flexera_org_id_for_optima" do
   description "The Flexera One org ID for Optima queries used to determine estimated costs, by default the current org is used"
   default "current"
   allowed_pattern /^(current|[0-9]+)$/
+end
+
+parameter "param_log_to_cm_audit_entries" do
+  type "string"
+  label "Log to CM Audit Entries"
+  description "Boolean for whether or not to log any debugging information from actions to CM Audit Entries, this should be left set to No on Flexera EU"
+  default "No"
+  allowed_values "Yes", "No"
 end
 
 ###############################################################################
@@ -604,9 +612,10 @@ policy "pol_utilization" do
   validate $ds_snapshots_cost_mapping do
     summary_template "AWS Account ID: {{with index data.result 0}}{{ .accountId }}{{end}} - {{ len data.result }} rows containing AWS old snapshot data"
     detail_template <<-EOS
-    The following {{ len data.result }} old snapshots, for AWS Account: {{with index data.result 0}}{{ .accountId }}{{end}}, have exceeded the specified age of: {{ parameters.snapshot_age }} days old.\n
-    {{data.message}}
-    EOS
+The following {{ len data.result }} old snapshots, for AWS Account: {{with index data.result 0}}{{ .accountId }}{{end}}, have exceeded the specified age of: {{ parameters.snapshot_age }} days old.
+
+{{data.message}}
+EOS
     escalate $ese_email
     escalate $esc_delete_snapshot
     check eq(size(val(data, "result")), 0)
@@ -656,37 +665,42 @@ escalation "esc_delete_snapshot" do
   automatic contains($param_automatic_action, "Delete Snapshots")
   label "Delete Snapshots"
   description "Approval to delete all selected snapshots"
-  run "take_action", data, $param_deregister_image
+  run "take_action", data, $param_deregister_image, $param_log_to_cm_audit_entries
 end
 
 ###############################################################################
 # Cloud Workflow
 ###############################################################################
 
-define take_action($data, $param_deregister_image) return $all_responses do
-  $all_responses = []
-  $image_ids = []
+define take_action($data, $param_deregister_image, $param_log_to_cm_audit_entries) do
+  $$debug = $param_log_to_cm_audit_entries == "Yes"
+  $$errors = []
   foreach $item in $data do
-    sub on_error: skip do
+    sub on_error: skip_error_and_append($item["id"]) do
+      $image_ids = []
+
       if $item["snapshotImageIdFormat"] != ""
         $image_ids = split($item["snapshotImageIdFormat"], ",")
       end
 
       if $param_deregister_image == "Yes"
-        call deregisterImageFromSnapshot($image_ids, $item["region"])
-        call delete_snapshot($item)
+        call deregisterImageFromSnapshot($image_ids, $item["region"], $$errors) retrieve $$errors
+        call delete_snapshot($item, $$errors) retrieve $$errors
       elsif $param_deregister_image == "No"
         if empty?($image_ids)
-          call delete_snapshot($item)
+          call delete_snapshot($item, $$errors) retrieve $$errors
         end
       end
     end
-
-    $image_ids = []
+  end
+  if size($$errors) > 0
+    $error = join($$errors, "\n")
+    call sys_log("Errors", $error)
+    raise $error
   end
 end
 
-define deregisterImageFromSnapshot($item, $region) do
+define deregisterImageFromSnapshot($item, $region, $errors) return $errors do
   foreach $image in $item do
     $deregister_response = http_request(
       auth: $$auth_aws,
@@ -699,15 +713,16 @@ define deregisterImageFromSnapshot($item, $region) do
       "Version": "2016-11-15",
       "ImageId": strip($image)
       }
-   )
-  $deregisterResponseResult = $deregister_response["code"]
+    )
+    call check_response_and_append_if_error($deregister_response, "Deregister Image", $errors) retrieve $errors
+    $deregisterResponseResult = $deregister_response["code"]
     if $deregisterResponseResult != 200
       call sys_log("Deregister image snapshot", to_s($deregister_response))
     end
   end
 end
 
-define delete_snapshot($item) do
+define delete_snapshot($item, $errors) return $errors do
   $delete_response = http_request(
     auth: $$auth_aws,
     https: true,
@@ -720,19 +735,33 @@ define delete_snapshot($item) do
       "SnapshotId.1": strip($item["id"])
     }
   )
+  call check_response_and_append_if_error($delete_response, "Delete Snapshot", $errors) retrieve $errors
   $splitResult = $delete_response["code"]
   if $splitResult != 200
    call sys_log("Inside delete_snapshot definition", to_s($delete_response))
   end
 end
 
-define sys_log($subject, $detail) do
-  rs_cm.audit_entries.create(
-    notify: "None",
-    audit_entry: {
-      auditee_href: @@account,
-      summary: "AWS Old Snapshots :- " + $subject,
-      detail: $detail
-    }
-  )
+define skip_error_and_append($subject) do
+  $$errors << "Unexpected error for " + $subject + "\n  " + to_s($_error)
+  $_error_behavior = "skip"
+end
+
+define check_response_and_append_if_error($response, $request_description, $errors) return $errors do
+  if $response["code"] > 299 || $response["code"] < 200
+    $errors << "Unexpected status code from " + $request_description + " request\n  " + to_s($response)
+  end
+end
+
+define sys_log($subject, $detail) on_error: skip_error_and_append("Creating audit entry for " + $subject) do
+  if $$debug
+    rs_cm.audit_entries.create(
+      notify: "None",
+      audit_entry: {
+        auditee_href: @@account,
+        summary: "AWS Old Snapshots Policy :- " + $subject,
+        detail: $detail
+      }
+    )
+  end
 end
