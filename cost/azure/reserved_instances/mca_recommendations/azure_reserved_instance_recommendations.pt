@@ -89,14 +89,7 @@ end
 datasource "ds_ri_recommendations" do
   iterate $ds_subscriptions
   request do
-    auth $azure_auth
-    pagination $azure_pagination
-    host "management.azure.com"
-    path join(["/subscriptions/", val(iter_item,"subscriptionId"), "/providers/Microsoft.Consumption/reservationRecommendations"])
-    query "api-version","2019-10-01"
-    query "$filter",join(["properties/lookBackPeriod eq ", $param_days])
-    header "User-Agent", "RS Policies"
-    ignore_status [404]
+    run_script $js_ri_request, val(iter_item,"subscriptionId"), $param_days
   end
   result do
     encoding "json"
@@ -121,6 +114,26 @@ end
 ###############################################################################
 # Scripts
 ###############################################################################
+
+script "js_ri_request", type: "javascript" do
+  parameters "subscriptionId", "param_days"
+  result "request"
+  code <<-EOS 
+    var request = {
+    auth: "azure_auth",
+    pagination: "azure_pagination",
+    host: "management.azure.com",
+    path: "/subscriptions/"+subscriptionId+"/providers/Microsoft.Consumption/reservationRecommendations",
+    query_params: {
+        "api-version": "2019-10-01",
+        "$filter": "properties/lookBackPeriod eq "+param_days
+    },
+    headers: {
+        "User-Agent": "RS Policies"
+    }
+    } 
+  EOS
+end
 
 script "js_ri_cleanup", type: "javascript" do
   parameters "ri_recos"
