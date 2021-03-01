@@ -1,5 +1,10 @@
 # Changelog
 
+## v2.16
+
+- Increase the sleep time between calls to AWS for snapshot status in order to decrease the likelihood of hitting
+  a Cloud Workflow event limit
+
 ## v2.15
 
 - Improve error handling and debug logging so that errors from taking action are actually surfaced
