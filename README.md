@@ -74,7 +74,6 @@ Please contact sales@flexera.com to learn more.
 - [Azure Reserved Instance Recommendations](./cost/azure/reserved_instances/recommendations)
 - [Azure Unused IP Addresses](./cost/azure/unused_ip_addresses)
 - [Azure Schedule Instance](./cost/azure/schedule_instance/)
-- [Azure MCA Expiring Reserved Instances](./cost/azure/reserved_instances/mca_expiration)
 - [Azure MCA Reserved Instance Recommendations](./cost/azure/reserved_instances/mca_recommendations)
 
 ##### Database
