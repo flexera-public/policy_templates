@@ -1,4 +1,4 @@
-name "Azure Hybrid Use Benefit for Linux Server 1.0"
+name "Azure Hybrid Use Benefit for Linux Server 2.0"
 rs_pt_ver 20180301
 type "policy"
 short_description "Identifies Linux instances eligible for Azure Hybrid Use Benefit.  See the [README](https://github.com/rightscale/policy_templates/tree/master/cost/azure/hybrid_use_benefit) and [docs.rightscale.com/policies](http://docs.rightscale.com/policies/) to learn more."
@@ -33,7 +33,7 @@ parameter "param_automatic_action" do
   type "list"
   label "Automatic Actions"
   description "When this value is set, this policy will automatically take the selected action(s)"
-  allowed_values ["Hybrid use benefit for SLES Linux","Hybrid use benefit for RHEL Linux" ]
+  allowed_values "Hybrid use benefit for Linux"
 end
 
 #################
@@ -134,15 +134,24 @@ script "js_filter_resources", type: "javascript" do
       if (instance.osType === "Linux"){
         var resourceGroup = instance.id.split('/')[4];
         var tags = JSON.stringify(instance["tags"]);
-        var ahub = "N/A"
+        var ahub = "N/A";
+        var lic_param = "N/A"
         console.log(instance["name"], "OS: Linux")
         if (instance.licenseType === "SLES_BYOS" || instance.licenseType === "RHEL_BYOS") {
           ahub = "Yes"
         } else {
-          ahub = "No"
+          if (instance.licenseType === "None" && instance.imagePublisher === "suse") {
+            lic_param = "SLES_BYOS"
+            ahub = "No"
+          } else {
+            if (instance.licenseType === "None" && instance.imagePublisher === "RedHat") {
+              lic_param = "RHEL_BYOS"
+              ahub = "No"
+            }
+          }
           }
       }
-        console.log(instance["name"], "AHUB: ", ahub)
+        console.log(instance["name"], "AHUB: ", ahub, " License to apply: ", lic_param)
 
         result.push({
       subscriptionName: instance["subscriptionName"],
@@ -156,6 +165,7 @@ script "js_filter_resources", type: "javascript" do
           imageOffer: instance["imageOffer"],
           imageSku: instance["imageSku"],
           imageVersion: instance["imageVersion"],
+          lic_param: lic_param,
           tags: tags
         })
       }
@@ -173,8 +183,8 @@ policy 'azure_license_policy' do
   validate_each $filtered_resources do
     summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} Instances Not Using Azure Hybrid Use Benefit for Linux Server"
     escalate $email
-    escalate $license_sles_instances
-    escalate $license_rhel_instances
+    escalate $license_instances
+   # escalate $license_rhel_instances
     check eq(val(item,"ahub"),"Yes")
     export "result" do
       resource_level true
@@ -214,6 +224,9 @@ policy 'azure_license_policy' do
       field "id" do
         label "Id"
       end
+      field "lic_param" do
+        label "lic_param"
+      end
     end
   end
 end
@@ -229,25 +242,25 @@ escalation "email" do
   email $param_email
 end
 
-escalation "license_sles_instances" do
-  automatic contains($param_automatic_action, "Hybrid Use Benefit for SLES Linux")
-  label "Approve AHUB for SLES"
+escalation "license_instances" do
+  automatic contains($param_automatic_action, "Hybrid Use Benefit for Linux")
+  label "Approve AHUB for Linux"
   description "Approve escalation to apply Hybrid Use Benefit to identified instances"
-  run "license_sles_instances", data
+  run "license_instances", data
 end
 
-escalation "license_rhel_instances" do
-  automatic contains($param_automatic_action, "Hybrid Use Benefit for RHEL Linux")
-  label "Approve AHUB for RHEL"
-  description "Approve escalation to apply Hybrid Use Benefit to identified instances"
-  run "license_rhel_instances", data
-end
+#escalation "license_rhel_instances" do
+#  automatic contains($param_automatic_action, "Hybrid Use Benefit for RHEL Linux")
+#  label "Approve AHUB for RHEL"
+#  description "Approve escalation to apply Hybrid Use Benefit to identified instances"
+#  run "license_rhel_instances", data
+#end
 
 ##################
 # Cloud Workflow
 ##################
 
-define license_sles_instances($data) return $all_responses do
+define license_instances($data) return $all_responses do
 
   $all_responses = []
   foreach $item in $data do
@@ -267,7 +280,7 @@ define license_sles_instances($data) return $all_responses do
         },
         body: {
           "properties": {
-            "licenseType": "SLES_BYOS"
+            "licenseType": $item["lic_param"]
           }
         }
       )
@@ -278,33 +291,33 @@ define license_sles_instances($data) return $all_responses do
   end
 end
 
-define license_rhel_instances($data) return $all_responses do
-
-  $all_responses = []
-  foreach $item in $data do
-    sub on_error: skip do
-      $update_inst_response = http_request(
-	    auth: $$azure_auth,
-        verb: "patch",
-        host: "management.azure.com",
-        https: true,
-        href: $item["id"],
-        query_strings: {
-          "api-version": "2018-06-01"
-        },
-        headers: {
-          "cache-control": "no-cache",
-          "content-type": "application/json"
-        },
-        body: {
-          "properties": {
-            "licenseType": "RHEL_BYOS"
-          }
-        }
-      )
-
-      $all_responses << $update_inst_response
-
-    end
-  end
-end
+#define license_rhel_instances($data) return $all_responses do
+#
+#  $all_responses = []
+#  foreach $item in $data do
+#    sub on_error: skip do
+#      $update_inst_response = http_request(
+#	    auth: $$azure_auth,
+#        verb: "patch",
+#        host: "management.azure.com",
+#        https: true,
+#        href: $item["id"],
+#        query_strings: {
+#          "api-version": "2018-06-01"
+#        },
+#        headers: {
+#          "cache-control": "no-cache",
+#          "content-type": "application/json"
+#        },
+#        body: {
+#          "properties": {
+#            "licenseType": "RHEL_BYOS"
+#          }
+#        }
+#      )
+#
+#      $all_responses << $update_inst_response
+#
+#    end
+#  end
+#end
