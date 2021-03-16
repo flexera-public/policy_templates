@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.10
+
+- Fixed the Run Rate label
+
 ## v1.9
 
 - Modified escalation label and description for consistency

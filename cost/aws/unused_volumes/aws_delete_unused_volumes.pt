@@ -1,11 +1,11 @@
 name "AWS Unused Volumes"
 rs_pt_ver 20180301
 type "policy"
-short_description "Checks for unused volumes and if no read/write operations performed within a specified number of days and, optionally, deletes them. See the [README](https://github.com/flexera/policy_templates/tree/master/cost/aws/unused_volumes) and [docs.rightscale.com/policies](https://docs.rightscale.com/policies/) to learn more."
+short_description "Checks for unused volumes with no read/write operations performed within a specified number of days and, optionally, deletes them. See the [README](https://github.com/flexera/policy_templates/tree/master/cost/aws/unused_volumes) and [docs.rightscale.com/policies](https://docs.rightscale.com/policies/) to learn more."
 category "Cost"
 severity "low"
 info(
-  version: "2.14",
+  version: "2.16",
   provider: "AWS",
   service: "EBS",
   policy_set: "Unused Volumes"
@@ -64,6 +64,14 @@ parameter "param_flexera_org_id_for_optima" do
   description "The Flexera One org ID for Optima queries used to determine estimated costs, by default the current org is used"
   default "current"
   allowed_pattern /^(current|[0-9]+)$/
+end
+
+parameter "param_log_to_cm_audit_entries" do
+  type "string"
+  label "Log to CM Audit Entries"
+  description "Boolean for whether or not to log any debugging information from actions to CM Audit Entries, this should be left set to No on Flexera EU"
+  default "No"
+  allowed_values "Yes", "No"
 end
 
 ###############################################################################
@@ -703,8 +711,8 @@ policy "policy_unattached_volumes_list" do
   validate $ds_volume_cost_mapping do
     summary_template "AWS Account ID: {{ data.accountId }} - {{ len data.unused_volumes }} Unused Volumes Found"
     detail_template <<-EOS
-    {{data.message}}
-    EOS
+{{data.message}}
+EOS
     escalate $report_unused_volumes
     escalate $delete_volumes
     check eq(size(val(data, "unused_volumes")), 0)
@@ -751,31 +759,34 @@ escalation "delete_volumes" do
   automatic contains($param_automatic_action, "Delete Volumes")
   label "Delete Volumes"
   description "Approval to delete all selected volumes"
-  run "take_action", data, $param_take_snapshot
+  run "take_action", data, $param_take_snapshot, $param_log_to_cm_audit_entries
 end
 
 ###############################################################################
 # Cloud Workflow
 ###############################################################################
 
-define take_action($data, $param_take_snapshot) return $all_responses do
-  # If you want to see the audit entries. Please set $$debug = true
-  $$debug = false
-  $all_responses = []
+define take_action($data, $param_take_snapshot, $param_log_to_cm_audit_entries) do
+  $$debug = $param_log_to_cm_audit_entries == "Yes"
+  $$errors = []
   foreach $item in $data do
     $snapshot_status_code = 200
     if $param_take_snapshot == "Yes"
-      call create_volumes_snapshot($item) retrieve $status_code
+      call create_volumes_snapshot($item, $$errors) retrieve $status_code, $$errors
       $snapshot_status_code = $status_code
     end
     if $snapshot_status_code == 200
-      call delete_volume($item) retrieve $status_code
+      call delete_volume($item, $$errors) retrieve $status_code, $$errors
     end
+  end
+  if size($$errors) > 0
+    $error = join($$errors, "\n")
+    call sys_log("Errors", $error)
+    raise $error
   end
 end
 
-define create_volumes_snapshot($item) return $status_code do
-  $response = []
+define create_volumes_snapshot($item, $errors) return $status_code, $errors do
   $status_code
   $snapshot_status = "pending"
   $response = http_request(
@@ -790,6 +801,7 @@ define create_volumes_snapshot($item) return $status_code do
       "VolumeId": $item["id"]
     }
   )
+  call check_response_and_append_if_error($response, "Create Volumes Snapshot", $errors) retrieve $errors
   call sys_log("Create Volumes Snapshot Response ", to_s($response))
   $status_code = $response["code"]
 
@@ -801,20 +813,23 @@ define create_volumes_snapshot($item) return $status_code do
       $condition_check = "completed"
 
       while $condition_check !~ $snapshot_status do
-        sleep(2)
-        call get_snapshot_status(to_s($snapshotId)) retrieve $status
+        sleep(30)
+        call get_snapshot_status(to_s($snapshotId), []) retrieve $status, $snapshot_errors
         $snapshot_status = $status
 
-        if $snapshot_status == "error"
+        if $snapshot_status == "error" || size($snapshot_errors) > 0
           $status_code = 400
           $snapshot_status = "completed"
+          foreach $error in $snapshot_errors do
+            $errors << $error
+          end
         end
       end
     end
   end
 end
 
-define delete_volume($item) return $status_code do
+define delete_volume($item, $errors) return $status_code, $errors do
   $delete_response = http_request(
     auth: $$auth_aws,
     https: true,
@@ -827,17 +842,18 @@ define delete_volume($item) return $status_code do
       "VolumeId": $item["id"]
     }
   )
+  call check_response_and_append_if_error($delete_response, "Delete Volume", $errors) retrieve $errors
   call sys_log("Delete Volumes Response ", to_s($delete_response))
   $volume_delete_status = $delete_response["code"]
   if $volume_delete_status != 200
     $volume_delete_body = $delete_response["body"]
     $split_body = split($volume_delete_body, "<Message>")
     $split_final_message = split($split_body[1], "</Message>");
-     call create_tag($item["region"], $item["id"], to_s($split_final_message[0]))
+    call create_tag($item["region"], $item["id"], to_s($split_final_message[0]), $errors) retrieve $errors
   end
 end
 
-define get_snapshot_status($snapshotId) return $snapshot_status do
+define get_snapshot_status($snapshotId, $errors) return $snapshot_status, $errors do
   call sys_log("Inside Get Snapshot Details Snapshot Id ", $snapshotId)
   $snapshot_response = http_request(
     auth: $$auth_aws,
@@ -851,13 +867,14 @@ define get_snapshot_status($snapshotId) return $snapshot_status do
       "SnapshotId": $snapshotId
     }
   )
+  call check_response_and_append_if_error($snapshot_response, "Describe Snapshot " + $snapshotId, $errors) retrieve $errors
   call sys_log("Get Snapshot Details ", to_s($snapshot_response))
   $snapshot_status = $snapshot_response["body"]["DescribeSnapshotsResponse"]["snapshotSet"]["item"]["status"]
 end
 
-define create_tag($region, $volumeId, $message) do
+define create_tag($region, $volumeId, $message, $errors) return $errors do
   call sys_log("Create Tag  ", $volumeId)
-  $snapshot_response = http_request(
+  $response = http_request(
     auth: $$auth_aws,
     https: true,
     verb: "get",
@@ -871,15 +888,27 @@ define create_tag($region, $volumeId, $message) do
       "Tag.1.Value": to_s($message)
     }
   )
+  call check_response_and_append_if_error($response, "Create Tag", $errors) retrieve $errors
 end
 
-define sys_log($subject, $detail) do
+define skip_error_and_append($subject) do
+  $$errors << "Unexpected error for " + $subject + "\n  " + to_s($_error)
+  $_error_behavior = "skip"
+end
+
+define check_response_and_append_if_error($response, $request_description, $errors) return $errors do
+  if $response["code"] > 299 || $response["code"] < 200
+    $errors << "Unexpected status code from " + $request_description + " request\n  " + to_s($response)
+  end
+end
+
+define sys_log($subject, $detail) on_error: skip_error_and_append("Creating audit entry for " + $subject) do
   if $$debug
     rs_cm.audit_entries.create(
       notify: "None",
       audit_entry: {
         auditee_href: @@account,
-        summary: "AWS Delete Unused Volumes Policy " + $subject,
+        summary: "AWS Unused Volumes Policy :- " + $subject,
         detail: $detail
       }
     )
