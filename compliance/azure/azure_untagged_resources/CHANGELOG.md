@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.3
+
+- fix broken link to the README file
+
 ## v2.2
 
 - Modified escalation label and description for consistency
