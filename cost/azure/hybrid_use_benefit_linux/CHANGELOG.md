@@ -1,8 +1,8 @@
 # Changelog
 
-## v1.0
+## v2.1
 
-- initial release
+- modified headline and links to docs
 
 ## v2.0
 

@@ -1,4 +1,4 @@
-# Azure Hybrid Use Benefit Policy
+# Azure Hybrid Use Benefit Policy for Linux
 
 ## What it does
 
