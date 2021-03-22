@@ -5,7 +5,7 @@ short_description "Find all Azure resources missing any of the user provided tag
 category "Compliance"
 severity "low"
 info(
-   version: "2.3",
+   version: "2.4",
    provider: "Azure",
    service: "",
    policy_set: "Untagged Resources"
@@ -85,7 +85,7 @@ datasource "ds_azure_resources" do
     pagination $azure_pagination
     host "management.azure.com"
       path join(["/subscriptions/", val(iter_item,"subscriptionId"), "/resources"])
-    query "api-version","2018-02-01"
+    query "api-version","2020-06-01"
     header "User-Agent", "RS Policies"
   end
   result do
@@ -97,20 +97,51 @@ datasource "ds_azure_resources" do
       field "region", jmes_path(col_item,"location")
       field "name", jmes_path(col_item,"name")
       field "tags", jmes_path(col_item,"tags")
+      field "type", jmes_path(col_item,"type")
     end
   end
 end
 
+# See also: https://docs.microsoft.com/en-us/azure/azure-resource-manager/management/tag-support
+datasource "ds_tag_support" do
+  request do
+    host "raw.githubusercontent.com"
+    path "/tfitzmac/resource-capabilities/master/tag-support.csv"
+  end
+  result do
+    encoding "text"
+  end
+end
+
+datasource "ds_parsed_tag_support" do
+  run_script $js_parse_tag_support, $ds_tag_support
+end
+
 datasource "ds_filtered_resources" do
-  run_script $js_filter_resources, $ds_azure_resources, $param_tag_key
+  run_script $js_filter_resources, $ds_azure_resources, $param_tag_key, $ds_parsed_tag_support
 end
 
 ###############################################################################
 # Scripts
 ###############################################################################
 
+script "js_parse_tag_support", type: "javascript" do
+  parameters "ds_tag_support"
+  result "result"
+  code <<-EOS
+    var result = {};
+    var rows = ds_tag_support.split(/\\r?\\n/);
+    // Skip headers
+    rows.shift();
+    _.each(rows, function(row){
+      var fields = row.split(',');
+      result[fields[0]+"/"+fields[1]] = fields[2];
+    });
+EOS
+end
+
 script "js_filter_resources", type: "javascript" do
-  parameters "ds_azure_resources", "param_tag_key"
+  parameters "ds_azure_resources", "param_tag_key", "ds_parsed_tag_support"
   result "result"
   code <<-EOS
     var result = [];
@@ -126,12 +157,12 @@ script "js_filter_resources", type: "javascript" do
       var rg_split = id.split('/') ;
       var resource_group_name = rg_split[4] ;
       var namespace = rg_split[6] ;
-      var resource_type = rg_split[7] ;
       var resource_tags = JSON.stringify(ar.tags);
       var isResMissedTag=false;
       var all_include_tag='';
       var all_missed_tag='';
       var all_tags={};
+      var tag_support=ds_parsed_tag_support[ar["type"]];
       if(!(_.isEmpty(resource_tags))){
       all_tags=ar.tags;
       }
@@ -143,8 +174,7 @@ script "js_filter_resources", type: "javascript" do
          all_include_tag=all_include_tag+" "+param_tag_key_lower[j];
        }
       }
-
-    if(isResMissedTag){
+    if((isResMissedTag)&&(tag_support!=='FALSE')){
       result.push({
         subscriptionId: ar["subscriptionId"],
         subscriptionName : ar["subscriptionName"],
@@ -153,10 +183,11 @@ script "js_filter_resources", type: "javascript" do
         name: ar["name"],
         resource_group: resource_group_name,
         namespace: namespace,
-        resource_type: resource_type,
+        resource_type: ar["type"],
         all_missed_tag: all_missed_tag,
         all_include_tag: resource_tags,
-        all_tags: all_tags
+        all_tags: all_tags,
+        tag_support: tag_support
         })
       }
     })
@@ -184,6 +215,9 @@ policy "policy_azure_resource" do
       end
       field "resource_type" do
         label "Resource Type"
+      end
+      field "tag_support" do
+        label "Tag Support"
       end
       field "name" do
         label "Resource Name"
