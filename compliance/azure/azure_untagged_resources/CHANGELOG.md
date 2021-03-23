@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.4
+
+- Get the type from the resource object, and check whether it supports tags
+
 ## v2.3
 
 - fix broken link to the README file
