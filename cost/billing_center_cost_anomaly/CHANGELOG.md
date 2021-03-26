@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.10
+
+- Use rs_optima_host variable everywhere, instead of literal string
+
 ## v1.9
 
 - Fixed `report` variable type in js_format_costs script
