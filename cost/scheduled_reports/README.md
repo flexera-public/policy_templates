@@ -48,6 +48,8 @@ This policy requires permissions to access RightScale resources (Optima).  Befor
 
 - Optima - billing_center_viewer
 
+Alternatively, a version of the policy is provided that uses OAuth2 Flexera credentials (eg for use in the EU region). It requires policy credentials of type OAuth2 against the FlexeraOne application (e.g. in the EU, via the URL: https://login.flexera.eu/oidc/token). Those credentials should be associated with a user with the right permissions, ie billing_center_viewer (for the relevant billing centers).
+
 ## Supported Clouds
 
 - AWS
