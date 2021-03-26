@@ -29,8 +29,7 @@ There are four cost metrics to choose from.
 This policy has the following input parameters required when launching the policy.
 
 - *Email list* - Email addresses of the recipients you wish to notify
-- *Billing Center List* - List of top-level Billing Center names you want to report on.  Names must be exactly as shown in Optima.
-Leave the field blank to report on all top-level Billing Centers.
+- *Billing Center List* - List of top-level Billing Center names you want to report on.  Names must be exactly as shown in Optima.  Leave the field blank to report on all top-level Billing Centers.
 - *Cost Metric* - See Cost Metrics above for details on selection.
 - *Graph Dimension* - The cost dimension to break out the cost data in the embedded bar chart image
 - *Date Range* - Select the previous range to display in the chart
@@ -48,7 +47,7 @@ This policy requires permissions to access RightScale resources (Optima).  Befor
 
 - Optima - billing_center_viewer
 
-Alternatively, a version of the policy is provided that uses OAuth2 Flexera credentials (eg for use in the EU region). It requires policy credentials of type OAuth2 against the FlexeraOne application (e.g. in the EU, via the URL: https://login.flexera.eu/oidc/token). Those credentials should be associated with a user with the right permissions, ie billing_center_viewer (for the relevant billing centers).
+Alternatively, a version of the policy is provided that uses OAuth2 Flexera credentials (eg for use in the EU region). It requires policy credentials of type OAuth2 against the FlexeraOne application (e.g. in the EU, via the URL:`https://login.flexera.eu/oidc/token`). Those credentials should be associated with a user with the right permissions, ie billing_center_viewer (for the relevant billing centers).
 
 ## Supported Clouds
 

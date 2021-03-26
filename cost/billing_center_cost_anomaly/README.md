@@ -27,7 +27,7 @@ The Cost Anomaly Policy will analyze the spend of all Billing Centers in an Orga
 - billing_center_viewer
 
 Alternatively, a version of the policy is provided that uses OAuth2 Flexera credentials (e.g. for use in the EU region).
-It requires policy credentials of type OAuth2 against the FlexeraOne application (e.g. in the EU, via URL https://login.flexera.eu/oidc/token).
+It requires policy credentials of type OAuth2 against the FlexeraOne application (e.g. in the EU, via URL `https://login.flexera.eu/oidc/token`).
 Those credentials should be associated with a user with the right permissions, ie those mentioned above.
 
 ### Supported Clouds
