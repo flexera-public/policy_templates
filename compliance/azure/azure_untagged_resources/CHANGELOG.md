@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.5
+
+- Removed the sys_log function as it was not used
+
 ## v2.4
 
 - Get the type from the resource object, and check whether it supports tags
