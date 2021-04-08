@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.6
+
+- Removing unused ds, js and start_date and end_date variables
+
 ## v2.5
 
 - Modified escalation label and description for consistency
