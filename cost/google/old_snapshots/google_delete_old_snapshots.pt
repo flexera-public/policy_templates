@@ -5,7 +5,7 @@ short_description "Checks for snapshots older than specified number of days and,
 category "Cost"
 severity "low"
 info(
-  version: "2.5",
+  version: "2.6",
   provider:"Google",
   service: "Storage",
   policy_set: "Old Snapshots"
@@ -72,7 +72,6 @@ end
 
 #get all google project
 datasource "ds_google_project" do
-  iterate $ds_time
   request do
     auth $auth_google
     pagination $google_pagination
@@ -84,14 +83,8 @@ datasource "ds_google_project" do
     collect jmes_path(response, "projects[*]") do
       field "projectNumber", jmes_path(col_item,"projectNumber")
       field "projectId", jmes_path(col_item,"projectId")
-      field "end_date", val(iter_item,"end_date")
-      field "start_date", val(iter_item,"start_date")
     end
   end
-end
-
-datasource "ds_time" do
-  run_script $js_time
 end
 
 datasource "ds_snapshots" do
@@ -124,16 +117,6 @@ end
 ###############################################################################
 # Scripts
 ###############################################################################
-script "js_time", type: "javascript" do
-  result "time"
-  code <<-EOF
-  var time = [{
-    "end_date":  new Date().toISOString(),
-    "start_date": new Date(new Date().setDate(new Date().getDate() - 30)).toISOString()
-  }]
-EOF
-end
-
 script "js_filter_snapshots", type: "javascript" do
   parameters "ds_snapshots", "param_exclusion_tags"
   result "filtered_snapshots"
@@ -142,7 +125,6 @@ script "js_filter_snapshots", type: "javascript" do
     var count = 0
     _.each(param_exclusion_tags, function(tag)
       {
-        console.log(tag)
         tag_key = tag.split(':')[0]
         tag_value = tag.split(':')[1]
         if ( snapshot.labels[tag_key] != null && snapshot.labels[tag_key] !== undefined){
