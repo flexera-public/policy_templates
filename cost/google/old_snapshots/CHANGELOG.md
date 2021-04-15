@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.7
+
+- Added missing pagination to the request for snapshot list
+
 ## v2.6
 
 - Removing unused ds, js and start_date and end_date variables
