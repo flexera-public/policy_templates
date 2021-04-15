@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.2
+
+- corrected buggy filter to find only RHEL and SLES Linux AHub eligible vms
+
 ## v2.1
 
 - modified headline and links to docs
