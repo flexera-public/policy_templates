@@ -1,0 +1,447 @@
+name "Azure Hybrid Use Benefit for SQL"
+rs_pt_ver 20180301
+type "policy"
+short_description "Identifies SQL instances eligible for Azure Hybrid Use Benefit.  See the [README](https://github.com/rightscale/policy_templates/tree/master/cost/azure/hybrid_use_benefit) and [docs.rightscale.com/policies](http://docs.rightscale.com/policies/) to learn more."
+long_description ""
+severity "low"
+category "Cost"
+info(
+  version: "1.0",
+  provider: "Azure",
+  service: "compute",
+  policy_set: ""
+)
+
+#############
+# Parameters
+#############
+
+parameter "param_exclusion_tag_key" do
+  category "User Inputs"
+  label "Exclusion Tag Key"
+  description "Azure-native instance tag to ignore instances that are not using AHUB/BYOL. Only supply the tag key. The policy assumes that the tag value is irrelevant."
+  type "string"
+  default "exclude_ahub"
+end
+
+parameter "param_email" do
+  type "list"
+  label "Email addresses of the recipients you wish to notify"
+end
+
+parameter "param_automatic_action" do
+  type "list"
+  label "Automatic Actions"
+  description "When this value is set, this policy will automatically take the selected action(s)"
+  allowed_values "Hybrid use benefit for SQL"
+end
+
+#################
+# Authentication
+#################
+
+credentials "azure_auth" do
+  schemes "oauth2"
+  label "Azure"
+  description "Select the Azure Resource Manager Credential from the list."
+  tags "provider=azure_rm"
+end
+
+#############
+# Pagination
+#############
+
+pagination "azure_pagination" do
+  get_page_marker do
+    body_path "nextLink"
+  end
+  set_page_marker do
+    uri true
+  end
+end
+
+##############
+# Datasources
+##############
+
+datasource "ds_subscriptions" do
+  request do
+    auth $azure_auth
+    pagination $azure_pagination
+    host "management.azure.com"
+    path "/subscriptions/"
+    query "api-version","2019-06-01"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "value[*]") do
+      field "subscriptionId", jmes_path(col_item,"subscriptionId")
+      field "subscriptionName", jmes_path(col_item,"displayName")
+    end
+  end
+end
+
+datasource "sql_virtualmachines" do
+  iterate $ds_subscriptions
+    request do
+      auth $azure_auth
+      pagination $azure_pagination
+      host "management.azure.com"
+      path join(["/subscriptions/", val(iter_item,"subscriptionId"), "/providers/Microsoft.SqlVirtualMachine/sqlVirtualMachines"])
+      query "api-version","2017-03-01-preview"
+    end
+    result do
+      encoding "json"
+      collect jmes_path(response, "value") do
+	      field "subscriptionName", val(iter_item,"subscriptionName")
+        field "id", jmes_path(col_item,"id")
+        field "vmid", jmes_path(col_item,"properties.virtualMachineResourceId")
+        field "name", jmes_path(col_item,"name")
+        field "location", jmes_path(col_item,"location")
+        field "licenseType", jmes_path(col_item,"properties.sqlServerLicenseType")
+        field "imageSku", jmes_path(col_item,"properties.sqlImageSku")
+        field "imageOffer", jmes_path(col_item,"properties.sqlImageOffer")
+        field "type", get(1, split(jmes_path(col_item,"type"), "/"))
+        field "tags", jmes_path(col_item,"tags")
+      end
+    end
+end
+
+# For SQL databases running provisioned database applicable, serverless SQL databases are not eligible to AHUB
+datasource "sql_dbserver" do
+  iterate $ds_subscriptions
+    request do
+      auth $azure_auth
+      pagination $azure_pagination
+      host "management.azure.com"
+      path join(["/subscriptions/", val(iter_item,"subscriptionId"), "/providers/Microsoft.Sql/servers"])
+      query "api-version","2019-06-01-preview"
+    end
+    result do
+      encoding "json"
+      collect jmes_path(response, "value") do
+	      field "subscriptionName", val(iter_item,"subscriptionName")
+        field "resourceGroup", get(4, split(jmes_path(col_item,"id"), "/"))
+        field "dbserverId", jmes_path(col_item,"id")
+        field "dbserverName", jmes_path(col_item,"name")
+        field "type", jmes_path(col_item,"type")
+        field "tags", jmes_path(col_item,"tags")
+      end
+    end
+end
+
+datasource "sql_databases" do
+  iterate $sql_dbserver
+    request do
+      auth $azure_auth
+      pagination $azure_pagination
+      host "management.azure.com"
+      path join([val(iter_item,"dbserverId"),"/databases"])
+      query "api-version", "2020-08-01-preview"
+    end
+    result do
+      encoding "json"
+      collect jmes_path(response, "value") do
+        field "subscriptionName", val(iter_item,"subscriptionName")
+        field "resourceGroup", val(iter_item,"resourceGroup")
+        field "id", jmes_path(col_item,"id")
+        field "licenseType", jmes_path(col_item,"properties.licenseType")
+        field "vCores", jmes_path(col_item,"properties.currentSku.capacity")
+        field "location", jmes_path(col_item,"location")
+        field "tags", jmes_path(col_item,"tags")
+        field "name", jmes_path(col_item,"name")
+        field "kind", jmes_path(col_item,"kind")
+        field "type", get(2, split(jmes_path(col_item,"type"), "/"))
+      end
+    end
+end
+
+datasource "sql_managed_instances" do
+  iterate $ds_subscriptions
+    request do
+      auth $azure_auth
+      pagination $azure_pagination
+      host "management.azure.com"
+      path join(["/subscriptions/", val(iter_item,"subscriptionId"), "/providers/Microsoft.Sql/managedInstances"])
+      query "api-version","2020-11-01-preview"
+    end
+    result do
+      encoding "json"
+      collect jmes_path(response, "value") do
+        field "subscriptionName", val(iter_item,"subscriptionName")
+        field "resourceGroup", get(4, split(jmes_path(col_item,"id"), "/"))
+        field "id", jmes_path(col_item,"id")
+        field "licenseType", jmes_path(col_item,"properties.licenseType")
+        field "vCores", jmes_path(col_item,"properties.vCores")
+        field "location", jmes_path(col_item,"location")
+        field "tags", jmes_path(col_item,"tags")
+        field "name", jmes_path(col_item,"name")
+        field "type", get(1, split(jmes_path(col_item,"type"), "/"))
+      end
+    end
+end
+
+
+datasource "filtered_instances" do
+  run_script $js_filtered_instances, $sql_virtualmachines, $sql_databases, $sql_managed_instances, $param_exclusion_tag_key
+end
+
+##########
+# Scripts
+##########
+
+script "js_filtered_instances", type: "javascript" do
+  parameters "sql_virtualmachines", "sql_databases", "sql_managed_instances", "exclusion_tag"
+  result "result"
+  code <<-EOS
+  var result = [];
+    //SQL Virtualmachines
+      _.each(sql_virtualmachines, function(virtualmachine){
+        if (_.has(virtualmachine.tags, exclusion_tag)) {
+        } else {
+            var resourceGroup = virtualmachine.id.split('/')[4];
+            var tags = JSON.stringify(virtualmachine["tags"]);
+            var ahub = "N/A"
+            if (virtualmachine.licenseType === "AHUB") {
+                ahub = "Yes"
+              } else {
+                ahub = "No"
+              }
+
+            result.push({
+              subscriptionName: virtualmachine["subscriptionName"],
+              id: virtualmachine["id"],
+              vmid: virtualmachine["vmid"],
+              name: virtualmachine["name"],
+              resourceGroup: resourceGroup,
+              location: virtualmachine["location"],
+              ahub: ahub,
+              type: virtualmachine["type"],
+              imageOffer: virtualmachine["imageOffer"],
+              imageSku: virtualmachine["imageSku"]
+              licenseType: virtualmachine["licenseType"],
+              tags: tags
+            })
+          }
+      })
+
+    //SQL databases
+    _.each(sql_databases, function(database){
+      var version = database.kind.split(',')[3]
+      if (_.isNull(database.tags) || _.has(database.tags, exclusion_tag)) {
+      } else {
+          if (database.licenseType === "None" || _.isUndefined(database.licenseType)) {
+          } else {
+              if (version !== "serverless" && database.skuName !== "System") {
+                var resourceGroup = database.id.split('/')[4];
+                var tags = JSON.stringify(database["tags"]);
+                var ahub = "N/A";
+                if (database.licenseType === "BasePrice") {
+                  ahub = "Yes"
+                } else {
+                  ahub = "No"
+                  }
+                console.log(database["name"], "AHUB: ", ahub)
+                result.push({
+                  subscriptionName: database["subscriptionName"],
+                  id: database["id"],
+                  name: database["name"],
+                  resourceGroup: database["resourceGroup"],
+                  location: database["location"],
+                  ahub: ahub,
+                  licenseType: database["licenseType"],
+                  vCores: database["vCores"]
+                  type: database["type"],
+                  tags: tags
+                })
+              }
+            }
+        }
+    })
+
+    //SQL Managed Instances
+    _.each(sql_managed_instances, function(instance){
+      if (_.has(instance.tags, exclusion_tag)) {
+      } else {
+          if (instance.licenseType === "None" || _.isUndefined(instance.licenseType)) {
+          } else {
+              var tags = JSON.stringify(instance["tags"]);
+              var ahub = "N/A"
+              if (instance.licenseType === "BasePrice") {
+                ahub = "Yes"
+              } else {
+                ahub = "No"
+              }
+              result.push({
+                subscriptionName: instance["subscriptionName"],
+                id: instance["id"],
+                name: instance["name"],
+                resourceGroup: instance["resourceGroup"],
+                location: instance["location"],
+                ahub: ahub,
+                licenseType: instance["licenseType"],
+                vCores: instance["vCores"]
+                type: instance["type"],
+                tags: tags
+              })
+            }
+        }
+    })
+
+    result = _.sortBy(result, 'subscriptionName');
+    result = _.sortBy(result, 'location');
+    result = _.sortBy(result, 'type');
+  EOS
+end
+
+##########
+# Policy
+##########
+
+policy 'azure_sql_ahub' do
+  validate_each $filtered_instances do
+    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} Instances Not Using Azure Hybrid Use Benefit for SQL"
+    escalate $email
+    escalate $license_sqlahub
+    check eq(val(item,"ahub"),"Yes")
+    export do
+      resource_level true
+      field "subscriptionName" do
+        label "Subscription Name"
+      end
+      field "name" do
+        label "Instance Name"
+      end
+      field "location" do
+        label "Location"
+      end
+      field "resourceGroup" do
+        label "Resource Group"
+      end
+      field "type" do
+        label "SQL Type"
+      end
+      field "vCores" do
+        label "vCores"
+      end
+      field "licenseType" do
+        label "Current License"
+      end
+      field "ahub" do
+        label "AHUB"
+      end
+      field "imageSku" do
+        label "Edition"
+      end
+      field "imageOffer" do
+        label "Version/VM OS"
+      end
+      field "tags" do
+        label "Tags"
+      end
+      field "id" do
+        label "Id"
+      end
+      field "vmid" do
+        label "VirtualMachineResourceId"
+      end
+    end
+  end
+end
+
+##############
+# Escalations
+##############
+
+escalation "email" do
+  automatic true
+  label "Send Email"
+  description "Send Incident email"
+  email $param_email
+end
+
+escalation "license_sqlahub" do
+  automatic contains($param_automatic_action, "Hybrid Use Benefit for SQL")
+  label "Approve AHUB for SQL"
+  description "Approve escalation to apply Hybrid Use Benefit for SQL"
+  run "license_sqlahub", data
+end
+
+##################
+# Cloud Workflow
+##################
+
+define license_sqlahub($data) return $all_responses do
+  $all_responses = []
+  foreach $item in $data do
+    sub on_error: skip do
+      if ($item["type"] == "sqlVirtualMachines")
+        $update_inst_response = http_request(
+	      auth: $$azure_auth,
+          verb: "put",
+          host: "management.azure.com",
+          https: true,
+          href: $item["id"],
+          query_strings: {
+            "api-version": "2017-03-01-preview"
+          },
+          headers: {
+            "cache-control": "no-cache",
+            "content-type": "application/json"
+          },
+          body: {
+            "location": $item['location'],
+            "properties": {
+              "virtualMachineResourceId": $item['vmid'],
+              "sqlServerLicenseType": "AHUB"
+            }
+          }
+        )
+        $all_responses << $update_inst_response
+      elsif ($item["type"] == "databases")
+        $update_inst_response = http_request(
+	      auth: $$azure_auth,
+          verb: "patch",
+          host: "management.azure.com",
+          https: true,
+          href: $item["id"],
+          query_strings: {
+            "api-version": "2020-11-01-preview"
+          },
+          headers: {
+            "cache-control": "no-cache",
+            "content-type": "application/json"
+          },
+          body: {
+            "properties": {
+              "licenseType": "BasePrice"
+            }
+          }
+        )
+        $all_responses << $update_inst_response
+      elsif ($item["type"] == "managedInstances")
+        $update_inst_response = http_request(
+        auth: $$azure_auth,
+          verb: "patch",
+          host: "management.azure.com",
+          https: true,
+          href: $item["id"],
+          query_strings: {
+            "api-version": "2020-11-01-preview"
+          },
+          headers: {
+            "cache-control": "no-cache",
+            "content-type": "application/json"
+          },
+          body: {
+            "properties": {
+              "licenseType": "BasePrice"
+            }
+          }
+        )
+        $all_responses << $update_inst_response
+      end
+    end
+  end
+end
