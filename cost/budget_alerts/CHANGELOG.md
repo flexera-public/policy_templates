@@ -1,4 +1,11 @@
 # Changelog
+# v1.16
+
+- Now using OAuth2 credentials instead of the built-in Rightscale authentication
+
+## v1.15
+
+- Use rs_optima_host variable everywhere, instead of literal string
 
 ## v1.14
 
