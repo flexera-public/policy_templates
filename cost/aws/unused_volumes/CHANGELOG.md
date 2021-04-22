@@ -1,5 +1,16 @@
 # Changelog
 
+## v2.16
+
+- Increase the sleep time between calls to AWS for snapshot status in order to decrease the likelihood of hitting
+  a Cloud Workflow event limit
+
+## v2.15
+
+- Improve error handling and debug logging so that errors from taking action are actually surfaced
+- Add a `param_log_to_cm_audit_entries` parameter to control whether action debug logging is sent to CM Audit
+  Entries; this should be left set to No on Flexera EU
+
 ## v2.14
 
 - Add a parameter to override the Flexera One org ID to use when querying Optima for cases when the project is not

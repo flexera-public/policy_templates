@@ -67,6 +67,8 @@ Please contact sales@flexera.com to learn more.
 ##### Compute
 
 - [Azure Hybrid Use Benefit](./cost/azure/hybrid_use_benefit/)
+- [Azure Hybrid Use Benefit for Linux](./cost/azure/hybrid_use_benefit_linux/)
+- [Azure Hybrid Use Benefit for SQL](./cost/azure/hybrid_use_benefit_sql/)
 - [Azure Idle Compute Instances](./cost/azure/idle_compute_instances/)
 - [Azure Inefficient Instance Utilization using Log Analytics](./cost/azure/instances_log_analytics_utilization/)
 - [Azure Expiring Reserved Instances](./cost/azure/reserved_instances/expiration)
@@ -74,6 +76,7 @@ Please contact sales@flexera.com to learn more.
 - [Azure Reserved Instance Recommendations](./cost/azure/reserved_instances/recommendations)
 - [Azure Unused IP Addresses](./cost/azure/unused_ip_addresses)
 - [Azure Schedule Instance](./cost/azure/schedule_instance/)
+- [Azure MCA Reserved Instance Recommendations](./cost/azure/reserved_instances/mca_recommendations)
 
 ##### Database
 
