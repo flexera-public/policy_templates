@@ -50,9 +50,7 @@ exclude_hosts = [
   'www.w3.org',
   'tempuri.org',
   'us-3.rightscale.com',
-  'us-4.rightscale.com',
-  'demo.flexnetmanager.com',
-  'wstunnel1-1.rightscale.com'
+  'us-4.rightscale.com'
 ]
 changed_files.each do |file|
  diff = git.diff_for_file(file)
