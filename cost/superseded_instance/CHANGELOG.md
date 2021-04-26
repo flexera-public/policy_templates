@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.11
+
+- Fixed cloud account vendor URL, and use name instead of id
+
 ## v1.10
 
 - Fixed the Run Rate label
