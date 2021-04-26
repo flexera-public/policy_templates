@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.6
+
+- Drop namespace from resource type when looking up supported API versions
+
 ## v2.5
 
 - Removed the sys_log function as it was not used
