@@ -1,6 +1,6 @@
 # Changelog
 
-# v1.16
+## v1.16
 
 - Now using OAuth2 credentials instead of the built-in Rightscale authentication
 
