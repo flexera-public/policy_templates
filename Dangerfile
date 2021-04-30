@@ -135,6 +135,27 @@ has_app_changes.each do |file|
   end
 end
 
+# check for default_frequency
+# only check .pt files
+frequencies = [
+  '15 minutes',
+  'hourly',
+  'daily',
+  'weekly',
+  'monthly'
+].sort
+has_app_changes.each do |file|
+  pp.parse(file)
+  default_frequency = pp.parsed_default_frequency
+  if ! default_frequency
+    fail "Please add a default_frequency property field and value. #{file}"
+  end
+  # check frequency meets the expected list
+  if default_frequency && !frequencies.include?(default_frequency.downcase)
+    fail "The frequency is not valid: #{default_frequency}.  Valid frequencies include #{frequencies.join(", ")}"
+  end
+end
+
 # check for info field required fields
 has_app_changes.each do |file|
   # get info field data
