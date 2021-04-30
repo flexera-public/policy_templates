@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.5
+
+- Added default_frequency "daily"
+
 ## v2.4
 
 - Adding AWS Account Id
