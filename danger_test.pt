@@ -1,0 +1,857 @@
+name "Danger Test"
+rs_pt_ver 20180301
+type "policy"
+short_description "Test Danger checks"
+long_description ""
+severity "low"
+category "Compliance"
+info(
+  version: "2.6",
+  provider: "Danger",
+  service: "CI",
+  policy_set: "",
+  publish: false
+)
+
+###############################################################################
+# Parameters
+###############################################################################
+
+parameter "param_allowed_regions" do
+  type "list"
+  label "Allowed Regions"
+  allowed_pattern /^([a-zA-Z-_]+-[a-zA-Z0-9-_]+-[0-9-_]+,*|)+$/
+  description "A list of allowed regions. See the README for more details"
+end
+
+parameter "param_email" do
+  type "list"
+  label "Email addresses to notify"
+  description "Email addresses of the recipients you wish to notify when new incidents are created"
+end
+
+parameter "param_num_cpu_surplus_credits" do
+  type "number"
+  label "Number of Surplus Credits to alert on"
+  description "Number of CPU Surplus Credits to report on, Set to -1 to ignore cpu burst credits"
+  default -1
+  min_value -1
+end
+
+parameter "param_bool_cpu_burst_credit_balance" do
+  type "string"
+  label "Enable checking burst credit balance against max"
+  description "checks burst credit balance against max_earnable_credits"
+  default "false"
+  allowed_values "true", "false"
+end
+
+parameter "param_exclusion_tag_key" do
+  category "User Inputs"
+  label "Exclusion Tag"
+  description "Cloud native tag key to ignore instances. Format: Key:Value"
+  type "string"
+end
+
+parameter "param_cooldown_days" do
+  type "number"
+  label "Cooldown Days"
+  description "Days to cooldown between checks of same instance"
+  default 30
+end
+
+parameter "param_automatic_action" do
+  type "list"
+  label "Automatic Actions"
+  description "When this value is set, this policy will automatically take the selected action(s)"
+  allowed_values ["Resize Instances"]
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+#authenticate with AWS
+credentials "auth_aws" do
+  schemes "aws","aws_sts"
+  label "AWS"
+  description "Select the AWS Credential from the list"
+  tags "provider=aws"
+end
+
+###############################################################################
+# Datasources
+###############################################################################
+
+datasource "ds_get_caller_identity" do
+  request do
+    auth $auth_aws
+    verb "GET"
+    host "sts.amazonaws.com"
+    path "/"
+    header "User-Agent", "RS Policies"
+    query "Action", "GetCallerIdentity"
+    query "Version", "2011-06-15"
+  end
+  result do
+    encoding "xml"
+    collect xpath(response, "//GetCallerIdentityResponse/GetCallerIdentityResult") do
+      field "account",xpath(col_item, "Account")
+    end
+ end
+end
+
+#Get list of enabled regions for an account
+datasource "ds_regions_list" do
+  request do
+    auth $auth_aws
+    verb "GET"
+    host "ec2.amazonaws.com"
+    path "/"
+    query "Action", "DescribeRegions"
+    query "Version", "2016-11-15"
+  end
+  result do
+    encoding "xml"
+    collect xpath(response, "//DescribeRegionsResponse/regionInfo/item", "array") do
+      field "region", xpath(col_item, "regionName")
+    end
+  end
+end
+
+# Get only SCP enabled regions
+datasource "ds_regions" do
+  run_script $js_regions, $param_allowed_regions, $ds_regions_list
+end
+
+datasource "ds_instance_types" do
+  request do
+    verb "GET"
+    host "raw.githubusercontent.com"
+    path "/rightscale/policy_templates/master/data/aws/instance_types.json"
+    header "User-Agent", "RS Policies"
+  end
+end
+
+datasource "ds_instances" do
+  run_script $js_instances, $ds_instances_set, $param_exclusion_tag_key, $ds_instance_types
+end
+
+datasource "ds_instances_set" do
+  iterate $ds_regions
+  request do
+    run_script $js_instances_set, val(iter_item,"region")
+  end
+  result do
+    encoding "xml"
+    collect xpath(response, "//DescribeInstancesResponse/reservationSet/item", "array") do
+      field "instances_set" do
+        collect xpath(col_item,"instancesSet/item","array") do
+          field "region",val(iter_item, "region")
+          field "instanceId", xpath(col_item,"instanceId")
+          field "instanceType", xpath(col_item,"instanceType")
+          field "privateDnsName", xpath(col_item, "privateDnsName")
+          field "tag_set" do
+            collect xpath(col_item,"tagSet/item","array") do
+              field "key", xpath(col_item, "key")
+              field "value", xpath(col_item, "value")
+            end
+          end
+        end
+      end
+    end
+  end
+end
+
+datasource "ds_cloudwatch_cpu_usage" do
+  iterate $ds_instances
+  request do
+    run_script $js_cloudwatch_cpu_usage, val(iter_item, "region"), val(iter_item, "instanceId")
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "GetMetricStatisticsResponse.GetMetricStatisticsResult.Datapoints[*]") do
+      field "region", val(iter_item, "region")
+      field "instanceId", val(iter_item, "instanceId")
+      field "instanceType", val(iter_item, "instanceType")
+      field "instance_type_info", val(iter_item,"instance_type_info")
+      field "privateDnsName", val(iter_item, "privateDnsName")
+      field "tag_set", val(iter_item, "tag_set")
+      field "cpu_unit", jmes_path(col_item,"Unit")
+      field "cpu_maximum", jmes_path(col_item, "Maximum")
+      field "cpu_minimum", jmes_path(col_item, "Minimum")
+      field "cpu_average", jmes_path(col_item, "Average")
+    end
+  end
+end
+
+datasource "ds_cloudwatch_cpu_credit_balance" do
+  iterate $ds_instances
+  request do
+    run_script $js_cloudwatch_cpu_credit_balance, val(iter_item, "region"), val(iter_item, "instanceId")
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "GetMetricStatisticsResponse.GetMetricStatisticsResult.Datapoints[*]") do
+      field "region", val(iter_item, "region")
+      field "instanceId", val(iter_item, "instanceId")
+      field "privateDnsName", val(iter_item, "privateDnsName")
+      field "tag_set", val(iter_item, "tag_set")
+      field "cpu_credit_balance_unit", jmes_path(col_item,"Unit")
+      field "max", jmes_path(col_item, "Maximum")
+      field "min", jmes_path(col_item, "Minimum")
+      field "avg", jmes_path(col_item, "Average")
+    end
+  end
+end
+
+datasource "ds_cloudwatch_cpu_surplus_credit_balance" do
+  iterate $ds_instances
+  request do
+    run_script $js_cloudwatch_cpu_surplus_credit_balance, val(iter_item, "region"), val(iter_item, "instanceId")
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "GetMetricStatisticsResponse.GetMetricStatisticsResult.Datapoints[*]") do
+      field "region", val(iter_item, "region")
+      field "instanceId", val(iter_item, "instanceId")
+      field "privateDnsName", val(iter_item, "privateDnsName")
+      field "tag_set", val(iter_item, "tag_set")
+      field "cpu_credit_balance_unit", jmes_path(col_item,"Unit")
+      field "max", jmes_path(col_item, "Maximum")
+      field "min", jmes_path(col_item, "Minimum")
+      field "avg", jmes_path(col_item, "Average")
+    end
+  end
+end
+
+datasource "ds_cloudwatch_cpu_surplus_credits_charged" do
+  iterate $ds_instances
+  request do
+    run_script $js_cloudwatch_cpu_surplus_credits_charged, val(iter_item, "region"), val(iter_item, "instanceId")
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "GetMetricStatisticsResponse.GetMetricStatisticsResult.Datapoints[*]") do
+      field "region", val(iter_item, "region")
+      field "instanceId", val(iter_item, "instanceId")
+      field "privateDnsName", val(iter_item, "privateDnsName")
+      field "tag_set", val(iter_item, "tag_set")
+      field "cpu_credit_balance_unit", jmes_path(col_item,"Unit")
+      field "max", jmes_path(col_item, "Maximum")
+      field "min", jmes_path(col_item, "Minimum")
+      field "avg", jmes_path(col_item, "Average")
+    end
+  end
+end
+
+datasource "ds_merged_metrics" do
+  run_script $js_merged_metrics, $ds_cloudwatch_cpu_usage, $ds_cloudwatch_cpu_credit_balance, $ds_cloudwatch_cpu_surplus_credit_balance, $ds_cloudwatch_cpu_surplus_credits_charged
+end
+
+datasource "ds_check_merged_metrics" do
+  run_script $js_check_merged_metrics, $ds_merged_metrics, $param_bool_cpu_burst_credit_balance, $param_num_cpu_surplus_credits, $ds_get_caller_identity
+end
+
+###############################################################################
+# Scripts
+###############################################################################
+
+script "js_regions", type:"javascript" do
+  parameters "user_entered_regions", "all_regions"
+  result "regions"
+  code <<-EOS
+    if(_.isEmpty(user_entered_regions)){
+      regions = all_regions;
+    }else{
+      //Filter unique regions
+      var uniqueRegions = _.uniq(user_entered_regions);
+      var all_regions_list = [];
+      all_regions.forEach(function(all_region){
+        all_regions_list.push(all_region.region)
+      })
+
+      //Filter valid regions
+      var valid_regions = [];
+      _.map(uniqueRegions, function(uniqueRegion){
+        if(all_regions_list.indexOf(uniqueRegion) > -1){
+          valid_regions.push({"region": uniqueRegion})
+        }
+      })
+
+      //Throw an error if no valid regions found
+      if (_.isEmpty(valid_regions)) {
+        regions = all_regions;
+      }else{
+        regions = valid_regions
+      }
+    }
+  EOS
+end
+
+script "js_instances", type: "javascript" do
+  result "results"
+  parameters "ds_instance_set", "param_exclusion_tag_key", "ds_instance_types"
+  code <<-EOS
+  var tag_key = param_exclusion_tag_key.split(':')[0]
+  var tag_value = param_exclusion_tag_key.split(':')[1]
+  var results = []
+  for ( n=0; n < ds_instance_set.length; n++) {
+    var instance_set = ds_instance_set[n].instances_set
+    for ( i=0; i < instance_set.length; i++) {
+      var instance = instance_set[i]
+      var tags = instance.tag_set
+      var instance_type_info = ds_instance_types[instance.instanceType]
+
+      if (_.contains(_.pluck(tags,'key'), tag_key) && _.contains(_.pluck(tags,'value'), tag_value)){
+        continue
+      } else {
+        results.push({
+          "region": instance.region,
+          "instanceId": instance.instanceId,
+          "instanceType": instance.instanceType,
+          "privateDnsName": instance.privateDnsName,
+          "tag_set": instance.tag_set,
+          "instance_type_info": instance_type_info
+        })
+      }
+    }
+  }
+  results = _.sortBy(results, 'region');
+EOS
+end
+
+script "js_instances_set", type: "javascript" do
+  result "results"
+  parameters "region"
+  code <<-EOS
+  var end_date = new Date().toISOString()
+  var start_date = new Date(new Date().setDate(new Date().getDate() - 30)).toISOString();
+  results = {
+    "auth": "auth_aws",
+    "host": 'ec2.'+region+'.amazonaws.com',
+    "verb": "GET",
+    "path": "/",
+    "headers": {
+      "User-Agent": "RS Policies",
+      "Content-Type": "text/xml"
+    }
+    "query_params": {
+      'Action': 'DescribeInstances',
+      'Version': '2016-11-15'
+    }
+  }
+EOS
+end
+
+script "js_cloudwatch_cpu_usage", type: "javascript" do
+  result "results"
+  parameters "region","instance_id"
+  code <<-EOS
+  var end_date = new Date().toISOString()
+  var start_date = new Date(new Date().setDate(new Date().getDate() - 30)).toISOString();
+  results = {
+    "auth": "auth_aws",
+    "host": 'monitoring.'+region+'.amazonaws.com',
+    "verb": "GET",
+    "path": "/",
+    "headers": {
+      "User-Agent": "RS Policies",
+      "Content-Type": "application/json",
+      "x-amz-target": "GraniteServiceVersion20100801.GetMetricStatistics",
+      "Accept": "application/json",
+      "Content-Encoding": "amz-1.0"
+    }
+    "query_params": {
+      'Action': 'GetMetricStatistics',
+      'Version': '2010-08-01',
+      'Namespace': 'AWS/EC2',
+      'MetricName': 'CPUUtilization',
+      'Dimensions.member.1.Name': 'InstanceId',
+      'Dimensions.member.1.Value': instance_id,
+      'StartTime': start_date,
+      'EndTime': end_date,
+      'Period': "2592000",
+      'Statistics.member.1': 'Maximum',
+      'Statistics.member.2': 'Average',
+      'Statistics.member.3': 'Minimum'
+    }
+  }
+EOS
+end
+
+script "js_cloudwatch_cpu_credit_balance", type: "javascript" do
+  result "results"
+  parameters "region","instance_id"
+  code <<-EOS
+  var end_date = new Date().toISOString()
+  var start_date = new Date(new Date().setDate(new Date().getDate() - 30)).toISOString();
+  results = {
+    "auth": "auth_aws",
+    "host": 'monitoring.'+region+'.amazonaws.com',
+    "verb": "GET",
+    "path": "/",
+    "headers": {
+      "User-Agent": "RS Policies",
+      "Content-Type": "application/json",
+      "x-amz-target": "GraniteServiceVersion20100801.GetMetricStatistics",
+      "Accept": "application/json",
+      "Content-Encoding": "amz-1.0"
+    }
+    "query_params": {
+      'Action': 'GetMetricStatistics',
+      'Version': '2010-08-01',
+      'Namespace': 'AWS/EC2',
+      'MetricName': 'CPUCreditBalance',
+      'Dimensions.member.1.Name': 'InstanceId',
+      'Dimensions.member.1.Value': instance_id,
+      'StartTime': start_date,
+      'EndTime': end_date,
+      'Period': "2592000",
+      'Statistics.member.1': 'Maximum',
+      'Statistics.member.2': 'Average',
+      'Statistics.member.3': 'Minimum'
+    }
+  }
+EOS
+end
+
+script "js_cloudwatch_cpu_surplus_credit_balance", type: "javascript" do
+  result "results"
+  parameters "region","instance_id"
+  code <<-EOS
+  var end_date = new Date().toISOString()
+  var start_date = new Date(new Date().setDate(new Date().getDate() - 30)).toISOString();
+  results = {
+    "auth": "auth_aws",
+    "host": 'monitoring.'+region+'.amazonaws.com',
+    "verb": "GET",
+    "path": "/",
+    "headers": {
+      "User-Agent": "RS Policies",
+      "Content-Type": "application/json",
+      "x-amz-target": "GraniteServiceVersion20100801.GetMetricStatistics",
+      "Accept": "application/json",
+      "Content-Encoding": "amz-1.0"
+    }
+    "query_params": {
+      'Action': 'GetMetricStatistics',
+      'Version': '2010-08-01',
+      'Namespace': 'AWS/EC2',
+      'MetricName': 'CPUSurplusCreditBalance',
+      'Dimensions.member.1.Name': 'InstanceId',
+      'Dimensions.member.1.Value': instance_id,
+      'StartTime': start_date,
+      'EndTime': end_date,
+      'Period': "2592000",
+      'Statistics.member.1': 'Maximum',
+      'Statistics.member.2': 'Average',
+      'Statistics.member.3': 'Minimum'
+    }
+  }
+EOS
+end
+
+script "js_cloudwatch_cpu_surplus_credits_charged", type: "javascript" do
+  result "results"
+  parameters "region","instance_id"
+  code <<-EOS
+  var end_date = new Date().toISOString()
+  var start_date = new Date(new Date().setDate(new Date().getDate() - 30)).toISOString();
+  results = {
+    "auth": "auth_aws",
+    "host": 'monitoring.'+region+'.amazonaws.com',
+    "verb": "GET",
+    "path": "/",
+    "headers": {
+      "User-Agent": "RS Policies",
+      "Content-Type": "application/json",
+      "x-amz-target": "GraniteServiceVersion20100801.GetMetricStatistics",
+      "Accept": "application/json",
+      "Content-Encoding": "amz-1.0"
+    }
+    "query_params": {
+      'Action': 'GetMetricStatistics',
+      'Version': '2010-08-01',
+      'Namespace': 'AWS/EC2',
+      'MetricName': 'CPUSurplusCreditsCharged',
+      'Dimensions.member.1.Name': 'InstanceId',
+      'Dimensions.member.1.Value': instance_id,
+      'StartTime': start_date,
+      'EndTime': end_date,
+      'Period': "2592000",
+      'Statistics.member.1': 'Maximum',
+      'Statistics.member.2': 'Average',
+      'Statistics.member.3': 'Minimum'
+    }
+  }
+EOS
+end
+
+script "js_merged_metrics", type: "javascript" do
+  parameters "ds_cloudwatch_cpu_usage", "ds_cloudwatch_cpu_credit_balance", "ds_cloudwatch_cpu_surplus_credit_balance", "ds_cloudwatch_cpu_surplus_credits_charged"
+  result "merged_results"
+  code <<-EOS
+  var merged_results = []
+  for ( i = 0; i < ds_cloudwatch_cpu_usage.length; i++){
+    var instance_id = ds_cloudwatch_cpu_usage[i].instanceId
+    var cloudwatch_cpu_credit_balance = _.find(ds_cloudwatch_cpu_credit_balance, function(record) { return record.instanceId == instance_id; })
+    var cloudwatch_cpu_surplus_credit_balance = _.find(ds_cloudwatch_cpu_surplus_credit_balance, function(record) { return record.instanceId == instance_id; })
+    var cloudwatch_cpu_surplus_credits_charged = _.find(ds_cloudwatch_cpu_surplus_credits_charged, function(record) { return record.instanceId == instance_id; })
+
+    if (cloudwatch_cpu_credit_balance != null && cloudwatch_cpu_credit_balance !== undefined) {
+      var cloudwatch_cpu_credit_balance_avg = parseFloat(cloudwatch_cpu_credit_balance.avg).toFixed(2)
+      var cloudwatch_cpu_credit_balance_min = parseFloat(cloudwatch_cpu_credit_balance.min).toFixed(2)
+      var cloudwatch_cpu_credit_balance_max = parseFloat(cloudwatch_cpu_credit_balance.max).toFixed(2)
+    } else {
+      var cloudwatch_cpu_credit_balance_avg = "N/A"
+      var cloudwatch_cpu_credit_balance_min = "N/A"
+      var cloudwatch_cpu_credit_balance_max = "N/A"
+    }
+
+    if (cloudwatch_cpu_surplus_credit_balance != null && cloudwatch_cpu_surplus_credit_balance !== undefined) {
+      var cloudwatch_cpu_surplus_credit_balance_avg = parseFloat(cloudwatch_cpu_surplus_credit_balance.avg).toFixed(2)
+      var cloudwatch_cpu_surplus_credit_balance_min = parseFloat(cloudwatch_cpu_surplus_credit_balance.min).toFixed(2)
+      var cloudwatch_cpu_surplus_credit_balance_max = parseFloat(cloudwatch_cpu_surplus_credit_balance.max).toFixed(2)
+    } else {
+      var cloudwatch_cpu_surplus_credit_balance_avg = "N/A"
+      var cloudwatch_cpu_surplus_credit_balance_min = "N/A"
+      var cloudwatch_cpu_surplus_credit_balance_max = "N/A"
+    }
+
+    if (cloudwatch_cpu_surplus_credits_charged != null && cloudwatch_cpu_surplus_credits_charged !== undefined) {
+      var cloudwatch_cpu_surplus_credits_charged_avg = parseFloat(cloudwatch_cpu_surplus_credits_charged.avg).toFixed(2)
+      var cloudwatch_cpu_surplus_credits_charged_min = parseFloat(cloudwatch_cpu_surplus_credits_charged.min).toFixed(2)
+      var cloudwatch_cpu_surplus_credits_charged_max = parseFloat(cloudwatch_cpu_surplus_credits_charged.max).toFixed(2)
+    } else {
+      var cloudwatch_cpu_surplus_credits_charged_avg = "N/A"
+      var cloudwatch_cpu_surplus_credits_charged_min = "N/A"
+      var cloudwatch_cpu_surplus_credits_charged_max = "N/A"
+    }
+
+    merged_results.push(
+      {
+        "region": ds_cloudwatch_cpu_usage[i].region,
+        "instanceId": ds_cloudwatch_cpu_usage[i].instanceId,
+        "instanceType": ds_cloudwatch_cpu_usage[i].instanceType,
+        "instance_type_info": ds_cloudwatch_cpu_usage[i].instance_type_info,
+        "privateDnsName": ds_cloudwatch_cpu_usage[i].privateDnsName,
+        "hostname": ds_cloudwatch_cpu_usage[i].privateDnsName.split('.')[0],
+        "tag_set": ds_cloudwatch_cpu_usage[i].tag_set,
+        "cpu_minimum": parseFloat(ds_cloudwatch_cpu_usage[i].cpu_minimum).toFixed(2),
+        "cpu_maximum": parseFloat(ds_cloudwatch_cpu_usage[i].cpu_maximum).toFixed(2),
+        "cpu_average": parseFloat(ds_cloudwatch_cpu_usage[i].cpu_average).toFixed(2),
+        "cloudwatch_cpu_credit_balance_avg": cloudwatch_cpu_credit_balance_avg,
+        "cloudwatch_cpu_credit_balance_max": cloudwatch_cpu_credit_balance_max,
+        "cloudwatch_cpu_credit_balance_min": cloudwatch_cpu_credit_balance_min,
+        "cloudwatch_cpu_surplus_credit_balance_avg": cloudwatch_cpu_surplus_credit_balance_avg,
+        "cloudwatch_cpu_surplus_credit_balance_max": cloudwatch_cpu_surplus_credit_balance_max,
+        "cloudwatch_cpu_surplus_credit_balance_min": cloudwatch_cpu_surplus_credit_balance_min,
+        "cloudwatch_cpu_surplus_credits_charged_avg": cloudwatch_cpu_surplus_credits_charged_avg,
+        "cloudwatch_cpu_surplus_credits_charged_min": cloudwatch_cpu_surplus_credits_charged_min,
+        "cloudwatch_cpu_surplus_credits_charged_max": cloudwatch_cpu_surplus_credits_charged_max
+      }
+    )
+  }
+  merged_results = _.sortBy(merged_results, 'region');
+EOS
+end
+
+script "js_check_merged_metrics", type: "javascript" do
+  parameters "ds_merged_metrics", "param_bool_cpu_burst_credit_balance", "param_num_cpu_surplus_credits", "ds_get_caller_identity"
+  result "merged_results"
+  code <<-EOS
+    var merged_results = []
+    _.each(ds_merged_metrics,function(result) {
+      if ( result.instance_type_info.burst_info !== undefined ){
+        if ( param_bool_cpu_burst_credit_balance == "true" && (result.cloudwatch_cpu_credit_balance_min != "N/A") && (result.cloudwatch_cpu_credit_balance_min == result.instance_type_info.burst_info.max_earnable_credits)){
+          merged_results.push(
+            {
+              "accountId": ds_get_caller_identity[0]['account'],
+              "region": result.region,
+              "id": result.instanceId,
+              "instanceType": result.instanceType,
+              "instance_type_info": result.instance_type_info,
+              "privateDnsName": result.privateDnsName,
+              "hostname": result.hostname,
+              "tag_set": result.tag_set,
+              "cpu_minimum": result.cpu_minimum,
+              "cpu_maximum": result.cpu_maximum,
+              "cpu_average": result.cpu_average,
+              "cloudwatch_cpu_credit_balance_avg": result.cloudwatch_cpu_credit_balance_avg,
+              "cloudwatch_cpu_credit_balance_max": result.cloudwatch_cpu_credit_balance_max,
+              "cloudwatch_cpu_credit_balance_min": result.cloudwatch_cpu_credit_balance_min,
+              "cloudwatch_cpu_surplus_credit_balance_avg": result.cloudwatch_cpu_surplus_credit_balance_avg,
+              "cloudwatch_cpu_surplus_credit_balance_max": result.cloudwatch_cpu_surplus_credit_balance_max,
+              "cloudwatch_cpu_surplus_credit_balance_min": result.cloudwatch_cpu_surplus_credit_balance_min,
+              "cloudwatch_cpu_surplus_credits_charged_avg": result.cloudwatch_cpu_surplus_credits_charged_avg,
+              "cloudwatch_cpu_surplus_credits_charged_min": result.cloudwatch_cpu_surplus_credits_charged_min,
+              "cloudwatch_cpu_surplus_credits_charged_max": result.cloudwatch_cpu_surplus_credits_charged_max,
+              "next_instance_size": result.instance_type_info["down"]
+            }
+          )
+        }
+      }
+
+      if ( param_num_cpu_surplus_credits != -1 && (result.cloudwatch_cpu_surplus_credit_balance_min != "N/A") && (result.cloudwatch_cpu_surplus_credit_balance_min >= param_num_cpu_surplus_credits)){
+        merged_results.push(
+          {
+            "accountId": ds_get_caller_identity[0]['account'],
+            "region": result.region,
+            "id": result.instanceId,
+            "instanceType": result.instanceType,
+            "instance_type_info": result.instance_type_info,
+            "privateDnsName": result.privateDnsName,
+            "hostname": result.hostname,
+            "tag_set": result.tag_set,
+            "cpu_minimum": result.cpu_minimum,
+            "cpu_maximum": result.cpu_maximum,
+            "cpu_average": result.cpu_average,
+            "cloudwatch_cpu_credit_balance_avg": result.cloudwatch_cpu_credit_balance_avg,
+            "cloudwatch_cpu_credit_balance_max": result.cloudwatch_cpu_credit_balance_max,
+            "cloudwatch_cpu_credit_balance_min": result.cloudwatch_cpu_credit_balance_min,
+            "cloudwatch_cpu_surplus_credit_balance_avg": result.cloudwatch_cpu_surplus_credit_balance_avg,
+            "cloudwatch_cpu_surplus_credit_balance_max": result.cloudwatch_cpu_surplus_credit_balance_max,
+            "cloudwatch_cpu_surplus_credit_balance_min": result.cloudwatch_cpu_surplus_credit_balance_min,
+            "cloudwatch_cpu_surplus_credits_charged_avg": result.cloudwatch_cpu_surplus_credits_charged_avg,
+            "cloudwatch_cpu_surplus_credits_charged_min": result.cloudwatch_cpu_surplus_credits_charged_min,
+            "cloudwatch_cpu_surplus_credits_charged_max": result.cloudwatch_cpu_surplus_credits_charged_max,
+            "next_instance_size": result.instance_type_info["up"]
+          }
+        )
+      }
+    })
+  EOS
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_email" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
+end
+
+escalation "esc_resize_instance" do
+  automatic contains($param_automatic_action, "Resize Instances")
+  label "Resize Instances"
+  description "Resize selected instances"
+  run "resize_instances", data, $param_cooldown_days
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "pol_utilization" do
+  validate $ds_check_merged_metrics do
+    summary_template "AWS Account ID: {{with index data 0}}{{ .accountId }}{{end}} - {{ len data }} rows containing instance CloudWatch utilization data"
+    export do
+      resource_level true
+      field "accountId" do
+        label "Account Id"
+      end
+      field "region" do
+        label "Region"
+      end
+      field "id" do
+        label "Instance ID"
+      end
+      field "instanceType" do
+        label "Instance Type"
+      end
+      field "hostname" do
+        label "Hostname"
+      end
+      field "privateDnsName" do
+        label "Private DNS Name"
+      end
+      field "cpu_maximum" do
+        label "CPU Maximum %"
+      end
+      field "cpu_average" do
+        label "CPU Average %"
+      end
+      field "cloudwatch_cpu_credit_balance_min" do
+        label "CPU Credit Balance Minimum"
+      end
+      field "cloudwatch_cpu_surplus_credit_balance_min" do
+        label "CPU Surplus Credit Balance Minimum"
+      end
+      field "cloudwatch_cpu_surplus_credits_charged_max" do
+        label "CPU Surplus Credit Charged Maximum"
+      end
+      field "instance_type_info_burst_info_max_earnable_credits" do
+        label "Max Earnable Credits"
+        path "instance_type_info.burst_info.max_earnable_credits"
+      end
+      field "next_instance_size" do
+        label "Resize Instance To"
+      end
+    end
+
+    escalate $esc_email
+    escalate $esc_resize_instance
+    check eq(size(data), 0)
+  end
+end
+
+###############################################################################
+# Cloud Workflow
+###############################################################################
+
+define resize_instances($data,$param_cooldown_days) do
+  foreach $item in $data do
+
+    @current_instance = rs_cm.instances.empty()
+    @instance = rs_cm.instances.index(filter: ["resource_uid=="+$item["id"]])
+    @cloud = @instance.cloud()
+    @next_instance = @instance
+
+    if $item["next_instance_size"] != "N/A"
+      sub on_error: rollback($item, @next_instance, @cloud) do
+        call sys_log('Instance Resizing',$item['id'])
+        call stop_instance(@instance, @cloud, $item) retrieve @next_instance
+
+        @next_instance = first(@cloud.instances(filter: ['resource_uid=='+$item['id']]))
+        @new_instance_type = first(@cloud.instance_types(filter: ["name=="+$item["next_instance_size"]]))
+        @next_instance.update(instance: { instance_type_href: @new_instance_type.href })
+
+        call sys_log('Instance Resized', @new_instance_type.name)
+        call start_instance(@next_instance, @cloud, $item) retrieve @next_instance
+      end
+
+      sub task_label:"Adding Cooldown Tag" do
+        $date = now() + (60*60*24)*$param_cooldown_days
+        $format_string = "%Y/%m/%d %H:%M:%S"
+        $formatted_time = strftime($date, $format_string)
+        # add the cooldown tag, but
+        # dont add/modify the cooldown tag if it already exists
+        $cooldown_tag = tag_value(@next_instance,'rs_downsize:cooldown')
+        call sys_log('cooldown_tag',$cooldown_tag)
+
+        if !$cooldown_tag
+          task_label("Adding Cooldown Tag " + $item['id'])
+          rs_cm.tags.multi_add(resource_hrefs: [@next_instance.href], tags: ["rs_downsize:cooldown="+$formatted_time])
+          call sys_log('Adding Cooldown Tag',$formatted_time)
+        end
+        @current_instance = @next_instance
+      end
+    end
+  end
+end
+
+define rollback($item, @instance, @cloud) do
+  sub task_label:"Rolling Back to Original Instance Type" do
+    ## Logic to revert the instance back to its original instance type
+    call sys_log('Instance Rollingback', $item['id'])
+    @instance = first(@cloud.instances(filter: ['resource_uid=='+$item['id'] ]))
+
+    sub task_label:"Setting Error Tag" do
+      $msg = split($_error["message"], "\n")
+      foreach $i in $msg do
+        if $i =~ "CloudException"
+          $tag = "rs_policy_action:downsize_error_info=" + $i
+          rs_cm.tags.multi_add(tags: [$tag], resource_hrefs: [@instance.href])
+        end
+      end
+      call sys_log(join(["Resize Error: ",@instance.name]), to_s($msg))
+    end
+
+    $state = @instance.state
+    $current_instance_type = @instance.instance_type().name
+    $started_condition = "/^(stranded|stranded in booting|error|operational|running)$/"
+    if $current_instance_type == $item["instanceType"]
+      # Instance is still the original size, just make sure it's running
+      if $state =~ $started_condition
+        # instance is running nothing to do
+      else
+        # instance is not running, start it
+        call start_instance(@instance, @cloud, $item) retrieve @instance
+      end
+    else
+      # Instance is the new size, roll back
+      call sys_log('Instance Resizing', $item['id'])
+      call stop_instance(@instance, @cloud, $item) retrieve @instance
+
+      @instance = first(@cloud.instances(filter: ['resource_uid=='+$item['id']]))
+      @new_instance_type = first(@cloud.instance_types(filter: ["name=="+$item["instanceType"]]))
+      @instance.update(instance: { instance_type_href: @new_instance_type.href })
+
+      call sys_log('Instance Resized', @new_instance_type.name)
+      call start_instance(@instance, @cloud, $item) retrieve @instance
+    end
+  end
+  $_error_behavior = "skip"
+end
+
+define stop_instance(@instance, @cloud, $item) return @instance do
+  task_label("Stopping instance " + $item['id'])
+  @instance.stop()
+  task_label("Sleeping until instance stopped " + $item['id'])
+  $wake_condition = "/^(stopped|terminated|inactive|error|provisioned)$/"
+  $state = ''
+  while $state !~ $wake_condition do
+    sub on_error: retry, timeout: 20m, on_timeout: skip do
+      # find the resource by resource_uid because the href may have changed after resize.
+      @instance = first(@cloud.instances(filter: ['resource_uid=='+$item['id']]))
+      call sys_log('Waiting for instance stop state: ' + @instance.name,to_s(to_object(@instance)))
+      $state = @instance.state
+      call sys_log('Instance stop state',$state)
+    end
+  end
+  task_label("Instance Stopped " + $item['id'])
+  call sys_log('Instance Stopped', $item['id'])
+end
+
+define start_instance(@instance, @cloud, $item) return @instance do
+  task_label("Starting instance " + $item['id'])
+  @instance.start()
+  $wake_condition = "/^(stranded|stranded in booting|error|operational|running)$/"
+  $state = ''
+  task_label("Sleeping until instance started " + @next_instance.name)
+  while $state !~ $wake_condition do
+    sub on_error: retry, timeout: 20m, on_timeout: skip do
+      # find the resource by resource_uid because the href may have changed after resize.
+      @instance = first(@cloud.instances(filter: ['resource_uid=='+$item['id']]))
+      call sys_log('waiting for instance start state', to_s(to_object(@instance)))
+      $state = @instance.state
+      call sys_log('Instance start state', $state)
+    end
+  end
+  task_label("Instance Started " + $item['id'])
+  call sys_log('Instance Started', $item['id'])
+end
+
+# remove the cooldown tag if the $param_cooldown_days has exceeded
+define delete_cooldown_tag($data,$param_cooldown_days) do
+  foreach $item in $data['cooldown_instances'] do
+    @cloud = rs_cm.get(href: $item['cloud_href'])
+    # find the resource by resource_uid because the href may have changed after resize.
+    @instance = first(@cloud.instances(filter: ['resource_uid=='+$item['instanceId'] ]))
+    $cooldown_tag = tag_value(@instance,'rs_downsize:cooldown')
+    call sys_log('cooldown_tag',$cooldown_tag)
+    $cooldown_time = to_d($cooldown_tag)
+    call sys_log('cooldown_time',to_s($cooldown_time))
+    # if the cooldown_time has passed delete the cooldown tag
+    if ($cooldown_time - now()) / 86400 >= $param_cooldown_days
+      rs_cm.tags.multi_delete(resource_hrefs: [@instance.href], tags: 'rs_downsize:cooldown')
+      call sys_log('deleted cooldown tag',$cooldown_value)
+    end
+  end
+end
+
+# logging to the Accounts Audit Entries
+define sys_log($subject, $detail) do
+  rs_cm.audit_entries.create(
+    notify: "None",
+    audit_entry: {
+      auditee_href: @@account,
+      summary: "Downsize Instance: "+ $subject,
+      detail: $detail
+    }
+  )
+end
