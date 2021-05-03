@@ -2,15 +2,16 @@
 
 ## What it does
 
-This Policy Template gets the top-level / parent Teams for a GitHub.com Org and creates an incident if any do not match the whitelisted values.
+Gets the repositories under a list of GitHub.com Organizations and creates incidents for any that do not have protection enabled for their default branch.
 
 ## Input Parameters
 
 1. GitHub.com Organizations to check - Example: `flexera`
 1. Branches that should be protected - Example: `master`
+1. Include default branch regardless of branches list.
 1. Repositories that are whitelisted from the policy - Example: `flexera/repository-name`
 1. Email address to send escalation emails to - Example: `noreply@example.com`
-1. Protection Option: Enforce all configured restrictions for administrators. 
+1. Protection Option: Enforce all configured restrictions for administrators.
 1. Protection Option: Require at least this number of approving review on a pull request, before merging.
 1. Automatic Actions: When this value is set, this policy will automatically take the selected action(s).
 
@@ -32,7 +33,7 @@ credentials listed when you apply the policy, please contact your cloud admin an
 
 ### Credential configuration
 
-For administrators [creating and managing credentials](https://docs.rightscale.com/policies/users/guides/credential_management.html) to use with this policy, the following information is needed: 
+For administrators [creating and managing credentials](https://docs.rightscale.com/policies/users/guides/credential_management.html) to use with this policy, the following information is needed:
 
 Provider tag value to match this policy: `github`
 
@@ -43,3 +44,4 @@ This policy requires permissions to access GitHub.com API as the Owner of the Or
 ## Cost
 
 This Policy Template does not launch any instances, and so does not incur any cloud costs.
+

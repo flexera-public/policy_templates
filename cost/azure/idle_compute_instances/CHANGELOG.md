@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.8
+
+- Use the right API version to get the monitor/metrics, and use the biggest interval (ie "P1D", ie one-day)
+
 ## v2.7
 
 - Updated policy to fetch cost details for multiple subscription ids from Optima
