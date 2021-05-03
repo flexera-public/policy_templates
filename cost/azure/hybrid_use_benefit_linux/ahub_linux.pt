@@ -1,0 +1,282 @@
+name "Azure Hybrid Use Benefit for Linux Server"
+rs_pt_ver 20180301
+type "policy"
+short_description "Identifies Linux instances eligible for Azure Hybrid Use Benefit.  See the [README](https://github.com/rightscale/policy_templates/tree/master/cost/azure/hybrid_use_benefit_linux) and [docs.rightscale.com/policies](http://docs.rightscale.com/policies/) to learn more."
+long_description ""
+severity "low"
+category "Cost"
+info(
+  version: "2.2",
+  provider: "Azure",
+  service: "compute",
+  policy_set: ""
+)
+
+#############
+# Parameters
+#############
+
+parameter "param_exclusion_tag_key" do
+  category "User Inputs"
+  label "Exclusion Tag Key"
+  description "Azure-native instance tag to ignore instances that are not using AHUB/BYOL. Only supply the tag key. The policy assumes that the tag value is irrelevant."
+  type "string"
+  default "exclude_ahub"
+end
+
+parameter "param_email" do
+  type "list"
+  label "Email addresses of the recipients you wish to notify"
+end
+
+parameter "param_automatic_action" do
+  type "list"
+  label "Automatic Actions"
+  description "When this value is set, this policy will automatically take the selected action(s)"
+  allowed_values "Hybrid use benefit for Linux"
+end
+
+#################
+# Authentication
+#################
+
+credentials "azure_auth" do
+  schemes "oauth2"
+  label "Azure"
+  description "Select the Azure Resource Manager Credential from the list."
+  tags "provider=azure_rm"
+end
+
+#############
+# Pagination
+#############
+
+pagination "azure_pagination" do
+  get_page_marker do
+    body_path "nextLink"
+  end
+  set_page_marker do
+    uri true
+  end
+end
+
+##############
+# Datasources
+##############
+
+datasource "ds_subscriptions" do
+  request do
+    auth $azure_auth
+    pagination $azure_pagination
+    host "management.azure.com"
+    path "/subscriptions/"
+    query "api-version","2019-06-01"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "value[*]") do
+      field "subscriptionId", jmes_path(col_item,"subscriptionId")
+      field "subscriptionName", jmes_path(col_item,"displayName")
+    end
+  end
+end
+
+datasource "azure_instances" do
+  iterate $ds_subscriptions
+    request do
+      auth $azure_auth
+      pagination $azure_pagination
+      host "management.azure.com"
+      path join(["/subscriptions/", val(iter_item,"subscriptionId"), "/providers/Microsoft.Compute/virtualMachines"])
+      query "api-version","2017-12-01"
+      header "User-Agent", "RS Policies"
+    end
+    result do
+      encoding "json"
+      collect jmes_path(response, "value") do
+	    field "subscriptionName", val(iter_item,"subscriptionName")
+        field "id", jmes_path(col_item,"id")
+        field "name", jmes_path(col_item,"name")
+        field "location", jmes_path(col_item,"location")
+        field "licenseType", jmes_path(col_item,"properties.licenseType")
+        field "vmSize", jmes_path(col_item,"properties.hardwareProfile.vmSize")
+        field "osType", jmes_path(col_item,"properties.storageProfile.osDisk.osType")
+        field "imagePublisher", jmes_path(col_item,"properties.storageProfile.imageReference.publisher")
+        field "imageOffer", jmes_path(col_item,"properties.storageProfile.imageReference.offer")
+        field "imageSku", jmes_path(col_item,"properties.storageProfile.imageReference.sku")
+        field "imageVersion", jmes_path(col_item,"properties.storageProfile.imageReference.version")
+        field "tags", jmes_path(col_item,"tags")
+      end
+    end
+end
+
+datasource "filtered_resources" do
+  run_script $js_filter_resources, $azure_instances, $param_exclusion_tag_key
+end
+
+##########
+# Scripts
+##########
+
+script "js_filter_resources", type: "javascript" do
+  parameters "azure_instances","exclusion_tag"
+  result "result"
+  code <<-EOS
+  var result = [];
+  _.each(azure_instances, function(instance){
+
+    if (_.has(instance.tags, exclusion_tag)) {
+    } else {
+      if (instance.osType === "Linux"){
+        var resourceGroup = instance.id.split('/')[4];
+        var tags = JSON.stringify(instance["tags"]);
+        var ahub = "N/A";
+        var lic_param = "N/A"
+        if (instance.licenseType === "SLES_BYOS" || instance.licenseType === "RHEL_BYOS") {
+          ahub = "Yes"
+        } else {
+          if (instance.imagePublisher === "suse" || instance.imagePublisher === "RedHat") {
+            if (instance.licenseType === "None" || _.isUndefined(instance.licenseType)) {
+              if (instance.imagePublisher === "suse") {
+                lic_param = "SLES_BYOS"
+                ahub = "No"
+              } else {
+              if (instance.imagePublisher === "RedHat") {
+                lic_param = "RHEL_BYOS"
+                ahub = "No"
+              }
+              }
+              result.push({
+                subscriptionName: instance["subscriptionName"],
+                id: instance["id"],
+                name: instance["name"],
+                resourceGroup: resourceGroup,
+                location: instance["location"],
+                ahub: ahub,
+                vmSize: instance["vmSize"],
+                imagePublisher: instance["imagePublisher"],
+                imageOffer: instance["imageOffer"],
+                imageSku: instance["imageSku"],
+                imageVersion: instance["imageVersion"],
+                lic_param: lic_param,
+                tags: tags
+              })
+            }
+          }
+        }
+      }
+    }
+  })
+  result = _.sortBy(result, 'subscriptionName');
+  result = _.sortBy(result, 'location');
+  EOS
+end
+
+##########
+# Policy
+##########
+
+policy 'azure_license_policy' do
+  validate_each $filtered_resources do
+    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} Instances Not Using Azure Hybrid Use Benefit for Linux Server"
+    escalate $email
+    escalate $license_instances
+    check eq(val(item,"ahub"),"Yes")
+    export "result" do
+      resource_level true
+      field "subscriptionName" do
+        label "Subscription Name"
+      end
+      field "location" do
+        label "Location"
+      end
+      field "resourceGroup" do
+        label "Resource Group"
+      end
+      field "name" do
+        label "Instance Name"
+      end
+      field "vmSize" do
+        label "Instance Size"
+      end
+      field "imagePublisher" do
+        label "Image Publisher"
+      end
+      field "imageOffer" do
+        label "Image Offer"
+      end
+      field "imageSku" do
+        label "Image Sku"
+      end
+      field "imageVersion" do
+        label "Image Version"
+      end
+      field "ahub" do
+        label "AHUB"
+      end
+      field "tags" do
+        label "Tags"
+      end
+      field "id" do
+        label "Id"
+      end
+      field "lic_param" do
+        label "lic_param"
+      end
+    end
+  end
+end
+
+##############
+# Escalations
+##############
+
+escalation "email" do
+  automatic true
+  label "Send Email"
+  description "Send Incident email"
+  email $param_email
+end
+
+escalation "license_instances" do
+  automatic contains($param_automatic_action, "Hybrid Use Benefit for Linux")
+  label "Approve AHUB for Linux"
+  description "Approve escalation to apply Hybrid Use Benefit to identified instances"
+  run "license_instances", data
+end
+
+##################
+# Cloud Workflow
+##################
+
+define license_instances($data) return $all_responses do
+
+  $all_responses = []
+  foreach $item in $data do
+    sub on_error: skip do
+      $update_inst_response = http_request(
+	    auth: $$azure_auth,
+        verb: "patch",
+        host: "management.azure.com",
+        https: true,
+        href: $item["id"],
+        query_strings: {
+          "api-version": "2018-06-01"
+        },
+        headers: {
+          "cache-control": "no-cache",
+          "content-type": "application/json"
+        },
+        body: {
+          "properties": {
+            "licenseType": $item["lic_param"]
+          }
+        }
+      )
+
+      $all_responses << $update_inst_response
+
+    end
+  end
+end

@@ -1,5 +1,13 @@
 # Changelog
 
+## v2.3
+
+- Removed legacy CMP permission validation declaration
+
+## v2.2
+
+- Modified escalation label and description for consistency
+
 ## v2.1
 
 - Merged Cloud and On premise into one policy.

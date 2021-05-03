@@ -1,5 +1,13 @@
 # Changelog
 
+## v1.7
+
+- Updated js_format_costs script for vendor_account_name error comparing ds_cloud_vendor_account name to new_bc_cost_obj vendor account name
+
+## v1.6
+
+- Modified escalation label and description for consistency
+
 ## v1.5
 
 - Added Resource tabel

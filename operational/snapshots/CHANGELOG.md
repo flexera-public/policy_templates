@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.9
+
+- Modified escalation label and description for consistency
+
 ## v1.8
 
 - Modified Instance resources filter to get running instances having attached volumes that do not have a snapshot
@@ -16,7 +20,7 @@
 
 - Added Approval block
 
-## V1.4
+## v1.4
 
 - Fix 'undefined' href error for excluded tagged resources.
 
@@ -34,4 +38,4 @@
 
 ## v1.0
 
-- Initial Release
+- initial release

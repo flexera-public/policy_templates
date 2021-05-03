@@ -1,5 +1,22 @@
 # Changelog
 
+## v2.9
+
+- Added a new input parameter to enter regions in order to support SCP (Service Control Policy) and CIS Standards
+
+## v2.8
+
+- Modified escalation label and description for consistency
+
+## v2.7
+
+- Added AWS Account ID to resource table
+
+## v2.6
+
+- formatted the incident detail message to display if no savings data available
+- reverted the toFixed() to Math.round() for displaying savings data
+
 ## v2.5
 
 - updated policy to handle and show the error if the user is not having permission for fetching cost data from Optima

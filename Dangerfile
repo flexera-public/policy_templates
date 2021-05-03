@@ -105,6 +105,10 @@ has_app_changes.each do |file|
   if category && !categories.include?(category.downcase)
     fail "The Category is not valid: #{category}.  Valid Categories include #{categories.join(", ")}"
   end
+  # check first character of category is uppercase
+  if category !~ /^[A-Z]/
+    fail "The First letter of Category is not capitalised: #{category}."
+  end
 end
 
 # check markdown of .md files with markdown lint
@@ -131,6 +135,23 @@ has_app_changes.each do |file|
   end
 end
 
+# check for default_frequency
+# only check .pt files
+frequencies = [
+  '15 minutes',
+  'hourly',
+  'daily',
+  'weekly',
+  'monthly'
+].sort
+has_app_changes.each do |file|
+  pp.parse(file)
+  default_frequency = pp.parsed_default_frequency
+  if ! default_frequency
+    fail "Please add a 'default_frequency' property field and value. #{file}"
+  end
+end
+
 # check for info field required fields
 has_app_changes.each do |file|
   # get info field data
@@ -148,3 +169,6 @@ end
 fail 'Please provide a summary of your Pull Request.' if github.pr_body.length < 10
 
 fail 'Please add labels to this Pull Request' if github.pr_labels.empty?
+
+# Lint added and modified files only
+textlint.lint

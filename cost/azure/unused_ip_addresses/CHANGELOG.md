@@ -1,5 +1,15 @@
 # Changelog
 
+## v2.4
+
+- Updated policy to fetch cost details for multiple subscription ids from Optima
+- updated escalation label for consistency
+
+## v2.3
+
+- formatted the incident detail message to display if no savings data available
+- reverted the toFixed() to Math.round() for displaying savings data
+
 ## v2.2
 
 - Include Estimated Monthly Savings to each resource.

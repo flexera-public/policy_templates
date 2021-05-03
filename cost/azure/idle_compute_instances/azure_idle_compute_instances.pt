@@ -6,7 +6,7 @@ long_description ""
 category "Cost"
 severity "low"
 info(
-  version: "2.5",
+  version: "2.8",
   provider: "Azure",
   service: "Compute",
   policy_set: "Idle Compute Instances"
@@ -135,8 +135,9 @@ datasource "ds_azure_instance_performance" do
     pagination $azure_pagination
     host "management.azure.com"
     path join(["/subscriptions/", val(iter_item,"subscriptionId"), "/resourceGroups/", val(iter_item,"rg"), "/providers/Microsoft.Compute/virtualMachines/",val(iter_item,"name"),"/providers/microsoft.insights/metrics"])
-    query "api-version","2016-09-01"
+    query "api-version","2018-01-01"
     query "timespan","P30D"
+    query "interval", "P1D"
     header "User-Agent", "RS Policies"
     ignore_status [404]
   end 
@@ -150,7 +151,7 @@ datasource "ds_azure_instance_performance" do
 	field "subscriptionId",val(iter_item,"subscriptionId")
     field "subscriptionName",val(iter_item,"subscriptionName")
     field "averages" do
-      collect jmes_path(response,"value[].data[]") do
+      collect jmes_path(response,"value[].timeseries[].data[]") do
         field "average", jmes_path(col_item,"average")
       end
     end
@@ -203,8 +204,9 @@ datasource "ds_billing_centers" do
 end
 
 datasource "ds_instance_costs" do
+  iterate $ds_subscriptions
   request do
-    run_script $js_get_costs, $ds_subscriptions, $ds_top_level_billing_centers, rs_org_id
+    run_script $js_get_costs, val(iter_item,"subscriptionId"), $ds_top_level_billing_centers, rs_org_id
   end
   result do
     encoding "json"
@@ -256,43 +258,41 @@ script "js_get_costs", type:"javascript" do
     }
     var start_date = getFormattedDailyDate(new Date(new Date().setDate(new Date().getDate() - 3)));
     var end_date = getFormattedDailyDate(new Date(new Date().setDate(new Date().getDate() - 2)));
-    for(var j in account_id){
-      var request = {
-        auth: "auth_rs",
-        host: "optima.rightscale.com",
-        verb: "POST",
-        path: "/bill-analysis/orgs/" + org + "/costs/select",
-        body_fields: {
-          "dimensions": ["resource_id", "resource_type"],
-          "granularity": "day",
-          "start_at": start_date,
-          "end_at": end_date,
-          "metrics": ["cost_nonamortized_unblended_adj"],
-          "billing_center_ids": _.compact(_.map(billing_centers, function(value){ return value.id})),
-          "limit": 10000,
-          "filter": {
-            "expressions": [
-              {
-                "dimension": "service",
-                "type": "equal",
-                "value": "Microsoft.Compute"
-              },
-              {
-                "dimension": "vendor_account",
-                "type": "equal",
-                "value": account_id[j]["subscriptionId"]
-              }
-            ],
-            "type": "and"
-          }
-        },
-        headers: {
-          "User-Agent": "RS Policies",
-          "Api-Version": "1.0"
-        },
-        ignore_status: [400]
-      }
-	}
+    var request = {
+      auth: "auth_rs",
+      host: "optima.rightscale.com",
+      verb: "POST",
+      path: "/bill-analysis/orgs/" + org + "/costs/select",
+      body_fields: {
+        "dimensions": ["resource_id", "resource_type"],
+        "granularity": "day",
+        "start_at": start_date,
+        "end_at": end_date,
+        "metrics": ["cost_nonamortized_unblended_adj"],
+        "billing_center_ids": _.compact(_.map(billing_centers, function(value){ return value.id})),
+        "limit": 10000,
+        "filter": {
+          "expressions": [
+            {
+              "dimension": "service",
+              "type": "equal",
+              "value": "Microsoft.Compute"
+            },
+            {
+              "dimension": "vendor_account",
+              "type": "equal",
+              "value": account_id
+            }
+          ],
+          "type": "and"
+        }
+      },
+      headers: {
+        "User-Agent": "RS Policies",
+        "Api-Version": "1.0"
+      },
+      ignore_status: [400]
+    }
   EOS
 end
 
@@ -353,6 +353,7 @@ script "js_instance_cost_mapping", type:"javascript" do
     var result = {};
     var idle_instance_list=[];
     var message=''
+    var count=0;
     function formatNumber(number, separator){
       var numString =number.toString();
       var values=numString.split(".");
@@ -392,6 +393,7 @@ script "js_instance_cost_mapping", type:"javascript" do
       _.each(instance_list, function(instance){
         var cost_objects = _.where(instance_costs, {resource_id: instance['id']});
         if (_.size(cost_objects) > 0){
+          count++;
           var sum = _.reduce(_.compact(_.map(cost_objects, function(value){return value.cost_nonamortized_unblended_adj})), function(memo, num){ return memo + num; }, 0);
           var monthly_savings = sum*30;
           total_savings=total_savings+monthly_savings;
@@ -402,8 +404,13 @@ script "js_instance_cost_mapping", type:"javascript" do
           idle_instance_list.push(instance);
         }
       })
-      total_savings=cur + ' '+formatNumber((Math.round(total_savings * 100) / 100), separator);
-      message="The total estimated monthly savings are " +total_savings;
+      if(count){
+        total_savings=cur + ' '+formatNumber((Math.round(total_savings * 100) / 100), separator);
+        message="The total estimated monthly savings are " +total_savings;
+      }
+      else{
+        message="The Flexera Optima system does not have any data to calculate savings for these resources";
+      }
     }
     else{
       message="You do not have the minimum required role of billing_center_viewer to view the savings";
@@ -468,8 +475,8 @@ end
 
 escalation "email" do
   automatic true
-  label "Send Mail"
-  description "Sends incidents email"
+  label "Send Email"
+  description "Send incident email"
   email $param_email
 end
 

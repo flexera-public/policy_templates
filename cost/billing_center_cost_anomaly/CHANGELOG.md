@@ -1,5 +1,14 @@
 # Changelog
 
+## v1.9
+
+- Fixed `report` variable type in js_format_costs script
+- Added back in detail template to more easily show billing centers, currency, and the provided parameters
+
+## v1.8
+
+- Modified escalation label and description for consistency
+
 ## v1.7
 
 - Updating resource table to iterate thru data and show all items in incident.
@@ -14,7 +23,7 @@
 
 ## v1.4
 
-- Added a new paramter "Minimum Period Spend" for the user to indicate a minimum amount a billing center must have to be included in the report
+- Added a new parameter "Minimum Period Spend" for the user to indicate a minimum amount a billing center must have to be included in the report
 - Added info field
 
 ## v1.3

@@ -5,7 +5,7 @@ short_description "Checks for unused IP addresses in the given account and, opti
 severity "low"
 category "Cost"
 info(
-  version: "2.2",
+  version: "2.4",
   provider: "Azure",
   service: "Compute",
   policy_set: "Unused IP Addresses"
@@ -179,8 +179,9 @@ datasource "ds_top_level_billing_centers" do
 end
 
 datasource "ds_ip_costs" do
+  iterate $ds_subscriptions
   request do
-    run_script $js_get_costs, $ds_subscriptions, $ds_top_level_billing_centers, rs_org_id
+    run_script $js_get_costs, val(iter_item,"subscriptionId"), $ds_top_level_billing_centers, rs_org_id
   end
   result do
     encoding "json"
@@ -228,47 +229,45 @@ script "js_get_costs", type:"javascript" do
     }
     var start_date = getFormattedDailyDate(new Date(new Date().setDate(new Date().getDate() - 3)));
     var end_date = getFormattedDailyDate(new Date(new Date().setDate(new Date().getDate() - 2)));
-    for(var j in account_id){
-      var request = {
-        auth: "auth_rs",
-        host: "optima.rightscale.com",
-        verb: "POST",
-        path: "/bill-analysis/orgs/" + org + "/costs/select",
-        body_fields: {
-          "dimensions": ["resource_id"],
-          "granularity": "day",
-          "start_at": start_date,
-          "end_at": end_date,
-          "metrics": ["cost_nonamortized_unblended_adj"],
-          "billing_center_ids": _.compact(_.map(billing_centers, function(value){ return value.id})),
-          "limit": 10000,
-          "filter": {
-            "expressions": [
-              {
-                "dimension": "service",
-                "type": "equal",
-                "value": "Microsoft.Network"
-              },
-              {
-                "dimension": "vendor_account",
-                "type": "equal",
-                "value": account_id[j]["subscriptionId"]
-              },
-              {
-                "dimension": "resource_type",
-                "type": "equal",
-                "value": "Virtual Network-IP Addresses"
-              }
-            ],
-            "type": "and"
-          }
-        },
-        headers: {
-          "User-Agent": "RS Policies",
-          "Api-Version": "1.0"
-        },
-        ignore_status: [400]
-      }
+    var request = {
+      auth: "auth_rs",
+      host: "optima.rightscale.com",
+      verb: "POST",
+      path: "/bill-analysis/orgs/" + org + "/costs/select",
+      body_fields: {
+        "dimensions": ["resource_id"],
+        "granularity": "day",
+        "start_at": start_date,
+        "end_at": end_date,
+        "metrics": ["cost_nonamortized_unblended_adj"],
+        "billing_center_ids": _.compact(_.map(billing_centers, function(value){ return value.id})),
+        "limit": 10000,
+        "filter": {
+          "expressions": [
+            {
+              "dimension": "service",
+              "type": "equal",
+              "value": "Microsoft.Network"
+            },
+            {
+              "dimension": "vendor_account",
+              "type": "equal",
+              "value": account_id
+            },
+            {
+              "dimension": "resource_type",
+              "type": "equal",
+              "value": "Virtual Network-IP Addresses"
+            }
+          ],
+          "type": "and"
+        }
+      },
+      headers: {
+        "User-Agent": "RS Policies",
+        "Api-Version": "1.0"
+      },
+      ignore_status: [400]
     }
   EOS
 end
@@ -314,6 +313,7 @@ script "js_ip_cost_mapping", type:"javascript" do
   var result = {};
   var unused_ip_list=[];
   var message='';
+  var count=0;
   function formatNumber(number, separator){
     var numString =number.toString();
     var values=numString.split(".");
@@ -353,6 +353,7 @@ script "js_ip_cost_mapping", type:"javascript" do
     _.each(ip_list, function(ip){
       var cost_objects = _.where(ip_costs, {resource_id: ip["ipAddressId"]});
       if (_.size(cost_objects) > 0){
+        count++;
         var sum = _.reduce(_.compact(_.map(cost_objects, function(value){ return value.cost_nonamortized_unblended_adj})), function(memo, num){ return memo + num; }, 0);
         var monthly_savings = sum*30;
         total_savings=total_savings+monthly_savings;
@@ -364,7 +365,7 @@ script "js_ip_cost_mapping", type:"javascript" do
           location:ip["location"],
           tags:ip["tags"],
           ipAddressId:ip["ipAddressId"],
-          savings: cur + ' '+formatNumber(monthly_savings.toFixed(3), separator)
+          savings: cur + ' '+formatNumber((Math.round(monthly_savings * 100) / 100), separator)
         })
       } else {
         unused_ip_list.push({
@@ -379,8 +380,13 @@ script "js_ip_cost_mapping", type:"javascript" do
         })
       }
     })
-    total_savings=cur + ' '+formatNumber(total_savings.toFixed(3), separator);
-    message="The total estimated monthly savings are "+total_savings;
+    if(count){
+      total_savings=cur + ' '+formatNumber((Math.round(total_savings * 100) / 100), separator);
+      message="The total estimated monthly savings are "+total_savings;
+    }
+    else{
+      message="The Flexera Optima system does not have any data to calculate savings for these resources";
+    }
   }
   else{
     unused_ip_list=ip_list;
@@ -399,8 +405,8 @@ end
 
 escalation "send_email_report" do
   automatic true
-  label "Send Mail"
-  description "Sends incidents email"
+  label "Send Email"
+  description "Send incident email"
   email $param_email
 end
 

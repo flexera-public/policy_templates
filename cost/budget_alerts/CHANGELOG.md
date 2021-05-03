@@ -1,5 +1,14 @@
 # Changelog
 
+## v1.15
+
+- Fixed markdown alignment in HERE doc, which was causing the conversion to HTML in the email to fail.
+
+## v1.14
+
+- Modified escalation label and description for consistency
+- Added incident resource table
+
 ## v1.13
 
 - Added the ability to provide either Billing center name or Id.

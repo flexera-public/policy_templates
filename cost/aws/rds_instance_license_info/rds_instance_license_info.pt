@@ -6,7 +6,7 @@ long_description ""
 severity "low"
 category "Cost"
 info(
-  version: "2.1",
+  version: "2.4",
   provider: "AWS",
   service: "RDS",
   policy_set: ""
@@ -19,6 +19,13 @@ info(
 ###############################################################################
 # Parameters
 ###############################################################################
+
+parameter "param_allowed_regions" do
+  type "list"
+  label "Allowed Regions"
+  allowed_pattern /^([a-zA-Z-_]+-[a-zA-Z0-9-_]+-[0-9-_]+,*|)+$/
+  description "A list of allowed regions. See the README for more details"
+end
 
 parameter "param_email" do
   type "list"
@@ -42,6 +49,24 @@ end
 # Datasources
 ###############################################################################
 
+datasource "ds_get_caller_identity" do
+  request do
+    auth $auth_aws
+    verb "GET"
+    host "sts.amazonaws.com"
+    path "/"
+    header "User-Agent", "RS Policies"
+    query "Action", "GetCallerIdentity"
+    query "Version", "2011-06-15"
+  end
+  result do
+    encoding "xml"
+    collect xpath(response, "//GetCallerIdentityResponse/GetCallerIdentityResult") do
+      field "account",xpath(col_item, "Account")
+    end
+ end
+end
+
 #Get list of enabled regions for an account
 datasource "ds_regions_list" do
   request do
@@ -62,21 +87,7 @@ end
 
 # Get only SCP enabled regions
 datasource "ds_regions" do
-  iterate $ds_regions_list
-    request do
-      auth $auth_aws
-      verb "GET"
-      host "ec2.amazonaws.com"
-      host join(["ec2.",val(iter_item,"region"),".amazonaws.com"])
-      path "/"
-      query "Action", "DescribeRegions"
-      query "Version", "2016-11-15"
-      ignore_status [403]
-    end
-    result do
-      encoding "xml"
-      field "region", val(iter_item, "region")
-    end
+  run_script $js_regions, $param_allowed_regions, $ds_regions_list
 end
 
 datasource "ds_instances_set" do
@@ -123,22 +134,54 @@ datasource "ds_aws_instance_size_map" do
 end
 
 datasource "ds_filtered_results" do
-  run_script $js_filtered_results, $ds_instances_set, $ds_aws_instance_size_map
+  run_script $js_filtered_results, $ds_instances_set, $ds_aws_instance_size_map, $ds_get_caller_identity
 end
 
 ###############################################################################
 # Scripts
 ###############################################################################
 
+script "js_regions", type:"javascript" do
+  parameters "user_entered_regions", "all_regions"
+  result "regions"
+  code <<-EOS
+    if(_.isEmpty(user_entered_regions)){
+      regions = all_regions;
+    }else{
+      //Filter unique regions
+      var uniqueRegions = _.uniq(user_entered_regions);
+      var all_regions_list = [];
+      all_regions.forEach(function(all_region){
+        all_regions_list.push(all_region.region)
+      })
+
+      //Filter valid regions
+      var valid_regions = [];
+      _.map(uniqueRegions, function(uniqueRegion){
+        if(all_regions_list.indexOf(uniqueRegion) > -1){
+          valid_regions.push({"region": uniqueRegion})
+        }
+      })
+
+      //Throw an error if no valid regions found
+      if (_.isEmpty(valid_regions)) {
+        regions = all_regions;
+      }else{
+        regions = valid_regions
+      }
+    }
+  EOS
+end
+
 script "js_filtered_results", type: "javascript" do
-  parameters "ds_instances_set", "ds_aws_instance_size_map"
+  parameters "ds_instances_set", "ds_aws_instance_size_map", "ds_get_caller_identity"
   result "results"
   code <<-EOS
   var results = []
 
   _.each(ds_instances_set, function(instance){
     var vcpu = "Unknown"
-    
+
     if (_.isEmpty(instance["processorFeatures"])){
       vcpu = ds_aws_instance_size_map[instance["dbInstanceClass"]]["vcpu"]
     } else {
@@ -149,6 +192,7 @@ script "js_filtered_results", type: "javascript" do
 
     results.push (
       {
+        "accountId": ds_get_caller_identity[0]['account'],
         "region": instance["region"],
         "availabilityZone": instance["availabilityZone"],
         "dbInstanceArn": instance["dbInstanceArn"],
@@ -171,27 +215,50 @@ end
 
 policy "pol_rds_instances" do
   validate $ds_filtered_results do
-    summary_template "AWS RDS Instances"
-    detail_template <<-EOS
-# AWS RDS Instances
-| Region | Instance ID | Engine | Engine Version | Instance Class | Availability Zone | vCPUs | License Model |
-| ------ | ----------- | ------ | -------------- | -------------- | ----------------- | ----- | ------------- |
-{{ range data -}}
-| {{.region}} | {{.dbInstanceIdentifier}} | {{.engine}} | {{.engineVersion}} | {{.dbInstanceClass}} | {{.availabilityZone }} | {{.vcpu}} | {{.licenseModel}} |
-{{ end -}}
-
-###### Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }}) within Org: {{ rs_org_name }} (Org ID: {{ rs_org_id }})
-EOS
+    summary_template "AWS Account ID: {{with index data 0}}{{ .accountId }}{{end}} - RDS Instances"
     check eq(size(data),0)
+    export do
+      resource_level true
+      field "accountId" do
+        label "Account Id"
+      end
+      field "region" do
+        label "Region"
+      end
+      field "id" do
+        path "dbInstanceIdentifier"
+        label "Instance ID"
+      end
+      field "engine" do
+        label "Engine"
+      end
+      field "engineVersion" do
+        label "Engine Version"
+      end
+      field "dbInstanceClass" do
+        label "Instance Class"
+      end
+      field "availabilityZone" do
+        label "Availability Zone"
+      end
+      field "vcpu" do
+        label "vCPUs"
+      end
+      field "licenseModel" do
+        label "License Model"
+      end
+    end
     escalate $email
   end
 end
-
 
 ###############################################################################
 # Escalations
 ###############################################################################
 
 escalation "email" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
   email $param_email
 end

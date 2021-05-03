@@ -1,5 +1,15 @@
 # Changelog
 
+## v2.4
+
+- Updated policy to fetch cost details for multiple subscription ids from Optima
+- Modified escalation label and description for consistency
+
+## v2.3
+
+- formatted the incident detail message to display if no savings data available
+- reverted the toFixed() to Math.round() for displaying savings data
+
 ## v2.2
 
 - updated policy to handle and show the error if the user is not having permission for fetching cost data from Optima

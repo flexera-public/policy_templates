@@ -1,5 +1,21 @@
 # Changelog
 
+## v2.10
+
+- Added a new input parameter to enter regions in order to support SCP (Service Control Policy) and CIS Standards
+
+## v2.9
+
+- Modified escalation label and description for consistency
+
+## v2.8
+
+- Added AWS Account ID to resource table
+
+## v2.7
+
+- formatted the incident detail message to display if no savings data available
+
 ## v2.6
 
 - Include Total Estimated Monthly Savings in the incident message details

@@ -7,11 +7,15 @@ severity "medium"
 category "SaaS Management"
 default_frequency "daily"
 info(
-  version: "2.0",
+  version: "2.2",
   provider: "Flexera SaaS Manager",
   service: "",
   policy_set: "",
 )
+
+###############################################################################
+# User inputs
+###############################################################################
 
 parameter "param_category" do
   type "string"
@@ -25,6 +29,10 @@ parameter "param_email" do
   description "Email addresses of the recipients you wish to notify"
 end
 
+###############################################################################
+# Authentication
+###############################################################################
+
 #authenticate with FSM
 credentials "fsm_auth" do
   schemes "oauth2"
@@ -33,10 +41,19 @@ credentials "fsm_auth" do
   tags "provider=flexera_fsm"
 end
 
+###############################################################################
+# Datasources
+###############################################################################
+
+datasource "ds_get_host" do
+  run_script $js_get_host, rs_governance_host
+end
+
 datasource "ds_managed_products" do
+  iterate $ds_get_host
   request do
     auth $fsm_auth
-    host "api.fsm.flexeraeng.com"
+    host val(iter_item,"host")
     verb "GET"
     scheme "https"
     path join(["/svc/orgs/", rs_org_id, "/managed-products"])
@@ -48,6 +65,7 @@ datasource "ds_managed_products" do
       field "appId", val(col_item, "id")
       field "appName", val(col_item, "name")
       field "appVendor", jmes_path(col_item, "product.vendor.name")
+      field "saas_host", val(iter_item,"host")
     end
   end
 end
@@ -55,7 +73,7 @@ end
 datasource "ds_managed_product_agents" do
   iterate $ds_managed_products
   request do
-    run_script $js_managed_product_agents, val(iter_item, "appId"), $param_category, rs_org_id
+    run_script $js_managed_product_agents, val(iter_item, "appId"), $param_category, rs_org_id, val(iter_item, "saas_host")
   end
   result do
     encoding "json"
@@ -72,13 +90,30 @@ datasource "ds_managed_product_agents" do
   end
 end
 
+###############################################################################
+# Scripts
+###############################################################################
+
+script "js_get_host", type: "javascript" do
+  parameters "rs_governance_host"
+  result "result"
+  code <<-EOS
+    var result = [];
+    if(rs_governance_host.indexOf(".eu") !== -1 || rs_governance_host.indexOf("-eu") !== -1){
+      result.push({host: "api.fsm-eu.flexeraeng.com"});
+    }else{
+      result.push({host: "api.fsm.flexeraeng.com"});
+    }
+  EOS
+end
+
 script "js_managed_product_agents", type: "javascript" do
-  parameters "appId", "param_category", "rs_org_id"
+  parameters "appId", "param_category", "rs_org_id", "saas_host"
   result "request"
   code <<-EOS
   request = {
     auth: "fsm_auth",
-    host: "api.fsm.flexeraeng.com",
+    host: saas_host,
     verb: "GET",
     scheme: "https",
     path: "/svc/orgs/"+rs_org_id+"/managed-products/"+appId+"/managed-product-agents",
@@ -93,9 +128,20 @@ script "js_managed_product_agents", type: "javascript" do
 EOS
 end
 
+###############################################################################
+# Escalations
+###############################################################################
+
 escalation "report_summary" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
   email $param_email
 end
+
+###############################################################################
+# Policy
+###############################################################################
 
 policy "policy_dept_app_users" do
   validate $ds_managed_product_agents do

@@ -10,13 +10,14 @@ This policy template checks for Unused RDS instances by reviewing the DBconnecti
 
 ### Policy savings details
 
-The policy includes the estimated savings. The estimated savings is recognized if the resource is terminated. Optima is used to receive the estimated savings which is the product of the most recent full day's cost of the resource * 30. The savings is displayed in the Estimated Monthly Savings column. If the resource cannot be found in Optima the value is N/A. The incident message detail includes the sum of each resource Estimated Monthly Savings as Total Estimated Monthly Savings. The savings value is rounded off to 3 decimal places.
-If the user is missing the minimum required role of `billing_center_viewer`, appropriate message is displayed in the incident detail message along with the estimated monthly savings column value as N/A in the incident table.
+The policy includes the estimated savings. The estimated savings is recognized if the resource is terminated. Optima is used to receive the estimated savings which is the product of the most recent full day's cost of the resource * 30. The savings is displayed in the Estimated Monthly Savings column. If the resource cannot be found in Optima the value is N/A. The incident message detail includes the sum of each resource Estimated Monthly Savings as Total Estimated Monthly Savings.
+If the user is missing the minimum required role of `billing_center_viewer` or if there is no enough data received from Optima to calculate savings, appropriate message is displayed in the incident detail message along with the estimated monthly savings column value as N/A in the incident table.
 
 ## Input Parameters
 
 This policy has the following input parameters required when launching the policy.
 
+- *Allowed Regions* - A list of allowed regions for an AWS account. Please enter the allowed regions code if SCP is enabled, see [Available Regions](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/using-regions-availability-zones.html#concepts-available-regions) in AWS; otherwise, the policy may fail on regions that are disabled via SCP. Leave blank to consider all the regions.
 - *Email addresses to notify* - Email addresses of the recipients you wish to notify when new incidents are created
 - *Exclusion Tag Key:Value* - AWS tag key to ignore instances. Format: Key:Value
 - *Automatic Actions* - When this value is set, this policy will automatically take the selected action(s).

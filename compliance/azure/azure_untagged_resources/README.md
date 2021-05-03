@@ -3,6 +3,7 @@
 ## What it does
 
 Find all Azure resources missing any of the user provided tags with the option to update the resources with the missing tags.
+Only the resources that support tags are considered.
 
 ## Input Parameters
 
