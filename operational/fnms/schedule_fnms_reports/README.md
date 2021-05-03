@@ -10,13 +10,13 @@ The report / Mail output looks like this:
 
 Current limitations:
 
-- Output is limited to max 100.000 rows.
+- Output is limited to max 100,000 rows.
 
 ## Input Parameters
 
 This policy has the following input parameters required when launching the policy.
 
-- *FNMS Report URL* - Full FlexNet URL (e.g. [https://demo.flexnetmanager.com/Suite](https://demo.flexnetmanager.com/Suite) or WStunnel tunnel URL <https://wstunnel1-1.rightscale.com/_token/<token>/>)
+- *FNMS Report URL* - Full FlexNet URL (e.g. `https://demo.flexnetmanager.com/Suite` or WStunnel tunnel URL `https://wstunnel1-1.rightscale.com/_token/<token>/`)
 - *FNMS Report ID* - FlexNet manager Custom View ID
 - *Report Title in the Mail* - Report header in the report result
 - *Email addresses of the recipients you wish to notify* - A list of email addresses to notify
@@ -27,7 +27,7 @@ This policy has the following input parameters required when launching the polic
 
 ## Prerequisites
 
-Fot on-premise If FlexNet Manager Suite is not accessible from the Internet, you will need to setup a wstunnel to provide a secure connection into the FlexNet manager system.  For more details on wstunnel please refer to this: [https://github.com/rightscale/wstunnel](https://github.com/rightscale/wstunnel)
+For on-premise If FlexNet Manager Suite is not accessible from the Internet, you will need to setup a wstunnel to provide a secure connection into the FlexNet manager system.  For more details on wstunnel please refer to this: [https://github.com/rightscale/wstunnel](https://github.com/rightscale/wstunnel)
 
 This policy uses [credentials](https://docs.rightscale.com/policies/users/guides/credential_management.html) for connecting to the cloud -- in order to apply this policy you must have a credential registered in the system that is compatible with this policy. If there are no credentials listed when you apply the policy, please contact your cloud admin and ask them to register a credential that is compatible with this policy. The information below should be consulted when creating the credential.
 
