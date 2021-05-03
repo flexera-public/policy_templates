@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.8
+
+- Fixed a bug where calculating maximum and minimum numbers in an array returns NaN
+
 ## v2.7
 
 - Modified escalation label and description for consistency

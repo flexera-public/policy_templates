@@ -1,5 +1,15 @@
 # Changelog
 
+## v2.14
+
+- Improve error handling and debug logging so that errors from taking action are actually surfaced
+- Add a `param_log_to_cm_audit_entries` parameter to control whether action debug logging is sent to CM Audit
+  Entries; this should be left set to No on Flexera EU
+
+## v2.13
+
+- Modified policy to use per hour cost for unused IP from AWS pricing document for calculating estimated savings.
+
 ## v2.12
 
 - Added a new input parameter to enter regions in order to support SCP (Service Control Policy) and CIS Standards

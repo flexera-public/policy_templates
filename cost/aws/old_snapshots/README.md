@@ -6,9 +6,11 @@ This policy finds AWS snapshots in the given account which are older than the sp
 
 ### Policy savings details
 
-The policy includes the estimated savings. The estimated savings is recognized if the resource is terminated. Optima is used to receive the estimated savings which is the product of the most recent full day’s cost of the resource * 30. The savings is displayed in the Estimated Monthly Savings column. If the resource can not be found in Optima the value is n/a. The incident header includes the sum of each resource Estimated Monthly Savings in the Incident Header as Total Estimated Monthly Savings.
+The policy includes the estimated savings. The estimated savings is recognized if the resource is terminated. Optima is used to receive the estimated savings which is the product of the most recent full day’s cost of the resource \* 30. The savings are displayed in the *Estimated Monthly Savings* column. If the resource can not be found in Optima the value is `N/A`. The incident header includes the sum of each resource *Estimated Monthly Savings* as Total Estimated Monthly Savings.
 
-The Estimated Monthly Savings and Total Estimated Monthly Savings rounded to 3 decimal places, so the savings value will display $0.000 if estimated savings is less than $0.0005.
+If the AWS bill for the AWS account is registered in Optima in a different Flexera One org than the project where the policy template is applied, the *Flexera One Org ID for Optima* parameter can be set to the org where the AWS account is registered in Optima. Leaving this parameter set to `current` will result in using the same org as the project where the policy template is applied querying for Optima cost data.
+
+The *Estimated Monthly Savings* and *Total Estimated Monthly Savings* are rounded to 3 decimal places, so the savings value will display $0.000 if the estimated savings is less than $0.0005.
 
 ## Input Parameters
 
@@ -20,6 +22,7 @@ This policy has the following input parameters required when launching the polic
 - *Deregister Image* - If Yes, the snapshot will be deleted along with the images, and if No the snapshot will not be considered for deletion.
 - *Exclude Tags* - List of tags that a snapshot can have to exclude it from the list.
 - *Automatic Actions* - When this value is set, this policy will automatically take the selected action(s).
+- *Flexera One Org ID for Optima* - The Flexera One org ID for Optima queries used to determine estimated costs, by default the current org is used.
 
 Please note that the "Automatic Actions" parameter contains a list of action(s) that can be performed on the resources. When it is selected, the policy will automatically execute the corresponding action on the data that failed the checks, post incident generation. Please leave it blank for *manual* action.
 For example, if a user selects the "Delete Snapshots" action while applying the policy, all the snapshots that didn't satisfy the policy condition will be deleted.
