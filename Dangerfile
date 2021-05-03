@@ -150,10 +150,6 @@ has_app_changes.each do |file|
   if ! default_frequency
     fail "Please add a 'default_frequency' property field and value. #{file}"
   end
-  # check frequency meets the expected list
-  if default_frequency && !frequencies.include?(default_frequency.downcase)
-    fail "The frequency is not valid: #{default_frequency}.  Valid frequencies include #{frequencies.join(", ")}"
-  end
 end
 
 # check for info field required fields
