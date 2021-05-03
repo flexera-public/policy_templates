@@ -6,7 +6,7 @@ long_description ""
 severity "medium"
 category "SaaS Management"
 info(
-  version: "2.0",
+  version: "2.2",
   provider: "Okta",
   service: "",
   policy_set: ""
@@ -29,6 +29,13 @@ parameter "param_email" do
   type "list"
   label "Email addresses to notify"
   description "Email addresses of the recipients you wish to notify when new incidents are created"
+end
+
+parameter "param_automatic_action" do
+  type "list"
+  label "Automatic Actions"
+  description "When this value is set, this policy will automatically take the selected action(s)"
+  allowed_values ["Deactivate Users"]
 end
 
 credentials "auth_okta" do
@@ -83,41 +90,43 @@ script "js_filtered_users", type: "javascript" do
 end
 
 escalation "esc_email" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
   email $param_email
 end
 
 escalation "esc_deactivate_users" do
-  request_approval  do
-    label "Approve User Deactivation"
-    description "Approve escalation to run RightScale Cloud Workflow to deactivate the inactive Okta Users"
-    parameter "approval_reason" do
-      type "string"
-      label "Reason for Approval"
-      description "Explain why you are approving the action"
-    end
-  end
+  automatic contains($param_automatic_action, "Deactivate Users")
+  label "Deactivate User"
+  description "Deactivate inactive Okta Users"
   run "deactivate_users", data, $param_okta_org_name
 end
 
 policy "policy_inactive_users" do
   validate $ds_filtered_users do
     summary_template "Inactive Okta Users"
-    detail_template <<-EOS
-# Inactive Okta Users
-
-### Okta Org: {{ parameters.param_okta_org_name }}
-### Minimum Number of Days Since Last Login: {{ parameters.param_days }}
-
-| First Name | Last Name | Email Address | Last Login | 
-| ---------- | --------- | ------------- | ---------- |
-{{ range data -}}
-| {{ .firstName }} | {{.lastName}} | {{.email}} | {{.lastLogin}} |
-{{ end -}}
-
-EOS
     escalate $esc_email
     escalate $esc_deactivate_users
     check eq(size(data), 0)
+    export do
+      resource_level true
+      field "firstName" do
+        label "First Name"
+      end
+      field "lastName" do
+        label "Last Name"
+      end
+      field "email" do
+        label "Email Address"
+      end
+      field "lastLogin" do
+        label "Last Login"
+      end
+      field "id" do
+        label "ID"
+      end
+    end
   end
 end
 

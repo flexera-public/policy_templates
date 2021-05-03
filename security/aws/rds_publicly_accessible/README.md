@@ -12,30 +12,19 @@ When a publicly accessible RDS instance is detected, an email action is triggere
 
 ## Input Parameters
 
+- *Allowed Regions* - A list of allowed regions for an AWS account. Please enter the allowed regions code if SCP is enabled, see [Available Regions](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/using-regions-availability-zones.html#concepts-available-regions) in AWS; otherwise, the policy may fail on regions that are disabled via SCP. Leave blank to consider all the regions.
 - *Email addresses to notify* - Email addresses of the recipients you wish to notify when new incidents are created
 - *Tags to ignore* - List of tags that will exclude resources from being evaluated by this policy. Multiple tags are evaluated as an 'OR' condition. Tag keys or key/value pairs can be listed. Example: 'test,env=dev'
+- *Automatic Actions* - When this value is set, this policy will automatically take the selected action(s).
+
+Please note that the "Automatic Actions" parameter contains a list of action(s) that can be performed on the resources. When it is selected, the policy will automatically execute the corresponding action on the data that failed the checks, post incident generation. Please leave it blank for *manual* action.
+For example if a user selects the "Update RDS Instances" action while applying the policy, all the resources that didn't satisfy the policy condition will be updated.
 
 ## Policy Actions
 
 - Sends an email notification
 - Disable the publicly accessible RDS instances after approval
-- Delete publicly accessible RDS instances after approval (optional)
-
-Perform below steps to enable delete action.
-
-- Edit the file [AWS_Publicly_Accessible_RDS_Instances](/security/aws/rds_publicly_accessible/aws_publicly_accessible_rds_instances.pt)
-- uncomment below mentioned lines
-
-```javascript
-   escalate $delete_publicly_accessible_RDS_instances_approval
-     check logic_or(
-      eq(val(item, "delete_protection"), "YES"),
-      ne(val(item, "db_instance_status"), "available")
-    )
-```
-
-- And comment the line which contains 'check eq(val(item, "publicly_accessible"), "false")', save the changes.
-- upload the modified file and apply the policy.
+- Delete publicly accessible RDS instances after approval
 
 Note:
 
@@ -52,13 +41,13 @@ This policy uses [credentials](https://docs.rightscale.com/policies/users/guides
 
 For administrators [creating and managing credentials](https://docs.rightscale.com/policies/users/guides/credential_management.html) to use with this policy, the following information is needed:
 
-Provider tag value to match this policy: `aws`
+Provider tag value to match this policy: `aws` , `aws_sts`
 
 Required permissions in the provider:
 
 ```javascript
 {
-  "Version": "2014-10-31",
+  "Version": "2012-10-17",
   "Statement":[{
   "Effect":"Allow",
   "Action":["rds:DescribeDBInstances",
@@ -68,6 +57,11 @@ Required permissions in the provider:
             "rds:DescribeDBClusterSnapshots",
             "rds:DeleteDBInstance"],
     "Resource":"*"
+    },
+    {
+      "Effect":"Allow",
+      "Action":["ec2:DescribeRegions"],
+      "Resource":"*",
     }
   ]
 }

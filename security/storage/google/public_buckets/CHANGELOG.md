@@ -1,5 +1,13 @@
 # Change log
 
+## v2.3
+
+- Modified escalation label and description for consistency
+
+## v2.2
+
+- Added resource table
+
 ## v2.1
 
 - Bug fixes on unhandled errors when executing

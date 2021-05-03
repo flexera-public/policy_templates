@@ -6,7 +6,7 @@ long_description ""
 category "Compliance"
 severity "medium"
 info(
-  version: "1.11",
+  version: "1.13",
   provider: "Flexera Cloud Management",
   service: "",
   policy_set: ""
@@ -47,6 +47,13 @@ end
 parameter "param_email" do
   label "Email addresses of the recipients you wish to notify"
   type "list"
+end
+
+parameter "param_automatic_action" do
+  type "list"
+  label "Automatic Actions"
+  description "When this value is set, this policy will automatically take the selected action(s)"
+  allowed_values ["Tag Resources"]
 end
 
 # Retrieve all clouds
@@ -282,8 +289,17 @@ for (var i = 0; i < resources.length; i++) {
   EOS
 end
 
-escalation "escalate_resources" do
+escalation "email" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
   email $param_email
+end
+
+escalation "escalate_resources" do
+  automatic contains($param_automatic_action, "Tag Resources")
+  label "Tag resources"
+  description "Tag resources"
   run "tag_resources", data, $param_advanced_tag_key
 end
 
@@ -295,10 +311,9 @@ end
 policy "untagged_resources_policy" do
   validate $filtered_resources do
     summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} Untagged Resources Found"
-    escalate $escalate_resources
-    check eq(size(data), 0)
-    resolve $resolve_resources
+
     export do
+      resource_level true
       field "cloud_name" do
         label "Cloud Name"
       end
@@ -307,9 +322,6 @@ policy "untagged_resources_policy" do
       end
       field "name" do
         label "Name"
-      end
-      field "id" do
-        label "ID"
       end
       field "type" do
         label "Type"
@@ -326,7 +338,15 @@ policy "untagged_resources_policy" do
       field "invalid_tags" do
         label "Invalid Tags"
       end
+      field "id" do
+        label "ID"
+      end
     end
+
+    escalate $escalate_resources
+    escalate $email
+    check eq(size(data), 0)
+    resolve $resolve_resources
   end
 end
 

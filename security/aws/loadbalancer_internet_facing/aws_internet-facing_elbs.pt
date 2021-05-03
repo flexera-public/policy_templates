@@ -1,4 +1,4 @@
-﻿name "AWS Internet-facing ELBs & ALBs"
+name "AWS Internet-facing ELBs & ALBs"
 rs_pt_ver 20180301
 type "policy"
 short_description "Report and remediate any Classic Load Balancers(ELBs) and Application load Balancers(ALBs) that are Internet-facing. \n See the [README](https://github.com/flexera/policy_templates/tree/master/security/aws/loadbalancer_internet_facing) and [docs.rightscale.com/policies](https://docs.rightscale.com/policies/) to learn more."
@@ -6,7 +6,7 @@ long_description ""
 category "Security"
 severity "high"
 info(
-  version: "2.1",
+  version: "2.5",
   provider: "AWS",
   service: "ELB",
   policy_set: ""
@@ -15,6 +15,13 @@ info(
 ###############################################################################
 # User inputs
 ###############################################################################
+
+parameter "param_allowed_regions" do
+  type "list"
+  label "Allowed Regions"
+  allowed_pattern /^([a-zA-Z-_]+-[a-zA-Z0-9-_]+-[0-9-_]+,*|)+$/
+  description "A list of allowed regions. See the README for more details"
+end
 
 parameter "param_email" do
   type "list"
@@ -28,6 +35,13 @@ parameter "param_exclude_tags" do
   description "List of tags that will exclude load Balancers from being evaluated by this policy. Multiple tags are evaluated as an 'OR' condition. Tag keys or Key/value pairs can be listed. Example: 'test,env=dev'"
 end
 
+parameter "param_automatic_action" do
+  type "list"
+  label "Automatic Actions"
+  description "When this value is set, this policy will automatically take the selected action(s)"
+  allowed_values ["Delete ELBs and ALBs"]
+end
+
 ###############################################################################
 # Authentication
 ###############################################################################
@@ -39,7 +53,6 @@ credentials "auth_aws" do
   description "Select the AWS Credential from the list"
   tags "provider=aws"
 end
-
 
 ###############################################################################
 # Pagination
@@ -58,9 +71,31 @@ end
 # Datasources
 ###############################################################################
 
+datasource "ds_region_list" do
+  request do
+    auth $auth_aws
+    verb "GET"
+    host "ec2.amazonaws.com"
+    path "/"
+    query "Action", "DescribeRegions"
+    query "Version", "2016-11-15"
+  end
+  result do
+    encoding "xml"
+    collect xpath(response, "//DescribeRegionsResponse/regionInfo/item", "array") do
+      field "region", xpath(col_item, "regionName")
+    end
+  end
+end
+
+# Get only SCP enabled regions
+datasource "ds_regions" do
+  run_script $js_regions, $param_allowed_regions, $ds_region_list
+end
+
 #Generates list of Regions with Load Balancer type and API version.
 datasource "ds_regions_list" do
-  run_script $js_regions_map
+  run_script $js_regions_map, $ds_regions
 end
 
 #Get the list of all Classic and application load Balancers
@@ -117,13 +152,56 @@ end
 # Script
 ###############################################################################
 
+script "js_regions", type:"javascript" do
+  parameters "user_entered_regions", "all_regions"
+  result "regions"
+  code <<-EOS
+    if(_.isEmpty(user_entered_regions)){
+      regions = all_regions;
+    }else{
+      //Filter unique regions
+      var uniqueRegions = _.uniq(user_entered_regions);
+      var all_regions_list = [];
+      all_regions.forEach(function(all_region){
+        all_regions_list.push(all_region.region)
+      })
+
+      //Filter valid regions
+      var valid_regions = [];
+      _.map(uniqueRegions, function(uniqueRegion){
+        if(all_regions_list.indexOf(uniqueRegion) > -1){
+          valid_regions.push({"region": uniqueRegion})
+        }
+      })
+
+      //Throw an error if no valid regions found
+      if (_.isEmpty(valid_regions)) {
+        regions = all_regions;
+      }else{
+        regions = valid_regions
+      }
+    }
+  EOS
+end
+
 #Generates list of Regions with Load Balancer type and API version.
 script "js_regions_map", type: "javascript" do
+  parameters "regions"
   result "regions_map"
   code <<-EOS
-    var regions_map=[]
-    regions_map.push({"region": "us-east-1", "API_version": "2012-06-01", "LBtype": "Classic"}, {"region": "us-east-2", "API_version": "2012-06-01", "LBtype": "Classic"}, {"region": "us-west-1", "API_version": "2012-06-01", "LBtype": "Classic"}, {"region": "us-west-2", "API_version": "2012-06-01", "LBtype": "Classic"}, {"region": "ap-south-1", "API_version": "2012-06-01", "LBtype": "Classic"}, {"region": "ap-northeast-2", "API_version": "2012-06-01", "LBtype": "Classic"}, {"region": "ap-southeast-1", "API_version": "2012-06-01", "LBtype": "Classic"}, {"region": "ap-southeast-2", "API_version": "2012-06-01", "LBtype": "Classic"}, {"region": "ap-northeast-1", "API_version": "2012-06-01", "LBtype": "Classic"}, {"region": "ca-central-1", "API_version": "2012-06-01", "LBtype": "Classic"}, {"region": "eu-central-1", "API_version": "2012-06-01", "LBtype": "Classic"}, {"region": "eu-west-1", "API_version": "2012-06-01", "LBtype": "Classic"}, {"region": "eu-west-2", "API_version": "2012-06-01", "LBtype": "Classic"}, {"region": "eu-west-3", "API_version": "2012-06-01", "LBtype": "Classic"}, {"region": "sa-east-1", "API_version": "2012-06-01", "LBtype": "Classic"}, {"region": "eu-north-1", "API_version": "2012-06-01", "LBtype": "Classic"},
-                     {"region": "us-east-1", "API_version": "2015-12-01", "LBtype": "Application"}, {"region": "us-east-2", "API_version": "2015-12-01", "LBtype": "Application"}, {"region": "us-west-1", "API_version": "2015-12-01", "LBtype": "Application"}, {"region": "us-west-2", "API_version": "2015-12-01", "LBtype": "Application"}, {"region": "ap-south-1", "API_version": "2015-12-01", "LBtype": "Application"}, {"region": "ap-northeast-2", "API_version": "2015-12-01", "LBtype": "Application"}, {"region": "ap-southeast-1", "API_version": "2015-12-01", "LBtype": "Application"}, {"region": "ap-southeast-2", "API_version": "2015-12-01", "LBtype": "Application"}, {"region": "ap-northeast-1", "API_version": "2015-12-01", "LBtype": "Application"}, {"region": "ca-central-1", "API_version": "2015-12-01", "LBtype": "Application"}, {"region": "eu-central-1", "API_version": "2015-12-01", "LBtype": "Application"}, {"region": "eu-west-1", "API_version": "2015-12-01", "LBtype": "Application"}, {"region": "eu-west-2", "API_version": "2015-12-01", "LBtype": "Application"}, {"region": "eu-west-3", "API_version": "2015-12-01", "LBtype": "Application"}, {"region": "sa-east-1", "API_version": "2015-12-01", "LBtype": "Application"}, {"region": "eu-north-1", "API_version": "2015-12-01", "LBtype": "Application"})
+    var regions_map=[];
+    for(var i=0; i < regions.length; i++){
+      regions_map.push({
+        "region": regions[i].region,
+        "API_version": "2012-06-01",
+        "LBtype": "Classic"
+      })
+      regions_map.push({
+        "region": regions[i].region,
+        "API_version": "2015-12-01",
+        "LBtype": "Application"
+      })
+    }
   EOS
 end
 
@@ -175,7 +253,7 @@ script "js_elb_list_with_tags", type: "javascript" do
 end
 
 
-#Process the response data, check for the tags and generate a list of internetfacing ELB's
+#Process the response data, check for the tags and generate a list of internetfacing ELBs
 script "js_elb_filter_map", type: "javascript" do
   parameters "ds_elb_list_with_tags", "param_exclude_tags"
   result "content"
@@ -242,18 +320,34 @@ end
 policy "policy_internet_facing_ELB" do
   validate $ds_internet_facing_elb_map do
     summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} Internet-facing ELBs & ALBs Found in AWS"
-    detail_template <<-EOS
-## List of internet-facing Classic and Application Load Balancers
-| LoadBalancer Name | LoadBalancer Type |  Region  | Availability Zones |    TAGs   |
-| ----------------- | ----------------- | ---------| ------------------ | --------- |
-{{ range data -}}
-| {{ .loadBalancerName }} | {{.loadBalancerType}} | {{.region}} | {{ .availabilityZones }} | {{.tagKeyValue}} |
-{{ end -}}
-###### Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }}) within Org: {{ rs_org_name }} (Org ID: {{ rs_org_id }})
-    EOS
     escalate $report_internet_facing_ELB
     escalate $approve_delete_internet_facing_ELB
     check eq(size(data),0)
+    export do
+      resource_level true
+      field "region" do
+        label "Region"
+      end
+      field "id" do
+        label "LoadBalancer Name"
+        path "loadBalancerName"
+      end
+      field "loadBalancerType" do
+        label "LoadBalancer Type"
+      end
+      field "availabilityZones" do
+        label "Availability Zones"
+      end
+      field "tagKeyValue" do
+        label "Tags"
+      end
+      field "loadBalancerArn" do
+        label "LoadBalancer ARN"
+      end
+      field "api_version" do
+        label "API Version"
+      end
+    end
   end
 end
 
@@ -262,19 +356,16 @@ end
 ###############################################################################
 
 escalation "report_internet_facing_ELB" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
   email $param_email
 end
 
 escalation "approve_delete_internet_facing_ELB" do
-  request_approval  do
-    label "Approve Resource Deletion"
-    description "Approve escalation to run RightScale Cloud Workflow to delete Internet-facing ELB's & ALB's"
-    parameter "approval_reason" do
-      type "string"
-      label "Reason for Approval"
-      description "Explain why you are approving the action"
-    end
-  end
+  automatic contains($param_automatic_action, "Delete ELBs and ALBs")
+  label "Delete Resource"
+  description "Delete selected ELB's & ALB's"
   run "delete_internet_facing_ELB", data
 end
 
@@ -290,7 +381,7 @@ define delete_internet_facing_ELB($data) return $all_responses do
   $LoadBalancer= ""
   foreach $item in $data do
     if $item["loadBalancerType"] == "Classic"
-      $LoadBalancer= "LoadBalancerName="+ $item["loadBalancerName"]
+      $LoadBalancer= "LoadBalancerName="+ $item["id"]
     else
       $LoadBalancer="LoadBalancerArn="+ $item["loadBalancerArn"]
     end

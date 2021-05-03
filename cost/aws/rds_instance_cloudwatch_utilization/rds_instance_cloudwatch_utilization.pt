@@ -6,7 +6,7 @@ long_description ""
 severity "low"
 category "Cost"
 info(
-  version: "2.1",
+  version: "2.6",
   provider: "AWS",
   service: "RDS",
   policy_set: "RightSize Database Services"
@@ -15,6 +15,13 @@ info(
 ###############################################################################
 # Parameters
 ###############################################################################
+
+parameter "param_allowed_regions" do
+  type "list"
+  label "Allowed Regions"
+  allowed_pattern /^([a-zA-Z-_]+-[a-zA-Z0-9-_]+-[0-9-_]+,*|)+$/
+  description "A list of allowed regions. See the README for more details"
+end
 
 parameter "param_email" do
   type "list"
@@ -46,6 +53,13 @@ parameter "param_exclusion_tag_key" do
   type "string"
 end
 
+parameter "param_automatic_action" do
+  type "list"
+  label "Automatic Actions"
+  description "When this value is set, this policy will automatically take the selected action(s)"
+  allowed_values ["Resize Instances"]
+end
+
 ###############################################################################
 # Authentication
 ###############################################################################
@@ -62,18 +76,49 @@ end
 # Datasources
 ###############################################################################
 
-#Generates list of Regions
+datasource "ds_get_caller_identity" do
+  request do
+    auth $auth_aws
+    verb "GET"
+    host "sts.amazonaws.com"
+    path "/"
+    header "User-Agent", "RS Policies"
+    query "Action", "GetCallerIdentity"
+    query "Version", "2011-06-15"
+  end
+  result do
+    encoding "xml"
+    collect xpath(response, "//GetCallerIdentityResponse/GetCallerIdentityResult") do
+      field "account",xpath(col_item, "Account")
+    end
+ end
+end
+
+#Get list of enabled regions for an account
 datasource "ds_regions_list" do
   request do
+    auth $auth_aws
     verb "GET"
-    host "raw.githubusercontent.com"
-    path "/rightscale/policy_templates/master/data/aws/regions.json"
-    header "User-Agent", "RS Policies"
+    host "ec2.amazonaws.com"
+    path "/"
+    query "Action", "DescribeRegions"
+    query "Version", "2016-11-15"
+  end
+  result do
+    encoding "xml"
+    collect xpath(response, "//DescribeRegionsResponse/regionInfo/item", "array") do
+      field "region", xpath(col_item, "regionName")
+    end
   end
 end
 
+# Get only SCP enabled regions
+datasource "ds_regions" do
+  run_script $js_regions, $param_allowed_regions, $ds_regions_list
+end
+
 datasource "ds_instances_set" do
-  iterate $ds_regions_list
+  iterate $ds_regions
   request do
     run_script $js_instances_set, val(iter_item,"region")
   end
@@ -145,12 +190,44 @@ datasource "ds_merged_metrics" do
 end
 
 datasource "ds_filtered_results" do
-  run_script $js_filtered_results, $ds_merged_metrics, $param_avg_cpu_downsize, $param_avg_cpu_upsize
+  run_script $js_filtered_results, $ds_merged_metrics, $param_avg_cpu_downsize, $param_avg_cpu_upsize, $ds_get_caller_identity
 end
 
 ###############################################################################
 # Scripts
 ###############################################################################
+
+script "js_regions", type:"javascript" do
+  parameters "user_entered_regions", "all_regions"
+  result "regions"
+  code <<-EOS
+    if(_.isEmpty(user_entered_regions)){
+      regions = all_regions;
+    }else{
+      //Filter unique regions
+      var uniqueRegions = _.uniq(user_entered_regions);
+      var all_regions_list = [];
+      all_regions.forEach(function(all_region){
+        all_regions_list.push(all_region.region)
+      })
+
+      //Filter valid regions
+      var valid_regions = [];
+      _.map(uniqueRegions, function(uniqueRegion){
+        if(all_regions_list.indexOf(uniqueRegion) > -1){
+          valid_regions.push({"region": uniqueRegion})
+        }
+      })
+
+      //Throw an error if no valid regions found
+      if (_.isEmpty(valid_regions)) {
+        regions = all_regions;
+      }else{
+        regions = valid_regions
+      }
+    }
+  EOS
+end
 
 script "js_instances", type: "javascript" do
   result "results"
@@ -323,7 +400,7 @@ end
 
 
 script "js_filtered_results", type: "javascript" do
-  parameters "ds_merged_metrics", "param_avg_cpu_downsize", "param_avg_cpu_upsize"
+  parameters "ds_merged_metrics", "param_avg_cpu_downsize", "param_avg_cpu_upsize", "ds_get_caller_identity"
   result "results"
   code <<-EOS
   var results = []
@@ -334,6 +411,7 @@ script "js_filtered_results", type: "javascript" do
       } else {
         results.push (
           {
+            "accountId": ds_get_caller_identity[0]['account'],
             "region": instance["region"],
             "availabilityZone": instance["availabilityZone"],
             "dbInstanceArn": instance["dbInstanceArn"],
@@ -352,6 +430,7 @@ script "js_filtered_results", type: "javascript" do
       } else {
         results.push (
           {
+            "accountId": ds_get_caller_identity[0]['account'],
             "region": instance["region"],
             "availabilityZone": instance["availabilityZone"],
             "dbInstanceArn": instance["dbInstanceArn"],
@@ -365,7 +444,7 @@ script "js_filtered_results", type: "javascript" do
       }
     }
   })
-
+  results = _.sortBy(results, 'region');
  EOS
 end
 
@@ -375,20 +454,38 @@ end
 
 policy "pol_utilization" do
   validate $ds_filtered_results do
-    summary_template "AWS RDS instances to Resize"
-    detail_template <<-EOS
-# AWS RDS Instances to Resize
-| Region | instanceID | Engine | Current Instance Class | Recommended Instance Class | Availability Zone | CPU Average % |
-| ------ | ---------- | ------ | ---------------------- | -------------------------- | ----------------- | ------------- |
-{{ range data -}}
-| {{.region}} | {{.dbInstanceIdentifier}} | {{.engine}} | {{.dbInstanceClass}} |  {{.recommended_size}} | {{.availabilityZone }} | {{ .percent_cpu_avg }} |
-{{ end -}}
-
-###### Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }}) within Org: {{ rs_org_name }} (Org ID: {{ rs_org_id }})
-EOS
+    summary_template "AWS Account ID: {{with index data 0}}{{ .accountId }}{{end}} - {{ len data }} AWS RDS instances with inefficient utilization"
     check eq(size(data),0)
     escalate $email
     escalate $resize_instances
+    export do
+      resource_level true
+      field "accountId" do
+        label "Account Id"
+      end
+      field "region" do
+        label "Region"
+      end
+      field "id" do
+        label "Instance Id"
+        path "dbInstanceIdentifier"
+      end
+      field "engine" do
+        label "Engine"
+      end
+      field "dbInstanceClass" do
+        label "Current Instance Class"
+      end
+      field "recommended_size" do
+        label "Recommended Instance Class"
+      end
+      field "availabilityZone" do
+        label "Availability Zone"
+      end
+      field "percent_cpu_avg" do
+        label "CPU Average %"
+      end
+    end
   end
 end
 
@@ -398,19 +495,16 @@ end
 ###############################################################################
 
 escalation "email" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
   email $param_email
 end
 
 escalation "resize_instances" do
-  request_approval  do
-    label "Escalation approval"
-    description "Approve RDS RightSizing action"
-    parameter "approval_reason" do
-      type "string"
-      label "Reason for approval"
-      description "Explain why you are approving the action"
-    end
-  end
+  automatic contains($param_automatic_action, "Resize Instances")
+  label "Update Instance"
+  description "Approve selected RDS RightSizing"
   run "rightsize_rds", data
 end
 
@@ -432,7 +526,7 @@ define rightsize_rds($data) return $all_responses do
         query_strings: {
           "Action": "DescribeDBInstances",
           "Version": "2014-10-31",
-          "DBInstanceIdentifier": $item["dbInstanceIdentifier"]
+          "DBInstanceIdentifier": $item["id"]
         }
       )
       $all_responses << $get_response
@@ -449,7 +543,7 @@ define rightsize_rds($data) return $all_responses do
           query_strings: {
             "Action": "ModifyDBInstance",
             "Version": "2014-10-31",
-            "DBInstanceIdentifier": $item["dbInstanceIdentifier"],
+            "DBInstanceIdentifier": $item["id"],
             "DBInstanceClass": $item["recommended_size"]
           }
         )

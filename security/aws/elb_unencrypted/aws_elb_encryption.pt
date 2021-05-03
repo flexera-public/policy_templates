@@ -6,7 +6,7 @@ long_description ""
 category "Security"
 severity "medium"
 info(
-  version: "2.1",
+  version: "2.5",
   provider: "AWS",
   service: "ELB",
   policy_set: ""
@@ -15,6 +15,13 @@ info(
 ###############################################################################
 # User inputs
 ###############################################################################
+
+parameter "param_allowed_regions" do
+  type "list"
+  label "Allowed Regions"
+  allowed_pattern /^([a-zA-Z-_]+-[a-zA-Z0-9-_]+-[0-9-_]+,*|)+$/
+  description "A list of allowed regions. See the README for more details"
+end
 
 parameter "param_email" do
   type "list"
@@ -66,18 +73,32 @@ end
 ###############################################################################
 
 #Generates list of Regions
+#Get list of enabled regions for an account
 datasource "ds_regions_list" do
   request do
+    auth $auth_aws
     verb "GET"
-    host "raw.githubusercontent.com"
-    path "/rightscale/policy_templates/master/data/aws/regions.json"
-    header "User-Agent", "RS Policies"
+    host "ec2.amazonaws.com"
+    path "/"
+    query "Action", "DescribeRegions"
+    query "Version", "2016-11-15"
   end
+  result do
+    encoding "xml"
+    collect xpath(response, "//DescribeRegionsResponse/regionInfo/item", "array") do
+      field "region", xpath(col_item, "regionName")
+    end
+  end
+end
+
+# Get only SCP enabled regions
+datasource "ds_regions" do
+  run_script $js_regions, $param_allowed_regions, $ds_regions_list
 end
 
 #Get the list of all network and application load Balancers
 datasource "ds_elb_list" do
-  iterate $ds_regions_list
+  iterate $ds_regions
   request do
     run_script $js_elb_list, val(iter_item,"region")
   end
@@ -147,6 +168,38 @@ end
 ###############################################################################
 # Script
 ###############################################################################
+
+script "js_regions", type:"javascript" do
+  parameters "user_entered_regions", "all_regions"
+  result "regions"
+  code <<-EOS
+    if(_.isEmpty(user_entered_regions)){
+      regions = all_regions;
+    }else{
+      //Filter unique regions
+      var uniqueRegions = _.uniq(user_entered_regions);
+      var all_regions_list = [];
+      all_regions.forEach(function(all_region){
+        all_regions_list.push(all_region.region)
+      })
+
+      //Filter valid regions
+      var valid_regions = [];
+      _.map(uniqueRegions, function(uniqueRegion){
+        if(all_regions_list.indexOf(uniqueRegion) > -1){
+          valid_regions.push({"region": uniqueRegion})
+        }
+      })
+
+      //Throw an error if no valid regions found
+      if (_.isEmpty(valid_regions)) {
+        regions = all_regions;
+      }else{
+        regions = valid_regions
+      }
+    }
+  EOS
+end
 
 #https://docs.aws.amazon.com/elasticloadbalancing/latest/APIReference/API_DescribeLoadBalancers.html (Application or Network Load Balancer)
 script "js_elb_list", type: "javascript" do
@@ -267,17 +320,22 @@ script "js_elb_filter_map", type: "javascript" do
             break
           default:
             content.push ({
-              loadBalancerName: elb['loadBalancerName'],
+              id: elb['loadBalancerName'],
               loadBalancerType: elb['loadBalancerType'],
-			        loadBalancerProtocol: protocol,
+			  loadBalancerProtocol: protocol,
               loadBalancerPort: elb['listenerPort'],
               region: elb['region'],
               availabilityZones:(s_availabilityZones.slice(2)),
-              tagKeyValue:(tagKeyValue.slice(2))
+              tagKeyValue:(tagKeyValue.slice(2)),
+              loadBalanceProtocolAndPort: protocol+" "+elb['listenerPort']
             })
 	      }
       }
     }
+
+  content = _.sortBy(content,'id')
+  content = _.sortBy(content,'loadBalancerType')
+  content = _.sortBy(content,'region')
   EOS
 end
 
@@ -288,17 +346,29 @@ end
 policy "policy_unencrypted_ALB_NLB" do
   validate $ds_unencrypted_elb_map do
     summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} AWS Unencrypted ELB Listeners (ALB/NLB)"
-    detail_template <<-EOS
-## List of AWS Unencrypted ELB Listeners (ALB/NLB)
-| LoadBalancer Name | LoadBalancer Type | Listener Protocol (Port) |  Region  | Availability Zones |    TAGs   |
-| ----------------- | ----------------- | ------------------------ | ---------| ------------------ | --------- |
-{{ range data -}}
-| {{ .loadBalancerName }} | {{.loadBalancerType}} | {{.loadBalancerProtocol}} ({{.loadBalancerPort}}) | {{.region}} | {{ .availabilityZones }} | {{.tagKeyValue}} |
-{{ end -}}
-###### Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }}) within Org: {{ rs_org_name }} (Org ID: {{ rs_org_id }})
-    EOS
     escalate $esc_unencrypted_lbs
     check eq(size(data),0)
+    export do
+      resource_level true
+      field "id" do
+        label "LoadBalancer Name"
+      end
+      field "loadBalancerType" do
+        label "Load Balancer Type"
+      end
+      field "loadBalanceProtocolAndPort" do
+        label "Listener Protocol (Port)"
+      end
+      field "region" do
+        label "Region"
+      end
+      field "availabilityZones" do
+        label "Availability Zones"
+      end
+      field "tagKeyValue" do
+        label "TAGs"
+      end
+    end
   end
 end
 
@@ -307,6 +377,9 @@ end
 ###############################################################################
 
 escalation "esc_unencrypted_lbs" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
   email $param_email
 end
 

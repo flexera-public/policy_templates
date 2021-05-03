@@ -6,7 +6,7 @@ long_description ""
 severity "low"
 category "Cost"
 info(
-  version: "2.1",
+  version: "2.5",
   provider: "Azure",
   service: "",
   policy_set: ""
@@ -19,14 +19,22 @@ info(
 parameter "param_exclusion_tag_key" do
   category "User Inputs"
   label "Exclusion Tag Key"
-  description "Azure-native instance tag to ignore instances that are not using AHUB/BYOL. Only supply the tag key. The policy assumes that the tag value is irrelevant."
+  description "An Azure-native instance tag to ignore instances that are not using AHUB. Only supply the tag key. The policy assumes that the tag value is irrelevant."
   type "string"
   default "exclude_ahub"
 end
 
 parameter "param_email" do
   type "list"
-  label "Email addresses of the recipients you wish to notify"
+  label "Email addresses"
+  description "A list of email addresses of the recipients you wish to notify"
+end
+
+parameter "param_automatic_action" do
+  type "list"
+  label "Automatic Actions"
+  description "When this value is set, this policy will automatically take the selected action(s)"
+  allowed_values ["Hybrid use benefit"]
 end
 
 #################
@@ -118,29 +126,20 @@ script "js_filter_resources", type: "javascript" do
   code <<-EOS
     var result = [];
     _.each(azure_instances, function(instance){
-
-      console.log("Instance Name: ", instance["name"])
-
       if (_.has(instance.tags, exclusion_tag)) {
         console.log(instance["name"], "SKIP")
       } else {
-        if (instance.osType === "Windows"){
+        if (instance.osType === "Windows" ){
           var resourceGroup = instance.id.split('/')[4]
           var tags = JSON.stringify(instance["tags"]);
           var ahub = "N/A"
-
-          console.log(instance["name"], "OS: Windows")
-
-          if (instance.licenseType === "Windows_Server") {
+          if (instance.licenseType === "Windows_Server" || instance.licenseType === "Windows_Client") {
             ahub = "Yes"
           } else {
             ahub = "No"
           }
-
-          console.log(instance["name"], "AHUB: ", ahub)
-
           result.push({
-		    subscriptionName: instance["subscriptionName"],
+            subscriptionName: instance["subscriptionName"],
             id: instance["id"],
             name: instance["name"],
             resourceGroup: resourceGroup,
@@ -168,17 +167,48 @@ end
 policy 'azure_license_policy' do
   validate_each $filtered_resources do
     summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} Instances Not Using Azure Hybrid Use Benefit for Windows Server"
-    detail_template <<-EOS
-# Azure Hybrid Use Benefit
-| Subscription Name | Location | Resource Group | Instance Name | Instance Size | Image Publisher | Image Offer | Image Sku | Image Version | AHUB | Tags |
-| ------------- | -------------- | -------- | ------------- | --------------- | ----------- | --------- | ------------- | ---- | ---- |
-{{ range data -}}
-|{{.subscriptionName}} | {{.location}} | {{.resourceGroup}} | {{.name}} | {{.vmSize}} | {{.imagePublisher}} | {{.imageOffer}} | {{.imageSku}} | {{.imageVersion}} | {{.ahub}} | {{.tags}} |
-{{ end -}}
-EOS
     escalate $email
     escalate $license_instances
     check eq(val(item,"ahub"),"Yes")
+    export do
+      resource_level true
+      field "subscriptionName" do
+        label "Subscription Name"
+      end
+      field "location" do
+        label "Location"
+      end
+      field "resourceGroup" do
+        label "Resource Group"
+      end
+      field "name" do
+        label "Instance Name"
+      end
+      field "vmSize" do
+        label "Instance Size"
+      end
+      field "imagePublisher" do
+        label "Image Publisher"
+      end
+      field "imageOffer" do
+        label "Image Offer"
+      end
+      field "imageSku" do
+        label "Image Sku"
+      end
+      field "imageVersion" do
+        label "Image Version"
+      end
+      field "ahub" do
+        label "AHUB"
+      end
+      field "tags" do
+        label "Tags"
+      end
+      field "id" do
+        label "Id"
+      end
+    end
   end
 end
 
@@ -187,19 +217,16 @@ end
 ##############
 
 escalation "email" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
   email $param_email
 end
 
 escalation "license_instances" do
-  request_approval  do
-    label "Approve Hybrid Use Benefit"
-    description "Approve escalation to apply Hybrid Use Benefit to identified instances"
-    parameter "approval_reason" do
-      type "string"
-      label "Reason for Approval"
-      description "Explain why you are approving the action"
-    end
-  end
+  automatic contains($param_automatic_action, "Hybrid use benefit")
+  label "Add Hybrid Use Benefit"
+  description "Apply hybrid use benefit to the selected intance"
   run "license_instances", data
 end
 
@@ -213,7 +240,7 @@ define license_instances($data) return $all_responses do
   foreach $item in $data do
     sub on_error: skip do
       $update_inst_response = http_request(
-	    auth: $$azure_auth,
+        auth: $$azure_auth,
         verb: "patch",
         host: "management.azure.com",
         https: true,
@@ -227,7 +254,7 @@ define license_instances($data) return $all_responses do
         },
         body: {
           "properties": {
-            "licenseType": "Windows_Server"
+          "licenseType": "Windows_Server"
           }
         }
       )

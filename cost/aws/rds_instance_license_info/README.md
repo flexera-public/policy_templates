@@ -12,6 +12,7 @@ This Policy Template gathers AWS RDS Instance data related to licensing.
 
 This policy has the following input parameters required when launching the policy.
 
+- *Allowed Regions* - A list of allowed regions for an AWS account. Please enter the allowed regions code if SCP is enabled, see [Available Regions](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/using-regions-availability-zones.html#concepts-available-regions) in AWS; otherwise, the policy may fail on regions that are disabled via SCP. Leave blank to consider all the regions.
 - *Email addresses to notify* - A list of email addresses to notify
 
 ## Policy Actions
@@ -28,15 +29,27 @@ This policy uses [credentials](https://docs.rightscale.com/policies/users/guides
 
 For administrators [creating and managing credentials](https://docs.rightscale.com/policies/users/guides/credential_management.html) to use with this policy, the following information is needed:
 
-Provider tag value to match this policy: `aws`
+Provider tag value to match this policy: `aws` , `aws_sts`
 
 Required permissions in the provider:
 
 - Read access to RDS
 
+```javascript
+{
+  "Version": "2012-10-17",
+  "Statement":[{
+  "Effect":"Allow",
+  "Action":["ec2:DescribeRegions"],
+    "Resource":"*"
+    }
+  ]
+}
+```
+
 ## Supported Clouds
 
-- Amazon
+- AWS
 
 ## Cost
 

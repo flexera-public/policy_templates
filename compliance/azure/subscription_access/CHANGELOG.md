@@ -1,5 +1,13 @@
 # Changelog
 
+## v2.3
+
+- Fixed bug in displaying role assignment id
+
+## v2.2
+
+- Added Resource table
+
 ## v2.1
 
 - fix provider tag for graph Credential

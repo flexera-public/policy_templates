@@ -6,18 +6,15 @@ long_description ""
 severity "medium"
 category "Operational"
 info(
-  version: "1.7",
+  version: "1.9",
   provider: "Flexera Cloud Management",
   service: "",
   policy_set: ""
 )
 
-permission "general_permissions" do
-  resources "rs_cm.credentials", "rs_cm.audit_entries", "rs_cm.clouds"
-  actions   "rs_cm.*"
-end
-
-auth "auth_rs", type: "rightscale"
+###############################################################################
+# User inputs
+###############################################################################
 
 parameter "param_email" do
   type "list"
@@ -39,6 +36,39 @@ parameter "param_rotation_units" do
   allowed_values "Days", "Hours", "Minutes"
 end
 
+parameter "param_automatic_action" do
+  type "list"
+  label "Automatic Actions"
+  description "When this value is set, this policy will automatically take the selected action(s)"
+  allowed_values ["Update Credentials"]
+end
+
+###############################################################################
+# Permissions
+###############################################################################
+
+permission "general_permissions" do
+  resources "rs_cm.credentials", "rs_cm.audit_entries", "rs_cm.clouds"
+  actions   "rs_cm.*"
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+auth "auth_rs", type: "rightscale"
+
+###############################################################################
+# Datasources
+###############################################################################
+
+# Get attached AWS clouds
+resources "aws_clouds", type: "rs_cm.clouds" do
+  filter do
+    cloud_type "amazon"
+  end
+end
+
 # We use a RightScale account tag to keep track of when to rotate the keys.
 # If it not found, the policy will rotate keys at that time and add the tag for the next rotation.
 datasource "ds_account_tags" do
@@ -49,13 +79,6 @@ datasource "ds_account_tags" do
     path "/api/tags/by_resource"
     header "X-Api-Version", "1.5"
     body_field "resource_hrefs", [join(["/api/accounts/",rs_project_id])]
-  end
-end
-
-# Get attached AWS clouds
-resources "aws_clouds", type: "rs_cm.clouds" do
-  filter do
-    cloud_type "amazon"
   end
 end
 
@@ -75,7 +98,7 @@ datasource "ds_cloud_accounts" do
   result do
     encoding "json"
     collect jmes_path(response, "[]") do
-      field "cloud_href", jmes_path(col_item, "links[?rel=='cloud'].href | [0]") 
+      field "cloud_href", jmes_path(col_item, "links[?rel=='cloud'].href | [0]")
       field "cloud_account_href", jmes_path(col_item, "links[?rel=='self'].href | [0]")
     end
   end
@@ -85,13 +108,18 @@ end
 datasource "ds_aws_cloud_accounts" do
   run_script $js_aws_cloud_accounts, $ds_aws_clouds, $ds_cloud_accounts, $ds_account_tags
 end
+
+###############################################################################
+# Scripts
+###############################################################################
+
 script "js_aws_cloud_accounts", type: "javascript" do
   parameters "ds_aws_clouds", "ds_cloud_accounts", "ds_account_tags"
   result "aws_cloud_accounts"
   code <<-EOS
 // This is the eventual output list of AWS-specific RightScale cloud accounts.
 var aws_cloud_accounts = [];
-  
+
 // Right now in Epoch time
 var now_epoch_time = Math.round((new Date()).getTime() / 1000);
 // Tweak "now" to include 10 minutes (i.e. 600 seconds) into the future to account for any drift on the policy schedule clock.
@@ -110,11 +138,11 @@ for (var i = 0; i < account_tags.length; i++) {
     }
   }
 }
-     
+
 // Convert the array of hashes (aka objects) into a hash where the key is the cloud_href and the value is the cloud_account_href.
 // This is used later to find the "AWS" cloud accounts.
 var cloud_account_hash = {};
-  
+
 for (var i = 0; i < ds_cloud_accounts.length; i++) {
   ds_cloud_account = ds_cloud_accounts[i]
   cloud_href = ds_cloud_account["cloud_href"]
@@ -127,83 +155,94 @@ for (var i = 0; i < ds_aws_clouds.length; i++) {
   aws_cloud_name = ds_aws_clouds[i].name
   cloud_account_href = cloud_account_hash[aws_cloud_href]
   if (cloud_account_href) {
-    var aws_cloud_account_info = { "cloud_account_href" : cloud_account_href, "cloud_href" : aws_cloud_href, "cloud_name" : aws_cloud_name, "needs_rotation" : needs_rotation }
+    var aws_cloud_account_info = {
+      id: cloud_account_href,
+      "cloud_href" : aws_cloud_href,
+      "cloud_name" : aws_cloud_name,
+      "needs_rotation" : needs_rotation }
     aws_cloud_accounts.push(aws_cloud_account_info)
   }
 }
 EOS
 end
 
-policy "pol_aws_key_update" do
-  
-  validate_each $ds_aws_cloud_accounts do
-      # the ds_aws_cloud_accounts logic populates a needs rotation field which is used to decide if we need to rotate keys
-      check eq(val(item, "needs_rotation"), "false")
-	  escalate $email
-      escalate $update_connection
+###############################################################################
+# Escalations
+###############################################################################
 
-      summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): AWS Cloud Credentials Updated"
-      detail_template <<-EOS
-AWS Key Update Report for RightScale Account: {{ rs_project_name }} (ID: {{ rs_project_id }})\n
-The following RightScale cloud account connections have been updated with new AWS keys.\n
-| Cloud Name | RightScale Cloud Account HREF |
-| ---------- | ----------------------------- |
-{{ range data -}}
-    | {{ .cloud_name }} | {{ .cloud_account_href }} |
-{{ end -}}
-EOS
-  end
+escalation "esc_email" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
 end
 
-escalation "email" do
-   email $param_email
-end
-
-escalation "update_connection" do
-  request_approval  do
-    label "Approve to Update cloud account connections"
-    description "Update cloud account connections"
-    parameter "approval_reason" do
-      type "string"
-      label "Reason for approval"
-      description "Explain why you are approving the action"
-    end
-  end
+escalation "esc_update_connection" do
+  automatic contains($param_automatic_action, "Update Credentials")
+  label "Update cloud account"
+  description "Update selected cloud account connections"
   run "update_aws_connection", data, $param_rotation_period, $param_rotation_units
 end
 
+###############################################################################
+# Policy
+###############################################################################
+
+policy "pol_aws_key_update" do
+  validate_each $ds_aws_cloud_accounts do
+  # the ds_aws_cloud_accounts logic populates a needs rotation field which is used to decide if we need to rotate keys
+    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): AWS Cloud Credentials Updated"
+    export do
+      resource_level true
+      field "cloud_name" do
+        label "Cloud Name"
+      end
+      field "id" do
+        label "RightScale Cloud Account HREF"
+      end
+    end
+    check eq(val(item, "needs_rotation"), "false")
+	  escalate $esc_email
+    escalate $esc_update_connection
+  end
+end
+
+###############################################################################
+# Cloud Workflow
+###############################################################################
+
 define update_aws_connection($data, $param_rotation_period, $param_rotation_units) do
-  
+
   call generate_new_aws_keys() retrieve $new_access_key_id, $new_secret_access_key, $aws_user_name
-  
+
   # Build the cloud account update hash
   $cloud_account_params = {
-    creds: { 
+    creds: {
       aws_access_key_id : $new_access_key_id,
       aws_secret_access_key : $new_secret_access_key
     }
   }
-  
+
   sub on_error: retry do # This is to handle the possiblity of an update failing, in which case, just try again
     call log("AWS Key Rotation Policy: Updating cloud account connections.", "")
     foreach $item in $data do
-      @cloud_account = rs_cm.get(href: $item["cloud_account_href"])
+      @cloud_account = rs_cm.get(href: $item["id"])
       @cloud_account.update(cloud_account: $cloud_account_params)
     end
   end
-  
+
   # Now deactivate the old key that was being used.
   # The key is deactivated instead of deleted to allow for a potential rollback use-case.
   call deactivate_aws_key(cred("AWS_ACCESS_KEY_ID"))
-  
+
   # Now update the credentials in RightScale to reflect the new keys
   call update_cred("AWS_ACCESS_KEY_ID", $new_access_key_id)
   call update_cred("AWS_SECRET_ACCESS_KEY", $new_secret_access_key)
-  
+
   # Update account tag to indicate next time it should be updated
   call calculate_next_rotation_date($param_rotation_period, $param_rotation_units) retrieve $next_rotation_date
   call tag_account_next_rotation_date($next_rotation_date)
-  
+
   call log("AWS Key Rotation Policy: Completed AWS cloud account key updates.", "")
 end
 
@@ -221,10 +260,10 @@ end
 # Create a new set of keys
 # Returns the new access key and secret access key and aws user name
 define generate_new_aws_keys() return  $new_access_key_id, $new_secret_access_key, $aws_user_name do
-  call log("AWS Key Rotation Policy: Starting the process of generating a new set of keys.", "") 
-  
+  call log("AWS Key Rotation Policy: Starting the process of generating a new set of keys.", "")
+
   # This will only remove a key if needs to.
-  call remove_aws_key() 
+  call remove_aws_key()
 
   # Create a new key
   call create_new_aws_keys() retrieve $response
@@ -235,16 +274,16 @@ define generate_new_aws_keys() return  $new_access_key_id, $new_secret_access_ke
   call log("AWS Key Rotation Policy: Created new AWS access key: "+$new_access_key_id, "")
 end
 
-# Remove aws keys if we already have more than one key. 
+# Remove aws keys if we already have more than one key.
 define remove_aws_key() do
   # get list of current keys
   call get_existing_aws_keys() retrieve $existing_keys
-  
-  # If the existing keys comes back as an array (as opposed to an "object") then we already have keys 
+
+  # If the existing keys comes back as an array (as opposed to an "object") then we already have keys
   # and we need to get rid of one to make room for a new one.
   # Otherwise, we have room to create a new key so do nothing.
   if type($existing_keys) == "array"
-  
+
     $found_key = false
     $key_to_delete = {}
     $current_key = cred("AWS_ACCESS_KEY_ID")
@@ -255,7 +294,7 @@ define remove_aws_key() do
           $found_key = true
         end
       end
-      
+
       # Didn't find an inactive key to delete.
       # So look for a key that is not being used for the connection to RightScale.
       if logic_not($found_key)
@@ -269,7 +308,7 @@ define remove_aws_key() do
     end
     # Now delete the key
     call delete_aws_key($key_to_delete["AccessKeyId"])
-      
+
   end
 end
 
@@ -283,7 +322,7 @@ end
 #  },
 define get_existing_aws_keys() return $keys do
   $iam_api = "https://iam.amazonaws.com/?Version=2010-05-08&Action=ListAccessKeys"
-  $response = http_get(    
+  $response = http_get(
     url: $iam_api,
     "signature": { type: "aws" }
     )
@@ -293,7 +332,7 @@ end
 # Create a new set of AWS access keys
 define create_new_aws_keys() return $response do
   $iam_api = "https://iam.amazonaws.com/?Version=2010-05-08&Action=CreateAccessKey"
-  $response = http_get(    
+  $response = http_get(
     url: $iam_api,
     "signature": { type: "aws" }
     )
@@ -303,7 +342,7 @@ end
 define delete_aws_key($access_key_id) do
   call log("AWS Key Rotation Policy: Deleting the following key to make room for a new set of keys: "+$access_key_id, "")
   $iam_api = "https://iam.amazonaws.com/?Version=2010-05-08&Action=DeleteAccessKey&AccessKeyId="+$access_key_id
-  $response = http_get(    
+  $response = http_get(
     url: $iam_api,
     "signature": { type: "aws" }
     )
@@ -313,7 +352,7 @@ end
 define deactivate_aws_key($access_key_id) do
   call log("AWS Key Rotation Policy: Deactivating the following key: "+$access_key_id, "")
   $iam_api = "https://iam.amazonaws.com/?Version=2010-05-08&Status=Inactive&Action=UpdateAccessKey&AccessKeyId="+$access_key_id
-  $response = http_get(    
+  $response = http_get(
     url: $iam_api,
     "signature": { type: "aws" }
     )
@@ -324,7 +363,7 @@ define calculate_next_rotation_date($rotation_period, $param_rotation_units) ret
   $now_time = now()
   $now_time = strftime($now_time, "%s") # epoch time in seconds
   $now_time = to_n($now_time)
-  
+
   # Calculate the period multipler based on user-selected units
   if $param_rotation_units == "Hours"  # if units is hours then number of seconds in an hour
     $period_multiplier = 60 * 60
@@ -333,14 +372,14 @@ define calculate_next_rotation_date($rotation_period, $param_rotation_units) ret
   else # assume the unit is days
     $period_multiplier = 24 * 60 * 60
   end
-  $num_seconds_in_period = (to_n($rotation_period) * $period_multiplier) 
+  $num_seconds_in_period = (to_n($rotation_period) * $period_multiplier)
   $next_rotation_date = $now_time + $num_seconds_in_period
 end
 
 # Store the next rotation date as an account tag for future reference.
 define tag_account_next_rotation_date($next_rotation_date) do
   $tag = "rs:aws_next_key_rotation="+$next_rotation_date
-  rs_cm.tags.multi_add(resource_hrefs: [@@account.href], tags: [$tag]) 
+  rs_cm.tags.multi_add(resource_hrefs: [@@account.href], tags: [$tag])
 end
 
 

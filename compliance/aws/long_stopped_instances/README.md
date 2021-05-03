@@ -10,9 +10,14 @@ The policy leverages the AWS API to check all instances that have been stopped f
 
 ## Input Parameters
 
+- *Allowed Regions* - A list of allowed regions for an AWS account. Please enter the allowed regions code if SCP is enabled, see [Available Regions](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/using-regions-availability-zones.html#concepts-available-regions) in AWS; otherwise, the policy may fail on regions that are disabled via SCP. Leave blank to consider all the regions.
 - *Email addresses to notify* - Email addresses of the recipients you wish to notify when new incidents are created.
 - *Exclusion Tag* - List of tags that will exclude EC2 instances from being evaluated by this policy. Multiple tags are evaluated as an 'OR' condition. Tag keys or key/value pairs can be listed. Example: 'test,env=dev'.
 - *Stopped days* - Number of days an instance is stopped before it is added to the report.
+- *Automatic Actions* - When this value is set, this policy will automatically take the selected action(s).
+
+Please note that the "Automatic Actions" parameter contains a list of action(s) that can be performed on the resources. When it is selected, the policy will automatically execute the corresponding action on the data that failed the checks, post incident generation. Please leave it blank for *manual* action.
+For example if a user selects the "Terminate Instances" action while applying the policy, all the resources that didn't satisfy the policy condition will be terminated.
 
 ## Policy Actions
 
@@ -27,25 +32,13 @@ This policy uses [credentials](https://docs.rightscale.com/policies/users/guides
 
 For administrators [creating and managing credentials](https://docs.rightscale.com/policies/users/guides/credential_management.html) to use with this policy, the following information is needed:
 
-Provider tag value to match this policy: `aws`
+Provider tag value to match this policy: `aws` , `aws_sts`
 
 Required permissions in the provider:
 
 ```javascript
 {
-  "Version": "2016-11-15",
-  "Statement":[{
-  "Effect":"Allow",
-  "Action":["ec2: DescribeInstances"],
-    "Resource":"*"
-    }
-  ]
-}
-```
-
-```javascript
-{
-  "Version": "2010-08-01",
+  "Version": "2012-10-17",
   "Statement":[{
       "Effect":"Allow",
       "Action":["cloudwatch:GetMetricStatistics"],
@@ -55,8 +48,14 @@ Required permissions in the provider:
             "aws:SecureTransport":"true"
             }
          }
+      },
+      {
+        "Effect":"Allow",
+        "Action":["ec2:DescribeInstances",
+                    "ec2:DescribeRegions"],
+        "Resource":"*"
       }
-   ]
+  ]
 }
 ```
 

@@ -8,7 +8,7 @@ category "Cost"
 default_frequency "daily"
 tenancy "single"
 info(
-  version: "1.4",
+  version: "1.7",
   provider: "Flexera Optima",
   service: "",
   policy_set: ""
@@ -206,7 +206,7 @@ script "js_format_costs", type: "javascript" do
     _.each(new_bc_cost_objs, function(new_bc_cost_obj){
       var billing_center = _.reject(ds_billing_centers, function(bc){ return bc.id != new_bc_cost_obj.id })[0];
       if (new_bc_cost_obj.vendor == "AWS" ) {
-        var account = _.reject(ds_cloud_vendor_accounts, function(ds_cloud_vendor_account){ return ds_cloud_vendor_account.id != new_bc_cost_obj.vendor_account_name });
+        var account = _.reject(ds_cloud_vendor_accounts, function(ds_cloud_vendor_account){ return ds_cloud_vendor_account.name != new_bc_cost_obj.vendor_account_name });
         var vendor_account_name = account[0].name
       } else {
         var vendor_account_name = new_bc_cost_obj.vendor_account_name
@@ -279,24 +279,34 @@ EOS
 end
 
 escalation "esc_budget_alert" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
   email $param_email
 end
 
 policy "policy_budget_alert" do
   validate $ds_format_costs do
     summary_template "{{ rs_org_name }} (Org ID: {{ rs_org_id }}): Low Account Usage Detected Below {{parameters.param_threshold}} - Total Savings: {{with(index data 0)}}{{.total_sum}}{{end}}"
-    detail_template <<-EOS
-# Low Account Usage Detected - Total Savings: {{with(index data 0)}}{{.total_sum}}{{end}}
-
-| Billing Center Name | Vendor | Account Name | Savings |
-| ------------------- | ------ | ------------ | ------- |
-{{ range data -}}
-| {{.name}} | {{.vendor}} | {{.vendor_account_name}} | {{.run_rate}} |
-{{ end -}}
-
-###### Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }}) within Org: {{ rs_org_name }} (Org ID: {{ rs_org_id }})
-EOS
     escalate $esc_budget_alert
     check eq(size(data), 0)
+    export do
+      resource_level true
+      field "name" do
+        label "Billing Center Name"
+      end
+      field "vendor" do
+        label "Vendor"
+      end
+      field "vendor_account_name" do
+        label "Account Name"
+      end
+      field "run_rate" do
+        label "Savings"
+      end
+      field "id" do
+        label "Id"
+      end
+    end
   end
 end

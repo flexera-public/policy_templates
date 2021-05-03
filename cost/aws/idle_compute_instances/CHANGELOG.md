@@ -1,5 +1,38 @@
 # Changelog
 
+## v2.10
+
+- Added a new input parameter to enter regions in order to support SCP (Service Control Policy) and CIS Standards
+
+## v2.9
+
+- Modified escalation label and description for consistency
+
+## v2.8
+
+- Added AWS Account ID to resource table
+
+## v2.7
+
+- formatted the incident detail message to display if no savings data available
+
+## v2.6
+
+- Include Total Estimated Monthly Savings in the incident message details
+- updated policy to handle and show the error if the user is not having permission for fetching cost data from Optima
+
+## v2.5
+
+- Added EC2 DescribeRegions API action to get only Service Control Policy enabled Regions
+
+## v2.4
+
+- Updated escalation block
+
+## v2.3
+
+- add Estimated Monthly Savings
+
 ## v2.2
 
 - adding incident resource table

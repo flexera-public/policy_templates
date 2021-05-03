@@ -8,7 +8,7 @@ severity "low"
 default_frequency "daily"
 tenancy "single"
 info(
-  version: "1.2",
+  version: "1.4",
   provider: "Flexera Cloud Management",
   service: "",
   policy_set: ""
@@ -58,6 +58,13 @@ parameter "param_exclude_tags" do
   type "list"
 end
 
+parameter "param_automatic_action" do
+  type "list"
+  label "Automatic Actions"
+  description "When this value is set, this policy will automatically take the selected action(s)"
+  allowed_values ["Update Instances"]
+end
+
 ###############################################################################
 # Authentication
 ###############################################################################
@@ -90,7 +97,7 @@ datasource "ds_instances_16" do
       field "name", jmes_path(col_item, "name")
       field "description", jmes_path(col_item, "description")
       field "legacy_id", to_n(jmes_path(col_item, "legacy_id"))
-      field "resource_uid", jmes_path(col_item, "resource_uid")
+      field "id", jmes_path(col_item, "resource_uid")
       field "instance_type", jmes_path(col_item, "links.instance_type.name")
       field "region", jmes_path(col_item, "links.cloud.region")
       field "cloud_name", val(iter_item, "display_name")
@@ -152,21 +159,17 @@ end
 ###############################################################################
 # Escalations
 ###############################################################################
-escalation "email" do
+escalation "report_superseded_instance_email" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
   email $param_email
 end
 
 escalation "esc_resize_instances" do
-  request_approval  do
-    label "Escalation approval"
-    description "Approve resize action"
-    parameter "approval_reason" do
-      type "string"
-      label "Reason for approval"
-      description "Explain why you are approving the action"
-    end
-  end
-
+  automatic contains($param_automatic_action, "Update Instances")
+  label "Update Instances"
+  description "Update selected instances to new instance type"
   run "resize_instances", data, $param_new_instance_type
 end
 
@@ -181,19 +184,33 @@ end
 policy "policy_superseded_instance" do
   validate $ds_combined_instance_data do
     summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} Instances will be resized from {{ parameters.param_old_instance_type }} to {{ parameters.param_new_instance_type }}"
-    detail_template <<-EOS
-# Superseded Instances
-| Resource UID | Name | Cloud | Old Instance Type | New Instance Type |
-| ------------ | ---- | ----- | ----------------- | ----------------- |
-{{ range data -}}
-| {{ .resource_uid }} | {{ .name }} | {{ .cloud_name }} | {{ parameters.param_old_instance_type }} | {{ parameters.param_new_instance_type }} |
-{{ end -}}
-___
-###### Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }}) within Org: {{ rs_org_name }} (Org ID: {{ rs_org_id }})
-EOS
     check eq(size(data), 0)
-	escalate $email
+	  escalate $report_superseded_instance_email
     escalate $esc_resize_instances
+    export do
+      resource_level true
+      field "cloud_name" do
+        label "Cloud"
+      end
+      field "name" do
+        label "Name"
+      end
+      field "param_old_instance_type" do
+        label "Old Instance Type"
+      end
+      field "param_new_instance_type" do
+        label "New Instance Type"
+      end
+      field "id" do
+        label "Resource UID"
+      end
+	  field "locked" do
+	    label "Locked"
+	  end
+	  field "href" do
+	    label "Href"
+	  end
+    end
   end
 end
 
@@ -214,7 +231,7 @@ define resize_instances($data,$param_new_instance_type) do
         call sys_log('Instance Resizing',$item['name'])
         call stop_instance(@instance, @cloud, $item) retrieve @next_instance
 
-        @next_instance = first(@cloud.instances(filter: ['resource_uid=='+$item['resource_uid']]))
+        @next_instance = first(@cloud.instances(filter: ['resource_uid=='+$item['id']]))
         @new_instance_type = first(@cloud.instance_types(filter: ["name=="+$param_new_instance_type]))
         @next_instance.update(instance: { instance_type_href: @new_instance_type.href })
 
@@ -230,7 +247,7 @@ define rollback($item, @instance, @cloud) do
   sub task_label:"Rolling Back to Original Instance Type" do
     ## Logic to revert the instance back to its original instance type
     call sys_log('Instance Rollingback', $item['name'])
-    @instance = first(@cloud.instances(filter: ['resource_uid=='+$item['resource_uid'] ]))
+    @instance = first(@cloud.instances(filter: ['resource_uid=='+$item['id'] ]))
 
     sub task_label:"Setting Error Tag" do
       $msg = split($_error["message"], "\n")
@@ -259,7 +276,7 @@ define rollback($item, @instance, @cloud) do
       call sys_log('Instance Resizing', $item['name'])
       call stop_instance(@instance, @cloud, $item) retrieve @instance
 
-      @instance = first(@cloud.instances(filter: ['resource_uid=='+$item['resource_uid']]))
+      @instance = first(@cloud.instances(filter: ['resource_uid=='+$item['id']]))
       @new_instance_type = first(@cloud.instance_types(filter: ["name=="+$item["instance_type"]]))
       @instance.update(instance: { instance_type_href: @new_instance_type.href })
 
@@ -279,7 +296,7 @@ define stop_instance(@instance, @cloud, $item) return @instance do
   while $state !~ $wake_condition do
     sub on_error: retry, timeout: 20m, on_timeout: skip do
       # find the resource by resource_uid because the href may have changed after resize.
-      @instance = first(@cloud.instances(filter: ['resource_uid=='+$item['resource_uid']]))
+      @instance = first(@cloud.instances(filter: ['resource_uid=='+$item['id']]))
       call sys_log('Waiting for instance stop state: ' + @instance.name,to_s(to_object(@instance)))
       $state = @instance.state
       call sys_log('Instance stop state',$state)
@@ -298,7 +315,7 @@ define start_instance(@instance, @cloud, $item) return @instance do
   while $state !~ $wake_condition do
     sub on_error: retry, timeout: 20m, on_timeout: skip do
       # find the resource by resource_uid because the href may have changed after resize.
-      @instance = first(@cloud.instances(filter: ['resource_uid=='+$item['resource_uid']]))
+      @instance = first(@cloud.instances(filter: ['resource_uid=='+$item['id']]))
       call sys_log('waiting for instance start state', to_s(to_object(@instance)))
       $state = @instance.state
       call sys_log('Instance start state', $state)

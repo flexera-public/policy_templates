@@ -6,17 +6,15 @@ long_description ""
 severity "medium"
 category "Cost"
 info(
-  version: "2.0",
+  version: "2.2",
   provider: "Azure",
   service: "Compute",
   policy_set: ""
 )
 
-# Need to read the Azure EA key from credentials
-permission "perm_read_creds" do
-  actions   "rs_cm.show_sensitive","rs_cm.index_sensitive"
-  resources "rs_cm.credentials"
-end
+#############
+# Parameters
+#############
 
 # Could maybe get this from the EA key, but for now just ask for it
 parameter "param_enrollment" do
@@ -28,6 +26,8 @@ parameter "param_utilization" do
   category "RI"
   label "Show RI's with utilization below this value"
   type "number"
+  min_value 1
+  max_value 100
 end
 
 parameter "param_email" do
@@ -35,12 +35,20 @@ parameter "param_email" do
   label "Email addresses of the recipients you wish to notify"
 end
 
+#################
+# Authentication
+#################
+
 credentials "azure_ea_auth" do
   schemes "api_key"
   label "Azure"
   description "Select the Azure EA Credential from the list."
   tags "provider=azure_ea"
 end
+
+#############
+# Pagination
+#############
 
 pagination "azure_pagination" do
   get_page_marker do
@@ -51,7 +59,41 @@ pagination "azure_pagination" do
   end
 end
 
-# Build the API request object dynamically because we need to 
+##############
+# Datasources
+##############
+
+# Use the request object above to make the API call and get the data
+datasource "scripted" do
+  request do
+    run_script $azure_ri_request, $param_enrollment
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "[*]") do
+      field "reservationId", jmes_path(col_item,"reservationId")
+      field "skuName", jmes_path(col_item,"skuName")
+      field "minUtilizationPercentage", jmes_path(col_item,"minUtilizationPercentage")
+      field "avgUtilizationPercentage", jmes_path(col_item,"avgUtilizationPercentage")
+      field "maxUtilizationPercentage", jmes_path(col_item,"maxUtilizationPercentage")
+      field "reservedHours", jmes_path(col_item,"reservedHours")
+      field "usedHours", jmes_path(col_item,"usedHours")
+    end
+  end
+end
+
+# The Azure API returns a record per RI per day. This datasource uses the script
+# to group the data to be per-RI only, and average/sum the numbers across the
+# individual records
+datasource "grouped_utilizations" do
+  run_script $group_results,$scripted
+end
+
+##########
+# Scripts
+##########
+
+# Build the API request object dynamically because we need to
 #  calculate the startdate and enddate based on today
 # This is our API: https://docs.microsoft.com/en-us/rest/api/billing/enterprise/billing-enterprise-api-reserved-instance-usage#request-for--reserved-instance-usage-summary
 script "azure_ri_request", type: "javascript" do
@@ -60,7 +102,7 @@ script "azure_ri_request", type: "javascript" do
   code <<-EOS
 
     // Azure API allows you to specify which dates to retrieve utilization for. In order to keep with
-    // parity on how Optima does this for AWS RIs, and after consultation with COS team, the decision 
+    // parity on how Optima does this for AWS RIs, and after consultation with COS team, the decision
     // was made to use the last week's worth of data. We start from today-2 for a couple of reasons:
     //  1 - that's what it is in Optima for AWS
     //  2 - it's not clear how up-to-date the Azure data is, so specifying "today" might not work great
@@ -83,34 +125,8 @@ script "azure_ri_request", type: "javascript" do
       headers: {
         "User-Agent": "RS Policies"
       }
-    } 
+    }
   EOS
-end
-
-# Use the request object above to make the API call and get the data
-datasource "scripted" do
-  request do
-    run_script $azure_ri_request, $param_enrollment
-  end
-  result do
-    encoding "json"
-    collect jmes_path(response, "[*]") do
-      field "reservationId", jmes_path(col_item,"reservationId")
-      field "skuName", jmes_path(col_item,"skuName")
-      field "minUtilizationPercentage", jmes_path(col_item,"minUtilizationPercentage")
-      field "avgUtilizationPercentage", jmes_path(col_item,"avgUtilizationPercentage")
-      field "maxUtilizationPercentage", jmes_path(col_item,"maxUtilizationPercentage")
-      field "reservedHours", jmes_path(col_item,"reservedHours")
-      field "usedHours", jmes_path(col_item,"usedHours")
-    end
-  end
-end
-
-# The Azure API returns a record per RI per day. This datasource uses the script
-# to group the data to be per-RI only, and average/sum the numbers across the 
-# individual records
-datasource "grouped_utilizations" do
-  run_script $group_results,$scripted
 end
 
 # See note above - this groups the data from the Azure API into a per-RI
@@ -120,21 +136,21 @@ script "group_results", type: "javascript" do
   result "groupings"
   code <<-EOS
     var groupings = _.map(_.groupBy(result, 'reservationId'), function(v, k){
-      
+
       // Average the "average" utilization
       avgUtil = _.reduce(v, function(memo, num) {
             return memo + num.avgUtilizationPercentage;
         }, 0) / (v.length === 0 ? 1 : v.length);
 
-      // Sum the reserved hours  
+      // Sum the reserved hours
       sumReserved = _.reduce(v, function(memo, num) {
             return memo + num.reservedHours;
-        }, 0); 
+        }, 0);
 
       // Sum the used hours
       sumUsed = _.reduce(v, function(memo, num) {
             return memo + num.usedHours;
-        }, 0);            
+        }, 0);
 
       return {
         id: k,
@@ -144,25 +160,49 @@ script "group_results", type: "javascript" do
         used: sumUsed
       }
     })
+    groupings=_.sortBy(groupings, 'id');
+    groupings=_.sortBy(groupings, 'sku');
+    groupings=_.sortBy(groupings, 'reserved');
   EOS
 end
+
+##########
+# Policy
+##########
 
 policy "azure_superseded_instances_policy" do
   validate_each $grouped_utilizations do
     summary_template "(Enrollment ID: {{parameters.param_enrollment}}): {{ len data }} Underutilized Azure Reserved Instances"
-    detail_template <<-EOS
-# Azure RIs that are under-utilized
-| RI ID | SKU Name | Reserved Hours | Used Hours | Avg Util Pct | 
-| ------------- | ------------- | ------ | --- | --- |
-{{ range data -}}
-| {{.id}} | {{.sku}} | {{.reserved}} | {{.used}} | {{.util}} |
-{{ end -}}
-EOS
     escalate $email
-    check gt(to_n(val(item,"util")),$param_utilization)
+    check logic_not(lt(to_n(val(item,"util")),$param_utilization))
+    export do
+      resource_level true
+      field "id" do
+        label "RI ID"
+      end
+      field "sku" do
+        label "SKU Name"
+      end
+      field "reserved" do
+        label "Reserved Hours"
+      end
+      field "used" do
+        label "Used Hours"
+      end
+      field "util" do
+        label "Avg Util Pct"
+      end
+    end
   end
 end
 
+##############
+# Escalations
+##############
+
 escalation "email" do
-   email $param_email
+  automatic true
+  label "Send Email"
+  description "Sends incident email"
+  email $param_email
 end

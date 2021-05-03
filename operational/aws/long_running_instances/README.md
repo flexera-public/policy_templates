@@ -13,10 +13,14 @@ This policy checks for running instances that have been running longer than the 
 This policy template has the following Input parameters which require value before
 the policy can be applied.
 
+- *Allowed Regions* - A list of allowed regions for an AWS account. Please enter the allowed regions code if SCP is enabled, see [Available Regions](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/using-regions-availability-zones.html#concepts-available-regions) in AWS; otherwise, the policy may fail on regions that are disabled via SCP. Leave blank to consider all the regions.
 - *Email notify list* - Email addresses of the recipients you wish to notify.
 - *Days Old* - Number of days to be running before included in list.
-- *Action to Take* - Either Stop or Terminate the instance
 - *Exclusion Tag Key:Value* - Cloud native tag key to ignore instances. Format: Key:Value
+- *Automatic Actions* - When this value is set, this policy will automatically take the selected action(s).
+
+Please note that the "Automatic Actions" parameter contains a list of action(s) that can be performed on the resources. When it is selected, the policy will automatically execute the corresponding action on the data that failed the checks, post incident generation. Please leave it blank for *manual* action.
+For example if a user selects the "Stop Instances" action while applying the policy, all the instances that didn't satisfy the policy condition will be stopped.
 
 ## Policy Actions
 
@@ -42,12 +46,11 @@ for connecting to the cloud -- in order to apply this policy you must have a
 For administrators [creating and managing credentials](https://docs.rightscale.com/policies/users/guides/credential_management.html)
 to use with this policy, the following information is needed:
 
-Provider tag value to match this policy: `aws`
+Provider tag value to match this policy: `aws` , `aws_sts`
 
 Required permissions in the provider:
 
 ```javascript
-
 {
     "Version": "2012-10-17",
     "Statement": [
@@ -62,12 +65,12 @@ Required permissions in the provider:
         },
         {
             "Effect": "Allow",
-            "Action": "ec2:DescribeInstances",
+            "Action": ["ec2:DescribeInstances",
+                        "ec2:DescribeRegions"]
             "Resource": "*"
         }
     ]
 }
-
 ```
 
 ## Supported Clouds

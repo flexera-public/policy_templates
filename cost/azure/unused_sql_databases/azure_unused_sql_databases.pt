@@ -6,7 +6,7 @@ long_description ""
 severity "low"
 category "Cost"
 info(
-  version: "2.1",
+  version: "2.5",
   provider: "Azure",
   service: "SQL",
   policy_set: "Unused Database Services"
@@ -27,6 +27,13 @@ parameter "param_exclusion_tag_key" do
   category "User Inputs"
   label "Exclusion Tag Key"
   description "Azure-native SQL Database tag key to ignore databases. Only supply the tag key. The policy assumes that the tag value is irrelevant."
+end
+
+parameter "param_automatic_action" do
+  type "list"
+  label "Automatic Actions"
+  description "When this value is set, this policy will automatically take the selected action(s)"
+  allowed_values ["Terminate Instances"]
 end
 
 ###############################################################################
@@ -97,7 +104,7 @@ datasource "ds_azure_sql_databases" do
         field "kind", jmes_path(col_item,"kind")
         field "sku" , jmes_path(col_item,"sku")
         field "tags", jmes_path(col_item,"tags")
-		field "subscriptionId",val(iter_item,"subscriptionId")
+        field "subscriptionId",val(iter_item,"subscriptionId")
         field "subscriptionName",val(iter_item,"displayName")
     end
   end
@@ -119,8 +126,9 @@ datasource "ds_azure_sql_database_metrics" do
         field "sku" , val(iter_item,"sku")
         field "unit", jmes_path(col_item,"unit")
         field "timeseries", jmes_path(col_item,"timeseries")
-		field "subscriptionId",val(iter_item,"subscriptionId")
+        field "subscriptionId",val(iter_item,"subscriptionId")
         field "subscriptionName",val(iter_item,"subscriptionName")
+        field "tags", val(iter_item,"tags")
     end
   end
 end
@@ -193,24 +201,33 @@ script "js_merged_metrics", type: "javascript" do
         }
         //now find the metrics for the devices
         var objMetric = databases_metrics[i];
-		var total = 0;
+        var total = 0;
         if (typeof objMetric == "object" && typeof objMetric.timeseries[0].data == "object"){
           var ts_data =  objMetric.timeseries[0].data;
           for (x=0; x < ts_data.length; x++) {
             total += ts_data[x].count;
           }
           if(total == 0){
+            if(databases_metrics[i].sku === null || typeof databases_metrics[i].sku === "undefined"){
+              var sku={
+                "capacity": "Not available",
+                "name": "Not available",
+                "tier": "Not available"
+              }
+            } else {
+              var sku=databases_metrics[i].sku;
+            }
             result.push({
               id: databases_metrics[i].id,
-		      location: databases_metrics[i].location,
+              location: databases_metrics[i].location,
               name: databases_metrics[i].name,
               resource_group: resource_group,
               kind: databases_metrics[i].kind,
               type: databases_metrics[i].type,
-              sku: databases_metrics[i].sku,
+              sku: sku,
               unit: databases_metrics[i].unit,
-			  subscriptionName: databases_metrics[i].subscriptionName,
-			  subscriptionId: databases_metrics[i].subscriptionId
+              subscriptionName: databases_metrics[i].subscriptionName,
+              subscriptionId: databases_metrics[i].subscriptionId
             })
           }
         }
@@ -228,21 +245,45 @@ end
 policy "policy_azure_db_utilization" do
   validate $ds_merged_metrics do
     summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} Azure Unused SQL Databases"
-    detail_template <<-EOS
-# Azure Unused SQL Databases
-
-| Subscription Name | Location | Name | Resource Group | Kind | Type | SKU - Name | SKU - Tier | SKU - Capacity |
-| ----------------- | -------| ---- | -------------- | ---- | ---- | -----------| ---------- | -------------- |
-{{ range data -}}
-| {{.subscriptionName}} | {{.location}} | {{.name}} | {{.resource_group}} | {{.kind}} | {{.type}} | {{.sku.name}} | {{.sku.tier}} | {{.sku.capacity}} |
-{{ end -}}
-
-___
-###### Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }}) within Org: {{ rs_org_name }} (Org ID: {{ rs_org_id }})
-EOS
     escalate $esc_email_report
     escalate $esc_delete_unused_sql_databases_approval
     check eq(size(data), 0)
+    export do
+      resource_level true
+      field "subscriptionName" do
+        label "Subscription Name"
+      end
+      field "location" do
+        label "Location"
+      end
+      field "name" do
+        label "Name"
+      end
+      field "resource_group" do
+        label "Resource Group"
+      end
+      field "kind" do
+        label "Kind"
+      end
+      field "type" do
+        label "Type"
+      end
+      field "skuName" do
+        label "SKU - Name"
+        path "sku.name"
+      end
+      field "skuTier" do
+        label "SKU - Tier"
+        path "sku.tier"
+      end
+      field "skuCapacity" do
+        label "SKU - Capacity"
+        path "sku.capacity"
+      end
+      field "id" do
+        label "Id"
+      end
+    end
   end
 end
 
@@ -251,19 +292,16 @@ end
 ###############################################################################
 
 escalation "esc_email_report" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
   email $param_email
 end
 
 escalation "esc_delete_unused_sql_databases_approval" do
-  request_approval do
-    label "Approve resource Delete"
-    description "Approve escalation to run RightScale Cloud Workflow to delete unused SQL databases."
-    parameter "approval_resion" do
-      type "string"
-      label "Reason for Approval"
-      description "Explain why are you approving the action."
-    end
-  end
+  automatic contains($param_automatic_action, "Terminate Instances")
+  label "Delete SQL databases"
+  description "Deleted unused SQL Databases"
   run "delete_unused_sql_databases", data
 end
 
@@ -279,7 +317,7 @@ define delete_unused_sql_databases($data) return $all_responses do
       $response = http_request(
         verb: "delete",
         host: "management.azure.com",
-		auth: $$azure_auth,
+        auth: $$azure_auth,
         https: true,
         href: $item["id"],
         query_strings: {

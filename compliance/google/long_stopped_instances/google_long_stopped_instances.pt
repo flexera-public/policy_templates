@@ -6,7 +6,7 @@ long_description ""
 category "Compliance"
 severity "low"
 info(
-      version: "2.2",
+      version: "2.4",
       provider: "GCE",
       service: "Compute",
       policy_set: "Long Stopped Instances"
@@ -30,6 +30,13 @@ parameter "param_stoped_days" do
   type "number"
   label "Stopped days"
   description "Number of days an instance is stopped before it is added to the report"
+end
+
+parameter "param_automatic_action" do
+  type "list"
+  label "Automatic Actions"
+  description "When this value is set, this policy will automatically take the selected action(s)"
+  allowed_values ["Terminate Instances"]
 end
 
 ###############################################################################
@@ -223,19 +230,31 @@ end
 policy "pol_utilization" do
   validate_each $ds_report do
     summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} google cloud instances in Stopped State for Over {{parameters.param_stoped_days}} Day(s)"
-    detail_template <<-EOS
-# Google Instance Out of Compliance
-| Project ID | Region | Instance ID | Name | Status |  Tags |
-|:----------:| ------:|:-----------:|-----:|-------:|------:|
-{{ range data -}}
-| {{.projectId}} | {{.zone}} | {{.instance_id}} | {{.name}} | {{.status}} | {{.tagKeyValue}}
-{{ end -}}
-___
-###### Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }}) within Org: {{ rs_org_name }} (Org ID: {{ rs_org_id }})
-EOS
     check eq(0,1)
     escalate $esc_email
     escalate $esc_delete_instances
+    export do
+      resource_level true
+      field "projectId" do
+        label "Project ID"
+      end
+      field "zone" do
+        label "Zone"
+      end
+      field "id" do
+        label "Instance ID"
+        path "instance_id"
+      end
+      field "name" do
+        label "Name"
+      end
+      field "status" do
+        label "Status"
+      end
+      field "tagKeyValue" do
+        label "Tags"
+      end
+    end
   end
 end
 
@@ -245,19 +264,16 @@ end
 ###############################################################################
 
 escalation "esc_email" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
   email $param_email
 end
 
 escalation "esc_delete_instances" do
-   request_approval  do
-     label "Approve Instances Deletion"
-     description "Approve escalation to terminate the instance(s)"
-     parameter "approval_reason" do
-     type "string"
-     label "Reason for Approval"
-     description "Explain why you are approving the action"
-     end
-   end
+  automatic contains($param_automatic_action, "Terminate Instances")
+  label "Delete Instances"
+  description "Terminate the stopped instances"
   run "delete_instances", data
 end
 

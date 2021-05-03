@@ -12,6 +12,7 @@ The policy leverages the AWS elasticloadbalancing API to examine listener detail
 
 ## Input Parameters
 
+- *Allowed Regions* - A list of allowed regions for an AWS account. Please enter the allowed regions code if SCP is enabled, see [Available Regions](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/using-regions-availability-zones.html#concepts-available-regions) in AWS; otherwise, the policy may fail on regions that are disabled via SCP. Leave blank to consider all the regions.
 - *Email addresses of the recipients you wish to notify* - A list of email addresses to notify
 - *Ignore tags* - ALB/NLB with any of these tags will be ignored
 
@@ -27,19 +28,24 @@ This policy uses [credentials](https://docs.rightscale.com/policies/users/guides
 
 For administrators [creating and managing credentials](https://docs.rightscale.com/policies/users/guides/credential_management.html) to use with this policy, the following information is needed:
 
-Provider tag value to match this policy: `aws`
+Provider tag value to match this policy: `aws` , `aws_sts`
 
 Required permissions in the provider:
 
 ```javascript
 {
-    "Version": "2015-12-01",
+    "Version": "2012-10-17",
     "Statement":[{
     "Effect":"Allow",
     "Action":["elasticloadbalancing:DescribeLoadBalancers",
               "elasticloadbalancing:DescribeTags",
               "elasticloadbalancing:DescribeListeners"],
     "Resource":"*"
+    },
+    {
+      "Effect":"Allow",
+      "Action":["ec2:DescribeRegions"],
+      "Resource":"*"
     }
   ]
 }

@@ -6,7 +6,7 @@ long_description ""
 severity "medium"
 category "Cost"
 info(
-  version: "1.14",
+  version: "1.16",
   provider: "Flexera Cloud Management",
   service: "",
   policy_set: "Inefficient Instance Usage"
@@ -79,7 +79,12 @@ parameter "param_email" do
   description "Email addresses of the recipients you wish to notify"
 end
 
-
+parameter "param_automatic_action" do
+  type "list"
+  label "Automatic Actions"
+  description "When this value is set, this policy will automatically take the selected action(s)"
+  allowed_values ["Re-Size Instances"]
+end
 
 auth "auth_rs", type: "rightscale"
 
@@ -371,19 +376,16 @@ resolution "report_downsize_instances_resolution" do
 end
 
 escalation "report_downsize_instances" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
   email $param_email
 end
 
 escalation "downsize_instances" do
-request_approval  do
-  label "Escalation approval"
-  description "Approve rightsize action"
-  parameter "approval_reason" do
-    type "string"
-    label "Reason for approval"
-    description "Explain why you are approving the action"
-  end
-end
+  automatic contains($param_automatic_action, "Re-Size Instances")
+  label "Resize Instance"
+  description "Resized selected instance"
   run "downsize_instances", data, $param_cooldown_days
 end
 
@@ -421,16 +423,6 @@ end
 policy "policy_rightsize" do
   validate_each $ds_instances_with_calculated_metrics do
     summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} Instances that can be rightsized"
-    detail_template <<-EOS
-# {{ len data }} Instances can be rightsized
-
-| Cloud Type | Instance Name | Resource UID | Average Memory | Free Average Memory | Total Average Memory | Max Free Memory | Max Total Memory | Max CPU Idle | Average CPU Idle | Current Instance Size | New Instance Size |
-| ---------- | ------------- | ------------- | ------------ | -------------- | ------------------- | -------------------- | --------------- | ---------------- | ------------ | ---------------- | --------------------- | ----------------- |
-{{ range data -}}
-  | {{.cloud_type}} |{{.name}} | {{.resource_uid}} | {{.average_mem_percent}}% | {{.free_avg }}MB | {{.total_avg }}MB | {{.max_free_memory }}MB | {{.max_total_memory }}MB | {{.max_cpu_idle}}% | {{.average_cpu_idle}}% | {{.instance_type}} | {{.next_instance_size}} |
-{{ end -}}
-
-EOS
     escalate $report_downsize_instances
     escalate $downsize_instances
     resolve $report_downsize_instances_resolution
@@ -438,5 +430,48 @@ EOS
     check logic_and(eq($param_max_free_memory_percent, -1), lt(to_n(val(item,"max_free_memory_avg")),$param_max_free_memory_percent))
     check logic_and(eq($param_avg_cpu_idle, -1), lt(to_n(val(item,"average_cpu_idle")),$param_avg_cpu_idle))
     check logic_and(eq($param_max_cpu_idle, -1), lt(to_n(val(item,"max_cpu_idle")),$param_max_cpu_idle))
+    export do
+      resource_level true
+      field "cloud_type" do
+        label "Cloud Type"
+      end
+      field "name" do
+        label "Instance Name"
+      end
+      field "id" do
+        label "Resource UID"
+        path "resource_uid"
+      end
+      field "average_mem_percent" do
+        label "Average Memory"
+      end
+      field "free_avg" do
+        label "Free Average Memory"
+      end
+      field "total_avg" do
+        label "Total Average Memory"
+      end
+      field "max_free_memory" do
+        label "Max Free Memory"
+      end
+      field "max_total_memory" do
+        label "Max Total Memory"
+      end
+      field "max_cpu_idle" do
+        label "Max CPU Idle"
+      end
+      field "average_cpu_idle" do
+        label "Average CPU Idle"
+      end
+      field "instance_type" do
+        label "Current Instance Zize"
+      end
+      field "next_instance_size" do
+        label "New Instance Size"
+      end
+      field "href" do
+        label "Href"
+      end
+    end
   end
 end

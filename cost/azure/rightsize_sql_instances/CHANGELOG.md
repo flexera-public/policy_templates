@@ -1,5 +1,18 @@
 # Changelog
 
+## v2.5
+
+- Ignored Elastic pool databases getting listed in incident.
+- Display Recommendation as Change tier when SQL database can not downsize because it's already at it's min size or can not upsize because it's already at it's max
+
+## v2.4
+
+- Removed recommendation capacity for minimun capacity value.
+
+## v2.3
+
+- Added Resource table
+
 ## v2.2
 
 - Skip resources that do not return a SKU value

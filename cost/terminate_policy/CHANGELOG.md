@@ -1,5 +1,13 @@
 # Changelog
 
+## v1.6
+
+- Modified escalation label and description for consistency
+
+## v1.5
+
+- remove approval block and adding incident resource table
+
 ## v1.4
 
 - Updated the metadata

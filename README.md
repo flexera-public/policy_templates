@@ -41,6 +41,8 @@ Please contact sales@flexera.com to learn more.
 - [AWS Reserved Instances Report by Billing Center](./cost/aws/reserved_instances/report_by_bc)
 - [AWS Reserved Instance Recommendations](./cost/aws/reserved_instances/recommendations)
 - [AWS Savings Plan Recommendations](./cost/aws/savings_plan/recommendations)
+- [AWS Schedule Instance](./cost/aws/schedule_instance/)
+- [AWS Unused IP Addresses](./cost/aws/unused_ip_addresses)
 
 ##### Database
 
@@ -65,11 +67,16 @@ Please contact sales@flexera.com to learn more.
 ##### Compute
 
 - [Azure Hybrid Use Benefit](./cost/azure/hybrid_use_benefit/)
+- [Azure Hybrid Use Benefit for Linux](./cost/azure/hybrid_use_benefit_linux/)
+- [Azure Hybrid Use Benefit for SQL](./cost/azure/hybrid_use_benefit_sql/)
 - [Azure Idle Compute Instances](./cost/azure/idle_compute_instances/)
-- [Azure Inefficient Instance Utilization using Log Analytics](./cost/azure/instances_log_analitics_utilization/)
+- [Azure Inefficient Instance Utilization using Log Analytics](./cost/azure/instances_log_analytics_utilization/)
 - [Azure Expiring Reserved Instances](./cost/azure/reserved_instances/expiration)
 - [Azure Reserved Instance Utilization](./cost/azure/reserved_instances/utilization/)
 - [Azure Reserved Instance Recommendations](./cost/azure/reserved_instances/recommendations)
+- [Azure Unused IP Addresses](./cost/azure/unused_ip_addresses)
+- [Azure Schedule Instance](./cost/azure/schedule_instance/)
+- [Azure MCA Reserved Instance Recommendations](./cost/azure/reserved_instances/mca_recommendations)
 
 ##### Database
 
@@ -90,6 +97,7 @@ Please contact sales@flexera.com to learn more.
 - [Google Committed Use Discount (CUD)](./cost/google/cud_report/)
 - [Google Idle Compute Instances](./cost/google/idle_compute_instances/)
 - [Google Expiring Committed Use Discount (CUD)](./cost/google/cud_expiration/)
+- [Google Schedule Instance](./cost/google/schedule_instance/)
 
 ##### Database
 
@@ -155,30 +163,32 @@ Please contact sales@flexera.com to learn more.
 
 - [AWS Disallowed Regions](./compliance/aws/disallowed_regions/)
 - [AWS Unused ECS Clusters](./compliance/aws/ecs_unused/)
-- [AWS EC2 Instances not running FlexNet Inventory Agent - Cloud](./compliance/aws/instances_without_fnm_agent/)
-- [AWS EC2 Instances not running FlexNet Inventory Agent - On Premise](./compliance/aws/instances_without_fnm_agent_on_premise/)
+- [AWS EC2 Instances not running FlexNet Inventory Agent](./compliance/aws/instances_without_fnm_agent/)
 - [AWS Long-stopped Instances](./compliance/aws/long_stopped_instances/)
+- [AWS Untagged Resources](./compliance/aws/untagged_resources/)
 - [AWS Service Control Policy Audit](./compliance/aws/scp_audit/)
+- [AWS IAM Role Audit](./compliance/aws/iam_role_audit/)
 
 #### Azure
 
 - [Azure AHUB Utilization with Manual Entry](./compliance/azure/ahub_manual/)
 - [Azure Disallowed Regions](./compliance/azure/azure_disallowed_regions)
-- [Azure Instances not running FlexNet Inventory Agent - Cloud](./compliance/azure/instances_without_fnm_agent/)
-- [Azure Instances not running FlexNet Inventory Agent - On Premise](./compliance/azure/instances_without_fnm_agent_on_premise/)
+- [Azure Instances not running FlexNet Inventory Agent](./compliance/azure/instances_without_fnm_agent/)
 - [Azure Long Stopped Instances](./compliance/azure/azure_long_stopped_instances)
+- [Azure Policy Audit](./compliance/azure/azure_policy_audit)
 - [Azure Regulatory Compliance](./compliance/azure/compliance_score/)
 - [Azure Subscription Access](./compliance/azure/subscription_access/)
 - [Azure Tag Resources with Resource Group Name](./compliance/tags/azure_rg_tags)
+- [Azure Untagged Resources](./compliance/azure/azure_untagged_resources)
 
 #### Google
 
 - [Google Long-Stopped Instances](./compliance/google/long_stopped_instances)
+- [Google Unlabeled Resources](./compliance/google/unlabeled_resources)
 
 #### Other
 
-- [FlexNet Manager Licenses At Risk - Cloud](./compliance/fnms/fnms_licenses_at_risk/)
-- [FlexNet Manager Licenses At Risk - On Premise](./compliance/fnms/fnms_licenses_at_risk_on_premise/)
+- [FlexNet Manager Licenses At Risk](./compliance/fnms/fnms_licenses_at_risk/)
 - [FlexNet Manager Low Available Licenses](./compliance/fnms/fnms_low_licenses_available)
 - [GitHub.com Available Seats](./compliance/github/available_seats/)
 - [GitHub.com Unpermitted Outside Collaborators](./compliance/github/outside_collaborators/)
@@ -187,6 +197,7 @@ Please contact sales@flexera.com to learn more.
 - [GitHub.com Unpermitted Sized Repositories](./compliance/github/repository_size/)
 - [GitHub.com Repository Branches without Protection](./compliance/github/repository_branch_protection/)
 - [GitHub.com Repositories without Admin Team](./compliance/github/repository_admin_team/)
+- [Policy Update Notification](./compliance/policy_update_notification/)
 
 ### Operational
 
@@ -219,8 +230,7 @@ Please contact sales@flexera.com to learn more.
 
 #### Other
 
-- [Schedule FlexNet Manager Report - Cloud](./operational/fnms/schedule_fnms_reports/)
-- [Schedule FlexNet Manager Report - On Premise](./operational/fnms/schedule_fnms_reports_on_premise/)
+- [Schedule FlexNet Manager Report](./operational/fnms/schedule_fnms_reports/)
 
 ### SaaS Management
 
@@ -245,19 +255,20 @@ Please contact sales@flexera.com to learn more.
 - [Google Instance Types](./data/google/instance_types.json)
 - [Currency Reference](./cost/scheduled_reports/currency_reference.json)
 - [Azure SQL Service Tier Types](./data/azure/sql_service_tier_types.json)
+- [TZ database Timezone List](./data/tz_database/timezones_list.json)
 
 ## Instructions to upload policy templates to Flexera CMP Policies
 
 - The policy templates in the repo are the files that have a .pt extension.
 - Select the desired policy template, click on the “Raw” button, and then right-click and choose “Save As” to save the file to your computer.
-- To upload the template to your account, navigate over to the Templates page in the left nav bar in [Governance](https://governance.rightscale.com). Ensure you have the role to access policy management in RightScale. Learn More about [Policy Access Control](http://docs.rightscale.com/policies/#how-policies-work-access-control).
+- To upload the template to your account, navigate over to the Templates page in the left nav bar in [Governance](https://governance.rightscale.com). Ensure you have the role to access policy management in RightScale. Learn More about [Policy Access Control](https://docs.rightscale.com/policies/#how-policies-work-access-control).
 - Click the “Upload Policy Template” button in the account you wish to test the policy and follow the instructions to upload the template you just downloaded.
 
 ## Policy Template Documentation
 
-- [Getting Started](http://docs.rightscale.com/policies/getting_started/)
-- [Reference Documentation](http://docs.rightscale.com/policies/reference/)
-- [Policy Template Language](http://docs.rightscale.com/policies/reference/policy_template_language.html)
+- [Getting Started](https://docs.rightscale.com/policies/users/getting_started/)
+- [Reference Documentation](https://docs.rightscale.com/policies/developers/)
+- [Policy Template Language](https://docs.rightscale.com/policies/developers/reference/v20180301/policy_template_language.html)
 - [Markdown Editor](https://jbt.github.io/markdown-editor/) - Use this to test Markdown Syntax
 - [Libraries](./libraries/README.md)
 - [README GUIDELINE](./README_GUIDELINE.md)

@@ -1,5 +1,18 @@
 # Changelog
 
+## v2.5
+
+- Fixed a bug where we would only report on a single CUD in a region where there is more than one.
+- Refactored formatting, added section headers, and fixed indents.
+
+## v2.4
+
+- Modified escalation label and description for consistency
+
+## v2.3
+
+- Added resource table
+
 ## v2.2
 
 - Bug fixes on unhandled errors when executing

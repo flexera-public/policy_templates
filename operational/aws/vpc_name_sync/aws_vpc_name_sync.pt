@@ -6,7 +6,7 @@ long_description ""
 severity "medium"
 category "Operational"
 info(
-  version: "2.0",
+  version: "2.4",
   provider: "AWS",
   service: "VPC",
   policy_set: ""
@@ -26,9 +26,23 @@ permission "perm_update_network_name" do
   resources "rs_cm.networks"
 end
 
+parameter "param_automatic_action" do
+  type "list"
+  label "Automatic Actions"
+  description "When this value is set, this policy will automatically take the selected action(s)"
+  allowed_values ["Update VPC"]
+end
+
 ###############################################################################
 # Parameters
 ###############################################################################
+
+parameter "param_allowed_regions" do
+  type "list"
+  label "Allowed Regions"
+  allowed_pattern /^([a-zA-Z-_]+-[a-zA-Z0-9-_]+-[0-9-_]+,*|)+$/
+  description "A list of allowed regions. See the README for more details"
+end
 
 parameter "param_email" do
   type "list"
@@ -74,18 +88,31 @@ end
 # Datasources
 ###############################################################################
 
-#Generates list of Regions
+#Get list of enabled regions for an account
 datasource "ds_regions_list" do
   request do
+    auth $auth_aws
     verb "GET"
-    host "raw.githubusercontent.com"
-    path "/rightscale/policy_templates/master/data/aws/regions.json"
-    header "User-Agent", "RS Policies"
+    host "ec2.amazonaws.com"
+    path "/"
+    query "Action", "DescribeRegions"
+    query "Version", "2016-11-15"
+  end
+  result do
+    encoding "xml"
+    collect xpath(response, "//DescribeRegionsResponse/regionInfo/item", "array") do
+      field "region", xpath(col_item, "regionName")
+    end
   end
 end
 
+# Get only SCP enabled regions
+datasource "ds_regions" do
+  run_script $js_regions, $param_allowed_regions, $ds_regions_list
+end
+
 datasource "ds_vpcs" do
-  iterate $ds_regions_list
+  iterate $ds_regions
   request do
     auth $auth_aws
     host join(["ec2.",val(iter_item,"region"),".amazonaws.com"])
@@ -123,6 +150,38 @@ end
 ###############################################################################
 # Scripts
 ###############################################################################
+
+script "js_regions", type:"javascript" do
+  parameters "user_entered_regions", "all_regions"
+  result "regions"
+  code <<-EOS
+    if(_.isEmpty(user_entered_regions)){
+      regions = all_regions;
+    }else{
+      //Filter unique regions
+      var uniqueRegions = _.uniq(user_entered_regions);
+      var all_regions_list = [];
+      all_regions.forEach(function(all_region){
+        all_regions_list.push(all_region.region)
+      })
+
+      //Filter valid regions
+      var valid_regions = [];
+      _.map(uniqueRegions, function(uniqueRegion){
+        if(all_regions_list.indexOf(uniqueRegion) > -1){
+          valid_regions.push({"region": uniqueRegion})
+        }
+      })
+
+      //Throw an error if no valid regions found
+      if (_.isEmpty(valid_regions)) {
+        regions = all_regions;
+      }else{
+        regions = valid_regions
+      }
+    }
+  EOS
+end
 
 script "script_vpcs", type: "javascript" do
   parameters "ds_vpcs","ds_networks"
@@ -163,11 +222,13 @@ script "script_vpcs", type: "javascript" do
           "rs_name": ds_networks[y]["name"],
           "aws_name":  aws_name,
           "href": ds_networks[y]["href"],
-          "resource_uid": ds_networks[y]["resource_uid"],
+          "id": ds_networks[y]["resource_uid"],
           "region": region
         })
       }
     }
+  updates = _.sortBy(updates,"id")
+  updates = _.sortBy(updates,"region")
   EOS
 end
 
@@ -178,17 +239,27 @@ end
 policy "policy_vpc_sync" do
   validate_each $ds_rs_updates do
     summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} VPC Names Out of Sync"
-    detail_template <<-EOS
-# VPC Name Validation between AWS and Cloud Managament
-| VpcId | Region | RS Name | AWS Name | Href |
-| ----- | ------ | ------- | -------- | ---- |
-{{ range data -}}
-  | {{.resource_uid}} | {{.region}} | {{.rs_name}} | {{.aws_name}} | {{.href}} |
-{{ end -}}
-EOS
     check equals?(val(item, "rs_name"), val(item, "aws_name"))
 	escalate $email
     escalate $escalate_resources
+    export do
+      resource_level true
+      field "id" do
+        label "VPC Id"
+      end
+      field "region" do
+        label "Region"
+      end
+      field "rs_name" do
+        label "RS Name"
+      end
+      field "aws_name" do
+        label "AWS Name"
+      end
+      field "href" do
+        label "Href"
+      end
+    end
   end
 end
 
@@ -197,19 +268,16 @@ end
 ###############################################################################
 
 escalation "email" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
   email $param_email
 end
 
 escalation "escalate_resources" do
-  request_approval  do
-    label "Approve to Update VPC"
-    description "Update VPC"
-    parameter "approval_reason" do
-      type "string"
-      label "Reason for approval"
-      description "Explain why you are approving the action"
-    end
-  end
+  automatic contains($param_automatic_action, "Update VPC")
+  label "Update VPC"
+  description "Update selected VPC"
   run "update_vpcs", data
 end
 

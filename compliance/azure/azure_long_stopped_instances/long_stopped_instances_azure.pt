@@ -6,7 +6,7 @@ long_description ""
 category "Compliance"
 severity "low"
 info(
-  version: "2.2",
+  version: "2.4",
   provider: "Azure",
   service: "Compute",
   policy_set: "Long Stopped Instances"
@@ -26,6 +26,13 @@ parameter "param_numberofdays" do
   type "string"
   label "Days"
   description "Threshold of days to consider an instance long running."
+end
+
+parameter "param_automatic_action" do
+  type "list"
+  label "Automatic Actions"
+  description "When this value is set, this policy will automatically take the selected action(s)"
+  allowed_values ["Terminate Instances"]
 end
 
 ###############################################################################
@@ -171,19 +178,34 @@ end
 policy "azure_resource_policy" do
   validate $ds_filtered_resources do
     summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} Azure VMs in Stopped State for Over {{parameters.param_numberofdays}} Day(s)"
-    detail_template <<-EOS
-# Azure Virtual Machines Out of Compliance
-| Subscription Name | Name | Resource Group | Status | Time Stopped | Days Elapsed |
-| ----------------- | ---- | -------------- | ------ | ------------ | ------------ |
-{{ range data -}}
-| {{.subscriptionName}} | {{.name}} | {{.resourcegroup}} | {{.status}} | {{.time_stopped}} | {{.days_elapsed}} |
-{{ end -}}
-___
-###### Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }}) within Org: {{ rs_org_name }} (Org ID: {{ rs_org_id }})
-EOS
     escalate $email
     escalate $delete_resources
     check eq(size(data), 0)
+    export do
+      resource_level true
+      field "subscriptionName" do
+        label "Subscription Name"
+      end
+      field "id" do
+        label "Name"
+        path "name"
+      end
+      field "resourcegroup" do
+        label "Resource Group"
+      end
+      field "status" do
+        label "Status"
+      end
+      field "time_stopped" do
+        label "Time Stopped"
+      end
+      field "days_elapsed" do
+        label "Days Elapsed"
+      end
+      field "subscriptionId" do
+        label "Subscription ID"
+      end
+    end
   end
 end
 
@@ -192,19 +214,16 @@ end
 ###############################################################################
 
 escalation "email" do
-   email $param_email
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
 end
 
 escalation "delete_resources" do
-   request_approval  do
-     label "Approve Resource Deletion"
-     description "Approve escalation to terminate the instance(s)"
-     parameter "approval_reason" do
-     type "string"
-       label "Reason for Approval"
-      description "Explain why you are approving the action"
-     end
-   end
+  automatic contains($param_automatic_action, "Terminate Instances")
+  label "Delete Resource"
+  description "Delete the selected instance"
   run "delete_resources", data
 end
 
@@ -220,7 +239,7 @@ define delete_resources($data) return $all_responses do
         auth: $$azure_auth,
         verb: "delete",
         host: "management.azure.com",
-        href: join(["/subscriptions/", $item['subscriptionId'], "/resourceGroups/", $item["resourcegroup"], "/providers/Microsoft.Compute/virtualMachines/",$item["name"]]),
+        href: join(["/subscriptions/", $item['subscriptionId'], "/resourceGroups/", $item["resourcegroup"], "/providers/Microsoft.Compute/virtualMachines/",$item["id"]]),
         https: true,
         query_strings: {
           "api-version": "2018-06-01"

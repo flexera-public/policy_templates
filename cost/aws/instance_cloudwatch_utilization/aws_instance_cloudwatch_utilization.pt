@@ -6,7 +6,7 @@ long_description ""
 severity "low"
 category "Cost"
 info(
-  version: "2.2",
+  version: "2.9",
   provider: "AWS",
   service: "EC2",
   policy_set: "Inefficient Instance Usage"
@@ -15,6 +15,13 @@ info(
 ###############################################################################
 # Parameters
 ###############################################################################
+
+parameter "param_allowed_regions" do
+  type "list"
+  label "Allowed Regions"
+  allowed_pattern /^([a-zA-Z-_]+-[a-zA-Z0-9-_]+-[0-9-_]+,*|)+$/
+  description "A list of allowed regions. See the README for more details"
+end
 
 parameter "param_email" do
   type "list"
@@ -45,7 +52,14 @@ parameter "param_exclusion_tag_key" do
   label "Exclusion Tag Key:Value"
   description "Cloud native tag key to ignore instances. Format: Key:Value"
   type "string"
-  allowed_pattern /([\w]?)+\:([\w]?)+/
+  allowed_pattern /(^$)|([\w]?)+\:([\w]?)+/
+end
+
+parameter "param_automatic_action" do
+  type "list"
+  label "Automatic Actions"
+  description "When this value is set, this policy will automatically take the selected action(s)"
+  allowed_values ["Downsize Instances"]
 end
 
 ###############################################################################
@@ -77,22 +91,49 @@ end
 # Datasources
 ###############################################################################
 
-#Generates list of Regions
+datasource "ds_get_caller_identity" do
+  request do
+    auth $auth_aws
+    verb "GET"
+    host "sts.amazonaws.com"
+    path "/"
+    header "User-Agent", "RS Policies"
+    query "Action", "GetCallerIdentity"
+    query "Version", "2011-06-15"
+  end
+  result do
+    encoding "xml"
+    collect xpath(response, "//GetCallerIdentityResponse/GetCallerIdentityResult") do
+      field "account",xpath(col_item, "Account")
+    end
+ end
+end
+
+#Get list of enabled regions for an account
 datasource "ds_regions_list" do
   request do
+    auth $auth_aws
     verb "GET"
-    host "raw.githubusercontent.com"
-    path "/rightscale/policy_templates/master/data/aws/regions.json"
-    header "User-Agent", "RS Policies"
+    host "ec2.amazonaws.com"
+    path "/"
+    query "Action", "DescribeRegions"
+    query "Version", "2016-11-15"
+  end
+  result do
+    encoding "xml"
+    collect xpath(response, "//DescribeRegionsResponse/regionInfo/item", "array") do
+      field "region", xpath(col_item, "regionName")
+    end
   end
 end
 
-datasource "ds_instances" do
-  run_script $js_instances, $ds_instances_set, $param_exclusion_tag_key
+# Get only SCP enabled regions
+datasource "ds_regions" do
+  run_script $js_regions, $param_allowed_regions, $ds_regions_list
 end
 
 datasource "ds_instances_set" do
-  iterate $ds_regions_list
+  iterate $ds_regions
   request do
     verb "GET"
 	auth $auth_aws
@@ -129,6 +170,10 @@ datasource "ds_instances_set" do
   end
 end
 
+datasource "ds_instances" do
+  run_script $js_instances, $ds_instances_set, $param_exclusion_tag_key
+end
+
 datasource "ds_cloudwatch_cpu_usage" do
   iterate $ds_instances
   request do
@@ -139,7 +184,7 @@ datasource "ds_cloudwatch_cpu_usage" do
     collect jmes_path(response, "GetMetricStatisticsResponse.GetMetricStatisticsResult.Datapoints[*]") do
       field "region", val(iter_item, "region")
       field "instanceId", val(iter_item, "instanceId")
-	  field "instanceType", val(iter_item, "instanceType")
+      field "instanceType", val(iter_item, "instanceType")
       field "platform", val(iter_item, "platform")
       field "privateDnsName", val(iter_item, "privateDnsName")
       field "tag_set", val(iter_item, "tag_set")
@@ -149,6 +194,10 @@ datasource "ds_cloudwatch_cpu_usage" do
       field "cpu_average", jmes_path(col_item, "Average")
     end
   end
+end
+
+datasource "ds_cloudwatch_cpu_highest_usage_value" do
+  run_script $js_cloudwatch_cpu_highest_usage_value, $ds_cloudwatch_cpu_usage
 end
 
 datasource "ds_cloudwatch_mem_usage" do
@@ -171,6 +220,10 @@ datasource "ds_cloudwatch_mem_usage" do
   end
 end
 
+datasource "ds_cloudwatch_mem_highest_usage_value" do
+  run_script $js_cloudwatch_memory_highest_usage_value, $ds_cloudwatch_mem_usage
+end
+
 datasource "ds_cloudwatch_windows_mem_usage" do
   iterate $ds_instances
   request do
@@ -191,6 +244,10 @@ datasource "ds_cloudwatch_windows_mem_usage" do
   end
 end
 
+datasource "ds_cloudwatch_windows_mem_highest_usage_value" do
+  run_script $js_cloudwatch_windows_memory_highest_usage_value, $ds_cloudwatch_windows_mem_usage
+end
+
 # get AWS instance size map
 datasource "ds_aws_instance_size_map" do
   request do
@@ -202,16 +259,48 @@ datasource "ds_aws_instance_size_map" do
 end
 
 datasource "ds_merged_metrics" do
-  run_script $js_merged_metrics, $ds_cloudwatch_cpu_usage, $ds_cloudwatch_mem_usage, $ds_cloudwatch_windows_mem_usage
+  run_script $js_merged_metrics, $ds_cloudwatch_cpu_highest_usage_value, $ds_cloudwatch_mem_highest_usage_value, $ds_cloudwatch_windows_mem_highest_usage_value
 end
 
 datasource "ds_inefficient_utilization_metrics" do
-  run_script $js_inefficient_utilization_metrics, $ds_aws_instance_size_map, $ds_merged_metrics, $param_avg_used_memory, $param_avg_cpu
+  run_script $js_inefficient_utilization_metrics, $ds_aws_instance_size_map, $ds_merged_metrics, $param_avg_used_memory, $param_avg_cpu, $ds_get_caller_identity
 end
 
 ###############################################################################
 # Scripts
 ###############################################################################
+
+script "js_regions", type:"javascript" do
+  parameters "user_entered_regions", "all_regions"
+  result "regions"
+  code <<-EOS
+    if(_.isEmpty(user_entered_regions)){
+      regions = all_regions;
+    }else{
+      //Filter unique regions
+      var uniqueRegions = _.uniq(user_entered_regions);
+      var all_regions_list = [];
+      all_regions.forEach(function(all_region){
+        all_regions_list.push(all_region.region)
+      })
+
+      //Filter valid regions
+      var valid_regions = [];
+      _.map(uniqueRegions, function(uniqueRegion){
+        if(all_regions_list.indexOf(uniqueRegion) > -1){
+          valid_regions.push({"region": uniqueRegion})
+        }
+      })
+
+      //Throw an error if no valid regions found
+      if (_.isEmpty(valid_regions)) {
+        regions = all_regions;
+      }else{
+        regions = valid_regions
+      }
+    }
+  EOS
+end
 
 script "js_instances", type: "javascript" do
   result "results"
@@ -282,6 +371,36 @@ script "js_cloudwatch_cpu_usage", type: "javascript" do
 EOS
 end
 
+script "js_cloudwatch_cpu_highest_usage_value", type: "javascript" do
+  result "instances"
+  parameters "datapoints"
+  code <<-EOS
+    var instances = [];
+    var instanceIds = [];
+    var distinctInstances = [];
+    datapoints.forEach(function(datapoint){
+      if(instanceIds.indexOf(datapoint.instanceId) === -1){
+        instanceIds.push(datapoint.instanceId)
+        distinctInstances.push(datapoint)
+      }
+    })
+    _.each(distinctInstances, function(currentInstance){
+      var max_cpu_value = currentInstance.cpu_maximum; var min_cpu_value = currentInstance.cpu_minimum; var avg_cpu_value = currentInstance.cpu_average;
+      _.each(datapoints, function(instance){
+        if(currentInstance.instanceId == instance.instanceId){
+          if(instance.cpu_average > avg_cpu_value){
+            max_cpu_value = instance.cpu_maximum;
+            min_cpu_value = instance.cpu_minimum;
+            avg_cpu_value = instance.cpu_average;
+          }
+        }
+      })
+      currentInstance.cpu_maximum = max_cpu_value; currentInstance.cpu_minimum = min_cpu_value; currentInstance.cpu_average = avg_cpu_value;
+      instances.push(currentInstance)
+    })
+  EOS
+end
+
 script "js_cloudwatch_mem_usage", type: "javascript" do
   result "results"
   parameters "region","instance_id","privateDnsName"
@@ -321,6 +440,36 @@ script "js_cloudwatch_mem_usage", type: "javascript" do
     }
   }
 EOS
+end
+
+script "js_cloudwatch_memory_highest_usage_value", type: "javascript" do
+  result "instances"
+  parameters "datapoints"
+  code <<-EOS
+    var instances = [];
+    var instanceIds = [];
+    var distinctInstances = [];
+    datapoints.forEach(function(datapoint){
+      if(instanceIds.indexOf(datapoint.instanceId) === -1){
+        instanceIds.push(datapoint.instanceId)
+        distinctInstances.push(datapoint)
+      }
+    })
+    _.each(distinctInstances, function(currentInstance){
+      var max_mem_value = currentInstance.mem_maximum; var min_mem_value = currentInstance.mem_minimum; var avg_mem_value = currentInstance.mem_average;
+      _.each(datapoints, function(instance){
+        if(currentInstance.instanceId == instance.instanceId){
+          if(instance.mem_average > avg_mem_value){
+            max_mem_value = instance.mem_maximum;
+            min_mem_value = instance.mem_minimum;
+            avg_mem_value = instance.mem_average;
+          }
+        }
+      })
+      currentInstance.mem_maximum = max_mem_value; currentInstance.mem_minimum = min_mem_value; currentInstance.mem_average = avg_mem_value;
+      instances.push(currentInstance)
+    })
+  EOS
 end
 
 script "js_cloudwatch_windows_memory_usage", type: "javascript" do
@@ -365,10 +514,40 @@ script "js_cloudwatch_windows_memory_usage", type: "javascript" do
 EOS
 end
 
+script "js_cloudwatch_windows_memory_highest_usage_value", type: "javascript" do
+  result "instances"
+  parameters "datapoints"
+  code <<-EOS
+    var instances = [];
+    var instanceIds = [];
+    var distinctInstances = [];
+    datapoints.forEach(function(datapoint){
+      if(instanceIds.indexOf(datapoint.instanceId) === -1){
+        instanceIds.push(datapoint.instanceId)
+        distinctInstances.push(datapoint)
+      }
+    })
+    _.each(distinctInstances, function(currentInstance){
+      var max_mem_value = currentInstance.mem_maximum; var min_mem_value = currentInstance.mem_minimum; var avg_mem_value = currentInstance.mem_average;
+      _.each(datapoints, function(instance){
+        if(currentInstance.instanceId == instance.instanceId){
+          if(instance.mem_average > avg_mem_value){
+            max_mem_value = instance.mem_maximum;
+            min_mem_value = instance.mem_minimum;
+            avg_mem_value = instance.mem_average;
+          }
+        }
+      })
+      currentInstance.mem_maximum = max_mem_value; currentInstance.mem_minimum = min_mem_value; currentInstance.mem_average = avg_mem_value;
+      instances.push(currentInstance)
+    })
+  EOS
+end
+
 script "js_merged_metrics", type: "javascript" do
   parameters "ds_cloudwatch_cpu_usage", "ds_cloudwatch_mem_usage", "ds_cloudwatch_windows_mem_usage"
   result "merged_results"
-code <<-EOS
+  code <<-EOS
   var merged_results = []
   for ( i = 0; i < ds_cloudwatch_cpu_usage.length; i++){
     var instance = ds_cloudwatch_cpu_usage[i]
@@ -413,7 +592,7 @@ code <<-EOS
         "mem_maximum": mem_maximum,
         "mem_minimum": mem_minimum,
         "mem_average": mem_average,
-		"instanceType": instance.instanceType
+        "instanceType": instance.instanceType
       }
     )
   }
@@ -422,28 +601,31 @@ end
 
 script "js_inefficient_utilization_metrics", type: "javascript" do
   result "inefficient_utilization_results"
-  parameters "ds_aws_instance_size_map", "ds_merged_metrics", "param_avg_used_memory", "param_avg_cpu"
+  parameters "ds_aws_instance_size_map", "ds_merged_metrics", "param_avg_used_memory", "param_avg_cpu", "ds_get_caller_identity"
   code <<-EOS
   var inefficient_utilization_results = []
   for ( i = 0; i < ds_merged_metrics.length; i++){
     var instance = ds_merged_metrics[i]
-	var cpu_average = instance.cpu_average
-	var mem_average = instance.mem_average
-	var next_instance_size = ds_aws_instance_size_map[instance.instanceType]["down"]
-	if(next_instance_size == null && typeof next_instance_size == "undefined" ){
+    var cpu_average = instance.cpu_average
+    var mem_average = instance.mem_average
+    var next_instance_size = "Unknown";
+    if(ds_aws_instance_size_map[instance.instanceType] !== undefined && ds_aws_instance_size_map[instance.instanceType] != null){
+      next_instance_size = ds_aws_instance_size_map[instance.instanceType]["down"]
+    }
+    if(next_instance_size == null && typeof next_instance_size == "undefined" ){
       next_instance_size="N/A";
-	}
+    }
     var maximumMemoryField = instance.mem_maximum
     if(maximumMemoryField == "101" || maximumMemoryField === "101"){
        maximumMemoryField = "N/A"
-	}
-
+    }
     var averageMemoryField = instance.mem_average
     if(averageMemoryField == "101" || averageMemoryField === "101"){
        averageMemoryField = "N/A"
-	}
+    }
     if ((cpu_average < param_avg_cpu || mem_average < param_avg_used_memory)){
       inefficient_utilization_results.push({
+        "accountId": ds_get_caller_identity[0]['account'],
         "region": instance.region,
         "id": instance.instanceId,
         "platform": instance.platform,
@@ -456,8 +638,8 @@ script "js_inefficient_utilization_metrics", type: "javascript" do
         "mem_maximum": instance.mem_maximum,
         "mem_minimum": instance.mem_minimum,
         "mem_average": mem_average,
-		"instanceType": instance.instanceType,
-		"next_instance_size": next_instance_size,
+        "instanceType": instance.instanceType,
+        "next_instance_size": next_instance_size,
         "maximumMemoryField": maximumMemoryField,
         "averageMemoryField":averageMemoryField
       })
@@ -473,13 +655,16 @@ end
 
 policy "pol_utilization" do
   validate_each $ds_inefficient_utilization_metrics do
-    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} AWS instances with inefficient utilization"
+    summary_template "AWS Account ID: {{with index data 0}}{{ .accountId }}{{end}} - {{ len data }} AWS instances with inefficient utilization"
     escalate $email
     check logic_or(eq($param_avg_used_memory, -1), gt(to_n(val(item,"mem_average")), $param_avg_used_memory))
     check logic_or(eq($param_avg_cpu, -1), gt(to_n(val(item,"cpu_average")),$param_avg_cpu))
-	escalate $esc_downsize_instances
+    escalate $esc_downsize_instances
     export do
       resource_level true
+      field "accountId" do
+        label "Account Id"
+      end
       field "region" do
         label "Region"
       end
@@ -487,7 +672,10 @@ policy "pol_utilization" do
         label "Instance Id"
       end
       field "instanceType" do
-        label "Instance Type"
+        label "Current Instance Type"
+      end
+      field "next_instance_size" do
+        label "Next Instance Type"
       end
       field "platform" do
         label "platform"
@@ -510,10 +698,7 @@ policy "pol_utilization" do
       field "averageMemoryField" do
         label "Memory Average %"
       end
-      field "next_instance_size" do
-        label "Next Instance Size %"
-      end
-    end  
+    end
   end
 end
 
@@ -523,19 +708,16 @@ end
 ###############################################################################
 
 escalation "email" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
   email $param_email
 end
 
 escalation "esc_downsize_instances" do
-  request_approval  do
-    label "Approve Instances for downsizing"
-    description "Approve downsize action"
-    parameter "approval_reason" do
-      type "string"
-      label "Reason for approval"
-      description "Explain why you are approving the action"
-    end
-  end
+  automatic contains($param_automatic_action, "Downsize Instances")
+  label "Downsize Instances"
+  description "Approval to downsize all selected instances"
   run "downsize_instances", data
 end
 
@@ -679,7 +861,7 @@ define rollback($item) do
   $state = to_s($status_responses["instanceState"]["name"])
   $started_condition = "running"
   if include?(to_s($status_responses["instanceType"]), to_s($item["instanceType"]))
-    # Instance is still the original size, just make sure it's running
+    # Instance is still the original size, just make sure its running
     if $state =~ $started_condition
       # instance is running nothing to do
     else
@@ -713,7 +895,6 @@ define rollback_instance_type($item) do
 end
 
 define sys_log($subject, $detail) do
-
     rs_cm.audit_entries.create(
       notify: "None",
       audit_entry: {

@@ -1,5 +1,13 @@
 # Changelog
 
+## v1.16
+
+- Modified escalation label and description for consistency
+
+## v1.15
+
+- Added resource table
+
 ## v1.14
 
 - Included README link in the policy template

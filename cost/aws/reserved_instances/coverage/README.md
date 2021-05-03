@@ -10,7 +10,7 @@ It will email the user specified in `Email addresses of the recipients you wish 
 This policy has the following input parameters required when launching the policy.
 
 - *Number of days in the past to view Reserved Instance Coverage* - allowed values 7,14,30,90,180,365
-- *Email addresses of the recipients you wish to notify* - A list of email addresses to notify
+- *Email addresses* - A list of email addresses of the recipients you wish to notify
 
 ## Policy Actions
 
@@ -32,15 +32,18 @@ Required permissions in the provider:
 
 ```javascript
 {
-    "Version": "2012-10-17",
-    "Statement": [
-        {
-            "Sid": "VisualEditor0",
-            "Effect": "Allow",
-            "Action": "ce:GetReservationCoverage",
-            "Resource": "*"
-        }
-    ]
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "ce:*"
+      ],
+      "Resource": [
+        "*"
+      ]
+    }
+  ]
 }
 ```
 

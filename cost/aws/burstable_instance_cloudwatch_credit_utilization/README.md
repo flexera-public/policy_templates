@@ -14,11 +14,16 @@ This Policy Template gathers AWS CloudWatch data for instances on 30 day interva
 
 This policy has the following input parameters required when launching the policy.
 
+- *Allowed Regions* - A list of allowed regions for an AWS account. Please enter the allowed regions code if SCP is enabled, see [Available Regions](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/using-regions-availability-zones.html#concepts-available-regions) in AWS; otherwise, the policy may fail on regions that are disabled via SCP. Leave blank to consider all the regions.
 - *Email addresses to notify* - Email addresses of the recipients you wish to notify when new incidents are created
 - *Number of Surplus Credits to alert on* - Number of CPU Surplus Credits to report on, Set to -1 to ignore cpu burst credits
 - *Enable checking burst credit balance against max* - checks burst credit balance against max_earnable_credits
 - *Exclusion Tag* - Cloud native tag key to ignore instances. Format: Key:Value
 - *Cooldown Days* - Days to cooldown between checks of same instance
+- *Automatic Actions* - When this value is set, this policy will automatically take the selected action(s).
+
+Please note that the "*Automatic Actions*" parameter contains a list of action(s) that can be performed on the resources. When it is selected, the policy will automatically execute the corresponding action on the data that failed the checks, post incident generation. Please leave it blank for *manual* action.
+For example if a user selects the "Resize Instances" action while applying the policy, all the identified instances that didn't satisfy the policy condition will be resized.
 
 ## Policy Actions
 
@@ -33,7 +38,7 @@ This policy uses [credentials](https://docs.rightscale.com/policies/users/guides
 
 For administrators [creating and managing credentials](https://docs.rightscale.com/policies/users/guides/credential_management.html) to use with this policy, the following information is needed:
 
-Provider tag value to match this policy: `aws`
+Provider tag value to match this policy: `aws` , `aws_sts`
 
 Required permissions in the provider:
 
@@ -68,7 +73,8 @@ Required permissions in the provider:
         },
         {
             "Effect": "Allow",
-            "Action": "ec2:DescribeInstances",
+            "Action": ["ec2:DescribeInstances",
+                        "ec2:DescribeRegions"]
             "Resource": "*"
         }
     ]
@@ -77,7 +83,7 @@ Required permissions in the provider:
 
 ## Supported Clouds
 
-- Amazon
+- AWS
 
 ## Cost
 

@@ -6,7 +6,7 @@ long_description ""
 severity "high"
 category "Security"
 info(
-  version: "2.1",
+  version: "2.3",
   provider: "Azure",
   service: "SQL",
   policy_set: "Public Database Access"
@@ -27,6 +27,13 @@ parameter "param_exclusion_tag_key" do
   category "User Inputs"
   label "Exclusion Tag Key"
   description "Azure SQL Managed instance tag to ignore instance that are with public data endpoint enabled. Only supply the tag key. The policy assumes that the tag value is irrelevant."
+end
+
+parameter "param_automatic_action" do
+  type "list"
+  label "Automatic Actions"
+  description "When this value is set, this policy will automatically take the selected action(s)"
+  allowed_values ["Disable Public endpoint"]
 end
 
 ###############################################################################
@@ -124,31 +131,30 @@ script "js_sql_managed_instances", type: "javascript" do
       var tags=instance['tags'];
       var is_tag_matched=false;
       var param_exclusion_tag_key_lowercase = param_exclusion_tag_key.toLowerCase();
-        if(typeof(tags) != "undefined" && tags!=null){
-          for(var k=0;k<tags.length;k++){
-            var tag=tags[k];
-              if(param_exclusion_tag_key_lowercase.indexOf((tag['tagKey']).toLowerCase()) !== -1){
-               is_tag_matched = true;
-              }
+      if(typeof(tags) != "undefined" && tags!=null){
+        for(var k=0;k<tags.length;k++){
+          var tag=tags[k];
+          if(param_exclusion_tag_key_lowercase.indexOf((tag['tagKey']).toLowerCase()) !== -1){
+            is_tag_matched = true;
           }
         }
-        if(!is_tag_matched){
-          res.push({
-            instance_state:instance['instance_state'],
-            name:instance['name'],
-            location:instance['location'],
-            license_type:instance['license_type'],
-            id:instance['id'],
-            v_cores:instance['v_cores'],
-            storage_size_in_gb:instance['storage_size_in_gb'],
-            isPublicDataEndpointEnabled:instance['isPublicDataEndpointEnabled'],
-            tags:instance['tags'],
-            subscriptionId:instance['subscriptionId'],
-            subscriptionName:instance['subscriptionName']
-          })
-        }
+      }
+      if(!is_tag_matched){
+        res.push({
+          instance_state:instance['instance_state'],
+          name:instance['name'],
+          location:instance['location'],
+          license_type:instance['license_type'],
+          id:instance['id'],
+          v_cores:instance['v_cores'],
+          storage_size_in_gb:instance['storage_size_in_gb'],
+          isPublicDataEndpointEnabled:instance['isPublicDataEndpointEnabled'],
+          tags:instance['tags'],
+          subscriptionId:instance['subscriptionId'],
+          subscriptionName:instance['subscriptionName']
+        })
+      }
     }
-
 	res = _.sortBy(res, 'subscriptionName');
 	res = _.sortBy(res, 'location');
   EOS
@@ -161,19 +167,40 @@ end
 policy "pol_sql_managed_instances" do
   validate_each $ds_sql_managed_instances do
     summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} Azure SQL managed instances with public endpoint enabled"
-    detail_template <<-EOS
-# Azure SQL managed Instance Details
-| Subscription Name | Name | Location | Instance State | License Type | vCores | Storage Size In GB | Tags |
-| ----------------- | ------| -------- | -------------- | ------------ | ------ | ------------------ | ---- |
-{{ range data -}}
-| {{.subscriptionName}} | {{.name}} | {{.location}} | {{.instance_state}} | {{.license_type}} | {{.v_cores}} | {{.storage_size_in_gb}} | {{.tags}} |
-{{ end -}}
-    EOS
     escalate $esc_report_Managed_instances
     escalate $esc_disable_public_endpoint_approval
-#Note: Uncomment below line(remove '#') to enable Delete action And comment above line (add '#' at beginning) when you enable Delete action.
-    #escalate $esc_delete_Managed_instances_approval
+    escalate $esc_delete_Managed_instances_approval
     check logic_not(val(item,"isPublicDataEndpointEnabled"))
+    export do
+      resource_level true
+      field "subscriptionName" do
+        label "Subscription Name"
+      end
+      field "name" do
+        label "Name"
+      end
+      field "location" do
+        label "Location"
+      end
+      field "instance_state" do
+        label "Instance State"
+      end
+      field "license_type" do
+        label "License Type"
+      end
+      field "v_cores" do
+        label "vCores"
+      end
+      field "storage_size_in_gb" do
+        label "Storage Size In GB"
+      end
+      field "tags" do
+        label "Tags"
+      end
+      field "id" do
+        label "Id"
+      end
+    end
   end
 end
 
@@ -182,32 +209,23 @@ end
 ###############################################################################
 
 escalation "esc_report_Managed_instances" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
   email $param_email
 end
 
 escalation "esc_disable_public_endpoint_approval" do
-  request_approval do
-    label "Approve resource Update"
-    description "Approve esclation to run RightScale Cloud Workflow to disable public endpoint"
-    parameter "approval_resion" do
-      type "string"
-      label "Reason for Approval"
-      description "Explain why are you approving the action."
-    end
-  end
+  automatic contains($param_automatic_action, "Disable Public endpoint")
+  label "Update Resource"
+  description "Disable the public endpoint"
   run "esc_disable_public_endpoint", data
 end
 
 escalation "esc_delete_Managed_instances_approval" do
-  request_approval do
-    label "Approve resource Delete"
-    description "Approve escalation to run RightScale Cloud Workflow to delete SQL managed instance with public endpoint enabled."
-    parameter "approval_resion" do
-      type "string"
-      label "Reason for Approval"
-      description "Explain why are you approving the action."
-    end
-  end
+  automatic false
+  label "Delete Resource"
+  description "Delete the selected SQL instance"
   run "ecs_delete_Managed_instances", data
 end
 
@@ -216,7 +234,6 @@ end
 ###############################################################################
 
 define esc_disable_public_endpoint($data) return $all_responses do
-
   $all_responses = []
   foreach $item in $data do
     sub on_error: skip do
@@ -246,14 +263,13 @@ define esc_disable_public_endpoint($data) return $all_responses do
 end
 
 define ecs_delete_Managed_instances($data) return $all_responses do
-
   $all_responses = []
   foreach $item in $data do
     sub on_error: skip do
       $response = http_request(
         verb: "delete",
         host: "management.azure.com",
-		auth: $$azure_auth,
+        auth: $$azure_auth,
         https: true,
         href: $item["id"],
         query_strings: {
@@ -271,14 +287,12 @@ define ecs_delete_Managed_instances($data) return $all_responses do
 end
 
 define sys_log($subject, $detail) do
-  if $$debug
-    rs_cm.audit_entries.create(
-      notify: "None",
-      audit_entry: {
-        auditee_href: @@account,
-        summary: "Check for publicly accessible Azure SQL Managed Instance Policy "+ $subject,
-        detail: $detail
-      }
-    )
-  end
+  rs_cm.audit_entries.create(
+    notify: "None",
+    audit_entry: {
+      auditee_href: @@account,
+      summary: "Check for publicly accessible Azure SQL Managed Instance Policy "+ $subject,
+      detail: $detail
+    }
+  )
 end

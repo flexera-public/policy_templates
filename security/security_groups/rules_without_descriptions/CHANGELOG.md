@@ -1,5 +1,13 @@
 # Changelog
 
+## v1.10
+
+- Modified escalation label and description for consistency
+
+## v1.9
+
+- Adding incident resource table
+
 ## v1.8
 
 - Updated the metadata

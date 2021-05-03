@@ -1,14 +1,14 @@
 name "New Service Usage"
 rs_pt_ver 20180301
 type "policy"
-short_description "Analyze bill for new service usage and notify. See the [README](https://github.com/rightscale/policy_templates/tree/master/cost/new_service_alert/) and [docs.rightscale.com/policies](http://docs.rightscale.com/policies/) to learn more."
+short_description "Analyze bill for new service usage and notify. See the [README](https://github.com/rightscale/policy_templates/tree/master/cost/new_service_usage) and [docs.rightscale.com/policies](http://docs.rightscale.com/policies/) to learn more."
 long_description ""
 severity "low"
 category "Cost"
 default_frequency "daily"
 tenancy "single"
 info(
-  version: "1.1",
+  version: "1.4",
   provider: "Flexera Optima",
   service: "",
   policy_set: ""
@@ -211,12 +211,6 @@ script "js_format_costs", type: "javascript" do
   var new_bc_cost_objs = _.reject(new_bc_costs, function(new_bc_cost){ return new_bc_cost.id != bc_id });
     _.each(new_bc_cost_objs, function(new_bc_cost_obj){
       var billing_center = _.reject(ds_billing_centers, function(bc){ return bc.id != new_bc_cost_obj.id })[0];
-      if (new_bc_cost_obj.vendor == "AWS" ) {
-        var account = _.reject(ds_cloud_vendor_accounts, function(ds_cloud_vendor_account){ return ds_cloud_vendor_account.id != new_bc_cost_obj.vendor_account_name });
-        var vendor_account_name = account[0].name
-      } else {
-        var vendor_account_name = new_bc_cost_obj.vendor_account_name
-      }
       arr_results.push({
         name: billing_center.name,
         id: bc_id,
@@ -224,7 +218,7 @@ script "js_format_costs", type: "javascript" do
         region: new_bc_cost_obj.region,
         new_sum: new_bc_cost_obj.cost_nonamortized_blended_adj,
         vendor: new_bc_cost_obj.vendor,
-        vendor_account_name: vendor_account_name,
+        vendor_account_name: new_bc_cost_obj.vendor_account_name,
         timestamp: new_bc_cost_obj.timestamp
       })
     })
@@ -403,24 +397,40 @@ EOS
 end
 
 escalation "esc_budget_alert" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
   email $param_email
 end
 
 policy "policy_budget_alert" do
   validate_each $ds_check_services do
     summary_template "{{ rs_org_name }} (Org ID: {{ rs_org_id }}): New Service Usage Detected"
-    detail_template <<-EOS
-# New Service Usage Detected
-
-| Billing Center Name | Vendor | Account Name | Region | Service | Projected Cost |
-| ------------------- | ------ | ------------ | ------ | ------- | -------------- |
-{{ range data -}}
-| {{.name}} | {{.vendor}} | {{.vendor_account_name}} | {{.region}} | {{.service}} | {{.run_rate}} | 
-{{ end -}}
-
-###### Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }}) within Org: {{ rs_org_name }} (Org ID: {{ rs_org_id }})
-EOS
     escalate $esc_budget_alert
     check logic_and(eq(val(item,"run_rate"),"0.00"), eq($param_include_0,"false"))
+    export do
+      resource_level true
+      field "name" do
+        label "Billing Center Name"
+      end
+      field "vendor" do
+        label "Vendor"
+      end
+      field "vendor_account_name" do
+        label "Account Name"
+      end
+      field "region" do
+        label "Region"
+      end
+      field "service" do
+        label "Service"
+      end
+      field "run_rate" do
+        label "Projected Cost"
+      end
+      field "id" do
+        label "ID"
+      end
+    end
   end
 end

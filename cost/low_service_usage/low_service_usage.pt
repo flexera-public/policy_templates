@@ -8,11 +8,15 @@ category "Cost"
 default_frequency "daily"
 tenancy "single"
 info(
-  version: "1.4",
+  version: "1.6",
   provider: "Flexera Optima",
   service: "",
   policy_set: ""
 )
+
+###############################################################################
+# Input Parameter
+###############################################################################
 
 parameter "param_threshold" do
   label "Low Service Spend Threshold"
@@ -43,7 +47,15 @@ parameter "param_minimum_savings_threshold" do
   default 1
 end
 
+###############################################################################
+# Authentication
+###############################################################################
+
 auth "auth_rs", type: "rightscale"
+
+###############################################################################
+# Datasources
+###############################################################################
 
 datasource "ds_dimensions" do
   request do
@@ -114,29 +126,36 @@ datasource "ds_new_bc_costs" do
   end
 end
 
+datasource "ds_format_costs" do
+  run_script $js_format_costs, $ds_new_bc_costs, $ds_cloud_vendor_accounts, $ds_billing_centers, $param_threshold, $param_minimum_savings_threshold
+end
+
+
+###############################################################################
+# Scripts
+###############################################################################
+
 script "js_new_costs_request", type: "javascript" do
   parameters "org_id","ds_billing_centers", "param_billing_centers"
   result "request"
   code <<-EOS
-    //https://stackoverflow.com/questions/3605214/javascript-add-leading-zeroes-to-date 
     function pad(n){return n<10 ? '0'+n : n}
     var date = new Date();
     var year = date.getUTCFullYear();
-    var month = (2 + date.getUTCMonth())
-    
-    if (month == 1){ 
-      var lmonth = 12;
-      var lyear = year-1 ;
-    } else {
-      var lmonth = month-1;
-      var lyear = year ;
-    }
-    
-    mo = month.toString().length > 1 ? month : '0' + month;
-    lmo = lmonth.toString().length > 1 ? lmonth : '0' + lmonth;
+    var month = (1 + date.getUTCMonth())
     var yesterday = new Date(new Date().setDate(new Date().getDate()-1)).getDate()
-    var next_month = lyear + "-" + lmo + "-" + pad(yesterday)
-    var current_month = lyear + "-" + lmo + '-01'
+    if(yesterday==1){
+      yesterday++;
+    }
+    if(date.getDate()==1){
+      month=month-1;
+      if(month==1){
+        month=12;
+        year=year-1;
+     }
+    }
+   var end_at = year + "-" + pad(month) + "-" + pad(yesterday)
+   var start_at = year + "-" + pad(month) + '-01'
     var billing_center_ids = []
     if (param_billing_centers.length === 0){
       var top_billing_centers = _.reject(ds_billing_centers, function(bc){ return bc.parent_id != null });
@@ -157,8 +176,8 @@ script "js_new_costs_request", type: "javascript" do
         "granularity": "day",
         "metrics": ['cost_nonamortized_blended_adj'],
         "billing_center_ids": billing_center_ids,
-        "start_at": current_month,
-        "end_at": next_month
+        "start_at": start_at,
+        "end_at": end_at
       },
       headers: {
         "Api-Version": "1.0",
@@ -166,10 +185,6 @@ script "js_new_costs_request", type: "javascript" do
       }
     }
   EOS
-end
-
-datasource "ds_format_costs" do
-  run_script $js_format_costs, $ds_new_bc_costs, $ds_cloud_vendor_accounts, $ds_billing_centers, $param_threshold, $param_minimum_savings_threshold
 end
 
 script "js_format_costs", type: "javascript" do
@@ -202,12 +217,6 @@ script "js_format_costs", type: "javascript" do
   var new_bc_cost_objs = _.reject(new_bc_costs, function(new_bc_cost){ return new_bc_cost.id != bc_id });
     _.each(new_bc_cost_objs, function(new_bc_cost_obj){
       var billing_center = _.reject(ds_billing_centers, function(bc){ return bc.id != new_bc_cost_obj.id })[0];
-      if (new_bc_cost_obj.vendor == "AWS" ) {
-        var account = _.reject(ds_cloud_vendor_accounts, function(ds_cloud_vendor_account){ return ds_cloud_vendor_account.id != new_bc_cost_obj.vendor_account_name });
-        var vendor_account_name = account[0].name
-      } else {
-        var vendor_account_name = new_bc_cost_obj.vendor_account_name
-      }
       arr_results.push({
         name: billing_center.name,
         id: bc_id,
@@ -215,7 +224,7 @@ script "js_format_costs", type: "javascript" do
         region: new_bc_cost_obj.region,
         new_sum: new_bc_cost_obj.cost_amortized_unblended_adj,
         vendor: new_bc_cost_obj.vendor,
-        vendor_account_name: vendor_account_name,
+        vendor_account_name: new_bc_cost_obj.vendor_account_name,
         timestamp: new_bc_cost_obj.timestamp
       })
     })
@@ -277,25 +286,49 @@ script "js_format_costs", type: "javascript" do
 EOS
 end
 
+###############################################################################
+# Escalations
+###############################################################################
+
 escalation "esc_budget_alert" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
   email $param_email
 end
+
+###############################################################################
+# Policy
+###############################################################################
 
 policy "policy_budget_alert" do
   validate $ds_format_costs do
     summary_template "{{ rs_org_name }} (Org ID: {{ rs_org_id }}): Low Service Usage Detected Below {{parameters.param_threshold}} - Total Savings: {{with(index data 0)}}{{.total_sum}}{{end}}"
-    detail_template <<-EOS
-# Low Service Usage Detected - Total Savings: {{with(index data 0)}}{{.total_sum}}{{end}}
-
-| Billing Center Name | Vendor | Account Name | Region | Service | Savings |
-| ------------------- | ------ | ------------ | ------ | ------- | ------- |
-{{ range data -}}
-| {{.name}} | {{.vendor}} | {{.vendor_account_name}} | {{.region}} | {{.service}} | {{.run_rate}} | 
-{{ end -}}
-
-###### Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }}) within Org: {{ rs_org_name }} (Org ID: {{ rs_org_id }})
-EOS
     escalate $esc_budget_alert
     check eq(size(data), 0)
+    export do
+      resource_level true
+      field "name" do
+        label "Billing Center Name"
+      end
+      field "vendor" do
+        label "Vendor"
+      end
+      field "vendor_account_name" do
+        label "Account Name"
+      end
+      field "region" do
+        label "Region"
+      end
+      field "service" do
+        label "Service"
+      end
+      field "run_rate" do
+        label "Savings"
+      end
+      field "id" do
+        label "ID"
+      end
+    end
   end
 end

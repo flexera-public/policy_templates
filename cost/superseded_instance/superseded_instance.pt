@@ -8,7 +8,7 @@ severity "low"
 default_frequency "daily"
 tenancy "single"
 info(
-  version: "1.7",
+  version: "1.12",
   provider: "Flexera Optima",
   service: "",
   policy_set: ""
@@ -122,7 +122,7 @@ end
 
 datasource "ds_new_bc_costs" do
   request do
-    run_script $js_new_costs_request, rs_org_id, $ds_billing_centers, $param_billing_centers
+    run_script $js_new_costs_request, rs_org_id, $ds_billing_centers, $param_billing_centers, rs_optima_host
   end
   result do
     encoding "json"
@@ -144,10 +144,12 @@ datasource "ds_new_bc_costs" do
 end
 
 script "js_new_costs_request", type: "javascript" do
-  parameters "org_id","ds_billing_centers", "param_billing_centers"
+  parameters "org_id","ds_billing_centers", "param_billing_centers", "optima_host"
   result "request"
-  code <<-EOS  
+  code <<-EOS
     var date = new Date();
+    // Make sure we get at least a month worth of costs
+    date.setMonth(date.getMonth()-1);
     var year = date.getUTCFullYear();
 	var month =  (date.getUTCMonth()==11)?1:2 + date.getUTCMonth();
 
@@ -192,12 +194,24 @@ script "js_new_costs_request", type: "javascript" do
         {"dimension":"category","type":"equal","value":"Compute"},
         {"dimension":"resource_type","type":"equal","value":"Compute Instance"},
         {"dimension":"vendor","type":"equal","value":"AWS"}
-      ]}
+      ]},
+      {"type" : "and", "expressions" : [
+        {"dimension":"category","type":"equal","value":"Compute"},
+        {"dimension":"vendor","type":"equal","value":"AzureMCA-Enterprise"},
+        {"dimension":"service", "type":"equal", value:"Microsoft.Compute"},
+        {"dimension":"resource_type","type":"substring","substring":"Virtual Machines"}
+      ]},
+        {"type" : "and", "expressions" : [
+        {"dimension":"category","type":"equal","value":"Compute"},
+        {"dimension":"vendor","type":"equal","value":"AzureMCA-CSP"},
+        {"dimension":"service", "type":"equal", value:"Microsoft.Compute"},
+        {"dimension":"resource_type","type":"substring","substring":"Virtual Machines"}
+      ]},
     ]
 
     var request = {
       auth: "auth_rs",
-      host: "optima.rightscale.com",
+      host: optima_host,
       verb: "POST",
       path: "/bill-analysis/orgs/" + org_id + "/costs/select",
       body_fields: {
@@ -253,7 +267,7 @@ script "js_format_costs", type: "javascript" do
     _.each(new_bc_cost_objs, function(new_bc_cost_obj){
       var billing_center = _.reject(ds_billing_centers, function(bc){ return bc.id != new_bc_cost_obj.id })[0];
       if (new_bc_cost_obj.vendor == "AWS" ) {
-        var account = _.reject(ds_cloud_vendor_accounts, function(ds_cloud_vendor_account){ return ds_cloud_vendor_account.id != new_bc_cost_obj.vendor_account_name });
+        var account = _.reject(ds_cloud_vendor_accounts, function(ds_cloud_vendor_account){ return ds_cloud_vendor_account.name != new_bc_cost_obj.vendor_account_name });
         var vendor_account_name = account[0].name
       } else {
         var vendor_account_name = new_bc_cost_obj.vendor_account_name
@@ -396,6 +410,9 @@ end
 # Escalations
 ###############################################################################
 escalation "report_instances" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
   email $param_email
 end
 
@@ -410,23 +427,35 @@ end
 policy "pol_aws_superseded_instance" do
   validate_each $ds_combined_instance_data do
     summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} possible superseded instances"
-    detail_template <<-EOS
-# Superseded Instances
-
-| Resource UID | Name | Current Instance Type | Region | New Instance Type | VPC Required | ENA Required | Monthly Estimated Cost |
-| ------------ | ---- | --------------------- | ------ | ----------------- | ------------ | ------------ | ---------------------- |
-{{ range data -}}
-| {{ if .warn }}**_{{ end -}}{{ .resource_id }}{{ if .warn }}_**{{ end -}} | {{ .name }} | {{.instance_type}} | {{.region}} | {{.new_instance_type}} | {{ if .vpc_incompatible_move }} **_TRUE_** {{else}} false {{end}} |  {{ if .ena_incompatible }} **_TRUE_** {{else}} false {{end}} | {{.run_rate}} |
-{{ end -}}
-
-___
-###### Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }}) within Org: {{ rs_org_name }} (Org ID: {{ rs_org_id }})
-EOS
     check logic_or(lt(to_n(val(item,"run_rate")),$param_threshold), lt(to_n(val(item,"run_rate")),$param_minimum_savings_threshold))
     escalate $report_instances
+    export do
+      # no actions so resource_level can be false
+      resource_level false
+      field "region" do
+        label "Region"
+      end
+      field "resource_id" do
+        label "Resource UID"
+      end
+      field "name" do
+        label "Name"
+      end
+      field "instance_type" do
+        label "Current Instance Type"
+      end
+      field "new_instance_type" do
+        label "New Instance Type"
+      end
+      field "vpc_incompatible_move" do
+        label "VPC Required"
+      end
+      field "ena_incompatible" do
+        label "ENA Required"
+      end
+      field "run_rate" do
+        label "Run Rate"
+      end
+    end
   end
 end
-
-###############################################################################
-# Cloud Workflow
-###############################################################################

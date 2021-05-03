@@ -6,7 +6,7 @@ long_description ""
 category "Cost"
 severity "low"
 info(
-  version: "2.1",
+  version: "2.9",
   provider: "AWS",
   service: "ELB",
   policy_set: ""
@@ -16,15 +16,31 @@ info(
 # User inputs
 ###############################################################################
 
+parameter "param_allowed_regions" do
+  type "list"
+  label "Allowed Regions"
+  allowed_pattern /^([a-zA-Z-_]+-[a-zA-Z0-9-_]+-[0-9-_]+,*|)+$/
+  description "A list of allowed regions. See the README for more details"
+end
+
 parameter "param_email" do
   type "list"
-  label "Email addresses of the recipients you wish to notify"
+  label "Email addresses"
+  description "A list of email addresses to notify"
 end
 
 parameter "param_exclude_tags" do
   type "list"
-  label "List of one or more Tags that will exclude Classic Load Balancer from actions being taken. Format: Key=Value"
+  label "Ignore tags"
+  description "List of one or more Tags that will exclude Classic Load Balancer from actions being taken. Format: Key=Value"
   allowed_pattern /([\w]?)+\=([\w]?)+/
+end
+
+parameter "param_automatic_action" do
+  type "list"
+  label "Automatic Actions"
+  description "When this value is set, this policy will automatically take the selected action(s)"
+  allowed_values ["Delete Load balancers"]
 end
 
 ###############################################################################
@@ -39,24 +55,39 @@ credentials "auth_aws" do
   tags "provider=aws"
 end
 
+auth "auth_rs", type: "rightscale"
+
 ###############################################################################
 # Datasources
 ###############################################################################
 
-#Generates list of Regions
+#Get list of enabled regions for an account
 datasource "ds_regions_list" do
   request do
+    auth $auth_aws
     verb "GET"
-    host "raw.githubusercontent.com"
-    path "/rightscale/policy_templates/master/data/aws/regions.json"
-    header "User-Agent", "RS Policies"
+    host "ec2.amazonaws.com"
+    path "/"
+    query "Action", "DescribeRegions"
+    query "Version", "2016-11-15"
   end
+  result do
+    encoding "xml"
+    collect xpath(response, "//DescribeRegionsResponse/regionInfo/item", "array") do
+      field "region", xpath(col_item, "regionName")
+    end
+  end
+end
+
+# Get only SCP enabled regions
+datasource "ds_regions" do
+  run_script $js_regions, $param_allowed_regions, $ds_regions_list
 end
 
 #To get list of All LoadBalancers.
 #https://docs.aws.amazon.com/elasticloadbalancing/2012-06-01/APIReference/API_DescribeLoadBalancers.html
 datasource "ds_clb_list" do
-  iterate $ds_regions_list
+  iterate $ds_regions
   request do
     auth $auth_aws
     host join(["elasticloadbalancing.",val(iter_item,"region"),".amazonaws.com"])
@@ -132,14 +163,130 @@ datasource "ds_instances_health" do
   end
 end
 
-
 datasource "ds_unused_clb_map" do
   run_script $js_aws_clb_filter_map, $ds_clb_list_tags,$ds_instances_health,$param_exclude_tags
+end
+
+datasource "ds_currency_reference" do
+  request do
+    host "raw.githubusercontent.com"
+    path "/rightscale/policy_templates/master/cost/scheduled_reports/currency_reference.json"
+    header "User-Agent", "RS Policies"
+  end
+end
+
+datasource "ds_currency_code" do
+  request do
+    auth $auth_rs
+    host rs_optima_host
+    path join(["/bill-analysis/orgs/",rs_org_id,"/settings/currency_code"])
+    header "Api-Version", "0.1"
+    header "User-Agent", "RS Policies"
+    ignore_status [403]
+  end
+  result do
+    encoding "json"
+    field "id", jmes_path(response,"id")
+    field "value", jmes_path(response,"value")
+  end
+end
+
+datasource "ds_billing_centers" do
+  request do
+    auth $auth_rs
+    host rs_optima_host
+    path join(["/analytics/orgs/",rs_org_id,"/billing_centers"])
+    header "Api-Version", "1.0"
+    header "User-Agent", "RS Policies"
+    query "view", "allocation_table"
+    ignore_status [403]
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response,"[*]") do
+      field "href", jmes_path(col_item,"href")
+      field "id", jmes_path(col_item,"id")
+      field "name", jmes_path(col_item,"name")
+      field "parent_id", jmes_path(col_item,"parent_id")
+    end
+  end
+end
+
+datasource "ds_top_level_billing_centers" do
+  run_script $js_top_level_bc, $ds_billing_centers
+end
+
+datasource "ds_get_caller_identity" do
+  request do
+    auth $auth_aws
+    verb "GET"
+    host "sts.amazonaws.com"
+    path "/"
+    header "User-Agent", "RS Policies"
+    query "Action", "GetCallerIdentity"
+    query "Version", "2011-06-15"
+  end
+  result do
+    encoding "xml"
+    collect xpath(response, "//GetCallerIdentityResponse/GetCallerIdentityResult") do
+      field "account",xpath(col_item, "Account")
+    end
+ end
+end
+
+datasource "ds_clbs_costs" do
+  request do
+    run_script $js_get_costs, $ds_get_caller_identity, $ds_top_level_billing_centers, rs_org_id
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response,"rows[*]") do
+      field "resource_id", jmes_path(col_item,"dimensions.resource_id")
+      field "cost_nonamortized_unblended_adj", jmes_path(col_item,"metrics.cost_nonamortized_unblended_adj")
+      field "resource_type", jmes_path(col_item,"dimensions.resource_type")
+    end
+  end
+end
+
+datasource "ds_clbs_cost_mapping" do
+  run_script $js_clbs_cost_mapping, $ds_unused_clb_map, $ds_clbs_costs, $ds_currency_code, $ds_currency_reference, $ds_billing_centers, $ds_get_caller_identity
 end
 
 ###############################################################################
 # Script
 ###############################################################################
+
+script "js_regions", type:"javascript" do
+  parameters "user_entered_regions", "all_regions"
+  result "regions"
+  code <<-EOS
+    if(_.isEmpty(user_entered_regions)){
+      regions = all_regions;
+    }else{
+      //Filter unique regions
+      var uniqueRegions = _.uniq(user_entered_regions);
+      var all_regions_list = [];
+      all_regions.forEach(function(all_region){
+        all_regions_list.push(all_region.region)
+      })
+
+      //Filter valid regions
+      var valid_regions = [];
+      _.map(uniqueRegions, function(uniqueRegion){
+        if(all_regions_list.indexOf(uniqueRegion) > -1){
+          valid_regions.push({"region": uniqueRegion})
+        }
+      })
+
+      //Throw an error if no valid regions found
+      if (_.isEmpty(valid_regions)) {
+        regions = all_regions;
+      }else{
+        regions = valid_regions
+      }
+    }
+  EOS
+end
 
 script "js_aws_clb_filter_map", type: "javascript" do
   parameters "ds_clb_list_tags","ds_instances_health","param_exclude_tags"
@@ -186,11 +333,12 @@ script "js_aws_clb_filter_map", type: "javascript" do
       //If the CLB tag does not match with entered param_exclude_tags, then check if any instance exists in the CLB and check for instances health.
       if(!(isTagMatched)){
         clb_details={
-          loadBalancerName: clb['loadBalancerName'],
+          id: clb['loadBalancerName'],
           instanceId:(s_instanceIds.slice(2)),
           availabilityZones:(s_availabilityZones.slice(2)),
           tagKeyValue:(tagKeyValue.slice(2)),
-          region: clb['region']
+          region: clb['region'],
+          savings:"N/A"
         }
         if(instancesList.length > 0){
           var isInstanceNotHealthy=false
@@ -214,47 +362,219 @@ script "js_aws_clb_filter_map", type: "javascript" do
   EOS
 end
 
-###############################################################################
-# Policy
-###############################################################################
+script "js_top_level_bc", type: "javascript" do
+  parameters "billing_centers"
+  result "filtered_billing_centers"
+  code <<-EOS
+    var filtered_billing_centers = _.reject(billing_centers, function(bc){ return bc.parent_id != null });
+  EOS
+end
 
-policy "policy_delete_unused_CLB" do
-  validate $ds_unused_clb_map do
-    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} Unused Classic Load Balancers Found in AWS"
-    detail_template <<-EOS
-## List of Unused Classic Load Balancers
-| LoadBalancer_Name | Region | Instance_ID | Availability_Zones | TAG_Value |
-| ----------------- | ------ | ----------- | ------------------ | --------- |
-{{ range data -}}
-| {{ .loadBalancerName }} | {{.region}} | {{ .instanceId }} | {{ .availabilityZones }} | {{.tagKeyValue}} |
-{{ end -}}
-###### Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }}) within Org: {{ rs_org_name }} (Org ID: {{ rs_org_id }})
-EOS
-    escalate $report_unused_CLB
-    escalate $approve_delete_CLB
-    check eq(size(data),0)
-  end
+script "js_get_costs", type:"javascript" do
+  parameters  "account_id","billing_centers","org"
+  result "request"
+  code <<-EOS
+    // returns date formatted as string: YYYY-mm-dd
+    function getFormattedDailyDate(date) {
+      var year = date.getFullYear();
+      var month = (1 + date.getMonth()).toString();
+      month = month.length > 1 ? month : '0' + month;
+      var day = date.getDate().toString();
+      day = day.length > 1 ? day : '0' + day;
+      return year + '-' + month + '-' + day;
+    }
+    var start_date = getFormattedDailyDate(new Date(new Date().setDate(new Date().getDate() - 3)));
+    var end_date = getFormattedDailyDate(new Date(new Date().setDate(new Date().getDate() - 2)));
+    var request = {
+      auth: "auth_rs",
+      host: "optima.rightscale.com",
+      verb: "POST",
+      path: "/bill-analysis/orgs/" + org + "/costs/select",
+      body_fields: {
+        "dimensions": ["resource_id","resource_type"],
+        "granularity": "day",
+        "start_at": start_date,
+        "end_at": end_date,
+        "metrics": ["cost_nonamortized_unblended_adj"],
+        "billing_center_ids": _.compact(_.map(billing_centers, function(value){ return value.id})),
+        "limit": 10000,
+        "filter": {
+          "expressions": [
+            {
+              "dimension": "service",
+              "type": "equal",
+              "value": "AWSELB"
+            },
+            {
+              "dimension": "resource_type",
+              "type": "equal",
+              "value": "Load Balancer"
+            },
+            {
+              "dimension": "vendor_account",
+              "type": "equal",
+              "value": account_id[0]["account"]
+            }
+          ],
+          "type": "and"
+        }
+      },
+      headers: {
+        "User-Agent": "RS Policies",
+        "Api-Version": "1.0"
+      },
+      ignore_status: [400]
+    }
+  EOS
+end
+
+script "js_clbs_cost_mapping", type:"javascript" do
+  parameters  "clbs","clbs_cost","ds_currency_code","ds_currency_reference", "ds_billing_centers", "ds_get_caller_identity"
+  result "result"
+  code <<-EOS
+  var total=0;
+  var result = {};
+  var loadbalancers = [];
+  var message='';
+  var count=0;
+  function formatNumber(number, separator){
+    var numString =number.toString();
+    var values=numString.split(".");
+    var result = ''
+    while (values[0].length > 3){
+      var chunk = values[0].substr(-3)
+      values[0] = values[0].substr(0, values[0].length - 3)
+      result = separator + chunk + result
+    }
+    if (values[0].length > 0){
+      result = values[0] + result
+    }
+    if(values[1]==undefined){
+      return result;
+    }
+    return result+"."+values[1];
+  }
+  if(ds_billing_centers.length!=0){
+    // Format costs with currency symbol and thousands separator
+    if( ds_currency_code['value'] !== undefined ) {
+      if (ds_currency_reference[ds_currency_code['value']] !== undefined ) {
+        var cur = ds_currency_reference[ds_currency_code['value']]['symbol']
+        if( ds_currency_reference[ds_currency_code['value']]['t_separator'] !== undefined ) {
+          var separator = ds_currency_reference[ds_currency_code['value']]['t_separator']
+        } else {
+          var separator = ""
+        }
+      } else {
+        var cur = ""
+        var separator = ""
+      }
+    } else {
+      var cur = "$"
+      var separator = ","
+    }
+    _.each(clbs, function(clb){
+      var cost_objects = _.where(clbs_cost, {resource_id: "loadbalancer/".concat(clb["id"])});
+      if (_.size(cost_objects) > 0){
+        count++;
+        var sum = _.reduce(_.compact(_.map(cost_objects, function(value){ return value.cost_nonamortized_unblended_adj})), function(memo, num){ return memo + num; }, 0);
+        var monthly_savings = sum*30;
+        total=total+monthly_savings;
+        loadbalancers.push({
+          accountId: ds_get_caller_identity[0]['account'],
+          id : clb['id'],
+          region : clb['region'],
+          availabilityZones : clb['availabilityZones'],
+          instanceId : clb['instanceId'],
+          tagKeyValue : clb['tagKeyValue'],
+          savings: cur + ' '+formatNumber((Math.round(monthly_savings * 100) / 100), separator),
+        })
+      } else {
+        loadbalancers.push({
+          accountId: ds_get_caller_identity[0]['account'],
+          id : clb['id'],
+          region : clb['region'],
+          availabilityZones : clb['availabilityZones'],
+          instanceId : clb['instanceId'],
+          tagKeyValue : clb['tagKeyValue'],
+          savings: "N/A",
+        })
+      }
+    })
+    if(count){
+      var total_savings=cur + ' '+formatNumber((Math.round(total * 100) / 100), separator);
+      message=message="The total estimated monthly savings are "+total_savings;
+    }
+    else{
+      message="The Flexera Optima system does not have any data to calculate savings for these resources";
+    }
+  }
+  else{
+    loadbalancers=clbs;
+    message="You do not have the minimum required role of billing_center_viewer to view the savings";
+  }
+  result={
+    "clbs": loadbalancers,
+    "message": message
+  };
+  EOS
 end
 
 ###############################################################################
 # Escalations
 ###############################################################################
 
-escalation "report_unused_CLB" do
+escalation "esc_email" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
   email $param_email
 end
 
-escalation "approve_delete_CLB" do
-  request_approval  do
-    label "Approve Resource Deletion"
-    description "Approve escalation to run RightScale Cloud Workflow to delete unused CLB"
-    parameter "approval_reason" do
-      type "string"
-      label "Reason for Approval"
-      description "Explain why you are approving the action"
+escalation "esc_delete_clb" do
+  automatic contains($param_automatic_action, "Delete Load balancers")
+  label "Delete CLB"
+  description "Delete selected unused CLB"
+  run "delete_CLB", data
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "policy_delete_unused_CLB" do
+  validate $ds_clbs_cost_mapping do
+    check eq(size(val(data, "clbs")), 0)
+    escalate $esc_email
+    escalate $esc_delete_clb
+    summary_template "AWS Account ID: {{with index data.clbs 0}}{{ .accountId }}{{end}} - {{ len data.clbs }} Unused Classic Load Balancers Found in AWS"
+    detail_template <<-EOS
+    {{data.message}}
+    EOS
+    export "clbs" do
+      resource_level true
+      field "accountId" do
+        label "Account Id"
+      end
+      field "id" do
+        label "LoadBalancer Name"
+      end
+      field "region" do
+        label "Region"
+      end
+      field "instanceId" do
+        label "Instance ID"
+      end
+      field "availabilityZones" do
+        label "Availability Zones"
+      end
+      field "tagKeyValue" do
+        label "Tag Value"
+      end
+      field "savings" do
+        label "Estimated Monthly Savings"
+      end
     end
   end
-  run "delete_CLB", data
 end
 
 ###############################################################################
@@ -271,7 +591,7 @@ define delete_CLB($data) return $all_responses do
       verb: "get",
       host: join(["elasticloadbalancing.",$item["region"],".amazonaws.com"]),
       auth: $$auth_aws,
-      href: join(["/", "?Action=DeleteLoadBalancer", "&LoadBalancerName=", $item["loadBalancerName"], "&Version=2012-06-01"]),
+      href: join(["/", "?Action=DeleteLoadBalancer", "&LoadBalancerName=", $item["id"], "&Version=2012-06-01"]),
       https: true,
       headers:{
         "cache-control": "no-cache",

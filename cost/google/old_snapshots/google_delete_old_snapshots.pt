@@ -5,7 +5,7 @@ short_description "Checks for snapshots older than specified number of days and,
 category "Cost"
 severity "low"
 info(
-  version: "2.2", 
+  version: "2.7",
   provider:"Google",
   service: "Storage",
   policy_set: "Old Snapshots"
@@ -32,6 +32,13 @@ parameter "param_exclusion_tags" do
   description "Cloud native label to ignore snapshots. Format: Key:Value"
   type "list"
   allowed_pattern /(^$)|([\w]?)+\:([\w]?)+/
+end
+
+parameter "param_automatic_action" do
+  type "list"
+  label "Automatic Actions"
+  description "When this value is set, this policy will automatically take the selected action(s)"
+  allowed_values ["Delete Snapshots"]
 end
 
 ###############################################################################
@@ -65,7 +72,6 @@ end
 
 #get all google project
 datasource "ds_google_project" do
-  iterate $ds_time
   request do
     auth $auth_google
     pagination $google_pagination
@@ -77,23 +83,19 @@ datasource "ds_google_project" do
     collect jmes_path(response, "projects[*]") do
       field "projectNumber", jmes_path(col_item,"projectNumber")
       field "projectId", jmes_path(col_item,"projectId")
-      field "end_date", val(iter_item,"end_date")
-      field "start_date", val(iter_item,"start_date")
     end
   end
-end
-
-datasource "ds_time" do
-  run_script $js_time
 end
 
 datasource "ds_snapshots" do
   iterate $ds_google_project
   request do
     auth $auth_google
+    pagination $google_pagination
     host "compute.googleapis.com"
     path join(["/compute/v1/projects/",val(iter_item,"projectId"),"/global/snapshots"])
     query "filter","status=READY"
+    ignore_status [403,404]
   end
   result do
     encoding "json"
@@ -116,16 +118,6 @@ end
 ###############################################################################
 # Scripts
 ###############################################################################
-script "js_time", type: "javascript" do
-  result "time"
-  code <<-EOF
-  var time = [{
-    "end_date":  new Date().toISOString(),
-    "start_date": new Date(new Date().setDate(new Date().getDate() - 30)).toISOString()
-  }]
-EOF
-end
-
 script "js_filter_snapshots", type: "javascript" do
   parameters "ds_snapshots", "param_exclusion_tags"
   result "filtered_snapshots"
@@ -134,7 +126,6 @@ script "js_filter_snapshots", type: "javascript" do
     var count = 0
     _.each(param_exclusion_tags, function(tag)
       {
-        console.log(tag)
         tag_key = tag.split(':')[0]
         tag_value = tag.split(':')[1]
         if ( snapshot.labels[tag_key] != null && snapshot.labels[tag_key] !== undefined){
@@ -145,14 +136,16 @@ script "js_filter_snapshots", type: "javascript" do
       }
     )
     if (count == 0){
-      var labelsList = "";
-      for(var prop in snapshot.labels){
-         labelsList = labelsList + prop+" : "+snapshot.labels[prop]+", ";
-	  }
-      if(labelsList.length > 0){
-        snapshot.labels = labelsList.substring(0, labelsList.length - 2);
-	  }
-      return snapshot
+      if (snapshot.id != null) {
+        var labelsList = "";
+        for(var prop in snapshot.labels){
+          labelsList = labelsList + prop+" : "+snapshot.labels[prop]+", ";
+        }
+        if(labelsList.length > 0){
+          snapshot.labels = labelsList.substring(0, labelsList.length - 2);
+        }
+        return snapshot
+      }
     }
   }
 )
@@ -202,6 +195,9 @@ policy "policy_old_snapshots" do
       field "status" do
         label "Status"
       end
+      field "selfLink" do
+        label "Self Link"
+      end
     end
   end
 end
@@ -212,19 +208,16 @@ end
 ###############################################################################
 
 escalation "esc_email" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
   email $param_email
 end
 
 escalation "esc_approve_delete_snapshots" do
-  request_approval  do
-    label "Approve Resource Deletion"
-    description "Approve escalation to run RightScale Cloud Workflow to delete Old Snapshots"
-    parameter "approval_reason" do
-      type "string"
-      label "Reason for Approval"
-      description "Explain why you are approving the action"
-    end
-  end
+  automatic contains($param_automatic_action, "Delete Snapshots")
+  label "Delete Snapshots"
+  description "Approval to delete all selected snapshots"
   run "delete_snapshots", data
 end
 

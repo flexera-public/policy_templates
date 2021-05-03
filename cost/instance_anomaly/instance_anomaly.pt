@@ -6,36 +6,35 @@ long_description ""
 severity "medium"
 category "Cost"
 info(
-  version: "1.2",
+  version: "1.5",
   provider: "Flexera Cloud Management",
   service: "",
   policy_set: ""
 )
-
 
 ###############################################################################
 # Parameters
 ###############################################################################
 
 parameter "param_percent_change" do
-	type "number"
-	label "Percent change"
-	description "Percentage of change allowed before sending report"
-	min_value "1"
+  type "number"
+  label "Percent change"
+  description "Percentage of change allowed before sending report"
+  min_value "1"
 end # parameter
 
 parameter "param_decrease" do
-	type "string"
-	label "Incr / Decr"
-	description "Whether to check for increases, decreases, or both"
-	allowed_values "Increase Only", "Increase/Decrease", "Decrease Only"
-	default "Increase Only"
+  type "string"
+  label "Incr / Decr"
+  description "Whether to check for increases, decreases, or both"
+  allowed_values "Increase Only", "Increase/Decrease", "Decrease Only"
+  default "Increase Only"
 end # parameter
 
 parameter "param_emails" do
-	type "list"
-	label "Email List"
-	description "Email addresses of the recipients you wish to notify"
+  type "list"
+  label "Email List"
+  description "Email addresses of the recipients you wish to notify"
 end # parameter
 
 ###############################################################################
@@ -43,8 +42,8 @@ end # parameter
 ###############################################################################
 
 permission "perm_index_instances" do
-	resources "rs_cm.instances"
-	actions "rs_cm.index"
+  resources "rs_cm.instances"
+  actions "rs_cm.index"
 end 
 
 ###############################################################################
@@ -58,30 +57,30 @@ auth "auth_rs", type: "rightscale"
 ###############################################################################
 
 datasource "ds_instances" do
-	request do
-  	auth $auth_rs
-  	verb "GET"
-  	path "/api/instances"
-  	host rs_cm_host
-  	header "X-Api-Version", "1.6"
-  	header "X-Account", to_s(rs_project_id)
-  	query "view", "full"
-  	query "filter", "state=booting,running,stranded"
- 	end
- 	result do
- 		encoding "json"
-		collect jmes_path(response,"[*]") do
-			field "in_id", val(col_item, "id")
-			field "in_href", val(col_item, "href")
-			field "in_timestamp", jmes_path(col_item, "timestamps.created_at")
-			field "in_cloudName", jmes_path(col_item, "links.cloud.name")
-			field "in_cloudRegion", jmes_path(col_item, "links.cloud.region")
- 		end # collect
- 	end # result
+  request do
+    auth $auth_rs
+    verb "GET"
+    path "/api/instances"
+    host rs_cm_host
+    header "X-Api-Version", "1.6"
+    header "X-Account", to_s(rs_project_id)
+    query "view", "full"
+    query "filter", "state=booting,running,stranded"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response,"[*]") do
+      field "in_id", val(col_item, "id")
+      field "in_href", val(col_item, "href")
+      field "in_timestamp", jmes_path(col_item, "timestamps.created_at")
+      field "in_cloudName", jmes_path(col_item, "links.cloud.name")
+      field "in_cloudRegion", jmes_path(col_item, "links.cloud.region")
+    end # collect
+  end # result
 end # datasource
 
 datasource "ds_check_instances" do
-	run_script $js_check_instances, $ds_instances, $param_percent_change, $param_decrease
+  run_script $js_check_instances, $ds_instances, $param_percent_change, $param_decrease
 end # datasource
 
 ###############################################################################
@@ -89,86 +88,82 @@ end # datasource
 ###############################################################################
 
 script "js_check_instances", type: "javascript" do
-	parameters "ds_instances", "param_percent_change", "param_change_dir"
-	result "report_table"
-	code <<-EOS
-		// Output
-		report_table = [];
-		var date = new Date();
+  parameters "ds_instances", "param_percent_change", "param_change_dir"
+  result "report_table"
+  code <<-EOS
+    // Output
+    report_table = [];
+    var date = new Date();
   	var timestamp_now = date.getTime();
   	var ago_30 = timestamp_now - (30*24*60*60*1000);
   	var ago_60 = timestamp_now - (60*24*60*60*1000);
 
-		// Strip out day of week from pretty string (e.g. Fri, 13 Aug 2019 => 13 Aug 2019)
+    // Strip out day of week from pretty string (e.g. Fri, 13 Aug 2019 => 13 Aug 2019)
   	var stringWorker = new String(new Date(ago_30).toDateString());
   	var ago_30_pretty = stringWorker.substr((stringWorker.indexOf(",") + 1), stringWorker.length).trim();
 
   	stringWorker = new String(new Date(ago_60).toDateString());
   	var ago_60_pretty = stringWorker.substr((stringWorker.indexOf(",")+1), stringWorker.length).trim();
 
-
   	// These represent "older than 30" and "within 30"; total instances is sum of both; everything
   	//  outside of 60 days is excluded
   	var hash = {};
 
   	for (var i = 0; i < ds_instances.length; i++ ) {
-  		var instance = ds_instances[i]
-  		var links = instance["in_links"]
-  		var cloud = instance["in_cloudName"]
-  		var region = instance["in_cloudRegion"]
-  		var created = new Date(instance["in_timestamp"]).getTime();
-
-  		if (region == null) {
-  			region = "Undefined";
-  			instance["in_cloudRegion"] = region
-  		}
-
-  		if (created >= ago_60 ) {
-	  		var key = cloud + ":" + region
-
-	  		// First, ensure that the cloud is in the hash
-	  		if (hash[key] == null) {
-	  			hash[key] = {"cloud": cloud, "region":region, "pretty_30":ago_30_pretty, "pretty_60":ago_60_pretty, "ago_30":0, "ago_60":0 }
-	  		}
-
-  			if (created <= ago_30) {
-  				hash[key]["ago_30"] += 1;
-  			} else {
-  				hash[key]["ago_60"] += 1;
-  			}
-  		}
-  	}
+      var instance = ds_instances[i]
+      var uid = instance["in_id"]
+      var links = instance["in_links"]
+      var cloud = instance["in_cloudName"]
+      var region = instance["in_cloudRegion"]
+      var created = new Date(instance["in_timestamp"]).getTime();
+      if (region == null) {
+        region = "Undefined";
+        instance["in_cloudRegion"] = region
+      }
+      if (created >= ago_60 ) {
+        var key = cloud + ":" + region
+        // First, ensure that the cloud is in the hash
+        if (hash[key] == null) {
+          hash[key] = {"cloud": cloud, "id":uid, "region":region, "pretty_30":ago_30_pretty, "pretty_60":ago_60_pretty, "ago_30":0, "ago_60":0 }
+        }
+        if (created <= ago_30) {
+          hash[key]["ago_30"] += 1;
+        } else {
+          hash[key]["ago_60"] += 1;
+        }
+      }
+    }
 
     // All have been summed - determine which counts violate the policy.  Compliant items are deleted, leaving violations in the hash
   	for (keyIter in hash) {
-			totalInstances = hash[keyIter]["ago_30"] + hash[keyIter]["ago_60"]
-			newDelta = hash[keyIter]["ago_30"] - hash[keyIter]["ago_60"]
-			pctChange = ((newDelta / totalInstances) * 100)
-			hash[keyIter]["pctChange"] = pctChange
+      totalInstances = hash[keyIter]["ago_30"] + hash[keyIter]["ago_60"]
+      newDelta = hash[keyIter]["ago_30"] - hash[keyIter]["ago_60"]
+      pctChange = ((newDelta / totalInstances) * 100)
+      hash[keyIter]["pctChange"] = pctChange
 
-	 		  // Check to see if threshold has been exceeded
-			switch(param_change_dir) {
-				case "Increase Only" :
-					// Check for no violation
-					if (pctChange < param_percent_change) {
-						delete hash[keyIter]
-					}
-					break;
-				case "Decrease Only" :
-					if (Math.abs(pctChange) < param_percent_change || (pctChange >= 0)) {
-						delete hash[keyIter]
-					}
-					break;
-				default:
-					if (Math.abs(pctChange) < param_percent_change) {
-						delete hash[keyIter]
-					}
-					break;
-			} // switch
+      // Check to see if threshold has been exceeded
+      switch(param_change_dir) {
+        case "Increase Only" :
+          // Check for no violation
+          if (pctChange < param_percent_change) {
+            delete hash[keyIter]
+          }
+          break;
+        case "Decrease Only" :
+          if (Math.abs(pctChange) < param_percent_change || (pctChange >= 0)) {
+            delete hash[keyIter]
+          }
+          break;
+        default:
+          if (Math.abs(pctChange) < param_percent_change) {
+            delete hash[keyIter]
+          }
+          break;
+      } // switch
 
-			report_table.push(hash[keyIter])
+      report_table.push(hash[keyIter])
   	} // for
-	EOS
+  EOS
 end
 
 ###############################################################################
@@ -176,21 +171,28 @@ end
 ###############################################################################
 
 policy "check_percent_change" do
-	validate_each $ds_check_instances do
+  validate_each $ds_check_instances do
    	summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): Instance count threshold exceeded"
-  	detail_template <<-EOS
-Instance count report: {{ rs_project_name }} (ID: {{ rs_project_id }})\n
-Date span [30 days ago: {{with(index data 0)}}{{.pretty_30}}{{end}}] - [60 days ago: {{with(index data 0)}}{{.pretty_60}}{{end}}] \n
-			
-| Cloud | Region | Instances Last 30 days | Instances Previous 30 days |
-| ----- | ------ | ----------- | ----------- |
-{{ range data -}}
-| {{.cloud}} | {{.region}} | {{.ago_30}} | {{.ago_60}} |
-{{ end -}}
-EOS
-		check false
-		escalate $email_threshold_report
-	end # validate
+    check false
+    escalate $email_threshold_report
+    export do
+      field "cloud" do
+        label "Cloud"
+      end
+      field "region" do
+        label "Region"
+      end
+      field "ago_30" do
+        label "Instances Last 30 days"
+      end
+      field "ago_60" do
+        label "Instances Previous 30 days"
+      end
+      field "id" do
+        label "ID"
+      end
+    end
+  end # validate
 end # policy
 
 ###############################################################################
@@ -198,7 +200,8 @@ end # policy
 ###############################################################################
 
 escalation "email_threshold_report" do
-  # Let the identified folks know that instance count is out of range
+  automatic true
+  label "Send Email"
+  description "Send incident email"
   email $param_emails
-end # escalation
-
+end

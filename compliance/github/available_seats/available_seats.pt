@@ -5,7 +5,7 @@ long_description ""
 severity "medium"
 category "Compliance"
 info(
-  version: "2.0",
+  version: "2.2",
   provider: "GitHub",
   service: "",
   policy_set: ""
@@ -73,6 +73,7 @@ datasource "ds_github_orgs" do
   result do
     encoding "json"
     collect jmes_path(response, "[@]") do
+      field "id", jmes_path(col_item, "id")
       field "org", jmes_path(col_item, "login")
       field "total_seats", jmes_path(col_item, "plan.seats")
       field "used_seats", jmes_path(col_item, "plan.filled_seats")
@@ -84,44 +85,57 @@ end
 policy "policy_available_seats" do
   validate_each $ds_github_orgs do
     summary_template "GitHub Orgs with low available seats"
-    detail_template <<-EOS
-# GitHub Orgs with Low Seats
-| Org Name | Available Seats | Used Seats | Total Seats |
-| --------- | --------------- | --------- | ------------ |
-{{ range data -}}
-| [{{.org}}](https://github.com/orgs/{{.org}}/people) | {{.available_seats}} | {{.used_seats}} | {{.total_seats}} |
-{{ end -}}
-
-#### Policy Min Seat Count: {{parameters.param_min_seats}}
-
-___
-###### Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }})
-
-EOS
     check gt(to_n(val(item,"available_seats")),to_n($param_min_seats))
+    ### Policy Min Seat Count: {{parameters.param_min_seats}}
     escalate $email_report
+    export do
+      resource_level true
+      field "org" do
+        label "Organization Name"
+      end
+      field "available_seats" do
+        label "Available Seats"
+      end
+      field "used_seats" do
+        label "Used Seats"
+      end
+      field "total_seats" do
+        label "Total Seats"
+      end
+      field "id" do
+        label "Id"
+      end
+    end
   end
   validate_each $ds_github_orgs do
     summary_template "GitHub Orgs with too many available seats"
-    detail_template <<-EOS
-# GitHub Orgs with Too Many Available Seats
-| Org Name | Available Seats | Used Seats | Total Seats |
-| --------- | --------------- | --------- | ------------ |
-{{ range data -}}
-| [{{.org}}](https://github.com/orgs/{{.org}}/people) | {{.available_seats}} | {{.used_seats}} | {{.total_seats}} |
-{{ end -}}
-
-#### Policy Max Seat Count: {{parameters.param_max_seats}}
-
-___
-###### Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }})
-
-EOS
     check lt(to_n(val(item,"available_seats")),to_n($param_max_seats))
     escalate $email_report
+    #### Policy Max Seat Count: {{parameters.param_max_seats}}
+    export do
+      resource_level true
+      field "org" do
+        label "Organization Name"
+      end
+      field "available_seats" do
+        label "Available Seats"
+      end
+      field "used_seats" do
+        label "Used Seats"
+      end
+      field "total_seats" do
+        label "Total Seats"
+      end
+      field "id" do
+        label "Id"
+      end
+    end
   end
 end
 
 escalation "email_report" do
-    email $param_email
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
 end

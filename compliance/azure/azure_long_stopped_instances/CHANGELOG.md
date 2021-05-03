@@ -1,5 +1,13 @@
 # Changelog
 
+## v2.4
+
+- Modified escalation label and description for consistency
+
+## v2.3
+
+- Added resource table
+
 ## v2.2
 
 - Modified policy for handling 404 error
