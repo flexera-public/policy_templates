@@ -148,7 +148,7 @@ has_app_changes.each do |file|
   pp.parse(file)
   default_frequency = pp.parsed_default_frequency
   if ! default_frequency
-    fail "Please add a default_frequency property field and value. #{file}"
+    fail "Please add a 'default_frequency' property field and value. #{file}"
   end
   # check frequency meets the expected list
   if default_frequency && !frequencies.include?(default_frequency.downcase)

@@ -23,7 +23,7 @@ class PolicyParser
   def name(name)
     @parsed_name = name
   end
-  
+
   def severity(severity)
     @parsed_severity = severity
   end
@@ -34,6 +34,10 @@ class PolicyParser
 
   def short_description(short_description)
     @parsed_short_description = short_description
+  end
+
+  def default_frequency(default_frequency)
+    @parsed_default_frequency = default_frequency
   end
 
   def method_missing(symbol, *args, &block)
