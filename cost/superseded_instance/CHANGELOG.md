@@ -1,5 +1,17 @@
 # Changelog
 
+## v1.12
+
+- Ensure at least a month worth of costs are retrieved
+
+## v1.11
+
+- Fixed cloud account vendor URL, and use name instead of id
+
+## v1.10
+
+- Fixed the Run Rate label
+
 ## v1.9
 
 - Modified escalation label and description for consistency
