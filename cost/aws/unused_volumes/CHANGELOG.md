@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.17
+
+- Added default_frequency "daily"
+
 ## v2.16
 
 - Increase the sleep time between calls to AWS for snapshot status in order to decrease the likelihood of hitting
