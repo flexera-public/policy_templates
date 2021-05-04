@@ -1,5 +1,13 @@
 # Changelog
 
+## v1.6
+
+- Added default_frequency "daily"
+
+## v1.5
+
+- Modified policy template to collect instance id and formatted the template and README files.
+
 ## v1.4
 
 - Modified escalation label and description for consistency

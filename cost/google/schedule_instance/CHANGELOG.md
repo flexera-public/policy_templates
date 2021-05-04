@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.2
+
+- Added default_frequency "daily"
+
 ## v2.1
 
 - converted list of timezone objects to one object in timezones_list.json
@@ -8,3 +12,4 @@
 ## v2.0
 
 - initial release
+

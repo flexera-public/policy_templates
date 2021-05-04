@@ -7,17 +7,25 @@ severity "high"
 category "SaaS Management"
 default_frequency "daily"
 info(
-  version: "2.2",
+  version: "2.3",
   provider: "Flexera SaaS Manager",
   service: "",
   policy_set: ""
 )
+
+###############################################################################
+# User inputs
+###############################################################################
 
 parameter "param_email" do
   type "list"
   label "Email addresses to notify"
   description "Email addresses of the recipients you wish to notify"
 end
+
+###############################################################################
+# Authentication
+###############################################################################
 
 #authenticate with FSM
 credentials "fsm_auth" do
@@ -27,10 +35,19 @@ credentials "fsm_auth" do
   tags "provider=flexera_fsm"
 end
 
+###############################################################################
+# Datasources
+###############################################################################
+
+datasource "ds_get_host" do
+  run_script $js_get_host, rs_governance_host
+end
+
 datasource "ds_num_products" do
+  iterate $ds_get_host
   request do
     auth $fsm_auth
-    host "api.fsm.flexeraeng.com"
+    host val(iter_item,"host")
     verb "GET"
     scheme "https"
     path join(["/svc/orgs/", rs_org_id, "/managed-products"])
@@ -39,12 +56,13 @@ datasource "ds_num_products" do
   result do
     encoding "json"
     field "totalItems", jmes_path(response, "totalItems")
+    field "saas_host", val(iter_item,"host")
   end
 end
 
 datasource "ds_products" do
   request do
-    run_script $js_products, val($ds_num_products,"totalItems"), rs_org_id
+    run_script $js_products, $ds_num_products, rs_org_id
   end
   result do
     encoding "json"
@@ -57,31 +75,11 @@ datasource "ds_products" do
   end
 end
 
-script "js_products", type: "javascript" do
-  parameters "num_items", "rs_org_id"
-  result "request"
-  code <<-EOS
-  request = {
-    auth: "fsm_auth",
-    host: "api.fsm.flexeraeng.com",
-    verb: "GET",
-    scheme: "https",
-    path: "/svc/orgs/"+rs_org_id+"/managed-products",
-    headers: {
-      "content-type": "application/json"
-    },
-     query_params: {
-      "pageSize": num_items.toString(),
-      "includeInactive": "false"
-    }
-  }
-EOS
-end
-
-datasource "ds_num_unsanctioned" do 
+datasource "ds_num_unsanctioned" do
+  iterate $ds_get_host 
   request do
     auth $fsm_auth
-    host "api.fsm.flexeraeng.com"
+    host val(iter_item,"host")
     verb "GET"
     scheme "https"
     path join(["/svc/orgs/", rs_org_id, "/financial-discovery"])
@@ -90,12 +88,13 @@ datasource "ds_num_unsanctioned" do
   result do
     encoding "json"
     field "totalItems", jmes_path(response, "totalItems")
+    field "saas_host", val(iter_item,"host")
   end
 end 
 
 datasource "ds_unsanctioned" do 
   request do
-    run_script $js_unsanctioned, val($ds_num_unsanctioned,"totalItems"), rs_org_id
+    run_script $js_unsanctioned, $ds_num_unsanctioned, rs_org_id
   end
   result do
     encoding "json"
@@ -110,13 +109,55 @@ datasource "ds_unsanctioned" do
   end
 end
 
-script "js_unsanctioned", type: "javascript" do
-  parameters "num_items", "rs_org_id"
+datasource "ds_format_data" do 
+  run_script $js_format_data, $ds_products, $ds_unsanctioned
+end 
+
+###############################################################################
+# Scripts
+###############################################################################
+
+script "js_get_host", type: "javascript" do
+  parameters "host"
+  result "result"
+  code <<-EOS
+    var result = [];
+    if(host.indexOf(".eu") !== -1 || host.indexOf("-eu") !== -1){
+      result.push({host: "api.fsm-eu.flexeraeng.com"});
+    }else{
+      result.push({host: "api.fsm.flexeraeng.com"});
+    }
+  EOS
+end
+
+script "js_products", type: "javascript" do
+  parameters "ds_num_products", "rs_org_id"
   result "request"
   code <<-EOS
   request = {
     auth: "fsm_auth",
-    host: "api.fsm.flexeraeng.com",
+    host: ds_num_products[0]["saas_host"],
+    verb: "GET",
+    scheme: "https",
+    path: "/svc/orgs/"+rs_org_id+"/managed-products",
+    headers: {
+      "content-type": "application/json"
+    },
+     query_params: {
+      "pageSize": ds_num_products[0]["totalItems"].toString(),
+      "includeInactive": "false"
+    }
+  }
+EOS
+end
+
+script "js_unsanctioned", type: "javascript" do
+  parameters "ds_num_unsanctioned", "rs_org_id"
+  result "request"
+  code <<-EOS
+  request = {
+    auth: "fsm_auth",
+    host: ds_num_unsanctioned[0]["saas_host"],
     verb: "GET",
     scheme: "https",
     path: "/svc/orgs/"+rs_org_id+"/financial-discovery",
@@ -124,15 +165,11 @@ script "js_unsanctioned", type: "javascript" do
       "content-type": "application/json"
     },
      query_params: {
-      "pageSize": num_items.toString()
+      "pageSize": ds_num_unsanctioned[0]["totalItems"].toString()
     }
   }
 EOS
 end
-
-datasource "ds_format_data" do 
-  run_script $js_format_data, $ds_products, $ds_unsanctioned
-end 
 
 script "js_format_data", type: "javascript" do
   parameters "ds_products", "ds_unsanctioned"
@@ -159,6 +196,9 @@ script "js_format_data", type: "javascript" do
 EOS
 end
 
+###############################################################################
+# Escalations
+###############################################################################
 
 escalation "report_summary" do
   automatic true
@@ -166,6 +206,10 @@ escalation "report_summary" do
   description "Send incident email"
   email $param_email
 end
+
+###############################################################################
+# Policy
+###############################################################################
 
 policy "policy_fsm_unsanctioned_with_contract" do
   validate $ds_format_data do
