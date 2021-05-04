@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.4
+
+- Changing 400 to 404
+
 ## v2.3
 
 - Modified escalation label and description for consistency
