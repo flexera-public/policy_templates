@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.8
+
+- Added default_frequency "daily"
+
 ## v2.7
 
 - Added missing pagination to the request for snapshot list

@@ -1,5 +1,13 @@
 # Changelog
 
+## v2.6
+
+- Adding Azure China
+
+## v2.5
+
+- Added default_frequency "daily"
+
 ## v2.4
 
 - Updated policy to fetch cost details for multiple subscription ids from Optima
