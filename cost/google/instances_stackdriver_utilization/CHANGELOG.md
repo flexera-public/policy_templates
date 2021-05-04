@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.9
+
+- Added default_frequency "daily"
+
 ## v2.8
 
 - Fixed a bug where calculating maximum and minimum numbers in an array returns NaN

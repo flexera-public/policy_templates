@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.7
+
+- Added default_frequency "daily"
+
 ## v2.6
 
 - Added a new input parameter to enter regions in order to support SCP (Service Control Policy) and CIS Standards
