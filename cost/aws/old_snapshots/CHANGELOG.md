@@ -1,5 +1,24 @@
 # Changelog
 
+## v2.14
+
+- Added default_frequency "daily"
+
+## v2.13
+
+- Improve error handling and debug logging so that errors from taking action are actually surfaced
+- Add a `param_log_to_cm_audit_entries` parameter to control whether action debug logging is sent to CM Audit
+  Entries; this should be left set to No on Flexera EU
+
+## v2.12
+
+- Add a parameter to override the Flexera One org ID to use when querying Optima for cases when the project is not
+  in the same org where the AWS bill is registered in Optima
+
+## v2.11
+
+- Added a new input parameter to enter regions in order to support SCP (Service Control Policy) and CIS Standards
+
 ## v2.10
 
 - Modified escalation label and description for consistency

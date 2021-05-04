@@ -6,16 +6,17 @@ long_description ""
 category "Cost"
 severity "low"
 tenancy "single"
+default_frequency "daily"
 info(
-      version: "2.4",
-      provider: "GCE",
-      service: "Compute",
-      policy_set: "Committed Use Discount"
-    )
+  version: "2.6",
+  provider: "GCE",
+  service: "Compute",
+  policy_set: "Committed Use Discount"
+)
 
-##################
-# User inputs    #
-##################
+###############################################################################
+# Parameters
+###############################################################################
 
 parameter "param_email" do
   type "list"
@@ -29,6 +30,10 @@ parameter "param_cud_status" do
   default "All"
 end
 
+###############################################################################
+# Authentication
+###############################################################################
+
 # authenticate with Google
 credentials "auth_google" do
   schemes "oauth2"
@@ -36,6 +41,10 @@ credentials "auth_google" do
   description "Select the Google Cloud Credential from the list."
   tags "provider=gce"
 end
+
+###############################################################################
+# Pagination
+###############################################################################
 
 pagination "google_pagination" do
   get_page_marker do
@@ -45,6 +54,10 @@ pagination "google_pagination" do
     query "pageToken"
   end
 end
+
+###############################################################################
+# Datasources
+###############################################################################
 
 #get all google project
 datasource "ds_google_project" do
@@ -76,70 +89,71 @@ datasource "ds_committed_use_discount" do
     ignore_status [403,404]
   end
   result do
-  encoding "json"
-  collect jmes_path(response, "items.*.commitments[0]") do
-  field "cud_id", jmes_path(col_item, 'id')
-  field "name", jmes_path(col_item, 'name')
-  field "region", jmes_path(col_item, 'region')
-  field "status", jmes_path(col_item, 'status')
-  field "plan", jmes_path(col_item, 'plan')
-  field "endTimestamp", jmes_path(col_item, 'endTimestamp')
-  field "startTimestamp", jmes_path(col_item, 'startTimestamp')
-  field "projectId", val(iter_item, "projectId")
+    encoding "json"
+    collect jmes_path(response, "items.*.commitments[]") do
+      field "cud_id", jmes_path(col_item, 'id')
+      field "name", jmes_path(col_item, 'name')
+      field "region", jmes_path(col_item, 'region')
+      field "status", jmes_path(col_item, 'status')
+      field "plan", jmes_path(col_item, 'plan')
+      field "endTimestamp", jmes_path(col_item, 'endTimestamp')
+      field "startTimestamp", jmes_path(col_item, 'startTimestamp')
+      field "projectId", val(iter_item, "projectId")
+    end
   end
- end
 end
 
 datasource "ds_committed_use_discount_map" do
   run_script $js_committed_use_discount_map, $ds_committed_use_discount, $param_cud_status
 end
 
+###############################################################################
+# Scripts
+###############################################################################
+
 #Filter the JSON, based on user selection for param 'param_cud_status' and formating Date.
 script "js_committed_use_discount_map", type: "javascript" do
   parameters "commitments","param_cud_status"
   result "content"
   code <<-EOS
-  var content=[];
-  for(var i=0; i < commitments.length ; i++){
-	commitment = commitments[i]
+    var content=[];
+    for(var i=0; i < commitments.length ; i++){
+      commitment = commitments[i]
 
-	var start_date = (new Date(commitment['startTimestamp'])).toISOString().slice(0, 10);
-	var end_date = (new Date(commitment['endTimestamp'])).toISOString().slice(0, 10);
+      var start_date = (new Date(commitment['startTimestamp'])).toISOString().slice(0, 10);
+      var end_date = (new Date(commitment['endTimestamp'])).toISOString().slice(0, 10);
 
-	commitmentDetails={
-          cud_id: commitment['cud_id'],
-          name: commitment['name'],
-          region: commitment['region'],
-          status: commitment['status'],
-          startTimestamp: start_date,
-          plan: commitment['plan'],
-          endTimestamp: end_date,
-          projectId: commitment['projectId']
-		}
+      commitmentDetails={
+        cud_id: commitment['cud_id'],
+        name: commitment['name'],
+        region: commitment['region'],
+        status: commitment['status'],
+        startTimestamp: start_date,
+        plan: commitment['plan'],
+        endTimestamp: end_date,
+        projectId: commitment['projectId']
+      }
 
-	if(param_cud_status != 'All'){
-		if(commitments[i].status === param_cud_status.toUpperCase()){
-			content.push(commitmentDetails)
-		}
-	}else{
-			content.push(commitmentDetails)
-		}
-  }
-EOS
+      if(param_cud_status != 'All'){
+        if(commitments[i].status === param_cud_status.toUpperCase()){
+          content.push(commitmentDetails)
+        }
+      } else {
+        content.push(commitmentDetails)
+      }
+    }
+  EOS
 end
 
-escalation "report_list_of_CUDs" do
-  automatic true
-  label "Send Email"
-  description "Send incident email"
-  email $param_email
-end
+###############################################################################
+# Policy
+###############################################################################
 
 policy "policy_committed_use_discount" do
   validate $ds_committed_use_discount_map do
-	summary_template " List of {{ parameters.param_cud_status }} Committed Use Discounts in Google Cloud"
-	escalate $report_list_of_CUDs
-	check eq(size(data),0)
+    summary_template " List of {{ parameters.param_cud_status }} Committed Use Discounts in Google Cloud"
+    escalate $report_list_of_CUDs
+    check eq(size(data),0)
     export do
       resource_level true
       field "projectId" do
@@ -169,4 +183,15 @@ policy "policy_committed_use_discount" do
       end
     end
   end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "report_list_of_CUDs" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
 end

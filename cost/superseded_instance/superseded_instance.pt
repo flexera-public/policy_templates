@@ -93,7 +93,7 @@ end
 
 datasource "ds_new_bc_costs" do
   request do
-    run_script $js_new_costs_request, rs_org_id, $ds_billing_centers, $param_billing_centers
+    run_script $js_new_costs_request, rs_org_id, $ds_billing_centers, $param_billing_centers, rs_optima_host
   end
   result do
     encoding "json"
@@ -180,10 +180,12 @@ script "js_get_billing_centers", type: "javascript" do
 end
 
 script "js_new_costs_request", type: "javascript" do
-  parameters "org_id","ds_billing_centers", "param_billing_centers"
+  parameters "org_id","ds_billing_centers", "param_billing_centers", "optima_host"
   result "request"
   code <<-EOS
     var date = new Date();
+    // Make sure we get at least a month worth of costs
+    date.setMonth(date.getMonth()-1);
     var year = date.getUTCFullYear();
     var month =  (date.getUTCMonth()==11)?1:2 + date.getUTCMonth();
 
@@ -228,12 +230,24 @@ script "js_new_costs_request", type: "javascript" do
         {"dimension":"category","type":"equal","value":"Compute"},
         {"dimension":"resource_type","type":"equal","value":"Compute Instance"},
         {"dimension":"vendor","type":"equal","value":"AWS"}
-      ]}
+      ]},
+      {"type" : "and", "expressions" : [
+        {"dimension":"category","type":"equal","value":"Compute"},
+        {"dimension":"vendor","type":"equal","value":"AzureMCA-Enterprise"},
+        {"dimension":"service", "type":"equal", value:"Microsoft.Compute"},
+        {"dimension":"resource_type","type":"substring","substring":"Virtual Machines"}
+      ]},
+        {"type" : "and", "expressions" : [
+        {"dimension":"category","type":"equal","value":"Compute"},
+        {"dimension":"vendor","type":"equal","value":"AzureMCA-CSP"},
+        {"dimension":"service", "type":"equal", value:"Microsoft.Compute"},
+        {"dimension":"resource_type","type":"substring","substring":"Virtual Machines"}
+      ]},
     ]
 
     var request = {
       auth: "auth_rs",
-      host: "optima.rightscale.com",
+      host: optima_host,
       verb: "POST",
       path: "/bill-analysis/orgs/" + org_id + "/costs/select",
       body_fields: {
@@ -461,7 +475,3 @@ policy "pol_aws_superseded_instance" do
     end
   end
 end
-
-###############################################################################
-# Cloud Workflow
-###############################################################################
