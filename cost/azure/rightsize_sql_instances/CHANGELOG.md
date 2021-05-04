@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.6
+
+- Added default_frequency "daily"
+
 ## v2.5
 
 - Ignored Elastic pool databases getting listed in incident.

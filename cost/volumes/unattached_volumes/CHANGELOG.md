@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.15
+
+- Added default_frequency "daily"
+
 ## v1.14
 
 - Modified escalation label and description for consistency

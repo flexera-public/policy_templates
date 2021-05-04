@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.3
+
+- Added default_frequency "daily"
+
 ## v2.2
 
 - corrected buggy filter to find only RHEL and SLES Linux AHub eligible vms

@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.15
+
+- Added default_frequency "daily"
+
 ## v2.14
 
 - Improve error handling and debug logging so that errors from taking action are actually surfaced
