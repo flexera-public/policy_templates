@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.10
+
+- Added default_frequency "daily"
+
 ## v2.9
 
 - Modified escalation label and description for consistency

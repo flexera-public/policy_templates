@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.6
+
+- Added default_frequency "daily"
+
 ## v2.5
 
 - Fixed a bug where we would only report on a single CUD in a region where there is more than one.
