@@ -1,0 +1,263 @@
+name "Flexera IAM Explicit User Roles"
+rs_pt_ver 20180301
+type "policy"
+short_description "Identifies users in Flexera IAM that have explicit user roles assigned.\n See the [README](https://github.com/flexera/policy_templates/tree/master/compliance/flexera/iam_explicit_user_roles) and [docs.rightscale.com/policies](https://docs.rightscale.com/policies/) to learn more."
+long_description ""
+category "Compliance"
+severity "medium"
+tenancy "single"
+default_frequency "hourly"
+info(
+    version: "1.0",
+    provider: "Flexera",
+    service: "IAM",
+    policy_set: ""
+)
+
+###############################################################################
+# Permissions
+###############################################################################
+
+###############################################################################
+# Parameters
+###############################################################################
+
+parameter "param_email" do
+  type "list"
+  label "Email addresses of the recipients you wish to notify"
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+auth "auth_rs", type: "rightscale"
+
+###############################################################################
+# Pagination
+###############################################################################
+
+###############################################################################
+# Datasources
+###############################################################################
+
+datasource "ds_iam_users" do
+  request do
+    auth $auth_rs
+    host "governance.rightscale.com"
+    path join(["grs/orgs/",rs_org_id,"/users"])
+    header "X-Api-Version", "2.0"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response,"[*]") do
+      field "email", jmes_path(col_item, "email")
+      field "id", jmes_path(col_item, "id")
+      field "href", jmes_path(col_item, "href")
+      field "first_name", jmes_path(col_item, "first_name")
+      field "last_name", jmes_path(col_item, "last_name")
+    end
+  end
+end
+
+datasource "ds_iam_roles" do
+  request do
+    auth $auth_rs
+    host "governance.rightscale.com"
+    path join(["grs/orgs/",rs_org_id,"/roles"])
+    header "X-Api-Version", "2.0"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response,"[*]") do
+      field "id", jmes_path(col_item, "id")
+      field "href", jmes_path(col_item, "href")
+      field "name", jmes_path(col_item, "name")
+    end
+  end
+end
+
+datasource "ds_iam_org_access_rules" do
+  request do
+    auth $auth_rs
+    host "governance.rightscale.com"
+    path join(["grs/orgs/",rs_org_id,"/access_rules"])
+    header "X-Api-Version", "2.0"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response,"[*]") do
+      field "subject_href", jmes_path(col_item, "links.subject.href")
+      field "subject_kind", jmes_path(col_item, "links.subject.kind")
+      field "role_href", jmes_path(col_item, "links.role.href")
+      field "scope", jmes_path(col_item, "links.scope.href")
+    end
+  end
+end
+
+datasource "ds_iam_projects" do
+  request do
+    auth $auth_rs
+    host "governance.rightscale.com"
+    path join(["grs/orgs/",rs_org_id,"/projects"])
+    header "X-Api-Version", "2.0"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response,"[*]") do
+      field "id", jmes_path(col_item, "id")
+      field "href", jmes_path(col_item, "href")
+      field "name", jmes_path(col_item, "name")
+    end
+  end
+end
+
+datasource "ds_iam_project_access_rules" do
+  iterate $ds_iam_projects
+  request do
+    auth $auth_rs
+    host "governance.rightscale.com"
+    path join(["grs/orgs/",rs_org_id,"/projects/",val(iter_item, "id"),"/access_rules"])
+    header "X-Api-Version", "2.0"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response,"[*]") do
+      field "subject_href", jmes_path(col_item, "links.subject.href")
+      field "subject_kind", jmes_path(col_item, "links.subject.kind")
+      field "role_href", jmes_path(col_item, "links.role.href")
+      field "scope", jmes_path(col_item, "links.scope.href")
+    end
+  end
+end
+
+datasource "ds_combined_access_rules" do
+  run_script $js_combined_access_rules, $ds_iam_org_access_rules, $ds_iam_project_access_rules
+end
+
+datasource "ds_filtered_user_access_rules" do
+  run_script $js_filtered_user_access_rules, $ds_combined_access_rules, $ds_iam_users, $ds_iam_projects, $ds_iam_roles
+end
+
+###############################################################################
+# Scripts
+###############################################################################
+
+script "js_combined_access_rules", type: "javascript" do
+  parameters "ds_iam_org_access_rules", "ds_iam_project_access_rules"
+  result "results"
+  code <<-EOS
+    var results = [];
+    // Filter out group access rules
+    // Combine org and project access rules
+
+    var iam_org_access_rules =
+      _.reject(ds_iam_org_access_rules, function(access_rule){ return access_rule.subject_kind === "group" });
+
+    var iam_project_access_rules =
+      _.reject(ds_iam_project_access_rules, function(access_rule){ return access_rule.subject_kind === "group" });
+
+    results = iam_org_access_rules.concat(iam_project_access_rules)
+EOS
+end
+
+script "js_filtered_user_access_rules", type: "javascript" do
+  parameters "ds_combined_access_rules", "ds_iam_users", "ds_iam_projects", "ds_iam_roles"
+  result "results"
+  code <<-EOS
+    var results = [];
+    var users = [];
+    // Return a list of users and scopes and the roles they explicitly have applied
+
+    _.each(ds_iam_users, function(user){
+      var userRoles = []
+      var userScopes = []
+      var userHref = user["href"]
+
+      userRoles = _.where(ds_combined_access_rules, {"subject_href": userHref})
+      userScopes = _.unique(_.pluck(userRoles, 'scope'))
+      if (userRoles && userScopes) {
+        _.each(userScopes, function(scope){
+          var scopeRoles = []
+          var roleNames = []
+          var roleHrefs = []
+
+          var scopeName = "Organization"
+          console.log("Scope: " + scope)
+          if ( scope.match(/projects/) ) {
+            var projectName =_.findWhere(ds_iam_projects, { "href": scope })["name"]
+            console.log("Project Name", projectName)
+            scopeName = "Project (" + projectName + ")"
+          }
+
+          scopeRoles = _.pluck(_.where(userRoles, { "scope": scope }), "role_href")
+          console.log("Scope Roles:", scopeRoles)
+          _.each(scopeRoles, function(scopeRole){
+            console.log("Scope Role: ", scopeRole )
+            var tmpScopeRole = _.findWhere(ds_iam_roles, { href: scopeRole })
+            if (tmpScopeRole) {
+              roleNames.push(tmpScopeRole["name"])
+            }
+          })
+
+          results.push({
+            id: user["id"],
+            href: user["href"],
+            first_name: user["first_name"],
+            last_name: user["last_name"],
+            email: user["email"],
+            scope_name: scopeName,
+            scope_href: scope,
+            role_names: roleNames.join(", "),
+            role_hrefs: scopeRoles
+          })
+        })
+      }
+    })
+    results = _.sortBy(results, 'last_name')
+EOS
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "policy_flexera_iam_explicit" do
+  validate $ds_filtered_user_access_rules do
+    summary_template "{{ len data }} explicit Flexera IAM Access Rules applied"
+    detail_template <<-EOS
+## The following access rules are explicityly assigned to users.
+## Best practices dictate that user roles be managed via groups.
+
+| Last Name  | First Name  | Email | User Id | Scope Name | Scope Href | Role Names |
+| :--------: | :---------: | :---: | :-----: | :--------: | :--------: | :--------: |
+{{ range data -}}
+  | {{ .last_name }} | {{ .first_name }} | {{ .email }} | {{ .id }} | {{ .scope_name }} | {{ .scope_href }} | {{ .role_names }} |
+{{ end -}}
+
+___
+###### Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }}) within Org: {{ rs_org_name }} (Org ID: {{ rs_org_id }})
+EOS
+    escalate $email
+    check false
+  end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "email" do
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
+end
+
+###############################################################################
+# Cloud Workflow
+###############################################################################

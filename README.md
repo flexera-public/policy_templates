@@ -6,6 +6,22 @@ Please contact sales@flexera.com to learn more.
 
 ## Released Policy Templates
 
+---
+
+Categories
+
+- [Cost](#cost)
+- [Security](#security)
+- [Compliance](#compliance)
+- [Operational](#operational)
+- [SaaS Management](#saas-management)
+
+Reference
+
+- [Policy Data Sets](#policy-data-sets)
+
+---
+
 ### Cost
 
 #### Multi-cloud
@@ -151,6 +167,10 @@ Please contact sales@flexera.com to learn more.
 - [Google Open Buckets](./security/storage/google/public_buckets/)
 
 ### Compliance
+
+#### Flexera
+
+- [Flexera IAM Explicit User Roles](./compliance/flexera/iam_explicit_user_roles/)
 
 #### Multi-cloud
 
