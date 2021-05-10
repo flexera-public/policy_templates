@@ -1,7 +1,7 @@
 name "AWS GP3 Upgradeable Volumes"
 rs_pt_ver 20180301
 type "policy"
-short_description "Checks for unused volumes with no read/write operations performed within a specified number of days and, optionally, deletes them. See the [README](https://github.com/flexera/policy_templates/tree/master/cost/aws/unused_volumes) and [docs.rightscale.com/policies](https://docs.rightscale.com/policies/) to learn more."
+short_description "Checks for upgradeable volumes and report them for modification. See the [README](https://github.com/flexera/policy_templates/tree/master/cost/aws/gp3_volume_upgrade) and [docs.rightscale.com/policies](https://docs.rightscale.com/policies/) to learn more."
 category "Cost"
 severity "low"
 default_frequency "daily"
@@ -423,7 +423,7 @@ script "js_volume_cost_mapping", type:"javascript" do
   parameters "volumes", "volume_costs", "ds_currency_code", "ds_currency_reference", "ds_billing_centers", "ds_get_caller_identity"
   result "result"
   code <<-EOS
-  var unused_volumes=[];
+  var upgradeable_volumes=[];
   var result = {};
   var message='';
   var count=0;
@@ -486,7 +486,7 @@ script "js_volume_cost_mapping", type:"javascript" do
         var sum = _.reduce(_.compact(_.map(cost_objects, function(value){ return value.cost_nonamortized_unblended_adj})), function(memo, num){ return memo + num; }, 0);
         var monthly_savings = sum*30;
         total_savings=total_savings+monthly_savings;
-        unused_volumes.push({
+        upgradeable_volumes.push({
           accountId: ds_get_caller_identity[0]['account'],
           volume_id : volume['volume_id'],
           id: volume['volume_id'],
@@ -500,7 +500,7 @@ script "js_volume_cost_mapping", type:"javascript" do
           savings: cur + ' '+formatNumber((Math.round((monthly_savings - (monthly_savings * .8)) * 100) / 100), separator),
         })
       } else {
-        unused_volumes.push({
+        upgradeable_volumes.push({
           accountId: ds_get_caller_identity[0]['account'],
           volume_id : volume['volume_id'],
           id: volume['volume_id'],
@@ -525,15 +525,15 @@ script "js_volume_cost_mapping", type:"javascript" do
     }
   }
   else{
-    unused_volumes=volumes;
+    upgradeable_volumes=volumes;
     message="You do not have the minimum required role of billing_center_viewer to view the savings";
   }
   result={
-    "unused_volumes": unused_volumes,
+    "upgradeable_volumes": upgradeable_volumes,
     "message": message,
     "accountId": ds_get_caller_identity[0]['account']
   }
-  result.unused_volumes=_.sortBy(result.unused_volumes,'region')
+  result.upgradeable_volumes=_.sortBy(result.upgradeable_volumes,'region')
   EOS
 end
 
@@ -543,13 +543,13 @@ end
 
 policy "policy_unattached_volumes_list" do
   validate $ds_volume_cost_mapping do
-    summary_template "AWS Account ID: {{ data.accountId }} - {{ len data.unused_volumes }} Upgradeable Volumes Found"
+    summary_template "AWS Account ID: {{ data.accountId }} - {{ len data.upgradeable_volumes }} Upgradeable Volumes Found"
     detail_template <<-EOS
 {{data.message}}
 EOS
-    escalate $report_unused_volumes
-    check eq(size(val(data, "unused_volumes")), 0)
-    export "unused_volumes" do
+    escalate $report_volumes
+    check eq(size(val(data, "upgradeable_volumes")), 0)
+    export "upgradeable_volumes" do
       resource_level true
       field "accountId" do
         label "Account Id"
@@ -584,7 +584,7 @@ end
 # Escalations
 ###############################################################################
 
-escalation "report_unused_volumes" do
+escalation "report_volumes" do
   automatic true
   label "Send Email"
   description "Send incident email"
