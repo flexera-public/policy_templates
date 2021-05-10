@@ -1,4 +1,4 @@
-name "AWS Unused Volumes"
+name "AWS GP3 Upgradeable Volumes"
 rs_pt_ver 20180301
 type "policy"
 short_description "Checks for unused volumes with no read/write operations performed within a specified number of days and, optionally, deletes them. See the [README](https://github.com/flexera/policy_templates/tree/master/cost/aws/unused_volumes) and [docs.rightscale.com/policies](https://docs.rightscale.com/policies/) to learn more."
@@ -6,10 +6,10 @@ category "Cost"
 severity "low"
 default_frequency "daily"
 info(
-  version: "2.17",
+  version: "2.0",
   provider: "AWS",
   service: "EBS",
-  policy_set: "Unused Volumes"
+  policy_set: "GP3 Volumes"
 )
 
 ###############################################################################
@@ -34,13 +34,6 @@ parameter "param_exclude_tags" do
   category "User Inputs"
   label "Exclude Tags"
   description "A list of tags used to excluded volumes from the incident."
-end
-
-parameter "param_automatic_action" do
-  type "list"
-  label "Automatic Actions"
-  description "When this value is set, this policy will automatically take the selected action(s)"
-  allowed_values ["Delete Volumes"]
 end
 
 parameter "param_flexera_org_id_for_optima" do
@@ -233,7 +226,7 @@ datasource "ds_volume_costs" do
 end
 
 datasource "ds_volume_cost_mapping" do
-  run_script $js_volume_cost_mapping, $ds_check_volumes_read_or_write_operations, $ds_volume_costs, $ds_currency_code, $ds_currency_reference, $ds_billing_centers, $ds_get_caller_identity
+  run_script $js_volume_cost_mapping, $ds_unattached_volumes_map, $ds_volume_costs, $ds_currency_code, $ds_currency_reference, $ds_billing_centers, $ds_get_caller_identity
 end
 
 ###############################################################################
@@ -286,7 +279,10 @@ script "js_aws_unattached_volumes_list", type: "javascript" do
       "Action": "DescribeVolumes",
       "Version": "2016-11-15",
       "Filter.1.Name": "status",
-      "Filter.1.Value.1": "available"
+      "Filter.1.Value.1": "available",
+      "Filter.2.Name": "volume-type",
+      "Filter.2.Value.1": "gp2",
+      "Filter.2.Value.2": "io1"
     }
   }
   EOS
@@ -327,13 +323,14 @@ script "js_filter_aws_unattached_volumes", type: "javascript" do
     if(!(isTagMatched)){
       content.push({
         tagKeyValue : (tagKeyValue.slice(2)),
-        vol_id : vol['volume_id'],
+        volume_id : vol['volume_id'],
         availability_zone : vol['availability_zone'],
         snapshot_id : vol['snapshot_id'],
-        volume_Type : vol['volume_Type']
+        volume_type : vol['volume_type']
         region : vol['region'],
         createdTime : vol['createdTime'],
-        size : vol['size']+" GB"
+        size : vol['size']+" GB",
+        tags: vol['tags']
       })
     }
   }
@@ -373,8 +370,8 @@ script "js_get_costs", type: "javascript" do
       return year + '-' + month + '-' + day;
     }
 
-    var start_date = getFormattedDailyDate(new Date(new Date().setDate(new Date().getDate() - 3)));
-    var end_date = getFormattedDailyDate(new Date(new Date().setDate(new Date().getDate() - 2)));
+    var start_date = getFormattedDailyDate(new Date(new Date().setDate(new Date().getDate() - 4)));
+    var end_date = getFormattedDailyDate(new Date(new Date().setDate(new Date().getDate() - 3)));
 
     var request = {
       auth: "auth_rs",
@@ -428,7 +425,7 @@ script "js_volume_cost_mapping", type:"javascript" do
   var message='';
   var count=0;
   function formatNumber(number, separator){
-    var numString =number.toString();
+    var numString =number.toFixed(2);
     var values=numString.split(".");
     var result = ''
     while (values[0].length > 3){
@@ -464,8 +461,23 @@ script "js_volume_cost_mapping", type:"javascript" do
     }
     var total_savings=0;
     _.each(volumes, function(volume){
-      var cost_objects = _.where(volume_costs, {resource_id: volume["volumeId"]});
+      console.log(volume.volume_id)
+      var cost_objects = _.where(volume_costs, {resource_id: volume["volume_id"]});
       console.log(cost_objects)
+      var tags = volume['tags'];
+      var tagKeyValue = "";
+      for(var k=0; k < tags.length; k++){
+        tag = tags[k];
+        // Constructing tags with comma separated to display in detail_template
+        if((tag['tagValue']).length > 0){
+          tagKeyValue = tagKeyValue+" , "+tag['tagKey']+'='+tag['tagValue'];
+        }else{
+          tagKeyValue = tagKeyValue+" , "+tag['tagKey'];
+        }
+      }
+      if(tagKeyValue === "" || tagKeyValue === " " || tagKeyValue == ""){
+        tagKeyValue = "   < No Value >";
+      }
       if (_.size(cost_objects) > 0){
         count++;
         var sum = _.reduce(_.compact(_.map(cost_objects, function(value){ return value.cost_nonamortized_unblended_adj})), function(memo, num){ return memo + num; }, 0);
@@ -473,23 +485,25 @@ script "js_volume_cost_mapping", type:"javascript" do
         total_savings=total_savings+monthly_savings;
         unused_volumes.push({
           accountId: ds_get_caller_identity[0]['account'],
-          volumeId : volume['volumeId'],
+          volume_id : volume['volume_id'],
+          id: volume['volume_id'],
           region : volume['region'],
-          availabilityZone : volume['availabilityZone'],
-          volumeType : volume['volumeType'],
-          tags : volume['tags'],
+          availabilityZone : volume['availability_zone'],
+          volume_type : volume['volume_type'],
+          tags : (tagKeyValue.slice(2)),
           createdTime : volume['createdTime'],
           size : volume['size'],
-          savings: cur + ' '+formatNumber((Math.round(monthly_savings * 100) / 100), separator),
+          savings: cur + ' '+formatNumber((Math.round((monthly_savings - (monthly_savings * .8)) * 100) / 100), separator),
         })
       } else {
         unused_volumes.push({
           accountId: ds_get_caller_identity[0]['account'],
-          volumeId : volume['volumeId'],
+          volume_id : volume['volume_id'],
+          id: volume['volume_id'],
           region : volume['region'],
-          availabilityZone : volume['availabilityZone'],
-          volumeType : volume['volumeType'],
-          tags : volume['tags'],
+          availabilityZone : volume['availability_zone'],
+          volume_type : volume['volume_type'],
+          tags : (tagKeyValue.slice(2)),
           createdTime : volume['createdTime'],
           size : volume['size'],
           savings: "N/A",
@@ -524,12 +538,11 @@ end
 
 policy "policy_unattached_volumes_list" do
   validate $ds_volume_cost_mapping do
-    summary_template "AWS Account ID: {{ data.accountId }} - {{ len data.unused_volumes }} Unused Volumes Found"
+    summary_template "AWS Account ID: {{ data.accountId }} - {{ len data.unused_volumes }} Upgradeable Volumes Found"
     detail_template <<-EOS
 {{data.message}}
 EOS
     escalate $report_unused_volumes
-    escalate $delete_volumes
     check eq(size(val(data, "unused_volumes")), 0)
     export "unused_volumes" do
       resource_level true
@@ -541,9 +554,9 @@ EOS
       end
       field "id" do
         label "Volume Id"
-        path "volumeId"
+        path "volume_id"
       end
-      field "volumeType" do
+      field "volume_type" do
         label "Volume Type"
       end
       field "size" do
@@ -570,162 +583,6 @@ escalation "report_unused_volumes" do
   email $param_email
 end
 
-escalation "delete_volumes" do
-  automatic contains($param_automatic_action, "Delete Volumes")
-  label "Delete Volumes"
-  description "Approval to delete all selected volumes"
-  run "take_action", data, $param_take_snapshot, $param_log_to_cm_audit_entries
-end
-
 ###############################################################################
 # Cloud Workflow
 ###############################################################################
-
-define take_action($data, $param_take_snapshot, $param_log_to_cm_audit_entries) do
-  $$debug = $param_log_to_cm_audit_entries == "Yes"
-  $$errors = []
-  foreach $item in $data do
-    $snapshot_status_code = 200
-    if $param_take_snapshot == "Yes"
-      call create_volumes_snapshot($item, $$errors) retrieve $status_code, $$errors
-      $snapshot_status_code = $status_code
-    end
-    if $snapshot_status_code == 200
-      call delete_volume($item, $$errors) retrieve $status_code, $$errors
-    end
-  end
-  if size($$errors) > 0
-    $error = join($$errors, "\n")
-    call sys_log("Errors", $error)
-    raise $error
-  end
-end
-
-define create_volumes_snapshot($item, $errors) return $status_code, $errors do
-  $status_code
-  $snapshot_status = "pending"
-  $response = http_request(
-    auth: $$auth_aws,
-    https: true,
-    verb: "get",
-    host: "ec2." + $item["region"] + ".amazonaws.com",
-    href: "/",
-    query_strings: {
-      "Action": "CreateSnapshot",
-      "Version": "2016-11-15",
-      "VolumeId": $item["id"]
-    }
-  )
-  call check_response_and_append_if_error($response, "Create Volumes Snapshot", $errors) retrieve $errors
-  call sys_log("Create Volumes Snapshot Response ", to_s($response))
-  $status_code = $response["code"]
-
-  if $status_code == 200
-    $snapshot_status = $response["body"]["CreateSnapshotResponse"]["status"]
-    $snapshotId = $response["body"]["CreateSnapshotResponse"]["snapshotId"]
-
-    if $snapshot_status == "pending"
-      $condition_check = "completed"
-
-      while $condition_check !~ $snapshot_status do
-        sleep(30)
-        call get_snapshot_status(to_s($snapshotId), []) retrieve $status, $snapshot_errors
-        $snapshot_status = $status
-
-        if $snapshot_status == "error" || size($snapshot_errors) > 0
-          $status_code = 400
-          $snapshot_status = "completed"
-          foreach $error in $snapshot_errors do
-            $errors << $error
-          end
-        end
-      end
-    end
-  end
-end
-
-define delete_volume($item, $errors) return $status_code, $errors do
-  $delete_response = http_request(
-    auth: $$auth_aws,
-    https: true,
-    verb: "get",
-    host: "ec2." + $item["region"] + ".amazonaws.com",
-    href: "/",
-    query_strings: {
-      "Action": "DeleteVolume",
-      "Version": "2016-11-15",
-      "VolumeId": $item["id"]
-    }
-  )
-  call check_response_and_append_if_error($delete_response, "Delete Volume", $errors) retrieve $errors
-  call sys_log("Delete Volumes Response ", to_s($delete_response))
-  $volume_delete_status = $delete_response["code"]
-  if $volume_delete_status != 200
-    $volume_delete_body = $delete_response["body"]
-    $split_body = split($volume_delete_body, "<Message>")
-    $split_final_message = split($split_body[1], "</Message>");
-    call create_tag($item["region"], $item["id"], to_s($split_final_message[0]), $errors) retrieve $errors
-  end
-end
-
-define get_snapshot_status($snapshotId, $errors) return $snapshot_status, $errors do
-  call sys_log("Inside Get Snapshot Details Snapshot Id ", $snapshotId)
-  $snapshot_response = http_request(
-    auth: $$auth_aws,
-    https: true,
-    verb: "get",
-    host: "ec2." + $item["region"] + ".amazonaws.com",
-    href: "/",
-    query_strings: {
-      "Action": "DescribeSnapshots",
-      "Version": "2016-11-15",
-      "SnapshotId": $snapshotId
-    }
-  )
-  call check_response_and_append_if_error($snapshot_response, "Describe Snapshot " + $snapshotId, $errors) retrieve $errors
-  call sys_log("Get Snapshot Details ", to_s($snapshot_response))
-  $snapshot_status = $snapshot_response["body"]["DescribeSnapshotsResponse"]["snapshotSet"]["item"]["status"]
-end
-
-define create_tag($region, $volumeId, $message, $errors) return $errors do
-  call sys_log("Create Tag  ", $volumeId)
-  $response = http_request(
-    auth: $$auth_aws,
-    https: true,
-    verb: "get",
-    host: "ec2." + $region + ".amazonaws.com",
-    href: "/",
-    query_strings: {
-      "Action": "CreateTags",
-      "Version": "2016-11-15",
-      "ResourceId.1": $volumeId,
-      "Tag.1.Key": "Error While Deleting Volume",
-      "Tag.1.Value": to_s($message)
-    }
-  )
-  call check_response_and_append_if_error($response, "Create Tag", $errors) retrieve $errors
-end
-
-define skip_error_and_append($subject) do
-  $$errors << "Unexpected error for " + $subject + "\n  " + to_s($_error)
-  $_error_behavior = "skip"
-end
-
-define check_response_and_append_if_error($response, $request_description, $errors) return $errors do
-  if $response["code"] > 299 || $response["code"] < 200
-    $errors << "Unexpected status code from " + $request_description + " request\n  " + to_s($response)
-  end
-end
-
-define sys_log($subject, $detail) on_error: skip_error_and_append("Creating audit entry for " + $subject) do
-  if $$debug
-    rs_cm.audit_entries.create(
-      notify: "None",
-      audit_entry: {
-        auditee_href: @@account,
-        summary: "AWS Unused Volumes Policy :- " + $subject,
-        detail: $detail
-      }
-    )
-  end
-end
