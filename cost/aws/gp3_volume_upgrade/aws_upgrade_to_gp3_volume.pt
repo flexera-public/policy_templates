@@ -109,32 +109,44 @@ end
 #To get list of Unattached Volumes.
 datasource "ds_unattached_volumes_list" do
   iterate $ds_regions
-    request do
-      run_script $js_aws_unattached_volumes_list, val(iter_item, "region")
-    end
+  request do
+    auth $auth_aws
+    pagination $aws_volumes_pagination_xml
+    host join(["ec2.",val(iter_item, "region"),".amazonaws.com"])
+    verb "GET"
+    path "/"
+    query "Action", "DescribeVolumes"
+    query "Version", "2016-11-15"
+    query "Filter.1.Name", "status"
+    query "Filter.1.Value.1", "available"
+    query "Filter.1.Value.2", "in-use"
+    query "Filter.2.Name", "volume-type"
+    query "Filter.2.Value.1", "gp2"
+    query "Filter.2.Value.2", "io1"
+  end
   result do
-  encoding "xml"
-  collect xpath(response, "//DescribeVolumesResponse/volumeSet/item", "array") do
-    field "tags" do
-      collect xpath(col_item, "tagSet/item") do
-        field "tagKey", xpath(col_item, "key")
-        field "tagValue", xpath(col_item, "value")
+    encoding "xml"
+    collect xpath(response, "//DescribeVolumesResponse/volumeSet/item", "array") do
+      field "tags" do
+        collect xpath(col_item, "tagSet/item") do
+          field "tagKey", xpath(col_item, "key")
+          field "tagValue", xpath(col_item, "value")
+        end
       end
-    end
-    field "attachments" do
-      collect xpath(col_item, "attachmentSet/item") do
-        field "instance_id", xpath(col_item, "instanceId")
+      field "attachments" do
+        collect xpath(col_item, "attachmentSet/item") do
+          field "instance_id", xpath(col_item, "instanceId")
+        end
       end
+      field "volume_id", xpath(col_item, "volumeId")
+      field "availability_zone", xpath(col_item, "availabilityZone")
+      field "snapshot_id", xpath(col_item, "snapshotId")
+      field "volume_type", xpath(col_item, "volumeType")
+      field "region", val(iter_item, "region")
+      field "createdTime", xpath(col_item, "createTime")
+      field "size", xpath(col_item, "size")
+      field "status", xpath(col_item,"status")
     end
-    field "volume_id", xpath(col_item, "volumeId")
-    field "availability_zone", xpath(col_item, "availabilityZone")
-    field "snapshot_id", xpath(col_item, "snapshotId")
-    field "volume_type", xpath(col_item, "volumeType")
-    field "region", val(iter_item, "region")
-    field "createdTime", xpath(col_item, "createTime")
-    field "size", xpath(col_item, "size")
-    field "status", xpath(col_item,"status")
-   end
   end
 end
 
@@ -215,7 +227,7 @@ end
 
 datasource "ds_volume_costs" do
   request do
-    run_script $js_get_costs, $ds_get_caller_identity, $ds_top_level_billing_centers, val($ds_flexera_optima, "org_id")
+    run_script $js_get_costs, $ds_get_caller_identity, $ds_top_level_billing_centers, val($ds_flexera_optima, "org_id"), rs_optima_host
   end
   result do
     encoding "json"
@@ -263,30 +275,6 @@ script "js_regions", type: "javascript" do
         regions = valid_regions
       }
     }
-  EOS
-end
-
-#https://docs.aws.amazon.com/AWSEC2/latest/APIReference/API_DescribeVolumes.html
-script "js_aws_unattached_volumes_list", type: "javascript" do
-  parameters "region"
-  result "results"
-  code <<-EOS
-  results = {
-    auth: "auth_aws",
-    host: 'ec2.'+region+'.amazonaws.com',
-    path: '/',
-    pagination: "aws_volumes_pagination_xml",
-    query_params: {
-      "Action": "DescribeVolumes",
-      "Version": "2016-11-15",
-      "Filter.1.Name": "status",
-      "Filter.1.Value.1": "available",
-      "Filter.1.Value.2": "in-use",
-      "Filter.2.Name": "volume-type",
-      "Filter.2.Value.1": "gp2",
-      "Filter.2.Value.2": "io1"
-    }
-  }
   EOS
 end
 
@@ -360,7 +348,7 @@ script "js_top_level_bc", type: "javascript" do
 end
 
 script "js_get_costs", type: "javascript" do
-  parameters "account_id", "billing_centers", "org"
+  parameters "account_id", "billing_centers", "org", "optima_host"
   result "request"
   code <<-EOS
     // returns date formatted as string: YYYY-mm-dd
@@ -378,7 +366,7 @@ script "js_get_costs", type: "javascript" do
 
     var request = {
       auth: "auth_rs",
-      host: "optima.rightscale.com",
+      host: optima_host,
       verb: "POST",
       path: "/bill-analysis/orgs/" + org + "/costs/select",
       body_fields: {
