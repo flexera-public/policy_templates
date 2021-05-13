@@ -7,7 +7,7 @@ category "Cost"
 severity "low"
 default_frequency "daily"
 info(
-  version: "2.2",
+  version: "2.3",
   provider: "Azure",
   service: "Compute",
   policy_set:"Schedule Instance"
@@ -87,7 +87,7 @@ datasource "ds_subscriptions" do
   end
 end
 
-#get all virtual machines 
+#get all virtual machines
 datasource "ds_azure_virtualmachines" do
   iterate $ds_subscriptions
   request do
@@ -132,7 +132,7 @@ datasource "ds_azure_instances" do
     field "rg", val(iter_item,"rg")
     field "name", val(iter_item,"name")
     field "location", val(iter_item, "location")
-    field "tags", val(iter_item,"tags")	     
+    field "tags", val(iter_item,"tags")
     field "subscriptionId",val(iter_item,"subscriptionId")
     field "subscriptionName",val(iter_item,"subscriptionName")
   end
@@ -174,7 +174,7 @@ script "js_filter_instances", type: "javascript" do
         else if(prop== 'next_stop'){
           next_stop=new Date(instance.tags[prop]);
           next_stop_iso=next_stop.toISOString();
-        }	  
+        }
       }
       var resource_tags = JSON.stringify(instance.tags);
       var all_tags={};
@@ -195,7 +195,7 @@ script "js_filter_instances", type: "javascript" do
           "all_tags": resource_tags,
           "tags":all_tags,
           "next_start":next_start_iso,
-          "next_stop":next_stop_iso	
+          "next_stop":next_stop_iso
         })
       }
   results = _.sortBy(results, 'subscriptionName');
@@ -285,7 +285,7 @@ policy "policy_schedule_instance" do
       end
       field "rg" do
         label "Resource Group"
-      end  
+      end
       field "schedule" do
         label "Schedule"
       end
@@ -364,7 +364,7 @@ define schedule_instance($data) return $all_responses do
 
     $stoppable = /^(running|starting|deallocating|deallocated)$/
     $startable = /^(stopped|stopping|deallocating|deallocated)$/
-    call tag_resources($item, $item['schedule'], $next_start, $next_stop) retrieve $responses	
+    call tag_resources($item, $item['schedule'], $next_start, $next_stop) retrieve $responses
     if($window_active)
       if($item['state']=~$startable)
         call sys_log('> ' + $item['id'] + ': Starting ...', to_s($item))
@@ -451,26 +451,30 @@ define delete_schedule($data) return $all_responses do
   foreach $item in $data do
     call sys_log('> ' + $item['id'] + ': Deleting schedule Tag ...', to_s($item))
       $delete_tag = "delete"
-      call tag_resources($item, $delete_tag, $next_start, $next_stop) retrieve $response    
+      call tag_resources($item, $delete_tag, $next_start, $next_stop) retrieve $response
       $all_responses << $response
   end
 end
 
 define tag_resources($item, $param, $next_start, $next_stop) return $update_resource_response do
-   $$log = [] 
+   $$log = []
    $new_tags = {}
-   $new_tags = $item["tags"] 
-   if $param != "delete" 
+   $new_tags = $item["tags"]
+   if $param == "delete"
+      $new_tags.delete("next_start")
+      $new_tags.delete("next_stop")
+      $new_tags.delete("schedule")
+   else
       $new_tags["next_start"]= $next_start
       $new_tags["next_stop"]= $next_stop
       $new_tags["schedule"]= $param
    end
-   $$log << to_s($new_tags)	
+   $$log << to_s($new_tags)
    $$log << $next_start
-   $$log << $next_stop	
+   $$log << $next_stop
    $$log << $param
    call sys_log('all tags ', to_s($new_tags))
-   sub on_error: handle_error($update_resource_response) do 
+   sub on_error: handle_error($update_resource_response) do
       $update_resource_response = http_request(
           auth: $$azure_auth,
           verb: "patch",
@@ -519,14 +523,14 @@ define window_active($start_hour, $start_minute, $start_rule, $stop_hour, $stop_
   $next_stop    = $body['next_stop']
 end
 
-define handle_error($response) do 
+define handle_error($response) do
   $status_code = $response["code"]
   if $status_code == 404
     $_error_behavior = "skip"
-  else 
+  else
     $_error_behavior = "raise"
-  end 
-end 
+  end
+end
 
 define sys_log($subject, $detail) do
   rs_cm.audit_entries.create(
