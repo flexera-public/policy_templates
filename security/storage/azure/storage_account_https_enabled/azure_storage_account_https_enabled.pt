@@ -1,0 +1,192 @@
+name "Azure Storage Accounts Without HTTPs Enforced"
+rs_pt_ver 20180301
+type "policy"
+short_description "Checks for Azure Storage Accounts with HTTPs not enforced.\n See the [README](https://github.com/flexera/policy_templates/tree/master/security/storage/azure/storage_account_https_enabled) and [docs.rightscale.com/policies](https://docs.rightscale.com/policies/) to learn more."
+long_description ""
+severity "low"
+category "Security"
+default_frequency "daily"
+info(
+  version: "2.0",
+  provider: "Azure",
+  service: "Storage Accounts",
+  policy_set: "Storage Security"
+  )
+
+###############################################################################
+# User inputs
+###############################################################################
+
+parameter "param_email" do
+  type "list"
+  label "Email addresses to notify"
+  description "Email addresses of the recipients you wish to notify when new incidents are created"
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+credentials "azure_auth" do
+  schemes "oauth2"
+  label "Azure"
+  description "Select the Azure Resource Manager Credential from the list."
+  tags "provider=azure_rm"
+end
+
+###############################################################################
+# Pagination
+###############################################################################
+
+pagination "azure_pagination" do
+  get_page_marker do
+    body_path "nextLink"
+  end
+  set_page_marker do
+    uri true
+  end
+end
+
+###############################################################################
+# Datasources
+###############################################################################
+
+datasource "ds_subscriptions" do
+  request do
+    auth $azure_auth
+    pagination $azure_pagination
+    host "management.azure.com"
+    path "/subscriptions/"
+    query "api-version","2018-06-01"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "value[*]") do
+      field "subscriptionId", jmes_path(col_item,"subscriptionId")
+      field "subscriptionName", jmes_path(col_item,"displayName")
+    end
+  end
+end
+
+#https://docs.microsoft.com/en-us/rest/api/storagerp/storageaccounts/list
+datasource "ds_azure_storage_accounts_list" do
+  iterate $ds_subscriptions
+  request do
+    auth $azure_auth
+      pagination $azure_pagination
+      host "management.azure.com"
+      path join(["/subscriptions/", val(iter_item,"subscriptionId"), "/providers/Microsoft.Storage/storageAccounts"])
+      query "api-version","2021-01-01"
+      header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "value[*]") do
+      field "subscriptionId", val(iter_item,"subscriptionId")
+      field "subscriptionName", val(iter_item,"subscriptionName")
+      field "name", jmes_path(col_item,"name")
+      field "location", jmes_path(col_item,"location")
+      field "resource_group", get(4, split(jmes_path(col_item,"id"), "/"))
+      field "supportsHttpsTrafficOnly", jmes_path(col_item,"properties.supportsHttpsTrafficOnly")
+      field "tags", jmes_path(col_item,"tags")
+      field "id", jmes_path(col_item,"id")
+    end
+  end
+end
+
+datasource "ds_format_data" do
+  run_script $js_format_data, $ds_azure_storage_accounts_list
+end
+
+###############################################################################
+# Scripts
+###############################################################################
+
+script "js_format_data", type: "javascript" do
+  parameters "ds_azure_storage_accounts_list"
+  result "results"
+  code <<-EOF
+  var results = _.filter(ds_azure_storage_accounts_list, function(resource){
+    var tagsList = "";
+    for(var prop in resource.tags){
+      tagsList = tagsList+prop+":"+resource.tags[prop]+", ";
+    }
+
+    if(tagsList.length > 0){
+      resource.tags = tagsList.substring(0,tagsList.length-2);
+    } else {
+      resource.tags = "< No Value >"
+    }
+    return resource
+  })
+  results = _.sortBy(results,"location");
+  results = _.sortBy(results,"subscriptionName");
+ EOF
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "policy_azure_storage_accounts_list" do
+  validate_each $ds_format_data do
+    summary_template "{{ len data }} Azure Storage Accounts without HTTPs enforced"
+    escalate $esc_email
+    check val(item, "supportsHttpsTrafficOnly")
+    export do
+      resource_level false
+      field "subscriptionName" do
+        label "Subscription Name"
+      end
+      field "subscriptionId" do
+        label "Subscription Id"
+      end
+      field "location" do
+        label "Location"
+      end
+      field "resource_group" do
+        label "Resource Group"
+      end
+      field "name" do
+        label "Storage Account Name"
+      end
+      field "supportsHttpsTrafficOnly" do
+        label "Supports Https Traffic Only"
+      end
+      field "tags" do
+        label "Tags"
+      end
+      field "id" do
+        label "Resource Id"
+      end
+    end
+  end
+end
+
+###############################################################################
+# Escalation
+###############################################################################
+
+escalation "esc_email" do
+  label "Send Mail"
+  description "Sends incidents email"
+  email $param_email
+end
+
+###############################################################################
+# Cloud Workflow
+###############################################################################
+
+define sys_log($subject, $detail) do
+  if $$debug
+    rs_cm.audit_entries.create(
+      notify: "None",
+      audit_entry: {
+        auditee_href: @@account,
+        summary: "Azure Storage Account HTTPs Enforcement Policy "+ $subject,
+        detail: $detail
+      }
+    )
+  end
+end
