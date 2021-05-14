@@ -81,29 +81,53 @@ datasource "ds_azure_web_app_list" do
   iterate $ds_subscriptions
   request do
     auth $azure_auth
-      pagination $azure_pagination
-      host "management.azure.com"
-      path join(["/subscriptions/", val(iter_item,"subscriptionId"), "/providers/Microsoft.Web/sites"])
-      query "api-version","2019-08-01"
-      header "User-Agent", "RS Policies"
+    pagination $azure_pagination
+    host "management.azure.com"
+    path join(["/subscriptions/", val(iter_item,"subscriptionId"), "/providers/Microsoft.Web/sites"])
+    query "api-version","2019-08-01"
+    header "User-Agent", "RS Policies"
   end
   result do
     encoding "json"
     collect jmes_path(response, "value[*]") do
-      field "subscriptionId", val(iter_item,"subscriptionId")
-      field "subscriptionName", val(iter_item,"subscriptionName")
-      field "name", jmes_path(col_item,"name")
-      field "location", jmes_path(col_item,"location")
+      field "subscriptionId", val(iter_item, "subscriptionId")
+      field "subscriptionName", val(iter_item, "subscriptionName")
+      field "name", jmes_path(col_item, "name")
+      field "location", jmes_path(col_item, "location")
       field "resource_group", get(4, split(jmes_path(col_item,"id"), "/"))
-      field "minTlsVersion", jmes_path(col_item,"properties.siteConfig.minTlsVersion")
+      field "httpsOnly", jmes_path(col_item, "properties.httpsOnly")
       field "tags", jmes_path(col_item,"tags")
       field "id", jmes_path(col_item,"id")
     end
   end
 end
 
+datasource "ds_azure_web_app_config" do
+  iterate $ds_azure_web_app_list
+  request do
+    auth $azure_auth
+    pagination $azure_pagination
+    host "management.azure.com"
+    path join([val(iter_item, "id"),"/config/web"])
+    query "api-version","2019-08-01"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+    field "subscriptionId", val(iter_item, "subscriptionId")
+    field "subscriptionName", val(iter_item, "subscriptionName")
+    field "name", val(iter_item, "name")
+    field "location", val(iter_item, "location")
+    field "resource_group", val(iter_item, "resource_group")
+    field "httpsOnly", val(iter_item, "httpsOnly")
+    field "minTlsVersion", jmes_path(response,"properties.minTlsVersion")
+    field "tags", val(iter_item, "tags")
+    field "id", val(iter_item, "id")
+  end
+end
+
 datasource "ds_format_data" do
-  run_script $js_format_data, $ds_azure_web_app_list
+  run_script $js_format_data, $ds_azure_web_app_config
 end
 
 ###############################################################################
@@ -111,10 +135,10 @@ end
 ###############################################################################
 
 script "js_format_data", type: "javascript" do
-  parameters "ds_azure_web_app_list"
+  parameters "ds_azure_web_app_config"
   result "results"
   code <<-EOF
-  var results = _.filter(ds_azure_web_app_list, function(resource){
+  var results = _.filter(ds_azure_web_app_config, function(resource){
     var tagsList = "";
     for(var prop in resource.tags){
       tagsList = tagsList+prop+":"+resource.tags[prop]+", ";
@@ -157,6 +181,9 @@ policy "policy_azure_web_app_list" do
       end
       field "name" do
         label "Web App Name"
+      end
+      field "httpsOnly" do
+        label "HTTPS Only"
       end
       field "minTlsVersion" do
         label "Minimum TLS Version"
