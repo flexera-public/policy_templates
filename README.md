@@ -144,7 +144,13 @@ Please contact sales@flexera.com to learn more.
 
 #### Azure
 
+##### Database
+
 - [Azure Publicly Accessible Managed SQL Instance](./security/azure/sql_publicly_accessible_managed_instance)
+
+##### Storage
+
+- [Azure Storage Accounts Without HTTPs Enforced](./security/storage/azure/storage_account_https_enabled)
 
 #### Google
 
