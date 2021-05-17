@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.6
+
+- Adding Azure China
+
 ## v2.5
 
 - Added default_frequency "daily"

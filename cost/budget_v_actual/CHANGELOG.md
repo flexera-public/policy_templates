@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.4
+
+- Fixed markdown alignment in validation heredoc
+
 ## v1.3
 
 - Added default_frequency "daily"
