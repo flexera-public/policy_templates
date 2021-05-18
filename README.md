@@ -144,7 +144,17 @@ Please contact sales@flexera.com to learn more.
 
 #### Azure
 
-- [Azure Publicly Accessible Managed SQL Instance](./security/azure/sql_publicly_accessible_managed_instance)
+##### Database
+
+- [Azure Publicly Accessible Managed SQL Instance](./security/azure/sql_publicly_accessible_managed_instance/)
+
+##### Web Apps
+
+- [Azure Web App Minimum TLS Version](./security/azure/webapp_tls_version_support/)
+
+##### Storage
+
+- [Azure Storage Accounts Without HTTPs Enforced](./security/storage/azure/storage_account_https_enabled/)
 
 #### Google
 
