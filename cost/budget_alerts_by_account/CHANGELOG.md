@@ -1,9 +1,5 @@
 # Changelog
 
-## v1.3
-
-- Use rs_optima_host variable instead of hardcoded optima.rightscale.com (different in EU region)
-
 ## v1.2
 
 - Fixed aws account name lookup bug that lead to an error
