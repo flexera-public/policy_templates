@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.25
+
+- Now using OAuth2 credentials instead of the built-in Rightscale authentication.
+
 ## v1.24
 
 - Fixed issue with top 10 cost categories when there is no data yet for current month.
