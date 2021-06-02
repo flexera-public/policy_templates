@@ -6,7 +6,7 @@ long_description ""
 category "Operational"
 severity "low"
 info(
-  version: "1.2",
+  version: "1.4",
   provider: "Flexera Cloud Management",
   service: "",
   policy_set: ""
@@ -36,6 +36,13 @@ parameter "param_exclude_tags" do
   type "list"
   label "Tags to ignore"
   description "List of tags that will exclude Servers from being evaluated by this policy. Multiple tags are evaluated as an 'OR' condition. Tag must be of the format 'namespace:predicate=value'. Example: 'rs_agent:type=right_link_lite,rs_monitoring:state=auth'"
+end
+
+parameter "param_automatic_action" do
+  type "list"
+  label "Automatic Actions"
+  description "When this value is set, this policy will automatically take the selected action(s)"
+  allowed_values ["Terminate Instances"]
 end
 
 ###############################################################################
@@ -143,45 +150,62 @@ script "js_get_stranded_instance", type: "javascript" do
 end
 
 ###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_email" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
+end
+
+escalation "esc_approve_terminate_instances" do
+  automatic contains($param_automatic_action, "Terminate Instances")
+  label "Terminate Instances"
+  description "Approve escalation to run RightScale Cloud Workflow to delete Stranded Instnace"
+  run "terminate_instance", data
+end
+
+###############################################################################
 # Policy
 ###############################################################################
 
 policy "pol_stranded_instances" do
   validate $ds_get_stranded_instances do
     summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} Stranded Instance Details"
-    detail_template <<-EOS
-# Stranded Instance Details
-| Cloud Name | Cloud Type | Instance Name | Resource UID | Updated On | Is Instance Locked | Href | Tags |
-| ---------- | ---------- | ------------- | ------------ | ---------- | ------------------ | ---- | ---- |
-{{ range data -}}
-| {{.cloud_name}} | {{.cloud_type}} | {{.name}} | {{.resource_uid}} | {{.updated_at}} | {{.locked}} | {{.href}} | {{.tags}} |
-{{ end -}}
-    EOS
-    escalate $report_stranded_instances
-    escalate $approve_terminate_instances
+    escalate $esc_email
+    escalate $esc_approve_terminate_instances
     check eq(size(data),0)
-  end
-end
-
-###############################################################################
-# Escalations
-###############################################################################
-
-escalation "report_stranded_instances" do
-  email $param_email
-end
-
-escalation "approve_terminate_instances" do
-  request_approval  do
-  label "Approve Instance Termination"
-    description "Approve escalation to run RightScale Cloud Workflow to delete Stranded Instnace"
-    parameter "approval_reason" do
-      type "string"
-      label "Reason for Approval"
-      description "[Note]: Locked instances will not be terminated."
+    export do
+      resource_level true
+      field "cloud_name" do
+        label "Cloud Name"
+      end
+      field "cloud_type" do
+        label "Cloud Type"
+      end
+      field "name" do
+        label "Instance Name"
+      end
+      field "id" do
+        label "Resource UID"
+        path "resource_uid"
+      end
+      field "updated_at" do
+        label "Updated On"
+      end
+      field "locked" do
+        label "Is Instance Locked"
+      end
+      field "href" do
+        label "Href"
+      end
+      field "tags" do
+        label "Tags"
+      end
     end
   end
-  run "terminate_instance", data
 end
 
 ###############################################################################

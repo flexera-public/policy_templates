@@ -6,24 +6,22 @@ long_description ""
 category "Compliance"
 severity "low"
 info(
-  version: "2.0",
+  version: "2.4",
   provider: "AWS",
   service: "ECS",
   policy_set: ""
 )
 
 ###############################################################################
-# Permissions
-###############################################################################
-
-permission "perm_read_creds" do
-  actions "rs_cm.show_sensitive","rs_cm.index_sensitive"
-  resources "rs_cm.credentials"
-end
-
-###############################################################################
 # User inputs
 ###############################################################################
+
+parameter "param_allowed_regions" do
+  type "list"
+  label "Allowed Regions"
+  allowed_pattern /^([a-zA-Z-_]+-[a-zA-Z0-9-_]+-[0-9-_]+,*|)+$/
+  description "A list of allowed regions. See the README for more details"
+end
 
 parameter "param_email" do
   type "list"
@@ -37,6 +35,14 @@ parameter "param_exclude_tags" do
   description "List of tags that will exclude ECS Clusters from being evaluated by this policy. Multiple tags are evaluated as an 'OR' condition. Tag keys or key/value pairs can be listed. Example: 'test,env=dev'"
 end
 
+parameter "param_automatic_action" do
+  type "list"
+  label "Automatic Actions"
+  description "When this value is set, this policy will automatically take the selected action(s)"
+  allowed_values ["Delete Clusters"]
+end
+
+
 ###############################################################################
 # Authentication
 ###############################################################################
@@ -48,24 +54,36 @@ credentials "auth_aws" do
   tags "provider=aws"
 end
 
-
 ###############################################################################
 # Datasources
 ###############################################################################
 
-#Generates list of Regions
+#Get list of enabled regions for an account
 datasource "ds_regions_list" do
   request do
+    auth $auth_aws
     verb "GET"
-    host "raw.githubusercontent.com"
-    path "/rightscale/policy_templates/master/data/aws/regions.json"
-    header "User-Agent", "RS Policies"
+    host "ec2.amazonaws.com"
+    path "/"
+    query "Action", "DescribeRegions"
+    query "Version", "2016-11-15"
   end
+  result do
+    encoding "xml"
+    collect xpath(response, "//DescribeRegionsResponse/regionInfo/item", "array") do
+      field "region", xpath(col_item, "regionName")
+    end
+  end
+end
+
+# Get only SCP enabled regions
+datasource "ds_regions" do
+  run_script $js_regions, $param_allowed_regions, $ds_regions_list
 end
 
 #To get list of All ESC Clusters.
 datasource "ds_aws_ecs_cluster_list" do
-  iterate $ds_regions_list
+  iterate $ds_regions
   request do
     run_script $js_aws_ecs_cluster_list, val(iter_item,"region")
   end
@@ -78,7 +96,7 @@ end
 
 #To get description of all clusters by passing array of cluster_name as input.
 datasource "ds_aws_ecs_cluster_description" do
-  iterate $ds_regions_list
+  iterate $ds_regions
   request do
     run_script $js_aws_ecs_cluster_description, $ds_aws_ecs_cluster_list, val(iter_item,"region")
   end
@@ -109,6 +127,38 @@ end
 ###############################################################################
 # Scripts
 ###############################################################################
+
+script "js_regions", type:"javascript" do
+  parameters "user_entered_regions", "all_regions"
+  result "regions"
+  code <<-EOS
+    if(_.isEmpty(user_entered_regions)){
+      regions = all_regions;
+    }else{
+      //Filter unique regions
+      var uniqueRegions = _.uniq(user_entered_regions);
+      var all_regions_list = [];
+      all_regions.forEach(function(all_region){
+        all_regions_list.push(all_region.region)
+      })
+
+      //Filter valid regions
+      var valid_regions = [];
+      _.map(uniqueRegions, function(uniqueRegion){
+        if(all_regions_list.indexOf(uniqueRegion) > -1){
+          valid_regions.push({"region": uniqueRegion})
+        }
+      })
+
+      //Throw an error if no valid regions found
+      if (_.isEmpty(valid_regions)) {
+        regions = all_regions;
+      }else{
+        regions = valid_regions
+      }
+    }
+  EOS
+end
 
 #https://docs.aws.amazon.com/AmazonECS/latest/APIReference/API_ListClusters.html
 script "js_aws_ecs_cluster_list", type: "javascript" do
@@ -188,7 +238,7 @@ script "js_aws_ecs_cluster_filter_map", type: "javascript" do
 
       if(!(isTagMatched) && (Number(cluster['active_Services_Count']) == 0 && Number(cluster['running_Tasks_Count']) == 0 && Number(cluster['pending_Tasks_Count']) == 0 && Number(cluster['registered_Container_Instances_Count']) == 0)){
         content.push({
-          cluster_Name: cluster['cluster_Name'],
+          id: cluster['cluster_Name'],
           region: cluster['region'],
           active_Services_Count: cluster['active_Services_Count'],
           running_Tasks_Count: cluster['running_Tasks_Count'],
@@ -199,6 +249,8 @@ script "js_aws_ecs_cluster_filter_map", type: "javascript" do
         })
       }
     }
+  content = _.sortBy(content,'id')
+  content = _.sortBy(content,'region')
   EOS
 end
 
@@ -209,17 +261,24 @@ end
 policy "pol_ri_coverage" do
   validate $ds_unused_ecs_cluster_map do
     summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} Unused ECS Clusters found in AWS."
-    detail_template <<-EOS
-# Unused ECS Clusters
-| Cluster Name | Region | status | Tags |
-| ------------ | ------ | ------ | ---- |
-{{ range data -}}
-| {{ .cluster_Name}} | {{.region}} | {{.status}} | {{.tagKeyValue}} |
-{{ end -}}
-    EOS
     escalate $report_unused_ECS_clusters
     escalate $delete_clusters
     check eq(size(data),0)
+    export do
+      resource_level true
+      field "id" do
+        label "Cluster Name"
+      end
+      field "region" do
+        label "Region"
+      end
+      field "status" do
+        label "Status"
+      end
+      field "tagKeyValue" do
+        label "Tags"
+      end
+    end
   end
 end
 
@@ -228,19 +287,16 @@ end
 ###############################################################################
 
 escalation "report_unused_ECS_clusters" do
+  automatic true
+  label "Send Mail"
+  description "Sends incidents email"
   email $param_email
 end
 
 escalation "delete_clusters" do
-  request_approval  do
-    label "Approve Resource Deletion"
-    description "Approve escalation to run RightScale Cloud Workflow to delete unused clusters"
-    parameter "approval_reason" do
-      type "string"
-      label "Reason for Approval"
-      description "Explain why you are approving the action"
-    end
-  end
+  automatic contains($param_automatic_action, "Delete Clusters")
+  label "Delete Unused Clusters"
+  description "Delete selected clusters"
   run "delete_clusters", data
 end
 
@@ -265,7 +321,7 @@ define delete_clusters($data) return $all_responses do
           "content-type": "application/x-amz-json-1.1"
         },
         body: {
-          "cluster": $item["cluster_Name"]
+          "cluster": $item["id"]
         }
       )
       $all_responses << $response

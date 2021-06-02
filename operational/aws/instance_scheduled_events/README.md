@@ -1,44 +1,53 @@
-## AWS Instance Scheduled Events
+# AWS Instance Scheduled Events
 
-### What it does
+## What it does
+
 This policy checks for any scheduled event on EC2 instances that could cause operational issues, such as an instance reboot, stop, retirement, system reboot and system maintenance.
- 
-### Functional Details
- 
+
+## Functional Details
+
 The policy leverages the AWS EC2 API to discover any scheduled events on EC2 instances and provides the details in a report emailed to the specified users.
- 
-### Input Parameters
- 
+
+## Input Parameters
+
+- *Allowed Regions* - A list of allowed regions for an AWS account. Please enter the allowed regions code if SCP is enabled, see [Available Regions](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/using-regions-availability-zones.html#concepts-available-regions) in AWS; otherwise, the policy may fail on regions that are disabled via SCP. Leave blank to consider all the regions.
 - *Email addresses to notify* - Email addresses of the recipients you wish to notify when new incidents are created
 - *Tags to ignore* - List of tags that will exclude resources from being evaluated by this policy. Multiple tags are evaluated as an 'OR' condition. Tag keys or key/value pairs can be listed. Example: 'test,env=dev'
- 
-### Required RightScale Roles
- 
-- policy_manager
-- admin or credential_viewer
 
-### AWS Required Permissions
+## Prerequisites
 
-This policy requires permissions to describe AWS EC2 instance status, list EC2 tags.
-The Cloud Management Platform automatically creates two Credentials when connecting AWS to Cloud Management; AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY. The IAM user credentials contained in those credentials will require the following permissions:
+This policy uses [credentials](https://docs.rightscale.com/policies/users/guides/credential_management.html)
+for connecting to the cloud -- in order to apply this policy you must have a
+ credential registered in the system that is compatible with this policy. If
+ there are no credentials listed when you apply the policy, please contact your
+ cloud admin and ask them to register a credential that is compatible with this
+  policy. The information below should be consulted when creating the credential.
+
+### Credential configuration
+
+For administrators [creating and managing credentials](https://docs.rightscale.com/policies/users/guides/credential_management.html)
+to use with this policy, the following information is needed:
+
+Provider tag value to match this policy: `aws` , `aws_sts`
 
 ```javascript
 {
-  "Version": "2016-11-15",
+  "Version": "2012-10-17",
   "Statement":[{
   "Effect":"Allow",
   "Action":["ec2:DescribeInstanceStatus",
-            "ec2:DescribeTags"],
+            "ec2:DescribeTags",
+            "ec2:DescribeRegions"],
     "Resource":"*"
     }
   ]
 }
 ```
- 
-### Supported Clouds
- 
+
+## Supported Clouds
+
 - AWS
- 
-### Cost
- 
+
+## Cost
+
 This Policy Template does not incur any cloud costs.

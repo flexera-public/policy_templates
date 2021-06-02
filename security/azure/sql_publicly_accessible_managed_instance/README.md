@@ -2,14 +2,13 @@
 
 ## What it does
 
-This policy checks all Azure SQL Managed instances and reports on any that are publicly accessible. When such an instance is detected, the user can choose to disable public data endpoint or delete it. For deleting the user needs to enable 'delete action' option as mentioned in "To enable delete action" section below.
+This policy checks all Azure SQL Managed instances and reports on any that are publicly accessible. When such an instance is detected, the user can choose to disable public data endpoint or delete it.
 
 ## Functional Details
 
 When a publicly accessible Azure SQL Managed Instance is detected, an email action is triggered automatically to notify the specified users of the incident. Users then have multiple actions that they are able to take after approval:
 
 - *delete* - deletes the Azure SQL managed instance
-- *Note: by default *delete* action has been disabled, the user can follow the steps mentioned in "To enable delete action" section above to enable delete action.*
 - *disable public data endpoint* - modifies the configuration of virtual network of the particular SQL managed instance that allows public accessibility.
 
 ## Input Parameters
@@ -18,6 +17,10 @@ This policy has the following input parameters required when launching the polic
 
 - *Email addresses to notify* - Email addresses of the recipients you wish to notify when new incidents are created
 - *Exclusion Tag Key* - Azure SQL Managed instance tag to ignore instance that are with public data endpoint enabled. Only supply the tag key. The policy assumes that the tag value is irrelevant.
+- *Automatic Actions* - When this value is set, this policy will automatically take the selected action(s).
+
+Please note that the "*Automatic Actions*" parameter contains a list of action(s) that can be performed on the resources. When it is selected, the policy will automatically execute the corresponding action on the data that failed the checks, post incident generation. Please leave it blank for *manual* action.
+For example if a user selects the "Disable Public endpoint" action while applying the policy, the public data endpoint would be deleted for the identified instances.
 
 ## Prerequesites
 
@@ -32,14 +35,6 @@ Provider tag value to match this policy: `azure_rm`
 Required permissions in the provider:
 
 - Microsoft.Sql/managedInstances/*
-
-## To enable delete action
-
-Perform below steps to enable delete action.
-
-- Edit the file [Check_for_publicly_accessible_Azure_SQL_Managed_Instance](https://github.com/flexera/policy_templates/tree/master/security/azure/sql_publicly_accessible_managed_instance)
-- uncomment the line which conatins 'escalate $esc_delete_Managed_instances_approval' and save the changes.
-- upload the modified file and apply the policy.
 
 ## Supported Clouds
 

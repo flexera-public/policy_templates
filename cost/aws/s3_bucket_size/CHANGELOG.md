@@ -1,5 +1,25 @@
 # Changelog
 
+## v2.5
+
+- Added default_frequency "daily"
+
+## v2.4
+
+- Adding AWS Account Id
+
+## v2.3
+
+- fix description
+
+## v2.2
+
+- adding incident resource table
+
+## v2.1
+
+- remove unnecessary permissions block
+
 ## v2.0
 
 - Changes to support the Credential Service

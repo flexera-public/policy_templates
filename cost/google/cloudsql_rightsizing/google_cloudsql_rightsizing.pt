@@ -5,8 +5,9 @@ short_description "Checks Google CloudSQL instances based on provided CPU thresh
 long_description ""
 severity "medium"
 category "Cost"
+default_frequency "daily"
 info(
-      version: "2.0",
+      version: "2.6",
       provider: "GCE",
       service: "SQL",
       policy_set: "Rightsize Database Services"
@@ -48,13 +49,11 @@ parameter "param_exclusion_tag_key" do
   allowed_pattern /(^$)|([\w]?)+\:([\w]?)+/
 end
 
-###############################################################################
-# Permissions
-###############################################################################
-
-permission "perm_read_creds" do
-  actions   "rs_cm.show_sensitive","rs_cm.index_sensitive"
-  resources "rs_cm.credentials"
+parameter "param_automatic_action" do
+  type "list"
+  label "Automatic Actions"
+  description "When this value is set, this policy will automatically take the selected action(s)"
+  allowed_values ["Resize Instances"]
 end
 
 ###############################################################################
@@ -86,7 +85,7 @@ end
 # Datasources
 ###############################################################################
 
-#get all google project
+#get all active google project
 datasource "ds_google_project" do
   iterate $ds_time
   request do
@@ -94,6 +93,7 @@ datasource "ds_google_project" do
     pagination $google_pagination
     host "cloudresourcemanager.googleapis.com"
     path "/v1/projects/"
+    query "filter", "lifecycleState=ACTIVE"
   end
   result do
     encoding "json"
@@ -116,6 +116,7 @@ datasource "ds_cloudsql_tiers" do
     auth $auth_google
     host "www.googleapis.com"
     path join(["/sql/v1beta4/projects/",val(iter_item,"projectId"),"/tiers/"])
+    ignore_status [403,404]
   end
   result do
     encoding "json"
@@ -133,10 +134,11 @@ datasource "ds_cloudsql_instances" do
     auth $auth_google
     host "www.googleapis.com"
     path join(["/sql/v1beta4/projects/",val(iter_item,"projectId"),"/instances/"])
+    ignore_status [403,404]
   end
   result do
     encoding "json"
-    collect jmes_path(response, "items[*]") do
+    collect jq(response, ".items[]?") do
         field "database_id", join([jmes_path(col_item, "project"), ":", jmes_path(col_item, "name")])
         field "tier", jmes_path(col_item, "settings.tier")
         field "pricingPlan", jmes_path(col_item, "settings.pricingPlan")
@@ -161,16 +163,17 @@ datasource "ds_cloudsql_utilization" do
     query "interval.startTime", val(iter_item,"start_date")
     query "aggregation.alignmentPeriod", "+10800s"
     query "aggregation.perSeriesAligner", "ALIGN_MEAN"
+    ignore_status [403,404]
   end
   result do
     encoding "json"
-    collect jmes_path(response, "timeSeries[*]") do
-      field "database_id", jmes_path(col_item, "resource.labels.database_id")
-      field "region", jmes_path(col_item, "resource.labels.region")
-      field "avg_cpu_points", jmes_path(col_item, "points[*].value.doubleValue | avg(@)")
-      field "max_cpu_points", jmes_path(col_item, "points[*].value.doubleValue | max(@)")
-      field "min_cpu_points", jmes_path(col_item, "points[*].value.doubleValue | min(@)")
-      field "projectId", val(iter_item, "projectId")	  
+    collect jq(response, ".timeSeries[]?") do
+      field "database_id", jq(col_item, ".resource.labels.database_id")
+      field "region", jq(col_item, ".resource.labels.region")
+      field "avg_cpu_points", jq(col_item, "try([.points[].value.doubleValue] | add/length | if . != null then . else 0 end) catch 0")
+      field "max_cpu_points", jq(col_item, "try([.points[].value.doubleValue] | max | if . != null then . else 0 end) catch 0")
+      field "min_cpu_points", jq(col_item, "try([.points[].value.doubleValue] | min | if . != null then . else 0 end) catch 0")
+      field "projectId", val(iter_item, "projectId")
     end
   end
 end
@@ -181,6 +184,7 @@ datasource "ds_google_instance_size_map" do
     host "raw.githubusercontent.com"
     path "/flexera/policy_templates/e412d4ca5dc191f15fcf6cc532dc2d31de44f3ee/data/google/instance_types.json"
     header "User-Agent", "RS Policies"
+    ignore_status [403,404]
   end
 end
 
@@ -195,15 +199,16 @@ datasource "ds_memory_utilization" do
     query "interval.startTime", val(iter_item,"start_date")
     query "aggregation.alignmentPeriod", "+10800s"
     query "aggregation.perSeriesAligner", "ALIGN_MEAN"
+    ignore_status [403,404]
   end
   result do
     encoding "json"
-    collect jmes_path(response, "timeSeries[*]") do
-      field "database_id", jmes_path(col_item, "resource.labels.database_id")
-      field "region", jmes_path(col_item, "resource.labels.region")
-      field "avg_mem_points", jmes_path(col_item, "points[*].value.doubleValue | avg(@)")
-      field "max_mem_points", jmes_path(col_item, "points[*].value.doubleValue | max(@)")
-      field "min_mem_points", jmes_path(col_item, "points[*].value.doubleValue | min(@)")
+    collect jq(response, ".timeSeries[]?") do
+      field "database_id", jq(col_item, ".resource.labels.database_id")
+      field "region", jq(col_item, ".resource.labels.region")
+      field "avg_mem_points", jq(col_item, "try([.points[].value.doubleValue] | add/length | if . != null then . else 0 end) catch 0")
+      field "max_mem_points", jq(col_item, "try([.points[].value.doubleValue] | max | if . != null then . else 0 end) catch 0")
+      field "min_mem_points", jq(col_item, "try([.points[].value.doubleValue] | min | if . != null then . else 0 end) catch 0")
     end
   end
 end
@@ -241,7 +246,6 @@ script "js_calculated_utilization", type: "javascript" do
       var cloudsql_instance = _.find(ds_cloudsql_instances,function(instance){ return instance.database_id == database_id})
       var memory_utilization = _.find(ds_memory_utilization,function(instance){ return instance.database_id == database_id})
       if ( cloudsql_instance == null && cloudsql_instance === undefined){
-
       } else {
         if (  cloudsql_utilization_instance.zone != null &&  cloudsql_utilization_instance.zone !== undefined ){
           var zone =  cloudsql_utilization_instance.zone
@@ -252,7 +256,6 @@ script "js_calculated_utilization", type: "javascript" do
             var zone = 'undefined'
           }
         }
-
         if (  cloudsql_utilization_instance.tier != null &&  cloudsql_utilization_instance.tier !== undefined ){
           var tier =  cloudsql_utilization_instance.tier
         } else {
@@ -262,7 +265,6 @@ script "js_calculated_utilization", type: "javascript" do
             var tier = 'undefined'
           }
         }
-
         if (  cloudsql_utilization_instance.pricingPlan != null &&  cloudsql_utilization_instance.pricingPlan !== undefined ){
           var pricingPlan =  cloudsql_utilization_instance.pricingPlan
         } else {
@@ -284,7 +286,7 @@ script "js_calculated_utilization", type: "javascript" do
         results.push(
           {
             region: cloudsql_utilization_instance.region,
-            projectId: cloudsql_utilization_instance['projectId'],	
+            projectId: cloudsql_utilization_instance['projectId'],
             zone: zone,
             tier: tier,
             pricingPlan: pricingPlan,
@@ -324,7 +326,6 @@ script "js_checked_utilization", type: "javascript" do
         var filtered_instance = instance;
       }
     }
-
     if (filtered_instance != null && filtered_instance !== undefined){
       if (filtered_instance["cpu_average"] > param_avg_cpu_upscale){
         var recommended_size = instance_type_hash["up"]
@@ -336,7 +337,6 @@ script "js_checked_utilization", type: "javascript" do
           results.push(filtered_instance)
         }
       }
-
       if (filtered_instance["cpu_average"] < param_avg_cpu_downscale){
         var recommended_size = instance_type_hash["down"]
         if ( recommended_size == null && recommended_size === null ){
@@ -349,6 +349,18 @@ script "js_checked_utilization", type: "javascript" do
       }
     }
   })
+     for(var instance in results){
+      var taglist="";
+      for(var prop in instance.userLabels){
+        taglist=taglist+prop+":"+instance.userLabels["prop"]+", ";
+	  }
+      if(taglist.length>0){
+        instance.userLabels=taglist.substring(0,taglist.length-2);
+	  }
+      else{
+        instance.tags="< No Value >";
+	  }
+	}
     results = _.sortBy(results, 'region');
     results= _.sortBy(results, 'projectId');
 EOF
@@ -360,21 +372,46 @@ end
 policy "pol_utilization" do
   validate_each $ds_checked_utilization do
     summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} rows containing Google CloudSQL instances to be rightsized"
-    detail_template <<-EOS
-# Google CloudSQL Instances
-
-| Project ID | Database ID | Region | Zone | Pricing Plan | Tier | Recommended Tier | CPU Maximum % | CPU Minimum % | CPU Average % | Tags |
-| ---------- | ----------- | ------ | ---- | ------------ | ---- | ---------------- | ------------- | ------------- | ------------- | ---- |
-{{ range data -}}
-| {{.projectId}} | {{.database_id}} | {{.region}} | {{.zone}} | {{.pricingPlan}} | {{.tier}} | {{.recommended_size}} | {{ .cpu_maximum }} | {{.cpu_minimum}} | {{ .cpu_average }} | {{ range $i,$e := .userLabels}}{{$i}}:{{ $e }}{{ end }} |
-{{ end -}}
-
-
-###### Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }}) within Org: {{ rs_org_name }} (Org ID: {{ rs_org_id }})
-EOS
     check logic_not(val(item,"recommended_size"))
     escalate $email
     escalate $update_resources
+    export do
+      resource_level true
+      field "projectId" do
+        label "Project ID"
+      end
+      field "id" do
+        label "Database ID"
+        path "database_id"
+      end
+      field "zone" do
+        label "Zone"
+      end
+      field "pricingPlan" do
+        label "Pricing Plan"
+      end
+      field "tier" do
+        label "Tier"
+      end
+      field "recommended_size" do
+        label "Recommended Tier"
+      end
+      field "cpu_maximum" do
+        label "CPU Maximum %"
+      end
+      field "cpu_minimum" do
+        label "CPU Minimum %"
+      end
+      field "cpu_average" do
+        label "CPU Average %"
+      end
+      field "userLabels" do
+        label "Tags"
+      end
+	    field "selfLink" do
+	      label "Self Link"
+	    end
+    end
   end
 end
 
@@ -384,19 +421,16 @@ end
 ###############################################################################
 
 escalation "email" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
   email $param_email
 end
 
 escalation "update_resources" do
-  request_approval do
-    label "Approve resource update"
-    description "Approve escalation to resize cloudsql instance"
-    parameter "approval_resion" do
-      type "string"
-      label "Reason for Approval"
-      description "Explain why are you approving the action."
-    end
-  end
+  automatic contains($param_automatic_action , "Resize Instances")
+  label "Resize resources"
+  description "Resized the selected resource"
   run "update_resources", data
 end
 

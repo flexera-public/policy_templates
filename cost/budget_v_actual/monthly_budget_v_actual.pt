@@ -6,6 +6,13 @@ long_description "Version: 1.1"
 severity "low"
 category "Cost"
 tenancy "single"
+default_frequency "daily"
+info(
+  version: "1.4",
+  provider: "Flexera Optima",
+  service: "",
+  policy_set: ""
+)
 
 parameter "param_email" do
   type "list"
@@ -205,9 +212,9 @@ script "js_current_month_cost_request", type: "javascript" do
     start_at = getFormattedDailyDate(new Date(now.getFullYear(), now.getMonth(), 1))
     // end_at to end of this month
     end_at = getFormattedDailyDate(addDays(new Date(now.getFullYear(), now.getMonth() + 1, 0),1))
-    
+
     var billing_center_ids = []
-    
+
     if (param_billing_centers.length === 0){
       var top_billing_centers = _.reject(ds_billing_centers, function(bc){ return bc.parent_id != null });
       billing_center_ids = _.map(top_billing_centers, function(value, key){ return value.id });
@@ -216,7 +223,7 @@ script "js_current_month_cost_request", type: "javascript" do
       billing_center_names = _.map(param_billing_centers, function(name){ return name.toLowerCase(); });
       billing_center_ids = _.compact(_.map(ds_billing_centers, function(value){ if(_.contains(billing_center_names, value.name.toLowerCase())){return value.id} }));
     }
-    
+
     var body = {
       "dimensions":[]
       "granularity":"day",
@@ -258,7 +265,7 @@ script "js_report", type: "javascript" do
 
     return year + '-' + month ;
   }
-  
+
   // create a map to use in the request metric field.
     var cost_metric = {
       "Unamortized Unblended":"cost_nonamortized_unblended_adj",
@@ -268,7 +275,7 @@ script "js_report", type: "javascript" do
     }
 
     var metric = cost_metric[param_cost_metric]
-    
+
     var current_month_total = 0.00
     for (var i = 0; i < ds_current_month_costs['rows'].length; i++) {
       var row = ds_current_month_costs['rows'][i]
@@ -321,7 +328,7 @@ script "js_report", type: "javascript" do
     var currentMonth = getFormattedMonthlyDate(now);
     var currentMonthName = longMonthNames[parseInt(currentMonth.split('-')[1])];
     var param_monthly_budgeted = monthlyBudgetInputs[parseInt(currentMonth.split('-')[1])];
-    
+
     var cm_actual_total = cur + ' ' + formatNumber(Math.round(current_month_total), sep);
     var cm_budget_total = cur + ' ' + formatNumber(Math.round(param_monthly_budgeted), sep);
 
@@ -345,7 +352,7 @@ script "js_report", type: "javascript" do
     } else {
       var cur = "USD"
     }
-    
+
     var reportData = [
       {
         range: 'Monthly',
@@ -379,24 +386,33 @@ policy "policy_scheduled_report" do
 ## Org: {{ rs_org_name }} (Org ID: {{ rs_org_id }})
 ## Billing Center(s): {{ data.billingCenters }}
 ![Actual v. Monthly Cost Report](https://image-charts.com/chart?{{ data.chartType }}&{{ data.chartData }}&{{ data.chartSize }}&{{ data.chartLabels }}&{{ data.chartAxis }}&{{ data.chartAxisFormat }} "Actual v. Monthly Cost Report")
-
-|Range|Current|Budget|Overbudget|
-|:---:|------:|-----:|---------:|
-{{ range data.reportData -}}
-  | {{ .range }} | {{ .current }} | {{ .budget }} | {{ .overbudget }} |
-{{ end -}}  
-  
 ### For more detailed cost information, visit [Optima](https://analytics.rightscale.com/orgs/{{ rs_org_id }}/dashboard).
-  
 For more information on this report, please view the [README](https://github.com/rightscale/policy_templates/tree/master/cost/budget_v_actual).
 ___
 ###### Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }}) within Org: {{ rs_org_name }} (Org ID: {{ rs_org_id }})
 EOS
     escalate $escalation_send_email
     check eq(0, 1)
+    export "reportData" do
+      field "range" do
+        label "Range"
+      end
+      field "current" do
+        label "Current"
+      end
+      field "budget" do
+        label "Budget"
+      end
+      field "overbudget" do
+        label "Over Budget"
+      end
+    end
   end
 end
 
 escalation "escalation_send_email" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
   email $param_email
 end

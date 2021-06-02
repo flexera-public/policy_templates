@@ -1,5 +1,30 @@
 # Changelog
 
+## v1.15
+
+- Fixed markdown alignment in HERE doc, which was causing the conversion to HTML in the email to fail.
+
+## v1.14
+
+- Modified escalation label and description for consistency
+- Added incident resource table
+
+## v1.13
+
+- Added the ability to provide either Billing center name or Id.
+
+## v1.12
+
+- Fixed missing budget alert incident graph
+
+## v1.11
+
+- Fix first day issue with month
+
+## v1.10
+
+- Fix error when the policy run within the first 3 days of the month.
+
 ## v1.9
 
 - Fixed evaluation exceeded maximum time

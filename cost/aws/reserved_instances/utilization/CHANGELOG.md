@@ -1,5 +1,21 @@
 # Changelog
 
+## v1.14
+
+- Added default_frequency "daily"
+
+## v1.13
+
+- Modified escalation label and description for consistency
+
+## v1.12
+
+- Adding incident resource table
+
+## v1.11
+
+- Updated datasource to leverage new API URI
+
 ## v1.10
 
 - Updated the metadata

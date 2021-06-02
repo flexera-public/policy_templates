@@ -6,20 +6,11 @@ long_description ""
 category "Compliance"
 severity "low"
 info(
-  version: "2.0",
+  version: "2.3",
   provider: "Azure",
   service: "Identity",
   policy_set: ""
   )
-
-###############################################################################
-# Permissions
-###############################################################################
-
-permission "perm_read_creds" do
-  actions   "rs_cm.show_sensitive","rs_cm.index_sensitive"
-  resources "rs_cm.credentials"
-end
 
 ###############################################################################
 # Parameters
@@ -53,8 +44,8 @@ end
 credentials "azure_graph_auth" do
   schemes "oauth2"
   label "Azure"
-  description "Select the Azure Resource Manager Credential for graph API from the list."
-  tags "provider=azure_rm"
+  description "Select the Azure Resource Manager Credential for Azure Active Directory API from the list."
+  tags "provider=azure_graph"
 end
 
 ###############################################################################
@@ -215,11 +206,15 @@ script "js_filter_resources", type: "javascript" do
             username: user.mail,
             principalname: user.userPrincipalName,
             role: definition.properties.roleName,
-            subscriptionName: definition.subscriptionName
+            subscriptionName: definition.subscriptionName,
+            id:r.name
           })
         }
       })
     })
+    results=_.sortBy(results, 'subscriptionName');
+    results=_.sortBy(results, 'name');
+    results=_.sortBy(results, 'username');
 
 EOS
 end
@@ -231,18 +226,29 @@ end
 policy "azure_resource_policy" do
   validate_each $filtered_resources do
     summary_template "{{ len data }} Azure Users who are {{parameters.param_azure_roles}}"
-    detail_template <<-EOS
-# Azure users out of compliance
-| Subscription Name | Resource Name | Azure Username | Azure User Principal Name | Role |
-| ----------------- | ------------- | -------------- | ------------------------- | ---- |
-{{ range data -}}
-| {{.subscriptionName}} | {{.name}} | {{.username}} | {{.principalname}} | {{.role}} |
-{{ end -}}
-
-###### Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }}) within Org: {{ rs_org_name }} (Org ID: {{ rs_org_id }})
-EOS
     escalate $email
     check eq(0,1)
+    export do
+      resource_level true
+      field "subscriptionName" do
+        label "Subscription Name"
+      end
+      field "name" do
+        label "Resource Name"
+      end
+      field "username" do
+        label "Azure Username"
+      end
+      field "principalname" do
+        label "Azure User Principal Name"
+      end
+      field "role" do
+        label "Role"
+      end
+      field "id" do
+        label "Role Assignment Id"
+      end
+    end
   end
 end
 
@@ -251,7 +257,10 @@ end
 ###############################################################################
 
 escalation "email" do
-   email $param_email
+  automatic true
+  label "Send Email"
+  description "Sends incident email"
+  email $param_email
 end
 
 ###############################################################################

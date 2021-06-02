@@ -8,7 +8,7 @@ category "Cost"
 tenancy "single"
 default_frequency "daily"
 info(
-  version: "1.9",
+  version: "1.15",
   provider: "Flexera Optima",
   service: "",
   policy_set: ""
@@ -17,21 +17,22 @@ info(
 parameter "param_monthly_budget" do
   label "Monthly Budget"
   type "number"
-end 
+  description "specify the monthly budget.  Currency is irrelevant; the policy will default to whichever currency is used in Optima"
+end
 
-parameter "param_bc_name" do 
-  label "Billing Center Name"
-  description "(Optional) Provide the name of a Billing Center if the Budget Scope is 'Billing Center'"
+parameter "param_bc_name" do
+  label "Billing Center Name or ID"
+  description "Provide the name or id of a Billing Center if the Budget Scope is 'Billing Center'. Leave it blank for 'Organization' scope"
   type "string"
-end 
+end
 
-parameter "param_type" do 
+parameter "param_type" do
   label "Budget Alert Type"
   type "string"
   allowed_values "Actual Spend","Forecasted Spend"
   description "Actual Spend alerts are based off incurred costs. Forecasted Spend alerts are based off monthly runrates."
   default "Actual Spend"
-end 
+end
 
 parameter "param_cost_metric" do
   type "string"
@@ -42,8 +43,9 @@ parameter "param_cost_metric" do
 end
 
 parameter "param_email" do
-  label "Email addresses of the recipients you wish to notify"
+  label "Email addresses"
   type "list"
+  description "A list of email addresses to notify"
 end
 
 auth "auth_rs", type: "rightscale"
@@ -119,22 +121,28 @@ script "costs_request", type: "javascript" do
     var date = new Date();
     var year = date.getUTCFullYear();
     var month =  (date.getUTCMonth()==11)?1:2 + date.getUTCMonth();
-    
-    if (month == 1){ 
+
+    if (month == 1){
       var lmonth = 12;
       var lyear = year ;
-	  year=year+1;
+    year=year+1;
     } else {
       var lmonth = month-1;
       var lyear = year ;
     }
-    
+
     mo = month.toString().length > 1 ? month : '0' + month;
     lmo = lmonth.toString().length > 1 ? lmonth : '0' + lmonth;
 
-
+    // wait for all the bill data to be collected, usually takes about 3 days	   
     var dt = new Date();
-    dt.setDate( dt.getDate() - 3 );
+    if (dt.getDate() > 4){
+      // start collecting bill data after its retrieved by Optima, roughly 3 days
+      // the complete cost data should be retrieved
+      dt.setDate( dt.getDate() - 3 );
+    } else if (dt.getDate() == 1){
+      dt.setDate(dt.getDate() + 1)
+    }
     var today_minus_three = dt.toISOString().substring(0,10)
     var current_month = lyear + "-" + lmo + "-01"
 
@@ -155,7 +163,8 @@ script "costs_request", type: "javascript" do
         "User-Agent": "RS Policies",
         "Api-Version": "1.0"
       }
-    } 
+    }
+
   EOS
 end
 
@@ -191,7 +200,7 @@ script "js_bc_costs", type: "javascript" do
       "Amortized Unblended":"amortized_unblended_costs",
       "Unamortized Blended": "nonamortized_blended_costs",
       "Amortized Blended":"amortized_blended_costs"
-  } 
+  }
   var totalCost=0;
   var bc_id="";
   var count=0;
@@ -199,38 +208,39 @@ script "js_bc_costs", type: "javascript" do
    _.each(billing_centers, function(bc){
     var type = cost_type[param_cost_metric];
     var cost = bc[type];
-	if(param_bc_name === bc.name){
-      bc_name = param_bc_name;
+	if(param_bc_name === bc.name || param_bc_name===bc.id){
+	  bc_name = bc["name"];
       totalCost=totalCost + cost;
       bc_id = bc["id"];
 	  count++;
-    }else{
+	}
+	else{
     costs.push({
         name: bc["name"],
         total: cost,
-        id: bc["id"]       
+        id: bc["id"]
     })
     }
-   })  
-   if(param_bc_name === bc_name){
+   })
+   if(count>0){
     costs.push({
         name: bc_name,
         total: totalCost,
-        id: bc_id       
+        id: bc_id
     })
    }
 EOS
-end 
+end
 
-datasource "org_total" do 
+datasource "org_total" do
   run_script $js_org_total, $top_bc_costs_formatted, $param_bc_name
-end 
+end
 
-script "js_org_total", type: "javascript" do 
+script "js_org_total", type: "javascript" do
   parameters "billing_centers", "param_bc_name"
   result "org_total"
   code <<-EOS
-  var totals = [] ; 
+  var totals = [] ;
   var sum =0;
    if( param_bc_name.length <= 0 ){
   _.each(billing_centers, function(bc_total){ totals.push(bc_total.total)})
@@ -252,8 +262,20 @@ script "js_filtered_billing_centers", type: "javascript" do
   parameters "billing_centers", "param_bc_name"
   result "filtered_billing_centers"
   code <<-EOS
-  var filtered_billing_centers =
-    _.reject(billing_centers, function(bc){ return (param_bc_name !== bc.name) });
+  var filtered_billing_centers=[];
+    _.each(billing_centers, function(bc){ 
+      if(param_bc_name==="Unallocated" && param_bc_name===bc.name){
+        if(bc.parent_id==null){
+          filtered_billing_centers.push(bc);
+		}
+	  }
+      else if(param_bc_name===bc.name){
+        filtered_billing_centers.push(bc);
+      }
+      else if(param_bc_name===bc.id){
+        filtered_billing_centers.push(bc);
+	  }
+	});
 EOS
 end
 
@@ -279,18 +301,18 @@ datasource "all_bc_costs_formatted" do
   run_script $js_bc_costs, $all_bc_costs, $param_cost_metric, $param_bc_name
 end
 
-datasource "all_costs" do 
+datasource "all_costs" do
   run_script $js_combine_ds, $all_bc_costs_formatted, $org_total, $param_bc_name
-end 
+end
 
-script "js_combine_ds", type: "javascript" do 
+script "js_combine_ds", type: "javascript" do
   parameters "billing_centers","org", "param_bc_name"
   result "result"
   code <<-EOS
-  var result = [] ; 
-   
-  _.each(billing_centers, function(bc){ 
-  if (param_bc_name === bc.name){
+  var result = [] ;
+
+  _.each(billing_centers, function(bc){
+  if(param_bc_name === bc.name || param_bc_name==bc.id){
     result.push(bc);
 	}
   })
@@ -299,17 +321,19 @@ script "js_combine_ds", type: "javascript" do
 EOS
 end
 
-datasource "filtered_target" do 
+datasource "filtered_target" do
   run_script $js_filter_target, $all_costs, $param_bc_name, $param_monthly_budget, $param_type, $ds_currency_code, $ds_currency_reference
-end 
+end
 
-script "js_filter_target", type: "javascript" do 
+script "js_filter_target", type: "javascript" do
   parameters "all_costs", "param_bc_name", "param_monthly_budget", "param_type", "ds_currency_code", "ds_currency_reference"
   result "report"
   code <<-EOS
   var target = [] ;
   var report={};
   var date = new Date();
+  // wait for all the bill data to be collected, usually takes about 3 days
+  if (date.getDate() > 4) {
   var month = date.getUTCMonth()+1;
   var day = ( date.getUTCDate()-3 );
   var n = date.getMonth();
@@ -330,7 +354,7 @@ script "js_filter_target", type: "javascript" do
   if (month == 12){ var numdays = 31 ;}
 
   var monthcomplete = day / numdays ;
-  
+
  function formatNumber(number, separator){
        var numString =number.toString();
        var values=numString.split(".");
@@ -374,35 +398,35 @@ script "js_filter_target", type: "javascript" do
       if( (Math.round((runrate - param_monthly_budget) * 100) / 100) !== 0 ){
           overBudgetAmountCur=cur;
       }
-	  
-	  var forecastedSpend = cur+' '+formatNumber((Math.round(( runrate -bc["total"]) * 100) / 100), separator);
+
+	  var forecastedSpend = cur+formatNumber((Math.round(( runrate -bc["total"]) * 100) / 100), separator);
 	  if (bc.name === "Organization"){
 	   selected_bc=bc;
         if (param_type === "Forecasted Spend"){
-        var overBudgetAmount= overBudgetAmountCur+' '+formatNumber((Math.round((runrate - param_monthly_budget) * 100) / 100), separator);
+        var overBudgetAmount= overBudgetAmountCur+formatNumber((Math.round((runrate - param_monthly_budget) * 100) / 100), separator);
         var overBudgetPercent=Math.round((((Math.round(runrate * 100) / 100)-(Math.round(param_monthly_budget * 100) / 100))/param_monthly_budget)*100);
           target.push({
             name: bc["name"],
-            actual: cur + ' '+formatNumber((Math.round(bc["total"] * 100) / 100), separator),
+            actual: cur +formatNumber((Math.round(bc["total"] * 100) / 100), separator),
             type: "Forecasted Spend",
-            runrate: cur + ' '+formatNumber((Math.round(runrate * 100) / 100),separator),
+            runrate: cur +formatNumber((Math.round(runrate * 100) / 100),separator),
             id: bc["id"],
-            budget: cur + ' '+formatNumber(param_monthly_budget,separator),
+            budget: cur +formatNumber(param_monthly_budget,separator),
             total: runrate,
             overBudgetAmount: overBudgetAmount,
             overBudgetPercent: overBudgetPercent+"%",
             forecastedSpend: forecastedSpend
           })
         } else {
-          var overBudgetAmount= overBudgetAmountCur+' '+formatNumber((Math.round((bc["total"] - param_monthly_budget) * 100) / 100), separator);
+          var overBudgetAmount= overBudgetAmountCur+formatNumber((Math.round((bc["total"] - param_monthly_budget) * 100) / 100), separator);
           var overBudgetPercent=Math.round((((Math.round(bc["total"] * 100) / 100)-(Math.round(param_monthly_budget * 100) / 100))/param_monthly_budget)*100);
           target.push({
             name: bc["name"],
-            actual: cur + ' '+formatNumber((Math.round(bc["total"] * 100) / 100), separator),
+            actual: cur +formatNumber((Math.round(bc["total"] * 100) / 100), separator),
             type: "Actual Spend",
-            runrate: cur + ' '+formatNumber((Math.round(runrate * 100) / 100),separator),
+            runrate: cur +formatNumber((Math.round(runrate * 100) / 100),separator),
             id: bc["id"],
-            budget: cur + ' '+formatNumber(param_monthly_budget,separator),
+            budget: cur +formatNumber(param_monthly_budget,separator),
             total: bc["total"],
             overBudgetAmount: overBudgetAmount,
             overBudgetPercent: overBudgetPercent+"%",
@@ -417,45 +441,45 @@ script "js_filter_target", type: "javascript" do
          var overBudgetAmountCur="";
          if( (Math.round((runrate - param_monthly_budget) * 100) / 100) !== 0 ){
            overBudgetAmountCur=cur;
-         }	
-         var forecastedSpend = cur+' '+formatNumber((Math.round(( runrate -bc["total"]) * 100) / 100), separator);
-	  if (param_bc_name === bc.name){
+         }
+         var forecastedSpend = cur+formatNumber((Math.round(( runrate -bc["total"]) * 100) / 100), separator);
+	  if (param_bc_name === bc.name  || bc.id===param_bc_name){
 	    selected_bc=bc;
         if (param_type === "Forecasted Spend"){
-         var overBudgetAmount = overBudgetAmountCur+' '+formatNumber((Math.round((runrate - param_monthly_budget) * 100) / 100), separator);
-         var overBudgetPercent = Math.round((((Math.round(runrate * 100) / 100)-(Math.round(param_monthly_budget * 100) / 100))/param_monthly_budget)*100);		
+         var overBudgetAmount = overBudgetAmountCur+formatNumber((Math.round((runrate - param_monthly_budget) * 100) / 100), separator);
+         var overBudgetPercent = Math.round((((Math.round(runrate * 100) / 100)-(Math.round(param_monthly_budget * 100) / 100))/param_monthly_budget)*100);
           target.push({
             name: bc["name"],
-            actual: cur + ' '+formatNumber((Math.round(bc["total"] * 100) / 100), separator),
+            actual: cur + formatNumber((Math.round(bc["total"] * 100) / 100), separator),
             type: "Forecasted Spend",
-            runrate: cur + ' '+formatNumber((Math.round(runrate * 100) / 100),separator),
+            runrate: cur +formatNumber((Math.round(runrate * 100) / 100),separator),
             id: bc["id"],
-            budget: cur + ' '+formatNumber(param_monthly_budget,separator),
+            budget: cur +formatNumber(param_monthly_budget,separator),
             total: runrate
             overBudgetAmount: overBudgetAmount,
             overBudgetPercent: overBudgetPercent+"%",
-            forecastedSpend: forecastedSpend			
+            forecastedSpend: forecastedSpend
           })
         } else {
-          var overBudgetAmount= overBudgetAmountCur+' '+formatNumber((Math.round((bc["total"] - param_monthly_budget) * 100) / 100), separator);
-          var overBudgetPercent=Math.round((((Math.round(bc["total"] * 100) / 100)-(Math.round(param_monthly_budget * 100) / 100))/param_monthly_budget)*100);		
+          var overBudgetAmount= overBudgetAmountCur+formatNumber((Math.round((bc["total"] - param_monthly_budget) * 100) / 100), separator);
+          var overBudgetPercent=Math.round((((Math.round(bc["total"] * 100) / 100)-(Math.round(param_monthly_budget * 100) / 100))/param_monthly_budget)*100);
           target.push({
             name: bc["name"],
-            actual: cur + ' '+formatNumber((Math.round(bc["total"] * 100) / 100), separator),
+            actual: cur +formatNumber((Math.round(bc["total"] * 100) / 100), separator),
             type: "Actual Spend",
-            runrate: cur + ' '+formatNumber((Math.round(runrate * 100) / 100),separator),
+            runrate: cur +formatNumber((Math.round(runrate * 100) / 100),separator),
             id: bc["id"],
-            budget: cur + ' '+formatNumber(param_monthly_budget,separator),
+            budget: cur +formatNumber(param_monthly_budget,separator),
             total: bc["total"],
 			overBudgetAmount: overBudgetAmount,
 			overBudgetPercent: overBudgetPercent+"%",
-            forecastedSpend: forecastedSpend			
+            forecastedSpend: forecastedSpend
           })
         }
       }
     })
   }
-  if (param_type === "Forecasted Spend"){ 
+  if (param_type === "Forecasted Spend"){
   var runrate = selected_bc["total"] / monthcomplete ;
   }else{
   var runrate = selected_bc["total"]
@@ -464,16 +488,16 @@ script "js_filter_target", type: "javascript" do
   var budgetCur="";
   var forecastedSpend="";
   if((Math.round(selected_bc["total"] * 100) / 100) !==0){
-    totalCur=cur + ' '+formatNumber((Math.round(selected_bc["total"] * 100) / 100), separator);
+    totalCur=cur + formatNumber((Math.round(selected_bc["total"] * 100) / 100), separator);
   }
   if((Math.round((target[0]["total"] - selected_bc["total"]) * 100) / 100)!==0){
-    forecastedSpend=cur+' '+formatNumber((Math.round((target[0]["total"] - selected_bc["total"]) * 100) / 100), separator);
+    forecastedSpend=cur+formatNumber((Math.round((target[0]["total"] - selected_bc["total"]) * 100) / 100), separator);
   }
   if(param_monthly_budget!==0){
-   budgetCur=cur + ' '+formatNumber(param_monthly_budget,separator);
+   budgetCur=cur +formatNumber(param_monthly_budget,separator);
   }
   console.log((Math.round((target[0]["total"] - selected_bc["total"]) * 100) / 100));
-  report= {
+  report = {
             actual: (Math.round(selected_bc["total"] * 100) / 100).toString(10),
             runrate: (Math.round(runrate * 100) / 100).toString(10),
             monthYear: month_year,
@@ -487,16 +511,25 @@ script "js_filter_target", type: "javascript" do
             chartLebel: "chdl=Actual+Spend|Forecasted+Spend|Budget|Over+Budget",
             chartLebelPosition: "chdlp=b",
             chartYAxis: "chxt=y",
-            chartYAxisLebel: "chxl=0:|+ 1:|+",
+            chartYAxisLebel: "chxl=0:|+1:|+",
             chartDataAutoScale: "chds=a"
             chartDataValue: 'chl='+totalCur+'||'+ forecastedSpend+'|||'+budgetCur+'||'+target[0]["overBudgetAmount"],
-            reportData: target			
+            reportData: target
   }
-  
+} else {
+  report = {
+    total: param_monthly_budget-1,
+    runrate: -1,
+    actual: -1
+  }
+}
 EOS
-end 
+end
 
 escalation "esc_budget_alert" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
   email $param_email
 end
 
@@ -507,21 +540,39 @@ policy "budget_alert" do
     hash_exclude "actual", "runrate", "total"
     detail_template <<-EOS
 # Budget Exceeded
-
 ### Cost Metric: {{ parameters.param_cost_metric }}
 ### Budget Alert Type: {{ parameters.param_type }}
 ### Monthly Spend for {{ data.monthYear }}
-
-![Spending Overview Chart](https://image-charts.com/chart?{{ data.chartType }}&{{ data.chartData }}&{{ data.chartSize }}&{{ data.chartTitle }}&{{ data.chartImage }}&{{ data.chartColor }}&{{ data.chartLebel }}&{{ data.chartYAxisLebel }}&{{ data.chartYAxis }}&{{ data.chartLebelPosition }}&{{data.chartDataAutoScale}}&{{data.chartDataValue}} "Actual v. Monthly Cost Report")
-
-| Billing Center Name | Budget | Month to Date Spend | Additional Forecasted Spend | Forecasted Full Month Spend | Over Budget Amount | Over Budget Percent | Billing Center ID | 
-{{ range data.reportData -}}
-| :-----------------: | -----: | ------------------: | --------------------------: | --------------------------: | -----------------: | :-----------------: | :---------------: |
-| {{ .name }} | {{.budget}} | {{.actual}}  | {{.forecastedSpend}} | {{.runrate}} | {{.overBudgetAmount}} | {{.overBudgetPercent}} | {{.id}} | 
-{{ end -}}
-
+![Spending Overview Chart](https://image-charts.com/chart?{{ data.chartType }}&{{ data.chartData }}&{{ data.chartSize }}&{{ data.chartImage }}&{{ data.chartColor }}&{{ data.chartLebel }}&{{ data.chartYAxisLebel }}&{{ data.chartYAxis }}&{{ data.chartLebelPosition }}&{{data.chartDataAutoScale}}&{{data.chartDataValue}}&{{ data.chartTitle }}"Actual v. Monthly Cost Report")
 EOS
     escalate $esc_budget_alert
     check lt(val(data,"total"),$param_monthly_budget)
+    export "reportData" do
+      resource_level true
+      field "name" do
+        label "Billing Center Name"
+      end
+      field "budget" do
+        label "Budget"
+      end
+      field "actual" do
+        label "Month to Date Spend"
+      end
+      field "forecastedSpend" do
+        label "Additional Forecasted Spend"
+      end
+      field "runrate" do
+        label "Forecasted Full Month Spend"
+      end
+      field "overBudgetAmount" do
+        label "Over Budget Amount"
+      end
+      field "overBudgetPercent" do
+        label "Over Budget Percent"
+      end
+      field "id" do
+        label "Billing Center ID"
+      end
+    end
   end
 end

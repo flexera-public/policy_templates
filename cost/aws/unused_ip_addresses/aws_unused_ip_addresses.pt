@@ -1,0 +1,448 @@
+name "AWS Unused IP Addresses"
+rs_pt_ver 20180301
+type "policy"
+short_description "Checks AWS for unused IP Addresses and, optionally, deletes them. See the [README](https://github.com/flexera/policy_templates/tree/master/cost/aws/unused_ip_addresses/) and [docs.rightscale.com/policies](https://docs.rightscale.com/policies/) to learn more."
+long_description ""
+severity "low"
+category "Cost"
+default_frequency "daily"
+info(
+    version: "2.15",
+    provider: "AWS",
+    service: "EC2",
+    policy_set: "Unused IP Addresses"
+  )
+
+##############################################################################
+# Parameters
+##############################################################################
+
+parameter "param_allowed_regions" do
+  type "list"
+  label "Allowed Regions"
+  allowed_pattern /^([a-zA-Z-_]+-[a-zA-Z0-9-_]+-[0-9-_]+,*|)+$/
+  description "A list of allowed regions. See the README for more details"
+end
+
+parameter "param_exclude_tags" do
+  type "list"
+  label "Exclusion Tags"
+  description "A list of AWS tags to ignore Elastic IPs. Format: Key=Value"
+end
+
+parameter "param_email" do
+  type "list"
+  label "Email addresses"
+  description "Email addresses of the recipients you wish to notify when new incidents are created"
+end
+
+parameter "param_automatic_action" do
+  type "list"
+  label "Automatic Actions"
+  description "When this value is set, this policy will automatically take the selected action(s)"
+  allowed_values ["Delete Unused IPs"]
+end
+
+parameter "param_log_to_cm_audit_entries" do
+  type "string"
+  label "Log to CM Audit Entries"
+  description "Boolean for whether or not to log any debugging information from actions to CM Audit Entries, this should be left set to No on Flexera EU"
+  default "No"
+  allowed_values "Yes", "No"
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+credentials "auth_aws" do
+  schemes "aws","aws_sts"
+  label "AWS"
+  description "Select the AWS Cloud Credential from the list."
+  tags "provider=aws"
+end
+
+auth "auth_rs", type: "rightscale"
+
+pagination "aws_pagination" do
+  get_page_marker do
+    body_path "//DescribeAddressesResponse/nextToken"
+  end
+  set_page_marker do
+    query "nextToken"
+  end
+end
+
+###############################################################################
+# Datasources
+###############################################################################
+
+#Get list of enabled regions for an account
+datasource "ds_regions_list" do
+  request do
+    auth $auth_aws
+    verb "GET"
+    host "ec2.amazonaws.com"
+    path "/"
+    query "Action", "DescribeRegions"
+    query "Version", "2016-11-15"
+  end
+  result do
+    encoding "xml"
+    collect xpath(response, "//DescribeRegionsResponse/regionInfo/item", "array") do
+      field "region", xpath(col_item, "regionName")
+    end
+  end
+end
+
+# Get only SCP enabled regions
+datasource "ds_regions" do
+  run_script $js_regions, $param_allowed_regions, $ds_regions_list
+end
+
+datasource "ds_aws_elastic_ip_address" do
+  iterate $ds_regions
+  request do
+    auth $auth_aws
+    pagination $aws_pagination
+    host join(["ec2.",val(iter_item,"region"), ".amazonaws.com"])
+    path "/"
+    query "Action", "DescribeAddresses"
+    query "Version", "2016-11-15"
+  end
+  result do
+    encoding "xml"
+    collect xpath(response, "//DescribeAddressesResponse/addressesSet/item") do
+      field "publicIp", xpath(col_item,"publicIp")
+      field "domain" , xpath(col_item,"domain")
+      field "instance_id", xpath(col_item, "instanceId")
+      field "region", val(iter_item,"region")
+      field "association_id", xpath(col_item,"associationId")
+      field "allocation_id", xpath(col_item,"allocationId")
+      field "tags" do
+        collect xpath(col_item, "tagSet/item") do
+          field "tagKey", xpath(col_item, "key")
+          field "tagValue", xpath(col_item, "value")
+        end
+      end
+    end
+  end
+end
+
+datasource "ds_get_caller_identity" do
+  request do
+    auth $auth_aws
+    verb "GET"
+    host "sts.amazonaws.com"
+    path "/"
+    header "User-Agent", "RS Policies"
+    query "Action", "GetCallerIdentity"
+    query "Version", "2011-06-15"
+  end
+  result do
+    encoding "xml"
+    collect xpath(response, "//GetCallerIdentityResponse/GetCallerIdentityResult") do
+      field "account",xpath(col_item, "Account")
+    end
+ end
+end
+
+datasource "ds_get_aws_offer_page" do
+  request do
+    auth $auth_aws
+    verb "GET"
+    host "pricing.us-east-1.amazonaws.com"
+    path "/offers/v1.0/aws/AmazonEC2/current/us-east-1/index.json"
+    header "User-Agent", "RS Policies"
+  end
+end
+
+datasource "ds_filter_ip" do
+  run_script $js_filter_ip_response, $ds_aws_elastic_ip_address, $param_exclude_tags, $ds_get_caller_identity
+end
+
+datasource "ds_ip_cost_mapping" do
+  run_script $js_ip_cost_mapping, $ds_filter_ip, $ds_get_caller_identity, $ds_get_aws_offer_page
+end
+
+###############################################################################
+# Scripts
+###############################################################################
+
+script "js_regions", type:"javascript" do
+  parameters "user_entered_regions", "all_regions"
+  result "regions"
+  code <<-EOS
+    if(_.isEmpty(user_entered_regions)){
+      regions = all_regions;
+    }else{
+      //Filter unique regions
+      var uniqueRegions = _.uniq(user_entered_regions);
+      var all_regions_list = [];
+      all_regions.forEach(function(all_region){
+        all_regions_list.push(all_region.region)
+      })
+
+      //Filter valid regions
+      var valid_regions = [];
+      _.map(uniqueRegions, function(uniqueRegion){
+        if(all_regions_list.indexOf(uniqueRegion) > -1){
+          valid_regions.push({"region": uniqueRegion})
+        }
+      })
+
+      //Throw an error if no valid regions found
+      if (_.isEmpty(valid_regions)) {
+        regions = all_regions;
+      }else{
+        regions = valid_regions
+      }
+    }
+  EOS
+end
+
+script "js_filter_ip_response", type: "javascript" do
+  parameters "ds_aws_elastic_ip_address", "exclusion_tag", "ds_get_caller_identity"
+  result "result"
+  code <<-EOS
+    var result=[];
+    var param_exclude_tags_lower=[];
+    for(var j=0;j<exclusion_tag.length;j++){
+      param_exclude_tags_lower[j] = exclusion_tag[j].toString().toLowerCase();
+    }
+    for(var i=0;i<ds_aws_elastic_ip_address.length;i++){
+      instance = ds_aws_elastic_ip_address[i];
+      var tags = instance['tags'];
+      var isTagMatched = false;
+      var tagKeyValue = "";
+      for(var k=0; k < tags.length; k++){
+        tag = tags[k];
+        if((param_exclude_tags_lower.indexOf((tag['tagKey']).toLowerCase()) !== -1) || (param_exclude_tags_lower.indexOf((tag['tagKey']+'='+tag['tagValue']).toLowerCase()) !== -1)){
+          isTagMatched = true;
+        }
+        // Constructing tags with comma separated to display in detail_template
+        if((tag['tagValue']).length > 0){
+          tagKeyValue = tagKeyValue+" , "+tag['tagKey']+'='+tag['tagValue'];
+        }
+        else{
+          tagKeyValue = tagKeyValue+" , "+tag['tagKey'];
+        }
+      }
+      if(tagKeyValue === "" || tagKeyValue === " " || tagKeyValue == ""){
+        tagKeyValue = "< No Value >";
+      }
+      else{
+        tagKeyValue=tagKeyValue.slice(2);
+      }
+      //If the instance id is empty and IP tag does not match with entered param_exclude_tags
+      if(instance['instance_id']=="" && instance['association_id'] == ""){
+        if(!(isTagMatched)){
+          result.push({
+            accountId: ds_get_caller_identity[0]['account'],
+            all_tags: (tagKeyValue),
+            domain: instance['domain'],
+            publicIp: instance['publicIp'],
+            region: instance["region"],
+            allocation_id: instance["allocation_id"]
+          })
+        }
+      }
+    }
+  EOS
+end
+
+script "js_ip_cost_mapping", type:"javascript" do
+  parameters  "ip_list", "ds_get_caller_identity", "offer_page"
+  result "result"
+  code <<-EOS
+    var result = {};
+    var unused_ip_list=[];
+    var message='';
+    var doc_rate=0;
+    var total_savings = 0;
+    var savings_per_resource = 0;
+    var sku = '';
+    var sku_obj = _.find(offer_page.products, function(product){
+                    if(product.productFamily == 'IP Address' && product.attributes.usagetype.indexOf('ElasticIP:IdleAddress')!= -1){
+                      return product;
+                    }
+                  })
+    sku = sku_obj['sku'];
+    var obj= offer_page.terms.OnDemand[sku]
+    _.each(obj, function(item){
+      price_dim = item.priceDimensions;
+      _.each(price_dim, function(price_item){
+        if(price_item.description.indexOf('Elastic IP address not attached to a running instance per hour') != -1){
+          doc_curr_val=_.values(price_item.pricePerUnit);
+          doc_rate=doc_curr_val[0];
+        }
+      })
+    })
+    function formatNumber(number, separator){
+      var numString =number.toString();
+      var values=numString.split(".");
+      var result = ''
+      while (values[0].length > 3){
+        var chunk = values[0].substr(-3)
+        values[0] = values[0].substr(0, values[0].length - 3)
+        result = separator + chunk + result
+      }
+      if (values[0].length > 0){
+        result = values[0] + result
+      }
+      if(values[1]==undefined){
+        return result;
+      }
+      return result+"."+values[1];
+    }
+    var cur = "$"
+    var separator = ","
+    //The savings is calculated and displayed in USD
+    savings_per_resource = Math.round((doc_rate * 24 * 30) * 100) / 100;
+    total_savings = savings_per_resource * ip_list.length;
+    total_savings = cur + ' '+formatNumber((Math.round((total_savings) * 100) / 100) , separator);
+    savings_per_resource = cur + ' '+formatNumber(savings_per_resource, separator);
+    message = "The total estimated monthly savings are "+ total_savings;
+    _.each(ip_list, function(ip){
+      ip['savings']=savings_per_resource;
+    })
+    result={
+      "ip_list": ip_list,
+      "message": message,
+      "accountId": ds_get_caller_identity[0]['account']
+    }
+    result.ip_list=_.sortBy(result.ip_list,"region")
+  EOS
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_email" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
+end
+
+escalation "esc_delete_ip_address" do
+  automatic contains($param_automatic_action, "Delete Unused IPs")
+  label "Delete IP"
+  description "Delete Selected Unused IP"
+  run "delete_unused_instances", data, $param_log_to_cm_audit_entries
+end
+
+###############################################################################
+# Policy
+##############################################################################
+
+policy "policy_unused_ip_addresses" do
+  validate $ds_ip_cost_mapping do
+    summary_template "AWS Account ID: {{ data.accountId }} - {{ len data.ip_list }} Unused IP Addresses Found"
+    detail_template <<-EOS
+{{data.message}}
+EOS
+    check eq(size(val(data, "ip_list")),0)
+    escalate $esc_email
+    escalate $esc_delete_ip_address
+    export "ip_list" do
+      resource_level true
+      field "accountId" do
+        label "Account Id"
+      end
+      field "id" do
+        label "Public IP"
+        path "publicIp"
+      end
+      field "domain" do
+        label "Domain"
+      end
+      field "region" do
+        label "Region"
+      end
+      field "all_tags" do
+        label "Tags"
+      end
+      field "allocation_id" do
+        label "Allocation Id"
+      end
+     field "savings" do
+       label "Estimated Monthly Savings"
+      end
+    end
+  end
+end
+
+###############################################################################
+# Cloud Workflow
+###############################################################################
+
+define delete_unused_instances($data, $param_log_to_cm_audit_entries) do
+  $$debug = $param_log_to_cm_audit_entries == "Yes"
+  $$errors = []
+  $all_responses = []
+  foreach $item in $data do
+    sub on_error: skip_error_and_append($item["id"]) do
+      if $item["domain"]=="standard"
+        $response = http_request(
+          verb: "get",
+          host: join(["ec2.", $item["region"], ".amazonaws.com"]),
+          auth: $$auth_aws,
+          href: "/",
+          query_strings:{
+            "Action": "ReleaseAddress",
+            "PublicIp": $item["id"],
+            "Version": "2016-11-15"
+          },
+          https: true
+        )
+      elsif $item["domain"]=="vpc"
+        $response = http_request(
+          verb: "get",
+          host: join(["ec2.", $item["region"], ".amazonaws.com"]),
+          auth: $$auth_aws,
+          href: "/",
+          query_strings:{
+            "Action": "ReleaseAddress",
+            "AllocationId": $item["allocation_id"],
+            "Version": "2016-11-15"
+          },
+          https: true
+        )
+      end
+      call check_response_and_append_if_error($response, "Release Address " + $item["id"], $$errors) retrieve $$errors
+      $all_responses << $response
+    end
+  end
+  call sys_log("Responses", to_s($all_responses))
+  if size($$errors) > 0
+    $error = join($$errors, "\n")
+    call sys_log("Errors", $error)
+    raise $error
+  end
+end
+
+define skip_error_and_append($subject) do
+  $$errors << "Unexpected error for " + $subject + "\n  " + to_s($_error)
+  $_error_behavior = "skip"
+end
+
+define check_response_and_append_if_error($response, $request_description, $errors) return $errors do
+  if $response["code"] > 299 || $response["code"] < 200
+    $errors << "Unexpected status code from " + $request_description + " request\n  " + to_s($response)
+  end
+end
+
+define sys_log($subject, $detail) on_error: skip_error_and_append("Creating audit entry for " + $subject) do
+  if $$debug
+    rs_cm.audit_entries.create(
+      notify: "None",
+      audit_entry: {
+        auditee_href: @@account,
+        summary: "AWS Unused IP Addresses Policy :- " + $subject,
+        detail: $detail
+      }
+    )
+  end
+end

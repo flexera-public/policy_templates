@@ -1,5 +1,22 @@
 # Changelog
 
+## v1.24
+
+- Fixed issue with top 10 cost categories when there is no data yet for current month.
+
+## v1.23
+
+- Fixed markdown block.
+
+## v1.22
+
+- Modified escalation label and description for consistency
+- Added incident resource table
+
+## v1.21
+
+- Added "Billing Centers" as a reportable dimension
+
 ## v1.20
 
 - Fixed date value issue.

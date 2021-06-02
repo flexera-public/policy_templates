@@ -1,4 +1,4 @@
-﻿name "AWS Unencrypted Volumes"
+name "AWS Unencrypted Volumes"
 rs_pt_ver 20180301
 type "policy"
 short_description "Report any Elastic Block Store (EBS) volumes in AWS that are unencrypted. \n See the [README](https://github.com/rightscale/policy_templates/tree/master/security/aws/ebs_unencrypted_volumes) and [docs.rightscale.com/policies](http://docs.rightscale.com/policies/) to learn more."
@@ -6,25 +6,22 @@ long_description ""
 category "Security"
 severity "low"
 info(
-  version: "2.0",
+  version: "2.5",
   provider: "AWS",
   service: "EBS",
   policy_set: ""
 )
 
-
-###############################################################################
-# Permissions
-###############################################################################
-
-permission "perm_read_creds" do
-  actions   "rs_cm.show_sensitive","rs_cm.index_sensitive"
-  resources "rs_cm.credentials"
-end
-
 ###############################################################################
 # User inputs
 ###############################################################################
+
+parameter "param_allowed_regions" do
+  type "list"
+  label "Allowed Regions"
+  allowed_pattern /^([a-zA-Z-_]+-[a-zA-Z0-9-_]+-[0-9-_]+,*|)+$/
+  description "A list of allowed regions. See the README for more details"
+end
 
 parameter "param_email" do
   type "list"
@@ -67,19 +64,32 @@ end
 # Datasource
 ###############################################################################
 
-#Generates list of Regions
+#Get list of enabled regions for an account
 datasource "ds_regions_list" do
   request do
+    auth $auth_aws
     verb "GET"
-    host "raw.githubusercontent.com"
-    path "/rightscale/policy_templates/master/data/aws/regions.json"
-    header "User-Agent", "RS Policies"
+    host "ec2.amazonaws.com"
+    path "/"
+    query "Action", "DescribeRegions"
+    query "Version", "2016-11-15"
   end
+  result do
+    encoding "xml"
+    collect xpath(response, "//DescribeRegionsResponse/regionInfo/item", "array") do
+      field "region", xpath(col_item, "regionName")
+    end
+  end
+end
+
+# Get only SCP enabled regions
+datasource "ds_regions" do
+  run_script $js_regions, $param_allowed_regions, $ds_regions_list
 end
 
 #To get list of All Unencrypted Volumes.
 datasource "ds_unencrypted_volume_list" do
-  iterate $ds_regions_list
+  iterate $ds_regions
   request do
     run_script $js_aws_unencrypted_volumes_list, val(iter_item,"region")
   end
@@ -115,6 +125,38 @@ end
 ###############################################################################
 # Script
 ###############################################################################
+
+script "js_regions", type:"javascript" do
+  parameters "user_entered_regions", "all_regions"
+  result "regions"
+  code <<-EOS
+    if(_.isEmpty(user_entered_regions)){
+      regions = all_regions;
+    }else{
+      //Filter unique regions
+      var uniqueRegions = _.uniq(user_entered_regions);
+      var all_regions_list = [];
+      all_regions.forEach(function(all_region){
+        all_regions_list.push(all_region.region)
+      })
+
+      //Filter valid regions
+      var valid_regions = [];
+      _.map(uniqueRegions, function(uniqueRegion){
+        if(all_regions_list.indexOf(uniqueRegion) > -1){
+          valid_regions.push({"region": uniqueRegion})
+        }
+      })
+
+      //Throw an error if no valid regions found
+      if (_.isEmpty(valid_regions)) {
+        regions = all_regions;
+      }else{
+        regions = valid_regions
+      }
+    }
+  EOS
+end
 
 #https://docs.aws.amazon.com/AWSEC2/latest/APIReference/API_DescribeVolumes.html
 script "js_aws_unencrypted_volumes_list", type: "javascript" do
@@ -179,7 +221,7 @@ script "js_unencrypted_vol_filter_map", type: "javascript" do
           content.push({
           instanceId:instanceId,
           tagKeyValue:(tagKeyValue.slice(2)),
-          volume_id:vol['volume_id'],
+          id:vol['volume_id'],
           availability_zone:vol['availability_zone'],
           snapshot_id:vol['snapshot_id'],
           encrypted:vol['encrypted'],
@@ -189,6 +231,9 @@ script "js_unencrypted_vol_filter_map", type: "javascript" do
          })
       }
     }
+  content = _.sortBy(content,'id')
+  content = _.sortBy(content,'region')
+  content = _.sortBy(content,'availability_zone')
   EOS
 end
 
@@ -198,16 +243,38 @@ end
 policy "policy_unencrypted_volumes_list" do
   validate $ds_unencrypted_volumes_map do
     summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} Unencrypted Volumes Found in AWS"
-    detail_template <<-EOS
-# List of Unencrypted Volumes
-| Volume_ID | Region | Availability_Zones | Instance_ID | Snapshot_ID | Encrypted | Volume_Status | Volume_Type | TAG_Value |
-| --------- | ------ | ------------------ | ----------- | ----------- | ----------| ------------- | ----------- | --------- |
-{{ range data -}}
-| {{.volume_id}} | {{ .region }} | {{ .availability_zone }} | {{ .instanceId }} | {{ .snapshot_id }} | {{ .encrypted }} | {{.vol_status}} | {{.vol_type}} | {{.tagKeyValue}} |
-{{ end -}}
-    EOS
     escalate $report_unencrypted_volumes
     check eq(size(data),0)
+    export do
+      resource_level true
+      field "id" do
+        label "Volume Id"
+      end
+      field "region" do
+        label "Region"
+      end
+      field "availability_zone" do
+        label "Availability Zone"
+      end
+      field "instanceId" do
+        label "Instance Id"
+      end
+      field "snapshot_id" do
+        label "Snaphot Id"
+      end
+      field "encrypted" do
+        label "Encrypted"
+      end
+      field "vol_status" do
+        label "Volume Status"
+      end
+      field "vol_type" do
+        label "Volume Type"
+      end
+      field "tagKeyValue" do
+        label "TAGs"
+      end
+    end
   end
 end
 ###############################################################################
@@ -215,5 +282,8 @@ end
 ###############################################################################
 
 escalation "report_unencrypted_volumes" do
+  automatic true
+  label "Send Email"
+  description "Send incident email" 
   email $param_email
 end

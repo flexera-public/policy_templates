@@ -1,5 +1,21 @@
 # Changelog
 
+## v1.14
+
+- Added default_frequency "daily"
+
+## v1.13
+
+- Modified escalation label and description for consistency
+
+## v1.12
+
+- Updated escalation block
+
+## v1.11
+
+- adding incident resource table
+
 ## v1.10
 
 - Updated the metadata

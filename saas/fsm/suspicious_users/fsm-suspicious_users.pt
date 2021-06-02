@@ -7,83 +7,51 @@ severity "high"
 default_frequency "daily"
 category "SaaS Management"
 info(
-  version: "1.1",
+  version: "2.3",
   provider: "Flexera SaaS Manager",
   service: "",
   policy_set: ""
 )
 
+###############################################################################
+# User inputs
+###############################################################################
 
 parameter "param_email" do
-    type "list"
-    label "Email addresses to notify"
-    description "Email addresses of the recipients you wish to notify"
+  type "list"
+  label "Email addresses to notify"
+  description "Email addresses of the recipients you wish to notify"
 end
 
+###############################################################################
+# Authentication
+###############################################################################
 
-resources "refresh_token", type: "rs_cm.credentials" do
-  filter do
-      name "FSM_TOKEN"
-  end
-  view "sensitive"
+#authenticate with FSM
+credentials "fsm_auth" do
+  schemes "oauth2"
+  label "FSM"
+  description "Select the FSM Resource Manager Credential from the list."
+  tags "provider=flexera_fsm"
 end
 
-datasource "ds_access_token" do
-  iterate @refresh_token
-  request do
-    host "login.flexera.com"
-    path "/oidc/token"
-    verb "POST"
-    body_field "grant_type", "refresh_token"
-    body_field "refresh_token", val(iter_item, "value")
-  end
-  result do
-    encoding "json"
-    field "access_token", val(response, "access_token")
-  end
+###############################################################################
+# Datasources
+###############################################################################
+
+datasource "ds_get_host" do
+  run_script $js_get_host, rs_governance_host
 end
-
-datasource "ds_global_auth" do
-  iterate $ds_access_token
-  request do
-    host "api.metasaas.com"
-    path "/auth/external-token"
-    verb "POST"
-    body_field "token", val(iter_item, "access_token")
-  end
-  result do
-    encoding "json"
-    field "access_token", val(response, "token")
-  end
-end
-
-datasource "ds_customer_select" do
-  iterate $ds_global_auth
-  request do
-      host "api.metasaas.com"
-      path "/auth/select-customer"
-      verb "POST"
-      header "Authorization", join(["Bearer", val(iter_item, "access_token")])
-      body_field "orgId", rs_org_id
-  end
-  result do
-      encoding "json"
-      field "access_token", val(response, "token")
-  end
-end
-
-
 
 datasource "ds_suspicious_users" do
-  iterate $ds_customer_select
+  iterate $ds_get_host
   request do
-    #auth $rs_auth
-    host "api.metasaas.com"
+    auth $fsm_auth
+    host val(iter_item,"host")
     verb "GET"
     scheme "https"
-    path "/svc/activity/suspicious-agents"
+    path join(["/svc/orgs/", rs_org_id, "/activity/suspicious-agents"])
     header "content-type", "application/json"
-    header "Authorization", join(["Bearer ", val(iter_item, "access_token"), " "])
     query "page", "1"
     query "pageSize", "100"
     query "asc", "false"
@@ -91,21 +59,38 @@ datasource "ds_suspicious_users" do
     query "includeUnrecognized", "true"
     query "includeRecognized", "false"
   end
-    result do
-       encoding "json"
-       collect jmes_path(response, "[*]") do
-           field "firstName", val(col_item, "firstName")
-           field "lastName", val(col_item, "lastName")
-           field "email", val(col_item, "email")
-           field "managedProductName", val(col_item, "managedProductName")
-           field "recognized", val(col_item, "recognized")
-           field "unauthorized", val(col_item, "unauthorized")
-        end
+  result do
+    encoding "json"
+    collect jmes_path(response, "[*]") do
+      field "firstName", val(col_item, "firstName")
+      field "lastName", val(col_item, "lastName")
+      field "email", val(col_item, "email")
+      field "managedProductName", val(col_item, "managedProductName")
+      field "recognized", val(col_item, "recognized")
+      field "unauthorized", val(col_item, "unauthorized")
     end
+  end
 end
 
 datasource "ds_users_cleanup" do
   run_script $js_users_cleanup, $ds_suspicious_users
+end
+
+###############################################################################
+# Scripts
+###############################################################################
+
+script "js_get_host", type: "javascript" do
+  parameters "rs_governance_host"
+  result "result"
+  code <<-EOS
+    var result=[];
+    if(rs_governance_host.indexOf(".eu") !== -1 || rs_governance_host.indexOf("-eu") !== -1){
+      result.push({host: "api.fsm-eu.flexeraeng.com"});
+    }else{
+      result.push({host: "api.fsm.flexeraeng.com"});
+    }
+  EOS
 end
 
 script "js_users_cleanup", type: "javascript" do
@@ -127,30 +112,44 @@ script "js_users_cleanup", type: "javascript" do
         activity_type: activity_type
       })
     })
-
   EOS
 end
 
+###############################################################################
+# Escalations
+###############################################################################
 
 escalation "report_summary" do
-    email $param_email
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
 end
+
+###############################################################################
+# Policy
+###############################################################################
 
 policy "policy_fsm_suspicious_users" do
   validate $ds_users_cleanup do
       summary_template "{{ len data }} Suspicious SaaS Users Found"
-      detail_template <<-EOS
-# Suspicious SaaS Users
-
-| Email | First Name | Last Name | Application | Activity Type |
-| ----- | ---------- | --------- | ----------- | ------------- |
-{{ range data -}}
-| {{.email}} | {{.firstName}} | {{.lastName}} | {{.managedProductName}} | {{.activity_type}} |
-{{ end -}}
-
-
-###### Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }}) within Org: {{ rs_org_name }} (Org ID: {{ rs_org_id }})
-EOS
+      export do 
+        field "lastName" do
+          label "Last Name"
+        end 
+        field "firstName" do 
+          label "First Name"
+        end 
+        field "email" do 
+          label "Email"
+        end 
+        field "managedProductName" do 
+          label "Application"
+        end
+        field "activity_type" do 
+          label "Activity Type"
+        end
+      end 
       escalate $report_summary
       check eq(size(data), 0)
   end

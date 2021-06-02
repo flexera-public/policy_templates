@@ -1,0 +1,168 @@
+name "SaaS Manager - Redundant Apps"
+rs_pt_ver 20180301
+type "policy"
+short_description "This policy will create an incident when Flexera SaaS Manager identifies application categories with an excessive number of applications. See the [README](https://github.com/flexera/policy_templates/tree/master/saas/fsm/redundant_apps/) and [docs.rightscale.com/policies](https://docs.rightscale.com/policies/) to learn more."
+long_description ""
+severity "low"
+category "SaaS Management"
+default_frequency "weekly"
+info(
+  version: "2.4",
+  provider: "Flexera SaaS Manager",
+  service: "",
+  policy_set: ""
+)
+
+###############################################################################
+# User inputs
+###############################################################################
+
+parameter "param_too_many_apps" do
+  type "number"
+  label "Excessive Number of Apps in a Single Category"
+  description "Enter an excessive number of apps per category. If a single category has N number of apps or greater then an incident will be raised."
+end
+
+parameter "param_email" do
+  type "list"
+  label "Email addresses to notify"
+  description "Email addresses of the recipients you wish to notify"
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+#authenticate with FSM
+credentials "fsm_auth" do
+  schemes "oauth2"
+  label "FSM"
+  description "Select the FSM Resource Manager Credential from the list."
+  tags "provider=flexera_fsm"
+end
+
+
+###############################################################################
+# Datasources
+###############################################################################
+
+datasource "ds_get_host" do
+  run_script $js_get_host, rs_governance_host
+end
+
+
+datasource "ds_filtered_apps" do
+  run_script $js_filtered_apps, $ds_managed_products, $param_too_many_apps
+end
+
+datasource "ds_managed_products" do
+  iterate $ds_get_host
+  request do
+    auth $fsm_auth
+    host val(iter_item,"host")
+    verb "GET"
+    scheme "https"
+    path join(["/svc/orgs/", rs_org_id, "/managed-products"])
+    header "content-type", "application/json"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "items[*]") do
+      field "id", val(col_item, "id")
+      field "name", val(col_item, "name")
+      field "category", jmes_path(col_item, "product.category.categoryName")
+    end
+  end
+end
+
+###############################################################################
+# Scripts
+###############################################################################
+
+script "js_filtered_apps", type: "javascript" do
+  parameters "apps", "param_too_many_apps"
+  result "result"
+  code <<-EOS
+  var result = [];
+  var appCatArray = [];
+
+  _.each(apps, function(app){
+      currentCategory = app["category"];
+      if (appCatArray.indexOf(currentCategory) == -1){
+        appCatArray.push(currentCategory);
+      }
+  })
+
+  for (i = 0; i < appCatArray.length; i++) {
+    var uniqueAppCategory = appCatArray[i];
+    var categoryApps = "";
+    var count = 0;
+    _.each(apps, function(app){
+        currentApp = app["name"];
+        currentCat = app["category"];
+        if (uniqueAppCategory == currentCat && uniqueAppCategory != null) {
+          count++
+          if (categoryApps == "") {
+            categoryApps = currentApp;
+          }
+          else {
+            categoryApps = categoryApps + ", " + currentApp;
+          }        
+        }
+    })
+    
+    if (count >= param_too_many_apps) {
+      result.push({
+        appCategory: uniqueAppCategory,
+        appDetails: categoryApps
+      })
+    }    
+  }
+
+  result = _.sortBy(result, 'appCategory');
+EOS
+end
+
+script "js_get_host", type: "javascript" do
+  parameters "rs_governance_host"
+  result "result"
+  code <<-EOS
+    var result = [];
+    if(rs_governance_host.indexOf(".eu") !== -1 || rs_governance_host.indexOf("-eu") !== -1){
+        result.push({host: "api.fsm-eu.flexeraeng.com"});
+	}else{
+        result.push({host: "api.fsm.flexeraeng.com"});
+	}
+  EOS
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "report_summary" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "policy_fsm_excessive_apps" do
+  validate $ds_filtered_apps do
+    summary_template "{{ len data }} SaaS App Categories with more than {{ parameters.param_too_many_apps }} Apps"
+    escalate $report_summary
+    check eq(size(data), 0)
+    export do
+      field "appCategory" do
+        label "Application Category"
+      end
+      field "appDetails" do
+        label "SaaS Applications"
+      end
+    end
+  end
+end

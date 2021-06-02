@@ -5,8 +5,9 @@ short_description "This Policy will provide an overview for the various Regulato
 long_description ""
 severity "medium"
 category "Compliance"
+default_frequency "daily"
 info(
-  version: "2.0",
+  version: "2.4",
   provider: "Azure",
   service: "",
   policy_set: ""
@@ -77,11 +78,12 @@ datasource "ds_azure_resourceresult" do
       path join(["/subscriptions/", val(iter_item,"subscriptionId"), "/providers/Microsoft.Security/regulatoryComplianceStandards"])
       query "api-version","2019-01-01-preview"
       header "User-Agent", "RS Policies"
+      ignore_status [404]
     end
     result do
       encoding "json"
       collect jmes_path(response, "value[*]") do
-	    field "subscriptionName", val(iter_item,"subscriptionName")
+        field "subscriptionName", val(iter_item,"subscriptionName")
         field "id", jmes_path(col_item,"id")
         field "name", jmes_path(col_item,"name")
         field "type", jmes_path(col_item,"type")
@@ -113,7 +115,7 @@ script "js_calculate_score", type: "javascript" do
     var calculated_score = ((Math.round((report["passedControls"] / total_controls) * 100) / 100) * 100).toString(10)
 
     result.push({
-	  subscriptionName: report["subscriptionName"],
+    subscriptionName: report["subscriptionName"],
       id: report["id"],
       name: report["name"],
       score: calculated_score + "%",
@@ -134,18 +136,32 @@ end
 policy "policy_azure_exec_reg_compliance" do
   validate $ds_format_report do
     summary_template "Regulatory Compliance Report"
-    detail_template <<-EOS
-
-| Subscription Name | Compliance Standard | Compliance Score | Passed Controls | Failed Controls | Skipped Controls | Resource ID |
-| ------------------- | ---------------- | ----- | --------------- | --------------- | ---------------- | ----------- |
-{{ range data -}}
-|{{.subscriptionName}} | {{.name}} | {{.score}} | {{.passedControls}} | {{.failedControls}} | {{.skippedControls}} | {{.id}} |
-{{ end -}}
-
-###### Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }}) within Org: {{ rs_org_name }} (Org ID: {{ rs_org_id }})
-EOS
-  escalate $email
-  check eq(size(data), 0)
+    escalate $email
+    check eq(size(data), 0)
+    export do
+      resource_level true
+      field "subscriptionName" do
+        label "Subscription Name"
+      end
+      field "name" do
+        label "Compliance Standard"
+      end
+      field "score" do
+        label "Compliance Score"
+      end
+      field "passedControls" do
+        label "Passed Controls"
+      end
+      field "failedControls" do
+        label "Failed Controls"
+      end
+      field "skippedControls" do
+        label "Skipped Controls"
+      end
+      field "id" do
+        label "Resource ID"
+      end
+    end
   end
 end
 
@@ -154,5 +170,8 @@ end
 ##############
 
 escalation "email" do
-   email $param_email
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
 end

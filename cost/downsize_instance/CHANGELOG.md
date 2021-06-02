@@ -1,5 +1,21 @@
 # Changelog
 
+## v1.19
+
+- Added default_frequency "daily"
+
+## v1.18
+
+- Modified escalation label and description for consistency
+
+## v1.17
+
+- Updated escalation block
+
+## v1.16
+
+- adding incident resource table
+
 ## v1.15
 
 - Updated the metadata
@@ -14,7 +30,7 @@
 
 ## v1.12
 
-- Separate the Utilization from the downsize actions.  The Utilization policy is now [RightLink Utilization](/rightscale/policy_templates/cost/rightlink_utilization/README.md)
+- Separate the Utilization from the downsize actions.  The Utilization policy is now [RightLink Utilization](https://github.com/flexera/policy_templates/blob/master/cost/rightlink_rightsize/README.md)
 
 ## v1.11
 

@@ -2,10 +2,17 @@ name "Low Account Usage"
 rs_pt_ver 20180301
 type "policy"
 short_description "Analyze all account usage and determines recommend consolidation or deletion. See the [README](https://github.com/rightscale/policy_templates/tree/master/cost/low_account_usage/) and [docs.rightscale.com/policies](http://docs.rightscale.com/policies/) to learn more."
-long_description "Version: 1.3"
+long_description ""
 severity "low"
 category "Cost"
+default_frequency "daily"
 tenancy "single"
+info(
+  version: "1.7",
+  provider: "Flexera Optima",
+  service: "",
+  policy_set: ""
+)
 
 parameter "param_threshold" do
   label "Low Account Spend Threshold"
@@ -74,8 +81,8 @@ datasource "ds_cloud_vendor_accounts" do
   request do
     auth $auth_rs
     host rs_optima_host
-    path join(["/analytics/orgs/",rs_org_id,"/cloud_vendor_accounts"])
-    header "Api-Version", "1.0"
+    path join(["/bill-analysis/orgs/",rs_org_id,"/cloud_vendor_accounts"])
+    header "Api-Version", "0.1"
     header "User-Agent", "RS Policies"
     query "cloud_vendor", "aws"
   end
@@ -199,7 +206,7 @@ script "js_format_costs", type: "javascript" do
     _.each(new_bc_cost_objs, function(new_bc_cost_obj){
       var billing_center = _.reject(ds_billing_centers, function(bc){ return bc.id != new_bc_cost_obj.id })[0];
       if (new_bc_cost_obj.vendor == "AWS" ) {
-        var account = _.reject(ds_cloud_vendor_accounts, function(ds_cloud_vendor_account){ return ds_cloud_vendor_account.id != new_bc_cost_obj.vendor_account_name });
+        var account = _.reject(ds_cloud_vendor_accounts, function(ds_cloud_vendor_account){ return ds_cloud_vendor_account.name != new_bc_cost_obj.vendor_account_name });
         var vendor_account_name = account[0].name
       } else {
         var vendor_account_name = new_bc_cost_obj.vendor_account_name
@@ -272,24 +279,34 @@ EOS
 end
 
 escalation "esc_budget_alert" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
   email $param_email
 end
 
 policy "policy_budget_alert" do
   validate $ds_format_costs do
     summary_template "{{ rs_org_name }} (Org ID: {{ rs_org_id }}): Low Account Usage Detected Below {{parameters.param_threshold}} - Total Savings: {{with(index data 0)}}{{.total_sum}}{{end}}"
-    detail_template <<-EOS
-# Low Account Usage Detected - Total Savings: {{with(index data 0)}}{{.total_sum}}{{end}}
-
-| Billing Center Name | Vendor | Account Name | Savings |
-| ------------------- | ------ | ------------ | ------- |
-{{ range data -}}
-| {{.name}} | {{.vendor}} | {{.vendor_account_name}} | {{.run_rate}} |
-{{ end -}}
-
-###### Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }}) within Org: {{ rs_org_name }} (Org ID: {{ rs_org_id }})
-EOS
     escalate $esc_budget_alert
     check eq(size(data), 0)
+    export do
+      resource_level true
+      field "name" do
+        label "Billing Center Name"
+      end
+      field "vendor" do
+        label "Vendor"
+      end
+      field "vendor_account_name" do
+        label "Account Name"
+      end
+      field "run_rate" do
+        label "Savings"
+      end
+      field "id" do
+        label "Id"
+      end
+    end
   end
 end

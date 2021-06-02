@@ -1,0 +1,574 @@
+name "AWS Schedule Instance"
+rs_pt_ver 20180301
+type "policy"
+short_description "This Policy Template allows you to schedule start and stop times for your instance, along with the option to terminate instance, update and delete schedule. See the [README](https://github.com/flexera/policy_templates/tree/master/cost/aws/schedule_instance/) and [docs.rightscale.com/policies](https://docs.rightscale.com/policies/) to learn more."
+long_description ""
+category "Cost"
+severity "low"
+default_frequency "daily"
+info(
+  version: "2.7",
+  provider: "AWS",
+  service: "EC2",
+  policy_set:"Schedule Instance"
+)
+
+###############################################################################
+# User inputs
+###############################################################################
+
+parameter "param_allowed_regions" do
+  type "list"
+  label "Allowed Regions"
+  allowed_pattern /^([a-zA-Z-_]+-[a-zA-Z0-9-_]+-[0-9-_]+,*|)+$/
+  description "A list of allowed regions. See the README for more details"
+end
+
+parameter "param_email" do
+  type "list"
+  label "Email addresses"
+  description "A list of email addresses to notify"
+end
+
+parameter "param_tags_to_exclude" do
+  type "list"
+  label "Exclusion Tags"
+  description "A list of AWS tags to ignore instances. Format: Key=Value"
+end
+
+parameter "param_automatic_action" do
+  type "list"
+  label "Automatic Actions"
+  description "When this value is set, this policy will automatically take the selected action(s)"
+  allowed_values ["Schedule Instances"]
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+credentials "auth_aws" do
+  schemes "aws","aws_sts"
+  label "AWS"
+  description "Select the AWS Cloud Credential from the list."
+  tags "provider=aws"
+end
+
+###############################################################################
+# Pagination
+###############################################################################
+
+pagination "aws_pagination" do
+  get_page_marker do
+    body_path "//DescribeInstancesResponse/nextToken"
+  end
+  set_page_marker do
+    body_field "NextToken"
+  end
+end
+
+###############################################################################
+# Datasources
+###############################################################################
+
+datasource "ds_get_caller_identity" do
+  request do
+    auth $auth_aws
+    verb "GET"
+    host "sts.amazonaws.com"
+    path "/"
+    header "User-Agent", "RS Policies"
+    query "Action", "GetCallerIdentity"
+    query "Version", "2011-06-15"
+  end
+  result do
+    encoding "xml"
+    collect xpath(response, "//GetCallerIdentityResponse/GetCallerIdentityResult") do
+      field "account",xpath(col_item, "Account")
+    end
+ end
+end
+
+#Get list of enabled regions for an account
+datasource "ds_regions_list" do
+  request do
+    auth $auth_aws
+    verb "GET"
+    host "ec2.amazonaws.com"
+    path "/"
+    query "Action", "DescribeRegions"
+    query "Version", "2016-11-15"
+  end
+  result do
+    encoding "xml"
+    collect xpath(response, "//DescribeRegionsResponse/regionInfo/item", "array") do
+      field "region", xpath(col_item, "regionName")
+    end
+  end
+end
+
+# Get only SCP enabled regions
+datasource "ds_regions" do
+  run_script $js_regions, $param_allowed_regions, $ds_regions_list
+end
+
+datasource "ds_get_all_instances" do
+  iterate $ds_regions
+  request do
+    auth $auth_aws
+    pagination $aws_pagination
+    host join(["ec2.",val(iter_item, "region"),".amazonaws.com"])
+    verb "GET"
+    path "/"
+    query "Action", "DescribeInstances"
+    query "Filter.1.Name", "tag-key"
+    query "Filter.1.Value.1", "schedule"
+    query "Version", "2016-11-15"
+  end
+  result do
+    encoding "xml"
+    collect xpath(response,"//DescribeInstancesResponse/reservationSet/item/instancesSet/item") do
+      field "id", xpath(col_item,"instanceId")
+      field "state", xpath(col_item,"instanceState/name")
+      field "tags" do
+        collect xpath(col_item,"tagSet/item") do
+          field "tagKey", xpath(col_item,"key")
+          field "tagValue", xpath(col_item,"value")
+        end
+      end
+      field "region", val(iter_item,"region")
+    end
+  end
+end
+
+datasource "ds_filter_resources" do
+  run_script $js_filter_resources, $ds_get_all_instances, $param_tags_to_exclude, $ds_get_caller_identity
+end
+
+###############################################################################
+# Scripts
+###############################################################################
+
+script "js_regions", type:"javascript" do
+  parameters "user_entered_regions", "all_regions"
+  result "regions"
+  code <<-EOS
+    if(_.isEmpty(user_entered_regions)){
+      regions = all_regions;
+    }else{
+      //Filter unique regions
+      var uniqueRegions = _.uniq(user_entered_regions);
+      var all_regions_list = [];
+      all_regions.forEach(function(all_region){
+        all_regions_list.push(all_region.region)
+      })
+
+      //Filter valid regions
+      var valid_regions = [];
+      _.map(uniqueRegions, function(uniqueRegion){
+        if(all_regions_list.indexOf(uniqueRegion) > -1){
+          valid_regions.push({"region": uniqueRegion})
+        }
+      })
+
+      //Throw an error if no valid regions found
+      if (_.isEmpty(valid_regions)) {
+        regions = all_regions;
+      }else{
+        regions = valid_regions
+      }
+    }
+  EOS
+end
+
+script "js_filter_resources", type: "javascript" do
+  parameters "ds_get_all_instances", "param_tags_to_exclude", "ds_get_caller_identity"
+  result "result"
+  code <<-EOS
+  var result=[];
+  for(var i=0;i<ds_get_all_instances.length;i++){
+    var notMatched=true;
+    var next_start=null;
+    var next_stop=null;
+    var next_start_iso=null;
+    var next_stop_iso=null;
+    var now=new Date();
+    var instance=ds_get_all_instances[i];
+    for(var j=0;j<param_tags_to_exclude.length;j++){
+      var param_lowerCase=param_tags_to_exclude[j].toLowerCase();
+      if(param_lowerCase.indexOf("=")==-1)
+      {
+        for(var k=0;k<instance.tags.length;k++){
+          var current_tag=instance.tags[k];
+          if(current_tag["tagKey"].toLowerCase()==param_lowerCase){
+            notMatched=false;
+            break;
+          }
+        }
+      }
+      else {
+        var arr=param_lowerCase.split("=");
+        for(var k=0;k<instance.tags.length;k++){
+          var current_tag=instance.tags[k];
+          if(current_tag["tagKey"].toLowerCase()==arr[0] && current_tag["tagValue"].toLowerCase()==arr[1]){
+            notMatched=false;
+            break;
+          }
+        }
+      }
+    }
+    if(notMatched){
+      var all_tags="";
+      for(var j=0;j<instance.tags.length;j++){
+        all_tags=all_tags+", "+instance.tags[j].tagKey+"="+instance.tags[j].tagValue;
+        if(instance.tags[j].tagKey== 'schedule'){
+          schedule=instance.tags[j].tagValue;
+        }
+        else if(instance.tags[j].tagKey== 'next_start'){
+          next_start=new Date(instance.tags[j].tagValue);
+          next_start_iso=next_start.toISOString();
+        }
+        else if(instance.tags[j].tagKey== 'next_stop'){
+          next_stop=new Date(instance.tags[j].tagValue);
+          next_stop_iso=next_stop.toISOString();
+        }
+      }
+      if(now > next_start || now > next_stop || next_start==null || next_stop==null){
+        result.push({
+          "accountId": ds_get_caller_identity[0]['account'],
+          "id":instance.id,
+          "state": instance.state,
+          "region": instance.region,
+          "schedule":schedule,
+          "tags":all_tags.slice(2),
+          "next_start":next_start_iso,
+          "next_stop":next_stop_iso
+        })
+      }
+    }
+  }
+  result=_.sortBy(result, 'id');
+  result=_.sortBy(result, 'region');
+  EOS
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_email" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
+end
+
+escalation "esc_schedule_instance" do
+  automatic contains($param_automatic_action, "Schedule Instances")
+  label "Schedule"
+  description "Stop or Start the Instance"
+  run "schedule_instance", data
+end
+
+escalation "esc_terminate_instance" do
+  automatic false
+  label "Terminate Instance"
+  description "Terminate or delete the Instance"
+  run "terminate_instance", data
+end
+
+escalation "esc_update_schedule" do
+  automatic false
+  label "Update Schedule"
+  description "Update the existing schedule Tag"
+  parameter "param_schedule" do
+    type "string"
+    label "New Schedule"
+    description "Provide Schedule Value"
+  end
+  run "update_schedule", data, $param_schedule
+end
+
+escalation "esc_delete_schedule" do
+  automatic false
+  label "Delete Schedule"
+  description "Delete Schedule Tag"
+  run "delete_schedule", data
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "policy_schedule_instance" do
+  validate $ds_filter_resources do
+    summary_template "AWS Account ID: {{with index data 0}}{{ .accountId }}{{end}} - Schedule Instance list"
+    hash_include "next_start", "next_stop"
+    escalate $esc_email
+    escalate $esc_schedule_instance
+    escalate $esc_terminate_instance
+    escalate $esc_update_schedule
+    escalate $esc_delete_schedule
+    check eq(size(data),0)
+    export do
+      resource_level true
+      field "accountId" do
+        label "Account Id"
+      end
+      field "region" do
+        label "Region"
+      end
+      field "id" do
+        label "Instance ID"
+      end
+      field "state" do
+        label "Instance State"
+      end
+      field "schedule" do
+        label "Schedule"
+      end
+      field "tags" do
+        label "Tags"
+      end
+    end
+  end
+end
+
+###############################################################################
+# Cloud Workflow
+###############################################################################
+
+define schedule_instance($data) return $all_response do
+  foreach $item in $data do
+    $rule = split($item['schedule'],';')[1]
+    $time_range = split($item['schedule'],';')[0]
+    $start_time = split($time_range,'-')[0]
+    $start_hour = split($start_time, ':')[0]
+    $start_minute = split($start_time, ':')[1]
+    if $start_minute==null
+      $start_minute='00';
+    end
+    $stop_time = split($time_range,'-')[1]
+    $stop_hour = split($stop_time, ':')[0]
+    $stop_minute = split($stop_time, ':')[1]
+    if $stop_minute==null
+      $stop_minute='00';
+    end
+    $start_rule = join(["FREQ=WEEKLY;BYDAY=",$rule])
+    $stop_rule = join(["FREQ=WEEKLY;BYDAY=",$rule])
+    $timezone = split($item['schedule'],';')[2]
+    if ! $timezone
+      $timezone = "UTC"
+    end
+    call window_active($start_hour, $start_minute, $start_rule, $stop_hour, $stop_minute, $stop_rule, $timezone) retrieve $window_active , $next_start, $next_stop
+
+    call sys_log('window_active',$window_active)
+    call sys_log('next_start',$next_start)
+    call sys_log('next_stop',$next_stop)
+
+    if ($window_active)
+      call sys_log($item['schedule'] + ' schedule window is currently active: Instances may be started.', '')
+    else
+      call sys_log($item['schedule'] + ' schedule window is currently in-active: Instances may be stopped.', '')
+    end
+
+    $stoppable = /^(running|pending)$/
+    $startable = /^(stopped|stopping)$/
+
+    $response= http_request(
+      auth: $$auth_aws,
+      host: join(["ec2.", $item['region'], ".amazonaws.com"]),
+      href: "/",
+      https: true,
+      verb: "get",
+      query_strings:{
+        "Action": "CreateTags",
+        "ResourceId.1": $item['id'],
+        "Tag.1.Key": "next_start",
+        "Tag.1.Value": $next_start,
+        "Tag.2.Key": "next_stop",
+        "Tag.2.Value": $next_stop,
+        "Tag.3.Key": 'schedule',
+        "Tag.3.Value": join([$start_hour, ":", $start_minute, "-", $stop_hour, ":", $stop_minute, ";",$rule, ";", $timezone]),
+        "Version": "2016-11-15"
+      }
+    )
+    if($window_active)
+      if($item['state']=~$startable)
+        call sys_log('> ' + $item['id'] + ': Starting ...', to_s($item))
+        sub on_error: skip do
+          $response= http_request(
+            auth: $$auth_aws,
+            host: join(["ec2.", $item['region'], ".amazonaws.com"]),
+            href: "/",
+            https: true,
+            verb: "get",
+            query_strings:{
+              "Action": "StartInstances",
+              "InstanceId.1":$item['id'],
+              "Version":"2016-11-15"
+            }
+          )
+          $all_response << $response
+        end
+      else
+        call sys_log('> ' + $item['id'] + ': No action - Instance state is ' + $item['state'], '')
+      end
+    else
+      if($item['state'] =~ $stoppable)
+        call sys_log('> ' + $item['id'] + ': Stopping ...', to_s($item))
+        sub on_error: skip do
+          $response= http_request(
+            auth: $$auth_aws,
+            host: join(["ec2.", $item['region'], ".amazonaws.com"]),
+            href: "/",
+            https: true,
+            verb: "get",
+            query_strings:{
+              "Action": "StopInstances",
+              "InstanceId.1":$item['id'],
+              "Version":"2016-11-15"
+            }
+          )
+          $all_response << $response
+        end
+      else
+        call sys_log('> ' + $item['id'] + ': No action - Instance state is ' + $item['state'], '')
+      end
+    end
+  end
+end
+
+define terminate_instance($data) return $all_response do
+  foreach $item in $data do
+    call sys_log('> ' + $item['id'] + ': Terminating ...', to_s($item))
+    sub on_error: skip do
+      $response= http_request(
+        auth: $$auth_aws,
+        host: join(["ec2.", $item['region'], ".amazonaws.com"]),
+        href: "/",
+        https: true,
+        verb: "get",
+        query_strings:{
+          "Action": "TerminateInstances",
+          "InstanceId.1":$item['id'],
+          "Version":"2016-11-15"
+        }
+      )
+      $all_response << $response
+    end
+  end
+end
+
+define delete_schedule($data) return $all_response do
+  foreach $item in $data do
+    call sys_log('> ' + $item['id'] + ': Deleting schedule Tag ...', to_s($item))
+    sub on_error: skip do
+      $response= http_request(
+        auth: $$auth_aws,
+        host: join(["ec2.", $item['region'], ".amazonaws.com"]),
+        href: "/",
+        https: true,
+        verb: "get",
+        query_strings:{
+          "Action": "DeleteTags",
+          "ResourceId.1": $item['id'],
+          "Tag.1.Key": "schedule",
+          "Tag.2.Key": "next_start",
+          "Tag.3.Key": "next_stop",
+          "Version": "2016-11-15"
+        }
+      )
+      $all_response << $response
+    end
+  end
+end
+
+define update_schedule($data, $param) return $all_response do
+  foreach $item in $data do
+    $rule = split($param,';')[1]
+    $time_range = split($param,';')[0]
+    $start_time = split($time_range,'-')[0]
+    $start_hour = split($start_time, ':')[0]
+    $start_minute = split($start_time, ':')[1]
+    if $start_minute==null
+      $start_minute='00';
+    end
+    $stop_time = split($time_range,'-')[1]
+    $stop_hour = split($stop_time, ':')[0]
+    $stop_minute = split($stop_time, ':')[1]
+    if $stop_minute==null
+      $stop_minute='00';
+    end
+    $start_rule = join(["FREQ=WEEKLY;BYDAY=",$rule])
+    $stop_rule = join(["FREQ=WEEKLY;BYDAY=",$rule])
+    $timezone = split($param,';')[2]
+    if ! $timezone
+      $timezone = "UTC"
+    end
+    call window_active($start_hour, $start_minute, $start_rule, $stop_hour, $stop_minute, $stop_rule, $timezone) retrieve $window_active , $next_start, $next_stop
+    call sys_log('> ' + $item['id'] + ': Updating schedule Tag ...', to_s($item))
+    sub on_error: skip do
+      $response= http_request(
+        auth: $$auth_aws,
+        host: join(["ec2.", $item['region'], ".amazonaws.com"]),
+        href: "/",
+        https: true,
+        verb: "get",
+        query_strings:{
+          "Action": "CreateTags",
+          "ResourceId.1": $item['id'],
+          "Tag.1.Key": "next_start",
+          "Tag.1.Value": $next_start,
+          "Tag.2.Key": "next_stop",
+          "Tag.2.Value": $next_stop,
+          "Tag.3.Key": 'schedule',
+          "Tag.3.Value": join([$start_hour, ":", $start_minute, "-", $stop_hour, ":", $stop_minute, ";",$rule, ";", $timezone]),
+          "Version": "2016-11-15"
+        }
+      )
+      $all_response << $response
+    end
+  end
+end
+
+define window_active($start_hour, $start_minute, $start_rule, $stop_hour, $stop_minute, $stop_rule, $tz) return $window_active, $next_start, $next_stop do
+  $params = {
+    verb: 'post',
+    host: 'bjlaftw4kh.execute-api.us-east-1.amazonaws.com',
+    https: true,
+    href: '/production',
+    headers:{
+      'content-type': 'application/json'
+    },
+    body: {
+      'start_hour': $start_hour,
+      'start_minute': $start_minute,
+      'start_rule': $start_rule,
+      'stop_minute': $stop_minute,
+      'stop_hour': $stop_hour,
+      'stop_rule': $stop_rule,
+      'tz': $tz
+    }
+  }
+  call sys_log('window active $params', to_s($params))
+  $response = http_request($params)
+  call sys_log('window active $response', to_s($response))
+  $body = $response['body']
+  call sys_log('window active $body', to_s($body))
+
+  $window_active = to_b($body['event_active'])
+  $next_start   = $body['next_start']
+  $next_stop    = $body['next_stop']
+end
+
+define sys_log($subject, $detail) do
+  rs_cm.audit_entries.create(
+    notify: "None",
+    audit_entry: {
+      auditee_href: @@account,
+      summary: $subject,
+      detail: $detail
+    }
+  )
+end

@@ -1,0 +1,456 @@
+name "Budget Alerts by Cloud Account"
+rs_pt_ver 20180301
+type "policy"
+short_description "Create a Monthly Budget Alert for a Cloud Vendor Account. See the [README](https://github.com/flexera/policy_templates/tree/master/cost/budget_alerts_by_account/) and [docs.rightscale.com/policies](https://docs.rightscale.com/policies/) to learn more."
+long_description ""
+severity "medium"
+category "Cost"
+tenancy "single"
+default_frequency "daily"
+info(
+  version: "1.2",
+  provider: "Flexera Optima",
+  service: "",
+  policy_set: ""
+)
+
+###############################################################################
+# Permissions
+###############################################################################
+
+###############################################################################
+# Parameters
+###############################################################################
+
+parameter "param_monthly_budget" do
+  label "Monthly Budget"
+  type "number"
+end
+
+parameter "param_acct_name" do
+  label "Cloud Vendor Account Name"
+  description "Provide the name of the Cloud Vendor Account that the budget should be enforced against"
+  type "string"
+end
+
+parameter "param_type" do
+  label "Budget Alert Type"
+  type "string"
+  allowed_values "Actual Spend","Forecasted Spend"
+  description "Actual Spend alerts are based off incurred costs. Forecasted Spend alerts are based off monthly runrates."
+  default "Actual Spend"
+end
+
+parameter "param_cost_metric" do
+  type "string"
+  label "Cost Metric"
+  allowed_values "Unamortized Unblended","Amortized Unblended","Unamortized Blended","Amortized Blended"
+  default "Unamortized Unblended"
+  description "Select the cost metric for your report.  See the README file for more details"
+end
+
+parameter "param_email" do
+  label "Email addresses of the recipients you wish to notify"
+  type "list"
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+auth "auth_rs", type: "rightscale"
+
+###############################################################################
+# Datasources
+###############################################################################
+
+datasource "ds_session" do
+  request do
+    auth $auth_rs
+    verb "GET"
+    host rs_cm_host
+    path "/api/sessions"
+    header "X-Api-Version", "1.5"
+    query "view", "whoami"
+  end
+  result do
+    field "user_id", last(split(first(jmes_path(response, "links[?rel == 'user'].href")),'/'))
+  end
+end
+
+datasource "ds_currency_reference" do
+  request do
+    host "raw.githubusercontent.com"
+    path "/rightscale/policy_templates/master/cost/scheduled_reports/currency_reference.json"
+    header "User-Agent", "RS Policies"
+  end
+end
+
+datasource "ds_currency_code" do
+  request do
+    auth $auth_rs
+    host rs_optima_host
+    path join(["/bill-analysis/orgs/",rs_org_id,"/settings/currency_code"])
+    header "Api-Version", "0.1"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+    field "id", jmes_path(response,"id")
+    field "value", jmes_path(response,"value")
+  end
+end
+
+datasource "ds_billing_centers" do
+  request do
+    run_script $js_get_billing_centers, $ds_session,rs_org_id,rs_optima_host
+  end
+end
+
+datasource "ds_top_bc_costs" do
+  request do
+    run_script $js_costs_request, rs_org_id, $param_cost_metric, $ds_billing_centers
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response,"rows[*]") do
+      field "vendor", jmes_path(col_item,"dimensions.vendor")
+      field "vendor_account_name", jmes_path(col_item,"dimensions.vendor_account_name")
+      field "id", jmes_path(col_item,"dimensions.billing_center_id")
+      field "amortized_unblended_costs", jmes_path(col_item,"metrics.cost_amortized_unblended_adj")
+      field "amortized_blended_costs", jmes_path(col_item,"metrics.cost_amortized_blended_adj")
+      field "nonamortized_unblended_costs", jmes_path(col_item,"metrics.cost_nonamortized_unblended_adj")
+      field "nonamortized_blended_costs", jmes_path(col_item,"metrics.cost_nonamortized_blended_adj")
+    end
+  end
+end
+
+datasource "ds_formatted_costs" do
+  run_script $js_formatted_costs, $ds_top_bc_costs, $param_cost_metric, $param_acct_name
+end
+
+datasource "ds_filtered_target" do
+  run_script $js_filter_target, $ds_formatted_costs, $param_acct_name, $param_monthly_budget, $param_type, $ds_currency_code, $ds_currency_reference
+end
+
+###############################################################################
+# Scripts
+###############################################################################
+
+script "js_get_billing_centers", type: "javascript" do
+  parameters "ds_session","rs_org_id","rs_optima_host"
+  result "request"
+  code <<-EOS
+    request = {
+      "auth": "auth_rs",
+      "verb": "GET",
+      "host": rs_optima_host
+      "path": "/analytics/users/"+ds_session["user_id"]+"/orgs/"+rs_org_id+"/billing_centers"
+      "headers": {"Api-Version": "1.0" },
+    }
+  EOS
+end
+
+script "js_costs_request", type: "javascript" do
+  parameters "org","param_cost_metric","billing_centers"
+  result "request"
+  code <<-EOS
+    var cost_metric = {
+      "Unamortized Unblended":"cost_nonamortized_unblended_adj",
+      "Amortized Unblended":"cost_amortized_unblended_adj",
+      "Unamortized Blended": "cost_nonamortized_blended_adj",
+      "Amortized Blended":"cost_amortized_blended_adj"
+    }
+    var date = new Date();
+    var year = date.getUTCFullYear();
+    var month =  (date.getUTCMonth()==11)?1:2 + date.getUTCMonth();
+
+    if (month == 1){
+      var lmonth = 12;
+      var lyear = year ;
+    year=year+1;
+    } else {
+      var lmonth = month-1;
+      var lyear = year ;
+    }
+
+    mo = month.toString().length > 1 ? month : '0' + month;
+    lmo = lmonth.toString().length > 1 ? lmonth : '0' + lmonth;
+
+    // wait for all the bill data to be collected, usually takes about 3 days
+    var dt = new Date();
+    if (dt.getDate() > 4){
+      // start collecting bill data after its retrieved by Optima, roughly 3 days
+      // the complete cost data should be retrieved
+      dt.setDate( dt.getDate() - 3 );
+    } else if (dt.getDate() == 1){
+      dt.setDate(dt.getDate() + 1)
+    }
+    var today_minus_three = dt.toISOString().substring(0,10)
+    var current_month = lyear + "-" + lmo + "-01"
+
+    var bc_ids = _.pluck(billing_centers, 'id');
+
+    var request = {
+      auth: "auth_rs",
+      host: "optima.rightscale.com",
+      verb: "POST",
+      path: "/bill-analysis/orgs/" + org + "/costs/aggregated",
+      body_fields: {
+        "dimensions": ["vendor","vendor_account_name","billing_center_id"],
+        "granularity": "day",
+        "start_at": current_month,
+        "end_at": today_minus_three,
+        "metrics": [cost_metric[param_cost_metric]],
+        "billing_center_ids": bc_ids
+      },
+      headers: {
+        "User-Agent": "RS Policies",
+        "Api-Version": "1.0"
+      }
+    }
+
+  EOS
+end
+
+script "js_formatted_costs", type: "javascript" do
+  parameters "ds_top_bc_costs", "param_cost_metric", "param_acct_name"
+  result "result"
+  code <<-EOS
+  var result = [];
+  var costs = [];
+  var cost_type = {
+      "Unamortized Unblended":"nonamortized_unblended_costs",
+      "Amortized Unblended":"amortized_unblended_costs",
+      "Unamortized Blended": "nonamortized_blended_costs",
+      "Amortized Blended":"amortized_blended_costs"
+  }
+  var totalCost=0;
+  var bc_id="";
+  var count=0;
+  var bc_name= "";
+  var type = cost_type[param_cost_metric];
+
+  _.each(ds_top_bc_costs, function(row){
+    var cost = row[type];
+    if (param_acct_name == row["vendor_account_name"]){
+      costs.push({
+        account_name: row["vendor_account_name"],
+        vendor: row["vendor"],
+        total: cost
+      })
+    }
+  })
+
+  var sum = _.reduce(_.pluck(costs, 'total'), function(memo, num){ return memo + num; }, 0);
+  result.push({
+    account_name: costs[0]["account_name"],
+    vendor: costs[0]["vendor"],
+    total: sum
+  })
+  EOS
+end
+
+script "js_filter_target", type: "javascript" do
+  parameters "ds_formatted_costs", "param_acct_name", "param_monthly_budget", "param_type", "ds_currency_code", "ds_currency_reference"
+  result "report"
+  code <<-EOS
+  var target = [] ;
+  var report={};
+  var date = new Date();
+  // wait for all the bill data to be collected, usually takes about 3 days
+  if (date.getDate() > 4) {
+    var month = date.getUTCMonth()+1;
+    var day = ( date.getUTCDate()-3 );
+    var n = date.getMonth();
+    var months=['January','February','March','April','May','June','July','August','September','October','November','December'];
+    var month_year=months[n]+" "+date.getFullYear();
+
+    if (month == 1){ var numdays = 31 ;}
+    if (month == 2){ var numdays = 29 ;}
+    if (month == 3){ var numdays = 31 ;}
+    if (month == 4){ var numdays = 30 ;}
+    if (month == 5){ var numdays = 31 ;}
+    if (month == 6){ var numdays = 30 ;}
+    if (month == 7){ var numdays = 31 ;}
+    if (month == 8){ var numdays = 31 ;}
+    if (month == 9){ var numdays = 30 ;}
+    if (month == 10){ var numdays = 31 ;}
+    if (month == 11){ var numdays = 30 ;}
+    if (month == 12){ var numdays = 31 ;}
+
+    var monthcomplete = day / numdays ;
+
+    function formatNumber(number, separator){
+      var numString =number.toString();
+      var values=numString.split(".");
+      var result = ''
+      while (values[0].length > 3){
+        var chunk = values[0].substr(-3)
+        values[0] = values[0].substr(0, values[0].length - 3)
+        result = separator + chunk + result
+      }
+      if (values[0].length > 0){
+        result = values[0] + result
+      }
+      if(values[1]==undefined){
+        return result;
+      }
+      return result+"."+values[1];
+    }
+
+    // Format costs with currency symbol and thousands separator
+    if( ds_currency_code['value'] !== undefined ) {
+      if (ds_currency_reference[ds_currency_code['value']] !== undefined ) {
+        var cur = ds_currency_reference[ds_currency_code['value']]['symbol']
+        if( ds_currency_reference[ds_currency_code['value']]['t_separator'] !== undefined ) {
+          var separator = ds_currency_reference[ds_currency_code['value']]['t_separator']
+        } else {
+          var separator = ""
+        }
+      } else {
+        var cur = ""
+        var separator = ""
+      }
+    } else {
+      var cur = "$"
+      var separator = ","
+    }
+    var target = [];
+    _.each(ds_formatted_costs, function(obj){
+      var runrate = obj["total"] / monthcomplete ;
+      var forecastedSpend = Math.round(( runrate -obj["total"]) * 100) / 100 ;
+      var forecastedSpendDisplay = cur+' '+formatNumber(forecastedSpend, separator);
+
+      if (param_type === "Forecasted Spend"){
+        var overBudgetAmount= Math.round((runrate - param_monthly_budget) * 100) / 100 ;
+        var overBudgetAmountDisplay= cur+' '+formatNumber(overBudgetAmount, separator);
+        var overBudgetPercent=Math.round((((Math.round(runrate * 100) / 100)-(Math.round(param_monthly_budget * 100) / 100))/param_monthly_budget)*100);
+        target.push({
+          account_name: obj["account_name"],
+          vendor: obj["vendor"],
+          actualDisplay: cur + ' '+formatNumber((Math.round(obj["total"] * 100) / 100), separator),
+          actual: Math.round(obj["total"] * 100) / 100,
+          type: "Forecasted Spend",
+          runrateDisplay: cur + ' '+formatNumber((Math.round(runrate * 100) / 100),separator),
+          runrate: Math.round(runrate * 100) / 100,
+          budgetDisplay: cur + ' '+formatNumber(param_monthly_budget,separator),
+          total: runrate,
+          overBudgetAmount: overBudgetAmount,
+          overBudgetAmountDisplay: overBudgetAmountDisplay,
+          overBudgetPercentDisplay: overBudgetPercent+"%",
+          overBudgetPercent: overBudgetPercent,
+          forecastedSpend: forecastedSpend,
+          forecastedSpendDisplay: forecastedSpendDisplay
+        })
+      } else {
+        var overBudgetAmount= Math.round((runrate - param_monthly_budget) * 100) / 100 ;
+        var overBudgetAmountDisplay= cur+' '+formatNumber(overBudgetAmount, separator);
+        var overBudgetPercent=Math.round((((Math.round(obj["total"] * 100) / 100)-(Math.round(param_monthly_budget * 100) / 100))/param_monthly_budget)*100);
+        target.push({
+          account_name: obj["account_name"],
+          vendor: obj["vendor"],
+          actualDisplay: cur + ' '+formatNumber((Math.round(obj["total"] * 100) / 100), separator),
+          actual: (Math.round(obj["total"] * 100) / 100).toString(10),
+          type: "Actual Spend",
+          runrateDisplay: cur + ' '+formatNumber((Math.round(runrate * 100) / 100),separator),
+          runrate: (Math.round(runrate * 100) / 100).toString(10),
+          budgetDisplay: cur + ' '+formatNumber(param_monthly_budget,separator),
+          total: obj["total"],
+          overBudgetAmount: overBudgetAmount,
+          overBudgetAmountDisplay: overBudgetAmountDisplay,
+          overBudgetPercentDisplay: overBudgetPercent+"%",
+          overBudgetPercent: overBudgetPercent,
+          forecastedSpend: forecastedSpend,
+          forecastedSpendDisplay: forecastedSpendDisplay
+        })
+      }
+    })
+
+    report = {
+      actual: target[0]['actual'],
+      runrate: target[0]["runrate"],
+      monthYear: month_year,
+      total: target[0]["total"],
+      chartType: "cht=bhs",
+      chartSize: "chs=800x200",
+      chartData: "chd=t:" + target[0]["actual"] + "," + 0 + "|" + target[0]["forecastedSpend"] + "," + 0 + "|" + 0 + ","+param_monthly_budget + "|" + 0 + "," + target[0]["overBudgetAmount"],
+      chartTitle: "chtt=",
+      chartImage: "chof=.png",
+      chartColor: "chco=65B178,CCF2D6,2F6DB7,E5A687",
+      chartLabel: "chdl=Actual+Spend|Forecasted+Spend|Budget|Over+Budget",
+      chartLabelPosition: "chdlp=b",
+      chartYAxis: "chxt=y",
+      chartYAxisLabel: "chxl=1:|2:|",
+      chartDataAutoScale: "chds=a",
+      chartDataValue: 'chl=' + target[0]["actualDisplay"].replace(" ","%20") + '||' + target[0]["forecastedSpendDisplay"].replace(" ","%20") + '|||' + target[0]["budgetDisplay"].replace(" ","%20") + '||' + target[0]["overBudgetAmountDisplay"].replace(" ","%20"),
+      reportData: target
+    }
+  } else {
+    report = {
+      total: param_monthly_budget-1,
+      runrate: -1,
+      actual: -1
+    }
+  }
+  EOS
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "budget_alert" do
+  validate $ds_filtered_target do
+    summary_template "{{ parameters.param_type }} Budget Exceeded"
+    # ignore changes to the monthly spend and runrate, since those will change constantly
+    hash_exclude "actual", "runrate", "total"
+    detail_template <<-EOS
+      # Budget Exceeded
+      ### Cost Metric: {{ parameters.param_cost_metric }}
+      ### Budget Alert Type: {{ parameters.param_type }}
+      ### Cloud Account: {{ parameters.param_acct_name }}
+      ### Monthly Spend for {{ data.monthYear }}
+      ![Spending Overview Chart](https://image-charts.com/chart?{{data.chartType}}&{{data.chartData}}&{{data.chartSize}}&{{data.chartTitle}}&{{data.chartImage}}&{{data.chartColor}}&{{data.chartLabel}}&{{data.chartYAxisLabel}}&{{data.chartYAxis}}&{{data.chartLabelPosition}}&{{data.chartDataAutoScale}}&{{data.chartDataValue}})
+    EOS
+    escalate $esc_budget_alert
+    check lt(val(data,"total"),$param_monthly_budget)
+    export "reportData" do
+      field "account_name" do
+        label "Cloud Account Name"
+      end
+      field "vendor" do
+        label "Cloud Vendor"
+      end
+      field "budgetDisplay" do
+        label "Budget"
+      end
+      field "actualDisplay" do
+        label "Month to Date Spend"
+      end
+      field "forecastedSpendDisplay" do
+        label "Additional Forecasted Spend"
+      end
+      field "runrateDisplay" do
+        label "Forecasted Full Month Spend"
+      end
+      field "overBudgetAmountDisplay" do
+        label "Over Budget Amount"
+      end
+      field "overBudgetPercentDisplay" do
+        label "Over Budget Percent"
+      end
+    end
+  end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_budget_alert" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
+end

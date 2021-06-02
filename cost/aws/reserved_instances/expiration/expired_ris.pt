@@ -6,18 +6,27 @@ long_description ""
 severity "medium"
 category "Cost"
 tenancy "single"
+default_frequency "daily"
 info(
-  version: "1.7",
+  version: "1.11",
   provider: "Flexera Optima",
   service: "",
   policy_set: ""
 )
+
+###############################################################################
+# Permissions
+###############################################################################
 
 permission "optima" do
   label "Access Optima Resources"
   resources "rs_optima.aws_reserved_instances"
   actions "rs_optima.index"
 end
+
+###############################################################################
+# User inputs
+###############################################################################
 
 parameter "param_heads_up_days" do
   type "number"
@@ -29,13 +38,21 @@ parameter "param_email" do
   label "Email addresses of the recipients you wish to notify"
 end
 
+###############################################################################
+# Authentication
+###############################################################################
+
 auth "auth_rs", type: "rightscale"
+
+###############################################################################
+# Datasources
+###############################################################################
 
 datasource "ds_reservations" do
   request do
     auth $auth_rs
     host rs_optima_host
-    path join(["/api/reco/orgs/",rs_org_id,"/aws_reserved_instances"])
+    path join(["/reserved_instances/orgs/",rs_org_id,"/clouds/aws"])
   end
   result do
     encoding "json"
@@ -50,25 +67,43 @@ datasource "ds_reservations" do
   end
 end
 
-escalation "report_expiring_reserved_instances" do
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_email" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
   email $param_email
 end
+
+###############################################################################
+# Policy
+###############################################################################
 
 policy "ri_expiration" do
   validate_each $ds_reservations do
     summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): Reserved instances are nearing expiration."
-    detail_template <<-EOS
-# Reserved Instance Expiration
+    export do
+      field "region" do
+        label "Region"
+      end
+      field "account_name" do
+        label "Account"
+      end
+      field "instance_type" do
+        label "Instance Type"
+      end
+      field "instance_count" do
+        label "Instance Count"
+      end
+      field "end_datetime" do
+        label "End Time"
+      end
+    end
 
-| Account | Region | Instance Type | Instance Count | End Time |
-| ------- | ------ | ------------- | -------------- | -------- |
-{{ range data -}}
-| {{ .account_name }}({{ .account_id }}) | {{.region}} | {{.instance_type}} | {{.instance_count}} | {{.end_datetime}} |
-{{ end -}}
-
-EOS
-
-    escalate $report_expiring_reserved_instances
+    escalate $esc_email
     check gt(dec(to_d(val(item, "end_datetime")), now), prod($param_heads_up_days, 24*3600))
   end
 end

@@ -6,21 +6,13 @@ long_description ""
 category "Cost"
 severity "low"
 tenancy "single"
+default_frequency "daily"
 info(
-      version: "2.0",
+      version: "2.5",
       provider: "GCE",
       service: "Compute",
       policy_set: ""
     )
-
-###############################################################################
-# Permissions
-###############################################################################
-
-permission "perm_read_creds" do
-  actions   "rs_cm.show_sensitive","rs_cm.index_sensitive"
-  resources "rs_cm.credentials"
-end
 
 ###############################################################################
 # Parameters
@@ -66,13 +58,14 @@ end
 # Datasources
 ###############################################################################
 
-#get all google project
+#get all active google project
 datasource "ds_google_project" do
   request do
     auth $auth_google
     pagination $google_pagination
     host "cloudresourcemanager.googleapis.com"
     path "/v1/projects/"
+    query "filter", "lifecycleState=ACTIVE"
   end
   result do
     encoding "json"
@@ -93,6 +86,7 @@ datasource "ds_committed_use_discount" do
     path join(["/compute/v1/projects/",val(iter_item, "projectId"),"/aggregated/commitments"])
     query "accept" , "application/json"
     query "filter", 'status="ACTIVE"'
+    ignore_status [403,404]
   end
   result do
     encoding "json"
@@ -162,20 +156,39 @@ end
 policy "policy_committed_use_discount_expiration" do
   validate $ds_committed_use_discount_map do
     summary_template " {{ len data }} Committed Use Discount(s) in Google Cloud Expiring"
-    detail_template <<-EOS
-# Expiring Committed Use Discounts in Google Cloud
-### Threshold: {{ parameters.param_days_expiration }} Days
-
-| Project ID | CUD Id |  Name  | Region | Status | Plan | Start Date | End Date | Days Until Expiration |
-|:----------:|:------:|:------:|:------:|:------:|:----:|:----------:|:--------:|:---------------------:|
-{{ range data -}}
-| {{.projectId}} | {{.cud_id}} | {{.name}} | {{.region}} | {{.status}} | {{.plan}} | {{.startTimestamp}} | {{.endTimestamp}} | {{.daysExpiration}} |
-{{ end -}}
-
-###### Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }}) within Org: {{ rs_org_name }} (Org ID: {{ rs_org_id }})
-EOS
     escalate $report_list_of_CUDs
     check eq(size(data),0)
+    export do
+      resource_level true
+      field "projectId" do
+        label "Project ID"
+      end
+      field "name" do
+        label "Name"
+      end
+      field "region" do
+        label "Zone"
+      end
+      field "status" do
+        label "Status"
+      end
+      field "plan" do
+        label "Plan"
+      end
+      field "startTimestamp" do
+        label "Start Date"
+      end
+      field "endTimestamp" do
+        label "End Date"
+      end
+      field "daysExpiration" do
+        label "Days Until Expiration"
+      end
+      field "id" do
+        label "CUD Id"
+        path "cud_id"
+      end
+    end
   end
 end
 
@@ -185,5 +198,8 @@ end
 ###############################################################################
 
 escalation "report_list_of_CUDs" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
   email $param_email
 end

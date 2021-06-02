@@ -6,7 +6,7 @@ long_description ""
 category "Compliance"
 severity "medium"
 info(
-  version: "1.3",
+  version: "1.5",
   provider: "Flexera Cloud Management",
   service: "",
   policy_set: ""
@@ -41,6 +41,13 @@ parameter "param_exclude_tags" do
   type "list"
   label "Tags to ignore"
   description "List of tags that will exclude Servers from being evaluated by this policy. Multiple tags are evaluated as an 'OR' condition. Tag must be of the format 'namespace:predicate=value'. Example: 'rs_agent:type=right_link_lite,rs_monitoring:state=auth'"
+end
+
+parameter "param_automatic_action" do
+  type "list"
+  label "Automatic Actions"
+  description "When this value is set, this policy will automatically take the selected action(s)"
+  allowed_values ["Stop Instances"]
 end
 
 ###############################################################################
@@ -139,7 +146,7 @@ script "js_get_unapproved_instances", type: "javascript" do
           cloud_name:instance['cloud_name']
           cloud_type:cloud_type
           name:instance['name']
-          resource_uid:instance['resource_uid']
+          id:instance['resource_uid']
 		  state:instance['state']
           updated_at:date
           instance_type:instance['instance_type']
@@ -158,16 +165,38 @@ end
 policy "pol_unapproved_instances" do
   validate $ds_get_unapproved_instances do
     summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} Instances with unapproved instance type."
-    detail_template <<-EOS
-# Instances with unapproved instance type details.
-| Cloud Name | Cloud Type | Instance Name | Resource UID | State | Updated On | Instance Type | Href | Tags |
-| ---------- | ---------- | ------------- | ------------ | ----- | ---------- | ------------- | ---- | ---- |
-{{ range data -}}
-| {{.cloud_name}} | {{.cloud_type}} | {{.name}} | {{.resource_uid}} | {{.state}} | {{.updated_at}} | {{.instance_type}} | {{.href}} | {{.tags}} |
-{{ end -}}
-    EOS
+    export do
+      resource_level true
+      field "cloud_name" do
+        label "Cloud Name"
+      end
+      field "cloud_type" do
+        label "Cloud Type"
+      end
+      field "name" do
+        label "Instance Name"
+      end
+      field "state" do
+        label "State"
+      end
+      field "updated_at" do
+        label "Updated On"
+      end
+      field "instance_type" do
+        label "Instance Type"
+      end
+      field "href" do
+        label "Href"
+      end
+      field "tags" do
+        label "Tags"
+      end
+      field "id" do
+        label "Resource UID"
+      end
+    end
     escalate $report_approved_instances
-    escalate $approve_stop_instances
+    escalate $stop_instances
     check eq(size(data),0)
   end
 end
@@ -177,19 +206,16 @@ end
 ###############################################################################
 
 escalation "report_approved_instances" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
   email $param_email
 end
 
-escalation "approve_stop_instances" do
-  request_approval  do
-  label "Approve Instance Stop"
-    description "Approve to stop instance with specified instance types."
-    parameter "approval_reason" do
-      type "string"
-      label "Reason for Approval"
-      description "Explain why you are approving the action."
-    end
-  end
+escalation "stop_instances" do
+  automatic contains($param_automatic_action, "Stop Instances")
+  label "Stop Instances"
+  description "Stop selected instances with unapproved instance types."
   run "stop_instance", data
 end
 

@@ -5,8 +5,9 @@ short_description "A policy that downsizes instances. \n See the [README](https:
 long_description ""
 severity "medium"
 category "Cost"
+default_frequency "daily"
 info(
-  version: "1.15",
+  version: "1.19",
   provider: "Flexera Cloud Management",
   service: "",
   policy_set: ""
@@ -53,6 +54,14 @@ parameter "param_cooldown_days" do
   description "Days to cooldown between checks of same instance"
   default 30
 end
+
+parameter "param_automatic_action" do
+  type "list"
+  label "Automatic Actions"
+  description "When this value is set, this policy will automatically take the selected action(s)"
+  allowed_values ["Downsize Instances"]
+end
+
 
 ###############################################################################
 # Authentication
@@ -231,7 +240,7 @@ for ( i = 0; i < instances.length; i++ ) {
   if ( tag_keys.indexOf('rs_downsize:cooldown') === -1 ){
     if ( !instances[i]['cloud_specific_attributes']['availability_set']) {
       downsize_instances.push({
-        resource_uid: instances[i]["resource_uid"],
+        id: instances[i]["resource_uid"],
         name: instances[i]["name"],
         href: instances[i]["href"],
         description: instances[i]["description"],
@@ -254,7 +263,7 @@ for ( i = 0; i < instances.length; i++ ) {
     })
     var cooldown_date = cooldown_tag.split('=')[1]
     cooldown_instances.push({
-      resource_uid: instances[i]["resource_uid"],
+      id: instances[i]["resource_uid"],
       name: instances[i]["name"],
       href: instances[i]["href"],
       description: instances[i]["description"],
@@ -272,6 +281,12 @@ details = {
   downsize_instances: downsize_instances,
   cooldown_instances: cooldown_instances
 }
+
+downsize_instances = _.sortBy(downsize_instances,'cloud_type')
+downsize_instances = _.sortBy(downsize_instances,'region')
+cooldown_instances = _.sortBy(cooldown_instances,'cloud_type')
+cooldown_instances = _.sortBy(cooldown_instances,'region')
+
 EOS
 end
 
@@ -288,33 +303,24 @@ end
 ###############################################################################
 
 escalation "report_downsize_instances" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
   email $param_email
 end
 
 escalation "downsize_instances" do
-  request_approval  do
-    label "Escalation approval"
-    description "Approve downsize action"
-    parameter "approval_reason" do
-      type "string"
-      label "Reason for approval"
-      description "Explain why you are approving the action"
-    end
-  end
+  automatic contains($param_automatic_action, "Downsize Instances")
+  label "Downsize Instances"
+  description "Approval to downsize all selected instances"
   run "downsize_instances", data, $param_instance_tag_list, $param_cooldown_days
 end
 
 #remove the cooldown tag if the $param_cooldown_days has exceeded
 escalation "cooldown_instances" do
-   request_approval  do
-    label "Approve to remove the cooldown tag"
-    description "remove the cooldown tag if the input cooldown days has exceeded"
-    parameter "approval_reason" do
-      type "string"
-      label "Reason for approval"
-      description "Explain why you are approving the action"
-    end
-  end
+  automatic false
+  label "Remove CoolDown Tag"
+  description "Approval to remove the cooldown  tag if the input cooldown days has exceeded"
   run "delete_cooldown_tag", data,  $param_cooldown_days
 end
 
@@ -325,36 +331,86 @@ end
 policy "policy_downsize" do
   validate $ds_filtered_instances do
     summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data.downsize_instances }} Instances that can be downsized"
-    detail_template <<-EOS
-# {{ len data.downsize_instances }} Instances can be downsized
-
-| Instance Name | Resource UID | Current Instance Type | New Instance Type |
-| ------------- | ------------ | --------------------- | ----------------- |
-{{ range data.downsize_instances -}}
-  | {{.name}} | {{.resource_uid}} | {{.instance_type}} | {{.next_instance_size}} |
-{{ end -}}
-
-EOS
     escalate $report_downsize_instances
     escalate $downsize_instances
     resolve $report_downsize_instances_resolution
     check eq(size(val(data, "downsize_instances")), 0)
+    export do
+      resource_level true
+      field "cloud_type" do
+        label "Cloud"
+        path "downsize_instances.cloud_type"
+      end
+      field "region" do
+        label "Data Center"
+        path "downsize_instances.region"
+      end
+      field "name" do
+        label "Instance Name"
+        path "downsize_instances.name"
+      end
+      field "id" do
+        label "Resource UID"
+        path "downsize_instances.id"
+      end
+      field "instance_type" do
+        label "Current Instance Type"
+        path "downsize_instances.instance_type"
+      end
+      field "next_instance_size" do
+        label "New Instance Type"
+        path "downsize_instances.next_instance_size"
+      end
+      field "cloud_href" do
+        label "Cloud Href"
+        path "downsize_instances.cloud_href"
+      end
+      field "tags" do
+        label "Tags"
+        path "downsize_instances.tags"
+      end
+    end
   end
 
   validate $ds_filtered_instances do
     summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data.cooldown_instances }} Instances are in cooldown"
-    detail_template <<-EOS
-  # {{ len data.cooldown_instances }} Instances are in cooldown
-
-  | Instance Name | Resource UID | Current Instance Type | New Instance Type | Cooldown Date |
-  | ------------- | ------------ | --------------------- | ----------------- | ------------- |
-  {{ range data.cooldown_instances -}}
-  | {{.name}} | {{.resource_uid}} | {{.instance_type}} | {{.next_instance_size}} | {{.cooldown_date}} |
-  {{ end -}}
-
-  EOS
     escalate $cooldown_instances
     check eq(size(val(data, "cooldown_instances")), 0)
+    export do
+      resource_level true
+      field "cloud_type" do
+        label "Cloud"
+        path "cooldown_instances.cloud_type"
+      end
+      field "region" do
+        label "Data Center"
+        path "cooldown_instances.region"
+      end
+      field "name" do
+        label "Instance Name"
+        path "cooldown_instances.name"
+      end
+      field "id" do
+        label "Resource UID"
+        path "cooldown_instances.id"
+      end
+      field "instance_type" do
+        label "Current Instance Type"
+        path "cooldown_instances.instance_type"
+      end
+      field "next_instance_size" do
+        label "New Instance Type"
+        path "cooldown_instances.next_instance_size"
+      end
+      field "cooldown_date" do
+        label "Cooldown Date"
+        path "cooldown_instances.cooldown_date"
+      end
+      field "cloud_href" do
+        label "Cloud Href"
+        path "cooldown_instances.cloud_href"
+      end
+    end
   end
 end
 
@@ -376,7 +432,7 @@ define downsize_instances($data,$param_instance_tag_list,$param_cooldown_days) d
         call sys_log('Instance Resizing',$item['name'])
         call stop_instance(@instance, @cloud, $item) retrieve @next_instance
 
-        @next_instance = first(@cloud.instances(filter: ['resource_uid=='+$item['resource_uid']]))
+        @next_instance = first(@cloud.instances(filter: ['resource_uid=='+$item['id']]))
         @new_instance_type = first(@cloud.instance_types(filter: ["name=="+$item["next_instance_size"]]))
         @next_instance.update(instance: { instance_type_href: @new_instance_type.href })
 
@@ -406,7 +462,7 @@ define downsize_instances($data,$param_instance_tag_list,$param_cooldown_days) d
       if empty?(@current_instance)
         @cloud = rs_cm.get(href: $item['cloud_href'])
         # find the resource by resource_uid because the href may have changed after resize.
-        @current_instance = first(@cloud.instances(filter: ['resource_uid=='+$item['resource_uid'] ]))
+        @current_instance = first(@cloud.instances(filter: ['resource_uid=='+$item['id'] ]))
       end
 
       # delete the downsize tag(s) provided by the user
@@ -433,7 +489,7 @@ define rollback($item, @instance, @cloud) do
   sub task_label:"Rolling Back to Original Instance Type" do
     ## Logic to revert the instance back to its original instance type
     call sys_log('Instance Rollingback', $item['name'])
-    @instance = first(@cloud.instances(filter: ['resource_uid=='+$item['resource_uid'] ]))
+    @instance = first(@cloud.instances(filter: ['resource_uid=='+$item['id'] ]))
 
     sub task_label:"Setting Error Tag" do
       $msg = split($_error["message"], "\n")
@@ -462,7 +518,7 @@ define rollback($item, @instance, @cloud) do
       call sys_log('Instance Resizing', $item['name'])
       call stop_instance(@instance, @cloud, $item) retrieve @instance
 
-      @instance = first(@cloud.instances(filter: ['resource_uid=='+$item['resource_uid']]))
+      @instance = first(@cloud.instances(filter: ['resource_uid=='+$item['id']]))
       @new_instance_type = first(@cloud.instance_types(filter: ["name=="+$item["instance_type"]]))
       @instance.update(instance: { instance_type_href: @new_instance_type.href })
 
@@ -482,7 +538,7 @@ define stop_instance(@instance, @cloud, $item) return @instance do
   while $state !~ $wake_condition do
     sub on_error: retry, timeout: 20m, on_timeout: skip do
       # find the resource by resource_uid because the href may have changed after resize.
-      @instance = first(@cloud.instances(filter: ['resource_uid=='+$item['resource_uid']]))
+      @instance = first(@cloud.instances(filter: ['resource_uid=='+$item['id']]))
       call sys_log('Waiting for instance stop state: ' + @instance.name,to_s(to_object(@instance)))
       $state = @instance.state
       call sys_log('Instance stop state',$state)
@@ -501,7 +557,7 @@ define start_instance(@instance, @cloud, $item) return @instance do
   while $state !~ $wake_condition do
     sub on_error: retry, timeout: 20m, on_timeout: skip do
       # find the resource by resource_uid because the href may have changed after resize.
-      @instance = first(@cloud.instances(filter: ['resource_uid=='+$item['resource_uid']]))
+      @instance = first(@cloud.instances(filter: ['resource_uid=='+$item['id']]))
       call sys_log('waiting for instance start state', to_s(to_object(@instance)))
       $state = @instance.state
       call sys_log('Instance start state', $state)
@@ -516,7 +572,7 @@ define delete_cooldown_tag($data,$param_cooldown_days) do
   foreach $item in $data['cooldown_instances'] do
     @cloud = rs_cm.get(href: $item['cloud_href'])
     # find the resource by resource_uid because the href may have changed after resize.
-    @instance = first(@cloud.instances(filter: ['resource_uid=='+$item['resource_uid'] ]))
+    @instance = first(@cloud.instances(filter: ['resource_uid=='+$item['id'] ]))
     $cooldown_tag = tag_value(@instance,'rs_downsize:cooldown')
     call sys_log('cooldown_tag',$cooldown_tag)
     $cooldown_time = to_d($cooldown_tag)

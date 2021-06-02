@@ -5,8 +5,9 @@ short_description "This Policy Template is used to terminate instances based on 
 long_description ""
 category "Cost"
 severity "low"
+default_frequency "daily"
 info(
-  version: "1.4",
+  version: "1.7",
   provider: "Flexera Cloud Management",
   service: "",
   policy_set: ""
@@ -44,6 +45,13 @@ parameter "param_exclude_tags" do
   description "List of tags that will exclude instances from being evaluated by this policy. Multiple tags are evaluated as an 'OR' condition. Tag must be of the format 'namespace:predicate=value'."
 end
 
+parameter "param_automatic_action" do
+  type "list"
+  label "Automatic Actions"
+  description "When this value is set, this policy will automatically take the selected action(s)"
+  allowed_values ["Terminate Instances"]
+end
+
 ###############################################################################
 # Authentication
 ###############################################################################
@@ -55,6 +63,11 @@ auth "auth_rs", type: "rightscale"
 ###############################################################################
 
 resources "clouds", type: "rs_cm.clouds"
+
+resources "datacenters", type: "rs_cm.datacenter" do
+  iterate @clouds  
+  cloud_href href(iter_item)
+end
 
 resources "instances", type: "rs_cm.instances" do
   iterate @clouds  
@@ -72,12 +85,19 @@ datasource "ds_clouds" do
   field "name", val(iter_item, "display_name")
 end
 
+datasource "ds_datacenters" do
+  iterate @datacenters
+  field "href", href(iter_item)
+  field "name", val(iter_item, "name")
+end
+
 datasource "ds_instances" do
   iterate @instances
   field "resource_uid", val(iter_item,  "resource_uid")
   field "name", val(iter_item, "name")
   field "href", href(iter_item)
   field "cloud_href", jmes_path(iter_item, "links[?rel=='cloud'].href | [0]")
+  field "datacenter_href", jmes_path(iter_item, "links[?rel=='datacenter'].href | [0]")
   field "instance_type_href", jmes_path(iter_item, "links[?rel=='instance_type'].href | [0]")
   field "locked", jmes_path(iter_item,"locked")
   field "state", jmes_path(iter_item,"state")
@@ -85,7 +105,7 @@ datasource "ds_instances" do
 end
 
 datasource "ds_instances_with_timestamp" do
-  run_script $js_instances_with_timestamp, $ds_instances, $param_terminate_tags
+  run_script $js_instances_with_timestamp, $ds_instances, $param_terminate_tags, $ds_clouds, $ds_datacenters
 end
 
 ###############################################################################
@@ -93,7 +113,7 @@ end
 ###############################################################################
 
 script "js_instances_with_timestamp", type: "javascript" do
-  parameters "ds_instances", "param_terminate_tags"
+  parameters "ds_instances", "param_terminate_tags", "ds_clouds", "ds_datacenters"
   result "results"
   code <<-EOF
     var results = []
@@ -119,11 +139,25 @@ script "js_instances_with_timestamp", type: "javascript" do
         var should_terminate = true
       }
       
+      // create a map of clouds with href key to get name
+      var cloud_map = {}
+      for (var i = 0; i < ds_clouds.length; i++) {
+          var cloud = ds_clouds[i]
+          cloud_map[cloud['href']]={'name': cloud['name']}
+      }
+
+      // create a map of datacenters with href key to get name
+      var datacenter_map = {}
+      for (var i = 0; i < ds_datacenters.length; i++) {
+          var datacenter = ds_datacenters[i]
+          datacenter_map[datacenter['href']]={'name': datacenter['name']}
+      }
       results.push({
-        resource_uid: instance.resource_uid,
+        id: instance.resource_uid,
         name: instance.name,
-        href: instance.href
-        cloud_href: instance.cloud_href,
+        href: instance.href,
+        cloud_name: cloud_map[instance.cloud_href]['name'],
+        datacenter_name: datacenter_map[instance.datacenter_href]['name'],
         instance_type_href: instance.instance_type_href,
         locked: instance.locked,
         state: instance.state,
@@ -133,6 +167,8 @@ script "js_instances_with_timestamp", type: "javascript" do
         terminate: should_terminate
       })
     }
+    results = _.sortBy(results, 'cloud_name');
+
 EOF
 end
 
@@ -140,20 +176,16 @@ end
 # Escalations
 ###############################################################################
 escalation "email" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
   email $param_email
 end
 
 escalation "report_and_terminate_instances" do
-  request_approval  do
-    label "Escalation approval"
-    description "Approve Terminate action"
-    parameter "approval_reason" do
-      type "string"
-      label "Reason for approval"
-      description "Explain why you are approving the action"
-    end
-  end
-
+  automatic contains($param_automatic_action, "Terminate Instances")
+  label "Terminate Instances"
+  description "Terminate Instances"
   run "terminate_instances", data
 end
 
@@ -168,18 +200,37 @@ end
 policy "pol_instances" do
   validate_each $ds_instances_with_timestamp do
     summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} Terminable Instances"
-    detail_template <<-EOS
-# Terminable Instances
-| Name | Terminate Date | Current Time | Locked |
-| ---- | -------------- | ------------ | ------ |
-{{ range data -}}
-| {{ .name }} | {{.terminate_date}} | {{.run_time}} | {{.locked}} |
-{{ end -}}
-EOS
     escalate $email
     escalate $report_and_terminate_instances
     check logic_not(val(item,"terminate"))
     resolve $report_resolution
+    export do
+      resource_level true
+      field "cloud_name" do
+        label "Cloud Name"
+      end
+      field "datacenter_name" do
+        label "Datacenter Name"
+      end
+      field "name" do
+        label "Name"
+      end
+      field "terminate_date" do
+        label "Terminate Date"
+      end
+      field "run_time" do
+        label "Current Date"
+      end
+      field "locked" do
+        label "Locked"
+      end
+      field "id" do
+        label "Resource UID"
+      end
+      field "href" do
+        label "Href"
+      end
+    end
   end
 end
 

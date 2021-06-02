@@ -1,5 +1,26 @@
 # Changelog
 
+## v2.5
+
+- Added default_frequency "daily"
+
+## v2.4
+
+- Modified escalation label and description for consistency
+
+## v2.3
+
+- updated minimum required permission in the README
+- modified label and description in both Policy Template and README files to be similar
+
+## v2.2
+
+- Added resource table
+
+## v2.1
+
+- remove unnecessary permissions block
+
 ## v2.0
 
 - Changes to support the Credential Service

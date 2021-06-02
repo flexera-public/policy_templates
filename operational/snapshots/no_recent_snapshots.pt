@@ -6,15 +6,15 @@ long_description ""
 severity "low"
 category "Operational"
 info(
-  version: "1.6",
+  version: "1.9",
   provider: "Flexera Cloud Management",
   service: "",
   policy_set: ""
 )
 
-##################
-# User inputs    #
-##################
+###############################################################################
+# User inputs 
+###############################################################################
 
 parameter "param_email" do
   category "Contact"
@@ -49,13 +49,28 @@ parameter "param_exclude_tags" do
   label "Exclude Tags"
 end
 
+parameter "param_automatic_action" do
+  type "list"
+  label "Automatic Actions"
+  description "When this value is set, this policy will automatically take the selected action(s)"
+  allowed_values ["Take Snapshots"]
+end
+
 permission "perm_resources" do
   label "Access"
   resources "rs_cm.clouds", "rs_cm.volume_snapshots",'rs_cm.instances','rs_cm.volumes'
   actions "rs_cm.index", "rs_cm.show"
 end
 
+###############################################################################
+# Authentication
+###############################################################################
+
 auth "auth_rs", type: "rightscale"
+
+###############################################################################
+# Resources
+###############################################################################
 
 resources "clouds", type: "rs_cm.clouds" do
   filter do
@@ -67,17 +82,9 @@ resources "instances", type: "rs_cm.instances" do
   iterate @clouds
   cloud_href href(iter_item)
   filter do
-    state "operational"
+    state ne: ["stopped", "terminated", "inactive", "queued"]
   end
   tags none($param_exclude_tags)
-end
-
-datasource "ds_instances" do
-  iterate @instances
-  field "resource_uid", val(iter_item,  "resource_uid")
-  field "name", val(iter_item, "name")
-  field "href", href(iter_item)
-  field "cloud_href", jmes_path(iter_item, "links[?rel=='cloud'].href | [0]")
 end
 
 resources "volume_attachments", type: "rs_cm.volume_attachments" do
@@ -88,6 +95,29 @@ resources "volume_attachments", type: "rs_cm.volume_attachments" do
   end
 end
 
+resources "volumes", type: "rs_cm.volumes" do
+  iterate @clouds
+  cloud_href href(iter_item)
+  tags none($param_exclude_tags)
+end
+
+resources "volume_snapshots", type: "rs_cm.volume_snapshots" do
+  iterate @clouds
+  cloud_href href(iter_item)
+end
+
+###############################################################################
+# Datasources
+###############################################################################
+
+datasource "ds_instances" do
+  iterate @instances
+  field "resource_uid", val(iter_item,  "resource_uid")
+  field "name", val(iter_item, "name")
+  field "href", href(iter_item)
+  field "cloud_href", jmes_path(iter_item, "links[?rel=='cloud'].href | [0]")
+end
+
 datasource "ds_volume_attachments" do
   iterate @volume_attachments
   field "href", href(iter_item)
@@ -96,22 +126,11 @@ datasource "ds_volume_attachments" do
   field "instance_href", jmes_path(iter_item, "links[?rel=='instance'].href | [0]")
 end
 
-resources "volumes", type: "rs_cm.volumes" do
-  iterate @clouds
-  cloud_href href(iter_item)
-  tags none($param_exclude_tags)
-end
-
 datasource "ds_volumes" do
   iterate(@volumes)
   field "resource_uid", val(iter_item,  "resource_uid")
   field "name", val(iter_item, "name")
   field "href", href(iter_item)
-end
-
-resources "volume_snapshots", type: "rs_cm.volume_snapshots" do
-  iterate @clouds
-  cloud_href href(iter_item)
 end
 
 datasource "ds_volume_snapshots" do
@@ -126,6 +145,10 @@ end
 datasource "ds_volumes_volume_snapshots" do
   run_script $js_volumes_volume_snapshots, $ds_volume_attachments, $ds_volumes, $ds_volume_snapshots, $ds_instances, $param_include_root_device
 end
+
+###############################################################################
+# Scripts
+###############################################################################
 
 script "js_volumes_volume_snapshots", type: "javascript" do
   parameters "ds_volume_attachments", "ds_volumes", "ds_volume_snapshots", "ds_instances", "include_root_device"
@@ -182,26 +205,68 @@ script "js_volumes_volume_snapshots", type: "javascript" do
 EOS
 end
 
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "pol_snapshot_age" do
+  validate_each $ds_volumes_volume_snapshots do
+    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} Outdated Snapshots Found"
+    escalate $report_outdated_snapshots
+    escalate $take_snapshots
+    resolve $report_outdated_snapshots_resolution
+    check lt(dec(now,to_d(val(item, "snapshot_updated_at"))), prod($param_snapshot_days,86400))
+    export do
+      resource_level true
+      field "instance_name" do
+        label "Instance Name"
+      end
+      field "volume_name" do
+        label "Volume Name"
+      end
+      field "snapshot_name" do
+        label "Snapshot Name"
+      end
+      field "snapshot_resource_uid" do
+        label "Snapshot ID"
+      end
+      field "snapshot_updated_at" do
+        label "Updated At"
+      end
+      field "id" do
+        label "Instance Href"
+        path "instance_href"
+      end
+    end
+  end
+end
+
+###############################################################################
+# Escalations and Resolution
+###############################################################################
+
 resolution "report_outdated_snapshots_resolution" do
   email $param_email
 end
 
 escalation "report_outdated_snapshots" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
   email $param_email
 end
 
 escalation "take_snapshots" do
-   request_approval  do
-    label "Approve to take snapshot"
-    description "Take snaphots"
-    parameter "approval_reason" do
-      type "string"
-      label "Reason for approval"
-      description "Explain why you are approving the action"
-    end
-  end
+  automatic contains($param_automatic_action, "Take Snapshots")
+  label "Create Snapshot"
+  description "Approve to take the snapshots"
   run "take_snapshot", data, $param_alert_options
 end
+
+###############################################################################
+# Cloud Workflow
+###############################################################################
 
 define sys_log($subject, $detail) do
   if $$debug
@@ -226,15 +291,15 @@ define take_snapshot($data,$param_alert_options) return $data,$instance_hash,$sn
   $snapshot_list = []
   if $param_alert_options != "Email"
     foreach $item in $data do
-      if $instance_hash[$item["instance_href"]]
+      if $instance_hash[$item["id"]]
         $new_array = []
-        foreach $new_item in $instance_hash[$item["instance_href"]] do
+        foreach $new_item in $instance_hash[$item["id"]] do
           $new_array << $new_item
         end
         $new_array << $item
-        $instance_hash[$item["instance_href"]] = $new_array
+        $instance_hash[$item["id"]] = $new_array
       else
-        $instance_hash[$item["instance_href"]] = [$item]
+        $instance_hash[$item["id"]] = [$item]
       end
     end
     foreach $item in keys($instance_hash) do
@@ -264,22 +329,3 @@ define take_snapshot($data,$param_alert_options) return $data,$instance_hash,$sn
   end
 end
 
-policy "pol_snapshot_age" do
-  validate_each $ds_volumes_volume_snapshots do
-    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} Outdated Snapshots Found"
-    detail_template <<-EOS
-# Outdated Snapshots
-
-| Instance Name | Volume Name | Snapshot Name | Snapshot ID | Updated At |
-| ------------- | ----------- | ------------- | ----------- | ---------- |
-{{ range data -}}
-| {{.instance_name}} | {{.volume_name}} | {{.snapshot_name}} | {{.snapshot_resource_uid}} | {{.snapshot_updated_at}} |
-{{ end -}}
-EOS
-
-  escalate $report_outdated_snapshots
-  escalate $take_snapshots
-  resolve $report_outdated_snapshots_resolution
-  check lt(dec(now,to_d(val(item, "snapshot_updated_at"))), prod($param_snapshot_days,86400))
-  end
-end

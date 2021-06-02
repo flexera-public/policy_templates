@@ -1,12 +1,13 @@
 name "Unattached IP Addresses"
 rs_pt_ver 20180301
 type "policy"
-short_description "Checks Unutilized IP Addresses and deletes them."
+short_description "Checks Unutilized IP Addresses and deletes them with approval. See the [README](https://github.com/flexera/policy_templates/tree/master/cost/unattached_addresses) and [docs.rightscale.com/policies](https://docs.rightscale.com/policies/) to learn more."
 long_description ""
 severity "low"
 category "Cost"
+default_frequency "daily"
 info(
-  version: "1.2",
+  version: "1.7",
   provider: "Flexera Cloud Management",
   service: "",
   policy_set: "Unused IP Addresses"
@@ -25,6 +26,13 @@ end
 parameter "param_whitelist" do
   type "list"
   label "White list of IP Addresses to keep"
+end
+
+parameter "param_automatic_action" do
+  type "list"
+  label "Automatic Actions"
+  description "When this value is set, this policy will automatically take the selected action(s)"
+  allowed_values ["Delete IP Addresses"]
 end
 
 auth "auth_rs", type: "rightscale"
@@ -85,12 +93,11 @@ script "js_munge_addresses", type: "javascript" do
 
       // exlcude white listed names
       // only show which addresses are not attached, no bindings
-      if( param_whitelist.indexOf(address['address']) === -1 &&
-        attached === 'false' ){
+      if( param_whitelist.indexOf(address['address']) === -1 && attached === 'false' ){
         addresses.push({
           cloud_name: clouds[cloud_href]['name'],
           cloud_type: clouds[cloud_href]['type'],
-          address: address['address'],
+          id: address['address'],
           name: address['name'],
           href: address['href'],
           attached: attached
@@ -102,19 +109,16 @@ EOS
 end
 
 escalation "email" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
   email $param_email
 end
 
 escalation "report_description" do
-  request_approval  do
-    label "Escalation approval"
-    description "Approve delete action"
-    parameter "approval_reason" do
-      type "string"
-      label "Reason for approval"
-      description "Explain why you are approving the action"
-    end
-  end
+  automatic contains($param_automatic_action, "Delete IP Addresses")
+  label "Delete Addresses"
+  description "Approval to delete all selected addresses"
   run "delete_unattached_addresses", data
 end
 
@@ -125,21 +129,33 @@ end
 policy "unattached_ip_addresses" do
   validate $ds_munged_addresses do
     summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} Unattached IP Addresses"
-    detail_template <<-EOS
-# Unattached IP Addresses
-
-| Cloud Name | Cloud Type | Address Name | Address | Attached | href |
-| ---------  | ---------- | ------------ | ------- | -------- | ---- |
-{{ range data -}}
-| {{ .cloud_name }} | {{ .cloud_type }} | {{.name}}| {{.address}} | {{.attached}} | {{.href}}|
-{{ end -}}
-EOS
     escalate $email
     escalate $report_description
     check eq(size(data),0)
-    #check contains($param_whitelist,val(item, "address"))
+    #check contains($param_whitelist,val(item, "id"))
     #check eq(val(item,'attached'),'true')
     resolve $report_resolution
+    export do
+      resource_level true
+      field "id" do
+        label "Address" 
+      end
+      field "cloud_name" do
+        label "Cloud Name"
+      end
+      field "cloud_type" do
+        label "Cloud Type"
+      end
+      field "name" do
+        label "Address Name"
+      end
+      field "attached" do
+        label "Attached"
+      end
+      field "href" do
+        label "HREF"
+      end
+    end    
   end
 end
 

@@ -6,6 +6,11 @@ This policy checks all Classic Load Balancers (CLB) to determine if any are unus
 
 Note:Elastic Load Balancing (ELB) supports three types of load balancers: Application Load Balancers, Network Load Balancers and Classic Load Balancers.
 
+### Policy savings details
+
+The policy includes the estimated savings.  The estimated savings is recognized if the resource is terminated.   Optima is used to receive the estimated savings which is the product of the most recent full day’s cost of the resource * 30.  The savings is displayed in the Estimated Monthly Savings column.  If the resource can not be found in Optima the value is n/a.  The incident detail message includes the sum of each resource Estimated Monthly Savings as Total Estimated Monthly Savings.
+If the user is missing the minimum required role of `billing_center_viewer`or if there is no enough data received from Optima to calculate savings, appropriate message is displayed in the incident detail message along with the estimated monthly savings column value as N/A in the incident table.
+
 ## Functional Details
 
 The policy leverages the AWS elasticloadbalancing API to determine if the CLB is in use.
@@ -14,8 +19,13 @@ When an unused CLB is detected, an email action is triggered automatically to no
 
 ## Input Parameters
 
-- *Email addresses of the recipients you wish to notify* - A list of email addresses to notify
-- *Ignore tags* - CLB with any of these tags will be ignored
+- *Allowed Regions* - A list of allowed regions for an AWS account. Please enter the allowed regions code if SCP is enabled, see [Available Regions](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/using-regions-availability-zones.html#concepts-available-regions) in AWS; otherwise, the policy may fail on regions that are disabled via SCP. Leave blank to consider all the regions.
+- *Email addresses* - A list of email addresses to notify
+- *Ignore tags* - List of one or more Tags that will exclude Classic Load Balancer from actions being taken. Format: Key=Value
+- *Automatic Actions* - When this value is set, this policy will automatically take the selected action(s).
+
+Please note that the "*Automatic Actions*" parameter contains a list of action(s) that can be performed on the resources. When it is selected, the policy will automatically execute the corresponding action on the data that failed the checks, post incident generation. Please leave it blank for *manual* action.
+For example if a user selects the "Delete Load Balancers" action while applying the policy, all the identified unused load balancers will get deleted.
 
 ## Policy Actions
 
@@ -24,19 +34,20 @@ When an unused CLB is detected, an email action is triggered automatically to no
 
 ## Prerequisites
 
-This policy uses [credentials](https://docs.rightscale.com/policies/users/guides/credential_management.html) for connecting to the cloud -- in order to apply this policy you must have a credential registered in the system that is compatible with this policy. If there are no credentials listed when you apply the policy, please contact your cloud admin and ask them to register a credential that is compatible with this policy. The information below should be consulted when creating the credential.
+- This policy uses [credentials](https://docs.rightscale.com/policies/users/guides/credential_management.html) for connecting to the cloud -- in order to apply this policy you must have a credential registered in the system that is compatible with this policy. If there are no credentials listed when you apply the policy, please contact your cloud admin and ask them to register a credential that is compatible with this policy. The information below should be consulted when creating the credential.
+- billing_center_viewer (note: this role must be applied at the Organization level).
 
 ### Credential configuration
 
 For administrators [creating and managing credentials](https://docs.rightscale.com/policies/users/guides/credential_management.html) to use with this policy, the following information is needed:
 
-Provider tag value to match this policy: `aws`
+Provider tag value to match this policy: `aws` , `aws_sts`
 
 Required permissions in the provider:
 
 ```javascript
 {
-    "Version": "2012-06-01",
+    "Version": "2012-10-17",
     "Statement":[{
     "Effect":"Allow",
     "Action":["elasticloadbalancing:DescribeLoadBalancers",
@@ -44,6 +55,11 @@ Required permissions in the provider:
               "elasticloadbalancing:DescribeTags",
               "elasticloadbalancing:DeleteLoadBalancer"],
     "Resource":"*"
+    },
+    {
+      "Effect":"Allow",
+      "Action":["ec2:DescribeRegions"],
+      "Resource":"*"
     }
   ]
 }
