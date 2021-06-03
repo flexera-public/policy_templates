@@ -30,6 +30,12 @@ parameter "param_email" do
   description "Email addresses of the recipients you wish to notify"
 end
 
+parameter "param_exclude_tags" do
+  type "list"
+  label "Ignore Tags"
+  description "List of one or more Tags that will exclude Classic Load Balancer from actions being taken. Format: Key=Value"
+end
+
 parameter "param_error_rate" do
   type "number"
   label "Error Rate Percentage"
@@ -106,6 +112,24 @@ datasource "ds_functions_list" do
   end
 end
 
+datasource "ds_tags_list" do
+  iterate $ds_functions_list
+  request do
+    auth $auth_aws
+    pagination $pagination_aws_marker
+    host join(['lambda.',val(iter_item,"region"),'.amazonaws.com'])
+    path join(['/2017-03-31/tags/', val(iter_item, "function_arn")])
+    verb 'GET'
+  end
+  result do
+    encoding "json"
+    field "region", val(iter_item, "region")
+    field "function_name", val(iter_item, "function_name")
+    field "function_arn", val(iter_item, "function_arn")
+    field "tags", jmes_path(response,"Tags")
+  end
+end
+
 datasource "ds_cloudwatch_function_invocations" do
   iterate $ds_functions_list
   request do
@@ -139,7 +163,7 @@ datasource "ds_cloudwatch_function_errors" do
 end
 
 datasource "ds_merged_results" do
-  run_script $js_merge_results, $ds_cloudwatch_function_invocations, $ds_cloudwatch_function_errors
+  run_script $js_merge_results, $ds_cloudwatch_function_invocations, $ds_cloudwatch_function_errors, $ds_tags_list, $param_exclude_tags
 end
 
 ###############################################################################
@@ -214,9 +238,54 @@ end
 
 script "js_merge_results", type: "javascript" do
   result "results"
-  parameters "ds_cloudwatch_function_invocations", "ds_cloudwatch_function_errors"
+  parameters "ds_cloudwatch_function_invocations", "ds_cloudwatch_function_errors", "ds_tags_list", "param_exclude_tags"
   code <<-EOF
   results = []
+  var optimizeCb = function(func, context, argCount) {
+    if (context === void 0) return func;
+    switch (argCount == null ? 3 : argCount) {
+      case 1: return function(value) {
+        return func.call(context, value);
+      };
+      case 2: return function(value, other) {
+        return func.call(context, value, other);
+      };
+      case 3: return function(value, index, collection) {
+        return func.call(context, value, index, collection);
+      };
+      case 4: return function(accumulator, value, index, collection) {
+        return func.call(context, accumulator, value, index, collection);
+      };
+    }
+    return function() {
+      return func.apply(context, arguments);
+    };
+  };
+
+  var cb = function(value, context, argCount) {
+    if (value == null) return _.identity;
+    if (_.isFunction(value)) return optimizeCb(value, context, argCount);
+    if (_.isObject(value)) return _.matcher(value);
+    return _.property(value);
+  };
+  _.iteratee = function(value, context) {
+    return cb(value, context, Infinity);
+  };
+
+  _.mixin({
+    mapObject: function(obj, iteratee, context) {
+      iteratee = cb(iteratee, context);
+      var keys =  _.keys(obj),
+            length = keys.length,
+            results = {},
+            currentKey;
+        for (var index = 0; index < length; index++) {
+          currentKey = keys[index];
+          results[currentKey] = iteratee(obj[currentKey], currentKey, obj);
+        }
+        return results;
+    }
+  });
 
   _.each(ds_cloudwatch_function_invocations, function(item){
     var filtered_error = _.first(
@@ -226,13 +295,47 @@ script "js_merge_results", type: "javascript" do
         }
       })
     )
+    var filtered_tags = _.first(
+      _.filter(ds_tags_list, function(tag_item){
+        if (item.function_arn == tag_item.function_arn){
+          return tag_item
+        }
+      })
+    )
+    var tags = filtered_tags.tags
+    var tag_key_value=""
+    var is_tag_matched = false
+    if(typeof(tags) != "undefined"){
+      counter = 0
+      _.mapObject(tags, function(val, key){
+        if ( counter == 0){
+          counter = 1
+          tag_key_value = '' + key + '=' + val
+        } else {
+          tag_key_value = tag_key_value + ', ' + key + '=' + val
+        }
+        _.each(param_exclude_tags, function(tag){
+          exclude_tag_key  = tag.split('=')[0]
+          exclude_tag_value = tag.split('=')[1]
+          if (exclude_tag_key == key){
+            if (exclude_tag_value == val){
+              is_tag_matched = true
+            }
+          }
+        })
+      })
+    }
     var new_item = item
-    error_percentage = ((filtered_error.errors / item.invocations) * 100)
+    error_percentage = (filtered_error.errors / item.invocations)
     new_item["accountId"] = item.function_arn.split(':')[4]
     new_item["error_count"] = filtered_error.errors
     new_item["error_percentage"] = error_percentage
-    results.push(item)
+    new_item["tags"] = tag_key_value
+    if (!is_tag_matched){
+      results.push(item)
+    }
   })
+
   EOF
 end
 ###############################################################################
@@ -264,6 +367,9 @@ policy "policy_functions_in_error" do
       end
       field "error_percentage" do
         label "Error Percentage"
+      end
+      field "tags" do
+        label "tags"
       end
     end
   end
