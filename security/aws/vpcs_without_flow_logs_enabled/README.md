@@ -12,7 +12,7 @@ The policy leverages the AWS ec2 API to examine vpc and flowlog details. When a 
 
 - *Allowed Regions* - A list of allowed regions for an AWS account. Please enter the allowed regions code if SCP is enabled, see [Available Regions](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/using-regions-availability-zones.html#concepts-available-regions) in AWS; otherwise, the policy may fail on regions that are disabled via SCP. Leave blank to consider all the regions.
 - *Email addresses of the recipients you wish to notify* - A list of email addresses to notify
-- *Ignore tags* - ALB/NLB with any of these tags will be ignored
+- *Ignore tags* - VPC with any of these tags will be ignored
 
 ## Policy Actions
 
