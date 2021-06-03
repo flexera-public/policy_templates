@@ -1,14 +1,12 @@
-# AWS Unencrypted ELB Listeners (ALB/NLB)
+# AWS VPC's without FlowLogs Enabled
 
 ## What it does
 
-Checks for unecrypted listeners on Application and Network Load Balancers. If an internet-facing listener is using an unecrypted protocol (eg: NOT HTTPS, SSL, or TLS) an incident report will show for the listener and an email will be sent to the user-specified email address.
-
-Note: Elastic Load Balancing (ELB) supports three types of load balancers: Classic Load Balancers, Application Load Balancers, and Network Load Balancers. There is a separate policy for Classic Load Balancers with unencrypted internet-facing listeners.
+Checks for whether a VPC has flow logs enabled or not. It will report on vpcs without flow logs enabled.
 
 ## Functional Details
 
-The policy leverages the AWS elasticloadbalancing API to examine listener details. When an unencrypted internet-facing listener is detected, an email action is triggered automatically to notify the specified users of the incident.
+The policy leverages the AWS ec2 API to examine vpc and flowlog details. When a vpc without flowlogs enabled is detected, an email action is triggered automatically to notify the specified users of the incident.
 
 ## Input Parameters
 
@@ -37,9 +35,9 @@ Required permissions in the provider:
     "Version": "2012-10-17",
     "Statement":[{
     "Effect":"Allow",
-    "Action":["elasticloadbalancing:DescribeLoadBalancers",
-              "elasticloadbalancing:DescribeTags",
-              "elasticloadbalancing:DescribeListeners"],
+    "Action":["elasticloadbalancing:DescribeVpcs",
+              "elasticloadbalancing:DescribeFlowLogs"
+             ],
     "Resource":"*"
     },
     {

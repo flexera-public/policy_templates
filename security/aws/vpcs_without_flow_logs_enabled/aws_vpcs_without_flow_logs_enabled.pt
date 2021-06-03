@@ -103,6 +103,7 @@ datasource "ds_vpc_list" do
     encoding "xml"
     collect xpath(response, "//DescribeVpcsResponse/vpcSet/item","array") do
       field "region", val(iter_item, "region")
+      field "ownerId", xpath(col_item, "ownerId")
       field "id", xpath(col_item, "vpcId")
       field "tags" do
         collect xpath(col_item, "tagSet/item") do
@@ -143,7 +144,7 @@ datasource "ds_flowlog_list" do
 end
 
 datasource "ds_vpc_filtered" do
-  run_script $js_vpc_filtered, $ds_vpc_list, $ds_flowlog_list
+  run_script $js_vpc_filtered, $ds_vpc_list, $ds_flowlog_list, $param_exclude_tags
 end
 
 
@@ -184,10 +185,31 @@ script "js_regions", type:"javascript" do
 end
 
 script "js_vpc_filtered", type:"javascript" do
-  parameters "ds_vpc_list", "ds_flowlog_list"
+  parameters "ds_vpc_list", "ds_flowlog_list", "param_exclude_tags"
   result "vpc_result"
   code <<-EOF
+  var param_exclude_tags_lower=[];
+  for(var i=0; i < param_exclude_tags.length; i++){
+    param_exclude_tags_lower[i]=param_exclude_tags[i].toString().toLowerCase();
+  }
   var vpc_result = _.reject(ds_vpc_list, function(vpc){
+    tags = vpc.tags
+    var tag_key_value=""
+    if(typeof(tags) != "undefined"){
+      for(var k=0;k<tags.length;k++){
+        var tag=tags[k];
+        if((param_exclude_tags_lower.indexOf((tag['tagKey']).toLowerCase()) !== -1) || (param_exclude_tags_lower.indexOf((tag['tagKey']+'='+tag['tagValue']).toLowerCase()) !== -1)){
+          is_tag_matched = true;
+        }
+        // Constructing tags with comma separated to display in detail_template
+        if((tag['tagValue']).length > 0){
+          tag_key_value = tag_key_value + ', '+ tag['tagKey']+'='+tag['tagValue']
+        }else{
+          tag_key_value = tag_key_value + ', '+ tag['tagKey']
+        }
+      }
+    }
+    vpc["tagKeyValue"] = (tag_key_value.slice(1))
     for (var i = 0; i < ds_flowlog_list.length; i++) {
       if (vpc.id == ds_flowlog_list[i].resourceId){
         return vpc;
@@ -203,16 +225,22 @@ end
 
 policy "policy_vpcs_with_flowlogs" do
   validate $ds_vpc_filtered do
-    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} AWS VPC's without FlowLogs Enabled."
+    summary_template "{{ rs_project_name }}: {{ len data }} AWS VPC's without FlowLogs Enabled."
     escalate $esc_unencrypted_lbs
     check eq(size(data),0)
     export do
       resource_level true
+      field "ownerId" do
+        label "Owner Id"
+      end
       field "id" do
         label "VPC Id"
       end
       field "region" do
         label "Region"
+      end
+      field "tagKeyValue" do
+        label "Tags"
       end
     end
   end
