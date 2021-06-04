@@ -1,0 +1,392 @@
+name "AWS Lambda Functions with high error rate"
+rs_pt_ver 20180301
+type "policy"
+short_description "Report any functions with error rate over parameter. \n See the [README](https://github.com/rightscale/policy_templates/tree/master/operational/aws/lambda_functions_with_high_error_rate) and [docs.rightscale.com/policies](http://docs.rightscale.com/policies/) to learn more."
+long_description ""
+category "Operational"
+severity "high"
+default_frequency "hourly"
+info(
+  version: "2.0",
+  provider: "AWS",
+  service: "Lambda",
+  policy_set: ""
+)
+
+###############################################################################
+# User inputs
+###############################################################################
+
+parameter "param_allowed_regions" do
+  type "list"
+  label "Allowed Regions"
+  allowed_pattern /^([a-zA-Z-_]+-[a-zA-Z0-9-_]+-[0-9-_]+,*|)+$/
+  description "A list of allowed regions. See the README for more details"
+end
+
+parameter "param_email" do
+  type "list"
+  label "Email Address"
+  description "Email addresses of the recipients you wish to notify"
+end
+
+parameter "param_exclude_tags" do
+  type "list"
+  label "Ignore Tags"
+  description "List of one or more Tags that will exclude Classic Load Balancer from actions being taken. Format: Key=Value"
+end
+
+parameter "param_error_rate" do
+  type "number"
+  label "Error Rate Percentage"
+  description "Error Rate Percentage To Trigger On"
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+credentials "auth_aws" do
+  schemes "aws","aws_sts"
+  label "AWS"
+  description "Select the AWS Credential from the list"
+  tags "provider=aws"
+end
+
+###############################################################################
+# Pagination
+###############################################################################
+pagination "pagination_aws_marker" do
+  get_page_marker do
+    body_path jmes_path(response, "NextMarker")
+  end
+  set_page_marker do
+    query "Marker"
+  end
+end
+
+###############################################################################
+# Datasources
+###############################################################################
+
+#Generates list of Regions
+#Get list of enabled regions for an account
+datasource "ds_regions_list" do
+  request do
+    auth $auth_aws
+    verb "GET"
+    host "ec2.amazonaws.com"
+    path "/"
+    query "Action", "DescribeRegions"
+    query "Version", "2016-11-15"
+  end
+  result do
+    encoding "xml"
+    collect xpath(response, "//DescribeRegionsResponse/regionInfo/item", "array") do
+      field "region", xpath(col_item, "regionName")
+    end
+  end
+end
+
+# Get only SCP enabled regions
+datasource "ds_regions" do
+  run_script $js_regions, $param_allowed_regions, $ds_regions_list
+end
+
+datasource "ds_functions_list" do
+  iterate $ds_regions
+  request do
+    auth $auth_aws
+    pagination $pagination_aws_marker
+    host join(['lambda.',val(iter_item,"region"),'.amazonaws.com'])
+    path '/2015-03-31/functions/'
+    verb 'GET'
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "Functions[*]") do
+      field "region", val(iter_item, "region")
+      field "function_name", jmes_path(col_item, "FunctionName")
+      field "function_arn", jmes_path(col_item, "FunctionArn")
+    end
+  end
+end
+
+datasource "ds_tags_list" do
+  iterate $ds_functions_list
+  request do
+    auth $auth_aws
+    pagination $pagination_aws_marker
+    host join(['lambda.',val(iter_item,"region"),'.amazonaws.com'])
+    path join(['/2017-03-31/tags/', val(iter_item, "function_arn")])
+    verb 'GET'
+  end
+  result do
+    encoding "json"
+    field "region", val(iter_item, "region")
+    field "function_name", val(iter_item, "function_name")
+    field "function_arn", val(iter_item, "function_arn")
+    field "tags", jmes_path(response,"Tags")
+  end
+end
+
+datasource "ds_cloudwatch_function_invocations" do
+  iterate $ds_functions_list
+  request do
+    run_script $js_cloudwatch_function, val(iter_item, "region"), val(iter_item, "function_name"), "Invocations"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "GetMetricStatisticsResponse.GetMetricStatisticsResult.Datapoints[*]") do
+      field "region", val(iter_item, "region")
+      field "function_name", val(iter_item, "function_name")
+      field "function_arn", val(iter_item, "function_arn")
+      field "invocations", jmes_path(col_item, "Sum")
+    end
+  end
+end
+
+datasource "ds_cloudwatch_function_errors" do
+  iterate $ds_functions_list
+  request do
+    run_script $js_cloudwatch_function, val(iter_item, "region"), val(iter_item, "function_name"), "Errors"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "GetMetricStatisticsResponse.GetMetricStatisticsResult.Datapoints[*]") do
+      field "region", val(iter_item, "region")
+      field "function_name", val(iter_item, "function_name")
+      field "function_arn", val(iter_item, "function_arn")
+      field "errors", jmes_path(col_item, "Sum")
+    end
+  end
+end
+
+datasource "ds_merged_results" do
+  run_script $js_merge_results, $ds_cloudwatch_function_invocations, $ds_cloudwatch_function_errors, $ds_tags_list, $param_exclude_tags
+end
+
+###############################################################################
+# Script
+###############################################################################
+
+script "js_regions", type:"javascript" do
+  parameters "user_entered_regions", "all_regions"
+  result "regions"
+  code <<-EOS
+    if(_.isEmpty(user_entered_regions)){
+      regions = all_regions;
+    }else{
+      //Filter unique regions
+      var uniqueRegions = _.uniq(user_entered_regions);
+      var all_regions_list = [];
+      all_regions.forEach(function(all_region){
+        all_regions_list.push(all_region.region)
+      })
+
+      //Filter valid regions
+      var valid_regions = [];
+      _.map(uniqueRegions, function(uniqueRegion){
+        if(all_regions_list.indexOf(uniqueRegion) > -1){
+          valid_regions.push({"region": uniqueRegion})
+        }
+      })
+
+      //Throw an error if no valid regions found
+      if (_.isEmpty(valid_regions)) {
+        regions = all_regions;
+      }else{
+        regions = valid_regions
+      }
+    }
+  EOS
+end
+
+script "js_cloudwatch_function", type: "javascript" do
+  result "results"
+  parameters "region","function_name", "metric"
+  code <<-EOS
+  var end_date = new Date().toISOString()
+  var start_date = new Date(new Date().setHours(new Date().getHours() - 1)).toISOString();
+  results = {
+    "auth": "auth_aws",
+    "host": 'monitoring.'+region+'.amazonaws.com',
+    "verb": "GET",
+    "path": "/",
+    "headers": {
+      "User-Agent": "RS Policies",
+      "Content-Type": "application/json",
+      "x-amz-target": "GraniteServiceVersion20100801.GetMetricStatistics",
+      "Accept": "application/json",
+      "Content-Encoding": "amz-1.0"
+    }
+    "query_params": {
+      'Action': 'GetMetricStatistics',
+      'Version': '2010-08-01',
+      'Namespace': 'AWS/Lambda',
+      'MetricName': metric,
+      'Dimensions.member.1.Name': 'FunctionName',
+      'Dimensions.member.1.Value': function_name,
+      'StartTime': start_date,
+      'EndTime': end_date,
+      'Period': "3600",
+      'Statistics.member.1': 'Sum'
+    }
+  }
+EOS
+end
+
+script "js_merge_results", type: "javascript" do
+  result "results"
+  parameters "ds_cloudwatch_function_invocations", "ds_cloudwatch_function_errors", "ds_tags_list", "param_exclude_tags"
+  code <<-EOF
+  results = []
+  var optimizeCb = function(func, context, argCount) {
+    if (context === void 0) return func;
+    switch (argCount == null ? 3 : argCount) {
+      case 1: return function(value) {
+        return func.call(context, value);
+      };
+      case 2: return function(value, other) {
+        return func.call(context, value, other);
+      };
+      case 3: return function(value, index, collection) {
+        return func.call(context, value, index, collection);
+      };
+      case 4: return function(accumulator, value, index, collection) {
+        return func.call(context, accumulator, value, index, collection);
+      };
+    }
+    return function() {
+      return func.apply(context, arguments);
+    };
+  };
+
+  var cb = function(value, context, argCount) {
+    if (value == null) return _.identity;
+    if (_.isFunction(value)) return optimizeCb(value, context, argCount);
+    if (_.isObject(value)) return _.matcher(value);
+    return _.property(value);
+  };
+  _.iteratee = function(value, context) {
+    return cb(value, context, Infinity);
+  };
+
+  _.mixin({
+    mapObject: function(obj, iteratee, context) {
+      iteratee = cb(iteratee, context);
+      var keys =  _.keys(obj),
+            length = keys.length,
+            results = {},
+            currentKey;
+        for (var index = 0; index < length; index++) {
+          currentKey = keys[index];
+          results[currentKey] = iteratee(obj[currentKey], currentKey, obj);
+        }
+        return results;
+    }
+  });
+
+  _.each(ds_cloudwatch_function_invocations, function(item){
+    var filtered_error = _.first(
+      _.filter(ds_cloudwatch_function_errors, function(error_item){
+        if (item.function_name == error_item.function_name) {
+          return error_item
+        }
+      })
+    )
+    var filtered_tags = _.first(
+      _.filter(ds_tags_list, function(tag_item){
+        if (item.function_arn == tag_item.function_arn){
+          return tag_item
+        }
+      })
+    )
+    var tags = filtered_tags.tags
+    var tag_key_value=""
+    var is_tag_matched = false
+    if(typeof(tags) != "undefined"){
+      counter = 0
+      _.mapObject(tags, function(val, key){
+        if ( counter == 0){
+          counter = 1
+          tag_key_value = '' + key + '=' + val
+        } else {
+          tag_key_value = tag_key_value + ', ' + key + '=' + val
+        }
+        _.each(param_exclude_tags, function(tag){
+          exclude_tag_key  = tag.split('=')[0]
+          exclude_tag_value = tag.split('=')[1]
+          if (exclude_tag_key == key){
+            if (exclude_tag_value == val){
+              is_tag_matched = true
+            }
+          }
+        })
+      })
+    }
+    var new_item = item
+    error_percentage = (filtered_error.errors / item.invocations)
+    new_item["accountId"] = item.function_arn.split(':')[4]
+    new_item["error_count"] = filtered_error.errors
+    new_item["error_percentage"] = error_percentage
+    new_item["tags"] = tag_key_value
+    if (!is_tag_matched){
+      results.push(item)
+    }
+  })
+
+  EOF
+end
+###############################################################################
+# Policy
+###############################################################################
+
+policy "policy_functions_in_error" do
+  validate_each $ds_merged_results do
+    summary_template "AWS Account ID: {{with index data 0}}{{ .accountId }}{{end}}: {{ len data }} AWS Functions over error percentage"
+    escalate $esc_functions_in_error
+    check lt(val(item, "error_percentage"), $param_error_rate)
+    export do
+      resource_level true
+      field "accountId" do
+        label "AWS Account Id"
+      end
+      field "id" do
+        label "Function Name"
+        path "function_name"
+      end
+      field "region" do
+        label "Region"
+      end
+      field "invocations" do
+        label "Invocations"
+      end
+      field "error_count" do
+        label "Errors"
+      end
+      field "error_percentage" do
+        label "Error Percentage"
+      end
+      field "tags" do
+        label "tags"
+      end
+    end
+  end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_functions_in_error" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
+end
+
+
+###############################################################################
+# Cloud Workflow
+###############################################################################
