@@ -26,6 +26,10 @@ This policy has the following input parameters required when launching the polic
 
 - billing_center_viewer (note: this role must be applied at the Organization level)
 
+Alternatively, a version of the policy is provided that uses OAuth2 Flexera credentials (e.g. for use in the EU region).
+It requires policy credentials of type OAuth2 against the FlexeraOne application (e.g. in the EU, via URL `https://login.flexera.eu/oidc/token`).
+Those credentials should be associated with a user with the right permissions, ie those mentioned above.
+
 ## Supported Clouds
 
 - AWS
