@@ -142,6 +142,10 @@ Please contact sales@flexera.com to learn more.
 - [AWS Unencrypted ELB Listeners (CLB)](./security/aws/clb_unencrypted/)
 - [AWS Unencrypted ELB Listeners (ALB/NLB)](./security/aws/elb_unencrypted/)
 
+#### VPC
+
+- [AWS VPC's without FlowLogs Enabled](./security/aws/vpcs_without_flow_logs_enabled/)
+
 #### Azure
 
 ##### Database
@@ -226,6 +230,7 @@ Please contact sales@flexera.com to learn more.
 - [AWS VPC Name Tag Sync](./operational/aws/vpc_name_sync)
 - [AWS Long Running Instances](./operational/aws/long_running_instances/)
 - [AWS Instance Scheduled Events](./operational/aws/instance_scheduled_events)
+- [AWS Lambda Functions with high error rate](./operational/aws/lambda_functions_with_high_error_rate/)
 
 #### Azure
 
