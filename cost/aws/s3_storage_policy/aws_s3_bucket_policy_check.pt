@@ -1,4 +1,4 @@
-name "AWS Bucket Size Check"
+name "AWS S3 Bucket Policy Check"
 rs_pt_ver 20180301
 type "policy"
 short_description "This Policy Template scans all S3 buckets in the given account and checks if the bucket exceeds a specified byte size. See the [README](https://github.com/flexera/policy_templates/tree/master/cost/aws/s3_bucket_size) and [docs.rightscale.com/policies](https://docs.rightscale.com/policies/) to learn more."
@@ -21,12 +21,6 @@ parameter "param_email" do
   type "list"
   label "Email Address"
   description "Email addresses of the recipients you wish to notify"
-end
-
-parameter "param_size" do
-  type "string"
-  label "Byte Size Threshold"
-  description "Byte size to check (eg: 1000000000 = 1GB)"
 end
 
 ###############################################################################
@@ -98,7 +92,7 @@ datasource "aws_buckets_with_region" do
   end
 end
 
-datasource "aws_sanitized_buckets" do
+datasource "ds_aws_sanitized_buckets" do
   run_script $parse_buckets, $aws_buckets_with_region
 end
 
@@ -133,105 +127,86 @@ script "parse_buckets", type: "javascript" do
 EOS
 end
 
-datasource "aws_bucket_sizes" do
-  iterate $aws_sanitized_buckets
+datasource "ds_aws_bucket_tags_list" do
+  iterate $ds_aws_sanitized_buckets
   request do
-    run_script $aws_bucket_sizes_request, val(iter_item, "bucket_name"), val(iter_item, "region")
+    auth $auth_aws
+    host val(iter_item, "host")
+    path join(["/", val(iter_item, "bucket_name"),"/"])
+    ignore_status [404]
+    query "tagging", ""
   end
   result do
-    encoding "json"
-    collect jmes_path(response, "GetMetricStatisticsResponse.GetMetricStatisticsResult.Datapoints[*]") do
+    encoding "xml"
+    collect xpath(response, "//Tagging/TagSet", "array") do
+      field "tags" do
+        collect xpath(col_item, "Tag") do
+          field "tagKey", xpath(col_item, "Key")
+          field "tagValue", xpath(col_item, "Value")
+        end
+      end
       field "bucket_name", val(iter_item, "bucket_name")
+      field "creation_date", val(iter_item, "creation_date")
       field "region", val(iter_item, "region")
-      field "maximum", jmes_path(col_item, "Maximum")
-      field "minimum", jmes_path(col_item, "Minimum")
-      field "average", jmes_path(col_item, "Average")
+      field "host", val(iter_item, "host")
     end
   end
 end
 
-script "aws_bucket_sizes_request", type: "javascript" do
-  parameters "bucket_name", "region"
-  result "request"
-  code <<-EOS
-  var end_date = new Date().toISOString()
-  var start_date = new Date(new Date().setDate(new Date().getDate() - 30)).toISOString();
-  request = {
-    "auth": "auth_aws",
-    "host": 'monitoring.'+region+'.amazonaws.com',
-    "verb": "GET",
-    "path": "/",
-    "headers": {
-      "User-Agent": "RS Policies",
-      "Content-Type": "application/json",
-      "x-amz-target": "GraniteServiceVersion20100801.GetMetricStatistics",
-      "Accept": "application/json",
-      "Content-Encoding": "amz-1.0"
-    }
-    "query_params": {
-      'Action': 'GetMetricStatistics',
-      'Version': '2010-08-01',
-      'Namespace': 'AWS/S3',
-      'MetricName': 'BucketSizeBytes',
-      'Dimensions.member.1.Name': 'BucketName',
-      'Dimensions.member.1.Value': bucket_name,
-      'Dimensions.member.2.Name': 'StorageType',
-      'Dimensions.member.2.Value': 'StandardStorage',
-      'StartTime': start_date,
-      'EndTime': end_date,
-      'Period': "2592000",
-      'Statistics.member.1': 'Maximum',
-      'Statistics.member.2': 'Average',
-      'Statistics.member.3': 'Minimum'
-    }
-  }
-  EOS
+datasource "ds_aws_bucket_policies" do
+  iterate $ds_aws_sanitized_buckets
+  request do
+    auth $auth_aws
+    host val(iter_item, "host")
+    path join(["/", val(iter_item, "bucket_name"),"/"])
+    ignore_status [404]
+    query "intelligent-tiering", ""
+  end
+  result do
+    encoding "xml"
+    field "bucket_name", val(iter_item, "bucket_name")
+    field "creation_date", val(iter_item, "creation_date")
+    field "region", val(iter_item, "region")
+    field "tags", val(iter_item, "tags")
+    field "configuration", xpath(response, "//ListIntelligentTieringConfigurationsResult/IntelligentTieringConfiguration")
+  end
 end
 
-datasource "aws_oversized_buckets" do
-  run_script $check_for_oversized_buckets, $aws_bucket_sizes, $param_size, $ds_get_caller_identity
+datasource "ds_combined_bucket_info" do
+  run_script $js_combined_bucket_info, $ds_aws_bucket_policies, $ds_aws_bucket_tags_list, $ds_get_caller_identity
 end
 
-script "check_for_oversized_buckets", type: "javascript" do
-  parameters "buckets", "paramsize2check", "ds_get_caller_identity"
+script "js_combined_bucket_info", type: "javascript" do
+  parameters "ds_aws_bucket_policies", "ds_aws_bucket_tags_list", "ds_get_caller_identity"
   result "results"
-  code <<-EOS
+  code <<-EOF
   var results = []
-  function bytesToSize(bytes) {
-    var sizes = ["Bytes", "KB", "MB", "GB", "TB"]
-    if (bytes === 0) return 'n/a'
-    var i = parseInt(Math.floor(Math.log(bytes) / Math.log(1000)), 10)
-
-    if (i >= 4) {
-      var size = 4
-    } else {
-      var size = i
-    }
-
-    if (i === 0) return bytes + " " + sizes[size]
-    return ( bytes / Math.pow(1000, i) ).toFixed(1) + " " + sizes[size]
-  }
-
-  for(var i = 0; i < buckets.length; i++) {
-    var bucket = buckets[i]
-    var avg_size = bucket["average"]
-
-    if (avg_size > paramsize2check) {
-      avg_size = bytesToSize(avg_size)
-      results.push (
-        {
-          accountId: ds_get_caller_identity[0]['account'],
-          region: bucket.region
-          id: bucket.bucket_name,
-          average: avg_size
+  _.each(ds_aws_bucket_policies, function(bucket){
+    var tagged_bucket = _.first(_.filter(ds_aws_bucket_tags_list, function(item) {
+      if (item.bucket_name == bucket.bucket_name){
+        return item
+      }}
+    ))
+    if (tagged_bucket !== undefined){
+      tags = tagged_bucket.tags
+      bucket["tags"] = tags
+      var tagKeyValue=""
+      _.each(tags, function(tag){
+        if((tag['tagValue']).length > 0){
+          tagKeyValue = tagKeyValue + ', '+ tag['tagKey']+'='+tag['tagValue']
+        }else{
+          tagKeyValue = tagKeyValue + ', '+ tag['tagKey']
         }
-      )
+      })
+      bucket["tagKeyValue"] = (tagKeyValue.slice(2))
+    } else {
+      bucket["tags"] = ""
     }
-    results = _.sortBy(results,'region')
-  }
-EOS
+    bucket["accountId"] = ds_get_caller_identity[0]['account']
+    results.push(bucket)
+  })
+EOF
 end
-
 ###############################################################################
 # Escalations
 ###############################################################################
@@ -248,25 +223,25 @@ end
 ###############################################################################
 
 policy "aws_oversized_buckets" do
-  validate $aws_oversized_buckets do
+  validate_each $ds_combined_bucket_info do
     summary_template "{{ len data }} Oversized Buckets Found in AWS Account ID: {{with index data 0}}{{ .accountId }}{{end}}"
     export do
-      resource_level true
-      field "accountId" do
-        label "Account Id"
+      field "id" do
+        path "bucket_name"
+        label "Bucket Name"
+      end
+      field "creation_date" do
+        label "Creation Date"
       end
       field "region" do
         label "Region"
       end
-      field "id" do
-        label "Bucket Name"
-      end
-      field "average" do
-        label "Bucket Size Average"
+      field "tagKeyValue" do
+        label "tags"
       end
     end
     #check if empty
-    check eq(size(data), 0)
+    check eq(val(item,"configuration"),"")
     escalate $esc_email
   end
 end
