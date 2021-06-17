@@ -2,14 +2,14 @@
 
 ## What it does
 
-This Policy Template scans all S3 buckets in the given account and checks if the bucket exceeds a specified byte size provided as an input parameter. Bucket size is harvested via CloudWatch queries. If the a bucket exceeds the threshold, and incident report will show for the S3 buckets, and related information and an email will be sent to the user-specified email address.
+This Policy Template scans all S3 buckets in the given account and checks if the bucket has an intelligent tiering policy configured. If the bucket does not have intelligent tiering enabled an email will be sent to the user-specified email address.
 
 ## Input Parameters
 
 This policy has the following input parameters required when launching the policy.
 
-- *Byte size to check (eg: 1000000000 = 1GB)* - enter the S3 bucket size threshold to trigger an incident.
 - *Email Address* - Email addresses of the recipients you wish to notify
+- *Exclude Tags* - A list of tags used to excluded volumes from the incident.
 
 ## Policy Actions
 
@@ -30,20 +30,6 @@ Provider tag value to match this policy: `aws`
 Required permissions in the provider:
 
 ```javascript
-{
-  "Version": "2012-10-17",
-  "Statement":[{
-      "Effect":"Allow",
-      "Action":["cloudwatch:GetMetricStatistics","cloudwatch:ListMetrics"],
-      "Resource":"*",
-      "Condition":{
-         "Bool":{
-            "aws:SecureTransport":"true"
-            }
-         }
-      }
-   ]
-}
 
 {
   "Version": "2006-03-01",
@@ -53,6 +39,8 @@ Required permissions in the provider:
       "Action": [
         "s3:ListAllMyBuckets",
         "s3:GETBucketlocation",
+        "s3:GetIntelligentTieringConfiguration",
+        "s3:GetBucketTagging"
       ],
       "Resource": "*"
     }

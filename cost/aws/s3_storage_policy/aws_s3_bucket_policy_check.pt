@@ -1,7 +1,7 @@
-name "AWS S3 Bucket Policy Check"
+name "AWS S3 Bucket Intelligent Tiering Check"
 rs_pt_ver 20180301
 type "policy"
-short_description "This Policy Template scans all S3 buckets in the given account and checks if the bucket exceeds a specified byte size. See the [README](https://github.com/flexera/policy_templates/tree/master/cost/aws/s3_bucket_size) and [docs.rightscale.com/policies](https://docs.rightscale.com/policies/) to learn more."
+short_description "This Policy Template scans all s3 buckets and reports if they don't have intelligent tiering enabled. See the [README](https://github.com/flexera/policy_templates/tree/master/cost/aws/s3_storage_policy) and [docs.rightscale.com/policies](https://docs.rightscale.com/policies/) to learn more."
 long_description ""
 severity "medium"
 category "Cost"
@@ -21,6 +21,13 @@ parameter "param_email" do
   type "list"
   label "Email Address"
   description "Email addresses of the recipients you wish to notify"
+end
+
+parameter "param_exclude_tags" do
+  type "list"
+  category "User Inputs"
+  label "Exclude Tags"
+  description "A list of tags used to excluded volumes from the incident."
 end
 
 ###############################################################################
@@ -173,11 +180,11 @@ datasource "ds_aws_bucket_policies" do
 end
 
 datasource "ds_combined_bucket_info" do
-  run_script $js_combined_bucket_info, $ds_aws_bucket_policies, $ds_aws_bucket_tags_list, $ds_get_caller_identity
+  run_script $js_combined_bucket_info, $ds_aws_bucket_policies, $ds_aws_bucket_tags_list, $ds_get_caller_identity, $param_exclude_tags
 end
 
 script "js_combined_bucket_info", type: "javascript" do
-  parameters "ds_aws_bucket_policies", "ds_aws_bucket_tags_list", "ds_get_caller_identity"
+  parameters "ds_aws_bucket_policies", "ds_aws_bucket_tags_list", "ds_get_caller_identity", "param_exclude_tags"
   result "results"
   code <<-EOF
   var results = []
@@ -187,16 +194,29 @@ script "js_combined_bucket_info", type: "javascript" do
         return item
       }}
     ))
+    var is_tagged_match = false;
     if (tagged_bucket !== undefined){
       tags = tagged_bucket.tags
       bucket["tags"] = tags
       var tagKeyValue=""
+
       _.each(tags, function(tag){
         if((tag['tagValue']).length > 0){
           tagKeyValue = tagKeyValue + ', '+ tag['tagKey']+'='+tag['tagValue']
         }else{
           tagKeyValue = tagKeyValue + ', '+ tag['tagKey']
         }
+        key = tag['tagKey']
+        val = tag['tagValue']
+        _.each(param_exclude_tags, function(exclude_tag){
+          exclude_tag_key  = exclude_tag.split('=')[0]
+          exclude_tag_value = exclude_tag.split('=')[1]
+          if (exclude_tag_key == key){
+            if (exclude_tag_value == val){
+              is_tag_matched = true
+            }
+          }
+        })
       })
       bucket["tagKeyValue"] = (tagKeyValue.slice(2))
     } else {
@@ -224,8 +244,9 @@ end
 
 policy "aws_oversized_buckets" do
   validate_each $ds_combined_bucket_info do
-    summary_template "{{ len data }} Oversized Buckets Found in AWS Account ID: {{with index data 0}}{{ .accountId }}{{end}}"
+    summary_template "{{ len data }} Buckets without intelligent tiering policies found in AWS Account ID: {{with index data 0}}{{ .accountId }}{{end}}"
     export do
+      resource_level true
       field "id" do
         path "bucket_name"
         label "Bucket Name"
@@ -237,11 +258,11 @@ policy "aws_oversized_buckets" do
         label "Region"
       end
       field "tagKeyValue" do
-        label "tags"
+        label "Tags"
       end
     end
     #check if empty
-    check eq(val(item,"configuration"),"")
+    check ne(val(item,"configuration"),"")
     escalate $esc_email
   end
 end
