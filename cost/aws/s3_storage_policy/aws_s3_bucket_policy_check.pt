@@ -1,0 +1,268 @@
+name "AWS S3 Bucket Intelligent Tiering Check"
+rs_pt_ver 20180301
+type "policy"
+short_description "This Policy Template scans all s3 buckets and reports if they don't have intelligent tiering enabled. See the [README](https://github.com/flexera/policy_templates/tree/master/cost/aws/s3_storage_policy) and [docs.rightscale.com/policies](https://docs.rightscale.com/policies/) to learn more."
+long_description ""
+severity "medium"
+category "Cost"
+default_frequency "daily"
+info(
+  version: "2.0",
+  provider: "AWS",
+  service: "S3",
+  policy_set: ""
+)
+
+###############################################################################
+# User inputs
+###############################################################################
+
+parameter "param_email" do
+  type "list"
+  label "Email Address"
+  description "Email addresses of the recipients you wish to notify"
+end
+
+parameter "param_exclude_tags" do
+  type "list"
+  category "User Inputs"
+  label "Exclude Tags"
+  description "A list of tags used to excluded volumes from the incident."
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+#authenticate with AWS
+credentials "auth_aws" do
+  schemes "aws","aws_sts"
+  label "AWS"
+  description "Select the AWS Credential from the list"
+  tags "provider=aws"
+end
+
+###############################################################################
+# Datasources
+###############################################################################
+
+datasource "ds_get_caller_identity" do
+  request do
+    auth $auth_aws
+    verb "GET"
+    host "sts.amazonaws.com"
+    path "/"
+    header "User-Agent", "RS Policies"
+    query "Action", "GetCallerIdentity"
+    query "Version", "2011-06-15"
+  end
+  result do
+    encoding "xml"
+    collect xpath(response, "//GetCallerIdentityResponse/GetCallerIdentityResult") do
+      field "account",xpath(col_item, "Account")
+    end
+ end
+end
+
+# Reference: https://docs.aws.amazon.com/AmazonS3/latest/API/RESTServiceGET.html
+datasource "aws_buckets" do
+  # This request is not paginated
+  request do
+    auth $auth_aws
+    host "s3.amazonaws.com"
+    path "/"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "xml"
+    collect xpath(response, "//ListAllMyBucketsResult/Buckets/Bucket", "array") do
+      field "bucket_name", xpath(col_item, "Name")
+      field "creation_date", xpath(col_item, "CreationDate")
+    end
+  end
+end
+
+datasource "aws_buckets_with_region" do
+  iterate $aws_buckets
+  request do
+    auth $auth_aws
+    host "s3-external-1.amazonaws.com"
+    path join(["/", val(iter_item, "bucket_name")])
+    query "location", ""
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "xml"
+    field "bucket_name", val(iter_item, "bucket_name")
+    field "creation_date", val(iter_item, "creation_date")
+    field "region", xpath(response, "//LocationConstraint")
+  end
+end
+
+datasource "ds_aws_sanitized_buckets" do
+  run_script $parse_buckets, $aws_buckets_with_region
+end
+
+script "parse_buckets", type: "javascript" do
+  parameters "buckets"
+  result "results"
+  code <<-EOS
+  results = []
+  for ( i = 0; i < buckets.length; i++ ) {
+    if ( !buckets[i]["region"] ){
+      results.push(
+      {
+        "bucket_name": buckets[i]["bucket_name"],
+        "creation_date": buckets[i]["creation_date"],
+        "region": "us-east-1",
+        "host": "s3-external-1.amazonaws.com",
+        "auth": "auth_aws"
+      }
+      )
+    } else {
+      if ( buckets[i]["region"] == "EU" ) { buckets[i]["region"] = "eu-west-1" }
+      results.push(
+      {
+        "bucket_name": buckets[i]["bucket_name"],
+        "creation_date": buckets[i]["creation_date"],
+        "region": buckets[i]["region"],
+        "host": "s3-" + buckets[i]["region"] + ".amazonaws.com"
+      }
+      )
+    }
+  };
+EOS
+end
+
+datasource "ds_aws_bucket_tags_list" do
+  iterate $ds_aws_sanitized_buckets
+  request do
+    auth $auth_aws
+    host val(iter_item, "host")
+    path join(["/", val(iter_item, "bucket_name"),"/"])
+    ignore_status [404]
+    query "tagging", ""
+  end
+  result do
+    encoding "xml"
+    collect xpath(response, "//Tagging/TagSet", "array") do
+      field "tags" do
+        collect xpath(col_item, "Tag") do
+          field "tagKey", xpath(col_item, "Key")
+          field "tagValue", xpath(col_item, "Value")
+        end
+      end
+      field "bucket_name", val(iter_item, "bucket_name")
+      field "creation_date", val(iter_item, "creation_date")
+      field "region", val(iter_item, "region")
+      field "host", val(iter_item, "host")
+    end
+  end
+end
+
+datasource "ds_aws_bucket_policies" do
+  iterate $ds_aws_sanitized_buckets
+  request do
+    auth $auth_aws
+    host val(iter_item, "host")
+    path join(["/", val(iter_item, "bucket_name"),"/"])
+    ignore_status [404]
+    query "intelligent-tiering", ""
+  end
+  result do
+    encoding "xml"
+    field "bucket_name", val(iter_item, "bucket_name")
+    field "creation_date", val(iter_item, "creation_date")
+    field "region", val(iter_item, "region")
+    field "tags", val(iter_item, "tags")
+    field "configuration", xpath(response, "//ListIntelligentTieringConfigurationsResult/IntelligentTieringConfiguration")
+  end
+end
+
+datasource "ds_combined_bucket_info" do
+  run_script $js_combined_bucket_info, $ds_aws_bucket_policies, $ds_aws_bucket_tags_list, $ds_get_caller_identity, $param_exclude_tags
+end
+
+script "js_combined_bucket_info", type: "javascript" do
+  parameters "ds_aws_bucket_policies", "ds_aws_bucket_tags_list", "ds_get_caller_identity", "param_exclude_tags"
+  result "results"
+  code <<-EOF
+  var results = []
+  _.each(ds_aws_bucket_policies, function(bucket){
+    var tagged_bucket = _.first(_.filter(ds_aws_bucket_tags_list, function(item) {
+      if (item.bucket_name == bucket.bucket_name){
+        return item
+      }}
+    ))
+    var is_tagged_match = false;
+    if (tagged_bucket !== undefined){
+      tags = tagged_bucket.tags
+      bucket["tags"] = tags
+      var tagKeyValue=""
+
+      _.each(tags, function(tag){
+        if((tag['tagValue']).length > 0){
+          tagKeyValue = tagKeyValue + ', '+ tag['tagKey']+'='+tag['tagValue']
+        }else{
+          tagKeyValue = tagKeyValue + ', '+ tag['tagKey']
+        }
+        key = tag['tagKey']
+        val = tag['tagValue']
+        _.each(param_exclude_tags, function(exclude_tag){
+          exclude_tag_key  = exclude_tag.split('=')[0]
+          exclude_tag_value = exclude_tag.split('=')[1]
+          if (exclude_tag_key == key){
+            if (exclude_tag_value == val){
+              is_tag_matched = true
+            }
+          }
+        })
+      })
+      bucket["tagKeyValue"] = (tagKeyValue.slice(2))
+    } else {
+      bucket["tags"] = ""
+    }
+    bucket["accountId"] = ds_get_caller_identity[0]['account']
+    results.push(bucket)
+  })
+EOF
+end
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_email" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "pol_aws_intelligent_tiering_check" do
+  validate_each $ds_combined_bucket_info do
+    summary_template "AWS Account ID: {{with index data 0}}{{ .accountId }}{{end}} - {{ len data }} Buckets found without intelligent tiering policies"
+    export do
+      resource_level true
+      field "id" do
+        path "bucket_name"
+        label "Bucket Name"
+      end
+      field "creation_date" do
+        label "Creation Date"
+      end
+      field "region" do
+        label "Region"
+      end
+      field "tagKeyValue" do
+        label "Tags"
+      end
+    end
+    #check if empty
+    check ne(val(item,"configuration"),"")
+    escalate $esc_email
+  end
+end
