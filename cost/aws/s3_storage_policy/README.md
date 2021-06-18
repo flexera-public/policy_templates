@@ -1,4 +1,4 @@
-# AWS Bucket Size Check
+# AWS S3 Bucket Intelligent Tiering Check
 
 ## What it does
 
