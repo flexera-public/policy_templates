@@ -61,6 +61,7 @@ Please contact sales@flexera.com to learn more.
 - [AWS S3 Buckets without Server Access Logging](./security/storage/aws/s3_buckets_without_server_access_logging/)
 - [AWS Object Storage Optimization](./cost/aws/object_storage_optimization/)
 - [AWS Old Snapshots](./cost/aws/old_snapshots/)
+- [AWS S3 Bucket Intelligent Tiering Check](./cost/aws/s3_storage_policy/)
 
 #### Azure
 
