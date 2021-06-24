@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.8
+
+- Debug log via param (off by default)
+
 ## v2.7
 
 - Added default_frequency "daily"

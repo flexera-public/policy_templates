@@ -27,7 +27,6 @@ This policy has the following input parameters required when launching the polic
 
 The following policy actions are taken on any resources found to be out of compliance.
 
-- Delete Unused volumes after approval
 - Send an email report
 
 ## Prerequisites
@@ -51,10 +50,6 @@ The following AWS permissions must be allowed for the policy to run.
       "Effect":"Allow",
       "Action":[
         "ec2:DescribeVolumes",
-        "ec2:CreateTags",
-        "ec2:CreateSnapshot",
-        "ec2:DescribeSnapshots",
-        "ec2:DeleteVolume",
         "ec2:DescribeRegions"
       ],
       "Resource":"*"
