@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.10
+
+- Debug param added (off by default, for EU app); use rs_optima_host, not hardcoded hostname
+
 ## v2.9
 
 - Added default_frequency "daily"

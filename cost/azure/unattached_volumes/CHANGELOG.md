@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.7
+
+- Debug via param (off by default, for EU app); use rs_optima_host, not hardcoded hostname
+
 ## v2.6
 
 - Adding Azure China
