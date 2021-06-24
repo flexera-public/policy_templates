@@ -1,0 +1,263 @@
+name "AWS VPC's without FlowLogs Enabled"
+rs_pt_ver 20180301
+type "policy"
+short_description "Report any AWS VPC's without FlowLogs Enabled. \n See the [README](https://github.com/rightscale/policy_templates/tree/master/security/aws/vpcs_without_flow_logs_enabled) and [docs.rightscale.com/policies](http://docs.rightscale.com/policies/) to learn more."
+long_description ""
+category "Security"
+severity "medium"
+default_frequency "daily"
+info(
+  version: "2.0",
+  provider: "AWS",
+  service: "VPC",
+  policy_set: "AWS Config"
+)
+
+###############################################################################
+# User inputs
+###############################################################################
+
+parameter "param_allowed_regions" do
+  type "list"
+  label "Allowed Regions"
+  allowed_pattern /^([a-zA-Z-_]+-[a-zA-Z0-9-_]+-[0-9-_]+,*|)+$/
+  description "A list of allowed regions. See the README for more details"
+end
+
+parameter "param_email" do
+  type "list"
+  label "Email Address"
+  description "Email addresses of the recipients you wish to notify"
+end
+
+parameter "param_exclude_tags" do
+  type "list"
+  label "Ignore Tags"
+  description "List of one or more Tags that will exclude Classic Load Balancer from actions being taken. Format: Key=Value"
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+credentials "auth_aws" do
+  schemes "aws","aws_sts"
+  label "AWS"
+  description "Select the AWS Credential from the list"
+  tags "provider=aws"
+end
+
+###############################################################################
+# Pagination
+###############################################################################
+pagination "aws_pagination_xml" do
+  get_page_marker do
+    body_path "//DescribeVpcsResponse/nextToken"
+  end
+  set_page_marker do
+    query "NextToken"
+  end
+end
+
+###############################################################################
+# Datasources
+###############################################################################
+
+#Generates list of Regions
+#Get list of enabled regions for an account
+datasource "ds_regions_list" do
+  request do
+    auth $auth_aws
+    verb "GET"
+    host "ec2.amazonaws.com"
+    path "/"
+    query "Action", "DescribeRegions"
+    query "Version", "2016-11-15"
+  end
+  result do
+    encoding "xml"
+    collect xpath(response, "//DescribeRegionsResponse/regionInfo/item", "array") do
+      field "region", xpath(col_item, "regionName")
+    end
+  end
+end
+
+# Get only SCP enabled regions
+datasource "ds_regions" do
+  run_script $js_regions, $param_allowed_regions, $ds_regions_list
+end
+
+#Get the list of all vpcs
+datasource "ds_vpc_list" do
+  iterate $ds_regions
+  request do
+    auth $auth_aws
+    pagination $aws_pagination_xml
+    host join(['ec2.',val(iter_item,"region"),'.amazonaws.com'])
+    path '/'
+    verb 'GET'
+    query "Action", "DescribeVpcs"
+    query "Version", "2016-11-15"
+  end
+  result do
+    encoding "xml"
+    collect xpath(response, "//DescribeVpcsResponse/vpcSet/item","array") do
+      field "region", val(iter_item, "region")
+      field "ownerId", xpath(col_item, "ownerId")
+      field "id", xpath(col_item, "vpcId")
+      field "tags" do
+        collect xpath(col_item, "tagSet/item") do
+          field "tagKey", xpath(col_item, "key")
+          field "tagValue", xpath(col_item, "value")
+        end
+      end
+    end
+  end
+end
+
+datasource "ds_flowlog_list" do
+  iterate $ds_regions
+  request do
+    auth $auth_aws
+    pagination $aws_pagination_xml
+    host join(['ec2.',val(iter_item,"region"),'.amazonaws.com'])
+    path '/'
+    verb 'GET'
+    query "Action", "DescribeFlowLogs"
+    query "Version", "2016-11-15"
+  end
+  result do
+    encoding "xml"
+    collect xpath(response, "//DescribeFlowLogsResponse/flowLogSet/item","array") do
+      field "region", val(iter_item, "region")
+      field "flowLogId", xpath(col_item, "flowLogId")
+      field "resourceId", xpath(col_item, "resourceId")
+      field "flowLogStatus", xpath(col_item, "flowLogStatus")
+      field "tags" do
+        collect xpath(col_item, "tagSet/item") do
+          field "tagKey", xpath(col_item, "key")
+          field "tagValue", xpath(col_item, "value")
+        end
+      end
+    end
+  end
+end
+
+datasource "ds_vpc_filtered" do
+  run_script $js_vpc_filtered, $ds_vpc_list, $ds_flowlog_list, $param_exclude_tags
+end
+
+
+###############################################################################
+# Script
+###############################################################################
+
+script "js_regions", type:"javascript" do
+  parameters "user_entered_regions", "all_regions"
+  result "regions"
+  code <<-EOS
+    if(_.isEmpty(user_entered_regions)){
+      regions = all_regions;
+    }else{
+      //Filter unique regions
+      var uniqueRegions = _.uniq(user_entered_regions);
+      var all_regions_list = [];
+      all_regions.forEach(function(all_region){
+        all_regions_list.push(all_region.region)
+      })
+
+      //Filter valid regions
+      var valid_regions = [];
+      _.map(uniqueRegions, function(uniqueRegion){
+        if(all_regions_list.indexOf(uniqueRegion) > -1){
+          valid_regions.push({"region": uniqueRegion})
+        }
+      })
+
+      //Throw an error if no valid regions found
+      if (_.isEmpty(valid_regions)) {
+        regions = all_regions;
+      }else{
+        regions = valid_regions
+      }
+    }
+  EOS
+end
+
+script "js_vpc_filtered", type:"javascript" do
+  parameters "ds_vpc_list", "ds_flowlog_list", "param_exclude_tags"
+  result "vpc_result"
+  code <<-EOF
+  var param_exclude_tags_lower=[];
+  for(var i=0; i < param_exclude_tags.length; i++){
+    param_exclude_tags_lower[i]=param_exclude_tags[i].toString().toLowerCase();
+  }
+  var vpc_result = _.reject(ds_vpc_list, function(vpc){
+    tags = vpc.tags
+    var tag_key_value=""
+    if(typeof(tags) != "undefined"){
+      for(var k=0;k<tags.length;k++){
+        var tag=tags[k];
+        if((param_exclude_tags_lower.indexOf((tag['tagKey']).toLowerCase()) !== -1) || (param_exclude_tags_lower.indexOf((tag['tagKey']+'='+tag['tagValue']).toLowerCase()) !== -1)){
+          is_tag_matched = true;
+        }
+        // Constructing tags with comma separated to display in detail_template
+        if((tag['tagValue']).length > 0){
+          tag_key_value = tag_key_value + ', '+ tag['tagKey']+'='+tag['tagValue']
+        }else{
+          tag_key_value = tag_key_value + ', '+ tag['tagKey']
+        }
+      }
+    }
+    vpc["tagKeyValue"] = (tag_key_value.slice(1))
+    for (var i = 0; i < ds_flowlog_list.length; i++) {
+      if (vpc.id == ds_flowlog_list[i].resourceId){
+        return vpc;
+      }
+    }
+  })
+  EOF
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "policy_vpcs_with_flowlogs" do
+  validate $ds_vpc_filtered do
+    summary_template "AWS Account ID: {{with index data 0}}{{ .ownerId }}{{end}}: {{ len data }} AWS VPC's without FlowLogs Enabled."
+    escalate $esc_vpcs_without_flowlogs
+    check eq(size(data),0)
+    export do
+      resource_level true
+      field "ownerId" do
+        label "AWS Account Id"
+      end
+      field "id" do
+        label "VPC Id"
+      end
+      field "region" do
+        label "Region"
+      end
+      field "tagKeyValue" do
+        label "Tags"
+      end
+    end
+  end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_vpcs_without_flowlogs" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
+end
+
+
+###############################################################################
+# Cloud Workflow
+###############################################################################

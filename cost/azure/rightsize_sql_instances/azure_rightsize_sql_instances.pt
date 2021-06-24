@@ -7,7 +7,7 @@ severity "low"
 category "Cost"
 default_frequency "daily"
 info(
-  version: "2.6",
+  version: "2.7",
   provider: "Azure",
   service: "SQL",
   policy_set: "RightSize Database Services"
@@ -47,11 +47,20 @@ parameter "param_email" do
   label "Email addresses"
   description "Email addresses of the recipients you wish to notify"
 end
+
 parameter "param_automatic_action" do
   type "list"
   label "Automatic Actions"
   description "When this value is set, this policy will automatically take the selected action(s)"
   allowed_values ["Resize Instances"]
+end
+
+parameter "param_log_to_cm_audit_entries" do
+  type "string"
+  label "Log to CM Audit Entries"
+  description "Boolean for whether or not to log any debugging information from actions to CM Audit Entries, this should be left set to No on Flexera EU"
+  default "No"
+  allowed_values "Yes", "No"
 end
 
 ###############################################################################
@@ -258,7 +267,7 @@ script "js_merged_metrics", type: "javascript" do
                     capacity = json_name["up"];
                   }
                 }
-              }		  
+              }
               if(capacity != null && capacity.length > 0){
                 recommended_capacity = capacity;
               }else{
@@ -397,14 +406,15 @@ escalation "esc_update_rightsize_sql_databases_approval" do
   automatic contains($param_automatic_action, "Resize Instances")
   label "Resize Database"
   description "Resized selected  SQL database"
-  run "update_rightsize_sql_databases", data
+  run "update_rightsize_sql_databases", data, $param_log_to_cm_audit_entries
 end
 
 ###############################################################################
 # Cloud Workflow
 ###############################################################################
 
-define update_rightsize_sql_databases($data) return $all_responses do
+define update_rightsize_sql_databases($data, $param_log_to_cm_audit_entries) return $all_responses do
+  $$debug = $param_log_to_cm_audit_entries == "Yes"
   $all_responses = []
   foreach $item in $data do
     if $item["recommended_capacity"] != "n/a"
@@ -438,12 +448,14 @@ define update_rightsize_sql_databases($data) return $all_responses do
 end
 
 define sys_log($subject, $detail) do
-  rs_cm.audit_entries.create(
-    notify: "None",
-    audit_entry: {
-      auditee_href: @@account,
-      summary: "Azure RightSize SQL Databases "+ $subject,
-      detail: $detail
-    }
-  )
+  if $$debug
+    rs_cm.audit_entries.create(
+      notify: "None",
+      audit_entry: {
+        auditee_href: @@account,
+        summary: "Azure RightSize SQL Databases "+ $subject,
+        detail: $detail
+      }
+    )
+  end
 end

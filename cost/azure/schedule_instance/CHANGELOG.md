@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.3
+
+- "Delete schedule" action now removes the "schedule", "next_start" and "next_stop" tags
+
 ## v2.2
 
 - Added default_frequency "daily"
