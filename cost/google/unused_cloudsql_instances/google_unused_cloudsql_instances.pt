@@ -7,7 +7,7 @@ severity "low"
 category "Cost"
 default_frequency "daily"
 info(
-      version: "2.5",
+      version: "2.6",
       provider: "GCE",
       service: "SQL",
       policy_set: "Unused Database Services"
@@ -45,6 +45,14 @@ parameter "param_automatic_action" do
   label "Automatic Actions"
   description "When this value is set, this policy will automatically take the selected action(s)"
   allowed_values ["Terminate Resource"]
+end
+
+parameter "param_log_to_cm_audit_entries" do
+  type "string"
+  label "Log to CM Audit Entries"
+  description "Boolean for whether or not to log any debugging information from actions to CM Audit Entries, this should be left set to No on Flexera EU"
+  default "No"
+  allowed_values "Yes", "No"
 end
 
 ###############################################################################
@@ -188,7 +196,7 @@ script "js_clean_instance_data", type: "javascript" do
   }
     _.each(ds_add_instance_data, function(result){
       var connection = _.filter(ds_connections, function(conn){
-        if ( conn != null &&  typeof conn != null && conn.database_id != null && typeof (conn.database_id) !== 'undefined' && conn.database_id.split(':')[2] == 
+        if ( conn != null &&  typeof conn != null && conn.database_id != null && typeof (conn.database_id) !== 'undefined' && conn.database_id.split(':')[2] ==
 
 result.name){
           return conn
@@ -307,14 +315,15 @@ escalation "terminate_resources" do
   automatic contains($param_automatic_action, "Terminate Resource")
   label "Terminate resource"
   description "Terminated the selected resource"
-  run "terminate_resources", data
+  run "terminate_resources", data, $param_log_to_cm_audit_entries
 end
 
 ###############################################################################
 # Cloud Workflow
 ###############################################################################
 
-define terminate_resources($data) return $all_responses do
+define terminate_resources($data,$param_log_to_cm_audit_entries) return $all_responses do
+  $$debug = $param_log_to_cm_audit_entries == "Yes"
   $$log = []
   $all_responses = []
   $syslog_subject = "Google Unused CloudSQL: "
@@ -343,12 +352,14 @@ define handle_error($response) do
 end
 
 define sys_log($subject, $detail) do
-  rs_cm.audit_entries.create(
-    notify: "None",
-    audit_entry: {
-      auditee_href: @@account,
-      summary: $subject,
-      detail: $detail
-    }
-  )
+  if $$debug
+    rs_cm.audit_entries.create(
+      notify: "None",
+      audit_entry: {
+        auditee_href: @@account,
+        summary: $subject,
+        detail: $detail
+      }
+    )
+  end
 end
