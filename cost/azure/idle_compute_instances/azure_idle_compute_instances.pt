@@ -7,7 +7,7 @@ category "Cost"
 severity "low"
 default_frequency "daily"
 info(
-  version: "2.9",
+  version: "2.10",
   provider: "Azure",
   service: "Compute",
   policy_set: "Idle Compute Instances"
@@ -45,6 +45,14 @@ parameter "param_automatic_action" do
   label "Automatic Actions"
   description "When this value is set, this policy will automatically take the selected action(s)"
   allowed_values ["Terminate Instances"]
+end
+
+parameter "param_log_to_cm_audit_entries" do
+  type "string"
+  label "Log to CM Audit Entries"
+  description "Boolean for whether or not to log any debugging information from actions to CM Audit Entries, this should be left set to No on Flexera EU"
+  default "No"
+  allowed_values "Yes", "No"
 end
 
 ###############################################################################
@@ -98,7 +106,7 @@ datasource "ds_subscriptions" do
   end
 end
 
-#get all virtual machines 
+#get all virtual machines
 datasource "ds_azure_virtualmachines" do
   iterate $ds_subscriptions
   request do
@@ -141,10 +149,10 @@ datasource "ds_azure_instance_performance" do
     query "interval", "P1D"
     header "User-Agent", "RS Policies"
     ignore_status [404]
-  end 
+  end
   result do
     encoding "json"
-    field "vmname", val(iter_item,"name") 
+    field "vmname", val(iter_item,"name")
     field "rg", val(iter_item, "rg")
     field "id", val(iter_item, "id")
     field "location", val(iter_item, "location")
@@ -207,7 +215,7 @@ end
 datasource "ds_instance_costs" do
   iterate $ds_subscriptions
   request do
-    run_script $js_get_costs, val(iter_item,"subscriptionId"), $ds_top_level_billing_centers, rs_org_id
+    run_script $js_get_costs, val(iter_item,"subscriptionId"), $ds_top_level_billing_centers, rs_org_id, rs_optima_host
   end
   result do
     encoding "json"
@@ -245,7 +253,7 @@ EOS
 end
 
 script "js_get_costs", type:"javascript" do
-  parameters  "account_id","billing_centers","org"
+  parameters  "account_id","billing_centers","org","optima_host"
   result "request"
   code <<-EOS
     // returns date formatted as string: YYYY-mm-dd
@@ -261,7 +269,7 @@ script "js_get_costs", type:"javascript" do
     var end_date = getFormattedDailyDate(new Date(new Date().setDate(new Date().getDate() - 2)));
     var request = {
       auth: "auth_rs",
-      host: "optima.rightscale.com",
+      host: optima_host,
       verb: "POST",
       path: "/bill-analysis/orgs/" + org + "/costs/select",
       body_fields: {
@@ -328,12 +336,12 @@ code <<-EOS
   _.each(ds_azure_instance_performance, function(result){
     var averages = _.pluck(result.averages,"average")
 
-    var sum = _.reduce(averages, function(memo, num){ 
+    var sum = _.reduce(averages, function(memo, num){
       if (num != null && num !== undefined){
         return memo + parseFloat(num)
       } else {}
-      return memo + 0; 
-      }, 
+      return memo + 0;
+      },
     0)
 
     var final_average = parseFloat(sum/averages.length)
@@ -485,15 +493,15 @@ escalation "delete_resources" do
   automatic contains($param_automatic_action, "Terminate Instances")
   label "Terminate Instances"
   description "Approval to terminate all selected instances"
-  run "delete_resources", data
+  run "delete_resources", data, $param_log_to_cm_audit_entries
 end
 
 ###############################################################################
 # Cloud Workflow
 ###############################################################################
 
-define delete_resources($data) return $all_responses do
-  $$debug=true
+define delete_resources($data,$param_log_to_cm_audit_entries) return $all_responses do
+  $$debug = $param_log_to_cm_audit_entries == "Yes"
   $$log = []
   $all_responses = []
   $syslog_subject = "Azure Terminate Instance: "

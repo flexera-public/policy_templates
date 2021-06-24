@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.8
+
+- Debug via param (off by default, for EU app)
+
 ## v2.7
 
 - Added default_frequency "daily"
