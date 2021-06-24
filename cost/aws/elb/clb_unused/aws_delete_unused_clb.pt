@@ -7,7 +7,7 @@ category "Cost"
 severity "low"
 default_frequency "daily"
 info(
-  version: "2.10",
+  version: "2.11",
   provider: "AWS",
   service: "ELB",
   policy_set: ""
@@ -42,6 +42,14 @@ parameter "param_automatic_action" do
   label "Automatic Actions"
   description "When this value is set, this policy will automatically take the selected action(s)"
   allowed_values ["Delete Load balancers"]
+end
+
+parameter "param_log_to_cm_audit_entries" do
+  type "string"
+  label "Log to CM Audit Entries"
+  description "Boolean for whether or not to log any debugging information from actions to CM Audit Entries, this should be left set to No on Flexera EU"
+  default "No"
+  allowed_values "Yes", "No"
 end
 
 ###############################################################################
@@ -237,7 +245,7 @@ end
 
 datasource "ds_clbs_costs" do
   request do
-    run_script $js_get_costs, $ds_get_caller_identity, $ds_top_level_billing_centers, rs_org_id
+    run_script $js_get_costs, $ds_get_caller_identity, $ds_top_level_billing_centers, rs_org_id, rs_optima_host
   end
   result do
     encoding "json"
@@ -372,7 +380,7 @@ script "js_top_level_bc", type: "javascript" do
 end
 
 script "js_get_costs", type:"javascript" do
-  parameters  "account_id","billing_centers","org"
+  parameters  "account_id","billing_centers","org", "optima_host"
   result "request"
   code <<-EOS
     // returns date formatted as string: YYYY-mm-dd
@@ -388,7 +396,7 @@ script "js_get_costs", type:"javascript" do
     var end_date = getFormattedDailyDate(new Date(new Date().setDate(new Date().getDate() - 2)));
     var request = {
       auth: "auth_rs",
-      host: "optima.rightscale.com",
+      host: optima_host,
       verb: "POST",
       path: "/bill-analysis/orgs/" + org + "/costs/select",
       body_fields: {
@@ -535,7 +543,7 @@ escalation "esc_delete_clb" do
   automatic contains($param_automatic_action, "Delete Load balancers")
   label "Delete CLB"
   description "Delete selected unused CLB"
-  run "delete_CLB", data
+  run "delete_CLB", data, $param_log_to_cm_audit_entries
 end
 
 ###############################################################################
@@ -583,8 +591,8 @@ end
 ###############################################################################
 
 #https://docs.aws.amazon.com/elasticloadbalancing/2012-06-01/APIReference/API_DeleteLoadBalancer.html
-define delete_CLB($data) return $all_responses do
-  $$debug=true
+define delete_CLB($data,$param_log_to_cm_audit_entries) return $all_responses do
+  $$debug = $param_log_to_cm_audit_entries == "Yes"
   $all_responses = []
   foreach $item in $data do
     sub on_error: skip do

@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.11
+
+- Debug log via parameter, off by default (for EU compatibility)
+
 ## v2.10
 
 - Added default_frequency "daily"
