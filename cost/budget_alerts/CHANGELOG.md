@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.16
+
+- Adding budget threshold to policy.
+
 ## v1.15
 
 - Fixed markdown alignment in HERE doc, which was causing the conversion to HTML in the email to fail.
