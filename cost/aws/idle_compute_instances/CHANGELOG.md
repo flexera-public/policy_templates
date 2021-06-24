@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.12
+
+- Debug logs via param (off by default); use Optima host, not hardcoded hostname
+
 ## v2.11
 
 - Added default_frequency "daily"

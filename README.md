@@ -61,6 +61,7 @@ Please contact sales@flexera.com to learn more.
 - [AWS S3 Buckets without Server Access Logging](./security/storage/aws/s3_buckets_without_server_access_logging/)
 - [AWS Object Storage Optimization](./cost/aws/object_storage_optimization/)
 - [AWS Old Snapshots](./cost/aws/old_snapshots/)
+- [AWS S3 Bucket Intelligent Tiering Check](./cost/aws/s3_storage_policy/)
 
 #### Azure
 
@@ -142,10 +143,25 @@ Please contact sales@flexera.com to learn more.
 - [AWS Unencrypted ELB Listeners (CLB)](./security/aws/clb_unencrypted/)
 - [AWS Unencrypted ELB Listeners (ALB/NLB)](./security/aws/elb_unencrypted/)
 
+#### VPC
+
+- [AWS VPC's without FlowLogs Enabled](./security/aws/vpcs_without_flow_logs_enabled/)
+
 #### Azure
 
-- [Azure Publicly Accessible Managed SQL Instance](./security/azure/sql_publicly_accessible_managed_instance)
 - [Azure Resources with public IP address](./security/azure/resources_with_public_ip_address)
+
+##### Database
+
+- [Azure Publicly Accessible Managed SQL Instance](./security/azure/sql_publicly_accessible_managed_instance/)
+
+##### Web Apps
+
+- [Azure Web App Minimum TLS Version](./security/azure/webapp_tls_version_support/)
+
+##### Storage
+
+- [Azure Storage Accounts Without HTTPs Enforced](./security/storage/azure/storage_account_https_enabled/)
 
 #### Google
 
@@ -217,6 +233,7 @@ Please contact sales@flexera.com to learn more.
 - [AWS VPC Name Tag Sync](./operational/aws/vpc_name_sync)
 - [AWS Long Running Instances](./operational/aws/long_running_instances/)
 - [AWS Instance Scheduled Events](./operational/aws/instance_scheduled_events)
+- [AWS Lambda Functions with high error rate](./operational/aws/lambda_functions_with_high_error_rate/)
 
 #### Azure
 
