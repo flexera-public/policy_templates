@@ -1,9 +1,5 @@
 # Changelog
 
-## v1.1
+## v2.0
 
-- Added resource table
-
-## v1.0
-
-- initial release
+- Initial Release
