@@ -14,7 +14,6 @@ This policy has the following input parameters required when launching the polic
 
 - *Exclusion Tag Key* - Cloud native tag key to ignore instances. Example: exclude_utilization
 - *Email addresses* - Email addresses of the recipients you wish to notify
-- *Log to CM Audit Entries* - Boolean for whether or not to log any debugging information from actions to CM Audit Entries, this should be left set to No on Flexera EU
 
 ## Actions
 
