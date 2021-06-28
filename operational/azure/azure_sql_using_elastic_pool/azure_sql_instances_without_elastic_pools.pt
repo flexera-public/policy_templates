@@ -1,7 +1,7 @@
 name "Azure SQL Databases without Elastic Pools"
 rs_pt_ver 20180301
 type "policy"
-short_description "Check for Inefficient Azure SQL single database services that are inside or outside the CPU threshold for the last 30 days and resizes them after approval. See the [README](https://github.com/flexera/policy_templates/tree/master/cost/azure/rightsize_sql_instances/) and [docs.rightscale.com/policies](https://docs.rightscale.com/policies/) to learn more."
+short_description "Check a list of Azure SQL Servers and check for Elastic DB Pools. See the [README](https://github.com/flexera/policy_templates/tree/master/operational/azure/azure_sql_using_elastic_pool/) and [docs.rightscale.com/policies](https://docs.rightscale.com/policies/) to learn more."
 long_description ""
 severity "low"
 category "Cost"
@@ -94,7 +94,7 @@ datasource "ds_azure_sql_databases" do
     host "management.azure.com"
     path join(["/subscriptions/", val(iter_item,"subscriptionId"), "/resources"])
     query "api-version","2019-08-01"
-    query "$filter", "resourceType eq 'Microsoft.Sql/servers/databases'"
+    query "$filter", "resourceType eq 'Microsoft.Sql/servers'"
     header "User-Agent", "RS Policies"
   end
   result do
@@ -113,18 +113,38 @@ datasource "ds_azure_sql_databases" do
   end
 end
 
-#Generates list of service tiers.
-datasource "ds_azure_sql_resize_map" do
+datasource "ds_elastic_pools" do
+  iterate $ds_azure_sql_databases
   request do
-    verb "GET"
-    host "raw.githubusercontent.com"
-    path "/flexera/policy_templates/master/data/azure/sql_service_tier_types.json"
+    auth $azure_auth
+    pagination $azure_pagination
+    host "management.azure.com"
+    path join([val(iter_item, "id"), '/elasticPools'])
+    query "api-version", "2020-08-01-preview"
     header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "value[*]") do
+      field "id", val(iter_item,"id")
+      field "name", val(iter_item,"name")
+      field "location", val(iter_item,"location")
+      field "type", val(iter_item,"type")
+      field "kind", val(iter_item,"kind")
+      field "sku" , val(iter_item,"sku")
+      field "tags", val(iter_item,"tags")
+      field "subscriptionId", val(iter_item,"subscriptionId")
+      field "subscriptionName", val(iter_item,"displayName")
+      field "elasticPoolId", jmes_path(col_item, "id")
+      field "elasticPoolName", jmes_path(col_item, "name")
+      field "elasticPoolSku", jmes_path(col_item, "sku")
+      field "elasticPoolProperties", jmes_path(col_item, "properties")
+    end
   end
 end
 
 datasource "ds_merged_metrics" do
-  run_script $js_merged_metrics, $ds_azure_sql_database_metrics, $ds_azure_sql_resize_map, $param_exclusion_tag_key
+  run_script $js_merged_metrics, $ds_azure_sql_databases, $ds_elastic_pools, $param_exclusion_tag_key
 end
 
 ###############################################################################
@@ -132,114 +152,29 @@ end
 ###############################################################################
 
 script "js_merged_metrics", type: "javascript" do
-  parameters "databases_metrics", "ds_azure_sql_resize_map", "exclusion_tag" , "down_threshold", "up_threshold"
-  result "result"
+  parameters "ds_azure_sql_databases", "ds_elastic_pools", "param_exclusion_tag_key"
+  result "results"
   code <<-EOS
-    var result = [];
-
-    //exclude the database with the exclution tags, and the system databases
-    for(i=0; i< databases_metrics.length; i++){
-      if (databases_metrics[i].sku !== undefined && databases_metrics[i].sku != null){
-        if(!(_.has(databases_metrics[i].tags, exclusion_tag) || databases_metrics[i].kind.toLowerCase().indexOf(",system") > -1)){
-          //Find the Resource group
-          var capacity = "";
-          var recommended_capacity = "";
-          var recommendation = "";
-          var aTemp = databases_metrics[i].id.split("/resourceGroups/")
-          var resource_group="";
-          if(aTemp.length > 1){
-            aTemp = aTemp[1].split("/");
-            resource_group = aTemp[0];
-          }else{
-            resource_group = "";
-          }
-
-          //now find the metrics for the devices
-          var objMetric = databases_metrics[i];
-          var total = 0.0;
-          var average_cpu = "";
-          if (typeof objMetric == "object" && typeof objMetric.timeseries[0].data == "object"){
-            var ts_data =  objMetric.timeseries[0].data;
-            for (x=0; x < ts_data.length; x++) {
-              total += ts_data[x].average;
-            }
-            average_cpu = total / ts_data.length;
-            average_cpu = average_cpu.toFixed(2);
-          }else{
-            average_cpu = "n/a";
-          }
-          var sku = databases_metrics[i].sku;
-          //Now check for recommendation
-          if(average_cpu !== "n/a"){
-            if(Number(average_cpu) >= Number(up_threshold)){
-              //Upsize
-              recommendation = "Upsize";
-              if (databases_metrics[i].sku !== undefined && databases_metrics[i].sku != null && ds_azure_sql_resize_map[sku.tier] !== undefined && ds_azure_sql_resize_map[sku.tier] != null){
-                var json_tier = ds_azure_sql_resize_map[sku.tier];
-                if (json_tier[sku.name+"_"+sku.capacity] !== undefined && json_tier[sku.name+"_"+sku.capacity] != null){
-                  var json_name = json_tier[sku.name+"_"+sku.capacity];
-                  if (json_name["up"] !== undefined && json_name["up"] != null){
-                    capacity = json_name["up"];
-                  }
-                }
-              }
-              if(capacity != null && capacity.length > 0){
-                recommended_capacity = capacity;
-              }else{
-                recommended_capacity = "n/a";
-              }
-            }else if(Number(average_cpu) <= Number(down_threshold)){
-              //Downsize
-              recommendation = "Downsize";
-              if (databases_metrics[i].sku !== undefined && databases_metrics[i].sku != null && ds_azure_sql_resize_map[sku.tier] !== undefined && ds_azure_sql_resize_map[sku.tier] != null){
-                if (sku.tier === "Basic"){
-                  recommendation = "-";
-                }
-                var json_tier = ds_azure_sql_resize_map[sku["tier"]];
-                if (json_tier[sku.name+"_"+sku.capacity] !== undefined && json_tier[sku.name+"_"+sku.capacity] != null){
-                  var json_name = json_tier[sku.name+"_"+sku.capacity];
-                  if (json_name["down"] !== undefined && json_name["down"] != null){
-                    capacity = json_name["down"];
-                  }
-                }
-              }
-              if(capacity != null && capacity.length > 0){
-                recommended_capacity = capacity;
-              }else{
-                recommended_capacity = "n/a";
-              }
-            }
-          }else{
-            recommendation = "-";
-            recommended_capacity = "n/a";
-          }
-          if (recommended_capacity === "n/a" && recommendation !== "-"){
-            recommendation = "Change tier"
-          }
-          if(average_cpu !== "n/a" && sku.name !== "ElasticPool"){
-            result.push({
-              id: databases_metrics[i].id,
-              location: databases_metrics[i].location,
-              average_cpu: average_cpu,
-              name: databases_metrics[i].name,
-              resource_group: resource_group,
-              kind: databases_metrics[i].kind,
-              type: databases_metrics[i].type,
-              sku: databases_metrics[i].sku,
-              unit: databases_metrics[i].unit,
-              tags: databases_metrics[i].tags,
-              recommendation: recommendation,
-              recommended_capacity:recommended_capacity,
-              subscriptionId: databases_metrics[i].subscriptionId,
-              subscriptionName: databases_metrics[i].subscriptionName
-            })
-          }
+  var results = []
+  _.each(ds_azure_sql_databases, function(server){
+    var pool = _.first(
+      _.filter(ds_elastic_pools, function(pool){
+        if (server.id == pool.id){
+          return pool
         }
-      }
+      })
+    )
+    if ( !_.has(server.tags, param_exclusion_tag_key) && (pool == undefined)){
+      resource_group = server.id.split('/')[4]
+      var tag_string = ""
+      _.each(server.tags, function(value, key){
+        tag_string = tag_string + key + '=' + value + ', '
+      })
+      server['resource_group'] = resource_group
+      server['tagString'] = tag_string
+      results.push(server)
     }
-    result=_.sortBy(result, 'subscriptionName');
-    result=_.sortBy(result, 'location');
-    result=_.sortBy(result, 'name');
+  })
   EOS
 end
 
@@ -249,14 +184,8 @@ end
 
 policy 'policy_azure_db_utilization' do
   validate $ds_merged_metrics do
-    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): Found {{ len data }} Azure Rightsize SQL single Database"
-	detail_template <<-EOS
-      ### Thresholds for Consideration
-      - Upsize Average CPU% threshold   : {{ parameters.param_avg_cpu_upsize }}
-      - Downsize Average CPU% threshold : {{ parameters.param_avg_cpu_downsize }}
-    EOS
+    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): Found {{ len data }} Azure SQL Servers without Elastic Pools"
     escalate $email_report
-    escalate $esc_update_rightsize_sql_databases_approval
     check eq(size(data),0)
     export do
       resource_level true
@@ -278,26 +207,8 @@ policy 'policy_azure_db_utilization' do
       field "type" do
         label "Type"
       end
-      field "skuCapacity" do
-        label "Current Capacity"
-        path "sku.capacity"
-      end
-      field "recommended_capacity" do
-        label "Recommended Capacity"
-      end
-      field "skuName" do
-        label "SKU - Name"
-        path "sku.name"
-      end
-      field "skuTier" do
-        label "SKU - Tier"
-        path "sku.tier"
-      end
-      field "average_cpu" do
-        label "CPU Average %"
-      end
-      field "recommendation" do
-        label "Recommendation"
+      field "tagString" do
+        label "Tags"
       end
       field "id" do
         label "Id"
@@ -317,60 +228,7 @@ escalation "email_report" do
   email $param_email
 end
 
-escalation "esc_update_rightsize_sql_databases_approval" do
-  automatic contains($param_automatic_action, "Resize Instances")
-  label "Resize Database"
-  description "Resized selected  SQL database"
-  run "update_rightsize_sql_databases", data, $param_log_to_cm_audit_entries
-end
-
 ###############################################################################
 # Cloud Workflow
 ###############################################################################
 
-define update_rightsize_sql_databases($data, $param_log_to_cm_audit_entries) return $all_responses do
-  $$debug = $param_log_to_cm_audit_entries == "Yes"
-  $all_responses = []
-  foreach $item in $data do
-    if $item["recommended_capacity"] != "n/a"
-      sub on_error: skip do
-        $response = http_request(
-          auth: $$azure_auth,
-          verb: "patch",
-          host: "management.azure.com",
-          https: true,
-          href: $item["id"],
-          query_strings: {
-            "api-version": "2017-10-01-preview"
-          },
-          headers: {
-            "cache-control": "no-cache",
-            "content-type": "application/json"
-          },
-          body: {
-            "sku": {
-            "name": $item["skuName"],
-            "tier": $item["skuTier"],
-            "capacity": $item["recommended_capacity"]
-          }
-        }
-      )
-      call sys_log('Update RightSize Azure SQL Databases: ',to_s($response))
-      $all_responses << $response
-    end
-  end
- end
-end
-
-define sys_log($subject, $detail) do
-  if $$debug
-    rs_cm.audit_entries.create(
-      notify: "None",
-      audit_entry: {
-        auditee_href: @@account,
-        summary: "Azure RightSize SQL Databases "+ $subject,
-        detail: $detail
-      }
-    )
-  end
-end
