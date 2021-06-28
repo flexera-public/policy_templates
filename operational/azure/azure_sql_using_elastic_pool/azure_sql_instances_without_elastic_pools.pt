@@ -1,4 +1,4 @@
-name "Azure Rightsize SQL Databases"
+name "Azure SQL Databases without Elastic Pools"
 rs_pt_ver 20180301
 type "policy"
 short_description "Check for Inefficient Azure SQL single database services that are inside or outside the CPU threshold for the last 30 days and resizes them after approval. See the [README](https://github.com/flexera/policy_templates/tree/master/cost/azure/rightsize_sql_instances/) and [docs.rightscale.com/policies](https://docs.rightscale.com/policies/) to learn more."
@@ -7,33 +7,15 @@ severity "low"
 category "Cost"
 default_frequency "daily"
 info(
-  version: "2.7",
+  version: "2.0",
   provider: "Azure",
   service: "SQL",
-  policy_set: "RightSize Database Services"
+  policy_set: "Database Services"
 )
 
 ###############################################################################
 # Parameters
 ###############################################################################
-
-parameter "param_avg_cpu_upsize" do
-  type "number"
-  label "Average used CPU % - Upsize threshold"
-  description "Set to -1 to ignore CPU utilization"
-  default 80
-  min_value -1
-  max_value 100
-end
-
-parameter "param_avg_cpu_downsize" do
-  type "number"
-  label "Average used CPU % - Downsize Threshold"
-  description "Set to -1 to ignore CPU utilization"
-  default 60
-  min_value -1
-  max_value 100
-end
 
 parameter "param_exclusion_tag_key" do
   category "User Inputs"
@@ -46,13 +28,6 @@ parameter "param_email" do
   type "list"
   label "Email addresses"
   description "Email addresses of the recipients you wish to notify"
-end
-
-parameter "param_automatic_action" do
-  type "list"
-  label "Automatic Actions"
-  description "When this value is set, this policy will automatically take the selected action(s)"
-  allowed_values ["Resize Instances"]
 end
 
 parameter "param_log_to_cm_audit_entries" do
@@ -138,29 +113,6 @@ datasource "ds_azure_sql_databases" do
   end
 end
 
-datasource "ds_azure_sql_database_metrics" do
-  iterate $ds_azure_sql_databases
-  request do
-    run_script $js_utilization_request, val(iter_item,"id")
-  end
-  result do
-    encoding "json"
-    collect jmes_path(response, "value") do
-      field "id", val(iter_item,"id")
-      field "location", val(iter_item,"location")
-      field "name", val(iter_item,"name")
-      field "kind", val(iter_item,"kind")
-      field "type", val(iter_item,"type")
-      field "sku" , val(iter_item,"sku")
-      field "tags", val(iter_item,"tags")
-      field "unit", jmes_path(col_item,"unit")
-      field "timeseries", jmes_path(col_item,"timeseries")
-      field "subscriptionId",val(iter_item,"subscriptionId")
-      field "subscriptionName",val(iter_item,"subscriptionName")
-    end
-  end
-end
-
 #Generates list of service tiers.
 datasource "ds_azure_sql_resize_map" do
   request do
@@ -172,49 +124,12 @@ datasource "ds_azure_sql_resize_map" do
 end
 
 datasource "ds_merged_metrics" do
-  run_script $js_merged_metrics, $ds_azure_sql_database_metrics, $ds_azure_sql_resize_map, $param_exclusion_tag_key, $param_avg_cpu_downsize, $param_avg_cpu_upsize
+  run_script $js_merged_metrics, $ds_azure_sql_database_metrics, $ds_azure_sql_resize_map, $param_exclusion_tag_key
 end
 
 ###############################################################################
 # Scripts
 ###############################################################################
-
-# Build the API request object dynamically
-script "js_utilization_request", type: "javascript" do
-  parameters "resource_id"
-  result "request"
-  code <<-EOS
-    var end_date_tmp = new Date()
-    end_date_tmp.setMilliseconds(999)
-    end_date_tmp.setSeconds(59)
-    end_date_tmp.setMinutes(59)
-    end_date_tmp.setHours(23)
-    var end_date = new Date(end_date_tmp).toISOString()
-    var start_date_tmp = new Date(new Date().setDate(new Date().getDate() - 30))
-    start_date_tmp.setMilliseconds(0)
-    start_date_tmp.setSeconds(0)
-    start_date_tmp.setMinutes(0)
-    var start_date = new Date(start_date_tmp).toISOString()
-    var sTimespan = start_date  + "/" + end_date;
-    var request = {
-      auth: "azure_auth",
-      verb : "GET",
-      scheme : "https",
-      host : "management.azure.com",
-      path : "" + resource_id + "/providers/microsoft.insights/metrics",
-      query_params: {
-        "api-version" : "2018-01-01",
-        "timespan" : sTimespan,
-        "metricnames" : "cpu_percent"
-        "aggregation" : "Average,count",
-        "interval" :  "P1D"                    //Dailey
-      },
-      headers: {
-        "User-Agent" : "RS Policies"
-      }
-    }
-  EOS
-end
 
 script "js_merged_metrics", type: "javascript" do
   parameters "databases_metrics", "ds_azure_sql_resize_map", "exclusion_tag" , "down_threshold", "up_threshold"

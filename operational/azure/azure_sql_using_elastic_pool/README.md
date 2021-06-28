@@ -1,41 +1,52 @@
-# Azure Migrate Integration
+# Azure Rightsize SQL Databases
 
 ## What it does
 
-This Policy will collect the resources from a RISC Foundations assessment and seed Azure Migrate with the discovered servers.
+This policy will look at Utilization of Azure SQL single database and recommend up or down sizing after user approval.
 
-## Prerequisites
+## Functional Details
 
-- RISC Foundations assessment to have successfully discovered resources and analyzed application stacks
-- Retrieve a RISC API Assessment Code and API Key from your Subscription Administrator.  See more about RISC API authentication requirements [here](https://portal.riscnetworks.com/app/documentation/?path=/using-the-platform/restful-api-access/)
-- Create an Azure Migrate project in the target Azure Subscription, and select "Flexera" as your Assessment Tool
-- Azure Service Principal (AKA Azure Active Directory Application) with the appropriate permissions to manage resources in the target subscription
-- The following RightScale Credentials
-  - `AZURE_APPLICATION_ID`
-  - `AZURE_APPLICATION_KEY`
+This policy checks all the Azure SQL databases for a Azure Subscription. It does a Average CPU usage over the last 30 days. It then checks if the Utilization is Lower than the Downsize Threshold or higher that Upsize Threshold. Finally it displays the found data, recommendations and provides option to Downsize or Upsize the SQL database after the user approval.
+
+- This policy does not support databases which are in Elastic pool
+- This policy applies only for Upsize or Downsize of DTUs/vCores within tiers.
+- This policy will not be applicable to resize between service tiers.
+- If the SQL database can not downsize because it's already at it's min size or can not upsize because it's already at it's max. then in the 'Recommended Capacity' column shows as 'n/a' and 'Recommendation' column shows as 'Change tier' for resize within tiers.
+- Pls refer the following links: <https://docs.microsoft.com/en-us/azure/sql-database/sql-database-dtu-resource-limits-single-databases> and <https://docs.microsoft.com/en-us/azure/sql-database/sql-database-vcore-resource-limits-single-databases> for detailed resource limits of Azure SQL Database using the DTU purchasing model and using the vCore purchasing model.
 
 ## Input Parameters
 
 This policy has the following input parameters required when launching the policy.
 
-- *RISC User ID* - Email address of the RISC User Account which will be used for authentication
-- *RISC Hashed Password* - Hashed password to be used for authentication
-- *RISC Assessment Code* - RISC Assessment Code to be used for authentication
-- *Azure Tenant ID* - the Azure AD Tenant ID used for the Azure API Authentication
-- *Azure Subscription ID* - the Azure Subscription ID used for the Azure API Authentication
-- *Azure Migrate Project Name* - The resource name of the Azure Migrate Project where RISC data should be populated
+- *Average used CPU % - Upsize threshold* - Percentage of CPU utilization to identify an Upsize is recommended
+- *Average used CPU % - Downsize Threshold* - Percentage of CPU utilization to identify an Downsize is recommended
+- *Exclusion Tag Key* - Cloud native tag key to ignore instances. Example: exclude_utilization
+- *Email addresses* - Email addresses of the recipients you wish to notify
+- *Automatic Actions* - When this value is set, this policy will automatically take the selected action(s).
 
-## Policy Actions
+Please note that the "Automatic Actions" parameter contains a list of action(s) that can be performed on the resources. When it is selected, the policy will automatically execute the corresponding action on the data that failed the checks, post incident generation. Please leave it blank for *manual* action.
+For example if a user selects the "Resize Instances" action while applying the policy, all the identified resources will be resized as per the recommendation.
 
-- Populate an Azure Migrate project with the discovered servers from a RISC Foundations Assessment
+## Actions
 
-## Installation
+- Sends an email notification
+- Rightsize SQL Databases after approval
 
-1. Follow steps to [Create an Azure Active Directory Application](https://docs.microsoft.com/en-us/azure/azure-resource-manager/resource-group-create-service-principal-portal#create-an-azure-active-directory-application)
-1. Grant the Azure AD Application access to the necessary subscription(s)
-1. [Retrieve the Application ID & Authentication Key](https://docs.microsoft.com/en-us/azure/azure-resource-manager/resource-group-create-service-principal-portal#get-application-id-and-authentication-key)
-1. Create RightScale Credentials with values that match the Application ID (Credential name: `AZURE_APPLICATION_ID`) & Authentication Key (Credential name: `AZURE_APPLICATION_KEY`)
-1. [Retrieve your Tenant ID](https://docs.microsoft.com/en-us/azure/azure-resource-manager/resource-group-create-service-principal-portal#get-tenant-id)
+## Prerequisites
+
+This policy uses [credentials](https://docs.rightscale.com/policies/users/guides/credential_management.html) for connecting to the cloud -- in order to apply this policy you must have a credential registered in the system that is compatible with this policy. If there are no credentials listed when you apply the policy, please contact your cloud admin and ask them to register a credential that is compatible with this policy. The information below should be consulted when creating the credential.
+
+### Credential configuration
+
+For administrators [creating and managing credentials](https://docs.rightscale.com/policies/users/guides/credential_management.html) to use with this policy, the following information is needed:
+
+Provider tag value to match this policy: `azure_rm`
+
+Required permissions in the provider:
+
+- Microsoft.Sql/servers/databases/read
+- Microsoft.Sql/servers/databases/update
+- Microsoft.Sql/servers/databases/metrics/read
 
 ## Supported Clouds
 
