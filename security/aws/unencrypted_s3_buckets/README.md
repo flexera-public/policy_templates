@@ -48,17 +48,25 @@ Required permissions in the provider:
 
 ```javascript
 {
-  "Version": "2006-03-01",
+  "Version": "2012-10-17",
   "Statement": [
     {
+      "Sid": "FlexeraPolicyS3Read",
       "Effect": "Allow",
       "Action": [
+        "s3:GetEncryptionConfiguration",
+        "s3:GetBucketTagging",
         "s3:ListAllMyBuckets",
-        "s3:GETBucketlocation",
-        "s3:GETBucketencryption",
-        "s3:GETBuckettagging",
-        "s3:PUTBucketencryption",
-        "s3:DELETEBucket"
+        "s3:GetBucketLocation"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "FlexeraPolicyS3Write",
+      "Effect": "Allow",
+      "Action": [
+        "s3:PutEncryptionConfiguration",
+        "s3:DeleteBucket"
       ],
       "Resource": "*"
     }
