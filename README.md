@@ -240,6 +240,7 @@ Please contact sales@flexera.com to learn more.
 - [Azure Migrate Integration](./operational/azure/azure_migrate)
 - [AzureAD Group Sync](./operational/azure/azuread_group_sync/)
 - [Azure Sync Tags with Optima](./operational/azure/sync_tags_with_optima/)
+- [Azure SQL Databases without Elastic Pools](./operational/azure/azure_sql_using_elastic_pool/)
 
 #### VMWare
 
