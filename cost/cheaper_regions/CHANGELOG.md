@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.11
+
+- Added check that AWS account array is not empty before assigning it
+
 ## v1.10
 
 - Modified escalation label and description for consistency
