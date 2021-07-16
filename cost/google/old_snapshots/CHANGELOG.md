@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.10
+
+- Check for the case where labels is null (or undefined) on a snapshot
+
 ## v2.9
 
 - Debug via param (off by default, for EU app)
