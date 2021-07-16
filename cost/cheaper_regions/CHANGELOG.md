@@ -3,6 +3,7 @@
 ## v1.11
 
 - Use rs_optima_host variable instead of hardcoded optima.rightscale.com (different in EU region)
+- Added check that AWS account array is not empty before assigning it
 
 ## v1.10
 
