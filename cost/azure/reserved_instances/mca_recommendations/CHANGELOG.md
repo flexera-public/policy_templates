@@ -1,6 +1,6 @@
 # Changelog
 
-## v2,2
+## v2.2
 
 - support for all  Reservation types; ['VirtualMachines', 'SQLDatabases', 'PostgreSQL', 'ManagedDisk', 'MySQL', 'RedHat', 'MariaDB', 'RedisCache', 'CosmosDB', 'SqlDataWarehouse', 'SUSELinux', 'AppService', 'BlockBlob', 'AzureDataExplorer', 'VMwareCloudSimple']
 - Added support for Shared subscription reservations
