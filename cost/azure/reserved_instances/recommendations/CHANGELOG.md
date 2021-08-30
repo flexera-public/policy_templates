@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.3
+
+- deprecating this policy as it's replaced by [the new version](../mca_recommendations)
+
 ## v2.2
 
 - Added default_frequency "daily"
