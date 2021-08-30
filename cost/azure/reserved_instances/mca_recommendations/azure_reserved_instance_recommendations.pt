@@ -26,6 +26,15 @@ parameter "param_days" do
   type "string"
 end
 
+parameter "param_scope" do
+  category "RI"
+  label "Reservation Scope"
+  default "Shared"
+  description "Single or Shared Reservation Scope"
+  allowed_values "Single","Shared"
+  type "string"
+end
+
 parameter "param_savings_threshold" do
   category "RI"
   label "Net Savings Threshold"
@@ -90,7 +99,7 @@ end
 datasource "ds_ri_recommendations" do
   iterate $ds_subscriptions
   request do
-    run_script $js_ri_request, val(iter_item,"subscriptionId"), $param_days
+    run_script $js_ri_request, val(iter_item,"subscriptionId"), $param_days, $param_scope
   end
   result do
     encoding "json"
@@ -117,10 +126,11 @@ end
 ###############################################################################
 
 script "js_ri_request", type: "javascript" do
-  parameters "subscriptionId", "param_days"
+  parameters "subscriptionId", "param_days", "param_scope"
   result "request"
   code <<-EOS
     var quote_str="'"+param_days+"'";
+    var scope_str="'"+param_scope+"'";
     var request = {
     auth: "azure_auth",
     pagination: "azure_pagination",
@@ -128,7 +138,7 @@ script "js_ri_request", type: "javascript" do
     path: "/subscriptions/"+subscriptionId+"/providers/Microsoft.Consumption/reservationRecommendations",
     query_params: {
         "api-version": "2019-10-01",
-        "$filter": "propertied/resourceType eq [\'VirtualMachines\', \'SQLDatabases\',\'PostgreSQL\', \'ManagedDisk\', \'MySQL\', \'RedHat\', \'MariaDB\', \'RedisCache\', \'CosmosDB\', \'SqlDataWarehouse\', \'SUSELinux\', \'AppService\', \'BlockBlob\', \'AzureDataExplorer\', \'VMwareCloudSimple\'] and properties/scope eq \'Shared\' and properties/lookBackPeriod eq "+quote_str
+        "$filter": "propertied/resourceType eq [\'VirtualMachines\', \'SQLDatabases\',\'PostgreSQL\', \'ManagedDisk\', \'MySQL\', \'RedHat\', \'MariaDB\', \'RedisCache\', \'CosmosDB\', \'SqlDataWarehouse\', \'SUSELinux\', \'AppService\', \'BlockBlob\', \'AzureDataExplorer\', \'VMwareCloudSimple\'] and properties/scope eq "+ scope_str + " and properties/lookBackPeriod eq "+quote_str
     },
     headers: {
         "User-Agent": "RS Policies"
@@ -173,7 +183,7 @@ end
 
 policy "azure_ri_recommendations" do
   validate_each $ds_ri_normalization do
-    summary_template "{{ len data }} Azure MCA Reserved Instances Purchase Recommendations"
+    summary_template "{{ len data }} Azure Reservation Purchase Recommendations"
     escalate $email
     check lt(to_n(val(item,"netSavings")),$param_savings_threshold)
     export do
