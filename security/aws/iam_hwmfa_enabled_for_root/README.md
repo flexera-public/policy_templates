@@ -1,12 +1,12 @@
-# AWS Root Access Keys
+# AWS Hardware MFA
 
 ## What it does
 
-The 'root' user account is the most privileged user in an AWS account. AWS Access Keys provide programmatic access to a given AWS account. It is recommended that all access keys associated with the 'root' user account be removed. This policy checks the Root account for access k. An incident is created if one or more are present.
+Multi-factor authentication (MFA) increases account security by requiring the user have access to another device in order to log into the account in addition to their username and password. Hardware MFA uses a hardware tool, such as a physical key, to authenticate. It is recommended that MFA be enabled on all accounts, and in some cases, hardware MFA is preferred. This policy checks the root account to verify that hardware MFA is enabled.
 
 ## Functional Details
 
-When AWS access keys with root access are detected, an email action is triggered automatically to notify the specified users of the incident.
+When the root account does not have hardware MFA enabled, an email action is triggered automatically to notify the specified users of the incident.
 
 ## Input Parameters
 
