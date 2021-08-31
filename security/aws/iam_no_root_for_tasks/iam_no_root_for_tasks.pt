@@ -1,0 +1,171 @@
+name "AWS IAM Report Root User Doing Everyday Tasks"
+rs_pt_ver 20180301
+type "policy"
+short_description "Report whether the root account is being used for routine or everyday tasks. \n See the [README](https://github.com/flexera/policy_templates/tree/master/security/aws/iam_no_root_for_tasks) and [docs.rightscale.com/policies](https://docs.rightscale.com/policies/) to learn more."
+long_description ""
+category "Security"
+severity "high"
+default_frequency "15 minutes"
+info(
+  version: "1.0",
+  provider: "AWS",
+  service: "IAM",
+  policy_set: "CIS",
+  cce_id: "CCE-78911-5",
+  cis_aws_foundations_securityhub: "1.12",
+  benchmark_control: "1.4",
+  benchmark_version: "1.4.0",
+  cis_controls: "[\"1.4\",\"3.3v8\", \"4.3v7\", \"5.4v8\"]",
+  nist: "AC-6(9)"
+)
+
+###############################################################################
+# User inputs
+###############################################################################
+
+parameter "param_email" do
+  type "list"
+  label "Email Address"
+  description "Email addresses of the recipients you wish to notify"
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+credentials "auth_aws" do
+  schemes "aws","aws_sts"
+  label "AWS"
+  description "Select the AWS Credential from the list"
+  tags "provider=aws"
+end
+
+###############################################################################
+# Datasources
+###############################################################################
+
+# Retrieve the id number of the account being tested
+datasource "ds_get_caller_identity" do
+  request do
+    auth $auth_aws
+    verb "GET"
+    host "sts.amazonaws.com"
+    path "/"
+    header "User-Agent", "RS Policies"
+    query "Action", "GetCallerIdentity"
+    query "Version", "2011-06-15"
+  end
+  result do
+    encoding "xml"
+    collect xpath(response, "//GetCallerIdentityResponse/GetCallerIdentityResult") do
+      field "account",xpath(col_item, "Account")
+    end
+  end
+end
+
+datasource "ds_generate_cred_report" do
+  request do
+    auth $auth_aws
+    verb "GET"
+    host "iam.amazonaws.com"
+    path "/"
+    query "Action", "GenerateCredentialReport"
+    query "Version", "2010-05-08"
+    header "Accept", "application/json"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+    field "credReportStatus", jmes_path(response, "GenerateCredentialReportResponse.GenerateCredentialReportResult.State")
+  end
+end
+
+datasource "ds_sleep" do
+  run_script $js_sleep, $ds_generate_cred_report
+end
+
+datasource "ds_get_cred_report" do
+  iterate $ds_sleep
+  request do
+    auth $auth_aws
+    verb "GET"
+    host "iam.amazonaws.com"
+    path "/"
+    query "Action", "GetCredentialReport"
+    query "Version", "2010-05-08"
+    header "Accept", "application/json"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+    field "credReportBase64", jmes_path(response, "GetCredentialReportResponse.GetCredentialReportResult.Content")
+  end
+end
+
+datasource "ds_parse_cred_report" do
+  run_script $js_parse_cred_report, $ds_get_caller_identity, $ds_get_cred_report
+end
+
+###############################################################################
+# Scripts
+###############################################################################
+
+script "js_sleep", type:"javascript" do
+  parameters "ds_generate_cred_report"
+  result "result"
+  code <<-EOS
+    sleepDuration=60
+    var now = new Date().getTime();
+    while(new Date().getTime() < now + sleepDuration){ /* Do nothing */ }
+    var result = ds_generate_cred_report
+EOS
+end
+
+script "js_parse_cred_report", type:"javascript" do
+  parameters "ds_get_caller_identity", "ds_get_cred_report"
+  result "result"
+  code <<-EOS
+    var result = []
+EOS
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "policy_iam_no_root_for_tasks" do
+  validate $ds_get_cred_report do
+    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): Root User Used"
+    escalate $esc_report_root_for_tasks
+    detail_template <<-EOS
+The root user has been utilized in the last {{data.day_difference}} days.
+
+Affected Account ID: {{data.id}}
+{{data.exceptions}}
+EOS
+    check ne(val(data, "exceptions"),"")
+    export do
+      resource_level true
+      field "id" do
+        label "id"
+      end
+      field "exceptions" do
+        label "exceptions"
+      end
+      field "day_difference" do
+        label "day_difference"
+      end
+    end
+  end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_report_root_for_tasks" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
+end
