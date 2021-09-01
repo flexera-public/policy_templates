@@ -1,6 +1,6 @@
 # Azure Reserved Instances Recommendation
 
-## NOTE:  This policy supersedes the previous [Policy Template](../recommendations/) that used the Azure EA Key.
+## NOTE:  This policy supersedes the previous [Policy Template](../recommendations/) that used the Azure EA Key
 
 ## What it does
 
