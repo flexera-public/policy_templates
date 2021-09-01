@@ -5,11 +5,7 @@ short_description "Report whether the root account is being used for routine or 
 long_description ""
 category "Security"
 severity "high"
-<<<<<<< HEAD
 default_frequency "daily"
-=======
-default_frequency "daily"
->>>>>>> 98148f7bbf2f6c8e9508098eff3ce725772f9c21
 info(
   version: "1.0",
   provider: "AWS",
@@ -129,59 +125,46 @@ script "js_parse_cred_report", type:"javascript" do
   parameters "ds_get_caller_identity", "ds_get_cred_report"
   result "result"
   code <<-EOS
-<<<<<<< HEAD
-  exceptions=""
-  now=new Date()
-  day_difference = 7
+  var exceptions=[]
+  var day_difference = 7
+  var now = new Date()
+  var root_index = 0
 
-  cred_report_array = atob(ds_get_cred_report.credReportBase64).split("\n")
-
-  for (index = 1; index < cred_report_array.length; index++) {
-    if (cred_report_array[index].search("<root_account>,")  != -1) {
-      password_last_used = new Date(cred_report_array[index].split(",")[4])
-      access_key_1_last_used = new Date(cred_report_array[index].split(",")[10])
-      access_key_2_last_used = new Date(cred_report_array[index].split(",")[15])
-
-      password_diff = (now - password_last_used) / 1000 / 60 / 60 / 24
-      access_key_1_diff = (now - access_key_1_last_used) / 1000 / 60 / 60 / 24
-      access_key_2_diff = (now - access_key_2_last_used) / 1000 / 60 / 60 / 24
-
-      if (password_diff <= day_difference && cred_report_array[index].split(",")[4] != 'N/A')
-      {
-        exceptions = exceptions + "Root Password Last Used: " + password_last_used + "\n"
-      }
-
-      if (access_key_1_diff <= day_difference && cred_report_array[index].split(",")[10] != 'N/A')
-      {
-        exceptions = exceptions + "Root Access Key 1 Last Used: " + access_key_1_last_used_date + "\n"
-      }
-
-      if (access_key_2_diff <= day_difference && cred_report_array[index].split(",")[15] != 'N/A')
-      {
-        exceptions = exceptions + "Root Access Key 2 Last Used: " + access_key_2_last_used_date + "\n"
-      }
-
-    }
-  }
-
-  result={
-    id: ds_get_caller_identity[0]['account'],
-    exceptions: exceptions,
-    day_difference: day_difference
-=======
   var decoded = atob(ds_get_cred_report.credReportBase64)
   data = decoded.toString()
   arr = data.split('\n');
-  var result = [];
+  var report = [];
   var headers = arr[0].split(',');
+
   for(var i = 1; i < arr.length; i++) {
     var data = arr[i].split(',');
     var obj = {};
     for(var j = 0; j < data.length; j++) {
        obj[headers[j].trim()] = data[j].trim();
     }
-    result.push(obj);
->>>>>>> 98148f7bbf2f6c8e9508098eff3ce725772f9c21
+    report.push(obj);
+  }
+
+  var root_account = _.find(report, function(item){
+    return item.user == '<root_account>'
+  })
+
+  if (now - new Date(root_account['password_last_used']) <= day_difference * 86400000) {
+    exceptions.push("Root Password Last Used: " + root_account['password_last_used'])
+  }
+
+  if (now - new Date(root_account['access_key_1_last_used_date']) <= day_difference * 86400000) {
+    exceptions.push("Root Access Key 1 Last Used: " + root_account['access_key_1_last_used_date'])
+  }
+
+  if (now - new Date(root_account['access_key_2_last_used_date']) <= day_difference * 86400000) {
+    exceptions.push("Root Access Key 2 Last Used: " + root_account['access_key_2_last_used_date'])
+  }
+
+  result={
+    id: ds_get_caller_identity[0]['account'],
+    exceptions: exceptions,
+    day_difference: day_difference
   }
 EOS
 end
@@ -198,9 +181,11 @@ policy "policy_iam_no_root_for_tasks" do
 The root user has been utilized in the last {{data.day_difference}} days.
 
 Affected Account ID: {{data.id}}
-{{data.exceptions}}
+{{- range $val := data.exceptions }}
+  {{ $val }}
+{{- end }}
 EOS
-    check ne(val(data, "exceptions"),"")
+    check ne(size(val(data, "exceptions")),0)
     export do
       resource_level true
       field "id" do
