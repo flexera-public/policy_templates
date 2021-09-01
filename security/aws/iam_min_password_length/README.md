@@ -34,7 +34,10 @@ Required permissions in the provider:
     "Statement": [
         {
             "Effect": "Allow",
-            "Action": "iam:GetAccountPasswordPolicy",
+            "Action": [
+              "iam:GetAccountPasswordPolicy",
+              "sts:GetCallerIdentity"
+            ],
             "Resource": "*"
         }
     ]
