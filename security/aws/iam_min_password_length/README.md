@@ -31,19 +31,13 @@ Required permissions in the provider:
 ```javascript
 {
     "Version": "2012-10-17",
-    "Statement":[{
-    "Effect":"Allow",
-    "Action":["elasticloadbalancing:DescribeLoadBalancers",
-              "elasticloadbalancing:DescribeTags",
-              "elasticloadbalancing:DescribeListeners"],
-    "Resource":"*"
-    },
-    {
-      "Effect":"Allow",
-      "Action":["ec2:DescribeRegions"],
-      "Resource":"*"
-    }
-  ]
+    "Statement": [
+        {
+            "Effect": "Allow",
+            "Action": "iam:GetAccountPasswordPolicy",
+            "Resource": "*"
+        }
+    ]
 }
 ```
 
