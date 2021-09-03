@@ -1,0 +1,199 @@
+name "AWS IAM Ensure Access Keys Are Rotated"
+rs_pt_ver 20180301
+type "policy"
+short_description "Report if access keys exist that are 90 days old or older. \n See the [README](https://github.com/flexera/policy_templates/tree/master/security/aws/iam_rotate_access_keys) and [docs.rightscale.com/policies](https://docs.rightscale.com/policies/) to learn more."
+long_description ""
+category "Security"
+severity "high"
+default_frequency "daily"
+info(
+  version: "1.0",
+  provider: "AWS",
+  service: "IAM",
+  policy_set: "CIS",
+  cce_id: "CCE-78902-4",
+  cis_aws_foundations_securityhub: "1.4",
+  benchmark_control: "1.4",
+  benchmark_version: "1.4.0",
+  cis_controls: "[\"5v8\", \"16v7\"]",
+  nist: "IA-5(1)"
+)
+
+###############################################################################
+# User inputs
+###############################################################################
+
+parameter "param_email" do
+  type "list"
+  label "Email Address"
+  description "Email addresses of the recipients you wish to notify"
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+credentials "auth_aws" do
+  schemes "aws","aws_sts"
+  label "AWS"
+  description "Select the AWS Credential from the list"
+  tags "provider=aws"
+end
+
+###############################################################################
+# Datasources
+###############################################################################
+
+# Retrieve the id number of the account being tested
+datasource "ds_get_caller_identity" do
+  request do
+    auth $auth_aws
+    verb "GET"
+    host "sts.amazonaws.com"
+    path "/"
+    header "User-Agent", "RS Policies"
+    query "Action", "GetCallerIdentity"
+    query "Version", "2011-06-15"
+  end
+  result do
+    encoding "xml"
+    collect xpath(response, "//GetCallerIdentityResponse/GetCallerIdentityResult") do
+      field "account",xpath(col_item, "Account")
+    end
+  end
+end
+
+datasource "ds_generate_cred_report" do
+  request do
+    auth $auth_aws
+    verb "GET"
+    host "iam.amazonaws.com"
+    path "/"
+    query "Action", "GenerateCredentialReport"
+    query "Version", "2010-05-08"
+    header "Accept", "application/json"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+    field "credReportStatus", jmes_path(response, "GenerateCredentialReportResponse.GenerateCredentialReportResult.State")
+  end
+end
+
+datasource "ds_sleep" do
+  run_script $js_sleep, $ds_generate_cred_report
+end
+
+datasource "ds_get_cred_report" do
+  iterate $ds_sleep
+  request do
+    auth $auth_aws
+    verb "GET"
+    host "iam.amazonaws.com"
+    path "/"
+    query "Action", "GetCredentialReport"
+    query "Version", "2010-05-08"
+    header "Accept", "application/json"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+    field "credReportBase64", jmes_path(response, "GetCredentialReportResponse.GetCredentialReportResult.Content")
+  end
+end
+
+datasource "ds_parse_cred_report" do
+  run_script $js_parse_cred_report, $ds_get_caller_identity, $ds_get_cred_report
+end
+
+###############################################################################
+# Scripts
+###############################################################################
+
+script "js_sleep", type:"javascript" do
+  parameters "ds_generate_cred_report"
+  result "result"
+  code <<-EOS
+    sleepDuration=60
+    var now = new Date().getTime();
+    while(new Date().getTime() < now + sleepDuration){ /* Do nothing */ }
+    var result = ds_generate_cred_report
+EOS
+end
+
+script "js_parse_cred_report", type:"javascript" do
+  parameters "ds_get_caller_identity", "ds_get_cred_report"
+  result "result"
+  code <<-EOS
+  bad_users_list = []
+  now = new Date()
+
+  var decoded = atob(ds_get_cred_report.credReportBase64)
+  data = decoded.toString()
+  arr = data.split('\n');
+  var report = [];
+  var headers = arr[0].split(',');
+
+  for(var i = 1; i < arr.length; i++) {
+    var data = arr[i].split(',');
+    var obj = {};
+    for(var j = 0; j < data.length; j++) {
+       obj[headers[j].trim()] = data[j].trim();
+    }
+    report.push(obj);
+  }
+
+  _.each(report, function(user){
+    if ((user.access_key_1_active == "true" && now - new Date(user.access_key_1_last_rotated) >= 86400000 * 90) ||
+        (user.access_key_2_active == "true" && now - new Date(user.access_key_2_last_rotated) >= 86400000 * 90))
+      { bad_users_list.push(user.user) }
+  })
+
+  result={
+    id: ds_get_caller_identity[0]['account'],
+    bad_users_list: bad_users_list
+  }
+EOS
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "policy_rotate_access_keys" do
+  validate $ds_get_cred_report do
+    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): Users Without MFA Found"
+    escalate $esc_report_rotate_access_keys
+    detail_template <<-EOS
+IAM user accounts found that have access keys that are 90+ days old.
+It is recommended that these access keys be rotated.
+
+Affected Account ID: {{data.id}}
+Affected Users:
+{{- range $val := data.bad_users_list }}
+  {{ $val }}
+{{- end }}
+EOS
+    check ne(size(val(data, "bad_users_list")),0)
+    export do
+      resource_level true
+      field "id" do
+        label "id"
+      end
+      field "bad_users_list" do
+        label "bad_users_list"
+      end
+    end
+  end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_report_rotate_access_keys" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
+end
