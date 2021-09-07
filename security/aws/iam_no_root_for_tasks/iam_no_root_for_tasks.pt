@@ -15,7 +15,7 @@ info(
   cis_aws_foundations_securityhub: "1.12",
   benchmark_control: "1.4",
   benchmark_version: "1.4.0",
-  cis_controls: "[\"1.4\",\"3.3v8\", \"4.3v7\", \"5.4v8\"]",
+  cis_controls: "[\"4.3v7\", \"5.4v8\"]",
   nist: "AC-6(9)"
 )
 
@@ -125,18 +125,46 @@ script "js_parse_cred_report", type:"javascript" do
   parameters "ds_get_caller_identity", "ds_get_cred_report"
   result "result"
   code <<-EOS
+  var exceptions=[]
+  var day_difference = 7
+  var now = new Date()
+  var root_index = 0
+
   var decoded = atob(ds_get_cred_report.credReportBase64)
   data = decoded.toString()
   arr = data.split('\\n');
   var result = [];
   var headers = arr[0].split(',');
+
   for(var i = 1; i < arr.length; i++) {
     var data = arr[i].split(',');
     var obj = {};
     for(var j = 0; j < data.length; j++) {
        obj[headers[j].trim()] = data[j].trim();
     }
-    result.push(obj);
+    report.push(obj);
+  }
+
+  var root_account = _.find(report, function(item){
+    return item.user == '<root_account>'
+  })
+
+  if (now - new Date(root_account['password_last_used']) <= day_difference * 86400000) {
+    exceptions.push("Root Password Last Used: " + root_account['password_last_used'])
+  }
+
+  if (now - new Date(root_account['access_key_1_last_used_date']) <= day_difference * 86400000) {
+    exceptions.push("Root Access Key 1 Last Used: " + root_account['access_key_1_last_used_date'])
+  }
+
+  if (now - new Date(root_account['access_key_2_last_used_date']) <= day_difference * 86400000) {
+    exceptions.push("Root Access Key 2 Last Used: " + root_account['access_key_2_last_used_date'])
+  }
+
+  result={
+    id: ds_get_caller_identity[0]['account'],
+    exceptions: exceptions,
+    day_difference: day_difference
   }
 EOS
 end
@@ -153,9 +181,11 @@ policy "policy_iam_no_root_for_tasks" do
 The root user has been utilized in the last {{data.day_difference}} days.
 
 Affected Account ID: {{data.id}}
-{{data.exceptions}}
+{{- range $val := data.exceptions }}
+  {{ $val }}
+{{- end }}
 EOS
-    check ne(val(data, "exceptions"),"")
+    check ne(size(val(data, "exceptions")),0)
     export do
       resource_level true
       field "id" do
