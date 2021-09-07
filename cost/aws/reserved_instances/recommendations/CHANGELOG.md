@@ -1,6 +1,5 @@
 # Changelog
 
-
 ## v2.4
 
 - Added "Account Scope" (PAYER or LINKED) parameter
