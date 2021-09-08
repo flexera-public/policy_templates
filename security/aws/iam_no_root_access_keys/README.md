@@ -2,7 +2,7 @@
 
 ## What it does
 
-The 'root' user account is the most privileged user in an AWS account. AWS Access Keys provide programmatic access to a given AWS account. It is recommended that all access keys associated with the 'root' user account be removed. This policy checks the Root account for access k. An incident is created if one or more are present.
+The 'root' user account is the most privileged user in an AWS account. AWS Access Keys provide programmatic access to a given AWS account. It is recommended that all access keys associated with the 'root' user account be removed. This policy checks the Root account for access key. An incident is created if one or more are present.
 
 ## Functional Details
 
@@ -33,7 +33,6 @@ Required permissions in the provider:
     "Version": "2012-10-17",
     "Statement": [
         {
-            "Sid": "VisualEditor0",
             "Effect": "Allow",
             "Action": [
                 "sts:GetCallerIdentity",
