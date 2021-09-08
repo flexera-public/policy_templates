@@ -30,6 +30,10 @@ Please contact sales@flexera.com to learn more.
 
 #### AWS
 
+##### Credential Setup
+
+- [Read Only CFT](./cost/aws/FlexeraReadOnlyPolicy.template)
+
 ##### Compute
 
 - [AWS Burstable Instance CloudWatch Utilization](./cost/aws/burstable_instance_cloudwatch_credit_utilization/)
