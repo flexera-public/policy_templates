@@ -274,6 +274,7 @@ Please contact sales@flexera.com to learn more.
 - [Currency Reference](./cost/scheduled_reports/currency_reference.json)
 - [Azure SQL Service Tier Types](./data/azure/sql_service_tier_types.json)
 - [TZ database Timezone List](./data/tz_database/timezones_list.json)
+- [FinOps Foundation Waste Sensors](https://github.com/finopsfoundation/kpis/tree/master/waste-sensors/)
 
 ## Instructions to upload policy templates to Flexera CMP Policies
 
