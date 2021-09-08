@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.16
+
+- Adding finops foundation waste sensor id
+
 ## v2.15
 
 - Added default_frequency "daily"
