@@ -42,6 +42,11 @@ parameter "param_recommenders" do
   default "Idle persistent disk recommender"
 end
 
+parameter "param_location_whitelist" do
+  type "list"
+  label "Location Whitelist"
+end
+
 parameter "param_log_to_cm_audit_entries" do
   type "string"
   label "Log to CM Audit Entries"
@@ -96,26 +101,9 @@ datasource "ds_google_project" do
   end
 end
 
-datasource "ds_zones" do
-  iterate $ds_google_project
-  request do
-    auth $auth_google
-    pagination $google_pagination
-    host "compute.googleapis.com"
-    path join(["/compute/v1/projects/",val(iter_item,"projectId"),"/zones"])
-  end
-  result do
-    encoding "json"
-    collect jmes_path(response, "items[*]") do
-      field "projectId", val(iter_item, "projectId")
-      field "projectNumber", val(iter_item, "projectNumber")
-      field "name", jmes_path(col_item, "name")
-    end
-  end
-end
 
 datasource "ds_recommenders" do
-  run_script $js_recommenders, $ds_zones, $param_recommenders
+  run_script $js_recommenders, $param_location_whitelist, $param_recommenders, $ds_google_project
 end
 
 datasource "ds_recommendations" do
@@ -145,7 +133,7 @@ end
 # Scripts
 ###############################################################################
 script "js_recommenders", type: "javascript" do
-  parameters "ds_zones", "param_recommenders"
+  parameters "param_location_whitelist", "param_recommenders", "ds_google_project"
   result "results"
   code <<-EOF
   var results = []
@@ -167,22 +155,15 @@ script "js_recommenders", type: "javascript" do
     "Unattended project recommender": "google.resourcemanager.projectUtilization.Recommender",
   }
   recommenders = recommender_map[param_recommenders]
-  _.each(ds_zones, function(zone){
-    results.push({
-      projectNumber: zone.projectNumber,
-      projectId: zone.projectId,
-      location: zone.name,
-      recommender: recommenders
-    })
-    if ( global_inserted == 0){
+  _.each(ds_google_project, function(project){
+    _.each(param_location_whitelist, function(location){
       results.push({
-        projectNumber: zone.projectNumber,
-        projectId: zone.projectId,
-        location: 'global',
+        projectNumber: project.projectNumber,
+        projectId: project.projectId,
+        location: location,
         recommender: recommenders
       })
-      global_inserted = 1
-    }
+    })
   })
 EOF
 end
