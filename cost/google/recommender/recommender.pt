@@ -23,10 +23,23 @@ parameter "param_email" do
 end
 
 parameter "param_recommenders" do
-  type "list"
+  type "string"
   label "List of Recommenders to Check"
-  allowed_values ["google.iam.policy.Recommender"]
-  default ["google.iam.policy.Recommender"]
+  allowed_values ["Account security recommender",
+    "Cloud SQL out-of-disk recommender",
+    "Committed use discount recommender",
+    "IAM recommender",
+    "Idle custom image recommender",
+    "Idle IP address recommender",
+    "Idle persistent disk recommender",
+    "Idle VM recommender",
+    "Managed instance group machine type recommender",
+    "Product suggestion recommender - Container",
+    "Product suggestion recommender - Compute",
+    "VM machine type recommender",
+    "Unattended project recommender",
+    "Unattended project recommender"]
+  default "Idle persistent disk recommender"
 end
 
 parameter "param_log_to_cm_audit_entries" do
@@ -89,7 +102,7 @@ datasource "ds_zones" do
     auth $auth_google
     pagination $google_pagination
     host "compute.googleapis.com"
-    path join(["/compute/v1/projects/",val(iter_item,"projectId"),"/regions"])
+    path join(["/compute/v1/projects/",val(iter_item,"projectId"),"/zones"])
   end
   result do
     encoding "json"
@@ -110,6 +123,22 @@ datasource "ds_recommendations" do
   request do
     run_script $js_recommender_call, val(iter_item,"projectId"), val(iter_item, "location"), val(iter_item, "recommender")
   end
+  result do
+    encoding "json"
+    collect jmes_path(response, "recommendations[*]") do
+      field "projectId", val(iter_item, "projectId")
+      field "projectNumber", val(iter_item, "projectNumber")
+      field "location", val(iter_item, "location")
+      field "id", jmes_path(col_item, "name")
+      field "resource", jmes_path(col_item, "content.overview.resource")
+      field "resourceName", jmes_path(col_item, "content.overview.resourceName")
+      field "description", jmes_path(col_item, "description")
+      field "primaryImpact", jmes_path(col_item, "primaryImpact")
+      field "priority", jmes_path(col_item, "priority")
+      field "recommenderSubtype", jmes_path(col_item, "recommenderSubtype")
+      field "state", jmes_path(col_item, "stateInfo.state")
+    end
+  end
 end
 
 ###############################################################################
@@ -120,27 +149,40 @@ script "js_recommenders", type: "javascript" do
   result "results"
   code <<-EOF
   var results = []
-  _.each(param_recommenders, function(recommender){
-    var global_inserted = 0
-    _.each(ds_zones, function(zone){
-      /*
+  var global_inserted = 0
+  var recommender_map = {
+    "Account security recommender": "google.accounts.security.SecurityKeyRecommender",
+    "Cloud SQL out-of-disk recommender": "google.cloudsql.instance.OutOfDiskRecommender",
+    "Committed use discount recommender": "google.compute.commitment.UsageCommitmentRecommender",
+    "IAM recommender": "google.iam.policy.Recommender",
+    "Idle custom image recommender": "google.compute.image.IdleResourceRecommender",
+    "Idle IP address recommender": "google.compute.address.IdleResourceRecommender",
+    "Idle persistent disk recommender": "google.compute.disk.IdleResourceRecommender",
+    "Idle VM recommender": "google.compute.instance.IdleResourceRecommender",
+    "Managed instance group machine type recommender": "google.compute.instanceGroupManager.MachineTypeRecommender",
+    "Product suggestion recommender - Container": "google.logging.productSuggestion.ContainerRecommender",
+    "Product suggestion recommender - Compute": "google.monitoring.productSuggestion.ComputeRecommender",
+    "VM machine type recommender": "google.compute.instance.MachineTypeRecommender",
+    "Unattended project recommender": "google.resourcemanager.projectUtilization.Recommender",
+    "Unattended project recommender": "google.resourcemanager.projectUtilization.Recommender",
+  }
+  recommenders = recommender_map[param_recommenders]
+  _.each(ds_zones, function(zone){
+    results.push({
+      projectNumber: zone.projectNumber,
+      projectId: zone.projectId,
+      location: zone.name,
+      recommender: recommenders
+    })
+    if ( global_inserted == 0){
       results.push({
         projectNumber: zone.projectNumber,
         projectId: zone.projectId,
-        location: zone.name,
-        recommender: recommender
+        location: 'global',
+        recommender: recommenders
       })
-      */
-      if ( global_inserted == 0){
-        results.push({
-          projectNumber: zone.projectNumber,
-          projectId: zone.projectId,
-          location: 'global',
-          recommender: recommender
-        })
-        global_inserted = 1
-      }
-    })
+      global_inserted = 1
+    }
   })
 EOF
 end
@@ -150,7 +192,7 @@ script "js_recommender_call", type: "javascript" do
   result "request"
   code <<-EOF
   var now = new Date().getTime();
-  var sleepDuration = 30000
+  var sleepDuration = 10000
   while(new Date().getTime() < now + sleepDuration){ /* Do nothing */ }
   var request = {
     auth: "auth_google",
@@ -177,10 +219,43 @@ end
 
 policy "policy_recommendations" do
   validate_each $ds_recommendations do
-    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): rows containing Old Snapshots"
+    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} rows found for {{parameters.param_recommenders}}"
     check eq(0,1)
     escalate $esc_email
-    detail_template "details"
+    export do
+      resource_level true
+      field "projectId" do
+        label "Project ID"
+      end
+      field "location" do
+        label "Location"
+      end
+      field "resourceName" do
+        label "Resource Name"
+      end
+      field "description" do
+        label "Description"
+      end
+      field "primary_impact" do
+        label "Primary Impact"
+        path "primaryImpact.category"
+      end
+      field "priority" do
+        label "Priority"
+      end
+      field "recommenderSubtype" do
+        label "Sub Type"
+      end
+      field "state" do
+        label "State"
+      end
+      field "resource" do
+        label "resource"
+      end
+      field "id" do
+        label "Name"
+      end
+    end
   end
 end
 
