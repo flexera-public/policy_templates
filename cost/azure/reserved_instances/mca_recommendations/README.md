@@ -4,7 +4,7 @@
 
 ## What it does
 
-This Policy leverages the [Azure API](https://docs.microsoft.com/en-us/rest/api/consumption/reservationrecommendations/list). It will raise incidents if Azure has any Reservations Purchase Recommendations, whose net savings exceeds the `Net Savings Threshold` parameter in the Policy.  Supports Shared subscription Reservations and the following Reservation Types: ['VirtualMachines', 'SQLDatabases', 'PostgreSQL', 'ManagedDisk', 'MySQL', 'RedHat', 'MariaDB', 'RedisCache', 'CosmosDB', 'SqlDataWarehouse', 'SUSELinux', 'AppService', 'BlockBlob', 'AzureDataExplorer', 'VMwareCloudSimple']
+This Policy leverages the [Azure API](https://docs.microsoft.com/en-us/rest/api/consumption/reservationrecommendations/list). It will raise incidents if Azure has any Reservations Purchase Recommendations, whose net savings exceeds the `Net Savings Threshold` parameter in the Policy.  Supports Shared subscription Reservations and the following Reservation Types: ['VirtualMachines', 'SQLDatabases', 'PostgreSQL', 'ManagedDisk', 'MySQL', 'RedHat', 'MariaDB', 'RedisCache', 'CosmosDB', 'SqlDataWarehouse', 'SUSELinux', 'AppService', 'BlockBlob', 'AzureDataExplorer', 'VMwareCloudSimple'].  You must use the Resource Type input to apply the policy for each resource type you want a reservation recommendation.
 
 ## Input Parameters
 
