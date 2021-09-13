@@ -127,6 +127,9 @@ Please contact sales@flexera.com to learn more.
 
 #### AWS
 
+##### IAM
+- [AWS No Root Access Keys](./security/aws/iam_no_root_access_keys/)
+
 ##### Database
 
 - [AWS Unencrypted RDS Instances](./security/aws/rds_unencrypted/)
