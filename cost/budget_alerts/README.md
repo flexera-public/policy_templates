@@ -17,6 +17,7 @@ This Policy uses Optima to determine if a Billing Center or the entire Organizat
 This policy has the following input parameters required when launching the policy.
 
 - *Monthly Budget* - specify the monthly budget.  Currency is irrelevant; the policy will default to whichever currency is used in Optima.
+- *Threshold Percentage* - Percentage of budget amount to alert on
 - *Billing Center Name or Id* - if the scope is "Billing Center", supply the name or Id of the target Billing Center. When left blank the policy reports on all the billing centers in the CMP Organization.
 - *Cost Metric* - specify options for amortized vs non-amortized and blended vs unblended costs
 - *Budget Alert Type* - Actual Spend alerts are based off incurred costs. Forecasted Spend alerts are based off monthly runrates

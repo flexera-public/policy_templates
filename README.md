@@ -61,6 +61,7 @@ Please contact sales@flexera.com to learn more.
 - [AWS S3 Buckets without Server Access Logging](./security/storage/aws/s3_buckets_without_server_access_logging/)
 - [AWS Object Storage Optimization](./cost/aws/object_storage_optimization/)
 - [AWS Old Snapshots](./cost/aws/old_snapshots/)
+- [AWS S3 Bucket Intelligent Tiering Check](./cost/aws/s3_storage_policy/)
 
 #### Azure
 
@@ -88,6 +89,7 @@ Please contact sales@flexera.com to learn more.
 - [Azure Blob Storage Optimization](./cost/azure/object_storage_optimization/)
 - [Azure Old Snapshots](./cost/azure/old_snapshots/)
 - [Azure Unused Volumes](./cost/azure/unattached_volumes)
+- [Azure Storage Accounts without Lifecycle Management Policies](./cost/azure/storage_account_lifecycle_management/)
 
 #### Google
 
@@ -125,6 +127,11 @@ Please contact sales@flexera.com to learn more.
 
 #### AWS
 
+##### IAM
+
+- [AWS Hardware MFA Enabled For Root User](./security/aws/iam_hwmfa_enabled_for_root/)
+- [AWS Prevent Password Reuse](./security/aws/iam_prevent_password_reuse/)
+
 ##### Database
 
 - [AWS Unencrypted RDS Instances](./security/aws/rds_unencrypted/)
@@ -141,6 +148,10 @@ Please contact sales@flexera.com to learn more.
 - [AWS Internet-facing ELBs & ALBs](./security/aws/loadbalancer_internet_facing/)
 - [AWS Unencrypted ELB Listeners (CLB)](./security/aws/clb_unencrypted/)
 - [AWS Unencrypted ELB Listeners (ALB/NLB)](./security/aws/elb_unencrypted/)
+
+#### VPC
+
+- [AWS VPC's without FlowLogs Enabled](./security/aws/vpcs_without_flow_logs_enabled/)
 
 #### Azure
 
@@ -226,6 +237,7 @@ Please contact sales@flexera.com to learn more.
 - [AWS VPC Name Tag Sync](./operational/aws/vpc_name_sync)
 - [AWS Long Running Instances](./operational/aws/long_running_instances/)
 - [AWS Instance Scheduled Events](./operational/aws/instance_scheduled_events)
+- [AWS Lambda Functions with high error rate](./operational/aws/lambda_functions_with_high_error_rate/)
 
 #### Azure
 
@@ -233,6 +245,7 @@ Please contact sales@flexera.com to learn more.
 - [Azure Migrate Integration](./operational/azure/azure_migrate)
 - [AzureAD Group Sync](./operational/azure/azuread_group_sync/)
 - [Azure Sync Tags with Optima](./operational/azure/sync_tags_with_optima/)
+- [Azure SQL Databases without Elastic Pools](./operational/azure/azure_sql_using_elastic_pool/)
 
 #### VMWare
 

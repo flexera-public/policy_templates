@@ -1,0 +1,226 @@
+name "Azure SQL Databases without Elastic Pools"
+rs_pt_ver 20180301
+type "policy"
+short_description "Check a list of Azure SQL Servers and check for Elastic DB Pools. See the [README](https://github.com/flexera/policy_templates/tree/master/operational/azure/azure_sql_using_elastic_pool/) and [docs.rightscale.com/policies](https://docs.rightscale.com/policies/) to learn more."
+long_description ""
+severity "low"
+category "Cost"
+default_frequency "daily"
+info(
+  version: "2.0",
+  provider: "Azure",
+  service: "SQL",
+  policy_set: "Database Services"
+)
+
+###############################################################################
+# Parameters
+###############################################################################
+
+parameter "param_exclusion_tag_key" do
+  category "User Inputs"
+  label "Exclusion Tag Key"
+  description "Cloud native tag key to ignore instances. Example: exclude_utilization"
+  type "string"
+end
+
+parameter "param_email" do
+  type "list"
+  label "Email addresses"
+  description "Email addresses of the recipients you wish to notify"
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+#authenticate with Azure
+credentials "azure_auth" do
+  schemes "oauth2"
+  label "Azure"
+  description "Select the Azure Resource Manager Credential from the list."
+  tags "provider=azure_rm"
+end
+
+###############################################################################
+# Pagination
+###############################################################################
+pagination "azure_pagination" do
+  get_page_marker do
+    body_path "nextLink"
+  end
+  set_page_marker do
+    uri true
+  end
+end
+
+###############################################################################
+# Datasources
+###############################################################################
+
+datasource "ds_subscriptions" do
+  request do
+    auth $azure_auth
+    pagination $azure_pagination
+    host "management.azure.com"
+    path "/subscriptions/"
+    query "api-version","2019-06-01"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "value[*]") do
+      field "subscriptionId", jmes_path(col_item,"subscriptionId")
+      field "displayName", jmes_path(col_item,"displayName")
+      field "state", jmes_path(col_item,"state")
+    end
+  end
+end
+
+#https://docs.microsoft.com/en-us/rest/api/resources/resources/list
+datasource "ds_azure_sql_databases" do
+  iterate $ds_subscriptions
+  request do
+    auth $azure_auth
+    pagination $azure_pagination
+    host "management.azure.com"
+    path join(["/subscriptions/", val(iter_item,"subscriptionId"), "/resources"])
+    query "api-version","2019-08-01"
+    query "$filter", "resourceType eq 'Microsoft.Sql/servers'"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "value") do
+      field "id", jmes_path(col_item,"id")
+      field "name", jmes_path(col_item,"name")
+      field "location", jmes_path(col_item,"location")
+      field "type", jmes_path(col_item,"type")
+      field "kind", jmes_path(col_item,"kind")
+      field "sku" , jmes_path(col_item,"sku")
+      field "tags", jmes_path(col_item,"tags")
+      field "subscriptionId",val(iter_item,"subscriptionId")
+      field "subscriptionName",val(iter_item,"displayName")
+    end
+  end
+end
+
+datasource "ds_elastic_pools" do
+  iterate $ds_azure_sql_databases
+  request do
+    auth $azure_auth
+    pagination $azure_pagination
+    host "management.azure.com"
+    path join([val(iter_item, "id"), '/elasticPools'])
+    query "api-version", "2020-08-01-preview"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "value[*]") do
+      field "id", val(iter_item,"id")
+      field "name", val(iter_item,"name")
+      field "location", val(iter_item,"location")
+      field "type", val(iter_item,"type")
+      field "kind", val(iter_item,"kind")
+      field "sku" , val(iter_item,"sku")
+      field "tags", val(iter_item,"tags")
+      field "subscriptionId", val(iter_item,"subscriptionId")
+      field "subscriptionName", val(iter_item,"displayName")
+      field "elasticPoolId", jmes_path(col_item, "id")
+      field "elasticPoolName", jmes_path(col_item, "name")
+      field "elasticPoolSku", jmes_path(col_item, "sku")
+      field "elasticPoolProperties", jmes_path(col_item, "properties")
+    end
+  end
+end
+
+datasource "ds_merged_metrics" do
+  run_script $js_merged_metrics, $ds_azure_sql_databases, $ds_elastic_pools, $param_exclusion_tag_key
+end
+
+###############################################################################
+# Scripts
+###############################################################################
+
+script "js_merged_metrics", type: "javascript" do
+  parameters "ds_azure_sql_databases", "ds_elastic_pools", "param_exclusion_tag_key"
+  result "results"
+  code <<-EOS
+  var results = []
+  _.each(ds_azure_sql_databases, function(server){
+    var pool = _.first(
+      _.filter(ds_elastic_pools, function(pool){
+        if (server.id == pool.id){
+          return pool
+        }
+      })
+    )
+    if ( !_.has(server.tags, param_exclusion_tag_key) && (pool == undefined)){
+      resource_group = server.id.split('/')[4]
+      var tag_string = ""
+      _.each(server.tags, function(value, key){
+        tag_string = tag_string + key + '=' + value + ', '
+      })
+      server['resource_group'] = resource_group
+      server['tagString'] = tag_string
+      results.push(server)
+    }
+  })
+  EOS
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy 'policy_azure_db_utilization' do
+  validate $ds_merged_metrics do
+    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): Found {{ len data }} Azure SQL Servers without Elastic Pools"
+    escalate $email_report
+    check eq(size(data),0)
+    export do
+      resource_level true
+      field "subscriptionName" do
+        label "Subscription Name"
+      end
+      field "location" do
+        label "Location"
+      end
+      field "name" do
+        label "Name"
+      end
+      field "resource_group" do
+        label "Resource Group"
+      end
+      field "kind" do
+        label "Kind"
+      end
+      field "type" do
+        label "Type"
+      end
+      field "tagString" do
+        label "Tags"
+      end
+      field "id" do
+        label "Id"
+      end
+    end
+  end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "email_report" do
+  automatic true
+  label "Send Email"
+  description "Sends incident email"
+  email $param_email
+end
+
+###############################################################################
+# Cloud Workflow
+###############################################################################
+

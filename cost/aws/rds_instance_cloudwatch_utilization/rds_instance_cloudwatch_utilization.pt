@@ -7,7 +7,7 @@ severity "low"
 category "Cost"
 default_frequency "daily"
 info(
-  version: "2.7",
+  version: "2.9",
   provider: "AWS",
   service: "RDS",
   policy_set: "RightSize Database Services"
@@ -59,6 +59,14 @@ parameter "param_automatic_action" do
   label "Automatic Actions"
   description "When this value is set, this policy will automatically take the selected action(s)"
   allowed_values ["Resize Instances"]
+end
+
+parameter "param_log_to_cm_audit_entries" do
+  type "string"
+  label "Log to CM Audit Entries"
+  description "Boolean for whether or not to log any debugging information from actions to CM Audit Entries, this should be left set to No on Flexera EU"
+  default "No"
+  allowed_values "Yes", "No"
 end
 
 ###############################################################################
@@ -253,8 +261,13 @@ script "js_instances", type: "javascript" do
         continue
       } else {
         var instance_type = instance.dbInstanceClass
-        var size_up = ds_aws_instance_size_map[instance_type.toString()]["up"]
-        var size_down = ds_aws_instance_size_map[instance_type.toString()]["down"]
+        if(ds_aws_instance_size_map[instance_type.toString()] !== undefined && ds_aws_instance_size_map[instance_type.toString()] != null){
+          var size_up = ds_aws_instance_size_map[instance_type.toString()]["up"]
+          var size_down = ds_aws_instance_size_map[instance_type.toString()]["down"]
+        } else {
+          var size_up = "N/A"
+          var size_down = "N/A"
+        }
         results.push ({
           "region": instance.region,
           "availabilityZone": instance.availabilityZone,
@@ -506,11 +519,11 @@ escalation "resize_instances" do
   automatic contains($param_automatic_action, "Resize Instances")
   label "Update Instance"
   description "Approve selected RDS RightSizing"
-  run "rightsize_rds", data
+  run "rightsize_rds", data, $param_log_to_cm_audit_entries
 end
 
-define rightsize_rds($data) return $all_responses do
-  $$debug=true
+define rightsize_rds($data,$param_log_to_cm_audit_entries) return $all_responses do
+  $$debug = $param_log_to_cm_audit_entries == "Yes"
   $$log = []
   $all_responses = []
 
