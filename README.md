@@ -127,6 +127,10 @@ Please contact sales@flexera.com to learn more.
 
 #### AWS
 
+##### IAM
+
+- [AWS Hardware MFA Enabled For Root User](./security/aws/iam_hwmfa_enabled_for_root/)
+
 ##### Database
 
 - [AWS Unencrypted RDS Instances](./security/aws/rds_unencrypted/)
