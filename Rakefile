@@ -1,6 +1,9 @@
 require 'rubygems'
 require 'json'
 require 'fileutils'
+require "open-uri"
+require 'yaml'
+require 'openssl'
 require_relative 'tools/lib/policy_parser'
 
 # the list of policies is consumed by the tools/policy_sync/policy_sync.pt
@@ -66,4 +69,56 @@ task :generate_policy_list do
   end
   policies = {"policies": file_list }
   File.open('dist/active-policy-list.json', 'w') { |file| file.write(JSON.pretty_generate(policies)+"\n") }
+end
+
+desc "Creates a KPI file to track policies meeting finops kpis"
+task :generate_kpi_list do
+  OpenSSL::SSL::VERIFY_PEER = OpenSSL::SSL::VERIFY_NONE
+  kpis_url = "https://raw.githubusercontent.com/finopsfoundation/kpis/master/waste-sensors/waste-sensors.yml"
+  kpis_file = '../../kpis.json'
+  waste_sensor_file = "./waste-sensors.yml"
+
+  open(kpis_url) do |sensors|
+    File.open(waste_sensor_file, "wb") do |file|
+      file.write(sensors.read)
+    end
+  end
+  parsed_finops_kpis = YAML.load_stream(File.open(waste_sensor_file))
+
+  file_list = []
+  Dir['**/*.pt'].reject{ |f| f['msp/'] }.each do |file|
+    if !file.match(/test_code/)
+      f = File.open(file, "r:bom|utf-8")
+
+      pp = PolicyParser.new
+      pp.parse(file)
+
+      if pp.parsed_info
+        provider = pp.parsed_info[:provider]
+        finops_waste_sensor_id = pp.parsed_info[:finops_waste_sensor_id]
+      end
+      name = pp.parsed_name
+      if !finops_waste_sensor_id.nil?
+        file_list<<{
+          name: name,
+          provider: provider,
+          finops_waste_sensor_id: finops_waste_sensor_id
+        }
+      end
+    end
+  end
+
+  parsed_finops_kpis.each do |kpi|
+    x = file_list.find { |f| f[:finops_waste_sensor_id] == kpi["id"] }
+    if !x.nil?
+      kpi["policy"] = x[:name]
+    else
+      kpi["policy"] = nil
+    end
+  end
+
+  File.open("./finops-kpis.json", "wb") do |file|
+    file.write(JSON.pretty_generate(parsed_finops_kpis))
+  end
+  File.delete(waste_sensor_file) if File.exist?(waste_sensor_file)
 end
