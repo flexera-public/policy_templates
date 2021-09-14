@@ -8,6 +8,8 @@ Please contact sales@flexera.com to learn more.
 
 ### Cost
 
+![Finops Waste Sensors](sensors.svg "Finops Waste Sensors")
+
 #### Multi-cloud
 
 - [Billing Center Cost Anomaly](./cost/billing_center_cost_anomaly/)

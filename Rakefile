@@ -77,6 +77,7 @@ task :generate_kpi_list do
   kpis_url = "https://raw.githubusercontent.com/finopsfoundation/kpis/master/waste-sensors/waste-sensors.yml"
   kpis_file = '../../kpis.json'
   waste_sensor_file = "./waste-sensors.yml"
+  SHIELD_URL_PREFIX = 'https://img.shields.io/badge/'.freeze
 
   open(kpis_url) do |sensors|
     File.open(waste_sensor_file, "wb") do |file|
@@ -108,10 +109,12 @@ task :generate_kpi_list do
     end
   end
 
+  success_counter = 0
   parsed_finops_kpis.each do |kpi|
     x = file_list.find { |f| f[:finops_waste_sensor_id] == kpi["id"] }
     if !x.nil?
       kpi["policy"] = x[:name]
+      success_counter += 1
     else
       kpi["policy"] = nil
     end
@@ -119,6 +122,15 @@ task :generate_kpi_list do
 
   File.open("./finops-kpis.json", "wb") do |file|
     file.write(JSON.pretty_generate(parsed_finops_kpis))
+  end
+
+  percentage_coverage = ((success_counter.to_f/parsed_finops_kpis.length().to_f).to_f*100).to_i
+  message = "#{percentage_coverage}%"
+  png_url = URI.escape(SHIELD_URL_PREFIX + "Finops Waste Sensor Coverage-#{message}-brightgreen.svg?style=plastic")
+  open(png_url) do |png|
+    File.open('sensors.svg', "wb") do |file|
+      file.write(png.read)
+    end
   end
   File.delete(waste_sensor_file) if File.exist?(waste_sensor_file)
 end
