@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.4
+
+- Fixed bug in iteration over multiple roles/subscriptions
+
 ## v2.3
 
 - Fixed bug in displaying role assignment id

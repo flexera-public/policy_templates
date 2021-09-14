@@ -30,6 +30,10 @@ Please contact sales@flexera.com to learn more.
 
 #### AWS
 
+##### Credential Setup
+
+- [Read Only CFT](./cost/aws/FlexeraReadOnlyPolicy.template)
+
 ##### Compute
 
 - [AWS Burstable Instance CloudWatch Utilization](./cost/aws/burstable_instance_cloudwatch_credit_utilization/)
@@ -89,6 +93,7 @@ Please contact sales@flexera.com to learn more.
 - [Azure Blob Storage Optimization](./cost/azure/object_storage_optimization/)
 - [Azure Old Snapshots](./cost/azure/old_snapshots/)
 - [Azure Unused Volumes](./cost/azure/unattached_volumes)
+- [Azure Storage Accounts without Lifecycle Management Policies](./cost/azure/storage_account_lifecycle_management/)
 
 #### Google
 
@@ -125,6 +130,12 @@ Please contact sales@flexera.com to learn more.
 - [Security Groups With Ports Open To The World](./security/security_groups/world_open_ports)
 
 #### AWS
+
+##### IAM
+
+- [AWS No Root Access Keys](./security/aws/iam_no_root_access_keys/)
+- [AWS Hardware MFA Enabled For Root User](./security/aws/iam_hwmfa_enabled_for_root/)
+- [AWS Prevent Password Reuse](./security/aws/iam_prevent_password_reuse/)
 
 ##### Database
 
@@ -241,6 +252,7 @@ Please contact sales@flexera.com to learn more.
 - [Azure Migrate Integration](./operational/azure/azure_migrate)
 - [AzureAD Group Sync](./operational/azure/azuread_group_sync/)
 - [Azure Sync Tags with Optima](./operational/azure/sync_tags_with_optima/)
+- [Azure SQL Databases without Elastic Pools](./operational/azure/azure_sql_using_elastic_pool/)
 
 #### VMWare
 
