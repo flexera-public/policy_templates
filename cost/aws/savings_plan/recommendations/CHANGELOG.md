@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.5
+
+- prevent updating the incident if the data doesn't change
+
 ## v2.4
 
 - Added default_frequency "daily"
