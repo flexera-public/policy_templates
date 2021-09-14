@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.9
+
+- Updated next instance size logic to account for missing instance type in instance_types.json
+
 ## v2.8
 
 - Debug log via param (off by default)

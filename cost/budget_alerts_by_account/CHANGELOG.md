@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.3
+
+- Fixed markdown alignment in validation heredoc
+
 ## v1.2
 
 - Fixed aws account name lookup bug that lead to an error
