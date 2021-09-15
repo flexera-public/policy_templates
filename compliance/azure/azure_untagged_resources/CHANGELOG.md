@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.7
+
+- Convert resource type to lower case for comparison (Microsoft is not consistent with the case)
+
 ## v2.6
 
 - Drop namespace from resource type when looking up supported API versions
