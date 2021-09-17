@@ -1,0 +1,140 @@
+name "AWS IAM Report Root Account Access Keys"
+rs_pt_ver 20180301
+type "policy"
+short_description "Report any access keys with root access. \n See the [README](https://github.com/flexera/policy_templates/tree/master/security/aws/iam_no_root_access_keys) and [docs.rightscale.com/policies](https://docs.rightscale.com/policies/) to learn more."
+long_description ""
+category "Security"
+severity "high"
+default_frequency "15 minutes"
+info(
+  version: "1.0",
+  provider: "AWS",
+  service: "IAM",
+  policy_set: "CIS",
+  cce_id: "CCE-78910-7",
+  cis_aws_foundations_securityhub: "1.12",
+  benchmark_control: "1.4",
+  benchmark_version: "1.4.0",
+  cis_controls: "[\"3.3v8\", \"4.3v7\", \"5.4v8\"]",
+  nist: "AC-6(9)"
+)
+
+###############################################################################
+# User inputs
+###############################################################################
+
+parameter "param_email" do
+  type "list"
+  label "Email Address"
+  description "Email addresses of the recipients you wish to notify"
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+credentials "auth_aws" do
+  schemes "aws","aws_sts"
+  label "AWS"
+  description "Select the AWS Credential from the list"
+  tags "provider=aws"
+end
+
+###############################################################################
+# Datasources
+###############################################################################
+
+# Retrieve the id number of the account being tested
+datasource "ds_get_caller_identity" do
+  request do
+    auth $auth_aws
+    verb "GET"
+    host "sts.amazonaws.com"
+    path "/"
+    header "User-Agent", "RS Policies"
+    query "Action", "GetCallerIdentity"
+    query "Version", "2011-06-15"
+  end
+  result do
+    encoding "xml"
+    collect xpath(response, "//GetCallerIdentityResponse/GetCallerIdentityResult") do
+      field "account",xpath(col_item, "Account")
+    end
+  end
+end
+
+# Retrieve a boolean variable that indicates if any account keys have root access
+datasource "ds_iam_accesskeys" do
+  request do
+    auth $auth_aws
+    verb "GET"
+    host "iam.amazonaws.com"
+    path "/"
+    query "Action", "GetAccountSummary"
+    query "Version", "2010-05-08"
+    header "Accept", "application/json"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+    field "accountAccessKeysPresent", jmes_path(response, "GetAccountSummaryResponse.GetAccountSummaryResult.SummaryMap.AccountAccessKeysPresent")
+  end
+end
+
+# Combine ds_get_caller_identity and ds_iam_accesskeys into a single datasource
+datasource "ds_iam_caller_keys" do
+  run_script $js_caller_keys, $ds_iam_accesskeys, $ds_get_caller_identity
+end
+
+###############################################################################
+# Scripts
+###############################################################################
+
+# Script to combine ds_get_caller_identity and ds_iam_accesskeys into a single datasource
+script "js_caller_keys", type:"javascript" do
+  parameters "ds_iam_accesskeys", "ds_get_caller_identity"
+  result "result"
+  code <<-EOS
+    result={
+      id: ds_get_caller_identity[0]['account'],
+      accountAccessKeysPresent: ds_iam_accesskeys['accountAccessKeysPresent']
+    }
+EOS
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "policy_iam_root_keys" do
+  validate $ds_iam_caller_keys do
+    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): Root Access Keys Found in AWS"
+    escalate $report_root_access_keys
+    detail_template <<-EOS
+One or more access keys associated with this AWS account have full root access.
+
+Affected Account ID: {{data.id}}
+EOS
+    check eq(val(data, "accountAccessKeysPresent"),0)
+    export do
+      resource_level true
+      field "id" do
+        label "id"
+      end
+      field "accountAccessKeysPresent" do
+        label "accountAccessKeysPresent"
+      end
+    end
+  end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "report_root_access_keys" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
+end
