@@ -125,17 +125,34 @@ script "js_parse_cred_report", type:"javascript" do
   parameters "ds_get_caller_identity", "ds_get_cred_report"
   result "result"
   code<<-EOS
-    bad_users_present = 0;
     bad_users_list = [];
+    bad_users_present = 0;
+    now = new Date();
 
-    var cred_report_array = atob(ds_get_cred_report.credReportBase64).split('\\n');
+    var decoded = atob(ds_get_cred_report.credReportBase64);
+    var data = decoded.toString();
+    var arr = data.split('\\n');
+    var report = [];
+    var headers = arr[0].split(',');
 
-    for (var index = 1; index < cred_report_array.length; index++) {
-      if (cred_report_array[index].split(",")[3] == "true" && cred_report_array[index].split(",")[7] == "false")
-      {
-        bad_users_present = 1
-        bad_users_list.push(cred_report_array[index].split(",")[0])
+    for (var i=1; i < arr.length; i++) {
+      var data = arr[i].split(',');
+      var obj = {};
+      for(var j = 0; j < data.length; j++) {
+        obj[headers[j].trim()] = data[j].trim();
       }
+      report.push(obj);
+    }
+
+    _.each(report, function(user){
+      user_bad = 0;
+      if (user.password_enabled == "true" && user.mfa_active == "false") {
+        bad_users_list.push(user.user);
+      }
+    })
+
+    if (bad_users_list.length > 0) {
+      bad_users_present = 1
     }
 
     result={
