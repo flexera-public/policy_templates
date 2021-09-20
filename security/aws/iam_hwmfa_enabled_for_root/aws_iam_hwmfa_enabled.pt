@@ -1,0 +1,168 @@
+name "AWS IAM Report Root Accounts Without Hardware MFA"
+rs_pt_ver 20180301
+type "policy"
+short_description "Report root account if hardware MFA is disabled. \n See the [README](https://github.com/flexera/policy_templates/tree/master/security/aws/iam_hwmfa_enabled_for_root) and [docs.rightscale.com/policies](https://docs.rightscale.com/policies/) to learn more."
+long_description ""
+category "Security"
+severity "high"
+default_frequency "15 minutes"
+info(
+  version: "1.0",
+  provider: "AWS",
+  service: "IAM",
+  policy_set: "CIS",
+  cce_id: "CCE-78911-5",
+  cis_aws_foundations_securityhub: "1.14",
+  benchmark_control: "1.4",
+  benchmark_version: "1.4.0",
+  cis_controls: "[\"6.5v8\", \"4.5v7\"]",
+  nist: "IA-2(1)"
+)
+
+###############################################################################
+# User inputs
+###############################################################################
+
+parameter "param_email" do
+  type "list"
+  label "Email Address"
+  description "Email addresses of the recipients you wish to notify"
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+credentials "auth_aws" do
+  schemes "aws","aws_sts"
+  label "AWS"
+  description "Select the AWS Credential from the list"
+  tags "provider=aws"
+end
+
+###############################################################################
+# Datasources
+###############################################################################
+
+# Retrieve the id number of the account being tested
+datasource "ds_get_caller_identity" do
+  request do
+    auth $auth_aws
+    verb "GET"
+    host "sts.amazonaws.com"
+    path "/"
+    header "User-Agent", "RS Policies"
+    query "Action", "GetCallerIdentity"
+    query "Version", "2011-06-15"
+  end
+  result do
+    encoding "xml"
+    collect xpath(response, "//GetCallerIdentityResponse/GetCallerIdentityResult") do
+      field "account",xpath(col_item, "Account")
+    end
+  end
+end
+
+# Store whether MFA is enabled at all
+datasource "ds_iam_mfa_enabled" do
+  request do
+    auth $auth_aws
+    verb "GET"
+    host "iam.amazonaws.com"
+    path "/"
+    query "Action", "GetAccountSummary"
+    query "Version", "2010-05-08"
+    header "Accept", "application/json"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+    field "accountMFAEnabled", jmes_path(response, "GetAccountSummaryResponse.GetAccountSummaryResult.SummaryMap.AccountMFAEnabled")
+  end
+end
+
+# Retrieve a list of virtual MFA devices
+datasource "ds_iam_mfa_devices" do
+  request do
+    auth $auth_aws
+    verb "GET"
+    host "iam.amazonaws.com"
+    path "/"
+    query "Action", "ListVirtualMFADevices"
+    query "Version", "2010-05-08"
+    header "Accept", "application/json"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+    field "virtualMFADevices", jmes_path(response, "VirtualMFADevices")
+  end
+end
+
+# Combine ds_get_caller_identity and ds_iam_accesskeys into a single datasource
+datasource "ds_iam_mfa_status" do
+  run_script $js_iam_mfa_status, $ds_get_caller_identity, $ds_iam_mfa_enabled, $ds_iam_mfa_devices
+end
+
+###############################################################################
+# Scripts
+###############################################################################
+
+# Script to combine ds_get_caller_identity and ds_iam_accesskeys into a single datasource
+script "js_iam_mfa_status", type:"javascript" do
+  parameters "ds_get_caller_identity", "ds_iam_mfa_enabled", "ds_iam_mfa_devices"
+  result "result"
+  code <<-EOS
+    hw_enabled=0
+
+    if (ds_iam_mfa_devices['virtualMFADevices'] == null && ds_iam_mfa_enabled['accountMFAEnabled'] == 1) {
+      hw_enabled=1
+    }
+
+    result={
+      id: ds_get_caller_identity[0]['account'],
+      mfa_enabled: ds_iam_mfa_enabled['accountMFAEnabled']
+      mfa_hw_enabled: hw_enabled
+    }
+EOS
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "policy_iam_hwmfa" do
+  validate $ds_iam_mfa_status do
+    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): Hardware MFA disabled"
+    escalate $esc_report_root_access_keys
+    detail_template <<-EOS
+Hardware multi-factor authentication is not enabled for the root user.
+
+Affected Account ID: {{data.id}}
+EOS
+    check eq(val(data, "mfa_hw_enabled"),1)
+    export do
+      resource_level true
+      field "id" do
+        label "id"
+      end
+      field "mfa_enabled" do
+        label "mfa_enabled"
+      end
+      field "mfa_hw_enabled" do
+        label "mfa_hw_enabled"
+      end
+    end
+  end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_report_root_access_keys" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
+end
