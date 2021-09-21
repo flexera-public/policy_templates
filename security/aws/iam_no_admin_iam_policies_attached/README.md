@@ -2,7 +2,7 @@
 
 ## What it does
 
-Generally speaking, AWS policies should grant specific permissions based on the principle of least privilege. This policy checks for any attached AWS policies that have full administrative rights and raises an incident if any are present.
+AWS policies should grant specific permissions based on the principle of least privilege. This policy checks for any attached AWS policies that have full unrestricted administrative rights and raises an incident if any are present.
 
 ## Functional Details
 
@@ -35,8 +35,9 @@ Required permissions in the provider:
         {
             "Effect": "Allow",
             "Action": [
-                "sts:GetCallerIdentity",
-                "iam:GetAccountSummary"
+                "iam:ListPolicies",
+                "iam:GetPolicyVersion",
+                "sts:GetCallerIdentity"
             ],
             "Resource": "*"
         }
