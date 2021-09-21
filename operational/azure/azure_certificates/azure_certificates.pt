@@ -7,7 +7,7 @@ category "Operational"
 severity "low"
 default_frequency "daily"
 info(
-  version: "2.0", 
+  version: "2.0",
   provider: "Azure",
   service: "Compute",
   policy_set: ""
@@ -90,35 +90,14 @@ datasource "ds_subscriptions" do
   end
 end
 
-datasource "ds_resource_groups" do
+datasource "ds_certificates" do
   iterate $ds_subscriptions
   request do
     auth $azure_auth
     pagination $azure_pagination
     host "management.azure.com"
-    path join(["/subscriptions/", val(iter_item,"subscriptionId"), "/resourcegroups"])
-    query "api-version","2019-10-01"
-    header "User-Agent", "RS Policies"
-  end
-  result do
-    encoding "json"
-    collect jmes_path(response, "value[*]") do
-      field "id", jmes_path(col_item, "id")
-      field "location", jmes_path(col_item, "location")
-      field "rgName", jmes_path(col_item, "name")
-      field "subscriptionName", val(iter_item, "subscriptionName")
-    end
-  end
-end
-
-datasource "ds_certificates" do
-  iterate $ds_resource_groups
-  request do
-    auth $azure_auth
-    pagination $azure_pagination
-    host "management.azure.com"
-    path join([val(iter_item,"id"), "/providers/Microsoft.Web/certificates", ])
-    query "api-version","2019-10-01"
+    path join(["/subscriptions/", val(iter_item, "subscriptionId"), "/providers/Microsoft.Web/certificates", ])
+    query "api-version","2019-08-01"
     header "User-Agent", "RS Policies"
   end
   result do
@@ -126,11 +105,11 @@ datasource "ds_certificates" do
     collect jmes_path(response, "value[*]") do
       field "id", jmes_path(col_item, "id")
       field "subscriptionName", val(iter_item, "subscriptionName")
-      field "rgName", val(iter_item, "rgName")
+      field "subscriptionId", val(iter_item, "subscriptionId")
       field "location", jmes_path(col_item, "location")
       field "name", jmes_path(col_item, "name")
       field "tags", jmes_path(col_item, "tags")
-      field "properties" do 
+      field "properties" do
         collect jmes_path(response, "properties[*]") do
           field "expirationDate", jmes_path(col_item, "expirationDate")
           field "subjectName", jmes_path(col_item, "subjectName")
@@ -175,7 +154,7 @@ script "js_filter_certificates", type: "javascript" do
           if (expire_days > (nowDate - compareDate)) {
             result.push({
               subscriptionName: certs["subscriptionName"],
-              rgName: certs["rgName"],
+              rgName: certs["id"].split('/')[4],
               location: certs["location"],
               name: certs["name"],
               expirationDate: cert["expirationDate"].toString(),
