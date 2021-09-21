@@ -1,0 +1,102 @@
+name "AWS IAM Report Attached Admin IAM Policies"
+rs_pt_ver 20180301
+type "policy"
+short_description "Report any admin IAM policies that are attached. \n See the [README](https://github.com/flexera/policy_templates/tree/master/security/aws/iam_no_admin_iam_policies_attached) and [docs.rightscale.com/policies](https://docs.rightscale.com/policies/) to learn more."
+long_description ""
+category "Security"
+severity "high"
+default_frequency "daily"
+info(
+  version: "2.0",
+  provider: "AWS",
+  service: "IAM",
+  policy_set: "CIS",
+  cce_id: "CCE-78912-3",
+  cis_aws_foundations_securityhub: "1.22",
+  benchmark_control: "1.16",
+  benchmark_version: "1.4.0",
+  cis_controls: "[\"3.3v8\", \"4v7\"]",
+  nist: "AC-6"
+)
+
+###############################################################################
+# User inputs
+###############################################################################
+
+parameter "param_email" do
+  type "list"
+  label "Email Address"
+  description "Email addresses of the recipients you wish to notify"
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+credentials "auth_aws" do
+  schemes "aws","aws_sts"
+  label "AWS"
+  description "Select the AWS Credential from the list"
+  tags "provider=aws"
+end
+
+###############################################################################
+# Datasources
+###############################################################################
+
+# Retrieve a boolean variable that indicates if any account keys have root access
+datasource "ds_iam_listpolicies" do
+  request do
+    auth $auth_aws
+    verb "GET"
+    host "iam.amazonaws.com"
+    path "/"
+    query "Action", "ListPolicies"
+    query "Version", "2010-05-08"
+    query "OnlyAttached", "true"
+    header "Accept", "application/json"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "GetListPoliciesResponse.GetListPoliciesResult.Policies[*]") do
+      field "policyName", jmes_path(col_item, "PolicyName")
+      field "arn", jmes_path(col_item, "Arn")
+    end
+  end
+end
+
+# datasource "ds_iam_policyversions" do
+#   iterate $ds_iam_listpolicies
+#   request do
+#     auth $auth_aws
+#     verb "GET"
+#     host "iam.amazonaws.com"
+#     path "/"
+#     query "Action", "GetPolicyVersion"
+#     query "PolicyArn", val(iter_item, "Arn")
+#     query "VersionId", "v1"
+#     query "Version", "2010-05-08"
+#     query "OnlyAttached", "true"
+#     header "Accept", "application/json"
+#     header "User-Agent", "RS Policies"
+#   end
+#   result do
+#     encoding "json"
+#     collect jmes_path(response, "GetPolicyVersionResponse.GetPolicyVersionResult.PolicyVersion.Document.Statement[*]") do
+#       field "policyName", jmes_path(iter_item, "policyName")
+#       field "arn", jmes_path(iter_item, "arn")
+#       field "action", jmes_path(col_item, "Action")
+#       field "effect", jmes_path(col_item, "Effect")
+#       field "resource", jmes_path(col_item, "Resource")
+#     end
+#   end
+# end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "pol_no_admin_iam_policies" do
+
+end
