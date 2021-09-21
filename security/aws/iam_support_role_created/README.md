@@ -6,7 +6,7 @@ AWS provides a support center that can be used for incident notification and res
 
 ## Functional Details
 
-When no AWSSupportAccess policies are found, or no such policies are attached to a role, this policy raises an incident.
+When the AWSSupportAccess IAM policy is not attached to a role, this policy raises an incident.
 
 ## Input Parameters
 
