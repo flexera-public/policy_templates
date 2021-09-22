@@ -18,3 +18,130 @@ info(
   cis_controls: "[\"3.3v8\", \"14v7\", \"14.6v7\"]",
   nist: "" # Unknown
 )
+
+###############################################################################
+# User inputs
+###############################################################################
+
+parameter "param_email" do
+  type "list"
+  label "Email Address"
+  description "Email addresses of the recipients you wish to notify"
+end
+
+parameter "param_regions" do
+  type "list"
+  label "Regions"
+  description "Active regions you wish to run this policy against"
+  default "us-east-1"
+  allowed_values "us-east-1", "us-east-2", "us-west-1", "us-west-2", "af-south-1", "ap-east-1", "ap-south-1", "ap-northeast-3", "ap-northeast-2", "ap-southeast-1", "ap-southeast-2", "ap-northeast-1", "ca-central-1", "eu-central-1", "eu-west-1", "eu-west-2", "eu-south-1", "eu-west-3", "eu-north-1", "me-south-1", "sa-east-1", "us-gov-east-1", "us-gov-west-1"
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+credentials "auth_aws" do
+  schemes "aws","aws_sts"
+  label "AWS"
+  description "Select the AWS Credential from the list"
+  tags "provider=aws"
+end
+
+###############################################################################
+# Datasources
+###############################################################################
+
+# Retrieve the id number of the account being tested
+datasource "ds_get_caller_identity" do
+  request do
+    auth $auth_aws
+    verb "GET"
+    host "sts.amazonaws.com"
+    path "/"
+    header "User-Agent", "RS Policies"
+    query "Action", "GetCallerIdentity"
+    query "Version", "2011-06-15"
+  end
+  result do
+    encoding "xml"
+    collect xpath(response, "//GetCallerIdentityResponse/GetCallerIdentityResult") do
+      field "account",xpath(col_item, "Account")
+    end
+  end
+end
+
+datasource "ds_list_analyzers" do
+  iterate $param_regions
+  request do
+    auth $auth_aws
+    verb "GET"
+    host join(["access-analyzer.", iter_item, ".amazonaws.com"])
+    path "/analyzer"
+    header "User-Agent", "RS Policies"
+    header "Accept", "application/json"
+    query "Action", "GetCallerIdentity"
+    query "Version", "2011-06-15"
+  end
+  result do
+    encoding "json"
+    field "region", iter_item
+    field "analyzers", jmes_path(response, "analyzers")
+  end
+end
+
+datasource "ds_checked_analyzers" do
+  run_script $js_analyzers, $ds_get_caller_identity, $ds_list_analyzers
+end
+
+###############################################################################
+# Scripts
+###############################################################################
+
+# Script to combine ds_get_caller_identity and ds_iam_accesskeys into a single datasource
+script "js_analyzers", type:"javascript" do
+  parameters "ds_get_caller_identity", "ds_list_analyzers"
+  result "result"
+  code <<-EOS
+
+EOS
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "policy_access_analyzer_enabled" do
+  validate $ds_checked_analyzers do
+    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): Regions Without Access Analyzers Found"
+    escalate $esc_report_access_analyzer_enabled
+    detail_template <<-EOS
+Regions without Access Analyzers found.
+
+Affected Account ID: {{data.id}}
+Affected Regions: {{data.regions}}
+EOS
+    check eq(size(val(data, "regions")),0)
+    export do
+      resource_level true
+      field "id" do
+        label "id"
+      end
+      field "regions" do
+        label "regions"
+      end
+    end
+  end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_report_access_analyzer_enabled" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
+end
+
