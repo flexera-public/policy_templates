@@ -78,10 +78,9 @@ Please contact sales@flexera.com to learn more.
 - [Azure Inefficient Instance Utilization using Log Analytics](./cost/azure/instances_log_analytics_utilization/)
 - [Azure Expiring Reserved Instances](./cost/azure/reserved_instances/expiration)
 - [Azure Reserved Instance Utilization](./cost/azure/reserved_instances/utilization/)
-- [Azure Reserved Instance Recommendations](./cost/azure/reserved_instances/recommendations)
+- [Azure Reserved Instance Recommendations](./cost/azure/reserved_instances/mca_recommendations)
 - [Azure Unused IP Addresses](./cost/azure/unused_ip_addresses)
 - [Azure Schedule Instance](./cost/azure/schedule_instance/)
-- [Azure MCA Reserved Instance Recommendations](./cost/azure/reserved_instances/mca_recommendations)
 
 ##### Database
 
