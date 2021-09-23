@@ -132,9 +132,14 @@ Please contact sales@flexera.com to learn more.
 
 ##### IAM
 
+###### CIS Policies
+
 - [AWS No Root Access Keys](./security/aws/iam_no_root_access_keys/)
 - [AWS Hardware MFA Enabled For Root User](./security/aws/iam_hwmfa_enabled_for_root/)
+- [AWS MFA Enabled For IAM Users](./security/aws/iam_mfa_enabled_for_iam_users/)
+- [AWS Minimum Password Length](./security/aws/iam_min_password_length/)
 - [AWS Prevent Password Reuse](./security/aws/iam_prevent_password_reuse/)
+- [AWS Rotate Access Keys](./security/aws/iam_rotate_access_keys/)
 
 ##### Database
 
