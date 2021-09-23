@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.8
+
+- Ignoring Custom Instance Types
+
 ## v2.7
 
 - Debug via param (off by default, for EU app)
