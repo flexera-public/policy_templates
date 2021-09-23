@@ -1,9 +1,9 @@
 # Changelog
 
-## v2.0
+## v2.1
 
 - updated metadata
 
-## v1.0
+## v2.0
 
 - initial release
