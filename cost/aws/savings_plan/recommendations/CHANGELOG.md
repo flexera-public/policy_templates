@@ -2,7 +2,11 @@
 
 ## v2.5
 
+<<<<<<< HEAD
 - prevent updating the incident if the data doesn't change
+=======
+- Added "Account Scope" (PAYER or LINKED) parameter
+>>>>>>> master
 
 ## v2.4
 
