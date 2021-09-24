@@ -140,6 +140,7 @@ Please contact sales@flexera.com to learn more.
 - [AWS MFA Enabled For IAM Users](./security/aws/iam_mfa_enabled_for_iam_users/)
 - [AWS Minimum Password Length](./security/aws/iam_min_password_length/)
 - [AWS Prevent Password Reuse](./security/aws/iam_prevent_password_reuse/)
+- [AWS Disable Credentials Unused For 45+ Days](./security/aws/iam_disable_45_day_creds/)
 - [AWS Rotate Access Keys](./security/aws/iam_rotate_access_keys/)
 - [AWS Report Attached Admin IAM Policies](./security/aws/iam_no_admin_iam_policies_attached/)
 
