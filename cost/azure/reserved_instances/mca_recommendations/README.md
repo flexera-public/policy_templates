@@ -1,8 +1,10 @@
-# Azure MCA Reserved Instances Recommendation Policy Template
+# Azure Reserved Instances Recommendation
+
+**NOTE:**  This policy supersedes the previous [Policy Template](../recommendations/) that used the Azure EA Key
 
 ## What it does
 
-This Policy Template leverages the [Azure API](https://docs.microsoft.com/en-us/rest/api/consumption/reservationrecommendations/list). It will raise incidents if Azure MCA has any RI Purchase Recommendations, whose net savings exceeds the `Net Savings Threshold` parameter in the Policy.
+This Policy leverages the [Azure API](https://docs.microsoft.com/en-us/rest/api/consumption/reservationrecommendations/list). It will raise incidents if Azure has any Reservations Purchase Recommendations, whose net savings exceeds the `Net Savings Threshold` parameter in the Policy.  Supports Shared subscription Reservations and the following Reservation Types: ['VirtualMachines', 'SQLDatabases', 'PostgreSQL', 'ManagedDisk', 'MySQL', 'RedHat', 'MariaDB', 'RedisCache', 'CosmosDB', 'SqlDataWarehouse', 'SUSELinux', 'AppService', 'BlockBlob', 'AzureDataExplorer', 'VMwareCloudSimple'].  You must use the Resource Type input to apply the policy for each resource type you want a reservation recommendation.
 
 ## Input Parameters
 
@@ -10,6 +12,8 @@ This policy has the following input parameters required when launching the polic
 
 - *Look Back Period* - Number of days of prior usage to analyze.
 - *Net Savings Threshold* - Specify the minimum net savings that should result in a recommendation
+- *Reservation Scope* - Single or Shared Scoped Reservations
+- *Resource Type* - the resource type used for Reservation recommendations
 - *Email addresses to notify* - Email addresses of the recipients you wish to notify
 
 ## Policy Actions
@@ -41,4 +45,3 @@ Required permissions in the provider:
 ## Cost
 
 This Policy Template does not launch any instances, and so does not incur any cloud costs.
-
