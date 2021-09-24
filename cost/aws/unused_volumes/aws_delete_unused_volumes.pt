@@ -6,7 +6,7 @@ category "Cost"
 severity "low"
 default_frequency "daily"
 info(
-  version: "2.17",
+  version: "2.18",
   provider: "AWS",
   service: "EBS",
   policy_set: "Unused Volumes"
@@ -856,21 +856,32 @@ end
 
 define get_snapshot_status($snapshotId, $errors) return $snapshot_status, $errors do
   call sys_log("Inside Get Snapshot Details Snapshot Id ", $snapshotId)
-  $snapshot_response = http_request(
-    auth: $$auth_aws,
-    https: true,
-    verb: "get",
-    host: "ec2." + $item["region"] + ".amazonaws.com",
-    href: "/",
-    query_strings: {
-      "Action": "DescribeSnapshots",
-      "Version": "2016-11-15",
-      "SnapshotId": $snapshotId
-    }
-  )
-  call check_response_and_append_if_error($snapshot_response, "Describe Snapshot " + $snapshotId, $errors) retrieve $errors
-  call sys_log("Get Snapshot Details ", to_s($snapshot_response))
-  $snapshot_status = $snapshot_response["body"]["DescribeSnapshotsResponse"]["snapshotSet"]["item"]["status"]
+  $snapshot_status = "error"
+  $counter = 0
+  sub on_error: handle_retries($counter, $errors) do
+    $snapshot_response = http_request(
+      auth: $$auth_aws,
+      https: true,
+      verb: "get",
+      host: "ec2." + $item["region"] + ".amazonaws.com",
+      href: "/",
+      query_strings: {
+        "Action": "DescribeSnapshots",
+        "Version": "2016-11-15",
+        "SnapshotId": $snapshotId
+      }
+    )
+    call check_response_and_append_if_error($snapshot_response, "Describe Snapshot " + $snapshotId, $errors) retrieve $errors
+    call sys_log("Get Snapshot Details ", to_s($snapshot_response))
+
+    $status_code = $response["code"]
+    $counter = $counter + 1
+    if $status_code == 200
+      $snapshot_status = $snapshot_response["body"]["DescribeSnapshotsResponse"]["snapshotSet"]["item"]["status"]
+    else
+      raise $errors
+    end
+  end
 end
 
 define create_tag($region, $volumeId, $message, $errors) return $errors do
@@ -900,6 +911,17 @@ end
 define check_response_and_append_if_error($response, $request_description, $errors) return $errors do
   if $response["code"] > 299 || $response["code"] < 200
     $errors << "Unexpected status code from " + $request_description + " request\n  " + to_s($response)
+  end
+end
+
+define handle_retries($attempts, $errors) do
+  $$snapshot_errors = $errors
+  if $attempts < 3
+    $_error_behavior = "retry"
+    sys_log("Snapshot Retry Error", $_error["message"])
+    sleep(30)
+  else
+    raise $_error["type"] + ": " + $_error["message"]
   end
 end
 
