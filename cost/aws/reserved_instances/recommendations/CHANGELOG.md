@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.4
+
+- Added "Account Scope" (PAYER or LINKED) parameter
+
 ## v2.3
 
 - Added default_frequency "daily"
