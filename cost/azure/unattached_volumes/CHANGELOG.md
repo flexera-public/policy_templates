@@ -3,7 +3,7 @@
 ## v2.8
 
 - Added `and resourceProvider eq 'Microsoft.Compute' and resourceType eq 'Microsoft.Compute/VirtualMachines'` to event filter
-  to get smaller but more specific result set
+  to get smaller but more specific result set to help with ExecutionTimeout.
 
 ## v2.7
 
