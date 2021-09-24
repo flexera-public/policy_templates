@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.18
+
+- Adding retry to get
+
 ## v2.17
 
 - Added default_frequency "daily"
