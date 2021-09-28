@@ -141,6 +141,7 @@ Please contact sales@flexera.com to learn more.
 - [AWS Minimum Password Length](./security/aws/iam_min_password_length/)
 - [AWS Prevent Password Reuse](./security/aws/iam_prevent_password_reuse/)
 - [AWS Rotate Access Keys](./security/aws/iam_rotate_access_keys/)
+- [AWS Expired SSL Certs](./security/aws/iam_expired_ssl_certs/)
 
 ##### Database
 
