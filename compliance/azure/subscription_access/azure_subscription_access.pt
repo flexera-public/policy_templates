@@ -4,9 +4,10 @@ type "policy"
 short_description "Lists anyone who has been granted Owner or Contributor access to an Azure subscription. \n See the [README](https://github.com/flexera/policy_templates/tree/master/compliance/azure/subscription_access) and [docs.rightscale.com/policies](https://docs.rightscale.com/policies/) to learn more."
 long_description ""
 category "Compliance"
+default_frequency "monthly"
 severity "low"
 info(
-  version: "2.3",
+  version: "2.4",
   provider: "Azure",
   service: "Identity",
   policy_set: ""
@@ -107,7 +108,7 @@ datasource "ds_subscriptions" do
     pagination $azure_pagination
     host "management.azure.com"
     path "/subscriptions/"
-    query "api-version","2019-06-01"
+    query "api-version","2020-01-01"
     header "User-Agent", "RS Policies"
   end
   result do
@@ -116,6 +117,7 @@ datasource "ds_subscriptions" do
       field "subscriptionId", jmes_path(col_item,"subscriptionId")
       field "displayName", jmes_path(col_item,"displayName")
       field "state", jmes_path(col_item,"state")
+      field "tags", jmes_path(col_item,"tags")
     end
   end
 end
@@ -182,8 +184,7 @@ script "js_filtered_azure_role_definitions", type: "javascript" do
   code <<-EOS
     var results = [];
     _.each(param_azure_roles,function(role) {
-      console.log(role)
-      var result = _.find(ds_azure_role_definitions, function(definition){ return definition.properties.roleName == role})
+      var result = _.filter(ds_azure_role_definitions, function(definition){ return definition.properties.roleName == role})
       results.push(result)
     })
 EOS
@@ -194,9 +195,9 @@ script "js_filter_resources", type: "javascript" do
   result "results"
   code <<-EOS
     var results = [];
-
-    // Iterate through all resources
-    _.each(ds_filtered_azure_role_definitions, function(definition){
+    // Iterate through all resources for each array in the array
+    for(var i = 0; i< ds_filtered_azure_role_definitions.length; i++) {
+    _.each(ds_filtered_azure_role_definitions[i], function(definition){
       var result = _.filter(ds_azure_role_assignments, function(ra) { return ra.properties.roleDefinitionId == definition.id})
       _.each(result, function(r) {
         var user = _.find(ds_azure_users, function(user){ return user.id == r.properties.principalId })
@@ -212,10 +213,10 @@ script "js_filter_resources", type: "javascript" do
         }
       })
     })
+    }
     results=_.sortBy(results, 'subscriptionName');
     results=_.sortBy(results, 'name');
     results=_.sortBy(results, 'username');
-
 EOS
 end
 

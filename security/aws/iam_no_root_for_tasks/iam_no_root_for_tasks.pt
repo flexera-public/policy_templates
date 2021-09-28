@@ -1,0 +1,202 @@
+name "AWS IAM Report Root User Doing Everyday Tasks"
+rs_pt_ver 20180301
+type "policy"
+short_description "Report whether the root account is being used for routine or everyday tasks. \n See the [README](https://github.com/flexera/policy_templates/tree/master/security/aws/iam_no_root_for_tasks) and [docs.rightscale.com/policies](https://docs.rightscale.com/policies/) to learn more."
+long_description ""
+category "Security"
+severity "high"
+default_frequency "daily"
+info(
+  version: "2.1",
+  provider: "AWS",
+  service: "IAM",
+  policy_set: "CIS",
+  cce_id: "",
+  cis_aws_foundations_securityhub: "1.1",
+  benchmark_control: "1.7",
+  benchmark_version: "1.4.0",
+  cis_controls: "[\"4.3v7\", \"5.4v8\"]",
+  nist: ""
+)
+
+###############################################################################
+# User inputs
+###############################################################################
+
+parameter "param_email" do
+  type "list"
+  label "Email Address"
+  description "Email addresses of the recipients you wish to notify"
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+credentials "auth_aws" do
+  schemes "aws","aws_sts"
+  label "AWS"
+  description "Select the AWS Credential from the list"
+  tags "provider=aws"
+end
+
+###############################################################################
+# Datasources
+###############################################################################
+
+# Retrieve the id number of the account being tested
+datasource "ds_get_caller_identity" do
+  request do
+    auth $auth_aws
+    verb "GET"
+    host "sts.amazonaws.com"
+    path "/"
+    header "User-Agent", "RS Policies"
+    query "Action", "GetCallerIdentity"
+    query "Version", "2011-06-15"
+  end
+  result do
+    encoding "xml"
+    collect xpath(response, "//GetCallerIdentityResponse/GetCallerIdentityResult") do
+      field "account",xpath(col_item, "Account")
+    end
+  end
+end
+
+datasource "ds_generate_cred_report" do
+  request do
+    auth $auth_aws
+    verb "GET"
+    host "iam.amazonaws.com"
+    path "/"
+    query "Action", "GenerateCredentialReport"
+    query "Version", "2010-05-08"
+    header "Accept", "application/json"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+    field "credReportStatus", jmes_path(response, "GenerateCredentialReportResponse.GenerateCredentialReportResult.State")
+  end
+end
+
+datasource "ds_sleep" do
+  run_script $js_sleep, $ds_generate_cred_report
+end
+
+datasource "ds_get_cred_report" do
+  iterate $ds_sleep
+  request do
+    auth $auth_aws
+    verb "GET"
+    host "iam.amazonaws.com"
+    path "/"
+    query "Action", "GetCredentialReport"
+    query "Version", "2010-05-08"
+    header "Accept", "application/json"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+    field "credReportBase64", jmes_path(response, "GetCredentialReportResponse.GetCredentialReportResult.Content")
+  end
+end
+
+datasource "ds_parse_cred_report" do
+  run_script $js_parse_cred_report, $ds_get_caller_identity, $ds_get_cred_report
+end
+
+###############################################################################
+# Scripts
+###############################################################################
+
+script "js_sleep", type:"javascript" do
+  parameters "ds_generate_cred_report"
+  result "result"
+  code <<-EOS
+    sleepDuration=240
+    var now = new Date().getTime();
+    while(new Date().getTime() < now + sleepDuration){ /* Do nothing */ }
+    var result = ds_generate_cred_report
+EOS
+end
+
+script "js_parse_cred_report", type:"javascript" do
+  parameters "ds_get_caller_identity", "ds_get_cred_report"
+  result "result"
+  code <<-EOS
+  var exceptions=[]
+  var day_difference = 7
+  var now = new Date()
+  var root_index = 0
+  var report = []
+
+  var decoded = atob(ds_get_cred_report.credReportBase64)
+  data = decoded.toString()
+  arr = data.split('\\n');
+  var result = [];
+  var headers = arr[0].split(',');
+
+  for(var i = 1; i < arr.length; i++) {
+    var data = arr[i].split(',');
+    var obj = {};
+    for(var j = 0; j < data.length; j++) {
+       obj[headers[j].trim()] = data[j].trim();
+    }
+    report.push(obj);
+  }
+
+  var root_account = _.find(report, function(item){
+    return item.user == '<root_account>'
+  })
+
+  if (now - new Date(root_account['password_last_used']) <= day_difference * 86400000) {
+    exceptions.push("Root Password Last Used: " + root_account['password_last_used'])
+  }
+
+  if (now - new Date(root_account['access_key_1_last_used_date']) <= day_difference * 86400000) {
+    exceptions.push("Root Access Key 1 Last Used: " + root_account['access_key_1_last_used_date'])
+  }
+
+  if (now - new Date(root_account['access_key_2_last_used_date']) <= day_difference * 86400000) {
+    exceptions.push("Root Access Key 2 Last Used: " + root_account['access_key_2_last_used_date'])
+  }
+
+  result={
+    id: ds_get_caller_identity[0]['account'],
+    exceptions: exceptions,
+    day_difference: day_difference
+  }
+EOS
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "policy_iam_no_root_for_tasks" do
+  validate $ds_parse_cred_report do
+    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): Root User Used"
+    escalate $esc_report_root_for_tasks
+    detail_template <<-EOS
+The root user has been utilized in the last {{data.day_difference}} days.
+
+Affected Account ID: {{data.id}}
+{{- range $val := data.exceptions }}
+  {{ $val }}
+{{- end }}
+EOS
+    check eq(size(val(data, "exceptions")),0)
+  end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_report_root_for_tasks" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
+end

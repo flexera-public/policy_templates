@@ -30,6 +30,10 @@ Please contact sales@flexera.com to learn more.
 
 #### AWS
 
+##### Credential Setup
+
+- [Read Only CFT](./cost/aws/FlexeraReadOnlyPolicy.template)
+
 ##### Compute
 
 - [AWS Burstable Instance CloudWatch Utilization](./cost/aws/burstable_instance_cloudwatch_credit_utilization/)
@@ -74,10 +78,9 @@ Please contact sales@flexera.com to learn more.
 - [Azure Inefficient Instance Utilization using Log Analytics](./cost/azure/instances_log_analytics_utilization/)
 - [Azure Expiring Reserved Instances](./cost/azure/reserved_instances/expiration)
 - [Azure Reserved Instance Utilization](./cost/azure/reserved_instances/utilization/)
-- [Azure Reserved Instance Recommendations](./cost/azure/reserved_instances/recommendations)
+- [Azure Reserved Instance Recommendations](./cost/azure/reserved_instances/mca_recommendations)
 - [Azure Unused IP Addresses](./cost/azure/unused_ip_addresses)
 - [Azure Schedule Instance](./cost/azure/schedule_instance/)
-- [Azure MCA Reserved Instance Recommendations](./cost/azure/reserved_instances/mca_recommendations)
 
 ##### Database
 
@@ -126,6 +129,18 @@ Please contact sales@flexera.com to learn more.
 - [Security Groups With Ports Open To The World](./security/security_groups/world_open_ports)
 
 #### AWS
+
+##### IAM
+
+###### CIS Policies
+
+- [AWS No Root Access Keys](./security/aws/iam_no_root_access_keys/)
+- [AWS Hardware MFA Enabled For Root User](./security/aws/iam_hwmfa_enabled_for_root/)
+- [AWS MFA Enabled For IAM Users](./security/aws/iam_mfa_enabled_for_iam_users/)
+- [AWS Minimum Password Length](./security/aws/iam_min_password_length/)
+- [AWS Prevent Password Reuse](./security/aws/iam_prevent_password_reuse/)
+- [AWS Disable Credentials Unused For 45+ Days](./security/aws/iam_disable_45_day_creds/)
+- [AWS Rotate Access Keys](./security/aws/iam_rotate_access_keys/)
 
 ##### Database
 
