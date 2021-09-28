@@ -34,7 +34,7 @@ parameter "param_regions" do
   label "Regions"
   description "Active regions you wish to run this policy against"
   default ["us-east-1"]
-  allowed_values "us-east-1", "us-east-2", "us-west-1", "us-west-2", "af-south-1", "ap-east-1", "ap-south-1", "ap-northeast-3", "ap-northeast-2", "ap-southeast-1", "ap-southeast-2", "ap-northeast-1", "ca-central-1", "eu-central-1", "eu-west-1", "eu-west-2", "eu-south-1", "eu-west-3", "eu-north-1", "me-south-1", "sa-east-1", "us-gov-east-1", "us-gov-west-1"
+  allowed_pattern /^([a-zA-Z-_]+-[a-zA-Z0-9-_]+-[0-9-_]+,*|)+$/
 end
 
 ###############################################################################
@@ -71,16 +71,17 @@ datasource "ds_get_caller_identity" do
   end
 end
 
+# Places param_regions into a datasource for iteration
 datasource "ds_regions" do
-  field "list", $param_regions
+  run_script $js_regions, $param_regions
 end
 
 datasource "ds_list_analyzers" do
-  iterate val($ds_regions, "list")
+  iterate $ds_regions
   request do
     auth $auth_aws
     verb "GET"
-    host join(["access-analyzer.", iter_item, ".amazonaws.com"])
+    host join(["access-analyzer.", iter_item ,".amazonaws.com"])
     path "/analyzer"
     header "User-Agent", "RS Policies"
     header "Accept", "application/json"
@@ -102,12 +103,37 @@ end
 # Scripts
 ###############################################################################
 
+script "js_regions", type:"javascript" do
+  parameters "param_regions"
+  result "param_regions"
+  code ""
+end
+
 # Script to combine ds_get_caller_identity and ds_iam_accesskeys into a single datasource
 script "js_analyzers", type:"javascript" do
   parameters "ds_get_caller_identity", "ds_list_analyzers"
   result "result"
   code <<-EOS
+    var regions=[]
 
+    _.each(ds_list_analyzers, function(item) {
+      region_bad = 1
+
+      _.each(item.analyzers, function(analyzer) {
+        if (analyzer.status == "ACTIVE") {
+          region_bad = 0
+        }
+      })
+
+      if (region_bad == 1) {
+        regions.push(item.region)
+      }
+    })
+
+    result={
+      id: ds_get_caller_identity[0]['account'],
+      regions: regions
+    }
 EOS
 end
 
