@@ -1,7 +1,9 @@
 # AWS Access Analyzers Enabled
+
 ## What it does
 
 Access Analyzer scans show resources that other accounts and federated users can access, such as KMS keys and IAM roles. So the results allow you to determine if an unintended user is allowed, making it easier for administrators to monitor least privileges access. This policy ensures that Access Analyzers are enabled for the specified regions.
+
 ## Functional Details
 
 When one or more of the provided regions does not have an access analyzer enabled, this policy raises an incident with a list of the affected regions.
