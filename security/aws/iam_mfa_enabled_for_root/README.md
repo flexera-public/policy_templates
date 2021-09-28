@@ -36,9 +36,7 @@ Required permissions in the provider:
             "Effect": "Allow",
             "Action": [
                 "sts:GetCallerIdentity",
-                "iam:GetAccountSummary",
-                "iam:ListVirtualMFADevices"
-
+                "iam:GetAccountSummary"
             ],
             "Resource": "*"
         }
