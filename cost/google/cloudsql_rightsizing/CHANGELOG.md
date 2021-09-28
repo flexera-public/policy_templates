@@ -2,7 +2,7 @@
 
 ## v2.8
 
-- Ignoring Custom Instance Types
+- Ignoring Custom Tiers from google results
 
 ## v2.7
 
