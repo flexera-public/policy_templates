@@ -2,18 +2,19 @@
 
 ## What it does
 
-This Policy will list all of the certificates in Azure, their resource group and expiration date.
+This policy will raise an alert if there are expired and almost expired certificates on the Azure account.
 
 ## Functional Details
 
-This policy checks all the Azure SQL Servers for a Azure Subscription. If the server does not have elastic pools configured it will raise an incident.
+This policy checks all the certificates on the Azure account. If there are expired and/or almost expired certificates, an alert is raised, and a report listing the relevant certificates is provided.
 
 ## Input Parameters
 
 This policy has the following input parameters required when launching the policy.
 
 - *Exclusion Tag Key* - Cloud native tag key to ignore instances. Example: exclude_utilization
-- *Email addresses* - Email addresses of the recipients you wish to notify
+- *Email addresses* - Email addresses of the recipients you wish to notify.
+- *Days* - Number of days from expiration that should trigger the policy to raise an incident.
 
 ## Actions
 
