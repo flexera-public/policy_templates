@@ -3,6 +3,7 @@
 ## v2.3
 
 - Add option to include all Reservation types in one incident
+- Add option to filter for Reservation term; 1 year or 3 year 
 
 ## v2.2
 

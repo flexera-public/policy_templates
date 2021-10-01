@@ -35,6 +35,16 @@ parameter "param_type" do
   type "string"
 end
 
+parameter "param_term" do
+  category "RI"
+  label "Term"
+  default "1 Year"
+  description "The reservation term"
+  allowed_values "1 Year", "3 Year"
+  type "string"
+end
+
+
 parameter "param_scope" do
   category "RI"
   label "Reservation Scope"
@@ -118,7 +128,7 @@ script "js_ri_types", type: "javascript" do
       var services = ["VirtualMachines","SQLDatabases","PostgreSQL","ManagedDisk", "MySQL", "RedHat", "MariaDB", "RedisCache", "CosmosDB", "SqlDataWarehouse", "SUSELinux", "AppService", "BlockBlob", "AzureDataExplorer", "VMwareCloudSimple"]
       _.each(subscriptions, function(subscription){
         if (param_service === "All"){
-          _.each(services, function(service, subscription){
+          _.each(services, function(service){
             result.push({"service":service, "subscriptionId":subscription.subscriptionId})
           })
         } else {
@@ -154,7 +164,7 @@ datasource "ds_ri_recommendations" do
 end
 
 datasource "ds_ri_normalization" do
-  run_script $js_ri_cleanup, $ds_ri_recommendations
+  run_script $js_ri_cleanup, $ds_ri_recommendations, $param_term
 end
 
 ###############################################################################
@@ -185,7 +195,7 @@ script "js_ri_request", type: "javascript" do
 end
 
 script "js_ri_cleanup", type: "javascript" do
-  parameters "ri_recos"
+  parameters "ri_recos", "param_term"
   result "result"
   code <<-EOS
     var result = [];
@@ -196,6 +206,11 @@ script "js_ri_cleanup", type: "javascript" do
       if (reco.term === "P3Y"){
         var term = "3 Year";
       }
+
+      if ( param_term !== term ) {
+        return true
+      }
+
       result.push({
         subscriptionId: reco["subscriptionId"],
         service: reco["service"],
@@ -251,7 +266,7 @@ policy "azure_ri_recommendations" do
         label "Net Savings"
       end
       field "recommendedQuantity" do
-        label "Total RI Quantity to Purchase"
+        label "Recommended Quantity to Purchase"
       end
       field "costWithNoRI" do
         label "Total Current Cost (without RI)"
