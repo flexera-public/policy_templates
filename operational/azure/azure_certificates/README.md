@@ -2,11 +2,11 @@
 
 ## What it does
 
-This policy will raise an alert if there are expired and almost expired certificates on the Azure account.
+This policy will raise an incident if there are expired and almost expired certificates on the Azure account in active use.
 
 ## Functional Details
 
-This policy checks all the certificates on the Azure account. If there are expired and/or almost expired certificates, an alert is raised, and a report listing the relevant certificates is provided.
+This policy checks all the certificates on the Azure account in active use. If there are expired and/or almost expired certificates, an incident is raised, and a report listing the relevant certificates is provided.
 
 ## Input Parameters
 

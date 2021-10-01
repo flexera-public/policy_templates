@@ -1,7 +1,7 @@
 name "Expiring Azure Certificates"
 rs_pt_ver 20180301
 type "policy"
-short_description "Report to list all expired and almost expired certificates in Azure, their resource group and expiration date."
+short_description "Raise an incident if there are expired and almost expired certificates on the Azure account in active use."
 long_description ""
 category "Operational"
 severity "low"
@@ -28,13 +28,13 @@ end
 
 parameter "param_email" do
   type "list"
-  label "Email addresses of the recipients you wish to notify"
+  label "Email addresses of the recipients you wish to notify."
 end
 
 parameter "param_numberofdays" do
   type "string"
   label "Days"
-  description "Threshold of days to alert on an expiring certificate."
+  description "Number of days from expiration to raise an incident."
 end
 
 parameter "param_exclusion_tag_key" do
@@ -131,30 +131,30 @@ end
 ###############################################################################
 script "js_filter_certificates", type: "javascript" do
   parameters "certificates", "exclusion_tag", "expire_days"
-  result "bad_cert_list"
+  result "result"
   code <<-EOS
-    var bad_cert_list = [];
+    var result = [];
     nowDate = new Date();
 
-    _.each(certificates, function(test_cert){
+    _.each(certificates, function(test_cert) {
       if (!(_.has(test_cert.tags, exclusion_tag))) {
         cert = test_cert
         cert["rgName"] = cert["id"].split('/')[4]
         cert["certStatus"] = "Active";
 
         compareDate = new Date(cert["expirationDate"]);
-        if (nowDate > compareDate){
+        if (nowDate > compareDate) {
           cert["certStatus"] = "Expired";
         }
 
-        if (expire_days > ((compareDate - nowDate) / 86400000)) {
-          cert["rgName"] = cert["id"].split('/')[4]
-          bad_cert_list.push(cert)
+        if ((expire_days > ((compareDate - nowDate) / 86400000)) || cert["certStatus"] == "Expired") {
+          result.push(cert)
         }
       }
     })
-    bad_cert_list = _.sortBy(bad_cert_list, 'subscriptionName');
-    bad_cert_list = _.sortBy(bad_cert_list, 'rgName');
+
+    result = _.sortBy(result, 'subscriptionName');
+    result = _.sortBy(result, 'rgName');
 EOS
 end
 ###############################################################################
@@ -163,20 +163,19 @@ end
 
 policy "azure_certificate_policy" do
   validate_each $ds_filtered_certificates do
-    summary_template "Azure Subscription({{parameters.param_azure_sub}}) - {{ len data }} App Service Certificates"
+    summary_template "Expiring/Expired Certificates Found: {{ len data }} App Service Certificates"
     detail_template <<-EOS
 # Azure Certificates
 | Subscription Name	| Resource Group | Location |	Expiration Date	| Subject	| Certificate Name | Issuer | Issue Date | Host Names	| Thumbprint | Key Vault ID | Key Vault Secret Name | Key Vault Secret Status | Certificate Status |
 | ----------------- | -------------- | -------- | --------------- | ------- | ---------------- | ------ | ---------- | ---------- | ---------- | ------------ | --------------------- | ----------------------- | ------------------ |
 {{ range data -}}
-|{{.subscriptionName}} | {{.rgName}} | {{.location}} | {{.name}} | {{.expirationDate}} | {{.subjectName}} | {{.issuer}} | {{.issuerDate}} | {{.hostNames}} | {{.thumbprint}} | {{.keyVaultId}} | {{.keyVaultSecretName}} | {{.keyVaultSecretStatus}} | {{.certStatus}} |
+|{{.subscriptionName}} | {{.rgName}} | {{.location}} | {{.expirationDate}} | {{.name}} | {{.subjectName}} | {{.issuer}} | {{.issueDate}} | {{.hostNames}} | {{.thumbprint}} | {{.keyVaultId}} | {{.keyVaultSecretName}} | {{.keyVaultSecretStatus}} | {{.certStatus}} |
 {{ end -}}
 
 ###### Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }}) within Org: {{ rs_org_name }} (Org ID: {{ rs_org_id }})
 EOS
-    escalate $email
-    #check eq(size(data),0)
-    check eq(0,1)
+    escalate $esc_report_bad_certs
+    check eq(val(item, "id"), "")
   end
 end
 
@@ -184,6 +183,9 @@ end
 # Escalations
 ###############################################################################
 
-escalation "email" do
-   email $param_email
+escalation "esc_report_bad_certs" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
 end
