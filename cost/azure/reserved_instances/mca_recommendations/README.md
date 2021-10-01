@@ -14,7 +14,7 @@ This policy has the following input parameters required when launching the polic
 - *Net Savings Threshold* - Specify the minimum net savings that should result in a recommendation
 - *Reservation Scope* - Single or Shared Scoped Reservations
 - *Resource Type* - the resource type used for Reservation recommendations.  Select all to include all Reservation types in a single incident.
-- *Reservation Term* - The Reservation term; 1 Year or 3 Year 
+- *Reservation Term* - The Reservation term; 1 Year or 3 Year
 - *Email addresses to notify* - Email addresses of the recipients you wish to notify
 
 ## Policy Actions
