@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.3
+
+- Add option to include all Reservation types in one incident
+
 ## v2.2
 
 - Support for all Reservation types: ['VirtualMachines', 'SQLDatabases', 'PostgreSQL', 'ManagedDisk', 'MySQL', 'RedHat', 'MariaDB', 'RedisCache', 'CosmosDB', 'SqlDataWarehouse', 'SUSELinux', 'AppService', 'BlockBlob', 'AzureDataExplorer', 'VMwareCloudSimple']
