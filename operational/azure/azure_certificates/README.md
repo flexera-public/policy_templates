@@ -32,7 +32,8 @@ Provider tag value to match this policy: `azure_rm`
 
 Required permissions in the provider:
 
-- Microsoft.Sql/servers/read
+- Microsoft.Subscription/aliases/read
+- Microsoft.Web/certificates/Read
 
 ## Supported Clouds
 
