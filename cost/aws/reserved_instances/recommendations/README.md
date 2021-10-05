@@ -13,7 +13,7 @@ It will email the user specified in `Email addresses of the recipients you wish 
 This policy has the following input parameters required when launching the policy.
 
 - *Look Back Period* - Number of days of prior usage to analyze
-- *Service* - AWS Service for which to scan for RI Recommendations
+- *Service* - AWS Service for which to scan for RI Recommendations.  Select All to include all services in a single incident.
 - *EC2 Specification* - EC2 RI type. Note: this parameter will be ignored if the Service parameter is not \"Elastic Compute Cloud (EC2)\"
 - *RI Term* - Length of RI term
 - *Payment Option* - RI purchase option.  Leave blank to include all RI purchase options
