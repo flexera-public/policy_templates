@@ -7,7 +7,7 @@ severity "medium"
 category "Cost"
 default_frequency "daily"
 info(
-  version: "2.2",
+  version: "2.3",
   provider: "Azure",
   service: "Compute",
   policy_set: "Reserved Instance"
@@ -29,16 +29,26 @@ end
 parameter "param_type" do
   category "RI"
   label "Resource Type"
-  default "VirtualMachines"
+  default "All"
   description "The resource type used for reservation recommendations"
-  allowed_values "VirtualMachines","SQLDatabases","PostgreSQL","ManagedDisk", "MySQL", "RedHat", "MariaDB", "RedisCache", "CosmosDB", "SqlDataWarehouse", "SUSELinux", "AppService", "BlockBlob", "AzureDataExplorer", "VMwareCloudSimple"
+  allowed_values "All","VirtualMachines","SQLDatabases","PostgreSQL","ManagedDisk", "MySQL", "RedHat", "MariaDB", "RedisCache", "CosmosDB", "SqlDataWarehouse", "SUSELinux", "AppService", "BlockBlob", "AzureDataExplorer", "VMwareCloudSimple"
   type "string"
 end
+
+parameter "param_term" do
+  category "RI"
+  label "Term"
+  default "1 Year"
+  description "The reservation term"
+  allowed_values "1 Year", "3 Year"
+  type "string"
+end
+
 
 parameter "param_scope" do
   category "RI"
   label "Reservation Scope"
-  default "Shared"
+  default "Single"
   description "Single or Shared Reservation Scope"
   allowed_values "Single","Shared"
   type "string"
@@ -105,10 +115,34 @@ datasource "ds_subscriptions" do
   end
 end
 
+datasource "ds_ri_types" do
+  run_script $js_ri_types, $param_type, $ds_subscriptions
+end
+
+script "js_ri_types", type: "javascript" do
+  parameters "param_service", "subscriptions"
+  result "result"
+  code <<-EOS
+    var result = []
+
+      var services = ["VirtualMachines","SQLDatabases","PostgreSQL","ManagedDisk", "MySQL", "RedHat", "MariaDB", "RedisCache", "CosmosDB", "SqlDataWarehouse", "SUSELinux", "AppService", "BlockBlob", "AzureDataExplorer", "VMwareCloudSimple"]
+      _.each(subscriptions, function(subscription){
+        if (param_service === "All"){
+          _.each(services, function(service){
+            result.push({"service":service, "subscriptionId":subscription.subscriptionId})
+          })
+        } else {
+            result.push({"service":param_service, "subscriptionId":subscription.subscriptionId})
+        }
+      })
+
+  EOS
+end
+
 datasource "ds_ri_recommendations" do
-  iterate $ds_subscriptions
+  iterate $ds_ri_types
   request do
-    run_script $js_ri_request, val(iter_item,"subscriptionId"), $param_days, $param_scope, $param_type
+    run_script $js_ri_request, val(iter_item,"subscriptionId"), $param_days, $param_scope, val(iter_item,"service")
   end
   result do
     encoding "json"
@@ -123,12 +157,14 @@ datasource "ds_ri_recommendations" do
       field "netSavings", jmes_path(col_item,"properties.netSavings")
       field "firstUsageDate", jmes_path(col_item,"properties.firstUsageDate")
       field "scope", jmes_path(col_item,"properties.scope")
+      field "subscriptionId", val(iter_item,"subscriptionId")
+      field "service", val(iter_item,"service")
     end
   end
 end
 
 datasource "ds_ri_normalization" do
-  run_script $js_ri_cleanup, $ds_ri_recommendations
+  run_script $js_ri_cleanup, $ds_ri_recommendations, $param_term
 end
 
 ###############################################################################
@@ -159,7 +195,7 @@ script "js_ri_request", type: "javascript" do
 end
 
 script "js_ri_cleanup", type: "javascript" do
-  parameters "ri_recos"
+  parameters "ri_recos", "param_term"
   result "result"
   code <<-EOS
     var result = [];
@@ -170,8 +206,14 @@ script "js_ri_cleanup", type: "javascript" do
       if (reco.term === "P3Y"){
         var term = "3 Year";
       }
+
+      if ( param_term !== term ) {
+        return true
+      }
+
       result.push({
-        meterId: reco["meterId"],
+        subscriptionId: reco["subscriptionId"],
+        service: reco["service"],
         skuName: reco["skuName"],
         term: term,
         region: reco["region"],
@@ -181,11 +223,18 @@ script "js_ri_cleanup", type: "javascript" do
         totalCostWithRI: (Math.round(reco["totalCostWithRI"] * 100) / 100).toString(10),
         netSavings: (Math.round(reco["netSavings"] * 100) / 100).toString(10),
         firstUsageDate: reco["firstUsageDate"]
+        meterId: reco["meterId"],
       })
     })
-    result=_.sortBy(result, 'skuName');
-    result=_.sortBy(result, 'term');
-    result=_.sortBy(result, 'region');
+
+    var result = _(result)
+    .chain()
+    .sortBy(function(result){
+      return result.service;
+    }).sortBy(function(result){
+      return result.subscriptionId;
+    }).value();
+
   EOS
 end
 
@@ -200,21 +249,27 @@ policy "azure_ri_recommendations" do
     escalate $email
     check lt(to_n(val(item,"netSavings")),$param_savings_threshold)
     export do
-      resource_level true
+      resource_level false
+      field "subscriptionId" do
+        label "Subscription Id"
+      end
+      field "service" do
+        label "Service"
+      end
       field "skuName" do
         label "SKU Name"
       end
-      field "term" do
-        label "Term"
-      end
       field "region" do
         label "Location"
+      end
+      field "term" do
+        label "Term"
       end
       field "netSavings" do
         label "Net Savings"
       end
       field "recommendedQuantity" do
-        label "Total RI Quantity to Purchase"
+        label "Recommended Quantity to Purchase"
       end
       field "costWithNoRI" do
         label "Total Current Cost (without RI)"

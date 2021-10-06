@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.5
+
+- Add option to include all Reserved Instance types in one incident
+
 ## v2.4
 
 - Added "Account Scope" (PAYER or LINKED) parameter
