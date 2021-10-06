@@ -6,6 +6,22 @@ Please contact sales@flexera.com to learn more.
 
 ## Released Policy Templates
 
+---
+
+Categories
+
+- [Cost](#cost)
+- [Security](#security)
+- [Compliance](#compliance)
+- [Operational](#operational)
+- [SaaS Management](#saas-management)
+
+Reference
+
+- [Policy Data Sets](#policy-data-sets)
+
+---
+
 ### Cost
 
 #### Multi-cloud
@@ -142,6 +158,7 @@ Please contact sales@flexera.com to learn more.
 - [AWS Prevent Password Reuse](./security/aws/iam_prevent_password_reuse/)
 - [AWS Disable Credentials Unused For 45+ Days](./security/aws/iam_disable_45_day_creds/)
 - [AWS Rotate Access Keys](./security/aws/iam_rotate_access_keys/)
+- [AWS Report Attached Admin IAM Policies](./security/aws/iam_no_admin_iam_policies_attached/)
 
 ##### Database
 
@@ -185,6 +202,10 @@ Please contact sales@flexera.com to learn more.
 - [Google Open Buckets](./security/storage/google/public_buckets/)
 
 ### Compliance
+
+#### Flexera
+
+- [Flexera IAM Explicit User Roles](./compliance/flexera/iam_explicit_user_roles/)
 
 #### Multi-cloud
 
