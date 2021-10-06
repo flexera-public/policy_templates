@@ -1,12 +1,12 @@
-# AWS Hardware MFA Enabled For Root
+# AWS MFA Enabled For Root
 
 ## What it does
 
-Multi-factor authentication (MFA) increases account security by requiring the user have access to another device in order to log into the account in addition to their username and password. Hardware MFA uses a hardware tool, such as a physical key, to authenticate. It is recommended that MFA be enabled on all accounts, and in some cases, hardware MFA is preferred. This policy checks the root account to verify that hardware MFA is enabled.
+Multi-factor authentication (MFA) increases account security by requiring the user have access to another device in order to log into the account in addition to their username and password. It is recommended that MFA be enabled on all accounts. This policy checks the root account to verify that MFA is enabled.
 
 ## Functional Details
 
-When the root account does not have hardware MFA enabled, an email action is triggered automatically to notify the specified users of the incident.
+When the root account does not have MFA enabled, an email action is triggered automatically to notify the specified users of the incident.
 
 ## Input Parameters
 
@@ -36,9 +36,7 @@ Required permissions in the provider:
             "Effect": "Allow",
             "Action": [
                 "sts:GetCallerIdentity",
-                "iam:GetAccountSummary",
-                "iam:ListVirtualMFADevices"
-
+                "iam:GetAccountSummary"
             ],
             "Resource": "*"
         }
