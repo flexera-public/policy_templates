@@ -6,6 +6,22 @@ Please contact sales@flexera.com to learn more.
 
 ## Released Policy Templates
 
+---
+
+Categories
+
+- [Cost](#cost)
+- [Security](#security)
+- [Compliance](#compliance)
+- [Operational](#operational)
+- [SaaS Management](#saas-management)
+
+Reference
+
+- [Policy Data Sets](#policy-data-sets)
+
+---
+
 ### Cost
 
 #### Multi-cloud
@@ -135,6 +151,7 @@ Please contact sales@flexera.com to learn more.
 ###### CIS Policies
 
 - [AWS No Root Access Keys](./security/aws/iam_no_root_access_keys/)
+- [AWS MFA Enabled For Root User](./security/aws/iam_mfa_enabled_for_root/)
 - [AWS Hardware MFA Enabled For Root User](./security/aws/iam_hwmfa_enabled_for_root/)
 - [AWS MFA Enabled For IAM Users](./security/aws/iam_mfa_enabled_for_iam_users/)
 - [AWS Minimum Password Length](./security/aws/iam_min_password_length/)
@@ -142,6 +159,7 @@ Please contact sales@flexera.com to learn more.
 - [AWS Disable Credentials Unused For 45+ Days](./security/aws/iam_disable_45_day_creds/)
 - [AWS Rotate Access Keys](./security/aws/iam_rotate_access_keys/)
 - [AWS Support Role Created](./security/aws/iam_support_role_created/)
+- [AWS Report Attached Admin IAM Policies](./security/aws/iam_no_admin_iam_policies_attached/)
 
 ##### Database
 
@@ -183,6 +201,10 @@ Please contact sales@flexera.com to learn more.
 - [Google Open Buckets](./security/storage/google/public_buckets/)
 
 ### Compliance
+
+#### Flexera
+
+- [Flexera IAM Explicit User Roles](./compliance/flexera/iam_explicit_user_roles/)
 
 #### Multi-cloud
 
@@ -253,6 +275,7 @@ Please contact sales@flexera.com to learn more.
 #### Azure
 
 - [Azure VMs Not Using Managed Disks](./operational/azure/vms_without_managed_disks/)
+- [Azure Expiring Certificates](./operational/azure/azure_certificates/)
 - [Azure Migrate Integration](./operational/azure/azure_migrate)
 - [AzureAD Group Sync](./operational/azure/azuread_group_sync/)
 - [Azure Sync Tags with Optima](./operational/azure/sync_tags_with_optima/)
