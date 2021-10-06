@@ -1,12 +1,12 @@
-# AWS Hardware MFA Enabled For Root
+# AWS Minimum Password Length
 
 ## What it does
 
-Multi-factor authentication (MFA) increases account security by requiring the user have access to another device in order to log into the account in addition to their username and password. Hardware MFA uses a hardware tool, such as a physical key, to authenticate. It is recommended that MFA be enabled on all accounts, and in some cases, hardware MFA is preferred. This policy checks the root account to verify that hardware MFA is enabled.
+Password policies are, in part, used to enforce password complexity requirements. IAM password policies can be used to ensure password are at least a given length. It is recommended that the password policy require a minimum password length 14, and this policy checks if the password policy has been configured as such.
 
 ## Functional Details
 
-When the root account does not have hardware MFA enabled, an email action is triggered automatically to notify the specified users of the incident.
+The policy leverages the AWS IAM API to examine the password policy. When there is no password policy or the policy does not require a password length of 14 characters or greater, an email action is triggered automatically to notify the specified users of the incident.
 
 ## Input Parameters
 
@@ -35,10 +35,8 @@ Required permissions in the provider:
         {
             "Effect": "Allow",
             "Action": [
-                "sts:GetCallerIdentity",
-                "iam:GetAccountSummary",
-                "iam:ListVirtualMFADevices"
-
+              "iam:GetAccountPasswordPolicy",
+              "sts:GetCallerIdentity"
             ],
             "Resource": "*"
         }

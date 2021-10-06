@@ -1,19 +1,19 @@
-name "AWS IAM Report Root Accounts Without Hardware MFA"
+name "AWS IAM Ensure MFA Enabled For IAM Users"
 rs_pt_ver 20180301
 type "policy"
-short_description "Report root account if hardware MFA is disabled. \n See the [README](https://github.com/flexera/policy_templates/tree/master/security/aws/iam_hwmfa_enabled_for_root) and [docs.rightscale.com/policies](https://docs.rightscale.com/policies/) to learn more."
+short_description "Report if MFA is not enabled for IAM users with a console password. \n See the [README](https://github.com/flexera/policy_templates/tree/master/security/aws/iam_no_root_for_tasks) and [docs.rightscale.com/policies](https://docs.rightscale.com/policies/) to learn more."
 long_description ""
 category "Security"
 severity "high"
 default_frequency "15 minutes"
 info(
-  version: "2.0",
+  version: "2.1",
   provider: "AWS",
   service: "IAM",
   policy_set: "CIS",
-  cce_id: "CCE-78911-5",
-  cis_aws_foundations_securityhub: "1.14",
-  benchmark_control: "1.6",
+  cce_id: "CCE-78901-6",
+  cis_aws_foundations_securityhub: "1.2",
+  benchmark_control: "1.10",
   benchmark_version: "1.4.0",
   cis_controls: "[\"6.5v8\", \"4.5v7\"]",
   nist: "IA-2(1)"
@@ -63,67 +63,98 @@ datasource "ds_get_caller_identity" do
   end
 end
 
-# Store whether MFA is enabled at all
-datasource "ds_iam_mfa_enabled" do
+datasource "ds_generate_cred_report" do
   request do
     auth $auth_aws
     verb "GET"
     host "iam.amazonaws.com"
     path "/"
-    query "Action", "GetAccountSummary"
+    query "Action", "GenerateCredentialReport"
     query "Version", "2010-05-08"
     header "Accept", "application/json"
     header "User-Agent", "RS Policies"
   end
   result do
     encoding "json"
-    field "accountMFAEnabled", jmes_path(response, "GetAccountSummaryResponse.GetAccountSummaryResult.SummaryMap.AccountMFAEnabled")
+    field "credReportStatus", jmes_path(response, "GenerateCredentialReportResponse.GenerateCredentialReportResult.State")
   end
 end
 
-# Retrieve a list of virtual MFA devices
-datasource "ds_iam_mfa_devices" do
+datasource "ds_sleep" do
+  run_script $js_sleep, $ds_generate_cred_report
+end
+
+datasource "ds_get_cred_report" do
+  iterate $ds_sleep
   request do
     auth $auth_aws
     verb "GET"
     host "iam.amazonaws.com"
     path "/"
-    query "Action", "ListVirtualMFADevices"
+    query "Action", "GetCredentialReport"
     query "Version", "2010-05-08"
     header "Accept", "application/json"
     header "User-Agent", "RS Policies"
   end
   result do
     encoding "json"
-    field "virtualMFADevices", jmes_path(response, "VirtualMFADevices")
+    field "credReportBase64", jmes_path(response, "GetCredentialReportResponse.GetCredentialReportResult.Content")
   end
 end
 
-# Combine ds_get_caller_identity and ds_iam_accesskeys into a single datasource
-datasource "ds_iam_mfa_status" do
-  run_script $js_iam_mfa_status, $ds_get_caller_identity, $ds_iam_mfa_enabled, $ds_iam_mfa_devices
+datasource "ds_parse_cred_report" do
+  run_script $js_parse_cred_report, $ds_get_caller_identity, $ds_get_cred_report
 end
 
 ###############################################################################
 # Scripts
 ###############################################################################
 
-# Script to combine ds_get_caller_identity and ds_iam_accesskeys into a single datasource
-script "js_iam_mfa_status", type:"javascript" do
-  parameters "ds_get_caller_identity", "ds_iam_mfa_enabled", "ds_iam_mfa_devices"
+script "js_sleep", type:"javascript" do
+  parameters "ds_generate_cred_report"
   result "result"
   code <<-EOS
-    hw_enabled=0
+    sleepDuration=60
+    var now = new Date().getTime();
+    while(new Date().getTime() < now + sleepDuration){ /* Do nothing */ }
+    var result = ds_generate_cred_report
+EOS
+end
 
-    if (ds_iam_mfa_devices['virtualMFADevices'] == null && ds_iam_mfa_enabled['accountMFAEnabled'] == 1) {
-      hw_enabled=1
-    }
+script "js_parse_cred_report", type:"javascript" do
+  parameters "ds_get_caller_identity", "ds_get_cred_report"
+  result "result"
+  code <<-EOS
+  var bad_users_list = [];
+  var bad_users_present = 0;
+  var now = new Date();
 
-    result={
-      id: ds_get_caller_identity[0]['account'],
-      mfa_enabled: ds_iam_mfa_enabled['accountMFAEnabled']
-      mfa_hw_enabled: hw_enabled
+  var decoded = atob(ds_get_cred_report.credReportBase64);
+  var data = decoded.toString();
+  var arr = data.split('\\n');
+  var report = [];
+  var headers = arr[0].split(',');
+
+  for (var i=1; i < arr.length; i++) {
+    var data = arr[i].split(',');
+    var obj = {};
+    for(var j = 0; j < data.length; j++) {
+      obj[headers[j].trim()] = data[j].trim();
     }
+    report.push(obj);
+  }
+
+  _.each(report, function(user){
+    user_bad = 0;
+    if (user.password_enabled == "true" && user.mfa_active == "false") {
+      bad_users_list.push(user.user);
+    }
+  })
+
+  result={
+    id: ds_get_caller_identity[0]['account'],
+    bad_users_list: bad_users_list
+  }
 EOS
 end
 
@@ -131,26 +162,27 @@ end
 # Policy
 ###############################################################################
 
-policy "policy_iam_hwmfa" do
-  validate $ds_iam_mfa_status do
-    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): Hardware MFA disabled"
-    escalate $esc_report_iam_hwmfa
+policy "policy_mfa_enabled_for_iam_users" do
+  validate $ds_parse_cred_report do
+    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): Users Without MFA Found"
+    escalate $esc_report_iam_users_without_mfa
     detail_template <<-EOS
-Hardware multi-factor authentication is not enabled for the root user.
+IAM users found with password enabled but no multi-factor authentication configured.
 
 Affected Account ID: {{data.id}}
+Affected Users: {{data.bad_users_list}}
 EOS
-    check eq(val(data, "mfa_hw_enabled"),1)
+    check eq(size(val(data, "bad_users_list")),0)
     export do
       resource_level true
       field "id" do
         label "id"
       end
-      field "mfa_enabled" do
-        label "mfa_enabled"
+      field "bad_users_present" do
+        label "bad_users_present"
       end
-      field "mfa_hw_enabled" do
-        label "mfa_hw_enabled"
+      field "bad_users_list" do
+        label "bad_users_list"
       end
     end
   end
@@ -160,7 +192,7 @@ end
 # Escalations
 ###############################################################################
 
-escalation "esc_report_iam_hwmfa" do
+escalation "esc_report_iam_users_without_mfa" do
   automatic true
   label "Send Email"
   description "Send incident email"

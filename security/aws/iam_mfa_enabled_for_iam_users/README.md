@@ -1,12 +1,12 @@
-# AWS Hardware MFA Enabled For Root
+# AWS No Root User For Everyday Tasks
 
 ## What it does
 
-Multi-factor authentication (MFA) increases account security by requiring the user have access to another device in order to log into the account in addition to their username and password. Hardware MFA uses a hardware tool, such as a physical key, to authenticate. It is recommended that MFA be enabled on all accounts, and in some cases, hardware MFA is preferred. This policy checks the root account to verify that hardware MFA is enabled.
+Multi-Factor Authentication (MFA) adds an extra layer of authentication assurance beyond traditional credentials. With MFA enabled, when a user signs in to the AWS Console, they will be prompted for their user name and password as well as for an authentication code from their physical or virtual MFA token. It is recommended that MFA be enabled for all accounts that have a console password, and this policy checks for users that have a console password but do *not* have MFA enabled.
 
 ## Functional Details
 
-When the root account does not have hardware MFA enabled, an email action is triggered automatically to notify the specified users of the incident.
+The policy leverages the AWS IAM API to generate and examine a credential report. When users are found that have a console password but do not have MFA enabled, an email action is triggered automatically to notify the specified users of the incident. This email report contains a list of affected users.
 
 ## Input Parameters
 
@@ -35,10 +35,9 @@ Required permissions in the provider:
         {
             "Effect": "Allow",
             "Action": [
-                "sts:GetCallerIdentity",
-                "iam:GetAccountSummary",
-                "iam:ListVirtualMFADevices"
-
+              "sts:GetCallerIdentity",
+              "iam:GenerateCredentialReport",
+              "iam:GetCredentialReport"
             ],
             "Resource": "*"
         }

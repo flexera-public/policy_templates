@@ -1,22 +1,22 @@
-name "AWS IAM Report Root User Doing Everyday Tasks"
+name "AWS IAM Ensure Credentials Unused For >45 days Are Disabled"
 rs_pt_ver 20180301
 type "policy"
-short_description "Report whether the root account is being used for routine or everyday tasks. \n See the [README](https://github.com/flexera/policy_templates/tree/master/security/aws/iam_no_root_for_tasks) and [docs.rightscale.com/policies](https://docs.rightscale.com/policies/) to learn more."
+short_description "Report if credentials exist that have gone unused for 45 days or more. \n See the [README](https://github.com/flexera/policy_templates/tree/master/security/aws/iam_disable_45_day_creds) and [docs.rightscale.com/policies](https://docs.rightscale.com/policies/) to learn more."
 long_description ""
 category "Security"
 severity "high"
 default_frequency "daily"
 info(
-  version: "2.1",
+  version: "2.0",
   provider: "AWS",
   service: "IAM",
   policy_set: "CIS",
-  cce_id: "",
-  cis_aws_foundations_securityhub: "1.1",
-  benchmark_control: "1.7",
+  cce_id: "CCE-78900-8",
+  cis_aws_foundations_securityhub: "", # Not listed
+  benchmark_control: "1.12",
   benchmark_version: "1.4.0",
-  cis_controls: "[\"4.3v7\", \"5.4v8\"]",
-  nist: ""
+  cis_controls: "[\"5.3v8\", \"16.9v7\"]",
+  nist: "IA-4(4)"
 )
 
 ###############################################################################
@@ -114,7 +114,7 @@ script "js_sleep", type:"javascript" do
   parameters "ds_generate_cred_report"
   result "result"
   code <<-EOS
-    sleepDuration=240
+    sleepDuration=60
     var now = new Date().getTime();
     while(new Date().getTime() < now + sleepDuration){ /* Do nothing */ }
     var result = ds_generate_cred_report
@@ -125,47 +125,67 @@ script "js_parse_cred_report", type:"javascript" do
   parameters "ds_get_caller_identity", "ds_get_cred_report"
   result "result"
   code <<-EOS
-  var exceptions=[]
-  var day_difference = 7
-  var now = new Date()
-  var root_index = 0
-  var report = []
+  var bad_users_list = [];
+  var now = new Date();
 
-  var decoded = atob(ds_get_cred_report.credReportBase64)
-  data = decoded.toString()
-  arr = data.split('\\n');
-  var result = [];
+  var decoded = atob(ds_get_cred_report.credReportBase64);
+  var data = decoded.toString();
+  var arr = data.split('\\n');
+  var report = [];
   var headers = arr[0].split(',');
 
-  for(var i = 1; i < arr.length; i++) {
+  for (var i=1; i < arr.length; i++) {
     var data = arr[i].split(',');
     var obj = {};
     for(var j = 0; j < data.length; j++) {
-       obj[headers[j].trim()] = data[j].trim();
+      obj[headers[j].trim()] = data[j].trim();
     }
     report.push(obj);
   }
 
-  var root_account = _.find(report, function(item){
-    return item.user == '<root_account>'
+  _.each(report, function(user){
+    user_bad = 1;
+
+    if (user.user == "<root_account>") {
+      user_bad = 0;
+    }
+
+    if (user.password_enabled == "true") {
+      if (user.password_last_used == "No_Information") {
+        if (now - new Date(user.password_last_changed) < 86400000 * 45) {
+          user_bad = 0;
+        }
+      } else {
+        if (now - new Date(user.password_last_used) < 86400000 * 45) {
+          user_bad = 0;
+        }
+      }
+    }
+
+    if (user.access_key_1_active == "true") {
+      if (user.access_key_1_last_used_date != "No_Information") {
+        if (now - new Date(user.access_key_1_last_used_date) < 86400000 * 45) {
+          user_bad = 0;
+        }
+      }
+    }
+
+    if (user.access_key_2_active == "true") {
+      if (user.access_key_2_last_used_date != "No_Information") {
+        if (now - new Date(user.access_key_2_last_used_date) < 86400000 * 45) {
+          user_bad = 0;
+        }
+      }
+    }
+
+    if (user_bad == 1) {
+      bad_users_list.push(user.user);
+    }
   })
-
-  if (now - new Date(root_account['password_last_used']) <= day_difference * 86400000) {
-    exceptions.push("Root Password Last Used: " + root_account['password_last_used'])
-  }
-
-  if (now - new Date(root_account['access_key_1_last_used_date']) <= day_difference * 86400000) {
-    exceptions.push("Root Access Key 1 Last Used: " + root_account['access_key_1_last_used_date'])
-  }
-
-  if (now - new Date(root_account['access_key_2_last_used_date']) <= day_difference * 86400000) {
-    exceptions.push("Root Access Key 2 Last Used: " + root_account['access_key_2_last_used_date'])
-  }
 
   result={
     id: ds_get_caller_identity[0]['account'],
-    exceptions: exceptions,
-    day_difference: day_difference
+    bad_users_list: bad_users_list
   }
 EOS
 end
@@ -174,19 +194,30 @@ end
 # Policy
 ###############################################################################
 
-policy "policy_iam_no_root_for_tasks" do
+policy "policy_disable_45_day_creds" do
   validate $ds_parse_cred_report do
-    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): Root User Used"
-    escalate $esc_report_root_for_tasks
+    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): Users Without MFA Found"
+    escalate $esc_report_disable_45_day_creds
     detail_template <<-EOS
-The root user has been utilized in the last {{data.day_difference}} days.
+IAM user accounts found that have not been accessed for 45 days or longer.
+It is recommended that these user accounts be deleted.
 
 Affected Account ID: {{data.id}}
-{{- range $val := data.exceptions }}
+Affected Users:
+{{- range $val := data.bad_users_list }}
   {{ $val }}
 {{- end }}
 EOS
-    check eq(size(val(data, "exceptions")),0)
+    check eq(size(val(data, "bad_users_list")),0)
+    export do
+      resource_level true
+      field "id" do
+        label "id"
+      end
+      field "bad_users_list" do
+        label "bad_users_list"
+      end
+    end
   end
 end
 
@@ -194,7 +225,7 @@ end
 # Escalations
 ###############################################################################
 
-escalation "esc_report_root_for_tasks" do
+escalation "esc_report_disable_45_day_creds" do
   automatic true
   label "Send Email"
   description "Send incident email"
