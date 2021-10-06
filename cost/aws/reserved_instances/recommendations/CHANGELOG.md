@@ -1,8 +1,12 @@
 # Changelog
 
-## v2.5
+## v2.6
 
 - prevent the incident update when data doesnt change
+
+## v2.5
+
+- Add option to include all Reserved Instance types in one incident
 
 ## v2.4
 
