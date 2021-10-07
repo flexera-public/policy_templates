@@ -1,12 +1,12 @@
-# AWS Hardware MFA Enabled For Root
+# AWS IAM Ensure Credentials Unused For >45 days Are Disabled
 
 ## What it does
 
-Multi-factor authentication (MFA) increases account security by requiring the user have access to another device in order to log into the account in addition to their username and password. Hardware MFA uses a hardware tool, such as a physical key, to authenticate. It is recommended that MFA be enabled on all accounts, and in some cases, hardware MFA is preferred. This policy checks the root account to verify that hardware MFA is enabled.
+AWS IAM users can access AWS resources using different types of credentials, such as passwords or access keys. It is recommended that all credentials that have been unused in 45 or greater days be deactivated or removed, and this policy checks for unused credentials.
 
 ## Functional Details
 
-When the root account does not have hardware MFA enabled, an email action is triggered automatically to notify the specified users of the incident.
+The policy leverages the AWS IAM API to generate and examine a credential report. When user credentials are found that have not been used for 45 days or longer, an email action is triggered automatically to notify the specified users of the incident. This email report contains a list of affected user accounts.
 
 ## Input Parameters
 
@@ -35,10 +35,9 @@ Required permissions in the provider:
         {
             "Effect": "Allow",
             "Action": [
-                "sts:GetCallerIdentity",
-                "iam:GetAccountSummary",
-                "iam:ListVirtualMFADevices"
-
+              "sts:GetCallerIdentity",
+              "iam:GenerateCredentialReport",
+              "iam:GetCredentialReport"
             ],
             "Resource": "*"
         }

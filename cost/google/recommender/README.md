@@ -51,6 +51,6 @@ Required permissions in the provider:
 
 This Policy Template does not launch any instances, and so does not incur any cloud costs.
 
-### API Quotes
+### API Quotas
 
-The google api sets quotas on the recommender api, which will generate a `429 RESOURCE_EXHAUSTED`. [Quotas & Limits](https://cloud.google.com/recommender/quotas)
+The google api sets quotas on the recommender api, which will generate a `429 RESOURCE_EXHAUSTED`. See [Quotas & Limits](https://cloud.google.com/recommender/quotas)

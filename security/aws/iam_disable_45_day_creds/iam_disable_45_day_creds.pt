@@ -1,22 +1,22 @@
-name "AWS IAM Ensure Access Keys Are Rotated"
+name "AWS IAM Ensure Credentials Unused For >45 days Are Disabled"
 rs_pt_ver 20180301
 type "policy"
-short_description "Report if access keys exist that are 90 days old or older. \n See the [README](https://github.com/flexera/policy_templates/tree/master/security/aws/iam_rotate_access_keys) and [docs.rightscale.com/policies](https://docs.rightscale.com/policies/) to learn more."
+short_description "Report if credentials exist that have gone unused for 45 days or more. \n See the [README](https://github.com/flexera/policy_templates/tree/master/security/aws/iam_disable_45_day_creds) and [docs.rightscale.com/policies](https://docs.rightscale.com/policies/) to learn more."
 long_description ""
 category "Security"
 severity "high"
 default_frequency "daily"
 info(
-  version: "2.2",
+  version: "2.0",
   provider: "AWS",
   service: "IAM",
   policy_set: "CIS",
-  cce_id: "CCE-78902-4",
-  cis_aws_foundations_securityhub: "1.4",
-  benchmark_control: "1.14",
+  cce_id: "CCE-78900-8",
+  cis_aws_foundations_securityhub: "", # Not listed
+  benchmark_control: "1.12",
   benchmark_version: "1.4.0",
-  cis_controls: "[\"5v8\", \"16v7\"]",
-  nist: "IA-5(1)"
+  cis_controls: "[\"5.3v8\", \"16.9v7\"]",
+  nist: "IA-4(4)"
 )
 
 ###############################################################################
@@ -125,28 +125,62 @@ script "js_parse_cred_report", type:"javascript" do
   parameters "ds_get_caller_identity", "ds_get_cred_report"
   result "result"
   code <<-EOS
-  bad_users_list = []
-  now = new Date()
+  var bad_users_list = [];
+  var now = new Date();
 
-  var decoded = atob(ds_get_cred_report.credReportBase64)
-  data = decoded.toString()
-  arr = data.split('\\n');
+  var decoded = atob(ds_get_cred_report.credReportBase64);
+  var data = decoded.toString();
+  var arr = data.split('\\n');
   var report = [];
   var headers = arr[0].split(',');
 
-  for(var i = 1; i < arr.length; i++) {
+  for (var i=1; i < arr.length; i++) {
     var data = arr[i].split(',');
     var obj = {};
     for(var j = 0; j < data.length; j++) {
-       obj[headers[j].trim()] = data[j].trim();
+      obj[headers[j].trim()] = data[j].trim();
     }
     report.push(obj);
   }
 
   _.each(report, function(user){
-    if ((user.access_key_1_active == "true" && now - new Date(user.access_key_1_last_rotated) >= 86400000 * 90) ||
-        (user.access_key_2_active == "true" && now - new Date(user.access_key_2_last_rotated) >= 86400000 * 90))
-      { bad_users_list.push(user.user) }
+    user_bad = 1;
+
+    if (user.user == "<root_account>") {
+      user_bad = 0;
+    }
+
+    if (user.password_enabled == "true") {
+      if (user.password_last_used == "No_Information") {
+        if (now - new Date(user.password_last_changed) < 86400000 * 45) {
+          user_bad = 0;
+        }
+      } else {
+        if (now - new Date(user.password_last_used) < 86400000 * 45) {
+          user_bad = 0;
+        }
+      }
+    }
+
+    if (user.access_key_1_active == "true") {
+      if (user.access_key_1_last_used_date != "No_Information") {
+        if (now - new Date(user.access_key_1_last_used_date) < 86400000 * 45) {
+          user_bad = 0;
+        }
+      }
+    }
+
+    if (user.access_key_2_active == "true") {
+      if (user.access_key_2_last_used_date != "No_Information") {
+        if (now - new Date(user.access_key_2_last_used_date) < 86400000 * 45) {
+          user_bad = 0;
+        }
+      }
+    }
+
+    if (user_bad == 1) {
+      bad_users_list.push(user.user);
+    }
   })
 
   result={
@@ -160,13 +194,13 @@ end
 # Policy
 ###############################################################################
 
-policy "policy_rotate_access_keys" do
+policy "policy_disable_45_day_creds" do
   validate $ds_parse_cred_report do
-    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): Old Access Keys Found"
-    escalate $esc_report_rotate_access_keys
+    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): Users Without MFA Found"
+    escalate $esc_report_disable_45_day_creds
     detail_template <<-EOS
-IAM user accounts found that have access keys that are 90+ days old.
-It is recommended that these access keys be rotated.
+IAM user accounts found that have not been accessed for 45 days or longer.
+It is recommended that these user accounts be deleted.
 
 Affected Account ID: {{data.id}}
 Affected Users:
@@ -191,7 +225,7 @@ end
 # Escalations
 ###############################################################################
 
-escalation "esc_report_rotate_access_keys" do
+escalation "esc_report_disable_45_day_creds" do
   automatic true
   label "Send Email"
   description "Send incident email"
