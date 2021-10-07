@@ -159,6 +159,8 @@ Reference
 - [AWS Disable Credentials Unused For 45+ Days](./security/aws/iam_disable_45_day_creds/)
 - [AWS Rotate Access Keys](./security/aws/iam_rotate_access_keys/)
 - [AWS Expired SSL Certs](./security/aws/iam_expired_ssl_certs/)
+- [AWS Access Analyzer Enabled](./security/aws/iam_access_analyzer_enabled/)
+- [AWS Support Role Created](./security/aws/iam_support_role_created/)
 - [AWS Report Attached Admin IAM Policies](./security/aws/iam_no_admin_iam_policies_attached/)
 
 ##### Database
