@@ -1,22 +1,22 @@
-name "AWS IAM Report Root Accounts Without Hardware MFA"
+name "AWS IAM Report Attached Admin IAM Policies"
 rs_pt_ver 20180301
 type "policy"
-short_description "Report root account if hardware MFA is disabled. \n See the [README](https://github.com/flexera/policy_templates/tree/master/security/aws/iam_hwmfa_enabled_for_root) and [docs.rightscale.com/policies](https://docs.rightscale.com/policies/) to learn more."
+short_description "Report any admin IAM policies that are attached. \n See the [README](https://github.com/flexera/policy_templates/tree/master/security/aws/iam_no_admin_iam_policies_attached) and [docs.rightscale.com/policies](https://docs.rightscale.com/policies/) to learn more."
 long_description ""
 category "Security"
 severity "high"
-default_frequency "15 minutes"
+default_frequency "daily"
 info(
   version: "2.0",
   provider: "AWS",
   service: "IAM",
   policy_set: "CIS",
-  cce_id: "CCE-78911-5",
-  cis_aws_foundations_securityhub: "1.14",
-  benchmark_control: "1.6",
+  cce_id: "CCE-78912-3",
+  cis_aws_foundations_securityhub: "1.22",
+  benchmark_control: "1.16",
   benchmark_version: "1.4.0",
-  cis_controls: "[\"6.5v8\", \"4.5v7\"]",
-  nist: "IA-2(1)"
+  cis_controls: "[\"3.3v8\", \"4v7\"]",
+  nist: "AC-6"
 )
 
 ###############################################################################
@@ -63,66 +63,85 @@ datasource "ds_get_caller_identity" do
   end
 end
 
-# Store whether MFA is enabled at all
-datasource "ds_iam_mfa_enabled" do
+datasource "ds_iam_listpolicies" do
   request do
     auth $auth_aws
     verb "GET"
     host "iam.amazonaws.com"
     path "/"
-    query "Action", "GetAccountSummary"
+    query "Action", "ListPolicies"
     query "Version", "2010-05-08"
+    query "OnlyAttached", "true"
     header "Accept", "application/json"
     header "User-Agent", "RS Policies"
   end
   result do
     encoding "json"
-    field "accountMFAEnabled", jmes_path(response, "GetAccountSummaryResponse.GetAccountSummaryResult.SummaryMap.AccountMFAEnabled")
+    collect jmes_path(response, "ListPoliciesResponse.ListPoliciesResult.Policies[*]") do
+      field "policyName", jmes_path(col_item, "PolicyName")
+      field "arn", jmes_path(col_item, "Arn")
+      field "versionId", jmes_path(col_item, "DefaultVersionId")
+    end
   end
 end
 
-# Retrieve a list of virtual MFA devices
-datasource "ds_iam_mfa_devices" do
+datasource "ds_iam_policyversions" do
+  iterate $ds_iam_listpolicies
   request do
     auth $auth_aws
     verb "GET"
     host "iam.amazonaws.com"
     path "/"
-    query "Action", "ListVirtualMFADevices"
+    query "Action", "GetPolicyVersion"
+    query "PolicyArn", val(iter_item, "arn")
+    query "VersionId", val(iter_item, "versionId")
     query "Version", "2010-05-08"
+    query "OnlyAttached", "true"
     header "Accept", "application/json"
     header "User-Agent", "RS Policies"
   end
   result do
     encoding "json"
-    field "virtualMFADevices", jmes_path(response, "VirtualMFADevices")
+    field "policyName", jmes_path(iter_item, "policyName")
+    field "arn", jmes_path(iter_item, "arn")
+    field "versionId", jmes_path(iter_item, "versionId")
+    field "encoded_details", jmes_path(response, "GetPolicyVersionResponse.GetPolicyVersionResult.PolicyVersion.Document")
   end
 end
 
-# Combine ds_get_caller_identity and ds_iam_accesskeys into a single datasource
-datasource "ds_iam_mfa_status" do
-  run_script $js_iam_mfa_status, $ds_get_caller_identity, $ds_iam_mfa_enabled, $ds_iam_mfa_devices
+datasource "ds_iam_policies" do
+  run_script $js_iam_policies, $ds_iam_policyversions, $ds_get_caller_identity
 end
 
 ###############################################################################
 # Scripts
 ###############################################################################
 
-# Script to combine ds_get_caller_identity and ds_iam_accesskeys into a single datasource
-script "js_iam_mfa_status", type:"javascript" do
-  parameters "ds_get_caller_identity", "ds_iam_mfa_enabled", "ds_iam_mfa_devices"
+script "js_iam_policies", type:"javascript" do
+  parameters "ds_iam_policyversions", "ds_get_caller_identity"
   result "result"
   code <<-EOS
-    hw_enabled=0
+    var bad_policy_list = [];
 
-    if (ds_iam_mfa_devices['virtualMFADevices'] == null && ds_iam_mfa_enabled['accountMFAEnabled'] == 1) {
-      hw_enabled=1
-    }
+    _.each(ds_iam_policyversions, function(policy){
+      statement_list = JSON.parse(decodeURIComponent(policy.encoded_details))['Statement']
+      bad_policy = 0
 
-    result={
+      _.each(statement_list, function(statement){
+        if (statement['Effect'] == 'Allow' && statement['Action'] == '*' && statement['Resource'] == '*') {
+          bad_policy = 1
+        }
+      })
+
+      if (bad_policy == 1) {
+        bad_policy_list.push(policy['policyName'] + ": " + policy['arn'])
+      }
+
+    })
+
+    result = {
       id: ds_get_caller_identity[0]['account'],
-      mfa_enabled: ds_iam_mfa_enabled['accountMFAEnabled']
-      mfa_hw_enabled: hw_enabled
+      bad_policy_list: bad_policy_list
     }
 EOS
 end
@@ -131,26 +150,28 @@ end
 # Policy
 ###############################################################################
 
-policy "policy_iam_hwmfa" do
-  validate $ds_iam_mfa_status do
-    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): Hardware MFA disabled"
-    escalate $esc_report_iam_hwmfa
+policy "pol_no_admin_iam_policies" do
+  validate $ds_iam_policies do
+    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): Attached Admin Policies Found"
+    escalate $esc_no_admin_iam_policies
     detail_template <<-EOS
-Hardware multi-factor authentication is not enabled for the root user.
+Attached policies with full admin access found.
 
-Affected Account ID: {{data.id}}
+Affected Account: {{data.id}}
+
+Problematic Policies:
+{{- range $val := data.bad_policy_list }}
+  {{ $val }}\n
+{{- end }}
 EOS
-    check eq(val(data, "mfa_hw_enabled"),1)
+    check eq(size(val(data, "bad_policy_list")),0)
     export do
       resource_level true
       field "id" do
         label "id"
       end
-      field "mfa_enabled" do
-        label "mfa_enabled"
-      end
-      field "mfa_hw_enabled" do
-        label "mfa_hw_enabled"
+      field "bad_policy_list" do
+        label "bad_policy_list"
       end
     end
   end
@@ -160,7 +181,7 @@ end
 # Escalations
 ###############################################################################
 
-escalation "esc_report_iam_hwmfa" do
+escalation "esc_no_admin_iam_policies" do
   automatic true
   label "Send Email"
   description "Send incident email"
