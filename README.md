@@ -161,6 +161,7 @@ Reference
 - [AWS Access Analyzer Enabled](./security/aws/iam_access_analyzer_enabled/)
 - [AWS Support Role Created](./security/aws/iam_support_role_created/)
 - [AWS Report Attached Admin IAM Policies](./security/aws/iam_no_admin_iam_policies_attached/)
+- [AWS Expired SSL Certs](./security/aws/iam_expired_ssl_certs/)
 
 ##### Database
 
