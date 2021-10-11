@@ -4,6 +4,8 @@ This repository contains a library of open source Flexera CMP Policy Templates t
 
 Please contact sales@flexera.com to learn more.
 
+[![Coverage Status](https://coveralls.io/repos/github/flexera/policy_templates/badge.svg?branch=master)](https://coveralls.io/github/flexera/policy_templates?branch=master)
+
 ## Released Policy Templates
 
 ---
