@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.13
+
+- Added Google expression blob for /bill-analysis/orgs/" + org_id + "/costs/select request
+
 ## v1.12
 
 - Ensure at least a month worth of costs are retrieved
