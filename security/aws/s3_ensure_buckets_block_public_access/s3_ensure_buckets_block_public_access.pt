@@ -57,7 +57,7 @@ datasource "ds_get_caller_identity" do
   result do
     encoding "xml"
     collect xpath(response, "//GetCallerIdentityResponse/GetCallerIdentityResult") do
-      field "account",xpath(col_item, "Account")
+      field "account", xpath(col_item, "Account")
     end
  end
 end
@@ -78,8 +78,32 @@ datasource "ds_aws_buckets" do
   end
 end
 
-datasource "ds_aws_buckets_with_pab_info" do
+datasource "ds_aws_buckets_with_region" do
   iterate $ds_aws_buckets
+  request do
+    auth $auth_aws
+    host join([val(iter_item, "id"), ".s3.amazonaws.com"])
+    path "/"
+    query "location", ""
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "xml"
+    field "id", val(iter_item, "id")
+    field "creation_date", val(iter_item, "creation_date")
+    field "region", response
+  end
+end
+
+# https://docs.aws.amazon.com/AmazonS3/latest/API/API_GetBucketLocation.html
+# "Buckets in Region us-east-1 have a LocationConstraint of null."
+# This is to clean up the data and replace that null value with us-east-1
+datasource "ds_aws_buckets_with_region_cleaned" do
+  run_script $js_aws_buckets_with_region_cleaned, $ds_aws_buckets_with_region
+end
+
+datasource "ds_aws_buckets_with_pab_info" do
+  iterate $ds_aws_buckets_with_region_cleaned
   request do
     auth $auth_aws
     host join([val(iter_item, "id"), ".s3.amazonaws.com"])
@@ -91,6 +115,7 @@ datasource "ds_aws_buckets_with_pab_info" do
     encoding "xml"
     field "id", val(iter_item, "id")
     field "creation_date", val(iter_item, "creation_date")
+    field "region", val(iter_item, "region")
     field "block_public_acls", xpath(response, "//PublicAccessBlockConfiguration/BlockPublicAcls")
     field "ignore_public_acls", xpath(response, "//PublicAccessBlockConfiguration/IgnorePublicAcls")
     field "block_public_policy", xpath(response, "//PublicAccessBlockConfiguration/BlockPublicPolicy")
@@ -98,13 +123,31 @@ datasource "ds_aws_buckets_with_pab_info" do
   end
 end
 
-datasource "ds_aws_buckets_without_pab" do
-  run_script $js_aws_buckets_without_pab, $ds_aws_buckets_with_pab_info
-end
+# datasource "ds_aws_buckets_without_pab" do
+#   run_script $js_aws_buckets_without_pab, $ds_aws_buckets_with_pab_info
+# end
 
 ###############################################################################
 # Scripts
 ###############################################################################
+
+script "js_aws_buckets_with_region_cleaned", type:"javascript" do
+  parameters "ds_aws_buckets_with_region"
+  result "result"
+  code <<-EOS
+    result = []
+
+    _.each(ds_aws_buckets_with_region, function(bucket) {
+      if (bucket.region == "\\n") {
+        bucket.region = "us-east-1"
+      } else {
+        bucket.region = bucket.region.substring(1)
+      }
+
+      result.push(bucket)
+    })
+EOS
+end
 
 script "js_aws_buckets_without_pab", type:"javascript" do
   parameters "ds_aws_buckets_with_pab_info"
@@ -128,32 +171,35 @@ end
 ###############################################################################
 
 policy "policy_aws_buckets_without_pab" do
-  validate $ds_aws_buckets_without_pab do
-    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} S3 Buckets Without 'Block Public Access' Configured Found"
-    escalate $esc_report_aws_buckets_without_pab
-    check eq(size(data),0)
-    export do
-      resource_level true
-      field "id" do
-        label "S3 Bucket"
-      end
-      field "creation_date" do
-        label "Creation Date"
-      end
-      field "block_public_acls" do
-        label "Block Public ACLs"
-      end
-      field "ignore_public_acls" do
-        label "Ignore Public ACLs"
-      end
-      field "block_public_policy" do
-        label "Block Public Policy"
-      end
-      field "restrict_public_buckets" do
-        label "Restrict Public Buckets"
-      end
-    end
-  end
+  # validate $ds_aws_buckets_without_pab do
+  #   summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} S3 Buckets Without 'Block Public Access' Configured Found"
+  #   escalate $esc_report_aws_buckets_without_pab
+  #   check eq(size(data),0)
+  #   export do
+  #     resource_level true
+  #     field "id" do
+  #       label "S3 Bucket"
+  #     end
+  #     field "region" do
+  #       label "Region"
+  #     end
+  #     field "creation_date" do
+  #       label "Creation Date"
+  #     end
+  #     field "block_public_acls" do
+  #       label "Block Public ACLs"
+  #     end
+  #     field "ignore_public_acls" do
+  #       label "Ignore Public ACLs"
+  #     end
+  #     field "block_public_policy" do
+  #       label "Block Public Policy"
+  #     end
+  #     field "restrict_public_buckets" do
+  #       label "Restrict Public Buckets"
+  #     end
+  #   end
+  # end
 end
 
 ###############################################################################
@@ -166,5 +212,3 @@ escalation "esc_report_aws_buckets_without_pab" do
   description "Send incident email"
   email $param_email
 end
-
-
