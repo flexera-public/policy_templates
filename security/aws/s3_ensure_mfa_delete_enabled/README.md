@@ -35,7 +35,9 @@ Required permissions in the provider:
         {
             "Effect": "Allow",
             "Action": [
-              "sts:GetCallerIdentity"
+              "sts:GetCallerIdentity",
+              "s3:ListAllMyBuckets",
+              "s3:GetBucketVersioning"
             ],
             "Resource": "*"
         }

@@ -72,43 +72,26 @@ datasource "ds_aws_buckets" do
   result do
     encoding "xml"
     collect xpath(response, "//ListAllMyBucketsResult/Buckets/Bucket", "array") do
-      field "bucket_name", xpath(col_item, "Name")
+      field "id", xpath(col_item, "Name")
       field "creation_date", xpath(col_item, "CreationDate")
     end
   end
 end
 
-datasource "ds_aws_buckets_with_region" do
+datasource "ds_aws_buckets_with_versioning" do
   iterate $ds_aws_buckets
   request do
     auth $auth_aws
-    host "s3-external-1.amazonaws.com"
-    path join(["/", val(iter_item, "bucket_name")])
-    query "location", ""
-    header "User-Agent", "RS Policies"
-  end
-  result do
-    encoding "xml"
-    field "bucket_name", val(iter_item, "bucket_name")
-    field "creation_date", val(iter_item, "creation_date")
-    field "region", xpath(response, "//LocationConstraint")
-  end
-end
-
-datasource "ds_aws_buckets_with_versioning" do
-  iterate $ds_aws_buckets_with_region
-  request do
-    auth $auth_aws
-    host join([val(iter_item, "bucket_name"), ".s3.amazonaws.com"])
+    host join([val(iter_item, "id"), ".s3.amazonaws.com"])
     path "/"
     query "versioning", ""
     header "User-Agent", "RS Policies"
   end
   result do
     encoding "xml"
-    field "bucket_name", val(iter_item, "bucket_name")
+    field "id", val(iter_item, "id")
     field "creation_date", val(iter_item, "creation_date")
-    field "region", val(iter_item, "region")
+    field "versioning", xpath(response, "//VersioningConfiguration/Status")
     field "mfadelete", xpath(response, "//VersioningConfiguration/MfaDelete")
   end
 end
@@ -125,17 +108,20 @@ script "js_aws_buckets_cleaned", type:"javascript" do
   parameters "ds_aws_buckets_with_versioning"
   result "result"
   code <<-EOS
-    result = {}
+    result = []
 
     _.each(ds_aws_buckets_with_versioning, function(bucket) {
+      if (bucket.versioning != "Enabled") {
+        bucket.versioning = "Disabled"
+      }
+
       if (bucket.mfadelete != "Enabled") {
         bucket.mfadelete = "Disabled"
         result.push(bucket)
       }
     })
 
-    result = _.sortBy(result, 'bucket_name');
-    result = _.sortBy(result, 'region');
+    result = _.sortBy(result, 'id');
 EOS
 end
 
@@ -150,17 +136,17 @@ policy "policy_aws_buckets_without_mfa" do
     check eq(size(data),0)
     export do
       resource_level true
-      field "bucket_name" do
+      field "id" do
         label "S3 Bucket"
-      end
-      field "region" do
-        label "Region"
       end
       field "creation_date" do
         label "Creation Date"
       end
+      field "versioning" do
+        label "Versioning"
+      end
       field "mfadelete" do
-        label "MFA Delete Status"
+        label "MFA Delete"
       end
     end
   end
