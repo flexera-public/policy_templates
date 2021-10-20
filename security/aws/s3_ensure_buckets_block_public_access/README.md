@@ -37,6 +37,7 @@ Required permissions in the provider:
             "Action": [
               "sts:GetCallerIdentity",
               "s3:ListAllMyBuckets",
+              "s3:GetBucketLocation",
               "s3:GetPublicAccessBlock"
             ],
             "Resource": "*"
