@@ -165,8 +165,11 @@ Reference
 
 ##### Database
 
-- [AWS Unencrypted RDS Instances](./security/aws/rds_unencrypted/)
 - [AWS Publicly Accessible RDS Instances](./security/aws/rds_publicly_accessible/)
+
+###### CIS Policies
+
+- [AWS Unencrypted RDS Instances](./security/aws/rds_unencrypted/)
 
 ##### Storage
 

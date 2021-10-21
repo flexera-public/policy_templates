@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.6
+
+- Added CIS standards information to metadata
+
 ## v2.5
 
 - Added a new input parameter to enter regions in order to support SCP (Service Control Policy) and CIS Standards
