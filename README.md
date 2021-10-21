@@ -174,6 +174,10 @@ Reference
 - [AWS Unencrypted S3 Buckets](./security/aws/unencrypted_s3_buckets/)
 - [AWS Unencrypted Volumes](./security/aws/ebs_unencrypted_volumes/)
 
+###### CIS Policies
+
+- [AWS S3 Buckets Deny HTTP](./security/aws/s3_buckets_deny_http/)
+
 ##### Load Balancers
 
 - [AWS Internet-facing ELBs & ALBs](./security/aws/loadbalancer_internet_facing/)
