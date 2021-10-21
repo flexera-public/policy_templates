@@ -171,8 +171,10 @@ Reference
 ##### Storage
 
 - [AWS Open Buckets](./security/storage/aws/public_buckets/)
-- [AWS Unencrypted S3 Buckets](./security/aws/unencrypted_s3_buckets/)
 - [AWS Unencrypted Volumes](./security/aws/ebs_unencrypted_volumes/)
+
+###### CIS Policies
+- [AWS Unencrypted S3 Buckets](./security/aws/unencrypted_s3_buckets/)
 
 ##### Load Balancers
 
