@@ -1,12 +1,12 @@
-# AWS Hardware MFA Enabled For Root
+# AWS Access Analyzers Enabled
 
 ## What it does
 
-Multi-factor authentication (MFA) increases account security by requiring the user have access to another device in order to log into the account in addition to their username and password. Hardware MFA uses a hardware tool, such as a physical key, to authenticate. It is recommended that MFA be enabled on all accounts, and in some cases, hardware MFA is preferred. This policy checks the root account to verify that hardware MFA is enabled.
+Access Analyzer scans show resources that other accounts and federated users can access, such as KMS keys and IAM roles. So the results allow you to determine if an unintended user is allowed, making it easier for administrators to monitor least privileges access. This policy ensures that Access Analyzers are enabled for the specified regions.
 
 ## Functional Details
 
-When the root account does not have hardware MFA enabled, an email action is triggered automatically to notify the specified users of the incident.
+When one or more of the provided regions does not have an access analyzer enabled, this policy raises an incident with a list of the affected regions.
 
 ## Input Parameters
 
@@ -36,9 +36,7 @@ Required permissions in the provider:
             "Effect": "Allow",
             "Action": [
                 "sts:GetCallerIdentity",
-                "iam:GetAccountSummary",
-                "iam:ListVirtualMFADevices"
-
+                "access-analyzer:ListAnalyzers"
             ],
             "Resource": "*"
         }

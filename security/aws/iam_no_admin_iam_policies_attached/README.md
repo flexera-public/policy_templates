@@ -1,12 +1,12 @@
-# AWS Hardware MFA Enabled For Root
+# AWS Report Attached Admin IAM Policies
 
 ## What it does
 
-Multi-factor authentication (MFA) increases account security by requiring the user have access to another device in order to log into the account in addition to their username and password. Hardware MFA uses a hardware tool, such as a physical key, to authenticate. It is recommended that MFA be enabled on all accounts, and in some cases, hardware MFA is preferred. This policy checks the root account to verify that hardware MFA is enabled.
+AWS policies should grant specific permissions based on the principle of least privilege. This policy checks for any attached AWS policies that have full unrestricted administrative rights and raises an incident if any are present.
 
 ## Functional Details
 
-When the root account does not have hardware MFA enabled, an email action is triggered automatically to notify the specified users of the incident.
+When attached AWS policies that have full administrative rights are found, this policy raises an incident and provides a list of relevant policies.
 
 ## Input Parameters
 
@@ -35,10 +35,9 @@ Required permissions in the provider:
         {
             "Effect": "Allow",
             "Action": [
-                "sts:GetCallerIdentity",
-                "iam:GetAccountSummary",
-                "iam:ListVirtualMFADevices"
-
+                "iam:ListPolicies",
+                "iam:GetPolicyVersion",
+                "sts:GetCallerIdentity"
             ],
             "Resource": "*"
         }

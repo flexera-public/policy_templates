@@ -1,12 +1,12 @@
-# AWS Hardware MFA Enabled For Root
+# AWS Ensure Support Role Created And Attached
 
 ## What it does
 
-Multi-factor authentication (MFA) increases account security by requiring the user have access to another device in order to log into the account in addition to their username and password. Hardware MFA uses a hardware tool, such as a physical key, to authenticate. It is recommended that MFA be enabled on all accounts, and in some cases, hardware MFA is preferred. This policy checks the root account to verify that hardware MFA is enabled.
+AWS provides a support center that can be used for incident notification and response, as well as technical support and customer services. This policy verifies that an IAM Role to allow authorized users to manage incidents with AWS Support exists.
 
 ## Functional Details
 
-When the root account does not have hardware MFA enabled, an email action is triggered automatically to notify the specified users of the incident.
+When the AWSSupportAccess IAM policy is not attached to a role, this policy raises an incident.
 
 ## Input Parameters
 
@@ -35,10 +35,9 @@ Required permissions in the provider:
         {
             "Effect": "Allow",
             "Action": [
-                "sts:GetCallerIdentity",
-                "iam:GetAccountSummary",
-                "iam:ListVirtualMFADevices"
-
+                "iam:ListPolicies",
+                "iam:ListEntitiesForPolicy",
+                "sts:GetCallerIdentity"
             ],
             "Resource": "*"
         }

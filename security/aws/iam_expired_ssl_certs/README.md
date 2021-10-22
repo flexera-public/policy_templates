@@ -1,12 +1,12 @@
-# AWS Hardware MFA Enabled For Root
+# AWS Report Expired SSL/TLS Certificates
 
 ## What it does
 
-Multi-factor authentication (MFA) increases account security by requiring the user have access to another device in order to log into the account in addition to their username and password. Hardware MFA uses a hardware tool, such as a physical key, to authenticate. It is recommended that MFA be enabled on all accounts, and in some cases, hardware MFA is preferred. This policy checks the root account to verify that hardware MFA is enabled.
+This policy searches the account for expired SSL/TLS certificates.
 
 ## Functional Details
 
-When the root account does not have hardware MFA enabled, an email action is triggered automatically to notify the specified users of the incident.
+When expired SSL/TLS certificates are found, an email action is triggered automatically to notify the specified users of the incident with a list of affected certificates.
 
 ## Input Parameters
 
@@ -36,9 +36,7 @@ Required permissions in the provider:
             "Effect": "Allow",
             "Action": [
                 "sts:GetCallerIdentity",
-                "iam:GetAccountSummary",
-                "iam:ListVirtualMFADevices"
-
+                "iam:ListServerCertificates"
             ],
             "Resource": "*"
         }

@@ -1,22 +1,22 @@
-name "AWS IAM Report Root Accounts Without Hardware MFA"
+name "AWS IAM Report Regions Without Access Analyzer"
 rs_pt_ver 20180301
 type "policy"
-short_description "Report root account if hardware MFA is disabled. \n See the [README](https://github.com/flexera/policy_templates/tree/master/security/aws/iam_hwmfa_enabled_for_root) and [docs.rightscale.com/policies](https://docs.rightscale.com/policies/) to learn more."
+short_description "Report affected regions if no Access Analyzer is enabled. \n See the [README](https://github.com/flexera/policy_templates/tree/master/security/aws/iam_access_analyzer_enabled) and [docs.rightscale.com/policies](https://docs.rightscale.com/policies/) to learn more."
 long_description ""
 category "Security"
 severity "high"
-default_frequency "15 minutes"
+default_frequency "daily"
 info(
   version: "2.0",
   provider: "AWS",
   service: "IAM",
   policy_set: "CIS",
-  cce_id: "CCE-78911-5",
-  cis_aws_foundations_securityhub: "1.14",
-  benchmark_control: "1.6",
+  cce_id: "", # Does not appear to have a CCE
+  cis_aws_foundations_securityhub: "", # Not listed
+  benchmark_control: "1.20",
   benchmark_version: "1.4.0",
-  cis_controls: "[\"6.5v8\", \"4.5v7\"]",
-  nist: "IA-2(1)"
+  cis_controls: "[\"3.3v8\", \"14v7\", \"14.6v7\"]",
+  nist: "" # Unknown
 )
 
 ###############################################################################
@@ -27,6 +27,14 @@ parameter "param_email" do
   type "list"
   label "Email Address"
   description "Email addresses of the recipients you wish to notify"
+end
+
+parameter "param_regions" do
+  type "list"
+  label "Regions"
+  description "Active regions you wish to run this policy against"
+  default ["us-east-1"]
+  allowed_pattern /^([a-zA-Z-_]+-[a-zA-Z0-9-_]+-[0-9-_]+,*|)+$/
 end
 
 ###############################################################################
@@ -63,66 +71,68 @@ datasource "ds_get_caller_identity" do
   end
 end
 
-# Store whether MFA is enabled at all
-datasource "ds_iam_mfa_enabled" do
+# Places param_regions into a datasource for iteration
+datasource "ds_regions" do
+  run_script $js_regions, $param_regions
+end
+
+datasource "ds_list_analyzers" do
+  iterate $ds_regions
   request do
     auth $auth_aws
     verb "GET"
-    host "iam.amazonaws.com"
-    path "/"
-    query "Action", "GetAccountSummary"
-    query "Version", "2010-05-08"
-    header "Accept", "application/json"
+    host join(["access-analyzer.", iter_item ,".amazonaws.com"])
+    path "/analyzer"
     header "User-Agent", "RS Policies"
+    header "Accept", "application/json"
+    query "Action", "GetCallerIdentity"
+    query "Version", "2011-06-15"
   end
   result do
     encoding "json"
-    field "accountMFAEnabled", jmes_path(response, "GetAccountSummaryResponse.GetAccountSummaryResult.SummaryMap.AccountMFAEnabled")
+    field "region", iter_item
+    field "analyzers", jmes_path(response, "analyzers")
   end
 end
 
-# Retrieve a list of virtual MFA devices
-datasource "ds_iam_mfa_devices" do
-  request do
-    auth $auth_aws
-    verb "GET"
-    host "iam.amazonaws.com"
-    path "/"
-    query "Action", "ListVirtualMFADevices"
-    query "Version", "2010-05-08"
-    header "Accept", "application/json"
-    header "User-Agent", "RS Policies"
-  end
-  result do
-    encoding "json"
-    field "virtualMFADevices", jmes_path(response, "VirtualMFADevices")
-  end
-end
-
-# Combine ds_get_caller_identity and ds_iam_accesskeys into a single datasource
-datasource "ds_iam_mfa_status" do
-  run_script $js_iam_mfa_status, $ds_get_caller_identity, $ds_iam_mfa_enabled, $ds_iam_mfa_devices
+datasource "ds_checked_analyzers" do
+  run_script $js_analyzers, $ds_get_caller_identity, $ds_list_analyzers
 end
 
 ###############################################################################
 # Scripts
 ###############################################################################
 
+script "js_regions", type:"javascript" do
+  parameters "param_regions"
+  result "param_regions"
+  code ""
+end
+
 # Script to combine ds_get_caller_identity and ds_iam_accesskeys into a single datasource
-script "js_iam_mfa_status", type:"javascript" do
-  parameters "ds_get_caller_identity", "ds_iam_mfa_enabled", "ds_iam_mfa_devices"
+script "js_analyzers", type:"javascript" do
+  parameters "ds_get_caller_identity", "ds_list_analyzers"
   result "result"
   code <<-EOS
-    hw_enabled=0
+    var regions=[]
 
-    if (ds_iam_mfa_devices['virtualMFADevices'] == null && ds_iam_mfa_enabled['accountMFAEnabled'] == 1) {
-      hw_enabled=1
-    }
+    _.each(ds_list_analyzers, function(item) {
+      region_bad = 1
+
+      _.each(item.analyzers, function(analyzer) {
+        if (analyzer.status == "ACTIVE") {
+          region_bad = 0
+        }
+      })
+
+      if (region_bad == 1) {
+        regions.push(item.region)
+      }
+    })
 
     result={
       id: ds_get_caller_identity[0]['account'],
-      mfa_enabled: ds_iam_mfa_enabled['accountMFAEnabled']
-      mfa_hw_enabled: hw_enabled
+      regions: regions
     }
 EOS
 end
@@ -131,26 +141,24 @@ end
 # Policy
 ###############################################################################
 
-policy "policy_iam_hwmfa" do
-  validate $ds_iam_mfa_status do
-    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): Hardware MFA disabled"
-    escalate $esc_report_iam_hwmfa
+policy "policy_access_analyzer_enabled" do
+  validate $ds_checked_analyzers do
+    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): Regions Without Access Analyzers Found"
+    escalate $esc_report_access_analyzer_enabled
     detail_template <<-EOS
-Hardware multi-factor authentication is not enabled for the root user.
+Regions without active Access Analyzers found.
 
 Affected Account ID: {{data.id}}
+Affected Regions: {{data.regions}}
 EOS
-    check eq(val(data, "mfa_hw_enabled"),1)
+    check eq(size(val(data, "regions")),0)
     export do
       resource_level true
       field "id" do
         label "id"
       end
-      field "mfa_enabled" do
-        label "mfa_enabled"
-      end
-      field "mfa_hw_enabled" do
-        label "mfa_hw_enabled"
+      field "regions" do
+        label "regions"
       end
     end
   end
@@ -160,9 +168,10 @@ end
 # Escalations
 ###############################################################################
 
-escalation "esc_report_iam_hwmfa" do
+escalation "esc_report_access_analyzer_enabled" do
   automatic true
   label "Send Email"
   description "Send incident email"
   email $param_email
 end
+
