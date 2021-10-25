@@ -200,6 +200,10 @@ Reference
 
 - [Azure Storage Accounts Without HTTPs Enforced](./security/storage/azure/storage_account_https_enabled/)
 
+###### CIS Policies
+
+- [AWS EBS Ensure Encryption By Default](./security/aws/ebs_ensure_encryption_default/)
+
 #### Google
 
 - [Google Open Buckets](./security/storage/google/public_buckets/)
