@@ -1,4 +1,4 @@
-# AWS Access Analyzers Enabled
+# AWS Ensure EBS Encryption By Default
 
 ## What it does
 
