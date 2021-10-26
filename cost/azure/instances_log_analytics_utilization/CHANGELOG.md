@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.13
+
+- Adding subscription filter to deal with timeout
+
 ## v2.12
 
 - Fixed bug causing incompatible rightsizing recommendations
