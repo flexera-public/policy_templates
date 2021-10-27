@@ -131,6 +131,10 @@ Reference
 - [Google Old Snapshots](./cost/google/old_snapshots/)
 - [Google Unused Volumes](./cost/google/unattached_volumes/)
 
+##### Native Recommendations
+
+- [Google Recommender Policy](./cost/google/recommender/)
+
 ##### Other
 
 - [Google Unutilized IP Addresses](./cost/google/unutilized_ip_addresses/)
@@ -165,8 +169,11 @@ Reference
 
 ##### Database
 
-- [AWS Unencrypted RDS Instances](./security/aws/rds_unencrypted/)
 - [AWS Publicly Accessible RDS Instances](./security/aws/rds_publicly_accessible/)
+
+###### CIS Policies
+
+- [AWS Unencrypted RDS Instances](./security/aws/rds_unencrypted/)
 
 ##### Storage
 
@@ -174,7 +181,9 @@ Reference
 - [AWS Unencrypted Volumes](./security/aws/ebs_unencrypted_volumes/)
 
 ###### CIS Policies
+
 - [AWS Unencrypted S3 Buckets](./security/aws/unencrypted_s3_buckets/)
+- [AWS S3 Buckets Deny HTTP](./security/aws/s3_buckets_deny_http/)
 
 ##### Load Balancers
 
@@ -187,6 +196,8 @@ Reference
 - [AWS VPC's without FlowLogs Enabled](./security/aws/vpcs_without_flow_logs_enabled/)
 
 #### Azure
+
+- [Azure Resources with public IP address](./security/azure/resources_with_public_ip_address)
 
 ##### Database
 
