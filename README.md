@@ -131,6 +131,10 @@ Reference
 - [Google Old Snapshots](./cost/google/old_snapshots/)
 - [Google Unused Volumes](./cost/google/unattached_volumes/)
 
+##### Native Recommendations
+
+- [Google Recommender Policy](./cost/google/recommender/)
+
 ##### Other
 
 - [Google Unutilized IP Addresses](./cost/google/unutilized_ip_addresses/)
