@@ -1,5 +1,13 @@
 # Changelog
 
+## v2.13
+
+- Adding subscription filter to deal with timeout
+
+## v2.12
+
+- Fixed bug causing incompatible rightsizing recommendations
+
 ## v2.11
 
 - Debug via param (off by default, for EU app)
