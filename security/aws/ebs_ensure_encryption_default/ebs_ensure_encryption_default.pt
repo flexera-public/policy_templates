@@ -23,18 +23,18 @@ info(
 # User inputs
 ###############################################################################
 
+parameter "param_allowed_regions" do
+  type "list"
+  label "Allowed Regions"
+  allowed_pattern /^([a-zA-Z-_]+-[a-zA-Z0-9-_]+-[0-9-_]+,*|)+$/
+  description "A list of allowed regions. See the README for more details"
+  default []
+end
+
 parameter "param_email" do
   type "list"
   label "Email Address"
   description "Email addresses of the recipients you wish to notify"
-end
-
-parameter "param_regions" do
-  type "list"
-  label "Regions"
-  description "Active regions you wish to run this policy against"
-  default ["us-east-1"]
-  allowed_pattern /^([a-zA-Z-_]+-[a-zA-Z0-9-_]+-[0-9-_]+,*|)+$/
 end
 
 ###############################################################################
@@ -52,9 +52,27 @@ end
 # Datasources
 ###############################################################################
 
-# Places param_regions into a datasource for iteration
+# Get list of enabled regions for an account
+datasource "ds_regions_list" do
+  request do
+    auth $auth_aws
+    verb "GET"
+    host "ec2.amazonaws.com"
+    path "/"
+    query "Action", "DescribeRegions"
+    query "Version", "2016-11-15"
+  end
+  result do
+    encoding "xml"
+    collect xpath(response, "//DescribeRegionsResponse/regionInfo/item", "array") do
+      field "region", xpath(col_item, "regionName")
+    end
+  end
+end
+
+# Get only SCP enabled regions
 datasource "ds_regions" do
-  run_script $js_regions, $param_regions
+  run_script $js_regions, $param_allowed_regions, $ds_regions_list
 end
 
 datasource "ds_regions_encryption" do
@@ -84,9 +102,41 @@ end
 ###############################################################################
 
 script "js_regions", type:"javascript" do
-  parameters "param_regions"
-  result "param_regions"
-  code ""
+  parameters "user_entered_regions", "all_regions"
+  result "regions"
+  code <<-EOS
+    if(_.isEmpty(user_entered_regions)){
+      new_regions_list = all_regions;
+    }else{
+      //Filter unique regions
+      var uniqueRegions = _.uniq(user_entered_regions);
+      var all_regions_list = [];
+      all_regions.forEach(function(all_region){
+        all_regions_list.push(all_region.region)
+      })
+
+      //Filter valid regions
+      var valid_regions = [];
+      _.map(uniqueRegions, function(uniqueRegion){
+        if(all_regions_list.indexOf(uniqueRegion) > -1){
+          valid_regions.push({"region": uniqueRegion})
+        }
+      })
+
+      //Throw an error if no valid regions found
+      if (_.isEmpty(valid_regions)) {
+        new_regions_list = all_regions;
+      }else{
+        new_regions_list = valid_regions
+      }
+    }
+
+    regions = []
+
+    _.each(new_regions_list, function(region) {
+      regions.push(region.region)
+    })
+  EOS
 end
 
 script "js_regions_without_encryption", type:"javascript" do
