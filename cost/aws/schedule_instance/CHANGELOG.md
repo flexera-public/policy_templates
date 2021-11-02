@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.8
+
+- Added support for a single AWS STS Cross account role to be used for multiple policies.
+
 ## v2.7
 
 - Added default_frequency "daily"

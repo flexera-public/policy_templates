@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.7
+
+- Added support for a single AWS STS Cross account role to be used for multiple policies.
+
 ## v2.6
 
 - prevent updating the incident if the data doesn't change

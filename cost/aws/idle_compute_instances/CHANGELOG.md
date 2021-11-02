@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.13
+
+- Added support for a single AWS STS Cross account role to be used for multiple policies.
+
 ## v2.12
 
 - Debug logs via param (off by default); use Optima host, not hardcoded hostname

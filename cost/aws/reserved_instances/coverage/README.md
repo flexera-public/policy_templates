@@ -11,6 +11,7 @@ This policy has the following input parameters required when launching the polic
 
 - *Number of days in the past to view Reserved Instance Coverage* - allowed values 7,14,30,90,180,365
 - *Email addresses* - A list of email addresses of the recipients you wish to notify
+- *Account Number* - The Account number for use with the AWS STS Cross Account Role.  Leave blank when using AWS IAM Access key and secret. [more](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_1982464505_1123608)
 
 ## Policy Actions
 

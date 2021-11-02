@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.12
+
+- Added support for a single AWS STS Cross account role to be used for multiple policies.
+
 ## v2.11
 
 - Debug log via parameter, off by default (for EU compatibility)

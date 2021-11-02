@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.16
+
+- Added support for a single AWS STS Cross account role to be used for multiple policies.
+
 ## v2.15
 
 - Use rs_optima_host instead of hardcoded hostname.
