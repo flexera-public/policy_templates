@@ -162,7 +162,7 @@ Reference
 - [AWS Prevent Password Reuse](./security/aws/iam_prevent_password_reuse/)
 - [AWS Disable Credentials Unused For 45+ Days](./security/aws/iam_disable_45_day_creds/)
 - [AWS Rotate Access Keys](./security/aws/iam_rotate_access_keys/)
-- [AWS Ensure IAM Users Receive Permissions Only Through Groups](./security/aws/iam_users_perms_via_groups/)
+- [AWS Ensure IAM Users Receive Permissions Only Through Groups](./security/aws/iam_users_perms_via_groups_only/)
 - [AWS Access Analyzer Enabled](./security/aws/iam_access_analyzer_enabled/)
 - [AWS Support Role Created](./security/aws/iam_support_role_created/)
 - [AWS Report Attached Admin IAM Policies](./security/aws/iam_no_admin_iam_policies_attached/)
