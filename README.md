@@ -182,6 +182,7 @@ Reference
 
 ###### CIS Policies
 
+- [AWS S3 Ensure Buckets Block Public Access](./security/aws/s3_ensure_buckets_block_public_access/)
 - [AWS S3 Ensure MFA Delete Enabled](./security/aws/s3_ensure_mfa_delete_enabled/)
 - [AWS Unencrypted S3 Buckets](./security/aws/unencrypted_s3_buckets/)
 - [AWS S3 Buckets Deny HTTP](./security/aws/s3_buckets_deny_http/)
