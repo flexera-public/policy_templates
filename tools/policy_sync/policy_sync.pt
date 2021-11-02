@@ -14,6 +14,13 @@ parameter "param_email" do
   min_length 1
 end
 
+parameter "param_branch" do
+  type "string"
+  label "Branch Name"
+  default "master"
+  allowed_values "master", "EU_Policies"
+end
+
 parameter "param_publish" do
   type "number"
   label "Publish Template"
@@ -69,16 +76,16 @@ datasource "ds_current_policy_template_list" do
 end
 
 datasource "ds_combined_policy_list" do
-  run_script $js_combine_policy_lists, $ds_active_policy_list, $ds_current_policy_template_list, $force_upgrade
+  run_script $js_combine_policy_lists, $ds_active_policy_list, $ds_current_policy_template_list, $force_upgrade, $param_branch
 end
 
 script "js_combine_policy_lists", type: "javascript" do
-  parameters "active_policy_list", "current_policy_list", "force_upgrade"
+  parameters "active_policy_list", "current_policy_list", "force_upgrade", "param_branch"
   result "policy_list"
   code <<-EOS
   var policy_list = [];
   var old_policy_list = {};
-  var github_raw_url = 'https://raw.githubusercontent.com/flexera/policy_templates/master/';
+  var github_raw_url = 'https://raw.githubusercontent.com/flexera/policy_templates/' + param_branch + '/';
 
   // create a map of published templates
   for (var index = 0; index < current_policy_list.length; index++) {
@@ -148,19 +155,19 @@ EOS
 end
 
 escalation "upload_new_policy_templates" do
-  run "upload_template", data, rs_project_id, rs_governance_host, $param_publish, rs_org_id
+  run "upload_template", data, rs_project_id, rs_governance_host, $param_publish, rs_org_id, $param_branch
 end
 
 escalation "report_policy_templates_update" do
   email $param_email
 end
 
-define upload_template($data,$project_id,$param_governance_host,$param_publish,$rs_org_id) return $url_array,$response_array do
+define upload_template($data,$project_id,$param_governance_host,$param_publish,$rs_org_id, $param_branch) return $url_array,$response_array do
 
     $url_array = []
     $response_array = []
     foreach $item in $data do
-      $url = "https://raw.githubusercontent.com/flexera/policy_templates/master/"+to_s($item["file_name"])
+      $url = "https://raw.githubusercontent.com/flexera/policy_templates/" + $param_branch + "/" + to_s($item["file_name"])
       $url_array << $url
 
       $policy_request = http_get(
