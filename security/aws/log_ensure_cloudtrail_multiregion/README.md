@@ -35,9 +35,9 @@ Required permissions in the provider:
         {
             "Effect": "Allow",
             "Action": [
-              "sts:GetCallerIdentity",
-              "iam:GenerateCredentialReport",
-              "iam:GetCredentialReport"
+                "cloudtrail:GetTrailStatus",
+                "cloudtrail:GetEventSelectors",
+                "cloudtrail:DescribeTrails"
             ],
             "Resource": "*"
         }
