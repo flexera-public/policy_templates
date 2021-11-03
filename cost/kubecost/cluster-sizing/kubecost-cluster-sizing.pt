@@ -1,0 +1,115 @@
+name "Kubecost Cluster Sizing Recommendations"
+rs_pt_ver 20180301
+type "policy"
+short_description "Analyze all account usage and determines recommend consolidation or deletion. See the [README](https://github.com/rightscale/policy_templates/tree/master/cost/low_account_usage/) and [docs.rightscale.com/policies](http://docs.rightscale.com/policies/) to learn more."
+long_description ""
+severity "low"
+category "Cost"
+default_frequency "daily"
+tenancy "single"
+info(
+  version: "2.0",
+  provider: "Flexera Optima",
+  service: "",
+  policy_set: ""
+)
+
+###############################################################################
+# User inputs
+###############################################################################
+
+parameter "param_email" do
+  label "Email addresses"
+  description "Email addresses of the recipients you wish to notify"
+  type "list"
+end
+
+parameter "param_kubecost_host" do
+  type "string"
+  label "Kubecost Host"
+  description "IP Address of Kubecost LB"
+end
+
+###############################################################################
+# Datasource
+###############################################################################
+
+datasource "ds_cluster_sizing" do
+  request do
+    verb "GET"
+    host $param_kubecost_host
+    scheme "http"
+    path "/model/savings/clusterSizing"
+  end
+  result do
+    encoding "json"
+    field "clusterId", jmes_path(response, "parameters.clusterId")
+    field "clusterName", jmes_path(response, "parameters.clusterName")
+    field "recommendations", jmes_path(response, "recommendations")
+  end
+end
+
+datasource "ds_cluster_array" do
+  run_script $js_cluster_array, $ds_cluster_sizing
+end
+
+script "js_cluster_array", type: "javascript" do
+  parameters "ds_cluster_sizing"
+  result "results"
+  code <<-EOF
+    var clusterId = ds_cluster_sizing.clusterId
+    var clusterName = ds_cluster_sizing.clusterName
+    var results = []
+    _.forEach(ds_cluster_sizing.recommendations, function(e, k) {
+      e.rec_type = k;
+      e.clusterId = clusterId;
+      e.clusterName = clusterName;
+      results.push(e);
+    })
+  EOF
+end
+###############################################################################
+# Policy
+###############################################################################
+
+policy "policy_kubecost_cluster" do
+  validate_each $ds_cluster_array do
+    summary_template "Kubecost Cluster Sizing Report"
+    escalate $report_volumes
+    check eq(0,1)
+    export do
+      field "clusterId" do
+        label "Cluster ID"
+      end
+      field "clusterName" do
+        label "Cluster Name"
+      end
+      field "rec_type" do
+        label "Recommendation Type"
+      end
+      field "totalMonthlyCost" do
+        label "Total Monthly Cost"
+      end
+      field "monthlySavings" do
+        label "Monthly Savings"
+      end
+      field "nodeCount" do
+        label "Node Count"
+      end
+      field "pools" do
+        label "Pools"
+      end
+    end
+  end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "report_volumes" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
+end
