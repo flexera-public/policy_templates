@@ -187,6 +187,12 @@ Reference
 - [AWS Unencrypted S3 Buckets](./security/aws/unencrypted_s3_buckets/)
 - [AWS S3 Buckets Deny HTTP](./security/aws/s3_buckets_deny_http/)
 
+##### Logging
+
+###### CIS Policies
+
+- [AWS Ensure Log File Validation Enabled For All CloudTrails](./security/aws/log_file_validation_enabled/)
+
 ##### Load Balancers
 
 - [AWS Internet-facing ELBs & ALBs](./security/aws/loadbalancer_internet_facing/)
