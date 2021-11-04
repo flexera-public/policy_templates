@@ -13,6 +13,7 @@ The policy leverages the AWS S3 API to find all buckets and check for any that d
 ## Input Parameters
 
 - *Email addresses of the recipients you wish to notify* - A list of email addresses to notify
+- *Account Number* - The Account number for use with the AWS STS Cross Account Role.  Leave blank when using AWS IAM Access key and secret. [more](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_1982464505_1123608
 - *Target Bucket* - An existing bucket in same reason as source to be used for logging.
 - *Target Bucket Prefix* - If using a Target Bucket, this element lets you specify a prefix for the keys that the log files will be stored under.
 - *Exclude Target Bucket* - Exclude target bucket as additional fees may incur.

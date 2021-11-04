@@ -12,6 +12,7 @@ This policy audits whether a named policy is applied across all AWS Accounts in 
 ## Input Parameters
 
 - *Email addresses* - Email addresses of the recipients you wish to notify when new incidents are created.
+- *Account Number* - The Account number for use with the AWS STS Cross Account Role.  Leave blank when using AWS IAM Access key and secret. [more](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_1982464505_1123608)
 - *Service Control Policy Name* - The name of the Service Control Policy to check for.
 
 ## Policy Actions

@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.5
+
+- Added support for a single AWS STS Cross account role to be used for multiple policies.
+
 ## v2.4
 
 - Added a new input parameter to enter regions in order to support SCP (Service Control Policy) and CIS Standards

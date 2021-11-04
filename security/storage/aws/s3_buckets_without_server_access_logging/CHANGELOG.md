@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.3
+
+- Added support for a single AWS STS Cross account role to be used for multiple policies.
+
 ## v2.2
 
 - Modified escalation label and description for consistency

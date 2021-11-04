@@ -15,6 +15,7 @@ encrypt - modifies the configuration of the unencrypted S3 Bucket by enabling th
 ## Input Parameters
 
 - *Email addresses to notify* - Email addresses of the recipients you wish to notify when new incidents are created
+- *Account Number* - The Account number for use with the AWS STS Cross Account Role.  Leave blank when using AWS IAM Access key and secret. [more](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_1982464505_1123608
 - *Tags to ignore* - List of tags that will exclude resources from being evaluated by this policy. Multiple tags are evaluated as an 'OR' condition. Tag keys or key/value pairs can be listed. Example: 'test,env=dev'
 - *Automatic Actions* - When this value is set, this policy will automatically take the selected action(s).
 
