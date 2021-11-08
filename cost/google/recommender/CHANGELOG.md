@@ -2,7 +2,7 @@
 
 ## v2.2
 
-- Added cost to incident output
+- Added cost to incident output and ability to filter by projects
 
 ## v2.1
 
