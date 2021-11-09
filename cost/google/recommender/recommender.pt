@@ -132,6 +132,10 @@ datasource "ds_recommendations" do
   end
 end
 
+datasource "ds_recommendations_cleaned" do
+  run_script $js_recommendations_cleaned, $ds_recommendations
+end
+
 ###############################################################################
 # Scripts
 ###############################################################################
@@ -191,12 +195,26 @@ script "js_recommender_call", type: "javascript" do
 EOF
 end
 
+script "js_recommendations_cleaned", type: "javascript" do
+  parameters "ds_recommendations"
+  result "results"
+  code <<-EOF
+  results = []
+
+  _.each(ds_recommendations, function(recommendation) {
+    recommendation.costUnits *= -1
+    results.push(recommendation)
+  })
+
+  EOF
+end
+
 ###############################################################################
 # Policy
 ###############################################################################
 
 policy "policy_recommendations" do
-  validate $ds_recommendations do
+  validate $ds_recommendations_cleaned do
     summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} rows found for {{parameters.param_recommenders}}"
     check eq(size(data), 0)
     escalate $esc_email
@@ -219,7 +237,7 @@ policy "policy_recommendations" do
         path "primaryImpact.category"
       end
       field "costUnits" do
-        label "Cost"
+        label "Savings"
       end
       field "currency" do
         label "Currency"
