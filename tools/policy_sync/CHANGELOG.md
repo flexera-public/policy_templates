@@ -1,5 +1,9 @@
 # CHANGELOG
 
+## 1.11
+
+- Adding feature branch
+
 ## 1.10
 
 - fix an issue with publishing
