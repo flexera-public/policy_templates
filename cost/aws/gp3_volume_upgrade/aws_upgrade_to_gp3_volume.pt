@@ -149,6 +149,27 @@ datasource "ds_superseded_volumes" do
   run_script $js_filter_aws_superseded_volumes, $ds_superseded_volumes_list, $param_exclude_tags
 end
 
+datasource "ds_superseded_volumes_regions" do
+  run_script $js_superseded_volumes_regions, $ds_superseded_volumes
+end
+
+datasource "ds_aws_offers" do
+  iterate $ds_superseded_volumes_regions
+  request do
+    auth $auth_aws
+    host "pricing.us-east-1.amazonaws.com"
+    path join(["/offers/v1.0/aws/AmazonEC2/current/", iter_item, "/index.json"])
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    collect jq(response, '(.products[] | select(.productFamily == "Storage" and (.attributes.usagetype | test("EBS:VolumeUsage\\\\.")) and ([.attributes.volumeApiName] | inside(["gp3", "gp2", "io1"]))).sku) as $sku | .terms.OnDemand[$sku] | to_entries[].value') do
+      field "region", iter_item
+      field 'description', jq(col_item, '.priceDimensions[].description')
+      field 'pricePerUnit', jq(col_item, '.priceDimensions[].pricePerUnit')
+    end
+  end
+end
+
 datasource "ds_currency_reference" do
   request do
     host "raw.githubusercontent.com"
@@ -320,6 +341,18 @@ script "js_filter_aws_superseded_volumes", type: "javascript" do
       })
     }
   }
+  EOS
+end
+
+script "js_superseded_volumes_regions", type: "javascript" do
+  parameters "superseded_volumes"
+  result "regions"
+  code <<-EOS
+  var region_set = {};
+  _.each(superseded_volumes, function (volume) {
+    region_set[volume.region] = volume.region;
+  });
+  var regions = _.sortBy(region_set, _.identity);
   EOS
 end
 
