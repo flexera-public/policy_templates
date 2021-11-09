@@ -83,7 +83,7 @@ end
 # Datasource
 ###############################################################################
 
-#Get list of enabled regions for an account
+# Get list of enabled regions for an account
 datasource "ds_regions_list" do
   request do
     auth $auth_aws
@@ -106,8 +106,8 @@ datasource "ds_regions" do
   run_script $js_regions, $param_allowed_regions, $ds_regions_list
 end
 
-#To get list of Unattached Volumes.
-datasource "ds_unattached_volumes_list" do
+# Get list of gp2 and io1 Volumes.
+datasource "ds_superseded_volumes_list" do
   iterate $ds_regions
   request do
     auth $auth_aws
@@ -133,11 +133,6 @@ datasource "ds_unattached_volumes_list" do
           field "tagValue", xpath(col_item, "value")
         end
       end
-      field "attachments" do
-        collect xpath(col_item, "attachmentSet/item") do
-          field "instance_id", xpath(col_item, "instanceId")
-        end
-      end
       field "volume_id", xpath(col_item, "volumeId")
       field "availability_zone", xpath(col_item, "availabilityZone")
       field "snapshot_id", xpath(col_item, "snapshotId")
@@ -150,8 +145,8 @@ datasource "ds_unattached_volumes_list" do
   end
 end
 
-datasource "ds_unattached_volumes_map" do
-  run_script $js_filter_aws_unattached_volumes, $ds_unattached_volumes_list, $param_exclude_tags
+datasource "ds_superseded_volumes" do
+  run_script $js_filter_aws_superseded_volumes, $ds_superseded_volumes_list, $param_exclude_tags
 end
 
 datasource "ds_currency_reference" do
@@ -239,7 +234,7 @@ datasource "ds_volume_costs" do
 end
 
 datasource "ds_volume_cost_mapping" do
-  run_script $js_volume_cost_mapping, $ds_unattached_volumes_map, $ds_volume_costs, $ds_currency_code, $ds_currency_reference, $ds_billing_centers, $ds_get_caller_identity
+  run_script $js_volume_cost_mapping, $ds_superseded_volumes, $ds_volume_costs, $ds_currency_code, $ds_currency_reference, $ds_billing_centers, $ds_get_caller_identity
 end
 
 ###############################################################################
@@ -278,8 +273,8 @@ script "js_regions", type: "javascript" do
   EOS
 end
 
-script "js_filter_aws_unattached_volumes", type: "javascript" do
-  parameters "ds_unattached_volumes_list", "param_exclude_tags"
+script "js_filter_aws_superseded_volumes", type: "javascript" do
+  parameters "ds_superseded_volumes_list", "param_exclude_tags"
   result "content"
   code <<-EOS
   var param_exclude_tags_lower=[];
@@ -287,8 +282,8 @@ script "js_filter_aws_unattached_volumes", type: "javascript" do
     param_exclude_tags_lower[j] = param_exclude_tags[j].toString().toLowerCase();
   }
   var content = [];
-  for(var i=0;i<ds_unattached_volumes_list.length;i++){
-    vol = ds_unattached_volumes_list[i];
+  for(var i=0;i<ds_superseded_volumes_list.length;i++){
+    vol = ds_superseded_volumes_list[i];
     // Check, if the tag present in entered param_exclude_tags, ignore the volume if the tag matches/present.
     var tags = vol['tags'];
     var isTagMatched = false;
@@ -483,7 +478,7 @@ script "js_volume_cost_mapping", type:"javascript" do
       if (_.size(cost_objects) > 0){
         count++;
         var sum = _.reduce(_.compact(_.map(cost_objects, function(value){ return value.cost_nonamortized_unblended_adj})), function(memo, num){ return memo + num; }, 0);
-        var monthly_savings = sum*30;
+        var monthly_savings = (sum - (sum * .8))*30;
         total_savings=total_savings+monthly_savings;
         upgradeable_volumes.push({
           accountId: ds_get_caller_identity[0]['account'],
@@ -496,7 +491,7 @@ script "js_volume_cost_mapping", type:"javascript" do
           createdTime : volume['createdTime'],
           size : volume['size'],
           status: volume['status'],
-          savings: cur + ' '+formatNumber((Math.round((monthly_savings - (monthly_savings * .8)) * 100) / 100), separator),
+          savings: cur + ' '+formatNumber((Math.round(monthly_savings * 100) / 100), separator),
         })
       } else {
         upgradeable_volumes.push({
@@ -540,7 +535,7 @@ end
 # Policy
 ###############################################################################
 
-policy "policy_unattached_volumes_list" do
+policy "policy_superseded_volumes" do
   validate $ds_volume_cost_mapping do
     summary_template "AWS Account ID: {{ data.accountId }} - {{ len data.upgradeable_volumes }} Upgradeable Volumes Found"
     detail_template <<-EOS
