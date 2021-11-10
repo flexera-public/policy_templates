@@ -2,7 +2,7 @@
 
 ## 1.11
 
-- Adding feature branch
+- Adding `param_branch` to support automatic publishing to the EU Shard.
 
 ## 1.10
 
