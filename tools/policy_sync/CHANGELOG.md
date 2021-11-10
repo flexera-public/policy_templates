@@ -1,5 +1,9 @@
 # CHANGELOG
 
+## 1.11
+
+- Adding `param_branch` to support automatic publishing to the EU Shard.
+
 ## 1.10
 
 - fix an issue with publishing
