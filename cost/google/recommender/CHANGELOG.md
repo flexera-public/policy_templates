@@ -2,7 +2,7 @@
 
 ## v2.3
 
-- Added cost duration in months to incident output
+- Added cost duration in months to incident output and adjusted Savings value to include currency location and symbol.
 
 ## v2.2
 

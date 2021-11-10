@@ -85,6 +85,14 @@ end
 # Datasources
 ###############################################################################
 
+datasource "ds_currency_reference" do
+  request do
+    host "raw.githubusercontent.com"
+    path "/rightscale/policy_templates/master/cost/scheduled_reports/currency_reference.json"
+    header "User-Agent", "RS Policies"
+  end
+end
+
 #get all google project
 datasource "ds_google_project" do
   request do
@@ -134,7 +142,7 @@ datasource "ds_recommendations" do
 end
 
 datasource "ds_recommendations_cleaned" do
-  run_script $js_recommendations_cleaned, $ds_recommendations
+  run_script $js_recommendations_cleaned, $ds_recommendations, $ds_currency_reference
 end
 
 ###############################################################################
@@ -197,13 +205,51 @@ EOF
 end
 
 script "js_recommendations_cleaned", type: "javascript" do
-  parameters "ds_recommendations"
+  parameters "ds_recommendations", "ds_currency_reference"
   result "results"
   code <<-EOF
+  function formatNumber(number, separator){
+    var numString =number.toString();
+    var values=numString.split(".");
+    var result = ''
+    while (values[0].length > 3){
+      var chunk = values[0].substr(-3)
+      values[0] = values[0].substr(0, values[0].length - 3)
+      result = separator + chunk + result
+    }
+    if (values[0].length > 0){
+      result = values[0] + result
+    }
+    if(values[1]==undefined){
+      return result;
+    }
+    return result+"."+values[1];
+  }
+
   results = []
 
   _.each(ds_recommendations, function(recommendation) {
     recommendation.costUnits *= -1
+
+    if (recommendation.currency !== undefined ) {
+      if (ds_currency_reference[recommendation.currency] !== undefined ) {
+        var cur = ds_currency_reference[recommendation.currency]['symbol']
+        if( ds_currency_reference[recommendation.currency]['t_separator'] !== undefined ) {
+          var separator = ds_currency_reference[recommendation.currency]['t_separator']
+        } else {
+          var separator = ""
+        }
+      } else {
+        var cur = ""
+        var separator = ""
+      }
+    } else {
+      var cur = "$"
+      var separator = ","
+    }
+
+    recommendation.costUnits = cur + ' ' + formatNumber(recommendation.costUnits, separator)
+
     recommendation.duration = Math.round(parseInt(recommendation.duration, 10) / 60 / 60 / 24 / 30)
     results.push(recommendation)
   })
@@ -239,13 +285,10 @@ policy "policy_recommendations" do
         path "primaryImpact.category"
       end
       field "costUnits" do
-        label "Cost"
-      end
-      field "currency" do
-        label "Currency"
+        label "Savings"
       end
       field "duration" do
-        label "Cost Duration (Months)"
+        label "Savings Duration (Months)"
       end
       field "priority" do
         label "Priority"
