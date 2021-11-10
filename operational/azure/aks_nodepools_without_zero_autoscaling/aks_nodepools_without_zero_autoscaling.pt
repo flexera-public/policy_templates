@@ -1,7 +1,7 @@
-name "AKS Node Pools Without Autoscaling"
+name "AKS Node Pools Without Zero Autoscaling"
 rs_pt_ver 20180301
 type "policy"
-short_description "Raise an incident if there are any AKS user node pools without autoscaling enabled. \n See the [README](https://github.com/flexera/policy_templates/tree/master/operational/azure/aks_nodepools_without_autoscaling) and [docs.rightscale.com/policies](https://docs.rightscale.com/policies/) to learn more."
+short_description "Raise an incident if there are any AKS user node pools without zero autoscaling enabled. \n See the [README](https://github.com/flexera/policy_templates/tree/master/operational/azure/aks_nodepools_without_autoscaling) and [docs.rightscale.com/policies](https://docs.rightscale.com/policies/) to learn more."
 long_description ""
 category "Operational"
 severity "low"
@@ -119,8 +119,8 @@ datasource "ds_aks_nodepools" do
   run_script $js_aks_nodepools, $ds_aks_clusters_with_pools, $param_exclusion_tags
 end
 
-datasource "ds_aks_nodepools_without_autoscaling" do
-  run_script $js_aks_nodepools_without_autoscaling, $ds_aks_nodepools
+datasource "ds_aks_nodepools_without_zero_autoscaling" do
+  run_script $js_aks_nodepools_without_zero_autoscaling, $ds_aks_nodepools
 end
 
 ###############################################################################
@@ -167,14 +167,14 @@ script "js_aks_nodepools", type: "javascript" do
 EOS
 end
 
-script "js_aks_nodepools_without_autoscaling", type: "javascript" do
+script "js_aks_nodepools_without_zero_autoscaling", type: "javascript" do
   parameters "ds_aks_nodepools"
   result "result"
   code <<-EOS
     result = []
 
     _.each(ds_aks_nodepools, function(pool) {
-      if (pool.autoscaling == false) {
+      if (pool.mincount != 0) {
         result.push(pool)
       }
     })
@@ -185,10 +185,10 @@ end
 # Policy
 ###############################################################################
 
-policy "pol_aks_nodepools_without_autoscaling" do
-  validate $ds_aks_nodepools_without_autoscaling do
-    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} AKS Node Pools Without Autoscaling Found"
-    escalate $esc_aks_nodepools_without_autoscaling
+policy "pol_aks_nodepools_without_zero_autoscaling" do
+  validate $ds_aks_nodepools_without_zero_autoscaling do
+    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} AKS Node Pools Without Zero Autoscaling Found"
+    escalate $esc_aks_nodepools_without_zero_autoscaling
     check eq(size(data), 0)
     export do
       resource_level true
@@ -201,6 +201,15 @@ policy "pol_aks_nodepools_without_autoscaling" do
       field "id" do
         label "Node Pool ID"
       end
+      field "autoscaling" do
+        label "Autoscaling"
+      end
+      field "mincount" do
+        label "Minimum Nodes"
+      end
+      field "maxcount" do
+        label "Maximum Nodes"
+      end
     end
   end
 end
@@ -209,7 +218,7 @@ end
 # Escalations
 ###############################################################################
 
-escalation "esc_aks_nodepools_without_autoscaling" do
+escalation "esc_aks_nodepools_without_zero_autoscaling" do
   automatic true
   label "Send Email"
   description "Send incident email"
