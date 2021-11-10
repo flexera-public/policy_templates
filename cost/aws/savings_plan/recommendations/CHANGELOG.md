@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.6
+
+- prevent updating the incident if the data doesn't change
+
 ## v2.5
 
 - Added "Account Scope" (PAYER or LINKED) parameter

@@ -33,6 +33,7 @@ Required permissions in the provider:
 
 - Microsoft.Resources/subscriptions/resources/read
 - Microsoft.Resources/subscriptions/providers/read
+- Tag Contributor or Contributor [more details](https://docs.microsoft.com/en-us/azure/azure-resource-manager/management/tag-resources?tabs=json)
 
 ## Supported Clouds
 

@@ -1,5 +1,11 @@
 # Changelog
 
+## v2.0
+
+- Bug fix for Optima cloud vendor account name API changes
+- Added currency reference to incident table
+- Fixed access of 'name' issue
+
 ## v1.12
 
 - Ensure at least a month worth of costs are retrieved

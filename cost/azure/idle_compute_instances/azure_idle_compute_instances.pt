@@ -7,7 +7,7 @@ category "Cost"
 severity "low"
 default_frequency "daily"
 info(
-  version: "2.10",
+  version: "2.11",
   provider: "Azure",
   service: "Compute",
   policy_set: "Idle Compute Instances"
@@ -31,6 +31,12 @@ parameter "param_cpu_average_percentage" do
   description "Average CPU threshold at which to trigger a decommission"
   default "60"
   allowed_pattern /^[0-9]$|^[1-9][0-9]$|^(100)$/
+end
+
+parameter "param_subscription_whitelist" do
+  label "Subscription Whitelist"
+  type "list"
+  description "Whitelisted Subscriptions, if empty, all subscriptions will be checked"
 end
 
 parameter "param_exclusion_tag_key" do
@@ -111,14 +117,18 @@ datasource "ds_subscriptions" do
   end
 end
 
+datasource "ds_filtered_subscriptions" do
+  run_script $js_filtered_subscriptions, $ds_subscriptions, $param_subscription_whitelist
+end
+
 #get all virtual machines
 datasource "ds_azure_virtualmachines" do
-  iterate $ds_subscriptions
+  iterate $ds_filtered_subscriptions
   request do
     auth $azure_auth
     pagination $azure_pagination
     host "management.azure.com"
-	path join(["/subscriptions/", val(iter_item,"subscriptionId"), "/providers/Microsoft.Compute/virtualMachines"])
+    path join(["/subscriptions/", val(iter_item,"subscriptionId"), "/providers/Microsoft.Compute/virtualMachines"])
     query "api-version","2019-03-01"
     header "User-Agent", "RS Policies"
     ignore_status [404]
@@ -131,7 +141,7 @@ datasource "ds_azure_virtualmachines" do
       field "name", jmes_path(col_item,"name")
       field "location", jmes_path(col_item, "location")
       field "tags", jmes_path(col_item,"tags")
-	  field "subscriptionId",val(iter_item,"subscriptionId")
+      field "subscriptionId",val(iter_item,"subscriptionId")
       field "subscriptionName",val(iter_item,"displayName")
     end
   end
@@ -162,7 +172,7 @@ datasource "ds_azure_instance_performance" do
     field "id", val(iter_item, "id")
     field "location", val(iter_item, "location")
     field "tags", val(iter_item, "tags")
-	field "subscriptionId",val(iter_item,"subscriptionId")
+    field "subscriptionId",val(iter_item,"subscriptionId")
     field "subscriptionName",val(iter_item,"subscriptionName")
     field "averages" do
       collect jmes_path(response,"value[].timeseries[].data[]") do
@@ -218,7 +228,7 @@ datasource "ds_billing_centers" do
 end
 
 datasource "ds_instance_costs" do
-  iterate $ds_subscriptions
+  iterate $ds_filtered_subscriptions
   request do
     run_script $js_get_costs, val(iter_item,"subscriptionId"), $ds_top_level_billing_centers, rs_org_id, rs_optima_host
   end
@@ -247,6 +257,26 @@ end
 ###############################################################################
 # Scripts
 ###############################################################################
+
+script "js_filtered_subscriptions", type: "javascript" do
+  parameters "ds_subscriptions", "param_subscription_whitelist"
+  result "results"
+  code <<-EOS
+  var results = []
+  if ( param_subscription_whitelist.length != 0){
+    results = []
+    _.each(param_subscription_whitelist, function(sub){
+      var found = _.find(ds_subscriptions, function(item){
+        return item.subscriptionId == sub || item.displayName.toLowerCase() == sub.toLowerCase();
+      })
+      results.push(found)
+    })
+
+  } else {
+    results = ds_subscriptions
+  }
+EOS
+end
 
 script "js_top_level_bc", type: "javascript" do
   parameters "billing_centers"
@@ -320,12 +350,12 @@ script "js_filter_instances", type: "javascript" do
       var tagsList = "";
       for(var prop in instance.tags){
         tagsList = tagsList+prop+":"+instance.tags[prop]+", ";
-	  }
+      }
       if(tagsList.length > 0){
         instance.tags = tagsList.substring(0,tagsList.length-2);
-	   }else{
+       }else{
          instance.tags = "< No Value >"
-	   }
+       }
        return instance
     }
   })
@@ -517,7 +547,7 @@ define delete_resources($data,$param_log_to_cm_audit_entries) return $all_respon
       $response = http_request(
         verb: "delete",
         host: "management.azure.com",
-		auth: $$azure_auth,
+        auth: $$azure_auth,
         href: join(["/subscriptions/", $item['subscriptionId'], "/resourceGroups/", $item["rg"], "/providers/Microsoft.Compute/virtualMachines/",$item["vmname"]]),
         https: true,
         query_strings: {

@@ -6,7 +6,7 @@ category "Cost"
 severity "low"
 default_frequency "daily"
 info(
-  version: "2.1",
+  version: "2.2",
   provider:"Google",
   service: "Storage",
   policy_set: "Native Recommendations"
@@ -47,6 +47,13 @@ parameter "param_location_whitelist" do
   type "list"
   label "Location"
   description "Location to check, it can be the zone, region or global"
+end
+
+parameter "param_project" do
+  type "list"
+  label "Project ID"
+  description "Google Projects to Query. Leave blank to query all projects."
+  default []
 end
 
 ###############################################################################
@@ -97,7 +104,7 @@ end
 
 
 datasource "ds_recommenders" do
-  run_script $js_recommenders, $param_location_whitelist, $param_recommenders, $ds_google_project
+  run_script $js_recommenders, $param_location_whitelist, $param_recommenders, $ds_google_project, $param_project
 end
 
 datasource "ds_recommendations" do
@@ -116,6 +123,8 @@ datasource "ds_recommendations" do
       field "resourceName", jmes_path(col_item, "content.overview.resourceName")
       field "description", jmes_path(col_item, "description")
       field "primaryImpact", jmes_path(col_item, "primaryImpact")
+      field "costUnits", jmes_path(col_item, "primaryImpact.costProjection.cost.units")
+      field "currency", jmes_path(col_item, "primaryImpact.costProjection.cost.currencyCode")
       field "priority", jmes_path(col_item, "priority")
       field "recommenderSubtype", jmes_path(col_item, "recommenderSubtype")
       field "state", jmes_path(col_item, "stateInfo.state")
@@ -127,7 +136,7 @@ end
 # Scripts
 ###############################################################################
 script "js_recommenders", type: "javascript" do
-  parameters "param_location_whitelist", "param_recommenders", "ds_google_project"
+  parameters "param_location_whitelist", "param_recommenders", "ds_google_project", "param_project"
   result "results"
   code <<-EOF
   var results = []
@@ -147,16 +156,19 @@ script "js_recommenders", type: "javascript" do
     "VM machine type recommender": "google.compute.instance.MachineTypeRecommender",
     "Unattended project recommender": "google.resourcemanager.projectUtilization.Recommender",
   }
+
   recommenders = recommender_map[param_recommenders]
   _.each(ds_google_project, function(project){
-    _.each(param_location_whitelist, function(location){
-      results.push({
-        projectNumber: project.projectNumber,
-        projectId: project.projectId,
-        location: location,
-        recommender: recommenders
+    if (_.contains(param_project, project.projectId) || param_project.length == 0) {
+      _.each(param_location_whitelist, function(location){
+        results.push({
+          projectNumber: project.projectNumber,
+          projectId: project.projectId,
+          location: location,
+          recommender: recommenders
+        })
       })
-    })
+    }
   })
 EOF
 end
@@ -172,6 +184,7 @@ script "js_recommender_call", type: "javascript" do
     auth: "auth_google",
     pagination: "google_pagination",
     host: "recommender.googleapis.com",
+    ignore_status: 403,
     path: "/v1/projects/"+ projectId +"/locations/" + location + "/recommenders/" + recommender + "/recommendations",
     query_strings: { alt: "json" }
   }
@@ -204,6 +217,12 @@ policy "policy_recommendations" do
       field "primary_impact" do
         label "Primary Impact"
         path "primaryImpact.category"
+      end
+      field "costUnits" do
+        label "Cost"
+      end
+      field "currency" do
+        label "Currency"
       end
       field "priority" do
         label "Priority"
