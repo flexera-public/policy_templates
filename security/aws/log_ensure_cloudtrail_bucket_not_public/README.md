@@ -6,7 +6,7 @@ CloudTrail logs a record of every API call made in your AWS account. These logs 
 
 ## Functional Details
 
-The policy leverages the AWS CloudTrail API
+The policy leverages the AWS CloudTrail and S3 APIs.
 
 ## Input Parameters
 
@@ -35,7 +35,11 @@ Required permissions in the provider:
         {
             "Effect": "Allow",
             "Action": [
-                "cloudtrail:GetTrailStatus"
+                "cloudtrail:DescribeTrails",
+                "s3:ListAllMyBuckets",
+                "s3:GetBucketLocation",
+                "s3:GetBucketAcl",
+                "s3:GetBucketPolicy"
             ],
             "Resource": "*"
         }
