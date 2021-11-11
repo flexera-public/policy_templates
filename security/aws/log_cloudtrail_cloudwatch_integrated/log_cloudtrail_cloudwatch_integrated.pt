@@ -1,0 +1,146 @@
+name "AWS Ensure CloudTrail Integrated With Cloudwatch"
+rs_pt_ver 20180301
+type "policy"
+short_description "Report if CloudTrail trails are not integrated with CloudWatch logs. \n See the [README](https://github.com/flexera/policy_templates/tree/master/security/aws/log_cloudtrail_cloudwatch_integrated) and [docs.rightscale.com/policies](https://docs.rightscale.com/policies/) to learn more."
+long_description ""
+category "Security"
+severity "high"
+default_frequency "daily"
+info(
+  version: "2.0",
+  provider: "AWS",
+  service: "CloudTrail",
+  policy_set: "CIS",
+  cce_id: "CCE-78916-4",
+  cis_aws_foundations_securityhub: "2.4",
+  benchmark_control: "3.4",
+  benchmark_version: "1.4.0",
+  cis_controls: "[\"8.5v8\", \"8.9v8\", \"6.2v7\", \"6.5v7\"]",
+  nist: "SI-4(2)"
+)
+
+###############################################################################
+# User inputs
+###############################################################################
+
+parameter "param_email" do
+  type "list"
+  label "Email Address"
+  description "Email addresses of the recipients you wish to notify"
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+credentials "auth_aws" do
+  schemes "aws","aws_sts"
+  label "AWS"
+  description "Select the AWS Credential from the list"
+  tags "provider=aws"
+end
+
+###############################################################################
+# Datasources
+###############################################################################
+
+datasource "ds_trail_list" do
+  request do
+    auth $auth_aws
+    verb "GET"
+    host "cloudtrail.us-east-1.amazonaws.com"
+    path "/"
+    header "User-Agent", "RS Policies"
+    header "Accept", "application/json"
+    query "Action", "DescribeTrails"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "DescribeTrailsResponse.DescribeTrailsResult.trailList") do
+      field "name", jmes_path(col_item, "Name")
+      field "arn", jmes_path(col_item, "TrailARN")
+      field "homeregion", jmes_path(col_item, "HomeRegion")
+      field "s3_bucket", jmes_path(col_item, "S3BucketName")
+      field "cloudwatch_arn", jmes_path(col_item, "CloudWatchLogsLogGroupArn")
+      field "response", response
+    end
+  end
+end
+
+datasource "ds_trail_list_with_cw" do
+  iterate $ds_trail_list
+  request do
+    auth $auth_aws
+    verb "GET"
+    host "cloudtrail.us-east-1.amazonaws.com"
+    path "/"
+    header "User-Agent", "RS Policies"
+    header "Accept", "application/json"
+    query "Action", "DescribeTrails"
+  end
+  result do
+    encoding "xml"
+    field "id", val(iter_item, "id")
+    field "creation_date", val(iter_item, "creation_date")
+    field "region", response
+  end
+end
+
+
+###############################################################################
+# Scripts
+###############################################################################
+
+script "js_something", type:"javascript" do
+  parameters "ds_something"
+  result "result"
+  code <<-EOS
+    result = []
+EOS
+end
+
+
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "policy_trails_with_nonprivate_buckets" do
+  # validate $ds_aws_bad_buckets do
+  #   summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} CloudTrails Found With Publicly Accessible Buckets"
+  #   escalate $esc_report_trails_with_nonprivate_buckets
+  #   check eq(size(data),0)
+  #   export do
+  #     resource_level true
+  #     field "trail_name" do
+  #       label "CloudTrail Name"
+  #     end
+  #     field "id" do
+  #       label "CloudTrail ARN"
+  #     end
+  #     field "bucket_name" do
+  #       label "S3 Bucket Name"
+  #     end
+  #     field "bucket_region" do
+  #       label "S3 Bucket Region"
+  #     end
+  #     field "bad_acl_grant" do
+  #       label "Bad ACL Grant?"
+  #     end
+  #     field "bad_policy" do
+  #       label "Bad Policy?"
+  #     end
+  #   end
+  # end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_report_trails_with_nonprivate_buckets" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
+end
