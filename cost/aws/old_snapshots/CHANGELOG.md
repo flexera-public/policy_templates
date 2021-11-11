@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.16
+
+- Fix non-optimal array searching for costs
+
 ## v2.15
 
 - Use rs_optima_host instead of hardcoded hostname.
