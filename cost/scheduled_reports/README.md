@@ -30,7 +30,7 @@ This policy has the following input parameters required when launching the polic
 
 - *Email list* - Email addresses of the recipients you wish to notify
 - *Billing Center List* - List of top-level Billing Center names you want to report on.  Names must be exactly as shown in Optima.
-Leave the field blank to report on all top-level Billing Centers.
+  Leave the field blank to report on all top-level Billing Centers.
 - *Cost Metric* - See Cost Metrics above for details on selection.
 - *Graph Dimension* - The cost dimension to break out the cost data in the embedded bar chart image
 - *Date Range* - Select the previous range to display in the chart
