@@ -1,12 +1,12 @@
-# AWS Ensure CloudTrail S3 Buckets Non-Public
+# AWS Ensure CloudTrail Integrated With Cloudwatch
 
 ## What it does
 
-CloudTrail logs a record of every API call made in your AWS account. These logs file are stored in an S3 bucket. It is recommended that the AWS policy and access control list (ACL) for this bucket do not allow public access. This policy raises an incident if any S3 buckets storing CloudTrail logs are not configured this way.
+AWS recommends integrating CloudTrails with CloudWatch logs. The intent of this recommendation is to ensure AWS account activity is being captured, monitored, and appropriately alarmed on. CloudWatch Logs is a native way to accomplish this using AWS services, and this policy will raise an incident if any trails are not so configured.
 
 ## Functional Details
 
-The policy leverages the AWS CloudTrail and S3 APIs.
+The policy leverages the AWS CloudTrail API.
 
 ## Input Parameters
 
@@ -36,10 +36,7 @@ Required permissions in the provider:
             "Effect": "Allow",
             "Action": [
                 "cloudtrail:DescribeTrails",
-                "s3:ListAllMyBuckets",
-                "s3:GetBucketLocation",
-                "s3:GetBucketAcl",
-                "s3:GetBucketPolicy"
+                "cloudtrail:GetTrailStatus"
             ],
             "Resource": "*"
         }

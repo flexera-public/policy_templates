@@ -58,11 +58,9 @@ datasource "ds_trail_list" do
     encoding "json"
     collect jmes_path(response, "DescribeTrailsResponse.DescribeTrailsResult.trailList") do
       field "name", jmes_path(col_item, "Name")
-      field "arn", jmes_path(col_item, "TrailARN")
+      field "id", jmes_path(col_item, "TrailARN")
       field "homeregion", jmes_path(col_item, "HomeRegion")
-      field "s3_bucket", jmes_path(col_item, "S3BucketName")
       field "cloudwatch_arn", jmes_path(col_item, "CloudWatchLogsLogGroupArn")
-      field "response", response
     end
   end
 end
@@ -72,30 +70,62 @@ datasource "ds_trail_list_with_cw" do
   request do
     auth $auth_aws
     verb "GET"
-    host "cloudtrail.us-east-1.amazonaws.com"
+    host join(["cloudtrail.", val(iter_item, "homeregion"), ".amazonaws.com"])
     path "/"
     header "User-Agent", "RS Policies"
     header "Accept", "application/json"
-    query "Action", "DescribeTrails"
+    query "Action", "GetTrailStatus"
+    query "Name", val(iter_item, "name")
   end
   result do
-    encoding "xml"
+    encoding "json"
+    field "name", val(iter_item, "name")
     field "id", val(iter_item, "id")
-    field "creation_date", val(iter_item, "creation_date")
-    field "region", response
+    field "homeregion", val(iter_item, "homeregion")
+    field "cloudwatch_arn", val(iter_item, "cloudwatch_arn")
+    field "cloudwatch_del_time", jmes_path(response, "GetTrailStatusResponse.GetTrailStatusResult.LatestCloudWatchLogsDeliveryTime")
   end
 end
 
+datasource "ds_trails_without_cw" do
+  run_script $js_trails_without_cw, $ds_trail_list_with_cw
+end
 
 ###############################################################################
 # Scripts
 ###############################################################################
 
-script "js_something", type:"javascript" do
-  parameters "ds_something"
+script "js_trails_without_cw", type:"javascript" do
+  parameters "ds_trail_list_with_cw"
   result "result"
   code <<-EOS
+    now = new Date()
     result = []
+
+    _.each(ds_trail_list_with_cw, function(trail) {
+      cloudwatch_del_time = new Date(trail.cloudwatch_del_time * 1000)
+      cloudwatch_enabled = true
+      cloudwatch_recent = true
+
+      if (trail.cloudwatch_arn == null) {
+        cloudwatch_enabled = false
+        cloudwatch_recent = false
+      } else {
+        if (now - cloudwatch_del_time > 86400000) {
+          cloudwatch_recent = false
+        }
+      }
+
+      if (cloudwatch_enabled == false || cloudwatch_recent == false) {
+        result.push({
+          name: trail.name,
+          id: trail.id,
+          homeregion: trail.homeregion,
+          cloudwatch_enabled: cloudwatch_enabled
+          cloudwatch_recent: cloudwatch_recent
+        })
+      }
+    })
 EOS
 end
 
@@ -105,40 +135,37 @@ end
 # Policy
 ###############################################################################
 
-policy "policy_trails_with_nonprivate_buckets" do
-  # validate $ds_aws_bad_buckets do
-  #   summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} CloudTrails Found With Publicly Accessible Buckets"
-  #   escalate $esc_report_trails_with_nonprivate_buckets
-  #   check eq(size(data),0)
-  #   export do
-  #     resource_level true
-  #     field "trail_name" do
-  #       label "CloudTrail Name"
-  #     end
-  #     field "id" do
-  #       label "CloudTrail ARN"
-  #     end
-  #     field "bucket_name" do
-  #       label "S3 Bucket Name"
-  #     end
-  #     field "bucket_region" do
-  #       label "S3 Bucket Region"
-  #     end
-  #     field "bad_acl_grant" do
-  #       label "Bad ACL Grant?"
-  #     end
-  #     field "bad_policy" do
-  #       label "Bad Policy?"
-  #     end
-  #   end
-  # end
+policy "policy_trails_without_cw" do
+  validate $ds_trails_without_cw do
+    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} CloudTrails Not Integrated With Cloudwatch Logs"
+    escalate $esc_report_trails_without_cw
+    check eq(size(data),0)
+    export do
+      resource_level true
+      field "name" do
+        label "Name"
+      end
+      field "id" do
+        label "ARN"
+      end
+      field "homeregion" do
+        label "Region"
+      end
+      field "cloudwatch_enabled" do
+        label "CloudWatch Integration?"
+      end
+      field "cloudwatch_recent" do
+        label "CloudWatch Logs Recently Delivered?"
+      end
+    end
+  end
 end
 
 ###############################################################################
 # Escalations
 ###############################################################################
 
-escalation "esc_report_trails_with_nonprivate_buckets" do
+escalation "esc_report_trails_without_cw" do
   automatic true
   label "Send Email"
   description "Send incident email"
