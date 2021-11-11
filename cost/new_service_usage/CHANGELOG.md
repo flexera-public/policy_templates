@@ -1,9 +1,5 @@
 # Changelog
 
-## v1.5
-
-- Use rs_optima_host variable instead of hardcoded optima.rightscale.com (different in EU region)
-
 ## v1.4
 
 - Modified escalation label and description for consistency

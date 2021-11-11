@@ -1,9 +1,5 @@
 # Changelog
 
-## v1.17
-
-- Use rs_optima_host variable everywhere, instead of literal string
-
 ## v1.16
 
 - Adding budget threshold to policy.
