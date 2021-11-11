@@ -8,7 +8,7 @@ category "Cost"
 default_frequency "daily"
 tenancy "single"
 info(
-  version: "1.7",
+  version: "1.8",
   provider: "Flexera Optima",
   service: "",
   policy_set: ""
@@ -43,7 +43,12 @@ parameter "param_minimum_savings_threshold" do
   default 1
 end
 
-auth "auth_rs", type: "rightscale"
+credentials "auth_rs" do
+  schemes "oauth2"
+  label "flexera"
+  description "Select FlexeraOne OAuth2 credentials"
+  tags "provider=flexera"
+end
 
 datasource "ds_dimensions" do
   request do
@@ -98,7 +103,7 @@ end
 
 datasource "ds_new_bc_costs" do
   request do
-    run_script $js_new_costs_request, rs_org_id, $ds_billing_centers, $param_billing_centers
+    run_script $js_new_costs_request, rs_org_id, $ds_billing_centers, $param_billing_centers, rs_optima_host
   end
   result do
     encoding "json"
@@ -117,23 +122,23 @@ datasource "ds_new_bc_costs" do
 end
 
 script "js_new_costs_request", type: "javascript" do
-  parameters "org_id","ds_billing_centers", "param_billing_centers"
+  parameters "org_id","ds_billing_centers", "param_billing_centers","optima_host"
   result "request"
   code <<-EOS
-    //https://stackoverflow.com/questions/3605214/javascript-add-leading-zeroes-to-date 
+    //https://stackoverflow.com/questions/3605214/javascript-add-leading-zeroes-to-date
     function pad(n){return n<10 ? '0'+n : n}
     var date = new Date();
     var year = date.getUTCFullYear();
     var month = (2 + date.getUTCMonth())
-    
-    if (month == 1){ 
+
+    if (month == 1){
       var lmonth = 12;
       var lyear = year-1 ;
     } else {
       var lmonth = month-1;
       var lyear = year ;
     }
-    
+
     mo = month.toString().length > 1 ? month : '0' + month;
     lmo = lmonth.toString().length > 1 ? lmonth : '0' + lmonth;
     var yesterday = new Date(new Date().setDate(new Date().getDate()-1)).getDate()
@@ -153,7 +158,7 @@ script "js_new_costs_request", type: "javascript" do
     var request = {
       auth: "auth_rs",
       verb: "POST",
-      host: "optima.rightscale.com",
+      host: optima_host,
       path: "/bill-analysis/orgs/" + org_id + "/costs/aggregated",
       body_fields: {
         "dimensions": ["billing_center_id","vendor","vendor_account_name", "service", "region", "usage_type", "line_item_type"],
@@ -223,7 +228,7 @@ script "js_format_costs", type: "javascript" do
 
     })
   })
-  
+
   var arr_filtered_results = _.filter(arr_results, function(result){
     if ( result.service != "APNFee") { return result }
   })

@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.7
+
+- Use rs_optima_host instead of hardcoded hostname
+
 ## v1.6
 
 - Added default_frequency "daily"

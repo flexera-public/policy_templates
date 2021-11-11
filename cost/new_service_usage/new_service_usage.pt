@@ -8,7 +8,7 @@ category "Cost"
 default_frequency "daily"
 tenancy "single"
 info(
-  version: "1.4",
+  version: "1.5",
   provider: "Flexera Optima",
   service: "",
   policy_set: ""
@@ -35,7 +35,12 @@ parameter "param_include_0" do
   default "false"
 end
 
-auth "auth_rs", type: "rightscale"
+credentials "auth_rs" do
+  schemes "oauth2"
+  label "flexera"
+  description "Select FlexeraOne OAuth2 credentials"
+  tags "provider=flexera"
+end
 
 datasource "ds_dimensions" do
   request do
@@ -90,7 +95,7 @@ end
 
 datasource "ds_new_bc_costs" do
   request do
-    run_script $js_new_costs_request, rs_org_id, $ds_billing_centers, $param_billing_centers
+    run_script $js_new_costs_request, rs_org_id, $ds_billing_centers, $param_billing_centers, rs_optima_host
   end
   result do
     encoding "json"
@@ -107,23 +112,23 @@ datasource "ds_new_bc_costs" do
 end
 
 script "js_new_costs_request", type: "javascript" do
-  parameters "org_id","ds_billing_centers", "param_billing_centers"
+  parameters "org_id","ds_billing_centers", "param_billing_centers", "optima_host"
   result "request"
   code <<-EOS
-    //https://stackoverflow.com/questions/3605214/javascript-add-leading-zeroes-to-date 
+    //https://stackoverflow.com/questions/3605214/javascript-add-leading-zeroes-to-date
     function pad(n){return n<10 ? '0'+n : n}
     var date = new Date();
     var year = date.getUTCFullYear();
     var month = (2 + date.getUTCMonth())
-    
-    if (month == 1){ 
+
+    if (month == 1){
       var lmonth = 12;
       var lyear = year-1 ;
     } else {
       var lmonth = month-1;
       var lyear = year ;
     }
-    
+
     mo = month.toString().length > 1 ? month : '0' + month;
     lmo = lmonth.toString().length > 1 ? lmonth : '0' + lmonth;
     var yesterday = new Date(new Date().setDate(new Date().getDate()-1)).getDate()
@@ -143,7 +148,7 @@ script "js_new_costs_request", type: "javascript" do
     var request = {
       auth: "auth_rs",
       verb: "POST",
-      host: "optima.rightscale.com",
+      host: optima_host,
       path: "/bill-analysis/orgs/" + org_id + "/costs/aggregated",
       body_fields: {
         "dimensions": ["billing_center_id", "vendor", "vendor_account_name", "service", "region"],
@@ -169,7 +174,7 @@ script "js_format_costs", type: "javascript" do
   parameters "new_bc_costs", "ds_cloud_vendor_accounts", "ds_billing_centers"
   result "formatted_data"
   code <<-EOS
-  //https://stackoverflow.com/questions/3605214/javascript-add-leading-zeroes-to-date 
+  //https://stackoverflow.com/questions/3605214/javascript-add-leading-zeroes-to-date
   function pad(n){return n<10 ? '0'+n : n}
   //https://www.w3resource.com/javascript-exercises/javascript-date-exercise-3.php
   var getDaysInMonth = function(month,year) {
@@ -185,15 +190,15 @@ script "js_format_costs", type: "javascript" do
   var today = date.getDate()
   var numdays = getDaysInMonth(date.getUTCMonth(),date.getUTCFullYear())
   var yesterday = new Date(new Date().setDate(new Date().getDate()-1)).getDate()
-  
-  if (month == 1){ 
+
+  if (month == 1){
     var lmonth = 12;
     var lyear = year-1 ;
   } else {
     var lmonth = month-1;
     var lyear = year ;
   }
-  
+
   mo = month.toString().length > 1 ? month : '0' + month;
   lmo = lmonth.toString().length > 1 ? lmonth : '0' + lmonth;
   var yesterday = new Date(new Date().setDate(new Date().getDate()-1)).getDate()
@@ -267,7 +272,7 @@ script "js_format_costs", type: "javascript" do
   var total_sum = _.chain(formatted_data)
   .pluck('run_rate')
   .reduce(function(memo, num){ return memo + parseFloat(num); }, 0).value();
-  _.each(formatted_data, function(data){  
+  _.each(formatted_data, function(data){
     data["total_sum"] = parseFloat(total_sum).toFixed(2)
     data["run_rate"] = parseFloat(data.run_rate).toFixed(2)
     return data
@@ -280,7 +285,7 @@ end
 
 datasource "ds_old_bc_costs" do
   request do
-    run_script $js_old_costs_request, rs_org_id, $ds_billing_centers, $param_billing_centers
+    run_script $js_old_costs_request, rs_org_id, $ds_billing_centers, $param_billing_centers, rs_optima_host
   end
   result do
     encoding "json"
@@ -297,23 +302,23 @@ datasource "ds_old_bc_costs" do
 end
 
 script "js_old_costs_request", type: "javascript" do
-  parameters "org_id","ds_billing_centers", "param_billing_centers"
+  parameters "org_id","ds_billing_centers", "param_billing_centers", "optima_host"
   result "request"
   code <<-EOS
-    //https://stackoverflow.com/questions/3605214/javascript-add-leading-zeroes-to-date 
+    //https://stackoverflow.com/questions/3605214/javascript-add-leading-zeroes-to-date
     function pad(n){return n<10 ? '0'+n : n}
     var date = new Date();
     var year = date.getUTCFullYear();
     var month = (2 + date.getUTCMonth())
-    
-    if (month == 1){ 
+
+    if (month == 1){
       var lmonth = 12;
       var lyear = year-1 ;
     } else {
       var lmonth = month-1;
       var lyear = year ;
     }
-    
+
     mo = month.toString().length > 1 ? month : '0' + month;
     lmo = lmonth.toString().length > 1 ? lmonth : '0' + lmonth;
     var yesterday = new Date(new Date().setDate(new Date().getDate()-1)).getDate()
@@ -340,7 +345,7 @@ script "js_old_costs_request", type: "javascript" do
     var request = {
       auth: "auth_rs",
       verb: "POST",
-      host: "optima.rightscale.com",
+      host: optima_host,
       path: "/bill-analysis/orgs/" + org_id + "/costs/aggregated",
       body_fields: {
         "dimensions": ["billing_center_id", "vendor", "vendor_account_name", "service", "region"],
@@ -390,7 +395,7 @@ script "js_check_services", type: "javascript" do
       region: item[0].region,
       run_rate: item[0].run_rate,
       total_sum: item[0].total_sum
-    } 
+    }
   })
 
 EOS

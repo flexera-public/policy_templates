@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.8
+
+- Use rs_optima_host variable instead of hardcoded optima.rightscale.com (different in EU region)
+
 ## v1.7
 
 - Updated js_format_costs script for vendor_account_name error comparing ds_cloud_vendor_account name to new_bc_cost_obj vendor account name
