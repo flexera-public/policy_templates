@@ -2,7 +2,7 @@
 
 ### What it does
 
-This Policy Template will analyze RISC Foundations NetFlow data and will leverage these traffic patterns to identify the top communication routes from each application stack to external dependencies.  
+This Policy Template will analyze RISC Foundations NetFlow data and will leverage these traffic patterns to identify the top communication routes from each application stack to external dependencies.
 
 ### Pre-requisites
 

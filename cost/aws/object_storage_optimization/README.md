@@ -46,7 +46,7 @@ Required permissions in the provider:
                           "s3:GetObjectTagging",
                           "s3:PutObject",
                           "s3:DeleteObject"
-                         ],
+                        ],
                 "Resource":"*"
               }
               ]

@@ -8,7 +8,7 @@ The policy will provide a report with a bar chart of actual v. budgeted spend fo
 
 IMPORTANT: The monthly budget inputs are compared against the current month's actual cloud costs of the applied policy. As a best practice, reapply this policy on an annual basis to reflect the current year's monthly budgeted cloud costs.
 
-_Note 1: The last 3 days of data in the current week or month will contain incomplete data._  
+_Note 1: The last 3 days of data in the current week or month will contain incomplete data._
 _Note 2: The account you apply the policy to is unimportant as Optima metrics are scoped to the Org._
 
 ### Cost Metrics

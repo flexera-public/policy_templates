@@ -58,10 +58,10 @@ Required permissions in the provider:
       "Action":["cloudwatch:GetMetricStatistics","cloudwatch:ListMetrics"],
       "Resource":"*",
       "Condition":{
-         "Bool":{
+        "Bool":{
             "aws:SecureTransport":"true"
             }
-         }
+        }
       },
       {
       "Effect":"Allow",
@@ -70,12 +70,12 @@ Required permissions in the provider:
                   "ec2:DescribeRegions"],
       "Resource":"*",
       "Condition":{
-         "Bool":{
+        "Bool":{
             "aws:SecureTransport":"true"
             }
-         }
+        }
       }
-   ]
+  ]
 }
 ```
 

@@ -53,10 +53,10 @@ Required permissions in the provider:
       "Action":["cloudwatch:GetMetricStatistics","cloudwatch:ListMetrics"],
       "Resource":"*",
       "Condition":{
-         "Bool":{
+        "Bool":{
             "aws:SecureTransport":"true"
             }
-         }
+        }
       },
       {
         "Effect":"Allow",

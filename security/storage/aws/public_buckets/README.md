@@ -36,8 +36,8 @@ Required permissions in the provider:
             "Sid": "ListObjectsInBucket",
             "Effect": "Allow",
             "Action": ["s3:ListAllMyBuckets",
-                       "s3:GetBucketLocation",
-                       "s3:GetBucketAcl"],
+                      "s3:GetBucketLocation",
+                      "s3:GetBucketAcl"],
             "Resource": ["arn:aws:s3:::bucket-name"]
         }
     ]

@@ -2,13 +2,13 @@
 
 ### What it does
 
-This Policy Template leverages the the RightScale cost APIs to import Cloud vendor services import service costs and add a markup or markdown by category.   
+This Policy Template leverages the the RightScale cost APIs to import Cloud vendor services import service costs and add a markup or markdown by category.
 
 ### Prerequisites
 
 - As this policy invokes the RightScale APIs, the user invoking the policy must have access to the Optima module and and components.
 
-### Categories 
+### Categories
 For a detailed explanation regarding categories and their mapping to the different cloud service please check the following link: [RightScale categories](https://helpnet.flexerasoftware.com/Optima/#helplibrary/RightScale_generated_Cost_Dimension__Category.htm#)
 
 ### Cost Metrics
@@ -24,7 +24,7 @@ There are four cost metrics to choose from.
 
 This policy has the following input parameters required when launching the policy.
 - *Email list* - Email addresses of the recipients you wish to notify
-- *Billing Center List* - List of top level Billing Center names you want to report on.  Names must be exactly as shown in Optima.  
+- *Billing Center List* - List of top level Billing Center names you want to report on.  Names must be exactly as shown in Optima.
 Leave the field blank to report on all top level Billing Centers.
 - *Cost Metric* - See cost metrics above for details on selection.
 - *Compute markup or markdown percentage* - markup for the compute category in number value (20 being 20% markup -20 being a 20% markdown. Leave 0 to apply the general markup).
@@ -58,5 +58,3 @@ This policy requires permissions to access RightScale resources (Optima).  Befor
 ### Cost
 
 This Policy Template does not incur any cloud costs.
-
-

@@ -2,7 +2,7 @@
 
 ### What it does
 
-This Policy Template leverages the Optima Bill Data for AWS Reserved Instances. It will notify only if expiration is within the timeframe specified in `Number of days to prior to expiration date to trigger incident` field. It will email the user specified in `Email addresses of the recipients you wish to notify`.  
+This Policy Template leverages the Optima Bill Data for AWS Reserved Instances. It will notify only if expiration is within the timeframe specified in `Number of days to prior to expiration date to trigger incident` field. It will email the user specified in `Email addresses of the recipients you wish to notify`.
 
 
 ### Input Parameters

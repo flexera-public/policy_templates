@@ -10,7 +10,7 @@ This Policy Template reports on services with low usage. Low usage of a specific
 
 ### Functional Details
 
-- This policy queries optima data to determine low account usage. 
+- This policy queries optima data to determine low account usage.
 
 #### Input Parameters
 

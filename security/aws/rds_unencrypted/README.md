@@ -47,7 +47,7 @@ Required permissions in the provider:
               "rds:CreateDBClusterSnapshot",
               "rds:DescribeDBClusterSnapshots",
               "rds:DeleteDBInstance"
-             ],
+            ],
     "Resource":"*"
     },
     {

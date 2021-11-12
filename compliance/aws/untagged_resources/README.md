@@ -33,18 +33,18 @@ Required permissions in the provider:
 
 ```javascript
  {
-   "Version": "2012-10-17",
-   "Statement": [
+  "Version": "2012-10-17",
+  "Statement": [
             {
               "Effect": "Allow",
               "Action": [
                 "tag:GetResources",
                 "tag:TagResources",
                 "ec2:DescribeRegions"
-               ],
-               "Resource": "*"
+              ],
+              "Resource": "*"
             }
-   ]
+  ]
  }
 ```
 

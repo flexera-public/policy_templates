@@ -29,7 +29,7 @@ Perform below steps to enable delete action.
 - uncomment below mentioned line
 
 ```javascript
-   escalate $delete_unencrypted_s3_buckets_approval
+  escalate $delete_unencrypted_s3_buckets_approval
 ```
 
 - upload the modified file and apply the policy.

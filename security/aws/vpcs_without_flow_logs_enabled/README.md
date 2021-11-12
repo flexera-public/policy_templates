@@ -37,7 +37,7 @@ Required permissions in the provider:
     "Effect":"Allow",
     "Action":["elasticloadbalancing:DescribeVpcs",
               "elasticloadbalancing:DescribeFlowLogs"
-             ],
+            ],
     "Resource":"*"
     },
     {

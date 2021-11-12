@@ -58,6 +58,3 @@ This policy requires permissions to access RightScale resources (Optima). Before
 ### Cost
 
 This Policy Template does not incur any cloud costs.
-
-
-

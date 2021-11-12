@@ -16,7 +16,7 @@ Days of the week: SU,MO,TU,WE,TH,FR,SA
 
 Timezone: Use the TZ database name from the [timezone list](https://en.wikipedia.org/wiki/List_of_tz_database_time_zones). For example use *America/New_York* for Eastern time.
 
-Example: instance:schedule=8-17;MO,TU,WE,TH,FR;America/New_York. Stops instances at 5pm, starts instance at 8am, Monday - Friday, Eastern Time.  
+Example: instance:schedule=8-17;MO,TU,WE,TH,FR;America/New_York. Stops instances at 5pm, starts instance at 8am, Monday - Friday, Eastern Time.
 
 Instances are off during the weekend and start back up on Monday morning and are off at 5p every weekday.
 Times are UTC unless the Timezone field is provided.

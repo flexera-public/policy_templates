@@ -10,7 +10,7 @@ This Policy Template determines which regions have cheaper alternatives by speci
 
 ### Functional Details
 
-- This policy uses a hash to determine existing regions and newer compatible cheaper regions. It checks the billing center and reports on cheaper regions. 
+- This policy uses a hash to determine existing regions and newer compatible cheaper regions. It checks the billing center and reports on cheaper regions.
 
 #### Input Parameters
 

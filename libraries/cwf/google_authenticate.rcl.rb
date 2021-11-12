@@ -1,6 +1,6 @@
-# This library code can be used to authenticate against the google api with cwf actions. 
+# This library code can be used to authenticate against the google api with cwf actions.
 define google_authenticate() return $access_token do
-  #The scope below only counts for devstorage, you will want to change to accomodate your needs. 
+  #The scope below only counts for devstorage, you will want to change to accomodate your needs.
   $jwt = {
     iss: cred("GCE_PLUGIN_ACCOUNT"),
     aud:"https://oauth2.googleapis.com/token",
@@ -20,7 +20,7 @@ define google_authenticate() return $access_token do
       "content-type": "application/json"
     },
     body:{
-      "grant_type": "urn:ietf:params:oauth:grant-type:jwt-bearer",         
+      "grant_type": "urn:ietf:params:oauth:grant-type:jwt-bearer",
       "assertion": $signed_sigurature
     }
   })
