@@ -3,7 +3,8 @@
 This policy allows you to set up scheduled reports that will provide summaries of cloud cost across all resources in the billing centers you specify, delivered to any email addresses you specify. The policy will report the following:
 
 Chart of the selected Date Range and Billing Term of utilization based on whichever [Reporting Dimension](https://docs.rightscale.com/optima/reference/rightscale_dimensions.html) you select (only bill data and RightScale-generated dimensions are supported).
-Daily Average - Weekly: Daily average costs calculated from Monday of the previous week through today
+
+Daily Average - Weekly: Daily average costs calculated from Monday of the previous week through today.
 Daily Average - Monthly: Daily average costs calculated from the 1st of the previous month through today.
 Previous - Weekly: Total costs during previous full week (Monday-Sunday).
 Previous - Monthly: Total costs during previous full month.
@@ -29,7 +30,8 @@ There are four cost metrics to choose from.
 This policy has the following input parameters required when launching the policy.
 
 - *Email list* - Email addresses of the recipients you wish to notify
-- *Billing Center List* - List of top-level Billing Center names you want to report on.  Names must be exactly as shown in Optima.  Leave the field blank to report on all top-level Billing Centers.
+- *Billing Center List* - List of top-level Billing Center names you want to report on.  Names must be exactly as shown in Optima.
+  Leave the field blank to report on all top-level Billing Centers.
 - *Cost Metric* - See Cost Metrics above for details on selection.
 - *Graph Dimension* - The cost dimension to break out the cost data in the embedded bar chart image
 - *Date Range* - Select the previous range to display in the chart
@@ -58,4 +60,3 @@ Alternatively, a version of the policy is provided that uses OAuth2 Flexera cred
 ## Cost
 
 This Policy Template does not launch any instances, and so does not incur any cloud costs.
-
