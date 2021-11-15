@@ -3,6 +3,7 @@
 ## v2.16
 
 - Fix non-optimal array searching for costs
+- Fix currency bug caused by incorrect parameter being passed
 
 ## v2.15
 
