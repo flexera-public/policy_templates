@@ -8,13 +8,13 @@ This Policy Template will send an email notifications when AWS RI Recommendation
 
 It will email the user specified in `Email addresses of the recipients you wish to notify`
 
-### Prerequisites
+## Prerequisites
 
 - The following RightScale Credentials
   - `AWS_ACCESS_KEY_ID` - The Access Key of an IAM User in the Master Payer account, which has access to Cost Explorer.
   - `AWS_SECRET_ACCESS_KEY` - The Secret Access Key of the IAM User.
 
-### Input Parameters
+## Input Parameters
 
 This policy has the following input parameters required when launching the policy.
 
@@ -26,20 +26,20 @@ This policy has the following input parameters required when launching the polic
 - *Net Savings Threshold* - Specify the minimum Net Savings that should result in an RI purchase recommendation
 - *Email addresses to notify* - A list of email addresses to notify
 
-### Policy Actions
+## Policy Actions
 
 The following policy actions are taken on any resources found to be out of compliance.
 
 - Send an email report
 - (Optional) Retrieve RI Purchase Offerings and Execute RI Purchases, after approval
 
-### Required RightScale Roles
+## Required RightScale Roles
 
 - Cloud Management - Actor
 - Cloud Management - Observer
 - Cloud Management - credential_viewer
 
-### AWS Required Permissions
+## AWS Required Permissions
 
 This policy requires permissions to describe AWS Cost Explorer.
 The Cloud Management Platform automatically creates two Credentials when connecting AWS to Cloud Management; AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY. The IAM user credentials contained in those credentials will require the following permissions:
@@ -61,10 +61,10 @@ The Cloud Management Platform automatically creates two Credentials when connect
 }
 ```
 
-### Supported Clouds
+## Supported Clouds
 
 - AWS
 
-### Cost
+## Cost
 
 This Policy Template does not launch any instances, and so does not incur any cloud costs.
