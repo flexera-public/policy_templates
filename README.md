@@ -161,6 +161,7 @@ Reference
 - [AWS Minimum Password Length](./security/aws/iam_min_password_length/)
 - [AWS Prevent Password Reuse](./security/aws/iam_prevent_password_reuse/)
 - [AWS Disable Credentials Unused For 45+ Days](./security/aws/iam_disable_45_day_creds/)
+- [AWS Ensure One Active Key Per IAM User](./security/aws/iam_one_active_key_per_user/)
 - [AWS Rotate Access Keys](./security/aws/iam_rotate_access_keys/)
 - [AWS Access Analyzer Enabled](./security/aws/iam_access_analyzer_enabled/)
 - [AWS Support Role Created](./security/aws/iam_support_role_created/)
