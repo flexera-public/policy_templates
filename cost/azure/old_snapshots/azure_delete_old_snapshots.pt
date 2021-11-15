@@ -6,7 +6,7 @@ severity "low"
 category "Cost"
 default_frequency "daily"
 info(
-  version: "2.6",
+  version: "2.7",
   provider: "Azure",
   service: "Storage",
   policy_set: "Old Snapshots"
@@ -259,7 +259,7 @@ script "js_get_costs", type:"javascript" do
         "User-Agent": "RS Policies",
         "Api-Version": "1.0"
       },
-    ignore_status: [400]
+      ignore_status: [400]
     }
   EOS
 end
@@ -333,6 +333,17 @@ script "js_snapshot_cost_mapping", type:"javascript" do
     }
     // Format costs with currency symbol and thousands separator
     if(ds_billing_centers.length!=0){
+      // Put costs into a map by resource ID and only include them for resource IDs we actually need
+      var costs_by_resource_id = {};
+      _.each(snapshots, function(snapshot) {
+        costs_by_resource_id[snapshot.snapshot_id] = [];
+      });
+      _.each(snapshots_costs, function(cost) {
+        var costs = costs_by_resource_id[cost.resource_id];
+        if (costs != null) {
+          costs.push(cost);
+        }
+      });
       if( ds_currency_code['value'] !== undefined ) {
         if (ds_currency_reference[ds_currency_code['value']] !== undefined ) {
           var cur = ds_currency_reference[ds_currency_code['value']]['symbol']
@@ -351,7 +362,7 @@ script "js_snapshot_cost_mapping", type:"javascript" do
       }
       var total=0;
       _.each(snapshots, function(snapshot){
-        var cost_objects = _.where(snapshots_costs, {resource_id: snapshot["snapshot_id"]});
+        var cost_objects = costs_by_resource_id[snapshot.snapshot_id];
         if (_.size(cost_objects) > 0){
           count++;
           var sum = _.reduce(_.compact(_.map(cost_objects, function(value){ return value.cost_nonamortized_unblended_adj})), function(memo, num){ return memo + num; }, 0);
@@ -387,8 +398,8 @@ policy "pol_azure_delete_old_snapshots" do
   validate $ds_snapshot_cost_mapping do
     summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data.instances }} Old Snapshots Found"
     detail_template <<-EOS
-      {{data.message}}.
-    EOS
+{{data.message}}.
+EOS
     export "instances" do
       resource_level true
       field "subscriptionName" do

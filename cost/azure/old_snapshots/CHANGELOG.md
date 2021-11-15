@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.7
+
+- Fix non-optimal array searching for costs
+
 ## v2.6
 
 - Debug via param (off by default, for EU app); use rs_optima_host instead of hardcoded hostname
