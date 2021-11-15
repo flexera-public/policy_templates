@@ -6,7 +6,7 @@ category "Cost"
 severity "low"
 default_frequency "daily"
 info(
-  version: "2.15",
+  version: "2.16",
   provider: "AWS",
   service: "EBS",
   policy_set: "Old Snapshots"
@@ -268,7 +268,7 @@ datasource "ds_filter_ami_snapshots" do
 end
 
 datasource "ds_snapshots_cost_mapping" do
-  run_script $js_snapshots_cost_mapping, $ds_filter_ami_snapshots, $ds_snapshot_costs, $ds_currency_reference, $ds_currency_reference, $ds_billing_centers, $ds_get_caller_identity
+  run_script $js_snapshots_cost_mapping, $ds_filter_ami_snapshots, $ds_snapshot_costs, $ds_currency_code, $ds_currency_reference, $ds_billing_centers, $ds_get_caller_identity
 end
 
 ###############################################################################
@@ -411,19 +411,30 @@ script "js_snapshots_cost_mapping", type: "javascript" do
     return result+"."+values[1];
   }
   if (ds_billing_centers.length!=0){
-  // Format costs with currency symbol and thousands separator
-  if( ds_currency_code['value'] !== undefined ) {
-    if (ds_currency_reference[ds_currency_code['value']] !== undefined ) {
-      var cur = ds_currency_reference[ds_currency_code['value']]['symbol']
-      if( ds_currency_reference[ds_currency_code['value']]['t_separator'] !== undefined ) {
-        var separator = ds_currency_reference[ds_currency_code['value']]['t_separator']
+    // Put costs into a map by resource ID and only include them for resource IDs we actually need
+    var costs_by_resource_id = {};
+    _.each(snapshots, function(snapshot) {
+      costs_by_resource_id[snapshot.formatSnapId] = [];
+    });
+    _.each(snapshot_costs, function(cost) {
+      var costs = costs_by_resource_id[cost.resource_id];
+      if (costs != null) {
+        costs.push(cost);
+      }
+    });
+    // Format costs with currency symbol and thousands separator
+    if( ds_currency_code['value'] !== undefined ) {
+      if (ds_currency_reference[ds_currency_code['value']] !== undefined ) {
+        var cur = ds_currency_reference[ds_currency_code['value']]['symbol']
+        if( ds_currency_reference[ds_currency_code['value']]['t_separator'] !== undefined ) {
+          var separator = ds_currency_reference[ds_currency_code['value']]['t_separator']
+        } else {
+          var separator = ""
+        }
       } else {
+        var cur = ""
         var separator = ""
       }
-    } else {
-      var cur = ""
-      var separator = ""
-    }
     } else {
       var cur = "$"
       var separator = ","
@@ -431,7 +442,7 @@ script "js_snapshots_cost_mapping", type: "javascript" do
   }
   var total=0;
   _.each(snapshots, function(snapshot){
-    var cost_objects = _.where(snapshot_costs, {resource_id: snapshot["formatSnapId"]});
+    var cost_objects = costs_by_resource_id[snapshot.formatSnapId];
     if (ds_billing_centers.length != 0 && _.size(cost_objects) > 0){
       var sum = _.reduce(_.compact(_.map(cost_objects, function(value){ return value.cost_nonamortized_unblended_adj})), function(memo, num){ return memo + num; }, 0);
       var monthly_savings = sum*30;
