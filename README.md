@@ -193,6 +193,12 @@ Reference
 - [AWS Unencrypted ELB Listeners (CLB)](./security/aws/clb_unencrypted/)
 - [AWS Unencrypted ELB Listeners (ALB/NLB)](./security/aws/elb_unencrypted/)
 
+##### Logging
+
+###### CIS Policies
+
+- [AWS Ensure AWS Config Enabled In All Regions)](./security/aws/aws_config_enabled/)
+
 #### VPC
 
 - [AWS VPC's without FlowLogs Enabled](./security/aws/vpcs_without_flow_logs_enabled/)
