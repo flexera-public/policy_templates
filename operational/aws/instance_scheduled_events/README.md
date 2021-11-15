@@ -28,7 +28,7 @@ for connecting to the cloud -- in order to apply this policy you must have a
 For administrators [creating and managing credentials](https://docs.rightscale.com/policies/users/guides/credential_management.html)
 to use with this policy, the following information is needed:
 
-Provider tag value to match this policy: `aws` , `aws_sts`
+Provider tag value to match this policy: `aws`, `aws_sts`
 
 ```javascript
 {
