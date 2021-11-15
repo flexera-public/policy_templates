@@ -35,7 +35,8 @@ You can create missing tags by setting the default-value key of the tag. You can
 
 Example JSON:
 
-```
+```json
+
 {
   "rs_agent:type": {
     "description":"Validate the tag using a array of possible values",
