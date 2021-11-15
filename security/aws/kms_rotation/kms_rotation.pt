@@ -44,11 +44,33 @@ end
 # Datasources
 ###############################################################################
 
-datasource "ds_keys" do
+datasource "ds_regions_list" do
   request do
     auth $auth_aws
     verb "GET"
-    host "kms.us-west-1.amazonaws.com"
+    host "ec2.amazonaws.com"
+    path "/"
+    query "Action", "DescribeRegions"
+    query "Version", "2016-11-15"
+  end
+  result do
+    encoding "xml"
+    collect xpath(response, "//DescribeRegionsResponse/regionInfo/item", "array") do
+      field "region", xpath(col_item, "regionName")
+    end
+  end
+end
+
+datasource "ds_regions_clean" do
+  run_script $js_regions_clean, $ds_regions_list
+end
+
+datasource "ds_regions_with_keys" do
+  iterate $ds_regions_clean
+  request do
+    auth $auth_aws
+    verb "GET"
+    host join(["kms.", iter_item, ".amazonaws.com"])
     path "/"
     header "User-Agent", "RS Policies"
     header "Accept", "application/json"
@@ -56,11 +78,87 @@ datasource "ds_keys" do
   end
   result do
     encoding "json"
-    collect jmes_path(response, "ListKeysResponse.ListKeysResult.Keys") do
-      field "key_arn", jmes_path(col_item, "KeyArn")
-      field "key_id", jmes_path(col_item, "KeyId")
-    end
+    field "region", iter_item
+    field "keys", jmes_path(response, "ListKeysResponse.ListKeysResult.Keys")
   end
+end
+
+datasource "ds_keys" do
+  run_script $js_keys, $ds_regions_with_keys
+end
+
+datasource "ds_keys_with_rotation" do
+  iterate $ds_keys
+  request do
+    auth $auth_aws
+    verb "POST"
+    host join(["kms.", val(iter_item, "region"), ".amazonaws.com"])
+    path "/"
+    header "User-Agent", "RS Policies"
+    header 'Content-Type', 'application/x-amz-json-1.1'
+    header 'X-Amz-Target', 'TrentService.GetKeyRotationStatus'
+    body join(['{"KeyId": "', val(iter_item, "id"), '"}'])
+    ignore_status 400
+  end
+  result do
+    encoding "json"
+    field "arn", val(iter_item, "arn")
+    field "id", val(iter_item, "id")
+    field "region", val(iter_item, "region")
+    field "rotation_enabled", jmes_path(response, "KeyRotationEnabled")
+  end
+end
+
+datasource "ds_keys_without_rotation" do
+  run_script $js_keys_without_rotation, $ds_keys_with_rotation
+end
+
+###############################################################################
+# Scripts
+###############################################################################
+
+script "js_regions_clean", type:"javascript" do
+  parameters "ds_regions_list"
+  result "result"
+  code <<-EOS
+    result = []
+
+    _.each(ds_regions_list, function(region_item) {
+      result.push(region_item.region)
+    })
+EOS
+end
+
+script "js_keys", type:"javascript" do
+  parameters "ds_regions_with_keys"
+  result "result"
+  code <<-EOS
+    result = []
+
+    _.each(ds_regions_with_keys, function(region) {
+      _.each(region.keys, function(key) {
+        result.push({
+          arn: key.KeyArn,
+          id: key.KeyId,
+          region: region.region
+        })
+      })
+    })
+EOS
+end
+
+script "js_keys_without_rotation", type:"javascript" do
+  parameters "ds_keys_with_rotation"
+  result "result"
+  code <<-EOS
+    result = []
+
+    _.each(ds_keys_with_rotation, function(key) {
+      if (key.rotation_enabled != true) {
+        result.push(key)
+      }
+    })
+EOS
 end
 
 ###############################################################################
@@ -68,23 +166,23 @@ end
 ###############################################################################
 
 policy "policy_keys_without_rotation" do
-  # validate $ds_keys_without_rotation do
-  #   summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} Customer Managed Keys (CMKs) Found Without Rotation Enabled"
-  #   escalate $esc_report_keys_without_rotation
-  #   check eq(size(data),0)
-  #   export do
-  #     resource_level true
-  #     field "name" do
-  #       label "Name"
-  #     end
-  #     field "id" do
-  #       label "ARN"
-  #     end
-  #     field "homeregion" do
-  #       label "Region"
-  #     end
-  #   end
-  # end
+  validate $ds_keys_without_rotation do
+    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} Customer Managed Keys (CMKs) Found Without Rotation Enabled"
+    escalate $esc_report_keys_without_rotation
+    check eq(size(data),0)
+    export do
+      resource_level true
+      field "id" do
+        label "Name"
+      end
+      field "arn" do
+        label "ARN"
+      end
+      field "region" do
+        label "Region"
+      end
+    end
+  end
 end
 
 ###############################################################################
