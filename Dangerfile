@@ -172,4 +172,10 @@ fail 'Please provide a summary of your Pull Request.' if github.pr_body.length <
 fail 'Please add labels to this Pull Request' if github.pr_labels.empty?
 
 # Lint added and modified files only
-textlint.lint
+# textlint.lint
+changed_files.each do |file|
+  `npm run textlint #{file}`
+  if $?.exitstatus != 0
+    fail "Textlint failed on #{file}"
+  end
+end
