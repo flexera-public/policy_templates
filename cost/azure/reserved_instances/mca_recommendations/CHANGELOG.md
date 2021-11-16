@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.5
+
+- updated policy to only pull from first subscription to avoid duplicate data. this will fix the shared repeating data
+
 ## v2.4
 
 - Ignored: {"code":"400","message":"Cost management data is unavailable for subscription XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX. The offer MS-AZR-0243P is not supported."}
