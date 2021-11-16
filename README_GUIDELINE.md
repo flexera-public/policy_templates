@@ -94,7 +94,7 @@ Credential Managements, and provider permissions.  See more below.
 
 In this section include additional configuration needed to run the policy.
 Additional information may include setting up credentials in Cloud Management,
-  configuring an external system etc.
+configuring an external system etc.
 
 ### Supported Clouds (OPTIONAL)
 
