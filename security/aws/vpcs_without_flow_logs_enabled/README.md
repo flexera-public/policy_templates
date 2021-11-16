@@ -32,13 +32,15 @@ Required permissions in the provider:
 
 ```javascript
 {
-    "Version": "2012-10-17",
-    "Statement":[{
-    "Effect":"Allow",
-    "Action":["elasticloadbalancing:DescribeVpcs",
-              "elasticloadbalancing:DescribeFlowLogs"
-            ],
-    "Resource":"*"
+  "Version": "2012-10-17",
+  "Statement":[
+    {
+      "Effect":"Allow",
+      "Action":[
+        "elasticloadbalancing:DescribeVpcs",
+        "elasticloadbalancing:DescribeFlowLogs"
+      ],
+      "Resource":"*"
     },
     {
       "Effect":"Allow",
