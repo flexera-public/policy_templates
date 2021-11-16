@@ -26,7 +26,7 @@ The policy name is the readme file header.  It begins with the Header 2
 markdown characters ##.  The name should match the value of the name field
 inside the policy template.  The name includes the cloud supported and what
 it checks.  If the policy is multi cloud then the cloud can be excluded and only
-  write what it checks
+write what it checks
 
 Example with supported cloud:
 
