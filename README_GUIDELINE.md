@@ -88,7 +88,7 @@ Example:
 ### Prerequisites
 
 This section describes what it takes to run the policy.  This may include the
-  Credential Managements, and provider permissions.  See more below.
+Credential Managements, and provider permissions.  See more below.
 
 ### Installation (OPTIONAL)
 
