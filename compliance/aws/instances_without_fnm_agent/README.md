@@ -48,7 +48,7 @@ Provider tag value to match this policy: `aws` , `aws_sts` , `flexera_fnms`
 
 Required permissions in the provider aws:
 
-```javascript
+```json
 {
   "Version": "2012-10-17",
   "Statement":[{
