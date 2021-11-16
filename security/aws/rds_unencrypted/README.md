@@ -39,22 +39,27 @@ Required permissions in the provider:
 
 ```javascript
 {
-    "Version": "2012-10-17",
-    "Statement":[{
-    "Effect":"Allow",
-    "Action":["rds:DescribeDBInstances",
-              "rds:ListTagsForResource",
-              "rds:CreateDBClusterSnapshot",
-              "rds:DescribeDBClusterSnapshots",
-              "rds:DeleteDBInstance"
-            ],
-    "Resource":"*"
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "rds:DescribeDBInstances",
+        "rds:ListTagsForResource",
+        "rds:CreateDBClusterSnapshot",
+        "rds:DescribeDBClusterSnapshots",
+        "rds:DeleteDBInstance"
+      ],
+      "Resource": "*"
     },
     {
-      "Effect":"Allow",
-      "Action":["ec2:DescribeRegions"],
-      "Resource":"*"
-    }]
+      "Effect": "Allow",
+      "Action": [
+        "ec2:DescribeRegions"
+      ],
+      "Resource": "*"
+    }
+  ]
 }
 ```
 
