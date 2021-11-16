@@ -28,7 +28,7 @@ Perform below steps to enable delete action.
 - Edit the pt file in this location [AWS_Unencrypted_S3_Buckets] <https://github.com/flexera/policy_templates/tree/master/security/aws/unencrypted_s3_buckets>
 - uncomment below mentioned line
 
-```javascript
+```ruby
   escalate $delete_unencrypted_s3_buckets_approval
 ```
 
