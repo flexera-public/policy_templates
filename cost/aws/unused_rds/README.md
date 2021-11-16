@@ -48,21 +48,28 @@ Required permissions in the provider:
 ```javascript
 {
   "Version": "2012-10-17",
-  "Statement":[{
-      "Effect":"Allow",
-      "Action":["cloudwatch:GetMetricStatistics","cloudwatch:ListMetrics"],
-      "Resource":"*",
-      "Condition":{
-        "Bool":{
-            "aws:SecureTransport":"true"
-            }
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "cloudwatch:GetMetricStatistics",
+        "cloudwatch:ListMetrics"
+      ],
+      "Resource": "*",
+      "Condition": {
+        "Bool": {
+          "aws:SecureTransport": "true"
         }
-      },
-      {
-        "Effect":"Allow",
-        "Action":["ec2:DescribeRegions"],
-        "Resource":"*"
-    }]
+      }
+    },
+    {
+      "Effect": "Allow",
+      "Action": [
+        "ec2:DescribeRegions"
+      ],
+      "Resource": "*"
+    }
+  ]
 }
 ```
 
