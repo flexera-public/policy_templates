@@ -173,32 +173,32 @@ script "js_regions", type:"javascript" do
   parameters "user_entered_regions", "all_regions"
   result "regions"
   code <<-EOS
-    if(_.isEmpty(user_entered_regions)){
-      regions = all_regions;
-    }else{
-      //Filter unique regions
-      var uniqueRegions = _.uniq(user_entered_regions);
-      var all_regions_list = [];
-      all_regions.forEach(function(all_region){
-        all_regions_list.push(all_region.region)
-      })
+  if (_.isEmpty(user_entered_regions)) {
+    regions = all_regions;
+  } else {
+    //Filter unique regions
+    var uniqueRegions = _.uniq(user_entered_regions);
+    var all_regions_list = [];
+    all_regions.forEach(function (all_region) {
+      all_regions_list.push(all_region.region)
+    })
 
-      //Filter valid regions
-      var valid_regions = [];
-      _.map(uniqueRegions, function(uniqueRegion){
-        if(all_regions_list.indexOf(uniqueRegion) > -1){
-          valid_regions.push({"region": uniqueRegion})
-        }
-      })
-
-      //Throw an error if no valid regions found
-      if (_.isEmpty(valid_regions)) {
-        regions = all_regions;
-      }else{
-        regions = valid_regions
+    //Filter valid regions
+    var valid_regions = [];
+    _.map(uniqueRegions, function (uniqueRegion) {
+      if (all_regions_list.indexOf(uniqueRegion) > -1) {
+        valid_regions.push({ "region": uniqueRegion })
       }
+    })
+
+    //Throw an error if no valid regions found
+    if (_.isEmpty(valid_regions)) {
+      regions = all_regions;
+    } else {
+      regions = valid_regions
     }
-  EOS
+  }
+EOS
 end
 
 #https://docs.aws.amazon.com/elasticloadbalancing/latest/APIReference/API_DescribeLoadBalancers.html (Application or Network Load Balancer)
@@ -206,21 +206,21 @@ script "js_elb_list", type: "javascript" do
   parameters "region"
   result "request"
   code <<-EOS
-    request = {
-      auth: 'auth_aws',
-      pagination: 'elb_pagination',
-      host: 'elasticloadbalancing.'+region+'.amazonaws.com',
-      path: '/',
-      verb: 'GET',
-      query_params: {
-        "Action": "DescribeLoadBalancers",
-        "Version": "2015-12-01"
-      },
-      headers: {
-        "Accept": "application/json"
-      }
+  request = {
+    auth: 'auth_aws',
+    pagination: 'elb_pagination',
+    host: 'elasticloadbalancing.'+region+'.amazonaws.com',
+    path: '/',
+    verb: 'GET',
+    query_params: {
+      "Action": "DescribeLoadBalancers",
+      "Version": "2015-12-01"
+    },
+    headers: {
+      "Accept": "application/json"
     }
-  EOS
+  }
+EOS
 end
 
 #https://docs.aws.amazon.com/elasticloadbalancing/latest/APIReference/API_DescribeTags.html (Application or Network Load Balancer)
@@ -272,71 +272,70 @@ end
 #Process the response data, check for the tags and generate a list of internetfacing listeners
 script "js_elb_filter_map", type: "javascript" do
   parameters "ds_elb_listeners_with_tags", "param_exclude_tags"
-
   result "content"
   code <<-EOS
-    var param_exclude_tags_lower=[];
-    for(var j=0; j < param_exclude_tags.length; j++){
-      param_exclude_tags_lower[j]=param_exclude_tags[j].toString().toLowerCase();
+  var param_exclude_tags_lower = [];
+  for (var j = 0; j < param_exclude_tags.length; j++) {
+    param_exclude_tags_lower[j] = param_exclude_tags[j].toString().toLowerCase();
+  }
+
+  var content = []
+  for (var i = 0; i < ds_elb_listeners_with_tags.length; i++) {
+    elb = ds_elb_listeners_with_tags[i]
+
+    // Constructing availabilityZones with comma separated to display in detail_template
+    var availabilityZones = elb['availabilityZones']
+    var s_availabilityZones = ""
+    for (var j = 0; j < availabilityZones.length; j++) {
+      availabilityZone = availabilityZones[j]
+      s_availabilityZones = s_availabilityZones + ', ' + availabilityZone.ZoneName
     }
 
-    var content=[]
-    for(var i=0; i<ds_elb_listeners_with_tags.length; i++){
-      elb=ds_elb_listeners_with_tags[i]
-
-      // Constructing availabilityZones with comma separated to display in detail_template
-      var availabilityZones=elb['availabilityZones']
-      var s_availabilityZones=""
-      for(var j=0; j < availabilityZones.length; j++){
-        availabilityZone = availabilityZones[j]
-        s_availabilityZones = s_availabilityZones + ', '+ availabilityZone.ZoneName
+    //Constructing Tags of individual ELB into key=value format. Check, if the tag present in entered param_exclude_tags. Ignore the Load Balancer if the tag matches/present.
+    var tags = elb['tags']
+    var isTagMatched = false
+    var tagKeyValue = ""
+    for (var j = 0; j < tags.length; j++) {
+      tag = tags[j]
+      if ((param_exclude_tags_lower.indexOf((tag['tagKey']).toLowerCase()) !== -1) || (param_exclude_tags_lower.indexOf((tag['tagKey'] + '=' + tag['tagValue']).toLowerCase()) !== -1)) {
+        isTagMatched = true;
       }
-
-      //Constructing Tags of individual ELB into key=value format. Check, if the tag present in entered param_exclude_tags. Ignore the Load Balancer if the tag matches/present.
-      var tags = elb['tags']
-      var isTagMatched=false
-      var tagKeyValue=""
-      for(var j=0; j < tags.length; j++){
-        tag = tags[j]
-        if((param_exclude_tags_lower.indexOf((tag['tagKey']).toLowerCase()) !== -1) || (param_exclude_tags_lower.indexOf((tag['tagKey']+'='+tag['tagValue']).toLowerCase()) !== -1)){
-          isTagMatched = true;
-        }
-        // Constructing tags with comma separated to display in detail_template
-        if((tag['tagValue']).length > 0){
-          tagKeyValue = tagKeyValue + ', '+ tag['tagKey']+'='+tag['tagValue']
-        }else{
-          tagKeyValue = tagKeyValue + ', '+ tag['tagKey']
-        }
-      }
-
-      //If the Load Balancer tag does not match with entered param_exclude_tags, then check if Load Balancer is internet-facing and has HTTPS/TLS in use.
-      if(!(isTagMatched) && (elb['scheme']) === 'internet-facing') {
-        // check for HTTPS or TLS listeners
-        protocol = elb['listenerProtocol']
-		    switch (protocol) {
-          case "HTTPS":
-            break
-          case "TLS":
-            break
-          default:
-            content.push ({
-              id: elb['loadBalancerName'],
-              loadBalancerType: elb['loadBalancerType'],
-			  loadBalancerProtocol: protocol,
-              loadBalancerPort: elb['listenerPort'],
-              region: elb['region'],
-              availabilityZones:(s_availabilityZones.slice(2)),
-              tagKeyValue:(tagKeyValue.slice(2)),
-              loadBalanceProtocolAndPort: protocol+" "+elb['listenerPort']
-            })
-	      }
+      // Constructing tags with comma separated to display in detail_template
+      if ((tag['tagValue']).length > 0) {
+        tagKeyValue = tagKeyValue + ', ' + tag['tagKey'] + '=' + tag['tagValue']
+      } else {
+        tagKeyValue = tagKeyValue + ', ' + tag['tagKey']
       }
     }
 
-  content = _.sortBy(content,'id')
-  content = _.sortBy(content,'loadBalancerType')
-  content = _.sortBy(content,'region')
-  EOS
+    //If the Load Balancer tag does not match with entered param_exclude_tags, then check if Load Balancer is internet-facing and has HTTPS/TLS in use.
+    if (!(isTagMatched) && (elb['scheme']) === 'internet-facing') {
+      // check for HTTPS or TLS listeners
+      protocol = elb['listenerProtocol']
+      switch (protocol) {
+        case "HTTPS":
+          break
+        case "TLS":
+          break
+        default:
+          content.push({
+            id: elb['loadBalancerName'],
+            loadBalancerType: elb['loadBalancerType'],
+            loadBalancerProtocol: protocol,
+            loadBalancerPort: elb['listenerPort'],
+            region: elb['region'],
+            availabilityZones: (s_availabilityZones.slice(2)),
+            tagKeyValue: (tagKeyValue.slice(2)),
+            loadBalanceProtocolAndPort: protocol + " " + elb['listenerPort']
+          })
+      }
+    }
+  }
+
+  content = _.sortBy(content, 'id')
+  content = _.sortBy(content, 'loadBalancerType')
+  content = _.sortBy(content, 'region')
+EOS
 end
 
 ###############################################################################

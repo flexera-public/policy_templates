@@ -19,7 +19,7 @@ The Cost Anomaly Policy will analyze the spend of all Billing Centers in an Orga
 - *Cost Metric* - Specify options for amortized vs nonamortized and blended vs unblended costs.
 - *Email addresses of the recipients you wish to notify* - A list of email addresses to notify
 - *Billing Center List* - List of Billing Center names you want to report on. Names must be exactly as shown in Optima.
-   Leave the field blank to report on all Billing Centers.
+  Leave the field blank to report on all Billing Centers.
 
 ### Required RightScale Roles
 
@@ -35,4 +35,3 @@ The Cost Anomaly Policy will analyze the spend of all Billing Centers in an Orga
 ### Cost
 
 This Policy Template does not incur any cloud costs.
-
