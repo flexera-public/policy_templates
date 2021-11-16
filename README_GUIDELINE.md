@@ -12,8 +12,8 @@ should be free of typos, spelling errors, easy to read and correct grammar.
 ## Readme File Sections
 
 The readme file contains a number of sections which describes the policy template
-  details.  All sections should start with the Header 2 markdown (2 #, ##) for
-  the name it should contain header 1 markdown (1 #, #).
+details.  All sections should start with the Header 2 markdown (2 #, ##) for
+the name it should contain header 1 markdown (1 #, #).
 
 [Markdown Cheatsheet](https://www.markdownguide.org/cheat-sheet/)
 
