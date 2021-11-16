@@ -264,33 +264,19 @@ script "js_resource_uri", type: "javascript" do
   parameters "ds_google_project"
   result "result"
   code <<-EOF
-    var result=[];
-    _.each(ds_google_project, function(project){
-
-  var resource_uri = {
-                      uri: project.projectId+"/aggregated/disks"
-                      };
-    result.push(resource_uri);
-    resource_uri = {
-                    uri: project.projectId+"/global/externalVpnGateways"
-                    }
-    result.push(resource_uri);
-    resource_uri = {
-                    uri: project.projectId+"/global/images"
-                  };
-    result.push(resource_uri);
-    resource_uri = {
-                    uri: project.projectId+"/aggregated/instances"
-                  };
-    result.push(resource_uri);
-    resource_uri = {
-                    uri: project.projectId+"/global/snapshots"
-                  };
-    result.push(resource_uri);
-    resource_uri = {
-                    uri: project.projectId+"/aggregated/vpnGateways"
-                  };
-    result.push(resource_uri);
+  var result = [];
+  var endpoints = [
+    "/aggregated/disks",
+    "/global/externalVpnGateways",
+    "/global/images",
+    "/aggregated/instances",
+    "/global/snapshots",
+    "/aggregated/vpnGateways"
+  ]
+  _.each(ds_google_project, function (project) {
+    _.each(endpoints, function(endpoint){
+      result.push({uri: project.projectId + endpoint});
+    })
   });
 EOF
 end
@@ -374,40 +360,40 @@ define label_resources($data, $param_labels_to_add) return $all_responses do
     else
       $new_labels = $item["labels"]
     end
-  foreach $label in $param_labels_to_add do
-    if $new_labels != null
-  $new_labels[first(split($label,"="))]=last(split($label,"="))
-  end
-  $$log << "after split: "+$new_labels[first(split($label,"="))]
-  end
-    sub on_error: handle_error($postResponse) do
-  $$log << "after split: "+join([$item["selfLink"],"/setLabels"])
-    if $item["type"] != "buckets"
-    $postResponse = http_post(
-      url: join([$item["selfLink"],"/setLabels"]),
-      auth: $$auth_google,
-      headers: {
-        "cache-control": "no-cache",
-        "content-type": "application/json"
-      },
-      body: {
-        "labels": $new_labels,
-    "labelFingerprint": $item["labelFingerprint"]
-      }
-    )
-    else
-      $postResponse = http_patch(
-      url: $item["selfLink"],
-      auth: $$auth_google,
-      headers: {
-        "cache-control": "no-cache",
-        "content-type": "application/json"
-      },
-      body: {
-        "labels": $new_labels
-      }
-    )
+    foreach $label in $param_labels_to_add do
+      if $new_labels != null
+        $new_labels[first(split($label,"="))]=last(split($label,"="))
+      end
+      $$log << "after split: "+$new_labels[first(split($label,"="))]
     end
+    sub on_error: handle_error($postResponse) do
+      $$log << "after split: "+join([$item["selfLink"],"/setLabels"])
+      if $item["type"] != "buckets"
+        $postResponse = http_post(
+          url: join([$item["selfLink"],"/setLabels"]),
+          auth: $$auth_google,
+          headers: {
+            "cache-control": "no-cache",
+            "content-type": "application/json"
+          },
+          body: {
+            "labels": $new_labels,
+            "labelFingerprint": $item["labelFingerprint"]
+          }
+        )
+      else
+        $postResponse = http_patch(
+          url: $item["selfLink"],
+          auth: $$auth_google,
+          headers: {
+            "cache-control": "no-cache",
+            "content-type": "application/json"
+          },
+          body: {
+            "labels": $new_labels
+          }
+        )
+      end
     end
     $all_responses << $postResponse
   end
