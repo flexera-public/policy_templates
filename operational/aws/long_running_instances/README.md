@@ -25,8 +25,8 @@ For example if a user selects the "Stop Instances" action while applying the pol
 ## Policy Actions
 
 Policy actions may include automation to alert or remediate violations found in the
- Policy Incident. Actions that destroy or terminate a resource generally require
- approval from the Policy Approver. This policy includes the following actions.
+Policy Incident. Actions that destroy or terminate a resource generally require
+approval from the Policy Approver. This policy includes the following actions.
 
 - Sends an email notification
 - Stop the instance
@@ -36,10 +36,10 @@ Policy actions may include automation to alert or remediate violations found in 
 
 This policy uses [credentials](https://docs.rightscale.com/policies/users/guides/credential_management.html)
 for connecting to the cloud -- in order to apply this policy you must have a
- credential registered in the system that is compatible with this policy. If
- there are no credentials listed when you apply the policy, please contact your
- cloud admin and ask them to register a credential that is compatible with this
-  policy. The information below should be consulted when creating the credential.
+credential registered in the system that is compatible with this policy. If
+there are no credentials listed when you apply the policy, please contact your
+cloud admin and ask them to register a credential that is compatible with this
+policy. The information below should be consulted when creating the credential.
 
 ### Credential configuration
 

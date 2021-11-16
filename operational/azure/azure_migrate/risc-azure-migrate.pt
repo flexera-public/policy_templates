@@ -32,23 +32,23 @@ parameter "param_acode" do
   category "RISC"
 end
 
-parameter "param_azure_tenant_id" do 
+parameter "param_azure_tenant_id" do
   type "string"
   label "Azure Tenant ID"
   category "Azure"
-end 
+end
 
-parameter "param_subscription_id" do 
+parameter "param_subscription_id" do
   type "string"
   label "Azure Subscription ID"
   category "Azure"
-end 
+end
 
 parameter "param_amh_project_name" do
   type "string"
   label "Azure Migrate Project Name"
   category "Azure"
-end 
+end
 
 datasource "ds_riscauth" do
   request do
@@ -89,7 +89,7 @@ script "js_riscgetStackSummary", type: "javascript" do
   parameters "ds_riscauth", "param_acode"
 
   code <<-EOS
-    
+
     var authtoken = ds_riscauth.token
     request = {
       "host": "api.riscnetworks.com",
@@ -99,7 +99,7 @@ script "js_riscgetStackSummary", type: "javascript" do
         "User-Agent": "RS Policies",
         "Content-Type": "application/json",
         "assessmentcode": param_acode,
-        "token":  authtoken 
+        "token":  authtoken
       }
     }
 
@@ -122,8 +122,8 @@ datasource "ds_riscgetAssetsByStack" do
       field "identifying_mac", jmes_path(col_item, "data.identifying_mac")
       field "ostype", jmes_path(col_item, "data.os")
       field "osversion", jmes_path(col_item, "data.os_version")
-      field "tags" do 
-        collect jmes_path(col_item, "tags[*]") do 
+      field "tags" do
+        collect jmes_path(col_item, "tags[*]") do
           field "key", jmes_path(col_item, "tagkey")
           field "value", jmes_path(col_item, "tagvalue")
         end
@@ -178,7 +178,7 @@ escalation "esc_azure_migrate" do
   run "main", data, $param_azure_tenant_id, $param_subscription_id, $param_amh_project_name
 end
 
-define main($data,$azure_tenant_id,$subscription_id,$amh_project_name) return $data_response do 
+define main($data,$azure_tenant_id,$subscription_id,$amh_project_name) return $data_response do
   call get_access_token($azure_tenant_id) retrieve $access_token
   call get_migrate_project_details($subscription_id,$amh_project_name,$access_token) retrieve $solution_id
   call get_eventhub_and_token($solution_id,$access_token) retrieve $eventhub_host,$sas_token,$publisher_id,$eventhub_name
@@ -216,7 +216,7 @@ define get_migrate_project_details($subscription_id,$amh_project_name,$access_to
   foreach $project in $projects do
     if $project["name"] == $amh_project_name
       $$target_project = $project
-    end 
+    end
   end
 
   $$target_project_solutions_response = http_get(
@@ -224,10 +224,10 @@ define get_migrate_project_details($subscription_id,$amh_project_name,$access_to
     headers: {"authorization": "Bearer " + $access_token}
     )
   $solutions = $$target_project_solutions_response["body"]["value"]
-  foreach $solution in $solutions do 
+  foreach $solution in $solutions do
     if $solution["properties"]["tool"] == "Flexera"
-      $$target_solution = $solution 
-    end 
+      $$target_solution = $solution
+    end
   end
   $solution_id = $$target_solution["id"]
 end
@@ -244,41 +244,41 @@ define get_eventhub_and_token($solution_id,$access_token) return $eventhub_host,
   $eventhub_name = split(split($publisherSasUri, ";")[2],"=")[1]
 end
 
-define format_data($data) return $payload do 
+define format_data($data) return $payload do
   $payload = []
-  foreach $item in $data do 
+  foreach $item in $data do
     $object = {
       "Version": "1.0",
-      "Name": $item['hostname'], 
+      "Name": $item['hostname'],
       "MessageType": "DiscoveryData",
-      "MachineId": $item['deviceid'],   
-      "MachineManagerId": "", 
-      "IpAddresses": [$item['identifying_ip']], 
+      "MachineId": $item['deviceid'],
+      "MachineManagerId": "",
+      "IpAddresses": [$item['identifying_ip']],
       "MacAddresses": [$item['identifying_mac']],
       "BiosId": $item['hardware_serial'],
-      "OSType": $item['ostype'], 
-      "OSName": $item['osversion'], 
-      "OSVersion": $item['osversion'], 
+      "OSType": $item['ostype'],
+      "OSName": $item['osversion'],
+      "OSVersion": $item['osversion'],
       "IsDeleted": "false"
     }
     $tags = {}
-    foreach $item_tag in $item['tags'] do 
+    foreach $item_tag in $item['tags'] do
       if $item_tag['key'] != null
         $key = $item_tag['key']
         $val = $item_tag['value']
         $tag = { $key : $val }
         $tags = $tags + $tag
       end
-    end 
+    end
 
     $ext_prop = {"ExtendedProperties": $tags}
 
     $object = $ext_prop + $object
     $payload << $object
-  end 
-end 
+  end
+end
 
-define send_data($eventhub_host, $eventhub_name, $publisher_id, $sas_token, $payload) return $response do 
+define send_data($eventhub_host, $eventhub_name, $publisher_id, $sas_token, $payload) return $response do
   $response = http_post(
     url: join(["https://",$eventhub_host,"/",$eventhub_name,"/publishers/",$publisher_id,"/messages"]),
     headers: {
@@ -311,4 +311,3 @@ define url_encode($string) return $encoded_string do
   $encoded_string = gsub($encoded_string, "[", "%5B")
   $encoded_string = gsub($encoded_string, "]", "%5D")
 end
-
