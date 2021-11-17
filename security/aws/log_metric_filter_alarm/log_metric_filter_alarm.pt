@@ -1,0 +1,173 @@
+name "AWS Ensure "
+rs_pt_ver 20180301
+type "policy"
+short_description "Report if . \n See the [README](https://github.com/flexera/policy_templates/tree/master/security/aws/log_ensure_cloudtrail_bucket_object_logging) and [docs.rightscale.com/policies](https://docs.rightscale.com/policies/) to learn more."
+long_description ""
+category "Security"
+severity "high"
+default_frequency "daily"
+info(
+  version: "2.0",
+  provider: "AWS",
+  service: "CloudTrail",
+  policy_set: "CIS",
+  cce_id: "",
+  cis_aws_foundations_securityhub: "",
+  benchmark_control: "[\"3.10\", \"3.11\"]",
+  benchmark_version: "1.4.0",
+  cis_controls: "[\"8.5v8\", \"6.2v7\", \"6.3v7\"]",
+  nist: ""
+)
+
+###############################################################################
+# User inputs
+###############################################################################
+
+parameter "param_email" do
+  type "list"
+  label "Email Address"
+  description "Email addresses of the recipients you wish to notify"
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+credentials "auth_aws" do
+  schemes "aws","aws_sts"
+  label "AWS"
+  description "Select the AWS Credential from the list"
+  tags "provider=aws"
+end
+
+###############################################################################
+# Datasources
+###############################################################################
+
+datasource "ds_trail_list" do
+  request do
+    auth $auth_aws
+    verb "GET"
+    host "cloudtrail.us-east-1.amazonaws.com"
+    path "/"
+    header "User-Agent", "RS Policies"
+    header "Accept", "application/json"
+    query "Action", "DescribeTrails"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "DescribeTrailsResponse.DescribeTrailsResult.trailList") do
+      field "name", jmes_path(col_item, "Name")
+      field "id", jmes_path(col_item, "TrailARN")
+      field "region", jmes_path(col_item, "HomeRegion")
+      field "log_group_arn", jmes_path(col_item, "CloudWatchLogsLogGroupArn")
+      field "multiregion", jmes_path(col_item, "IsMultiRegionTrail")
+    end
+  end
+end
+
+datasource "ds_multiregion_trails" do
+  run_script $js_multiregion_trails, $ds_trail_list
+end
+
+datasource "ds_multiregion_trails_with_logging" do
+  iterate $ds_multiregion_trails
+  request do
+    auth $auth_aws
+    verb "POST"
+    host join(["cloudtrail.", val(iter_item, "region"), ".amazonaws.com"])
+    path "/"
+    header "User-Agent", "RS Policies"
+    header 'X-Amz-Target', 'com.amazonaws.cloudtrail.v20131101.CloudTrail_20131101.GetTrailStatus'
+    header 'Content-Type', 'application/x-amz-json-1.1'
+    body join(['{ "Name": "', val(iter_item, "id"), '" }'])
+  end
+  result do
+    encoding "json"
+    field "name", val(iter_item, "name")
+    field "id", val(iter_item, "id")
+    field "region", val(iter_item, "region")
+    field "log_group", val(iter_item, "log_group")
+    field "log_group_arn", val(iter_item, "log_group_arn")
+    field "is_logging", jmes_path(response, "IsLogging")
+  end
+end
+
+# # Places param_regions into a datasource for iteration
+# datasource "ds_trails_without_ol" do
+#   run_script $js_trails_without_ol, $ds_trail_list_with_selectors
+# end
+
+###############################################################################
+# Scripts
+###############################################################################
+
+script "js_multiregion_trails", type:"javascript" do
+  parameters "ds_trail_list"
+  result "result"
+  code <<-EOS
+    result = []
+
+    _.each(ds_trail_list, function(trail) {
+      if (trail.multiregion == true) {
+        log_group = null
+
+        if (trail.log_group_arn != null) {
+          log_group = trail.log_group_arn.split(':')[6]
+        }
+
+        result.push({
+          name: trail.name,
+          id: trail.id,
+          region: trail.region,
+          log_group_arn: trail.log_group_arn,
+          log_group: log_group
+        })
+      }
+    })
+EOS
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "policy_trails_without_ol" do
+  # validate $ds_trails_without_ol do
+  #   summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} CloudTrails Found Without Complete Object Logging"
+  #   escalate $esc_report_trails_without_ol
+  #   check eq(size(data),0)
+  #   export do
+  #     resource_level true
+  #     field "name" do
+  #       label "Name"
+  #     end
+  #     field "id" do
+  #       label "ARN"
+  #     end
+  #     field "region" do
+  #       label "Region"
+  #     end
+  #     field "has_selectors" do
+  #       label "Has Event Selectors?"
+  #     end
+  #     field "object_logging_read" do
+  #       label "Object Logging: Read"
+  #     end
+  #     field "object_logging_write" do
+  #       label "Object Logging: Write"
+  #     end
+  #   end
+  # end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_report_trails_without_ol" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
+end
