@@ -1,4 +1,4 @@
-# AWS Ensure that Object-level logging for events is enabled for CloudTrails
+# AWS Ensure Object-level Events Logging Enabled For CloudTrails
 
 ## What it does
 
@@ -35,10 +35,8 @@ Required permissions in the provider:
         {
             "Effect": "Allow",
             "Action": [
-              "sts:GetCallerIdentity",
-              "s3:ListAllMyBuckets",
-              "s3:GetBucketLocation",
-              "s3:GetBucketVersioning"
+              "cloudtrail:DescribeTrails",
+              "cloudtrail:GetEventSelectors"
             ],
             "Resource": "*"
         }
