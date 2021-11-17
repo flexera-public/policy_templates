@@ -6,7 +6,7 @@ category "Cost"
 severity "low"
 default_frequency "daily"
 info(
-  version: "2.1",
+  version: "2.2",
   provider: "AWS",
   service: "EBS",
   policy_set: "GP3 Volumes"
@@ -34,6 +34,15 @@ parameter "param_exclude_tags" do
   category "User Inputs"
   label "Exclude Tags"
   description "A list of tags used to excluded volumes from the incident."
+end
+
+parameter "param_aws_edp_percentage" do
+  type "number"
+  label "AWS EDP Percentage"
+  description "The AWS Enterprise Discount Program percentage, by default this is calculated from Optima costs"
+  default -1
+  min_value -1
+  max_value 100
 end
 
 parameter "param_flexera_org_id_for_optima" do
@@ -156,7 +165,6 @@ end
 datasource "ds_aws_offers" do
   iterate $ds_superseded_volumes_regions
   request do
-    auth $auth_aws
     host "pricing.us-east-1.amazonaws.com"
     path join(["/offers/v1.0/aws/AmazonEC2/current/", iter_item, "/index.json"])
     header "User-Agent", "RS Policies"
@@ -255,7 +263,7 @@ datasource "ds_volume_costs" do
 end
 
 datasource "ds_volume_cost_mapping" do
-  run_script $js_volume_cost_mapping, $ds_superseded_volumes, $ds_volume_costs, $ds_currency_code, $ds_currency_reference, $ds_billing_centers, $ds_get_caller_identity
+  run_script $js_volume_cost_mapping, $ds_superseded_volumes, $param_aws_edp_percentage, $ds_aws_offers, $ds_volume_costs, $ds_currency_code, $ds_currency_reference, $ds_billing_centers, $ds_get_caller_identity
 end
 
 ###############################################################################
@@ -436,9 +444,29 @@ script "js_get_costs", type: "javascript" do
 end
 
 script "js_volume_cost_mapping", type:"javascript" do
-  parameters "volumes", "volume_costs", "ds_currency_code", "ds_currency_reference", "ds_billing_centers", "ds_get_caller_identity"
+  parameters "volumes", "aws_edp_percentage", "aws_offers", "volume_costs", "ds_currency_code", "ds_currency_reference", "ds_billing_centers", "ds_get_caller_identity"
   result "result"
   code <<-EOS
+  // map the prices by region and type for easy lookup
+  var prices_by_region_and_type = {};
+  _.each(aws_offers, function (offer) {
+    var prices_by_type = prices_by_region_and_type[offer.region];
+    if (prices_by_type == null) {
+      prices_by_type = prices_by_region_and_type[offer.region] = {};
+    }
+    prices_by_type[offer.description.match(/\\((gp2|io1|gp3)\\)/)[1]] = parseFloat(offer.pricePerUnit["USD"]);
+  });
+  // calculate the gp3 savings ratios for the other types by region
+  var gp3_savings_ratios_by_region_and_type = {};
+  _.each(prices_by_region_and_type, function(prices_by_type, region) {
+    var gp3_savings_ratios_by_type = gp3_savings_ratios_by_region_and_type[region] = {};
+    var gp3_price = prices_by_type["gp3"];
+    _.each(prices_by_type, function(price, type) {
+      if (type != "gp3") {
+        gp3_savings_ratios_by_type[type] = gp3_price / price;
+      }
+    });
+  });
   var upgradeable_volumes=[];
   var result = {};
   var message='';
@@ -472,6 +500,27 @@ script "js_volume_cost_mapping", type:"javascript" do
         costs.push(cost);
       }
     });
+    // calculate the discount ration from Optima costs unless a positive AWS EDP percentage has been specified
+    var discount_ratio, discount_percentage_string;
+    if (aws_edp_percentage < 0) {
+      var discount_ratios = [];
+      _.each(volumes, function(volume) {
+        var costs = costs_by_resource_id[volume.volume_id];
+        var price = _.reduce(costs, function(memo, cost) { return memo + cost.cost_nonamortized_unblended_adj; }, 0) * 30 / parseInt(volume.size);
+        if (price > 0) {
+          discount_ratios.push(price / prices_by_region_and_type[volume.region][volume.volume_type]);
+        }
+      });
+      if (discount_ratios.length > 0) {
+        discount_ratio = _.reduce(discount_ratios, function(memo, ratio) { return memo + ratio; }) / discount_ratios.length;
+      } else {
+        discount_ratio = 1;
+      }
+      discount_percentage_string  = (aws_edp_percentage = 100 - discount_ratio * 100).toFixed(1).replace(/\\.0$/, '') + "% calculated from Optima costs";
+    } else {
+      discount_ratio = 1 - aws_edp_percentage / 100;
+      discount_percentage_string = aws_edp_percentage + '%';
+    }
     // Format costs with currency symbol and thousands separator
     if( ds_currency_code['value'] !== undefined ) {
       if (ds_currency_reference[ds_currency_code['value']] !== undefined ) {
@@ -491,9 +540,6 @@ script "js_volume_cost_mapping", type:"javascript" do
     }
     var total_savings=0;
     _.each(volumes, function(volume){
-      console.log(volume.volume_id)
-      var cost_objects = costs_by_resource_id[volume.volume_id];
-      console.log(cost_objects)
       var tags = volume['tags'];
       var tagKeyValue = "";
       for(var k=0; k < tags.length; k++){
@@ -508,48 +554,26 @@ script "js_volume_cost_mapping", type:"javascript" do
       if(tagKeyValue === "" || tagKeyValue === " " || tagKeyValue == ""){
         tagKeyValue = "   < No Value >";
       }
-      if (_.size(cost_objects) > 0){
-        count++;
-        var sum = _.reduce(_.compact(_.map(cost_objects, function(value){ return value.cost_nonamortized_unblended_adj})), function(memo, num){ return memo + num; }, 0);
-        var monthly_savings = (sum - (sum * .8))*30;
-        total_savings=total_savings+monthly_savings;
-        upgradeable_volumes.push({
-          accountId: ds_get_caller_identity[0]['account'],
-          volume_id : volume['volume_id'],
-          id: volume['volume_id'],
-          region : volume['region'],
-          availabilityZone : volume['availability_zone'],
-          volume_type : volume['volume_type'],
-          tags : (tagKeyValue.slice(2)),
-          createdTime : volume['createdTime'],
-          size : volume['size'],
-          status: volume['status'],
-          savings: cur + ' '+formatNumber((Math.round(monthly_savings * 100) / 100), separator),
-        })
-      } else {
-        upgradeable_volumes.push({
-          accountId: ds_get_caller_identity[0]['account'],
-          volume_id : volume['volume_id'],
-          id: volume['volume_id'],
-          region : volume['region'],
-          availabilityZone : volume['availability_zone'],
-          volume_type : volume['volume_type'],
-          tags : (tagKeyValue.slice(2)),
-          createdTime : volume['createdTime'],
-          size : volume['size'],
-          status: volume['status'],
-          savings: "N/A",
-        })
-      }
-    })
+      var price = prices_by_region_and_type[volume.region][volume.volume_type] * parseInt(volume.size);
+      var monthly_savings = (price - (price * gp3_savings_ratios_by_region_and_type[volume.region][volume.volume_type])) * discount_ratio;
+      total_savings += monthly_savings;
+      upgradeable_volumes.push({
+        accountId: ds_get_caller_identity[0]['account'],
+        volume_id : volume['volume_id'],
+        id: volume['volume_id'],
+        region : volume['region'],
+        availabilityZone : volume['availability_zone'],
+        volume_type : volume['volume_type'],
+        tags : (tagKeyValue.slice(2)),
+        createdTime : volume['createdTime'],
+        size : volume['size'],
+        status: volume['status'],
+        savings: cur + ' '+formatNumber((Math.round(monthly_savings * 100) / 100), separator),
+      });
+    });
 
-    if(count){
-      total_savings=cur + ' '+formatNumber((Math.round(total_savings * 100) / 100), separator);
-      message="The total estimated monthly savings are "+total_savings;
-    }
-    else{
-      message="The Flexera Optima system does not have any data to calculate savings for these resources";
-    }
+    total_savings=cur + ' '+formatNumber((Math.round(total_savings * 100) / 100), separator);
+    message="The total estimated monthly savings are "+total_savings+" based on an AWS EDP of "+discount_percentage_string;
   }
   else{
     upgradeable_volumes=volumes;
