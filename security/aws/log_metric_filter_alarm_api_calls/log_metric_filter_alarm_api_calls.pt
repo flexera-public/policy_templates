@@ -200,6 +200,10 @@ datasource "ds_combined_trails_with_subs" do
   run_script $js_combined_trails_with_subs, $ds_combined_trails, $ds_sns_subscriptions
 end
 
+datasource "ds_results" do
+  run_script $js_results, $ds_combined_trails_with_subs
+end
+
 ###############################################################################
 # Scripts
 ###############################################################################
@@ -253,7 +257,7 @@ script "js_combined_trails", type:"javascript" do
     _.each(first_result, function(trail) {
       _.each(trail.filters, function(filter) {
         filterPatternCleaned = filter.filterPattern.replace(/'/g, '"').replace(/\s/g, "").replace(/{/g, "").replace(/}/g, "")
-        filter.filterPatternParts = filterPatternCleaned.replace(/&&/g, '||').split('||').sort()
+        filter.filterPatternParts = filterPatternCleaned.split('&&').sort()
 
         _.each(filter.metricTransformations, function(transformation) {
           _.each(ds_cloudwatch_alarms, function(alarm) {
@@ -321,44 +325,88 @@ script "js_combined_trails_with_subs", type:"javascript" do
 EOS
 end
 
+# Things to check for:
+# Multiregion CloudTrail
+# IsLogging set to True (CloudTrail is active)
+# Ensure there is at least one Event Selector for a Trail with IncludeManagementEvents set to
+#   true and ReadWriteType set to All (Capturing Management Events)
+# Verify valid MetricFilter exists
+# Ensure there is at least one active subscriber to the SNS topic (valid ARN present)
+
+script "js_results", type:"javascript" do
+  parameters "ds_combined_trails_with_subs"
+  result "result"
+  code <<-EOS
+    result = []
+
+    _.each(ds_combined_trails_with_subs, function(trail) {
+      test_eventselector = false
+      test_goodfilter = false
+
+      if (trail.event_selectors != null) {
+        _.each(trail.event_selectors, function(selector) {
+          if (selector.IncludeManagementEvents == true && selector.ReadWriteType == "All") {
+            test_eventselector = true
+          }
+        })
+      }
+
+      _.each(trail.filters, function(filter) {
+        test_metricfilter = false
+
+        if (_.contains(filter.filterPatternParts, '($.eventName!="HeadBucket"))') &&
+            _.contains(filter.filterPatternParts, '(($.errorCode="*UnauthorizedOperation")||($.errorCode="AccessDenied*"))') &&
+            _.contains(filter.filterPatternParts, '(($.sourceIPAddress!="delivery.logs.amazonaws.com")'))
+        {
+          test_metricfilter = true
+        }
+
+        _.each(filter.metricTransformations, function(transformation) {
+          _.each(transformation.alarm_actions, function(alarm) {
+            if (alarm.SubscriptionArn.substring(0,12) == 'arn:aws:sns:' && test_metricfilter == true) {
+              test_goodfilter = true
+            }
+          })
+        })
+      })
+
+      if (trail.is_logging && test_eventselector && test_goodfilter) {
+        result.push(trail)
+      }
+    })
+
+EOS
+end
+
 ###############################################################################
 # Policy
 ###############################################################################
 
 policy "policy_trails_without_ol" do
-  # validate $ds_trails_without_ol do
-  #   summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} CloudTrails Found Without Complete Object Logging"
-  #   escalate $esc_report_trails_without_ol
-  #   check eq(size(data),0)
-  #   export do
-  #     resource_level true
-  #     field "name" do
-  #       label "Name"
-  #     end
-  #     field "id" do
-  #       label "ARN"
-  #     end
-  #     field "region" do
-  #       label "Region"
-  #     end
-  #     field "has_selectors" do
-  #       label "Has Event Selectors?"
-  #     end
-  #     field "object_logging_read" do
-  #       label "Object Logging: Read"
-  #     end
-  #     field "object_logging_write" do
-  #       label "Object Logging: Write"
-  #     end
-  #   end
-  # end
+  validate $ds_results do
+    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} CloudTrails Found Without Complete Object Logging"
+    escalate $esc_report_results
+    check ne(size(data),0)
+    detail_template  <<-EOS
+      No CloudTrail exists that is properly configured to raise an alarm for unauthorized API calls.
+
+      A properly configured CloudTrail for this purpose would meet the following criteria:
+      * Configured for multiregion.
+      * Has logging enabled.
+      * Has an Event Selector configured to log all Management events.
+      * Has an appropriate filter configured to capture these events and raise an alarm.
+
+      For more details on how to remediate this issue, please review Amazon's documentation on this here:
+      https://docs.aws.amazon.com/securityhub/latest/userguide/securityhub-cis-controls.html#securityhub-cis-controls-3.1
+    EOS
+  end
 end
 
 ###############################################################################
 # Escalations
 ###############################################################################
 
-escalation "esc_report_trails_without_ol" do
+escalation "esc_report_results" do
   automatic true
   label "Send Email"
   description "Send incident email"
