@@ -149,7 +149,8 @@ datasource "ds_superseded_volumes_list" do
       field "region", val(iter_item, "region")
       field "createdTime", xpath(col_item, "createTime")
       field "size", xpath(col_item, "size")
-      field "status", xpath(col_item,"status")
+      field "iops", xpath(col_item, "iops")
+      field "status", xpath(col_item, "status")
     end
   end
 end
@@ -306,19 +307,16 @@ script "js_filter_aws_superseded_volumes", type: "javascript" do
   parameters "ds_superseded_volumes_list", "param_exclude_tags"
   result "content"
   code <<-EOS
-  var param_exclude_tags_lower=[];
-  for(var j=0;j<param_exclude_tags.length;j++){
-    param_exclude_tags_lower[j] = param_exclude_tags[j].toString().toLowerCase();
-  }
+  var param_exclude_tags_lower = _.map(param_exclude_tags, function(tag) {
+    return tag.toString().toLowerCase();
+  });
   var content = [];
-  for(var i=0;i<ds_superseded_volumes_list.length;i++){
-    vol = ds_superseded_volumes_list[i];
+  _.each(ds_superseded_volumes_list, function(vol) {
     // Check, if the tag present in entered param_exclude_tags, ignore the volume if the tag matches/present.
     var tags = vol['tags'];
     var isTagMatched = false;
     var tagKeyValue = "";
-    for(var k=0; k < tags.length; k++){
-      tag = tags[k];
+    _.each(tags, function(tag) {
       if((param_exclude_tags_lower.indexOf((tag['tagKey']).toLowerCase()) !== -1) || (param_exclude_tags_lower.indexOf((tag['tagKey']+'='+tag['tagValue']).toLowerCase()) !== -1)){
         isTagMatched = true;
       }
@@ -329,26 +327,18 @@ script "js_filter_aws_superseded_volumes", type: "javascript" do
       }else{
         tagKeyValue = tagKeyValue+" , "+tag['tagKey'];
       }
-    }
+    });
     if(tagKeyValue === "" || tagKeyValue === " " || tagKeyValue == ""){
       tagKeyValue = "   < No Value >";
     }
-    //If the volume tag does not match with entered param_exclude_tags
+    // If the volume tag does not match with entered param_exclude_tags
     if(!(isTagMatched)){
-      content.push({
-        tagKeyValue : (tagKeyValue.slice(2)),
-        volume_id : vol['volume_id'],
-        availability_zone : vol['availability_zone'],
-        snapshot_id : vol['snapshot_id'],
-        volume_type : vol['volume_type']
-        region : vol['region'],
-        createdTime : vol['createdTime'],
-        size : vol['size']+" GB",
-        status: vol['status'],
-        tags: vol['tags']
-      })
+      vol = _.clone(vol);
+      vol.tagKeyValue = tagKeyValue.slice(2);
+      vol.size = vol.size+" GB";
+      content.push(vol);
     }
-  }
+  });
   EOS
 end
 
@@ -559,14 +549,15 @@ script "js_volume_cost_mapping", type:"javascript" do
       total_savings += monthly_savings;
       upgradeable_volumes.push({
         accountId: ds_get_caller_identity[0]['account'],
-        volume_id : volume['volume_id'],
+        volume_id: volume['volume_id'],
         id: volume['volume_id'],
-        region : volume['region'],
-        availabilityZone : volume['availability_zone'],
-        volume_type : volume['volume_type'],
-        tags : (tagKeyValue.slice(2)),
-        createdTime : volume['createdTime'],
-        size : volume['size'],
+        region: volume['region'],
+        availabilityZone: volume['availability_zone'],
+        volume_type: volume['volume_type'],
+        tags: (tagKeyValue.slice(2)),
+        createdTime: volume['createdTime'],
+        size: volume['size'],
+        iops: volume.volume_type == "io1" ? parseInt(volume.iops) : null,
         status: volume['status'],
         savings: cur + ' '+formatNumber((Math.round(monthly_savings * 100) / 100), separator),
       });
@@ -620,6 +611,9 @@ EOS
       end
       field "size" do
         label "Size"
+      end
+      field "iops" do
+        label "IOPS"
       end
       field "tags" do
         label "Tags"
