@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.5
+
+- Added subscription filter option and ability to specify Azure API endpoint
+
 ## v2.4
 
 - Ignored: {"code":"400","message":"Cost management data is unavailable for subscription XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX. The offer MS-AZR-0243P is not supported."}
