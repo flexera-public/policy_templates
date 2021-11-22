@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.9
+
+- removing extra automatic action
+
 ## v2.8
 
 - Added subscription filter option and ability to specify Azure API endpoint
