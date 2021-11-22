@@ -28,6 +28,8 @@ and same will be added to the schedule label value.
 This policy has the following input parameters required when launching the policy.
 
 - *Email addresses* - A list of email addresses to notify
+- *Azure Endpoint* - Azure Endpoint to access resources
+- *Subscription Whitelist* - Whitelisted Subscriptions, if empty, all subscriptions will be checked
 - *Exclusion Tags* - List of tags that a virtual machine can have to exclude it from the list. Format: Key=Value.
 - *Automatic Actions(s)* - (Optional)When this value is set, this policy will automatically take the selected action(s).
 
