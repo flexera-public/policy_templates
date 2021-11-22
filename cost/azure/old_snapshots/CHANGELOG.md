@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.9
+
+- Adding `allowed_values "management.azure.com", "management.chinacloudapi.cn"`
+
 ## v2.8
 
 - Added subscription filter option and ability to specify Azure API endpoint
