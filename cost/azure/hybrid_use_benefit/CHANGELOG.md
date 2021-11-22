@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.7
+
+- Added subscription filter option and ability to specify Azure API endpoint
+
 ## v2.6
 
 - Added default_frequency "daily"
