@@ -16,6 +16,8 @@ This policy has the following input parameters required when launching the polic
 
 - *Exclusion Tag Key* - An Azure-native instance tag to ignore instances that are not using AHUB. Only supply the tag key. The policy assumes that the tag value is irrelevant.
 - *Email addresses* - A list of email addresses of the recipients you wish to notify
+- *Azure Endpoint* - Azure Endpoint to access resources
+- *Subscription Whitelist* - Whitelisted Subscriptions, if empty, all subscriptions will be checked
 - *Automatic Actions* - When this value is set, this policy will automatically take the selected action(s).
 
 Please note that the "*Automatic Actions*" parameter contains a list of action(s) that can be performed on the resources. When it is selected, the policy will automatically execute the corresponding action on the data that failed the checks, post incident generation. Please leave it blank for *manual* action.
