@@ -7,7 +7,7 @@ category "Operational"
 severity "low"
 default_frequency "daily"
 info(
-  version: "2.0",
+  version: "2.1",
   provider: "Azure",
   service: "AKS",
   policy_set: ""
@@ -27,6 +27,19 @@ parameter "param_exclusion_tags" do
   label "Tags To Ignore"
   description "The policy will ignore any clusters with the specified tags. Only supply the tag keys; the policy assumes that the tag value is irrelevant."
   type "list"
+end
+
+parameter "param_azure_endpoint" do
+  type "string"
+  label "Azure Endpoint"
+  allowed_values "management.azure.com", "management.chinacloudapi.cn"
+  default "management.azure.com"
+end
+
+parameter "param_subscription_whitelist" do
+  label "Subscription Whitelist"
+  type "list"
+  description "Whitelisted Subscriptions, if empty, all subscriptions will be checked"
 end
 
 ###############################################################################
@@ -61,7 +74,7 @@ datasource "ds_subscriptions" do
   request do
     auth $azure_auth
     pagination $azure_pagination
-    host "management.azure.com"
+    host $param_azure_endpoint
     path "/subscriptions/"
     query "api-version", "2021-04-01"
     header "User-Agent", "RS Policies"
@@ -75,12 +88,16 @@ datasource "ds_subscriptions" do
   end
 end
 
+datasource "ds_filtered_subscriptions" do
+  run_script $js_filtered_subscriptions, $ds_subscriptions, $param_subscription_whitelist
+end
+
 datasource "ds_aks_clusters" do
-  iterate $ds_subscriptions
+  iterate $ds_filtered_subscriptions
   request do
     auth $azure_auth
     pagination $azure_pagination
-    host "management.azure.com"
+    host $param_azure_endpoint
     path join(["/subscriptions/", val(iter_item, "subscriptionId"), "/providers/Microsoft.ContainerService/managedClusters"])
     query "api-version","2021-09-01"
     header "User-Agent", "RS Policies"
@@ -100,7 +117,7 @@ datasource "ds_aks_clusters_with_pools" do
   request do
     auth $azure_auth
     pagination $azure_pagination
-    host "management.azure.com"
+    host $param_azure_endpoint
     path join([val(iter_item, "id"), "/agentPools"])
     query "api-version","2021-09-01"
     header "User-Agent", "RS Policies"
@@ -125,6 +142,25 @@ end
 ###############################################################################
 # Scripts
 ###############################################################################
+
+script "js_filtered_subscriptions", type: "javascript" do
+  parameters "ds_subscriptions", "param_subscription_whitelist"
+  result "results"
+  code <<-EOS
+  var results = []
+  if ( param_subscription_whitelist.length != 0){
+    results = []
+    _.each(param_subscription_whitelist, function(sub){
+      var found = _.find(ds_subscriptions, function(item){
+        return item.subscriptionId == sub || item.subscriptionName.toLowerCase() == sub.toLowerCase();
+      })
+      results.push(found)
+    })
+  } else {
+    results = ds_subscriptions
+  }
+EOS
+end
 
 script "js_aks_nodepools", type: "javascript" do
   parameters "ds_aks_clusters_with_pools", "param_exclusion_tags"
