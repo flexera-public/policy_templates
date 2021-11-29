@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.16
+
+- changed tagKeyValue to tags in policy section.
+
 ## v2.15
 
 - Use rs_optima_host instead of hardcoded hostname.

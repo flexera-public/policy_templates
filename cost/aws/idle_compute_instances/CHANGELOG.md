@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.13
+
+- added tags to policy section.
+
 ## v2.12
 
 - Debug logs via param (off by default); use Optima host, not hardcoded hostname

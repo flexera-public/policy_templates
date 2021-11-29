@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.16
+
+- changed all_tags to tags in policy section.
+
 ## v2.15
 
 - Added default_frequency "daily"
