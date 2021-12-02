@@ -29,20 +29,24 @@ Provider tag value to match this policy: `aws`
 
 Required permissions in the provider:
 
-```javascript
+```json
 {
   "Version": "2012-10-17",
-  "Statement":[{
-      "Effect":"Allow",
-      "Action":["cloudwatch:GetMetricStatistics","cloudwatch:ListMetrics"],
-      "Resource":"*",
-      "Condition":{
-         "Bool":{
-            "aws:SecureTransport":"true"
-            }
-         }
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "cloudwatch:GetMetricStatistics",
+        "cloudwatch:ListMetrics"
+      ],
+      "Resource": "*",
+      "Condition": {
+        "Bool": {
+          "aws:SecureTransport": "true"
+        }
       }
-   ]
+    }
+  ]
 }
 
 {

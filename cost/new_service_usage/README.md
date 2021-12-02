@@ -10,7 +10,7 @@ This policy checks for new services that appear in the bill between the last mon
 
 ## Input Parameters
 
-This policy template has the following Input parameters which require value before the policy can be applied.  
+This policy template has the following Input parameters which require value before the policy can be applied.
 
 - *Email addresses* - A list of email addresses to notify
 - *Billing Center Name* - List of Billing Center Names to check
@@ -18,7 +18,7 @@ This policy template has the following Input parameters which require value befo
 
 ## Actions
 
-Policy actions may include automation to alert or remediate violations found in the Policy Incident. Actions that destroy or terminate a resource generally require approval from the Policy Approver. This policy includes the following actions.  
+Policy actions may include automation to alert or remediate violations found in the Policy Incident. Actions that destroy or terminate a resource generally require approval from the Policy Approver. This policy includes the following actions.
 
 - Sends an email notification
 

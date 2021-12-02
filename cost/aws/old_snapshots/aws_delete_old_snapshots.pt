@@ -6,7 +6,7 @@ category "Cost"
 severity "low"
 default_frequency "daily"
 info(
-  version: "2.14",
+  version: "2.16",
   provider: "AWS",
   service: "EBS",
   policy_set: "Old Snapshots"
@@ -263,7 +263,7 @@ datasource "ds_filter_ami_snapshots" do
 end
 
 datasource "ds_snapshots_cost_mapping" do
-  run_script $js_snapshots_cost_mapping, $ds_filter_ami_snapshots, $ds_snapshot_costs, $ds_currency_reference, $ds_currency_reference, $ds_billing_centers, $ds_get_caller_identity
+  run_script $js_snapshots_cost_mapping, $ds_filter_ami_snapshots, $ds_snapshot_costs, $ds_currency_code, $ds_currency_reference, $ds_billing_centers, $ds_get_caller_identity
 end
 
 ###############################################################################
@@ -316,7 +316,7 @@ script "js_top_level_bc", type: "javascript" do
   parameters "billing_centers"
   result "filtered_billing_centers"
   code <<-EOS
-     var filtered_billing_centers =_.reject(billing_centers, function(bc){ return bc.parent_id != null });
+    var filtered_billing_centers =_.reject(billing_centers, function(bc){ return bc.parent_id != null });
   EOS
 end
 
@@ -406,19 +406,30 @@ script "js_snapshots_cost_mapping", type: "javascript" do
     return result+"."+values[1];
   }
   if (ds_billing_centers.length!=0){
-  // Format costs with currency symbol and thousands separator
-  if( ds_currency_code['value'] !== undefined ) {
-    if (ds_currency_reference[ds_currency_code['value']] !== undefined ) {
-      var cur = ds_currency_reference[ds_currency_code['value']]['symbol']
-      if( ds_currency_reference[ds_currency_code['value']]['t_separator'] !== undefined ) {
-        var separator = ds_currency_reference[ds_currency_code['value']]['t_separator']
+    // Put costs into a map by resource ID and only include them for resource IDs we actually need
+    var costs_by_resource_id = {};
+    _.each(snapshots, function(snapshot) {
+      costs_by_resource_id[snapshot.formatSnapId] = [];
+    });
+    _.each(snapshot_costs, function(cost) {
+      var costs = costs_by_resource_id[cost.resource_id];
+      if (costs != null) {
+        costs.push(cost);
+      }
+    });
+    // Format costs with currency symbol and thousands separator
+    if( ds_currency_code['value'] !== undefined ) {
+      if (ds_currency_reference[ds_currency_code['value']] !== undefined ) {
+        var cur = ds_currency_reference[ds_currency_code['value']]['symbol']
+        if( ds_currency_reference[ds_currency_code['value']]['t_separator'] !== undefined ) {
+          var separator = ds_currency_reference[ds_currency_code['value']]['t_separator']
+        } else {
+          var separator = ""
+        }
       } else {
+        var cur = ""
         var separator = ""
       }
-    } else {
-      var cur = ""
-      var separator = ""
-    }
     } else {
       var cur = "$"
       var separator = ","
@@ -426,7 +437,7 @@ script "js_snapshots_cost_mapping", type: "javascript" do
   }
   var total=0;
   _.each(snapshots, function(snapshot){
-    var cost_objects = _.where(snapshot_costs, {resource_id: snapshot["formatSnapId"]});
+    var cost_objects = costs_by_resource_id[snapshot.formatSnapId];
     if (ds_billing_centers.length != 0 && _.size(cost_objects) > 0){
       var sum = _.reduce(_.compact(_.map(cost_objects, function(value){ return value.cost_nonamortized_unblended_adj})), function(memo, num){ return memo + num; }, 0);
       var monthly_savings = sum*30;
@@ -481,16 +492,16 @@ script "js_describe_snapshots", type: "javascript" do
         "path": "/",
         "pagination": "aws_pagination_xml",
         "headers": {
-           "User-Agent": "RS Policies",
-           "Content-Type": "text/xml"
+          "User-Agent": "RS Policies",
+          "Content-Type": "text/xml"
         },
         "query_params": {
-           'Action': 'DescribeSnapshots',
-           'Version': '2016-11-15',
-           'Filter.1.Name': 'status',
-           'Filter.1.Value.1': 'completed',
-           'Filter.2.Name': 'owner-id',
-           'Filter.2.Value.1': ds_get_caller_identity[0]['account']
+          'Action': 'DescribeSnapshots',
+          'Version': '2016-11-15',
+          'Filter.1.Name': 'status',
+          'Filter.1.Value.1': 'completed',
+          'Filter.2.Name': 'owner-id',
+          'Filter.2.Value.1': ds_get_caller_identity[0]['account']
         }
     }
   EOS
@@ -559,17 +570,17 @@ script "js_get_snapshot_ami", type: "javascript" do
       "verb": "GET",
       "path": "/",
       "headers": {
-         "User-Agent": "RS Policies",
-         "Content-Type": "text/xml"
+        "User-Agent": "RS Policies",
+        "Content-Type": "text/xml"
       },
       "query_params": {
-         'Action': 'DescribeImages',
-         'Version': '2016-11-15',
-         'Filter.1.Name': 'block-device-mapping.snapshot-id',
-         'Filter.1.Value.1': snapshotId
+        'Action': 'DescribeImages',
+        'Version': '2016-11-15',
+        'Filter.1.Name': 'block-device-mapping.snapshot-id',
+        'Filter.1.Value.1': snapshotId
         }
-     }
-   EOS
+    }
+  EOS
 end
 
 script "js_filter_ami_snapshots", type: "javascript" do
@@ -739,7 +750,7 @@ define delete_snapshot($item, $errors) return $errors do
   call check_response_and_append_if_error($delete_response, "Delete Snapshot", $errors) retrieve $errors
   $splitResult = $delete_response["code"]
   if $splitResult != 200
-   call sys_log("Inside delete_snapshot definition", to_s($delete_response))
+    call sys_log("Inside delete_snapshot definition", to_s($delete_response))
   end
 end
 

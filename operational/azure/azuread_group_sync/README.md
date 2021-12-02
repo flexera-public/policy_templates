@@ -46,11 +46,11 @@ For administrators [creating and managing credentials](https://docs.rightscale.c
 
 ### Credential #1
 
-Type: `Microsoft Azure Resource Manager`  
-Tenant Id: [See documentation](https://docs.rightscale.com/policies/users/guides/credential_management.html#azure-resource-manager)  
-Client Id: [See documentation](https://docs.rightscale.com/policies/users/guides/credential_management.html#azure-resource-manager)  
-Client Secret: [See documentation](https://docs.rightscale.com/policies/users/guides/credential_management.html#azure-resource-manager)  
-Resource: `Azure Active Directory`  
+Type: `Microsoft Azure Resource Manager`
+Tenant Id: [See documentation](https://docs.rightscale.com/policies/users/guides/credential_management.html#azure-resource-manager)
+Client Id: [See documentation](https://docs.rightscale.com/policies/users/guides/credential_management.html#azure-resource-manager)
+Client Secret: [See documentation](https://docs.rightscale.com/policies/users/guides/credential_management.html#azure-resource-manager)
+Resource: `Azure Active Directory`
 
 Required permissions in the provider:
 

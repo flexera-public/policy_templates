@@ -1,8 +1,12 @@
 # Changelog
 
-## v2.13
+## v2.14
 
 - added changes from [wiki](https://confluence.flexera.com/pages/viewpage.action?spaceKey=rightscale&title=Usage+Recommendations%3A+Waste+reduction)
+
+## v2.13
+
+- Fix non-optimal array searching for costs
 
 ## v2.12
 

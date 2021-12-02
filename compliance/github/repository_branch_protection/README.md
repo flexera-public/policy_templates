@@ -44,4 +44,3 @@ This policy requires permissions to access GitHub.com API as the Owner of the Or
 ## Cost
 
 This Policy Template does not launch any instances, and so does not incur any cloud costs.
-
