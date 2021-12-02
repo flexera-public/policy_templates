@@ -2,7 +2,7 @@
 
 ## v2.13
 
-- added tags to policy section.
+- added changes from [wiki](https://confluence.flexera.com/pages/viewpage.action?spaceKey=rightscale&title=Usage+Recommendations%3A+Waste+reduction)
 
 ## v2.12
 
