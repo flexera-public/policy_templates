@@ -1,5 +1,13 @@
 # Changelog
 
+## v.2.10
+
+- Fix non-optimal array searching for costs
+
+## v2.9
+
+- Adding subscription filter to deal with timeout
+
 ## v2.8
 
 - Added `and resourceProvider eq 'Microsoft.Compute' and resourceType eq 'Microsoft.Compute/VirtualMachines'` to event filter

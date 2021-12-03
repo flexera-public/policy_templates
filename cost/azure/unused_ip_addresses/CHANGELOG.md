@@ -1,5 +1,13 @@
 # Changelog
 
+## v2.7
+
+- Added subscription filter option and ability to specify Azure API endpoint
+
+## v2.6
+
+- Fix non-optimal array searching for costs
+
 ## v2.5
 
 - Added default_frequency "daily"

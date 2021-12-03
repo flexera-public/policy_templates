@@ -11,6 +11,8 @@ When a VM that is using unmanaged disks is detected, VM location information as 
 ## Input Parameters
 
 - *Email addresses of the recipients you wish to notify* - A list of email addresses to notify
+- *Azure Endpoint* - Azure Endpoint to access resources
+- *Subscription Whitelist* - Whitelisted Subscriptions, if empty, all subscriptions will be checked
 - *Exclusion Tag Key* - an Azure-native instance tag to ignore instances that match the disallowed instance type. Only supply the tag key.
 
 ## Prerequisites

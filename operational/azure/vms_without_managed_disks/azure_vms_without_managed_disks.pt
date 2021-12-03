@@ -5,8 +5,9 @@ short_description "Report any VMs that are not using managed disks in Azure. \n 
 long_description ""
 category "Operational"
 severity "low"
+default_frequency "daily"
 info(
-  version: "2.4",
+  version: "2.5",
   provider: "Azure",
   service: "Compute",
   policy_set: ""
@@ -20,6 +21,19 @@ info(
 parameter "param_email" do
   type "list"
   label "Email addresses of the recipients you wish to notify"
+end
+
+parameter "param_azure_endpoint" do
+  type "string"
+  label "Azure Endpoint"
+  allowed_values "management.azure.com", "management.chinacloudapi.cn"
+  default "management.azure.com"
+end
+
+parameter "param_subscription_whitelist" do
+  label "Subscription Whitelist"
+  type "list"
+  description "Whitelisted Subscriptions, if empty, all subscriptions will be checked"
 end
 
 parameter "param_exclusion_tag_key" do
@@ -61,7 +75,7 @@ datasource "ds_subscriptions" do
   request do
     auth $azure_auth
     pagination $azure_pagination
-    host "management.azure.com"
+    host $param_azure_endpoint
     path "/subscriptions/"
     query "api-version","2018-06-01"
     header "User-Agent", "RS Policies"
@@ -70,17 +84,21 @@ datasource "ds_subscriptions" do
     encoding "json"
     collect jmes_path(response, "value[*]") do
       field "subscriptionId", jmes_path(col_item,"subscriptionId")
-	  field "subscriptionName", jmes_path(col_item,"displayName")
+      field "subscriptionName", jmes_path(col_item,"displayName")
     end
   end
 end
 
+datasource "ds_filtered_subscriptions" do
+  run_script $js_filtered_subscriptions, $ds_subscriptions, $param_subscription_whitelist
+end
+
 datasource "ds_azure_virtual_machines" do
-  iterate $ds_subscriptions
+  iterate $ds_filtered_subscriptions
     request do
       auth $azure_auth
       pagination $azure_pagination
-      host "management.azure.com"
+      host $param_azure_endpoint
       path join(["/subscriptions/", val(iter_item,"subscriptionId"), "/providers/Microsoft.Compute/virtualMachines"])
       query "api-version","2018-06-01"
       header "User-Agent", "RS Policies"
@@ -88,7 +106,7 @@ datasource "ds_azure_virtual_machines" do
     result do
       encoding "json"
       collect jmes_path(response, "value[*]") do
-	    field "subscriptionName", val(iter_item,"subscriptionName")
+        field "subscriptionName", val(iter_item,"subscriptionName")
         field "id", jmes_path(col_item, "id")
         field "type", jmes_path(col_item, "type")
         field "location", jmes_path(col_item, "location")
@@ -107,6 +125,26 @@ end
 ###############################################################################
 # Scripts
 ###############################################################################
+
+script "js_filtered_subscriptions", type: "javascript" do
+  parameters "ds_subscriptions", "param_subscription_whitelist"
+  result "results"
+  code <<-EOS
+  var results = []
+  if ( param_subscription_whitelist.length != 0){
+    results = []
+    _.each(param_subscription_whitelist, function(sub){
+      var found = _.find(ds_subscriptions, function(item){
+        return item.subscriptionId == sub || item.subscriptionName.toLowerCase() == sub.toLowerCase();
+      })
+      results.push(found)
+    })
+  } else {
+    results = ds_subscriptions
+  }
+EOS
+end
+
 script "js_filter_virtual_machines", type: "javascript" do
   parameters "ds_azure_virtual_machines", "param_exclusion_tag_key"
   result "result"
@@ -180,4 +218,3 @@ escalation "email" do
   description "Send incident email"
   email $param_email
 end
-

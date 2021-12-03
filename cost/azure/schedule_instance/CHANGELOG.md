@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.4
+
+- Added subscription filter option and ability to specify Azure API endpoint
+
 ## v2.3
 
 - "Delete schedule" action now removes the "schedule", "next_start" and "next_stop" tags

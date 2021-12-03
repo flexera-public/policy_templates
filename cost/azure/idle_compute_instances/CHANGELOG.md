@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.12
+
+- Fix non-optimal array searching for costs
+
 ## v2.11
 
 - Adding subscription filter to deal with timeout

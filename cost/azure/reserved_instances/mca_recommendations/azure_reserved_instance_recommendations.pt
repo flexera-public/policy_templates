@@ -7,7 +7,7 @@ severity "medium"
 category "Cost"
 default_frequency "daily"
 info(
-  version: "2.4",
+  version: "2.5",
   provider: "Azure",
   service: "Compute",
   policy_set: "Reserved Instance"
@@ -68,6 +68,19 @@ parameter "param_email" do
   description "Email addresses of the recipients you wish to notify"
 end
 
+parameter "param_azure_endpoint" do
+  type "string"
+  label "Azure Endpoint"
+  allowed_values "management.azure.com", "management.chinacloudapi.cn"
+  default "management.azure.com"
+end
+
+parameter "param_subscription_whitelist" do
+  label "Subscription Whitelist"
+  type "list"
+  description "Whitelisted Subscriptions, if empty, all subscriptions will be checked"
+end
+
 ###############################################################################
 # Authentication
 ###############################################################################
@@ -101,7 +114,7 @@ datasource "ds_subscriptions" do
   request do
     auth $azure_auth
     pagination $azure_pagination
-    host "management.azure.com"
+    host $param_azure_endpoint
     path "/subscriptions/"
     query "api-version","2020-01-01"
     header "User-Agent", "RS Policies"
@@ -152,7 +165,7 @@ end
 datasource "ds_ri_recommendations" do
   iterate $ds_ri_types
   request do
-    run_script $js_ri_request, val(iter_item,"subscriptionId"), $param_days, $param_scope, val(iter_item,"service")
+    run_script $js_ri_request, val(iter_item,"subscriptionId"), $param_days, $param_scope, val(iter_item,"service"), $param_azure_endpoint
   end
   result do
     encoding "json"
@@ -181,8 +194,47 @@ end
 # Scripts
 ###############################################################################
 
+script "js_filtered_subscriptions", type: "javascript" do
+  parameters "ds_subscriptions", "param_subscription_whitelist"
+  result "results"
+  code <<-EOS
+  var results = []
+  if ( param_subscription_whitelist.length != 0){
+    results = []
+    _.each(param_subscription_whitelist, function(sub){
+      var found = _.find(ds_subscriptions, function(item){
+        return item.subscriptionId == sub || item.subscriptionName.toLowerCase() == sub.toLowerCase();
+      })
+      results.push(found)
+    })
+  } else {
+    results = ds_subscriptions
+  }
+EOS
+end
+
+script "js_ri_types", type: "javascript" do
+  parameters "param_service", "subscriptions"
+  result "result"
+  code <<-EOS
+    var result = []
+
+      var services = ["VirtualMachines","SQLDatabases","PostgreSQL","ManagedDisk", "MySQL", "RedHat", "MariaDB", "RedisCache", "CosmosDB", "SqlDataWarehouse", "SUSELinux", "AppService", "BlockBlob", "AzureDataExplorer", "VMwareCloudSimple"]
+      _.each(subscriptions, function(subscription){
+        if (param_service === "All"){
+          _.each(services, function(service){
+            result.push({"service":service, "subscriptionId":subscription.subscriptionId})
+          })
+        } else {
+            result.push({"service":param_service, "subscriptionId":subscription.subscriptionId})
+        }
+      })
+
+  EOS
+end
+
 script "js_ri_request", type: "javascript" do
-  parameters "subscriptionId", "param_days", "param_scope", "param_type"
+  parameters "subscriptionId", "param_days", "param_scope", "param_type", "param_azure_endpoint"
   result "request"
   code <<-EOS
     var quote_str="'"+param_days+"'";
@@ -191,7 +243,7 @@ script "js_ri_request", type: "javascript" do
     var request = {
     auth: "azure_auth",
     pagination: "azure_pagination",
-    host: "management.azure.com",
+    host: param_azure_endpoint,
     /*
       {"code":"400","message":"Cost management data is unavailable for subscription XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX. The offer MS-AZR-0243P is not supported."}
       {"code":"404","message":"Cost Management supports only Enterprise Agreement, Web direct and Microsoft Customer Agreement offer types. Subscription XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX is not associated with a valid offer type."}

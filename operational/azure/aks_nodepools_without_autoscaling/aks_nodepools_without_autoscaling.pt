@@ -1,0 +1,252 @@
+name "AKS Node Pools Without Autoscaling"
+rs_pt_ver 20180301
+type "policy"
+short_description "Raise an incident if there are any AKS user node pools without autoscaling enabled. \n See the [README](https://github.com/flexera/policy_templates/tree/master/operational/azure/aks_nodepools_without_autoscaling) and [docs.rightscale.com/policies](https://docs.rightscale.com/policies/) to learn more."
+long_description ""
+category "Operational"
+severity "low"
+default_frequency "daily"
+info(
+  version: "2.1",
+  provider: "Azure",
+  service: "AKS",
+  policy_set: ""
+)
+
+###############################################################################
+# Parameters
+###############################################################################
+
+parameter "param_email" do
+  type "list"
+  label "Email addresses of the recipients you wish to notify."
+end
+
+parameter "param_exclusion_tags" do
+  category "User Inputs"
+  label "Tags To Ignore"
+  description "The policy will ignore any clusters with the specified tags. Only supply the tag keys; the policy assumes that the tag value is irrelevant."
+  type "list"
+end
+
+parameter "param_azure_endpoint" do
+  type "string"
+  label "Azure Endpoint"
+  allowed_values "management.azure.com", "management.chinacloudapi.cn"
+  default "management.azure.com"
+end
+
+parameter "param_subscription_whitelist" do
+  label "Subscription Whitelist"
+  type "list"
+  description "Whitelisted Subscriptions, if empty, all subscriptions will be checked"
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+credentials "azure_auth" do
+  schemes "oauth2"
+  label "Azure"
+  description "Select the Azure Resource Manager Credential from the list."
+  tags "provider=azure_rm"
+end
+
+###############################################################################
+# Pagination
+###############################################################################
+
+pagination "azure_pagination" do
+  get_page_marker do
+    body_path "nextLink"
+  end
+  set_page_marker do
+    uri true
+  end
+end
+
+###############################################################################
+# Datasources
+###############################################################################
+
+datasource "ds_subscriptions" do
+  request do
+    auth $azure_auth
+    pagination $azure_pagination
+    host $param_azure_endpoint
+    path "/subscriptions/"
+    query "api-version", "2021-04-01"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "value[*]") do
+      field "subscriptionId", jmes_path(col_item,"subscriptionId")
+      field "subscriptionName", jmes_path(col_item,"displayName")
+    end
+  end
+end
+
+datasource "ds_filtered_subscriptions" do
+  run_script $js_filtered_subscriptions, $ds_subscriptions, $param_subscription_whitelist
+end
+
+datasource "ds_aks_clusters" do
+  iterate $ds_filtered_subscriptions
+  request do
+    auth $azure_auth
+    pagination $azure_pagination
+    host $param_azure_endpoint
+    path join(["/subscriptions/", val(iter_item, "subscriptionId"), "/providers/Microsoft.ContainerService/managedClusters"])
+    query "api-version","2021-09-01"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "value[*]") do
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+      field "tags", jmes_path(col_item, "tags")
+    end
+  end
+end
+
+datasource "ds_aks_clusters_with_pools" do
+  iterate $ds_aks_clusters
+  request do
+    auth $azure_auth
+    pagination $azure_pagination
+    host $param_azure_endpoint
+    path join([val(iter_item, "id"), "/agentPools"])
+    query "api-version","2021-09-01"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+    field "id", val(iter_item, "id")
+    field "name", val(iter_item, "name")
+    field "tags", val(iter_item, "tags")
+    field "pools", jmes_path(response, "value")
+  end
+end
+
+datasource "ds_aks_nodepools" do
+  run_script $js_aks_nodepools, $ds_aks_clusters_with_pools, $param_exclusion_tags
+end
+
+datasource "ds_aks_nodepools_without_autoscaling" do
+  run_script $js_aks_nodepools_without_autoscaling, $ds_aks_nodepools
+end
+
+###############################################################################
+# Scripts
+###############################################################################
+
+script "js_filtered_subscriptions", type: "javascript" do
+  parameters "ds_subscriptions", "param_subscription_whitelist"
+  result "results"
+  code <<-EOS
+  var results = []
+  if ( param_subscription_whitelist.length != 0){
+    results = []
+    _.each(param_subscription_whitelist, function(sub){
+      var found = _.find(ds_subscriptions, function(item){
+        return item.subscriptionId == sub || item.subscriptionName.toLowerCase() == sub.toLowerCase();
+      })
+      results.push(found)
+    })
+  } else {
+    results = ds_subscriptions
+  }
+EOS
+end
+
+script "js_aks_nodepools", type: "javascript" do
+  parameters "ds_aks_clusters_with_pools", "param_exclusion_tags"
+  result "result"
+  code <<-EOS
+
+  result = []
+
+  _.each(ds_aks_clusters_with_pools, function(cluster) {
+    _.each(cluster.pools, function(pool) {
+      unfiltered_tag = true
+
+      if (cluster.tags != null) {
+        _.each(param_exclusion_tags, function(tag) {
+          if (tag in cluster.tags) {
+            unfiltered_tag = false
+          }
+        })
+      }
+
+      if (pool.properties.mode != "System" && unfiltered_tag) {
+        result.push({
+          cluster_id: cluster.id,
+          cluster_name: cluster.name,
+          subscription: cluster.id.split("/")[2],
+          tags: cluster.tags,
+          id: pool.id,
+          name: pool.name,
+          count: pool.properties.count,
+          mincount: pool.properties.minCount,
+          maxcount: pool.properties.maxCount,
+          mode: pool.properties.mode,
+          autoscaling: pool.properties.enableAutoScaling
+        })
+      }
+    })
+  })
+
+EOS
+end
+
+script "js_aks_nodepools_without_autoscaling", type: "javascript" do
+  parameters "ds_aks_nodepools"
+  result "result"
+  code <<-EOS
+    result = []
+
+    _.each(ds_aks_nodepools, function(pool) {
+      if (pool.autoscaling == false) {
+        result.push(pool)
+      }
+    })
+EOS
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "pol_aks_nodepools_without_autoscaling" do
+  validate $ds_aks_nodepools_without_autoscaling do
+    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} AKS Node Pools Without Autoscaling Found"
+    escalate $esc_aks_nodepools_without_autoscaling
+    check eq(size(data), 0)
+    export do
+      resource_level true
+      field "cluster_name" do
+        label "AKS Cluster"
+      end
+      field "name" do
+        label "Node Pool"
+      end
+      field "id" do
+        label "Node Pool ID"
+      end
+    end
+  end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_aks_nodepools_without_autoscaling" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
+end
