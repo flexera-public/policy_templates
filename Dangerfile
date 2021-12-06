@@ -87,7 +87,7 @@ end
 # check for valid category values.
 # must be one of the following categories
 # when adding a new category update the Rakefile generate_policy_list task and
-# docs.rightscale.com/policies/users/policy_list.html.shim also.
+# https://docs.flexera.com/flexera/EN/Automation/PoliciesList.htm also.
 categories = [
   'cost',
   'compliance',
