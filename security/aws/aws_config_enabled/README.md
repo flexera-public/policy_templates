@@ -28,19 +28,19 @@ Provider tag value to match this policy: `aws` , `aws_sts`
 
 Required permissions in the provider:
 
-```javascript
+```json
 {
-    "Version": "2012-10-17",
-    "Statement": [
-        {
-            "Effect": "Allow",
-            "Action": [
-                "EC2:DescribeRegions",
-                "config:DescribeConfigurationRecorderStatus"
-            ],
-            "Resource": "*"
-        }
-    ]
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+          "EC2:DescribeRegions",
+          "config:DescribeConfigurationRecorderStatus"
+      ],
+      "Resource": "*"
+    }
+  ]
 }
 ```
 
