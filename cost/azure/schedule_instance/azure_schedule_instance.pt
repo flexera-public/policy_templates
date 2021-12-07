@@ -7,7 +7,7 @@ category "Cost"
 severity "low"
 default_frequency "daily"
 info(
-  version: "2.3",
+  version: "2.4",
   provider: "Azure",
   service: "Compute",
   policy_set:"Schedule Instance"
@@ -21,6 +21,19 @@ parameter "param_email" do
   type "list"
   label "Email addresses"
   description "A list of email addresses to notify"
+end
+
+parameter "param_azure_endpoint" do
+  type "string"
+  label "Azure Endpoint"
+  allowed_values "management.azure.com", "management.chinacloudapi.cn"
+  default "management.azure.com"
+end
+
+parameter "param_subscription_whitelist" do
+  label "Subscription Whitelist"
+  type "list"
+  description "Whitelisted Subscriptions, if empty, all subscriptions will be checked"
 end
 
 parameter "param_exclusion_tag_key" do
@@ -72,7 +85,7 @@ datasource "ds_subscriptions" do
   request do
     auth $azure_auth
     pagination $azure_pagination
-    host "management.azure.com"
+    host $param_azure_endpoint
     path "/subscriptions/"
     query "api-version","2019-06-01"
     header "User-Agent", "RS Policies"
@@ -87,13 +100,17 @@ datasource "ds_subscriptions" do
   end
 end
 
+datasource "ds_filtered_subscriptions" do
+  run_script $js_filtered_subscriptions, $ds_subscriptions, $param_subscription_whitelist
+end
+
 #get all virtual machines
 datasource "ds_azure_virtualmachines" do
-  iterate $ds_subscriptions
+  iterate $ds_filtered_subscriptions
   request do
     auth $azure_auth
     pagination $azure_pagination
-    host "management.azure.com"
+    host $param_azure_endpoint
     path join(["/subscriptions/", val(iter_item,"subscriptionId"), "/providers/Microsoft.Compute/virtualMachines"])
     query "api-version","2019-03-01"
     header "User-Agent", "RS Policies"
@@ -119,7 +136,7 @@ datasource "ds_azure_instances" do
   request do
     auth $azure_auth
     pagination $azure_pagination
-    host "management.azure.com"
+    host $param_azure_endpoint
     path join(["/subscriptions/", val(iter_item,"subscriptionId"), "/resourceGroups/", val(iter_item,"rg"), "/providers/Microsoft.Compute/virtualMachines/",val(iter_item,"name"),"/instanceView"])
     ignore_status [404]
     query "api-version","2018-06-01"
@@ -146,63 +163,82 @@ end
 # Scripts
 ###############################################################################
 
+script "js_filtered_subscriptions", type: "javascript" do
+  parameters "ds_subscriptions", "param_subscription_whitelist"
+  result "results"
+  code <<-EOS
+  var results = []
+  if ( param_subscription_whitelist.length != 0){
+    results = []
+    _.each(param_subscription_whitelist, function(sub){
+      var found = _.find(ds_subscriptions, function(item){
+        return item.subscriptionId == sub || item.displayName.toLowerCase() == sub.toLowerCase();
+      })
+      results.push(found)
+    })
+  } else {
+    results = ds_subscriptions
+  }
+EOS
+end
+
 script "js_filter_instances", type: "javascript" do
   parameters "ds_azure_instances", "param_exclusion_tag_key"
   result "results"
   code <<-EOF
-  var results =[];
-  _.each(ds_azure_instances, function(instance){
+  var results = [];
+  _.each(ds_azure_instances, function (instance) {
     if (_.has(instance.tags, param_exclusion_tag_key)) {
-    }else{
+    } else {
       var tagsList = "";
-      var notMatched=true;
-      var next_start=null;
-      var next_stop=null;
-      var next_start_iso=null;
-      var next_stop_iso=null;
-      var now=new Date();
-      var schedule="";
-      for(var prop in instance.tags){
-        tagsList = tagsList+prop+":"+instance.tags[prop]+", ";
-        if(prop== 'schedule'){
-          schedule=instance.tags[prop];
+      var notMatched = true;
+      var next_start = null;
+      var next_stop = null;
+      var next_start_iso = null;
+      var next_stop_iso = null;
+      var now = new Date();
+      var schedule = "";
+      for (var prop in instance.tags) {
+        tagsList = tagsList + prop + ":" + instance.tags[prop] + ", ";
+        if (prop == 'schedule') {
+          schedule = instance.tags[prop];
         }
-        else if(prop== 'next_start'){
-          next_start=new Date(instance.tags[prop]);
-          next_start_iso=next_start.toISOString();
+        else if (prop == 'next_start') {
+          next_start = new Date(instance.tags[prop]);
+          next_start_iso = next_start.toISOString();
         }
-        else if(prop== 'next_stop'){
-          next_stop=new Date(instance.tags[prop]);
-          next_stop_iso=next_stop.toISOString();
+        else if (prop == 'next_stop') {
+          next_stop = new Date(instance.tags[prop]);
+          next_stop_iso = next_stop.toISOString();
         }
       }
       var resource_tags = JSON.stringify(instance.tags);
-      var all_tags={};
-      if(!(_.isEmpty(resource_tags))){
-         all_tags=instance.tags;
-         delete all_tags.schedule;
+      var all_tags = {};
+      if (!(_.isEmpty(resource_tags))) {
+        all_tags = instance.tags;
+        delete all_tags.schedule;
       }
-      if((now > next_start || now > next_stop || next_start==null || next_stop==null) && (schedule !== "")){
+      if ((now > next_start || now > next_stop || next_start == null || next_stop == null) && (schedule !== "")) {
         results.push({
-          "id":instance.id,
+          "id": instance.id,
           "state": instance.status,
           "location": instance.location,
-          "schedule":schedule,
-          "rg":instance.rg,
-          "name":instance.name,
-          "subscriptionId":instance.subscriptionId,
-          "subscriptionName":instance.subscriptionName,
+          "schedule": schedule,
+          "rg": instance.rg,
+          "name": instance.name,
+          "subscriptionId": instance.subscriptionId,
+          "subscriptionName": instance.subscriptionName,
           "all_tags": resource_tags,
-          "tags":all_tags,
-          "next_start":next_start_iso,
-          "next_stop":next_stop_iso
+          "tags": all_tags,
+          "next_start": next_start_iso,
+          "next_stop": next_stop_iso
         })
       }
-  results = _.sortBy(results, 'subscriptionName');
-  results = _.sortBy(results, 'location');
+      results = _.sortBy(results, 'subscriptionName');
+      results = _.sortBy(results, 'location');
     }
   })
- EOF
+EOF
 end
 
 ###############################################################################
@@ -308,21 +344,21 @@ define terminate_instance($data) return $all_response do
   foreach $item in $data do
     call sys_log('> ' + $item['id'] + ': Terminating ...', to_s($item))
     sub on_error: skip do
-        $response= http_request(
-           auth: $$azure_auth,
-           verb: "delete",
-           host: "management.azure.com",
-           https: true,
-           href: $item['id'],
-           query_strings: {
-             "api-version": "2019-12-01"
-           },
-           headers: {
-             "cache-control": "no-cache",
-             "content-type": "application/json"
-           }
+      $response= http_request(
+        auth: $$azure_auth,
+        verb: "delete",
+        host: "management.azure.com",
+        https: true,
+        href: $item['id'],
+        query_strings: {
+          "api-version": "2019-12-01"
+        },
+        headers: {
+          "cache-control": "no-cache",
+          "content-type": "application/json"
+        }
       )
-    $all_responses << $response
+      $all_responses << $response
     end
   end
 end
@@ -345,7 +381,7 @@ define schedule_instance($data) return $all_responses do
       $start_minute = "00"
     end
     if $stop_minute == null
-       $stop_minute = "00"
+      $stop_minute = "00"
     end
     if ! $timezone
       $timezone = "UTC"
@@ -370,15 +406,15 @@ define schedule_instance($data) return $all_responses do
         call sys_log('> ' + $item['id'] + ': Starting ...', to_s($item))
         sub on_error: skip do
         $response= http_request(
-           auth: $$azure_auth,
-           verb: "post",
-           host: "management.azure.com",
-           https: true,
-           href: join([$item['id'],"/start"]),
-           query_strings: {
+          auth: $$azure_auth,
+          verb: "post",
+          host: "management.azure.com",
+          https: true,
+          href: join([$item['id'],"/start"]),
+          query_strings: {
               "api-version": "2019-12-01"
-           },
-           headers: {
+          },
+          headers: {
               "cache-control": "no-cache",
               "content-type": "application/json"
           }
@@ -434,7 +470,7 @@ define update_schedule($data, $param) return $all_responses do
       $start_minute = "00"
     end
     if $stop_minute == null
-       $stop_minute = "00"
+      $stop_minute = "00"
     end
     if ! $timezone
       $timezone = "UTC"
@@ -457,43 +493,43 @@ define delete_schedule($data) return $all_responses do
 end
 
 define tag_resources($item, $param, $next_start, $next_stop) return $update_resource_response do
-   $$log = []
-   $new_tags = {}
-   $old_tags = $item["tags"]
-   if $param == "delete"
-      foreach $tag_key in keys($old_tags) do
-        if $tag_key != "next_start" && $tag_key != "next_stop" && $tag_key != "schedule"
-          $new_tags[$tag_key] = $old_tags[$tag_key]
-        end
+  $$log = []
+  $new_tags = {}
+  $old_tags = $item["tags"]
+  if $param == "delete"
+    foreach $tag_key in keys($old_tags) do
+      if $tag_key != "next_start" && $tag_key != "next_stop" && $tag_key != "schedule"
+        $new_tags[$tag_key] = $old_tags[$tag_key]
       end
-   else
-      $new_tags = $old_tags
-      $new_tags["next_start"]= $next_start
-      $new_tags["next_stop"]= $next_stop
-      $new_tags["schedule"]= $param
-   end
-   $$log << to_s($new_tags)
-   $$log << $next_start
-   $$log << $next_stop
-   $$log << $param
-   call sys_log('all tags ', to_s($new_tags))
-   sub on_error: handle_error($update_resource_response) do
-      $update_resource_response = http_request(
-          auth: $$azure_auth,
-          verb: "patch",
-          host: "management.azure.com",
-          https: true,
-          href: $item["id"],
-          query_strings: {
-            "api-version": "2020-06-01"
-          },
-          headers: {
-            "cache-control": "no-cache",
-            "content-type": "application/json"
-          },
-          body: {"tags": $new_tags}
-      )
     end
+  else
+    $new_tags = $old_tags
+    $new_tags["next_start"]= $next_start
+    $new_tags["next_stop"]= $next_stop
+    $new_tags["schedule"]= $param
+  end
+  $$log << to_s($new_tags)
+  $$log << $next_start
+  $$log << $next_stop
+  $$log << $param
+  call sys_log('all tags ', to_s($new_tags))
+  sub on_error: handle_error($update_resource_response) do
+    $update_resource_response = http_request(
+      auth: $$azure_auth,
+      verb: "patch",
+      host: "management.azure.com",
+      https: true,
+      href: $item["id"],
+      query_strings: {
+        "api-version": "2020-06-01"
+      },
+      headers: {
+        "cache-control": "no-cache",
+        "content-type": "application/json"
+      },
+      body: {"tags": $new_tags}
+    )
+  end
 end
 
 define window_active($start_hour, $start_minute, $start_rule, $stop_hour, $stop_minute, $stop_rule, $tz) return $window_active, $next_start, $next_stop do

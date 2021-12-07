@@ -2,11 +2,11 @@
 
 ## What it does
 
-This Policy Template allows you to schedule start and stop times for your azure virtual machines, along with the option to terminate virtual machines, update and delete schedule.         
+This Policy Template allows you to schedule start and stop times for your azure virtual machines, along with the option to terminate virtual machines, update and delete schedule.
 
 ## How to Use
 
-This policy relies on a tag with format 'schedule' to stop and start virtual machines based on a schedule. The tag value defines the schedule with a start time (start hour and start minute), stop time (stop hour and stop minute) and days of the week and timezone. The start and stop time are in 24-hour format, and the days of the week are two character abbreviation for example: MO, TU, WE. See full example below. Use a Timezone TZ value to indicate a timezone to stop/start the virtual machines. 
+This policy relies on a tag with format 'schedule' to stop and start virtual machines based on a schedule. The tag value defines the schedule with a start time (start hour and start minute), stop time (stop hour and stop minute) and days of the week and timezone. The start and stop time are in 24-hour format, and the days of the week are two character abbreviation for example: MO, TU, WE. See full example below. Use a Timezone TZ value to indicate a timezone to stop/start the virtual machines.
 
 ## Schedule Tag Example
 
@@ -27,15 +27,17 @@ and same will be added to the schedule label value.
 
 This policy has the following input parameters required when launching the policy.
 
-- *Email addresses* - A list of email addresses to notify  
+- *Email addresses* - A list of email addresses to notify
+- *Azure Endpoint* - Azure Endpoint to access resources
+- *Subscription Whitelist* - Whitelisted Subscriptions, if empty, all subscriptions will be checked
 - *Exclusion Tags* - List of tags that a virtual machine can have to exclude it from the list. Format: Key=Value.
 - *Automatic Actions(s)* - (Optional)When this value is set, this policy will automatically take the selected action(s).
 
-## Policy Actions 
+## Policy Actions
 
 The following policy actions are taken on any resources found to be out of compliance.
- 
-- Send an email report  
+
+- Send an email report
 - stop - stop a selected virtual machine
 - start - start a selected virtual machine
 - terminate - terminates or deletes the selected virtual machines.
@@ -49,7 +51,7 @@ The following policy actions are taken on any resources found to be out of compl
 This policy uses `schedule` tag value for scheduling the virtual machine. The format should be like `8:15-17:30;MO,TU,WE,TH,FR;America/New_York`. Please refer to `Schedule Tag Example` section for more details.
 On leaving the minute field blank, policy will consider the minute as `00` and same will be added to the schedule tag value.
 
-This policy uses [credentials](https://docs.rightscale.com/policies/users/guides/credential_management.html) for connecting to the cloud -- in order to apply this policy, you must have a credential registered in the system that is compatible with this policy. If there are no credentials listed when you apply the policy, please contact your cloud admin, and ask them to register a credential that is compatible with this policy. The information below should be consulted when creating the credential.   
+This policy uses [credentials](https://docs.rightscale.com/policies/users/guides/credential_management.html) for connecting to the cloud -- in order to apply this policy, you must have a credential registered in the system that is compatible with this policy. If there are no credentials listed when you apply the policy, please contact your cloud admin, and ask them to register a credential that is compatible with this policy. The information below should be consulted when creating the credential.
 
 ### Credential configuration
 

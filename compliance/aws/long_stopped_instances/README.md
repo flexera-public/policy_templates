@@ -44,10 +44,10 @@ Required permissions in the provider:
       "Action":["cloudwatch:GetMetricStatistics"],
       "Resource":"*",
       "Condition":{
-         "Bool":{
+        "Bool":{
             "aws:SecureTransport":"true"
             }
-         }
+        }
       },
       {
         "Effect":"Allow",

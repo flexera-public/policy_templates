@@ -7,7 +7,7 @@ severity "low"
 category "Cost"
 default_frequency "daily"
 info(
-  version: "2.12",
+  version: "2.13",
   provider: "AWS",
   service: "EC2",
   policy_set: "Idle Compute Instances"
@@ -273,7 +273,7 @@ datasource "ds_get_caller_identity" do
     collect xpath(response, "//GetCallerIdentityResponse/GetCallerIdentityResult") do
       field "account",xpath(col_item, "Account")
     end
- end
+  end
 end
 
 datasource "ds_instances_costs" do
@@ -661,6 +661,17 @@ script "js_instance_cost_mapping", type:"javascript" do
     return result+"."+values[1];
   }
   if(ds_billing_centers.length!=0){
+    // Put costs into a map by resource ID and only include them for resource IDs we actually need
+    var costs_by_resource_id = {};
+    _.each(instances, function(instance) {
+      costs_by_resource_id[instance.id] = [];
+    });
+    _.each(instance_costs, function(cost) {
+      var costs = costs_by_resource_id[cost.resource_id];
+      if (costs != null) {
+        costs.push(cost);
+      }
+    });
     // Format costs with currency symbol and thousands separator
     if( ds_currency_code['value'] !== undefined ) {
       if (ds_currency_reference[ds_currency_code['value']] !== undefined ) {
@@ -680,7 +691,7 @@ script "js_instance_cost_mapping", type:"javascript" do
     }
     var total_savings=0;
     _.each(instances, function(instance){
-      var cost_objects = _.where(instance_costs, {resource_id: instance["id"]});
+      var cost_objects = costs_by_resource_id[instance.id];
       if (_.size(cost_objects) > 0){
         count++;
         var sum = _.reduce(_.compact(_.map(cost_objects, function(value){ return value.cost_nonamortized_unblended_adj})), function(memo, num){ return memo + num; }, 0);
@@ -753,8 +764,8 @@ policy "pol_utilization" do
   validate $ds_instance_cost_mapping do
     summary_template "AWS Account ID: {{with index data.idle_instances 0}}{{ .accountId }}{{end}} - {{ len data.idle_instances}} rows containing AWS instance CloudWatch utilization data"
     detail_template <<-EOS
-    {{data.message}}
-    EOS
+{{data.message}}
+EOS
     escalate $email
     escalate $terminate_resources
     check eq(size(val(data, "idle_instances")), 0)

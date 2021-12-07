@@ -4,12 +4,13 @@ type "policy"
 short_description "Identify all Azure Tag Keys and add them as custom dimensions in Flexera Optima. See the [README](https://github.com/flexera/policy_templates/tree/master/operational/azure/sync_tags_with_optima) and [docs.rightscale.com/policies](https://docs.rightscale.com/policies/) to learn more."
 severity "low"
 category "Operational"
+default_frequency "daily"
 info(
-  version: "2.1",
+  version: "2.2",
   provider: "Azure",
   service: "",
   policy_set: ""
-  )
+)
 
 ##################
 # User inputs    #
@@ -19,6 +20,19 @@ parameter "param_email" do
   type "list"
   label "Email Address"
   description "Email addresses of the recipients you wish to notify"
+end
+
+parameter "param_azure_endpoint" do
+  type "string"
+  label "Azure Endpoint"
+  allowed_values "management.azure.com", "management.chinacloudapi.cn"
+  default "management.azure.com"
+end
+
+parameter "param_subscription_whitelist" do
+  label "Subscription Whitelist"
+  type "list"
+  description "Whitelisted Subscriptions, if empty, all subscriptions will be checked"
 end
 
 parameter "param_exclusion_tag_key" do
@@ -79,7 +93,7 @@ datasource "ds_subscriptions" do
   request do
     auth $azure_auth
     pagination $azure_pagination
-    host "management.azure.com"
+    host $param_azure_endpoint
     path "/subscriptions/"
     query "api-version","2019-06-01"
     header "User-Agent", "RS Policies"
@@ -94,13 +108,17 @@ datasource "ds_subscriptions" do
   end
 end
 
+datasource "ds_filtered_subscriptions" do
+  run_script $js_filtered_subscriptions, $ds_subscriptions, $param_subscription_whitelist
+end
+
 #get all tag keys
 datasource "ds_azure_tags" do
-  iterate $ds_subscriptions
+  iterate $ds_filtered_subscriptions
   request do
     auth $azure_auth
     pagination $azure_pagination
-    host "management.azure.com"
+    host $param_azure_endpoint
     path join(["/subscriptions/", val(iter_item,"subscriptionId"), "/tagNames"])
     header "User-Agent", "RS Policies"
     query "api-version","2019-10-01"
@@ -133,6 +151,29 @@ end
 
 datasource "ds_filtered_tags" do
   run_script $js_filter_tags, $ds_azure_tags, $ds_optima_tag_dimensions, $param_exclusion_tag_key
+end
+
+###############################################################################
+# Scripts
+###############################################################################
+
+script "js_filtered_subscriptions", type: "javascript" do
+  parameters "ds_subscriptions", "param_subscription_whitelist"
+  result "results"
+  code <<-EOS
+  var results = []
+  if ( param_subscription_whitelist.length != 0){
+    results = []
+    _.each(param_subscription_whitelist, function(sub){
+      var found = _.find(ds_subscriptions, function(item){
+        return item.subscriptionId == sub || item.displayName.toLowerCase() == sub.toLowerCase();
+      })
+      results.push(found)
+    })
+  } else {
+    results = ds_subscriptions
+  }
+EOS
 end
 
 script "js_filter_tags", type: "javascript" do
@@ -204,8 +245,8 @@ define add_tags($data, $rs_org_id) return $all_responses do
   $$debug=true
   $all_responses = []
   foreach $item in $data do
-   sub on_error: skip do
-   $response = http_request(
+  sub on_error: skip do
+    $response = http_request(
       verb: "post",
       host: "optima.rightscale.com",
       href: join(["/bill-analysis/orgs/",$rs_org_id,"/custom/dimensions"]),

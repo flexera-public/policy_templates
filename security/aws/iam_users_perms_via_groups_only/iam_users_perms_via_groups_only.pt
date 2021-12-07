@@ -1,0 +1,189 @@
+name "AWS IAM Ensure One Active Key Per IAM User"
+rs_pt_ver 20180301
+type "policy"
+short_description "Report if any IAM users have policies assigned directly instead of through groups. \n See the [README](https://github.com/flexera/policy_templates/tree/master/security/aws/iam_users_perms_via_groups_only) and [docs.rightscale.com/policies](https://docs.rightscale.com/policies/) to learn more."
+long_description ""
+category "Security"
+severity "high"
+default_frequency "daily"
+info(
+  version: "2.0",
+  provider: "AWS",
+  service: "IAM",
+  policy_set: "CIS",
+  cce_id: "CCE-78912-3",
+  cis_aws_foundations_securityhub: "1.16",
+  benchmark_control: "1.15",
+  benchmark_version: "1.4.0",
+  cis_controls: "[\"6.8v8\", \"16v7\"]",
+  nist: "AC-6"
+)
+
+###############################################################################
+# User inputs
+###############################################################################
+
+parameter "param_email" do
+  type "list"
+  label "Email Address"
+  description "Email addresses of the recipients you wish to notify"
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+credentials "auth_aws" do
+  schemes "aws","aws_sts"
+  label "AWS"
+  description "Select the AWS Credential from the list"
+  tags "provider=aws"
+end
+
+###############################################################################
+# Datasources
+###############################################################################
+
+datasource "ds_iam_users" do
+  request do
+    auth $auth_aws
+    verb "GET"
+    host "iam.amazonaws.com"
+    path "/"
+    query "Action", "ListUsers"
+    query "Version", "2010-05-08"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "xml"
+    collect xpath(response, "//ListUsersResult/Users/member", "array") do
+      field "id", xpath(col_item, "UserId")
+      field "name", xpath(col_item, "UserName")
+      field "arn", xpath(col_item, "Arn")
+      field "create_date", xpath(col_item, "CreateDate")
+      field "password_last_used", xpath(col_item, "PasswordLastUsed")
+    end
+  end
+end
+
+datasource "ds_iam_users_with_policies" do
+  iterate $ds_iam_users
+  request do
+    auth $auth_aws
+    verb "GET"
+    host "iam.amazonaws.com"
+    path "/"
+    query "Action", "ListUserPolicies"
+    query "Version", "2010-05-08"
+    query "UserName", val(iter_item, "name")
+    header "User-Agent", "RS Policies"
+    header "Accept", "application/json"
+  end
+  result do
+    encoding "json"
+    field "id", val(iter_item, "id")
+    field "name", val(iter_item, "name")
+    field "arn", val(iter_item, "arn")
+    field "create_date", val(iter_item, "create_date")
+    field "password_last_used", val(iter_item, "password_last_used")
+    field "policies", jmes_path(response, "ListUserPoliciesResponse.ListUserPoliciesResult.PolicyNames")
+  end
+end
+
+datasource "ds_iam_users_attached" do
+  iterate $ds_iam_users_with_policies
+  request do
+    auth $auth_aws
+    verb "GET"
+    host "iam.amazonaws.com"
+    path "/"
+    query "Action", "ListAttachedUserPolicies"
+    query "Version", "2010-05-08"
+    query "UserName", val(iter_item, "name")
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "xml"
+    field "id", val(iter_item, "id")
+    field "name", val(iter_item, "name")
+    field "arn", val(iter_item, "arn")
+    field "create_date", val(iter_item, "create_date")
+    field "password_last_used", val(iter_item, "password_last_used")
+    field "policies", val(iter_item, "policies")
+    field "attached" do
+      collect xpath(response, "//ListAttachedUserPoliciesResult/AttachedPolicies/member", "array") do
+        field "name", xpath(col_item, "PolicyName")
+        field "arn", xpath(col_item, "PolicyArn")
+      end
+    end
+  end
+end
+
+datasource "ds_iam_users_with_direct_policies" do
+  run_script $js_iam_users_with_direct_policies, $ds_iam_users_attached
+end
+
+###############################################################################
+# Scripts
+###############################################################################
+
+script "js_iam_users_with_direct_policies", type:"javascript" do
+  parameters "ds_iam_users_attached"
+  result "result"
+  code <<-EOS
+    result = []
+
+    _.each(ds_iam_users_attached, function(user) {
+      if (user.policies.length > 0 || user.attached.length > 0) {
+        result.push({
+          id: user.id,
+          name: user.name,
+          arn: user.arn,
+          inline_policies: user.policies.length,
+          attached_policies: user.attached.length
+        })
+      }
+    })
+EOS
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "policy_iam_users_with_direct_policies" do
+  validate $ds_iam_users_with_direct_policies do
+    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} Users With Non-Group Policies Found"
+    escalate $esc_report_iam_users_with_direct_policies
+    check eq(size(data),0)
+    export do
+      resource_level true
+      field "name" do
+        label "User Name"
+      end
+      field "id" do
+        label "User ID"
+      end
+      field "arn" do
+        label "User ARN"
+      end
+      field "inline_policies" do
+        label "Inline Policies (#)"
+      end
+      field "attached_policies" do
+        label "Attached Policies (#)"
+      end
+    end
+  end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_report_iam_users_with_direct_policies" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
+end

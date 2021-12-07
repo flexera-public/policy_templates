@@ -39,5 +39,3 @@ Required permissions in the provider:
 ## Cost
 
 This policy does not incur any cloud costs.
-
-

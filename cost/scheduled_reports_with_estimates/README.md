@@ -27,8 +27,6 @@ There are four cost metrics to choose from.
 - Unamortized Blended - One-time and upfront costs are shown at the time of purchase. (AWS Only) Saving from reserved instances are shared equally by all matching instances in all accounts.
 - Amortized Blended - One-time and upfront costs are spread evenly over the term of the item purchased. (AWS Only) Saving from reserved instances are shared equally by all matching instances in all accounts.
 
-
-
 ## Functional Details
 
 The policy leverages the RightScale APis to report on billing data and send an email report
@@ -41,7 +39,6 @@ This policy has the following input parameters required when launching the polic
 - Billing Center List - List of top level Billing Center names you want to report on. Names must be exactly as shown in Optima. Leave the field blank to report on all top level Billing Centers.
 - Cost Metric - See Cost Metrics above for details on selection.
 - Graph Dimension - The cost dimension to break out the cost data in the embedded bar chart image
-
 
 ### Required RightScale Roles
 
@@ -58,6 +55,3 @@ This policy requires permissions to access RightScale resources (Optima). Before
 ### Cost
 
 This Policy Template does not incur any cloud costs.
-
-
-

@@ -6,7 +6,7 @@ severity "low"
 category "Cost"
 default_frequency "daily"
 info(
-  version: "2.5",
+  version: "2.7",
   provider: "Azure",
   service: "Compute",
   policy_set: "Unused IP Addresses"
@@ -27,6 +27,20 @@ parameter "param_exclude_tags" do
   category "User Inputs"
   label "Exclude Tags"
   description "A list of tags used to exclude IP addresses from the incident."
+end
+
+parameter "param_azure_endpoint" do
+  type "string"
+  label "Azure Endpoint"
+  description "Azure Endpoint to access resources"
+  allowed_values "management.azure.com", "management.chinacloudapi.cn"
+  default "management.azure.com"
+end
+
+parameter "param_subscription_whitelist" do
+  label "Subscription Whitelist"
+  type "list"
+  description "Whitelisted Subscriptions, if empty, all subscriptions will be checked"
 end
 
 parameter "param_automatic_action" do
@@ -72,7 +86,7 @@ datasource "ds_subscriptions" do
   request do
     auth $azure_auth
     pagination $azure_pagination
-    host "management.azure.com"
+    host $param_azure_endpoint
     path "/subscriptions/"
     query "api-version", "2020-01-01"
     header "User-Agent", "RS Policies"
@@ -86,13 +100,17 @@ datasource "ds_subscriptions" do
   end
 end
 
+datasource "ds_filtered_subscriptions" do
+  run_script $js_filtered_subscriptions, $ds_subscriptions, $param_subscription_whitelist
+end
+
 #To get all resource groups
 datasource "ds_resource_groups" do
-  iterate $ds_subscriptions
+  iterate $ds_filtered_subscriptions
   request do
     auth $azure_auth
     pagination $azure_pagination
-    host "management.azure.com"
+    host $param_azure_endpoint
     path join(["/subscriptions/",val(iter_item,"subscriptionId"),"/resourcegroups"])
     query "api-version","2019-10-01"
   end
@@ -111,7 +129,7 @@ datasource "ds_public_ip_addresses" do
   iterate $ds_resource_groups
   request do
     auth $azure_auth
-    host "management.azure.com"
+    host $param_azure_endpoint
     path join(["/subscriptions/",val(iter_item,"subscriptionId"),"/resourceGroups/",val(iter_item,"resourceGroupName"),"/providers/Microsoft.Network/publicIPAddresses"])
     query "api-version","2020-03-01"
   end
@@ -180,7 +198,7 @@ datasource "ds_top_level_billing_centers" do
 end
 
 datasource "ds_ip_costs" do
-  iterate $ds_subscriptions
+  iterate $ds_filtered_subscriptions
   request do
     run_script $js_get_costs, val(iter_item,"subscriptionId"), $ds_top_level_billing_centers, rs_org_id
   end
@@ -205,6 +223,25 @@ end
 ###############################################################################
 # Scripts
 ###############################################################################
+
+script "js_filtered_subscriptions", type: "javascript" do
+  parameters "ds_subscriptions", "param_subscription_whitelist"
+  result "results"
+  code <<-EOS
+  var results = []
+  if ( param_subscription_whitelist.length != 0){
+    results = []
+    _.each(param_subscription_whitelist, function(sub){
+      var found = _.find(ds_subscriptions, function(item){
+        return item.subscriptionId == sub || item.displayName.toLowerCase() == sub.toLowerCase();
+      })
+      results.push(found)
+    })
+  } else {
+    results = ds_subscriptions
+  }
+EOS
+end
 
 script "js_top_level_bc", type: "javascript" do
   parameters "billing_centers"
@@ -285,9 +322,9 @@ script "js_exclude_tags", type: "javascript" do
       //Exclude tags
       for(var i=0;i<param_exclude_tags.length;i++){
         if(_.has(ipAddress.tags, param_exclude_tags[i])){
-          isTagMatched = true;  
-		}
-	  }
+          isTagMatched = true;
+        }
+      }
 
       if(!isTagMatched){
         if(properties.ipConfiguration == null){
@@ -300,10 +337,10 @@ script "js_exclude_tags", type: "javascript" do
             tags:ipAddress["tags"],
             ipAddressId:ipAddress["ipAddressId"],
             savings:"N/A"
-		  })  
-		}
-	  }
-	})
+          })
+        }
+    }
+  })
   EOS
 end
 
@@ -335,6 +372,17 @@ script "js_ip_cost_mapping", type:"javascript" do
   if(ds_billing_centers.length!=0){
     // Format costs with currency symbol and thousands separator
     if( ds_currency_code['value'] !== undefined ) {
+      // Put costs into a map by resource ID and only include them for resource IDs we actually need
+      var costs_by_resource_id = {};
+      _.each(ip_list, function(ip) {
+        costs_by_resource_id[ip.ipAddressId] = [];
+      });
+      _.each(ip_costs, function(cost) {
+        var costs = costs_by_resource_id[cost.resource_id];
+        if (costs != null) {
+          costs.push(cost);
+        }
+      });
       if (ds_currency_reference[ds_currency_code['value']] !== undefined ) {
         var cur = ds_currency_reference[ds_currency_code['value']]['symbol']
         if( ds_currency_reference[ds_currency_code['value']]['t_separator'] !== undefined ) {
@@ -352,7 +400,7 @@ script "js_ip_cost_mapping", type:"javascript" do
     }
     var total_savings=0;
     _.each(ip_list, function(ip){
-      var cost_objects = _.where(ip_costs, {resource_id: ip["ipAddressId"]});
+      var cost_objects = costs_by_resource_id[ip.ipAddressId];
       if (_.size(cost_objects) > 0){
         count++;
         var sum = _.reduce(_.compact(_.map(cost_objects, function(value){ return value.cost_nonamortized_unblended_adj})), function(memo, num){ return memo + num; }, 0);
@@ -415,7 +463,7 @@ escalation "delete_unused_ip_addresses" do
   automatic contains($param_automatic_action, "Delete Unused IP Addresses")
   label "Delete Resources"
   description "Delete selected unused IP addresses"
-  run "delete_ip_addresses", data
+  run "delete_ip_addresses", data, $param_azure_endpoint
 end
 
 ###############################################################################
@@ -425,9 +473,9 @@ end
 policy "pol_unused_ip_addresses" do
   validate $ds_ip_cost_mapping do
     summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data.ip_list }} Unused IP Addresses Found"
-	detail_template <<-EOS
-	{{data.message}}
-	EOS
+    detail_template <<-EOS
+{{data.message}}
+EOS
     check eq(size(val(data, "ip_list")), 0)
     escalate $send_email_report
     escalate $delete_unused_ip_addresses
@@ -460,29 +508,29 @@ end
 # Cloud Workflow
 ###############################################################################
 
-define delete_ip_addresses($data) return $all_responses do
+define delete_ip_addresses($data, $param_azure_endpoint) return $all_responses do
   $$debug = false
   $all_responses = []
   foreach $item in $data do
     sub on_error: skip do
-      call azure_delete_ip_addresses(to_s($item['ipAddressId']))
+      call azure_delete_ip_addresses(to_s($item['ipAddressId']), $param_azure_endpoint)
     end
   end
 end
 
-define azure_delete_ip_addresses($ipAddressId) do
+define azure_delete_ip_addresses($ipAddressId, $param_azure_endpoint) do
   $response={}
   $syslog_subject = "Azure unused IP addresses : "
   $response = http_request(
           auth: $$azure_auth,
           verb: "delete",
-          host: "management.azure.com",
+          host: $param_azure_endpoint,
           https: true,
           href: $ipAddressId,
           query_strings: {
             "api-version": "2020-03-01"
           }
-        )    
+        )
     call sys_log($syslog_subject,to_s($response))
 end
 
