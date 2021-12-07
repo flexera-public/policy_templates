@@ -197,7 +197,7 @@ Reference
 
 ###### CIS Policies
 
-- [AWS Ensure AWS Config Enabled In All Regions)](./security/aws/aws_config_enabled/)
+- [AWS Ensure AWS Config Enabled In All Regions](./security/aws/aws_config_enabled/)
 
 #### VPC
 
