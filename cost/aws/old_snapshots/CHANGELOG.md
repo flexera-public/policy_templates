@@ -2,7 +2,7 @@
 
 ## v2.17
 
-- added changes from [wiki](https://confluence.flexera.com/pages/viewpage.action?spaceKey=rightscale&title=Usage+Recommendations%3A+Waste+reduction)
+- applying data normalization updates for spend recommendations api
 
 ## v2.16
 

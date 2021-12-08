@@ -1,4 +1,4 @@
-name "AWS Old Snapshots"
+name "AWS Old Snapshots test"
 rs_pt_ver 20180301
 type "policy"
 short_description "Checks for snapshots older than a specified number of days and, optionally, deletes them. See the [README](https://github.com/flexera/policy_templates/tree/master/cost/aws/old_snapshots) and [docs.rightscale.com/policies](https://docs.rightscale.com/policies/) to learn more."
@@ -6,7 +6,7 @@ category "Cost"
 severity "low"
 default_frequency "daily"
 info(
-  version: "2.16",
+  version: "2.17",
   provider: "AWS",
   service: "EBS",
   policy_set: "Old Snapshots"
@@ -251,7 +251,7 @@ datasource "ds_get_snapshot_ami" do
       field "imageId", xpath(col_item, "imageId")
       field "region", val(iter_item, "region")
       field "snapshotId", val(iter_item, "snapshotId")
-      field "tags", val(iter_item, "tags")
+      field "tags", val(iter_item, "tagKeyValue")
       field "daysOld", val(iter_item, "daysOld")
       field "volumeSize", val(iter_item, "volumeSize")
     end
@@ -283,7 +283,6 @@ script "js_regions", type: "javascript" do
       all_regions.forEach(function(all_region){
         all_regions_list.push(all_region.region)
       })
-
       //Filter valid regions
       var valid_regions = [];
       _.map(uniqueRegions, function(uniqueRegion){
@@ -291,7 +290,6 @@ script "js_regions", type: "javascript" do
           valid_regions.push({"region": uniqueRegion})
         }
       })
-
       //Throw an error if no valid regions found
       if (_.isEmpty(valid_regions)) {
         regions = all_regions;
@@ -333,10 +331,8 @@ script "js_get_costs", type: "javascript" do
       day = day.length > 1 ? day : '0' + day;
       return year + '-' + month + '-' + day;
     }
-
     var start_date = getFormattedDailyDate(new Date(new Date().setDate(new Date().getDate() - 3)));
     var end_date = getFormattedDailyDate(new Date(new Date().setDate(new Date().getDate() - 2)));
-
     var request = {
       auth: "auth_rs",
       host: optima_host,
@@ -384,10 +380,8 @@ script "js_snapshots_cost_mapping", type: "javascript" do
   parameters "snapshots", "snapshot_costs", "ds_currency_code", "ds_currency_reference", "ds_billing_centers", "ds_get_caller_identity"
   result "results"
   code <<-EOS
-
   var result = [];
   var results={};
-
   function formatNumber(number, separator){
     var numString =number.toString();
     var values=numString.split(".");
@@ -446,7 +440,7 @@ script "js_snapshots_cost_mapping", type: "javascript" do
         accountId: ds_get_caller_identity[0]['account'],
         snapshotId : snapshot['snapshotId'],
         region : snapshot['region'],
-        tagKeyValue : snapshot['tagKeyValue'],
+        tags : snapshot['tagKeyValue'],
         daysOld : snapshot['daysOld'],
         imageId : snapshot['imageId'],
         snapshotImageIdFormat : snapshot['snapshotImageIdFormat'],
@@ -458,7 +452,7 @@ script "js_snapshots_cost_mapping", type: "javascript" do
         accountId: ds_get_caller_identity[0]['account'],
         snapshotId : snapshot['snapshotId'],
         region : snapshot['region'],
-        tagKeyValue : snapshot['tagKeyValue'],
+        tags : snapshot['tagKeyValue'],
         daysOld : snapshot['daysOld'],
         imageId : snapshot['imageId'],
         snapshotImageIdFormat : snapshot['snapshotImageIdFormat'],
@@ -467,7 +461,6 @@ script "js_snapshots_cost_mapping", type: "javascript" do
       })
     }
   })
-
   if (ds_billing_centers.length!=0){
     var total_savings=cur + ' '+formatNumber(total.toFixed(3), separator);
     var message="The total estimated monthly savings are "+ total_savings;
@@ -527,7 +520,6 @@ script "js_filter_old_snapshots", type: "javascript" do
         if((param_exclude_tags_lower.indexOf((tag['tagKey']).toLowerCase()) !== -1) || (param_exclude_tags_lower.indexOf((tag['tagKey']+'='+tag['tagValue']).toLowerCase()) !== -1)){
           isTagMatched = true;
         }
-
         // Constructing tags with comma separated to display in detail_template
         if((tag['tagValue']).length > 0){
           tagKeyValue = tagKeyValue+" , "+tag['tagKey']+'='+tag['tagValue'];
@@ -535,11 +527,9 @@ script "js_filter_old_snapshots", type: "javascript" do
           tagKeyValue = tagKeyValue+" , "+tag['tagKey'];
         }
       }
-
       if(tagKeyValue === "" || tagKeyValue === " " || tagKeyValue == ""){
         tagKeyValue = "   < No Value >";
       }
-
       if(!(isTagMatched)){
         var snapshotTime = Date.parse(snapshot['startTime']);
         var daysOld = (new Date().getTime() - new Date(snapshotTime).getTime()) / (1000 * 3600 * 24);
@@ -625,7 +615,6 @@ policy "pol_utilization" do
     summary_template "AWS Account ID: {{with index data.result 0}}{{ .accountId }}{{end}} - {{ len data.result }} rows containing AWS old snapshot data"
     detail_template <<-EOS
 The following {{ len data.result }} old snapshots, for AWS Account: {{with index data.result 0}}{{ .accountId }}{{end}}, have exceeded the specified age of: {{ parameters.snapshot_age }} days old.
-
 {{data.message}}
 EOS
     escalate $ese_email
