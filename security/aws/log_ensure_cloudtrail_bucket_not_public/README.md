@@ -28,22 +28,22 @@ Provider tag value to match this policy: `aws` , `aws_sts`
 
 Required permissions in the provider:
 
-```javascript
+```json
 {
-    "Version": "2012-10-17",
-    "Statement": [
-        {
-            "Effect": "Allow",
-            "Action": [
-                "cloudtrail:DescribeTrails",
-                "s3:ListAllMyBuckets",
-                "s3:GetBucketLocation",
-                "s3:GetBucketAcl",
-                "s3:GetBucketPolicy"
-            ],
-            "Resource": "*"
-        }
-    ]
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "cloudtrail:DescribeTrails",
+        "s3:ListAllMyBuckets",
+        "s3:GetBucketLocation",
+        "s3:GetBucketAcl",
+        "s3:GetBucketPolicy"
+      ],
+      "Resource": "*"
+    }
+  ]
 }
 ```
 
