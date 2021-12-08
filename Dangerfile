@@ -29,7 +29,7 @@ end
 
 fpt = nil
 has_app_changes.each do |file|
-  puts "Checking #{file}\n#{fpt}"
+  message "Checking #{file}\n#{fpt}"
   # check if fpt is installed and do the check.  only report if there is a syntax error
   fpt = `[ -x ./fpt ] && ./fpt check #{file} | grep -v Checking`
   if ! fpt.empty?
@@ -174,9 +174,9 @@ fail 'Please add labels to this Pull Request' if github.pr_labels.empty?
 # Lint added and modified files only
 # textlint.lint
 changed_files.each do |file|
-  `node_modules/.bin/textlint #{file}`
+  `node_modules/.bin/textlint #{file} 1>textlint.log`
   if $?.exitstatus != 0
-    print `cat textlint.log`
+    message `cat textlint.log`
     fail "Textlint failed on #{file}"
   end
 end
