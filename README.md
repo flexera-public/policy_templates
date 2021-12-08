@@ -39,7 +39,7 @@ Reference
 - [Schedule Instances](./cost/schedule_instances/)
 - [Scheduled Report](./cost/scheduled_reports/)
 - [Scheduled Report with Estimates](./cost/scheduled_reports_with_estimates/)
-- [Scheduled Report with Markups & Markdowns](./cost/scheduled_report_markupsdowns/)
+- [Scheduled Report with Markups & Markdowns](./cost/scheduled_report_markuUpsDowns/)
 - [Superseded Instances](./cost/superseded_instance/)
 - [Superseded Instance Remediation](./cost/superseded_instance_remediation/)
 - [Terminate Instances with End Date](./cost/terminate_policy/)
