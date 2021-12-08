@@ -39,7 +39,7 @@ Reference
 - [Schedule Instances](./cost/schedule_instances/)
 - [Scheduled Report](./cost/scheduled_reports/)
 - [Scheduled Report with Estimates](./cost/scheduled_reports_with_estimates/)
-- [Scheduled Report with Markups & Markdowns](./cost/scheduled_report_markUpsDowns/)
+- [Scheduled Report with Markups & Markdowns](./cost/scheduled_report_markupsdowns/)
 - [Superseded Instances](./cost/superseded_instance/)
 - [Superseded Instance Remediation](./cost/superseded_instance_remediation/)
 - [Terminate Instances with End Date](./cost/terminate_policy/)
@@ -194,6 +194,12 @@ Reference
 - [AWS Internet-facing ELBs & ALBs](./security/aws/loadbalancer_internet_facing/)
 - [AWS Unencrypted ELB Listeners (CLB)](./security/aws/clb_unencrypted/)
 - [AWS Unencrypted ELB Listeners (ALB/NLB)](./security/aws/elb_unencrypted/)
+
+##### Logging
+
+###### CIS Policies
+
+- [AWS Ensure AWS Config Enabled In All Regions](./security/aws/aws_config_enabled/)
 
 #### VPC
 

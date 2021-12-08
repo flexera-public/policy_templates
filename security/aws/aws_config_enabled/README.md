@@ -1,25 +1,20 @@
-# Azure SQL Databases without Elastic Pools
+# AWS Ensure AWS Config Enabled In All Regions
 
 ## What it does
 
-This policy will look at a list of Azure SQL Servers and check for Elastic DB Pools.
+This policy verifies that AWS Config is enabled and properly configured for all active regions.
 
 ## Functional Details
 
-This policy checks all the Azure SQL Servers for a Azure Subscription. If the server does not have elastic pools configured it will raise an incident.
+The AWS Config API is used to gather the AWS Config information for all regions. When a region is found that has no AWS Config settings, or the AWS Config recordingGroup has 'allSupported' or 'includeGlobalResourceTypes' set to 'false', that region and these settings are added to a list. An incident is raised if this list contains any regions.
 
 ## Input Parameters
 
-This policy has the following input parameters required when launching the policy.
+- *Email addresses of the recipients you wish to notify* - A list of email addresses to notify
 
-- *Exclusion Tag Key* - Cloud native tag key to ignore instances. Example: exclude_utilization
-- *Email addresses* - Email addresses of the recipients you wish to notify
-- *Azure Endpoint* - Azure Endpoint to access resources
-- *Subscription Whitelist* - Whitelisted Subscriptions, if empty, all subscriptions will be checked
+## Policy Actions
 
-## Actions
-
-- Sends an email notification
+- Send an email report
 
 ## Prerequisites
 
@@ -29,15 +24,29 @@ This policy uses [credentials](https://docs.rightscale.com/policies/users/guides
 
 For administrators [creating and managing credentials](https://docs.rightscale.com/policies/users/guides/credential_management.html) to use with this policy, the following information is needed:
 
-Provider tag value to match this policy: `azure_rm`
+Provider tag value to match this policy: `aws` , `aws_sts`
 
 Required permissions in the provider:
 
-- Microsoft.Sql/servers/read
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+          "EC2:DescribeRegions",
+          "config:DescribeConfigurationRecorderStatus"
+      ],
+      "Resource": "*"
+    }
+  ]
+}
+```
 
 ## Supported Clouds
 
-- Azure
+- AWS
 
 ## Cost
 

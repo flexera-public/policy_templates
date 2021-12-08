@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.2
+
+- Added subscription filter option and ability to specify Azure API endpoint
+
 ## v2.1
 
 - Adding Resource Table

@@ -16,6 +16,8 @@ When a publicly accessible Azure SQL Managed Instance is detected, an email acti
 This policy has the following input parameters required when launching the policy.
 
 - *Email addresses to notify* - Email addresses of the recipients you wish to notify when new incidents are created
+- *Azure Endpoint* - Azure Endpoint to access resources
+- *Subscription Whitelist* - Whitelisted Subscriptions, if empty, all subscriptions will be checked
 - *Exclusion Tag Key* - Azure SQL Managed instance tag to ignore instance that are with public data endpoint enabled. Only supply the tag key. The policy assumes that the tag value is irrelevant.
 - *Automatic Actions* - When this value is set, this policy will automatically take the selected action(s).
 
