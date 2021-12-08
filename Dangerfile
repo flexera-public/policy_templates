@@ -174,7 +174,7 @@ fail 'Please add labels to this Pull Request' if github.pr_labels.empty?
 # Lint added and modified files only
 # textlint.lint
 changed_files.each do |file|
-  `npm run textlint --script=#{file}`
+  `node_modules/.bin/textlint #{file}`
   if $?.exitstatus != 0
     print `cat textlint.log`
     fail "Textlint failed on #{file}"
