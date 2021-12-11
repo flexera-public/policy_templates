@@ -50,7 +50,8 @@ The following AWS permissions must be allowed for the policy to run.
       "Effect":"Allow",
       "Action":[
         "ec2:DescribeVolumes",
-        "ec2:DescribeRegions"
+        "ec2:DescribeRegions",
+        "pricing:GetProducts"
       ],
       "Resource":"*"
     }

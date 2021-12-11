@@ -1,7 +1,7 @@
 name "AWS GP3 Upgradeable Volumes"
 rs_pt_ver 20180301
 type "policy"
-short_description "Checks for upgradeable volumes and report them for modification. See the [README](https://github.com/flexera/policy_templates/tree/master/cost/aws/gp3_volume_upgrade) and [docs.rightscale.com/policies](https://docs.rightscale.com/policies/) to learn more."
+short_description "Checks for upgradeable volumes and reports them for modification. See the [README](https://github.com/flexera/policy_templates/tree/master/cost/aws/gp3_volume_upgrade) and [docs.rightscale.com/policies](https://docs.rightscale.com/policies/) to learn more."
 category "Cost"
 severity "low"
 default_frequency "daily"
@@ -79,12 +79,21 @@ auth "auth_rs", type: "rightscale"
 # Pagination
 ###############################################################################
 
-pagination "aws_volumes_pagination_xml" do
+pagination "pagination_aws_volumes_xml" do
   get_page_marker do
     body_path "//DescribeVolumesResponse/nextToken"
   end
   set_page_marker do
     query "NextToken"
+  end
+end
+
+pagination "pagination_aws_products" do
+  get_page_marker do
+    body_path "NextToken"
+  end
+  set_page_marker do
+    body_field "NextToken"
   end
 end
 
@@ -120,7 +129,7 @@ datasource "ds_superseded_volumes_list" do
   iterate $ds_regions
   request do
     auth $auth_aws
-    pagination $aws_volumes_pagination_xml
+    pagination $pagination_aws_volumes_xml
     host join(["ec2.",val(iter_item, "region"),".amazonaws.com"])
     verb "GET"
     path "/"
@@ -159,22 +168,30 @@ datasource "ds_superseded_volumes" do
   run_script $js_filter_aws_superseded_volumes, $ds_superseded_volumes_list, $param_exclude_tags
 end
 
-datasource "ds_superseded_volumes_regions" do
-  run_script $js_superseded_volumes_regions, $ds_superseded_volumes
+datasource "ds_volume_types" do
+  run_script $js_volume_types, $ds_superseded_volumes
 end
 
-datasource "ds_aws_offers" do
-  iterate $ds_superseded_volumes_regions
+datasource "ds_aws_products" do
+  iterate $ds_volume_types
   request do
-    host "pricing.us-east-1.amazonaws.com"
-    path join(["/offers/v1.0/aws/AmazonEC2/current/", iter_item, "/index.json"])
-    header "User-Agent", "RS Policies"
+    auth $auth_aws
+    pagination $pagination_aws_products
+    host "api.pricing.us-east-1.amazonaws.com"
+    verb "POST"
+    path "/"
+    header "Content-Type", "application/x-amz-json-1.1"
+    header "X-Amz-Target", "AWSPriceListService.GetProducts"
+    body_field "Filters", [{Field: "volumeApiName", Type: "TERM_MATCH", Value: iter_item}]
+    body_field "ServiceCode", "AmazonEC2"
   end
   result do
-    collect jq(response, '(.products[] | select(.productFamily == "Storage" and (.attributes.usagetype | test("EBS:VolumeUsage\\\\.")) and ([.attributes.volumeApiName] | inside(["gp3", "gp2", "io1"]))).sku) as $sku | .terms.OnDemand[$sku] | to_entries[].value') do
-      field "region", iter_item
-      field 'description', jq(col_item, '.priceDimensions[].description')
-      field 'pricePerUnit', jq(col_item, '.priceDimensions[].pricePerUnit')
+    collect jq(response, '.PriceList[] | fromjson') do
+      field 'max_iops_volume', jq(col_item, '.product.attributes.maxIopsvolume')
+      field 'price_per_unit', jq(col_item, '.terms.OnDemand[].priceDimensions[].pricePerUnit.USD')
+      field 'region', jq(col_item, '.product.attributes.regionCode')
+      field 'usage_type', jq(col_item, '.product.attributes.usagetype')
+      field 'volume_type', iter_item
     end
   end
 end
@@ -264,7 +281,7 @@ datasource "ds_volume_costs" do
 end
 
 datasource "ds_volume_cost_mapping" do
-  run_script $js_volume_cost_mapping, $ds_superseded_volumes, $param_aws_edp_percentage, $ds_aws_offers, $ds_volume_costs, $ds_currency_code, $ds_currency_reference, $ds_billing_centers, $ds_get_caller_identity
+  run_script $js_volume_cost_mapping, $ds_superseded_volumes, $param_aws_edp_percentage, $ds_aws_products, $ds_volume_costs, $ds_currency_code, $ds_currency_reference, $ds_billing_centers, $ds_get_caller_identity
 end
 
 ###############################################################################
@@ -342,15 +359,15 @@ script "js_filter_aws_superseded_volumes", type: "javascript" do
   EOS
 end
 
-script "js_superseded_volumes_regions", type: "javascript" do
-  parameters "superseded_volumes"
-  result "regions"
+script "js_volume_types", type: "javascript", type: "javascript" do
+  parameters "volumes"
+  result "types"
   code <<-EOS
-  var region_set = {};
-  _.each(superseded_volumes, function (volume) {
-    region_set[volume.region] = volume.region;
+  var type_set = {gp3: "gp3"};
+  _.each(volumes, function (volume) {
+    return type_set[volume.volume_type] = volume.volume_type;
   });
-  var regions = _.sortBy(region_set, _.identity);
+  var types = _.sortBy(type_set, _.identity);
   EOS
 end
 
@@ -434,17 +451,33 @@ script "js_get_costs", type: "javascript" do
 end
 
 script "js_volume_cost_mapping", type:"javascript" do
-  parameters "volumes", "aws_edp_percentage", "aws_offers", "volume_costs", "ds_currency_code", "ds_currency_reference", "ds_billing_centers", "ds_get_caller_identity"
+  parameters "volumes", "aws_edp_percentage", "aws_products", "volume_costs", "ds_currency_code", "ds_currency_reference", "ds_billing_centers", "ds_get_caller_identity"
   result "result"
   code <<-EOS
   // map the prices by region and type for easy lookup
-  var prices_by_region_and_type = {};
-  _.each(aws_offers, function (offer) {
-    var prices_by_type = prices_by_region_and_type[offer.region];
-    if (prices_by_type == null) {
-      prices_by_type = prices_by_region_and_type[offer.region] = {};
+  var prices_by_region_and_type = {}, iops_prices_by_region_and_type = {}, max_iops_volume_by_region_and_type = {};
+  _.each(volumes, function (volume) {
+    if (prices_by_region_and_type[volume.region] == null) {
+      prices_by_region_and_type[volume.region] = {};
+      iops_prices_by_region_and_type[volume.region] = {};
+      max_iops_volume_by_region_and_type[volume.region] = {};
     }
-    prices_by_type[offer.description.match(/\\((gp2|io1|gp3)\\)/)[1]] = parseFloat(offer.pricePerUnit["USD"]);
+  });
+  _.each(aws_products, function (product) {
+    if (/EBS:VolumeUsage/.test(product.usage_type)) {
+      var prices_by_type = prices_by_region_and_type[product.region];
+      if (prices_by_type != null) {
+        prices_by_type[product.volume_type] = parseFloat(product.price_per_unit);
+        if (product.max_iops_volume != null) {
+          max_iops_volume_by_region_and_type[product.region][product.volume_type] = parseInt(product.max_iops_volume);
+        }
+      }
+    } else if (/EBS:VolumeP-IOPS/.test(product.usage_type)) {
+      var iops_prices_by_type = iops_prices_by_region_and_type[product.region];
+      if (iops_prices_by_type != null) {
+        iops_prices_by_type[product.volume_type] = parseFloat(product.price_per_unit);
+      }
+    }
   });
   // calculate the gp3 savings ratios for the other types by region
   var gp3_savings_ratios_by_region_and_type = {};
