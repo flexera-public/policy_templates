@@ -579,6 +579,17 @@ script "js_volume_cost_mapping", type:"javascript" do
       }
       var price = prices_by_region_and_type[volume.region][volume.volume_type] * parseInt(volume.size);
       var monthly_savings = (price - (price * gp3_savings_ratios_by_region_and_type[volume.region][volume.volume_type])) * discount_ratio;
+      var iops;
+      if (volume.volume_type == "io1") {
+        iops = parseInt(volume.iops);
+        // skip volumes with more IOPS than gp3 supports
+        if (iops > max_iops_volume_by_region_and_type[volume.region]["gp3"]) {
+          return;
+        }
+        var iops_price = iops_prices_by_region_and_type[volume.region][volume.volume_type] * iops;
+        var gp3_iops_price = iops <= 3000 ? 0 : iops_prices_by_region_and_type[volume.region]["gp3"] * (iops - 3000);
+        monthly_savings += (iops_price - gp3_iops_price) * discount_ratio;
+      }
       total_savings += monthly_savings;
       upgradeable_volumes.push({
         accountId: ds_get_caller_identity[0]['account'],
@@ -590,7 +601,7 @@ script "js_volume_cost_mapping", type:"javascript" do
         tags: (tagKeyValue.slice(2)),
         createdTime: volume['createdTime'],
         size: volume['size'],
-        iops: volume.volume_type == "io1" ? parseInt(volume.iops) : null,
+        iops: iops,
         status: volume['status'],
         savings: cur + ' '+formatNumber((Math.round(monthly_savings * 100) / 100), separator),
       });
