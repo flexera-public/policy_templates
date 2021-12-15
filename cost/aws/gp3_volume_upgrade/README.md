@@ -2,7 +2,7 @@
 
 ## What it does
 
-This Policy finds GP2 or IO1 volumes in the given account and recommends them for upgrade to GP3. A Policy Incident will be created with all of volumes that fall into these criteria.
+This Policy finds GP2, IO1, or IO2 volumes in the given account and recommends them for upgrade to GP3. A Policy Incident will be created with all of volumes that fall into these criteria.
 
 Optionally, the user can specify one or more tags that if found on a volume will exclude the volume from the list.
 
