@@ -124,7 +124,7 @@ datasource "ds_regions" do
   run_script $js_regions, $param_allowed_regions, $ds_regions_list
 end
 
-# Get list of gp2 and io1 Volumes.
+# Get list of gp2, io1, and io2 Volumes.
 datasource "ds_superseded_volumes_list" do
   iterate $ds_regions
   request do
@@ -141,6 +141,7 @@ datasource "ds_superseded_volumes_list" do
     query "Filter.2.Name", "volume-type"
     query "Filter.2.Value.1", "gp2"
     query "Filter.2.Value.2", "io1"
+    query "Filter.2.Value.3", "io2"
   end
   result do
     encoding "xml"
@@ -472,7 +473,7 @@ script "js_volume_cost_mapping", type:"javascript" do
           max_iops_volume_by_region_and_type[product.region][product.volume_type] = parseInt(product.max_iops_volume);
         }
       }
-    } else if (/EBS:VolumeP-IOPS/.test(product.usage_type)) {
+    } else if (/EBS:VolumeP-IOPS/.test(product.usage_type) && !/\\.tier\\d+$/.test(product.usage_type)) {
       var iops_prices_by_type = iops_prices_by_region_and_type[product.region];
       if (iops_prices_by_type != null) {
         iops_prices_by_type[product.volume_type] = parseFloat(product.price_per_unit);
@@ -580,7 +581,7 @@ script "js_volume_cost_mapping", type:"javascript" do
       var price = prices_by_region_and_type[volume.region][volume.volume_type] * parseInt(volume.size);
       var monthly_savings = (price - (price * gp3_savings_ratios_by_region_and_type[volume.region][volume.volume_type])) * discount_ratio;
       var iops;
-      if (volume.volume_type == "io1") {
+      if (/^io/.test(volume.volume_type)) {
         iops = parseInt(volume.iops);
         // skip volumes with more IOPS than gp3 supports
         if (iops > max_iops_volume_by_region_and_type[volume.region]["gp3"]) {
