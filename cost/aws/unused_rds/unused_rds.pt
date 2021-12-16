@@ -374,7 +374,7 @@ script "js_rds_instances", type: "javascript" do
         name: instance.name,
         arn: instance.instanceArn,
         id: instance.instanceId,
-        instanceType: instance.instanceType,
+        resourceType: instance.instanceType,
         privateDnsName: instance.privateDnsName,
         status: instance.status,
         connections: connections,
@@ -527,16 +527,19 @@ script "js_instance_cost_mapping", type:"javascript" do
       }
       var total_savings=0;
       _.each(instance_list, function(instance){
+        instance['resourceType']=instance.instanceType;
         var cost_objects = costs_by_resource_id[instance.name];
         if (_.size(cost_objects) > 0){
           count++;
           var sum = _.reduce(_.compact(_.map(cost_objects, function(value){return value.cost_nonamortized_unblended_adj})), function(memo, num){ return memo + num; }, 0);
           var monthly_savings = sum*30;
           total_savings=total_savings+monthly_savings;
-          instance['savings']=cur + ' '+formatNumber((Math.round(monthly_savings * 100) / 100), separator);
+          instance['savings']= (Math.round(monthly_savings * 100) / 100);
+          instances['savings_currency']= cur;
           unused_rds_instance_list.push(instance);
         } else {
-          instance['savings']= "N/A";
+          instance['savings']= 0.0;
+          instances['savings_currency']= cur;
           unused_rds_instance_list.push(instance);
         }
       })
@@ -576,7 +579,7 @@ EOS
     escalate $decommission_rds
     check eq(size(val(data,"instance_list")),0)
     export "instance_list" do
-      resource_level false
+      resource_level true
       field "accountId" do
         label "Account Id"
       end
@@ -596,13 +599,13 @@ EOS
         label "Savings Currency"
       end
       field "resourceID" do
-        label "Instance Id"
+        label "Resource Id"
       end
       field "privateDnsName" do
         label "Private DNS Name"
       end
-      field "instanceType" do
-        label "Instance Type"
+      field "resourceType" do
+        label "Resource Type"
       end
       field "connections" do
         label "Connections"
@@ -612,6 +615,10 @@ EOS
       end
       field "tags" do
         label "Tags"
+      end
+      field "id" do
+        label "id"
+        path "resourceID"
       end
     end
   end
