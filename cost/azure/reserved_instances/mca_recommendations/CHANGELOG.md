@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.6
+
+- updated policy to only pull from first subscription to avoid duplicate data. this will fix the shared repeating data
+
 ## v2.5
 
 - Added subscription filter option and ability to specify Azure API endpoint
