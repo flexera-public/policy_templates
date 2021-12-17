@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.1
+
+- Improve savings calculations by using the AWS Pricing API which is significantly faster and more memory efficient than retrieving the AWS price sheet JSON file
+
 ## v3.0
 
 - applying data normalization updates for spend recommendations api. this change breaks current iterations expecting specific output types being pushed.

@@ -55,7 +55,8 @@ Required permissions in the provider:
       "Action": [
         "ec2:DescribeAddresses",
         "ec2:ReleaseAddress",
-        "ec2:DescribeRegions"
+        "ec2:DescribeRegions",
+        "pricing:GetProducts"
       ],
       "Resource": "*"
     }
