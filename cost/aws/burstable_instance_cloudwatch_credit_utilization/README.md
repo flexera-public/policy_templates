@@ -45,39 +45,45 @@ Required permissions in the provider:
 ```javascript
 {
   "Version": "2012-10-17",
-  "Statement":[{
-      "Effect":"Allow",
-      "Action":["cloudwatch:GetMetricStatistics","cloudwatch:ListMetrics"],
-      "Resource":"*",
-      "Condition":{
-         "Bool":{
-            "aws:SecureTransport":"true"
-            }
-         }
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "cloudwatch:GetMetricStatistics",
+        "cloudwatch:ListMetrics"
+      ],
+      "Resource": "*",
+      "Condition": {
+        "Bool": {
+          "aws:SecureTransport": "true"
+        }
       }
-   ]
+    }
+  ]
 }
 ```
 
 ```javascript
 {
-    "Version": "2012-10-17",
-    "Statement": [
-        {
-            "Effect": "Allow",
-            "Action": [
-                "ec2:StartInstances",
-                "ec2:StopInstances"
-            ],
-            "Resource": "arn:aws:ec2:*:*:instance/*",
-        },
-        {
-            "Effect": "Allow",
-            "Action": ["ec2:DescribeInstances",
-                        "ec2:DescribeRegions"]
-            "Resource": "*"
-        }
-    ]
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "ec2:StartInstances",
+        "ec2:StopInstances"
+      ],
+      "Resource": "arn:aws:ec2:*:*:instance/*",
+    },
+    {
+      "Effect": "Allow",
+      "Action": [
+        "ec2:DescribeInstances",
+        "ec2:DescribeRegions"
+      ],
+      "Resource": "*"
+    }
+  ]
 }
 ```
 

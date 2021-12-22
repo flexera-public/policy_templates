@@ -1,9 +1,9 @@
 # README Guideline
 
 This document provides guidance on how to properly write a Policy Template README
- file.  The purpose of this file to help the policy template developer create a
- proper readme file, expedite the pull request review process, and have a
- consistent feel across all README files.
+file.  The purpose of this file to help the policy template developer create a
+proper readme file, expedite the pull request review process, and have a
+consistent feel across all README files.
 
 The README file is an important artifact of the policy template.  It is the
 customer facing documentation and should be written as such.  The README file
@@ -12,8 +12,8 @@ should be free of typos, spelling errors, easy to read and correct grammar.
 ## Readme File Sections
 
 The readme file contains a number of sections which describes the policy template
- details.  All sections should start with the Header 2 markdown (2 #, ##) for
-  the name it should contain header 1 markdown (1 #, #).
+details.  All sections should start with the Header 2 markdown (2 #, ##) for
+the name it should contain header 1 markdown (1 #, #).
 
 [Markdown Cheatsheet](https://www.markdownguide.org/cheat-sheet/)
 
@@ -26,7 +26,7 @@ The policy name is the readme file header.  It begins with the Header 2
 markdown characters ##.  The name should match the value of the name field
 inside the policy template.  The name includes the cloud supported and what
 it checks.  If the policy is multi cloud then the cloud can be excluded and only
- write what it checks
+write what it checks
 
 Example with supported cloud:
 
@@ -88,13 +88,13 @@ Example:
 ### Prerequisites
 
 This section describes what it takes to run the policy.  This may include the
- Credential Managements, and provider permissions.  See more below.
+Credential Managements, and provider permissions.  See more below.
 
 ### Installation (OPTIONAL)
 
 In this section include additional configuration needed to run the policy.
 Additional information may include setting up credentials in Cloud Management,
- configuring an external system etc.
+configuring an external system etc.
 
 ### Supported Clouds (OPTIONAL)
 
@@ -139,8 +139,8 @@ the policy can be applied.
 ## Policy Actions
 
 Policy actions may include automation to alert or remediate violations found in the
- Policy Incident. Actions that destroy or terminate a resource generally require
- approval from the Policy Approver. This policy includes the following actions.
+Policy Incident. Actions that destroy or terminate a resource generally require
+approval from the Policy Approver. This policy includes the following actions.
 
 - Sends an email notification
 - list additional actions if any.
@@ -149,10 +149,10 @@ Policy actions may include automation to alert or remediate violations found in 
 
 This policy uses [credentials](https://docs.rightscale.com/policies/users/guides/credential_management.html)
 for connecting to the cloud -- in order to apply this policy you must have a
- credential registered in the system that is compatible with this policy. If
- there are no credentials listed when you apply the policy, please contact your
- cloud admin and ask them to register a credential that is compatible with this
-  policy. The information below should be consulted when creating the credential.
+credential registered in the system that is compatible with this policy. If
+there are no credentials listed when you apply the policy, please contact your
+cloud admin and ask them to register a credential that is compatible with this
+policy. The information below should be consulted when creating the credential.
 
 ### Credential configuration
 

@@ -1,10 +1,10 @@
-## Billing Center Access Report
+# Billing Center Access Report
 
-### What it does
+## What it does
 
-This Policy Template can target either all Billing Centers in an Organization or target a specific Billing Center.  Child Billing Centers are supported as well.  The resulting incident is a report of all users that have access to the target Billing Center(s).  If RightScale Groups have been granted access to a Billing Center, the report will indicate which Group has delegated access to a particular user. 
+This Policy Template can target either all Billing Centers in an Organization or target a specific Billing Center.  Child Billing Centers are supported as well.  The resulting incident is a report of all users that have access to the target Billing Center(s).  If RightScale Groups have been granted access to a Billing Center, the report will indicate which Group has delegated access to a particular user.
 
-### Input Parameters
+## Input Parameters
 
 This policy has the following input parameters required when launching the policy.
 
@@ -12,14 +12,13 @@ This policy has the following input parameters required when launching the polic
 - *Billing Center Name* - If not reporting on all Billing Centers, provide the name of a specific Billing Center
 - *Email addresses of the recipients you wish to notify* - A list of email addresses to notify
 
-### Policy Actions
+## Policy Actions
 
 The following policy actions are taken on any resources found to be out of compliance.
 
 - Send an email report
 
-
-### Pre-reqs
+### Pre-requisites
 
 - Required roles:
   - `billing_center_admin` or `billing_center_viewer`

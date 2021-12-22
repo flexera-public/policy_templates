@@ -39,7 +39,7 @@ Reference
 - [Schedule Instances](./cost/schedule_instances/)
 - [Scheduled Report](./cost/scheduled_reports/)
 - [Scheduled Report with Estimates](./cost/scheduled_reports_with_estimates/)
-- [Scheduled Report with Markups & Markdowns](./cost/scheduled_report_markUpsDowns/)
+- [Scheduled Report with Markups & Markdowns](./cost/scheduled_report_markupsdowns/)
 - [Superseded Instances](./cost/superseded_instance/)
 - [Superseded Instance Remediation](./cost/superseded_instance_remediation/)
 - [Terminate Instances with End Date](./cost/terminate_policy/)
@@ -161,7 +161,9 @@ Reference
 - [AWS Minimum Password Length](./security/aws/iam_min_password_length/)
 - [AWS Prevent Password Reuse](./security/aws/iam_prevent_password_reuse/)
 - [AWS Disable Credentials Unused For 45+ Days](./security/aws/iam_disable_45_day_creds/)
+- [AWS Ensure One Active Key Per IAM User](./security/aws/iam_one_active_key_per_user/)
 - [AWS Rotate Access Keys](./security/aws/iam_rotate_access_keys/)
+- [AWS Ensure IAM Users Receive Permissions Only Through Groups](./security/aws/iam_users_perms_via_groups_only/)
 - [AWS Access Analyzer Enabled](./security/aws/iam_access_analyzer_enabled/)
 - [AWS Support Role Created](./security/aws/iam_support_role_created/)
 - [AWS Report Attached Admin IAM Policies](./security/aws/iam_no_admin_iam_policies_attached/)
@@ -192,12 +194,19 @@ Reference
 ###### CIS Policies
 
 - [AWS Ensure Log File Validation Enabled For All CloudTrails](./security/aws/log_file_validation_enabled/)
+- [AWS Ensure CloudTrail Enabled In All Regions](./security/aws/log_ensure_cloudtrail_multiregion/)
 
 ##### Load Balancers
 
 - [AWS Internet-facing ELBs & ALBs](./security/aws/loadbalancer_internet_facing/)
 - [AWS Unencrypted ELB Listeners (CLB)](./security/aws/clb_unencrypted/)
 - [AWS Unencrypted ELB Listeners (ALB/NLB)](./security/aws/elb_unencrypted/)
+
+##### Logging
+
+###### CIS Policies
+
+- [AWS Ensure AWS Config Enabled In All Regions](./security/aws/aws_config_enabled/)
 
 #### VPC
 

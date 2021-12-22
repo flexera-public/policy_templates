@@ -7,11 +7,11 @@ category "Cost"
 severity "low"
 default_frequency "daily"
 info(
-  version: "2.11",
+  version: "2.12",
   provider: "Azure",
   service: "Compute",
   policy_set: "Idle Compute Instances"
-  )
+)
 
 ###############################################################################
 # Parameters
@@ -348,13 +348,13 @@ script "js_filter_instances", type: "javascript" do
       }
       if(tagsList.length > 0){
         instance.tags = tagsList.substring(0,tagsList.length-2);
-       }else{
-         instance.tags = "< No Value >"
-       }
-       return instance
+      }else{
+        instance.tags = "< No Value >"
+      }
+      return instance
     }
   })
- EOF
+EOF
 end
 
 #This is to get the average cpu over time for the machine and return the dataset of machines with issues
@@ -411,6 +411,17 @@ script "js_instance_cost_mapping", type:"javascript" do
       return result+"."+values[1];
     }
     if(ds_billing_centers.length!=0){
+      // Put costs into a map by resource ID and only include them for resource IDs we actually need
+      var costs_by_resource_id = {};
+      _.each(instance_list, function(instance) {
+        costs_by_resource_id[instance.id] = [];
+      });
+      _.each(instance_costs, function(cost) {
+        var costs = costs_by_resource_id[cost.resource_id];
+        if (costs != null) {
+          costs.push(cost);
+        }
+      });
       // Format costs with currency symbol and thousands separator
       if( ds_currency_code['value'] !== undefined ) {
         if (ds_currency_reference[ds_currency_code['value']] !== undefined ) {
@@ -430,7 +441,7 @@ script "js_instance_cost_mapping", type:"javascript" do
       }
       var total_savings=0;
       _.each(instance_list, function(instance){
-        var cost_objects = _.where(instance_costs, {resource_id: instance['id']});
+        var cost_objects = costs_by_resource_id[instance.id];
         if (_.size(cost_objects) > 0){
           count++;
           var sum = _.reduce(_.compact(_.map(cost_objects, function(value){return value.cost_nonamortized_unblended_adj})), function(memo, num){ return memo + num; }, 0);
@@ -470,8 +481,8 @@ policy "azure_resource_policy" do
   validate $ds_instance_cost_mapping do
     summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): Azure idle compute instances found"
     detail_template <<-EOS
-    {{data.message}}
-    EOS
+{{data.message}}
+EOS
     check eq(size(val(data, "instance_list")), 0)
     escalate $email
     escalate $delete_resources
@@ -538,7 +549,7 @@ define delete_resources($data,$param_log_to_cm_audit_entries) return $all_respon
   call sys_log(join([$syslog_subject, "Identified Instances"]),to_s($data))
   $all_responses = []
   foreach $item in $data do
-   sub on_error: skip do
+    sub on_error: skip do
       $response = http_request(
         verb: "delete",
         host: "management.azure.com",

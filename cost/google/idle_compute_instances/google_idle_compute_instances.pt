@@ -209,140 +209,140 @@ script "js_calculated_utilization", type: "javascript" do
   result "results"
   parameters "ds_compute_utilization", "ds_memory_utilization"
   code <<-EOS
-    results = []
-    for ( i =0; i < ds_compute_utilization.length; i++ ){
-      var instance_id = ds_compute_utilization[i].instance_id
-      if ( instance_id === null || instance_id === undefined ) {
-        // No instance id, continue
+  results = []
+  for ( i =0; i < ds_compute_utilization.length; i++ ){
+    var instance_id = ds_compute_utilization[i].instance_id
+    if ( instance_id === null || instance_id === undefined ) {
+      // No instance id, continue
+    } else {
+      var points = ds_compute_utilization[i].cpu_points
+      if ( points === null || points === undefined ) {
+        var cpu_maximum = "101"
+        var cpu_average = "101"
+        var cpu_minimum = "101"
       } else {
-        var points = ds_compute_utilization[i].cpu_points
-        if ( points === null || points === undefined ) {
-          var cpu_maximum = "101"
-          var cpu_average = "101"
-          var cpu_minimum = "101"
-        } else {
-          var cpu_maximum = parseFloat( points.reduce( function (x, y) { return Math.max(x, y) } )).toFixed(2)
-          var cpu_sum = _.reduce(points, function(memo, num){ return memo + num; }, 0);
-          var cpu_average = parseFloat(cpu_sum / points.length).toFixed(2)
-          var cpu_minimum = parseFloat( points.reduce( function (x, y) { return Math.min(x, y) } )).toFixed(2)
-        }
-        var memory_record = _.find(ds_memory_utilization, function(record) { return record.instance_id == instance_id; })
-        var memory_maximum = "101"
-          var memory_average = "101"
-          var memory_minimum = "101"
-        if ( memory_record === null || memory_record === undefined ) {
+        var cpu_maximum = parseFloat( points.reduce( function (x, y) { return Math.max(x, y) } )).toFixed(2)
+        var cpu_sum = _.reduce(points, function(memo, num){ return memo + num; }, 0);
+        var cpu_average = parseFloat(cpu_sum / points.length).toFixed(2)
+        var cpu_minimum = parseFloat( points.reduce( function (x, y) { return Math.min(x, y) } )).toFixed(2)
+      }
+      var memory_record = _.find(ds_memory_utilization, function(record) { return record.instance_id == instance_id; })
+      var memory_maximum = "101"
+        var memory_average = "101"
+        var memory_minimum = "101"
+      if ( memory_record === null || memory_record === undefined ) {
+        // No memory records, continue
+      } else {
+        if ( memory_record.mem_points === null || memory_record.mem_points === undefined ) {
           // No memory records, continue
         } else {
-          if ( memory_record.mem_points === null || memory_record.mem_points === undefined ) {
-            // No memory records, continue
-          } else {
-            var memory_maximum = parseFloat( memory_record.mem_points.reduce( function (x, y) { return Math.max(x, y) } )).toFixed(2)
-            var memory_sum = _.reduce(memory_record.mem_points, function(memo, num){ return memo + num; }, 0);
-            var memory_average = parseFloat(memory_sum/memory_record.mem_points.length).toFixed(2)
-            var memory_minimum = parseFloat( memory_record.mem_points.reduce( function (x, y) { return Math.min(x, y) } )).toFixed(2)
-          }
+          var memory_maximum = parseFloat( memory_record.mem_points.reduce( function (x, y) { return Math.max(x, y) } )).toFixed(2)
+          var memory_sum = _.reduce(memory_record.mem_points, function(memo, num){ return memo + num; }, 0);
+          var memory_average = parseFloat(memory_sum/memory_record.mem_points.length).toFixed(2)
+          var memory_minimum = parseFloat( memory_record.mem_points.reduce( function (x, y) { return Math.min(x, y) } )).toFixed(2)
         }
-
-        results.push(
-          {
-            zone: ds_compute_utilization[i].zone,
-            projectId: ds_compute_utilization[i].projectId,
-            instance_id: instance_id,
-            cpu_average: cpu_average,
-            cpu_maximum: cpu_maximum,
-            cpu_minimum: cpu_minimum,
-            mem_average: memory_average,
-            mem_maximum: memory_maximum,
-            mem_minimum: memory_minimum
-          }
-        )
       }
+
+      results.push(
+        {
+          zone: ds_compute_utilization[i].zone,
+          projectId: ds_compute_utilization[i].projectId,
+          instance_id: instance_id,
+          cpu_average: cpu_average,
+          cpu_maximum: cpu_maximum,
+          cpu_minimum: cpu_minimum,
+          mem_average: memory_average,
+          mem_maximum: memory_maximum,
+          mem_minimum: memory_minimum
+        }
+      )
     }
-  EOS
+  }
+EOS
 end
 
 script "js_add_instance_data", type: "javascript" do
   result "request"
   parameters "project","zone", "instance_id"
   code <<-EOS
-    request = {
-      "auth": "auth_google",
-      "host": "www.googleapis.com",
-      "verb": "GET",
-      "path": "/compute/v1/projects/"+project+"/zones/"+zone+"/instances",
-      "headers": {
-        "User-Agent": "RS Policies",
-        "Content-Type": "application/json"
-      },
-      "query_params": {
-        "filter": "(id="+instance_id+") AND (status=RUNNING)"
-      }
-      "ignore_status": [403,404]
+  request = {
+    "auth": "auth_google",
+    "host": "www.googleapis.com",
+    "verb": "GET",
+    "path": "/compute/v1/projects/"+project+"/zones/"+zone+"/instances",
+    "headers": {
+      "User-Agent": "RS Policies",
+      "Content-Type": "application/json"
+    },
+    "query_params": {
+      "filter": "(id="+instance_id+") AND (status=RUNNING)"
     }
-  EOS
+    "ignore_status": [403,404]
+  }
+EOS
 end
 
 script "js_clean_instance_data", type: "javascript" do
   result "results"
   parameters "ds_add_instance_data", "param_exclusion_tag_key"
   code <<-EOS
-    tag_key = param_exclusion_tag_key.split(':')[0]
-    tag_value = param_exclusion_tag_key.split(':')[1]
+  tag_key = param_exclusion_tag_key.split(':')[0]
+  tag_value = param_exclusion_tag_key.split(':')[1]
 
-    results = _.filter(ds_add_instance_data, function(data){
-      if ( data.status == "RUNNING" ){
-        if ( data.labels != null && data.labels !== undefined ){
-          if ( data.labels[tag_key] != null && data.labels[tag_key] !== undefined ){
-            if ( data.labels[tag_key] != tag_value ){
-              var labelsList = "";
-              for(var prop in data.labels){
-                labelsList = labelsList+prop+":"+data.labels[prop]+", ";
-	           }
-               if(labelsList.length > 0){
-                 data.labels = labelsList.substring(0,labelsList.length-2);
-	           }else{
-                 data.labels = "< No Value >";
-	           }
-               if(data.hostname == undefined){
-                 data.hostname = data.id;
-			   }
-              return data
-            }
-          } else {
+  results = _.filter(ds_add_instance_data, function (data) {
+    if (data.status == "RUNNING") {
+      if (data.labels != null && data.labels !== undefined) {
+        if (data.labels[tag_key] != null && data.labels[tag_key] !== undefined) {
+          if (data.labels[tag_key] != tag_value) {
             var labelsList = "";
-            for(var prop in data.labels){
-              labelsList = labelsList+prop+":"+data.labels[prop]+", ";
-	        }
-            if(labelsList.length > 0){
-              data.labels = labelsList.substring(0,labelsList.length-2);
-	        }else{
+            for (var prop in data.labels) {
+              labelsList = labelsList + prop + ":" + data.labels[prop] + ", ";
+            }
+            if (labelsList.length > 0) {
+              data.labels = labelsList.substring(0, labelsList.length - 2);
+            } else {
               data.labels = "< No Value >";
-	        }
-            if(data.hostname == undefined){
+            }
+            if (data.hostname == undefined) {
               data.hostname = data.id;
-			}
+            }
             return data
           }
-        }else{
+        } else {
           var labelsList = "";
-          for(var prop in data.labels){
-            labelsList = labelsList+prop+":"+data.labels[prop]+", ";
+          for (var prop in data.labels) {
+            labelsList = labelsList + prop + ":" + data.labels[prop] + ", ";
           }
-          if(labelsList.length > 0){
-            data.labels = labelsList.substring(0,labelsList.length-2);
-          }else{
+          if (labelsList.length > 0) {
+            data.labels = labelsList.substring(0, labelsList.length - 2);
+          } else {
             data.labels = "< No Value >";
-		  }
-          if(data.hostname == undefined){
+          }
+          if (data.hostname == undefined) {
             data.hostname = data.id;
-		  }
+          }
           return data
         }
+      } else {
+        var labelsList = "";
+        for (var prop in data.labels) {
+          labelsList = labelsList + prop + ":" + data.labels[prop] + ", ";
+        }
+        if (labelsList.length > 0) {
+          data.labels = labelsList.substring(0, labelsList.length - 2);
+        } else {
+          data.labels = "< No Value >";
+        }
+        if (data.hostname == undefined) {
+          data.hostname = data.id;
+        }
+        return data
       }
-    })
-    results = _.sortBy(results, 'zone');
-    results= _.sortBy(results, 'projectId');
-  EOS
+    }
+  })
+  results = _.sortBy(results, 'zone');
+  results = _.sortBy(results, 'projectId');
+EOS
 end
 ###############################################################################
 # Policy

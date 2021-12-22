@@ -31,21 +31,22 @@ Provider tag value to match this policy: `aws` , `aws_sts`
 
 Required permissions in the provider:
 
-```javascript
+```json
 {
-   "Version":"2012-10-17",
-   "Statement":[
-      {
-         "Sid":"AllowRDSDescribe",
-         "Effect":"Allow",
-         "Action":"rds:DescribeDBInstances",
-         "Resource":"*"
-      },
-      {
+  "Version":"2012-10-17",
+  "Statement":[
+    {
+        "Sid":"AllowRDSDescribe",
         "Effect":"Allow",
-        "Action":["ec2:DescribeRegions"],
+        "Action":"rds:DescribeDBInstances",
         "Resource":"*"
-    }]
+    },
+    {
+      "Effect":"Allow",
+      "Action":["ec2:DescribeRegions"],
+      "Resource":"*"
+    }
+  ]
 }
 ```
 

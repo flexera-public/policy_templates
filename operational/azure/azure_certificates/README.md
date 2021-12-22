@@ -14,6 +14,8 @@ This policy has the following input parameters required when launching the polic
 
 - *Exclusion Tag Key* - Cloud native tag key to ignore instances. Example: exclude_utilization
 - *Email addresses* - Email addresses of the recipients you wish to notify.
+- *Azure Endpoint* - Azure Endpoint to access resources
+- *Subscription Whitelist* - Whitelisted Subscriptions, if empty, all subscriptions will be checked
 - *Days* - Number of days from expiration that should trigger the policy to raise an incident.
 
 ## Actions

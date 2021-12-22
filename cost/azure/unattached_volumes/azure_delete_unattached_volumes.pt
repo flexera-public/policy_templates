@@ -7,11 +7,11 @@ severity "low"
 category "Cost"
 default_frequency "daily"
 info(
-  version: "2.8",
+  version: "2.10",
   provider: "Azure",
   service: "Storage",
   policy_set: "Unused Volumes"
-  )
+)
 
 ##################
 # User inputs    #
@@ -44,13 +44,18 @@ parameter "param_exclusion_tag_key" do
   type "list"
 end
 
-
 parameter "param_azure_endpoint" do
   type "string"
   label "Azure Endpoint"
   description "Azure Endpoint to access resources"
   allowed_values "management.azure.com", "management.chinacloudapi.cn"
   default "management.azure.com"
+end
+
+parameter "param_subscription_whitelist" do
+  label "Subscription Whitelist"
+  type "list"
+  description "Whitelisted Subscriptions, if empty, all subscriptions will be checked"
 end
 
 parameter "param_automatic_action" do
@@ -120,9 +125,13 @@ datasource "ds_subscriptions" do
   end
 end
 
+datasource "ds_filtered_subscriptions" do
+  run_script $js_filtered_subscriptions, $ds_subscriptions, $param_subscription_whitelist
+end
+
 #get all disks
 datasource "ds_azure_disks" do
-  iterate $ds_subscriptions
+  iterate $ds_filtered_subscriptions
   request do
     auth $azure_auth
     pagination $azure_pagination
@@ -151,7 +160,7 @@ datasource "ds_filter_disks" do
 end
 
 datasource "ds_azure_log_activity" do
-  iterate $ds_subscriptions
+  iterate $ds_filtered_subscriptions
   request do
     run_script $js_get_logactivity, val(iter_item,"subscriptionId"), $param_unattached_days, $param_azure_endpoint
   end
@@ -214,7 +223,7 @@ datasource "ds_top_level_billing_centers" do
 end
 
 datasource "ds_volume_costs" do
-  iterate $ds_subscriptions
+  iterate $ds_filtered_subscriptions
   request do
     run_script $js_get_costs, val(iter_item,"subscriptionId"), $ds_top_level_billing_centers, rs_org_id, rs_optima_host
   end
@@ -242,6 +251,25 @@ end
 ###############################################################################
 # Scripts
 ###############################################################################
+
+script "js_filtered_subscriptions", type: "javascript" do
+  parameters "ds_subscriptions", "param_subscription_whitelist"
+  result "results"
+  code <<-EOS
+  var results = []
+  if ( param_subscription_whitelist.length != 0){
+    results = []
+    _.each(param_subscription_whitelist, function(sub){
+      var found = _.find(ds_subscriptions, function(item){
+        return item.subscriptionId == sub || item.displayName.toLowerCase() == sub.toLowerCase();
+      })
+      results.push(found)
+    })
+  } else {
+    results = ds_subscriptions
+  }
+EOS
+end
 
 script "js_top_level_bc", type: "javascript" do
   parameters "billing_centers"
@@ -324,9 +352,9 @@ script "js_get_logactivity", type: "javascript" do
       auth: "azure_auth",
       pagination: "azure_pagination",
       query_params: {
-       'api-version': '2015-04-01',
-       '$filter': filter,
-       '$select': 'operationName,properties'
+        'api-version': '2015-04-01',
+        '$filter': filter,
+        '$select': 'operationName,properties'
       }
     }
   EOS
@@ -336,58 +364,56 @@ script "js_filter_activities", type: "javascript" do
   parameters "ds_azure_log_activity"
   result "res"
   code <<-EOS
-   var res = [];
-   _.each(ds_azure_log_activity, function(activity){
-      var event=activity;
-      var responseBody=event['responseBody'];
+  var res = [];
+  _.each(ds_azure_log_activity, function (activity) {
+    var event = activity;
+    var responseBody = event['responseBody'];
 
-      if ((event['operationName']=='Create or Update Virtual Machine' || event['operationName']=='Microsoft.Compute/virtualMachines/write') && typeof responseBody != "undefined") {
-        if(responseBody.indexOf('toBeDetached')>-1){
-          var tobedetach=responseBody.substring(responseBody.indexOf('toBeDetached'), responseBody.indexOf('toBeDetached')+20);
-          if(tobedetach.indexOf('true')>-1){
-            res.push(responseBody)
-          }
+    if ((event['operationName'] == 'Create or Update Virtual Machine' || event['operationName'] == 'Microsoft.Compute/virtualMachines/write') && typeof responseBody != "undefined") {
+      if (responseBody.indexOf('toBeDetached') > -1) {
+        var tobedetach = responseBody.substring(responseBody.indexOf('toBeDetached'), responseBody.indexOf('toBeDetached') + 20);
+        if (tobedetach.indexOf('true') > -1) {
+          res.push(responseBody)
         }
       }
-   })
-
-  EOS
+    }
+  })
+EOS
 end
 
 script "js_filter_disks", type: "javascript" do
   parameters "param_exclusion_tag_key", "ds_azure_disks"
   result "res"
   code <<-EOS
-   var res = [];
-   _.each(ds_azure_disks, function(disk){
-      var is_tag_matched=false;
-      for(var k=0;k<param_exclusion_tag_key.length;k++){
-        for(key in disk.tags){
-          if(key.toLowerCase()==param_exclusion_tag_key[k].toLowerCase()){
-            is_tag_matched=true;
-            break;
-          }
-        }
-        if(is_tag_matched){
+  var res = [];
+  _.each(ds_azure_disks, function (disk) {
+    var is_tag_matched = false;
+    for (var k = 0; k < param_exclusion_tag_key.length; k++) {
+      for (key in disk.tags) {
+        if (key.toLowerCase() == param_exclusion_tag_key[k].toLowerCase()) {
+          is_tag_matched = true;
           break;
         }
       }
-      if(disk['diskState']=="Unattached" && (!is_tag_matched)){
-        res.push({
-          disk_id:disk['id'],
-          name:disk['name'],
-          location:disk['location'],
-          diskState:disk['diskState'],
-          diskSize:disk['diskSize'],
-          timeCreated:disk['timeCreated'],
-          subscriptionId:disk['subscriptionId'],
-          subscriptionName:disk['subscriptionName'],
-          tags:disk['tags']
-        })
+      if (is_tag_matched) {
+        break;
       }
-   })
-
-  EOS
+    }
+    if (disk['diskState'] == "Unattached" && (!is_tag_matched)) {
+      res.push({
+        disk_id: disk['id'],
+        name: disk['name'],
+        location: disk['location'],
+        diskState: disk['diskState'],
+        diskSize: disk['diskSize'],
+        timeCreated: disk['timeCreated'],
+        subscriptionId: disk['subscriptionId'],
+        subscriptionName: disk['subscriptionName'],
+        tags: disk['tags']
+      })
+    }
+  })
+EOS
 end
 
 script "js_combineddata", type: "javascript" do
@@ -395,37 +421,37 @@ parameters "ds_filter_activities", "ds_filter_disks", "param_unattached_days"
 result "results"
 code <<-EOS
   var results = []
-  var activities= ds_filter_activities;
-  for(i in ds_filter_disks){
-    var ismatched=false;
-    var disk= ds_filter_disks[i];
-    var expectedDate=new Date();
-    var createdTime=new Date(disk['timeCreated']);
-    expectedDate.setDate(expectedDate.getDate()- parseInt(param_unattached_days));
-    var diskId=disk['disk_id'];
-    var diskName=disk['name'];
+  var activities = ds_filter_activities;
+  for (i in ds_filter_disks) {
+    var ismatched = false;
+    var disk = ds_filter_disks[i];
+    var expectedDate = new Date();
+    var createdTime = new Date(disk['timeCreated']);
+    expectedDate.setDate(expectedDate.getDate() - parseInt(param_unattached_days));
+    var diskId = disk['disk_id'];
+    var diskName = disk['name'];
     var tags = JSON.stringify(disk['tags']);
-    for(var i=0;i<activities.length;i++){
-      var activity=activities[i].toString();
-      if(activity.indexOf(diskId)>-1 && activity.indexOf('toBeDetached')>-1){
-        var diskString=activity.substring(activity.indexOf('toBeDetached')-300, activity.indexOf('toBeDetached'));
-        var tobedetach=activity.substring(activity.indexOf('toBeDetached'), activity.indexOf('toBeDetached')+20);
-        if(tobedetach.indexOf('true')>-1 && diskString.indexOf(diskId)>-1){
-          ismatched=true;
+    for (var i = 0; i < activities.length; i++) {
+      var activity = activities[i].toString();
+      if (activity.indexOf(diskId) > -1 && activity.indexOf('toBeDetached') > -1) {
+        var diskString = activity.substring(activity.indexOf('toBeDetached') - 300, activity.indexOf('toBeDetached'));
+        var tobedetach = activity.substring(activity.indexOf('toBeDetached'), activity.indexOf('toBeDetached') + 20);
+        if (tobedetach.indexOf('true') > -1 && diskString.indexOf(diskId) > -1) {
+          ismatched = true;
         }
       }
     }
-    if((!ismatched) && expectedDate.getTime()>=createdTime.getTime()){
-        results.push({
-          disk_id: disk['disk_id'],
-          name: disk['name'],
-          location: disk['location'],
-          diskSize: disk['diskSize'],
-          subscriptionId: disk['subscriptionId'],
-          subscriptionName: disk['subscriptionName'],
-          tags: tags,
-          savings: "N/A"
-        })
+    if ((!ismatched) && expectedDate.getTime() >= createdTime.getTime()) {
+      results.push({
+        disk_id: disk['disk_id'],
+        name: disk['name'],
+        location: disk['location'],
+        diskSize: disk['diskSize'],
+        subscriptionId: disk['subscriptionId'],
+        subscriptionName: disk['subscriptionName'],
+        tags: tags,
+        savings: "N/A"
+      })
     }
   }
 EOS
@@ -436,32 +462,43 @@ script "js_volume_cost_mapping", type:"javascript" do
   result "result"
   code <<-EOS
   var instances = [];
-  var result={};
-  var message='';
-  var count=0;
-  function formatNumber(number, separator){
-    var numString =number.toString();
-    var values=numString.split(".");
+  var result = {};
+  var message = '';
+  var count = 0;
+  function formatNumber(number, separator) {
+    var numString = number.toString();
+    var values = numString.split(".");
     var result = ''
-    while (values[0].length > 3){
+    while (values[0].length > 3) {
       var chunk = values[0].substr(-3)
       values[0] = values[0].substr(0, values[0].length - 3)
       result = separator + chunk + result
     }
-    if (values[0].length > 0){
+    if (values[0].length > 0) {
       result = values[0] + result
     }
-    if(values[1]==undefined){
+    if (values[1] == undefined) {
       return result;
     }
-    return result+"."+values[1];
+    return result + "." + values[1];
   }
-  if(ds_billing_centers.length!=0){
+  if (ds_billing_centers.length != 0) {
+    // Put costs into a map by resource ID and only include them for resource IDs we actually need
+    var costs_by_resource_id = {};
+    _.each(volumes, function (volume) {
+      costs_by_resource_id[volume.disk_id] = [];
+    });
+    _.each(volume_costs, function (cost) {
+      var costs = costs_by_resource_id[cost.resource_id];
+      if (costs != null) {
+        costs.push(cost);
+      }
+    });
     // Format costs with currency symbol and thousands separator
-    if( ds_currency_code['value'] !== undefined ) {
-      if (ds_currency_reference[ds_currency_code['value']] !== undefined ) {
+    if (ds_currency_code['value'] !== undefined) {
+      if (ds_currency_reference[ds_currency_code['value']] !== undefined) {
         var cur = ds_currency_reference[ds_currency_code['value']]['symbol']
-        if( ds_currency_reference[ds_currency_code['value']]['t_separator'] !== undefined ) {
+        if (ds_currency_reference[ds_currency_code['value']]['t_separator'] !== undefined) {
           var separator = ds_currency_reference[ds_currency_code['value']]['t_separator']
         } else {
           var separator = ""
@@ -474,64 +511,66 @@ script "js_volume_cost_mapping", type:"javascript" do
       var cur = "$"
       var separator = ","
     }
-    var total=0;
-    _.each(volumes, function(volume){
-      var cost_objects = _.where(volume_costs, {resource_id: volume["disk_id"]});
-      if (_.size(cost_objects) > 0){
+    var total = 0;
+    _.each(volumes, function (volume) {
+      var cost_objects = costs_by_resource_id[volume.disk_id];
+      if (_.size(cost_objects) > 0) {
         count++;
-        var sum = _.reduce(_.compact(_.map(cost_objects, function(value){ return value.cost_nonamortized_unblended_adj})), function(memo, num){ return memo + num; }, 0);
-        var monthly_savings = sum*30;
-        total=total+monthly_savings;
+        var sum = _.reduce(_.compact(_.map(cost_objects, function (value) { return value.cost_nonamortized_unblended_adj })), function (memo, num) { return memo + num; }, 0);
+        var monthly_savings = sum * 30;
+        total = total + monthly_savings;
         instances.push({
-          disk_id:volume['disk_id'],
-          name:volume['name'],
-          location:volume['location'],
-          diskSize:volume['diskSize'],
-          subscriptionId:volume['subscriptionId'],
-          subscriptionName:volume['subscriptionName'],
-          tags:volume['tags'],
-          savings: cur + ' '+formatNumber((Math.round(monthly_savings * 100) / 100), separator)
+          disk_id: volume['disk_id'],
+          name: volume['name'],
+          location: volume['location'],
+          diskSize: volume['diskSize'],
+          subscriptionId: volume['subscriptionId'],
+          subscriptionName: volume['subscriptionName'],
+          tags: volume['tags'],
+          savings: cur + ' ' + formatNumber((Math.round(monthly_savings * 100) / 100), separator)
         })
       } else {
         instances.push({
-          disk_id:volume['disk_id'],
-          name:volume['name'],
-          location:volume['location'],
-          diskSize:volume['diskSize'],
-          subscriptionId:volume['subscriptionId'],
-          subscriptionName:volume['subscriptionName'],
-          tags:volume['tags'],
+          disk_id: volume['disk_id'],
+          name: volume['name'],
+          location: volume['location'],
+          diskSize: volume['diskSize'],
+          subscriptionId: volume['subscriptionId'],
+          subscriptionName: volume['subscriptionName'],
+          tags: volume['tags'],
           savings: "N/A"
         })
       }
     })
-    if(count){
-      total=cur + ' '+formatNumber((Math.round(total * 100) / 100), separator);
-      message="The total estimated monthly savings are "+total;
+    if (count) {
+      total = cur + ' ' + formatNumber((Math.round(total * 100) / 100), separator);
+      message = "The total estimated monthly savings are " + total;
     }
-    else{
-      message="The Flexera Optima system does not have any data to calculate savings for these resources";
+    else {
+      message = "The Flexera Optima system does not have any data to calculate savings for these resources";
     }
   }
-  else{
-    instances=volumes;
-    message="You do not have the minimum required role of billing_center_viewer to view the savings";
+  else {
+    instances = volumes;
+    message = "You do not have the minimum required role of billing_center_viewer to view the savings";
   }
-  result={"instances": instances,
-    "message": message};
+  result = {
+    "instances": instances,
+    "message": message
+  };
   result.instances = _.sortBy(result.instances, 'subscriptionName');
   result.instances = _.sortBy(result.instances, 'location');
-  EOS
+EOS
 end
 
 policy "pol_azure_unattached_volumes" do
   validate $ds_volume_cost_mapping do
     summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data.instances }} Unused Volumes Found"
     detail_template <<-EOS
-    The following {{ len data.instances }} unused volumes, for Account: {{ rs_project_name }} (ID: {{ rs_project_id }}), have exceeded the specified age of: {{ parameters.param_unattached_days }} days old.\n
-    {{data.message}}
-    EOS
-  # Send email report
+The following {{ len data.instances }} unused volumes, for Account: {{ rs_project_name }} (ID: {{ rs_project_id }}), have exceeded the specified age of: {{ parameters.param_unattached_days }} days old.\n
+{{data.message}}
+EOS
+    # Send email report
     escalate $send_email_report
     # Delete the volume if user selected the delete option
     escalate $process_volumes
@@ -588,7 +627,7 @@ define delete_unattached_volumes($data, $param_create_snapshot,$param_log_to_cm_
   $all_responses = []
   foreach $item in $data do
     sub on_error: skip do
-      call sys_log("Infor item =",to_s($item))
+      call sys_log("In for item =",to_s($item))
       if $param_create_snapshot == "true"
         call create_snapshot($item) retrieve $status_code
         if to_s($status_code)=="202"
@@ -609,54 +648,54 @@ define create_snapshot($item) return $status_code do
   call sys_log($syslog_subject,to_s($item))
   $snapshotName=split($item['id'], "Microsoft.Compute")
   $snapshotName=join([$snapshotName[0], "Microsoft.Compute", "/snapshots/", $item['name'], "Snapshot"])
-    $response = http_request(
-       auth: $$azure_auth,
-       verb: "put",
-       host: "management.azure.com",
-       https: true,
-       href: $snapshotName,
-       query_strings: {
-         "api-version": "2019-07-01"
-       },
-       headers:{
-         "content-type": "application/json"
-       },
-       body: {
-         "properties": {
-            "creationData": {
-               "createOption": "Copy",
-               "sourceUri": $item["id"]
-            }
-         },
-         "location": $item["location"]
-       }
-    )
+  $response = http_request(
+    auth: $$azure_auth,
+    verb: "put",
+    host: "management.azure.com",
+    https: true,
+    href: $snapshotName,
+    query_strings: {
+      "api-version": "2019-07-01"
+    },
+    headers:{
+      "content-type": "application/json"
+    },
+    body: {
+      "properties": {
+        "creationData": {
+          "createOption": "Copy",
+          "sourceUri": $item["id"]
+        }
+      },
+      "location": $item["location"]
+    }
+  )
   call sys_log("Create Snapshot response",to_s($response))
   $status_code = $response["code"]
   call sys_log("status_code",to_s($status_code))
   if $status_code == 202
-     $snapshotstatus=$response["body"]["properties"]["provisioningState"]
-     if $snapshotstatus == "Updating"
-       $expected_status = "Succeeded"
-       while $expected_status !~ $snapshotstatus do
-         call sys_log("In while snapshotstatus",to_s($disksnapshot_status))
-         call get_disksnapshot($snapshotName) retrieve $status
-         $disksnapshot_status = $status
-         call sys_log("disksnapshot_status",to_s($disksnapshot_status))
-         if $disksnapshot_status == "Creating"
-            $disksnapshot_status="Updating"
-         end
-       if $disksnapshot_status == "Succeeded"
-         call sys_log("disksnapshot_status in if","")
-         $snapshotstatus= "Succeeded"
-       elsif  $disksnapshot_status !~ "Updating"
-         call sys_log("disksnapshot_status in elsif","")
-         $snapshotstatus= "Succeeded"
-         $status_code = 400
-         call sys_log($syslog_subject, join(["Failed to create snapshot for following disk: ", to_s($item['name'])]))
-       end
+    $snapshotstatus=$response["body"]["properties"]["provisioningState"]
+    if $snapshotstatus == "Updating"
+      $expected_status = "Succeeded"
+      while $expected_status !~ $snapshotstatus do
+        call sys_log("In while snapshotstatus",to_s($disksnapshot_status))
+        call get_disksnapshot($snapshotName) retrieve $status
+        $disksnapshot_status = $status
+        call sys_log("disksnapshot_status",to_s($disksnapshot_status))
+        if $disksnapshot_status == "Creating"
+          $disksnapshot_status="Updating"
+        end
+        if $disksnapshot_status == "Succeeded"
+          call sys_log("disksnapshot_status in if","")
+          $snapshotstatus= "Succeeded"
+        elsif  $disksnapshot_status !~ "Updating"
+          call sys_log("disksnapshot_status in elsif","")
+          $snapshotstatus= "Succeeded"
+          $status_code = 400
+          call sys_log($syslog_subject, join(["Failed to create snapshot for following disk: ", to_s($item['name'])]))
+        end
       end
-     end
+    end
   end
 end
 
@@ -681,15 +720,15 @@ define delete_unattached_disk($disk_id) do
   $response={}
   $syslog_subject = "Azure delete unattached disk API response: "
   $response = http_request(
-        auth: $$azure_auth,
-        verb: "delete",
-        host: "management.azure.com",
-        https: true,
-        href: $disk_id,
-        query_strings: {
-          "api-version": "2019-07-01"
-        }
-     )
+    auth: $$azure_auth,
+    verb: "delete",
+    host: "management.azure.com",
+    https: true,
+    href: $disk_id,
+    query_strings: {
+      "api-version": "2019-07-01"
+    }
+  )
   call sys_log($syslog_subject,to_s($response))
   $delete_status = $response["code"]
   if $delete_status != 202
@@ -702,23 +741,23 @@ define tagdisk_error($disk_id,$error_code) do
   $response={}
   $syslog_subject = "Azure tag a disk API response: "
   $response = http_request(
-      auth: $$azure_auth,
-      verb: "patch",
-      host: "management.azure.com",
-      https: true,
-      href: $disk_id,
-      query_strings: {
-        "api-version": "2019-07-01"
-      },
-      headers: {
-        "content-type": "application/json"
-      },
-      body: {
-        "tags": {
-          "DeleteDiskError" :$error_code
-        }
+    auth: $$azure_auth,
+    verb: "patch",
+    host: "management.azure.com",
+    https: true,
+    href: $disk_id,
+    query_strings: {
+      "api-version": "2019-07-01"
+    },
+    headers: {
+      "content-type": "application/json"
+    },
+    body: {
+      "tags": {
+        "DeleteDiskError" :$error_code
       }
-    )
+    }
+  )
   call sys_log(join([$syslog_subject, "Response"]),to_s($response))
 end
 

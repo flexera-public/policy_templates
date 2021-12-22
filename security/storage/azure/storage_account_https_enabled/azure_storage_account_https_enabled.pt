@@ -7,11 +7,11 @@ severity "low"
 category "Security"
 default_frequency "daily"
 info(
-  version: "2.0",
+  version: "2.1",
   provider: "Azure",
   service: "Storage Accounts",
   policy_set: "Storage Security"
-  )
+)
 
 ###############################################################################
 # User inputs
@@ -21,6 +21,19 @@ parameter "param_email" do
   type "list"
   label "Email addresses to notify"
   description "Email addresses of the recipients you wish to notify when new incidents are created"
+end
+
+parameter "param_azure_endpoint" do
+  type "string"
+  label "Azure Endpoint"
+  allowed_values "management.azure.com", "management.chinacloudapi.cn"
+  default "management.azure.com"
+end
+
+parameter "param_subscription_whitelist" do
+  label "Subscription Whitelist"
+  type "list"
+  description "Whitelisted Subscriptions, if empty, all subscriptions will be checked"
 end
 
 ###############################################################################
@@ -55,7 +68,7 @@ datasource "ds_subscriptions" do
   request do
     auth $azure_auth
     pagination $azure_pagination
-    host "management.azure.com"
+    host $param_azure_endpoint
     path "/subscriptions/"
     query "api-version","2018-06-01"
     header "User-Agent", "RS Policies"
@@ -69,13 +82,17 @@ datasource "ds_subscriptions" do
   end
 end
 
+datasource "ds_filtered_subscriptions" do
+  run_script $js_filtered_subscriptions, $ds_subscriptions, $param_subscription_whitelist
+end
+
 #https://docs.microsoft.com/en-us/rest/api/storagerp/storageaccounts/list
 datasource "ds_azure_storage_accounts_list" do
-  iterate $ds_subscriptions
+  iterate $ds_filtered_subscriptions
   request do
     auth $azure_auth
       pagination $azure_pagination
-      host "management.azure.com"
+      host $param_azure_endpoint
       path join(["/subscriptions/", val(iter_item,"subscriptionId"), "/providers/Microsoft.Storage/storageAccounts"])
       query "api-version","2021-01-01"
       header "User-Agent", "RS Policies"
@@ -103,6 +120,25 @@ end
 # Scripts
 ###############################################################################
 
+script "js_filtered_subscriptions", type: "javascript" do
+  parameters "ds_subscriptions", "param_subscription_whitelist"
+  result "results"
+  code <<-EOS
+  var results = []
+  if ( param_subscription_whitelist.length != 0){
+    results = []
+    _.each(param_subscription_whitelist, function(sub){
+      var found = _.find(ds_subscriptions, function(item){
+        return item.subscriptionId == sub || item.subscriptionName.toLowerCase() == sub.toLowerCase();
+      })
+      results.push(found)
+    })
+  } else {
+    results = ds_subscriptions
+  }
+EOS
+end
+
 script "js_format_data", type: "javascript" do
   parameters "ds_azure_storage_accounts_list"
   result "results"
@@ -122,7 +158,7 @@ script "js_format_data", type: "javascript" do
   })
   results = _.sortBy(results,"location");
   results = _.sortBy(results,"subscriptionName");
- EOF
+EOF
 end
 
 ###############################################################################

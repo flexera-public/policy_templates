@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.18
+
+- Fix non-optimal array searching for costs
+
 ## v2.17
 
 - Added default_frequency "daily"

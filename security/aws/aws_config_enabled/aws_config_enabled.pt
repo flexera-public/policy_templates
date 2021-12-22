@@ -1,0 +1,182 @@
+name "AWS Ensure AWS Config Enabled In All Regions"
+rs_pt_ver 20180301
+type "policy"
+short_description "Report if AWS Config is not enabled in all regions. \n See the [README](https://github.com/flexera/policy_templates/tree/master/security/aws/aws_config_enabled) and [docs.rightscale.com/policies](https://docs.rightscale.com/policies/) to learn more."
+long_description ""
+category "Security"
+severity "high"
+default_frequency "daily"
+info(
+  version: "2.0",
+  provider: "AWS",
+  service: "Config",
+  policy_set: "CIS",
+  cce_id: "CCE-78917-2",
+  cis_aws_foundations_securityhub: "2.5",
+  benchmark_control: "3.5",
+  benchmark_version: "1.4.0",
+  cis_controls: "[\"1.1v8\", \"1.4v7\", \"11.2v7\", \"16.1v7\"]",
+  nist: "CM-8(3)"
+)
+
+###############################################################################
+# User inputs
+###############################################################################
+
+parameter "param_email" do
+  type "list"
+  label "Email Address"
+  description "Email addresses of the recipients you wish to notify"
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+credentials "auth_aws" do
+  schemes "aws","aws_sts"
+  label "AWS"
+  description "Select the AWS Credential from the list"
+  tags "provider=aws"
+end
+
+###############################################################################
+# Datasources
+###############################################################################
+
+# Get list of enabled regions for an account
+datasource "ds_regions_list" do
+  request do
+    auth $auth_aws
+    verb "GET"
+    host "ec2.amazonaws.com"
+    path "/"
+    query "Action", "DescribeRegions"
+    query "Version", "2016-11-15"
+  end
+  result do
+    encoding "xml"
+    collect xpath(response, "//DescribeRegionsResponse/regionInfo/item", "array") do
+      field "region", xpath(col_item, "regionName")
+    end
+  end
+end
+
+datasource "ds_regions_clean" do
+  run_script $js_regions_clean, $ds_regions_list
+end
+
+datasource "ds_config_recorders" do
+  iterate $ds_regions_clean
+  request do
+    auth $auth_aws
+    verb "POST"
+    host join(["config.", iter_item, ".amazonaws.com"])
+    path "/"
+    header 'X-Amz-Target', 'StarlingDoveService.DescribeConfigurationRecorders'
+    header 'Content-Type', 'application/x-amz-json-1.1'
+    body "{}"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "ConfigurationRecorders") do
+      field "region", iter_item
+      field "name", jmes_path(col_item, "name")
+      field "role_arn", jmes_path(col_item, "roleARN")
+      field "all_supported", jmes_path(col_item, "recordingGroup.allSupported")
+      field "include_grt", jmes_path(col_item, "recordingGroup.includeGlobalResourceTypes")
+      field "res_types", jmes_path(col_item, "recordingGroup.resourceTypes")
+    end
+  end
+end
+
+datasource "ds_regions_bad_config" do
+  run_script $js_regions_bad_config, $ds_config_recorders, $ds_regions_clean
+end
+
+###############################################################################
+# Scripts
+###############################################################################
+
+script "js_regions_clean", type:"javascript" do
+  parameters "ds_regions_list"
+  result "result"
+  code <<-EOS
+    result = []
+
+    _.each(ds_regions_list, function(region_item) {
+      result.push(region_item.region)
+    })
+EOS
+end
+
+script "js_regions_bad_config", type:"javascript" do
+  parameters "ds_config_recorders", "ds_regions_clean"
+  result "result"
+  code <<-EOS
+    var all_regions = {}
+    var result = []
+
+    _.each(ds_regions_clean, function(region) {
+      all_regions[region] = {
+        'config_enabled': false,
+        'config_sufficient': false
+      }
+    })
+
+    _.each(ds_config_recorders, function(recorder) {
+      all_regions[recorder.region]['config_enabled'] = true
+
+      if (recorder.all_supported == true && recorder.include_grt == true) {
+        all_regions[recorder.region]['config_sufficient'] = true
+      }
+    })
+
+    _.each(ds_regions_clean, function(region) {
+      if (all_regions[region]['config_enabled'] == false || all_regions[region]['config_sufficient'] == false) {
+        result.push({
+          id: region,
+          config_enabled: all_regions[region]['config_enabled'],
+          config_sufficient: all_regions[region]['config_sufficient']
+        })
+      }
+    })
+
+    result = _.sortBy(result, 'id');
+EOS
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "policy_regions_bad_config" do
+  validate $ds_regions_bad_config do
+    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} Regions Without AWS Config Fully Enabled"
+    escalate $esc_report_regions_bad_config
+    check eq(size(data),0)
+    export do
+      resource_level true
+      field "id" do
+        label "Region"
+      end
+      field "config_enabled" do
+        label "AWS Config Enabled"
+      end
+      field "config_sufficient" do
+        label "AWS Config Sufficient"
+      end
+    end
+  end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_report_regions_bad_config" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
+end

@@ -34,22 +34,24 @@ Provider tag value to match this policy: `aws`
 
 Required permissions in the provider:
 
-```javascript
+```json
 {
   "Version": "2006-03-01",
-  "Statement":[{
-                "Effect":"Allow",
-                "Action":["s3:ListAllMyBuckets",
-                          "s3:GetBucketLocation",
-                          "s3:ListBucket",
-                          "s3:GetObject",
-                          "s3:GetObjectTagging",
-                          "s3:PutObject",
-                          "s3:DeleteObject"
-                         ],
-                "Resource":"*"
-              }
-              ]
+  "Statement":[
+    {
+      "Effect":"Allow",
+      "Action":[
+        "s3:ListAllMyBuckets",
+        "s3:GetBucketLocation",
+        "s3:ListBucket",
+        "s3:GetObject",
+        "s3:GetObjectTagging",
+        "s3:PutObject",
+        "s3:DeleteObject"
+      ],
+      "Resource":"*"
+    }
+  ]
 }
 ```
 

@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.12
+
+- Fix non-optimal array searching for costs
+
 ## v2.11
 
 - Debug log via param (off by default); use rs_optima_host instead of hardcoded hostname
