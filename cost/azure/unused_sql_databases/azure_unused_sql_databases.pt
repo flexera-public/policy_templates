@@ -7,7 +7,7 @@ severity "low"
 category "Cost"
 default_frequency "daily"
 info(
-  version: "2.7",
+  version: "2.9",
   provider: "Azure",
   service: "SQL",
   policy_set: "Unused Database Services"
@@ -28,6 +28,20 @@ parameter "param_exclusion_tag_key" do
   category "User Inputs"
   label "Exclusion Tag Key"
   description "Azure-native SQL Database tag key to ignore databases. Only supply the tag key. The policy assumes that the tag value is irrelevant."
+end
+
+parameter "param_azure_endpoint" do
+  type "string"
+  label "Azure Endpoint"
+  description "Azure Endpoint to access resources"
+  allowed_values "management.azure.com", "management.chinacloudapi.cn"
+  default "management.azure.com"
+end
+
+parameter "param_subscription_whitelist" do
+  label "Subscription Whitelist"
+  type "list"
+  description "Whitelisted Subscriptions, if empty, all subscriptions will be checked"
 end
 
 parameter "param_automatic_action" do
@@ -76,7 +90,7 @@ datasource "ds_subscriptions" do
   request do
     auth $azure_auth
     pagination $azure_pagination
-    host "management.azure.com"
+    host $param_azure_endpoint
     path "/subscriptions/"
     query "api-version","2019-06-01"
     header "User-Agent", "RS Policies"
@@ -91,13 +105,17 @@ datasource "ds_subscriptions" do
   end
 end
 
+datasource "ds_filtered_subscriptions" do
+  run_script $js_filtered_subscriptions, $ds_subscriptions, $param_subscription_whitelist
+end
+
 #https://docs.microsoft.com/en-us/rest/api/resources/resources/list
 datasource "ds_azure_sql_databases" do
-  iterate $ds_subscriptions
+  iterate $ds_filtered_subscriptions
   request do
     auth $azure_auth
     pagination $azure_pagination
-    host "management.azure.com"
+    host $param_azure_endpoint
     path join(["/subscriptions/", val(iter_item,"subscriptionId"), "/resources"])
     query "api-version","2019-08-01"
     query "$filter", "resourceType eq 'Microsoft.Sql/servers/databases'"
@@ -122,7 +140,7 @@ end
 datasource "ds_azure_sql_database_metrics" do
   iterate $ds_azure_sql_databases
   request do
-    run_script $js_utilization_request, val(iter_item,"id")
+    run_script $js_utilization_request, val(iter_item,"id"), $param_azure_endpoint
   end
   result do
     encoding "json"
@@ -150,9 +168,28 @@ end
 # Scripts
 ###############################################################################
 
+script "js_filtered_subscriptions", type: "javascript" do
+  parameters "ds_subscriptions", "param_subscription_whitelist"
+  result "results"
+  code <<-EOS
+  var results = []
+  if ( param_subscription_whitelist.length != 0){
+    results = []
+    _.each(param_subscription_whitelist, function(sub){
+      var found = _.find(ds_subscriptions, function(item){
+        return item.subscriptionId == sub || item.displayName.toLowerCase() == sub.toLowerCase();
+      })
+      results.push(found)
+    })
+  } else {
+    results = ds_subscriptions
+  }
+EOS
+end
+
 # Build the API request object dynamically
 script "js_utilization_request", type: "javascript" do
-  parameters "resource_id"
+  parameters "resource_id", "param_azure_endpoint"
   result "request"
   code <<-EOS
     var end_date_tmp = new Date()
@@ -174,7 +211,7 @@ script "js_utilization_request", type: "javascript" do
       auth: "azure_auth",
       verb : "GET",
       scheme : "https",
-      host : "management.azure.com",
+      host : param_azure_endpoint,
       path : "" + resource_id + "/providers/microsoft.insights/metrics",
       query_params: {
         "api-version" : "2018-01-01",
@@ -242,8 +279,8 @@ script "js_merged_metrics", type: "javascript" do
         }
       }
     }
-	result = _.sortBy(result, 'subscriptionName');
-	result = _.sortBy(result, 'location');
+    result = _.sortBy(result, 'subscriptionName');
+    result = _.sortBy(result, 'location');
   EOS
 end
 
@@ -311,21 +348,21 @@ escalation "esc_delete_unused_sql_databases_approval" do
   automatic contains($param_automatic_action, "Terminate Instances")
   label "Delete SQL databases"
   description "Deleted unused SQL Databases"
-  run "delete_unused_sql_databases", data, $param_log_to_cm_audit_entries
+  run "delete_unused_sql_databases", data, $param_log_to_cm_audit_entries, $param_azure_endpoint
 end
 
 ###############################################################################
 # Cloud Workflow
 ###############################################################################
 
-define delete_unused_sql_databases($data,$param_log_to_cm_audit_entries) return $all_responses do
+define delete_unused_sql_databases($data,$param_log_to_cm_audit_entries, $param_azure_endpoint) return $all_responses do
   $$debug = $param_log_to_cm_audit_entries == "Yes"
   $all_responses = []
   foreach $item in $data do
     sub on_error: skip do
       $response = http_request(
         verb: "delete",
-        host: "management.azure.com",
+        host: $param_azure_endpoint,
         auth: $$azure_auth,
         https: true,
         href: $item["id"],

@@ -33,4 +33,3 @@ Provider tag value to match this policy: `servicenow`
 ## Policy Actions
 
 - Sends an email notification
-

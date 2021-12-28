@@ -2,7 +2,7 @@
 
 ## What it does
 
-This Policy allows you to set a tag with a timestamp and terminate an instance at a specific time. It will not terminate locked instances. 
+This Policy allows you to set a tag with a timestamp and terminate an instance at a specific time. It will not terminate locked instances.
 
 ## How to Use
 
@@ -42,7 +42,7 @@ For example if a user selects the "Terminate Instances" action while applying th
 
 The following policy actions are taken on any resources found to be out of compliance.
 
-- Terminate the instances. 
+- Terminate the instances.
 - Send an email report
 
 ## Required Permissions
