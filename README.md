@@ -177,6 +177,12 @@ Reference
 
 - [AWS Unencrypted RDS Instances](./security/aws/rds_unencrypted/)
 
+##### KMS
+
+###### CIS Policies
+
+- [AWS Ensure Rotation For Customer Master Keys (CMKs) Is Enabled](./security/aws/kms_rotation/)
+
 ##### Storage
 
 - [AWS Open Buckets](./security/storage/aws/public_buckets/)
