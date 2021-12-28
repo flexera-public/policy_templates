@@ -6,7 +6,7 @@ severity "low"
 category "Cost"
 default_frequency "daily"
 info(
-  version: "2.7",
+  version: "2.9",
   provider: "Azure",
   service: "Storage",
   policy_set: "Old Snapshots"
@@ -20,6 +20,19 @@ parameter "param_email" do
   type "list"
   label "Email Address"
   description "Email addresses of the recipients you wish to notify"
+end
+
+parameter "param_azure_endpoint" do
+  type "string"
+  label "Azure Endpoint"
+  allowed_values "management.azure.com", "management.chinacloudapi.cn"
+  default "management.azure.com"
+end
+
+parameter "param_subscription_whitelist" do
+  label "Subscription Whitelist"
+  type "list"
+  description "Whitelisted Subscriptions, if empty, all subscriptions will be checked"
 end
 
 parameter "param_snapshot_age" do
@@ -87,7 +100,7 @@ datasource "ds_subscriptions" do
   request do
     auth $azure_auth
     pagination $azure_pagination
-    host "management.azure.com"
+    host $param_azure_endpoint
     path "/subscriptions/"
     query "api-version","2019-06-01"
     header "User-Agent", "RS Policies"
@@ -102,13 +115,17 @@ datasource "ds_subscriptions" do
   end
 end
 
+datasource "ds_filtered_subscriptions" do
+  run_script $js_filtered_subscriptions, $ds_subscriptions, $param_subscription_whitelist
+end
+
 #get all snapshots
 datasource "ds_azure_get_snapshots" do
-  iterate $ds_subscriptions
+  iterate $ds_filtered_subscriptions
   request do
     auth $azure_auth
     pagination $azure_pagination
-    host "management.azure.com"
+    host $param_azure_endpoint
     path join(["/subscriptions/", val(iter_item,"subscriptionId"), "/providers/Microsoft.Compute/snapshots"])
     query "api-version","2019-07-01"
   end
@@ -176,7 +193,7 @@ datasource "ds_top_level_billing_centers" do
 end
 
 datasource "ds_snapshot_costs" do
-  iterate $ds_subscriptions
+  iterate $ds_filtered_subscriptions
   request do
     run_script $js_get_costs, val(iter_item,"subscriptionId"), $ds_top_level_billing_centers, rs_org_id, rs_optima_host
   end
@@ -201,6 +218,25 @@ end
 ###############################################################################
 # Scripts
 ###############################################################################
+
+script "js_filtered_subscriptions", type: "javascript" do
+  parameters "ds_subscriptions", "param_subscription_whitelist"
+  result "results"
+  code <<-EOS
+  var results = []
+  if ( param_subscription_whitelist.length != 0){
+    results = []
+    _.each(param_subscription_whitelist, function(sub){
+      var found = _.find(ds_subscriptions, function(item){
+        return item.subscriptionId == sub || item.displayName.toLowerCase() == sub.toLowerCase();
+      })
+      results.push(found)
+    })
+  } else {
+    results = ds_subscriptions
+  }
+EOS
+end
 
 script "js_top_level_bc", type: "javascript" do
   parameters "billing_centers"

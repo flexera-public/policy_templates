@@ -14,6 +14,8 @@ If the user is missing the minimum required role of `billing_center_viewer` or i
 This policy has the following input parameters required when launching the policy.
 
 - *Email addresses* - A list of email addresses to notify
+- *Azure Endpoint* - Azure Endpoint to access resources
+- *Subscription Whitelist* - Whitelisted Subscriptions, if empty, all subscriptions will be checked
 - *Snapshot age* - The number of days since the snapshot was created.
 - *Exclusion Tags* - list of tags that a snapshot can have to exclude it from the list.
 - *Automatic Actions* - When this value is set, this policy will automatically take the selected action(s).
