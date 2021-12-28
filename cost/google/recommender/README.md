@@ -11,6 +11,7 @@ This policy has the following input parameters required when launching the polic
 - *Email addresses* - A list of email addresses to notify
 - *Recommender to Check* - [Google recommender](https://cloud.google.com/recommender/docs/recommenders) to run the policy against
 - *Location* - Location to check, it can be the zone, region or global
+- *Project ID* - Google Projects to Query. Leave blank to query all projects.
 
 ## Policy Actions
 

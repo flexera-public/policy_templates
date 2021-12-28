@@ -1,5 +1,13 @@
 # Changelog
 
+## v2.5
+
+- Adding `allowed_values "management.azure.com", "management.chinacloudapi.cn"`
+
+## v2.4
+
+- Added subscription filter option and ability to specify Azure API endpoint
+
 ## v2.3
 
 - Added default_frequency "daily"

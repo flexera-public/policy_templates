@@ -1,0 +1,170 @@
+name "AWS Ensure CloudTrail Enabled In All Regions"
+rs_pt_ver 20180301
+type "policy"
+short_description "Report if CloudTrail is not fully enabled in all regions. \n See the [README](https://github.com/flexera/policy_templates/tree/master/security/aws/log_ensure_cloudtrail_multiregion) and [docs.rightscale.com/policies](https://docs.rightscale.com/policies/) to learn more."
+long_description ""
+category "Security"
+severity "high"
+default_frequency "daily"
+info(
+  version: "2.0",
+  provider: "AWS",
+  service: "CloudTrail",
+  policy_set: "CIS",
+  cce_id: "CCE-78913-1",
+  cis_aws_foundations_securityhub: "2.1",
+  benchmark_control: "3.1",
+  benchmark_version: "1.4.0",
+  cis_controls: "[\"8.5v8\", \"6.2v7\"]",
+  nist: "AU-2"
+)
+
+###############################################################################
+# User inputs
+###############################################################################
+
+parameter "param_email" do
+  type "list"
+  label "Email Address"
+  description "Email addresses of the recipients you wish to notify"
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+credentials "auth_aws" do
+  schemes "aws","aws_sts"
+  label "AWS"
+  description "Select the AWS Credential from the list"
+  tags "provider=aws"
+end
+
+###############################################################################
+# Datasources
+###############################################################################
+
+datasource "ds_trail_list" do
+  request do
+    auth $auth_aws
+    verb "GET"
+    host "cloudtrail.us-east-1.amazonaws.com"
+    path "/"
+    header "User-Agent", "RS Policies"
+    header "Accept", "application/json"
+    query "Action", "DescribeTrails"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "DescribeTrailsResponse.DescribeTrailsResult.trailList") do
+      field "name", jmes_path(col_item, "Name")
+      field "arn", jmes_path(col_item, "TrailARN")
+      field "homeregion", jmes_path(col_item, "HomeRegion")
+      field "multiregion", jmes_path(col_item, "IsMultiRegionTrail")
+    end
+  end
+end
+
+datasource "ds_trail_list_with_logging" do
+  iterate $ds_trail_list
+  request do
+    auth $auth_aws
+    verb "GET"
+    host join(["cloudtrail.", val(iter_item, "homeregion"), ".amazonaws.com"])
+    path "/"
+    header "User-Agent", "RS Policies"
+    header "Accept", "application/json"
+    query "Action", "GetTrailStatus"
+    query "Name", val(iter_item, "name")
+  end
+  result do
+    encoding "json"
+    field "name", val(iter_item, "name")
+    field "arn", val(iter_item, "arn")
+    field "homeregion", val(iter_item, "homeregion")
+    field "multiregion", val(iter_item, "multiregion")
+    field "is_logging", jmes_path(response, "GetTrailStatusResponse.GetTrailStatusResult.IsLogging")
+  end
+end
+
+datasource "ds_trail_list_with_selectors" do
+  iterate $ds_trail_list_with_logging
+  request do
+    auth $auth_aws
+    verb "GET"
+    host join(["cloudtrail.", val(iter_item, "homeregion"), ".amazonaws.com"])
+    path "/"
+    header "User-Agent", "RS Policies"
+    header "Accept", "application/json"
+    query "Action", "GetEventSelectors"
+    query "TrailName", val(iter_item, "arn")
+  end
+  result do
+    encoding "json"
+    field "name", val(iter_item, "name")
+    field "arn", val(iter_item, "arn")
+    field "homeregion", val(iter_item, "homeregion")
+    field "multiregion", val(iter_item, "multiregion")
+    field "is_logging", val(iter_item, "is_logging")
+    field "selectors", jmes_path(response, "GetEventSelectorsResponse.GetEventSelectorsResult.EventSelectors")
+  end
+end
+
+datasource "ds_multiregion_fully_enabled" do
+  run_script $js_multiregion_fully_enabled, $ds_trail_list_with_selectors
+end
+
+###############################################################################
+# Scripts
+###############################################################################
+
+script "js_multiregion_fully_enabled", type:"javascript" do
+  parameters "ds_trail_list_with_selectors"
+  result "multiregion_fully_enabled"
+  code <<-EOS
+    multiregion_fully_enabled = 0
+
+    _.each(ds_trail_list_with_selectors, function(trail) {
+      good_event_selector = false
+
+      _.each(trail.selectors, function(selector) {
+        if (selector.IncludeManagementEvents == true && selector.ReadWriteType == "All") {
+          good_event_selector = true
+        }
+      })
+
+      if (trail.multiregion == true && trail.is_logging == true && good_event_selector == true) {
+        multiregion_fully_enabled = 1
+      }
+    })
+EOS
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "policy_check_multiregion" do
+  validate $ds_multiregion_fully_enabled do
+    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): CloudTrail Is Not Enabled For All Regions"
+    escalate $esc_report_no_multiregion
+    check eq(data,1)
+    detail_template <<-EOS
+      No CloudTrail found that meets the requirements of:
+      * IsMultiRegionTrail set to "true"
+      * IsLogging set to "true"
+      * At least one Event Selector with IncludeManagementEvents set to "true" and ReadWriteType set to "All"
+    EOS
+  end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_report_no_multiregion" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
+end

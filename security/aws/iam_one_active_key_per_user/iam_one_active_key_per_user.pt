@@ -1,0 +1,170 @@
+name "AWS IAM Ensure One Active Key Per IAM User"
+rs_pt_ver 20180301
+type "policy"
+short_description "Report if any IAM users have 2 or more active access keys. \n See the [README](https://github.com/flexera/policy_templates/tree/master/security/aws/iam_one_active_key_per_user) and [docs.rightscale.com/policies](https://docs.rightscale.com/policies/) to learn more."
+long_description ""
+category "Security"
+severity "high"
+default_frequency "daily"
+info(
+  version: "2.0",
+  provider: "AWS",
+  service: "IAM",
+  policy_set: "CIS",
+  cce_id: "",
+  cis_aws_foundations_securityhub: "",
+  benchmark_control: "1.13",
+  benchmark_version: "1.4.0",
+  cis_controls: "[\"5v8\", \"4v7\"]",
+  nist: ""
+)
+
+###############################################################################
+# User inputs
+###############################################################################
+
+parameter "param_email" do
+  type "list"
+  label "Email Address"
+  description "Email addresses of the recipients you wish to notify"
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+credentials "auth_aws" do
+  schemes "aws","aws_sts"
+  label "AWS"
+  description "Select the AWS Credential from the list"
+  tags "provider=aws"
+end
+
+###############################################################################
+# Datasources
+###############################################################################
+
+datasource "ds_iam_users" do
+  request do
+    auth $auth_aws
+    verb "GET"
+    host "iam.amazonaws.com"
+    path "/"
+    query "Action", "ListUsers"
+    query "Version", "2010-05-08"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "xml"
+    collect xpath(response, "//ListUsersResult/Users/member", "array") do
+      field "id", xpath(col_item, "UserId")
+      field "name", xpath(col_item, "UserName")
+      field "arn", xpath(col_item, "Arn")
+      field "create_date", xpath(col_item, "CreateDate")
+      field "password_last_used", xpath(col_item, "PasswordLastUsed")
+    end
+  end
+end
+
+datasource "ds_iam_users_with_keys" do
+  iterate $ds_iam_users
+  request do
+    auth $auth_aws
+    verb "GET"
+    host "iam.amazonaws.com"
+    path "/"
+    query "Action", "ListAccessKeys"
+    query "Version", "2010-05-08"
+    query "UserName", val(iter_item, "name")
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "xml"
+    field "id", val(iter_item, "id")
+    field "name", val(iter_item, "name")
+    field "arn", val(iter_item, "arn")
+    field "create_date", val(iter_item, "create_date")
+    field "password_last_used", val(iter_item, "password_last_used")
+    field "access_keys" do
+      collect xpath(response, "//ListAccessKeysResult/AccessKeyMetadata/member", "array") do
+        field "id", xpath(col_item, "AccessKeyId")
+        field "username", xpath(col_item, "UserName")
+        field "status", xpath(col_item, "Status")
+        field "create_date", xpath(col_item, "CreateDate")
+      end
+    end
+  end
+end
+
+datasource "ds_iam_users_with_many_keys" do
+  run_script $js_iam_users_with_many_keys, $ds_iam_users_with_keys
+end
+
+###############################################################################
+# Scripts
+###############################################################################
+
+script "js_iam_users_with_many_keys", type:"javascript" do
+  parameters "ds_iam_users_with_keys"
+  result "result"
+  code <<-EOS
+    result = []
+
+    _.each(ds_iam_users_with_keys, function(user) {
+      active_keys = 0
+
+      _.each(user.access_keys, function(access_key) {
+        if (access_key.status == "Active") {
+          active_keys += 1
+        }
+      })
+
+      if (active_keys > 1) {
+        result.push({
+          id: user.id,
+          name: user.name,
+          arn: user.arn,
+          active_keys: active_keys
+        })
+      }
+    })
+EOS
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "policy_iam_users_with_many_keys" do
+  validate $ds_iam_users_with_many_keys do
+    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} Users With Multiple Active Access Keys Found"
+    escalate $esc_report_iam_users_with_many_keys
+    check eq(size(data),0)
+    export do
+      resource_level true
+      field "name" do
+        label "User Name"
+      end
+      field "id" do
+        label "User ID"
+      end
+      field "arn" do
+        label "User ARN"
+      end
+      field "active_keys" do
+        label "Active Keys"
+      end
+    end
+  end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_report_iam_users_with_many_keys" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
+end

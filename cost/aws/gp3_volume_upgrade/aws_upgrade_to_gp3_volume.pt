@@ -6,7 +6,7 @@ category "Cost"
 severity "low"
 default_frequency "daily"
 info(
-  version: "2.0",
+  version: "2.1",
   provider: "AWS",
   service: "EBS",
   policy_set: "GP3 Volumes"
@@ -222,7 +222,7 @@ datasource "ds_get_caller_identity" do
     collect xpath(response, "//GetCallerIdentityResponse/GetCallerIdentityResult") do
       field "account", xpath(col_item, "Account")
     end
- end
+  end
 end
 
 datasource "ds_volume_costs" do
@@ -433,6 +433,17 @@ script "js_volume_cost_mapping", type:"javascript" do
     return result+"."+values[1];
   }
   if(ds_billing_centers.length!=0){
+    // Put costs into a map by resource ID and only include them for resource IDs we actually need
+    var costs_by_resource_id = {};
+    _.each(volumes, function(volume) {
+      costs_by_resource_id[volume.volume_id] = [];
+    });
+    _.each(volume_costs, function(cost) {
+      var costs = costs_by_resource_id[cost.resource_id];
+      if (costs != null) {
+        costs.push(cost);
+      }
+    });
     // Format costs with currency symbol and thousands separator
     if( ds_currency_code['value'] !== undefined ) {
       if (ds_currency_reference[ds_currency_code['value']] !== undefined ) {
@@ -453,7 +464,7 @@ script "js_volume_cost_mapping", type:"javascript" do
     var total_savings=0;
     _.each(volumes, function(volume){
       console.log(volume.volume_id)
-      var cost_objects = _.where(volume_costs, {resource_id: volume["volume_id"]});
+      var cost_objects = costs_by_resource_id[volume.volume_id];
       console.log(cost_objects)
       var tags = volume['tags'];
       var tagKeyValue = "";

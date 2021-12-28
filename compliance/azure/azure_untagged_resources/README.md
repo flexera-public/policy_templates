@@ -10,6 +10,8 @@ Only the resources that support tags are considered.
 This policy has the following input parameters required when launching the policy.
 
 - *Email addresses to notify* - Email addresses of the recipients you wish to notify when new incidents are created
+- *Azure Endpoint* - Azure Endpoint to access resources
+- *Subscription Whitelist* - Whitelisted Subscriptions, if empty, all subscriptions will be checked
 - *List of tags* - List of tags keys to find resources which are not tagged by given inputs.
 
 ## Policy Actions
@@ -31,6 +33,8 @@ Provider tag value to match this policy: `azure_rm`
 
 Required permissions in the provider:
 
+- Microsoft.Resources/subscriptions/resources/read
+- Microsoft.Resources/subscriptions/providers/read
 - Tag Contributor or Contributor [more details](https://docs.microsoft.com/en-us/azure/azure-resource-manager/management/tag-resources?tabs=json)
 
 ## Supported Clouds

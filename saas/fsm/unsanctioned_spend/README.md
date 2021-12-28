@@ -35,4 +35,4 @@ Required permissions in the provider:
 
 ## Policy Actions
 
-- Sends an email notification 
+- Sends an email notification

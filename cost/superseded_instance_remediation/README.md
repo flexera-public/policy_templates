@@ -2,7 +2,7 @@
 
 ## What it does
 
-This Policy Template is used to automatically resize instances based on user-defined standards.  For example, the Policy uses a Disallowed Instance Type and its corresponding Superseded Instance Type.  If any Instances are found using the Disallowed type, they will be included in the corresponing Policy Incident.  Upon approval, Cloud Workflow will resize the Instance to the Superseded type. 
+This Policy Template is used to automatically resize instances based on user-defined standards.  For example, the Policy uses a Disallowed Instance Type and its corresponding Superseded Instance Type.  If any Instances are found using the Disallowed type, they will be included in the corresponing Policy Incident.  Upon approval, Cloud Workflow will resize the Instance to the Superseded type.
 
 ## Prerequesites
 
@@ -18,7 +18,7 @@ The following RightScale Permissions
 - Old Instance Type: `c1.medium`, Superseded Instance Type: `c5.large`
 - Old Instance Type: `Standard_A1`, Superseded Instance Type: `Standard_A1_v2`
 - The Exclude Tag parameter is a list value. Supply tags for instances you want excluded from the policy
-- Upon Approval, the Instances that appear in the Incident will be immediately stopped, resized, and started via Cloud Workflow. 
+- Upon Approval, the Instances that appear in the Incident will be immediately stopped, resized, and started via Cloud Workflow.
 
 ### Input Parameters
 
@@ -26,7 +26,7 @@ This policy has the following input parameters required when launching the polic
 
 - *Old Instance Type* - a single instance type that should be resized
 - *Superseded Instance Type* - the new instance type that instances should be resized to
-- *Exclude Tags* - A list of tags to filter out instances from being checked 
+- *Exclude Tags* - A list of tags to filter out instances from being checked
 - *Email addresses* - A list of email addresses to notify
 - *Automatic Actions* - When this value is set, this policy will automatically take the selected action(s).
 

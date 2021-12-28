@@ -1,15 +1,15 @@
-## NetFlow Top Talkers
+# NetFlow Top Talkers
 
-### What it does
+## What it does
 
-This Policy Template will analyze RISC Foundations NetFlow data and will leverage these traffic patterns to identify the top communication routes from each application stack to external dependencies.  
+This Policy Template will analyze RISC Foundations NetFlow data and will leverage these traffic patterns to identify the top communication routes from each application stack to external dependencies.
 
-### Pre-requisites
+## Pre-requisites
 
 - RISC Foundations assessment to have successfully discovered resources and analyzed application stacks
 - Retrieve a RISC API Assessment Code and API Key from your Subscription Administrator.  See more about RISC API authentication requirements [here](https://portal.riscnetworks.com/app/documentation/?path=/using-the-platform/restful-api-access/)
 
-### Input Parameters
+## Input Parameters
 
 This policy has the following input parameters required when launching the policy.
 
@@ -18,7 +18,7 @@ This policy has the following input parameters required when launching the polic
 - *RISC Hashed Password* - Hashed password to be used for authentication
 - *RISC Assessment Code* - RISC Assessment Code to be used for authentication
 
-### Supported Clouds
+## Supported Clouds
 
 - VMware
 - AWS
@@ -26,7 +26,6 @@ This policy has the following input parameters required when launching the polic
 - Google
 - Oracle
 
-
-### Cost
+## Cost
 
 This Policy Template does not incur any cloud costs.

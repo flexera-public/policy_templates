@@ -2,11 +2,11 @@
 
 ## What it does
 
-This Policy Template allows you to schedule start and stop times for your Google instance, along with the option to terminate instance, update and delete schedule.         
+This Policy Template allows you to schedule start and stop times for your Google instance, along with the option to terminate instance, update and delete schedule.
 
 ## How to Use
 
-This policy relies on a label with format 'schedule' to stop and start instances based on a schedule. The label value defines the schedule with a start time(start hour and start minute), stop time(stop hour and stop minute), days of the week and timezone. The start and stop time are in 24 hour format, and the days of the week are two character abbreviation for example: mo, tu, we. See full example below.. Use a Timezone TZ value to indicate a timezone to stop/start the instance(s) 
+This policy relies on a label with format 'schedule' to stop and start instances based on a schedule. The label value defines the schedule with a start time(start hour and start minute), stop time(stop hour and stop minute), days of the week and timezone. The start and stop time are in 24 hour format, and the days of the week are two character abbreviation for example: mo, tu, we. See full example below.. Use a Timezone TZ value to indicate a timezone to stop/start the instance(s)
 
 ## schedule Label Example
 
@@ -31,15 +31,15 @@ Please refer the [formatted timezones list](https://github.com/flexera/policy_te
 
 This policy has the following input parameters required when launching the policy.
 
-- *Email addresses* - A list of email addresses to notify  
-- *Exclusion Tags* - A list of Google tags to ignore instances. Format: Key=Value. 
+- *Email addresses* - A list of email addresses to notify
+- *Exclusion Tags* - A list of Google tags to ignore instances. Format: Key=Value.
 - *Automatic Action(s)* -(Optional) When this value is set, this policy will automatically take the selected action(s)
 
-## Policy Actions 
+## Policy Actions
 
 The following policy actions are taken on any resources found to be out of compliance.
 
-- Send an email report  
+- Send an email report
 - stop  - stop a selected instance
 - start - start a selected instance
 - terminate - terminates or deletes the selected instance.
@@ -53,7 +53,7 @@ The following policy actions are taken on any resources found to be out of compl
 This policy uses `schedule` label value for scheduling the instance. The format should be like `0800-1715_mo-tu-we-th-fr_america-new_york`. Please refer to `Schedule Label Example` section for more details.
 Please note that for this policy to work, the time should be in 24 hour format and both hours and minutes must have 2 digits: `0800`for `8am` or `2130` for `9:30pm`.
 
-This policy uses [credentials](https://docs.rightscale.com/policies/users/guides/credential_management.html) for connecting to the  cloud -- in order to apply this policy you must have a credential registered in the system that is compatible with this policy. If  there are no credentials listed when you apply the policy, please contact your cloud admin and ask them to register a credential  that is compatible with this policy. The information below should be consulted when creating the credential.   
+This policy uses [credentials](https://docs.rightscale.com/policies/users/guides/credential_management.html) for connecting to the  cloud -- in order to apply this policy you must have a credential registered in the system that is compatible with this policy. If  there are no credentials listed when you apply the policy, please contact your cloud admin and ask them to register a credential  that is compatible with this policy. The information below should be consulted when creating the credential.
 
 ### Credential configuration
 

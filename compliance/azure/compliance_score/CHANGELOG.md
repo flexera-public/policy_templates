@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.5
+
+- Added subscription filter option and ability to specify Azure API endpoint
+
 ## v2.4
 
 - Changing 400 to 404
