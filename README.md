@@ -206,6 +206,7 @@ Reference
 
 ###### CIS Policies
 
+- [AWS Ensure CloudTrail S3 Buckets Have Access Logging](./security/aws/log_ensure_cloudtrail_bucket_access_logging/)
 - [AWS Ensure CloudTrail Integrated With Cloudwatch](./security/aws/log_cloudtrail_cloudwatch_integrated/)
 - [AWS Ensure AWS Config Enabled In All Regions](./security/aws/aws_config_enabled/)
 
