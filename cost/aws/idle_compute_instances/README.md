@@ -55,27 +55,32 @@ Required permissions in the provider:
   "Statement":[
     {
       "Effect":"Allow",
-      "Action":["cloudwatch:GetMetricStatistics","cloudwatch:ListMetrics"],
+      "Action":[
+        "cloudwatch:GetMetricStatistics",
+        "cloudwatch:ListMetrics"
+      ],
       "Resource":"*",
       "Condition":{
-         "Bool":{
-            "aws:SecureTransport":"true"
-            }
-         }
-      },
-      {
-      "Effect":"Allow",
-      "Action":["ec2:DescribeInstances",
-                  "ec2:DescribeTags",
-                  "ec2:DescribeRegions"],
-      "Resource":"*",
-      "Condition":{
-         "Bool":{
-            "aws:SecureTransport":"true"
-            }
-         }
+        "Bool":{
+          "aws:SecureTransport":"true"
+        }
       }
-   ]
+    },
+    {
+      "Effect":"Allow",
+      "Action":[
+        "ec2:DescribeInstances",
+        "ec2:DescribeTags",
+        "ec2:DescribeRegions"
+      ],
+      "Resource":"*",
+      "Condition":{
+        "Bool":{
+          "aws:SecureTransport":"true"
+        }
+      }
+    }
+  ]
 }
 ```
 

@@ -5,12 +5,13 @@ short_description "Check for policies applied to Azure Subscriptions. See the [R
 long_description ""
 severity "medium"
 category "Compliance"
+default_frequency "daily"
 info(
-  version: "2.1",
+  version: "2.2",
   provider: "Azure",
   service: "Policy",
   policy_set: ""
-  )
+)
 
 ###############################################################################
 # Parameters
@@ -19,6 +20,19 @@ info(
 parameter "param_email" do
   type "list"
   label "Email addresses of the recipients you wish to notify"
+end
+
+parameter "param_azure_endpoint" do
+  type "string"
+  label "Azure Endpoint"
+  allowed_values "management.azure.com", "management.chinacloudapi.cn"
+  default "management.azure.com"
+end
+
+parameter "param_subscription_whitelist" do
+  label "Subscription Whitelist"
+  type "list"
+  description "Whitelisted Subscriptions, if empty, all subscriptions will be checked"
 end
 
 parameter "param_policy_names" do
@@ -31,7 +45,7 @@ end
 # Authentication
 ###############################################################################
 
-credentials "auth_azure" do
+credentials "azure_auth" do
   schemes "oauth2"
   label "Azure"
   description "Select the Azure Resource Manager Credential from the list."
@@ -57,9 +71,9 @@ end
 
 datasource "ds_subscriptions" do
   request do
-    auth $auth_azure
+    auth $azure_auth
     pagination $pagination_azure
-    host "management.azure.com"
+    host $param_azure_endpoint
     path "/subscriptions/"
     query "api-version","2019-06-01"
     header "User-Agent", "RS Policies"
@@ -74,12 +88,16 @@ datasource "ds_subscriptions" do
   end
 end
 
+datasource "ds_filtered_subscriptions" do
+  run_script $js_filtered_subscriptions, $ds_subscriptions, $param_subscription_whitelist
+end
+
 datasource "ds_azure_policy_definitions" do
-  iterate $ds_subscriptions
+  iterate $ds_filtered_subscriptions
   request do
-    auth $auth_azure
+    auth $azure_auth
     pagination $pagination_azure
-    host "management.azure.com"
+    host $param_azure_endpoint
     path join(["/subscriptions/", val(iter_item,"subscriptionId"), "/providers/Microsoft.Authorization/policyDefinitions"])
     query "api-version","2019-09-01"
     header "User-Agent", "RS Policies"
@@ -100,11 +118,11 @@ datasource "ds_azure_policy_definitions" do
 end
 
 datasource "ds_azure_policy_assignments" do
-  iterate $ds_subscriptions
+  iterate $ds_filtered_subscriptions
   request do
-    auth $auth_azure
+    auth $azure_auth
     pagination $pagination_azure
-    host "management.azure.com"
+    host $param_azure_endpoint
     path join(["/subscriptions/", val(iter_item,"subscriptionId"), "/providers/Microsoft.Authorization/policyAssignments"])
     query "api-version","2019-09-01"
     header "User-Agent", "RS Policies"
@@ -127,12 +145,31 @@ datasource "ds_azure_policy_assignments" do
 end
 
 datasource "ds_filtered_resources" do
-  run_script $js_filter_resources, $ds_subscriptions, $ds_azure_policy_definitions, $ds_azure_policy_assignments, $param_policy_names
+  run_script $js_filter_resources, $ds_filtered_subscriptions, $ds_azure_policy_definitions, $ds_azure_policy_assignments, $param_policy_names
 end
 
 ###############################################################################
 # Scripts
 ###############################################################################
+
+script "js_filtered_subscriptions", type: "javascript" do
+  parameters "ds_subscriptions", "param_subscription_whitelist"
+  result "results"
+  code <<-EOS
+  var results = []
+  if ( param_subscription_whitelist.length != 0){
+    results = []
+    _.each(param_subscription_whitelist, function(sub){
+      var found = _.find(ds_subscriptions, function(item){
+        return item.subscriptionId == sub || item.displayName.toLowerCase() == sub.toLowerCase();
+      })
+      results.push(found)
+    })
+  } else {
+    results = ds_subscriptions
+  }
+EOS
+end
 
 script "js_filter_resources", type: "javascript" do
   parameters "ds_subscriptions", "ds_azure_policy_definitions", "ds_azure_policy_assignments", "param_policy_names"
@@ -145,7 +182,7 @@ script "js_filter_resources", type: "javascript" do
     var subscription_name = subscription.displayName
     var sub_policies = _.where(ds_azure_policy_assignments, {subscriptionId: subscription_id})
     var sub_policy_definitions = _.where(ds_azure_policy_definitions, {subscriptionId: subscription_id})
-    
+
     _.each(param_policy_names, function(policyName){
       var policy = undefined
       var policy_definition = undefined
@@ -156,7 +193,7 @@ script "js_filter_resources", type: "javascript" do
       if ( policy_definition !== undefined ) {
         policy = _.findWhere(sub_policies, {policyDefinitionId: policy_definition["id"]})
       }
-      
+
       if ( policy !== undefined ) {
         if (policy.notScopes.length > 0) {
           var pol_notScopes = policy.notScopes.join(", ")
@@ -197,7 +234,7 @@ script "js_filter_resources", type: "javascript" do
       }
     })
   })
-  
+
   result = _.sortBy(result, 'subscriptionName');
 EOS
 end
