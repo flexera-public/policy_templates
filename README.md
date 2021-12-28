@@ -193,6 +193,7 @@ Reference
 
 ###### CIS Policies
 
+- [AWS Ensure Log File Validation Enabled For All CloudTrails](./security/aws/log_file_validation_enabled/)
 - [AWS Ensure CloudTrail Enabled In All Regions](./security/aws/log_ensure_cloudtrail_multiregion/)
 
 ##### Load Balancers
