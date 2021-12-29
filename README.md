@@ -212,6 +212,7 @@ Reference
 
 ###### CIS Policies
 
+- [AWS Ensure Object-level Events Logging Enabled For CloudTrails](./security/aws/log_ensure_cloudtrail_bucket_object_logging/)
 - [AWS Ensure CloudTrail Logs Encrypted At Rest](./security/aws/log_ensure_cloudtrail_encrypted/)
 - [AWS Ensure CloudTrail S3 Buckets Have Access Logging](./security/aws/log_ensure_cloudtrail_bucket_access_logging/)
 - [AWS Ensure CloudTrail Integrated With Cloudwatch](./security/aws/log_cloudtrail_cloudwatch_integrated/)
