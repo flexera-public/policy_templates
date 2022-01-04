@@ -1,0 +1,143 @@
+name "Google Committed Use Discount Recommendations (CUD)"
+rs_pt_ver 20180301
+type "policy"
+short_description "A policy that sends email notifications for all Google CUD's. \n See the [README](https://github.com/flexera/policy_templates/tree/master/cost/google/cud_report) and [docs.rightscale.com/policies](https://docs.rightscale.com/policies/) to learn more \n"
+long_description ""
+category "Cost"
+severity "low"
+tenancy "single"
+default_frequency "daily"
+info(
+  version: "2.6",
+  provider: "GCE",
+  service: "Recommendor",
+  policy_set: "Committed Use Discount"
+)
+
+###############################################################################
+# Parameters
+###############################################################################
+
+parameter "param_email" do
+  type "list"
+  label "Email addresses of the recipients you wish to notify"
+end
+
+# should this be hard set or do we need to pull from somewhere?
+parameter "param_region" do
+  type "list"
+  label "Region"
+  allowed_pattern /^([a-zA-Z-_]+-[a-zA-Z0-9-_]+-[0-9-_]+,*|)+$/
+  description "A list of allowed regions. See the README for more details"
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+# authenticate with Google
+credentials "auth_google" do
+  schemes "oauth2"
+  label "Google"
+  description "Select the Google Cloud Credential from the list."
+  tags "provider=gce"
+end
+
+###############################################################################
+# Pagination
+###############################################################################
+
+pagination "google_pagination" do
+  get_page_marker do
+    body_path "nextPageToken"
+  end
+  set_page_marker do
+    query "pageToken"
+  end
+end
+
+###############################################################################
+# Datasources
+###############################################################################
+
+#get all google project
+datasource "ds_google_project" do
+  request do
+    auth $auth_google
+    pagination $google_pagination
+    host "cloudresourcemanager.googleapis.com"
+    path "/v1/projects/"
+    query "filter", "lifecycleState=ACTIVE"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "projects[*]") do
+      field "projectNumber", jmes_path(col_item,"projectNumber")
+      field "projectId", jmes_path(col_item,"projectId")
+    end
+  end
+end
+
+#https://recommender.googleapis.com/v1/projects/${PROJECT}/locations/${LOCATION}/recommenders/google.compute.commitment.UsageCommitmentRecommender/recommendations
+datasource "ds_committed_use_discount_recommender" do
+  parameters "param_region"
+  iterate $ds_google_project
+  request do
+    auth $auth_google
+    host "www.recommender.googleapis.com"
+    header "Content-Type", "application/json"
+    path join(["/v1/projects/",val(iter_item,"projectId"),"/locations/param_region/recommenders/google.compute.commitment.UsageCommitmentRecommender/recommendations"])
+    query "accept" , "application/json"
+    ignore_status [403,404]
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "items.*.commitments[]") do
+      field "", jmes_path(col_item, '')
+    end
+  end
+end
+
+###############################################################################
+# Scripts
+###############################################################################
+
+#Filter the JSON, based on user selection for param 'param_cud_status' and formating Date.
+script "js_committed_use_discount_map", type: "javascript" do
+  parameters "commitments"
+  result "content"
+  code <<-EOS
+    var content=[];
+    content.push(commitmentDetails)
+    }
+  EOS
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "policy_committed_use_discount_recommendations" do
+  validate $ds_committed_use_discount_map do
+    summary_template " List of Committed Use Discount recommendations in Google Cloud"
+    escalate $report_list_of_CUDs
+    check eq(size(data),0)
+    export do
+      resource_level true
+      field "" do
+        label ""
+      end
+    end
+  end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "report_list_of_CUD_recommendations" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
+end
