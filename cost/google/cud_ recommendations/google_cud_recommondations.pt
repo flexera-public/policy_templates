@@ -1,17 +1,15 @@
-name "Google Committed Use Discount Recommendations (CUD)"
+name "Google Recommender Policy"
 rs_pt_ver 20180301
 type "policy"
-short_description "A policy that sends email notifications for all Google CUD's. \n See the [README](https://github.com/flexera/policy_templates/tree/master/cost/google/cud_report) and [docs.rightscale.com/policies](https://docs.rightscale.com/policies/) to learn more \n"
-long_description ""
+short_description "This Policy finds Google Recommendations and reports when it finds them. See the [README](https://github.com/flexera/policy_templates/tree/master/cost/google/recommender) and [docs.rightscale.com/policies](https://docs.rightscale.com/policies/) to learn more."
 category "Cost"
 severity "low"
-tenancy "single"
 default_frequency "daily"
 info(
-  version: "2.6",
-  provider: "GCE",
-  service: "Recommendor",
-  policy_set: "Committed Use Discount"
+  version: "2.2",
+  provider:"Google",
+  service: "Storage",
+  policy_set: "Native Recommendations"
 )
 
 ###############################################################################
@@ -20,15 +18,42 @@ info(
 
 parameter "param_email" do
   type "list"
-  label "Email addresses of the recipients you wish to notify"
+  label "Email addresses to notify"
+  description "Email addresses of the recipients you wish to notify when new incidents are created"
 end
 
-# should this be hard set or do we need to pull from somewhere?
-parameter "param_region" do
+parameter "param_recommenders" do
+  type "string"
+  label "Recommender to Check"
+  description "Google recommender to run the policy against"
+  allowed_values [
+    "Account security recommender",
+    "Cloud SQL out-of-disk recommender",
+    "Committed use discount recommender",
+    "IAM recommender",
+    "Idle custom image recommender",
+    "Idle IP address recommender",
+    "Idle persistent disk recommender",
+    "Idle VM recommender",
+    "Managed instance group machine type recommender",
+    "Product suggestion recommender - Container",
+    "Product suggestion recommender - Compute",
+    "VM machine type recommender",
+    "Unattended project recommender"
+  ]
+end
+
+parameter "param_location_whitelist" do
   type "list"
-  label "Region"
-  allowed_pattern /^([a-zA-Z-_]+-[a-zA-Z0-9-_]+-[0-9-_]+,*|)+$/
-  description "A list of allowed regions. See the README for more details"
+  label "Location"
+  description "Location to check, it can be the zone, region or global"
+end
+
+parameter "param_project" do
+  type "list"
+  label "Project ID"
+  description "Google Projects to Query. Leave blank to query all projects."
+  default []
 end
 
 ###############################################################################
@@ -67,7 +92,6 @@ datasource "ds_google_project" do
     pagination $google_pagination
     host "cloudresourcemanager.googleapis.com"
     path "/v1/projects/"
-    query "filter", "lifecycleState=ACTIVE"
   end
   result do
     encoding "json"
@@ -78,22 +102,32 @@ datasource "ds_google_project" do
   end
 end
 
-#https://recommender.googleapis.com/v1/projects/${PROJECT}/locations/${LOCATION}/recommenders/google.compute.commitment.UsageCommitmentRecommender/recommendations
-datasource "ds_committed_use_discount_recommender" do
-  parameters "param_region"
-  iterate $ds_google_project
+
+datasource "ds_recommenders" do
+  run_script $js_recommenders, $param_location_whitelist, $param_recommenders, $ds_google_project, $param_project
+end
+
+datasource "ds_recommendations" do
+  iterate $ds_recommenders
   request do
-    auth $auth_google
-    host "www.recommender.googleapis.com"
-    header "Content-Type", "application/json"
-    path join(["/v1/projects/",val(iter_item,"projectId"),"/locations/param_region/recommenders/google.compute.commitment.UsageCommitmentRecommender/recommendations"])
-    query "accept" , "application/json"
-    ignore_status [403,404]
+    run_script $js_recommender_call, val(iter_item,"projectId"), val(iter_item, "location"), val(iter_item, "recommender")
   end
   result do
     encoding "json"
-    collect jmes_path(response, "items.*.commitments[]") do
-      field "", jmes_path(col_item, '')
+    collect jmes_path(response, "recommendations[*]") do
+      field "projectId", val(iter_item, "projectId")
+      field "projectNumber", val(iter_item, "projectNumber")
+      field "location", val(iter_item, "location")
+      field "id", jmes_path(col_item, "name")
+      field "resource", jmes_path(col_item, "content.overview.resource")
+      field "resourceName", jmes_path(col_item, "content.overview.resourceName")
+      field "description", jmes_path(col_item, "description")
+      field "primaryImpact", jmes_path(col_item, "primaryImpact")
+      field "costUnits", jmes_path(col_item, "primaryImpact.costProjection.cost.units")
+      field "currency", jmes_path(col_item, "primaryImpact.costProjection.cost.currencyCode")
+      field "priority", jmes_path(col_item, "priority")
+      field "recommenderSubtype", jmes_path(col_item, "recommenderSubtype")
+      field "state", jmes_path(col_item, "stateInfo.state")
     end
   end
 end
@@ -101,31 +135,109 @@ end
 ###############################################################################
 # Scripts
 ###############################################################################
+script "js_recommenders", type: "javascript" do
+  parameters "param_location_whitelist", "param_recommenders", "ds_google_project", "param_project"
+  result "results"
+  code <<-EOF
+  var results = []
+  var global_inserted = 0
+  var recommender_map = {
+    "Account security recommender": "google.accounts.security.SecurityKeyRecommender",
+    "Cloud SQL out-of-disk recommender": "google.cloudsql.instance.OutOfDiskRecommender",
+    "Committed use discount recommender": "google.compute.commitment.UsageCommitmentRecommender",
+    "IAM recommender": "google.iam.policy.Recommender",
+    "Idle custom image recommender": "google.compute.image.IdleResourceRecommender",
+    "Idle IP address recommender": "google.compute.address.IdleResourceRecommender",
+    "Idle persistent disk recommender": "google.compute.disk.IdleResourceRecommender",
+    "Idle VM recommender": "google.compute.instance.IdleResourceRecommender",
+    "Managed instance group machine type recommender": "google.compute.instanceGroupManager.MachineTypeRecommender",
+    "Product suggestion recommender - Container": "google.logging.productSuggestion.ContainerRecommender",
+    "Product suggestion recommender - Compute": "google.monitoring.productSuggestion.ComputeRecommender",
+    "VM machine type recommender": "google.compute.instance.MachineTypeRecommender",
+    "Unattended project recommender": "google.resourcemanager.projectUtilization.Recommender",
+  }
 
-#Filter the JSON, based on user selection for param 'param_cud_status' and formating Date.
-script "js_committed_use_discount_map", type: "javascript" do
-  parameters "commitments"
-  result "content"
-  code <<-EOS
-    var content=[];
-    content.push(commitmentDetails)
+  recommenders = recommender_map[param_recommenders]
+  _.each(ds_google_project, function(project){
+    if (_.contains(param_project, project.projectId) || param_project.length == 0) {
+      _.each(param_location_whitelist, function(location){
+        results.push({
+          projectNumber: project.projectNumber,
+          projectId: project.projectId,
+          location: location,
+          recommender: recommenders
+        })
+      })
     }
-  EOS
+  })
+EOF
+end
+
+script "js_recommender_call", type: "javascript" do
+  parameters "projectId", "location", "recommender"
+  result "request"
+  code <<-EOF
+  var now = new Date().getTime();
+  var sleepDuration = 10000
+  while(new Date().getTime() < now + sleepDuration){ /* Do nothing */ }
+  var request = {
+    auth: "auth_google",
+    pagination: "google_pagination",
+    host: "recommender.googleapis.com",
+    ignore_status: 403,
+    path: "/v1/projects/"+ projectId +"/locations/" + location + "/recommenders/" + recommender + "/recommendations",
+    query_strings: { alt: "json" }
+  }
+EOF
 end
 
 ###############################################################################
 # Policy
 ###############################################################################
 
-policy "policy_committed_use_discount_recommendations" do
-  validate $ds_committed_use_discount_map do
-    summary_template " List of Committed Use Discount recommendations in Google Cloud"
-    escalate $report_list_of_CUDs
-    check eq(size(data),0)
+policy "policy_recommendations" do
+  validate $ds_recommendations do
+    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} rows found for {{parameters.param_recommenders}}"
+    check eq(size(data), 0)
+    escalate $esc_email
     export do
       resource_level true
-      field "" do
-        label ""
+      field "projectId" do
+        label "Project ID"
+      end
+      field "location" do
+        label "Location"
+      end
+      field "resourceName" do
+        label "Resource Name"
+      end
+      field "description" do
+        label "Description"
+      end
+      field "primary_impact" do
+        label "Primary Impact"
+        path "primaryImpact.category"
+      end
+      field "costUnits" do
+        label "Cost"
+      end
+      field "currency" do
+        label "Currency"
+      end
+      field "priority" do
+        label "Priority"
+      end
+      field "recommenderSubtype" do
+        label "Sub Type"
+      end
+      field "state" do
+        label "State"
+      end
+      field "resource" do
+        label "resource"
+      end
+      field "id" do
+        label "Name"
       end
     end
   end
@@ -135,9 +247,13 @@ end
 # Escalations
 ###############################################################################
 
-escalation "report_list_of_CUD_recommendations" do
+escalation "esc_email" do
   automatic true
   label "Send Email"
   description "Send incident email"
   email $param_email
 end
+
+###############################################################################
+# Cloud Workflow
+###############################################################################
