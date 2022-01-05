@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.0
+
+- applying data normalization updates for spend recommendations api
+
 ## v2.18
 
 - Fix non-optimal array searching for costs

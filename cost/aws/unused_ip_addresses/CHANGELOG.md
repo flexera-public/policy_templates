@@ -1,6 +1,6 @@
 # Changelog
 
-## v2.16
+## v3.0
 
 - applying data normalization updates for spend recommendations api
 
