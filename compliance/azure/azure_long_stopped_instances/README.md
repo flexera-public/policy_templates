@@ -11,6 +11,8 @@ The policy leverages the Azure API to check all instances that have been stopped
 ## Input Parameters
 
 - *Email addresses of the recipients you wish to notify* - A list of email addresses to notify
+- *Azure Endpoint* - Azure Endpoint to access resources
+- *Subscription Whitelist* - Whitelisted Subscriptions, if empty, all subscriptions will be checked
 - *Stopped days* - Number of days an instance is stopped before it is added to the report
 - *Automatic Actions* - When this value is set, this policy will automatically take the selected action(s).
 

@@ -1,0 +1,260 @@
+name "AWS Ensure CloudTrail S3 Buckets Non-Public"
+rs_pt_ver 20180301
+type "policy"
+short_description "Report if CloudTrail stores logs in publicly accessible S3 bucket(s). \n See the [README](https://github.com/flexera/policy_templates/tree/master/security/aws/log_ensure_cloudtrail_bucket_not_public) and [docs.rightscale.com/policies](https://docs.rightscale.com/policies/) to learn more."
+long_description ""
+category "Security"
+severity "high"
+default_frequency "daily"
+info(
+  version: "2.0",
+  provider: "AWS",
+  service: "CloudTrail",
+  policy_set: "CIS",
+  cce_id: "CCE-78915-6",
+  cis_aws_foundations_securityhub: "2.3",
+  benchmark_control: "3.3",
+  benchmark_version: "1.4.0",
+  cis_controls: "[\"3.3v8\", \"14.6v7\"]",
+  nist: "AU-9"
+)
+
+###############################################################################
+# User inputs
+###############################################################################
+
+parameter "param_email" do
+  type "list"
+  label "Email Address"
+  description "Email addresses of the recipients you wish to notify"
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+credentials "auth_aws" do
+  schemes "aws","aws_sts"
+  label "AWS"
+  description "Select the AWS Credential from the list"
+  tags "provider=aws"
+end
+
+###############################################################################
+# Datasources
+###############################################################################
+
+datasource "ds_trail_list" do
+  request do
+    auth $auth_aws
+    verb "GET"
+    host "cloudtrail.us-east-1.amazonaws.com"
+    path "/"
+    header "User-Agent", "RS Policies"
+    header "Accept", "application/json"
+    query "Action", "DescribeTrails"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "DescribeTrailsResponse.DescribeTrailsResult.trailList") do
+      field "name", jmes_path(col_item, "Name")
+      field "arn", jmes_path(col_item, "TrailARN")
+      field "homeregion", jmes_path(col_item, "HomeRegion")
+      field "s3_bucket", jmes_path(col_item, "S3BucketName")
+    end
+  end
+end
+
+datasource "ds_aws_buckets_with_region" do
+  iterate $ds_trail_list
+  request do
+    auth $auth_aws
+    host "s3.amazonaws.com"
+    path join(["/", val(iter_item, "s3_bucket")])
+    query "location", ""
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "xml"
+    field "trail_name", val(iter_item, "name")
+    field "trail_arn", val(iter_item, "arn")
+    field "trail_region", val(iter_item, "homeregion")
+    field "id", val(iter_item, "s3_bucket")
+    field "region", response
+  end
+end
+
+# https://docs.aws.amazon.com/AmazonS3/latest/API/API_GetBucketLocation.html
+# "Buckets in Region us-east-1 have a LocationConstraint of null."
+# This is to clean up the data and replace that null value with us-east-1
+datasource "ds_aws_buckets_with_region_cleaned" do
+  run_script $js_aws_buckets_with_region_cleaned, $ds_aws_buckets_with_region
+end
+
+datasource "ds_aws_buckets_with_acl_grants" do
+  iterate $ds_aws_buckets_with_region_cleaned
+  request do
+    auth $auth_aws
+    host val(iter_item, "host")
+    path join(["/", val(iter_item, "id")])
+    query "acl", ""
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "xml"
+    field "trail_name", val(iter_item, "trail_name")
+    field "trail_arn", val(iter_item, "trail_arn")
+    field "trail_region", val(iter_item, "trail_region")
+    field "id", val(iter_item, "id")
+    field "region", val(iter_item, "region")
+    field "host", val(iter_item, "host")
+    field "acl_grants" do
+      collect xpath(response, "//AccessControlPolicy/AccessControlList/Grant", "array") do
+        field "id", xpath(col_item, "Grantee/ID")
+        field "display_name", xpath(col_item, "Grantee/DisplayName")
+        field "uri", xpath(col_item, "Grantee/URI")
+        field "permission", xpath(col_item, "Permission")
+      end
+    end
+  end
+end
+
+datasource "ds_aws_buckets_with_policies" do
+  iterate $ds_aws_buckets_with_acl_grants
+  request do
+    auth $auth_aws
+    host val(iter_item, "host")
+    path join(["/", val(iter_item, "id")])
+    query "policy", ""
+    header "User-Agent", "RS Policies"
+    header "Accept", "application/json"
+    ignore_status 404
+  end
+  result do
+    encoding "json"
+    field "trail_name", val(iter_item, "trail_name")
+    field "trail_arn", val(iter_item, "trail_arn")
+    field "trail_region", val(iter_item, "trail_region")
+    field "id", val(iter_item, "id")
+    field "region", val(iter_item, "region")
+    field "host", val(iter_item, "host")
+    field "acl_grants", val(iter_item, "acl_grants")
+    field "policy", response
+  end
+end
+
+datasource "ds_aws_bad_buckets" do
+  run_script $js_bad_buckets, $ds_aws_buckets_with_policies
+end
+
+###############################################################################
+# Scripts
+###############################################################################
+
+script "js_aws_buckets_with_region_cleaned", type:"javascript" do
+  parameters "ds_aws_buckets_with_region"
+  result "result"
+  code <<-EOS
+    result = []
+
+    for ( i = 0; i < ds_aws_buckets_with_region.length; i++ ) {
+      if (ds_aws_buckets_with_region[i].region == "\\n") {
+        ds_aws_buckets_with_region[i].region = "us-east-1"
+        ds_aws_buckets_with_region[i].host = "s3-external-1.amazonaws.com"
+      } else if (ds_aws_buckets_with_region[i].region == "EU" || ds_aws_buckets_with_region[i].region == "\\nEU") {
+        ds_aws_buckets_with_region[i].region = "eu-west-1"
+        ds_aws_buckets_with_region[i].host = "s3-" + ds_aws_buckets_with_region[i]["region"] + ".amazonaws.com"
+      } else {
+        ds_aws_buckets_with_region[i].region = ds_aws_buckets_with_region[i].region.substring(1)
+        ds_aws_buckets_with_region[i].host = "s3-" + ds_aws_buckets_with_region[i]["region"] + ".amazonaws.com"
+      }
+
+      result.push(ds_aws_buckets_with_region[i])
+    }
+EOS
+end
+
+script "js_bad_buckets", type:"javascript" do
+  parameters "ds_aws_buckets_with_policies"
+  result "result"
+  code <<-EOS
+    result = []
+
+    _.each(ds_aws_buckets_with_policies, function(bucket) {
+      bad_acl_grant = "False"
+      bad_policy = "False"
+
+      _.each(bucket.acl_grants, function(grant) {
+        if (grant.uri == "https://acs.amazonaws.com/groups/global/AllUsers" ||
+            grant.uri == "https://acs.amazonaws.com/groups/global/AuthenticatedUsers" ||
+            grant.uri == "http://acs.amazonaws.com/groups/global/AllUsers" ||
+            grant.uri == "http://acs.amazonaws.com/groups/global/AuthenticatedUsers") {
+          bad_acl_grant = "True"
+        }
+      })
+
+      _.each(bucket.policy.Statement, function(statement) {
+        if (statement.Effect == "Allow") {
+          if (statement.Principal == "*" || statement.Principal == {"AWS": "*"}) {
+            bad_policy = "True"
+          }
+        }
+      })
+
+      if (bad_acl_grant == "True" || bad_policy == "True") {
+        result.push({
+          trail_name: bucket.trail_name,
+          id: bucket.trail_arn,
+          bucket_name: bucket.id,
+          bucket_region: bucket.region,
+          bad_acl_grant: bad_acl_grant,
+          bad_policy: bad_policy
+        })
+      }
+    })
+EOS
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "policy_trails_with_nonprivate_buckets" do
+  validate $ds_aws_bad_buckets do
+    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} CloudTrails Found With Publicly Accessible Buckets"
+    escalate $esc_report_trails_with_nonprivate_buckets
+    check eq(size(data),0)
+    export do
+      resource_level true
+      field "trail_name" do
+        label "CloudTrail Name"
+      end
+      field "id" do
+        label "CloudTrail ARN"
+      end
+      field "bucket_name" do
+        label "S3 Bucket Name"
+      end
+      field "bucket_region" do
+        label "S3 Bucket Region"
+      end
+      field "bad_acl_grant" do
+        label "Bad ACL Grant?"
+      end
+      field "bad_policy" do
+        label "Bad Policy?"
+      end
+    end
+  end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_report_trails_with_nonprivate_buckets" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
+end

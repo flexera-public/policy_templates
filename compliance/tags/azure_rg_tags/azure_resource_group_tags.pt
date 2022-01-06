@@ -5,8 +5,9 @@ short_description "Scan all resources in an Azure Subscription, raise an inciden
 long_description ""
 severity "medium"
 category "Compliance"
+default_frequency "daily"
 info(
-  version: "2.1",
+  version: "2.2",
   provider: "Azure",
   service: "",
   policy_set: ""
@@ -21,9 +22,26 @@ permission "perm_read_creds" do
   resources "rs_cm.credentials"
 end
 
+###############################################################################
+# Parameters
+###############################################################################
+
 parameter "param_email" do
   type "list"
   label "Email addresses of the recipients you wish to notify"
+end
+
+parameter "param_azure_endpoint" do
+  type "string"
+  label "Azure Endpoint"
+  allowed_values "management.azure.com", "management.chinacloudapi.cn"
+  default "management.azure.com"
+end
+
+parameter "param_subscription_whitelist" do
+  label "Subscription Whitelist"
+  type "list"
+  description "Whitelisted Subscriptions, if empty, all subscriptions will be checked"
 end
 
 parameter "param_tag_key" do
@@ -43,12 +61,20 @@ parameter "param_automatic_action" do
   allowed_values ["Tag Resources"]
 end
 
+###############################################################################
+# Authentication
+###############################################################################
+
 credentials "azure_auth" do
   schemes "oauth2"
   label "Azure"
   description "Select the Azure Resource Manager Credential from the list."
   tags "provider=azure_rm"
 end
+
+###############################################################################
+# Pagination
+###############################################################################
 
 pagination "azure_pagination" do
   get_page_marker do
@@ -59,11 +85,15 @@ pagination "azure_pagination" do
   end
 end
 
+###############################################################################
+# Datasources
+###############################################################################
+
 datasource "ds_subscriptions" do
   request do
     auth $azure_auth
     pagination $azure_pagination
-    host "management.azure.com"
+    host $param_azure_endpoint
     path "/subscriptions/"
     query "api-version","2018-06-01"
     header "User-Agent", "RS Policies"
@@ -77,12 +107,16 @@ datasource "ds_subscriptions" do
   end
 end
 
+datasource "ds_filtered_subscriptions" do
+  run_script $js_filtered_subscriptions, $ds_subscriptions, $param_subscription_whitelist
+end
+
 datasource "ds_azure_resources" do
-  iterate $ds_subscriptions
+  iterate $ds_filtered_subscriptions
   request do
     auth $azure_auth
     pagination $azure_pagination
-    host "management.azure.com"
+    host $param_azure_endpoint
     path join(["/subscriptions/", val(iter_item,"subscriptionId"), "/resources"])
     query "api-version","2018-02-01"
     header "User-Agent", "RS Policies"
@@ -102,6 +136,29 @@ end
 
 datasource "ds_filtered_resources" do
   run_script $js_filter_resources, $ds_azure_resources, $param_tag_key
+end
+
+###############################################################################
+# Scripts
+###############################################################################
+
+script "js_filtered_subscriptions", type: "javascript" do
+  parameters "ds_subscriptions", "param_subscription_whitelist"
+  result "results"
+  code <<-EOS
+  var results = []
+  if ( param_subscription_whitelist.length != 0){
+    results = []
+    _.each(param_subscription_whitelist, function(sub){
+      var found = _.find(ds_subscriptions, function(item){
+        return item.subscriptionId == sub || item.subscriptionName.toLowerCase() == sub.toLowerCase();
+      })
+      results.push(found)
+    })
+  } else {
+    results = ds_subscriptions
+  }
+EOS
 end
 
 script "js_filter_resources", type: "javascript" do
@@ -188,6 +245,10 @@ script "js_filter_resources", type: "javascript" do
   EOS
 end
 
+###############################################################################
+# Policies
+###############################################################################
+
 policy "policy_azure_resource" do
   validate_each $ds_filtered_resources do
     summary_template "{{ len data }} Azure Resources out of compliance."
@@ -233,6 +294,10 @@ policy "policy_azure_resource" do
   end
 end
 
+###############################################################################
+# Escalations
+###############################################################################
+
 escalation "email" do
   automatic true
   label "Send Email"
@@ -244,10 +309,14 @@ escalation "tag_resources" do
   automatic contains($param_automatic_action, "Tag Resources")
   label "Resource Tagging"
   description "Tagged the untagged resources"
-  run "tag_resources", data, $param_tag_key
+  run "tag_resources", data, $param_tag_key, $param_azure_endpoint
 end
 
-define tag_resources($data, $param_tag_key) return $all_responses do
+###############################################################################
+# Cloud Workflows
+###############################################################################
+
+define tag_resources($data, $param_tag_key, $param_azure_endpoint) return $all_responses do
   $$log = []
   $all_responses = []
 
@@ -256,7 +325,7 @@ define tag_resources($data, $param_tag_key) return $all_responses do
     $providers_response = http_request(
       auth: $$azure_auth,
       verb: "get",
-      host: "management.azure.com",
+      host: $param_azure_endpoint,
       https: true,
       href: "/subscriptions/" + $subscriptionId +"/providers",
       query_strings: {
@@ -293,7 +362,7 @@ define tag_resources($data, $param_tag_key) return $all_responses do
       $update_resource_response = http_request(
         auth: $$azure_auth,
         verb: "patch",
-        host: "management.azure.com",
+        host: $param_azure_endpoint,
         https: true,
         href: $item["id"],
         query_strings: {

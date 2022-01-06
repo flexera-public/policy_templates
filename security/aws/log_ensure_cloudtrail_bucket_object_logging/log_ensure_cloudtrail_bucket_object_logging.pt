@@ -1,0 +1,179 @@
+name "AWS Ensure Object-level Events Logging Enabled For CloudTrails"
+rs_pt_ver 20180301
+type "policy"
+short_description "Report if CloudTrail does not have object-level logging for read and write events enabled. \n See the [README](https://github.com/flexera/policy_templates/tree/master/security/aws/log_ensure_cloudtrail_bucket_object_logging) and [docs.rightscale.com/policies](https://docs.rightscale.com/policies/) to learn more."
+long_description ""
+category "Security"
+severity "high"
+default_frequency "daily"
+info(
+  version: "2.0",
+  provider: "AWS",
+  service: "CloudTrail",
+  policy_set: "CIS",
+  cce_id: "",
+  cis_aws_foundations_securityhub: "",
+  benchmark_control: "[\"3.10\", \"3.11\"]",
+  benchmark_version: "1.4.0",
+  cis_controls: "[\"8.5v8\", \"6.2v7\", \"6.3v7\"]",
+  nist: ""
+)
+
+###############################################################################
+# User inputs
+###############################################################################
+
+parameter "param_email" do
+  type "list"
+  label "Email Address"
+  description "Email addresses of the recipients you wish to notify"
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+credentials "auth_aws" do
+  schemes "aws","aws_sts"
+  label "AWS"
+  description "Select the AWS Credential from the list"
+  tags "provider=aws"
+end
+
+###############################################################################
+# Datasources
+###############################################################################
+
+datasource "ds_trail_list" do
+  request do
+    auth $auth_aws
+    verb "GET"
+    host "cloudtrail.us-east-1.amazonaws.com"
+    path "/"
+    header "User-Agent", "RS Policies"
+    header "Accept", "application/json"
+    query "Action", "DescribeTrails"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "DescribeTrailsResponse.DescribeTrailsResult.trailList") do
+      field "name", jmes_path(col_item, "Name")
+      field "id", jmes_path(col_item, "TrailARN")
+      field "region", jmes_path(col_item, "HomeRegion")
+    end
+  end
+end
+
+datasource "ds_trail_list_with_selectors" do
+  iterate $ds_trail_list
+  request do
+    auth $auth_aws
+    verb "POST"
+    host join(["cloudtrail.", val(iter_item, "region"), ".amazonaws.com"])
+    path "/"
+    header "User-Agent", "RS Policies"
+    header 'X-Amz-Target', 'com.amazonaws.cloudtrail.v20131101.CloudTrail_20131101.GetEventSelectors'
+    header 'Content-Type', 'application/x-amz-json-1.1'
+    body join(['{ "TrailName": "', val(iter_item, "name"), '" }'])
+  end
+  result do
+    encoding "json"
+    field "name", val(iter_item, "name")
+    field "id", val(iter_item, "id")
+    field "region", val(iter_item, "region")
+    field "event_selectors", jmes_path(response, "EventSelectors")
+  end
+end
+
+# Places param_regions into a datasource for iteration
+datasource "ds_trails_without_ol" do
+  run_script $js_trails_without_ol, $ds_trail_list_with_selectors
+end
+
+###############################################################################
+# Scripts
+###############################################################################
+
+script "js_trails_without_ol", type:"javascript" do
+  parameters "ds_trail_list_with_selectors"
+  result "result"
+  code <<-EOS
+    result = []
+
+    _.each(ds_trail_list_with_selectors, function(trail) {
+      has_selectors = false
+      object_logging_read = false
+      object_logging_write = false
+
+      if (trail.event_selectors != null) {
+        has_selectors = true
+
+        _.each(trail.event_selectors, function(selector) {
+          if (selector.ReadWriteType == "All") {
+            object_logging_read = true
+            object_logging_write = true
+          } else if (selector.ReadWriteType == "ReadOnly") {
+            object_logging_read = true
+          } else if (selector.ReadWriteType == "WriteOnly") {
+            object_logging_write = true
+          }
+        })
+      }
+
+      if (has_selectors == false || object_logging_read == false || object_logging_write == false) {
+        result.push({
+          name: trail.name,
+          id: trail.id,
+          region: trail.region,
+          has_selectors: has_selectors,
+          object_logging_read: object_logging_read,
+          object_logging_write: object_logging_write
+        })
+      }
+    })
+EOS
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "policy_trails_without_ol" do
+  validate $ds_trails_without_ol do
+    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} CloudTrails Found Without Complete Object Logging"
+    escalate $esc_report_trails_without_ol
+    check eq(size(data),0)
+    export do
+      resource_level true
+      field "name" do
+        label "Name"
+      end
+      field "id" do
+        label "ARN"
+      end
+      field "region" do
+        label "Region"
+      end
+      field "has_selectors" do
+        label "Has Event Selectors?"
+      end
+      field "object_logging_read" do
+        label "Object Logging: Read"
+      end
+      field "object_logging_write" do
+        label "Object Logging: Write"
+      end
+    end
+  end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_report_trails_without_ol" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
+end

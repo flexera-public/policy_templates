@@ -12,6 +12,8 @@ When the list of users that match the criteria changes, an incident is created a
 ## Input Parameters
 
 - *Email addresses of the recipients you wish to notify* - A list of email addresses to notify
+- *Azure Endpoint* - Azure Endpoint to access resources
+- *Subscription Whitelist* - Whitelisted Subscriptions, if empty, all subscriptions will be checked
 - *Roles to report on* - Can choose to report on Owner, Contributor, or Both
 
 ## Actions
