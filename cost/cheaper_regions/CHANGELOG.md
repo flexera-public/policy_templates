@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.12
+
+- added Google and AzureMCA expression blobs for filters
+
 ## v1.11
 
 - Use rs_optima_host variable instead of hardcoded optima.rightscale.com (different in EU region)

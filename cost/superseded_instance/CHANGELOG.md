@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.1
+
+- Added Google expression blob for /bill-analysis/orgs/" + org_id + "/costs/select request
+
 ## v2.0
 
 - Bug fix for Optima cloud vendor account name API changes
