@@ -7,7 +7,7 @@ severity "medium"
 category "Cost"
 default_frequency "daily"
 info(
-  version: "2.5",
+  version: "2.6",
   provider: "Azure",
   service: "Compute",
   policy_set: "Reserved Instance"
@@ -116,7 +116,7 @@ datasource "ds_subscriptions" do
     pagination $azure_pagination
     host $param_azure_endpoint
     path "/subscriptions/"
-    query "api-version","2019-06-01"
+    query "api-version","2020-01-01"
     header "User-Agent", "RS Policies"
   end
   result do
@@ -128,12 +128,12 @@ datasource "ds_subscriptions" do
   end
 end
 
+datasource "ds_ri_types" do
+  run_script $js_ri_types, $param_type, $ds_filtered_subscriptions, $param_scope
+end
+  
 datasource "ds_filtered_subscriptions" do
   run_script $js_filtered_subscriptions, $ds_subscriptions, $param_subscription_whitelist
-end
-
-datasource "ds_ri_types" do
-  run_script $js_ri_types, $param_type, $ds_filtered_subscriptions
 end
 
 datasource "ds_ri_recommendations" do
@@ -188,12 +188,21 @@ EOS
 end
 
 script "js_ri_types", type: "javascript" do
-  parameters "param_service", "subscriptions"
+  parameters "param_service", "subscriptions", "param_scope"
   result "result"
   code <<-EOS
     var result = []
 
-      var services = ["VirtualMachines","SQLDatabases","PostgreSQL","ManagedDisk", "MySQL", "RedHat", "MariaDB", "RedisCache", "CosmosDB", "SqlDataWarehouse", "SUSELinux", "AppService", "BlockBlob", "AzureDataExplorer", "VMwareCloudSimple"]
+    var services = ["VirtualMachines","SQLDatabases","PostgreSQL","ManagedDisk", "MySQL", "RedHat", "MariaDB", "RedisCache", "CosmosDB", "SqlDataWarehouse", "SUSELinux", "AppService", "BlockBlob", "AzureDataExplorer", "VMwareCloudSimple"]
+    if (param_scope == "Shared") {
+      if (param_service === "All"){
+        _.each(services, function(service){
+          result.push({"service":service, "subscriptionId":subscriptions[0].subscriptionId})
+        })
+      } else {
+        result.push({"service":param_service, "subscriptionId":subscriptions[0].subscriptionId})
+      }
+    } else {
       _.each(subscriptions, function(subscription){
         if (param_service === "All"){
           _.each(services, function(service){
@@ -203,7 +212,7 @@ script "js_ri_types", type: "javascript" do
             result.push({"service":param_service, "subscriptionId":subscription.subscriptionId})
         }
       })
-
+    }
   EOS
 end
 
@@ -225,7 +234,7 @@ script "js_ri_request", type: "javascript" do
     ignore_status: [400,404],
     path: "/subscriptions/"+subscriptionId+"/providers/Microsoft.Consumption/reservationRecommendations",
     query_params: {
-        "api-version": "2019-10-01",
+        "api-version": "2021-10-01",
         "$filter": "properties/resourceType eq "+ type_str +" and properties/scope eq "+ scope_str + " and properties/lookBackPeriod eq "+quote_str
     },
     headers: {

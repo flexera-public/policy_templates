@@ -16,6 +16,8 @@ This policy has the following input parameters required when launching the polic
 
 - *Policy Names* - A list of Azure Policies.
 - *Email addresses of the recipients you wish to notify* - A list of email addresses to notify
+- *Azure Endpoint* - Azure Endpoint to access resources
+- *Subscription Whitelist* - Whitelisted Subscriptions, if empty, all subscriptions will be checked
 
 ## Prerequisites
 

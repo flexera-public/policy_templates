@@ -6,7 +6,7 @@ category "Compliance"
 severity "low"
 default_frequency "daily"
 info(
-  version: "2.7",
+  version: "2.8",
   provider: "Azure",
   service: "",
   policy_set: "Untagged Resources"
@@ -20,6 +20,19 @@ parameter "param_email" do
   type "list"
   label "Email addresses to notify"
   description "Email addresses of the recipients you wish to notify when new incidents are created"
+end
+
+parameter "param_azure_endpoint" do
+  type "string"
+  label "Azure Endpoint"
+  allowed_values "management.azure.com", "management.chinacloudapi.cn"
+  default "management.azure.com"
+end
+
+parameter "param_subscription_whitelist" do
+  label "Subscription Whitelist"
+  type "list"
+  description "Whitelisted Subscriptions, if empty, all subscriptions will be checked"
 end
 
 parameter "param_tag_key" do
@@ -65,7 +78,7 @@ datasource "ds_subscriptions" do
   request do
     auth $azure_auth
     pagination $azure_pagination
-    host "management.azure.com"
+    host $param_azure_endpoint
     path "/subscriptions/"
     query "api-version","2018-06-01"
     header "User-Agent", "RS Policies"
@@ -79,13 +92,17 @@ datasource "ds_subscriptions" do
   end
 end
 
+datasource "ds_filtered_subscriptions" do
+  run_script $js_filtered_subscriptions, $ds_subscriptions, $param_subscription_whitelist
+end
+
 datasource "ds_azure_resources" do
-  iterate $ds_subscriptions
+  iterate $ds_filtered_subscriptions
   request do
     auth $azure_auth
     pagination $azure_pagination
-    host "management.azure.com"
-      path join(["/subscriptions/", val(iter_item,"subscriptionId"), "/resources"])
+    host $param_azure_endpoint
+    path join(["/subscriptions/", val(iter_item,"subscriptionId"), "/resources"])
     query "api-version","2020-06-01"
     header "User-Agent", "RS Policies"
   end
@@ -126,6 +143,25 @@ end
 ###############################################################################
 # Scripts
 ###############################################################################
+
+script "js_filtered_subscriptions", type: "javascript" do
+  parameters "ds_subscriptions", "param_subscription_whitelist"
+  result "results"
+  code <<-EOS
+  var results = []
+  if ( param_subscription_whitelist.length != 0){
+    results = []
+    _.each(param_subscription_whitelist, function(sub){
+      var found = _.find(ds_subscriptions, function(item){
+        return item.subscriptionId == sub || item.subscriptionName.toLowerCase() == sub.toLowerCase();
+      })
+      results.push(found)
+    })
+  } else {
+    results = ds_subscriptions
+  }
+EOS
+end
 
 script "js_parse_tag_support", type: "javascript" do
   parameters "ds_tag_support"
@@ -272,14 +308,14 @@ escalation "esc_tag_resources" do
     label "Add Tags"
     description "Add Tags to the selected resource"
   end
-  run "tag_resources", data, $param_tags_to_add
+  run "tag_resources", data, $param_tags_to_add, $param_azure_endpoint
 end
 
 ###############################################################################
 # Cloud Workflow
 ###############################################################################
 
-define tag_resources($data, $param_tags_to_add) return $all_responses do
+define tag_resources($data, $param_tags_to_add, $param_azure_endpoint) return $all_responses do
   $$log = []
   $all_responses = []
 
@@ -289,7 +325,7 @@ define tag_resources($data, $param_tags_to_add) return $all_responses do
   $providers_response = http_request(
     auth: $$azure_auth,
     verb: "get",
-    host: "management.azure.com",
+    host: $param_azure_endpoint,
     https: true,
     href: "/subscriptions/" + $subscriptionId +"/providers",
     query_strings: {
@@ -327,7 +363,7 @@ define tag_resources($data, $param_tags_to_add) return $all_responses do
       $update_resource_response = http_request(
       auth: $$azure_auth,
         verb: "patch",
-        host: "management.azure.com",
+        host: $param_azure_endpoint,
         https: true,
         href: $item["id"],
         query_strings: {

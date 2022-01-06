@@ -5,16 +5,34 @@ short_description "Check for instances that are in a disallowed region with the 
 long_description ""
 severity "medium"
 category "Compliance"
+default_frequency "daily"
 info(
-  version: "2.4",
+  version: "2.5",
   provider: "Azure",
   service: "Compute",
   policy_set: "Disallowed Regions"
-  )
+)
+
+###############################################################################
+# Parameters
+###############################################################################
 
 parameter "param_email" do
   type "list"
   label "Email addresses of the recipients you wish to notify"
+end
+
+parameter "param_azure_endpoint" do
+  type "string"
+  label "Azure Endpoint"
+  allowed_values "management.azure.com", "management.chinacloudapi.cn"
+  default "management.azure.com"
+end
+
+parameter "param_subscription_whitelist" do
+  label "Subscription Whitelist"
+  type "list"
+  description "Whitelisted Subscriptions, if empty, all subscriptions will be checked"
 end
 
 parameter "param_approved_region" do
@@ -30,13 +48,20 @@ parameter "param_automatic_action" do
   allowed_values ["Terminate Instances"]
 end
 
-#authenticate with Azure
+###############################################################################
+# Authentication
+###############################################################################
+
 credentials "azure_auth" do
   schemes "oauth2"
   label "Azure"
   description "Select the Azure Resource Manager Credential from the list."
   tags "provider=azure_rm"
 end
+
+###############################################################################
+# Pagination
+###############################################################################
 
 pagination "azure_pagination" do
   get_page_marker do
@@ -47,12 +72,15 @@ pagination "azure_pagination" do
   end
 end
 
-#get all subscription details.
+###############################################################################
+# Datasources
+###############################################################################
+
 datasource "ds_subscriptions" do
   request do
     auth $azure_auth
     pagination $azure_pagination
-    host "management.azure.com"
+    host $param_azure_endpoint
     path "/subscriptions/"
     query "api-version","2019-06-01"
     header "User-Agent", "RS Policies"
@@ -67,12 +95,16 @@ datasource "ds_subscriptions" do
   end
 end
 
+datasource "ds_filtered_subscriptions" do
+  run_script $js_filtered_subscriptions, $ds_subscriptions, $param_subscription_whitelist
+end
+
 datasource "azure_resources" do
-  iterate $ds_subscriptions
+  iterate $ds_filtered_subscriptions
   request do
     auth $azure_auth
     pagination $azure_pagination
-    host "management.azure.com"
+    host $param_azure_endpoint
     path join(["/subscriptions/", val(iter_item,"subscriptionId"), "/resources"])
     query "api-version","2018-02-01"
     header "User-Agent", "RS Policies"
@@ -92,6 +124,29 @@ end
 
 datasource "filtered_resources" do
   run_script $js_filter_resources, $azure_resources, $param_approved_region
+end
+
+###############################################################################
+# Scripts
+###############################################################################
+
+script "js_filtered_subscriptions", type: "javascript" do
+  parameters "ds_subscriptions", "param_subscription_whitelist"
+  result "results"
+  code <<-EOS
+  var results = []
+  if ( param_subscription_whitelist.length != 0){
+    results = []
+    _.each(param_subscription_whitelist, function(sub){
+      var found = _.find(ds_subscriptions, function(item){
+        return item.subscriptionId == sub || item.displayName.toLowerCase() == sub.toLowerCase();
+      })
+      results.push(found)
+    })
+  } else {
+    results = ds_subscriptions
+  }
+EOS
 end
 
 script "js_filter_resources", type: "javascript" do
@@ -130,6 +185,10 @@ script "js_filter_resources", type: "javascript" do
   EOS
 end
 
+###############################################################################
+# Policy
+###############################################################################
+
 policy "azure_resource_policy" do
   validate $filtered_resources do
     summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} Azure Resources out of compliance"
@@ -156,6 +215,10 @@ policy "azure_resource_policy" do
     end
   end
 end
+
+###############################################################################
+# Escalations
+###############################################################################
 
 escalation "email" do
   automatic true

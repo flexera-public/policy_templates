@@ -10,6 +10,8 @@ This policy has the following input parameters required when launching the polic
 
 - *Tag Key* - the tag key to scan on resources and to utilize when applying new/updated tags on resources
 - *Email addresses of the recipients you wish to notify* - A list of email addresses to notify
+- *Azure Endpoint* - Azure Endpoint to access resources
+- *Subscription Whitelist* - Whitelisted Subscriptions, if empty, all subscriptions will be checked
 - *Automatic Actions* - When this value is set, this policy will automatically take the selected action(s).
 
 Please note that the "Automatic Actions" parameter contains a list of action(s) that can be performed on the resources. When it is selected, the policy will automatically execute the corresponding action on the data that failed the checks, post incident generation. Please leave it blank for *manual* action.

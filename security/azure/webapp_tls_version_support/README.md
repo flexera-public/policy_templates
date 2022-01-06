@@ -14,6 +14,8 @@ This policy has the following input parameters required when launching the polic
 
 - *Minimum TLS Version* - The minimum TLS version supported
 - *Email addresses to notify* - Email addresses of the recipients you wish to notify when new incidents are created
+- *Azure Endpoint* - Azure Endpoint to access resources
+- *Subscription Whitelist* - Whitelisted Subscriptions, if empty, all subscriptions will be checked
 
 ## Prerequisites
 
