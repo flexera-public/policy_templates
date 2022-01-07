@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.10
+
+- updated README.md rightscale documentation links with https://docs.flexera.com/flexera/EN/Automation documentation links
+
 ## v2.9
 
 - Adding `allowed_values "management.azure.com", "management.chinacloudapi.cn"`

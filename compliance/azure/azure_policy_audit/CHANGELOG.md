@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.3
+
+- updated README.md rightscale documentation links with https://docs.flexera.com/flexera/EN/Automation documentation links
+
 ## v2.2
 
 - Added subscription filter option and ability to specify Azure API endpoint

@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.11
+
+- updated README.md rightscale documentation links with https://docs.flexera.com/flexera/EN/Automation documentation links
+
 ## v2.10
 
 - Debug via param (off by default, for EU app)

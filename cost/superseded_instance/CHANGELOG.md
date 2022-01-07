@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.1
+
+- updated README.md rightscale documentation links with https://docs.flexera.com/flexera/EN/Automation documentation links
+
 ## v2.0
 
 - Bug fix for Optima cloud vendor account name API changes

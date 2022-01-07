@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.13
+
+- updated README.md rightscale documentation links with https://docs.flexera.com/flexera/EN/Automation documentation links
+
 ## v2.12
 
 - Fix non-optimal array searching for costs

@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.7
+
+- updated README.md rightscale documentation links with https://docs.flexera.com/flexera/EN/Automation documentation links
+
 ## v1.6
 
 - updated policy to prevent tag creation for the already existing tags

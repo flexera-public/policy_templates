@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.7
+
+- updated README.md rightscale documentation links with https://docs.flexera.com/flexera/EN/Automation documentation links
+
 ## v2.6
 
 - updated policy to only pull from first subscription to avoid duplicate data. this will fix the shared repeating data

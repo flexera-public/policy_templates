@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.8
+
+- updated README.md rightscale documentation links with https://docs.flexera.com/flexera/EN/Automation documentation links
+
 ## v1.7
 
 - Updated js_format_costs script for vendor_account_name error comparing ds_cloud_vendor_account name to new_bc_cost_obj vendor account name

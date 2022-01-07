@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.7
+
+- updated README.md rightscale documentation links with https://docs.flexera.com/flexera/EN/Automation documentation links
+
 ## v2.6
 
 - Added CIS standards information to metadata

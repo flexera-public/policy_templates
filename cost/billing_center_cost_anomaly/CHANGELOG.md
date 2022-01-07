@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.10
+
+- updated README.md rightscale documentation links with https://docs.flexera.com/flexera/EN/Automation documentation links
+
 ## v1.9
 
 - Fixed `report` variable type in js_format_costs script

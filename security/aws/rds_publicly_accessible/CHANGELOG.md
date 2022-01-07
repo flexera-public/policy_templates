@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.6
+
+- updated README.md rightscale documentation links with https://docs.flexera.com/flexera/EN/Automation documentation links
+
 ## v2.5
 
 - Added a new input parameter to enter regions in order to support SCP (Service Control Policy) and CIS Standards

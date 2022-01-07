@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.12
+
+- updated README.md rightscale documentation links with https://docs.flexera.com/flexera/EN/Automation documentation links
+
 ## v1.11
 
 - Added check that AWS account array is not empty before assigning it

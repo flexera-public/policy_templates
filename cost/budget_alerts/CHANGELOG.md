@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.17
+
+- updated README.md rightscale documentation links with https://docs.flexera.com/flexera/EN/Automation documentation links
+
 ## v1.16
 
 - Adding budget threshold to policy.

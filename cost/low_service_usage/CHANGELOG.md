@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.7
+
+- updated README.md rightscale documentation links with https://docs.flexera.com/flexera/EN/Automation documentation links
+
 ## v1.6
 
 - Updated date format logic which was causing Error in policy execution on specific date.

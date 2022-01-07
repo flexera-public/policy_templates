@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.5
+
+- updated README.md rightscale documentation links with https://docs.flexera.com/flexera/EN/Automation documentation links
+
 ## v1.4
 
 - Fixed markdown alignment in validation heredoc

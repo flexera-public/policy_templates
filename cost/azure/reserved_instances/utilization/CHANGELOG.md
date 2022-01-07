@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.4
+
+- updated README.md rightscale documentation links with https://docs.flexera.com/flexera/EN/Automation documentation links
+
 ## v2.3
 
 - Added default_frequency "daily"
