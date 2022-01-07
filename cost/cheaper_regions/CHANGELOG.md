@@ -1,8 +1,12 @@
 # Changelog
 
-## v1.12
+## v1.13
 
 - updated README.md rightscale documentation links with https://docs.flexera.com/flexera/EN/Automation documentation links
+
+## v1.12
+
+- added Google and AzureMCA expression blobs for filters
 
 ## v1.11
 

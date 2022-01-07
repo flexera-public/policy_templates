@@ -1,8 +1,12 @@
 # Changelog
 
-## v2.1
+## v2.2
 
 - updated README.md rightscale documentation links with https://docs.flexera.com/flexera/EN/Automation documentation links
+
+## v2.1
+
+- Added Google expression blob for /bill-analysis/orgs/" + org_id + "/costs/select request
 
 ## v2.0
 
