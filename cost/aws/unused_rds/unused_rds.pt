@@ -86,7 +86,7 @@ end
 
 # get all the RDS instances merged together with the tags and CloudWatch
 datasource "ds_rds_instances" do
-  run_script $js_rds_instances, $ds_rds_instances_set, $ds_list_tags_for_resource,$ds_cloudwatch_connections, $param_exclusion_tag_key, $ds_currency_code, $ds_currency_reference
+  run_script $js_rds_instances, $ds_rds_instances_set, $ds_list_tags_for_resource,$ds_cloudwatch_connections, $param_exclusion_tag_key, $ds_currency_code, $ds_currency_reference, $ds_get_caller_identity
 end
 
 # get all the RDS instances
@@ -329,7 +329,7 @@ end
 # merge the instances and tags and remove instances that have the exclusion tag
 script "js_rds_instances", type: "javascript" do
   result "results"
-  parameters "ds_rds_instance_set", "ds_list_tags_for_resource", "ds_cloudwatch_connections", "param_exclusion_tag_key", "ds_currency_code", "ds_currency_reference"
+  parameters "ds_rds_instance_set", "ds_list_tags_for_resource", "ds_cloudwatch_connections", "param_exclusion_tag_key", "ds_currency_code", "ds_currency_reference", "ds_get_caller_identity"
   code <<-EOS
   var tag_key = param_exclusion_tag_key.split(':')[0]
   var tag_value = param_exclusion_tag_key.split(':')[1]
@@ -358,7 +358,7 @@ script "js_rds_instances", type: "javascript" do
     var instance_tags = {}
     var tags = []
     _.each(instances_w_tags, function(instance){
-      tags.push(instance.key+':'+instance.value)
+      tags.push(instance.key+'='+instance.value)
     })
     instance_tags[instance.instanceId] = tags
     // get dbconnection metrics for instance
@@ -366,10 +366,11 @@ script "js_rds_instances", type: "javascript" do
     var sample_count = _.pluck(metrics, 'sample_count')
     var connections = _.reduce(sample_count, function(memo, num){ return memo + num; }, 0);
     //check instance for exclusion tag
-    if ( _.contains(instance_tags[instance.instanceId], param_exclusion_tag_key) || connections>0){
+    if ( _.contains(instance_tags[instance.instanceId], param_exclusion_tag_key)|| connections>0){
       continue
     } else {
       results.push({
+        accountID: ds_get_caller_identity[0]['account']
         region: instance.region,
         name: instance.name,
         arn: instance.instanceArn,
@@ -581,7 +582,7 @@ EOS
     export "instance_list" do
       resource_level true
       field "accountID" do
-        label "Account Id"
+        label "Account ID"
       end
       field "region" do
         label "Region"
