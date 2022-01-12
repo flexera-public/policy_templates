@@ -177,6 +177,12 @@ Reference
 
 - [AWS Unencrypted RDS Instances](./security/aws/rds_unencrypted/)
 
+##### KMS
+
+###### CIS Policies
+
+- [AWS Ensure Rotation For Customer Master Keys (CMKs) Is Enabled](./security/aws/kms_rotation/)
+
 ##### Storage
 
 - [AWS Open Buckets](./security/storage/aws/public_buckets/)
@@ -189,6 +195,13 @@ Reference
 - [AWS Unencrypted S3 Buckets](./security/aws/unencrypted_s3_buckets/)
 - [AWS S3 Buckets Deny HTTP](./security/aws/s3_buckets_deny_http/)
 
+##### Logging
+
+###### CIS Policies
+
+- [AWS Ensure Log File Validation Enabled For All CloudTrails](./security/aws/log_file_validation_enabled/)
+- [AWS Ensure CloudTrail Enabled In All Regions](./security/aws/log_ensure_cloudtrail_multiregion/)
+
 ##### Load Balancers
 
 - [AWS Internet-facing ELBs & ALBs](./security/aws/loadbalancer_internet_facing/)
@@ -199,6 +212,10 @@ Reference
 
 ###### CIS Policies
 
+- [AWS Ensure Object-level Events Logging Enabled For CloudTrails](./security/aws/log_ensure_cloudtrail_bucket_object_logging/)
+- [AWS Ensure CloudTrail Logs Encrypted At Rest](./security/aws/log_ensure_cloudtrail_encrypted/)
+- [AWS Ensure CloudTrail S3 Buckets Have Access Logging](./security/aws/log_ensure_cloudtrail_bucket_access_logging/)
+- [AWS Ensure CloudTrail Integrated With Cloudwatch](./security/aws/log_cloudtrail_cloudwatch_integrated/)
 - [AWS Ensure AWS Config Enabled In All Regions](./security/aws/aws_config_enabled/)
 
 #### VPC

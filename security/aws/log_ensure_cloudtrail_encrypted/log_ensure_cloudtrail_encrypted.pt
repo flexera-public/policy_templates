@@ -1,0 +1,123 @@
+name "AWS Ensure CloudTrail Logs Encrypted At Rest"
+rs_pt_ver 20180301
+type "policy"
+short_description "Report if CloudTrail logs are not encrypted at rest. \n See the [README](https://github.com/flexera/policy_templates/tree/master/security/aws/log_ensure_cloudtrail_encrypted) and [docs.rightscale.com/policies](https://docs.rightscale.com/policies/) to learn more."
+long_description ""
+category "Security"
+severity "high"
+default_frequency "daily"
+info(
+  version: "2.0",
+  provider: "AWS",
+  service: "CloudTrail",
+  policy_set: "CIS",
+  cce_id: "CCE-78913-1",
+  cis_aws_foundations_securityhub: "2.7",
+  benchmark_control: "3.7",
+  benchmark_version: "1.4.0",
+  cis_controls: "[\"3.11v8\", \"6v7\", \"14.8v7\"]",
+  nist: "AU-9"
+)
+
+###############################################################################
+# User inputs
+###############################################################################
+
+parameter "param_email" do
+  type "list"
+  label "Email Address"
+  description "Email addresses of the recipients you wish to notify"
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+credentials "auth_aws" do
+  schemes "aws","aws_sts"
+  label "AWS"
+  description "Select the AWS Credential from the list"
+  tags "provider=aws"
+end
+
+###############################################################################
+# Datasources
+###############################################################################
+
+datasource "ds_trail_list" do
+  request do
+    auth $auth_aws
+    verb "GET"
+    host "cloudtrail.us-east-1.amazonaws.com"
+    path "/"
+    header "User-Agent", "RS Policies"
+    header "Accept", "application/json"
+    query "Action", "DescribeTrails"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "DescribeTrailsResponse.DescribeTrailsResult.trailList") do
+      field "name", jmes_path(col_item, "Name")
+      field "id", jmes_path(col_item, "TrailARN")
+      field "homeregion", jmes_path(col_item, "HomeRegion")
+      field "kms_key_id", jmes_path(col_item, "KmsKeyId")
+    end
+  end
+end
+
+datasource "ds_trails_without_encryption" do
+  run_script $js_trails_without_encryption, $ds_trail_list
+end
+
+###############################################################################
+# Scripts
+###############################################################################
+
+script "js_trails_without_encryption", type:"javascript" do
+  parameters "ds_trail_list"
+  result "result"
+  code <<-EOS
+    result = []
+
+    _.each(ds_trail_list, function(trail) {
+      if (trail.kms_key_id == null) {
+        result.push(trail)
+      }
+    })
+EOS
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "policy_trails_without_encryption" do
+  validate $ds_trails_without_encryption do
+    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} CloudTrails Found Without Encryption At Rest"
+    escalate $esc_report_trails_without_encryption
+    check eq(size(data),0)
+    export do
+      resource_level true
+      field "name" do
+        label "Name"
+      end
+      field "id" do
+        label "ARN"
+      end
+      field "homeregion" do
+        label "Region"
+      end
+    end
+  end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_report_trails_without_encryption" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
+end
