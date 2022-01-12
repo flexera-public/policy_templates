@@ -2,7 +2,7 @@
 
 ## v1.12
 
-- updated README.md rightscale documentation links with https://docs.flexera.com/flexera/EN/Automation documentation links
+- updated README.md rightscale documentation links with docs.flexera documentation links
 
 ## 1.11
 

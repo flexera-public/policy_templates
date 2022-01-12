@@ -2,7 +2,7 @@
 
 ## v2.3
 
-- updated README.md rightscale documentation links with https://docs.flexera.com/flexera/EN/Automation documentation links
+- updated README.md rightscale documentation links with docs.flexera documentation links
 
 ## v2.2
 - Improve savings calculations based on pricing from the AWS Pricing API
