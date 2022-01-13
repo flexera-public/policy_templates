@@ -1,4 +1,4 @@
-# Google Recommender Policy
+# Google Committed Use Discount Recommendations
 
 ## What it does
 
