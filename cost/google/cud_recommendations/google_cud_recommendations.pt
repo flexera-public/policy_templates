@@ -22,12 +22,6 @@ parameter "param_email" do
   description "Email addresses of the recipients you wish to notify when new incidents are created"
 end
 
-parameter "param_location_whitelist" do
-  type "list"
-  label "Location"
-  description "Location to check, it can be the zone, region or global"
-end
-
 parameter "param_project" do
   type "list"
   label "Project ID"
@@ -81,9 +75,25 @@ datasource "ds_google_project" do
   end
 end
 
+datasource "ds_google_regions" do
+  iterate $ds_google_project
+  request do
+    auth $auth_google
+    pagination $google_pagination
+    host "www.googleapis.com"
+    path join(["/compute/v1/projects/",val(iter_item,"projectId"),"/regions"])
+    ignore_status [403]
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "items[*]") do
+      field "name", jmes_path(col_item,"name")
+    end
+  end
+end
 
 datasource "ds_recommenders" do
-  run_script $js_recommenders, $param_location_whitelist, $ds_google_project, $param_project
+  run_script $js_recommenders, $ds_google_project, $param_project, $ds_google_regions
 end
 
 datasource "ds_recommendations" do
@@ -113,18 +123,18 @@ end
 # Scripts
 ###############################################################################
 script "js_recommenders", type: "javascript" do
-  parameters "param_location_whitelist", "ds_google_project", "param_project"
+  parameters "ds_google_project", "param_project", "ds_google_regions"
   result "results"
   code <<-EOF
   var results = []
 
   _.each(ds_google_project, function(project){
     if (_.contains(param_project, project.projectId) || param_project.length == 0) {
-      _.each(param_location_whitelist, function(location){
+      _.each(ds_google_regions, function(location){
         results.push({
           projectNumber: project.projectNumber,
           projectId: project.projectId,
-          location: location
+          location: location.name
         })
       })
     }
