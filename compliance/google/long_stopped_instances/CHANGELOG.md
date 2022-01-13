@@ -1,8 +1,12 @@
 # Change log
 
-## v2.5
+## v2.6
 
 - updated README.md rightscale documentation links with docs.flexera documentation links
+
+## v2.5
+
+- Updated to fix exclusionary construct and correct report
 
 ## v2.4
 

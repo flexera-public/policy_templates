@@ -5,12 +5,13 @@ short_description "Report on any google instances that have been stopped for a l
 long_description ""
 category "Compliance"
 severity "low"
+default_frequency "daily"
 info(
-      version: "2.4",
-      provider: "GCE",
-      service: "Compute",
-      policy_set: "Long Stopped Instances"
-    )
+  version: "2.5",
+  provider: "GCE",
+  service: "Compute",
+  policy_set: "Long Stopped Instances"
+)
 
 ###############################################################################
 # Parameters
@@ -28,7 +29,7 @@ parameter "param_exclude_tags" do
   description "List of tags(Key or Key, value mentioned in object metadata.) that will exclude objects from being evaluated by this policy. Multiple tags are evaluated as an 'OR' condition. Tag keys or key/value pairs can be listed. Example: 'test,env=dev'"
 end
 
-parameter "param_stoped_days" do
+parameter "param_stopped_days" do
   type "number"
   label "Stopped days"
   description "Number of days an instance is stopped before it is added to the report"
@@ -61,7 +62,6 @@ pagination "google_pagination" do
     query "pageToken"
   end
 end
-
 
 #get all google project
 datasource "ds_google_project" do
@@ -101,7 +101,7 @@ datasource "ds_zone" do
 end
 
 #https://cloud.google.com/compute/docs/reference/rest/v1/instances/list
-datasource "ds_stoped_instances" do
+datasource "ds_stopped_instances" do
   iterate $ds_zone
   request do
     auth $auth_google
@@ -124,13 +124,13 @@ datasource "ds_stoped_instances" do
   end
 end
 
-datasource "ds_stoped_instances_req_list" do
-  run_script $js_stoped_instances_req_list, $ds_stoped_instances, $param_stoped_days
+datasource "ds_stopped_instances_req_list" do
+  run_script $js_stopped_instances_req_list, $ds_stopped_instances, $param_stopped_days
 end
 
 #https://cloud.google.com/monitoring/api/ref_v3/rest/v3/projects.timeSeries/list
-datasource "ds_list_stoped_instances" do
-  iterate $ds_stoped_instances_req_list
+datasource "ds_list_instances_with_uptime_in_window" do
+  iterate $ds_stopped_instances_req_list
   request do
     auth $auth_google
     pagination $google_pagination
@@ -143,7 +143,6 @@ datasource "ds_list_stoped_instances" do
   end
   result do
     encoding "json"
-    encoding "json"
     collect jmes_path(response, "timeSeries[*]") do
       field "instance_name", val(iter_item,"instance_name")
       field "instance_id", jmes_path(col_item, "resource.labels.instance_id")
@@ -153,21 +152,21 @@ datasource "ds_list_stoped_instances" do
 end
 
 datasource "ds_report" do
-  run_script $js_report, $ds_stoped_instances, $ds_list_stoped_instances, $param_exclude_tags
+  run_script $js_report, $ds_stopped_instances, $ds_list_instances_with_uptime_in_window, $param_exclude_tags
 end
 
 ###############################################################################
 # Scripts
 ###############################################################################
-script "js_stoped_instances_req_list", type: "javascript" do
-  parameters "ds_stoped_instances", "param_stoped_days"
+script "js_stopped_instances_req_list", type: "javascript" do
+  parameters "ds_stopped_instances", "param_stopped_days"
   result "request"
   code <<-EOF
   var request=[];
-  _.each(ds_stoped_instances, function(row){
+  _.each(ds_stopped_instances, function(row){
     if(row["instance_name"] != null){
       var result = {
-        "start_at": new Date(new Date().setDate(new Date().getDate() - parseInt(param_stoped_days))).toISOString(),
+        "start_at": new Date(new Date().setDate(new Date().getDate() - parseInt(param_stopped_days))).toISOString(),
         "end_at": new Date().toISOString(),
         "instance_name": row["instance_name"],
         "projectId": row["projectId"]
@@ -179,49 +178,60 @@ EOF
 end
 
 script "js_report", type: "javascript" do
-  parameters "ds_stoped_instances", "ds_list_stoped_instances", "param_exclude_tags"
+  parameters "ds_stopped_instances", "ds_list_instances_with_uptime_in_window", "param_exclude_tags"
   result "result"
   code <<-EOF
   var result=[];
   var param_exclude_tags_lower=[];
+
   for(var i=0; i < param_exclude_tags.length; i++){
     param_exclude_tags_lower[i]=param_exclude_tags[i].toString().toLowerCase();
   }
-  _.each(ds_list_stoped_instances, function(instance_uptime){
-    _.each(ds_stoped_instances, function(instance_stoped){
-      var tags = instance_stoped['tags'];
-      var isTagMatched=false
-      var tagKeyValue=""
-      if(typeof(tags) !== "undefined"){
-        var tagKeys = Object.keys(tags);
-        for (var j = 0; j < tagKeys.length; j++){
-          var tagKey = tagKeys[j];
-          var tagValue = tags[tagKey];
-          //Check, if the tag present in entered param_exclude_tags, ignore the google bucket object if the tag matches/present.
-          if((param_exclude_tags_lower.indexOf(tagKey.toLowerCase()) !== -1) || (param_exclude_tags_lower.indexOf((tagKey+'='+tagValue).toLowerCase()) !== -1)){
-            isTagMatched = true;
-          }
-          if(tagValue.length > 0){
-            tagKeyValue = tagKeyValue + ', '+ tagKey+'='+tagValue
-          }else{
-            tagKeyValue = tagKeyValue + ', '+ tagKey
-          }
+  _.each(ds_stopped_instances, function(instance_stopped){
+    var tags = instance_stopped['tags'];
+    var isTagMatched=false
+    var tagKeyValue=""
+    if(typeof(tags) !== "undefined"){
+      var tagKeys = Object.keys(tags);
+      for (var j = 0; j < tagKeys.length; j++){
+        var tagKey = tagKeys[j];
+        var tagValue = tags[tagKey];
+        //Check, if the tag present in entered param_exclude_tags, ignore the google bucket object if the tag matches/present.
+        if((param_exclude_tags_lower.indexOf(tagKey.toLowerCase()) !== -1) || (param_exclude_tags_lower.indexOf((tagKey+'='+tagValue).toLowerCase()) !== -1)){
+          isTagMatched = true;
+        }
+        if(tagValue.length > 0){
+          tagKeyValue = tagKeyValue + ', '+ tagKey+'='+tagValue
+        }else{
+          tagKeyValue = tagKeyValue + ', '+ tagKey
         }
       }
-      if( instance_uptime["instance_name"] == instance_stoped["instance_name"] && instance_uptime["instance_id"] == null && !isTagMatched ){
-        result.push({
-          "name": instance_stoped["instance_name"],
-          "status": instance_stoped["status"],
-          "instance_id": instance_stoped["instance_id"],
-          "zone": instance_stoped["zone"],
-          "projectId": instance_stoped["projectId"],
-          "tagKeyValue":(tagKeyValue.slice(2))
-        })
-      }
+    }
+
+    // If we find any uptime in the param_stopped_days this list will be greater than 0.
+    // If it's 0 we report on it.
+    var instance_in_uptime_list = _.filter(ds_list_instances_with_uptime_in_window, function(item){
+      return item.instance_id == instance_stopped.instance_id
     })
+
+    if( instance_in_uptime_list.length == 0 && !isTagMatched ){
+      result.push({
+        "name": instance_stopped["instance_name"],
+        "status": instance_stopped["status"],
+        "instance_id": instance_stopped["instance_id"],
+        "zone": instance_stopped["zone"],
+        "projectId": instance_stopped["projectId"],
+        "tagKeyValue":(tagKeyValue.slice(2))
+      })
+    }
   })
-  result = _.sortBy(result, 'zone');
-  result = _.sortBy(result, 'projectId');
+
+  var result = _(result).chain()
+  .sortBy(function(item) {
+    return item.zone;
+  }).sortBy(function(item) {
+    return item.projectId;
+  }).value();
 EOF
 end
 
@@ -231,7 +241,7 @@ end
 
 policy "pol_utilization" do
   validate_each $ds_report do
-    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} google cloud instances in Stopped State for Over {{parameters.param_stoped_days}} Day(s)"
+    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} google cloud instances in Stopped State for Over {{parameters.param_stopped_days}} Day(s)"
     check eq(0,1)
     escalate $esc_email
     escalate $esc_delete_instances
