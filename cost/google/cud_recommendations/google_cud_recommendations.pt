@@ -1,0 +1,212 @@
+name "Google Committed Use Discount Recommender Policy"
+rs_pt_ver 20180301
+type "policy"
+short_description "This Policy finds Google CUD Recommendations and reports when it finds them. See the [README](https://github.com/flexera/policy_templates/tree/master/cost/google/recommender) and [docs.rightscale.com/policies](https://docs.rightscale.com/policies/) to learn more."
+category "Cost"
+severity "low"
+default_frequency "daily"
+info(
+  version: "2.0",
+  provider:"Google",
+  service: "Storage",
+  policy_set: "Native Recommendations"
+)
+
+###############################################################################
+# Parameters
+###############################################################################
+
+parameter "param_email" do
+  type "list"
+  label "Email addresses to notify"
+  description "Email addresses of the recipients you wish to notify when new incidents are created"
+end
+
+parameter "param_location_whitelist" do
+  type "list"
+  label "Location"
+  description "Location to check, it can be the zone, region or global"
+end
+
+parameter "param_project" do
+  type "list"
+  label "Project ID"
+  description "Google Projects to Query. Leave blank to query all projects."
+  default []
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+# authenticate with Google
+credentials "auth_google" do
+  schemes "oauth2"
+  label "Google"
+  description "Select the Google Cloud Credential from the list."
+  tags "provider=gce"
+end
+
+###############################################################################
+# Pagination
+###############################################################################
+
+pagination "google_pagination" do
+  get_page_marker do
+    body_path "nextPageToken"
+  end
+  set_page_marker do
+    query "pageToken"
+  end
+end
+
+###############################################################################
+# Datasources
+###############################################################################
+
+#get all google project
+datasource "ds_google_project" do
+  request do
+    auth $auth_google
+    pagination $google_pagination
+    host "cloudresourcemanager.googleapis.com"
+    path "/v1/projects/"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "projects[*]") do
+      field "projectNumber", jmes_path(col_item,"projectNumber")
+      field "projectId", jmes_path(col_item,"projectId")
+    end
+  end
+end
+
+
+datasource "ds_recommenders" do
+  run_script $js_recommenders, $param_location_whitelist, $ds_google_project, $param_project
+end
+
+datasource "ds_recommendations" do
+  iterate $ds_recommenders
+  request do
+    run_script $js_recommender_call, val(iter_item,"projectId"), val(iter_item, "location")
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "recommendations[*]") do
+      field "projectId", val(iter_item, "projectId")
+      field "projectNumber", val(iter_item, "projectNumber")
+      field "location", val(iter_item, "location")
+      field "id", jmes_path(col_item, "name")
+      field "description", jmes_path(col_item, "description")
+      field "primaryImpact", jmes_path(col_item, "primaryImpact")
+      field "costUnits", jmes_path(col_item, "primaryImpact.costProjection.cost.units")
+      field "currency", jmes_path(col_item, "primaryImpact.costProjection.cost.currencyCode")
+      field "priority", jmes_path(col_item, "priority")
+      field "recommenderSubtype", jmes_path(col_item, "recommenderSubtype")
+      field "state", jmes_path(col_item, "stateInfo.state")
+    end
+  end
+end
+
+###############################################################################
+# Scripts
+###############################################################################
+script "js_recommenders", type: "javascript" do
+  parameters "param_location_whitelist", "ds_google_project", "param_project"
+  result "results"
+  code <<-EOF
+  var results = []
+
+  _.each(ds_google_project, function(project){
+    if (_.contains(param_project, project.projectId) || param_project.length == 0) {
+      _.each(param_location_whitelist, function(location){
+        results.push({
+          projectNumber: project.projectNumber,
+          projectId: project.projectId,
+          location: location
+        })
+      })
+    }
+  })
+EOF
+end
+
+script "js_recommender_call", type: "javascript" do
+  parameters "projectId", "location"
+  result "request"
+  code <<-EOF
+  var now = new Date().getTime();
+  var sleepDuration = 10000
+  while(new Date().getTime() < now + sleepDuration){ /* Do nothing */ }
+  var request = {
+    auth: "auth_google",
+    pagination: "google_pagination",
+    host: "recommender.googleapis.com",
+    ignore_status: 403,
+    path: "/v1/projects/"+ projectId +"/locations/" + location + "/recommenders/google.compute.commitment.UsageCommitmentRecommender/recommendations",
+    query_strings: { alt: "json" }
+  }
+EOF
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "policy_recommendations" do
+  validate $ds_recommendations do
+    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} rows found for {{parameters.param_recommenders}}"
+    check eq(size(data), 0)
+    escalate $esc_email
+    export do
+      resource_level true
+      field "projectId" do
+        label "Project ID"
+      end
+      field "location" do
+        label "Location"
+      end
+      field "description" do
+        label "Description"
+      end
+      field "primary_impact" do
+        label "Primary Impact"
+        path "primaryImpact.category"
+      end
+      field "costUnits" do
+        label "Cost"
+      end
+      field "currency" do
+        label "Currency"
+      end
+      field "priority" do
+        label "Priority"
+      end
+      field "recommenderSubtype" do
+        label "Sub Type"
+      end
+      field "state" do
+        label "State"
+      end
+      field "id" do
+        label "Name"
+      end
+    end
+  end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_email" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
+end
+
+###############################################################################
+# Cloud Workflow
+###############################################################################
