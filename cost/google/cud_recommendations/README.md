@@ -34,14 +34,7 @@ Required permissions in the provider:
 
 - The `resourcemanager.projects.get` permission
 - The `roles/recommender.billingAccountCudViewer` role
-- The `roles/recommender.cloudAssetInsightsViewer` role
-- The `roles/recommender.cloudsqlViewer` role
-- The `roles/recommender.computeViewer` role
-- The `roles/recommender.firewallViewer` role
-- The `roles/recommender.iamViewer` role
-- The `roles/recommender.productSuggestionViewer` role
 - The `roles/recommender.projectCudViewer` role
-- The `roles/recommender.projectUtilViewer` role
 
 ## Supported Clouds
 
