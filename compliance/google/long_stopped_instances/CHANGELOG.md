@@ -1,5 +1,9 @@
 # Change log
 
+## v2.5
+
+- Updated to fix exclusionary construct and correct report
+
 ## v2.4
 
 - Modified escalation label and description for consistency
