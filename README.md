@@ -369,9 +369,9 @@ Reference
 
 ## Policy Template Documentation
 
-- [Getting Started](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htmusers/getting_started/)
-- [Reference Documentation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htmdevelopers/)
-- [Policy Template Language](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htmdevelopers/reference/v20180301/policy_template_language.html)
+- [Getting Started](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm)
+- [Reference Documentation](https://docs.flexera.com/flexera/EN/Automation/AutomationRefInfo.htm#automationrefinfo_1419216867_1009635)
+- [Policy Template Language](https://docs.flexera.com/flexera/EN/Automation/PTL.htm#automationrefinfo_1419216867_1122815)
 - [Markdown Editor](https://jbt.github.io/markdown-editor/) - Use this to test Markdown Syntax
 - [Libraries](./libraries/README.md)
 - [README GUIDELINE](./README_GUIDELINE.md)
