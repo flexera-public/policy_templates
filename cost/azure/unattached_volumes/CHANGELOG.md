@@ -1,5 +1,9 @@
 # Changelog
 
+## v.2.11
+
+- Added "ignore-status" for 400, 403, 404 errors
+
 ## v.2.10
 
 - Fix non-optimal array searching for costs
