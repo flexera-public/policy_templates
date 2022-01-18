@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.6
+
+- Added "ignore-status" for 400, 403, 404 errors
+
 ## v2.5
 
 - Adding `allowed_values "management.azure.com", "management.chinacloudapi.cn"`

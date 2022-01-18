@@ -7,7 +7,7 @@ severity "low"
 category "Cost"
 default_frequency "daily"
 info(
-  version: "2.5",
+  version: "2.6",
   provider: "Azure",
   service: "compute",
   policy_set: ""
@@ -100,7 +100,7 @@ datasource "ds_filtered_subscriptions" do
   run_script $js_filtered_subscriptions, $ds_subscriptions, $param_subscription_whitelist
 end
 
-datasource "azure_instances" do
+datasource "ds_azure_instances" do
   iterate $ds_filtered_subscriptions
     request do
       auth $azure_auth
@@ -109,6 +109,7 @@ datasource "azure_instances" do
       path join(["/subscriptions/", val(iter_item,"subscriptionId"), "/providers/Microsoft.Compute/virtualMachines"])
       query "api-version","2017-12-01"
       header "User-Agent", "RS Policies"
+      ignore_status [400,403,404]
     end
     result do
       encoding "json"
@@ -129,8 +130,8 @@ datasource "azure_instances" do
     end
 end
 
-datasource "filtered_resources" do
-  run_script $js_filter_resources, $azure_instances, $param_exclusion_tag_key
+datasource "ds_filtered_resources" do
+  run_script $js_filter_resources, $ds_azure_instances, $param_exclusion_tag_key
 end
 
 ##########
@@ -215,7 +216,7 @@ end
 ##########
 
 policy 'azure_license_policy' do
-  validate_each $filtered_resources do
+  validate_each $ds_filtered_resources do
     summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} Instances Not Using Azure Hybrid Use Benefit for Linux Server"
     escalate $email
     escalate $license_instances
