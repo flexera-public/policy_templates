@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.11
+
+- updated README.md rightscale documentation links with docs.flexera documentation links
+
 ## v2.10
 
 - Check for the case where labels is null (or undefined) on a snapshot

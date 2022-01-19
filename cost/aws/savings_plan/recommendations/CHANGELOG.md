@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.7
+
+- updated README.md rightscale documentation links with docs.flexera documentation links
+
 ## v2.6
 
 - prevent updating the incident if the data doesn't change
