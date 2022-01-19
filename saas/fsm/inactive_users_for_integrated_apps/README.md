@@ -6,7 +6,7 @@ This policy retrieves inactive users for the Integrated Applications of the spec
 
 ## Functional Description
 
-This policy integrates with the Flexera SaaS Manager API to retrieve inactive users for Integrated Applications of a Managed SaaS Application. Therefore the following are prerequisites for this policy to execute:
+This policy integrates with the Flexera SaaS Manager API to retrieve inactive users for Integrated Applications of a Managed SaaS Application that facilitates this application discovery through such integration.. Therefore the following are prerequisites for this policy to execute:
 
 - Flexera SaaS Manager implementation with HR roster connected
 - Please contact your Flexera Customer Success Manager for assistance to generate your FSM token.
@@ -21,6 +21,9 @@ This policy has the following input parameters required when launching the polic
 ## Prerequisites
 
 This policy uses [credentials](https://docs.rightscale.com/policies/users/guides/credential_management.html) for connecting to the cloud -- in order to apply this policy you must have a credential registered in the system that is compatible with this policy. If there are no credentials listed when you apply the policy, please contact your cloud admin and ask them to register a credential that is compatible with this policy. The information below should be consulted when creating the credential.
+
+Other prerequisites:
+- Ensure that the Application integration task is successfully configured and executing its application discovery task for the Managed SaaS Application.
 
 ### Credential configuration
 
