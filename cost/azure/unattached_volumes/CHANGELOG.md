@@ -1,8 +1,12 @@
 # Changelog
 
-## v2.11
+## v2.12
 
 - updated README.md rightscale documentation links with docs.flexera documentation links
+
+## v2.11
+
+- Added "ignore-status" for 400, 403, 404 errors
 
 ## v2.10
 
