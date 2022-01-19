@@ -344,42 +344,32 @@ script "js_filter_aws_unattached_volumes", type: "javascript" do
   parameters "ds_unattached_volumes_list", "param_exclude_tags", "unattachedDays"
   result "content"
   code <<-EOS
-  var param_exclude_tags_lower=[];
-  for(var j=0;j<param_exclude_tags.length;j++){
-    param_exclude_tags_lower[j] = param_exclude_tags[j].toString().toLowerCase();
-  }
   var content = [];
   for(var i=0;i<ds_unattached_volumes_list.length;i++){
     vol = ds_unattached_volumes_list[i];
     // Check, if the tag present in entered param_exclude_tags, ignore the volume if the tag matches/present.
-    var tags = vol['tags'];
-    var isTagMatched = false;
-    var tagKeyValue = "";
-    var startDate = new Date(vol['createdTime']); // Volume Created Date
-    var endDate = new Date();
-    var timeDifference = endDate.getTime() - startDate.getTime();
-    var daysDifference = (timeDifference / (1000 * 3600 * 24)).toFixed(2);
-    for(var k=0; k < tags.length; k++){
-      tag = tags[k];
-      if((param_exclude_tags_lower.indexOf((tag['tagKey']).toLowerCase()) !== -1) || (param_exclude_tags_lower.indexOf((tag['tagKey']+'='+tag['tagValue']).toLowerCase()) !== -1)){
-        isTagMatched = true;
-      }
+     var isTagMatched = false;
+     var startDate = new Date(vol['createdTime']); // Volume Created Date
+     var endDate = new Date();
+     var timeDifference = endDate.getTime() - startDate.getTime();
+     var daysDifference = (timeDifference / (1000 * 3600 * 24)).toFixed(2);
 
-      // Constructing tags with comma separated to display in detail_template
-      if((tag['tagValue']).length > 0){
-        tagKeyValue = tagKeyValue+" , "+tag['tagKey']+'='+tag['tagValue'];
-      }else{
-        tagKeyValue = tagKeyValue+" , "+tag['tagKey'];
+    var instance_tags = {}
+    var tags = []
+    _.each(vol['tags'], function(instance){
+      tags.push(instance.tagKey+'='+instance.tagValue)
+    })
+    _.each(param_exclude_tags, function(exclude){
+      if ( _.contains(tags, exclude)){
+        isTagMatched = true
       }
-    }
-    if(tagKeyValue === "" || tagKeyValue === " " || tagKeyValue == ""){
-      tagKeyValue = "";
-    }
+    })
+
     //If the volume tag does not match with entered param_exclude_tags
     if(daysDifference > unattachedDays){
       if(!(isTagMatched)){
         content.push({
-          tagKeyValue : (tagKeyValue.slice(2)),
+          tagKeyValue : tags,
           vol_id : vol['volume_id'],
           availability_zone : vol['availability_zone'],
           snapshot_id : vol['snapshot_id'],
@@ -405,7 +395,6 @@ script "js_aws_volumes_cloud_watch_read_byte_metrics", type: "javascript" do
     if(datapoints > 1440){
       period = period * 60;
     }
-    console.log("Period "+period);
     period = ""+period+"";
     metrics = {
       "auth": "auth_aws",
@@ -449,7 +438,6 @@ script "js_aws_volumes_cloud_watch_write_byte_metrics", type: "javascript" do
       period = period * 60;
     }
     period = ""+period+"";
-    console.log("Period "+period);
     metrics = {
       "auth": "auth_aws",
       "host": 'monitoring.'+region+'.amazonaws.com',
@@ -662,7 +650,6 @@ script "js_volume_cost_mapping", type:"javascript" do
     var total_savings=0;
     _.each(volumes, function(volume){
       var cost_objects = costs_by_resource_id[volume.volumeId];
-      console.log(cost_objects)
       if (_.size(cost_objects) > 0){
         count++;
         var sum = _.reduce(_.compact(_.map(cost_objects, function(value){ return value.cost_nonamortized_unblended_adj})), function(memo, num){ return memo + num; }, 0);
@@ -679,6 +666,7 @@ script "js_volume_cost_mapping", type:"javascript" do
           size : volume['size'],
           savings: (Math.round(monthly_savings * 100) / 100),
           savings_currency: cur,
+          service: "EBS"
         })
       } else {
         unused_volumes.push({
@@ -692,6 +680,7 @@ script "js_volume_cost_mapping", type:"javascript" do
           size : volume['size'],
           savings: 0.0,
           savings_currency: cur,
+          service: "EBS"
         })
       }
     })
@@ -760,6 +749,9 @@ EOS
       field "id" do
         label "Id"
         path "volumeId"
+      end
+      field "service" do
+        label "Service"
       end
     end
   end

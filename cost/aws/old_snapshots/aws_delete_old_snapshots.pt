@@ -446,7 +446,8 @@ script "js_snapshots_cost_mapping", type: "javascript" do
         snapshotImageIdFormat : snapshot['snapshotImageIdFormat'],
         savings : parseFloat(monthly_savings.toFixed(3)),
         savings_currency : cur,
-        volumeSize : snapshot['volumeSize']
+        volumeSize : snapshot['volumeSize'],
+        service : "EBS"
       })
     } else {
       result.push({
@@ -459,7 +460,8 @@ script "js_snapshots_cost_mapping", type: "javascript" do
         snapshotImageIdFormat : snapshot['snapshotImageIdFormat'],
         savings: 0.0,
         savings_currency : cur,
-        volumeSize : snapshot['volumeSize']
+        volumeSize : snapshot['volumeSize'],
+        service : "EBS"
       })
     }
   })
@@ -514,24 +516,17 @@ script "js_filter_old_snapshots", type: "javascript" do
     for(var i=0; i < ds_describe_snapshots.length; i++){
       var snapshot = ds_describe_snapshots[i];
       // Check, if the tag present in entered param_exclude_tags, ignore the snapshot if tag matches/present
-      var tags = snapshot['tags'];
       var isTagMatched = false;
-      var tagKeyValue = "";
-      for(var k=0; k < tags.length; k++){
-        tag = tags[k];
-        if((param_exclude_tags_lower.indexOf((tag['tagKey']).toLowerCase()) !== -1) || (param_exclude_tags_lower.indexOf((tag['tagKey']+'='+tag['tagValue']).toLowerCase()) !== -1)){
-          isTagMatched = true;
+      var instance_tags = {}
+      var tags = []
+      _.each(snapshot['tags'], function(instance){
+        tags.push(instance.tagKey+'='+instance.tagValue)
+      })
+      _.each(param_exclude_tags, function(exclude){
+        if ( _.contains(tags, exclude)){
+          isTagMatched = true
         }
-        // Constructing tags with comma separated to display in detail_template
-        if((tag['tagValue']).length > 0){
-          tagKeyValue = tagKeyValue+" , "+tag['tagKey']+'='+tag['tagValue'];
-        }else{
-          tagKeyValue = tagKeyValue+" , "+tag['tagKey'];
-        }
-      }
-      if(tagKeyValue === "" || tagKeyValue === " " || tagKeyValue == ""){
-        tagKeyValue = "";
-      }
+      })
       if(!(isTagMatched)){
         var snapshotTime = Date.parse(snapshot['startTime']);
         var daysOld = (new Date().getTime() - new Date(snapshotTime).getTime()) / (1000 * 3600 * 24);
@@ -540,7 +535,7 @@ script "js_filter_old_snapshots", type: "javascript" do
           results.push({
             snapshotId : snapshot['snapshotId'],
             region : snapshot['region'],
-            tagKeyValue : (tagKeyValue.slice(2)),
+            tagKeyValue : tags,
             daysOld : daysOld,
             volumeSize : snapshot['volumeSize']
           })
@@ -656,6 +651,9 @@ EOS
       field "id" do
         label "id"
         path "snapshotId"
+      end
+      field "service" do
+        label "Service"
       end
     end
   end

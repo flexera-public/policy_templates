@@ -206,40 +206,26 @@ script "js_filter_ip_response", type: "javascript" do
   result "result"
   code <<-EOS
     var result=[];
-    var param_exclude_tags_lower=[];
-    for(var j=0;j<exclusion_tag.length;j++){
-      param_exclude_tags_lower[j] = exclusion_tag[j].toString().toLowerCase();
-    }
     for(var i=0;i<ds_aws_elastic_ip_address.length;i++){
       instance = ds_aws_elastic_ip_address[i];
-      var tags = instance['tags'];
       var isTagMatched = false;
-      var tagKeyValue = "";
-      for(var k=0; k < tags.length; k++){
-        tag = tags[k];
-        if((param_exclude_tags_lower.indexOf((tag['tagKey']).toLowerCase()) !== -1) || (param_exclude_tags_lower.indexOf((tag['tagKey']+'='+tag['tagValue']).toLowerCase()) !== -1)){
-          isTagMatched = true;
+      var instance_tags = {}
+      var tags = []
+      _.each(instance['tags'], function(inst){
+        tags.push(inst.tagKey+'='+inst.tagValue)
+      })
+      _.each(exclusion_tag, function(exclude){
+        if ( _.contains(tags, exclude)){
+          isTagMatched = true
         }
-        // Constructing tags with comma separated to display in detail_template
-        if((tag['tagValue']).length > 0){
-          tagKeyValue = tagKeyValue+" , "+tag['tagKey']+'='+tag['tagValue'];
-        }
-        else{
-          tagKeyValue = tagKeyValue+" , "+tag['tagKey'];
-        }
-      }
-      if(tagKeyValue === "" || tagKeyValue === " " || tagKeyValue == ""){
-        tagKeyValue = "";
-      }
-      else{
-        tagKeyValue=tagKeyValue.slice(2);
-      }
+      })
+
       //If the instance id is empty and IP tag does not match with entered param_exclude_tags
       if(instance['instance_id']=="" && instance['association_id'] == ""){
         if(!(isTagMatched)){
           result.push({
             accountID: ds_get_caller_identity[0]['account'],
-            tags: (tagKeyValue),
+            tags: tags,
             domain: instance['domain'],
             publicIp: instance['publicIp'],
             region: instance["region"],
@@ -311,6 +297,7 @@ script "js_ip_cost_mapping", type:"javascript" do
       "ip_list": ip_list,
       "message": message,
       "accountID": ds_get_caller_identity[0]['account']
+      "service": "EC2"
     }
     result.ip_list=_.sortBy(result.ip_list,"region")
   EOS
@@ -377,6 +364,9 @@ EOS
       field "id" do
         label "ID"
         path "publicIp"
+      end
+      field "service" do
+        label "Service"
       end
     end
   end
