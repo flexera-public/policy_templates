@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.5
+
+- Removing Publish for EU
+
 ## v2.4
 
 - Added a new input parameter to enter regions in order to support SCP (Service Control Policy) and CIS Standards
