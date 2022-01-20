@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.3
+
+- updated README.md rightscale documentation links with docs.flexera documentation links
+
 ## v2.2
 
 - Updated pagination to add `NextToken` to the body instead of query parameters on subsequent calls

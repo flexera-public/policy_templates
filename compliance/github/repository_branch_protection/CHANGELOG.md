@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.4
+
+- updated README.md rightscale documentation links with docs.flexera documentation links
+
 ## v2.3
 
 - Use GitHub GraphQL API to decrease the number of API calls
