@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.14
+
+- updated README.md rightscale documentation links with docs.flexera documentation links
+
 ## v2.13
 
 - Fix non-optimal array searching for costs

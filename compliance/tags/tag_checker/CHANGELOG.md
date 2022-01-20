@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.14
+
+- updated README.md rightscale documentation links with docs.flexera documentation links
+
 ## v1.13
 
 - Modified escalation label and description for consistency

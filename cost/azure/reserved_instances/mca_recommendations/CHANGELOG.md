@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.7
+
+- updated README.md rightscale documentation links with docs.flexera documentation links
+
 ## v2.6
 
 - updated policy to only pull from first subscription to avoid duplicate data. this will fix the shared repeating data

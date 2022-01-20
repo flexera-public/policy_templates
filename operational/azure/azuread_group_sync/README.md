@@ -37,19 +37,19 @@ You can elect to automatically remove users from your organization that are no l
 - Azure Service Principal (AKA Azure Active Directory Application) with the appropriate permissions to read groups and users in the target tenant.
 - A [configured Identity Provider](https://docs.rightscale.com/platform/guides/configuring_sso/) in the Cloud Management Platform.
 - [Groups need to be created](https://docs.rightscale.com/gov/getting_started/gov_groups.html), and have [permissions assigned](https://docs.rightscale.com/gov/getting_started/gov_groups.html#roles), for each one that you want to synchronize from AzureAD. This policy will NOT create groups, or assign permissions to them, in the CMP.
-- This policy uses [credentials](https://docs.rightscale.com/policies/users/guides/credential_management.html) for connecting to the cloud -- in order to apply this policy you must have a credential registered in the system that is compatible with this policy. If there are no credentials listed when you apply the policy, please contact your cloud admin and ask them to register a credential that is compatible with this policy. [The information below](#Credential-Configuration) should be consulted when creating the credential.
+- This policy uses [credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for connecting to the cloud -- in order to apply this policy you must have a credential registered in the system that is compatible with this policy. If there are no credentials listed when you apply the policy, please contact your cloud admin and ask them to register a credential that is compatible with this policy. [The information below](#Credential-Configuration) should be consulted when creating the credential.
 - The policy must be applied by a user with the `enterprise_manager` role.
 
 ### Credential Configuration
 
-For administrators [creating and managing credentials](https://docs.rightscale.com/policies/users/guides/credential_management.html) to use with this policy, the following information is needed:
+For administrators [creating and managing credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) to use with this policy, the following information is needed:
 
 ### Credential #1
 
 Type: `Microsoft Azure Resource Manager`
-Tenant Id: [See documentation](https://docs.rightscale.com/policies/users/guides/credential_management.html#azure-resource-manager)
-Client Id: [See documentation](https://docs.rightscale.com/policies/users/guides/credential_management.html#azure-resource-manager)
-Client Secret: [See documentation](https://docs.rightscale.com/policies/users/guides/credential_management.html#azure-resource-manager)
+Tenant Id: [See documentation](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm#azure-resource-manager)
+Client Id: [See documentation](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm#azure-resource-manager)
+Client Secret: [See documentation](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm#azure-resource-manager)
 Resource: `Azure Active Directory`
 
 Required permissions in the provider:

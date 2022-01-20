@@ -31,12 +31,12 @@ The following policy actions are taken on any resources found to be out of compl
 
 ## Prerequisites
 
-- This policy requires the Azure Credential. When applying the policy select the appropriate credentials from the list for your tenant.  If such credential doesn't exist please contact your cloud admin to create the Credential. The credential must contain the value *Azure RM* in the Provider field. Refer to our documentation for more details on the [Credential Service](https://docs.rightscale.com/policies/users/guides/credential_management.html)
+- This policy requires the Azure Credential. When applying the policy select the appropriate credentials from the list for your tenant.  If such credential doesn't exist please contact your cloud admin to create the Credential. The credential must contain the value *Azure RM* in the Provider field. Refer to our documentation for more details on the [Credential Service](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm)
 - billing_center_viewer (note: this role must be applied at the Organization level).
 
 ### Credential configuration
 
-For administrators [creating and managing credentials](https://docs.rightscale.com/policies/users/guides/credential_management.html) to use with this policy, the following information is needed:
+For administrators [creating and managing credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) to use with this policy, the following information is needed:
 
 Provider tag value to match this policy: `azure_rm`
 
