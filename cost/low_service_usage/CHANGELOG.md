@@ -1,8 +1,13 @@
 # Changelog
 
-## v1.7
+## v1.8
 
 - updated README.md rightscale documentation links with docs.flexera documentation links
+- Now using OAuth2 credentials instead of the built-in Rightscale authentication
+
+## v1.7
+
+- Use rs_optima_host variable everywhere, instead of literal string
 
 ## v1.6
 

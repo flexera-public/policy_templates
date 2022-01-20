@@ -3,6 +3,7 @@
 This policy allows you to set up scheduled reports that will provide summaries of cloud cost across all resources in the billing centers you specify, delivered to any email addresses you specify. The policy will report the following:
 
 Chart of the selected Date Range and Billing Term of utilization based on whichever [Reporting Dimension](https://docs.rightscale.com/optima/reference/rightscale_dimensions.html) you select (only bill data and RightScale-generated dimensions are supported).
+
 Daily Average - Weekly: Daily average costs calculated from Monday of the previous week through today.
 Daily Average - Monthly: Daily average costs calculated from the 1st of the previous month through today.
 Previous - Weekly: Total costs during previous full week (Monday-Sunday).
@@ -47,6 +48,8 @@ The following policy actions are taken on any resources found to be out of compl
 This policy requires permissions to access RightScale resources (Optima).  Before applying this policy add the following roles to the user applying the policy.  The roles should be applied to all Accounts where the policy will run or the Organization. For more information on modifying roles visit the [Governance Docs](https://docs.rightscale.com/cm/ref/user_roles.html)
 
 - Optima - billing_center_viewer
+
+Alternatively, a version of the policy is provided that uses OAuth2 Flexera credentials (eg for use in the EU region). It requires policy credentials of type OAuth2 against the FlexeraOne application (e.g. in the EU, via the URL:`https://login.flexera.eu/oidc/token`). Those credentials should be associated with a user with the right permissions, ie billing_center_viewer (for the relevant billing centers).
 
 ## Supported Clouds
 

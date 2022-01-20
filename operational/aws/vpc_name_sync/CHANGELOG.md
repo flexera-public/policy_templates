@@ -6,6 +6,7 @@
 
 ## v2.5
 
+- Removing Publish for EU
 - updated README.md rightscale documentation links with docs.flexera documentation links
 
 ## v2.4
