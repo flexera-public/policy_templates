@@ -129,7 +129,7 @@ datasource "ds_instances_set" do
           field "region",val(iter_item, "region")
           field "instanceId", xpath(col_item,"instanceId")
           field "imageId", xpath(col_item,"imageId")
-          field "instanceType", xpath(col_item, "instanceType")
+          field "resourceType", xpath(col_item, "instanceType")
           field "platform", xpath(col_item, "platform")
           field "privateDnsName", xpath(col_item, "privateDnsName")
           field "tags" do
@@ -206,7 +206,7 @@ datasource "ds_cloudwatch_windows_mem_usage" do
 end
 
 datasource "ds_merged_metrics" do
-  run_script $js_merged_metrics, $ds_cloudwatch_cpu_usage, $ds_cloudwatch_mem_usage, $ds_cloudwatch_windows_mem_usage, $param_avg_used_memory, $param_avg_cpu
+  run_script $js_merged_metrics, $ds_cloudwatch_cpu_usage, $ds_cloudwatch_mem_usage, $ds_cloudwatch_windows_mem_usage, $param_avg_used_memory, $param_avg_cpu, $ds_instances
 end
 
 datasource "ds_currency_reference" do
@@ -348,7 +348,7 @@ script "js_instances", type: "javascript" do
           "region": instance.region,
           "instanceId": instance.instanceId,
           "imageId": instance.imageId,
-          "resourceType": instance.instanceType,
+          "resourceType": instance.resourceType,
           "platform": instance.platform,
           "privateDnsName": instance.privateDnsName,
           "tags": instance.tags
@@ -504,7 +504,7 @@ EOS
 end
 
 script "js_merged_metrics", type: "javascript" do
-  parameters "ds_cloudwatch_cpu_usage", "ds_cloudwatch_mem_usage", "ds_cloudwatch_windows_mem_usage", "param_avg_used_memory", "param_avg_cpu"
+  parameters "ds_cloudwatch_cpu_usage", "ds_cloudwatch_mem_usage", "ds_cloudwatch_windows_mem_usage", "param_avg_used_memory", "param_avg_cpu", "ds_instances"
   result "merged_results"
   code <<-EOS
   var merged_results = []
@@ -544,6 +544,13 @@ script "js_merged_metrics", type: "javascript" do
       }
     }
     if((param_avg_used_memory >= mem_average && param_avg_used_memory != -1) || (param_avg_cpu >= parseFloat(instance.cpu_average).toFixed(2) && param_avg_cpu != -1)){
+      var resourceType = ""
+      _.each(ds_instances, function(inst){
+        if (inst.instanceId === instance.instanceId){
+          console.log(inst.resourceType)
+          resourceType = inst.resourceType
+        }
+      })
       merged_results.push(
         {
           "region": instance.region,
@@ -552,6 +559,7 @@ script "js_merged_metrics", type: "javascript" do
           "privateDnsName": instance.privateDnsName,
           "hostname": instance.privateDnsName.split('.')[0],
           "tags": instance.tags,
+          "resourceType": resourceType,
           "cpu_minimum": parseFloat(instance.cpu_minimum).toFixed(2),
           "cpu_maximum": parseFloat(instance.cpu_maximum).toFixed(2),
           "cpu_average": parseFloat(instance.cpu_average).toFixed(2),
@@ -706,6 +714,7 @@ script "js_instance_cost_mapping", type:"javascript" do
           "accountID": ds_get_caller_identity[0]['account']
           "region": instance["region"],
           "resourceID": instance["id"],
+          "resourceType": instance["resourceType"],
           "platform": instance["platform"],
           "privateDnsName": instance["privateDnsName"],
           "hostname": instance["hostname"],
@@ -727,6 +736,7 @@ script "js_instance_cost_mapping", type:"javascript" do
           "accountID": ds_get_caller_identity[0]['account']
           "region": instance["region"],
           "resourceID": instance["id"],
+          "resourceType": instance["resourceType"],
           "platform": instance["platform"],
           "privateDnsName": instance["privateDnsName"],
           "hostname": instance["hostname"],
