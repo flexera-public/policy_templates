@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.6
+
+- Removing Publish for EU, No longer updating NAM
+
 ## v2.5
 
 - updated README.md rightscale documentation links with docs.flexera documentation links
