@@ -1,5 +1,9 @@
 # CHANGELOG
 
+## v1.13
+
+- updating for flexera-public
+
 ## v1.12
 
 - updated README.md rightscale documentation links with docs.flexera documentation links
