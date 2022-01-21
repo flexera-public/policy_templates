@@ -3,7 +3,7 @@
 ## v2.5
 
 - Updated to include pagination section 
-- Updated to add logic to map email to "uniqueId" for users where "email" field is not present
+- Updated to add logic to map email to uniqueId field for users where email field is not present
 
 ## v2.4
 
