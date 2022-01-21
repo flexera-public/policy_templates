@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.7
+
+- adding currency adjustment parameter that allows for percentage conversion of monthly estimated savings
+
 ## v2.6
 
 - prevent updating the incident if the data doesn't change
