@@ -28,6 +28,12 @@ parameter "param_project" do
   description "Google Projects to Query. Leave blank to query all projects."
 end
 
+parameter "param_regions" do
+  type "list"
+  label "Location"
+  description "Location to check, this is region names"
+end
+
 ###############################################################################
 # Authentication
 ###############################################################################
@@ -74,26 +80,8 @@ datasource "ds_google_project" do
   end
 end
 
-#retrieve all google regions
-datasource "ds_google_regions" do
-  iterate $ds_google_project
-  request do
-    auth $auth_google
-    pagination $google_pagination
-    host "www.googleapis.com"
-    path join(["/compute/v1/projects/",val(iter_item,"projectId"),"/regions"])
-    ignore_status [403]
-  end
-  result do
-    encoding "json"
-    collect jmes_path(response, "items[*]") do
-      field "name", jmes_path(col_item,"name")
-    end
-  end
-end
-
 datasource "ds_recommenders" do
-  run_script $js_recommenders, $ds_google_project, $param_project, $ds_google_regions
+  run_script $js_recommenders, $ds_google_project, $param_project, $param_regions
 end
 
 datasource "ds_recommendations" do
@@ -123,18 +111,18 @@ end
 # Scripts
 ###############################################################################
 script "js_recommenders", type: "javascript" do
-  parameters "ds_google_project", "param_project", "ds_google_regions"
+  parameters "ds_google_project", "param_project", "param_regions"
   result "results"
   code <<-EOF
   var results = []
 
   _.each(ds_google_project, function(project){
     if (_.contains(param_project, project.projectId) || param_project.length == 0) {
-      _.each(ds_google_regions, function(location){
+      _.each(param_regions, function(location){
         results.push({
           projectNumber: project.projectNumber,
           projectId: project.projectId,
-          location: location.name
+          location: location
         })
       })
     }
