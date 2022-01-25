@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.11
+
+- updated README.md rightscale documentation links with docs.flexera documentation links
+
 ## v2.10
 
 - Debug via param (off by default, for EU app)

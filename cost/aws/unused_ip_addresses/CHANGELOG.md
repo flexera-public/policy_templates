@@ -12,6 +12,10 @@
   - Added 'savings_currency' to record the currency symbol.
   - Added a 'service' field, hardcoded to "EC2"
 
+## v2.16
+
+- updated README.md rightscale documentation links with docs.flexera documentation links
+
 ## v2.15
 
 - Added default_frequency "daily"
