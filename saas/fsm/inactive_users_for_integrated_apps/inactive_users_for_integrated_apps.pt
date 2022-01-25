@@ -7,7 +7,7 @@ severity "low"
 category "SaaS Management"
 default_frequency "daily"
 info(
-  version: "2.0",
+  version: "2.1",
   provider: "Flexera",
   service: "All",
   policy_set: "N/A"
@@ -44,11 +44,28 @@ end
 # Datasources and Scripts
 ###############################################################################
 
+#GET HOST
+datasource "ds_host" do
+  run_script $js_get_host, rs_governance_host
+end
+  
+script "js_get_host", type: "javascript" do
+  parameters "rs_governance_host"
+  result "result"
+  code <<-EOS
+    if(rs_governance_host.indexOf(".eu") !== -1 || rs_governance_host.indexOf("-eu") !== -1){
+      var result = { flex_host: "api.flexera.eu", fsm_host: "api.fsm-eu.flexeraeng.com" }
+    }else{
+      var result = { flex_host: "api.flexera.com", fsm_host: "api.fsm.flexeraeng.com" }
+    }
+  EOS
+end
+
 #GET MANAGED APPLICATION LIST
 datasource "ds_managed_apps" do
   request do
     auth $auth_rs
-    host "api.flexera.com"
+    host val($ds_host, "flex_host")
     path join(["/saas/v1/orgs/", rs_org_id, "/managed-apps"])
   end
   result do
@@ -88,7 +105,7 @@ datasource "ds_integrated_apps" do
   iterate $ds_app_id_output
   request do
     auth $auth_rs
-    host "api.fsm.flexeraeng.com"
+    host val($ds_host, "fsm_host")
     path join(["/svc/orgs/", rs_org_id, "/sso-discovery/", val(iter_item,"application_id")]) 
     query "includeInactive", "false"
     query "includeUnmapped", "true"
@@ -124,7 +141,7 @@ datasource "ds_app_users" do
   iterate $ds_integrated_apps_filtered
   request do
     auth $auth_rs
-    host "api.fsm.flexeraeng.com"
+    host val($ds_host, "fsm_host")
     path join(["/svc/orgs/", rs_org_id, "/managed-products/", val(iter_item,"managed_product_id"), "/managed-product-agents"])
     query "asc", "true"
     query "sort", "uniqueId"
