@@ -1,5 +1,13 @@
 # Changelog
 
+## v1.13
+
+- updated README.md rightscale documentation links with docs.flexera documentation links
+
+## v1.12
+
+- added Google and AzureMCA expression blobs for filters
+
 ## v1.11
 
 - Added check that AWS account array is not empty before assigning it

@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.10
+
+- updated README.md rightscale documentation links with docs.flexera documentation links
+
 ## v2.9
 
 - Updated next instance size logic to account for missing instance type in instance_types.json
