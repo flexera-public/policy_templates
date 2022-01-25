@@ -2,14 +2,15 @@
 
 ## v3.0
 
+- applying data normalization updates for spend recommendations api. this change breaks current iterations expecting specific output types being pushed.
 - Normalizing fields for recommendations:
-- Renamed 'tag_set' to 'tags'
-- Renamed 'accountId' to 'accountID'
-- Renamed 'id' to 'resourceID'
-- Renamed 'instanceType' to 'resourceType'
-- Changed 'savings' to be a plain number
-- Added 'savings_currency' to record the currency symbol.
-- Added a 'service' field, hardcoded to "EC2"
+  - Renamed 'tag_set' to 'tags'
+  - Renamed 'accountId' to 'accountID'
+  - Renamed 'id' to 'resourceID'
+  - Renamed 'instanceType' to 'resourceType'
+  - Changed 'savings' to be a plain number
+  - Added 'savings_currency' to record the currency symbol.
+  - Added a 'service' field, hardcoded to "EC2"
 
 ## v2.18
 
