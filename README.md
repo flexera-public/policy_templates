@@ -116,6 +116,7 @@ Reference
 
 - [Google Inefficient Instance Utilization using StackDriver](./cost/google/instances_stackdriver_utilization/)
 - [Google Committed Use Discount (CUD)](./cost/google/cud_report/)
+- [Google Committed Use Discount Recommendations (CUD)](./cost/google/cud_recommendations/)
 - [Google Idle Compute Instances](./cost/google/idle_compute_instances/)
 - [Google Expiring Committed Use Discount (CUD)](./cost/google/cud_expiration/)
 - [Google Schedule Instance](./cost/google/schedule_instance/)
