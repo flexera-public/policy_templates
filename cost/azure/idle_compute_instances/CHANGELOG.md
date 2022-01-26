@@ -1,5 +1,13 @@
 # Changelog
 
+## v2.14
+
+- updated README.md rightscale documentation links with docs.flexera documentation links
+
+## v2.13
+
+- Added "ignore-status" for 400, 403, 404 errors
+
 ## v2.12
 
 - Fix non-optimal array searching for costs

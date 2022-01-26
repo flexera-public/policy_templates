@@ -1,5 +1,13 @@
 # Changelog
 
+## v2.6
+
+- Removing Publish for EU, No longer updating NAM
+
+## v2.5
+
+- updated README.md rightscale documentation links with docs.flexera documentation links
+
 ## v2.4
 
 - Added a new input parameter to enter regions in order to support SCP (Service Control Policy) and CIS Standards

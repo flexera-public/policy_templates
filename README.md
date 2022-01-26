@@ -39,7 +39,7 @@ Reference
 - [Schedule Instances](./cost/schedule_instances/)
 - [Scheduled Report](./cost/scheduled_reports/)
 - [Scheduled Report with Estimates](./cost/scheduled_reports_with_estimates/)
-- [Scheduled Report with Markups & Markdowns](./cost/scheduled_report_markUpsDowns/)
+- [Scheduled Report with Markups & Markdowns](./cost/scheduled_report_markupsdowns/)
 - [Superseded Instances](./cost/superseded_instance/)
 - [Superseded Instance Remediation](./cost/superseded_instance_remediation/)
 - [Terminate Instances with End Date](./cost/terminate_policy/)
@@ -177,6 +177,12 @@ Reference
 
 - [AWS Unencrypted RDS Instances](./security/aws/rds_unencrypted/)
 
+##### KMS
+
+###### CIS Policies
+
+- [AWS Ensure Rotation For Customer Master Keys (CMKs) Is Enabled](./security/aws/kms_rotation/)
+
 ##### Storage
 
 - [AWS Open Buckets](./security/storage/aws/public_buckets/)
@@ -189,11 +195,28 @@ Reference
 - [AWS Unencrypted S3 Buckets](./security/aws/unencrypted_s3_buckets/)
 - [AWS S3 Buckets Deny HTTP](./security/aws/s3_buckets_deny_http/)
 
+##### Logging
+
+###### CIS Policies
+
+- [AWS Ensure Log File Validation Enabled For All CloudTrails](./security/aws/log_file_validation_enabled/)
+- [AWS Ensure CloudTrail Enabled In All Regions](./security/aws/log_ensure_cloudtrail_multiregion/)
+
 ##### Load Balancers
 
 - [AWS Internet-facing ELBs & ALBs](./security/aws/loadbalancer_internet_facing/)
 - [AWS Unencrypted ELB Listeners (CLB)](./security/aws/clb_unencrypted/)
 - [AWS Unencrypted ELB Listeners (ALB/NLB)](./security/aws/elb_unencrypted/)
+
+##### Logging
+
+###### CIS Policies
+
+- [AWS Ensure Object-level Events Logging Enabled For CloudTrails](./security/aws/log_ensure_cloudtrail_bucket_object_logging/)
+- [AWS Ensure CloudTrail Logs Encrypted At Rest](./security/aws/log_ensure_cloudtrail_encrypted/)
+- [AWS Ensure CloudTrail S3 Buckets Have Access Logging](./security/aws/log_ensure_cloudtrail_bucket_access_logging/)
+- [AWS Ensure CloudTrail Integrated With Cloudwatch](./security/aws/log_cloudtrail_cloudwatch_integrated/)
+- [AWS Ensure AWS Config Enabled In All Regions](./security/aws/aws_config_enabled/)
 
 #### VPC
 
@@ -341,14 +364,14 @@ Reference
 
 - The policy templates in the repo are the files that have a .pt extension.
 - Select the desired policy template, click on the “Raw” button, and then right-click and choose “Save As” to save the file to your computer.
-- To upload the template to your account, navigate over to the Templates page in the left nav bar in [Governance](https://governance.rightscale.com). Ensure you have the role to access policy management in RightScale. Learn More about [Policy Access Control](https://docs.rightscale.com/policies/#how-policies-work-access-control).
+- To upload the template to your account, navigate over to the Templates page in the left nav bar in [Governance](https://governance.rightscale.com). Ensure you have the role to access policy management in RightScale. Learn More about [Policy Access Control](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm#how-policies-work-access-control).
 - Click the “Upload Policy Template” button in the account you wish to test the policy and follow the instructions to upload the template you just downloaded.
 
 ## Policy Template Documentation
 
-- [Getting Started](https://docs.rightscale.com/policies/users/getting_started/)
-- [Reference Documentation](https://docs.rightscale.com/policies/developers/)
-- [Policy Template Language](https://docs.rightscale.com/policies/developers/reference/v20180301/policy_template_language.html)
+- [Getting Started](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm)
+- [Reference Documentation](https://docs.flexera.com/flexera/EN/Automation/AutomationRefInfo.htm#automationrefinfo_1419216867_1009635)
+- [Policy Template Language](https://docs.flexera.com/flexera/EN/Automation/PTL.htm#automationrefinfo_1419216867_1122815)
 - [Markdown Editor](https://jbt.github.io/markdown-editor/) - Use this to test Markdown Syntax
 - [Libraries](./libraries/README.md)
 - [README GUIDELINE](./README_GUIDELINE.md)

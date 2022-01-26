@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.15
+
+- updated README.md rightscale documentation links with docs.flexera documentation links
+
 ## v1.14
 
 - Added default_frequency "daily"

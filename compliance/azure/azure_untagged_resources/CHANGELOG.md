@@ -1,5 +1,13 @@
 # Changelog
 
+## v2.9
+
+- updated README.md rightscale documentation links with docs.flexera documentation links
+
+## v2.8
+
+- Added subscription filter option and ability to specify Azure API endpoint
+
 ## v2.7
 
 - Convert resource type to lower case for comparison (Microsoft is not consistent with the case)
