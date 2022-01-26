@@ -1,5 +1,17 @@
 # Changelog
 
+## v3.0
+
+- applying data normalization updates for spend recommendations api. this change breaks current iterations expecting specific output types being pushed.
+- Normalizing fields for recommendations:
+  - added 'tags field
+  - Renamed 'accountId' to 'accountID'
+  - Renamed 'id' to 'resourceID'
+  - Renamed 'instanceType' to 'resourceType'
+  - Changed 'savings' to be a plain number
+  - Added 'savings_currency' to record the currency symbol.
+  - Added a 'service' field, hardcoded to "EBS"
+
 ## v2.19
 
 - updated README.md rightscale documentation links with docs.flexera documentation links

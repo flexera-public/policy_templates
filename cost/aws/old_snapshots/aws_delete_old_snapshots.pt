@@ -6,7 +6,7 @@ category "Cost"
 severity "low"
 default_frequency "daily"
 info(
-  version: "2.17",
+  version: "3.0",
   provider: "AWS",
   service: "EBS",
   policy_set: "Old Snapshots"
@@ -251,7 +251,7 @@ datasource "ds_get_snapshot_ami" do
       field "imageId", xpath(col_item, "imageId")
       field "region", val(iter_item, "region")
       field "snapshotId", val(iter_item, "snapshotId")
-      field "tagKeyValue", val(iter_item, "tagKeyValue")
+      field "tags", val(iter_item, "tagKeyValue")
       field "daysOld", val(iter_item, "daysOld")
       field "volumeSize", val(iter_item, "volumeSize")
     end
@@ -283,7 +283,6 @@ script "js_regions", type: "javascript" do
       all_regions.forEach(function(all_region){
         all_regions_list.push(all_region.region)
       })
-
       //Filter valid regions
       var valid_regions = [];
       _.map(uniqueRegions, function(uniqueRegion){
@@ -291,7 +290,6 @@ script "js_regions", type: "javascript" do
           valid_regions.push({"region": uniqueRegion})
         }
       })
-
       //Throw an error if no valid regions found
       if (_.isEmpty(valid_regions)) {
         regions = all_regions;
@@ -333,10 +331,8 @@ script "js_get_costs", type: "javascript" do
       day = day.length > 1 ? day : '0' + day;
       return year + '-' + month + '-' + day;
     }
-
     var start_date = getFormattedDailyDate(new Date(new Date().setDate(new Date().getDate() - 3)));
     var end_date = getFormattedDailyDate(new Date(new Date().setDate(new Date().getDate() - 2)));
-
     var request = {
       auth: "auth_rs",
       host: optima_host,
@@ -384,10 +380,8 @@ script "js_snapshots_cost_mapping", type: "javascript" do
   parameters "snapshots", "snapshot_costs", "ds_currency_code", "ds_currency_reference", "ds_billing_centers", "ds_get_caller_identity"
   result "results"
   code <<-EOS
-
   var result = [];
   var results={};
-
   function formatNumber(number, separator){
     var numString =number.toString();
     var values=numString.split(".");
@@ -443,33 +437,36 @@ script "js_snapshots_cost_mapping", type: "javascript" do
       var monthly_savings = sum*30;
       total=total+monthly_savings;
       result.push({
-        accountId: ds_get_caller_identity[0]['account'],
+        accountID: ds_get_caller_identity[0]['account'],
         snapshotId : snapshot['snapshotId'],
         region : snapshot['region'],
-        tagKeyValue : snapshot['tagKeyValue'],
+        tags : snapshot['tagKeyValue'],
         daysOld : snapshot['daysOld'],
         imageId : snapshot['imageId'],
         snapshotImageIdFormat : snapshot['snapshotImageIdFormat'],
-        savings : cur + ' '+formatNumber(monthly_savings.toFixed(3), separator),
-        volumeSize : snapshot['volumeSize']
+        savings : (Math.round(monthly_savings * 1000) / 1000),
+        savings_currency : cur,
+        volumeSize : snapshot['volumeSize'],
+        service : "EBS"
       })
     } else {
       result.push({
-        accountId: ds_get_caller_identity[0]['account'],
+        accountID: ds_get_caller_identity[0]['account'],
         snapshotId : snapshot['snapshotId'],
         region : snapshot['region'],
-        tagKeyValue : snapshot['tagKeyValue'],
+        tags : snapshot['tagKeyValue'],
         daysOld : snapshot['daysOld'],
         imageId : snapshot['imageId'],
         snapshotImageIdFormat : snapshot['snapshotImageIdFormat'],
-        savings: "N/A",
-        volumeSize : snapshot['volumeSize']
+        savings: 0.0,
+        savings_currency : cur,
+        volumeSize : snapshot['volumeSize'],
+        service : "EBS"
       })
     }
   })
-
   if (ds_billing_centers.length!=0){
-    var total_savings=cur + ' '+formatNumber(total.toFixed(3), separator);
+    var total_savings=cur + ' '+formatNumber(total.toFixed(2), separator);
     var message="The total estimated monthly savings are "+ total_savings;
   } else {
     var message="You do not have the minimum required role of billing_center_viewer to view the savings";
@@ -519,27 +516,17 @@ script "js_filter_old_snapshots", type: "javascript" do
     for(var i=0; i < ds_describe_snapshots.length; i++){
       var snapshot = ds_describe_snapshots[i];
       // Check, if the tag present in entered param_exclude_tags, ignore the snapshot if tag matches/present
-      var tags = snapshot['tags'];
       var isTagMatched = false;
-      var tagKeyValue = "";
-      for(var k=0; k < tags.length; k++){
-        tag = tags[k];
-        if((param_exclude_tags_lower.indexOf((tag['tagKey']).toLowerCase()) !== -1) || (param_exclude_tags_lower.indexOf((tag['tagKey']+'='+tag['tagValue']).toLowerCase()) !== -1)){
-          isTagMatched = true;
+      var instance_tags = {}
+      var tags = []
+      _.each(snapshot['tags'], function(instance){
+        tags.push(instance.tagKey+'='+instance.tagValue)
+      })
+      _.each(param_exclude_tags, function(exclude){
+        if ( _.contains(tags, exclude)){
+          isTagMatched = true
         }
-
-        // Constructing tags with comma separated to display in detail_template
-        if((tag['tagValue']).length > 0){
-          tagKeyValue = tagKeyValue+" , "+tag['tagKey']+'='+tag['tagValue'];
-        }else{
-          tagKeyValue = tagKeyValue+" , "+tag['tagKey'];
-        }
-      }
-
-      if(tagKeyValue === "" || tagKeyValue === " " || tagKeyValue == ""){
-        tagKeyValue = "   < No Value >";
-      }
-
+      })
       if(!(isTagMatched)){
         var snapshotTime = Date.parse(snapshot['startTime']);
         var daysOld = (new Date().getTime() - new Date(snapshotTime).getTime()) / (1000 * 3600 * 24);
@@ -548,7 +535,7 @@ script "js_filter_old_snapshots", type: "javascript" do
           results.push({
             snapshotId : snapshot['snapshotId'],
             region : snapshot['region'],
-            tagKeyValue : (tagKeyValue.slice(2)),
+            tagKeyValue : tags,
             daysOld : daysOld,
             volumeSize : snapshot['volumeSize']
           })
@@ -605,7 +592,7 @@ script "js_filter_ami_snapshots", type: "javascript" do
         region : snapshot['region'],
         tagKeyValue : snapshot['tagKeyValue'],
         daysOld : snapshot['daysOld'],
-        accountId: ds_get_caller_identity[0]['account'],
+        accountID: ds_get_caller_identity[0]['account'],
         imageId : snapshotImageIds,
         snapshotImageIdFormat : (snapshotImageIdFormat.slice(0,snapshotImageIdFormat.length - 2)),
         volumeSize: snapshot['volumeSize']
@@ -622,9 +609,9 @@ end
 
 policy "pol_utilization" do
   validate $ds_snapshots_cost_mapping do
-    summary_template "AWS Account ID: {{with index data.result 0}}{{ .accountId }}{{end}} - {{ len data.result }} rows containing AWS old snapshot data"
+    summary_template "AWS Account ID: {{with index data.result 0}}{{ .accountID }}{{end}} - {{ len data.result }} rows containing AWS old snapshot data"
     detail_template <<-EOS
-The following {{ len data.result }} old snapshots, for AWS Account: {{with index data.result 0}}{{ .accountId }}{{end}}, have exceeded the specified age of: {{ parameters.snapshot_age }} days old.
+The following {{ len data.result }} old snapshots, for AWS Account: {{with index data.result 0}}{{ .accountID }}{{end}}, have exceeded the specified age of: {{ parameters.snapshot_age }} days old.
 
 {{data.message}}
 EOS
@@ -633,8 +620,8 @@ EOS
     check eq(size(val(data, "result")), 0)
     export "result" do
       resource_level true
-      field "accountId" do
-        label "Account Id"
+      field "accountID" do
+        label "Account ID"
       end
       field "region" do
         label "Region"
@@ -645,8 +632,8 @@ EOS
       field "volumeSize" do
         label "Size"
       end
-      field "id" do
-        label "Snapshot Id"
+      field "resourceID" do
+        label "Resource ID"
         path "snapshotId"
       end
       field "snapshotImageIdFormat" do
@@ -655,8 +642,18 @@ EOS
       field "savings" do
         label "Estimated Monthly Savings"
       end
-      field "tagKeyValue" do
+      field "savings_currency" do
+        label "Savings Currency"
+      end
+      field "tags" do
         label "Tags"
+      end
+      field "id" do
+        label "ID"
+        path "snapshotId"
+      end
+      field "service" do
+        label "Service"
       end
     end
   end

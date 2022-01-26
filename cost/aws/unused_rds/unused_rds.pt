@@ -7,7 +7,7 @@ severity "low"
 category "Cost"
 default_frequency "daily"
 info(
-  version: "2.11",
+  version: "3.0",
   provider: "AWS",
   service: "RDS",
   policy_set: "Unused Database Services"
@@ -86,7 +86,7 @@ end
 
 # get all the RDS instances merged together with the tags and CloudWatch
 datasource "ds_rds_instances" do
-  run_script $js_rds_instances, $ds_rds_instances_set, $ds_list_tags_for_resource,$ds_cloudwatch_connections, $param_exclusion_tag_key
+  run_script $js_rds_instances, $ds_rds_instances_set, $ds_list_tags_for_resource,$ds_cloudwatch_connections, $param_exclusion_tag_key, $ds_currency_code, $ds_currency_reference, $ds_get_caller_identity
 end
 
 # get all the RDS instances
@@ -101,7 +101,7 @@ datasource "ds_rds_instances_set" do
           field "region",val(iter_item,"region")
           field "instanceId", xpath(col_item,"DbiResourceId")
           field "instanceArn", xpath(col_item, "DBInstanceArn")
-          field "instanceType", xpath(col_item, "DBInstanceClass")
+          field "resourceType", xpath(col_item, "DBInstanceClass")
           field "name", xpath(col_item,"DBInstanceIdentifier")
           field "status", xpath(col_item,"DBInstanceStatus")
           field "privateDnsName", xpath(col_item, "Endpoint/Address")
@@ -329,21 +329,38 @@ end
 # merge the instances and tags and remove instances that have the exclusion tag
 script "js_rds_instances", type: "javascript" do
   result "results"
-  parameters "ds_rds_instance_set", "ds_list_tags_for_resource", "ds_cloudwatch_connections", "param_exclusion_tag_key"
+  parameters "ds_rds_instance_set", "ds_list_tags_for_resource", "ds_cloudwatch_connections", "param_exclusion_tag_key", "ds_currency_code", "ds_currency_reference", "ds_get_caller_identity"
   code <<-EOS
   var tag_key = param_exclusion_tag_key.split(':')[0]
   var tag_value = param_exclusion_tag_key.split(':')[1]
   var results = []
+  // Format costs with currency symbol and thousands separator
+  if( ds_currency_code['value'] !== undefined ) {
+    if (ds_currency_reference[ds_currency_code['value']] !== undefined ) {
+      var cur = ds_currency_reference[ds_currency_code['value']]['symbol']
+    if( ds_currency_reference[ds_currency_code['value']]['t_separator'] !== undefined ) {
+        var separator = ds_currency_reference[ds_currency_code['value']]['t_separator']
+      } else {
+        var separator = ""
+      }
+    } else {
+      var cur = ""
+      var separator = ""
+    }
+  } else {
+    var cur = "$"
+    var separator = ","
+  }
   for ( n=0; n < ds_rds_instance_set.length; n++) {
     var instance = ds_rds_instance_set[n]
     // get tags for instance
     var instances_w_tags = _.where(ds_list_tags_for_resource, {instanceId: instance.instanceId})
     var instance_tags = {}
-    var tag_set = []
+    var tags = []
     _.each(instances_w_tags, function(instance){
-      tag_set.push(instance.key+':'+instance.value)
+      tags.push(instance.key+'='+instance.value)
     })
-    instance_tags[instance.instanceId] = tag_set
+    instance_tags[instance.instanceId] = tags
     // get dbconnection metrics for instance
     var metrics = _.where(ds_cloudwatch_connections, {instanceId: instance.instanceId})
     var sample_count = _.pluck(metrics, 'sample_count')
@@ -353,16 +370,19 @@ script "js_rds_instances", type: "javascript" do
       continue
     } else {
       results.push({
+        accountID: ds_get_caller_identity[0]['account'],
         region: instance.region,
         name: instance.name,
         arn: instance.instanceArn,
         id: instance.instanceId,
-        instanceType: instance.instanceType,
+        resourceType: instance.resourceType,
+        resourceID: instance.instanceId,
         privateDnsName: instance.privateDnsName,
         status: instance.status,
         connections: connections,
-        tag_set: instance_tags[instance.instanceId],
-        savings:"N/A"
+        tags: instance_tags[instance.instanceId],
+        savings: 0.0
+        savings_currency: cur
       })
     }
   }
@@ -509,16 +529,20 @@ script "js_instance_cost_mapping", type:"javascript" do
       }
       var total_savings=0;
       _.each(instance_list, function(instance){
+        instance['resourceType']=instance.resourceType;
+        instance['service']="RDS"
         var cost_objects = costs_by_resource_id[instance.name];
         if (_.size(cost_objects) > 0){
           count++;
           var sum = _.reduce(_.compact(_.map(cost_objects, function(value){return value.cost_nonamortized_unblended_adj})), function(memo, num){ return memo + num; }, 0);
           var monthly_savings = sum*30;
           total_savings=total_savings+monthly_savings;
-          instance['savings']=cur + ' '+formatNumber((Math.round(monthly_savings * 100) / 100), separator);
+          instance['savings']= (Math.round(monthly_savings * 1000) / 1000);
+          instance['savings_currency']= cur;
           unused_rds_instance_list.push(instance);
         } else {
-          instance['savings']= "N/A";
+          instance['savings']= 0.0;
+          instance['savings_currency']= cur;
           unused_rds_instance_list.push(instance);
         }
       })
@@ -537,7 +561,7 @@ script "js_instance_cost_mapping", type:"javascript" do
     result={
       "instance_list": unused_rds_instance_list,
       "message": message,
-      "accountId": ds_get_caller_identity[0]['account']
+      "accountID": ds_get_caller_identity[0]['account']
     }
     result.instance_list = _.sortBy(result.instance_list,"region");
     result.instance_list = _.sortBy(result.instance_list,"id");
@@ -550,7 +574,7 @@ end
 
 policy "pol_unused_rds" do
   validate $ds_instance_cost_mapping do
-    summary_template "AWS Account ID: {{ data.accountId }} - {{ len data.instance_list }} rows containing AWS RDS Unused Instances"
+    summary_template "AWS Account ID: {{ data.accountID }} - {{ len data.instance_list }} rows containing AWS RDS Unused Instances"
     detail_template <<-EOS
 {{data.message}}
 EOS
@@ -559,8 +583,8 @@ EOS
     check eq(size(val(data,"instance_list")),0)
     export "instance_list" do
       resource_level true
-      field "accountId" do
-        label "Account Id"
+      field "accountID" do
+        label "Account ID"
       end
       field "region" do
         label "Region"
@@ -574,14 +598,17 @@ EOS
       field "savings" do
         label "Estimated Monthly Savings"
       end
-      field "id" do
-        label "Instance Id"
+      field "savings_currency" do
+        label "Savings Currency"
+      end
+      field "resourceID" do
+        label "Resource Id"
       end
       field "privateDnsName" do
         label "Private DNS Name"
       end
-      field "instanceType" do
-        label "Instance Type"
+      field "resourceType" do
+        label "Resource Type"
       end
       field "connections" do
         label "Connections"
@@ -589,8 +616,15 @@ EOS
       field "arn" do
         label "ARN"
       end
-      field "tag_set" do
+      field "tags" do
         label "Tags"
+      end
+      field "id" do
+        label "id"
+        path "resourceID"
+      end
+      field "service" do
+        label "Service"
       end
     end
   end
