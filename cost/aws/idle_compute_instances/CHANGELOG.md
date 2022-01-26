@@ -6,6 +6,7 @@
 - Normalizing fields for recommendations:
   - Renamed 'accountId' to 'accountID'
   - Renamed 'id' to 'resourceID'
+  - Added 'resourceType' field
   - Changed 'savings' to be a plain number
   - Added 'savings_currency' to record the currency symbol.
   - Added a 'service' field, hardcoded to "EC2"
