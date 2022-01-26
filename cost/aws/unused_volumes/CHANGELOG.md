@@ -4,7 +4,7 @@
 
 - applying data normalization updates for spend recommendations api. this change breaks current iterations expecting specific output types being pushed.
 - Normalizing fields for recommendations:
-  - Renamed 'tag_set' to 'tags'
+  - added 'tags field
   - Renamed 'accountId' to 'accountID'
   - Renamed 'id' to 'resourceID'
   - Renamed 'instanceType' to 'resourceType'
