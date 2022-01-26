@@ -10,7 +10,7 @@
   - Renamed 'instanceType' to 'resourceType'
   - Changed 'savings' to be a plain number
   - Added 'savings_currency' to record the currency symbol.
-  - Added a 'service' field, hardcoded to "EC2"
+  - Added a 'service' field, hardcoded to "EBS"
 
 ## v2.19
 
