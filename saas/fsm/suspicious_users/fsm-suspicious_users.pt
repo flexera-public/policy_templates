@@ -7,7 +7,7 @@ severity "high"
 default_frequency "daily"
 category "SaaS Management"
 info(
-  version: "2.4",
+  version: "2.5",
   provider: "Flexera SaaS Manager",
   service: "",
   policy_set: ""
@@ -36,24 +36,52 @@ credentials "fsm_auth" do
 end
 
 ###############################################################################
-# Datasources
+# Pagination
 ###############################################################################
 
+pagination "pag_get_suspicious_users" do
+  get_page_marker do
+    body_path jq(response, 'if length < 1000 then null else if $marker != "" then $marker | tonumber + 1 else 2 end end')
+  end
+  set_page_marker do
+    query "page"
+  end
+end
+
+###############################################################################
+# Datasources and Scripts
+###############################################################################
+
+#GET HOST
 datasource "ds_get_host" do
   run_script $js_get_host, rs_governance_host
+end
+
+script "js_get_host", type: "javascript" do
+  parameters "rs_governance_host"
+  result "result"
+  code <<-EOS
+    var result = []
+    if(rs_governance_host.indexOf(".eu") !== -1 || rs_governance_host.indexOf("-eu") !== -1){
+      result.push({ host: "api.fsm-eu.flexeraeng.com" })
+    }else{
+      result.push({ host: "api.fsm.flexeraeng.com" })
+    }
+  EOS
 end
 
 datasource "ds_suspicious_users" do
   iterate $ds_get_host
   request do
     auth $fsm_auth
+    pagination $pag_get_suspicious_users
     host val(iter_item,"host")
     verb "GET"
     scheme "https"
     path join(["/svc/orgs/", rs_org_id, "/activity/suspicious-agents"])
     header "content-type", "application/json"
     query "page", "1"
-    query "pageSize", "100"
+    query "pageSize", "1000"
     query "asc", "false"
     query "includeUnauthorized", "true"
     query "includeUnrecognized", "true"
@@ -62,12 +90,13 @@ datasource "ds_suspicious_users" do
   result do
     encoding "json"
     collect jmes_path(response, "[*]") do
-      field "firstName", val(col_item, "firstName")
-      field "lastName", val(col_item, "lastName")
-      field "email", val(col_item, "email")
-      field "managedProductName", val(col_item, "managedProductName")
-      field "recognized", val(col_item, "recognized")
-      field "unauthorized", val(col_item, "unauthorized")
+      field "firstName", jmes_path(col_item, "firstName")
+      field "lastName", jmes_path(col_item, "lastName")
+      field "email", jmes_path(col_item, "email")
+      field "uniqueId", jmes_path(col_item, "uniqueId")
+      field "managedProductName", jmes_path(col_item, "managedProductName")
+      field "recognized", jmes_path(col_item, "recognized")
+      field "unauthorized", jmes_path(col_item, "unauthorized")
     end
   end
 end
@@ -76,42 +105,24 @@ datasource "ds_users_cleanup" do
   run_script $js_users_cleanup, $ds_suspicious_users
 end
 
-###############################################################################
-# Scripts
-###############################################################################
-
-script "js_get_host", type: "javascript" do
-  parameters "rs_governance_host"
-  result "result"
-  code <<-EOS
-    var result=[];
-    if(rs_governance_host.indexOf(".eu") !== -1 || rs_governance_host.indexOf("-eu") !== -1){
-      result.push({host: "api.fsm-eu.flexeraeng.com"});
-    }else{
-      result.push({host: "api.fsm.flexeraeng.com"});
-    }
-  EOS
-end
-
 script "js_users_cleanup", type: "javascript" do
   parameters "users"
   result "result"
   code <<-EOS
-    var result = [];
     _.each(users, function(user){
-      if (user["unauthorized"] == true){
-        var activity_type = "Unauthorized";
+      if (user.unauthorized == true){
+        user["activity_type"] = "Unauthorized";
       } else {
-        var activity_type = "Unrecognized";
+        user["activity_type"] = "Unrecognized";
       }
-      result.push({
-        firstName: user['firstName'],
-        lastName: user['lastName'],
-        email: user['email'],
-        managedProductName: user['managedProductName'],
-        activity_type: activity_type
-      })
+      if (user.firstName == null){ user["firstName"] = "" }
+      if (user.lastName == null){ user["lastName"] = "" }
+      if (user.email == null){
+        if (user.uniqueId == "(Unknown)" || user.uniqueId == null){ user["email"] = "" }
+        else { user["email"] = user.uniqueId }
+      }
     })
+    var result = users;
   EOS
 end
 
@@ -132,25 +143,25 @@ end
 
 policy "policy_fsm_suspicious_users" do
   validate $ds_users_cleanup do
-      summary_template "{{ len data }} Suspicious SaaS Users Found"
-      export do
-        field "lastName" do
-          label "Last Name"
-        end
-        field "firstName" do
-          label "First Name"
-        end
-        field "email" do
-          label "Email"
-        end
-        field "managedProductName" do
-          label "Application"
-        end
-        field "activity_type" do
-          label "Activity Type"
-        end
+    summary_template "{{ len data }} Suspicious SaaS Users Found"
+    export do
+      field "lastName" do
+        label "Last Name"
       end
-      escalate $report_summary
-      check eq(size(data), 0)
+      field "firstName" do
+        label "First Name"
+      end
+      field "email" do
+        label "Email"
+      end
+      field "managedProductName" do
+        label "Application"
+      end
+      field "activity_type" do
+        label "Activity Type"
+      end
+    end
+    escalate $report_summary
+    check eq(size(data), 0)
   end
 end
