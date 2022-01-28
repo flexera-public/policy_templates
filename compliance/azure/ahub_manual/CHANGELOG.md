@@ -1,5 +1,13 @@
 # Changelog
 
+## v2.6
+
+- updated README.md rightscale documentation links with docs.flexera documentation links
+
+## v2.5
+
+- Added "ignore-status" for 400, 403, 404 errors
+
 ## v2.4
 
 - Added subscription filter option and ability to specify Azure API endpoint

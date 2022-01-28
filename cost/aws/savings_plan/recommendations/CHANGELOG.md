@@ -1,8 +1,12 @@
 # Changelog
 
-## v2.7
+## v2.8
 
 - adding currency adjustment parameter that allows for percentage conversion of monthly estimated savings
+
+## v2.7
+
+- updated README.md rightscale documentation links with docs.flexera documentation links
 
 ## v2.6
 
