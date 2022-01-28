@@ -118,7 +118,7 @@ datasource "ds_subscriptions" do
   result do
     encoding "json"
     collect jmes_path(response, "value[*]") do
-      field "subscriptionId", jmes_path(col_item,"subscriptionId")
+      field "subscriptionID", jmes_path(col_item,"subscriptionID")
       field "displayName", jmes_path(col_item,"displayName")
       field "state", jmes_path(col_item,"state")
     end
@@ -136,7 +136,7 @@ datasource "ds_azure_disks" do
     auth $azure_auth
     pagination $azure_pagination
     host $param_azure_endpoint
-    path join(["/subscriptions/", val(iter_item,"subscriptionId"), "/providers/Microsoft.Compute/disks"])
+    path join(["/subscriptions/", val(iter_item,"subscriptionID"), "/providers/Microsoft.Compute/disks"])
     query "api-version","2019-07-01"
     ignore_status [400,403,404]
   end
@@ -150,7 +150,7 @@ datasource "ds_azure_disks" do
       field "diskState", jmes_path(col_item,"properties.diskState")
       field "timeCreated", jmes_path(col_item,"properties.timeCreated")
     field "diskSize", jmes_path(col_item,"properties.diskSizeGB")
-      field "subscriptionId",val(iter_item,"subscriptionId")
+      field "subscriptionID",val(iter_item,"subscriptionID")
       field "subscriptionName",val(iter_item,"displayName")
     end
   end
@@ -163,7 +163,7 @@ end
 datasource "ds_azure_log_activity" do
   iterate $ds_filtered_subscriptions
   request do
-    run_script $js_get_logactivity, val(iter_item,"subscriptionId"), $param_unattached_days, $param_azure_endpoint
+    run_script $js_get_logactivity, val(iter_item,"subscriptionID"), $param_unattached_days, $param_azure_endpoint
   end
   result do
     encoding "json"
@@ -226,7 +226,7 @@ end
 datasource "ds_volume_costs" do
   iterate $ds_filtered_subscriptions
   request do
-    run_script $js_get_costs, val(iter_item,"subscriptionId"), $ds_top_level_billing_centers, rs_org_id, rs_optima_host
+    run_script $js_get_costs, val(iter_item,"subscriptionID"), $ds_top_level_billing_centers, rs_org_id, rs_optima_host
   end
   result do
     encoding "json"
@@ -262,7 +262,7 @@ script "js_filtered_subscriptions", type: "javascript" do
     results = []
     _.each(param_subscription_whitelist, function(sub){
       var found = _.find(ds_subscriptions, function(item){
-        return item.subscriptionId == sub || item.displayName.toLowerCase() == sub.toLowerCase();
+        return item.subscriptionID == sub || item.displayName.toLowerCase() == sub.toLowerCase();
       })
       results.push(found)
     })
@@ -335,7 +335,7 @@ script "js_get_costs", type:"javascript" do
 end
 
 script "js_get_logactivity", type: "javascript" do
-  parameters "subscriptionId", "param_unattached_days", "param_azure_endpoint"
+  parameters "subscriptionID", "param_unattached_days", "param_azure_endpoint"
   result "results"
   code <<-EOS
 
@@ -348,7 +348,7 @@ script "js_get_logactivity", type: "javascript" do
 
     results = {
       host: param_azure_endpoint,
-      path: "/subscriptions/"+subscriptionId+"/providers/microsoft.insights/eventtypes/management/values",
+      path: "/subscriptions/"+subscriptionID+"/providers/microsoft.insights/eventtypes/management/values",
       verb: 'GET',
       ignore_status: [400,403,404],
       auth: "azure_auth",
@@ -409,7 +409,7 @@ script "js_filter_disks", type: "javascript" do
         diskState: disk['diskState'],
         diskSize: disk['diskSize'],
         timeCreated: disk['timeCreated'],
-        subscriptionId: disk['subscriptionId'],
+        subscriptionID: disk['subscriptionID'],
         subscriptionName: disk['subscriptionName'],
         tags: disk['tags']
       })
@@ -449,10 +449,10 @@ code <<-EOS
         name: disk['name'],
         location: disk['location'],
         diskSize: disk['diskSize'],
-        subscriptionId: disk['subscriptionId'],
+        subscriptionID: disk['subscriptionID'],
         subscriptionName: disk['subscriptionName'],
         tags: tags,
-        savings: "N/A"
+        savings: 0.0
       })
     }
   }
@@ -526,10 +526,11 @@ script "js_volume_cost_mapping", type:"javascript" do
           name: volume['name'],
           location: volume['location'],
           diskSize: volume['diskSize'],
-          subscriptionId: volume['subscriptionId'],
+          subscriptionID: volume['subscriptionID'],
           subscriptionName: volume['subscriptionName'],
           tags: volume['tags'],
-          savings: cur + ' ' + formatNumber((Math.round(monthly_savings * 100) / 100), separator)
+          savings: (Math.round(monthly_savings * 1000) / 1000),
+          savingsCurrency: cur
         })
       } else {
         instances.push({
@@ -537,10 +538,10 @@ script "js_volume_cost_mapping", type:"javascript" do
           name: volume['name'],
           location: volume['location'],
           diskSize: volume['diskSize'],
-          subscriptionId: volume['subscriptionId'],
+          subscriptionID: volume['subscriptionID'],
           subscriptionName: volume['subscriptionName'],
           tags: volume['tags'],
-          savings: "N/A"
+          savings: 0.0
         })
       }
     })

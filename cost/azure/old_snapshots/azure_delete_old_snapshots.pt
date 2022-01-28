@@ -108,7 +108,7 @@ datasource "ds_subscriptions" do
   result do
     encoding "json"
     collect jmes_path(response, "value[*]") do
-      field "subscriptionId", jmes_path(col_item,"subscriptionId")
+      field "subscriptionID", jmes_path(col_item,"subscriptionID")
       field "displayName", jmes_path(col_item,"displayName")
       field "state", jmes_path(col_item,"state")
     end
@@ -126,7 +126,7 @@ datasource "ds_azure_get_snapshots" do
     auth $azure_auth
     pagination $azure_pagination
     host $param_azure_endpoint
-    path join(["/subscriptions/", val(iter_item,"subscriptionId"), "/providers/Microsoft.Compute/snapshots"])
+    path join(["/subscriptions/", val(iter_item,"subscriptionID"), "/providers/Microsoft.Compute/snapshots"])
     query "api-version","2019-07-01"
   end
   result do
@@ -137,7 +137,7 @@ datasource "ds_azure_get_snapshots" do
       field "location", jmes_path(col_item, "location")
       field "tags", jmes_path(col_item,"tags")
       field "timeCreated", jmes_path(col_item,"properties.timeCreated")
-      field "subscriptionId",val(iter_item,"subscriptionId")
+      field "subscriptionID",val(iter_item,"subscriptionID")
       field "subscriptionName",val(iter_item,"displayName")
     end
   end
@@ -195,7 +195,7 @@ end
 datasource "ds_snapshot_costs" do
   iterate $ds_filtered_subscriptions
   request do
-    run_script $js_get_costs, val(iter_item,"subscriptionId"), $ds_top_level_billing_centers, rs_org_id, rs_optima_host
+    run_script $js_get_costs, val(iter_item,"subscriptionID"), $ds_top_level_billing_centers, rs_org_id, rs_optima_host
   end
   result do
     encoding "json"
@@ -228,7 +228,7 @@ script "js_filtered_subscriptions", type: "javascript" do
     results = []
     _.each(param_subscription_whitelist, function(sub){
       var found = _.find(ds_subscriptions, function(item){
-        return item.subscriptionId == sub || item.displayName.toLowerCase() == sub.toLowerCase();
+        return item.subscriptionID == sub || item.displayName.toLowerCase() == sub.toLowerCase();
       })
       results.push(found)
     })
@@ -331,10 +331,10 @@ script "js_filter_snapshots", type: "javascript" do
             name:snapshot['name'],
             location:snapshot['location'],
             timeCreated:snapshot['timeCreated'],
-            subscriptionId:snapshot['subscriptionId'],
+            subscriptionID:snapshot['subscriptionID'],
             subscriptionName:snapshot['subscriptionName'],
             age:age,
-            savings:"N/A"
+            savings:0.0
           })
         }
       }
@@ -404,10 +404,11 @@ script "js_snapshot_cost_mapping", type:"javascript" do
           var sum = _.reduce(_.compact(_.map(cost_objects, function(value){ return value.cost_nonamortized_unblended_adj})), function(memo, num){ return memo + num; }, 0);
           var monthly_savings = sum*30;
           total=total+monthly_savings;
-          snapshot['savings']= cur + ' '+formatNumber((Math.round(monthly_savings * 100) / 100), separator)
+          snapshot['savings']= (Math.round(monthly_savings * 1000) / 1000);
+          snapshot['savingsCurrency']= cur;
           instances.push(snapshot)
         } else {
-          snapshot['savings']= "N/A";
+          snapshot['savings']= 0.0;
           instances.push(snapshot)
         }
       })

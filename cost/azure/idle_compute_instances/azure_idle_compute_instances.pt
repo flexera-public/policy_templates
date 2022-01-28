@@ -105,7 +105,7 @@ datasource "ds_subscriptions" do
   result do
     encoding "json"
     collect jmes_path(response, "value[*]") do
-      field "subscriptionId", jmes_path(col_item,"subscriptionId")
+      field "subscriptionID", jmes_path(col_item,"subscriptionID")
       field "displayName", jmes_path(col_item,"displayName")
       field "state", jmes_path(col_item,"state")
     end
@@ -123,7 +123,7 @@ datasource "ds_azure_virtualmachines" do
     auth $azure_auth
     pagination $azure_pagination
     host "management.azure.com"
-    path join(["/subscriptions/", val(iter_item,"subscriptionId"), "/providers/Microsoft.Compute/virtualMachines"])
+    path join(["/subscriptions/", val(iter_item,"subscriptionID"), "/providers/Microsoft.Compute/virtualMachines"])
     query "api-version","2019-03-01"
     header "User-Agent", "RS Policies"
     ignore_status [400,403,404]
@@ -136,7 +136,7 @@ datasource "ds_azure_virtualmachines" do
       field "name", jmes_path(col_item,"name")
       field "location", jmes_path(col_item, "location")
       field "tags", jmes_path(col_item,"tags")
-      field "subscriptionId",val(iter_item,"subscriptionId")
+      field "subscriptionID",val(iter_item,"subscriptionID")
       field "subscriptionName",val(iter_item,"displayName")
     end
   end
@@ -153,7 +153,7 @@ datasource "ds_azure_instance_performance" do
     auth $azure_auth
     pagination $azure_pagination
     host "management.azure.com"
-    path join(["/subscriptions/", val(iter_item,"subscriptionId"), "/resourceGroups/", val(iter_item,"rg"), "/providers/Microsoft.Compute/virtualMachines/",val(iter_item,"name"),"/providers/microsoft.insights/metrics"])
+    path join(["/subscriptions/", val(iter_item,"subscriptionID"), "/resourceGroups/", val(iter_item,"rg"), "/providers/Microsoft.Compute/virtualMachines/",val(iter_item,"name"),"/providers/microsoft.insights/metrics"])
     query "api-version","2018-01-01"
     query "timespan","P30D"
     query "interval", "P1D"
@@ -167,7 +167,7 @@ datasource "ds_azure_instance_performance" do
     field "id", val(iter_item, "id")
     field "location", val(iter_item, "location")
     field "tags", val(iter_item, "tags")
-    field "subscriptionId",val(iter_item,"subscriptionId")
+    field "subscriptionID",val(iter_item,"subscriptionID")
     field "subscriptionName",val(iter_item,"subscriptionName")
     field "averages" do
       collect jmes_path(response,"value[].timeseries[].data[]") do
@@ -225,7 +225,7 @@ end
 datasource "ds_instance_costs" do
   iterate $ds_filtered_subscriptions
   request do
-    run_script $js_get_costs, val(iter_item,"subscriptionId"), $ds_top_level_billing_centers, rs_org_id, rs_optima_host
+    run_script $js_get_costs, val(iter_item,"subscriptionID"), $ds_top_level_billing_centers, rs_org_id, rs_optima_host
   end
   result do
     encoding "json"
@@ -262,7 +262,7 @@ script "js_filtered_subscriptions", type: "javascript" do
     results = []
     _.each(param_subscription_whitelist, function(sub){
       var found = _.find(ds_subscriptions, function(item){
-        return item.subscriptionId == sub || item.displayName.toLowerCase() == sub.toLowerCase();
+        return item.subscriptionID == sub || item.displayName.toLowerCase() == sub.toLowerCase();
       })
       results.push(found)
     })
@@ -378,7 +378,7 @@ code <<-EOS
 
     if (final_average < param_cpu_average_percentage && final_average != 0) {
       result["averagecpu"] = final_average
-      result['savings']="N/A";
+      result['savings']=0.0;
       results.push(result)
     }
   })
@@ -447,10 +447,12 @@ script "js_instance_cost_mapping", type:"javascript" do
           var sum = _.reduce(_.compact(_.map(cost_objects, function(value){return value.cost_nonamortized_unblended_adj})), function(memo, num){ return memo + num; }, 0);
           var monthly_savings = sum*30;
           total_savings=total_savings+monthly_savings;
-          instance['savings']=cur + ' '+formatNumber((Math.round(monthly_savings * 100) / 100), separator);
+          instance['savings']=(Math.round(monthly_savings * 100) / 1000);
+          instance['savingsCurrency']=cur;
           idle_instance_list.push(instance);
         } else {
-          instance['savings']= "N/A";
+          instance['savings']= 0.0;
+          instance['savingsCurrency']=cur;
           idle_instance_list.push(instance);
         }
       })
@@ -491,7 +493,7 @@ EOS
       field "subscriptionName" do
         label "Subscription Name"
       end
-      field "subscriptionId" do
+      field "subscriptionID" do
         label "Subscription Id"
       end
       field "location" do
@@ -554,7 +556,7 @@ define delete_resources($data,$param_log_to_cm_audit_entries) return $all_respon
         verb: "delete",
         host: "management.azure.com",
         auth: $$azure_auth,
-        href: join(["/subscriptions/", $item['subscriptionId'], "/resourceGroups/", $item["rg"], "/providers/Microsoft.Compute/virtualMachines/",$item["vmname"]]),
+        href: join(["/subscriptions/", $item['subscriptionID'], "/resourceGroups/", $item["rg"], "/providers/Microsoft.Compute/virtualMachines/",$item["vmname"]]),
         https: true,
         query_strings: {
           "api-version": "2018-06-01"

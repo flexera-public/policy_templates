@@ -94,7 +94,7 @@ datasource "ds_subscriptions" do
   result do
     encoding "json"
     collect jmes_path(response, "value[*]") do
-      field "subscriptionId", jmes_path(col_item,"subscriptionId")
+      field "subscriptionID", jmes_path(col_item,"subscriptionID")
       field "displayName", jmes_path(col_item,"displayName")
     end
   end
@@ -111,14 +111,14 @@ datasource "ds_resource_groups" do
     auth $azure_auth
     pagination $azure_pagination
     host $param_azure_endpoint
-    path join(["/subscriptions/",val(iter_item,"subscriptionId"),"/resourcegroups"])
+    path join(["/subscriptions/",val(iter_item,"subscriptionID"),"/resourcegroups"])
     query "api-version","2019-10-01"
   end
   result do
     encoding "json"
     collect jmes_path(response, "value[*]") do
       field "resourceGroupName", jmes_path(col_item,"name")
-      field "subscriptionId", val(iter_item,"subscriptionId")
+      field "subscriptionID", val(iter_item,"subscriptionID")
       field "subscriptionName", val(iter_item,"displayName")
     end
   end
@@ -130,13 +130,13 @@ datasource "ds_public_ip_addresses" do
   request do
     auth $azure_auth
     host $param_azure_endpoint
-    path join(["/subscriptions/",val(iter_item,"subscriptionId"),"/resourceGroups/",val(iter_item,"resourceGroupName"),"/providers/Microsoft.Network/publicIPAddresses"])
+    path join(["/subscriptions/",val(iter_item,"subscriptionID"),"/resourceGroups/",val(iter_item,"resourceGroupName"),"/providers/Microsoft.Network/publicIPAddresses"])
     query "api-version","2020-03-01"
   end
   result do
     encoding "json"
     collect jmes_path(response,"value[*]") do
-      field "subscriptionId", val(iter_item,"subscriptionId")
+      field "subscriptionID", val(iter_item,"subscriptionID")
       field "subscriptionName", val(iter_item,"subscriptionName")
       field "resourceGroupName", val(iter_item,"resourceGroupName")
       field "ipAddressName", jmes_path(col_item,"name")
@@ -200,7 +200,7 @@ end
 datasource "ds_ip_costs" do
   iterate $ds_filtered_subscriptions
   request do
-    run_script $js_get_costs, val(iter_item,"subscriptionId"), $ds_top_level_billing_centers, rs_org_id
+    run_script $js_get_costs, val(iter_item,"subscriptionID"), $ds_top_level_billing_centers, rs_org_id
   end
   result do
     encoding "json"
@@ -233,7 +233,7 @@ script "js_filtered_subscriptions", type: "javascript" do
     results = []
     _.each(param_subscription_whitelist, function(sub){
       var found = _.find(ds_subscriptions, function(item){
-        return item.subscriptionId == sub || item.displayName.toLowerCase() == sub.toLowerCase();
+        return item.subscriptionID == sub || item.displayName.toLowerCase() == sub.toLowerCase();
       })
       results.push(found)
     })
@@ -329,7 +329,7 @@ script "js_exclude_tags", type: "javascript" do
       if(!isTagMatched){
         if(properties.ipConfiguration == null){
           results.push({
-            subscriptionId:ipAddress["subscriptionId"],
+            subscriptionID:ipAddress["subscriptionID"],
             subscriptionName:ipAddress["subscriptionName"],
             resourceGroupName:ipAddress["resourceGroupName"],
             ipAddressName:ipAddress["ipAddressName"],
@@ -407,25 +407,27 @@ script "js_ip_cost_mapping", type:"javascript" do
         var monthly_savings = sum*30;
         total_savings=total_savings+monthly_savings;
         unused_ip_list.push({
-          subscriptionId:ip["subscriptionId"],
+          subscriptionID:ip["subscriptionID"],
           subscriptionName:ip["subscriptionName"],
           resourceGroupName:ip["resourceGroupName"],
           ipAddressName:ip["ipAddressName"],
           location:ip["location"],
           tags:ip["tags"],
           ipAddressId:ip["ipAddressId"],
-          savings: cur + ' '+formatNumber((Math.round(monthly_savings * 100) / 100), separator)
+          savings: (Math.round(monthly_savings * 100) / 100),
+          savingsCurrency: cur
         })
       } else {
         unused_ip_list.push({
-          subscriptionId:ip["subscriptionId"],
+          subscriptionID:ip["subscriptionID"],
           subscriptionName:ip["subscriptionName"],
           resourceGroupName:ip["resourceGroupName"],
           ipAddressName:ip["ipAddressName"],
           location:ip["location"],
           tags:ip["tags"],
           ipAddressId:ip["ipAddressId"],
-          savings: "N/A"
+          savings: 0.0,
+          savingsCurrency: cur
         })
       }
     })
