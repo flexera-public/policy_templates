@@ -29,6 +29,12 @@ parameter "param_billing_centers" do
   default []
 end
 
+parameter "param_lookback_months" do
+  label "Lookback Months"
+  type "number"
+  default 10
+end
+
 parameter "param_forecasted_months" do
   label "Months to forecast"
   type "number"
@@ -108,7 +114,7 @@ datasource "ds_billing_centers" do
 end
 
 datasource "ds_past_month_list" do
-  run_script $js_generate_past_month_list
+  run_script $js_generate_past_month_list, $param_lookback_months
 end
 
 datasource "ds_costs" do
@@ -142,6 +148,7 @@ end
 # Scripts
 ###############################################################################
 script "js_generate_past_month_list", type: "javascript" do
+  parameters "param_lookback_months"
   result "month_list"
   code <<-EOS
   var month_list = [];
@@ -164,7 +171,7 @@ script "js_generate_past_month_list", type: "javascript" do
     return date;
   }
 
-  _.each([1,2,3,4,5,6,7,8,9,10], function (month_counter) {
+  _.each(_.range(1, param_lookback_months + 1), function (month_counter) {
     var start_date = getFormattedDailyDate(getStartDate(new Date(), month_counter));
     var end_date = getFormattedDailyDate(getEndDate(new Date(), month_counter));
     month_list.push({
@@ -269,20 +276,64 @@ EOS
 end
 
 script "js_forecast", type: "javascript" do
-  parameters "data"
-  result "results"
+  parameters "ds_make_data_package"
+  result "report"
   code <<-EOS
-  var results = []
-  var forecasted_months = data.forecasted_months;
-  var cost_data = data.costs;
-  var cost_object = {};
-  _.each(cost_data, function ( item ) {
-    cost_object[item[0]] = item[1];
+  var forecasted_costs = [];
+  function getFormattedDailyDate(date) {
+    var year = date.getFullYear();
+    var month = (1 + date.getMonth()).toString();
+    month = month.length > 1 ? month : '0' + month;
+    return year + '-' + month;
+  }
+  function getFutureMonth( date, month_counter ) {
+    date.setMonth(date.getMonth() + month_counter);
+    return date;
+  }
+
+  var costs = ds_make_data_package[0].costs;
+  var forecasted_months = ds_make_data_package[0].forecasted_months;
+  var end_cost = costs[1].cost;
+  var start_cost = costs[costs.length - 1].cost;
+  var cost_difference = end_cost - start_cost;
+  var percent_difference = ((end_cost / cost_difference));
+  var monthly_percent_difference = (percent_difference / costs.length);
+  var forecasted_cost = costs[1].cost;
+  var chartDataArray = [];
+  var XAxisArray = [];
+  var monthNames = ['January', 'February', 'March', 'April', 'May', 'June',
+    'July', 'August', 'September', 'October', 'November', 'December',
+  ];
+  _.each(_.range(1, forecasted_months + 1), function (month) {
+    forecasted_cost = forecasted_cost + (forecasted_cost * monthly_percent_difference);
+    var future_month = getFormattedDailyDate( getFutureMonth(new Date(), month));
+    chartDataArray.push(parseInt(forecasted_cost));
+    XAxisArray.push(monthNames[parseInt(future_month.split('-')[1]) - 1]);
+    forecasted_costs.push( {
+      month: future_month,
+      forecasted_cost: parseInt(forecasted_cost),
+    } );
   } );
-  _.each(cost_data, function(item){
-    //subtract last one from first one
-    //divide retainer by last one, calculate difference
-  })
+
+
+  var now = new Date();
+  var currentMonthName = monthNames[now.getMonth()];
+  var chartData = 'chd=a:|' + chartDataArray.join(',');
+  var chartXAxis = 'chxl=0:|' + XAxisArray.join('|');
+  var report = {
+    chartType: 'cht=bvo',
+    chartSize: 'chs=999x500',
+    chartTitle: 'chtt=Forecasted Costs',
+    chartAxis: 'chxt=x,y',
+    chartXAxis: chartXAxis,
+    chartAxisFormat: 'chxs=1N*cUSD0sz*',
+    chartData: chartData,
+    chartColors: 'chco=CFECF7,27c9c2',
+    chartExtension: 'chof=.png',
+    currentMonthName: currentMonthName,
+    reportData: forecasted_costs,
+  };
+  console.log(report);
 EOS
 end
 
@@ -302,11 +353,24 @@ end
 ###############################################################################
 
 policy "budget_alert" do
-  validate_each $ds_forecast do
-    summary_template "Forecasted Item"
+  validate $ds_forecast do
+    summary_template "Forecasted Costs"
+    detail_template <<-EOS
+# Full Cost Report for {{ rs_org_name }} - {{ data.currentMonthName }}
+![Forecast Chart](https://image-charts.com/chart?{{ data.chartType }}&{{ data.chartSize }}&{{ data.chartTitle }}&{{ data.chartAxis }}&{{ data.chartXAxis }}&{{ data.chartAxisFormat }}&{{ data.chartData }}&{{ data.chartColors }}&{{ data.chartExtension }} "Forecasting Spend Chart")
+___
+###### Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }}) within Org: {{ rs_org_name }} (Org ID: {{ rs_org_id }})
+    EOS
     escalate $esc_budget_alert
-    detail_template ""
     check eq(1,0)
+    export "reportData" do
+      field "month" do
+        label "Month"
+      end
+      field "forecasted_cost" do
+        label "Forecasted Costs"
+      end
+    end
   end
 end
 
