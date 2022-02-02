@@ -17,6 +17,7 @@ This policy has the following input parameters required when launching the polic
 - *Savings Plan Type* - Choose between Compute Savings Plans or EC2 Instance Savings Plans
 - *Monthly Savings Threshold* - Specify the minimum monthly savings that should result in a Savings Plan purchase recommendation
 - *Email addresses to notify* - A list of email addresses to notify
+- *Currency Adjustment* - Number to adjust monthly estimated savings by depending on USD conversion (maximum value 5.0)
 
 ### Policy Actions
 

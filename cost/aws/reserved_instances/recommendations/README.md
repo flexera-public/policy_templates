@@ -19,6 +19,7 @@ This policy has the following input parameters required when launching the polic
 - *Payment Option* - RI purchase option.  Leave blank to include all RI purchase options
 - *Net Savings Threshold* - Specify the minimum estimated monthly savings that should result in a recommendation
 - *Email addresses to notify* - Email addresses of the recipients you wish to notify
+- *Currency Adjustment* - Number to adjust monthly estimated savings by depending on USD conversion (maximum value 5.0)
 
 ## Policy Actions
 
