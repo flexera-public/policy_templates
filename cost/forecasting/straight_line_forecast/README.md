@@ -1,4 +1,4 @@
-# Budget Alerts Policy
+# Straight-Line Forecasting Policy
 
 ## What it does
 
