@@ -44,6 +44,10 @@ Reference
 - [Superseded Instance Remediation](./cost/superseded_instance_remediation/)
 - [Terminate Instances with End Date](./cost/terminate_policy/)
 
+##### Forecasting
+
+- [Straight-Line Forecast](./cost/forecasting/straight_line_forecast/)
+
 #### AWS
 
 ##### Credential Setup
