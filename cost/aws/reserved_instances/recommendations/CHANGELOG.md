@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.9
+
+- updated policy versions to the correct changelog version
+
 ## v2.8
 
 - adding currency adjustment parameter that allows for percentage conversion of monthly estimated savings
