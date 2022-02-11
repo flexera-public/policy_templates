@@ -1,8 +1,20 @@
 # Changelog
 
-## v2.7
+## v2.10
 
 - Added support for a single AWS STS Cross account role to be used for multiple policies.
+
+## v2.9
+
+- updated policy versions to the correct changelog version
+
+## v2.8
+
+- adding currency adjustment parameter that allows for percentage conversion of monthly estimated savings
+
+## v2.7
+
+- updated README.md rightscale documentation links with docs.flexera documentation links
 
 ## v2.6
 

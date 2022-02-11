@@ -1,14 +1,14 @@
 name "Budget Alerts by Cloud Account"
 rs_pt_ver 20180301
 type "policy"
-short_description "Create a Monthly Budget Alert for a Cloud Vendor Account. See the [README](https://github.com/flexera/policy_templates/tree/master/cost/budget_alerts_by_account/) and [docs.rightscale.com/policies](https://docs.rightscale.com/policies/) to learn more."
+short_description "Create a Monthly Budget Alert for a Cloud Vendor Account. See the [README](https://github.com/flexera/policy_templates/tree/master/cost/budget_alerts_by_account/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 long_description ""
 severity "medium"
 category "Cost"
 tenancy "single"
 default_frequency "daily"
 info(
-  version: "1.3",
+  version: "1.5",
   provider: "Flexera Optima",
   service: "",
   policy_set: ""
@@ -64,20 +64,6 @@ auth "auth_rs", type: "rightscale"
 # Datasources
 ###############################################################################
 
-datasource "ds_session" do
-  request do
-    auth $auth_rs
-    verb "GET"
-    host rs_cm_host
-    path "/api/sessions"
-    header "X-Api-Version", "1.5"
-    query "view", "whoami"
-  end
-  result do
-    field "user_id", last(split(first(jmes_path(response, "links[?rel == 'user'].href")),'/'))
-  end
-end
-
 datasource "ds_currency_reference" do
   request do
     host "raw.githubusercontent.com"
@@ -103,7 +89,23 @@ end
 
 datasource "ds_billing_centers" do
   request do
-    run_script $js_get_billing_centers, $ds_session,rs_org_id,rs_optima_host
+    auth $auth_rs
+    host rs_optima_host
+    path join(["/analytics/orgs/",rs_org_id,"/billing_centers"])
+    header "Api-Version", "1.0"
+    header "User-Agent", "RS Policies"
+    query "view", "allocation_table"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response,"[*]") do
+      field "href", jmes_path(col_item,"href")
+      field "id", jmes_path(col_item,"id")
+      field "name", jmes_path(col_item,"name")
+      field "parent_id", jmes_path(col_item,"parent_id")
+      field "ancestor_ids", jmes_path(col_item,"ancestor_ids")
+      field "allocation_table", jmes_path(col_item,"allocation_table")
+    end
   end
 end
 
@@ -136,20 +138,6 @@ end
 ###############################################################################
 # Scripts
 ###############################################################################
-
-script "js_get_billing_centers", type: "javascript" do
-  parameters "ds_session","rs_org_id","rs_optima_host"
-  result "request"
-  code <<-EOS
-    request = {
-      "auth": "auth_rs",
-      "verb": "GET",
-      "host": rs_optima_host
-      "path": "/analytics/users/"+ds_session["user_id"]+"/orgs/"+rs_org_id+"/billing_centers"
-      "headers": {"Api-Version": "1.0" },
-    }
-  EOS
-end
 
 script "js_costs_request", type: "javascript" do
   parameters "org","param_cost_metric","billing_centers"

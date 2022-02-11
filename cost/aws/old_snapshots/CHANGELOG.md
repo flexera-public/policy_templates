@@ -1,8 +1,28 @@
 # Changelog
 
-## v2.16
+## v3.1
 
 - Added support for a single AWS STS Cross account role to be used for multiple policies.
+
+## v3.0
+
+- applying data normalization updates for spend recommendations api. this change breaks current iterations expecting specific output types being pushed.
+- Normalizing fields for recommendations:
+  - Renamed 'tagKeyValue' to 'tags'
+  - Renamed 'accountId' to 'accountID'
+  - Renamed 'id' to 'resourceID'
+  - Changed 'savings' to be a plain number
+  - Added 'savings_currency' to record the currency symbol.
+  - Added a 'service' field, hardcoded to "EBS"
+
+## v2.17
+
+- updated README.md rightscale documentation links with docs.flexera documentation links
+
+## v2.16
+
+- Fix non-optimal array searching for costs
+- Fix currency bug caused by incorrect parameter being passed
 
 ## v2.15
 

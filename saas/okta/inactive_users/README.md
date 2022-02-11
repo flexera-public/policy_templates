@@ -12,7 +12,7 @@ This Policy Template leverages the [Okta Users API](https://developer.okta.com/d
 
 This policy has the following input parameters required when launching the policy.
 
-- *Okta Organization Name* - The name of your Okta Organization.  For example, if you navigate to <https://contoso.okta.com> to login to Okta, the value in this parameter would be `contoso`.
+- *Okta Organization Name* - The name of your Okta Organization.  For example, if you navigate to <https://demo.okta.com> to login to Okta, the value in this parameter would be `demo`.
 - *Number of Days Since Last Login* - The number of days that a user has not logged in to Okta, which should raise an incident.
 - *Email addresses to notify* - A list of email addresses to notify
 - *Automatic Actions* - When this value is set, this policy will automatically take the selected action(s).
@@ -22,13 +22,13 @@ For example if a user selects the "Deactivate Users" action while applying the p
 
 ## Prerequisites
 
-This policy uses [credentials](https://docs.rightscale.com/policies/users/guides/credential_management.html)
+This policy uses [credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm)
 for connecting to the cloud -- in order to apply this policy you must have a credential registered in the system that is compatible with this policy. If there are no
 credentials listed when you apply the policy, please contact your cloud admin and ask them to register a credential that is compatible with this policy. The information below should be consulted when creating the credential.
 
 ### Credential configuration
 
-For administrators [creating and managing credentials](https://docs.rightscale.com/policies/users/guides/credential_management.html) to use with this policy, the following information is needed: 
+For administrators [creating and managing credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) to use with this policy, the following information is needed:
 
 Provider tag value to match this policy: `okta`
 

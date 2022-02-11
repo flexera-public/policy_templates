@@ -1,13 +1,13 @@
 name "AWS Idle Compute Instances"
 rs_pt_ver 20180301
 type "policy"
-short_description "Check for instances that are idle for the last 30 days and terminates them after approval. See the [README](https://github.com/flexera/policy_templates/tree/master/cost/aws/idle_compute_instances/) and [docs.rightscale.com/policies](https://docs.rightscale.com/policies/) to learn more."
+short_description "Check for instances that are idle for the last 30 days and terminates them after approval. See the [README](https://github.com/flexera/policy_templates/tree/master/cost/aws/idle_compute_instances/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 long_description ""
 severity "low"
 category "Cost"
 default_frequency "daily"
 info(
-  version: "2.12",
+  version: "3.1",
   provider: "AWS",
   service: "EC2",
   policy_set: "Idle Compute Instances"
@@ -136,10 +136,10 @@ datasource "ds_instances_set" do
           field "region",val(iter_item, "region")
           field "instanceId", xpath(col_item,"instanceId")
           field "imageId", xpath(col_item,"imageId")
-          field "instanceType", xpath(col_item, "instanceType")
+          field "resourceType", xpath(col_item, "instanceType")
           field "platform", xpath(col_item, "platform")
           field "privateDnsName", xpath(col_item, "privateDnsName")
-          field "tag_set" do
+          field "tags" do
             collect xpath(col_item,"tagSet/item","array") do
               field "key", xpath(col_item, "key")
               field "value", xpath(col_item, "value")
@@ -163,7 +163,7 @@ datasource "ds_cloudwatch_cpu_usage" do
       field "instanceId", val(iter_item, "instanceId")
       field "platform", val(iter_item, "platform")
       field "privateDnsName", val(iter_item, "privateDnsName")
-      field "tag_set", val(iter_item, "tag_set")
+      field "tags", val(iter_item, "tags")
       field "cpu_unit", jmes_path(col_item,"Unit")
       field "cpu_maximum", jmes_path(col_item, "Maximum")
       field "cpu_minimum", jmes_path(col_item, "Minimum")
@@ -183,7 +183,7 @@ datasource "ds_cloudwatch_mem_usage" do
       field "region", val(iter_item, "region")
       field "instanceId", val(iter_item, "instanceId")
       field "privateDnsName", val(iter_item, "privateDnsName")
-      field "tag_set", val(iter_item, "tag_set")
+      field "tags", val(iter_item, "tags")
       field "mem_unit", jmes_path(col_item,"Unit")
       field "mem_maximum", jmes_path(col_item, "Maximum")
       field "mem_minimum", jmes_path(col_item, "Minimum")
@@ -195,7 +195,7 @@ end
 datasource "ds_cloudwatch_windows_mem_usage" do
   iterate $ds_instances
   request do
-    run_script $js_cloudwatch_windows_memory_usage, val(iter_item, "region"), val(iter_item, "instanceId"), val(iter_item, "imageId"), val(iter_item, "instanceType")
+    run_script $js_cloudwatch_windows_memory_usage, val(iter_item, "region"), val(iter_item, "instanceId"), val(iter_item, "imageId"), val(iter_item, "resourceType")
   end
   result do
     encoding "json"
@@ -203,7 +203,7 @@ datasource "ds_cloudwatch_windows_mem_usage" do
       field "region", val(iter_item, "region")
       field "instanceId", val(iter_item, "instanceId")
       field "privateDnsName", val(iter_item, "privateDnsName")
-      field "tag_set", val(iter_item, "tag_set")
+      field "tags", val(iter_item, "tags")
       field "mem_unit", jmes_path(col_item,"Unit")
       field "mem_maximum", jmes_path(col_item, "Maximum")
       field "mem_minimum", jmes_path(col_item, "Minimum")
@@ -213,7 +213,7 @@ datasource "ds_cloudwatch_windows_mem_usage" do
 end
 
 datasource "ds_merged_metrics" do
-  run_script $js_merged_metrics, $ds_cloudwatch_cpu_usage, $ds_cloudwatch_mem_usage, $ds_cloudwatch_windows_mem_usage, $param_avg_used_memory, $param_avg_cpu
+  run_script $js_merged_metrics, $ds_cloudwatch_cpu_usage, $ds_cloudwatch_mem_usage, $ds_cloudwatch_windows_mem_usage, $param_avg_used_memory, $param_avg_cpu, $ds_instances
 end
 
 datasource "ds_currency_reference" do
@@ -280,7 +280,7 @@ datasource "ds_get_caller_identity" do
     collect xpath(response, "//GetCallerIdentityResponse/GetCallerIdentityResult") do
       field "account",xpath(col_item, "Account")
     end
- end
+  end
 end
 
 datasource "ds_instances_costs" do
@@ -347,7 +347,7 @@ script "js_instances", type: "javascript" do
     var instance_set = ds_instance_set[n].instances_set
     for ( i=0; i < instance_set.length; i++) {
       var instance = instance_set[i]
-      var tags = instance.tag_set
+      var tags = instance.tags
       if (_.contains(_.pluck(tags,'key'), tag_key) && _.contains(_.pluck(tags,'value'), tag_value)){
         continue
       } else {
@@ -355,10 +355,10 @@ script "js_instances", type: "javascript" do
           "region": instance.region,
           "instanceId": instance.instanceId,
           "imageId": instance.imageId,
-          "instanceType": instance.instanceType,
+          "resourceType": instance.resourceType,
           "platform": instance.platform,
           "privateDnsName": instance.privateDnsName,
-          "tag_set": instance.tag_set
+          "tags": instance.tags
         })
       }
     }
@@ -511,7 +511,7 @@ EOS
 end
 
 script "js_merged_metrics", type: "javascript" do
-  parameters "ds_cloudwatch_cpu_usage", "ds_cloudwatch_mem_usage", "ds_cloudwatch_windows_mem_usage", "param_avg_used_memory", "param_avg_cpu"
+  parameters "ds_cloudwatch_cpu_usage", "ds_cloudwatch_mem_usage", "ds_cloudwatch_windows_mem_usage", "param_avg_used_memory", "param_avg_cpu", "ds_instances"
   result "merged_results"
   code <<-EOS
   var merged_results = []
@@ -551,6 +551,12 @@ script "js_merged_metrics", type: "javascript" do
       }
     }
     if((param_avg_used_memory >= mem_average && param_avg_used_memory != -1) || (param_avg_cpu >= parseFloat(instance.cpu_average).toFixed(2) && param_avg_cpu != -1)){
+      var resourceType = ""
+      _.each(ds_instances, function(inst){
+        if (inst.instanceId === instance.instanceId){
+          resourceType = inst.resourceType
+        }
+      })
       merged_results.push(
         {
           "region": instance.region,
@@ -558,7 +564,8 @@ script "js_merged_metrics", type: "javascript" do
           "platform": instance.platform,
           "privateDnsName": instance.privateDnsName,
           "hostname": instance.privateDnsName.split('.')[0],
-          "tag_set": instance.tag_set,
+          "tags": instance.tags,
+          "resourceType": resourceType,
           "cpu_minimum": parseFloat(instance.cpu_minimum).toFixed(2),
           "cpu_maximum": parseFloat(instance.cpu_maximum).toFixed(2),
           "cpu_average": parseFloat(instance.cpu_average).toFixed(2),
@@ -668,6 +675,17 @@ script "js_instance_cost_mapping", type:"javascript" do
     return result+"."+values[1];
   }
   if(ds_billing_centers.length!=0){
+    // Put costs into a map by resource ID and only include them for resource IDs we actually need
+    var costs_by_resource_id = {};
+    _.each(instances, function(instance) {
+      costs_by_resource_id[instance.id] = [];
+    });
+    _.each(instance_costs, function(cost) {
+      var costs = costs_by_resource_id[cost.resource_id];
+      if (costs != null) {
+        costs.push(cost);
+      }
+    });
     // Format costs with currency symbol and thousands separator
     if( ds_currency_code['value'] !== undefined ) {
       if (ds_currency_reference[ds_currency_code['value']] !== undefined ) {
@@ -687,20 +705,26 @@ script "js_instance_cost_mapping", type:"javascript" do
     }
     var total_savings=0;
     _.each(instances, function(instance){
-      var cost_objects = _.where(instance_costs, {resource_id: instance["id"]});
+      var instance_tags = {}
+      var tags = []
+      _.each(instance["tags"], function(inst){
+        tags.push(inst.key+'='+inst.value)
+      })
+      var cost_objects = costs_by_resource_id[instance.id];
       if (_.size(cost_objects) > 0){
         count++;
         var sum = _.reduce(_.compact(_.map(cost_objects, function(value){ return value.cost_nonamortized_unblended_adj})), function(memo, num){ return memo + num; }, 0);
         var monthly_savings = sum*30;
         total_savings=total_savings+monthly_savings;
         idle_instance.push({
-          "accountId": ds_get_caller_identity[0]['account']
+          "accountID": ds_get_caller_identity[0]['account'],
           "region": instance["region"],
-          "id": instance["id"],
+          "resourceID": instance["id"],
+          "resourceType": instance["resourceType"],
           "platform": instance["platform"],
           "privateDnsName": instance["privateDnsName"],
           "hostname": instance["hostname"],
-          "tag_set": instance["tag_set"],
+          "tags": tags,
           "cpu_minimum": instance["cpu_minimum"],
           "cpu_maximum": instance["cpu_maximum"],
           "cpu_average": instance["cpu_average"],
@@ -709,17 +733,20 @@ script "js_instance_cost_mapping", type:"javascript" do
           "mem_average": instance["mem_average"],
           "mem_maximum_value": instance["mem_maximum_value"],
           "mem_average_value": instance["mem_average_value"]
-          "savings": cur + ' '+formatNumber(monthly_savings.toFixed(3), separator)
+          "savings": (Math.round(monthly_savings * 1000) / 1000),
+          "savings_currency": cur,
+          "service": "EC2"
         })
       } else {
         idle_instance.push({
-          "accountId": ds_get_caller_identity[0]['account']
+          "accountID": ds_get_caller_identity[0]['account']
           "region": instance["region"],
-          "id": instance["id"],
+          "resourceID": instance["id"],
+          "resourceType": instance["resourceType"],
           "platform": instance["platform"],
           "privateDnsName": instance["privateDnsName"],
           "hostname": instance["hostname"],
-          "tag_set": instance["tag_set"],
+          "tags": tags,
           "cpu_minimum": instance["cpu_minimum"],
           "cpu_maximum": instance["cpu_maximum"],
           "cpu_average": instance["cpu_average"],
@@ -728,12 +755,14 @@ script "js_instance_cost_mapping", type:"javascript" do
           "mem_average": instance["mem_average"],
           "mem_maximum_value": instance["mem_maximum_value"],
           "mem_average_value": instance["mem_average_value"]
-          "savings": "N/A"
+          "savings": 0.0,
+          "savings_currency": cur,
+          "service": "EC2"
         })
       }
     })
     if(count){
-      total_savings=cur + ' '+formatNumber(total_savings.toFixed(3), separator);
+      total_savings=cur + ' '+formatNumber(total_savings.toFixed(2), separator);
       message="The total estimated monthly savings are "+total_savings;
     }
     else{
@@ -758,17 +787,20 @@ end
 
 policy "pol_utilization" do
   validate $ds_instance_cost_mapping do
-    summary_template "AWS Account ID: {{with index data.idle_instances 0}}{{ .accountId }}{{end}} - {{ len data.idle_instances}} rows containing AWS instance CloudWatch utilization data"
+    summary_template "AWS Account ID: {{with index data.idle_instances 0}}{{ .accountID }}{{end}} - {{ len data.idle_instances}} rows containing AWS instance CloudWatch utilization data"
     detail_template <<-EOS
-    {{data.message}}
-    EOS
+{{data.message}}
+EOS
     escalate $email
     escalate $terminate_resources
     check eq(size(val(data, "idle_instances")), 0)
     export "idle_instances" do
       resource_level true
-      field "accountId" do
+      field "accountID" do
         label "Account Id"
+      end
+      field "resourceID" do
+        label "Resource ID"
       end
       field "region" do
         label "Region"
@@ -782,6 +814,9 @@ policy "pol_utilization" do
       field "savings" do
         label "Estimated Monthly Savings"
       end
+      field "savings_currency" do
+        label "Savings Currency"
+      end
       field "privateDnsName" do
         label "Private DNS Name"
       end
@@ -791,14 +826,24 @@ policy "pol_utilization" do
       field "cpu_average" do
         label "CPU Average %"
       end
+      field "resourceType" do
+        label "Resource Type"
+      end
       field "mem_maximum_value" do
         label "Memory Maximum %"
       end
       field "mem_average_value" do
         label "Memory Average %"
       end
+      field "tags" do
+        label "Tags"
+      end
       field "id" do
-        label "Instance ID"
+        label "ID"
+        path "resourceID"
+      end
+      field "service" do
+        label "Service"
       end
     end
   end

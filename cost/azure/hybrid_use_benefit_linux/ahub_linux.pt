@@ -1,13 +1,13 @@
 name "Azure Hybrid Use Benefit for Linux Server"
 rs_pt_ver 20180301
 type "policy"
-short_description "Identifies Linux instances eligible for Azure Hybrid Use Benefit.  See the [README](https://github.com/rightscale/policy_templates/tree/master/cost/azure/hybrid_use_benefit_linux) and [docs.rightscale.com/policies](http://docs.rightscale.com/policies/) to learn more."
+short_description "Identifies Linux instances eligible for Azure Hybrid Use Benefit.  See the [README](https://github.com/rightscale/policy_templates/tree/master/cost/azure/hybrid_use_benefit_linux) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 long_description ""
 severity "low"
 category "Cost"
 default_frequency "daily"
 info(
-  version: "2.3",
+  version: "2.7",
   provider: "Azure",
   service: "compute",
   policy_set: ""
@@ -28,6 +28,19 @@ end
 parameter "param_email" do
   type "list"
   label "Email addresses of the recipients you wish to notify"
+end
+
+parameter "param_azure_endpoint" do
+  type "string"
+  label "Azure Endpoint"
+  allowed_values "management.azure.com", "management.chinacloudapi.cn"
+  default "management.azure.com"
+end
+
+parameter "param_subscription_whitelist" do
+  label "Subscription Whitelist"
+  type "list"
+  description "Whitelisted Subscriptions, if empty, all subscriptions will be checked"
 end
 
 parameter "param_automatic_action" do
@@ -69,7 +82,7 @@ datasource "ds_subscriptions" do
   request do
     auth $azure_auth
     pagination $azure_pagination
-    host "management.azure.com"
+    host $param_azure_endpoint
     path "/subscriptions/"
     query "api-version","2019-06-01"
     header "User-Agent", "RS Policies"
@@ -83,20 +96,25 @@ datasource "ds_subscriptions" do
   end
 end
 
-datasource "azure_instances" do
-  iterate $ds_subscriptions
+datasource "ds_filtered_subscriptions" do
+  run_script $js_filtered_subscriptions, $ds_subscriptions, $param_subscription_whitelist
+end
+
+datasource "ds_azure_instances" do
+  iterate $ds_filtered_subscriptions
     request do
       auth $azure_auth
       pagination $azure_pagination
-      host "management.azure.com"
+      host $param_azure_endpoint
       path join(["/subscriptions/", val(iter_item,"subscriptionId"), "/providers/Microsoft.Compute/virtualMachines"])
       query "api-version","2017-12-01"
       header "User-Agent", "RS Policies"
+      ignore_status [400,403,404]
     end
     result do
       encoding "json"
       collect jmes_path(response, "value") do
-	    field "subscriptionName", val(iter_item,"subscriptionName")
+        field "subscriptionName", val(iter_item,"subscriptionName")
         field "id", jmes_path(col_item,"id")
         field "name", jmes_path(col_item,"name")
         field "location", jmes_path(col_item,"location")
@@ -112,13 +130,32 @@ datasource "azure_instances" do
     end
 end
 
-datasource "filtered_resources" do
-  run_script $js_filter_resources, $azure_instances, $param_exclusion_tag_key
+datasource "ds_filtered_resources" do
+  run_script $js_filter_resources, $ds_azure_instances, $param_exclusion_tag_key
 end
 
 ##########
 # Scripts
 ##########
+
+script "js_filtered_subscriptions", type: "javascript" do
+  parameters "ds_subscriptions", "param_subscription_whitelist"
+  result "results"
+  code <<-EOS
+  var results = []
+  if ( param_subscription_whitelist.length != 0){
+    results = []
+    _.each(param_subscription_whitelist, function(sub){
+      var found = _.find(ds_subscriptions, function(item){
+        return item.subscriptionId == sub || item.subscriptionName.toLowerCase() == sub.toLowerCase();
+      })
+      results.push(found)
+    })
+  } else {
+    results = ds_subscriptions
+  }
+EOS
+end
 
 script "js_filter_resources", type: "javascript" do
   parameters "azure_instances","exclusion_tag"
@@ -179,7 +216,7 @@ end
 ##########
 
 policy 'azure_license_policy' do
-  validate_each $filtered_resources do
+  validate_each $ds_filtered_resources do
     summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} Instances Not Using Azure Hybrid Use Benefit for Linux Server"
     escalate $email
     escalate $license_instances
@@ -257,7 +294,7 @@ define license_instances($data) return $all_responses do
   foreach $item in $data do
     sub on_error: skip do
       $update_inst_response = http_request(
-	    auth: $$azure_auth,
+        auth: $$azure_auth,
         verb: "patch",
         host: "management.azure.com",
         https: true,

@@ -1,0 +1,247 @@
+name "AWS S3 Ensure 'Block Public Access' Configured For All Buckets"
+rs_pt_ver 20180301
+type "policy"
+short_description "Report if 'Block Public Access' is not configured for any S3 Buckets. \n See the [README](https://github.com/flexera/policy_templates/tree/master/security/aws/s3_ensure_buckets_block_public_access) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+long_description ""
+category "Security"
+severity "high"
+default_frequency "daily"
+info(
+  version: "2.1",
+  provider: "AWS",
+  service: "S3",
+  policy_set: "CIS",
+  cce_id: "", # Unknown
+  cis_aws_foundations_securityhub: "", # Not Applicable
+  benchmark_control: "2.1.5",
+  benchmark_version: "1.4.0",
+  cis_controls: "[\"3.3v8\", \"14.6v7\"]",
+  nist: "" # Unknown
+)
+
+###############################################################################
+# User inputs
+###############################################################################
+
+parameter "param_email" do
+  type "list"
+  label "Email Address"
+  description "Email addresses of the recipients you wish to notify"
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+credentials "auth_aws" do
+  schemes "aws","aws_sts"
+  label "AWS"
+  description "Select the AWS Credential from the list"
+  tags "provider=aws"
+end
+
+###############################################################################
+# Datasources
+###############################################################################
+
+datasource "ds_get_caller_identity" do
+  request do
+    auth $auth_aws
+    verb "GET"
+    host "sts.amazonaws.com"
+    path "/"
+    header "User-Agent", "RS Policies"
+    query "Action", "GetCallerIdentity"
+    query "Version", "2011-06-15"
+  end
+  result do
+    encoding "xml"
+    collect xpath(response, "//GetCallerIdentityResponse/GetCallerIdentityResult") do
+      field "account", xpath(col_item, "Account")
+    end
+  end
+end
+
+datasource "ds_aws_buckets" do
+  request do
+    auth $auth_aws
+    host "s3.amazonaws.com"
+    path "/"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "xml"
+    collect xpath(response, "//ListAllMyBucketsResult/Buckets/Bucket", "array") do
+      field "id", xpath(col_item, "Name")
+      field "creation_date", xpath(col_item, "CreationDate")
+    end
+  end
+end
+
+datasource "ds_aws_buckets_with_region" do
+  iterate $ds_aws_buckets
+  request do
+    auth $auth_aws
+    host "s3.amazonaws.com"
+    path join(["/", val(iter_item, "id")])
+    query "location", ""
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "xml"
+    field "id", val(iter_item, "id")
+    field "creation_date", val(iter_item, "creation_date")
+    field "region", response
+  end
+end
+
+# https://docs.aws.amazon.com/AmazonS3/latest/API/API_GetBucketLocation.html
+# "Buckets in Region us-east-1 have a LocationConstraint of null."
+# This is to clean up the data and replace that null value with us-east-1
+datasource "ds_aws_buckets_with_region_cleaned" do
+  run_script $js_aws_buckets_with_region_cleaned, $ds_aws_buckets_with_region
+end
+
+datasource "ds_aws_buckets_with_pab_info" do
+  iterate $ds_aws_buckets_with_region_cleaned
+  request do
+    auth $auth_aws
+    host val(iter_item, "host")
+    path join(["/", val(iter_item, "id")])
+    query "publicAccessBlock", ""
+    header "User-Agent", "RS Policies"
+    ignore_status 404
+  end
+  result do
+    encoding "xml"
+    field "id", val(iter_item, "id")
+    field "creation_date", val(iter_item, "creation_date")
+    field "region", val(iter_item, "region")
+    field "block_public_acls", xpath(response, "//PublicAccessBlockConfiguration/BlockPublicAcls")
+    field "ignore_public_acls", xpath(response, "//PublicAccessBlockConfiguration/IgnorePublicAcls")
+    field "block_public_policy", xpath(response, "//PublicAccessBlockConfiguration/BlockPublicPolicy")
+    field "restrict_public_buckets", xpath(response, "//PublicAccessBlockConfiguration/RestrictPublicBuckets")
+  end
+end
+
+datasource "ds_aws_buckets_without_pab" do
+  run_script $js_aws_buckets_without_pab, $ds_aws_buckets_with_pab_info, $ds_aws_buckets_with_region_cleaned
+end
+
+###############################################################################
+# Scripts
+###############################################################################
+
+script "js_aws_buckets_with_region_cleaned", type:"javascript" do
+  parameters "ds_aws_buckets_with_region"
+  result "result"
+  code <<-EOS
+    result = []
+
+    for ( i = 0; i < ds_aws_buckets_with_region.length; i++ ) {
+      if (ds_aws_buckets_with_region[i].region == "\\n") {
+        ds_aws_buckets_with_region[i].region = "us-east-1"
+        ds_aws_buckets_with_region[i].host = "s3-external-1.amazonaws.com"
+      } else if (ds_aws_buckets_with_region[i].region == "EU" || ds_aws_buckets_with_region[i].region == "\\nEU") {
+        ds_aws_buckets_with_region[i].region = "eu-west-1"
+        ds_aws_buckets_with_region[i].host = "s3-" + ds_aws_buckets_with_region[i]["region"] + ".amazonaws.com"
+      } else {
+        ds_aws_buckets_with_region[i].region = ds_aws_buckets_with_region[i].region.substring(1)
+        ds_aws_buckets_with_region[i].host = "s3-" + ds_aws_buckets_with_region[i]["region"] + ".amazonaws.com"
+      }
+
+      result.push(ds_aws_buckets_with_region[i])
+    }
+EOS
+end
+
+script "js_aws_buckets_without_pab", type:"javascript" do
+  parameters "ds_aws_buckets_with_pab_info", "ds_aws_buckets_with_region"
+  result "result"
+  code <<-EOS
+    result = []
+
+    foundlistnames = []
+    _.each(ds_aws_buckets_with_pab_info, function(bucket) {
+      foundlistnames.push(bucket.id)
+    })
+
+    _.each(ds_aws_buckets_with_region, function(bucket) {
+      add_to_results = 1
+      _.each(foundlistnames, function(name) {
+        console.log(name)
+        if (bucket.id == name) {
+          add_to_results = 0
+        }
+      })
+
+      if (add_to_results == 1) {
+        result.push({
+          id: bucket.id,
+          creation_date: bucket.creation_date,
+          region: bucket.region,
+          block_public_acls: "false",
+          block_public_policy: "false",
+          ignore_public_acls: "false",
+          restrict_public_buckets: "false"
+        })
+      }
+    })
+
+    _.each(ds_aws_buckets_with_pab_info, function(bucket) {
+      if (bucket.block_public_acls == "false" || bucket.ignore_public_acls == "false" ||
+          bucket.block_public_policy == "false" || bucket.restrict_public_buckets == "false") {
+        result.push(bucket)
+      }
+    })
+
+    result = _.sortBy(result, 'id');
+EOS
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "policy_aws_buckets_without_pab" do
+  validate $ds_aws_buckets_without_pab do
+    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} S3 Buckets Without 'Block Public Access' Configured Found"
+    escalate $esc_report_aws_buckets_without_pab
+    check eq(size(data),0)
+    export do
+      resource_level true
+      field "id" do
+        label "S3 Bucket"
+      end
+      field "region" do
+        label "Region"
+      end
+      field "creation_date" do
+        label "Creation Date"
+      end
+      field "block_public_acls" do
+        label "Block Public ACLs"
+      end
+      field "ignore_public_acls" do
+        label "Ignore Public ACLs"
+      end
+      field "block_public_policy" do
+        label "Block Public Policy"
+      end
+      field "restrict_public_buckets" do
+        label "Restrict Public Buckets"
+      end
+    end
+  end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_report_aws_buckets_without_pab" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
+end

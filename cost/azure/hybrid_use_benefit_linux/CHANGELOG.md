@@ -1,5 +1,21 @@
 # Changelog
 
+## v2.7
+
+- updated README.md rightscale documentation links with docs.flexera documentation links
+
+## v2.6
+
+- Added "ignore-status" for 400, 403, 404 errors
+
+## v2.5
+
+- Adding `allowed_values "management.azure.com", "management.chinacloudapi.cn"`
+
+## v2.4
+
+- Added subscription filter option and ability to specify Azure API endpoint
+
 ## v2.3
 
 - Added default_frequency "daily"
