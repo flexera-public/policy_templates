@@ -15,7 +15,7 @@ the policy can be applied.
 
 - *Allowed Regions* - A list of allowed regions for an AWS account. Please enter the allowed regions code if SCP is enabled, see [Available Regions](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/using-regions-availability-zones.html#concepts-available-regions) in AWS; otherwise, the policy may fail on regions that are disabled via SCP. Leave blank to consider all the regions.
 - *Email notify list* - Email addresses of the recipients you wish to notify.
-- *Account Number* - The Account number for use with the AWS STS Cross Account Role.  Leave blank when using AWS IAM Access key and secret. [more](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_1982464505_1123608
+- *Account Number* - The Account number for use with the AWS STS Cross Account Role.  Leave blank when using AWS IAM Access key and secret. [more](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_1982464505_1123608)
 - *Days Old* - Number of days to be running before included in list.
 - *Exclusion Tag Key:Value* - Cloud native tag key to ignore instances. Format: Key:Value
 - *Automatic Actions* - When this value is set, this policy will automatically take the selected action(s).
