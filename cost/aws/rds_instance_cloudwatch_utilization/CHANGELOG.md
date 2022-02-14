@@ -1,6 +1,6 @@
 # Changelog
 
-## v2.10
+## v2.11
 
 - Added support for a single AWS STS Cross account role to be used for multiple policies.
 

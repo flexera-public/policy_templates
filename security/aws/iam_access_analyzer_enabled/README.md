@@ -11,7 +11,7 @@ When one or more of the provided regions does not have an access analyzer enable
 ## Input Parameters
 
 - *Email addresses of the recipients you wish to notify* - A list of email addresses to notify
-- *Account Number* - The Account number for use with the AWS STS Cross Account Role.  Leave blank when using AWS IAM Access key and secret. [more](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_1982464505_1123608
+- *Account Number* - The Account number for use with the AWS STS Cross Account Role.  Leave blank when using AWS IAM Access key and secret. [more](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_1982464505_1123608)
 
 ## Policy Actions
 
