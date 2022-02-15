@@ -21,7 +21,7 @@ This policy has the following input parameters required when launching the polic
 - *FNMS Report URL* - Full FlexNet URL (e.g. `https://flexera-demo-1.flexnetmanager.com/Suite` or WStunnel tunnel URL `https://wstunnel1-1.rightscale.com/_token/<token>/`)
 - *FNMS Report ID* - FlexNet Manager System Custom View ID.
 - *Email addresses to notify* - Email addresses of the recipients you wish to notify when new incidents are created
-- *Account Number* - The Account number for use with the AWS STS Cross Account Role.  Leave blank when using AWS IAM Access key and secret. [more](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_1982464505_1123608)
+- *Account Number* - The Account number for use with the AWS STS Cross Account Role. Leave blank when using AWS IAM Access key and secret. It only needs to be passed when the desired AWS account is different than the one associated with the Flexera One credential. [more](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_1982464505_1123608)
 - *Tags to ignore* - List of tags that will exclude EC2 instance from being evaluated by this policy. Multiple tags are evaluated as an 'OR' condition. Tag keys or key/value pairs can be listed. Example: 'test,env=dev'.
 
 ## Policy Actions

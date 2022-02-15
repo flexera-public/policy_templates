@@ -13,7 +13,7 @@ This policy has the following input parameters required when launching the polic
 
 - *Look Back Period* - Specify the number of days of past usage to analyze.
 - *Savings Plan Term* - Specify he Term length for the Savings Plan.
-- *Account Number* - The Account number for use with the AWS STS Cross Account Role.  Leave blank when using AWS IAM Access key and secret. [more](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_1982464505_1123608)
+- *Account Number* - The Account number for use with the AWS STS Cross Account Role. Leave blank when using AWS IAM Access key and secret. It only needs to be passed when the desired AWS account is different than the one associated with the Flexera One credential. [more](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_1982464505_1123608)
 - *Payment Option* - Specify the payment option for the Savings Plan.
 - *Savings Plan Type* - Choose between Compute Savings Plans or EC2 Instance Savings Plans
 - *Monthly Savings Threshold* - Specify the minimum monthly savings that should result in a Savings Plan purchase recommendation
