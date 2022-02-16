@@ -15,7 +15,7 @@
   - Added 'accountID' field with subscriptionID value
   - Added 'accountName' field with subscriptionName value
   - Added 'savings' field
-  - Added 'savings_currency' to record the currency symbol.
+  - Added 'savingsCurrency' to record the currency symbol.
   - Added 'service' field
   - Renamed 'resource_group' to 'resourceGroup'
   - Renamed 'type' to 'resourceType'

@@ -13,7 +13,7 @@
   - Added 'accountID' field with subscriptionID value
   - Added 'accountName' field with subscriptionName value
   - Changed 'savings' to be a plain number
-  - Added 'savings_currency' to record the currency symbol.
+  - Added 'savingsCurrency' to record the currency symbol.
   - Added 'service' field
   - Renamed 'resourceGroupName' to 'resourceGroup'
   - Added 'resourceType' field

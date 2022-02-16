@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.1
+
+- updated savings_currency to savingsCurrency and fixed possible N/A value to 0.0
+
 ## v3.0
 
 - applying data normalization updates for spend recommendations api. this change breaks current iterations expecting specific output types being pushed.

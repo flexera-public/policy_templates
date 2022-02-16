@@ -8,10 +8,10 @@
 - Normalizing fields for recommendations:
   - updated 'tags' field to slice of string values
   - Renamed 'id' to 'resourceID'
-  - Added 'AccountID' field with subscriptionID value
-  - Added 'AccountName' field with subscriptionName value
+  - Added 'accountID' field with subscriptionID value
+  - Added 'accountName' field with subscriptionName value
   - Changed 'savings' to be a plain number
-  - Added 'savings_currency' to record the currency symbol.
+  - Added 'savingsCurrency' to record the currency symbol.
   - Added 'service' field
   - Renamed 'rg' to 'resourceGroup'
   - Added 'resourceType' field
