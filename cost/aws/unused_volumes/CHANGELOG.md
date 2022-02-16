@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.1
+
+- Added support for a single AWS STS Cross account role to be used for multiple policies.
+
 ## v3.0
 
 - applying data normalization updates for spend recommendations api. this change breaks current iterations expecting specific output types being pushed.
