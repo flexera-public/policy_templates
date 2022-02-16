@@ -6,7 +6,7 @@ severity "low"
 category "Cost"
 default_frequency "daily"
 info(
-  version: "2.10",
+  version: "3.0",
   provider: "Azure",
   service: "Storage",
   policy_set: "Old Snapshots"
@@ -110,7 +110,7 @@ datasource "ds_subscriptions" do
     encoding "json"
     collect jmes_path(response, "value[*]") do
       field "subscriptionID", jmes_path(col_item,"subscriptionId")
-      field "displayName", jmes_path(col_item,"displayName")
+      field "subscriptionName", jmes_path(col_item,"displayName")
       field "state", jmes_path(col_item,"state")
     end
   end
@@ -134,14 +134,14 @@ datasource "ds_azure_get_snapshots" do
     encoding "json"
     collect jmes_path(response, "value[*]") do
       field "id", jmes_path(col_item,"id")
-      field "name", jmes_path(col_item,"name")
+      field "resourceName", jmes_path(col_item,"name")
       field "resourceGroup", get(4,split(jmes_path(col_item,"id"),'/'))
       field "resourceType", jmes_path(col_item,"type")
       field "region", jmes_path(col_item, "location")
       field "tags", jmes_path(col_item,"tags")
       field "timeCreated", jmes_path(col_item,"properties.timeCreated")
       field "subscriptionID",val(iter_item,"subscriptionID")
-      field "subscriptionName",val(iter_item,"displayName")
+      field "subscriptionName",val(iter_item,"subscriptionName")
     end
   end
 end
@@ -231,7 +231,7 @@ script "js_filtered_subscriptions", type: "javascript" do
     results = []
     _.each(param_subscription_whitelist, function(sub){
       var found = _.find(ds_subscriptions, function(item){
-        return item.subscriptionID == sub || item.displayName.toLowerCase() == sub.toLowerCase();
+        return item.subscriptionID == sub || item.subscriptionName.toLowerCase() == sub.toLowerCase();
       })
       results.push(found)
     })
@@ -346,7 +346,7 @@ script "js_filter_snapshots", type: "javascript" do
           res.push({
             resourceID:snapshot['id'],
             resourceType:snapshot['resourceType'],
-            name:snapshot['name'],
+            resourceName:snapshot['resourceName'],
             region:snapshot['region'],
             tags:tags,
             service:service,
@@ -426,9 +426,10 @@ script "js_snapshot_cost_mapping", type:"javascript" do
           var monthly_savings = sum*30;
           total=total+monthly_savings;
           snapshot['savings']= (Math.round(monthly_savings * 1000) / 1000);
-          snapshot['savingsCurrency']= cur;
+          snapshot['savings_currency']= cur;
           instances.push(snapshot)
         } else {
+          snapshot['savings_currency']= cur;
           snapshot['savings']= 0.0;
           instances.push(snapshot)
         }
@@ -470,6 +471,12 @@ EOS
       field "subscriptionName" do
         label "Subscription Name"
       end
+      field "resourceID" do
+        label "Resource Id"
+      end
+      field "resourceName" do
+        label "Resource Name"
+      end
       field "resourceGroup" do
         label "Resource Group"
       end
@@ -482,9 +489,6 @@ EOS
       field "age" do
         label "Age In Days"
       end
-      field "name" do
-        label "Name"
-      end
       field "tags" do
         label "Tags"
       end
@@ -494,8 +498,8 @@ EOS
       field "savings" do
         label "Estimated Monthly Savings"
       end
-      field "resourceID" do
-        label "Resource Id"
+      field "savings_currency" do
+        label "Savings Currency"
       end
       field "accountID" do
         label "Account ID"

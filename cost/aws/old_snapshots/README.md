@@ -6,11 +6,11 @@ This policy finds AWS snapshots in the given account which are older than the sp
 
 ### Policy savings details
 
-The policy includes the estimated savings. The estimated savings is recognized if the resource is terminated. Optima is used to receive the estimated savings which is the product of the most recent full day’s cost of the resource \* 30. The savings are displayed in the *Estimated Monthly Savings* column. If the resource can not be found in Optima the value is `N/A`. The incident header includes the sum of each resource *Estimated Monthly Savings* as Total Estimated Monthly Savings.
+The policy includes the estimated savings. The estimated savings is recognized if the resource is terminated. Optima is used to receive the estimated savings which is the product of the most recent full day’s cost of the resource \* 30. The savings are displayed in the *Estimated Monthly Savings* column. If the resource can not be found in Optima the value is 0.0. The incident header includes the sum of each resource *Estimated Monthly Savings* as Total Estimated Monthly Savings.
 
 If the AWS bill for the AWS account is registered in Optima in a different Flexera One org than the project where the policy template is applied, the *Flexera One Org ID for Optima* parameter can be set to the org where the AWS account is registered in Optima. Leaving this parameter set to `current` will result in using the same org as the project where the policy template is applied querying for Optima cost data.
 
-The *Estimated Monthly Savings* and *Total Estimated Monthly Savings* are rounded to 3 decimal places, so the savings value will display $0.000 if the estimated savings is less than $0.0005.
+The *Estimated Monthly Savings* and *Total Estimated Monthly Savings* are rounded to 3 decimal places, so the savings value will display 0.0 if the estimated savings is less than $0.0005.
 
 ## Input Parameters
 
