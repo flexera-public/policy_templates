@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.6
+
+- Added support for a single AWS STS Cross account role to be used for multiple policies.
+
 ## v2.5
 
 - updated README.md rightscale documentation links with docs.flexera documentation links

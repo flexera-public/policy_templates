@@ -18,6 +18,7 @@ This policy has the following input parameters required when launching the polic
 
 - *Allowed Regions* - A list of allowed regions for an AWS account. Please enter the allowed regions code if SCP is enabled, see [Available Regions](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/using-regions-availability-zones.html#concepts-available-regions) in AWS; otherwise, the policy may fail on regions that are disabled via SCP. Leave blank to consider all the regions.
 - *Email addresses* - A list of email addresses to notify.
+- *Account Number* - The Account number for use with the AWS STS Cross Account Role. Leave blank when using AWS IAM Access key and secret. It only needs to be passed when the desired AWS account is different than the one associated with the Flexera One credential. [more](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_1982464505_1123608)
 - *Snapshot age* - The number of days since the snapshot was created.
 - *Deregister Image* - If Yes, the snapshot will be deleted along with the images, and if No the snapshot will not be considered for deletion.
 - *Exclude Tags* - List of tags that a snapshot can have to exclude it from the list.

@@ -1,8 +1,12 @@
 # Changelog
 
-## v3.1
+## v3.2
 
 - updated savings_currency to savingsCurrency and fixed possible N/A value to 0.0
+
+## v3.1
+
+- Added support for a single AWS STS Cross account role to be used for multiple policies.
 
 ## v3.0
 

@@ -7,7 +7,7 @@ severity "low"
 category "Cost"
 default_frequency "daily"
 info(
-    version: "3.1",
+    version: "3.3",
     provider: "AWS",
     service: "EC2",
     policy_set: "Unused IP Addresses"
@@ -36,6 +36,12 @@ parameter "param_email" do
   description "Email addresses of the recipients you wish to notify when new incidents are created"
 end
 
+parameter "param_aws_account_number" do
+  type "string"
+  label "Account Number"
+  description "The account number for AWS STS Cross Account Roles."
+end
+
 parameter "param_automatic_action" do
   type "list"
   label "Automatic Actions"
@@ -60,11 +66,12 @@ credentials "auth_aws" do
   label "AWS"
   description "Select the AWS Cloud Credential from the list."
   tags "provider=aws"
+  aws_account_number $param_aws_account_number
 end
 
 auth "auth_rs", type: "rightscale"
 
-pagination "aws_pagination" do
+pagination "pagination_aws" do
   get_page_marker do
     body_path "//DescribeAddressesResponse/nextToken"
   end
@@ -73,11 +80,20 @@ pagination "aws_pagination" do
   end
 end
 
+pagination "pagination_aws_products" do
+  get_page_marker do
+    body_path "NextToken"
+  end
+  set_page_marker do
+    body_field "NextToken"
+  end
+end
+
 ###############################################################################
 # Datasources
 ###############################################################################
 
-#Get list of enabled regions for an account
+# Get list of enabled regions for an account
 datasource "ds_regions_list" do
   request do
     auth $auth_aws
@@ -104,7 +120,7 @@ datasource "ds_aws_elastic_ip_address" do
   iterate $ds_regions
   request do
     auth $auth_aws
-    pagination $aws_pagination
+    pagination $pagination_aws
     host join(["ec2.",val(iter_item,"region"), ".amazonaws.com"])
     path "/"
     query "Action", "DescribeAddresses"
@@ -147,13 +163,23 @@ datasource "ds_get_caller_identity" do
   end
 end
 
-datasource "ds_get_aws_offer_page" do
+datasource "ds_aws_products" do
   request do
     auth $auth_aws
-    verb "GET"
-    host "pricing.us-east-1.amazonaws.com"
-    path "/offers/v1.0/aws/AmazonEC2/current/us-east-1/index.json"
-    header "User-Agent", "RS Policies"
+    pagination $pagination_aws_products
+    host "api.pricing.us-east-1.amazonaws.com"
+    verb "POST"
+    path "/"
+    header "Content-Type", "application/x-amz-json-1.1"
+    header "X-Amz-Target", "AWSPriceListService.GetProducts"
+    body_field "Filters", [{Field: "productFamily", Type: "TERM_MATCH", Value: "IP Address"}]
+    body_field "ServiceCode", "AmazonEC2"
+  end
+  result do
+    collect jq(response, '.PriceList[] | fromjson | select(.product.attributes.usagetype | test("ElasticIP:IdleAddress"))') do
+      field 'price_per_unit', jq(col_item, '.terms.OnDemand[].priceDimensions[] | select(.description | test("Elastic IP address not attached to a running instance per hour")).pricePerUnit.USD')
+      field 'region', jq(col_item, '.product.attributes.regionCode')
+    end
   end
 end
 
@@ -162,7 +188,7 @@ datasource "ds_filter_ip" do
 end
 
 datasource "ds_ip_cost_mapping" do
-  run_script $js_ip_cost_mapping, $ds_filter_ip, $ds_get_caller_identity, $ds_get_aws_offer_page
+  run_script $js_ip_cost_mapping, $ds_filter_ip, $ds_get_caller_identity, $ds_aws_products
 end
 
 ###############################################################################
@@ -238,32 +264,20 @@ script "js_filter_ip_response", type: "javascript" do
 end
 
 script "js_ip_cost_mapping", type:"javascript" do
-  parameters  "ip_list", "ds_get_caller_identity", "offer_page"
+  parameters "ip_list", "ds_get_caller_identity", "aws_products"
   result "result"
   code <<-EOS
-    var result = {};
-    var unused_ip_list=[];
-    var message='';
-    var doc_rate=0;
+    // map the prices by region for easy lookup
+    var regions = {}, prices_by_region = {};
+    _.each(ip_list, function (ip) {
+      regions[ip.region] = true;
+    });
+    _.each(aws_products, function (product) {
+      if (regions[product.region]) {
+        prices_by_region[product.region] = parseFloat(product.price_per_unit);
+      }
+    });
     var total_savings = 0;
-    var savings_per_resource = 0;
-    var sku = '';
-    var sku_obj = _.find(offer_page.products, function(product){
-                    if(product.productFamily == 'IP Address' && product.attributes.usagetype.indexOf('ElasticIP:IdleAddress')!= -1){
-                      return product;
-                    }
-                  })
-    sku = sku_obj['sku'];
-    var obj= offer_page.terms.OnDemand[sku]
-    _.each(obj, function(item){
-      price_dim = item.priceDimensions;
-      _.each(price_dim, function(price_item){
-        if(price_item.description.indexOf('Elastic IP address not attached to a running instance per hour') != -1){
-          doc_curr_val=_.values(price_item.pricePerUnit);
-          doc_rate=doc_curr_val[0];
-        }
-      })
-    })
     function formatNumber(number, separator){
       var numString =number.toString();
       var values=numString.split(".");
@@ -281,25 +295,25 @@ script "js_ip_cost_mapping", type:"javascript" do
       }
       return result+"."+values[1];
     }
+    // The savings is calculated and displayed in USD
     var cur = "$"
     var separator = ","
-    //The savings is calculated and displayed in USD
-    savings_per_resource = Math.round((doc_rate * 24 * 30) * 1000) / 1000;
-    total_savings = savings_per_resource * ip_list.length;
-    total_savings = cur + ' '+formatNumber((Math.round((total_savings) * 100) / 100) , separator);
-    savings_per_resource = savings_per_resource;
-    message = "The total estimated monthly savings are "+ total_savings;
-    _.each(ip_list, function(ip){
-      ip['service']="EC2";
-      ip['savings']=savings_per_resource;
-      ip['savingsCurrency']=cur
+    var unused_ip_list = _.map(ip_list, function(ip){
+      ip = _.clone(ip);
+      var costs = prices_by_region[ip.region] * 24 * 30;
+      ip.service = 'EC2';
+      ip.savings = Math.round(costs * 1000) / 1000;
+      ip.savingsCurrency = cur;
+      total_savings += costs;
+      return ip;
     })
-    result={
-      "ip_list": ip_list,
+    var total_savings_string = cur + ' ' + formatNumber(Math.round(total_savings * 100) / 100, separator);
+    var message = "The total estimated monthly savings are " + total_savings_string;
+    var result = {
+      "ip_list": _.sortBy(unused_ip_list, "region"),
       "message": message,
-      "accountID": ds_get_caller_identity[0]['account']
-    }
-    result.ip_list=_.sortBy(result.ip_list,"region")
+      "accountID": ds_get_caller_identity[0]['account'],
+    };
   EOS
 end
 
