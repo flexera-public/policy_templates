@@ -1,5 +1,13 @@
 # Changelog
 
+## v2.11
+
+- Added default to aws_account_number parameter to enable existing API users.
+
+## v2.10
+
+- Added support for a single AWS STS Cross account role to be used for multiple policies.
+
 ## v2.9
 
 - updated policy versions to the correct changelog version
