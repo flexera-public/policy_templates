@@ -12,6 +12,7 @@ This policy audits whether named IAM roles exist in an account.
 ## Input Parameters
 
 - *Email addresses* - Email addresses of the recipients you wish to notify when new incidents are created.
+- *Account Number* - The Account number for use with the AWS STS Cross Account Role. Leave blank when using AWS IAM Access key and secret. It only needs to be passed when the desired AWS account is different than the one associated with the Flexera One credential. [more](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_1982464505_1123608)
 - *IAM Role Names* - List of IAM Role names to check for.
 
 ## Policy Actions
