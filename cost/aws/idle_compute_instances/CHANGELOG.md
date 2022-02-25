@@ -1,8 +1,12 @@
 # Changelog
 
-## v3.2
+## v3.3
 
 - updated savings_currency to savingsCurrency and fixed possible N/A value to 0.0
+
+## v3.2
+
+- Added default to aws_account_number parameter to enable existing API users.
 
 ## v3.1
 
