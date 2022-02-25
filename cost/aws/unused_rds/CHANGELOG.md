@@ -1,6 +1,6 @@
 # Changelog
 
-## v3.4
+## v3.3
 
 - updated savings_currency to savingsCurrency
 
