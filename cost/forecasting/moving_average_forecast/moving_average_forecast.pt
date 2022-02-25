@@ -32,14 +32,15 @@ parameter "param_lookback_months" do
   label "Lookback Months"
   description "Number of months to lookback to generate forecast"
   type "number"
-  default 10
+  default 15
 end
 
-parameter "param_forecasted_months" do
-  label "Months to forecast"
-  description "Number of months in the future to forecast"
+parameter "param_average_months" do
+  label "Months to use to calculate moving averate"
+  description "Months to use to calculate moving averate"
   type "number"
-  default 6
+  allowed_values 3,6
+  default 3
 end
 
 parameter "param_cost_metric" do
@@ -139,11 +140,11 @@ datasource "ds_costs" do
 end
 
 datasource "ds_make_data_package" do
-  run_script $js_make_data_package, $param_cost_metric, $param_forecasted_months, $ds_costs
+  run_script $js_make_data_package, $param_cost_metric, $ds_costs
 end
 
 datasource "ds_forecast" do
-  run_script $js_forecast, $ds_make_data_package
+  run_script $js_forecast, $ds_make_data_package, $param_average_months
 end
 
 ###############################################################################
@@ -226,7 +227,7 @@ script "js_new_costs_request", type: "javascript" do
 end
 
 script "js_make_data_package", type: "javascript" do
-  parameters "param_cost_metric", "param_forecasted_months", "ds_costs"
+  parameters "param_cost_metric", "ds_costs"
   result "results"
   code <<-EOS
   var results = [];
@@ -272,13 +273,12 @@ script "js_make_data_package", type: "javascript" do
   console.log(sorted_costs);
   results.push({
     costs: sorted_costs,
-    forecasted_months: param_forecasted_months,
   });
 EOS
 end
 
 script "js_forecast", type: "javascript" do
-  parameters "ds_make_data_package"
+  parameters "ds_make_data_package", "param_average_months"
   result "report"
   code <<-EOS
   var forecasted_costs = [];
@@ -310,25 +310,24 @@ script "js_forecast", type: "javascript" do
 
   var arr_costs = _.pluck(costs, 'cost');
 
-  forecasted_costs.push({ name: '3 month average', average: simpleMovingAverage(arr_costs, 3) });
-  forecasted_costs.push({ name: '6 month average', average: simpleMovingAverage(arr_costs, 6) });
-  console.log(forecasted_costs);
-  var XAxisArray = _.range(0, forecasted_costs[0]['average'].length - 1 );
-  var chartData = 'chd=a:' + forecasted_costs[0]['average'].join(',') + '|' + forecasted_costs[1]['average'].join(',');
+  forecasted_costs.push({ name: param_average_months + ' month average', average: simpleMovingAverage(arr_costs, param_average_months).reverse() });
+
+  var XAxisArray = _.range(1, forecasted_costs[0]['average'].length).reverse();
+  var chartData = 'chd=a:' + forecasted_costs[0]['average'].join(',') + '|';
   var chartXAxis = 'chxl=0:|' + XAxisArray.join('|');
+  forecasted_costs[0]['average'] = forecasted_costs[0]['average'].reverse()
   var report = {
-    chartType: encodeURI('cht=lc'),
-    chartSize: encodeURI('chs=999x500'),
-    chartTitle: encodeURI('chtt=Moving Average'),
-    chartAxis: encodeURI('chxt=x,y'),
-    chartXAxis: encodeURI(chartXAxis),
-    chartAxisFormat: encodeURI('chxs=1N*cUSD0sz*'),
-    chartData: encodeURI(chartData),
-    chartColors: encodeURI('chco=CFECF7,27c9c2'),
-    chartExtension: encodeURI('chof=.png'),
+    chartType: 'cht=lc',
+    chartSize: 'chs=999x500',
+    chartTitle: 'chtt=Moving Average',
+    chartAxis: 'chxt=x,y',
+    chartXAxis: chartXAxis,
+    chartAxisFormat: 'chxs=1N*cUSD0sz*',
+    chartData: chartData,
+    chartColors: 'chco=000000',
+    chartExtension: 'chof=.png',
     reportData: forecasted_costs,
   };
-  console.log(report);
 
 EOS
 end
@@ -350,15 +349,17 @@ end
 
 policy "policy_straight_line_forecast" do
   validate $ds_forecast do
-    summary_template "Forecasted Costs"
+    summary_template "{{parameters.param_average_months}} Month Moving Average"
     detail_template <<-EOS
-# Full Cost Report for {{ rs_org_name }} - {{ data.currentMonthName }}
-![Forecast Chart](https://image-charts.com/chart?{{ data.chartType }}&{{ data.chartSize }}&{{ data.chartTitle }}&{{ data.chartAxis }}&{{ data.chartXAxis }}&{{ data.chartAxisFormat }}&{{ data.chartData }}&{{ data.chartColors }}&{{ data.chartExtension }} "Forecasting Spend Chart")
+# Moving Average Report for {{ rs_org_name }}
+![Moving Average](https://image-charts.com/chart?{{ data.chartType }}&{{ data.chartSize }}&{{ data.chartTitle }}&{{ data.chartAxis }}&{{ data.chartXAxis }}&{{ data.chartAxisFormat }}&{{ data.chartData }}&{{ data.chartColors }}&{{ data.chartExtension }} "Forecasting Spend Chart")
 
-| Name | Averages |
-| ---- | -------- |
+| Sequence | Averages |
+| -------- | -------- |
 {{ range $val := data.reportData -}}
-| {{ $val.name }} | {{ range $i,$e := $val.average -}} {{- $i }} => {{- $e }}, {{ end -}} |
+{{ range $i,$e := $val.average -}}
+| {{- $i }} | {{- $e }} |
+{{ end -}}
 {{ end -}}
 
 ___
