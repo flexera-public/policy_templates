@@ -1,0 +1,296 @@
+name "Savings Realized from Reservations (Azure) - Nia Testing"
+rs_pt_ver 20180301
+type "policy"
+short_description "Calculate savings realised by RI purchases - subtract RI run cost from on-demand cost per instance type and region"
+long_description ""
+default_frequency "monthly"
+severity "low"
+category "Cost"
+info(
+  version: "2.0",
+  provider: "Flexera",
+  service: "All",
+  policy_set: "N/A"
+)
+
+###############################################################################
+# Parameters
+###############################################################################
+
+parameter "param_email" do
+  type "list"
+  label "Email addresses"
+end
+
+parameter "param_period_start" do
+  type "string"
+  label "Period Start Date"
+  description "Billing Period from Fastly Billing YYYY-MM"
+  allowed_pattern /20[2-9][0-9]-[0-1][0-9]/
+end
+
+parameter "param_period_end" do
+  type "string"
+  label "Period End Date"
+  description "Billing Period from Fastly Billing YYYY-MM"
+  allowed_pattern /20[2-9][0-9]-[0-1][0-9]/
+end
+
+
+
+###############################################################################
+# Authentication
+###############################################################################
+
+#authenticate with RightScale/Optima
+credentials "auth_rs" do
+  schemes "oauth2"
+  label "Flexera_Automation"
+  description "Select FlexeraOne OAuth2 credentials"
+  tags "provider=flexera"
+end
+
+###############################################################################
+# Datasources and Scripts
+###############################################################################
+
+#GET BILLING CENTERS FOR ORG
+datasource "ds_billing_centers" do
+  request do
+    auth $auth_rs
+    host rs_optima_host
+    path join(["/analytics/orgs/",rs_org_id,"/billing_centers"])
+    header "Api-Version", "1.0"
+    header "User-Agent", "RS Policies"
+    query "view", "allocation_table"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response,"[*]") do
+      field "href", jmes_path(col_item,"href")
+      field "id", jmes_path(col_item,"id")
+      field "name", jmes_path(col_item,"name")
+      field "parent_id", jmes_path(col_item,"parent_id")
+      field "ancestor_ids", jmes_path(col_item,"ancestor_ids")
+      field "allocation_table", jmes_path(col_item,"allocation_table")
+    end
+  end  
+end
+
+#GET TOP-LEVEL BILLING CENTERS
+datasource "ds_top_level_bcs" do
+  run_script $js_get_top_level_bc, $ds_billing_centers
+end
+
+script "js_get_top_level_bc", type: "javascript" do
+  parameters "billing_centers"
+  result "filtered_billing_centers"
+  code <<-EOS
+  var filtered_billing_centers = 
+  _.filter(billing_centers, function(bc){ return bc.parent_id == null })
+  EOS
+end
+
+#GET RESERVED INSTANCE COSTS
+datasource "ds_ri_aggregated_costs" do
+  request do
+    run_script $js_get_ri_aggregated_costs, $ds_top_level_bcs, $param_period_start, $param_period_end, rs_org_id, rs_optima_host
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "rows") do
+      field "instance_type", jmes_path(col_item, "dimensions.instance_type")
+      field "region", jmes_path(col_item, "dimensions.region")
+      field "usage_unit", jmes_path(col_item, "dimensions.usage_unit")
+      field "usage_amount", jmes_path(col_item, "metrics.usage_amount")
+      field "cost", jmes_path(col_item, "metrics.cost_amortized_unblended_adj")
+      field "month", jmes_path(col_item, "timestamp")
+    end
+  end
+end
+
+script "js_get_ri_aggregated_costs", type: "javascript" do
+  parameters "billing_centers", "start_date", "end_date", "org_id", "optima_host"
+  result "request"
+  code <<-EOS
+  var billing_center_ids = []
+  _.each(billing_centers, function(bc){
+    billing_center_ids.push(bc.id)
+  })
+
+  var payload = {
+    "billing_center_ids": billing_center_ids,
+    "filter": {
+      "type": "and",
+      "expressions": [
+        { "dimension": "vendor", "type": "equal", "value": "Azure" },
+        { "dimension": "service", "type": "equal", "value": "Microsoft.Compute" },
+        { "dimension": "resource_type", "type": "equal", "value": "Virtual Machines-Reservation-Base VM" },
+        {
+          "type": "not",
+          "expression": { "dimension": "instance_type", "type": "equal", "value": "None" }
+        }
+      ]
+    },
+    "dimensions": [
+      "instance_type",
+      "region",
+      "usage_unit"
+    ],
+    "granularity": "month",
+    "metrics": [
+      "cost_amortized_unblended_adj",
+      "usage_amount"
+    ]
+    "end_at": end_date,
+    "start_at": start_date
+  }
+
+  var request = {
+    auth: "auth_rs",
+    host: optima_host,
+    path: "/bill-analysis/orgs/" + org_id + "/costs/aggregated",
+    verb: "POST",
+    body_fields: payload,
+    headers: {
+      "User-Agent": "RS Policies"
+    }
+  }
+  EOS
+end 
+
+#GET BASE COSTS
+datasource "ds_base_aggregated_costs" do
+  request do
+    run_script $js_get_base_aggregated_costs, $ds_top_level_bcs, $param_period_start, $param_period_end, rs_org_id, rs_optima_host
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "rows") do
+      field "instance_type", jmes_path(col_item, "dimensions.instance_type")
+      field "region", jmes_path(col_item, "dimensions.region")
+      field "usage_unit", jmes_path(col_item, "dimensions.usage_unit")
+      field "usage_amount", jmes_path(col_item, "metrics.usage_amount")
+      field "cost", jmes_path(col_item, "metrics.cost_amortized_unblended_adj")
+      field "month", jmes_path(col_item, "timestamp")
+    end
+  end
+end
+
+script "js_get_base_aggregated_costs", type: "javascript" do
+  parameters "billing_centers", "start_date", "end_date", "org_id", "optima_host"
+  result "request"
+  code <<-EOS
+  var billing_center_ids = []
+  _.each(billing_centers, function(bc){
+    billing_center_ids.push(bc.id)
+  })
+
+  var payload = {
+    "billing_center_ids": billing_center_ids,
+    "filter": {
+      "type": "and",
+      "expressions": [
+        { "dimension": "vendor", "type": "equal", "value": "Azure" },
+        { "dimension": "service", "type": "equal", "value": "Microsoft.Compute" },
+        {
+          "type": "not",
+          "expression": { "dimension": "instance_type", "type": "equal", "value": "None" }
+        },
+        {
+          "type": "not",
+          "expression": { "dimension": "resource_type", "type": "equal", "value": "Virtual Machines-Reservation-Base VM" }
+        } 
+      ]
+  },
+    "dimensions": [
+      "instance_type",
+      "region",
+      "usage_unit"
+    ],
+    "granularity": "month",
+    "metrics": [
+      "cost_amortized_unblended_adj",
+      "usage_amount"
+    ]
+    "end_at": end_date,
+    "start_at": start_date
+  }
+
+  var request = {
+    auth: "auth_rs",
+    host: optima_host,
+    path: "/bill-analysis/orgs/" + org_id + "/costs/aggregated",
+    verb: "POST",
+    body_fields: payload,
+    headers: {
+      "User-Agent": "RS Policies"
+    }
+  }
+  EOS
+end
+
+#CALCULATE SAVINGS REALIZED (BASE COST - RI COST) FOR EACH INSTANCE TYPE, FOR EACH REGION
+datasource "ds_savings_realized" do
+  run_script $js_get_savings_realized, $ds_ri_aggregated_costs, $ds_base_aggregated_costs
+end
+
+script "js_get_savings_realized", type: "javascript" do
+  parameters "ri_costs", "base_costs"
+  result "result"
+  code <<-EOS
+  var result = []
+
+  //calculate cost per instance type per hour
+  _.each(ri_costs, function(ri){
+    var usage_unit = parseInt(ri.usage_unit.split(" ")[0])
+    ri["usage_amount_normalized"] = ri.usage_amount * usage_unit
+    if(ri.cost > 0){
+      ri["cost_per_hr"] = ri.cost / ( ri.usage_amount * usage_unit )
+    } else {
+      ri["cost_per_hr"] = 0
+    }   
+  })
+  _.each(base_costs, function(base){
+    var usage_unit = parseInt(base.usage_unit.split(" ")[0])
+    base["usage_amount_normalized"] = base.usage_amount * usage_unit
+    if(base.cost > 0){
+      base["cost_per_hr"] = base.cost / ( base.usage_amount * usage_unit )
+    } else {
+      base["cost_per_hr"] = 0
+    }  
+  })
+  
+  //calculate savings realized (base cost per hour - ri cost per hour)
+  _.each(base_costs, function(base){
+    _.each(ri_costs, function(reserved){
+      if (base.month == reserved.month && base.region == reserved.region && base.instance_type == reserved.instance_type){
+        var savings_realized = base.cost_per_hr - reserved.cost_per_hr
+
+        result.push(
+          { 
+            "month": base.month, 
+            "region": base.region, 
+            "instance_type": base.instance_type,
+            "savings_realized_per_hr": savings_realized
+            "savings_realized_per_mth": savings_realized * reserved.usage_amount_normalized
+          }
+        )
+      }
+    })
+  })
+  
+  EOS
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "policy_purchase_option_by_inst_type_and_region" do
+  validate_each $ds_savings_realized do
+    summary_template ""
+    detail_template ""
+    check eq(0,1)
+  end
+end
