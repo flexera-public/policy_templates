@@ -1,0 +1,408 @@
+name "Azure Instance Type Normalization Test (past 12 months) (Aggregated or By Billing Center)"
+rs_pt_ver 20180301
+type "policy"
+short_description "Apply Normalization factors"
+long_description ""
+severity "low"
+category "Cost"
+info(
+  version: "2.0",
+  provider: "Flexera",
+  service: "All",
+  policy_set: "N/A"
+)
+
+###############################################################################
+# Parameters
+###############################################################################
+
+parameter "param_email" do
+  type "list"
+  label "Email addresses"
+end
+
+parameter "param_period" do
+  type "string"
+  label "Billing Period"
+  description "Billing Period from Fastly Billing YYYY-MM"
+  allowed_pattern /20[2-9][0-9]-[0-1][0-9]/
+end
+
+parameter "param_aggregate" do
+  label "Aggregate KPI or per Billing Center"
+  type "string"
+  allowed_values [
+      "Aggregate",
+      "Per Billing Center"
+  ]
+  default "Per Billing Center"
+  description "List of Billing Center names you want to report on.  Leave blank to select all top level Billing Centers."
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+#authenticate with RighScale/Optima
+credentials "auth_rs" do
+  schemes "oauth2"
+  label "Flexera_Automation"
+  description "Select FlexeraOne OAuth2 credentials"
+  tags "provider=flexera"
+end
+
+###############################################################################
+# Datasources and Scripts
+###############################################################################
+
+#GET BILLING CENTERS FOR ORG
+datasource "ds_billing_centers" do
+  request do
+    auth $auth_rs
+    host rs_optima_host
+    path join(["/analytics/orgs/",rs_org_id,"/billing_centers"])
+    header "Api-Version", "1.0"
+    header "User-Agent", "RS Policies"
+    query "view", "allocation_table"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response,"[*]") do
+      field "href", jmes_path(col_item,"href")
+      field "id", jmes_path(col_item,"id")
+      field "name", jmes_path(col_item,"name")
+      field "parent_id", jmes_path(col_item,"parent_id")
+      field "ancestor_ids", jmes_path(col_item,"ancestor_ids")
+      field "allocation_table", jmes_path(col_item,"allocation_table")
+    end
+  end  
+end
+  
+#GET TOP-LEVEL BILLING CENTERS
+datasource "ds_top_level_billing_centers" do
+  run_script $js_top_level_bc, $ds_billing_centers
+end
+  
+script "js_top_level_bc", type: "javascript" do
+  parameters "billing_centers"
+  result "filtered_billing_centers"
+  code <<-EOS
+  var filtered_billing_centers =
+    _.reject(billing_centers, function(bc){ return bc.parent_id != null });
+  EOS
+end
+
+#GET INSTANCE TYPES AND USAGE
+datasource "ds_instance_types" do
+  request do
+    run_script $js_get_instance_types, $ds_top_level_billing_centers, rs_org_id, rs_optima_host, $param_period
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "rows") do
+      field "billing_center_id", jmes_path(col_item,"dimensions.billing_center_id")
+      field "instance_type", jmes_path(col_item,"dimensions.instance_type")
+      field "usage_unit", jmes_path(col_item,"dimensions.usage_unit")
+      field "cost", jmes_path(col_item,"metrics.cost_nonamortized_unblended_adj")
+      field "usage_amount", jmes_path(col_item,"metrics.usage_amount")
+      field "year_month", jmes_path(col_item,"timestamp")
+    end
+  end
+end
+
+script "js_get_instance_types", type: "javascript" do
+  parameters "ds_top_level_billing_centers","org_id", "optima_host", "period"
+  result "request"
+  code <<-EOS 
+  var billing_center_ids = []
+  var i;
+  for (i = 0; i < ds_top_level_billing_centers.length; i ++){
+    billing_center_ids.push(ds_top_level_billing_centers[i].id)
+  }
+
+  var end_date = period;
+  var time_period = period.split("-")
+   
+  var date = new Date(time_period[0], time_period[1]);
+  date.setMonth(date.getMonth() - 12)
+  var year = (date.getFullYear())
+  var start_date = (date.getFullYear()) + "-" + ("0" + (date.getMonth())).slice(-2);
+
+  var payload = {
+    "billing_center_ids": billing_center_ids,
+    "dimensions": [
+      "vendor",
+      "instance_type",
+      "usage_unit",
+      "billing_center_id"
+    ],
+    "filter": {
+      "type": "and",
+      "expressions": [
+        {
+          "dimension": "category",
+          "type": "equal",
+          "value": "Compute"
+        },
+        {
+          "dimension": "resource_type",
+          "type":"substring",
+          "substring":"Virtual Machines-"
+        },
+        {
+          "dimension":"vendor",
+          "type":"equal",
+          "value":"Azure"
+        }
+      ]
+    },
+    "granularity": "month",
+    "metrics": [
+      "cost_nonamortized_unblended_adj",
+      "usage_amount"
+    ],
+    "end_at": end_date,
+    "start_at": start_date
+  }
+
+  var request = {
+    auth: "auth_rs",
+    host: optima_host,
+    path: "/bill-analysis/orgs/" + org_id + "/costs/aggregated",
+    verb: 'POST',
+    body_fields: payload,
+    headers: {
+      "User-Agent": "RS Policies",
+    }
+  }
+  EOS
+end
+
+#GET CSV WITH NFU
+datasource "ds_isf_ratio_csv" do
+  request do
+    host "isfratio.blob.core.windows.net"
+    path "/isfratio/ISFRatio.csv"
+  end
+  result do
+    encoding "text"
+  end
+end
+
+#CALL DATASOURCES
+datasource "ds_output" do
+  run_script $js_output, $ds_instance_types, $ds_isf_ratio_csv, $ds_top_level_billing_centers, $param_aggregate
+end
+
+script "js_output", type: "javascript" do
+  parameters "ds_instance_types", "ds_isf_ratio_csv", "ds_top_level_billing_centers", "param_aggregate"
+  result "result"
+  code <<-'EOS'
+  var result = []
+  var temp_result = []
+  var grouped_costs = []
+  var aggregated_costs = []
+  var grouped_result = []
+  var aggregated_result = []
+
+  var isf_ratio_array = ds_isf_ratio_csv.toString().split("\r\n")
+  var isf_ratio_json = []
+
+  for (var i = 1; i < isf_ratio_array.length - 1; i++) {
+    var values_split = isf_ratio_array[i].split(",")
+    instance_size_flexibility_group = values_split[0];
+    arm_sku_name = values_split[1];
+    ratio = values_split[2];
+
+    var json_object = {
+      "instance_size_flexibility_name": instance_size_flexibility_group,
+      "arm_sku_name": arm_sku_name,
+      "ratio": ratio
+    }
+    isf_ratio_json.push(json_object)
+  }
+  //console.log(isf_ratio_json)
+
+  //APPLY NORMALIZATION RATIO
+  for (var i = 0; i < ds_instance_types.length; i++){
+    var billing_center_name = _.find(ds_top_level_billing_centers, function(name) { return name.id == ds_instance_types[i].billing_center_id })
+    console.log(billing_center_name)  
+    for (var j = 0; j < isf_ratio_json.length; j++){
+      if (ds_instance_types[i].instance_type == isf_ratio_json[j].arm_sku_name ){
+        var normalized_amount = ds_instance_types[i].usage_amount*isf_ratio_json[j].ratio
+        var cost_instance_hr = ds_instance_types[i].cost/normalized_amount
+        
+
+        var json_object = {
+          "instance_type": ds_instance_types[i].instance_type,
+          "cost": ds_instance_types[i].cost,
+          "usage_amount": ds_instance_types[i].usage_amount,
+          "normalization_factor": isf_ratio_json[j].ratio,
+          "normalized_amount": normalized_amount,
+          "cost_instance_hr": cost_instance_hr,
+          "date": ds_instance_types[i].year_month,
+          "billing_center_id": ds_instance_types[i].billing_center_id,
+          "billing_center_name": billing_center_name.name         
+        }
+        temp_result.push(json_object)
+      }
+    }
+  }
+
+  //Aggregate by Date only (All BCs)
+  temp_result.reduce(function(res, value){
+    if (!res[value.date]){
+      res[value.date] = { date: value.date, normalized_amount: 0, cost: 0 }
+      aggregated_costs.push(res[value.date])
+    }
+    res[value.date].normalized_amount += value.normalized_amount
+    res[value.date].cost += value.cost
+    return res
+  })
+
+  //Group by Date and Billing Center
+  temp_result.reduce(function(res, value) {
+    var key = value.date + '-' + value.billing_center_name
+    if (!res[key]) {
+      res[key] = { billing_center: value.billing_center_name, date: value.date, normalized_amount: 0, cost: 0 };
+      grouped_costs.push(res[key])
+    }
+    res[key].normalized_amount += value.normalized_amount;
+    res[key].cost += value.cost;
+    return res;
+  })
+
+  _.each(aggregated_costs, function(row){
+    row.cost_instance_hr = (row.cost / row.normalized_amount).toFixed(3)
+    row.billing_center = "Aggregated"
+    row.vendor = "Azure"
+    aggregated_result.push(row)
+  })
+
+  _.each(grouped_costs, function(row) {
+    row.cost_instance_hr = (row.cost / row.normalized_amount).toFixed(3)
+    row.vendor = "Azure"
+    grouped_result.push(row)
+  })
+
+  //Charting Calculations
+
+  chart_data = []
+  //generic calcs for either report
+
+  chart_axis_labels = "chxl=1:,"+aggregated_costs.map(function(o) { return o.date.substring(0,7); })
+  chart_axis_labels = chart_axis_labels.split(",").join("|")
+
+  if (param_aggregate === "Aggregate") {
+    //Aggregated Report data
+    chart_data_aggregated = "chd=t:"+aggregated_costs.map(function(o) { return o.cost_instance_hr; }).toString()
+    chart_legend = "chdl=Aggregate"
+    max = (Math.max.apply(Math, aggregated_costs.map(function(o) { return o.cost_instance_hr; }))*1.1).toFixed(2)
+    min = (Math.min.apply(Math, aggregated_costs.map(function(o) { return o.cost_instance_hr; }))*0.9).toFixed(2)
+    chart_range = "chxr=0,"+min+","+max
+    result = aggregated_result
+  } else {
+    //Per Billing Center report data
+    chart_data_per_bc = _.groupBy(grouped_costs, function(o) { return o.billing_center })
+    max = (Math.max.apply(Math, grouped_costs.map(function(o) { return o.cost_instance_hr; }))*1.1).toFixed(2)
+    min = (Math.min.apply(Math, grouped_costs.map(function(o) { return o.cost_instance_hr; }))*0.9).toFixed(2)
+    chart_range = "chxr=0,"+min+","+max
+    result = grouped_result
+
+    //produce list of BCs for legend
+    var chart_legend = "chdl="
+    var i=0
+    for (var key in chart_data_per_bc) {
+        chart_legend=chart_legend+key.replace("&","%26")
+        i++
+        if (i < _.size(chart_data_per_bc)) { chart_legend=chart_legend+"|"}
+    }
+    
+    //produce list of bc values for data set
+    var j=0
+    var bc_cost_data="chd=t:"
+    _.each(chart_data_per_bc, function (o) {
+        var i=0
+        _.each(o, function(p) {
+        bc_cost_data=bc_cost_data+p.cost_instance_hr
+        i++
+        if (i < _.size(o)) { bc_cost_data=bc_cost_data+"," }
+        })
+        j++
+        if (j < _.size(chart_data_per_bc)) {bc_cost_data=bc_cost_data+"|" }
+    })
+    chart_data_aggregated = bc_cost_data
+  }
+
+  //Report Map
+  report = {
+    chartType: "cht=lc",
+    chartSize: "chs=900x500",
+    chartData: chart_data_aggregated,
+    chartTitle: "chtt=Normalized%20%Cost%20Per%20Instance%20Hour",
+    chartImage: "chof=.png",
+    chartLabel: chart_legend, // populate from Billing Centers - comma separated
+    chartLabelPosition: "chdlp=b",
+    chartYAxis: "chxt=y,x",
+    chartYAxisLabel: chart_axis_labels,
+    chartScale: chart_range,
+    chartLineStyle: "chls=3|3|3|3|3|3|3|3|3|3|3",
+    chartLineColour: "chco=6929c4,9f1853,198038,b28600,1192e8,009d9a,005d5d,007d79"
+  }
+
+  result[0]["chart_dimensions"] = report
+
+  EOS
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_normalization_factor_report" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "policy_test" do
+  validate_each $ds_output do
+    summary_template "Test Cost Per Instance Hour (Normalized - past 12 months)"
+    detail_template <<-EOS
+    # Normalized Cost Per Instance Hour Report
+    ![Normalized Cost Per Instance Hour Chart](https://image-charts.com/chart?{{with index data 0}}{{ .chart_dimensions.chartData }}{{end}}&{{with index data 0}}{{ .chart_dimensions.chartSize }}{{end}}&{{with index data 0}}{{ .chart_dimensions.chartType }}{{end}}&{{with index data 0}}{{ .chart_dimensions.chartLabel }}{{end}}&{{with index data 0}}{{ .chart_dimensions.chartScale}}{{end}}&{{with index data 0}}{{ .chart_dimensions.chartYAxis }}{{end}}&{{with index data 0}}{{ .chart_dimensions.chartYAxisLabel }}{{end}}&{{with index data 0}}{{ .chart_dimensions.chartLineStyle }}{{end}}&{{with index data 0}}{{ .chart_dimensions.chartLineColour }}{{end}}&{{with index data 0}}{{ .chart_dimensions.chartTitle }}{{end}} "Cost Per Instance Hour Report")
+    EOS
+    escalate $esc_normalization_factor_report
+    check eq(0,1)
+    export do
+      # no actions so resource_level can be false
+      resource_level false
+      #field "instance_type" do
+      #  label "Instance Type"
+      #end
+      field "date" do
+        label "Month"
+      end
+      field "vendor" do
+        label "Cloud Vendor"
+      end
+      field "billing_center" do
+        label "Billing Center"
+      end
+      field "cost" do
+        label "Cost"
+      end
+      field "normalized_amount" do
+        label "Usage Amount with Normalization Factor applied"
+      end
+      field "cost_instance_hr" do
+        label "Cost of Instance per Hour"
+      end
+    end
+  end
+end
