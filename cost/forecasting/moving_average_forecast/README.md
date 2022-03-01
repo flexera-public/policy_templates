@@ -1,8 +1,8 @@
-# Straight-Line Forecasting Policy
+# Moving Average Policy
 
 ## What it does
 
-This Policy uses Optima to determine a forecast for a Billing Center or the entire Organization. The policy uses the specified previous number of months, not including the current month to determine a straight-line forecast.
+This Policy uses Optima to determine a moving average for a Billing Center or the entire Organization. The policy uses the specified previous number of months, not including the current month to determine a straight-line forecast.
 
 ## Functional Details
 
@@ -16,7 +16,7 @@ This policy has the following input parameters required when launching the polic
 
 - *Billing Center Name* - List of Billing Center Names to check
 - *Lookback Months* - Number of months to lookback to generate forecast
-- *Months to forecast* - Number of months in the future to forecast
+- *Months to use to calculate moving average* - Number of months to use to calculate moving average - 3,6
 - *Cost Metric* - specify options for amortized vs non-amortized and blended vs unblended costs
 - *Email addresses* - A list of email addresses to notify
 

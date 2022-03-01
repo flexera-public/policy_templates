@@ -1,7 +1,7 @@
 name "Moving Average"
 rs_pt_ver 20180301
 type "policy"
-short_description "Pulls the cost data for lookback period then generates a Straight-Line Forecast for the specified months. See the [README](https://github.com/rightscale/policy_templates/tree/master/cost/forecasting/straight_line_forecast/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+short_description "Pulls the cost data for lookback period then generates a moving average for the specified months. See the [README](https://github.com/rightscale/policy_templates/tree/master/cost/forecasting/moving_average/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 long_description ""
 severity "high"
 category "Cost"
@@ -24,7 +24,7 @@ info(
 
 parameter "param_billing_centers" do
   label "Billing Center Name"
-  description "List of Billing Center Names to check"
+  description "List of Billing Center Names to check, leave blank for all"
   type "list"
 end
 
@@ -36,8 +36,8 @@ parameter "param_lookback_months" do
 end
 
 parameter "param_average_months" do
-  label "Months to use to calculate moving averate"
-  description "Months to use to calculate moving averate"
+  label "Months to use to calculate moving average"
+  description "Months to use to calculate moving average"
   type "number"
   allowed_values 3,6
   default 3
@@ -48,7 +48,7 @@ parameter "param_cost_metric" do
   label "Cost Metric"
   allowed_values "Unamortized Unblended","Amortized Unblended","Unamortized Blended","Amortized Blended"
   default "Unamortized Unblended"
-  description "Select the cost metric for your report.  See the README file for more details"
+  description "Select the cost metric for your report. See the README file for more details"
 end
 
 parameter "param_email" do
@@ -123,7 +123,7 @@ end
 datasource "ds_costs" do
   iterate $ds_past_month_list
   request do
-    run_script $js_new_costs_request, rs_org_id, $ds_billing_centers, $param_cost_metric, $param_billing_centers, val(iter_item, 'start_date'), val(iter_item, 'end_date')
+    run_script $js_new_costs_request, rs_optima_host, rs_org_id, $ds_billing_centers, $param_cost_metric, $param_billing_centers, val(iter_item, 'start_date'), val(iter_item, 'end_date')
   end
   result do
     encoding "json"
@@ -186,7 +186,7 @@ EOS
 end
 
 script "js_new_costs_request", type: "javascript" do
-  parameters "org_id", "ds_billing_centers", "param_cost_metric", "param_billing_centers", "start_at", "end_at"
+  parameters "rs_optima_host", "org_id", "ds_billing_centers", "param_cost_metric", "param_billing_centers", "start_at", "end_at"
   result "request"
   code <<-EOS
     var cost_metric = {
@@ -202,13 +202,15 @@ script "js_new_costs_request", type: "javascript" do
     } else {
       // get array of billing center id's that match the names in param_billing_centers.
       billing_center_names = _.map(param_billing_centers, function(name){ return name.toLowerCase(); });
-      billing_center_ids = _.compact(_.map(ds_billing_centers, function(value){ if(_.contains(billing_center_names, value.name.toLowerCase())){return value.id} }));
+      var billing_center_ids = _.compact(_.map(ds_billing_centers, function (value) {
+        if (_.contains(billing_center_names, value.name.toLowerCase())) { return value.id; }
+      }));
     }
 
     var request = {
       auth: "auth_rs",
       verb: "POST",
-      host: "optima.rightscale.com",
+      host: rs_optima_host,
       path: "/bill-analysis/orgs/" + org_id + "/costs/aggregated",
       body_fields: {
         "dimensions": ["billing_center_id"],
@@ -230,13 +232,12 @@ script "js_make_data_package", type: "javascript" do
   parameters "param_cost_metric", "ds_costs"
   result "results"
   code <<-EOS
-  var results = [];
 
   var cost_metric = {
-    "Unamortized Unblended":"cost_nonamortized_unblended_adj",
-    "Amortized Unblended":"cost_amortized_unblended_adj",
+    "Unamortized Unblended": "cost_nonamortized_unblended_adj",
+    "Amortized Unblended": "cost_amortized_unblended_adj",
     "Unamortized Blended": "cost_nonamortized_blended_adj",
-    "Amortized Blended":"cost_amortized_blended_adj"
+    "Amortized Blended": "cost_amortized_blended_adj"
   }
 
   var mapped_costs = _.groupBy(ds_costs, function (value) {
@@ -261,6 +262,7 @@ script "js_make_data_package", type: "javascript" do
       cost: summed,
     };
   });
+
   var costs = [];
   _.each(unsorted_results, function (item) {
     costs.push({
@@ -320,16 +322,16 @@ script "js_forecast", type: "javascript" do
   var chartXAxis = 'chxl=0:|' + XAxisArray.join('|');
   forecasted_costs[0]['average'] = forecasted_costs[0]['average'].reverse()
   var report = {
-    chartType: 'cht=lc',
-    chartSize: 'chs=999x500',
-    chartTitle: 'chtt=Moving Average',
-    chartLabel: 'chdl=Moving Average|Actual Spend&chdlp=t'
-    chartAxis: 'chxt=x,y',
-    chartXAxis: chartXAxis,
-    chartAxisFormat: 'chxs=1N*cUSD0sz*',
-    chartData: chartData,
-    chartColors: 'chco=3072F3,ff0000,00aaaa',
-    chartExtension: 'chof=.png',
+    chartType: encodeURI('cht=lc'),
+    chartSize: encodeURI('chs=999x500'),
+    chartTitle: encodeURI('chtt=Moving Average'),
+    chartLabel: encodeURI('chdl=Moving Average|Actual Spend&chdlp=t'),
+    chartAxis: encodeURI('chxt=x,y'),
+    chartXAxis: encodeURI(chartXAxis),
+    chartAxisFormat: encodeURI('chxs=1N*cUSD0sz*'),
+    chartData: encodeURI(chartData),
+    chartColors: encodeURI('chco=3072F3,ff0000,00aaaa'),
+    chartExtension: encodeURI('chof=.png'),
     reportData: forecasted_costs,
   };
 
