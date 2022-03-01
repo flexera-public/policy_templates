@@ -47,6 +47,7 @@ Reference
 ##### Forecasting
 
 - [Straight-Line Forecast](./cost/forecasting/straight_line_forecast/)
+- [Moving Average](./cost/forecasting/moving_average/)
 
 #### AWS
 
