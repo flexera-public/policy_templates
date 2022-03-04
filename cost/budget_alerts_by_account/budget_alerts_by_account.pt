@@ -109,7 +109,7 @@ datasource "ds_billing_centers" do
   end
 end
 
-datasource "ds_top_bc_costs" do
+datasource "ds_top_bcs" do
   run_script $js_top_level_bc, $ds_billing_centers
 end
 
@@ -120,6 +120,12 @@ script "js_top_level_bc", type: "javascript" do
   var filtered_billing_centers =
     _.reject(billing_centers, function(bc){ return bc.parent_id != null });
 EOS
+end
+
+datasource "ds_top_bc_costs" do
+  request do
+    run_script $js_costs_request, rs_org_id, $param_cost_metric, $ds_top_bcs
+  end
 end
 
 datasource "ds_formatted_costs" do
@@ -201,36 +207,40 @@ script "js_formatted_costs", type: "javascript" do
   result "result"
   code <<-EOS
   var result = [];
-  var costs = [];
-  var cost_type = {
-      "Unamortized Unblended":"nonamortized_unblended_costs",
-      "Amortized Unblended":"amortized_unblended_costs",
-      "Unamortized Blended": "nonamortized_blended_costs",
-      "Amortized Blended":"amortized_blended_costs"
-  }
-  var totalCost=0;
-  var bc_id="";
-  var count=0;
-  var bc_name= "";
-  var type = cost_type[param_cost_metric];
+var costs = [];
+var cost_type = {
+  'Unamortized Unblended':'nonamortized_unblended_costs',
+  'Amortized Unblended':'amortized_unblended_costs',
+  'Unamortized Blended': 'nonamortized_blended_costs',
+  'Amortized Blended':'amortized_blended_costs',
+};
+var type = cost_type[param_cost_metric];
 
-  _.each(ds_top_bc_costs, function(row){
-    var cost = row[type];
-    if (param_acct_name == row["vendor_account_name"]){
+_.each(ds_top_bc_costs['rows'], function (row) {
+  var cost = row[type];
+  if (row['dimensions']['vendor_account_name'] != null && row['dimensions']['vendor_account_name'] !== undefined) {
+    console.log(param_acct_name + ' ' + row['dimensions']['vendor_account_name']);
+    if (param_acct_name == row['dimensions']['vendor_account_name']) {
       costs.push({
-        account_name: row["vendor_account_name"],
-        vendor: row["vendor"],
-        total: cost
-      })
+        account_name: row['dimensions']['vendor_account_name'],
+        vendor: row['vendor'],
+        total: cost,
+      });
+    } else {
+      return;
     }
-  })
+  }
+});
 
-  var sum = _.reduce(_.pluck(costs, 'total'), function(memo, num){ return memo + num; }, 0);
+var sum = _.reduce(_.pluck(costs, 'total'), function (memo, num) { return memo + num; }, 0);
+if ( costs.length > 0 ) {
   result.push({
-    account_name: costs[0]["account_name"],
-    vendor: costs[0]["vendor"],
-    total: sum
-  })
+    account_name: costs[0]['account_name'],
+    vendor: costs[0]['vendor'],
+    total: sum,
+  });
+}
+
   EOS
 end
 
