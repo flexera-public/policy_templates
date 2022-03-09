@@ -1,0 +1,424 @@
+name "Google Idle IP Address Recommender Policy"
+rs_pt_ver 20180301
+type "policy"
+short_description "This Policy finds Google Idle IP Address Recommendations and reports when it finds them. See the [README](https://github.com/flexera/policy_templates/tree/master/cost/google/recommender) and [docs.rightscale.com/policies](https://docs.rightscale.com/policies/) to learn more."
+category "Cost"
+severity "low"
+default_frequency "daily"
+info(
+  version: "2.0",
+  provider:"Google",
+  service: "Storage",
+  policy_set: "Native Recommendations"
+)
+
+###############################################################################
+# Parameters
+###############################################################################
+
+parameter "param_email" do
+  type "list"
+  label "Email addresses to notify"
+  description "Email addresses of the recipients you wish to notify when new incidents are created"
+end
+
+parameter "param_project" do
+  type "list"
+  label "Project ID"
+  description "Google Projects to Query. Leave blank to query all projects."
+end
+
+parameter "param_regions" do
+  type "list"
+  label "Location"
+  description "Location to check, this is region names"
+end
+
+parameter "param_exclude_labels" do
+  category "User Inputs"
+  label "Exclusion Label Key:Value"
+  description "Cloud native label to ignore IP addresses. Format: Key:Value"
+  type "string"
+  allowed_pattern /(^$)|([\w]?)+\:([\w]?)/
+end
+
+parameter "param_automatic_action" do
+  type "list"
+  label "Automatic Actions"
+  description "When this value is set, this policy will automatically take the selected action(s)"
+  allowed_values ["Delete IP Addresses"]
+end
+
+parameter "param_log_to_cm_audit_entries" do
+  type "string"
+  label "Log to CM Audit Entries"
+  description "Boolean for whether or not to log any debugging information from actions to CM Audit Entries, this should be left set to No on Flexera EU"
+  default "No"
+  allowed_values "Yes", "No"
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+# authenticate with Google
+credentials "auth_google" do
+  schemes "oauth2"
+  label "Google"
+  description "Select the Google Cloud Credential from the list."
+  tags "provider=gce"
+end
+
+###############################################################################
+# Pagination
+###############################################################################
+
+pagination "google_pagination" do
+  get_page_marker do
+    body_path "nextPageToken"
+  end
+  set_page_marker do
+    query "pageToken"
+  end
+end
+
+###############################################################################
+# Datasources
+###############################################################################
+
+#get all google project
+datasource "ds_google_project" do
+  request do
+    auth $auth_google
+    pagination $google_pagination
+    host "cloudresourcemanager.googleapis.com"
+    path "/v1/projects/"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "projects[*]") do
+      field "projectNumber", jmes_path(col_item,"projectNumber")
+      field "projectID", jmes_path(col_item,"projectId")
+    end
+  end
+end
+
+datasource "ds_recommendations" do
+  iterate $ds_recommenders
+  request do
+    run_script $js_recommender_call, val(iter_item,"projectID"), val(iter_item, "region")
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "recommendations[*]") do
+      field "projectID", val(iter_item, "projectID")
+      field "projectNumber", val(iter_item, "projectNumber")
+      field "region", val(iter_item, "region")
+      field "id", jmes_path(col_item, "name")
+      field "description", jmes_path(col_item, "description")
+      field "primaryImpact", jmes_path(col_item, "primaryImpact")
+      field "costUnits", jmes_path(col_item, "primaryImpact.costProjection.cost.units")
+      field "currency", jmes_path(col_item, "primaryImpact.costProjection.cost.currencyCode")
+      field "priority", jmes_path(col_item, "priority")
+      field "recommenderSubtype", jmes_path(col_item, "recommenderSubtype")
+      field "state", jmes_path(col_item, "stateInfo.state")
+    end
+  end
+end
+
+
+datasource "ds_addresses" do
+  iterate $param_regions
+  request do
+    run_script $js_get_addresses, val(iter_item, "projectID"), val(iter_item, "param_regions")
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response,"items[*]") do
+      field "address", jmes_path(col_item,"address")
+      field "addressType", jmes_path(col_item,"addressType")
+      field "creationTimestamp", jmes_path(col_item,"creationTimestamp")
+      field "description", jmes_path(col_item,"description")
+      field "resourceID", jmes_path(col_item,"id")
+      field "name", jmes_path(col_item,"name")
+      field "purpose", jmes_path(col_item,"purpose")
+      field "selfLink", jmes_path(col_item,"selfLink")
+      field "status", jmes_path(col_item,"status")
+      field "subnetwork", jmes_path(col_item,"subnetwork")
+      field "labels", jmes_path(col_item,"labels")
+      field "projectID", val(iter_item, "projectID")
+    end
+  end
+end
+
+datasource "ds_sanitize_ips" do
+  run_script $js_sanitize_data, $ds_addresses, $param_exclude_labels
+end
+
+datasource "ds_recommenders" do
+  run_script $js_recommenders, $ds_google_project, $param_project, $param_regions
+end
+
+datasource "ds_ip_cost_mapping" do
+  run_script $js_instance_cost_mapping, $ds_santize_ips, $ds_recommenders
+end
+
+###############################################################################
+# Scripts
+###############################################################################
+script "js_recommenders", type: "javascript" do
+  parameters "ds_google_project", "param_project", "param_regions"
+  result "results"
+  code <<-EOF
+  var results = []
+
+  _.each(ds_google_project, function(project){
+    if (_.contains(param_project, project.projectId) || param_project.length == 0) {
+      _.each(param_regions, function(region){
+        results.push({
+          projectNumber: project.projectNumber,
+          projectId: project.projectId,
+          region: region
+        })
+      })
+    }
+  })
+EOF
+end
+
+script "js_recommender_call", type: "javascript" do
+  parameters "projectId", "region"
+  result "request"
+  code <<-EOF
+  var now = new Date().getTime();
+  var sleepDuration = 10000
+  while(new Date().getTime() < now + sleepDuration){ /* Do nothing */ }
+  var request = {
+    auth: "auth_google",
+    pagination: "google_pagination",
+    host: "recommender.googleapis.com",
+    ignore_status: 403,
+    path: "/v1/projects/"+ projectId +"/locations/" + location + "/recommenders/google.compute.address.IdleResourceRecommender/recommendations",
+    query_strings: { alt: "json" }
+  }
+EOF
+end
+
+script "js_get_addresses", type: "javascript" do
+  result "request"
+  parameters "project","region"
+  code <<-EOS
+    request = {
+      "auth": "auth_google",
+      "host": "www.googleapis.com",
+      "verb": "GET",
+      "path": "/compute/beta/projects/"+project+"/regions/"+region+"/addresses",
+      "ignore_status": [403,404]
+      "headers": {
+        "User-Agent": "RS Policies",
+        "Content-Type": "application/json"
+      }
+      "query_params": {
+        "filter": '(status != "IN_USE") AND (addressType != "INTERNAL")'
+      }
+    }
+  EOS
+end
+
+script "js_sanitize_data", type: "javascript" do
+  result "results"
+  parameters "ds_addresses", "param_exclude_labels"
+  code <<-EOS
+    label_key = param_exclude_labels.split(':')[0]
+    label_value = param_exclude_labels.split(':')[1]
+
+    results = _.filter(ds_addresses, function(data){
+      if ( data.address != null ){
+        if ( data.labels != null && data.labels !== undefined ){
+          if ( data.labels[label_key] != null && data.labels[label_key] !== undefined ){
+            if ( data.labels[label_key] != label_value ){
+              return data
+            }
+          } else {
+            return data
+          }
+        }else{
+          return data
+        }
+      }
+    })
+    results= _.sortBy(results, 'projectId');
+  EOS
+end
+
+script "js_instance_cost_mapping", type:"javascript" do
+  parameters  "addresses","recommendations"
+  result "result"
+  code <<-EOS
+    var instances = [];
+    var result={};
+    var message=''
+    var count=0;
+
+    //--TODO--
+    function formatNumber(number, separator){
+      var numString =number.toString();
+      var values=numString.split(".");
+      var result = ''
+      while (values[0].length > 3){
+        var chunk = values[0].substr(-3)
+        values[0] = values[0].substr(0, values[0].length - 3)
+        result = separator + chunk + result
+      }
+      if (values[0].length > 0){
+        result = values[0] + result
+      }
+      if(values[1]==undefined){
+        return result;
+      }
+      return result+"."+values[1];
+    }
+
+    _.each(addresses, function(address) {
+      addressID = address.id
+      _.each(recommendations, function(recommendation){
+        if(addressID === recommendation.id) {
+          if(recommendation['currency'] !== undefined ) {
+            var cur = recommendation['currency']
+            addresses[addressID]['savingsCurrency'] = recommendation['currency']
+          } else {
+            var cur = "$"
+            var separator = ","
+          }if( recommendations['currency'] !== undefined ) {
+
+          } else {
+            var cur = "$"
+            var separator = ","
+          }
+          var sum = _.reduce(_.compact(_.map(cost_objects, function(value){ return value.costUnits})), function(memo, num){ return memo + num; }, 0);
+          var monthly_savings = sum*30;
+          total=total+monthly_savings;
+          address['savings']= cur + ' '+formatNumber((Math.round(monthly_savings * 1000) / 1000), separator)
+        }
+      })
+    })
+
+    // Format costs with currency symbol and thousands separator
+    if(recommendations.length!=0){
+      // Put costs into a map by resource ID and only include them for resource IDs we actually need
+      var costs_by_resource_id = {};
+      _.each(addresses, function(address) {
+        costs_by_resource_id[address.resourceID] = [];
+      });
+      _.each(recommendations, function(cost) {
+        var costs = costs_by_resource_id[cost.resource_id];
+        if (costs != null) {
+          costs.push(cost);
+        }
+      });
+
+      var total=0;
+      _.each(addresses, function(address){
+        var cost_objects = costs_by_resource_id[address.resourceID];
+        if (_.size(cost_objects) > 0){
+          count++;
+          if( recommendations['currency'] !== undefined ) {
+          address['savingsCurrency'] =
+          } else {
+          var cur = "$"
+          var separator = ","
+          }if( recommendations['currency'] !== undefined ) {
+
+          } else {
+            var cur = "$"
+            var separator = ","
+          }
+          var sum = _.reduce(_.compact(_.map(cost_objects, function(value){ return value.costUnits})), function(memo, num){ return memo + num; }, 0);
+          var monthly_savings = sum*30;
+          total=total+monthly_savings;
+          address['savings']= cur + ' '+formatNumber((Math.round(monthly_savings * 1000) / 1000), separator)
+          instances.push(address)
+        } else {
+          address['savings']= 0.0;
+          address.push(address)
+        }
+      })
+      if(count){
+        total=cur + ' '+formatNumber((Math.round(total * 100) / 100), separator);
+        message="The total estimated monthly savings are " +total;
+      } else {
+        message="The Flexera Optima system does not have any data to calculate savings for these resources";
+      }
+    }else{
+      message="You do not have the minimum required role of billing_center_viewer to view the savings";
+      instances=addresses;
+    }
+    result={
+      "instances": instances,
+      "message": message
+    };
+    result.instances = _.sortBy(result.instances,"location");
+    result.instances = _.sortBy(result.instances,"subscriptionName");
+  EOS
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "policy_recommendations" do
+  validate $ds_recommendations do
+    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} rows found for Committed Use Discount"
+    check eq(size(data), 0)
+    escalate $esc_email
+    export do
+      resource_level true
+      field "projectId" do
+        label "Project ID"
+      end
+      field "location" do
+        label "Location"
+      end
+      field "description" do
+        label "Description"
+      end
+      field "primary_impact" do
+        label "Primary Impact"
+        path "primaryImpact.category"
+      end
+      field "costUnits" do
+        label "Cost"
+      end
+      field "currency" do
+        label "Currency"
+      end
+      field "priority" do
+        label "Priority"
+      end
+      field "recommenderSubtype" do
+        label "Sub Type"
+      end
+      field "state" do
+        label "State"
+      end
+      field "id" do
+        label "Name"
+      end
+    end
+  end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_email" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
+end
+
+###############################################################################
+# Cloud Workflow
+###############################################################################
