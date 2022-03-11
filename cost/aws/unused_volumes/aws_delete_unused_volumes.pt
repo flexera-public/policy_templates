@@ -34,8 +34,17 @@ end
 # Datasource
 ###############################################################################
 
+datasource "ds_aws_instance_map" do
+  request do
+    verb "GET"
+    host "raw.githubusercontent.com"
+    path "/flexera-public/policy_templates/POL-556/data/mock/aws_delete_unused_volumes.json"
+    header "User-Agent", "RS Policies"
+  end
+end
+
 datasource "ds_volume_cost_mapping" do
-  run_script $js_volume_cost_mapping
+  run_script $js_volume_cost_mapping, $ds_aws_instance_map
 end
 
 ###############################################################################
@@ -44,46 +53,21 @@ end
 
 script "js_volume_cost_mapping", type:"javascript" do
   result "result"
+  parameters "ds_aws_instance_map"
   code <<-EOS
   var instance_list = []
-  var tags = []
-  var emptyTags = []
-  tags.push("purpose=to show up as an idle DB")
-  tags.push("mock=true")
+  var monthlySavings = 0
   var result = {}
-
-  instance_list.push({
-    accountID: "279901730306",
-    region: "us-east-1",
-    resourceType: "gp2",
-    size:"20 GB",
-    resourceID: "vol-02a1d7n1451kdb00e",
-    tags: emptyTags,
-    savings: 2.15,
-    savingsCurrency: "£",
-    service:"EBS"
+  _.each(ds_aws_instance_map.values, function(instance){
+    monthlySavings = monthlySavings + instance.savings
+    instance_list.push(instance)
   })
-
-  instance_list.push({
-    accountID: "279901730306",
-    region: "us-west-2",
-    resourceType: "gp2",
-    size:"20 GB",
-    resourceID: "vol-07c1dfb1450kdb01l",
-    tags: tags,
-    savings: 2.15,
-    savingsCurrency: "£",
-    service:"EBS"
-  })
-  var monthlySavings = 3.30
   var message="The total estimated monthly savings are £"+ monthlySavings;
-
   result={
     "instance_list": instance_list,
     "message": message,
-    "accountID": "279901730306"
+    "accountID": ds_aws_instance_map.values[0].accountID
   }
-
   result.instance_list = _.sortBy(result.instance_list,"region");
   result.instance_list = _.sortBy(result.instance_list,"id");
   EOS

@@ -32,9 +32,18 @@ end
 # Datasources
 ###############################################################################
 
+datasource "ds_aws_instance_map" do
+  request do
+    verb "GET"
+    host "raw.githubusercontent.com"
+    path "/flexera-public/policy_templates/POL-556/data/mock/unused_rds.json"
+    header "User-Agent", "RS Policies"
+  end
+end
+
 # get all the RDS instances merged together with the tags and CloudWatch
 datasource "ds_instance_cost_mapping" do
-  run_script $js_instance_cost_mapping
+  run_script $js_instance_cost_mapping, $ds_aws_instance_map
 end
 
 ###############################################################################
@@ -44,55 +53,24 @@ end
 # merge the instances and tags and remove instances that have the exclusion tag
 script "js_instance_cost_mapping", type: "javascript" do
   result "result"
+  parameters "ds_aws_instance_map"
   code <<-EOS
   var instance_list = []
-  var tags = []
-  var emptyTags = []
-  tags.push("purpose=to show up as an idle DB")
-  tags.push("mock=true")
+  var monthlySavings = 0
   var result = {}
-
-  instance_list.push({
-    accountID: "279901730306",
-    region: "us-east-1",
-    name: "dummy-database-to-be-idle-1",
-    arn: "arn:aws:rds:us-east-1:279901730306:db:dummy-database-to-be-idle-1",
-    resourceID: "db-Y9A7GZ27TRG2I9OC81ZRNGAE9UV",
-    resourceType: "db.t2.micro",
-    privateDnsName: "dummy-database-to-be-idle-1.c12zeech0klz.us-east-1.rds.amazonaws.com",
-    status: "available",
-    connections: 17423,
-    tags: emptyTags,
-    savings: 4.91,
-    service: "RDS",
-    savings_currency: "£"
+  _.each(ds_aws_instance_map.values, function(instance){
+    monthlySavings = monthlySavings + instance.savings
+    instance_list.push(instance)
   })
-
-  instance_list.push({
-    accountID: "279901730306",
-    region: "us-west-2",
-    name: "dummy-database-to-be-idle-2",
-    arn: "arn:aws:rds:us-west-2:279901730306:db:dummy-database-to-be-idle-2",
-    resourceID: "db-KS7GZN7TSL2ILOW81ZRNGAEV3I",
-    resourceType: "db.t2.medium",
-    privateDnsName: "dummy-database-to-be-idle-2.c12zeech0klz.us-west-2.rds.amazonaws.com",
-    status: "available",
-    connections: 57821,
-    tags: tags,
-    savings: 571.37,
-    service: "RDS",
-    savings_currency: "£"
-  })
-
+  var message="The total estimated monthly savings are £"+ monthlySavings;
   result={
     "instance_list": instance_list,
-    "message": "The total estimated monthly savings are £576.28",
-    "accountID": "279901730306"
+    "message": message,
+    "accountID": ds_aws_instance_map.values[0].accountID
   }
-
   result.instance_list = _.sortBy(result.instance_list,"region");
   result.instance_list = _.sortBy(result.instance_list,"id");
-EOS
+  EOS
 end
 
 ###############################################################################
