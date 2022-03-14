@@ -100,7 +100,7 @@ datasource "ds_ri_aggregated_costs" do
     encoding "json"
     collect jmes_path(response, "rows") do
       field "instance_type", jmes_path(col_item, "dimensions.instance_type")
-      field "region", jmes_path(col_item, "dimensions.region")
+      #field "region", jmes_path(col_item, "dimensions.region")
       field "usage_unit", jmes_path(col_item, "dimensions.usage_unit")
       field "usage_amount", jmes_path(col_item, "metrics.usage_amount")
       field "cost", jmes_path(col_item, "metrics.cost_amortized_unblended_adj")
@@ -134,7 +134,6 @@ script "js_get_ri_aggregated_costs", type: "javascript" do
     },
     "dimensions": [
       "instance_type",
-      "region",
       "usage_unit"
     ],
     "granularity": "month",
@@ -168,7 +167,7 @@ datasource "ds_base_aggregated_costs" do
     encoding "json"
     collect jmes_path(response, "rows") do
       field "instance_type", jmes_path(col_item, "dimensions.instance_type")
-      field "region", jmes_path(col_item, "dimensions.region")
+      #field "region", jmes_path(col_item, "dimensions.region")
       field "usage_unit", jmes_path(col_item, "dimensions.usage_unit")
       field "usage_amount", jmes_path(col_item, "metrics.usage_amount")
       field "cost", jmes_path(col_item, "metrics.cost_amortized_unblended_adj")
@@ -202,10 +201,9 @@ script "js_get_base_aggregated_costs", type: "javascript" do
           "expression": { "dimension": "resource_type", "type": "equal", "value": "Virtual Machines-Reservation-Base VM" }
         } 
       ]
-  },
+    },
     "dimensions": [
       "instance_type",
-      "region",
       "usage_unit"
     ],
     "granularity": "month",
@@ -230,6 +228,17 @@ script "js_get_base_aggregated_costs", type: "javascript" do
   EOS
 end
 
+#GET CSV WITH NFU
+datasource "ds_isf_ratio_csv" do
+  request do
+    host "isfratio.blob.core.windows.net"
+    path "/isfratio/ISFRatio.csv"
+  end
+  result do
+    encoding "text"
+  end
+end
+
 #CALCULATE SAVINGS REALIZED (BASE COST - RI COST) FOR EACH INSTANCE TYPE, FOR EACH REGION
 datasource "ds_savings_realized" do
   run_script $js_get_savings_realized, $ds_ri_aggregated_costs, $ds_base_aggregated_costs
@@ -237,25 +246,27 @@ end
 
 script "js_get_savings_realized", type: "javascript" do
   parameters "ri_costs", "base_costs"
-  result "result"
+  result "savings_realized_data"
   code <<-EOS
   var result = []
+  var savings_realized_data = []
+  //var grouped_costs = []
 
   //calculate cost per instance type per hour
   _.each(ri_costs, function(ri){
-    var usage_unit = parseInt(ri.usage_unit.split(" ")[0])
-    ri["usage_amount_normalized"] = ri.usage_amount * usage_unit
+    //var usage_unit = parseInt(ri.usage_unit.split(" ")[0])
+    //ri["usage_amount_normalized"] = ri.usage_amount * usage_unit
     if(ri.cost > 0){
-      ri["cost_per_hr"] = ri.cost / ( ri.usage_amount * usage_unit )
+      ri["cost_per_hr"] = ri.cost / ( ri.usage_amount )
     } else {
       ri["cost_per_hr"] = 0
     }   
   })
   _.each(base_costs, function(base){
-    var usage_unit = parseInt(base.usage_unit.split(" ")[0])
-    base["usage_amount_normalized"] = base.usage_amount * usage_unit
+    //var usage_unit = parseInt(base.usage_unit.split(" ")[0])
+    //base["usage_amount_normalized"] = base.usage_amount * base.usage_unit
     if(base.cost > 0){
-      base["cost_per_hr"] = base.cost / ( base.usage_amount * usage_unit )
+      base["cost_per_hr"] = base.cost / ( base.usage_amount )
     } else {
       base["cost_per_hr"] = 0
     }  
@@ -264,7 +275,7 @@ script "js_get_savings_realized", type: "javascript" do
   //calculate savings realized (base cost per hour - ri cost per hour)
   _.each(base_costs, function(base){
     _.each(ri_costs, function(reserved){
-      if (base.month == reserved.month && base.region == reserved.region && base.instance_type == reserved.instance_type){
+      if (base.month == reserved.month && base.instance_type == reserved.instance_type){
         var savings_realized = base.cost_per_hr - reserved.cost_per_hr
 
         result.push(
@@ -273,13 +284,84 @@ script "js_get_savings_realized", type: "javascript" do
             "region": base.region, 
             "instance_type": base.instance_type,
             "savings_realized_per_hr": savings_realized
-            "savings_realized_per_mth": savings_realized * reserved.usage_amount_normalized
+            "savings_realized_per_mth": savings_realized * base.usage_amount
           }
         )
       }
     })
   })
-  
+
+  //reduce list - aggregate costs for same instance type for same month
+  result.reduce(function(res, value) {
+    var key = value.instance_type + '-' + value.month
+    if (!res[key]) {
+      res[key] = { instance_type: value.instance_type, month: value.month, savings_realized_per_hr: 0, savings_realized_per_mth: 0 }
+      savings_realized_data.push(res[key])
+    }
+    res[key].savings_realized_per_mth += value.savings_realized_per_mth
+    res[key].savings_realized_per_hr += value.savings_realized_per_hr
+    return res
+  })
+  EOS
+end
+
+#CHART CREATION
+datasource "ds_chart_data" do
+  run_script $js_create_chart_data, $ds_savings_realized
+end
+
+script "js_create_chart_data", type: "javascript" do
+  parameters "savings_realized_data"
+  result "report"
+  code <<-EOS
+  var report = []
+
+  var chart_axis_labels = ("chxl=1:," + savings_realized_data.map( function(sr){ return sr.month.substring(0,7) })).split(",").join("|")
+  //chart_axis_labels = chart_axis_labels.split(",").join("|")
+
+  chart_data_per_inst_type = 
+  _.groupBy(savings_realized_data, function(sr){ return sr.instance_type })
+  report = savings_realized_data
+
+  chart_legend = "chdl="
+  var i = 0 
+  for (var key in chart_data_per_inst_type) {
+    chart_legend += key
+    i++
+    if (i < _.size(chart_data_per_inst_type)) { chart_legend += "|" }
+  }
+  console.log(chart_legend)
+
+  chart_data = "chd=t:"
+  var j = 0
+  _.each(chart_data_per_inst_type, function(o){
+    var k = 0
+    _.each(o, function(p){
+      chart_data = chart_data + p.savings_realized_per_mth
+      i++
+      if (k < _.size(o)){ chart_data = chart_data + "," } 
+    })
+    j++
+    if (j < _.size(chart_data_per_inst_type)){ chart_data = chart_data + "|" }
+  })
+
+  chart = {
+    chart_type: "cht=lc",
+    chart_size: "chs=900x500",
+    chart_data: chart_data,
+    chart_title: "chtt=Savings Realized Per Instance Type",
+    chart_image: "chof=.png",  
+    chart_label_position: "chdlp=b",
+    chart_y_axis: "chxt=y,x",
+    chart_y_axis_label: chart_axis_labels,
+    chart_line_style: "chls=3|3|3|3|3|3|3|3|3|3|3",
+    chart_line_color: "chco=6929c4,9f1853,198038,b28600,1192e8,009d9a,005d5d,007d79",
+    chart_data_scale: "chds=a"
+    chart_label: chart_legend
+    chart_label_size: "chdls=000000,9"
+  }
+
+  report[0]["chart_dimensions"] = chart
   EOS
 end
 
@@ -288,9 +370,13 @@ end
 ###############################################################################
 
 policy "policy_purchase_option_by_inst_type_and_region" do
-  validate_each $ds_savings_realized do
-    summary_template ""
-    detail_template ""
+  validate_each $ds_chart_data do
+    summary_template "Savings Realized"
+    detail_template <<-EOS
+    # Savings Realized Per Instance Type Report
+    ![Savings Realized Per Instance Type Chart](https://image-charts.com/chart?{{ with index data 0 }}{{ .chart_dimensions.chart_data }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_size }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_type }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_image }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_title }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_label_position }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_y_axis }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_y_axis_label }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_line_style }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_line_color }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_data_scale }}{{ end }}&{{ with index 0 }}{{ .chart_dimensions.chart_label }}{{ end }}&{{ with index 0 }}{{ .chart_dimensions.chart_label_size }}{{ end }}
+    )
+    EOS
     check eq(0,1)
   end
 end
