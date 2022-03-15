@@ -1,24 +1,26 @@
-name "AWS Unused Volumes"
+name "Azure Idle Compute Instances"
 rs_pt_ver 20180301
 type "policy"
-short_description "A Mock Policy that would check for unused volumes with no read/write operations performed within a specified number of days and, optionally, deletes them. See the [README](https://github.com/flexera/policy_templates/tree/master/cost/aws/unused_volumes) and [docs.rightscale.com/policies](https://docs.rightscale.com/policies/) to learn more."
+short_description "A mock policy that checks for instances that are idle for the last 30 days and terminates them after approval. \n See the [README](https://github.com/flexera/policy_templates/tree/master/cost/azure/idle_compute_instances/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+long_description ""
 category "Cost"
 severity "low"
 default_frequency "daily"
 info(
   version: "0.1",
-  provider: "AWS",
-  service: "EBS",
-  policy_set: "Unused Volumes"
+  provider: "Azure",
+  service: "Compute",
+  policy_set: "Idle Compute Instances"
 )
 
 ###############################################################################
-# User inputs
+# Parameters
 ###############################################################################
 
+#pass in the email address to notify
 parameter "param_email" do
   type "list"
-  label "Email addresses to notify"
+  label "Email addresses"
   description "Email addresses of the recipients you wish to notify when new incidents are created"
 end
 
@@ -31,34 +33,34 @@ end
 ###############################################################################
 
 ###############################################################################
-# Datasource
+# Datasources
 ###############################################################################
 
-datasource "ds_aws_instance_map" do
+datasource "ds_azure_instance_map" do
   request do
     verb "GET"
     host "raw.githubusercontent.com"
-    path "/flexera-public/policy_templates/POL-556/data/mock/aws_delete_unused_volumes.json"
+    path "/flexera-public/policy_templates/POL-556/data/mock/azure_idle_compute_instances.json"
     header "User-Agent", "RS Policies"
   end
 end
 
-datasource "ds_volume_cost_mapping" do
-  run_script $js_volume_cost_mapping, $ds_aws_instance_map
+datasource "ds_instance_cost_mapping" do
+  run_script $js_instance_cost_mapping, $ds_azure_instance_map
 end
 
 ###############################################################################
-# Script
+# Scripts
 ###############################################################################
 
-script "js_volume_cost_mapping", type:"javascript" do
+script "js_instance_cost_mapping", type:"javascript" do
   result "result"
-  parameters "ds_aws_instance_map"
+  parameters "ds_azure_instance_map"
   code <<-EOS
   var instance_list = []
   var monthlySavings = 0
   var result = {}
-  _.each(ds_aws_instance_map.values, function(instance){
+  _.each(ds_azure_instance_map.values, function(instance){
     monthlySavings = monthlySavings + instance.savings
     instance_list.push(instance)
   })
@@ -66,58 +68,75 @@ script "js_volume_cost_mapping", type:"javascript" do
   result={
     "instance_list": instance_list,
     "message": message,
-    "accountID": ds_aws_instance_map.values[0].accountID
+    "accountID": ds_azure_instance_map.values[0].accountID
   }
   result.instance_list = _.sortBy(result.instance_list,"region");
-  result.instance_list = _.sortBy(result.instance_list,"id");
+  result.instance_list = _.sortBy(result.instance_list,"subscriptionID");
   EOS
 end
+
 
 ###############################################################################
 # Policy
 ###############################################################################
 
-policy "policy_unattached_volumes_list" do
-  validate $ds_volume_cost_mapping do
-    summary_template "AWS Account ID: {{ data.accountID }} - {{ len data.instance_list }} Unused Volumes Found"
+policy "azure_resource_policy" do
+  validate $ds_instance_cost_mapping do
+    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): Azure idle compute instances found"
     detail_template <<-EOS
 {{data.message}}
 EOS
-    escalate $report_unused_volumes
     check eq(size(val(data, "instance_list")), 0)
+    escalate $email
     export "instance_list" do
       resource_level true
-      field "accountID" do
-        label "Account Id"
+      field "subscriptionName" do
+        label "Subscription Name"
       end
-      field "region" do
-        label "Region"
+      field "subscriptionID" do
+        label "Subscription ID"
       end
       field "resourceID" do
-        label "Resource Id"
-        path "volumeId"
+        label "Resource ID"
+      end
+      field "resourceName" do
+        label "Resource Name"
       end
       field "resourceType" do
         label "Resource Type"
       end
-      field "size" do
-        label "Size"
-      end
-      field "tags" do
-        label "Tags"
+      field "region" do
+        label "Region"
       end
       field "savings" do
         label "Estimated Monthly Savings"
       end
-      field "savings_currency" do
+      field "savingsCurrency" do
         label "Savings Currency"
       end
-      field "id" do
-        label "Id"
-        path "volumeId"
+      field "averageCPU" do
+        label "CPU Average"
+      end
+      field "resourceGroup" do
+        label "Resource Group"
+      end
+      field "tags" do
+        label "Tags"
       end
       field "service" do
         label "Service"
+      end
+      field "id" do
+        label "ID"
+        path "resourceID"
+      end
+      field "accountName" do
+        label "Account Name"
+        path "subscriptionName"
+      end
+      field "accountID" do
+        label "Account ID"
+        path "subscriptionID"
       end
     end
   end
@@ -127,7 +146,7 @@ end
 # Escalations
 ###############################################################################
 
-escalation "report_unused_volumes" do
+escalation "email" do
   automatic true
   label "Send Email"
   description "Send incident email"

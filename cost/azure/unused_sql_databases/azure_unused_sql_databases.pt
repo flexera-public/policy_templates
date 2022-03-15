@@ -1,13 +1,13 @@
 name "Azure Unused SQL Databases"
 rs_pt_ver 20180301
 type "policy"
-short_description "Check for database services that have no connections and decommissions them after approval. See the [README](https://github.com/flexera/policy_templates/tree/master/cost/azure/unused_sql_databases/) and [docs.rightscale.com/policies](https://docs.rightscale.com/policies/) to learn more."
+short_description "A mock policy that check for database services that have no connections and decommissions them after approval. See the [README](https://github.com/flexera/policy_templates/tree/master/cost/azure/unused_sql_databases/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 long_description ""
 severity "low"
 category "Cost"
 default_frequency "daily"
 info(
-  version: "2.9",
+  version: "0.1",
   provider: "Azure",
   service: "SQL",
   policy_set: "Unused Database Services"
@@ -23,264 +23,54 @@ parameter "param_email" do
   description "Email addresses of the recipients you wish to notify when new incidents are created."
 end
 
-parameter "param_exclusion_tag_key" do
-  type "string"
-  category "User Inputs"
-  label "Exclusion Tag Key"
-  description "Azure-native SQL Database tag key to ignore databases. Only supply the tag key. The policy assumes that the tag value is irrelevant."
-end
-
-parameter "param_azure_endpoint" do
-  type "string"
-  label "Azure Endpoint"
-  description "Azure Endpoint to access resources"
-  allowed_values "management.azure.com", "management.chinacloudapi.cn"
-  default "management.azure.com"
-end
-
-parameter "param_subscription_whitelist" do
-  label "Subscription Whitelist"
-  type "list"
-  description "Whitelisted Subscriptions, if empty, all subscriptions will be checked"
-end
-
-parameter "param_automatic_action" do
-  type "list"
-  label "Automatic Actions"
-  description "When this value is set, this policy will automatically take the selected action(s)"
-  allowed_values ["Terminate Instances"]
-end
-
-parameter "param_log_to_cm_audit_entries" do
-  type "string"
-  label "Log to CM Audit Entries"
-  description "Boolean for whether or not to log any debugging information from actions to CM Audit Entries, this should be left set to No on Flexera EU"
-  default "No"
-  allowed_values "Yes", "No"
-end
-
 ###############################################################################
 # Authentication
 ###############################################################################
-#authenticate with Azure
-credentials "azure_auth" do
-  schemes "oauth2"
-  label "Azure"
-  description "Select the Azure Resource Manager Credential from the list."
-  tags "provider=azure_rm"
-end
 
 ###############################################################################
 # Pagination
 ###############################################################################
-pagination "azure_pagination" do
-  get_page_marker do
-    body_path "nextLink"
-  end
-  set_page_marker do
-    uri true
-  end
-end
 
 ###############################################################################
 # Datasources
 ###############################################################################
-#get all subscription details.
-datasource "ds_subscriptions" do
+
+datasource "ds_azure_instance_map" do
   request do
-    auth $azure_auth
-    pagination $azure_pagination
-    host $param_azure_endpoint
-    path "/subscriptions/"
-    query "api-version","2019-06-01"
+    verb "GET"
+    host "raw.githubusercontent.com"
+    path "/flexera-public/optima-tools/POL-556/flexera/data/azure/azure_unused_sql_databases.json"
     header "User-Agent", "RS Policies"
   end
-  result do
-    encoding "json"
-    collect jmes_path(response, "value[*]") do
-      field "subscriptionId", jmes_path(col_item,"subscriptionId")
-      field "displayName", jmes_path(col_item,"displayName")
-      field "state", jmes_path(col_item,"state")
-    end
-  end
 end
 
-datasource "ds_filtered_subscriptions" do
-  run_script $js_filtered_subscriptions, $ds_subscriptions, $param_subscription_whitelist
-end
-
-#https://docs.microsoft.com/en-us/rest/api/resources/resources/list
-datasource "ds_azure_sql_databases" do
-  iterate $ds_filtered_subscriptions
-  request do
-    auth $azure_auth
-    pagination $azure_pagination
-    host $param_azure_endpoint
-    path join(["/subscriptions/", val(iter_item,"subscriptionId"), "/resources"])
-    query "api-version","2019-08-01"
-    query "$filter", "resourceType eq 'Microsoft.Sql/servers/databases'"
-    header "User-Agent", "RS Policies"
-  end
-  result do
-    encoding "json"
-      collect jmes_path(response, "value") do
-        field "id", jmes_path(col_item,"id")
-        field "name", jmes_path(col_item,"name")
-        field "location", jmes_path(col_item,"location")
-        field "type", jmes_path(col_item,"type")
-        field "kind", jmes_path(col_item,"kind")
-        field "sku" , jmes_path(col_item,"sku")
-        field "tags", jmes_path(col_item,"tags")
-        field "subscriptionId",val(iter_item,"subscriptionId")
-        field "subscriptionName",val(iter_item,"displayName")
-    end
-  end
-end
-
-datasource "ds_azure_sql_database_metrics" do
-  iterate $ds_azure_sql_databases
-  request do
-    run_script $js_utilization_request, val(iter_item,"id"), $param_azure_endpoint
-  end
-  result do
-    encoding "json"
-      collect jmes_path(response, "value") do
-        field "id", val(iter_item,"id")
-        field "location", val(iter_item,"location")
-        field "name", val(iter_item,"name")
-        field "kind", val(iter_item,"kind")
-        field "type", val(iter_item,"type")
-        field "sku" , val(iter_item,"sku")
-        field "unit", jmes_path(col_item,"unit")
-        field "timeseries", jmes_path(col_item,"timeseries")
-        field "subscriptionId",val(iter_item,"subscriptionId")
-        field "subscriptionName",val(iter_item,"subscriptionName")
-        field "tags", val(iter_item,"tags")
-    end
-  end
-end
-
-datasource "ds_merged_metrics" do
-  run_script $js_merged_metrics, $ds_azure_sql_database_metrics, $param_exclusion_tag_key
+datasource "ds_instance_cost_mapping" do
+  run_script $js_instance_cost_mapping, $ds_azure_instance_map
 end
 
 ###############################################################################
 # Scripts
 ###############################################################################
 
-script "js_filtered_subscriptions", type: "javascript" do
-  parameters "ds_subscriptions", "param_subscription_whitelist"
-  result "results"
-  code <<-EOS
-  var results = []
-  if ( param_subscription_whitelist.length != 0){
-    results = []
-    _.each(param_subscription_whitelist, function(sub){
-      var found = _.find(ds_subscriptions, function(item){
-        return item.subscriptionId == sub || item.displayName.toLowerCase() == sub.toLowerCase();
-      })
-      results.push(found)
-    })
-  } else {
-    results = ds_subscriptions
-  }
-EOS
-end
-
-# Build the API request object dynamically
-script "js_utilization_request", type: "javascript" do
-  parameters "resource_id", "param_azure_endpoint"
-  result "request"
-  code <<-EOS
-    var end_date_tmp = new Date()
-    end_date_tmp.setMilliseconds(999)
-    end_date_tmp.setSeconds(59)
-    end_date_tmp.setMinutes(59)
-    end_date_tmp.setHours(23)
-    var end_date = new Date(end_date_tmp).toISOString()
-
-    var start_date_tmp = new Date(new Date().setDate(new Date().getDate() - 30))
-    start_date_tmp.setMilliseconds(0)
-    start_date_tmp.setSeconds(0)
-    start_date_tmp.setMinutes(0)
-    var start_date = new Date(start_date_tmp).toISOString()
-
-    var sTimespan = start_date  + "/" + end_date;
-
-    var request = {
-      auth: "azure_auth",
-      verb : "GET",
-      scheme : "https",
-      host : param_azure_endpoint,
-      path : "" + resource_id + "/providers/microsoft.insights/metrics",
-      query_params: {
-        "api-version" : "2018-01-01",
-        "timespan" : sTimespan,
-        "metricnames" : "connection_successful"
-        "aggregation" : "Average,count",
-        "interval" :  "P1D"                    //Dailey
-      },
-      headers: {
-        "User-Agent" : "RS Policies"
-      }
-    }
-  EOS
-end
-
-script "js_merged_metrics", type: "javascript" do
-  parameters "databases_metrics", "exclusion_tag"
+script "js_instance_cost_mapping", type:"javascript" do
   result "result"
+  parameters "ds_azure_instance_map"
   code <<-EOS
-    var result = [];
-
-    //exclude the database with the exclution tags, and the system databases
-    for(i=0; i< databases_metrics.length; i++){
-      if(!(_.has(databases_metrics[i].tags, exclusion_tag) || databases_metrics[i].kind.toLowerCase().indexOf(",system") > -1)){
-        //Find the Resource groupe
-        var aTemp = databases_metrics[i].id.split("/resourceGroups/")
-        var resource_group="";
-        if(aTemp.length > 1){
-          aTemp = aTemp[1].split("/");
-          resource_group = aTemp[0];
-        }else{
-          resource_group = "";
-        }
-        //now find the metrics for the devices
-        var objMetric = databases_metrics[i];
-        var total = 0;
-        if (typeof objMetric == "object" && typeof objMetric.timeseries[0].data == "object"){
-          var ts_data =  objMetric.timeseries[0].data;
-          for (x=0; x < ts_data.length; x++) {
-            total += ts_data[x].count;
-          }
-          if(total == 0){
-            if(databases_metrics[i].sku === null || typeof databases_metrics[i].sku === "undefined"){
-              var sku={
-                "capacity": "Not available",
-                "name": "Not available",
-                "tier": "Not available"
-              }
-            } else {
-              var sku=databases_metrics[i].sku;
-            }
-            result.push({
-              id: databases_metrics[i].id,
-              location: databases_metrics[i].location,
-              name: databases_metrics[i].name,
-              resource_group: resource_group,
-              kind: databases_metrics[i].kind,
-              type: databases_metrics[i].type,
-              sku: sku,
-              unit: databases_metrics[i].unit,
-              subscriptionName: databases_metrics[i].subscriptionName,
-              subscriptionId: databases_metrics[i].subscriptionId
-            })
-          }
-        }
-      }
-    }
-    result = _.sortBy(result, 'subscriptionName');
-    result = _.sortBy(result, 'location');
+  var instance_list = []
+  var monthlySavings = 0
+  var result = {}
+  _.each(ds_azure_instance_map.values, function(instance){
+    monthlySavings = monthlySavings + instance.savings
+    instance_list.push(instance)
+  })
+  var message="The total estimated monthly savings are £"+ monthlySavings;
+  result={
+    "instance_list": instance_list,
+    "message": message,
+    "accountID": ds_azure_instance_map.values[0].accountID
+  }
+  result.instance_list = _.sortBy(result.instance_list,"region");
+  result.instance_list = _.sortBy(result.instance_list,"subscriptionID");
   EOS
 end
 
@@ -289,30 +79,50 @@ end
 ###############################################################################
 
 policy "policy_azure_db_utilization" do
-  validate $ds_merged_metrics do
-    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} Azure Unused SQL Databases"
+  validate $ds_instance_cost_mapping do
+    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data.instance_list }} Unused Azure Databases Found"
+    detail_template <<-EOS
+{{data.message}}.
+EOS
     escalate $esc_email_report
-    escalate $esc_delete_unused_sql_databases_approval
-    check eq(size(data), 0)
-    export do
+    check eq(size(val(data, "instance_list")), 0)
+    export "instance_list" do
       resource_level true
+      field "subscriptionID" do
+        label "Subscription ID"
+      end
       field "subscriptionName" do
-        label "Subscription Name"
+        label "subscription Name"
       end
-      field "location" do
-        label "Location"
+      field "resourceID" do
+        label "Resource ID"
       end
-      field "name" do
-        label "Name"
+      field "resourceName" do
+        label "Resource Name"
       end
-      field "resource_group" do
+      field "resourceGroup" do
         label "Resource Group"
       end
-      field "kind" do
-        label "Kind"
+      field "region" do
+        label "Region"
       end
-      field "type" do
-        label "Type"
+      field "resourceKind" do
+        label "Resource Kind"
+      end
+      field "resourceType" do
+        label "Resource Type"
+      end
+      field "savings" do
+        label "Estimated Monthly Savings"
+      end
+      field "savingsCurrency" do
+        label "Savings Currency"
+      end
+      field "tags" do
+        label "Tags"
+      end
+      field "service" do
+        label "Service"
       end
       field "skuName" do
         label "SKU - Name"
@@ -326,8 +136,17 @@ policy "policy_azure_db_utilization" do
         label "SKU - Capacity"
         path "sku.capacity"
       end
+      field "accountID" do
+        label "Account ID"
+        path "subscriptionID"
+      end
+      field "accountName" do
+        label "Account Name"
+        path "subscriptionName"
+      end
       field "id" do
-        label "Id"
+        label "ID"
+        path "resourceID"
       end
     end
   end
@@ -344,51 +163,6 @@ escalation "esc_email_report" do
   email $param_email
 end
 
-escalation "esc_delete_unused_sql_databases_approval" do
-  automatic contains($param_automatic_action, "Terminate Instances")
-  label "Delete SQL databases"
-  description "Deleted unused SQL Databases"
-  run "delete_unused_sql_databases", data, $param_log_to_cm_audit_entries, $param_azure_endpoint
-end
-
 ###############################################################################
 # Cloud Workflow
 ###############################################################################
-
-define delete_unused_sql_databases($data,$param_log_to_cm_audit_entries, $param_azure_endpoint) return $all_responses do
-  $$debug = $param_log_to_cm_audit_entries == "Yes"
-  $all_responses = []
-  foreach $item in $data do
-    sub on_error: skip do
-      $response = http_request(
-        verb: "delete",
-        host: $param_azure_endpoint,
-        auth: $$azure_auth,
-        https: true,
-        href: $item["id"],
-        query_strings: {
-          "api-version": "2017-10-01-preview"
-        },
-        headers: {
-          "cache-control": "no-cache",
-          "content-type": "application/json"
-        }
-      )
-      call sys_log('Deleted Azure Unused SQL databases: ',to_s($response))
-      $all_responses << $response
-    end
-  end
-end
-
-define sys_log($subject, $detail) do
-  if $$debug
-    rs_cm.audit_entries.create(
-      notify: "None",
-      audit_entry: {
-        auditee_href: @@account,
-        summary: "Azure unused SQL databases "+ $subject,
-        detail: $detail
-      }
-    )
-  end
-end
