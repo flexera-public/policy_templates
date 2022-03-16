@@ -2,11 +2,11 @@
 
 ## What it does
 
-Collects all currently applied policies and raises an incident for any in an error state.
+Collects all bill connects and raises an incident for any in an error state.
 
 ## Functional Details
 
-This policy collects all currently applied policies and checks the state of the policies. If any are in `error` it will raise an incident and send an email.
+This policy collects all bill connects and checks the state of each bill connect. If any have invalid credentials or errors, it will raise an incident and send an email.
 
 ## Input Parameters
 
