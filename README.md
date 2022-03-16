@@ -313,6 +313,8 @@ Reference
 - [No Recent Snapshots](./operational/snapshots/)
 - [Stranded Servers](./operational/stranded_servers/)
 - [NetFlow Top Talkers](./operational/azure/network_flow)
+- [Applied Policy Error Notification](./operational/applied_policy_error_notification/)
+- [Bill Processing Error Notification](./operational/bill_processing_errors_notification/)
 
 #### AWS
 
