@@ -1,0 +1,112 @@
+name "Bill Processing Error Notification"
+rs_pt_ver 20180301
+type "policy"
+short_description "Collects all currently applied policies and raises an incident for any in an error state. See the [README](https://github.com/flexera/policy_templates/tree/master/operational/applied_policy_error_notification/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+long_description ""
+severity "high"
+category "Operational"
+default_frequency "hourly"
+info(
+    version: "1.0",
+    provider: "Flexera Cloud Management",
+    service: "",
+    policy_set: ""
+  )
+
+###############################################################################
+# Parameters
+###############################################################################
+
+parameter "param_email" do
+  type "list"
+  label "Email addresses of the recipients you wish to notify"
+  description "A list of email addresses to notify"
+  min_length 1
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+auth "auth_rs", type: "rightscale"
+
+###############################################################################
+# Datasources
+###############################################################################
+datasource "ds_bill_connects_valid" do
+  request do
+    auth $auth_rs
+    verb "GET"
+    host rs_optima_host
+    path join(["/api/onboarding/orgs/", rs_org_id, "/bill_connects/validate"])
+    header "Api-Version", "1.0"
+    header "User-Agent", "RS Policies"
+  end
+end
+
+datasource "ds_bill_status_errors" do
+  request do
+    auth $auth_rs
+    verb "GET"
+    host rs_optima_host
+    path join(["/api/status/orgs/", rs_org_id, "/bill-status-errors"])
+    header "Api-Version", "1.0"
+    header "User-Agent", "RS Policies"
+  end
+end
+
+datasource "ds_combine_info" do
+  run_script $js_combine_info, $ds_bill_connects_valid, $ds_bill_status_errors
+end
+
+script "js_combine_info", type: "javascript" do
+  parameters "ds_bill_connects_valid", "ds_bill_status_errors"
+  result "results"
+  code <<-EOF
+  var results = [];
+  _.each(ds_bill_connects_valid, function (bill_connect) {
+    var combined = _.extend(bill_connect, ds_bill_status_errors[bill_connect.bill_id]);
+    combined.id = combined.bill_id;
+    combined.errors_str = combined.errors.join('|')
+    results.push(combined);
+  });
+EOF
+end
+
+###############################################################################
+# Scripts
+###############################################################################
+
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "pol_bill_processing_errors" do
+  validate_each $ds_combine_info do
+    summary_template "{{ rs_org_name }} (Account ID: {{ rs_org_id }}): {{ len data }} Failed Bill Connects"
+    export do
+      resource_level true
+      field "id" do
+        label "Bill Connect Id"
+      end
+      field "valid" do
+        label "Credentials Valid"
+      end
+      field "error_str" do
+        label "Error Messages"
+      end
+    end
+    escalate $esc_email
+    check logic_or(ne(val(item, "valid"), "true"), ne(val(item, "count"),0))
+  end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_email" do
+  email $param_email
+end
+
