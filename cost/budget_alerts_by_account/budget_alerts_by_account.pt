@@ -8,7 +8,7 @@ category "Cost"
 tenancy "single"
 default_frequency "daily"
 info(
-  version: "1.5",
+  version: "1.6",
   provider: "Flexera Optima",
   service: "",
   policy_set: ""
@@ -109,21 +109,22 @@ datasource "ds_billing_centers" do
   end
 end
 
+datasource "ds_top_bcs" do
+  run_script $js_top_level_bc, $ds_billing_centers
+end
+
+script "js_top_level_bc", type: "javascript" do
+  parameters "billing_centers"
+  result "filtered_billing_centers"
+  code <<-EOS
+  var filtered_billing_centers =
+  _.reject(billing_centers, function(bc){ return bc.parent_id != null });
+EOS
+end
+
 datasource "ds_top_bc_costs" do
   request do
-    run_script $js_costs_request, rs_org_id, $param_cost_metric, $ds_billing_centers
-  end
-  result do
-    encoding "json"
-    collect jmes_path(response,"rows[*]") do
-      field "vendor", jmes_path(col_item,"dimensions.vendor")
-      field "vendor_account_name", jmes_path(col_item,"dimensions.vendor_account_name")
-      field "id", jmes_path(col_item,"dimensions.billing_center_id")
-      field "amortized_unblended_costs", jmes_path(col_item,"metrics.cost_amortized_unblended_adj")
-      field "amortized_blended_costs", jmes_path(col_item,"metrics.cost_amortized_blended_adj")
-      field "nonamortized_unblended_costs", jmes_path(col_item,"metrics.cost_nonamortized_unblended_adj")
-      field "nonamortized_blended_costs", jmes_path(col_item,"metrics.cost_nonamortized_blended_adj")
-    end
+    run_script $js_costs_request, rs_org_id, $param_cost_metric, $ds_top_bcs
   end
 end
 
@@ -207,35 +208,36 @@ script "js_formatted_costs", type: "javascript" do
   code <<-EOS
   var result = [];
   var costs = [];
-  var cost_type = {
-      "Unamortized Unblended":"nonamortized_unblended_costs",
-      "Amortized Unblended":"amortized_unblended_costs",
-      "Unamortized Blended": "nonamortized_blended_costs",
-      "Amortized Blended":"amortized_blended_costs"
-  }
-  var totalCost=0;
-  var bc_id="";
-  var count=0;
-  var bc_name= "";
-  var type = cost_type[param_cost_metric];
+  var cost_metric = {
+    'Unamortized Unblended':'cost_nonamortized_unblended_adj',
+    'Amortized Unblended':'cost_amortized_unblended_adj',
+    'Unamortized Blended': 'cost_nonamortized_blended_adj',
+    'Amortized Blended':'cost_amortized_blended_adj',
+  };
+  var type = cost_metric[param_cost_metric];
 
-  _.each(ds_top_bc_costs, function(row){
-    var cost = row[type];
-    if (param_acct_name == row["vendor_account_name"]){
-      costs.push({
-        account_name: row["vendor_account_name"],
-        vendor: row["vendor"],
-        total: cost
-      })
+  _.each(ds_top_bc_costs['rows'], function (row) {
+    if (row['dimensions']['vendor_account_name'] != null && row['dimensions']['vendor_account_name'] !== undefined) {
+      if (param_acct_name == row['dimensions']['vendor_account_name']) {
+        costs.push({
+          account_name: row['dimensions']['vendor_account_name'],
+          vendor: row['dimensions']['vendor'],
+          total: row['metrics'][type],
+        });
+      } else {
+        return;
+      }
     }
-  })
+  });
 
-  var sum = _.reduce(_.pluck(costs, 'total'), function(memo, num){ return memo + num; }, 0);
-  result.push({
-    account_name: costs[0]["account_name"],
-    vendor: costs[0]["vendor"],
-    total: sum
-  })
+  var sum = _.reduce(_.pluck(costs, 'total'), function (memo, num) { return memo + num; }, 0);
+  if ( costs.length > 0 ) {
+    result.push({
+      account_name: costs[0]['account_name'],
+      vendor: costs[0]['vendor'],
+      total: sum,
+    });
+  }
   EOS
 end
 
