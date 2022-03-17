@@ -8,7 +8,7 @@ category "Cost"
 tenancy "single"
 default_frequency "daily"
 info(
-  version: "1.5",
+  version: "1.6",
   provider: "Flexera Optima",
   service: "",
   policy_set: ""
@@ -118,7 +118,7 @@ script "js_top_level_bc", type: "javascript" do
   result "filtered_billing_centers"
   code <<-EOS
   var filtered_billing_centers =
-    _.reject(billing_centers, function(bc){ return bc.parent_id != null });
+  _.reject(billing_centers, function(bc){ return bc.parent_id != null });
 EOS
 end
 
@@ -207,40 +207,37 @@ script "js_formatted_costs", type: "javascript" do
   result "result"
   code <<-EOS
   var result = [];
-var costs = [];
-var cost_type = {
-  'Unamortized Unblended':'nonamortized_unblended_costs',
-  'Amortized Unblended':'amortized_unblended_costs',
-  'Unamortized Blended': 'nonamortized_blended_costs',
-  'Amortized Blended':'amortized_blended_costs',
-};
-var type = cost_type[param_cost_metric];
+  var costs = [];
+  var cost_metric = {
+    'Unamortized Unblended':'cost_nonamortized_unblended_adj',
+    'Amortized Unblended':'cost_amortized_unblended_adj',
+    'Unamortized Blended': 'cost_nonamortized_blended_adj',
+    'Amortized Blended':'cost_amortized_blended_adj',
+  };
+  var type = cost_metric[param_cost_metric];
 
-_.each(ds_top_bc_costs['rows'], function (row) {
-  var cost = row[type];
-  if (row['dimensions']['vendor_account_name'] != null && row['dimensions']['vendor_account_name'] !== undefined) {
-    console.log(param_acct_name + ' ' + row['dimensions']['vendor_account_name']);
-    if (param_acct_name == row['dimensions']['vendor_account_name']) {
-      costs.push({
-        account_name: row['dimensions']['vendor_account_name'],
-        vendor: row['vendor'],
-        total: cost,
-      });
-    } else {
-      return;
+  _.each(ds_top_bc_costs['rows'], function (row) {
+    if (row['dimensions']['vendor_account_name'] != null && row['dimensions']['vendor_account_name'] !== undefined) {
+      if (param_acct_name == row['dimensions']['vendor_account_name']) {
+        costs.push({
+          account_name: row['dimensions']['vendor_account_name'],
+          vendor: row['dimensions']['vendor'],
+          total: row['metrics'][type],
+        });
+      } else {
+        return;
+      }
     }
-  }
-});
-
-var sum = _.reduce(_.pluck(costs, 'total'), function (memo, num) { return memo + num; }, 0);
-if ( costs.length > 0 ) {
-  result.push({
-    account_name: costs[0]['account_name'],
-    vendor: costs[0]['vendor'],
-    total: sum,
   });
-}
 
+  var sum = _.reduce(_.pluck(costs, 'total'), function (memo, num) { return memo + num; }, 0);
+  if ( costs.length > 0 ) {
+    result.push({
+      account_name: costs[0]['account_name'],
+      vendor: costs[0]['vendor'],
+      total: sum,
+    });
+  }
   EOS
 end
 
