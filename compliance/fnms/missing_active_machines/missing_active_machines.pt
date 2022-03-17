@@ -1,0 +1,100 @@
+name "ITAM Missing Active Machines"
+rs_pt_ver 20180301
+type "policy"
+short_description "Looks up Flexnet Manager Licenses \"At Risk\" and sends the result as an email.  See the [README](https://github.com/flexera/policy_templates/tree/master/compliance/fnms/fnms_licenses_at_risk) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+long_description ""
+severity "medium"
+category "Compliance"
+info(
+  version: "2.0",
+  provider: "Flexera ITAM",
+  service: "",
+  policy_set: "ITAM"
+)
+
+parameter "param_days_missing" do
+  type "number"
+  label "Days missing while active"
+  description "Number of missing for a machine to be reported"
+  default 30
+end
+
+parameter "param_email" do
+  type "list"
+  label "Email addresses of the recipients you wish to notify"
+  description "A list of email addresse(s) to notify"
+end
+
+credentials "auth_flexeraone" do
+  schemes "oauth2"
+  label "flexera"
+  description "Select FlexeraOne OAuth2 credentials"
+  tags "provider=flexera"
+end
+
+datasource "ds_assets" do
+  request do
+    auth $auth_flexeraone
+    host "api.flexera.com"
+    path join(["/fnms/v1/orgs/", rs_org_id, "/inventories"])
+    header "Api-Version", "0.1"
+    header "User-Agent", "RS Policies"
+    query "status", "Active"
+  end
+end
+
+datasource "ds_check_date" do
+  run_script $js_check_date, $ds_assets, $param_days_missing
+end
+
+script "js_check_date", type: "javascript" do
+  parameters "ds_assets", "param_days_missing"
+  result "results"
+  code <<-EOF
+  var results = [];
+  _.each(ds_assets.values, function (asset) {
+
+    var startDate = new Date(asset.inventorySourceData.lastInventoryDate); // Inventory Date
+    var endDate = new Date();
+    var timeDifference = endDate.getTime() - startDate.getTime();
+    var daysDifference = parseInt(timeDifference / (1000 * 3600 * 24));
+    if (daysDifference >= param_days_missing) {
+      asset.missing = 1;
+      results.push(asset);
+    }
+  });
+EOF
+end
+
+policy 'itam_policy' do
+  validate_each $ds_check_date do
+    summary_template 'FlexNet Manager - Software Licenses At Risk'
+    escalate $send_report
+    check eq(to_n(val(item,"missing")),0)
+    export do
+      field "assetId"
+      field "complianceStatus"
+      field "computerId"
+      field "deviceType"
+      field "inventorySourceData"
+      field "ipAddress"
+      field "macAddresses"
+      field "manufacturer"
+      field "model"
+      field "name"
+      field "os"
+      field "ownership"
+      field "processorType"
+      field "ram"
+      field "serialNumber"
+      field "userData"
+    end
+  end
+end
+
+escalation "send_report" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
+end
