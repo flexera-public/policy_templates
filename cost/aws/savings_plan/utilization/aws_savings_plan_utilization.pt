@@ -13,6 +13,10 @@ info(
   policy_set: ""
 )
 
+###############################################################################
+# Parameters
+###############################################################################
+
 parameter "param_savings_threshold" do
   category "Savings Plan"
   label "Savings Plans Utilization Threshold"
@@ -36,7 +40,11 @@ parameter "param_time_period" do
   type "string"
 end
 
-#Authenticate with AWS
+###############################################################################
+# Authentication
+###############################################################################
+
+#AUTHENTICATE WITH AWS
 credentials "auth_aws" do
   schemes "aws","aws_sts"
   label "AWS"
@@ -44,6 +52,9 @@ credentials "auth_aws" do
   tags "provider=aws"
 end
 
+###############################################################################
+# Datasources and Scripts
+###############################################################################
 
 #GET SAVINGS PLANS UTILIZATIONS DATA FROM AWS API
 datasource "ds_aws_utilization" do
@@ -109,27 +120,30 @@ end
 
 #PROCESS RESPONSE AND DEFINE CHART DATA
 datasource "ds_chart_data" do
-  run_script $js_define_chart_data, $ds_aws_utilization
+  run_script $js_define_chart_data, $ds_aws_utilization, $param_savings_threshold
 end
 
 script "js_define_chart_data", type: "javascript" do
-  parameters "aws_utilization_data"
+  parameters "aws_utilization_data", "savings_threshold"
   result "report"
   code <<-EOS
     var report = {};
     _.each(aws_utilization_data, function(util){
-      report = {
-        unused_commitment: util.unused_commitment.toString(),
-        used_commitment: util.used_commitment.toString(),
-        total_commitment: util.total_commitment.toString(),
-        utilization_percentage: util.utilization_percentage.toString(),
-        chart_type: "cht=pd",
-        chart_size: "chs=800x200",
-        chart_data: "chd=t:" + util.unused_commitment.toString() + "," + util.used_commitment.toString(),
-        chart_image: "chof=.png",
-        chart_label: "chdl=Unused+Commitment|Used+Commitment",
-        chart_inside_label: "chli=" + util.total_commitment.toString(),
-        chart_data_value: "chl=" + util.unused_commitment.toString() + "|" +  util.used_commitment.toString()
+      utilization_percentage = Number(util.used_commitment)/Number(util.total_commitment)
+      if ( utilization_percentage < savings_threshold){
+        report = {
+          unused_commitment: util.unused_commitment.toString(),
+          used_commitment: util.used_commitment.toString(),
+          total_commitment: util.total_commitment.toString(),
+          utilization_percentage: util.utilization_percentage.toString(),
+          chart_type: "cht=pd",
+          chart_size: "chs=800x200",
+          chart_data: "chd=t:" + util.unused_commitment.toString() + "," + util.used_commitment.toString(),
+          chart_image: "chof=.png",
+          chart_label: "chdl=Unused+Commitment|Used+Commitment",
+          chart_inside_label: "chli=" + util.total_commitment.toString(),
+          chart_data_value: "chl=" + util.unused_commitment.toString() + "|" +  util.used_commitment.toString()
+        }
       }
     })
   EOS
