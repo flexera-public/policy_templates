@@ -17,6 +17,13 @@ info(
 # Parameters
 ###############################################################################
 
+parameter "param_processing_limit" do
+  type "number"
+  label "Days missing while active"
+  description "Number of missing for a machine to be reported"
+  default 24
+end
+
 parameter "param_email" do
   type "list"
   label "Email addresses of the recipients you wish to notify"
@@ -33,6 +40,17 @@ auth "auth_rs", type: "rightscale"
 ###############################################################################
 # Datasources
 ###############################################################################
+datasource "ds_bill_connects" do
+  request do
+    auth $auth_rs
+    verb "GET"
+    host rs_optima_host
+    path join(["/api/onboarding/orgs/", rs_org_id, "/bill_connects"])
+    header "Api-Version", "1.0"
+    header "User-Agent", "RS Policies"
+  end
+end
+
 datasource "ds_bill_connects_valid" do
   request do
     auth $auth_rs
@@ -55,8 +73,30 @@ datasource "ds_bill_status_errors" do
   end
 end
 
+datasource "ds_bill_import_history" do
+  iterate $ds_bill_connects
+  request do
+    auth $auth_rs
+    verb "GET"
+    host rs_optima_host
+    path join(["/api/status/orgs/", rs_org_id, "/bill_id/", val(iter_item, "id"), "/import-history"])
+    #ignore_status [404]
+    header "Api-Version", "1.0"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "[*]") do
+      field "id", val(iter_item, "id")
+      field "billing_period", jmes_path(col_item, "billing_period")
+      field "downloaded_at", jmes_path(col_item, "downloaded_at")
+      field "status", jmes_path(col_item, "status")
+    end
+  end
+end
+
 datasource "ds_combine_info" do
-  run_script $js_combine_info, $ds_bill_connects_valid, $ds_bill_status_errors
+  run_script $js_combine_info, $ds_bill_connects_valid, $ds_bill_status_errors, $ds_bill_import_history, $param_processing_limit
 end
 
 ###############################################################################
@@ -64,7 +104,7 @@ end
 ###############################################################################
 
 script "js_combine_info", type: "javascript" do
-  parameters "ds_bill_connects_valid", "ds_bill_status_errors"
+  parameters "ds_bill_connects_valid", "ds_bill_status_errors", "ds_bill_import_history", "param_processing_limit"
   result "results"
   code <<-EOF
   var results = [];
