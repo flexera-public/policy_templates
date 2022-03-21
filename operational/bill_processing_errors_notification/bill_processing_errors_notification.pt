@@ -109,19 +109,35 @@ script "js_combine_info", type: "javascript" do
   code <<-EOF
   var results = [];
   _.each(ds_bill_connects_valid, function (bill_connect) {
+    var errors = [];
     var combined = _.extend(bill_connect, ds_bill_status_errors[bill_connect.bill_id]);
     combined.id = combined.bill_id;
     if (!combined.valid) {
-      var errors = [];
       _.each(combined.errors, function (error) {errors.push(error);});
       errors.push(combined.error);
-      combined["errors"] = errors;
+      combined['errors'] = errors;
     }
-    combined.errors_str = combined.errors.join(' | ');
+    _.each(ds_bill_import_history, function (history_item) {
+      if (history_item.id == combined.id) {
+        if (JSON.stringify(history_item.status) == JSON.stringify('in-progress')) {
+          var startDate = new Date(history_item.downloaded_at); // Inventory Date
+          var endDate = new Date();
+          var timeDifference = endDate.getTime() - startDate.getTime();
+          var hoursDifference = parseInt(timeDifference / (1000 * 3600));
+          if ( hoursDifference > param_processing_limit) {
+            combined.valid = false;
+            combined.errors.push('Bill: ' + combined.id + '-' + history_item.billing_period + ' processing longer than ' + param_processing_limit + ' Hours');
+          }
+        }
+      }
+    });
+
+    combined.errors_str = _.uniq(combined.errors).join(' | ');
     combined.valid = JSON.stringify(combined.valid);
     results.push(combined);
   });
-EOF
+
+  EOF
 end
 
 ###############################################################################
