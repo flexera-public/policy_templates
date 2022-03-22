@@ -8,9 +8,8 @@ The policy uses the specified previous number of months, not including the curre
 
 ## Functional Details
 
-- This policy supports a group of Billing Centers or the entire Organization.
-- This policy uses the last month before current to guarantee full data.
-- This policy produces a straight-line forecast by dividing the earliest month in the dataset by the last month in the dataset.
+- This policy supports a commitment target amount for a single Cloud Service Provider (e.g., AWS) or the entire Organization.
+- This policy produces a view of forecasted spend to the specified end date, based on previous spend to date from the specified start date.
 
 ### Input Parameters
 
