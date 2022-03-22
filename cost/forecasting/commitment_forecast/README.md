@@ -2,7 +2,7 @@
 
 ## What it does
 
-This Policy uses Optima to determine a forecast against a commitment amount for the entire Organization. This policy allows the user to specify a Commitment target value, and track the current commitment spend to date, as well as projected commitment spend for a given period.
+This Policy uses Optima to determine a forecast against the commitment amount agreed with your Cloud Service Provider/s. This policy allows the user to specify a Commitment target value, and track the current commitment spend to date, as well as projected commitment spend for a given period. The commitment amount can be measured against a specific Cloud Provider spend or for the entire Organization spend.
 
 The policy uses the specified previous number of months, not including the current month to determine a straight-line forecast.
 
