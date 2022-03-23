@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.7
+
+- URIEncode all the image-charts options
+
 ## v1.6
 
 - Fixed nil account_name, and updated searches to get correct data
