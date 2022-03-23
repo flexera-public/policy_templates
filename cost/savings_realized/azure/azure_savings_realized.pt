@@ -1,7 +1,7 @@
-name "Savings Realized from Reservations (Azure) - Nia Testing"
+name "Azure Savings Realized from Reservations"
 rs_pt_ver 20180301
 type "policy"
-short_description "Calculate savings realised by RI purchases - subtract RI run cost from on-demand cost per instance type and region"
+short_description "Calculate savings realized by RI purchases. See the [README](https://github.com/flexera/policy_templates/tree/master/cost/aws/[]) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more. "
 long_description ""
 default_frequency "monthly"
 severity "low"
@@ -35,8 +35,6 @@ parameter "param_period_end" do
   description "Billing Period from Fastly Billing YYYY-MM"
   allowed_pattern /20[2-9][0-9]-[0-1][0-9]/
 end
-
-
 
 ###############################################################################
 # Authentication
@@ -100,7 +98,8 @@ datasource "ds_ri_aggregated_costs" do
     encoding "json"
     collect jmes_path(response, "rows") do
       field "instance_type", jmes_path(col_item, "dimensions.instance_type")
-      #field "region", jmes_path(col_item, "dimensions.region")
+      field "region", jmes_path(col_item, "dimensions.region")
+      field "operating_system", jmes_path(col_item, "dimensions.x_operating_system")
       field "usage_unit", jmes_path(col_item, "dimensions.usage_unit")
       field "usage_amount", jmes_path(col_item, "metrics.usage_amount")
       field "cost", jmes_path(col_item, "metrics.cost_amortized_unblended_adj")
@@ -134,6 +133,8 @@ script "js_get_ri_aggregated_costs", type: "javascript" do
     },
     "dimensions": [
       "instance_type",
+      "region",
+      "x_operating_system",
       "usage_unit"
     ],
     "granularity": "month",
@@ -167,7 +168,8 @@ datasource "ds_base_aggregated_costs" do
     encoding "json"
     collect jmes_path(response, "rows") do
       field "instance_type", jmes_path(col_item, "dimensions.instance_type")
-      #field "region", jmes_path(col_item, "dimensions.region")
+      field "region", jmes_path(col_item, "dimensions.region")
+      field "operating_system", jmes_path(col_item, "dimensions.x_operating_system")
       field "usage_unit", jmes_path(col_item, "dimensions.usage_unit")
       field "usage_amount", jmes_path(col_item, "metrics.usage_amount")
       field "cost", jmes_path(col_item, "metrics.cost_amortized_unblended_adj")
@@ -204,6 +206,8 @@ script "js_get_base_aggregated_costs", type: "javascript" do
     },
     "dimensions": [
       "instance_type",
+      "region",
+      "x_operating_system",
       "usage_unit"
     ],
     "granularity": "month",
@@ -241,66 +245,94 @@ end
 
 #CALCULATE SAVINGS REALIZED (BASE COST - RI COST) FOR EACH INSTANCE TYPE, FOR EACH REGION
 datasource "ds_savings_realized" do
-  run_script $js_get_savings_realized, $ds_ri_aggregated_costs, $ds_base_aggregated_costs
+  run_script $js_get_savings_realized, $ds_ri_aggregated_costs, $ds_base_aggregated_costs, $ds_isf_ratio_csv
 end
 
 script "js_get_savings_realized", type: "javascript" do
-  parameters "ri_costs", "base_costs"
+  parameters "ri_costs", "base_costs", "isf_ratio_csv"
   result "savings_realized_data"
-  code <<-EOS
-  var result = []
+  code <<-'EOS'
+  var temp_result = []
   var savings_realized_data = []
-  //var grouped_costs = []
 
-  //calculate cost per instance type per hour
+  //convert normalization factor csv to json
+  var isf_ratio_array = isf_ratio_csv.toString().split("\r\n")
+  var isf_ratio_json = []
+  _.each(isf_ratio_array, function(ratio){
+    isf_ratio_json.push({
+      "instance_family": ratio.split(",")[0],
+      "arm_sku_name": ratio.split(",")[1],
+      "ratio": ratio.split(",")[2]
+    })
+  })
+
+  //calculate base cost of instance per hour across all months for each instance type/region/operating system combination
+  inst_type = _.pluck( _.uniq(ri_costs, function(ri){ return ri.instance_type }), "instance_type" )
+  region = _.pluck( _.uniq(ri_costs, function(ri){ return ri.region }), "region" )
+  op_system = _.pluck( _.uniq(ri_costs, function(ri){ return ri.operating_system }), "operating_system" )
+  month = _.union(
+    _.pluck( _.uniq(ri_costs, function(ri){ return ri.month }), "month" ),
+    _.pluck( _.uniq(base_costs, function(base){ return base.month }), "month" )
+  )
+
+  unique_cost_inst_hrs = []
+  _.each(inst_type, function(inst){
+    _.each(region, function(rg){
+      _.each(op_system, function(os){
+        base_cost_inst_hr_tot = 0, count = 0
+        _.each(base_costs, function(base){
+          if(base.instance_type == inst && base.region == rg && base.operating_system == os){
+            base_cost_inst_hr_tot += (base.cost / base.usage_amount)
+            count ++
+          }
+        })
+        avg_base_cost_inst_hr = 0 
+        if(count > 0){ avg_base_cost_inst_hr = base_cost_inst_hr_tot / count }
+        console.log(avg_base_cost_inst_hr)
+
+        unique_cost_inst_hrs.push({
+          "instance_type": inst,
+          "region": rg,
+          "operating_system": os,
+          "avg_base_cost_inst_hr": avg_base_cost_inst_hr
+        })
+      })
+    })
+  })
+  console.log("Cost instance hours", unique_cost_inst_hrs)
+
+  //apply cost_inst_hr to calculate savings realized
   _.each(ri_costs, function(ri){
-    //var usage_unit = parseInt(ri.usage_unit.split(" ")[0])
-    //ri["usage_amount_normalized"] = ri.usage_amount * usage_unit
-    if(ri.cost > 0){
-      ri["cost_per_hr"] = ri.cost / ( ri.usage_amount )
-    } else {
-      ri["cost_per_hr"] = 0
-    }   
-  })
-  _.each(base_costs, function(base){
-    //var usage_unit = parseInt(base.usage_unit.split(" ")[0])
-    //base["usage_amount_normalized"] = base.usage_amount * base.usage_unit
-    if(base.cost > 0){
-      base["cost_per_hr"] = base.cost / ( base.usage_amount )
-    } else {
-      base["cost_per_hr"] = 0
-    }  
-  })
-  
-  //calculate savings realized (base cost per hour - ri cost per hour)
-  _.each(base_costs, function(base){
-    _.each(ri_costs, function(reserved){
-      if (base.month == reserved.month && base.instance_type == reserved.instance_type){
-        var savings_realized = base.cost_per_hr - reserved.cost_per_hr
-
-        result.push(
+    _.each(unique_cost_inst_hrs, function(inst_hr){
+      if (ri.instance_type == inst_hr.instance_type && ri.region == inst_hr.region && ri.operating_system == inst_hr.operating_system){
+        savings_realized_per_inst_hr = inst_hr.avg_base_cost_inst_hr - (ri.cost / ri.usage_amount)
+        savings_realized = 0
+        if(ri.cost > 0 ){
+          savings_realized = savings_realized_per_inst_hr * ri.usage_amount
+        }
+        temp_result.push(
           { 
-            "month": base.month, 
-            "region": base.region, 
-            "instance_type": base.instance_type,
-            "savings_realized_per_hr": savings_realized
-            "savings_realized_per_mth": savings_realized * base.usage_amount
+            "month": ri.month, 
+            "region": ri.region, 
+            "instance_type": ri.instance_type,
+            "operating_system": ri.operating_system,
+            "savings_realized": savings_realized
           }
         )
       }
     })
   })
+  console.log(temp_result)
 
-  //reduce list - aggregate costs for same instance type for same month
-  result.reduce(function(res, value) {
-    var key = value.instance_type + '-' + value.month
-    if (!res[key]) {
-      res[key] = { instance_type: value.instance_type, month: value.month, savings_realized_per_hr: 0, savings_realized_per_mth: 0 }
-      savings_realized_data.push(res[key])
-    }
-    res[key].savings_realized_per_mth += value.savings_realized_per_mth
-    res[key].savings_realized_per_hr += value.savings_realized_per_hr
-    return res
+  //reduce list - aggregate costs for same month
+  _.each(month, function(mo){
+    savings_realized = 0
+    _.each(temp_result, function(res){
+      if(mo == res.month){
+        savings_realized += res.savings_realized
+      }
+    })
+    savings_realized_data.push({ "month": mo, "savings_realized": savings_realized })
   })
   EOS
 end
@@ -314,55 +346,56 @@ script "js_create_chart_data", type: "javascript" do
   parameters "savings_realized_data"
   result "report"
   code <<-EOS
-  var report = []
+  var report = savings_realized_data
 
-  var chart_axis_labels = ("chxl=1:," + savings_realized_data.map( function(sr){ return sr.month.substring(0,7) })).split(",").join("|")
-  //chart_axis_labels = chart_axis_labels.split(",").join("|")
+  //create chart axis labels
+  chart_axis_labels = 
+  ("chxl=1:," + 
+    _.uniq(savings_realized_data, function(sr) { return sr.month })
+    .map(function(sr){ return sr.month.substring(0,7) })
+  ).split(",").join("|")
 
-  chart_data_per_inst_type = 
-  _.groupBy(savings_realized_data, function(sr){ return sr.instance_type })
-  report = savings_realized_data
+  //calculate scale
+  //chart_range = ("chxr=0," +
+  max = (Math.max.apply(Math, savings_realized_data.map(function(sr){ return sr.savings_realized }))*1.1).toFixed(2)
+  min = (Math.min.apply(Math, savings_realized_data.map(function(sr){ return sr.savings_realized }))*0.9).toFixed(2)
+  chart_range = "chxr=0," + min + "," + max
 
-  chart_legend = "chdl="
-  var i = 0 
-  for (var key in chart_data_per_inst_type) {
-    chart_legend += key
-    i++
-    if (i < _.size(chart_data_per_inst_type)) { chart_legend += "|" }
-  }
-  console.log(chart_legend)
+  //create legend
+  chart_legend = "chdl=Savings%20Realized%20For%20Organization"
 
-  chart_data = "chd=t:"
-  var j = 0
-  _.each(chart_data_per_inst_type, function(o){
-    var k = 0
-    _.each(o, function(p){
-      chart_data = chart_data + p.savings_realized_per_mth
-      i++
-      if (k < _.size(o)){ chart_data = chart_data + "," } 
-    })
-    j++
-    if (j < _.size(chart_data_per_inst_type)){ chart_data = chart_data + "|" }
-  })
+  //create chart dataset
+  chart_data = "chd=t:" + savings_realized_data.map(function(sr) { return sr.savings_realized; }).toString()
 
   chart = {
     chart_type: "cht=lc",
     chart_size: "chs=900x500",
     chart_data: chart_data,
-    chart_title: "chtt=Savings Realized Per Instance Type",
+    chart_title: "chtt=Savings%20Realized%20For%20Organization",
     chart_image: "chof=.png",  
     chart_label_position: "chdlp=b",
     chart_y_axis: "chxt=y,x",
     chart_y_axis_label: chart_axis_labels,
     chart_line_style: "chls=3|3|3|3|3|3|3|3|3|3|3",
     chart_line_color: "chco=6929c4,9f1853,198038,b28600,1192e8,009d9a,005d5d,007d79",
-    chart_data_scale: "chds=a"
-    chart_label: chart_legend
-    chart_label_size: "chdls=000000,9"
+    chart_data_scale: "chds=a",
+    chart_legend: chart_legend,
+    chart_legend_size: "chdls=000000,5"
   }
 
   report[0]["chart_dimensions"] = chart
   EOS
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_savings_realized_report" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
 end
 
 ###############################################################################
@@ -374,9 +407,26 @@ policy "policy_purchase_option_by_inst_type_and_region" do
     summary_template "Savings Realized"
     detail_template <<-EOS
     # Savings Realized Per Instance Type Report
-    ![Savings Realized Per Instance Type Chart](https://image-charts.com/chart?{{ with index data 0 }}{{ .chart_dimensions.chart_data }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_size }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_type }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_image }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_title }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_label_position }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_y_axis }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_y_axis_label }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_line_style }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_line_color }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_data_scale }}{{ end }}&{{ with index 0 }}{{ .chart_dimensions.chart_label }}{{ end }}&{{ with index 0 }}{{ .chart_dimensions.chart_label_size }}{{ end }}
+    ![Savings Realized Per Instance Type Chart](https://image-charts.com/chart?{{ with index data 0 }}{{ .chart_dimensions.chart_data }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_size }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_type }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_image }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_title }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_label_position }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_y_axis }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_y_axis_label }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_line_style }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_line_color }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_data_scale }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_legend_size }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_legend }}{{ end }}
     )
     EOS
+    escalate $esc_savings_realized_report
     check eq(0,1)
+    export do
+      # no actions so resource_level can be false
+      resource_level false
+      field "month" do
+        label "Month"
+      end
+      #field "instance_type" do
+      #  label "Instance Type"
+      #end
+      field "savings_realized" do
+        label "Savings Realized per Month"
+      end
+      #field "region" do
+      #  label "Region"
+      #end
+    end
   end
 end
