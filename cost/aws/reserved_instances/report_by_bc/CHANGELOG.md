@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.7
+
+- API endpoint fix
+
 ## v1.6
 
 - Added default_frequency "daily"
