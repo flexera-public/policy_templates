@@ -1,0 +1,427 @@
+name "AWS Number of vCPUs Used per Instance Family"
+rs_pt_ver 20180301
+type "policy"
+short_description "Number of vCPUs used for each AWS Instance Family"
+long_description ""
+severity "low"
+category "Cost"
+default_frequency "monthly"
+info(
+  version: "2.0",
+  provider: "Flexera Optima",
+  service: "",
+  policy_set: ""
+)
+
+###############################################################################
+# Parameters
+###############################################################################
+
+parameter "param_email" do
+  type "list"
+  label "Email addresses"
+end
+
+parameter "param_region" do
+  type "string"
+  label "Region"
+  description "Select an AWS region. Leave empty for view across all regions"
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+#AUTHENTICATE WITH RIGHTSCALE/OPTIMA
+credentials "auth_rs" do
+  schemes "oauth2"
+  label "Flexera_Automation"
+  description "Select FlexeraOne OAuth2 credentials"
+  tags "provider=flexera"
+end
+
+###############################################################################
+# Datasources and Scripts
+###############################################################################
+
+#GET BILLING CENTERS FOR ORG
+datasource "ds_billing_centers" do
+  request do
+    auth $auth_rs
+    host rs_optima_host
+    path join(["/analytics/orgs/",rs_org_id,"/billing_centers"])
+    header "Api-Version", "1.0"
+    header "User-Agent", "RS Policies"
+    query "view", "allocation_table"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response,"[*]") do
+      field "href", jmes_path(col_item,"href")
+      field "id", jmes_path(col_item,"id")
+      field "name", jmes_path(col_item,"name")
+      field "parent_id", jmes_path(col_item,"parent_id")
+      field "ancestor_ids", jmes_path(col_item,"ancestor_ids")
+      field "allocation_table", jmes_path(col_item,"allocation_table")
+    end
+  end  
+end
+  
+#GET TOP-LEVEL BILLING CENTERS
+datasource "ds_top_level_billing_centers" do
+  run_script $js_top_level_bc, $ds_billing_centers
+end
+  
+script "js_top_level_bc", type: "javascript" do
+  parameters "billing_centers"
+  result "filtered_billing_centers"
+  code <<-EOS
+  var filtered_billing_centers =
+    _.reject(billing_centers, function(bc){ return bc.parent_id != null })
+  EOS
+end
+
+#GET USAGE DATA FOR INSTANCE TYPES
+datasource "ds_usage_data" do
+  request do
+    run_script $js_get_usage_data, $ds_top_level_billing_centers, $param_region, rs_org_id, rs_optima_host
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "rows") do
+      field "billing_center_id", jmes_path(col_item,"dimensions.billing_center_id")
+      field "instance_type", jmes_path(col_item,"dimensions.instance_type")
+      field "usage_unit", jmes_path(col_item,"dimensions.usage_unit")
+      field "cost", jmes_path(col_item,"metrics.cost_nonamortized_unblended_adj")
+      field "usage_amount", jmes_path(col_item,"metrics.usage_amount")
+      field "month", jmes_path(col_item,"timestamp")
+    end
+  end
+end
+
+script "js_get_usage_data", type: "javascript" do
+  parameters "top_level_billing_centers", "region", "org_id", "optima_host"
+  result "request"
+  code <<-EOS 
+  //Billing Center IDs into array
+  billing_center_ids = []
+  _.each(top_level_billing_centers, function(bc){
+    billing_center_ids.push(bc.id)
+  })
+
+  //Get Start and End dates
+  start_date = new Date(), end_date = new Date()
+  start_date.setMonth(start_date.getMonth() - 13)
+  end_date.setMonth(end_date.getMonth() - 1)
+
+  //get expressions for payload based on region parameter
+  expressions = []
+  if( region == "" ){ 
+    expressions = [
+      { "dimension": "category", "type": "equal", "value": "Compute" },
+      { "dimension": "resource_type", "type":"equal", "value":"Compute Instance" },
+      { "dimension": "vendor", "type":"equal", "value":"AWS" },
+      {
+        "type": "not",
+        "expression": { "dimension": "instance_type", "type": "equal", "value": "None" }
+      }
+    ]
+  } else { 
+    expressions = [
+      { "dimension": "category", "type": "equal", "value": "Compute" },
+      { "dimension": "resource_type", "type":"equal", "value":"Compute Instance" },
+      { "dimension": "vendor", "type":"equal", "value":"AWS" },
+      { "dimension": "region", "type": "equal", "value": region },
+      {
+        "type": "not",
+        "expression": { "dimension": "instance_type", "type": "equal", "value": "None" }
+      }
+    ]
+  }
+  
+  //POST JSON payload
+  payload = {
+    "billing_center_ids": billing_center_ids,
+    "filter": {
+      "type": "and",
+      "expressions": expressions
+    },
+    "dimensions": [
+      "instance_type",
+      "usage_unit"
+    ],
+    "granularity": "month",
+    "metrics": [
+      "cost_nonamortized_unblended_adj",
+      "usage_amount"
+    ],
+    "end_at": end_date.toLocaleDateString("en-US").split("-")[0] + "-" + end_date.toLocaleDateString("en-US").split("-")[1]
+    "start_at": start_date.toLocaleDateString("en-US").split("-")[0] + "-" + start_date.toLocaleDateString("en-US").split("-")[1]
+  }
+
+  //Request
+  request = {
+    auth: "auth_rs",
+    host: optima_host,
+    path: "/bill-analysis/orgs/" + org_id + "/costs/aggregated",
+    verb: "POST",
+    body_fields: payload,
+    headers: {
+      "User-Agent": "RS Policies",
+    }
+  }
+  EOS
+end
+
+#GET CSV WITH NORMALIZATION FACTOR UNITS
+datasource "ds_nfu_ratio_csv" do
+  run_script $js_get_aws_nfu
+end
+
+script "js_get_aws_nfu", type: "javascript" do
+  result "result"
+  code <<-'EOS'
+  var result =  { "csv": "Instance Size,Normalization Factor\r\nnano,0.25\r\nmicro,0.5\r\nsmall,1\r\nmedium,2\r\nlarge,4\r\nxlarge,8\r\n2xlarge,16\r\n3xlarge,24\r\n4xlarge,32\r\n6xlarge,48\r\n8xlarge,64\r\n9xlarge,72\r\n10xlarge,80\r\n12xlarge,96\r\n16xlarge,128\r\n18xlarge,144\r\n24xlarge,192\r\n32xlarge,256\r\n56xlarge,448\r\n112xlarge,896"}
+  EOS
+end
+
+#GET CSV WITH VCPU DATA FOR EACH INSTANCE TYPE
+datasource "ds_vcpu_data_csv" do
+  run_script $js_get_vcpu_data
+end
+
+script "js_get_vcpu_data", type: "javascript" do
+  result "result"
+  code <<-'EOS'
+  var result = { "csv": "Instance Name,vCPUs\r\nm6a.24xlarge,96 vCPUs\r\nm5dn.xlarge,4 vCPUs\r\nc6a.8xlarge,32 vCPUs\r\ng5.16xlarge,64 vCPUs\r\nr5ad.16xlarge,64 vCPUs\r\nm5a.2xlarge,8 vCPUs\r\nm5n.metal,96 vCPUs\r\nm5ad.2xlarge,8 vCPUs\r\nr5b.xlarge,4 vCPUs\r\nr5n.12xlarge,48 vCPUs\r\ni2.2xlarge,8 vCPUs\r\nr5ad.xlarge,4 vCPUs\r\ng3s.xlarge,4 vCPUs\r\nr5n.xlarge,4 vCPUs\r\nc5ad.xlarge,4 vCPUs\r\nr5dn.xlarge,4 vCPUs\r\nc6a.4xlarge,16 vCPUs\r\nis4gen.8xlarge,32 vCPUs\r\ni2.xlarge,4 vCPUs\r\nm5n.16xlarge,64 vCPUs\r\nt2.micro,1 vCPUs                                                         for a                   2h 24m                   burst\r\ng5.24xlarge,96 vCPUs\r\ninf1.xlarge,4 vCPUs\r\nr6gd.16xlarge,64 vCPUs\r\nr5n.24xlarge,96 vCPUs\r\nr5dn.metal,96 vCPUs\r\ni2.8xlarge,32 vCPUs\r\nr5dn.8xlarge,32 vCPUs\r\nr5a.8xlarge,32 vCPUs\r\nm6a.4xlarge,16 vCPUs\r\nr6g.medium,1 vCPUs\r\nr6g.12xlarge,48 vCPUs\r\na1.metal,16 vCPUs\r\nt4g.micro,2 vCPUs                                                         for a                   2h 24m                   burst\r\nr5b.large,2 vCPUs\r\nm5a.xlarge,4 vCPUs\r\nc6gn.8xlarge,32 vCPUs\r\nm5n.24xlarge,96 vCPUs\r\nc6g.2xlarge,8 vCPUs\r\nt2.2xlarge,8 vCPUs                                                         for a                   4h 4.8m                   burst\r\nr5b.16xlarge,64 vCPUs\r\nt2.large,2 vCPUs                                                         for a                   7h 12m                   burst\r\nc3.4xlarge,16 vCPUs\r\nm5a.16xlarge,64 vCPUs\r\nr5a.large,2 vCPUs\r\nc3.large,2 vCPUs\r\nc6a.48xlarge,192 vCPUs\r\nc6gd.medium,1 vCPUs\r\ninf1.24xlarge,96 vCPUs\r\nr5a.24xlarge,96 vCPUs\r\na1.2xlarge,8 vCPUs\r\nm5ad.xlarge,4 vCPUs\r\nc6gd.metal,64 vCPUs\r\nm6a.xlarge,4 vCPUs\r\nm5dn.24xlarge,96 vCPUs\r\ng5.4xlarge,16 vCPUs\r\nm5dn.metal,96 vCPUs\r\nm5a.large,2 vCPUs\r\nr5n.large,2 vCPUs\r\nr3.large,2 vCPUs\r\nm5dn.16xlarge,64 vCPUs\r\nm6a.8xlarge,32 vCPUs\r\nc6a.32xlarge,128 vCPUs\r\nr5n.2xlarge,8 vCPUs\r\nr5dn.16xlarge,64 vCPUs\r\nm3.2xlarge,8 vCPUs\r\nc3.2xlarge,8 vCPUs\r\nm5a.12xlarge,48 vCPUs\r\nr3.xlarge,4 vCPUs\r\nm5n.12xlarge,48 vCPUs\r\nm6a.48xlarge,192 vCPUs\r\nm5ad.large,2 vCPUs\r\nm6g.2xlarge,8 vCPUs\r\nr5b.24xlarge,96 vCPUs\r\nx2gd.2xlarge,8 vCPUs\r\ni2.4xlarge,16 vCPUs\r\nc6a.2xlarge,8 vCPUs\r\nr5n.16xlarge,64 vCPUs\r\nr5a.16xlarge,64 vCPUs\r\nc6gn.12xlarge,48 vCPUs\r\nr5n.8xlarge,32 vCPUs\r\ng4ad.8xlarge,32 vCPUs\r\nm5dn.large,2 vCPUs\r\nm6a.large,2 vCPUs\r\nr6gd.12xlarge,48 vCPUs\r\nr6g.2xlarge,8 vCPUs\r\nm3.large,2 vCPUs\r\nc6gd.12xlarge,48 vCPUs\r\nr5n.4xlarge,16 vCPUs\r\nm5n.2xlarge,8 vCPUs\r\nr5ad.12xlarge,48 vCPUs\r\nm5dn.12xlarge,48 vCPUs\r\nc6gd.2xlarge,8 vCPUs\r\nm5a.4xlarge,16 vCPUs\r\nr5ad.2xlarge,8 vCPUs\r\nc5a.2xlarge,8 vCPUs\r\nt2.xlarge,4 vCPUs                                                         for a                   5h 24m                   burst\r\nc3.8xlarge,32 vCPUs\r\nm3.medium,1 vCPUs\r\ng4ad.xlarge,4 vCPUs\r\nr5dn.2xlarge,8 vCPUs\r\ninf1.2xlarge,8 vCPUs\r\nm6a.32xlarge,128 vCPUs\r\ng5.xlarge,4 vCPUs\r\nm5a.8xlarge,32 vCPUs\r\nc3.xlarge,4 vCPUs\r\nr5a.2xlarge,8 vCPUs\r\nt2.small,1 vCPUs                                                         for a                   4h 48m                   burst\r\nc6gn.xlarge,4 vCPUs\r\nc6a.12xlarge,48 vCPUs\r\nx2gd.xlarge,4 vCPUs\r\nm6g.medium,1 vCPUs\r\nm1.xlarge,4 vCPUs\r\nr5b.12xlarge,48 vCPUs\r\nm5n.xlarge,4 vCPUs\r\nc5a.12xlarge,48 vCPUs\r\nm6g.16xlarge,64 vCPUs\r\nm3.xlarge,4 vCPUs\r\nm1.medium,1 vCPUs\r\nt3a.medium,2 vCPUs                                                         for a                   4h 48m                   burst\r\nr5n.metal,96 vCPUs\r\nm5dn.4xlarge,16 vCPUs\r\nim4gn.2xlarge,8 vCPUs\r\nr5ad.24xlarge,96 vCPUs\r\nr3.2xlarge,8 vCPUs\r\nm6a.16xlarge,64 vCPUs\r\nm6gd.12xlarge,48 vCPUs\r\nr6g.8xlarge,32 vCPUs\r\nr5dn.4xlarge,16 vCPUs\r\ng5.8xlarge,32 vCPUs\r\nis4gen.4xlarge,16 vCPUs\r\nc6a.16xlarge,64 vCPUs\r\nc5a.8xlarge,32 vCPUs\r\nc6a.xlarge,4 vCPUs\r\nr6g.metal,64 vCPUs\r\nm5ad.4xlarge,16 vCPUs\r\nc6g.4xlarge,16 vCPUs\r\ninf1.6xlarge,24 vCPUs\r\ng4ad.4xlarge,16 vCPUs\r\ng4ad.2xlarge,8 vCPUs\r\nr6gd.2xlarge,8 vCPUs\r\nc6gd.16xlarge,64 vCPUs\r\nm6gd.2xlarge,8 vCPUs\r\nc5a.xlarge,4 vCPUs\r\nr5a.4xlarge,16 vCPUs\r\nc6a.large,2 vCPUs\r\nr5b.metal,96 vCPUs\r\nm1.small,1 vCPUs\r\nc5ad.8xlarge,32 vCPUs\r\na1.xlarge,4 vCPUs\r\nr5b.8xlarge,32 vCPUs\r\nr6gd.8xlarge,32 vCPUs\r\nc6g.16xlarge,64 vCPUs\r\nr6g.16xlarge,64 vCPUs\r\nx2gd.metal,64 vCPUs\r\nc5ad.24xlarge,96 vCPUs\r\nm6gd.large,2 vCPUs\r\nt4g.large,2 vCPUs                                                         for a                   7h 12m                   burst\r\nm5n.large,2 vCPUs\r\nr5b.2xlarge,8 vCPUs\r\nm5dn.8xlarge,32 vCPUs\r\nr5dn.large,2 vCPUs\r\nc5ad.16xlarge,64 vCPUs\r\nr5a.xlarge,4 vCPUs\r\nm5n.4xlarge,16 vCPUs\r\nm5ad.24xlarge,96 vCPUs\r\nc6g.xlarge,4 vCPUs\r\nm6g.metal,64 vCPUs\r\nt3a.2xlarge,8 vCPUs                                                         for a                   9h 36m                   burst\r\nc5a.24xlarge,96 vCPUs\r\nc5a.4xlarge,16 vCPUs\r\nr5a.12xlarge,48 vCPUs\r\nx2gd.medium,1 vCPUs\r\ng5.12xlarge,48 vCPUs\r\nc5ad.4xlarge,16 vCPUs\r\nr6gd.xlarge,4 vCPUs\r\ng2.2xlarge,8 vCPUs\r\nm6g.large,2 vCPUs\r\nm5ad.8xlarge,32 vCPUs\r\nm6gd.16xlarge,64 vCPUs\r\ng4ad.16xlarge,64 vCPUs\r\nr5dn.12xlarge,48 vCPUs\r\nc6gn.2xlarge,8 vCPUs\r\nm5a.24xlarge,96 vCPUs\r\nm6g.xlarge,4 vCPUs\r\nr6gd.4xlarge,16 vCPUs\r\nm6a.12xlarge,48 vCPUs\r\ng5g.metal,64 vCPUs\r\nm6gd.medium,1 vCPUs\r\nc6g.12xlarge,48 vCPUs\r\nm6gd.4xlarge,16 vCPUs\r\nc6gd.large,2 vCPUs\r\nc5a.16xlarge,64 vCPUs\r\nc6a.24xlarge,96 vCPUs\r\nt4g.small,2 vCPUs                                                         for a                   4h 48m                   burst\r\nm5dn.2xlarge,8 vCPUs\r\nr5b.4xlarge,16 vCPUs\r\nr5ad.large,2 vCPUs\r\nim4gn.8xlarge,32 vCPUs\r\nx2gd.8xlarge,32 vCPUs\r\nr5ad.8xlarge,32 vCPUs\r\nc6g.metal,64 vCPUs\r\nc6gd.8xlarge,32 vCPUs\r\nm6a.2xlarge,8 vCPUs\r\nm6g.4xlarge,16 vCPUs\r\nr3.4xlarge,16 vCPUs\r\nm6gd.xlarge,4 vCPUs\r\nm5ad.12xlarge,48 vCPUs\r\nc5ad.large,2 vCPUs\r\nim4gn.4xlarge,16 vCPUs\r\nim4gn.large,2 vCPUs\r\nm5ad.16xlarge,64 vCPUs\r\nt4g.medium,2 vCPUs                                                         for a                   4h 48m                   burst\r\nc5ad.2xlarge,8 vCPUs\r\nis4gen.2xlarge,8 vCPUs\r\nc5a.large,2 vCPUs\r\nx2gd.large,2 vCPUs\r\nr5dn.24xlarge,96 vCPUs\r\nc6gn.4xlarge,16 vCPUs\r\ng2.8xlarge,32 vCPUs\r\ng5.2xlarge,8 vCPUs\r\nis4gen.medium,1 vCPUs\r\nr3.8xlarge,32 vCPUs\r\nr6g.4xlarge,16 vCPUs\r\nt3a.small,2 vCPUs                                                         for a                   4h 48m                   burst\r\nm1.large,2 vCPUs\r\nm2.4xlarge,8 vCPUs\r\ng5g.16xlarge,64 vCPUs\r\nm6gd.metal,64 vCPUs\r\nm2.xlarge,2 vCPUs\r\nc1.medium,2 vCPUs\r\nx2gd.12xlarge,48 vCPUs\r\nr6gd.metal,64 vCPUs\r\nm6g.8xlarge,32 vCPUs\r\ncc2.8xlarge,32 vCPUs\r\nis4gen.large,2 vCPUs\r\nc1.xlarge,8 vCPUs\r\nc5ad.12xlarge,48 vCPUs\r\nc6g.medium,1 vCPUs\r\na1.medium,1 vCPUs\r\nm2.2xlarge,4 vCPUs\r\nx2gd.16xlarge,64 vCPUs\r\nr5ad.4xlarge,16 vCPUs\r\nc6g.large,2 vCPUs\r\nt3a.nano,2 vCPUs                                                         for a                   1h 12m                   burst\r\nim4gn.xlarge,4 vCPUs\r\ng5g.4xlarge,16 vCPUs\r\nc6gd.4xlarge,16 vCPUs\r\ncr1.8xlarge,32 vCPUs\r\nr6gd.medium,1 vCPUs\r\nm5n.8xlarge,32 vCPUs\r\nm6gd.8xlarge,32 vCPUs\r\na1.large,2 vCPUs\r\ng5g.2xlarge,8 vCPUs\r\nt3a.xlarge,4 vCPUs                                                         for a                   9h 36m                   burst\r\nc6g.8xlarge,32 vCPUs\r\nc6gn.16xlarge,64 vCPUs\r\nc6gn.medium,1 vCPUs\r\ng5g.xlarge,4 vCPUs\r\nm6g.12xlarge,48 vCPUs\r\nc6gn.large,2 vCPUs\r\nt3a.micro,2 vCPUs                                                         for a                   2h 24m                   burst\r\nr6g.xlarge,4 vCPUs\r\nim4gn.16xlarge,64 vCPUs\r\nx2gd.4xlarge,16 vCPUs\r\nc6gn.metal,64 vCPUs\r\ng5.48xlarge,192 vCPUs\r\nr6g.large,2 vCPUs\r\na1.4xlarge,16 vCPUs\r\nt2.medium,2 vCPUs                                                         for a                   4h 48m                   burst\r\nt4g.2xlarge,8 vCPUs                                                         for a                   9h 36m                   burst\r\ng5g.8xlarge,32 vCPUs\r\nhs1.8xlarge,16 vCPUs\r\nu-18tb1.metal,448 vCPUs\r\nt1.micro,1 vCPUs\r\nr6gd.large,2 vCPUs\r\nt4g.xlarge,4 vCPUs                                                         for a                   9h 36m                   burst\r\nc6gd.xlarge,4 vCPUs\r\nt4g.nano,2 vCPUs                                                         for a                   1h 12m                   burst\r\nis4gen.xlarge,4 vCPUs\r\nu-24tb1.metal,448 vCPUs\r\nt2.nano,1 vCPUs                                                         for a                   1h 12m                   burst\r\nmac2.metal,12 vCPUs\r\nt3a.large,2 vCPUs                                                         for a                   7h 12m                   burst\r\ni2.large,2 vCPUs\r\nmac1.metal,12 vCPUs\r\nc5d.2xlarge,8 vCPUs\r\nc5d.xlarge,4 vCPUs\r\nc5.metal,96 vCPUs\r\nd3en.12xlarge,48 vCPUs\r\nd3en.8xlarge,32 vCPUs\r\nc6i.32xlarge,128 vCPUs\r\nc5.9xlarge,36 vCPUs\r\nr5.metal,96 vCPUs\r\nm5.24xlarge,96 vCPUs\r\nm5d.24xlarge,96 vCPUs\r\nx2idn.32xlarge,128 vCPUs\r\ni3en.12xlarge,48 vCPUs\r\ni3en.metal,96 vCPUs\r\nm5zn.3xlarge,12 vCPUs\r\nm5d.12xlarge,48 vCPUs\r\nu-9tb1.112xlarge,448 vCPUs\r\nx2iezn.12xlarge,48 vCPUs\r\nc5.large,2 vCPUs\r\nc5n.large,2 vCPUs\r\nx2iedn.2xlarge,8 vCPUs\r\nc5.24xlarge,96 vCPUs\r\nc5.12xlarge,48 vCPUs\r\nd2.8xlarge,36 vCPUs\r\nm6i.24xlarge,96 vCPUs\r\ni3en.3xlarge,12 vCPUs\r\nz1d.3xlarge,12 vCPUs\r\nm5.2xlarge,8 vCPUs\r\nc5.18xlarge,72 vCPUs\r\nx2iedn.32xlarge,128 vCPUs\r\ndl1.24xlarge,96 vCPUs\r\nx1e.16xlarge,64 vCPUs\r\nr6i.large,2 vCPUs\r\nc6i.24xlarge,96 vCPUs\r\nm6i.large,2 vCPUs\r\nc4.4xlarge,16 vCPUs\r\ni3en.xlarge,4 vCPUs\r\ni3.xlarge,4 vCPUs\r\nd3.2xlarge,8 vCPUs\r\nm5zn.metal,48 vCPUs\r\ni3.4xlarge,16 vCPUs\r\ni3en.2xlarge,8 vCPUs\r\nc6i.8xlarge,32 vCPUs\r\np3.2xlarge,8 vCPUs\r\nc5.xlarge,4 vCPUs\r\nr5d.8xlarge,32 vCPUs\r\nr5.12xlarge,48 vCPUs\r\nu-12tb1.112xlarge,448 vCPUs\r\nh1.8xlarge,32 vCPUs\r\nr5d.24xlarge,96 vCPUs\r\ni3en.6xlarge,24 vCPUs\r\nr4.8xlarge,32 vCPUs\r\nx1.16xlarge,64 vCPUs\r\nc5d.18xlarge,72 vCPUs\r\nc6i.12xlarge,48 vCPUs\r\nm6i.16xlarge,64 vCPUs\r\ng3.16xlarge,64 vCPUs\r\ni3en.large,2 vCPUs\r\nu-6tb1.56xlarge,224 vCPUs\r\nc5n.4xlarge,16 vCPUs\r\nc4.xlarge,4 vCPUs\r\nx1e.4xlarge,16 vCPUs\r\nm5d.xlarge,4 vCPUs\r\ni3en.24xlarge,96 vCPUs\r\nc5n.18xlarge,72 vCPUs\r\nm5d.16xlarge,64 vCPUs\r\nm4.large,2 vCPUs\r\nt3.medium,2 vCPUs                                                         for a                   4h 48m                   burst\r\nh1.4xlarge,16 vCPUs\r\nx1e.xlarge,4 vCPUs\r\nx2iezn.6xlarge,24 vCPUs\r\nc6i.2xlarge,8 vCPUs\r\ng4dn.8xlarge,32 vCPUs\r\nm5.large,2 vCPUs\r\nc5.4xlarge,16 vCPUs\r\nc4.large,2 vCPUs\r\nr5d.xlarge,4 vCPUs\r\nm4.4xlarge,16 vCPUs\r\nm5d.large,2 vCPUs\r\nm6i.8xlarge,32 vCPUs\r\nx2iezn.2xlarge,8 vCPUs\r\nr5.2xlarge,8 vCPUs\r\nc5n.9xlarge,36 vCPUs\r\nc5d.24xlarge,96 vCPUs\r\nm6i.metal,128 vCPUs\r\nm5d.2xlarge,8 vCPUs\r\nm4.10xlarge,40 vCPUs\r\nx2iezn.4xlarge,16 vCPUs\r\nc5d.large,2 vCPUs\r\nc6i.4xlarge,16 vCPUs\r\nr5d.2xlarge,8 vCPUs\r\nr5d.metal,96 vCPUs\r\nc6i.16xlarge,64 vCPUs\r\nx1.32xlarge,128 vCPUs\r\nc5n.2xlarge,8 vCPUs\r\nd3en.xlarge,4 vCPUs\r\nc6i.large,2 vCPUs\r\nm5.metal,96 vCPUs\r\nm5.12xlarge,48 vCPUs\r\np3.16xlarge,64 vCPUs\r\nr5d.4xlarge,16 vCPUs\r\nm6i.4xlarge,16 vCPUs\r\nc5d.4xlarge,16 vCPUs\r\nr5.24xlarge,96 vCPUs\r\nx2iedn.8xlarge,32 vCPUs\r\nr4.large,2 vCPUs\r\nd3en.2xlarge,8 vCPUs\r\nx1e.32xlarge,128 vCPUs\r\nx2iedn.xlarge,4 vCPUs\r\nc5n.xlarge,4 vCPUs\r\nx2iezn.metal,48 vCPUs\r\np3dn.24xlarge,96 vCPUs\r\np2.16xlarge,64 vCPUs\r\nm6i.xlarge,4 vCPUs\r\nr6i.2xlarge,8 vCPUs\r\nx1e.2xlarge,8 vCPUs\r\nm6i.2xlarge,8 vCPUs\r\nm5.16xlarge,64 vCPUs\r\nc5d.9xlarge,36 vCPUs\r\ng3.4xlarge,16 vCPUs\r\nr6i.12xlarge,48 vCPUs\r\nx2iedn.16xlarge,64 vCPUs\r\nh1.2xlarge,8 vCPUs\r\nm4.16xlarge,64 vCPUs\r\nm5zn.6xlarge,24 vCPUs\r\nx1e.8xlarge,32 vCPUs\r\nd3en.6xlarge,24 vCPUs\r\nr5.xlarge,4 vCPUs\r\nc5d.metal,96 vCPUs\r\nm5d.8xlarge,32 vCPUs\r\nr6i.metal,128 vCPUs\r\nm4.xlarge,4 vCPUs\r\nd2.xlarge,4 vCPUs\r\nc6i.xlarge,4 vCPUs\r\nc5.2xlarge,8 vCPUs\r\ng4dn.16xlarge,64 vCPUs\r\nx2iedn.4xlarge,16 vCPUs\r\nm5.8xlarge,32 vCPUs\r\nr4.16xlarge,64 vCPUs\r\nr6i.16xlarge,64 vCPUs\r\nm5.xlarge,4 vCPUs\r\nz1d.2xlarge,8 vCPUs\r\nr5.8xlarge,32 vCPUs\r\nr4.2xlarge,8 vCPUs\r\nz1d.xlarge,4 vCPUs\r\nd3.8xlarge,32 vCPUs\r\np2.8xlarge,32 vCPUs\r\nr6i.4xlarge,16 vCPUs\r\nr6i.xlarge,4 vCPUs\r\nc4.8xlarge,36 vCPUs\r\nu-3tb1.56xlarge,224 vCPUs\r\nz1d.metal,48 vCPUs\r\nt3.2xlarge,8 vCPUs                                                         for a                   9h 36m                   burst\r\nd2.2xlarge,8 vCPUs\r\nd2.4xlarge,16 vCPUs\r\nr6i.32xlarge,128 vCPUs\r\nx2idn.16xlarge,64 vCPUs\r\nu-6tb1.112xlarge,448 vCPUs\r\ng4dn.metal,96 vCPUs\r\nz1d.6xlarge,24 vCPUs\r\nd3.4xlarge,16 vCPUs\r\nm5zn.12xlarge,48 vCPUs\r\nm5d.4xlarge,16 vCPUs\r\nr5.16xlarge,64 vCPUs\r\nx2iezn.8xlarge,32 vCPUs\r\nt3.xlarge,4 vCPUs                                                         for a                   9h 36m                   burst\r\nz1d.12xlarge,48 vCPUs\r\nr4.xlarge,4 vCPUs\r\nr6i.8xlarge,32 vCPUs\r\nr5d.large,2 vCPUs\r\nm5.4xlarge,16 vCPUs\r\nr6i.24xlarge,96 vCPUs\r\ni3.metal,64 vCPUs\r\nm5zn.2xlarge,8 vCPUs\r\nc5d.12xlarge,48 vCPUs\r\np2.xlarge,4 vCPUs\r\nr4.4xlarge,16 vCPUs\r\nd3en.4xlarge,16 vCPUs\r\nf1.4xlarge,16 vCPUs\r\nx2idn.24xlarge,96 vCPUs\r\nf1.2xlarge,8 vCPUs\r\nm6i.32xlarge,128 vCPUs\r\nm5zn.large,2 vCPUs\r\nu-12tb1.metal,448 vCPUs\r\nx2iedn.24xlarge,96 vCPUs\r\nm5d.metal,96 vCPUs\r\nc4.2xlarge,8 vCPUs\r\nh1.16xlarge,64 vCPUs\r\nm6i.12xlarge,48 vCPUs\r\ni3.large,2 vCPUs\r\ng3.8xlarge,32 vCPUs\r\nr5.4xlarge,16 vCPUs\r\nm5zn.xlarge,4 vCPUs\r\nr5.large,2 vCPUs\r\nm4.2xlarge,8 vCPUs\r\nz1d.large,2 vCPUs\r\nc6i.metal,128 vCPUs\r\ni3.16xlarge,64 vCPUs\r\ni3.8xlarge,32 vCPUs\r\nc5n.metal,72 vCPUs\r\nr5d.12xlarge,48 vCPUs\r\ni3.2xlarge,8 vCPUs\r\ng4dn.xlarge,4 vCPUs\r\ng4dn.4xlarge,16 vCPUs\r\np3.8xlarge,32 vCPUs\r\nr5d.16xlarge,64 vCPUs\r\nvt1.3xlarge,12 vCPUs\r\nt3.nano,2 vCPUs                                                         for a                   1h 12m                   burst\r\nd3.xlarge,4 vCPUs\r\ng4dn.2xlarge,8 vCPUs\r\nt3.micro,2 vCPUs                                                         for a                   2h 24m                   burst\r\nu-6tb1.metal,448 vCPUs\r\nt3.small,2 vCPUs                                                         for a                   4h 48m                   burst\r\nf1.16xlarge,64 vCPUs\r\nvt1.24xlarge,96 vCPUs\r\nt3.large,2 vCPUs                                                         for a                   7h 12m                   burst\r\nvt1.6xlarge,24 vCPUs\r\nu-9tb1.metal,448 vCPUs\r\ng4dn.12xlarge,48 vCPUs\r\np4d.24xlarge,96 vCPUs" }
+  EOS
+end
+
+
+#GROUP INSTANCE TYPES INTO INSTANCE FAMILIES AND CALCULATE INSTANCE HOURS
+datasource "ds_instance_vcpus_per_fam" do
+  run_script $js_get_instance_vcpus_per_fam, $ds_nfu_ratio_csv, $ds_vcpu_data_csv, $ds_usage_data
+end
+
+script "js_get_instance_vcpus_per_fam", type: "javascript" do
+  parameters "nfu_ratios", "vcpu_data", "usage_data"
+  result "result"
+  code <<-'EOS'
+  temp_result = []
+  result = []
+
+  //Convert NFU csv to json
+  nfu_ratio_array = nfu_ratios.csv.toString().split("\r\n")
+  nfu_ratios_json = []
+  _.each(nfu_ratio_array, function(ratio, i){
+    if( i != 0 ){
+      nfu_ratios_json.push({
+        "instance_size": ratio.split(",")[0],
+        "nfu": ratio.split(",")[1]
+      })
+    }
+  })
+
+  //Convert vCPU csv to json
+  vcpu_data_array = vcpu_data.csv.toString().split("\r\n")
+  vcpu_data_json = []
+  _.each(vcpu_data_array, function(data, i){
+    if( i != 0 ){
+      vcpu_data_json.push({
+        "instance_type": data.split(",")[0],
+        "vcpu_count": data.split(",")[1].split(" ")[0]
+      })
+    }
+  })
+
+  //Enrich current data with Instance Family, and then vCPU count.  - //then calculate Normalized Instance Hours using NFU
+  _.each(usage_data, function(data){
+    data["instance_family"] = data.instance_type.split(".")[0]
+    _.each(vcpu_data_json, function(vcpu){
+      if(data.instance_type == vcpu.instance_type ){ 
+        data["vcpu_count"] = (data.usage_amount / 730 ) * vcpu.vcpu_count //Normalize Usage Amount (divide by 730 ) to get more accurate vCPU count
+      }
+    })
+  })
+
+  //For each month, sum Instance Hours for each Instance Family
+  month = _.pluck( _.uniq(usage_data, function(data){ return data.month }), "month" )
+  inst_family = _.pluck( _.uniq(usage_data, function(data){ return data.instance_family }), "instance_family" )
+
+  _.each(month, function(mo){
+    _.each(inst_family, function(fam){
+      total_vcpu_count = 0
+      _.each(usage_data, function(data){
+        if(data.month == mo && data.instance_family == fam){
+          total_vcpu_count += data.vcpu_count 
+        }
+      })
+      temp_result.push({
+        "month": mo,
+        "instance_family": fam,
+        "total_vcpu_count": total_vcpu_count
+      })
+    })  
+  })
+
+  //Get highest 8 Instance Families for vCPUs used
+  vcpu_totals_per_fam = []
+  _.each(inst_family, function(fam){
+    total_vcpus_12_months = 0
+    _.each(temp_result, function(data){
+      if(data.instance_family == fam){
+        total_vcpus_12_months += data.total_vcpu_count 
+      }
+    })
+    vcpu_totals_per_fam.push({
+      "total_vcpus_12_months": total_vcpus_12_months,
+      "instance_family": fam
+    })
+  })
+
+  top_8_inst_fams = _.last( _.pluck( _.sortBy(vcpu_totals_per_fam,"total_vcpus_12_months"), "instance_family" ), [8] )
+
+  //If Instance Family is not in 8 highest vCPUs used, then put into "Other" category
+  _.each(month, function(mo){
+    total_vcpus_other = 0
+    _.each(temp_result, function(data){
+      if(data.month == mo ){
+        exists = _.find(top_8_inst_fams, function(inst_fam){ return inst_fam == data.instance_family })
+        console.log(exists)
+        if(exists == null){
+          total_vcpus_other += data.total_vcpu_count
+        } else {
+          result.push({
+            "month": data.month,
+            "instance_family": data.instance_family,
+            "total_vcpu_count": data.total_vcpu_count
+          })
+        }
+      }
+    })
+    result.push({
+      "month": mo,
+      "instance_family": "Other",
+      "total_vcpu_count": total_vcpus_other
+    })
+  })
+  EOS
+end
+
+#CHART CREATION
+datasource "ds_chart_creation" do
+  run_script $js_create_chart_data, $ds_instance_vcpus_per_fam, $param_region
+end
+
+script "js_create_chart_data", type: "javascript" do
+  parameters "inst_vcpu_data", "param_region"
+  result "report"
+  code <<-EOS
+
+  //Group data by Instance Family
+  group_by_inst_fam = 
+  _.groupBy(inst_vcpu_data, function(data){ return data.instance_family })
+  report = inst_vcpu_data
+
+  //Create chart axis labels
+  chart_axis_labels = 
+  ("chxl=1:," + 
+    _.uniq(inst_vcpu_data, function(data) { return data.month })
+    .map(function(data){ return data.month.substring(0,7) })
+  ).split(",").join("|")
+
+  //Create legend
+  chart_legend = "chdl="
+  var i = 0 
+  for (var key in group_by_inst_fam) {
+    chart_legend += key.replace("&","%26").replace(/ /g,"%20")
+    i++
+    if (i < _.size(group_by_inst_fam)) { chart_legend += "|" }
+  }
+
+  //Create chart dataset
+  chart_data = "chd=t:"
+  var count_1 = 0
+  _.each(group_by_inst_fam, function(o){
+    var count_2 = 0
+    _.each(o, function(p){
+      chart_data = chart_data + p.total_vcpu_count
+      count_2++
+      if (count_2 < _.size(o)){ chart_data = chart_data + "," } 
+    })
+    count_1++
+    if (count_1 < _.size(group_by_inst_fam)){ chart_data = chart_data + "|" }
+  })
+
+  //Create Chart Title
+  chart_title = "Total Instance vCPUs Used Per Instance Family For " + param_region
+  chart_title_encode = encodeURI( "chtt=" + chart_title )
+  if( param_region == "" ){
+    chart_title = "Total Instance vCPUs Used Per Instance Family"
+    chart_title_encode = encodeURI( "chtt=" + chart_title )
+  }
+
+  //Whole Chart object
+  chart = {
+    chart_type: "cht=bvs",
+    chart_size: "chs=900x500",
+    chart_data: chart_data,
+    chart_title: chart_title_encode,
+    chart_image: "chof=.png",  
+    chart_label_position: "chdlp=b",
+    chart_axis: "chxt=y,x",
+    chart_axis_label: chart_axis_labels,
+    chart_axis_format: encodeURI("chxs=0N*f" + "0sz* vCPUs"),
+    chart_line_style: "chls=3|3|3|3|3|3|3|3|3|3|3",
+    chart_line_color: "chco=6929c4,9f1853,198038,b28600,1192e8,009d9a,005d5d,007d79",
+    chart_data_scale: "chds=a",
+    chart_legend: chart_legend,
+    chart_legend_size: "chdls=000000,5",
+    policy_title: chart_title
+  }
+
+  report[0]["chart_dimensions"] = chart
+  EOS
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_instance_hours_report" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "pol_inst_vcpu_per_inst_fam" do
+  validate_each $ds_chart_creation do
+    summary_template "AWS - Instance vCPUs Used per Instance Family (Normalized - past 12 months)"
+    detail_template <<-EOS
+    # AWS - {{ with index data 0 }}{{ .chart_dimensions.policy_title }}{{ end }} Report
+    ![Instance Hours Used Per Instance Family Chart](https://image-charts.com/chart?{{ with index data 0 }}{{ .chart_dimensions.chart_data }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_size }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_type }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_image }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_title }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_label_position }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_axis }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_axis_label }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_line_style }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_line_color }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_data_scale }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_legend_size }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_legend }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_axis_format }}{{ end }})
+    ___
+    ###### Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }}) within Org: {{ rs_org_name }} (Org ID: {{ rs_org_id }})
+    EOS
+    escalate $esc_instance_hours_report
+    check eq(0,1)
+    export do
+      # no actions so resource_level can be false
+      resource_level false
+      field "month" do
+        label "Month"
+      end
+      field "instance_family" do
+        label "Instance Family"
+      end
+      field "total_vcpu_count" do
+        label "vCPUs Used"
+      end
+    end
+  end
+end
