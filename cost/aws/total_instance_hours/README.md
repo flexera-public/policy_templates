@@ -1,4 +1,4 @@
-# Commitment Forecasting Policy
+# AWS Number of Instance Hours Used Policy Template
 
 ## What it does
 
