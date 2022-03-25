@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.4
+
+- API endpoint fix
+
 ## v3.3
 
 - updated savings_currency to savingsCurrency
