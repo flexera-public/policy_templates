@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.9
+
+- API endpoint fix
+
 ## v1.8
 
 - updated README.md rightscale documentation links with docs.flexera documentation links
