@@ -1,4 +1,4 @@
-name "AWS - Number of Hours per Instance Family"
+name "AWS Number of Hours Used per Instance Family"
 rs_pt_ver 20180301
 type "policy"
 short_description "Number of Hours used for each AWS Instance Family"
@@ -195,6 +195,7 @@ script "js_get_instance_hours_per_fam", type: "javascript" do
   parameters "nfu_ratios", "usage_data"
   result "result"
   code <<-'EOS'
+  temp_result = []
   result = []
 
   //Convert NFU csv to json
@@ -231,7 +232,7 @@ script "js_get_instance_hours_per_fam", type: "javascript" do
           total_inst_hrs += data.normalized_instance_hours 
         }
       })
-      result.push({
+      temp_result.push({
         "month": mo,
         "instance_family": fam,
         "total_instance_hours": total_inst_hrs
@@ -239,16 +240,57 @@ script "js_get_instance_hours_per_fam", type: "javascript" do
     })  
   })
 
+  //Get highest 8 Instance Families for Instance Hours used
+  inst_hr_totals_per_fam = []
+  _.each(inst_family, function(fam){
+    total_inst_hrs_12_months = 0
+    _.each(temp_result, function(data){
+      if(data.instance_family == fam){
+        total_inst_hrs_12_months += data.total_instance_hours 
+      }
+    })
+    inst_hr_totals_per_fam.push({
+      "total_inst_hrs_12_months": total_inst_hrs_12_months,
+      "instance_family": fam
+    })
+  })
+  
+  top_8_inst_fams = _.last( _.pluck( _.sortBy(inst_hr_totals_per_fam,"total_inst_hrs_12_months"), "instance_family" ), [8] )
+  
+  //If Instance Family is not in 8 highest Hours used, then put into "Other" category
+  _.each(month, function(mo){
+    total_inst_hrs_other = 0
+    _.each(temp_result, function(data){
+      if(data.month == mo ){
+        exists = _.find(top_8_inst_fams, function(inst_fam){ return inst_fam == data.instance_family })
+        console.log(exists)
+        if(exists == null){
+          total_inst_hrs_other += data.total_instance_hours
+        } else {
+          result.push({
+            "month": data.month,
+            "instance_family": data.instance_family,
+            "total_instance_hours": data.total_instance_hours
+          })
+        }
+      }
+    })
+    result.push({
+      "month": mo,
+      "instance_family": "Other",
+      "total_instance_hours": total_inst_hrs_other
+    })
+  })
   EOS
 end
 
 #CHART CREATION
 datasource "ds_chart_creation" do
-  run_script $js_create_chart_data, $ds_instance_hours_per_fam
+  run_script $js_create_chart_data, $ds_instance_hours_per_fam, $param_region
 end
 
 script "js_create_chart_data", type: "javascript" do
-  parameters "inst_hrs_data"
+  parameters "inst_hrs_data", "param_region"
   result "report"
   code <<-EOS
 
@@ -272,7 +314,6 @@ script "js_create_chart_data", type: "javascript" do
     i++
     if (i < _.size(group_by_inst_fam)) { chart_legend += "|" }
   }
-  console.log(chart_legend)
 
   //Create chart dataset
   chart_data = "chd=t:"
@@ -288,21 +329,31 @@ script "js_create_chart_data", type: "javascript" do
     if (count_1 < _.size(group_by_inst_fam)){ chart_data = chart_data + "|" }
   })
 
+  //Create Chart Title
+  chart_title = "Total Instance Hours Used Per Instance Family For " + param_region
+  chart_title_encode = encodeURI( "chtt=" + chart_title )
+  if( param_region == "" ){
+    chart_title = "Total Instance Hours Used Per Instance Family"
+    chart_title_encode = encodeURI( "chtt=" + chart_title )
+  }
+
   //Whole Chart object
   chart = {
-    chart_type: "cht=lc",
+    chart_type: "cht=bvs",
     chart_size: "chs=900x500",
     chart_data: chart_data,
-    chart_title: "chtt=Total%20Instance%20Hours%20Used%20Per%20Instance%20Family",
+    chart_title: chart_title_encode,
     chart_image: "chof=.png",  
     chart_label_position: "chdlp=b",
-    chart_y_axis: "chxt=y,x",
-    chart_y_axis_label: chart_axis_labels,
+    chart_axis: "chxt=y,x",
+    chart_axis_label: chart_axis_labels,
+    chart_axis_format: encodeURI("chxs=0N*f" + "0sz* Hours"),
     chart_line_style: "chls=3|3|3|3|3|3|3|3|3|3|3",
     chart_line_color: "chco=6929c4,9f1853,198038,b28600,1192e8,009d9a,005d5d,007d79",
     chart_data_scale: "chds=a",
     chart_legend: chart_legend,
-    chart_legend_size: "chdls=000000,5"
+    chart_legend_size: "chdls=000000,5",
+    policy_title: chart_title
   }
 
   report[0]["chart_dimensions"] = chart
@@ -328,9 +379,10 @@ policy "pol_inst_hrs_per_inst_fam" do
   validate_each $ds_chart_creation do
     summary_template "AWS - Instance Hours Used per Instance Family (Normalized - past 12 months)"
     detail_template <<-EOS
-    # AWS - Instance Hours Used Per Instance Family Report
-    ![Instance Hours Used Per Instance Family Chart](https://image-charts.com/chart?{{ with index data 0 }}{{ .chart_dimensions.chart_data }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_size }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_type }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_image }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_title }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_label_position }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_y_axis }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_y_axis_label }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_line_style }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_line_color }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_data_scale }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_legend_size }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_legend }}{{ end }}
-    )
+    # AWS - {{ with index data 0 }}{{ .chart_dimensions.policy_title }}{{ end }} Report
+    ![Instance Hours Used Per Instance Family Chart](https://image-charts.com/chart?{{ with index data 0 }}{{ .chart_dimensions.chart_data }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_size }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_type }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_image }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_title }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_label_position }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_axis }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_axis_label }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_line_style }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_line_color }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_data_scale }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_legend_size }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_legend }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_axis_format }}{{ end }})
+    ___
+    ###### Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }}) within Org: {{ rs_org_name }} (Org ID: {{ rs_org_id }})
     EOS
     escalate $esc_instance_hours_report
     check eq(0,1)
