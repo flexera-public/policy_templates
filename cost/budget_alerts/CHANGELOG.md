@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.19
+
+- Use provided keyword for Optima endpoint
+
 ## v1.18
 
 - URIEncode all the image-charts options
