@@ -1,0 +1,188 @@
+name "FlexNet Manager Overused Licenses"
+rs_pt_ver 20180301
+type "policy"
+short_description "Looks up Flexnet Manager Licenses and finds all Flexnet Manager Licenses with available count less than user provide percentage, and sends the result as an email.  See the [README](https://github.com/flexera/policy_templates/tree/master/compliance/fnms/fnms_low_licenses_available) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+long_description ""
+severity "medium"
+category "Compliance"
+info(
+  version: "2.0",
+  provider: "Flexera FNMS",
+  service: "",
+  policy_set: ""
+)
+
+###############################################################################
+# Parameters
+###############################################################################
+
+parameter "param_email" do
+  type "list"
+  label "Email addresses of the recipients you wish to notify"
+  description "A list of email addresse(s) to notify"
+end
+
+###############################################################################
+# Credentials
+###############################################################################
+
+credentials "api_auth" do
+  schemes "api_key","ntlm"
+  label "FNMS"
+  description "Select the FNMS Credential from the list."
+  tags "provider=flexera_fnms"
+end
+
+###############################################################################
+# Datasources
+###############################################################################
+
+datasource "ds_license_attributes" do
+  request do
+    auth $api_auth
+    verb "GET"
+    host "api.flexera.com"
+    path join(["/fnms/v1/orgs/", rs_org_id, "/license-attributes"])
+    query "offset", ""
+    query "limit", ""
+  end
+end
+
+datasource "ds_license_entitlements" do
+  request do
+    auth $api_auth
+    verb "GET"
+    host "api.flexera.com"
+    path join(["/fnms/v1/orgs/", rs_org_id, "/license-entitlements"])
+    query "offset", ""
+    query "limit", ""
+  end
+end
+
+datasource "ds_licenses" do
+  run_script $js_licenses, $ds_license_attributes, $ds_license_entitlements
+end
+
+datasource "ds_overused_licenses" do
+  run_script $js_overused_licenses, $ds_licenses
+end
+
+###############################################################################
+# Scripts
+###############################################################################
+
+script "js_licenses", type: "javascript" do
+  parameters "ds_license_attributes", "ds_license_entitlements"
+  result "result"
+  code <<-EOS
+    license_attributes = []
+    license_entitlements = []
+
+    _.each(ds_license_attributes['values'], function(la) {
+      license_attributes.push(la)
+    })
+
+    _.each(ds_license_entitlements['values'], function(le) {
+      license_entitlements.push(le)
+    })
+
+    result = []
+
+    _.each(license_attributes, function(la) {
+      _.each(license_entitlements, function(le) {
+        if (la['licenseId'] == le['licenseId']) {
+          available = le['available']
+          extra = le['extra']
+          consumed = le['consumed']
+
+          if (available + extra != 0) {
+            consumption = (consumed / (available + extra)) * 100
+          } else {
+            if (consumed == 0) {
+              consumption = 0
+            } else {
+              consumption = "N/A"
+            }
+          }
+
+          la['consumed'] = le['consumed']
+          la['available_extra'] = parseInt(le['available']) + parseInt(le['extra'])
+          la['consumption'] = consumption
+          la['id'] = la['licenseId']
+
+          result.push(la)
+        }
+      })
+    })
+EOS
+end
+
+script "js_overused_licenses", type: "javascript" do
+  parameters "ds_licenses"
+  result "result"
+  code <<-EOS
+    result = []
+
+    _.each(ds_licenses, function(license) {
+      if (license['consumption'] > 100 || license['consumption'] == "N/A") {
+         result.push(license)
+      }
+    })
+EOS
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "pol_overused_licenses" do
+  validate $ds_overused_licenses do
+    summary_template "Overused Licenses Found"
+    escalate $send_report
+    check eq(size(data),0)
+    export do
+      resource_level true
+      field "id" do
+        label "ID"
+      end
+      field "licenseName" do
+        label "Name"
+      end
+      field "licenseType" do
+        label "Type"
+      end
+      field "publisher" do
+        label "Publisher"
+      end
+      field "edition" do
+        label "Edition"
+      end
+      field "licenseDuration" do
+        label "Duration"
+      end
+      field "licenseStatus" do
+        label "Status"
+      end
+      field "available_extra" do
+        label "Available Licenses"
+      end
+      field "consumed" do
+        label "Used Licenses"
+      end
+      field "consumption" do
+        label "Percentage of Licenses Used"
+      end
+    end
+  end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "send_report" do
+  automatic true
+  label "Send Email"
+  description "Sends incident email"
+  email $param_email
+end
