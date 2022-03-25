@@ -2,7 +2,7 @@
 
 ## v1.8
 
-- API endpoint fix
+- Use provided keyword for Optima endpoint
 
 ## v1.7
 
