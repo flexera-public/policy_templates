@@ -2,7 +2,7 @@
 
 ## What it does
 
-This policy uses the ITAM Inventories API to look up software licenses and raise an incident if more instances of any licenses are used than are actually available. The incident provides a detailed list of the affected licenses.
+This policy uses the ITAM Inventories API to look up software licenses and raise an incident if more than 90% of available licenses are in use. The incident provides a detailed list of the affected licenses.
 
 ## Input Parameters
 
