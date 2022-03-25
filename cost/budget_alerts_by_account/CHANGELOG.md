@@ -1,5 +1,13 @@
 # Changelog
 
+## v1.7
+
+- URIEncode all the image-charts options
+
+## v1.6
+
+- Fixed nil account_name, and updated searches to get correct data
+
 ## v1.5
 
 - Removed ds_session and synced ds_billing_center from budget alert

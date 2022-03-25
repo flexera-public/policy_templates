@@ -8,7 +8,7 @@ category "Cost"
 tenancy "single"
 default_frequency "daily"
 info(
-  version: "1.5",
+  version: "1.7",
   provider: "Flexera Optima",
   service: "",
   policy_set: ""
@@ -109,21 +109,22 @@ datasource "ds_billing_centers" do
   end
 end
 
+datasource "ds_top_bcs" do
+  run_script $js_top_level_bc, $ds_billing_centers
+end
+
+script "js_top_level_bc", type: "javascript" do
+  parameters "billing_centers"
+  result "filtered_billing_centers"
+  code <<-EOS
+  var filtered_billing_centers =
+  _.reject(billing_centers, function(bc){ return bc.parent_id != null });
+EOS
+end
+
 datasource "ds_top_bc_costs" do
   request do
-    run_script $js_costs_request, rs_org_id, $param_cost_metric, $ds_billing_centers
-  end
-  result do
-    encoding "json"
-    collect jmes_path(response,"rows[*]") do
-      field "vendor", jmes_path(col_item,"dimensions.vendor")
-      field "vendor_account_name", jmes_path(col_item,"dimensions.vendor_account_name")
-      field "id", jmes_path(col_item,"dimensions.billing_center_id")
-      field "amortized_unblended_costs", jmes_path(col_item,"metrics.cost_amortized_unblended_adj")
-      field "amortized_blended_costs", jmes_path(col_item,"metrics.cost_amortized_blended_adj")
-      field "nonamortized_unblended_costs", jmes_path(col_item,"metrics.cost_nonamortized_unblended_adj")
-      field "nonamortized_blended_costs", jmes_path(col_item,"metrics.cost_nonamortized_blended_adj")
-    end
+    run_script $js_costs_request, rs_org_id, $param_cost_metric, $ds_top_bcs
   end
 end
 
@@ -207,35 +208,36 @@ script "js_formatted_costs", type: "javascript" do
   code <<-EOS
   var result = [];
   var costs = [];
-  var cost_type = {
-      "Unamortized Unblended":"nonamortized_unblended_costs",
-      "Amortized Unblended":"amortized_unblended_costs",
-      "Unamortized Blended": "nonamortized_blended_costs",
-      "Amortized Blended":"amortized_blended_costs"
-  }
-  var totalCost=0;
-  var bc_id="";
-  var count=0;
-  var bc_name= "";
-  var type = cost_type[param_cost_metric];
+  var cost_metric = {
+    'Unamortized Unblended':'cost_nonamortized_unblended_adj',
+    'Amortized Unblended':'cost_amortized_unblended_adj',
+    'Unamortized Blended': 'cost_nonamortized_blended_adj',
+    'Amortized Blended':'cost_amortized_blended_adj',
+  };
+  var type = cost_metric[param_cost_metric];
 
-  _.each(ds_top_bc_costs, function(row){
-    var cost = row[type];
-    if (param_acct_name == row["vendor_account_name"]){
-      costs.push({
-        account_name: row["vendor_account_name"],
-        vendor: row["vendor"],
-        total: cost
-      })
+  _.each(ds_top_bc_costs['rows'], function (row) {
+    if (row['dimensions']['vendor_account_name'] != null && row['dimensions']['vendor_account_name'] !== undefined) {
+      if (param_acct_name == row['dimensions']['vendor_account_name']) {
+        costs.push({
+          account_name: row['dimensions']['vendor_account_name'],
+          vendor: row['dimensions']['vendor'],
+          total: row['metrics'][type],
+        });
+      } else {
+        return;
+      }
     }
-  })
+  });
 
-  var sum = _.reduce(_.pluck(costs, 'total'), function(memo, num){ return memo + num; }, 0);
-  result.push({
-    account_name: costs[0]["account_name"],
-    vendor: costs[0]["vendor"],
-    total: sum
-  })
+  var sum = _.reduce(_.pluck(costs, 'total'), function (memo, num) { return memo + num; }, 0);
+  if ( costs.length > 0 ) {
+    result.push({
+      account_name: costs[0]['account_name'],
+      vendor: costs[0]['vendor'],
+      total: sum,
+    });
+  }
   EOS
 end
 
@@ -304,6 +306,7 @@ script "js_filter_target", type: "javascript" do
       var cur = "$"
       var separator = ","
     }
+    separator = separator.trim()
     var target = [];
     _.each(ds_formatted_costs, function(obj){
       var runrate = obj["total"] / monthcomplete ;
@@ -360,17 +363,17 @@ script "js_filter_target", type: "javascript" do
       runrate: target[0]["runrate"],
       monthYear: month_year,
       total: target[0]["total"],
-      chartType: "cht=bhs",
-      chartSize: "chs=800x200",
-      chartData: "chd=t:" + target[0]["actual"] + "," + 0 + "|" + target[0]["forecastedSpend"] + "," + 0 + "|" + 0 + ","+param_monthly_budget + "|" + 0 + "," + target[0]["overBudgetAmount"],
-      chartTitle: "chtt=",
-      chartImage: "chof=.png",
-      chartColor: "chco=65B178,CCF2D6,2F6DB7,E5A687",
-      chartLabel: "chdl=Actual+Spend|Forecasted+Spend|Budget|Over+Budget",
-      chartLabelPosition: "chdlp=b",
-      chartYAxis: "chxt=y",
-      chartYAxisLabel: "chxl=1:|2:|",
-      chartDataAutoScale: "chds=a",
+      chartType: encodeURI('cht=bhs'),
+      chartSize: encodeURI('chs=800x200'),
+      chartData: encodeURI("chd=t:" + target[0]["actual"] + "," + 0 + "|" + target[0]["forecastedSpend"] + "," + 0 + "|" + 0 + ","+param_monthly_budget + "|" + 0 + "," + target[0]["overBudgetAmount"]),
+      chartTitle: encodeURI('chtt='),
+      chartImage: encodeURI('chof=.png'),
+      chartColor: encodeURI('chco=65B178,CCF2D6,2F6DB7,E5A687'),
+      chartLabel: encodeURI('chdl=Actual+Spend|Forecasted+Spend|Budget|Over+Budget'),
+      chartLabelPosition: encodeURI('chdlp=b'),
+      chartYAxis: encodeURI('chxt=y'),
+      chartYAxisLabel: encodeURI('chxl=1:|2:|'),
+      chartDataAutoScale: encodeURI('chds=a'),
       chartDataValue: 'chl=' + target[0]["actualDisplay"].replace(" ","%20") + '||' + target[0]["forecastedSpendDisplay"].replace(" ","%20") + '|||' + target[0]["budgetDisplay"].replace(" ","%20") + '||' + target[0]["overBudgetAmountDisplay"].replace(" ","%20"),
       reportData: target
     }

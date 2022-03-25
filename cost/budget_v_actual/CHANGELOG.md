@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.6
+
+- URIEncode all the image-charts options
+
 ## v1.5
 
 - updated README.md rightscale documentation links with docs.flexera documentation links
