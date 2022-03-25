@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.19
+
+- API endpoint fix
+
 ## v1.18
 
 - URIEncode all the image-charts options

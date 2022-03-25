@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.2
+
+- API endpoint fix
+
 ## v2.1
 
 - URIEncode all the image-charts options
