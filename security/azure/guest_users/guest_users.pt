@@ -37,10 +37,10 @@ end
 # Authentication
 ###############################################################################
 
-credentials "azure_auth" do
+credentials "auth_azure_graph" do
   schemes "oauth2"
   label "Azure"
-  description "Select the Azure Resource Manager Credential from the list."
+  description "Select the Azure Graph Credential from the list."
   tags "provider=azure_graph"
 end
 
@@ -61,9 +61,9 @@ end
 # Datasources
 ###############################################################################
 
-datasource "ds_graph_users" do
+datasource "ds_guest_users" do
   request do
-    auth $azure_auth
+    auth $auth_azure_graph
     pagination $azure_pagination
     host $param_graph_endpoint
     path "/v1.0/users"
@@ -77,27 +77,13 @@ datasource "ds_graph_users" do
       field "displayName", jmes_path(col_item, "displayName")
       field "mail", jmes_path(col_item, "mail")
       field "userPrincipalName", jmes_path(col_item, "userPrincipalName")
-      field "userType", jmes_path(col_item, "userType")
-      field "accountEnabled", jmes_path(col_item, "accountEnabled")
     end
   end
-end
-
-datasource "ds_guest_users" do
-  run_script $js_guest_users, $ds_graph_users
 end
 
 ###############################################################################
 # Scripts
 ###############################################################################
-
-script "js_guest_users", type: "javascript" do
-  parameters "ds_graph_users"
-  result "result"
-  code <<-EOS
-  result = []
-EOS
-end
 
 ###############################################################################
 # Policy
@@ -105,15 +91,18 @@ end
 
 policy "policy_guest_users" do
   validate $ds_guest_users do
-    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): Azure Guest Users Found"
+    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} Azure Guest User(s) Found"
     escalate $esc_guest_users
     check eq(size(data),0)
     export do
       field "id" do
-        label "id"
+        label "ID"
       end
-      field "bad_users_list" do
-        label "bad_users_list"
+      field "displayName" do
+        label "Display Name"
+      end
+      field "mail" do
+        label "Email Address"
       end
     end
   end
