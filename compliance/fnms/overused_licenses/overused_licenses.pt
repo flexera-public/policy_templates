@@ -1,7 +1,7 @@
 name "ITAM Overused Licenses"
 rs_pt_ver 20180301
 type "policy"
-short_description "Looks up software licenses and reports in email any licenses at over 90% usage. See the [README](https://github.com/flexera/policy_templates/tree/master/compliance/fnms/overused_licenses) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+short_description "Looks up software licenses and reports in email any licenses that are overused. See the [README](https://github.com/flexera/policy_templates/tree/master/compliance/fnms/overused_licenses) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 long_description ""
 severity "medium"
 category "Compliance"
@@ -21,6 +21,13 @@ parameter "param_email" do
   type "list"
   label "Email addresses of the recipients you wish to notify"
   description "A list of email address(es) to notify"
+end
+
+parameter "param_percentage" do
+  type "number"
+  label "Percentage of License Usage"
+  description "The percentage of available licenses in use to consider a license overused"
+  default 90
 end
 
 ###############################################################################
@@ -65,7 +72,7 @@ datasource "ds_licenses" do
 end
 
 datasource "ds_overused_licenses" do
-  run_script $js_overused_licenses, $ds_licenses
+  run_script $js_overused_licenses, $ds_licenses, $param_percentage
 end
 
 ###############################################################################
@@ -119,13 +126,13 @@ EOS
 end
 
 script "js_overused_licenses", type: "javascript" do
-  parameters "ds_licenses"
+  parameters "ds_licenses", "param_percentage"
   result "result"
   code <<-EOS
     result = []
 
     _.each(ds_licenses, function(license) {
-      if (license['consumption'] > 90 || license['consumption'] == "N/A") {
+      if (license['consumption'] > param_percentage || license['consumption'] == "N/A") {
          result.push(license)
       }
     })
@@ -138,7 +145,7 @@ end
 
 policy "pol_overused_licenses" do
   validate $ds_overused_licenses do
-    summary_template "Overused Licenses Found"
+    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} Overused License(s) Found"
     escalate $send_report
     check eq(size(data),0)
     export do
