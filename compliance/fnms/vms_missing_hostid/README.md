@@ -1,8 +1,8 @@
-# FlexNet Manager VMs Missing Host ID
+# ITAM VMs Missing Host ID
 
 ## What it does
 
-This policy uses the FlexNet Manager Inventories API to look up virtual machines and raises an incident if any are found without a Host ID assigned to them. The incident provides a detailed list of the affected machines.
+This policy uses the ITAM Inventories API to look up virtual machines and raises an incident if any are found without a Host ID assigned to them. The incident provides a detailed list of the affected machines.
 
 ## Input Parameters
 
