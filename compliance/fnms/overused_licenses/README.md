@@ -9,6 +9,7 @@ This policy uses the ITAM Inventories API to look up software licenses and raise
 This policy has the following input parameters required when launching the policy.
 
 - *Email addresses of the recipients you wish to notify* - A list of email address(es) to notify
+- *Percentage of License Usage* - The percentage of available licenses in use to consider a license overused
 
 ## Policy Actions
 
