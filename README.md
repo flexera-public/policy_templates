@@ -297,6 +297,7 @@ Reference
 - [FlexNet Manager Licenses At Risk](./compliance/fnms/fnms_licenses_at_risk/)
 - [FlexNet Manager Low Available Licenses](./compliance/fnms/fnms_low_licenses_available)
 - [ITAM Missing Active Machines](./compliance/fnms/missing_active_machines/)
+- [ITAM VMs Missing Host ID](./compliance/fnms/vms_missing_hostid)
 
 #### Github
 
