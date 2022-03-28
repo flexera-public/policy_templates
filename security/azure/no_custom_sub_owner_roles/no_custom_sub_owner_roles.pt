@@ -1,0 +1,192 @@
+name "Azure Ensure No Custom Subscription Owner Roles"
+rs_pt_ver 20180301
+type "policy"
+short_description "Report if any custom subscription owner roles exist. \n See the [README](https://github.com/flexera/policy_templates/tree/master/security/azure/no_custom_sub_owner_roles) and [docs.rightscale.com/policies](https://docs.rightscale.com/policies/) to learn more."
+long_description ""
+category "Security"
+severity "high"
+default_frequency "daily"
+info(
+  version: "2.0",
+  provider: "Azure",
+  service: "IAM",
+  policy_set: "CIS",
+  cce_id: "",
+  benchmark_control: "1.20",
+  benchmark_version: "1.4.0",
+  cis_controls: "[\"5.4v8\", \"16v7\", \"4v7\"]",
+  nist: "AC-2"
+)
+
+###############################################################################
+# Parameters
+###############################################################################
+
+parameter "param_email" do
+  type "list"
+  label "Email addresses of the recipients you wish to notify"
+end
+
+parameter "param_azure_endpoint" do
+  type "string"
+  label "Azure Endpoint"
+  allowed_values "management.azure.com", "management.chinacloudapi.cn"
+  default "management.azure.com"
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+credentials "azure_auth" do
+  schemes "oauth2"
+  label "Azure"
+  description "Select the Azure Resource Manager Credential from the list."
+  tags "provider=azure_rm"
+end
+
+###############################################################################
+# Pagination
+###############################################################################
+
+pagination "azure_pagination" do
+  get_page_marker do
+    body_path "nextLink"
+  end
+  set_page_marker do
+    uri true
+  end
+end
+
+###############################################################################
+# Datasources
+###############################################################################
+
+datasource "ds_subscriptions" do
+  request do
+    auth $azure_auth
+    pagination $azure_pagination
+    host $param_azure_endpoint
+    path "/subscriptions/"
+    query "api-version", "2019-06-01"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "value[*]") do
+      field "id", jmes_path(col_item, "subscriptionId")
+      field "displayName", jmes_path(col_item, "displayName")
+      field "state", jmes_path(col_item, "state")
+    end
+  end
+end
+
+datasource "ds_role_defs" do
+  iterate $ds_subscriptions
+  request do
+    auth $azure_auth
+    pagination $azure_pagination
+    host $param_azure_endpoint
+    path join(["/subscriptions/", val(iter_item, "id"), "/providers/Microsoft.Authorization/roleDefinitions"])
+    query "api-version", "2015-07-01"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "value[*]") do
+      field "full_id", jmes_path(col_item, "id")
+      field "id", jmes_path(col_item, "name")
+      field "type", jmes_path(col_item, "type")
+      field "description", jmes_path(col_item, "properties.description")
+      field "assignableScopes", jmes_path(col_item, "properties.assignableScopes")
+      field "permissions", jmes_path(col_item, "properties.permissions")
+      field "roleName", jmes_path(col_item, "properties.roleName")
+      field "roleType", jmes_path(col_item, "properties.type")
+      field "subscriptionId", val(iter_item, "id")
+      field "subscriptionName", val(iter_item, "displayName")
+    end
+  end
+end
+
+datasource "ds_bad_role_defs" do
+  run_script $js_bad_role_def, $ds_role_defs
+end
+
+###############################################################################
+# Scripts
+###############################################################################
+
+script "js_bad_role_def", type: "javascript" do
+  parameters "ds_role_defs"
+  result "result"
+  code <<-EOS
+  result = []
+
+  _.each(ds_role_defs, function(role) {
+    // Ignore built in roles
+    if (role['roleType'] != 'BuiltInRole') {
+      // Ignore roles that aren't global or at the subscription level
+      if (_.contains(role['assignableScopes'], '/') || _.contains(role['assignableScopes'], '/subscriptions/' + role['subscriptionId'])) {
+        // Look for roles that contain "*" as one of their actions
+        star_action_found = false
+
+        _.each(role[permissions], function(perm) {
+          if (_.contains(perm[actions], '*')) {
+            star_action_found = true
+          }
+        })
+
+        if (star_action_found) {
+          result.push(role)
+        }
+      }
+    }
+  })
+EOS
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "policy_bad_role_defs" do
+  validate $ds_bad_role_defs do
+    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): Azure Custom Subscription Owner Roles"
+    escalate $esc_bad_role_defs
+    check eq(size(data),0)
+    export do
+      field "id" do
+        label "ID"
+      end
+      field "roleName" do
+        label "Name"
+      end
+      field "roleType" do
+        label "Type"
+      end
+      field "description" do
+        label "Description"
+      end
+      field "subscriptionId" do
+        label "Subscription ID"
+      end
+      field "subscriptionName" do
+        label "Subscription Name"
+      end
+      field "full_id" do
+        label "Full Path"
+      end
+    end
+  end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_bad_role_defs" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
+end
