@@ -1,5 +1,10 @@
 # Changelog
 
+## v1.8
+
+- Fixed issue with currentSpend subtracting 3 days unnecessarily
+- Fixed issue with incorrect API endpoint
+
 ## v1.7
 
 - URIEncode all the image-charts options

@@ -292,10 +292,15 @@ Reference
 - [Google Long-Stopped Instances](./compliance/google/long_stopped_instances)
 - [Google Unlabeled Resources](./compliance/google/unlabeled_resources)
 
-#### Other
+#### ITAM/FNMS
 
 - [FlexNet Manager Licenses At Risk](./compliance/fnms/fnms_licenses_at_risk/)
 - [FlexNet Manager Low Available Licenses](./compliance/fnms/fnms_low_licenses_available)
+- [ITAM Missing Active Machines](./compliance/fnms/missing_active_machines/)
+- [ITAM VMs Missing Host ID](./compliance/fnms/vms_missing_hostid)
+
+#### Github
+
 - [GitHub.com Available Seats](./compliance/github/available_seats/)
 - [GitHub.com Unpermitted Outside Collaborators](./compliance/github/outside_collaborators/)
 - [GitHub.com Unpermitted Repository Names](./compliance/github/repository_naming/)
@@ -303,6 +308,9 @@ Reference
 - [GitHub.com Unpermitted Sized Repositories](./compliance/github/repository_size/)
 - [GitHub.com Repository Branches without Protection](./compliance/github/repository_branch_protection/)
 - [GitHub.com Repositories without Admin Team](./compliance/github/repository_admin_team/)
+
+#### Other
+
 - [Policy Update Notification](./compliance/policy_update_notification/)
 
 ### Operational
