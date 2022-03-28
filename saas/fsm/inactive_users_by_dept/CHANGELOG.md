@@ -1,6 +1,7 @@
 # Changelog
 
 ## v2.6
+
 - Added pagination for API call
 - Refactored script 'js_format_data'
 
