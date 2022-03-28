@@ -232,6 +232,12 @@ Reference
 
 - [Azure Resources with public IP address](./security/azure/resources_with_public_ip_address)
 
+##### IAM
+
+###### CIS Policies
+
+- [Azure Guest Users Audit](./security/azure/guest_users/)
+
 ##### Database
 
 - [Azure Publicly Accessible Managed SQL Instance](./security/azure/sql_publicly_accessible_managed_instance/)
