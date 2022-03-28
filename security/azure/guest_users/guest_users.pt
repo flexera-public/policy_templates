@@ -1,0 +1,131 @@
+name "Azure Guest Users Audit"
+rs_pt_ver 20180301
+type "policy"
+short_description "Report if any guest users exist so that they can be reviewed. \n See the [README](https://github.com/flexera/policy_templates/tree/master/security/azure/guest_users) and [docs.rightscale.com/policies](https://docs.rightscale.com/policies/) to learn more."
+long_description ""
+category "Security"
+severity "high"
+default_frequency "daily"
+info(
+  version: "2.0",
+  provider: "Azure",
+  service: "IAM",
+  policy_set: "CIS",
+  cce_id: "",
+  benchmark_control: "1.3",
+  benchmark_version: "1.4.0",
+  cis_controls: "[\"5.3v8\", \"6.2v8\", \"16.8v7\"]",
+  nist: "AC-2"
+)
+
+###############################################################################
+# Parameters
+###############################################################################
+
+parameter "param_email" do
+  type "list"
+  label "Email addresses of the recipients you wish to notify"
+end
+
+parameter "param_graph_endpoint" do
+  type "string"
+  label "Azure Graph API Endpoint"
+  default "graph.microsoft.com"
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+credentials "azure_auth" do
+  schemes "oauth2"
+  label "Azure"
+  description "Select the Azure Resource Manager Credential from the list."
+  tags "provider=azure_graph"
+end
+
+###############################################################################
+# Pagination
+###############################################################################
+
+pagination "azure_pagination" do
+  get_page_marker do
+    body_path "nextLink"
+  end
+  set_page_marker do
+    uri true
+  end
+end
+
+###############################################################################
+# Datasources
+###############################################################################
+
+datasource "ds_graph_users" do
+  request do
+    auth $azure_auth
+    pagination $azure_pagination
+    host $param_graph_endpoint
+    path "/v1.0/users"
+    query "$filter", "userType eq 'Guest'"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "value[*]") do
+      field "id", jmes_path(col_item, "id")
+      field "displayName", jmes_path(col_item, "displayName")
+      field "mail", jmes_path(col_item, "mail")
+      field "userPrincipalName", jmes_path(col_item, "userPrincipalName")
+      field "userType", jmes_path(col_item, "userType")
+      field "accountEnabled", jmes_path(col_item, "accountEnabled")
+    end
+  end
+end
+
+datasource "ds_guest_users" do
+  run_script $js_guest_users, $ds_graph_users
+end
+
+###############################################################################
+# Scripts
+###############################################################################
+
+script "js_guest_users", type: "javascript" do
+  parameters "ds_graph_users"
+  result "result"
+  code <<-EOS
+  result = []
+EOS
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "policy_guest_users" do
+  validate $ds_guest_users do
+    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): Azure Guest Users Found"
+    escalate $esc_guest_users
+    check eq(size(data),0)
+    export do
+      field "id" do
+        label "id"
+      end
+      field "bad_users_list" do
+        label "bad_users_list"
+      end
+    end
+  end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_guest_users" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
+end
