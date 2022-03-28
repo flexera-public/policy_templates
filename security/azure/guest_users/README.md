@@ -2,7 +2,7 @@
 
 ## What it does
 
-This policy pulls a list of all guest users on the Azure account. An incident is raised with the list of affected users if any exist.
+This policy pulls a list of all guest users on the Azure account. An incident is raised with the list of affected users if any exist so that said users can be reviewed to ensure that they still need to exist.
 
 ## Functional Details
 
