@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.4
+
+- Use provided keyword for Optima endpoint
+
 ## v3.3
 
 - updated savings_currency to savingsCurrency and fixed possible N/A value to 0.0
