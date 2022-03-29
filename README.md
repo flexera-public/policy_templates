@@ -238,6 +238,12 @@ Reference
 
 - [Azure Ensure Log Analytics Auto-Provisioning](./security/azure/log_analytics_autoprovision/)
 
+##### IAM
+
+###### CIS Policies
+
+- [Azure Guest Users Audit](./security/azure/guest_users/)
+
 ##### Database
 
 - [Azure Publicly Accessible Managed SQL Instance](./security/azure/sql_publicly_accessible_managed_instance/)
@@ -368,7 +374,8 @@ Reference
 - [SaaS Manager - Suspicious Users](./saas/fsm/suspicious_users)
 - [SaaS Manager - Unsanctioned Spend](./saas/fsm/unsanctioned_spend)
 - [SaaS Manager - Redundant Apps](./saas/fsm/redundant_apps)
-- [SaaS Manager - Inactive Users](./saas/fsm/inactive_users_by_dept)
+- [SaaS Manager - Inactive Users by Department](./saas/fsm/inactive_users_by_dept)
+- [SaaS Manager - Inactive Users for Integrated Applications](./saas/fsm/inactive_users_for_integrated_apps)
 - [SaaS Manager - Duplicate User Accounts](./saas/fsm/duplicate_users)
 - [SaaS Manager - Unsanctioned Applications with Existing Contract](./saas/fsm/unsanctioned_apps_with_contract)
 - [SaaS Manager - SaaS App User Report by Category](./saas/fsm/users_by_category)
