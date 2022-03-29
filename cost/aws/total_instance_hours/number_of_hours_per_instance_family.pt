@@ -173,48 +173,44 @@ script "js_get_usage_data", type: "javascript" do
   EOS
 end
 
-#GET CSV WITH NORMALIZATION FACTOR UNITS
-datasource "ds_nfu_ratio_csv" do
-  run_script $js_get_aws_nfu
-end
-
-script "js_get_aws_nfu", type: "javascript" do
-  result "result"
-  code <<-'EOS'
-  var result =  { "csv": "Instance Size,Normalization Factor\r\nnano,0.25\r\nmicro,0.5\r\nsmall,1\r\nmedium,2\r\nlarge,4\r\nxlarge,8\r\n2xlarge,16\r\n3xlarge,24\r\n4xlarge,32\r\n6xlarge,48\r\n8xlarge,64\r\n9xlarge,72\r\n10xlarge,80\r\n12xlarge,96\r\n16xlarge,128\r\n18xlarge,144\r\n24xlarge,192\r\n32xlarge,256\r\n56xlarge,448\r\n112xlarge,896"}
-  EOS
+#GET DATA WITH NORMALIZATION FACTOR UNITS FOR INSTANCE TYPES
+datasource "ds_aws_instance_size_map" do
+  request do
+    verb "GET"
+    host "raw.githubusercontent.com"
+    path "/flexera/policy_templates/master/data/aws/instance_types.json"
+    header "User-Agent", "RS Policies"
+  end
 end
 
 
 #GROUP INSTANCE TYPES INTO INSTANCE FAMILIES AND CALCULATE INSTANCE HOURS
 datasource "ds_instance_hours_per_fam" do
-  run_script $js_get_instance_hours_per_fam, $ds_nfu_ratio_csv, $ds_usage_data
+  run_script $js_get_instance_hours_per_fam, $ds_aws_instance_size_map, $ds_usage_data
 end
 
 script "js_get_instance_hours_per_fam", type: "javascript" do
-  parameters "nfu_ratios", "usage_data"
+  parameters "aws_instance_data", "usage_data"
   result "result"
   code <<-'EOS'
   temp_result = []
   result = []
 
-  //Convert NFU csv to json
-  nfu_ratio_array = nfu_ratios.csv.toString().split("\r\n")
-  nfu_ratios_json = []
-  _.each(nfu_ratio_array, function(ratio, i){
-    if(i != 0 ){
-      nfu_ratios_json.push({
-        "instance_size": ratio.split(",")[0],
-        "nfu": ratio.split(",")[1]
-      })
-    }
+  //Get Normalization Factor units from Instance Data json
+  instance_types = _.keys(aws_instance_data)
+  nfu_ratios = []
+  _.each(instance_types, function(inst){
+    nfu_ratios.push({
+      "instance_type": inst
+      "nfu": parseInt(aws_instance_data[inst].nfu)
+    })
   })
 
   //Enrich current data with Instance Family, and then calculate Normalized Instance Hours using NFU
   _.each(usage_data, function(data){
     data["instance_family"] = data.instance_type.split(".")[0]
-    _.each(nfu_ratios_json, function(ratio){
-      if(data.instance_type.split(".")[1] == ratio.instance_size ){
+    _.each(nfu_ratios, function(ratio){
+      if(data.instance_type == ratio.instance_type ){
         data["normalized_instance_hours"] = data.usage_amount * ratio.nfu
       }
     })
