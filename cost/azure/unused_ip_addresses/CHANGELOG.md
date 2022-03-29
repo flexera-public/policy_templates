@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.1
+
+- Use provided keyword for Optima endpoint
+
 ## v3.0
 
 - applying data normalization updates for spend recommendations api. this change breaks current iterations expecting specific output types being pushed.

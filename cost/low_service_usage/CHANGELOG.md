@@ -1,6 +1,13 @@
 # Changelog
 
 ## v1.8
+<<<<<<< HEAD
+
+- Use provided keyword for Optima endpoint
+
+## v1.7
+=======
+>>>>>>> EU_Policies
 
 - updated README.md rightscale documentation links with docs.flexera documentation links
 - Now using OAuth2 credentials instead of the built-in Rightscale authentication
