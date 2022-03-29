@@ -1,8 +1,13 @@
 # Changelog
 
+## v2.6
+
+- Added pagination for API call
+- Refactored script 'js_format_data'
+
 ## v2.5
 
-- updated README.md rightscale documentation links with docs.flexera documentation links
+- Updated README.md rightscale documentation links with docs.flexera documentation links
 
 ## v2.4
 
