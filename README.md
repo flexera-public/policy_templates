@@ -232,6 +232,12 @@ Reference
 
 - [Azure Resources with public IP address](./security/azure/resources_with_public_ip_address)
 
+##### IAM
+
+###### CIS Policies
+
+- [Azure Guest Users Audit](./security/azure/guest_users/)
+
 ##### Database
 
 - [Azure Publicly Accessible Managed SQL Instance](./security/azure/sql_publicly_accessible_managed_instance/)
@@ -298,6 +304,8 @@ Reference
 - [FlexNet Manager Low Available Licenses](./compliance/fnms/fnms_low_licenses_available)
 - [ITAM Missing Active Machines](./compliance/fnms/missing_active_machines/)
 - [ITAM Ignored Recent Inventory Dates](./compliance/fnms/ignored_recent_inventory_dates/)
+- [ITAM Overused Licenses](./compliance/fnms/overused_licenses)
+- [ITAM VMs Missing Host ID](./compliance/fnms/vms_missing_hostid)
 
 #### Github
 
@@ -361,7 +369,8 @@ Reference
 - [SaaS Manager - Suspicious Users](./saas/fsm/suspicious_users)
 - [SaaS Manager - Unsanctioned Spend](./saas/fsm/unsanctioned_spend)
 - [SaaS Manager - Redundant Apps](./saas/fsm/redundant_apps)
-- [SaaS Manager - Inactive Users](./saas/fsm/inactive_users_by_dept)
+- [SaaS Manager - Inactive Users by Department](./saas/fsm/inactive_users_by_dept)
+- [SaaS Manager - Inactive Users for Integrated Applications](./saas/fsm/inactive_users_for_integrated_apps)
 - [SaaS Manager - Duplicate User Accounts](./saas/fsm/duplicate_users)
 - [SaaS Manager - Unsanctioned Applications with Existing Contract](./saas/fsm/unsanctioned_apps_with_contract)
 - [SaaS Manager - SaaS App User Report by Category](./saas/fsm/users_by_category)
