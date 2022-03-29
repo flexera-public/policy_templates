@@ -7,9 +7,10 @@ This policy uses the ITAM API to look up Active IT Asset Manager Licenses Expiri
 The report / Mail output looks like this:
 ITAM Expiring Licenses
 
-licenseId publisher licenseName version edition licenseStatus licenseDuration licenseType expiryDate
-12345 Adobe Acrobat Pro 2022 Professional [Active]  [Subscription]  [Named User]  2022-03-31T00:00:00Z
-54321 Microsoft Visio Pro 2019 Professional [Active] [Subscription]  [Named User] 2021-08-31T00:00:00Z
+| licenseId | publisher | licenseName | version | edition | licenseStatus | licenseDuration | licenseType | expiryDate |
+| --------- | --------- | ----------- | ------- | ------- | ------------- | --------------- | ----------- | ---------- |
+| 12345 | Adobe | Acrobat Pro | 2022 | Professional | [Active] | [Subscription] | [Named User] | 2022-03-31T00:00:00Z |
+| 54321 | Microsoft | Visio Pro | 2019 | Professional | [Active] | [Subscription] | [Named User] | 2021-08-31T00:00:00Z |
 
 Current limitations:
 
