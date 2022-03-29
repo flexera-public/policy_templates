@@ -6,6 +6,22 @@ Please contact sales@flexera.com to learn more.
 
 ## Released Policy Templates
 
+---
+
+Categories
+
+- [Cost](#cost)
+- [Security](#security)
+- [Compliance](#compliance)
+- [Operational](#operational)
+- [SaaS Management](#saas-management)
+
+Reference
+
+- [Policy Data Sets](#policy-data-sets)
+
+---
+
 ### Cost
 
 #### Multi-cloud
@@ -23,10 +39,15 @@ Please contact sales@flexera.com to learn more.
 - [Schedule Instances](./cost/schedule_instances/)
 - [Scheduled Report](./cost/scheduled_reports/)
 - [Scheduled Report with Estimates](./cost/scheduled_reports_with_estimates/)
-- [Scheduled Report with Markups & Markdowns](./cost/scheduled_report_markUpsDowns/)
+- [Scheduled Report with Markups & Markdowns](./cost/scheduled_report_markupsdowns/)
 - [Superseded Instances](./cost/superseded_instance/)
 - [Superseded Instance Remediation](./cost/superseded_instance_remediation/)
 - [Terminate Instances with End Date](./cost/terminate_policy/)
+
+##### Forecasting
+
+- [Straight-Line Forecast](./cost/forecasting/straight_line_forecast/)
+- [Moving Average](./cost/forecasting/moving_average/)
 
 #### AWS
 
@@ -100,6 +121,7 @@ Please contact sales@flexera.com to learn more.
 
 - [Google Inefficient Instance Utilization using StackDriver](./cost/google/instances_stackdriver_utilization/)
 - [Google Committed Use Discount (CUD)](./cost/google/cud_report/)
+- [Google Committed Use Discount Recommendations (CUD)](./cost/google/cud_recommendations/)
 - [Google Idle Compute Instances](./cost/google/idle_compute_instances/)
 - [Google Expiring Committed Use Discount (CUD)](./cost/google/cud_expiration/)
 - [Google Schedule Instance](./cost/google/schedule_instance/)
@@ -114,6 +136,10 @@ Please contact sales@flexera.com to learn more.
 - [Google Object Storage Optimization](./cost/google/object_storage_optimization/)
 - [Google Old Snapshots](./cost/google/old_snapshots/)
 - [Google Unused Volumes](./cost/google/unattached_volumes/)
+
+##### Native Recommendations
+
+- [Google Recommender Policy](./cost/google/recommender/)
 
 ##### Other
 
@@ -135,23 +161,52 @@ Please contact sales@flexera.com to learn more.
 ###### CIS Policies
 
 - [AWS No Root Access Keys](./security/aws/iam_no_root_access_keys/)
+- [AWS MFA Enabled For Root User](./security/aws/iam_mfa_enabled_for_root/)
 - [AWS Hardware MFA Enabled For Root User](./security/aws/iam_hwmfa_enabled_for_root/)
 - [AWS MFA Enabled For IAM Users](./security/aws/iam_mfa_enabled_for_iam_users/)
 - [AWS Minimum Password Length](./security/aws/iam_min_password_length/)
 - [AWS Prevent Password Reuse](./security/aws/iam_prevent_password_reuse/)
 - [AWS Disable Credentials Unused For 45+ Days](./security/aws/iam_disable_45_day_creds/)
+- [AWS Ensure One Active Key Per IAM User](./security/aws/iam_one_active_key_per_user/)
 - [AWS Rotate Access Keys](./security/aws/iam_rotate_access_keys/)
+- [AWS Ensure IAM Users Receive Permissions Only Through Groups](./security/aws/iam_users_perms_via_groups_only/)
+- [AWS Access Analyzer Enabled](./security/aws/iam_access_analyzer_enabled/)
+- [AWS Support Role Created](./security/aws/iam_support_role_created/)
+- [AWS Report Attached Admin IAM Policies](./security/aws/iam_no_admin_iam_policies_attached/)
+- [AWS Expired SSL Certs](./security/aws/iam_expired_ssl_certs/)
 
 ##### Database
 
-- [AWS Unencrypted RDS Instances](./security/aws/rds_unencrypted/)
 - [AWS Publicly Accessible RDS Instances](./security/aws/rds_publicly_accessible/)
+
+###### CIS Policies
+
+- [AWS Unencrypted RDS Instances](./security/aws/rds_unencrypted/)
+
+##### KMS
+
+###### CIS Policies
+
+- [AWS Ensure Rotation For Customer Master Keys (CMKs) Is Enabled](./security/aws/kms_rotation/)
 
 ##### Storage
 
 - [AWS Open Buckets](./security/storage/aws/public_buckets/)
-- [AWS Unencrypted S3 Buckets](./security/aws/unencrypted_s3_buckets/)
 - [AWS Unencrypted Volumes](./security/aws/ebs_unencrypted_volumes/)
+
+###### CIS Policies
+
+- [AWS S3 Ensure Buckets Block Public Access](./security/aws/s3_ensure_buckets_block_public_access/)
+- [AWS S3 Ensure MFA Delete Enabled](./security/aws/s3_ensure_mfa_delete_enabled/)
+- [AWS Unencrypted S3 Buckets](./security/aws/unencrypted_s3_buckets/)
+- [AWS S3 Buckets Deny HTTP](./security/aws/s3_buckets_deny_http/)
+
+##### Logging
+
+###### CIS Policies
+
+- [AWS Ensure Log File Validation Enabled For All CloudTrails](./security/aws/log_file_validation_enabled/)
+- [AWS Ensure CloudTrail Enabled In All Regions](./security/aws/log_ensure_cloudtrail_multiregion/)
 
 ##### Load Balancers
 
@@ -159,11 +214,29 @@ Please contact sales@flexera.com to learn more.
 - [AWS Unencrypted ELB Listeners (CLB)](./security/aws/clb_unencrypted/)
 - [AWS Unencrypted ELB Listeners (ALB/NLB)](./security/aws/elb_unencrypted/)
 
+##### Logging
+
+###### CIS Policies
+
+- [AWS Ensure Object-level Events Logging Enabled For CloudTrails](./security/aws/log_ensure_cloudtrail_bucket_object_logging/)
+- [AWS Ensure CloudTrail Logs Encrypted At Rest](./security/aws/log_ensure_cloudtrail_encrypted/)
+- [AWS Ensure CloudTrail S3 Buckets Have Access Logging](./security/aws/log_ensure_cloudtrail_bucket_access_logging/)
+- [AWS Ensure CloudTrail Integrated With Cloudwatch](./security/aws/log_cloudtrail_cloudwatch_integrated/)
+- [AWS Ensure AWS Config Enabled In All Regions](./security/aws/aws_config_enabled/)
+
 #### VPC
 
 - [AWS VPC's without FlowLogs Enabled](./security/aws/vpcs_without_flow_logs_enabled/)
 
 #### Azure
+
+- [Azure Resources with public IP address](./security/azure/resources_with_public_ip_address)
+
+##### IAM
+
+###### CIS Policies
+
+- [Azure Guest Users Audit](./security/azure/guest_users/)
 
 ##### Database
 
@@ -177,11 +250,19 @@ Please contact sales@flexera.com to learn more.
 
 - [Azure Storage Accounts Without HTTPs Enforced](./security/storage/azure/storage_account_https_enabled/)
 
+###### CIS Policies
+
+- [AWS EBS Ensure Encryption By Default](./security/aws/ebs_ensure_encryption_default/)
+
 #### Google
 
 - [Google Open Buckets](./security/storage/google/public_buckets/)
 
 ### Compliance
+
+#### Flexera
+
+- [Flexera IAM Explicit User Roles](./compliance/flexera/iam_explicit_user_roles/)
 
 #### Multi-cloud
 
@@ -217,10 +298,16 @@ Please contact sales@flexera.com to learn more.
 - [Google Long-Stopped Instances](./compliance/google/long_stopped_instances)
 - [Google Unlabeled Resources](./compliance/google/unlabeled_resources)
 
-#### Other
+#### ITAM/FNMS
 
 - [FlexNet Manager Licenses At Risk](./compliance/fnms/fnms_licenses_at_risk/)
 - [FlexNet Manager Low Available Licenses](./compliance/fnms/fnms_low_licenses_available)
+- [ITAM Missing Active Machines](./compliance/fnms/missing_active_machines/)
+- [ITAM Overused Licenses](./compliance/fnms/overused_licenses)
+- [ITAM VMs Missing Host ID](./compliance/fnms/vms_missing_hostid)
+
+#### Github
+
 - [GitHub.com Available Seats](./compliance/github/available_seats/)
 - [GitHub.com Unpermitted Outside Collaborators](./compliance/github/outside_collaborators/)
 - [GitHub.com Unpermitted Repository Names](./compliance/github/repository_naming/)
@@ -228,6 +315,9 @@ Please contact sales@flexera.com to learn more.
 - [GitHub.com Unpermitted Sized Repositories](./compliance/github/repository_size/)
 - [GitHub.com Repository Branches without Protection](./compliance/github/repository_branch_protection/)
 - [GitHub.com Repositories without Admin Team](./compliance/github/repository_admin_team/)
+
+#### Other
+
 - [Policy Update Notification](./compliance/policy_update_notification/)
 
 ### Operational
@@ -238,6 +328,8 @@ Please contact sales@flexera.com to learn more.
 - [No Recent Snapshots](./operational/snapshots/)
 - [Stranded Servers](./operational/stranded_servers/)
 - [NetFlow Top Talkers](./operational/azure/network_flow)
+- [Applied Policy Error Notification](./operational/applied_policy_error_notification/)
+- [Bill Processing Error Notification](./operational/bill_processing_errors_notification/)
 
 #### AWS
 
@@ -252,6 +344,7 @@ Please contact sales@flexera.com to learn more.
 #### Azure
 
 - [Azure VMs Not Using Managed Disks](./operational/azure/vms_without_managed_disks/)
+- [Azure Expiring Certificates](./operational/azure/azure_certificates/)
 - [Azure Migrate Integration](./operational/azure/azure_migrate)
 - [AzureAD Group Sync](./operational/azure/azuread_group_sync/)
 - [Azure Sync Tags with Optima](./operational/azure/sync_tags_with_optima/)
@@ -275,7 +368,8 @@ Please contact sales@flexera.com to learn more.
 - [SaaS Manager - Suspicious Users](./saas/fsm/suspicious_users)
 - [SaaS Manager - Unsanctioned Spend](./saas/fsm/unsanctioned_spend)
 - [SaaS Manager - Redundant Apps](./saas/fsm/redundant_apps)
-- [SaaS Manager - Inactive Users](./saas/fsm/inactive_users_by_dept)
+- [SaaS Manager - Inactive Users by Department](./saas/fsm/inactive_users_by_dept)
+- [SaaS Manager - Inactive Users for Integrated Applications](./saas/fsm/inactive_users_for_integrated_apps)
 - [SaaS Manager - Duplicate User Accounts](./saas/fsm/duplicate_users)
 - [SaaS Manager - Unsanctioned Applications with Existing Contract](./saas/fsm/unsanctioned_apps_with_contract)
 - [SaaS Manager - SaaS App User Report by Category](./saas/fsm/users_by_category)
@@ -294,14 +388,14 @@ Please contact sales@flexera.com to learn more.
 
 - The policy templates in the repo are the files that have a .pt extension.
 - Select the desired policy template, click on the “Raw” button, and then right-click and choose “Save As” to save the file to your computer.
-- To upload the template to your account, navigate over to the Templates page in the left nav bar in [Governance](https://governance.rightscale.com). Ensure you have the role to access policy management in RightScale. Learn More about [Policy Access Control](https://docs.rightscale.com/policies/#how-policies-work-access-control).
+- To upload the template to your account, navigate over to the Templates page in the left nav bar in [Governance](https://governance.rightscale.com). Ensure you have the role to access policy management in RightScale. Learn More about [Policy Access Control](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm#how-policies-work-access-control).
 - Click the “Upload Policy Template” button in the account you wish to test the policy and follow the instructions to upload the template you just downloaded.
 
 ## Policy Template Documentation
 
-- [Getting Started](https://docs.rightscale.com/policies/users/getting_started/)
-- [Reference Documentation](https://docs.rightscale.com/policies/developers/)
-- [Policy Template Language](https://docs.rightscale.com/policies/developers/reference/v20180301/policy_template_language.html)
+- [Getting Started](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm)
+- [Reference Documentation](https://docs.flexera.com/flexera/EN/Automation/AutomationRefInfo.htm#automationrefinfo_1419216867_1009635)
+- [Policy Template Language](https://docs.flexera.com/flexera/EN/Automation/PTL.htm#automationrefinfo_1419216867_1122815)
 - [Markdown Editor](https://jbt.github.io/markdown-editor/) - Use this to test Markdown Syntax
 - [Libraries](./libraries/README.md)
 - [README GUIDELINE](./README_GUIDELINE.md)

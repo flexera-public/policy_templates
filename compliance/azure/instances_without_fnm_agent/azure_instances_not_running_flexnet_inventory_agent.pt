@@ -1,12 +1,13 @@
 name "Azure Instances not running FlexNet Inventory Agent"
 rs_pt_ver 20180301
 type "policy"
-short_description "Check instances that are not running the FlexNet Inventory Agent. \n See the [README](https://github.com/flexera/policy_templates/tree/master/compliance/azure/instances_without_fnm_agent) and [docs.rightscale.com/policies](https://docs.rightscale.com/policies/) to learn more."
+short_description "Check instances that are not running the FlexNet Inventory Agent. \n See the [README](https://github.com/flexera/policy_templates/tree/master/compliance/azure/instances_without_fnm_agent) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 long_description ""
 severity "medium"
 category "Compliance"
+default_frequency "daily"
 info(
-  version: "2.4",
+  version: "2.6",
   provider: "Azure",
   service: "Compute",
   policy_set: "Instances not running FlexNet Inventory Agent"
@@ -20,6 +21,19 @@ parameter "param_email" do
   type "list"
   label "Email addresses to notify"
   description "Email addresses of the recipients you wish to notify when new incidents are created."
+end
+
+parameter "param_azure_endpoint" do
+  type "string"
+  label "Azure Endpoint"
+  allowed_values "management.azure.com", "management.chinacloudapi.cn"
+  default "management.azure.com"
+end
+
+parameter "param_subscription_whitelist" do
+  label "Subscription Whitelist"
+  type "list"
+  description "Whitelisted Subscriptions, if empty, all subscriptions will be checked"
 end
 
 parameter "param_exclusion_tag_key" do
@@ -83,7 +97,7 @@ datasource "ds_subscriptions" do
   request do
     auth $azure_auth
     pagination $azure_pagination
-    host "management.azure.com"
+    host $param_azure_endpoint
     path "/subscriptions/"
     query "api-version","2019-06-01"
     header "User-Agent", "RS Policies"
@@ -98,12 +112,16 @@ datasource "ds_subscriptions" do
   end
 end
 
+datasource "ds_filtered_subscriptions" do
+  run_script $js_filtered_subscriptions, $ds_subscriptions, $param_subscription_whitelist
+end
+
 datasource "ds_list_virtual_machines" do
-  iterate $ds_subscriptions
+  iterate $ds_filtered_subscriptions
   request do
     auth $azure_auth
     pagination $azure_pagination
-    host "management.azure.com"
+    host $param_azure_endpoint
     path join(["/subscriptions/", val(iter_item,"subscriptionId"), "/providers/Microsoft.Compute/virtualMachines"])
     query "api-version","2018-06-01"
     header "User-Agent", "RS Policies"
@@ -144,6 +162,25 @@ end
 # Scripts
 ###############################################################################
 
+script "js_filtered_subscriptions", type: "javascript" do
+  parameters "ds_subscriptions", "param_subscription_whitelist"
+  result "results"
+  code <<-EOS
+  var results = []
+  if ( param_subscription_whitelist.length != 0){
+    results = []
+    _.each(param_subscription_whitelist, function(sub){
+      var found = _.find(ds_subscriptions, function(item){
+        return item.subscriptionId == sub || item.displayName.toLowerCase() == sub.toLowerCase();
+      })
+      results.push(found)
+    })
+  } else {
+    results = ds_subscriptions
+  }
+EOS
+end
+
 #Formatter script for the Instance data
 script "js_format_instances", type: "javascript" do
   parameters "azure_VMs","ds_fnms_report", "param_exclusion_tag_key"
@@ -171,11 +208,11 @@ script "js_fnms_report", type: "javascript" do
   result "request"
   code <<-EOS
     var sHost = fnms_host.substr(fnms_host.indexOf('://')+3)
-     if (sHost.indexOf('/') > -1 && sHost.indexOf('_token') > -1){
+    if (sHost.indexOf('/') > -1 && sHost.indexOf('_token') > -1){
       var path=sHost.substr(sHost.indexOf('/'))+'ManageSoftServices/ComplianceAPIService/ComplianceAPIService.asmx';
     } else{
       var path='/ManageSoftServices/ComplianceAPIService/ComplianceAPIService.asmx';
-	 }
+    }
     if (sHost.indexOf('/') > -1)  sHost = sHost.substr(0,sHost.indexOf('/'))
 
     // Find the right schema

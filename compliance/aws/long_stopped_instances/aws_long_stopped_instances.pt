@@ -1,12 +1,12 @@
 name "AWS Long-stopped Instances"
 rs_pt_ver 20180301
 type "policy"
-short_description "Check for instances that have been stopped for a long time with the option to terminates them after approval. \n See the [README](https://github.com/flexera/policy_templates/tree/master/compliance/aws/long_stopped_instances) and [docs.rightscale.com/policies](https://docs.rightscale.com/policies/) to learn more."
+short_description "Check for instances that have been stopped for a long time with the option to terminates them after approval. \n See the [README](https://github.com/flexera/policy_templates/tree/master/compliance/aws/long_stopped_instances) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 long_description ""
 category "Compliance"
 severity "low"
 info(
-  version: "2.4",
+  version: "2.7",
   provider: "AWS",
   service: "EC2",
   policy_set: "Long Stopped Instances"
@@ -36,6 +36,13 @@ parameter "param_exclude_tags" do
   description "List of tags that will exclude EC2 instances from being evaluated by this policy. Multiple tags are evaluated as an 'OR' condition. Tag keys or key/value pairs can be listed. Example: 'test,env=dev'."
 end
 
+parameter "param_aws_account_number" do
+  type "string"
+  label "Account Number"
+  description "The account number for AWS STS Cross Account Roles."
+  default ""
+end
+
 parameter "param_stopped_days" do
   type "number"
   label "Stopped days"
@@ -60,6 +67,7 @@ credentials "auth_aws" do
   label "AWS"
   description "Select the AWS Credential from the list"
   tags "provider=aws"
+  aws_account_number $param_aws_account_number
 end
 
 ###############################################################################
@@ -231,45 +239,44 @@ script "js_filter_aws_instances", type: "javascript" do
   parameters "ds_ec2_stopped_instances_list", "ds_cloudwatch_cpu_usage", "param_exclude_tags"
   result "res"
   code <<-EOS
-   res = []
-   var param_exclude_tags_lower=[];
-    for(var i=0; i < param_exclude_tags.length; i++){
-      param_exclude_tags_lower[i]=param_exclude_tags[i].toString().toLowerCase();
-    }
-    _.each(ds_ec2_stopped_instances_list, function(instance_stopped){
-      _.each(ds_cloudwatch_cpu_usage, function(cloudwatch_metrics){
-        var tags=instance_stopped['tags'];
-        var is_tag_matched=false
-        var tag_key_value=""
-        if(typeof(tags) != "undefined"){
-	      for(var k=0;k<tags.length;k++){
-            var tag=tags[k];
-            if((param_exclude_tags_lower.indexOf((tag['tagKey']).toLowerCase()) !== -1) ||      (param_exclude_tags_lower.indexOf((tag['tagKey']+'='+tag['tagValue']).toLowerCase()) !== -1)){
-                is_tag_matched = true;
-            }
-            // Constructing tags with comma separated to display in detail_template
-            if((tag['tagValue']).length > 0){
-              tag_key_value = tag_key_value + ', '+ tag['tagKey']+'='+tag['tagValue']
-            }else{
-              tag_key_value = tag_key_value + ', '+ tag['tagKey']
-            }
-		  }
+  var res = []
+  var param_exclude_tags_lower = [];
+  for (var i = 0; i < param_exclude_tags.length; i++) {
+    param_exclude_tags_lower[i] = param_exclude_tags[i].toString().toLowerCase();
+  }
+  _.each(ds_ec2_stopped_instances_list, function (instance_stopped) {
+    _.each(ds_cloudwatch_cpu_usage, function (cloudwatch_metrics) {
+      var tags = instance_stopped['tags'];
+      var is_tag_matched = false
+      var tag_key_value = ""
+      if (typeof (tags) != "undefined") {
+        for (var k = 0; k < tags.length; k++) {
+          var tag = tags[k];
+          if ((param_exclude_tags_lower.indexOf((tag['tagKey']).toLowerCase()) !== -1) || (param_exclude_tags_lower.indexOf((tag['tagKey'] + '=' + tag['tagValue']).toLowerCase()) !== -1)) {
+            is_tag_matched = true;
+          }
+          // Constructing tags with comma separated to display in detail_template
+          if ((tag['tagValue']).length > 0) {
+            tag_key_value = tag_key_value + ', ' + tag['tagKey'] + '=' + tag['tagValue']
+          } else {
+            tag_key_value = tag_key_value + ', ' + tag['tagKey']
+          }
         }
-	    //If the EC2 instance tag does not match with entered param_exclude_tags and cloud metrics is empty,
-		if(instance_stopped["instance_id"] == cloudwatch_metrics["instance_id"] && cloudwatch_metrics['datapoints'].length == 0 && !is_tag_matched){
-          res.push({
-            instance_id: instance_stopped['instance_id'],
-            region: instance_stopped['region'],
-            tagKeyValue:(tag_key_value.slice(1)),
-            instance_state: instance_stopped['instance_state'],
-            instance_type: instance_stopped['instance_type']
-          })
-        }
-      })
-	})
-	res = _.sortBy(res, 'region');
-
-  EOS
+      }
+      //If the EC2 instance tag does not match with entered param_exclude_tags and cloud metrics is empty,
+      if (instance_stopped["instance_id"] == cloudwatch_metrics["instance_id"] && cloudwatch_metrics['datapoints'].length == 0 && !is_tag_matched) {
+        res.push({
+          instance_id: instance_stopped['instance_id'],
+          region: instance_stopped['region'],
+          tagKeyValue: (tag_key_value.slice(1)),
+          instance_state: instance_stopped['instance_state'],
+          instance_type: instance_stopped['instance_type']
+        })
+      }
+    })
+  })
+  res = _.sortBy(res, 'region');
+EOS
 end
 
 ###############################################################################
@@ -328,7 +335,7 @@ define terminate_instances($data) return $all_responses do
   $$debug=true
   $all_responses = []
   foreach $item in $data do
-   $response = http_request(
+    $response = http_request(
       verb: "get",
       host: join(["ec2.",$item["region"],".amazonaws.com"]),
       auth: $$auth_aws,

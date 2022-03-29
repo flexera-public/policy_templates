@@ -1,5 +1,17 @@
 # Changelog
 
+## v2.12
+
+- Added default to aws_account_number parameter to enable existing API users.
+
+## v2.11
+
+- Added support for a single AWS STS Cross account role to be used for multiple policies.
+
+## v2.10
+
+- updated README.md rightscale documentation links with docs.flexera documentation links
+
 ## v2.9
 
 - Updated next instance size logic to account for missing instance type in instance_types.json

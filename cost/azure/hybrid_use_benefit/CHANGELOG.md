@@ -1,5 +1,17 @@
 # Changelog
 
+## v2.9
+
+- updated README.md rightscale documentation links with docs.flexera documentation links
+
+## v2.8
+
+- Adding `allowed_values "management.azure.com", "management.chinacloudapi.cn"`
+
+## v2.7
+
+- Added subscription filter option and ability to specify Azure API endpoint
+
 ## v2.6
 
 - Added default_frequency "daily"

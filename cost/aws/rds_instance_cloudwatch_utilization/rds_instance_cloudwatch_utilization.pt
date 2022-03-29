@@ -1,13 +1,13 @@
 name "AWS Rightsize RDS Instances"
 rs_pt_ver 20180301
 type "policy"
-short_description "Check for Inefficient database services that are inside or outside the CPU threshold for the last 30 days and resizes them after approval. See the [README](https://github.com/flexera/policy_templates/tree/master/cost/aws/rds_instance_cloudwatch_utilization/) and [docs.rightscale.com/policies](https://docs.rightscale.com/policies/) to learn more."
+short_description "Check for Inefficient database services that are inside or outside the CPU threshold for the last 30 days and resizes them after approval. See the [README](https://github.com/flexera/policy_templates/tree/master/cost/aws/rds_instance_cloudwatch_utilization/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 long_description ""
 severity "low"
 category "Cost"
 default_frequency "daily"
 info(
-  version: "2.9",
+  version: "2.12",
   provider: "AWS",
   service: "RDS",
   policy_set: "RightSize Database Services"
@@ -28,6 +28,13 @@ parameter "param_email" do
   type "list"
   label "Email addresses to notify"
   description "Email addresses of the recipients you wish to notify when new incidents are created"
+end
+
+parameter "param_aws_account_number" do
+  type "string"
+  label "Account Number"
+  description "The account number for AWS STS Cross Account Roles."
+  default ""
 end
 
 parameter "param_avg_cpu_upsize" do
@@ -79,6 +86,7 @@ credentials "auth_aws" do
   label "AWS"
   description "Select the AWS Credential from the list."
   tags "provider=aws"
+  aws_account_number $param_aws_account_number
 end
 
 ###############################################################################
@@ -100,7 +108,7 @@ datasource "ds_get_caller_identity" do
     collect xpath(response, "//GetCallerIdentityResponse/GetCallerIdentityResult") do
       field "account",xpath(col_item, "Account")
     end
- end
+  end
 end
 
 #Get list of enabled regions for an account
@@ -378,37 +386,37 @@ end
 script "js_merged_metrics", type: "javascript" do
   parameters "ds_instances", "ds_cloudwatch_cpu_usage"
   result "results"
- code <<-EOS
- var results = []
+  code <<-EOS
+  var results = []
 
- for (n=0; n < ds_instances.length; n++) {
-   var instance = ds_instances[n]
-   var dbInstanceIdentifier = instance["dbInstanceIdentifier"]
-   //console.log("dbInstanceIdentifier is " + dbInstanceIdentifier)
-   for (x=0; x < ds_cloudwatch_cpu_usage.length; x++) {
-     var cpu_data=ds_cloudwatch_cpu_usage[x]
-     var cpu_instanceid=cpu_data["instanceId"]
-     //console.log("cpu_instanceid is " + cpu_instanceid)
-     if (dbInstanceIdentifier == cpu_instanceid) {
-      var cpu_average=parseFloat(cpu_data["cpu_average"]).toFixed(2)
-      //console.log("cpu_average is " + cpu_average)
-     }
+  for (n = 0; n < ds_instances.length; n++) {
+    var instance = ds_instances[n]
+    var dbInstanceIdentifier = instance["dbInstanceIdentifier"]
+    //console.log("dbInstanceIdentifier is " + dbInstanceIdentifier)
+    for (x = 0; x < ds_cloudwatch_cpu_usage.length; x++) {
+      var cpu_data = ds_cloudwatch_cpu_usage[x]
+      var cpu_instanceid = cpu_data["instanceId"]
+      //console.log("cpu_instanceid is " + cpu_instanceid)
+      if (dbInstanceIdentifier == cpu_instanceid) {
+        var cpu_average = parseFloat(cpu_data["cpu_average"]).toFixed(2)
+        //console.log("cpu_average is " + cpu_average)
+      }
+    }
 
-   }
-   results.push (
-     {
-       "region": instance["region"],
-       "availabilityZone": instance["availabilityZone"],
-       "dbInstanceArn": instance["dbInstanceArn"],
-       "dbInstanceIdentifier": instance["dbInstanceIdentifier"],
-       "dbInstanceClass": instance["dbInstanceClass"],
-       "engine": instance["engine"],
-       "percent_cpu_avg": cpu_average,
-       "upsize": instance["upsize"],
-       "downsize": instance["downsize"]
-     }
-   )
- }
+    results.push(
+      {
+        "region": instance["region"],
+        "availabilityZone": instance["availabilityZone"],
+        "dbInstanceArn": instance["dbInstanceArn"],
+        "dbInstanceIdentifier": instance["dbInstanceIdentifier"],
+        "dbInstanceClass": instance["dbInstanceClass"],
+        "engine": instance["engine"],
+        "percent_cpu_avg": cpu_average,
+        "upsize": instance["upsize"],
+        "downsize": instance["downsize"]
+      }
+    )
+  }
 EOS
 end
 
@@ -418,12 +426,12 @@ script "js_filtered_results", type: "javascript" do
   result "results"
   code <<-EOS
   var results = []
-  _.each(ds_merged_metrics, function(instance){
-    if (instance["percent_cpu_avg"] > param_avg_cpu_upsize){
-      if (instance["upsize"] == null){
+  _.each(ds_merged_metrics, function (instance) {
+    if (instance["percent_cpu_avg"] > param_avg_cpu_upsize) {
+      if (instance["upsize"] == null) {
         // skip
       } else {
-        results.push (
+        results.push(
           {
             "accountId": ds_get_caller_identity[0]['account'],
             "region": instance["region"],
@@ -438,11 +446,11 @@ script "js_filtered_results", type: "javascript" do
         )
       }
     }
-    if (instance["percent_cpu_avg"] < param_avg_cpu_downsize){
-      if (instance["downsize"] == null){
+    if (instance["percent_cpu_avg"] < param_avg_cpu_downsize) {
+      if (instance["downsize"] == null) {
         // skip
       } else {
-        results.push (
+        results.push(
           {
             "accountId": ds_get_caller_identity[0]['account'],
             "region": instance["region"],
@@ -459,7 +467,7 @@ script "js_filtered_results", type: "javascript" do
     }
   })
   results = _.sortBy(results, 'region');
- EOS
+EOS
 end
 
 ###############################################################################
@@ -533,7 +541,7 @@ define rightsize_rds($data,$param_log_to_cm_audit_entries) return $all_responses
     sub on_error: skip do
       $get_response = http_request(
         auth: $$auth_aws,
-		https: true,
+        https: true,
         verb: "get",
         host: "rds."+$item["region"]+".amazonaws.com",
         href: "/",
@@ -550,7 +558,7 @@ define rightsize_rds($data,$param_log_to_cm_audit_entries) return $all_responses
       if $state == "available"
         $modify_response = http_request(
           auth: $$auth_aws,
-		  https: true,
+          https: true,
           verb: "get",
           host: "rds."+$item["region"]+".amazonaws.com",
           href: "/",

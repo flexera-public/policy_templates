@@ -1,5 +1,37 @@
 # Changelog
 
+## v3.0
+
+- applying data normalization updates for spend recommendations api. this change breaks current iterations expecting specific output types being pushed.
+- fixed issue with potential nil pointer type error issue
+- updated savings field to round to 3rd decimal
+- updated displayName to subscription name more consistently
+- Normalizing fields for recommendations:
+  - updated 'tags' field to slice of string values
+  - Renamed 'ipAddressID' to 'resourceID' field
+  - Added 'subscriptionID' field
+  - Added 'accountID' field with subscriptionID value
+  - Added 'accountName' field with subscriptionName value
+  - Changed 'savings' to be a plain number
+  - Added 'savingsCurrency' to record the currency symbol.
+  - Added 'service' field
+  - Renamed 'resourceGroupName' to 'resourceGroup'
+  - Added 'resourceType' field
+  - Renamed 'location' to 'region'
+  - Renamed 'ipAddressName' to 'resourceName'
+
+## v2.8
+
+- updated README.md rightscale documentation links with docs.flexera documentation links
+
+## v2.7
+
+- Added subscription filter option and ability to specify Azure API endpoint
+
+## v2.6
+
+- Fix non-optimal array searching for costs
+
 ## v2.5
 
 - Added default_frequency "daily"

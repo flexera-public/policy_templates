@@ -13,12 +13,14 @@ It will email the user specified in `Email addresses of the recipients you wish 
 This policy has the following input parameters required when launching the policy.
 
 - *Look Back Period* - Number of days of prior usage to analyze
-- *Service* - AWS Service for which to scan for RI Recommendations
+- *Service* - AWS Service for which to scan for RI Recommendations.  Select All to include all services in a single incident.
+- *Account Number* - The Account number for use with the AWS STS Cross Account Role. Leave blank when using AWS IAM Access key and secret. It only needs to be passed when the desired AWS account is different than the one associated with the Flexera One credential. [more](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_1982464505_1123608)
 - *EC2 Specification* - EC2 RI type. Note: this parameter will be ignored if the Service parameter is not \"Elastic Compute Cloud (EC2)\"
 - *RI Term* - Length of RI term
 - *Payment Option* - RI purchase option.  Leave blank to include all RI purchase options
 - *Net Savings Threshold* - Specify the minimum estimated monthly savings that should result in a recommendation
 - *Email addresses to notify* - Email addresses of the recipients you wish to notify
+- *Currency Adjustment* - Number to adjust monthly estimated savings by depending on USD conversion (maximum value 5.0)
 
 ## Policy Actions
 
@@ -28,11 +30,11 @@ The following policy actions are taken on any resources found to be out of compl
 
 ## Prerequisites
 
-This policy uses [credentials](https://docs.rightscale.com/policies/users/guides/credential_management.html) for connecting to the cloud -- in order to apply this policy you must have a credential registered in the system that is compatible with this policy. If there are no credentials listed when you apply the policy, please contact your cloud admin and ask them to register a credential that is compatible with this policy. The information below should be consulted when creating the credential.
+This policy uses [credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for connecting to the cloud -- in order to apply this policy you must have a credential registered in the system that is compatible with this policy. If there are no credentials listed when you apply the policy, please contact your cloud admin and ask them to register a credential that is compatible with this policy. The information below should be consulted when creating the credential.
 
 ### Credential configuration
 
-For administrators [creating and managing credentials](https://docs.rightscale.com/policies/users/guides/credential_management.html) to use with this policy, the following information is needed:
+For administrators [creating and managing credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) to use with this policy, the following information is needed:
 
 Provider tag value to match this policy: `aws`
 

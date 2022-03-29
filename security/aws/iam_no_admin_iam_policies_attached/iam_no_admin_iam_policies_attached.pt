@@ -1,0 +1,197 @@
+name "AWS IAM Report Attached Admin IAM Policies"
+rs_pt_ver 20180301
+type "policy"
+short_description "Report any admin IAM policies that are attached. \n See the [README](https://github.com/flexera/policy_templates/tree/master/security/aws/iam_no_admin_iam_policies_attached) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+long_description ""
+category "Security"
+severity "high"
+default_frequency "daily"
+info(
+  version: "2.3",
+  provider: "AWS",
+  service: "IAM",
+  policy_set: "CIS",
+  cce_id: "CCE-78912-3",
+  cis_aws_foundations_securityhub: "1.22",
+  benchmark_control: "1.16",
+  benchmark_version: "1.4.0",
+  cis_controls: "[\"3.3v8\", \"4v7\"]",
+  nist: "AC-6"
+)
+
+###############################################################################
+# Parameters
+###############################################################################
+
+parameter "param_email" do
+  type "list"
+  label "Email Address"
+  description "Email addresses of the recipients you wish to notify"
+end
+
+parameter "param_aws_account_number" do
+  type "string"
+  label "Account Number"
+  description "The account number for AWS STS Cross Account Roles."
+  default ""
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+credentials "auth_aws" do
+  schemes "aws","aws_sts"
+  label "AWS"
+  description "Select the AWS Credential from the list"
+  tags "provider=aws"
+  aws_account_number $param_aws_account_number
+end
+
+###############################################################################
+# Datasources
+###############################################################################
+
+# Retrieve the id number of the account being tested
+datasource "ds_get_caller_identity" do
+  request do
+    auth $auth_aws
+    verb "GET"
+    host "sts.amazonaws.com"
+    path "/"
+    header "User-Agent", "RS Policies"
+    query "Action", "GetCallerIdentity"
+    query "Version", "2011-06-15"
+  end
+  result do
+    encoding "xml"
+    collect xpath(response, "//GetCallerIdentityResponse/GetCallerIdentityResult") do
+      field "account",xpath(col_item, "Account")
+    end
+  end
+end
+
+datasource "ds_iam_listpolicies" do
+  request do
+    auth $auth_aws
+    verb "GET"
+    host "iam.amazonaws.com"
+    path "/"
+    query "Action", "ListPolicies"
+    query "Version", "2010-05-08"
+    query "OnlyAttached", "true"
+    header "Accept", "application/json"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "ListPoliciesResponse.ListPoliciesResult.Policies[*]") do
+      field "policyName", jmes_path(col_item, "PolicyName")
+      field "arn", jmes_path(col_item, "Arn")
+      field "versionId", jmes_path(col_item, "DefaultVersionId")
+    end
+  end
+end
+
+datasource "ds_iam_policyversions" do
+  iterate $ds_iam_listpolicies
+  request do
+    auth $auth_aws
+    verb "GET"
+    host "iam.amazonaws.com"
+    path "/"
+    query "Action", "GetPolicyVersion"
+    query "PolicyArn", val(iter_item, "arn")
+    query "VersionId", val(iter_item, "versionId")
+    query "Version", "2010-05-08"
+    query "OnlyAttached", "true"
+    header "Accept", "application/json"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+    field "policyName", jmes_path(iter_item, "policyName")
+    field "arn", jmes_path(iter_item, "arn")
+    field "versionId", jmes_path(iter_item, "versionId")
+    field "encoded_details", jmes_path(response, "GetPolicyVersionResponse.GetPolicyVersionResult.PolicyVersion.Document")
+  end
+end
+
+datasource "ds_iam_policies" do
+  run_script $js_iam_policies, $ds_iam_policyversions, $ds_get_caller_identity
+end
+
+###############################################################################
+# Scripts
+###############################################################################
+
+script "js_iam_policies", type:"javascript" do
+  parameters "ds_iam_policyversions", "ds_get_caller_identity"
+  result "result"
+  code <<-EOS
+    var bad_policy_list = [];
+
+    _.each(ds_iam_policyversions, function(policy){
+      statement_list = JSON.parse(decodeURIComponent(policy.encoded_details))['Statement']
+      bad_policy = 0
+
+      _.each(statement_list, function(statement){
+        if (statement['Effect'] == 'Allow' && statement['Action'] == '*' && statement['Resource'] == '*') {
+          bad_policy = 1
+        }
+      })
+
+      if (bad_policy == 1) {
+        bad_policy_list.push(policy['policyName'] + ": " + policy['arn'])
+      }
+
+    })
+
+    result = {
+      id: ds_get_caller_identity[0]['account'],
+      bad_policy_list: bad_policy_list
+    }
+EOS
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "pol_no_admin_iam_policies" do
+  validate $ds_iam_policies do
+    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): Attached Admin Policies Found"
+    escalate $esc_no_admin_iam_policies
+    detail_template <<-EOS
+Attached policies with full admin access found.
+
+Affected Account: {{data.id}}
+
+Problematic Policies:
+{{- range $val := data.bad_policy_list }}
+  {{ $val }}\n
+{{- end }}
+EOS
+    check eq(size(val(data, "bad_policy_list")),0)
+    export do
+      resource_level true
+      field "id" do
+        label "id"
+      end
+      field "bad_policy_list" do
+        label "bad_policy_list"
+      end
+    end
+  end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_no_admin_iam_policies" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
+end

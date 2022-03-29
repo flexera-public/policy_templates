@@ -1,5 +1,21 @@
 # Changelog
 
+## v2.8
+
+- Added default to aws_account_number parameter to enable existing API users.
+
+## v2.7
+
+- Added support for a single AWS STS Cross account role to be used for multiple policies.
+
+## v2.6
+
+- Removing Publish for EU, no longer updating NAM
+
+## v2.5
+
+- updated README.md rightscale documentation links with docs.flexera documentation links
+
 ## v2.4
 
 - Added a new input parameter to enter regions in order to support SCP (Service Control Policy) and CIS Standards

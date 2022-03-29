@@ -21,6 +21,7 @@ This policy has the following input parameters required when launching the polic
 - *FNMS Report URL* - Full FlexNet URL (e.g. `https://flexera-demo-1.flexnetmanager.com/Suite` or WStunnel tunnel URL `https://wstunnel1-1.rightscale.com/_token/<token>/`)
 - *FNMS Report ID* - FlexNet Manager System Custom View ID.
 - *Email addresses to notify* - Email addresses of the recipients you wish to notify when new incidents are created
+- *Account Number* - The Account number for use with the AWS STS Cross Account Role. Leave blank when using AWS IAM Access key and secret. It only needs to be passed when the desired AWS account is different than the one associated with the Flexera One credential. [more](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_1982464505_1123608)
 - *Tags to ignore* - List of tags that will exclude EC2 instance from being evaluated by this policy. Multiple tags are evaluated as an 'OR' condition. Tag keys or key/value pairs can be listed. Example: 'test,env=dev'.
 
 ## Policy Actions
@@ -31,11 +32,11 @@ This policy has the following input parameters required when launching the polic
 
 For On Premise If FlexNet Manager Suite is not accessible from the Internet, you will need to setup a wstunnel to provide a secure connection into the FlexNet manager system.For more details on wstunnel please refer to this: [https://github.com/rightscale/wstunnel](https://github.com/rightscale/wstunnel)
 
-This policy uses [credentials](https://docs.rightscale.com/policies/users/guides/credential_management.html) for connecting to the cloud -- in order to apply this policy you must have a credential registered in the system that is compatible with this policy. If there are no credentials listed when you apply the policy, please contact your cloud admin and ask them to register a credential that is compatible with this policy. The information below should be consulted when creating the credential.
+This policy uses [credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for connecting to the cloud -- in order to apply this policy you must have a credential registered in the system that is compatible with this policy. If there are no credentials listed when you apply the policy, please contact your cloud admin and ask them to register a credential that is compatible with this policy. The information below should be consulted when creating the credential.
 
 ### Credential configuration
 
-For administrators [creating and managing credentials](https://docs.rightscale.com/policies/users/guides/credential_management.html) to use with this policy, the following information is needed:
+For administrators [creating and managing credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) to use with this policy, the following information is needed:
 
 Provider tag value to match this policy: `aws` , `aws_sts` , `flexera_fnms`
 
@@ -48,16 +49,15 @@ Provider tag value to match this policy: `aws` , `aws_sts` , `flexera_fnms`
 
 Required permissions in the provider aws:
 
-```javascript
- {
-    "Version": "2012-10-17",
-    "Statement":[{
-                  "Effect":"Allow",
-                  "Action":["ec2:DescribeInstances",
-                              "ec2:DescribeRegions"],
-                  "Resource":"*"
-                }]
- }
+```json
+{
+  "Version": "2012-10-17",
+  "Statement":[{
+    "Effect":"Allow",
+    "Action":["ec2:DescribeInstances", "ec2:DescribeRegions"],
+    "Resource":"*"
+  }]
+}
 ```
 
 ## Installation

@@ -1,5 +1,17 @@
 # Changelog
 
+## v2.14
+
+- Added default to aws_account_number parameter to enable existing API users.
+
+## v2.13
+
+- Added support for a single AWS STS Cross account role to be used for multiple policies.
+
+## v2.12
+
+- updated README.md rightscale documentation links with docs.flexera documentation links
+
 ## v2.11
 
 - Debug log via parameter, off by default (for EU compatibility)

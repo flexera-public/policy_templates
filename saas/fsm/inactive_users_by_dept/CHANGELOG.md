@@ -1,5 +1,14 @@
 # Changelog
 
+## v2.6
+
+- Added pagination for API call
+- Refactored script 'js_format_data'
+
+## v2.5
+
+- Updated README.md rightscale documentation links with docs.flexera documentation links
+
 ## v2.4
 
 - Updated to set SaaS API host dynamically in EU and non-EU zone

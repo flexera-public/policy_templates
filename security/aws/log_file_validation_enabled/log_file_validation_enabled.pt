@@ -1,0 +1,131 @@
+name "AWS Ensure Log File Validation Enabled For All CloudTrails"
+rs_pt_ver 20180301
+type "policy"
+short_description "Report if any CloudTrails do not have log file validation enabled. \n See the [README](https://github.com/flexera/policy_templates/tree/master/security/aws/log_file_validation_enabled) and [docs.rightscale.com/policies](https://docs.rightscale.com/policies/) to learn more."
+long_description ""
+category "Security"
+severity "high"
+default_frequency "daily"
+info(
+  version: "2.0",
+  provider: "AWS",
+  service: "CloudTrail",
+  policy_set: "CIS",
+  cce_id: "CCE-78914-9",
+  cis_aws_foundations_securityhub: "2.2",
+  benchmark_control: "3.2",
+  benchmark_version: "1.4.0",
+  cis_controls: "[\"8.11v8\", \"6v7\"]",
+  nist: "AU-4"
+)
+
+###############################################################################
+# User inputs
+###############################################################################
+
+parameter "param_email" do
+  type "list"
+  label "Email Address"
+  description "Email addresses of the recipients you wish to notify"
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+credentials "auth_aws" do
+  schemes "aws","aws_sts"
+  label "AWS"
+  description "Select the AWS Credential from the list"
+  tags "provider=aws"
+end
+
+###############################################################################
+# Datasources
+###############################################################################
+
+datasource "ds_trail_list" do
+  request do
+    auth $auth_aws
+    verb "GET"
+    host "cloudtrail.us-east-1.amazonaws.com"
+    path "/"
+    header "User-Agent", "RS Policies"
+    header "Accept", "application/json"
+    query "Action", "DescribeTrails"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "DescribeTrailsResponse.DescribeTrailsResult.trailList") do
+      field "name", jmes_path(col_item, "Name")
+      field "arn", jmes_path(col_item, "TrailARN")
+      field "homeregion", jmes_path(col_item, "HomeRegion")
+      field "log_file_validation_enabled", jmes_path(col_item, "LogFileValidationEnabled")
+    end
+  end
+end
+
+datasource "ds_trails_without_logfilevalidation" do
+  run_script $js_trails_without_logfilevalidation, $ds_trail_list
+end
+
+###############################################################################
+# Scripts
+###############################################################################
+
+script "js_trails_without_logfilevalidation", type:"javascript" do
+  parameters "ds_trail_list"
+  result "result"
+  code <<-EOS
+    result = []
+
+    _.each(ds_trail_list, function(trail) {
+      if (trail.log_file_validation_enabled != true) {
+        result.push({
+          name: trail.name,
+          id: trail.arn,
+          homeregion: trail.homeregion,
+          logfilevalidation: "Disabled"
+        })
+      }
+    })
+EOS
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "policy_trails_without_logfilevalidation" do
+  validate $ds_trails_without_logfilevalidation do
+    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} CloudTrails Found Without Log File Validation Enabled"
+    escalate $esc_report_trails_without_logfilevalidation
+    check eq(size(data),0)
+    export do
+      resource_level true
+      field "name" do
+        label "Name"
+      end
+      field "id" do
+        label "ARN"
+      end
+      field "homeregion" do
+        label "Home Region"
+      end
+      field "logfilevalidation" do
+        label "Log File Validation"
+      end
+    end
+  end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_report_trails_without_logfilevalidation" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
+end

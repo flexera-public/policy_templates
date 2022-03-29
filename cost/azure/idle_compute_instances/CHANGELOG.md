@@ -1,5 +1,40 @@
 # Changelog
 
+## v3.0
+
+- applying data normalization updates for spend recommendations api. this change breaks current iterations expecting specific output types being pushed.
+- fixed issue with potential nil pointer type error issue
+- updated savings field to round to 3rd decimal
+- Normalizing fields for recommendations:
+  - updated 'tags' field to slice of string values
+  - Renamed 'id' to 'resourceID'
+  - Added 'accountID' field with subscriptionID value
+  - Added 'accountName' field with subscriptionName value
+  - Changed 'savings' to be a plain number
+  - Added 'savingsCurrency' to record the currency symbol.
+  - Added 'service' field
+  - Renamed 'rg' to 'resourceGroup'
+  - Added 'resourceType' field
+  - Renamed 'location' to 'region'
+  - Renamed 'vmname' to 'resourceName'
+  - Renamed 'averagecpu' to 'averageCPU'
+
+## v2.14
+
+- updated README.md rightscale documentation links with docs.flexera documentation links
+
+## v2.13
+
+- Added "ignore-status" for 400, 403, 404 errors
+
+## v2.12
+
+- Fix non-optimal array searching for costs
+
+## v2.11
+
+- Adding subscription filter to deal with timeout
+
 ## v2.10
 
 - Debug param added (off by default, for EU app); use rs_optima_host, not hardcoded hostname

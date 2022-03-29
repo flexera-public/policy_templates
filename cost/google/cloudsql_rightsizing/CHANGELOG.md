@@ -1,5 +1,13 @@
 # Changelog
 
+## v2.9
+
+- updated README.md rightscale documentation links with docs.flexera documentation links
+
+## v2.8
+
+- Ignoring Custom Tiers from google results
+
 ## v2.7
 
 - Debug via param (off by default, for EU app)

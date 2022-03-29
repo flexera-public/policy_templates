@@ -1,29 +1,29 @@
 name "SaaS Manager - Inactive Users by Department"
 rs_pt_ver 20180301
 type "policy"
-short_description "This policy will create an incident when Flexera SaaS Manager identifies inactive or never active users for managed applications. See the [README](https://github.com/flexera/policy_templates/tree/master/saas/fsm/inactive_users_by_dept/) and [docs.rightscale.com/policies](https://docs.rightscale.com/policies/) to learn more."
+short_description "This policy will create an incident when Flexera SaaS Manager identifies inactive or never active users for managed applications. See the [README](https://github.com/flexera/policy_templates/tree/master/saas/fsm/inactive_users_by_dept/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 long_description ""
 severity "medium"
 category "SaaS Management"
 default_frequency "daily"
 info(
-  version: "2.4",
+  version: "2.6",
   provider: "Flexera SaaS Manager",
   service: "",
   policy_set: ""
 )
 
 ###############################################################################
-# User inputs
+# Parameters
 ###############################################################################
 
-parameter "param_num_days" do 
+parameter "param_num_days" do
   type "number"
   label "Inactive Days Threshold"
   description "Number of inactive days to trigger an incident"
   default 60
   min_value 60
-end 
+end
 
 parameter "param_email" do
   type "list"
@@ -40,41 +40,58 @@ credentials "fsm_auth" do
   schemes "oauth2"
   label "FSM"
   description "Select the FSM Resource Manager Credential from the list."
-  tags "provider=flexera_fsm"
+  tags "provider=flexera"
 end
 
 ###############################################################################
-# Datasources
+# Pagination
 ###############################################################################
 
-datasource "ds_get_host" do
+pagination "pag_get_inactive_users" do
+  get_page_marker do
+    body_path jq(response, 'if length < 10000 then null else if $marker != "" then $marker | tonumber + 1 else 2 end end')
+  end
+  set_page_marker do
+    query "page"
+  end
+end
+
+###############################################################################
+# Datasources and Scripts
+###############################################################################
+
+#GET HOST
+datasource "ds_host" do
   run_script $js_get_host, rs_governance_host
 end
 
-datasource "ds_total_items" do
-  iterate $ds_get_host
+script "js_get_host", type: "javascript" do
+  parameters "rs_governance_host"
+  result "result"
+  code <<-EOS
+    if(rs_governance_host.indexOf(".eu") !== -1 || rs_governance_host.indexOf("-eu") !== -1){
+      var result = { host: "api.fsm-eu.flexeraeng.com" }
+    }else{
+      var result = { host: "api.fsm.flexeraeng.com" }
+    }
+  EOS
+end
+
+#GET TOTAL PRODUCT ABANDONED USERS (INACTIVE)
+datasource "ds_inactive_users" do
   request do
     auth $fsm_auth
-    host val(iter_item,"host")
+    pagination $pag_get_inactive_users
+    host val($ds_host, "host")
     verb "GET"
     scheme "https"
     path join(["/svc/orgs/", rs_org_id, "/analytics/product-abandoned-users"])
     header "content-type", "application/json"
-    query "pageSize", "1"
+    query "pageSize", "10000"
     query "page", "1"
     query "employeeFilter", "active"
     query "sort", "department"
-   end
-  result do
-    encoding "json"
-    field "totalItems", jmes_path(response, "[].totalItems")
-    field "saas_host", val(iter_item,"host")
-  end
-end
-
-datasource "ds_inactive_users" do
-  request do
-    run_script $js_inactive, $ds_total_items, rs_org_id
+    query "asc", "true"
   end
   result do
     encoding "json"
@@ -82,103 +99,38 @@ datasource "ds_inactive_users" do
       field "department", jmes_path(col_item, "department")
       field "location", jmes_path(col_item, "location")
       field "email", jmes_path(col_item, "email")
-      field "firstName", jmes_path(col_item, "firstName")
-      field "lastName", jmes_path(col_item, "lastName")
-      field "managedProductName", jmes_path(col_item, "managedProductName")
-      field "daysSinceActive", jmes_path(col_item, "daysSinceActive")
-      field "totalItems", jmes_path(col_item, "totalItems")
+      field "first_name", jmes_path(col_item, "firstName")
+      field "last_name", jmes_path(col_item, "lastName")
+      field "managed_product_name", jmes_path(col_item, "managedProductName")
+      field "days_since_active", jmes_path(col_item, "daysSinceActive")
+      field "total_items", jmes_path(col_item, "totalItems")
     end
   end
 end
 
-datasource "ds_formatData" do
-  run_script $js_formatData, $ds_inactive_users
-end 
-
-###############################################################################
-# Scripts
-###############################################################################
-
-script "js_get_host", type: "javascript" do
-  parameters "rs_governance_host"
-  result "result"
-  code <<-EOS
-    var result = [];
-    if(rs_governance_host.indexOf(".eu") !== -1 || rs_governance_host.indexOf("-eu") !== -1){
-      result.push({host: "api.fsm-eu.flexeraeng.com"});
-    }else{
-      result.push({host: "api.fsm.flexeraeng.com"});
-    }
-  EOS
+#FORMAT DATA
+datasource "ds_formatted_data" do
+  run_script $js_format_data, $ds_inactive_users
 end
 
-script "js_inactive", type: "javascript" do
-  parameters "ds_total_items", "rs_org_id"
-  result "request"
-  code <<-EOS
-  console.log("ds_inactive_users"+rs_org_id)
-  request = {
-    auth: "fsm_auth",
-    host: ds_total_items[0]["saas_host"],
-    verb: "GET",
-    scheme: "https",
-    path: "/svc/orgs/"+rs_org_id+"/analytics/product-abandoned-users",
-    headers: {
-      "content-type": "application/json"
-    },
-     query_params: {
-      "pageSize": ds_total_items[0]["totalItems"].toString(),
-      "page": "1",
-      "sort": "department",
-      "asc": "true"
-    }
-  }
-EOS
-end
-
-script "js_formatData", type: "javascript" do 
+script "js_format_data", type: "javascript" do
   result "result"
   parameters "inactive_users"
   code <<-EOS
-  var result = [];
-
-  var departments = _.uniq(_.pluck(inactive_users, 'department'));
-  _.each(departments, function(dept){
-    console.log("Department: "+dept)
-    var dept_users = _.where(inactive_users, {department: dept});
-    console.log("Users: ")
-    console.log(dept_users)
-    
-    var apps = _.uniq(_.pluck(dept_users, 'managedProductName'));
-    _.each(apps, function(app){
-      var dept_app_users = _.where(dept_users, {managedProductName: app});
-      _.each(dept_app_users, function(user){
-        if (user["daysSinceActive"] == 0){
-          var days = "Never Active";
-        } else {
-          var days = user["daysSinceActive"];
-        }
-        result.push({
-          email: user["email"],
-          lastName: user["lastName"],
-          firstName: user["firstName"],
-          location: user["location"],
-          department: user["department"],
-          managedProductName: user["managedProductName"],
-          daysSinceLastActive: days
-        })
-      })
-    })
+  _.each(inactive_users, function(user){
+    if(user.days_since_active == 0){
+      user["days_since_active"] = "Never Active"
+    }
   })
-
-EOS
-end 
+  var result = inactive_users
+  EOS
+end
 
 ###############################################################################
 # Escalations
 ###############################################################################
 
-escalation "report_summary" do
+escalation "esc_report_summary" do
   automatic true
   label "Send Email"
   description "Send incident email"
@@ -190,34 +142,33 @@ end
 ###############################################################################
 
 policy "policy_fsm_inactive_users_by_dept" do
-  validate_each $ds_formatData do
+  validate_each $ds_formatted_data do
     summary_template "{{ len data }} Inactive SaaS Users"
-    export do 
-      field "lastName" do
+    escalate $esc_report_summary
+    check ne(val(item, "days_since_active"), "Never Active")
+    check lt(val(item,"days_since_active"),$param_num_days)
+    export do
+      field "last_name" do
         label "Last Name"
-      end 
-      field "firstName" do 
+      end
+      field "first_name" do
         label "First Name"
-      end 
-      field "email" do 
+      end
+      field "email" do
         label "Email"
-      end 
-      field "daysSinceLastActive" do 
+      end
+      field "department" do
+        label "Department"
+      end
+      field "days_since_active" do
         label "Days Since Last Active"
       end
-      field "location" do 
+      field "location" do
         label "Location"
       end
-      field "department" do 
-        label "Department"
-      end 
-      field "managedProductName" do 
+      field "managed_product_name" do
         label "Application"
       end
     end
-    
-    escalate $report_summary
-    check ne(val(item, "daysSinceLastActive"), "Never Active")
-    check lt(val(item,"daysSinceLastActive"),$param_num_days)
   end
 end

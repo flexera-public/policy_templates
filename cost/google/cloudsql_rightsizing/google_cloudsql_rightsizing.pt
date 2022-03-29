@@ -1,13 +1,13 @@
 name "Google Rightsize CloudSQL Instances"
 rs_pt_ver 20180301
 type "policy"
-short_description "Checks Google CloudSQL instances based on provided CPU threshold and Resize them after approval. See the [README](https://github.com/flexera/policy_templates/tree/master/cost/google/cloudsql_rightsizing/) and [docs.rightscale.com/policies](https://docs.rightscale.com/policies/) to learn more."
+short_description "Checks Google CloudSQL instances based on provided CPU threshold and Resize them after approval. See the [README](https://github.com/flexera/policy_templates/tree/master/cost/google/cloudsql_rightsizing/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 long_description ""
 severity "medium"
 category "Cost"
 default_frequency "daily"
 info(
-      version: "2.7",
+      version: "2.9",
       provider: "GCE",
       service: "SQL",
       policy_set: "Rightsize Database Services"
@@ -320,6 +320,9 @@ script "js_checked_utilization", type: "javascript" do
   tag_key = param_exclusion_tag_key.split(':')[0]
   tag_value = param_exclusion_tag_key.split(':')[1]
   _.each(ds_calculated_utilization, function(instance){
+    if ( instance.tier.match(/custom/) ){
+      return;
+    }
     var instance_type_hash = ds_google_instance_size_map[instance.tier]
     if ( instance.database_id.indexOf('failover') == -1){
       if ( instance.userLabels != null && instance.userLabels !== undefined ){
@@ -357,20 +360,20 @@ script "js_checked_utilization", type: "javascript" do
       }
     }
   })
-     for(var instance in results){
-      var taglist="";
-      for(var prop in instance.userLabels){
-        taglist=taglist+prop+":"+instance.userLabels["prop"]+", ";
-	  }
-      if(taglist.length>0){
-        instance.userLabels=taglist.substring(0,taglist.length-2);
-	  }
-      else{
-        instance.tags="< No Value >";
-	  }
-	}
-    results = _.sortBy(results, 'region');
-    results= _.sortBy(results, 'projectId');
+  for(var instance in results){
+    var taglist="";
+    for(var prop in instance.userLabels){
+      taglist=taglist+prop+":"+instance.userLabels["prop"]+", ";
+    }
+    if(taglist.length>0){
+      instance.userLabels=taglist.substring(0,taglist.length-2);
+    } else
+    {
+      instance.tags="< No Value >";
+    }
+  }
+  results = _.sortBy(results, 'region');
+  results= _.sortBy(results, 'projectId');
 EOF
 end
 ###############################################################################
@@ -416,9 +419,9 @@ policy "pol_utilization" do
       field "userLabels" do
         label "Tags"
       end
-	    field "selfLink" do
-	      label "Self Link"
-	    end
+      field "selfLink" do
+        label "Self Link"
+      end
     end
   end
 end
@@ -457,7 +460,7 @@ define update_resources($data,$param_log_to_cm_audit_entries) return $all_respon
     sub on_error: handle_error($response) do
       $response = http_patch(
         url: $item["selfLink"],
-		auth: $$auth_google,
+        auth: $$auth_google,
         headers: {
           "cache-control": "no-cache",
           "content-type": "application/json"

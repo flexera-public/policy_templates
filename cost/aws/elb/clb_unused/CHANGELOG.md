@@ -1,5 +1,21 @@
 # Changelog
 
+## v2.15
+
+- Added default to aws_account_number parameter to enable existing API users.
+
+## v2.14
+
+- Added support for a single AWS STS Cross account role to be used for multiple policies.
+
+## v2.13
+
+- updated README.md rightscale documentation links with docs.flexera documentation links
+
+## v2.12
+
+- Fix non-optimal array searching for costs
+
 ## v2.11
 
 - Debug log via param (off by default); use rs_optima_host instead of hardcoded hostname

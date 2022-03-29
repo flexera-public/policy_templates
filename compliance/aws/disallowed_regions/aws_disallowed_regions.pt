@@ -1,25 +1,32 @@
 name "AWS Disallowed Regions"
 rs_pt_ver 20180301
 type "policy"
-short_description "Check for instances that are in a disallowed region with the option to terminate them. \n See the [README](https://github.com/flexera/policy_templates/tree/master/compliance/aws/disallowed_regions) and [docs.rightscale.com/policies](https://docs.rightscale.com/policies/) to learn more."
+short_description "Check for instances that are in a disallowed region with the option to terminate them. \n See the [README](https://github.com/flexera/policy_templates/tree/master/compliance/aws/disallowed_regions) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 long_description ""
 category "Compliance"
 severity "low"
 info(
-  version: "2.2",
+  version: "2.5",
   provider: "AWS",
   service: "EC2",
   policy_set: "Disallowed Regions"
 )
 
 ###############################################################################
-# User inputs
+# Parameters
 ###############################################################################
 
 parameter "param_email" do
   type "list"
   label "Email addresses to notify"
   description "Email addresses of the recipients you wish to notify when new incidents are created."
+end
+
+parameter "param_aws_account_number" do
+  type "string"
+  label "Account Number"
+  description "The account number for AWS STS Cross Account Roles."
+  default ""
 end
 
 parameter "param_exclude_tags" do
@@ -53,6 +60,7 @@ credentials "auth_aws" do
   label "AWS"
   description "Select the AWS Credential from the list"
   tags "provider=aws"
+  aws_account_number $param_aws_account_number
 end
 
 ###############################################################################
@@ -83,7 +91,7 @@ datasource "ds_disallowed_instances_list" do
   iterate $ds_regions_list
   request do
     auth $auth_aws
-	pagination $aws_pagination_xml
+  pagination $aws_pagination_xml
     verb "GET"
     host join(["ec2.",val(iter_item,"region"),".amazonaws.com"])
     path "/"
@@ -130,7 +138,7 @@ script "js_filter_aws_instances", type: "javascript" do
       var is_tag_matched=false
       var tag_key_value=""
       if(typeof(tags) != "undefined"){
-	      for(var k=0;k<tags.length;k++){
+        for(var k=0;k<tags.length;k++){
           var tag=tags[k];
           if((param_exclude_tags_lower.indexOf((tag['tagKey']).toLowerCase()) !== -1) || (param_exclude_tags_lower.indexOf((tag['tagKey']+'='+tag['tagValue']).toLowerCase()) !== -1)){
             is_tag_matched = true;
@@ -143,7 +151,7 @@ script "js_filter_aws_instances", type: "javascript" do
           }
         }
       }
-	    if(!is_tag_matched && instance['instance_state']!="terminated"){
+      if(!is_tag_matched && instance['instance_state']!="terminated"){
         res.push({
           id: instance['instance_id'],
           region: instance['region'],
@@ -161,8 +169,8 @@ script "js_regions_map", type: "javascript" do
   parameters "param_disallowed_region"
   result "regions_map"
   code <<-EOS
-   regions_map=[]
-   var param_disallowed_region_lower=[];
+  regions_map=[]
+  var param_disallowed_region_lower=[];
     for(var i=0; i < param_disallowed_region.length; i++){
       param_disallowed_region_lower[i]=param_disallowed_region[i].toString().toLowerCase();
     }
@@ -233,8 +241,8 @@ define terminate_instances($data) return $all_responses do
   $$debug=true
   $all_responses = []
   foreach $item in $data do
-   sub on_error: skip do
-   $response = http_request(
+  sub on_error: skip do
+  $response = http_request(
       verb: "get",
       host: join(["ec2.",$item["region"],".amazonaws.com"]),
       auth: $$auth_aws,

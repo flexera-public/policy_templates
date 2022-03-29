@@ -1,5 +1,26 @@
 # Changelog
 
+## v1.8
+
+- Fixed issue with currentSpend subtracting 3 days unnecessarily
+- Fixed issue with incorrect API endpoint
+
+## v1.7
+
+- URIEncode all the image-charts options
+
+## v1.6
+
+- Fixed nil account_name, and updated searches to get correct data
+
+## v1.5
+
+- Removed ds_session and synced ds_billing_center from budget alert
+
+## v1.4
+
+- updated README.md rightscale documentation links with docs.flexera documentation links
+
 ## v1.3
 
 - Fixed markdown alignment in validation heredoc

@@ -1,5 +1,46 @@
 # Changelog
 
+## v3.0
+
+- applying data normalization updates for spend recommendations api. this change breaks current iterations expecting specific output types being pushed.
+- fixed issue with potential nil pointer type error issue
+- updated savings field to round to 3rd decimal
+- updated displayName to subscription name more consistently
+- Normalizing fields for recommendations:
+  - updated 'tags' field to slice of string values
+  - Added 'resourceID' field
+  - Added 'subscriptionID' field
+  - Added 'accountID' field with subscriptionID value
+  - Added 'accountName' field with subscriptionName value
+  - Changed 'savings' to be a plain number
+  - Added 'savingsCurrency' to record the currency symbol.
+  - Added 'service' field
+  - Added 'resourceGroup' field
+  - Added 'resourceType' field
+  - Renamed 'location' to 'region'
+  - Renamed 'name' to 'resourceName'
+
+## v2.12
+
+- updated README.md rightscale documentation links with docs.flexera documentation links
+
+## v2.11
+
+- Added "ignore-status" for 400, 403, 404 errors
+
+## v2.10
+
+- Fix non-optimal array searching for costs
+
+## v2.9
+
+- Adding subscription filter to deal with timeout
+
+## v2.8
+
+- Added `and resourceProvider eq 'Microsoft.Compute' and resourceType eq 'Microsoft.Compute/VirtualMachines'` to event filter
+  to get smaller but more specific result set to help with ExecutionTimeout.
+
 ## v2.7
 
 - Debug via param (off by default, for EU app); use rs_optima_host, not hardcoded hostname
