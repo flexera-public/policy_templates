@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.5
+
+- Updating to keyword from string
+
 ## v3.4
 
 - Use provided keyword for Optima endpoint
