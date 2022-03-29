@@ -2,10 +2,14 @@
 
 ## What it does
 
-This policy Looks up Active IT Asset Manager Licenses Expiring within set Time Period and sends the result as an email.
+This policy uses the ITAM API to look up Active IT Asset Manager Licenses Expiring within set Time Period and sends the result as an email.
 
 The report / Mail output looks like this:
-![Alt text][emailoutput]
+ITAM Expiring Licenses
+
+licenseId publisher licenseName version edition licenseStatus licenseDuration licenseType expiryDate
+12345 Adobe Acrobat Pro 2022 Professional [Active]  [Subscription]  [Named User]  2022-03-31T00:00:00Z
+54321 Microsoft Visio Pro 2019 Professional [Active] [Subscription]  [Named User] 2021-08-31T00:00:00Z
 
 Current limitations:
 
@@ -16,7 +20,7 @@ Current limitations:
 This policy has the following input parameters required when launching the policy.
 
 - *Time Period of Expiration* - Time Period, in days, to find licenses expiring within
-- *Email addresses of the recipients you wish to notify* - A list of email addresse(s) to notify
+- *Email addresses of the recipients you wish to notify* - A list of email address(es) to notify
 
 ## Policy Actions
 
