@@ -6,7 +6,7 @@ This policy checks all Azure subscriptions to ensure that they are configured to
 
 ## Functional Details
 
-The Azure Resource Manager API is used to get a list of subscriptions. This list is then used to query the "/providers/Microsoft.Security/securityContacts" endpoint iteratively in order to find the properties.alertNotifications.minimalSeverity setting for each subscription.
+The Azure Resource Manager API is used to get a list of subscriptions. This list is then used to query the "/providers/Microsoft.Security/securityContacts" endpoint iteratively in order to find the properties.alertNotifications.minimalSeverity and properties.alertNotifications.state settings for each subscription.
 
 ## Input Parameters
 
