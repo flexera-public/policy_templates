@@ -256,6 +256,12 @@ Reference
 
 - [AWS EBS Ensure Encryption By Default](./security/aws/ebs_ensure_encryption_default/)
 
+##### Security
+
+###### CIS Policies
+
+- [Azure Ensure High Severity Alerts](./security/azure/high_severity_alerts/)
+
 #### Google
 
 - [Google Open Buckets](./security/storage/google/public_buckets/)
