@@ -111,16 +111,22 @@ script "js_bad_security_contacts", type: "javascript" do
   _.each(ds_security_contacts, function(sec) {
     if (sec['id'] != undefined) {
       if (sec['name'] == 'default') {
-        if (sec['properties']['emails'] == '' || sec['properties']['emails'] == null || sec['properties']['emails'] == undefined) {
-          subscriptionId = sec['id'].split('/')[2]
-          subscriptionName = ''
+        owner_not_found = true
+        role_list = ''
 
-          _.each(ds_subscriptions, function(sub) {
-            if (subscriptionId == sub['id']) {
-              subscriptionName = sub['displayName']
-            }
-          })
+        _.each(sec['properties']['notificationsByRole']['roles'], function(role) {
+          if (role_list == '') {
+            role_list = role
+          } else {
+            role_list += ', ' + role
+          }
 
+          if (role == "Owner") {
+            owner_not_found = false
+          }
+        })
+
+        if (owner_not_found) {
           result.push({
             id: sec['id'],
             subscriptionId: subscriptionId,
@@ -129,7 +135,7 @@ script "js_bad_security_contacts", type: "javascript" do
             location: sec['location'],
             name: sec['name'],
             type: sec['type'],
-            emails: sec['properties']['emails']
+            roles: role_list
           })
         }
       }
@@ -144,7 +150,7 @@ end
 
 policy "policy_security_contacts" do
   validate $ds_bad_security_contacts do
-    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} Azure Subscription(s) Without Security Contact Email Found"
+    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} Azure Subscription(s) Not Configured To Send Security Alerts To Their Owners Found"
     escalate $esc_security_contacts
     check eq(size(data),0)
     export do
@@ -156,6 +162,9 @@ policy "policy_security_contacts" do
       end
       field "location" do
         label "Location"
+      end
+      field "roles" do
+        label "Roles Alerted"
       end
     end
   end
