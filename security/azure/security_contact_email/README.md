@@ -7,6 +7,7 @@ This policy checks all Azure subscriptions to ensure that they have at least one
 ## Functional Details
 
 The Azure Resource Manager API is used to get a list of subscriptions. This list is then used to query the "/providers/Microsoft.Security/securityContacts" endpoint iteratively in order to obtain the security contact information for each subscription.
+
 ## Input Parameters
 
 This policy has the following input parameters required when launching the policy.
