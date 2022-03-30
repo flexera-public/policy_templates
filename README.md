@@ -248,6 +248,12 @@ Reference
 
 - [AWS EBS Ensure Encryption By Default](./security/aws/ebs_ensure_encryption_default/)
 
+##### Security
+
+###### CIS Policies
+
+- [Azure Ensure Security Contact Email](./security/aws/security_contact_email/)
+
 #### Google
 
 - [Google Open Buckets](./security/storage/google/public_buckets/)
