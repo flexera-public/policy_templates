@@ -47,6 +47,7 @@ Reference
 ##### Forecasting
 
 - [Straight-Line Forecast](./cost/forecasting/straight_line_forecast/)
+- [Vendor Commitment Forecast](./cost/forecasting/commitment_forecast/)
 
 #### AWS
 
