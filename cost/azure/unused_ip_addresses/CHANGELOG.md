@@ -2,6 +2,10 @@
 
 ## v3.1
 
+- added new check properties.natGatway == null for unused IP check
+
+## v3.1
+
 - Use provided keyword for Optima endpoint
 
 ## v3.0
