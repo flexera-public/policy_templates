@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.14
+
+- Use provided keyword for Optima endpoint
+
 ## v1.13
 
 - updated README.md rightscale documentation links with docs.flexera documentation links

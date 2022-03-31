@@ -7,7 +7,7 @@ severity "low"
 category "Cost"
 default_frequency "daily"
 info(
-  version: "2.10",
+  version: "3.1",
   provider: "Azure",
   service: "SQL",
   policy_set: "Unused Database Services"
@@ -70,6 +70,8 @@ credentials "azure_auth" do
   tags "provider=azure_rm"
 end
 
+auth "auth_rs", type: "rightscale"
+
 ###############################################################################
 # Pagination
 ###############################################################################
@@ -85,21 +87,21 @@ end
 ###############################################################################
 # Datasources
 ###############################################################################
-#get all subscription details.
+#To get all subscriptions
 datasource "ds_subscriptions" do
   request do
     auth $azure_auth
     pagination $azure_pagination
     host $param_azure_endpoint
     path "/subscriptions/"
-    query "api-version","2019-06-01"
+    query "api-version","2020-01-01"
     header "User-Agent", "RS Policies"
   end
   result do
     encoding "json"
     collect jmes_path(response, "value[*]") do
-      field "subscriptionId", jmes_path(col_item,"subscriptionId")
-      field "displayName", jmes_path(col_item,"displayName")
+      field "subscriptionID", jmes_path(col_item,"subscriptionId")
+      field "subscriptionName", jmes_path(col_item,"displayName")
       field "state", jmes_path(col_item,"state")
     end
   end
@@ -116,23 +118,23 @@ datasource "ds_azure_sql_databases" do
     auth $azure_auth
     pagination $azure_pagination
     host $param_azure_endpoint
-    path join(["/subscriptions/", val(iter_item,"subscriptionId"), "/resources"])
-    query "api-version","2019-08-01"
+    path join(["/subscriptions/", val(iter_item,"subscriptionID"), "/resources"])
+    query "api-version","2021-04-01"
     query "$filter", "resourceType eq 'Microsoft.Sql/servers/databases'"
     header "User-Agent", "RS Policies"
   end
   result do
     encoding "json"
       collect jmes_path(response, "value") do
-        field "id", jmes_path(col_item,"id")
-        field "name", jmes_path(col_item,"name")
-        field "location", jmes_path(col_item,"location")
-        field "type", jmes_path(col_item,"type")
-        field "kind", jmes_path(col_item,"kind")
+        field "resourceID", jmes_path(col_item,"id")
+        field "resourceName", jmes_path(col_item,"name")
+        field "region", jmes_path(col_item,"location")
+        field "resourceType", jmes_path(col_item,"type")
+        field "resourceKind", jmes_path(col_item,"kind")
         field "sku" , jmes_path(col_item,"sku")
         field "tags", jmes_path(col_item,"tags")
-        field "subscriptionId",val(iter_item,"subscriptionId")
-        field "subscriptionName",val(iter_item,"displayName")
+        field "subscriptionID",val(iter_item,"subscriptionID")
+        field "subscriptionName",val(iter_item,"subscriptionName")
     end
   end
 end
@@ -140,28 +142,96 @@ end
 datasource "ds_azure_sql_database_metrics" do
   iterate $ds_azure_sql_databases
   request do
-    run_script $js_utilization_request, val(iter_item,"id"), $param_azure_endpoint
+    run_script $js_utilization_request, val(iter_item,"resourceID"), $param_azure_endpoint
   end
   result do
     encoding "json"
       collect jmes_path(response, "value") do
-        field "id", val(iter_item,"id")
-        field "location", val(iter_item,"location")
-        field "name", val(iter_item,"name")
-        field "kind", val(iter_item,"kind")
-        field "type", val(iter_item,"type")
+        field "resourceID", val(iter_item,"resourceID")
+        field "region", val(iter_item,"region")
+        field "resourceName", val(iter_item,"resourceName")
+        field "resourceKind", val(iter_item,"resourceKind")
+        field "resourceType", val(iter_item,"resourceType")
         field "sku" , val(iter_item,"sku")
         field "unit", jmes_path(col_item,"unit")
         field "timeseries", jmes_path(col_item,"timeseries")
-        field "subscriptionId",val(iter_item,"subscriptionId")
+        field "subscriptionID",val(iter_item,"subscriptionID")
         field "subscriptionName",val(iter_item,"subscriptionName")
         field "tags", val(iter_item,"tags")
     end
   end
 end
 
+datasource "ds_currency_reference" do
+  request do
+    host "raw.githubusercontent.com"
+    path "/rightscale/policy_templates/master/cost/scheduled_reports/currency_reference.json"
+    header "User-Agent", "RS Policies"
+  end
+end
+
+datasource "ds_currency_code" do
+  request do
+    auth $auth_rs
+    host rs_optima_host
+    path join(["/bill-analysis/orgs/",rs_org_id,"/settings/currency_code"])
+    header "Api-Version", "0.1"
+    header "User-Agent", "RS Policies"
+    ignore_status [403]
+  end
+  result do
+    encoding "json"
+    field "id", jmes_path(response,"id")
+    field "value", jmes_path(response,"value")
+  end
+end
+
+datasource "ds_billing_centers" do
+  request do
+    auth $auth_rs
+    host rs_optima_host
+    path join(["/analytics/orgs/",rs_org_id,"/billing_centers"])
+    header "Api-Version", "1.0"
+    header "User-Agent", "RS Policies"
+    query "view", "allocation_table"
+    ignore_status [403]
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response,"[*]") do
+      field "href", jmes_path(col_item,"href")
+      field "id", jmes_path(col_item,"id")
+      field "name", jmes_path(col_item,"name")
+      field "parent_id", jmes_path(col_item,"parent_id")
+    end
+  end
+end
+
+datasource "ds_instance_costs" do
+  iterate $ds_filtered_subscriptions
+  request do
+    run_script $js_get_costs, val(iter_item,"subscriptionID"), $ds_top_level_billing_centers, rs_org_id, rs_optima_host
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response,"rows[*]") do
+      field "resource_id", jmes_path(col_item, "dimensions.resource_id")
+      field "resource_type", jmes_path(col_item, "dimensions.resource_type")
+      field "cost_nonamortized_unblended_adj", jmes_path(col_item,"metrics.cost_nonamortized_unblended_adj")
+    end
+  end
+end
+
+datasource "ds_top_level_billing_centers" do
+  run_script $js_top_level_bc, $ds_billing_centers
+end
+
 datasource "ds_merged_metrics" do
   run_script $js_merged_metrics, $ds_azure_sql_database_metrics, $param_exclusion_tag_key
+end
+
+datasource "ds_instance_cost_mapping" do
+  run_script $js_instance_cost_mapping, $ds_merged_metrics, $ds_instance_costs, $ds_currency_code, $ds_currency_reference, $ds_billing_centers
 end
 
 ###############################################################################
@@ -177,7 +247,7 @@ script "js_filtered_subscriptions", type: "javascript" do
     results = []
     _.each(param_subscription_whitelist, function(sub){
       var found = _.find(ds_subscriptions, function(item){
-        return item.subscriptionId == sub || item.displayName.toLowerCase() == sub.toLowerCase();
+        return item.subscriptionID == sub || item.subscriptionName.toLowerCase() == sub.toLowerCase();
       })
       results.push(found)
     })
@@ -232,19 +302,32 @@ script "js_merged_metrics", type: "javascript" do
   result "result"
   code <<-EOS
     var result = [];
-
     //exclude the database with the exclution tags, and the system databases
     for(i=0; i< databases_metrics.length; i++){
-      if(!(_.has(databases_metrics[i].tags, exclusion_tag) || databases_metrics[i].kind.toLowerCase().indexOf(",system") > -1)){
+      var tags = []
+
+      if (typeof databases_metrics[i].tags === "undefined" || databases_metrics[i].tags === null) {
+        databases_metrics[i].tags = tags
+      }
+
+      if(!(_.has(databases_metrics[i].tags, exclusion_tag) || databases_metrics[i].resourceKind.toLowerCase().indexOf(",system") > -1)){
         //Find the Resource groupe
-        var aTemp = databases_metrics[i].id.split("/resourceGroups/")
-        var resource_group="";
+        var aTemp = databases_metrics[i].resourceID.split("/resourceGroups/")
+        var resourceGroup="";
         if(aTemp.length > 1){
           aTemp = aTemp[1].split("/");
-          resource_group = aTemp[0];
+          resourceGroup = aTemp[0];
         }else{
-          resource_group = "";
+          resourceGroup = "";
         }
+
+        Object.keys(databases_metrics[i]['tags']).forEach(function(key) {
+          tags.push(key+'='+databases_metrics[i]['tags'][key])
+        })
+
+        resourceTypeSplit = databases_metrics[i].resourceType.split("/")
+        service = resourceTypeSplit[0]
+
         //now find the metrics for the devices
         var objMetric = databases_metrics[i];
         var total = 0;
@@ -264,23 +347,177 @@ script "js_merged_metrics", type: "javascript" do
               var sku=databases_metrics[i].sku;
             }
             result.push({
-              id: databases_metrics[i].id,
-              location: databases_metrics[i].location,
-              name: databases_metrics[i].name,
-              resource_group: resource_group,
-              kind: databases_metrics[i].kind,
-              type: databases_metrics[i].type,
+              resourceID: databases_metrics[i].resourceID,
+              region: databases_metrics[i].region,
+              resourceName: databases_metrics[i].resourceName,
+              resourceGroup: resourceGroup,
+              resourceKind: databases_metrics[i].resourceKind,
+              resourceType: databases_metrics[i].resourceType,
               sku: sku,
+              tags: tags,
+              service: service,
               unit: databases_metrics[i].unit,
               subscriptionName: databases_metrics[i].subscriptionName,
-              subscriptionId: databases_metrics[i].subscriptionId
+              subscriptionID: databases_metrics[i].subscriptionID
             })
           }
         }
       }
     }
     result = _.sortBy(result, 'subscriptionName');
-    result = _.sortBy(result, 'location');
+    result = _.sortBy(result, 'region');
+  EOS
+end
+
+script "js_top_level_bc", type: "javascript" do
+  parameters "billing_centers"
+  result "filtered_billing_centers"
+  code <<-EOS
+  var filtered_billing_centers =
+    _.reject(billing_centers, function(bc){ return bc.parent_id != null });
+EOS
+end
+
+script "js_get_costs", type:"javascript" do
+  parameters  "account_id","billing_centers","org", "rs_optima_host"
+  result "request"
+  code <<-EOS
+    // returns date formatted as string: YYYY-mm-dd
+    function getFormattedDailyDate(date) {
+      var year = date.getFullYear();
+      var month = (1 + date.getMonth()).toString();
+      month = month.length > 1 ? month : '0' + month;
+      var day = date.getDate().toString();
+      day = day.length > 1 ? day : '0' + day;
+      return year + '-' + month + '-' + day;
+    }
+    var start_date = getFormattedDailyDate(new Date(new Date().setDate(new Date().getDate() - 3)));
+    var end_date = getFormattedDailyDate(new Date(new Date().setDate(new Date().getDate() - 2)));
+    var request = {
+      auth: "auth_rs",
+      host: rs_optima_host,
+      verb: "POST",
+      path: "/bill-analysis/orgs/" + org + "/costs/select",
+      body_fields: {
+        "dimensions": ["resource_id"],
+        "granularity": "day",
+        "start_at": start_date,
+        "end_at": end_date,
+        "metrics": ["cost_nonamortized_unblended_adj"],
+        "billing_center_ids": _.compact(_.map(billing_centers, function(value){ return value.id})),
+        "limit": 10000,
+        "filter": {
+          "expressions": [
+            {
+              "dimension": "service",
+              "type": "equal",
+              "value": "Microsoft.Sql"
+            },
+            {
+              "dimension": "vendor_account",
+              "type": "equal",
+              "value": account_id
+            }
+          ],
+          "type": "and"
+        }
+      },
+      headers: {
+        "User-Agent": "RS Policies",
+        "Api-Version": "1.0"
+      },
+      ignore_status: [400]
+    }
+  EOS
+end
+
+script "js_instance_cost_mapping", type:"javascript" do
+  parameters  "instance_list","instance_costs","ds_currency_code","ds_currency_reference", "ds_billing_centers"
+  result "result"
+  code <<-EOS
+    var result = {};
+    var idle_instance_list=[];
+    var message=''
+    var count=0;
+    function formatNumber(number, separator){
+      var numString =number.toString();
+      var values=numString.split(".");
+      var result = ''
+      while (values[0].length > 3){
+        var chunk = values[0].substr(-3)
+        values[0] = values[0].substr(0, values[0].length - 3)
+        result = separator + chunk + result
+      }
+      if (values[0].length > 0){
+        result = values[0] + result
+      }
+      if(values[1]==undefined){
+        return result;
+      }
+      return result+"."+values[1];
+    }
+    if(ds_billing_centers.length!=0){
+      // Put costs into a map by resource ID and only include them for resource IDs we actually need
+      var costs_by_resource_id = {};
+      _.each(instance_list, function(instance) {
+        costs_by_resource_id[instance.resourceID] = [];
+      });
+      _.each(instance_costs, function(cost) {
+        var costs = costs_by_resource_id[cost.resource_id];
+        if (costs != null) {
+          costs.push(cost);
+        }
+      });
+      // Format costs with currency symbol and thousands separator
+      if( ds_currency_code['value'] !== undefined ) {
+        if (ds_currency_reference[ds_currency_code['value']] !== undefined ) {
+          var cur = ds_currency_reference[ds_currency_code['value']]['symbol']
+          if( ds_currency_reference[ds_currency_code['value']]['t_separator'] !== undefined ) {
+            var separator = ds_currency_reference[ds_currency_code['value']]['t_separator']
+          } else {
+            var separator = ""
+          }
+        } else {
+          var cur = ""
+          var separator = ""
+        }
+      } else {
+        var cur = "$"
+        var separator = ","
+      }
+      var total_savings=0;
+      _.each(instance_list, function(instance){
+        var cost_objects = costs_by_resource_id[instance.resourceID];
+        if (_.size(cost_objects) > 0){
+          count++;
+          var sum = _.reduce(_.compact(_.map(cost_objects, function(value){return value.cost_nonamortized_unblended_adj})), function(memo, num){ return memo + num; }, 0);
+          var monthly_savings = sum*30;
+          total_savings=total_savings+monthly_savings;
+          instance['savings']=(Math.round(monthly_savings * 1000) / 1000);
+          instance['savingsCurrency']=cur;
+          idle_instance_list.push(instance);
+        } else {
+          instance['savings']= 0.0;
+          instance['savingsCurrency']=cur;
+          idle_instance_list.push(instance);
+        }
+      })
+      if(count){
+        total_savings=cur + ' '+formatNumber((Math.round(total_savings * 100) / 100), separator);
+        message="The total estimated monthly savings are " +total_savings;
+      }
+      else{
+        message="The Flexera Optima system does not have any data to calculate savings for these resources";
+      }
+    }
+    else{
+      message="You do not have the minimum required role of billing_center_viewer to view the savings";
+      idle_instance_list=instance_list;
+    }
+    result={ "instance_list": idle_instance_list,
+      "message": message}
+    result.instance_list = _.sortBy(result.instance_list,"region");
+    result.instance_list = _.sortBy(result.instance_list,"subscriptionName");
   EOS
 end
 
@@ -289,30 +526,51 @@ end
 ###############################################################################
 
 policy "policy_azure_db_utilization" do
-  validate $ds_merged_metrics do
-    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} Azure Unused SQL Databases"
+  validate $ds_instance_cost_mapping do
+    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data.instance_list }} Unused Azure Databases Found"
+    detail_template <<-EOS
+{{data.message}}.
+EOS
     escalate $esc_email_report
     escalate $esc_delete_unused_sql_databases_approval
-    check eq(size(data), 0)
-    export do
+    check eq(size(val(data, "instance_list")), 0)
+    export "instance_list" do
       resource_level true
+      field "subscriptionID" do
+        label "Subscription ID"
+      end
       field "subscriptionName" do
-        label "Subscription Name"
+        label "subscription Name"
       end
-      field "location" do
-        label "Location"
+      field "resourceID" do
+        label "Resource ID"
       end
-      field "name" do
-        label "Name"
+      field "resourceName" do
+        label "Resource Name"
       end
-      field "resource_group" do
+      field "resourceGroup" do
         label "Resource Group"
       end
-      field "kind" do
-        label "Kind"
+      field "region" do
+        label "Region"
       end
-      field "type" do
-        label "Type"
+      field "resourceKind" do
+        label "Resource Kind"
+      end
+      field "resourceType" do
+        label "Resource Type"
+      end
+      field "savings" do
+        label "Estimated Monthly Savings"
+      end
+      field "savingsCurrency" do
+        label "Savings Currency"
+      end
+      field "tags" do
+        label "Tags"
+      end
+      field "service" do
+        label "Service"
       end
       field "skuName" do
         label "SKU - Name"
@@ -326,8 +584,17 @@ policy "policy_azure_db_utilization" do
         label "SKU - Capacity"
         path "sku.capacity"
       end
+      field "accountID" do
+        label "Account ID"
+        path "subscriptionID"
+      end
+      field "accountName" do
+        label "Account Name"
+        path "subscriptionName"
+      end
       field "id" do
-        label "Id"
+        label "ID"
+        path "resourceID"
       end
     end
   end
@@ -356,39 +623,4 @@ end
 ###############################################################################
 
 define delete_unused_sql_databases($data,$param_log_to_cm_audit_entries, $param_azure_endpoint) return $all_responses do
-  $$debug = $param_log_to_cm_audit_entries == "Yes"
-  $all_responses = []
-  foreach $item in $data do
-    sub on_error: skip do
-      $response = http_request(
-        verb: "delete",
-        host: $param_azure_endpoint,
-        auth: $$azure_auth,
-        https: true,
-        href: $item["id"],
-        query_strings: {
-          "api-version": "2017-10-01-preview"
-        },
-        headers: {
-          "cache-control": "no-cache",
-          "content-type": "application/json"
-        }
-      )
-      call sys_log('Deleted Azure Unused SQL databases: ',to_s($response))
-      $all_responses << $response
-    end
-  end
-end
-
-define sys_log($subject, $detail) do
-  if $$debug
-    rs_cm.audit_entries.create(
-      notify: "None",
-      audit_entry: {
-        auditee_href: @@account,
-        summary: "Azure unused SQL databases "+ $subject,
-        detail: $detail
-      }
-    )
-  end
 end

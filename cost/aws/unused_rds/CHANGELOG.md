@@ -1,5 +1,13 @@
 # Changelog
 
+## v3.4
+
+- Use provided keyword for Optima endpoint
+
+## v3.3
+
+- updated savings_currency to savingsCurrency
+
 ## v3.2
 
 - Added default to aws_account_number parameter to enable existing API users.

@@ -6,7 +6,7 @@ category "Cost"
 severity "low"
 default_frequency "daily"
 info(
-  version: "3.2",
+  version: "3.5",
   provider: "AWS",
   service: "EBS",
   policy_set: "Unused Volumes"
@@ -277,7 +277,7 @@ end
 
 datasource "ds_volume_costs" do
   request do
-    run_script $js_get_costs, $ds_get_caller_identity, $ds_top_level_billing_centers, val($ds_flexera_optima, "org_id")
+    run_script $js_get_costs, $ds_get_caller_identity, $ds_top_level_billing_centers, val($ds_flexera_optima, "org_id"), rs_optima_host
   end
   result do
     encoding "json"
@@ -515,7 +515,7 @@ script "js_check_volumes_read_or_write_operations", type: 'javascript' do
         tags : volume['tagKeyValue'],
         createdTime : volume['createdTime'],
         size : volume['size'],
-        savings:"N/A"
+        savings:0.0
       })
     }
   }
@@ -542,7 +542,7 @@ script "js_top_level_bc", type: "javascript" do
 end
 
 script "js_get_costs", type: "javascript" do
-  parameters "account_id", "billing_centers", "org"
+  parameters "account_id", "billing_centers", "org", "rs_optima_host"
   result "request"
   code <<-EOS
     // returns date formatted as string: YYYY-mm-dd
@@ -560,7 +560,7 @@ script "js_get_costs", type: "javascript" do
 
     var request = {
       auth: "auth_rs",
-      host: "optima.rightscale.com",
+      host: rs_optima_host,
       verb: "POST",
       path: "/bill-analysis/orgs/" + org + "/costs/select",
       body_fields: {
@@ -673,7 +673,7 @@ script "js_volume_cost_mapping", type:"javascript" do
           createdTime : volume['createdTime'],
           size : volume['size'],
           savings: (Math.round(monthly_savings * 1000) / 1000),
-          savings_currency: cur,
+          savingsCurrency: cur,
           service: "EBS"
         })
       } else {
@@ -687,7 +687,7 @@ script "js_volume_cost_mapping", type:"javascript" do
           createdTime : volume['createdTime'],
           size : volume['size'],
           savings: 0.0,
-          savings_currency: cur,
+          savingsCurrency: cur,
           service: "EBS"
         })
       }
@@ -751,7 +751,7 @@ EOS
       field "savings" do
         label "Estimated Monthly Savings"
       end
-      field "savings_currency" do
+      field "savingsCurrency" do
         label "Savings Currency"
       end
       field "id" do

@@ -1,5 +1,18 @@
 # Changelog
 
+## v1.8
+
+- Fixed issue with currentSpend subtracting 3 days unnecessarily
+- Fixed issue with incorrect API endpoint
+
+## v1.7
+
+- URIEncode all the image-charts options
+
+## v1.6
+
+- Fixed nil account_name, and updated searches to get correct data
+
 ## v1.5
 
 - Removed ds_session and synced ds_billing_center from budget alert

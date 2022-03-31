@@ -8,7 +8,7 @@ category "Cost"
 tenancy "single"
 default_frequency "daily"
 info(
-  version: "1.17",
+  version: "1.19",
   provider: "Flexera Optima",
   service: "",
   policy_set: ""
@@ -116,7 +116,7 @@ EOS
 end
 
 script "costs_request", type: "javascript" do
-  parameters "org","param_cost_metric","bc"
+  parameters "rs_optima_host", "org","param_cost_metric","bc"
   result "request"
   code <<-EOS
     var cost_metric = {
@@ -155,7 +155,7 @@ script "costs_request", type: "javascript" do
 
     var request = {
       auth: "auth_rs",
-      host: "optima.rightscale.com",
+      host: rs_optima_host,
       verb: "POST",
       path: "/bill-analysis/orgs/" + org + "/costs/aggregated",
       body_fields: {
@@ -178,7 +178,7 @@ end
 datasource "top_bc_costs" do
   iterate $top_level_billing_centers
   request do
-    run_script $costs_request, rs_org_id, $param_cost_metric, val(iter_item, "id")
+    run_script $costs_request, rs_optima_host, rs_org_id, $param_cost_metric, val(iter_item, "id")
   end
   result do
     encoding "json"
@@ -289,7 +289,7 @@ end
 datasource "all_bc_costs" do
   iterate $ds_filtered_billing_centers
   request do
-    run_script $costs_request, rs_org_id, $param_cost_metric, val(iter_item, "id")
+    run_script $costs_request, rs_optima_host, rs_org_id, $param_cost_metric, val(iter_item, "id")
   end
   result do
     encoding "json"
@@ -397,6 +397,7 @@ script "js_filter_target", type: "javascript" do
       var cur = "$"
       var separator = ","
     }
+    separator = separator.trim()
     var selected_bc = null;
     if (param_bc_name.length <= 0) {
       _.each(all_costs, function (bc) {
@@ -509,18 +510,18 @@ script "js_filter_target", type: "javascript" do
       runrate: (Math.round(runrate * 100) / 100).toString(10),
       monthYear: month_year,
       total: target[0]["total"],
-      chartType: "cht=bhs",
-      chartSize: "chs=800x200",
-      chartData: "chd=t:" + (Math.round(selected_bc["total"] * 100) / 100) + "," + 0 + "|" + (Math.round((target[0]["total"] - selected_bc["total"]) * 100) / 100) + "," + 0 + "|" + 0 + "," + param_monthly_budget + "|" + 0 + "," + ((Math.round((runrate - param_monthly_budget) * 100) / 100)),
-      chartTitle: "chtt= ",
-      chartImage: "chof=.png",
-      chartColor: "chco=65B178,CCF2D6,2F6DB7,E5A687",
-      chartLebel: "chdl=Actual+Spend|Forecasted+Spend|Budget|Over+Budget",
-      chartLebelPosition: "chdlp=b",
-      chartYAxis: "chxt=y",
-      chartYAxisLebel: "chxl=0:|+1:|+",
-      chartDataAutoScale: "chds=a",
-      chartDataValue: 'chl=' + totalCur + '||' + forecastedSpend + '|||' + budgetCur + '||' + target[0]["overBudgetAmount"],
+      chartType: encodeURI('cht=bhs'),
+      chartSize: encodeURI('chs=800x200'),
+      chartData: encodeURI("chd=t:" + (Math.round(selected_bc["total"] * 100) / 100) + "," + 0 + "|" + (Math.round((target[0]["total"] - selected_bc["total"]) * 100) / 100) + "," + 0 + "|" + 0 + "," + param_monthly_budget + "|" + 0 + "," + ((Math.round((runrate - param_monthly_budget) * 100) / 100))),
+      chartTitle: encodeURI('chtt= "Actual v. Monthly Cost Report"'),
+      chartImage: encodeURI('chof=.png'),
+      chartColor: encodeURI('chco=65B178,CCF2D6,2F6DB7,E5A687'),
+      chartLebel: encodeURI('chdl=Actual+Spend|Forecasted+Spend|Budget|Over+Budget'),
+      chartLebelPosition: encodeURI('chdlp=b'),
+      chartYAxis: encodeURI('chxt=y'),
+      chartYAxisLebel: encodeURI('chxl=0:|+1:|+'),
+      chartDataAutoScale: encodeURI('chds=a'),
+      chartDataValue: encodeURI('chl=' + totalCur + '||' + forecastedSpend + '|||' + budgetCur + '||' + target[0]["overBudgetAmount"]),
       reportData: target
     }
   } else {
@@ -550,7 +551,7 @@ policy "budget_alert" do
 ### Cost Metric: {{ parameters.param_cost_metric }}
 ### Budget Alert Type: {{ parameters.param_type }}
 ### Monthly Spend for {{ data.monthYear }}
-![Spending Overview Chart](https://image-charts.com/chart?{{ data.chartType }}&{{ data.chartData }}&{{ data.chartSize }}&{{ data.chartImage }}&{{ data.chartColor }}&{{ data.chartLebel }}&{{ data.chartYAxisLebel }}&{{ data.chartYAxis }}&{{ data.chartLebelPosition }}&{{data.chartDataAutoScale}}&{{data.chartDataValue}}&{{ data.chartTitle }}"Actual v. Monthly Cost Report")
+![Spending Overview Chart](https://image-charts.com/chart?{{ data.chartType }}&{{ data.chartData }}&{{ data.chartSize }}&{{ data.chartImage }}&{{ data.chartColor }}&{{ data.chartLebel }}&{{ data.chartYAxisLebel }}&{{ data.chartYAxis }}&{{ data.chartLebelPosition }}&{{data.chartDataAutoScale}}&{{data.chartDataValue}}&{{ data.chartTitle }})
 EOS
     escalate $esc_budget_alert
     check lt(val(data,"total"),prod($param_monthly_budget,div($param_threshold_percentage,100)))

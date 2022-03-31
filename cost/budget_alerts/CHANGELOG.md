@@ -1,5 +1,13 @@
 # Changelog
 
+## v1.19
+
+- Use provided keyword for Optima endpoint
+
+## v1.18
+
+- URIEncode all the image-charts options
+
 ## v1.17
 
 - updated README.md rightscale documentation links with docs.flexera documentation links

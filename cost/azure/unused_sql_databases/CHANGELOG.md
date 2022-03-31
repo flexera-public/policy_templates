@@ -1,5 +1,32 @@
 # Changelog
 
+## v3.1
+
+- Use provided keyword for Optima endpoint
+
+## v3.0
+
+- applying data normalization updates for spend recommendations api. this change breaks current iterations expecting specific output types being pushed.
+- Added Optima cost and billing center api calls to provide savings data
+- fixed issue with potential nil pointer type error issue
+- updated savings field to round to 3rd decimal
+- Added total savings summary message
+- updated displayName to subscription name more consistently
+- Normalizing fields for recommendations:
+  - updated 'tags' field to slice of string values
+  - Renamed 'id' to 'resourceID'
+  - Added 'subscriptionID' field
+  - Added 'accountID' field with subscriptionID value
+  - Added 'accountName' field with subscriptionName value
+  - Added 'savings' field
+  - Added 'savingsCurrency' to record the currency symbol.
+  - Added 'service' field
+  - Renamed 'resource_group' to 'resourceGroup'
+  - Renamed 'type' to 'resourceType'
+  - Renamed 'location' to 'region'
+  - Renamed 'name' to 'resourceName'
+  - Renamed 'kind' to 'resourceKind'
+
 ## v2.10
 
 - updated README.md rightscale documentation links with docs.flexera documentation links

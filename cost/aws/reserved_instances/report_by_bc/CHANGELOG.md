@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.7
+
+- Use provided keyword for Optima endpoint
+
 ## v1.6
 
 - Added default_frequency "daily"

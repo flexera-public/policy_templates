@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.26
+
+- URIEncode all the image-charts options
+
 ## v1.25
 
 - Now using OAuth2 credentials instead of the built-in Rightscale authentication.
