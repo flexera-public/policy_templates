@@ -52,6 +52,14 @@ end
 # Authentication
 ###############################################################################
 
+#AUTHENTICATE WITH RIGHTSCALE/OPTIMA
+credentials "auth_rs" do
+  schemes "oauth2"
+  label "Flexera_Automation"
+  description "Select FlexeraOne OAuth2 credentials"
+  tags "provider=flexera"
+end
+
 #AUTHENTICATE WITH AWS
 credentials "auth_aws" do
   schemes "aws","aws_sts"
@@ -63,6 +71,31 @@ end
 ###############################################################################
 # Datasources and Scripts
 ###############################################################################
+
+#GET CURRENCY REFERENCE
+datasource "ds_currency_reference" do
+  request do
+    host "raw.githubusercontent.com"
+    path "/rightscale/policy_templates/master/cost/scheduled_reports/currency_reference.json"
+    header "User-Agent", "RS Policies"
+  end
+end
+
+#GET CURRENCY CODE FOR ORG
+datasource "ds_currency_code" do
+  request do
+    auth $auth_rs
+    host rs_optima_host
+    path join(["/bill-analysis/orgs/",rs_org_id,"/settings/currency_code"])
+    header "Api-Version", "0.1"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+    field "id", jmes_path(response,"id")
+    field "value", jmes_path(response,"value")
+  end
+end
 
 #GET SAVINGS PLANS UTILIZATIONS DATA FROM AWS API
 datasource "ds_aws_utilization" do
@@ -84,76 +117,103 @@ script "js_get_aws_utilization", type: "javascript" do
   parameters "time_period", "sp_arn"
   result "request"
   code <<-EOS    
-    var start_date = new Date(), end_date = new Date()
-    if(time_period === "Last 7 days"){
-      end_date.setDate(end_date.getDate() - 1)
-      start_date.setDate(start_date.getDate() - 8)
-    } else if(time_period === "Last 30 days"){
-      end_date.setDate(end_date.getDate() - 1)
-      start_date.setDate(start_date.getDate() - 31)
-    }
 
-    var payload = {
-      "Filter": { 
-        "Dimensions": { 
-          "Key": "SAVINGS_PLAN_ARN",
-          "Values": [ sp_arn ]
-        }
-      },
-      "SortBy": { 
-        "Key": "UtilizationPercentage",
-        "SortOrder": "ASCENDING"
-      },
-      "Granularity": "MONTHLY",
-      "TimePeriod": { 
-        "End": end_date.toLocaleDateString("en-US"),
-        "Start": start_date.toLocaleDateString("en-US")
+  var start_date = new Date(), end_date = new Date()
+  if(time_period === "Last 7 days"){
+    end_date.setDate(end_date.getDate() - 1)
+    start_date.setDate(start_date.getDate() - 8)
+  } else if(time_period === "Last 30 days"){
+    end_date.setDate(end_date.getDate() - 1)
+    start_date.setDate(start_date.getDate() - 31)
+  }
+
+  var payload = {
+    "Filter": { 
+      "Dimensions": { 
+        "Key": "SAVINGS_PLAN_ARN",
+        "Values": [ sp_arn ]
       }
+    },
+    "SortBy": { 
+      "Key": "UtilizationPercentage",
+      "SortOrder": "ASCENDING"
+    },
+    "Granularity": "MONTHLY",
+    "TimePeriod": { 
+      "End": end_date.toLocaleDateString("en-US"),
+      "Start": start_date.toLocaleDateString("en-US")
     }
-    
-    var request = {
-      auth: "auth_aws",
-      host: "ce.us-east-1.amazonaws.com",
-      path: '/',
-      verb: 'POST',
-      body_fields: payload,
-      headers: {
-        "User-Agent": "RS Policies",
-        "X-Amz-Target": "AWSInsightsIndexService.GetSavingsPlansUtilization",
-        "Content-Type": "application/x-amz-json-1.1",
-      }
+  }
+  
+  var request = {
+    auth: "auth_aws",
+    host: "ce.us-east-1.amazonaws.com",
+    path: '/',
+    verb: 'POST',
+    body_fields: payload,
+    headers: {
+      "User-Agent": "RS Policies",
+      "X-Amz-Target": "AWSInsightsIndexService.GetSavingsPlansUtilization",
+      "Content-Type": "application/x-amz-json-1.1",
     }
+  }
   EOS
 end
 
 #PROCESS RESPONSE AND DEFINE CHART DATA
 datasource "ds_chart_data" do
-  run_script $js_define_chart_data, $ds_aws_utilization, $param_savings_threshold
+  run_script $js_define_chart_data, $ds_aws_utilization, $ds_currency_reference, $ds_currency_code, $param_savings_threshold, $param_sp_arn
 end
 
 script "js_define_chart_data", type: "javascript" do
-  parameters "aws_utilization_data", "savings_threshold"
+  parameters "aws_utilization_data", "curr_ref", "curr_code", "savings_threshold", "sp_arn"
   result "report"
   code <<-EOS
-    var report = {};
-    _.each(aws_utilization_data, function(util){
-      utilization_percentage = Number(util.used_commitment)/Number(util.total_commitment)
-      if ( utilization_percentage < savings_threshold){
-        report = {
-          unused_commitment: util.unused_commitment.toString(),
-          used_commitment: util.used_commitment.toString(),
-          total_commitment: util.total_commitment.toString(),
-          utilization_percentage: util.utilization_percentage.toString(),
-          chart_type: encodeURI("cht=pd"),
-          chart_size: encodeURI("chs=800x200"),
-          chart_data: encodeURI("chd=t:" + util.unused_commitment.toString() + "," + util.used_commitment.toString()),
-          chart_image: encodeURI("chof=.png"),
-          chart_label: encodeURI("chdl=Unused+Commitment|Used+Commitment"),
-          chart_inside_label: encodeURI("chli=" + util.total_commitment.toString()),
-          chart_data_value: encodeURI("chl=" + util.unused_commitment.toString() + "|" +  util.used_commitment.toString())
-        }
+
+  var curr = "$", separator = ","
+  if (curr_code.value !== undefined){
+    curr = curr_ref[curr_code.value].symbol,
+    separator = curr_ref[curr_code.value].t_separator
+  }
+  
+  function formatNumber(number, separator){
+    var values = parseFloat(number).toFixed(2).toString().split(".")
+    var result = ''
+
+    while (values[0].length > 3){
+      var chunk = values[0].substr(-3)
+      values[0] = values[0].substr(0, values[0].length - 3)
+      result = separator + chunk + result
+    }
+    if (values[0].length > 0){
+      result = values[0] + result
+    }
+    if(values[1]==undefined){
+      return result
+    }
+    return result + "." + values[1]
+  }
+  
+  var report = {}
+  _.each(aws_utilization_data, function(util){
+    utilization_percentage = Number(util.used_commitment)/Number(util.total_commitment)
+    if ( utilization_percentage < savings_threshold){
+      report = {
+        unused_commitment: parseFloat(util.unused_commitment).toFixed(3),
+        used_commitment: parseFloat(util.used_commitment).toFixed(3),
+        total_commitment: parseFloat(util.total_commitment).toFixed(3),
+        utilization_percentage: util.utilization_percentage,
+        chart_title: encodeURI("chtt=Utilization for Savings Plan ARN: '" + sp_arn + "'"),
+        chart_type: encodeURI("cht=pd"),
+        chart_size: encodeURI("chs=800x200"),
+        chart_data: encodeURI("chd=t:" + util.unused_commitment + "," + util.used_commitment), //remove currency/separator from this line
+        chart_image: encodeURI("chof=.png"),
+        chart_label: encodeURI("chdl=Unused+Commitment|Used+Commitment"),
+        chart_inside_label: encodeURI("chli=" + curr + formatNumber(util.total_commitment, separator)),
+        chart_data_label: encodeURI("chl=" + curr+ formatNumber(util.unused_commitment, separator) + "|" + curr + formatNumber(util.used_commitment, separator)) //add currency/separator to this line
       }
-    })
+    }
+  })
   EOS
 end
 
@@ -177,9 +237,11 @@ policy "policy_aws_sp_utilization" do
     summary_template "Utilization details"
     detail_template <<-EOS
 # Savings Plan Utilization
-## ARN: {{ parameters.param_sp_arn }}
+### ARN: {{ parameters.param_sp_arn }}
 ### Utilization for {{ parameters.param_time_period }}
-![Spending Overview Chart](https://image-charts.com/chart?{{data.chart_type}}&{{data.chart_size}}&{{data.chart_data}}&{{data.chart_image}}&{{data.chart_label}}&{{data.chart_inside_label}}&{{data.chart_data_value}})
+![Spending Overview Chart](https://image-charts.com/chart?{{data.chart_type}}&{{data.chart_size}}&{{data.chart_data}}&{{data.chart_image}}&{{data.chart_label}}&{{data.chart_inside_label}}&{{data.chart_data_label}})
+___
+###### Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }}) within Org: {{ rs_org_name }} (Org ID: {{ rs_org_id }})
 EOS
     escalate $esc_savings_plans_utilizations
     check eq(0,1)
