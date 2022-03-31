@@ -3,7 +3,7 @@ rs_pt_ver 20180301
 type "policy"
 short_description "This policy allows the user to specify a Commitment target value (based on the commitment amount agreed with your Cloud Service Provider/s), and track the current commitment spend to date, as well as projected commitment spend over a period. See the [README](https://github.com/flexera/policy_templates/tree/master/cost/forecasting/commitment_forecast/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 long_description ""
-severity "high"
+severity "medium"
 category "Cost"
 tenancy "single"
 default_frequency "monthly"
@@ -51,6 +51,14 @@ parameter "param_email" do
   label "Email addresses"
   type "list"
   description "A list of email addresses to notify"
+end
+
+parameter "param_cost_metric" do
+  type "string"
+  label "Cost Metric"
+  allowed_values "Unamortized Unblended","Amortized Unblended","Unamortized Blended","Amortized Blended"
+  default "Unamortized Unblended"
+  description "Select the cost metric for your report.  See the README file for more details"
 end
 
 ###############################################################################
@@ -134,19 +142,22 @@ end
 #GET BILLING CENTER COSTS
 datasource "ds_aggregated_costs" do
   request do
-    run_script $js_agg_costs_request, $ds_top_level_billing_centers, $param_cloud_vendor, $param_start_date, $param_end_date, rs_org_id, rs_optima_host #$param_cost_metric
+    run_script $js_agg_costs_request, $ds_top_level_billing_centers, $param_cloud_vendor, $param_start_date, $param_end_date, $param_cost_metric, rs_org_id, rs_optima_host
   end
   result do
     encoding "json"
     collect jmes_path(response,"rows") do
       field "vendor", jmes_path(col_item,"dimensions.vendor")
-      field "nonamortized_unblended_costs", jmes_path(col_item,"metrics.cost_nonamortized_unblended_adj")
+      field "amortized_unblended_costs", jmes_path(col_item,"metrics.cost_amortized_unblended_adj")
+      field "amortized_blended_costs", jmes_path(col_item,"metrics.cost_amortized_blended_adj")
+      field "unamortized_unblended_costs", jmes_path(col_item,"metrics.cost_nonamortized_unblended_adj")
+      field "unamortized_blended_costs", jmes_path(col_item,"metrics.cost_nonamortized_blended_adj")
     end
   end
 end
 
 script "js_agg_costs_request", type: "javascript" do
-  parameters "top_billing_centers", "cloud_vendor", "start_date", "end_date", "org_id", "optima_host"
+  parameters "top_billing_centers", "cloud_vendor", "start_date", "end_date", "param_cost_metric", "org_id", "optima_host"
   result "request"
   code <<-EOS
 
@@ -161,6 +172,13 @@ script "js_agg_costs_request", type: "javascript" do
     "gcp": "GCP"
   }
 
+  var cost_metrics = {
+    "Unamortized Unblended":"cost_nonamortized_unblended_adj",
+    "Amortized Unblended":"cost_amortized_unblended_adj",
+    "Unamortized Blended": "cost_nonamortized_blended_adj",
+    "Amortized Blended":"cost_amortized_blended_adj"
+  }
+
   if(cloud_vendor.length <= 0){
     var request = {
       auth: "auth_rs",
@@ -172,7 +190,7 @@ script "js_agg_costs_request", type: "javascript" do
         "granularity": "month",
         "start_at": start_date,
         "end_at": end_date,
-        "metrics": "cost_nonamortized_unblended_adj",
+        "metrics": [ cost_metrics[param_cost_metric] ],
         "billing_center_ids": bc_ids
       },
       headers: {
@@ -192,7 +210,7 @@ script "js_agg_costs_request", type: "javascript" do
         "start_at": start_date,
         "end_at": end_date,
         "filter": { "dimension": "vendor", "type": "equal", "value": cloud_vendor_types[cloud_vendor.toLowerCase()] }
-        "metrics": ["cost_nonamortized_unblended_adj"],
+        "metrics": [ cost_metrics[param_cost_metric] ],
         "billing_center_ids": bc_ids
       },
       headers: {
@@ -206,31 +224,30 @@ end
 
 #CALCULATE ACTUAL SPEND (SUM OF TOTAL BILLING CENTER COSTS)
 datasource "ds_total_cost" do
-  run_script $js_get_total_cost, $ds_aggregated_costs, $param_cloud_vendor
+  run_script $js_get_total_cost, $ds_aggregated_costs, $param_cloud_vendor, $param_cost_metric, rs_org_name
 end
 
 script "js_get_total_cost", type: "javascript" do
-  parameters "aggregate_costs", "cloud_vendor"
+  parameters "aggregate_costs", "cloud_vendor", "cost_metric", "org_name"
   result "result"
   code <<-EOS
   var totals = []
   total_cost = 0
-
   _.each(aggregate_costs, function(agg){ 
-    totals.push(agg.nonamortized_unblended_costs)
+    totals.push(agg[cost_metric.toLowerCase().replace(/ /g, "_") + "_costs"])
   })
   total_cost = _.reduce(totals, function(memo, num){ return memo + num; }, 0)
 
   if (cloud_vendor == ""){
     var result = [{
-      name: "Organization",
+      name: org_name,
       total: total_cost,
       id: null,
       vendor: "Organization (All Vendors)"
     }]
   } else {
     var result = [{
-      name: "Organization",
+      name: org_name,
       total: total_cost,
       id: null,
       vendor: aggregate_costs[0].vendor
@@ -326,7 +343,7 @@ script "js_get_chart_data", type: "javascript" do
     chart_type: encodeURI("cht=bhs"),
     chart_size: encodeURI("chs=800x200"),
     chart_data: encodeURI("chd=t:" + (spend_data[0].actual_spend.toFixed(2)) + "," + 0 + "|" + (spend_data[0].forecasted_spend.toFixed(2)) +"," + 0 + "|" + 0 + "," + commitment_target + "|" + over_commitment_data),
-    chart_title: encodeURI("chtt=Actual & Forecasted Spend vs. Commitment Spend Target Report"),
+    chart_title: encodeURI("chtt=Actual+and+Forecasted+Spend+vs.+Vendor+Commitment+Spend+Target+Report"),
     chart_image: encodeURI("chof=.png"),
     chart_color: encodeURI("chco=4FA8E9,9EC9E9,63CED6," + over_commitment_color),
     chart_label: encodeURI("chdl=Actual+Spend+To+Date|Forecasted+Spend|Commitment+Target+Amount|" + over_commitment_label),
@@ -367,6 +384,8 @@ policy "policy_commitment_tracker" do
     ### Cost Metric: Unamortized Unblended
     ### Commitment Period: {{ parameters.param_start_date }} to {{ parameters.param_end_date }}
     ![Spending Overview Chart](https://image-charts.com/chart?{{ data.chart_type }}&{{ data.chart_data }}&{{ data.chart_size }}&{{ data.chart_image }}&{{ data.chart_color }}&{{ data.chart_label }}&{{ data.chart_y_axis_label }}&{{ data.chart_y_axis }}&{{ data.chart_label_position }}&{{data.chart_data_autoscale}}&{{data.chart_data_value}}&{{ data.chart_title }})
+    ___
+    ###### Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }}) within Org: {{ rs_org_name }} (Org ID: {{ rs_org_id }})
     EOS
     escalate $esc_budget_alert
     check eq(0,1)
