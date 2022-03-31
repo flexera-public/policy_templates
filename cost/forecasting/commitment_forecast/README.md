@@ -1,4 +1,4 @@
-# Commitment Forecasting Policy
+# Vendor Commitment Forecasting Policy
 
 ## What it does
 
