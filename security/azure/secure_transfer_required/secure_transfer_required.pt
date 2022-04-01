@@ -81,65 +81,57 @@ datasource "ds_subscriptions" do
   end
 end
 
-datasource "ds_security_contacts" do
+datasource "ds_storage_accounts" do
   iterate $ds_subscriptions
   request do
     auth $azure_auth
     pagination $azure_pagination
     host $param_azure_endpoint
-    path join(["/subscriptions/", val(iter_item, "id"), "/providers/Microsoft.Security/securityContacts"])
-    query "api-version", "2020-01-01-preview"
+    path join(["/subscriptions/", val(iter_item, "id"), "/providers/Microsoft.Storage/storageAccounts"])
+    query "api-version", "2021-04-01"
     header "User-Agent", "RS Policies"
     header "Content-Type", "application/json"
   end
+  result do
+    encoding "json"
+    collect jmes_path(response, "value[*]") do
+      field "id", jmes_path(col_item, "id")
+      field "kind", jmes_path(col_item, "kind")
+      field "location", jmes_path(col_item, "location")
+      field "name", jmes_path(col_item, "name")
+      field "accessTier", jmes_path(col_item, "properties.accessTier")
+      field "creationTime", jmes_path(col_item, "properties.creationTime")
+      field "primaryLocation", jmes_path(col_item, "properties.primaryLocation")
+      field "provisioningState", jmes_path(col_item, "properties.provisioningState")
+      field "statusOfPrimary", jmes_path(col_item, "properties.statusOfPrimary")
+      field "secure_transfer", jmes_path(col_item, "properties.supportsHttpsTrafficOnly")
+      field "encryption", jmes_path(col_item, "properties.encryption")
+      field "keyCreationTime", jmes_path(col_item, "properties.keyCreationTime")
+      field "networkAcls", jmes_path(col_item, "properties.networkAcls")
+      field "primaryEndpoints", jmes_path(col_item, "properties.primaryEndpoints")
+      field "subscriptionId", val(iter_item, "id")
+      field "subscriptionName", val(iter_item, "displayName")
+    end
+  end
 end
 
-datasource "ds_bad_security_alerts" do
-  run_script $js_bad_security_alerts, $ds_security_contacts, $ds_subscriptions
+datasource "ds_bad_storage_accounts" do
+  run_script $js_bad_storage_accounts, $ds_storage_accounts
 end
 
 ###############################################################################
 # Scripts
 ###############################################################################
 
-script "js_bad_security_alerts", type: "javascript" do
-  parameters "ds_security_contacts", "ds_subscriptions"
+script "js_bad_storage_accounts", type: "javascript" do
+  parameters "ds_storage_accounts"
   result "result"
   code <<-EOS
   result = []
 
-  _.each(ds_security_contacts, function(sec) {
-    if (sec['id'] != undefined) {
-      if (sec['name'] == 'default') {
-        if (sec['properties']['alertNotifications']['minimalSeverity'] != "High" || sec['properties']['alertNotifications']['state'] != "On") {
-          subscriptionId = sec['id'].split('/')[2]
-          subscriptionName = ''
-
-          _.each(ds_subscriptions, function(sub) {
-            if (subscriptionId == sub['id']) {
-              subscriptionName = sub['displayName']
-            }
-          })
-
-          enabled = "No"
-
-          if (sec['properties']['alertNotifications']['state'] == "On") {
-            enabled = "Yes"
-          }
-
-          result.push({
-            id: sec['id'],
-            subscriptionId: subscriptionId,
-            subscriptionName: subscriptionName,
-            etag: sec['etag'],
-            location: sec['location'],
-            name: sec['name'],
-            type: sec['type'],
-            enabled: enabled,
-            severity: sec['properties']['alertNotifications']['minimalSeverity']
-          })
-        }
-      }
+  _.each(ds_storage_accounts, function(account) {
+    if (account['secure_transfer'] != true) {
+      result.push(account)
     }
   })
 EOS
@@ -149,26 +141,29 @@ end
 # Policy
 ###############################################################################
 
-policy "policy_security_alerts" do
-  validate $ds_bad_security_alerts do
-    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} Azure Subscription(s) Without High Severity Alerting Found"
-    escalate $esc_security_alerts
+policy "policy_storage_accounts" do
+  validate $ds_bad_storage_accounts do
+    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} Azure Storage Account(s) That Don't Require Secure Transfer Found"
+    escalate $esc_storage_accounts
     check eq(size(data),0)
     export do
-      field "subscriptionId" do
-        label "ID"
-      end
-      field "subscriptionName" do
+      field "name" do
         label "Name"
+      end
+      field "kind" do
+        label "Kind"
       end
       field "location" do
         label "Location"
       end
-      field "enabled" do
-        label "Notifications Enabled?"
+      field "accessTier" do
+        label "Access Tier"
       end
-      field "severity" do
-        label "Minimum Severity"
+      field "secure_transfer" do
+        label "Secure Transfer Enforced?"
+      end
+      field "id" do
+        label "Resource ID"
       end
     end
   end
@@ -178,7 +173,7 @@ end
 # Escalations
 ###############################################################################
 
-escalation "esc_security_alerts" do
+escalation "esc_storage_accounts" do
   automatic true
   label "Send Email"
   description "Send incident email"

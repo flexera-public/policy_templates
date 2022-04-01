@@ -1,12 +1,12 @@
-# Azure Ensure High Severity Alerts
+# Azure Ensure Secure Transfer Required
 
 ## What it does
 
-This policy checks all Azure subscriptions to ensure that they are configured to send out high severity alerts. An incident is raised with the offending subscriptions if any are found that don't.
+This policy checks all Azure storage accounts to ensure that they are configured to require secure transfer. An incident is raised with the offending storage accounts if any are found that don't.
 
 ## Functional Details
 
-The Azure Resource Manager API is used to get a list of subscriptions. This list is then used to query the "/providers/Microsoft.Security/securityContacts" endpoint iteratively in order to find the properties.alertNotifications.minimalSeverity and properties.alertNotifications.state settings for each subscription.
+The Azure Resource Manager API is used to get a list of subscriptions. This list is then used to query the "/providers/Microsoft.Storage/storageAccounts" endpoint iteratively to gather the relevant metadata for each storage account.
 
 ## Input Parameters
 
@@ -28,7 +28,7 @@ Provider tag value to match this policy: `azure_rm`
 Required permissions in the provider:
 
 - Microsoft.Resources/subscriptions/read
-- Microsoft.Security/securityContacts/read
+- Microsoft.Storage/storageAccounts/read
 
 ## Supported Clouds
 
