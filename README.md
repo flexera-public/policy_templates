@@ -199,6 +199,7 @@ Reference
 
 ###### CIS Policies
 
+- [AWS EBS Ensure Encryption By Default](./security/aws/ebs_ensure_encryption_default/)
 - [AWS S3 Ensure Buckets Block Public Access](./security/aws/s3_ensure_buckets_block_public_access/)
 - [AWS S3 Ensure MFA Delete Enabled](./security/aws/s3_ensure_mfa_delete_enabled/)
 - [AWS Unencrypted S3 Buckets](./security/aws/unencrypted_s3_buckets/)
@@ -255,7 +256,7 @@ Reference
 
 ###### CIS Policies
 
-- [AWS EBS Ensure Encryption By Default](./security/aws/ebs_ensure_encryption_default/)
+- [Azure Ensure Secure Transfer Required](./security/azure/secure_transfer_required/)
 
 #### Google
 
