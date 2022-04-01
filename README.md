@@ -252,7 +252,7 @@ Reference
 
 ###### CIS Policies
 
-- [Azure Ensure Security Contact Email](./security/aws/security_contact_email/)
+- [Azure Ensure Security Contact Email](./security/azure/security_contact_email/)
 
 #### Google
 
