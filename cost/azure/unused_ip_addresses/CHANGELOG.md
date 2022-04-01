@@ -1,6 +1,6 @@
 # Changelog
 
-## v3.1
+## v3.2
 
 - added new check properties.natGatway == null for unused IP check
 
