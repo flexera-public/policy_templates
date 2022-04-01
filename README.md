@@ -48,6 +48,7 @@ Reference
 
 - [Straight-Line Forecast](./cost/forecasting/straight_line_forecast/)
 - [Moving Average](./cost/forecasting/moving_average/)
+- [Vendor Commitment Forecast](./cost/forecasting/commitment_forecast/)
 
 #### AWS
 
@@ -305,6 +306,7 @@ Reference
 - [FlexNet Manager Licenses At Risk](./compliance/fnms/fnms_licenses_at_risk/)
 - [FlexNet Manager Low Available Licenses](./compliance/fnms/fnms_low_licenses_available)
 - [ITAM Missing Active Machines](./compliance/fnms/missing_active_machines/)
+- [ITAM Ignored Recent Inventory Dates](./compliance/fnms/ignored_recent_inventory_dates/)
 - [ITAM Overused Licenses](./compliance/fnms/overused_licenses)
 - [ITAM VMs Missing Host ID](./compliance/fnms/vms_missing_hostid)
 
