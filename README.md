@@ -236,6 +236,12 @@ Reference
 
 - [Azure Resources with public IP address](./security/azure/resources_with_public_ip_address)
 
+##### Compute
+
+###### CIS Policies
+
+- [Azure Ensure Log Analytics Auto-Provisioning](./security/azure/log_analytics_autoprovision/)
+
 ##### IAM
 
 ###### CIS Policies
