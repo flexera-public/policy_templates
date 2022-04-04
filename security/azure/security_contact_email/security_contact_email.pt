@@ -1,0 +1,173 @@
+name "Azure Ensure Security Contact Email"
+rs_pt_ver 20180301
+type "policy"
+short_description "Report if any subscriptions lack a security contact email address. \n See the [README](https://github.com/flexera/policy_templates/tree/master/security/azure/security_contact_email) and [docs.rightscale.com/policies](https://docs.rightscale.com/policies/) to learn more."
+long_description ""
+category "Security"
+severity "high"
+default_frequency "daily"
+info(
+  version: "2.0",
+  provider: "Azure",
+  service: "Security",
+  policy_set: "CIS",
+  cce_id: "",
+  benchmark_control: "2.13",
+  benchmark_version: "1.4.0",
+  cis_controls: "[\"17.2v8\", \"3v7\"]",
+  nist: ""
+)
+
+###############################################################################
+# Parameters
+###############################################################################
+
+parameter "param_email" do
+  type "list"
+  label "Email addresses of the recipients you wish to notify"
+end
+
+parameter "param_azure_endpoint" do
+  type "string"
+  label "Azure Endpoint"
+  allowed_values "management.azure.com", "management.chinacloudapi.cn"
+  default "management.azure.com"
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+credentials "azure_auth" do
+  schemes "oauth2"
+  label "Azure"
+  description "Select the Azure Resource Manager Credential from the list."
+  tags "provider=azure_rm"
+end
+
+###############################################################################
+# Pagination
+###############################################################################
+
+pagination "azure_pagination" do
+  get_page_marker do
+    body_path "nextLink"
+  end
+  set_page_marker do
+    uri true
+  end
+end
+
+###############################################################################
+# Datasources
+###############################################################################
+
+datasource "ds_subscriptions" do
+  request do
+    auth $azure_auth
+    pagination $azure_pagination
+    host $param_azure_endpoint
+    path "/subscriptions/"
+    query "api-version", "2019-06-01"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "value[*]") do
+      field "id", jmes_path(col_item, "subscriptionId")
+      field "displayName", jmes_path(col_item, "displayName")
+      field "state", jmes_path(col_item, "state")
+    end
+  end
+end
+
+datasource "ds_security_contacts" do
+  iterate $ds_subscriptions
+  request do
+    auth $azure_auth
+    pagination $azure_pagination
+    host $param_azure_endpoint
+    path join(["/subscriptions/", val(iter_item, "id"), "/providers/Microsoft.Security/securityContacts"])
+    query "api-version", "2020-01-01-preview"
+    header "User-Agent", "RS Policies"
+    header "Content-Type", "application/json"
+  end
+end
+
+datasource "ds_bad_security_contacts" do
+  run_script $js_bad_security_contacts, $ds_security_contacts, $ds_subscriptions
+end
+
+###############################################################################
+# Scripts
+###############################################################################
+
+script "js_bad_security_contacts", type: "javascript" do
+  parameters "ds_security_contacts", "ds_subscriptions"
+  result "result"
+  code <<-EOS
+  result = []
+
+  _.each(ds_security_contacts, function(sec) {
+    if (sec['id'] != undefined) {
+      if (sec['name'] == 'default') {
+        if (sec['properties']['emails'] == '' || sec['properties']['emails'] == null || sec['properties']['emails'] == undefined) {
+          subscriptionId = sec['id'].split('/')[2]
+          subscriptionName = ''
+
+          _.each(ds_subscriptions, function(sub) {
+            if (subscriptionId == sub['id']) {
+              subscriptionName = sub['displayName']
+            }
+          })
+
+          result.push({
+            id: sec['id'],
+            subscriptionId: subscriptionId,
+            subscriptionName: subscriptionName,
+            etag: sec['etag'],
+            location: sec['location'],
+            name: sec['name'],
+            type: sec['type'],
+            emails: sec['properties']['emails']
+          })
+        }
+      }
+    }
+  })
+EOS
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "policy_security_contacts" do
+  validate $ds_bad_security_contacts do
+    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} Azure Subscription(s) Without Security Contact Email Found"
+    escalate $esc_security_contacts
+    check eq(size(data),0)
+    export do
+      field "subscriptionId" do
+        label "ID"
+      end
+      field "subscriptionName" do
+        label "Name"
+      end
+      field "location" do
+        label "Location"
+      end
+    end
+  end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_security_contacts" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
+end
