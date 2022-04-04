@@ -268,6 +268,7 @@ Reference
 
 ###### CIS Policies
 
+- [Azure Ensure High Severity Alerts](./security/azure/high_severity_alerts/)
 - [Azure Ensure Security Contact Email](./security/azure/security_contact_email/)
 
 #### Google
