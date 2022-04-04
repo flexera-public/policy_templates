@@ -48,6 +48,7 @@ Reference
 
 - [Straight-Line Forecast](./cost/forecasting/straight_line_forecast/)
 - [Moving Average](./cost/forecasting/moving_average/)
+- [Vendor Commitment Forecast](./cost/forecasting/commitment_forecast/)
 
 #### AWS
 
@@ -68,6 +69,7 @@ Reference
 - [AWS Reserved Instances Report by Billing Center](./cost/aws/reserved_instances/report_by_bc)
 - [AWS Reserved Instance Recommendations](./cost/aws/reserved_instances/recommendations)
 - [AWS Savings Plan Recommendations](./cost/aws/savings_plan/recommendations)
+- [AWS Savings Plan Utilization](./cost/aws/savings_plan/utilization)
 - [AWS Schedule Instance](./cost/aws/schedule_instance/)
 - [AWS Unused IP Addresses](./cost/aws/unused_ip_addresses)
 
@@ -234,6 +236,12 @@ Reference
 
 - [Azure Resources with public IP address](./security/azure/resources_with_public_ip_address)
 
+##### Compute
+
+###### CIS Policies
+
+- [Azure Ensure Log Analytics Auto-Provisioning](./security/azure/log_analytics_autoprovision/)
+
 ##### IAM
 
 ###### CIS Policies
@@ -261,6 +269,7 @@ Reference
 ###### CIS Policies
 
 - [Azure Ensure High Severity Alerts](./security/azure/high_severity_alerts/)
+- [Azure Ensure Security Contact Email](./security/azure/security_contact_email/)
 
 #### Google
 
@@ -311,6 +320,7 @@ Reference
 - [FlexNet Manager Licenses At Risk](./compliance/fnms/fnms_licenses_at_risk/)
 - [FlexNet Manager Low Available Licenses](./compliance/fnms/fnms_low_licenses_available)
 - [ITAM Missing Active Machines](./compliance/fnms/missing_active_machines/)
+- [ITAM Ignored Recent Inventory Dates](./compliance/fnms/ignored_recent_inventory_dates/)
 - [ITAM Overused Licenses](./compliance/fnms/overused_licenses)
 - [ITAM VMs Missing Host ID](./compliance/fnms/vms_missing_hostid)
 
