@@ -236,6 +236,12 @@ Reference
 
 - [Azure Resources with public IP address](./security/azure/resources_with_public_ip_address)
 
+##### Compute
+
+###### CIS Policies
+
+- [Azure Ensure Log Analytics Auto-Provisioning](./security/azure/log_analytics_autoprovision/)
+
 ##### IAM
 
 ###### CIS Policies
@@ -257,6 +263,13 @@ Reference
 ###### CIS Policies
 
 - [AWS EBS Ensure Encryption By Default](./security/aws/ebs_ensure_encryption_default/)
+
+##### Security
+
+###### CIS Policies
+
+- [Azure Ensure High Severity Alerts](./security/azure/high_severity_alerts/)
+- [Azure Ensure Security Contact Email](./security/azure/security_contact_email/)
 
 #### Google
 
