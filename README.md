@@ -269,6 +269,7 @@ Reference
 ###### CIS Policies
 
 - [Azure Ensure Owners Receive Security Alerts](./security/azure/security_alert_owners/)
+- [Azure Ensure High Severity Alerts](./security/azure/high_severity_alerts/)
 - [Azure Ensure Security Contact Email](./security/azure/security_contact_email/)
 
 #### Google
