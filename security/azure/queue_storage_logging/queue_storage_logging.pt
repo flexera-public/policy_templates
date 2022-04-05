@@ -45,6 +45,13 @@ credentials "azure_auth" do
   tags "provider=azure_rm"
 end
 
+credentials "azure_storage_auth" do
+  schemes "oauth2"
+  label "Azure"
+  description "Select the Azure Storage Credential from the list."
+  tags "provider=azure_storage"
+end
+
 ###############################################################################
 # Pagination
 ###############################################################################
@@ -123,12 +130,27 @@ end
 datasource "ds_storage_queues" do
   iterate $ds_storage_accounts_with_queues
   request do
-    auth $azure_auth
-    pagination $azure_pagination
+    auth $azure_storage_auth
     host val(iter_item, "queueHost")
-    query "comp", "list"
+    query "restype", "service"
+    query "comp", "properties"
     header "User-Agent", "RS Policies"
-    header "Content-Type", "application/json"
+    header "x-ms-version", "2018-03-28"
+  end
+  result do
+    encoding "xml"
+    collect xpath(response, "//StorageServiceProperties/Logging") do
+      field "id", val(iter_item, "id")
+      field "name", val(iter_item, "name")
+      field "location", val(iter_item, "location")
+      field "kind", val(iter_item, "kind")
+      field "accessTier", val(iter_item, "accessTier")
+      field "queueHost", val(iter_item, "queueHost")
+      field "loggingVersion", xpath(col_item, "Version")
+      field "loggingRead", xpath(col_item, "Read")
+      field "loggingWrite", xpath(col_item, "Write")
+      field "loggingDelete", xpath(col_item, "Delete")
+    end
   end
 end
 
@@ -152,6 +174,7 @@ script "js_storage_accounts_with_queues", type: "javascript" do
       result.push(account)
     }
   })
+
 EOS
 end
 
@@ -162,7 +185,7 @@ script "js_bad_storage_queues", type: "javascript" do
   result = []
 
   _.each(ds_storage_queues, function(queue) {
-    if (0 == 0) {
+    if (queue['loggingRead'] != "true" || queue['loggingWrite'] != "true" || queue['loggingDelete'] != "true") {
       result.push(queue)
     }
   })
@@ -173,10 +196,10 @@ end
 # Policy
 ###############################################################################
 
-policy "policy_storage_accounts" do
-  validate $ds_subscriptions do
-    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} Azure Storage Account(s) That Don't Require Secure Transfer Found"
-    escalate $esc_storage_accounts
+policy "policy_storage_queue_logging" do
+  validate $ds_bad_storage_queues do
+    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} Azure Storage Account(s) That Don't Have Storage Logging Enabled For Queue Service"
+    escalate $esc_email
     check eq(size(data),0)
     export do
       field "name" do
@@ -191,17 +214,17 @@ policy "policy_storage_accounts" do
       field "accessTier" do
         label "Access Tier"
       end
-      field "secure_transfer" do
-        label "Secure Transfer Enforced?"
+      field "loggingRead" do
+        label "Read Logging"
+      end
+      field "loggingWrite" do
+        label "Write Logging"
+      end
+      field "loggingDelete" do
+        label "Delete Logging"
       end
       field "id" do
         label "Resource ID"
-      end
-      field "subscriptionId" do
-        label "Subscription ID"
-      end
-      field "subscriptionName" do
-        label "Subscription Name"
       end
     end
   end
@@ -211,7 +234,7 @@ end
 # Escalations
 ###############################################################################
 
-escalation "esc_storage_accounts" do
+escalation "esc_email" do
   automatic true
   label "Send Email"
   description "Send incident email"

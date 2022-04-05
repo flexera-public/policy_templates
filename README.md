@@ -263,6 +263,7 @@ Reference
 ###### CIS Policies
 
 - [AWS EBS Ensure Encryption By Default](./security/aws/ebs_ensure_encryption_default/)
+- [Azure Ensure Storage Logging Enabled For Queue Service](./security/azure/queue_storage_logging/)
 
 ##### Security
 

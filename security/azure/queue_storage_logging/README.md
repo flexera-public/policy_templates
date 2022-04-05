@@ -1,12 +1,12 @@
-# Azure Ensure Secure Transfer Required
+# Azure Ensure Storage Logging Enabled For Queue Service
 
 ## What it does
 
-This policy checks all Azure storage accounts to ensure that they are configured to require secure transfer. An incident is raised with the offending storage accounts if any are found that don't.
+This policy checks all Azure storage accounts that use the queue service to ensure that they are configured to log read, write, and delete requests. An incident is raised with the offending storage accounts if any are found that don't.
 
 ## Functional Details
 
-The Azure Resource Manager API is used to get a list of subscriptions. This list is then used to query the "/providers/Microsoft.Storage/storageAccounts" endpoint iteratively to gather the relevant metadata for each storage account.
+The Azure Resource Manager API is used to get a list of subscriptions and storage accounts within those subscriptions. The policy then gathers the storage service properties of each storage account in order to verify that logging is properly enabled.
 
 ## Input Parameters
 
@@ -23,7 +23,7 @@ This policy uses [credentials](https://docs.flexera.com/flexera/EN/Automation/Ma
 
 For administrators [creating and managing credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) to use with this policy, the following information is needed:
 
-Provider tag value to match this policy: `azure_rm`
+Provider tag values to match this policy: `azure_rm`, `azure_storage`
 
 Required permissions in the provider:
 
