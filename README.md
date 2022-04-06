@@ -195,11 +195,13 @@ Reference
 
 ##### Storage
 
+- [AWS EBS Ensure Encryption By Default](./security/aws/ebs_ensure_encryption_default/)
 - [AWS Open Buckets](./security/storage/aws/public_buckets/)
 - [AWS Unencrypted Volumes](./security/aws/ebs_unencrypted_volumes/)
 
 ###### CIS Policies
 
+- [AWS EBS Ensure Encryption By Default](./security/aws/ebs_ensure_encryption_default/)
 - [AWS S3 Ensure Buckets Block Public Access](./security/aws/s3_ensure_buckets_block_public_access/)
 - [AWS S3 Ensure MFA Delete Enabled](./security/aws/s3_ensure_mfa_delete_enabled/)
 - [AWS Unencrypted S3 Buckets](./security/aws/unencrypted_s3_buckets/)
@@ -262,13 +264,16 @@ Reference
 
 ###### CIS Policies
 
-- [AWS EBS Ensure Encryption By Default](./security/aws/ebs_ensure_encryption_default/)
 - [Azure Ensure Storage Account Default Network Access Set To Deny](./security/azure/storage_network_deny/)
+- [Azure Ensure Blob Containers Set To Private](./security/azure/private_blob_containers/)
+- [Azure Ensure Storage Logging Enabled For Queue Service](./security/azure/queue_storage_logging/)
+- [Azure Ensure Secure Transfer Required](./security/azure/secure_transfer_required/)
 
 ##### Security
 
 ###### CIS Policies
 
+- [Azure Ensure Owners Receive Security Alerts](./security/azure/security_alert_owners/)
 - [Azure Ensure High Severity Alerts](./security/azure/high_severity_alerts/)
 - [Azure Ensure Security Contact Email](./security/azure/security_contact_email/)
 
