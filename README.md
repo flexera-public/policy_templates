@@ -263,7 +263,7 @@ Reference
 ###### CIS Policies
 
 - [AWS EBS Ensure Encryption By Default](./security/aws/ebs_ensure_encryption_default/)
-- [Azure Ensure Blob Containers Set To Private](./security/storage/azure/private_blob_containers/)
+- [Azure Ensure Storage Account Default Network Access Set To Deny](./security/storage/azure/storage_network_deny/)
 
 ##### Security
 

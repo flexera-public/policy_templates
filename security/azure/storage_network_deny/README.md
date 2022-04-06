@@ -1,12 +1,12 @@
-# Azure Ensure Blob Containers Set To Private
+# Azure Ensure Storage Account Default Network Access Set To Deny
 
 ## What it does
 
-This policy checks all Azure storage accounts that use the blob service to ensure that their blob containers are configured to not allow public access. An incident is raised with the offending blob containers and storage accounts if any are found that do.
+This policy checks all Azure storage accounts to verify that their default network access is set to "Deny". If any storage accounts are found where this is not the case, an incident is raised with a list of the affected accounts.
 
 ## Functional Details
 
-The Azure Resource Manager API is used to get a list of subscriptions and storage accounts within those subscriptions. The policy then gathers a list of blob containers within each storage account in order to verify that "Properties/PublicAccess" is empty.
+The Azure Resource Manager API is used to get a list of subscriptions and storage accounts within those subscriptions. The policy then checks "properties.networkAcls.defaultAction" for each account to verify that it is set to "Deny".
 
 ## Input Parameters
 
@@ -23,7 +23,7 @@ This policy uses [credentials](https://docs.flexera.com/flexera/EN/Automation/Ma
 
 For administrators [creating and managing credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) to use with this policy, the following information is needed:
 
-Provider tag values to match this policy: `azure_rm`, `azure_storage`
+Provider tag values to match this policy: `azure_rm`
 
 Required permissions in the provider:
 
