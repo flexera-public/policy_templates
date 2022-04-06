@@ -1,8 +1,8 @@
-# Azure Ensure Storage Logging Enabled For Queue Service
+# Azure Ensure Storage Logging Enabled For Blob Service
 
 ## What it does
 
-This policy checks all Azure storage accounts that use the queue service to ensure that they are configured to log read, write, and delete requests. An incident is raised with the offending storage accounts if any are found that don't.
+This policy checks all Azure storage accounts that use the blob service to ensure that they are configured to log read, write, and delete requests. An incident is raised with the offending storage accounts if any are found that don't.
 
 ## Functional Details
 

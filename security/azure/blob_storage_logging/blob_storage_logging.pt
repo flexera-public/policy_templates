@@ -1,7 +1,7 @@
-name "Azure Ensure Storage Logging Enabled For Queue Service"
+name "Azure Ensure Storage Logging Enabled For Blob Service"
 rs_pt_ver 20180301
 type "policy"
-short_description "Report if any storage queue accounts are not configured to log read, write, and delete requests. \n See the [README](https://github.com/flexera/policy_templates/tree/master/security/azure/queue_storage_logging) and [docs.rightscale.com/policies](https://docs.rightscale.com/policies/) to learn more."
+short_description "Report if any blob storage accounts are not configured to log read, write, and delete requests. \n See the [README](https://github.com/flexera/policy_templates/tree/master/security/azure/blob_storage_logging) and [docs.rightscale.com/policies](https://docs.rightscale.com/policies/) to learn more."
 long_description ""
 category "Security"
 severity "high"
@@ -12,7 +12,7 @@ info(
   service: "Storage",
   policy_set: "CIS",
   cce_id: "",
-  benchmark_control: "3.3",
+  benchmark_control: "3.10",
   benchmark_version: "1.4.0",
   cis_controls: "[\"8.5v8\", \"6.3v7\"]",
   nist: "AU-3"
@@ -116,22 +116,22 @@ datasource "ds_storage_accounts" do
       field "keyCreationTime", jmes_path(col_item, "properties.keyCreationTime")
       field "networkAcls", jmes_path(col_item, "properties.networkAcls")
       field "primaryEndpoints", jmes_path(col_item, "properties.primaryEndpoints")
-      field "queueEndpoint", jmes_path(col_item, "properties.primaryEndpoints.queue")
+      field "blobEndpoint", jmes_path(col_item, "properties.primaryEndpoints.blob")
       field "subscriptionId", val(iter_item, "id")
       field "subscriptionName", val(iter_item, "displayName")
     end
   end
 end
 
-datasource "ds_storage_accounts_with_queues" do
-  run_script $js_storage_accounts_with_queues, $ds_storage_accounts
+datasource "ds_storage_accounts_with_blobs" do
+  run_script $js_storage_accounts_with_blobs, $ds_storage_accounts
 end
 
-datasource "ds_storage_queues" do
-  iterate $ds_storage_accounts_with_queues
+datasource "ds_storage_blobs" do
+  iterate $ds_storage_accounts_with_blobs
   request do
     auth $azure_storage_auth
-    host val(iter_item, "queueHost")
+    host val(iter_item, "blobHost")
     query "restype", "service"
     query "comp", "properties"
     header "User-Agent", "RS Policies"
@@ -145,7 +145,7 @@ datasource "ds_storage_queues" do
       field "location", val(iter_item, "location")
       field "kind", val(iter_item, "kind")
       field "accessTier", val(iter_item, "accessTier")
-      field "queueHost", val(iter_item, "queueHost")
+      field "blobHost", val(iter_item, "blobHost")
       field "loggingVersion", xpath(col_item, "Version")
       field "loggingRead", xpath(col_item, "Read")
       field "loggingWrite", xpath(col_item, "Write")
@@ -154,39 +154,41 @@ datasource "ds_storage_queues" do
   end
 end
 
-datasource "ds_bad_storage_queues" do
-  run_script $js_bad_storage_queues, $ds_storage_queues
+datasource "ds_bad_storage_blobs" do
+  run_script $js_bad_storage_blobs, $ds_storage_blobs
 end
 
 ###############################################################################
 # Scripts
 ###############################################################################
 
-script "js_storage_accounts_with_queues", type: "javascript" do
+script "js_storage_accounts_with_blobs", type: "javascript" do
   parameters "ds_storage_accounts"
   result "result"
   code <<-EOS
   result = []
 
   _.each(ds_storage_accounts, function(account) {
-    if (account['queueEndpoint'] != null) {
-      account['queueHost'] = account['queueEndpoint'].split('//')[1].split('.')[0] + '.queue.core.windows.net'
+    if (account['blobEndpoint'] != null) {
+      account['blobHost'] = account['blobEndpoint'].split('//')[1].split('.')[0] + '.blob.core.windows.net'
       result.push(account)
     }
   })
 
+  result = result.slice(0,10)
+
 EOS
 end
 
-script "js_bad_storage_queues", type: "javascript" do
-  parameters "ds_storage_queues"
+script "js_bad_storage_blobs", type: "javascript" do
+  parameters "ds_storage_blobs"
   result "result"
   code <<-EOS
   result = []
 
-  _.each(ds_storage_queues, function(queue) {
-    if (queue['loggingRead'] != "true" || queue['loggingWrite'] != "true" || queue['loggingDelete'] != "true") {
-      result.push(queue)
+  _.each(ds_storage_blobs, function(blob) {
+    if (blob['loggingRead'] != "true" || blob['loggingWrite'] != "true" || blob['loggingDelete'] != "true") {
+      result.push(blob)
     }
   })
 EOS
@@ -196,9 +198,9 @@ end
 # Policy
 ###############################################################################
 
-policy "policy_storage_queue_logging" do
-  validate $ds_bad_storage_queues do
-    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} Azure Storage Account(s) That Don't Have Storage Logging Enabled For Queue Service"
+policy "policy_storage_blob_logging" do
+  validate $ds_bad_storage_blobs do
+    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} Azure Storage Account(s) That Don't Have Storage Logging Enabled For Blob Service"
     escalate $esc_email
     check eq(size(data),0)
     export do
