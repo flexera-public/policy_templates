@@ -263,7 +263,7 @@ Reference
 ###### CIS Policies
 
 - [AWS EBS Ensure Encryption By Default](./security/aws/ebs_ensure_encryption_default/)
-- [Azure Ensure Storage Account Default Network Access Set To Deny](./security/storage/azure/storage_network_deny/)
+- [Azure Ensure Storage Account Default Network Access Set To Deny](./security/azure/storage_network_deny/)
 
 ##### Security
 
