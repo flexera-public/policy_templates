@@ -1,0 +1,242 @@
+name "Azure Ensure Storage Logging Enabled For Queue Service"
+rs_pt_ver 20180301
+type "policy"
+short_description "Report if any storage queue accounts are not configured to log read, write, and delete requests. \n See the [README](https://github.com/flexera/policy_templates/tree/master/security/azure/queue_storage_logging) and [docs.rightscale.com/policies](https://docs.rightscale.com/policies/) to learn more."
+long_description ""
+category "Security"
+severity "high"
+default_frequency "daily"
+info(
+  version: "2.0",
+  provider: "Azure",
+  service: "Storage",
+  policy_set: "CIS",
+  cce_id: "",
+  benchmark_control: "3.3",
+  benchmark_version: "1.4.0",
+  cis_controls: "[\"8.5v8\", \"6.3v7\"]",
+  nist: "AU-3"
+)
+
+###############################################################################
+# Parameters
+###############################################################################
+
+parameter "param_email" do
+  type "list"
+  label "Email addresses of the recipients you wish to notify"
+end
+
+parameter "param_azure_endpoint" do
+  type "string"
+  label "Azure Endpoint"
+  allowed_values "management.azure.com", "management.chinacloudapi.cn"
+  default "management.azure.com"
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+credentials "azure_auth" do
+  schemes "oauth2"
+  label "Azure"
+  description "Select the Azure Resource Manager Credential from the list."
+  tags "provider=azure_rm"
+end
+
+credentials "azure_storage_auth" do
+  schemes "oauth2"
+  label "Azure"
+  description "Select the Azure Storage Credential from the list."
+  tags "provider=azure_storage"
+end
+
+###############################################################################
+# Pagination
+###############################################################################
+
+pagination "azure_pagination" do
+  get_page_marker do
+    body_path "nextLink"
+  end
+  set_page_marker do
+    uri true
+  end
+end
+
+###############################################################################
+# Datasources
+###############################################################################
+
+datasource "ds_subscriptions" do
+  request do
+    auth $azure_auth
+    pagination $azure_pagination
+    host $param_azure_endpoint
+    path "/subscriptions/"
+    query "api-version", "2019-06-01"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "value[*]") do
+      field "id", jmes_path(col_item, "subscriptionId")
+      field "displayName", jmes_path(col_item, "displayName")
+      field "state", jmes_path(col_item, "state")
+    end
+  end
+end
+
+datasource "ds_storage_accounts" do
+  iterate $ds_subscriptions
+  request do
+    auth $azure_auth
+    pagination $azure_pagination
+    host $param_azure_endpoint
+    path join(["/subscriptions/", val(iter_item, "id"), "/providers/Microsoft.Storage/storageAccounts"])
+    query "api-version", "2021-04-01"
+    header "User-Agent", "RS Policies"
+    header "Content-Type", "application/json"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "value[*]") do
+      field "id", jmes_path(col_item, "id")
+      field "kind", jmes_path(col_item, "kind")
+      field "location", jmes_path(col_item, "location")
+      field "name", jmes_path(col_item, "name")
+      field "accessTier", jmes_path(col_item, "properties.accessTier")
+      field "creationTime", jmes_path(col_item, "properties.creationTime")
+      field "primaryLocation", jmes_path(col_item, "properties.primaryLocation")
+      field "provisioningState", jmes_path(col_item, "properties.provisioningState")
+      field "statusOfPrimary", jmes_path(col_item, "properties.statusOfPrimary")
+      field "secure_transfer", jmes_path(col_item, "properties.supportsHttpsTrafficOnly")
+      field "encryption", jmes_path(col_item, "properties.encryption")
+      field "keyCreationTime", jmes_path(col_item, "properties.keyCreationTime")
+      field "networkAcls", jmes_path(col_item, "properties.networkAcls")
+      field "primaryEndpoints", jmes_path(col_item, "properties.primaryEndpoints")
+      field "queueEndpoint", jmes_path(col_item, "properties.primaryEndpoints.queue")
+      field "subscriptionId", val(iter_item, "id")
+      field "subscriptionName", val(iter_item, "displayName")
+    end
+  end
+end
+
+datasource "ds_storage_accounts_with_queues" do
+  run_script $js_storage_accounts_with_queues, $ds_storage_accounts
+end
+
+datasource "ds_storage_queues" do
+  iterate $ds_storage_accounts_with_queues
+  request do
+    auth $azure_storage_auth
+    host val(iter_item, "queueHost")
+    query "restype", "service"
+    query "comp", "properties"
+    header "User-Agent", "RS Policies"
+    header "x-ms-version", "2018-03-28"
+  end
+  result do
+    encoding "xml"
+    collect xpath(response, "//StorageServiceProperties/Logging") do
+      field "id", val(iter_item, "id")
+      field "name", val(iter_item, "name")
+      field "location", val(iter_item, "location")
+      field "kind", val(iter_item, "kind")
+      field "accessTier", val(iter_item, "accessTier")
+      field "queueHost", val(iter_item, "queueHost")
+      field "loggingVersion", xpath(col_item, "Version")
+      field "loggingRead", xpath(col_item, "Read")
+      field "loggingWrite", xpath(col_item, "Write")
+      field "loggingDelete", xpath(col_item, "Delete")
+    end
+  end
+end
+
+datasource "ds_bad_storage_queues" do
+  run_script $js_bad_storage_queues, $ds_storage_queues
+end
+
+###############################################################################
+# Scripts
+###############################################################################
+
+script "js_storage_accounts_with_queues", type: "javascript" do
+  parameters "ds_storage_accounts"
+  result "result"
+  code <<-EOS
+  result = []
+
+  _.each(ds_storage_accounts, function(account) {
+    if (account['queueEndpoint'] != null) {
+      account['queueHost'] = account['queueEndpoint'].split('//')[1].split('.')[0] + '.queue.core.windows.net'
+      result.push(account)
+    }
+  })
+
+EOS
+end
+
+script "js_bad_storage_queues", type: "javascript" do
+  parameters "ds_storage_queues"
+  result "result"
+  code <<-EOS
+  result = []
+
+  _.each(ds_storage_queues, function(queue) {
+    if (queue['loggingRead'] != "true" || queue['loggingWrite'] != "true" || queue['loggingDelete'] != "true") {
+      result.push(queue)
+    }
+  })
+EOS
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "policy_storage_queue_logging" do
+  validate $ds_bad_storage_queues do
+    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} Azure Storage Account(s) That Don't Have Storage Logging Enabled For Queue Service"
+    escalate $esc_email
+    check eq(size(data),0)
+    export do
+      field "name" do
+        label "Name"
+      end
+      field "kind" do
+        label "Kind"
+      end
+      field "location" do
+        label "Location"
+      end
+      field "accessTier" do
+        label "Access Tier"
+      end
+      field "loggingRead" do
+        label "Read Logging"
+      end
+      field "loggingWrite" do
+        label "Write Logging"
+      end
+      field "loggingDelete" do
+        label "Delete Logging"
+      end
+      field "id" do
+        label "Resource ID"
+      end
+    end
+  end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_email" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
+end
