@@ -1,7 +1,7 @@
-name "Azure Ensure Storage Logging Enabled For Queue Service"
+name "Azure Ensure Storage Logging Enabled For Table Service"
 rs_pt_ver 20180301
 type "policy"
-short_description "Report if any storage queue accounts are not configured to log read, write, and delete requests. \n See the [README](https://github.com/flexera/policy_templates/tree/master/security/azure/queue_storage_logging) and [docs.rightscale.com/policies](https://docs.rightscale.com/policies/) to learn more."
+short_description "Report if any storage table accounts are not configured to log read, write, and delete requests. \n See the [README](https://github.com/flexera/policy_templates/tree/master/security/azure/table_storage_logging) and [docs.rightscale.com/policies](https://docs.rightscale.com/policies/) to learn more."
 long_description ""
 category "Security"
 severity "high"
@@ -116,22 +116,22 @@ datasource "ds_storage_accounts" do
       field "keyCreationTime", jmes_path(col_item, "properties.keyCreationTime")
       field "networkAcls", jmes_path(col_item, "properties.networkAcls")
       field "primaryEndpoints", jmes_path(col_item, "properties.primaryEndpoints")
-      field "queueEndpoint", jmes_path(col_item, "properties.primaryEndpoints.queue")
+      field "tableEndpoint", jmes_path(col_item, "properties.primaryEndpoints.table")
       field "subscriptionId", val(iter_item, "id")
       field "subscriptionName", val(iter_item, "displayName")
     end
   end
 end
 
-datasource "ds_storage_accounts_with_queues" do
-  run_script $js_storage_accounts_with_queues, $ds_storage_accounts
+datasource "ds_storage_accounts_with_tables" do
+  run_script $js_storage_accounts_with_tables, $ds_storage_accounts
 end
 
-datasource "ds_storage_queues" do
-  iterate $ds_storage_accounts_with_queues
+datasource "ds_storage_tables" do
+  iterate $ds_storage_accounts_with_tables
   request do
     auth $azure_storage_auth
-    host val(iter_item, "queueHost")
+    host val(iter_item, "tableHost")
     query "restype", "service"
     query "comp", "properties"
     header "User-Agent", "RS Policies"
@@ -145,7 +145,7 @@ datasource "ds_storage_queues" do
       field "location", val(iter_item, "location")
       field "kind", val(iter_item, "kind")
       field "accessTier", val(iter_item, "accessTier")
-      field "queueHost", val(iter_item, "queueHost")
+      field "tableHost", val(iter_item, "table")
       field "loggingVersion", xpath(col_item, "Version")
       field "loggingRead", xpath(col_item, "Read")
       field "loggingWrite", xpath(col_item, "Write")
@@ -154,23 +154,23 @@ datasource "ds_storage_queues" do
   end
 end
 
-datasource "ds_bad_storage_queues" do
-  run_script $js_bad_storage_queues, $ds_storage_queues
+datasource "ds_bad_storage_tables" do
+  run_script $js_bad_storage_tables, $ds_storage_tables
 end
 
 ###############################################################################
 # Scripts
 ###############################################################################
 
-script "js_storage_accounts_with_queues", type: "javascript" do
+script "js_storage_accounts_with_tables", type: "javascript" do
   parameters "ds_storage_accounts"
   result "result"
   code <<-EOS
   result = []
 
   _.each(ds_storage_accounts, function(account) {
-    if (account['queueEndpoint'] != null) {
-      account['queueHost'] = account['queueEndpoint'].split('//')[1].split('.')[0] + '.queue.core.windows.net'
+    if (account['tableEndpoint'] != null) {
+      account['tableHost'] = account['tableEndpoint'].split('//')[1].split('.')[0] + '.table.core.windows.net'
       result.push(account)
     }
   })
@@ -178,15 +178,15 @@ script "js_storage_accounts_with_queues", type: "javascript" do
 EOS
 end
 
-script "js_bad_storage_queues", type: "javascript" do
-  parameters "ds_storage_queues"
+script "js_bad_storage_tables", type: "javascript" do
+  parameters "ds_storage_tables"
   result "result"
   code <<-EOS
   result = []
 
-  _.each(ds_storage_queues, function(queue) {
-    if (queue['loggingRead'] != "true" || queue['loggingWrite'] != "true" || queue['loggingDelete'] != "true") {
-      result.push(queue)
+  _.each(ds_storage_tables, function(table) {
+    if (table['loggingRead'] != "true" || table['loggingWrite'] != "true" || table['loggingDelete'] != "true") {
+      result.push(table)
     }
   })
 EOS
@@ -196,9 +196,9 @@ end
 # Policy
 ###############################################################################
 
-policy "policy_storage_queue_logging" do
-  validate $ds_bad_storage_queues do
-    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} Azure Storage Account(s) That Don't Have Storage Logging Enabled For Queue Service"
+policy "policy_storage_table_logging" do
+  validate $ds_bad_storage_tables do
+    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} Azure Storage Account(s) That Don't Have Storage Logging Enabled For Table Service"
     escalate $esc_email
     check eq(size(data),0)
     export do
