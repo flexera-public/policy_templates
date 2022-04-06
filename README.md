@@ -263,6 +263,7 @@ Reference
 
 ###### CIS Policies
 
+- [Azure Ensure Storage Logging Enabled For Queue Service](./security/azure/queue_storage_logging/)
 - [Azure Ensure Secure Transfer Required](./security/azure/secure_transfer_required/)
 
 ##### Security
