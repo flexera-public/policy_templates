@@ -1,0 +1,202 @@
+name "Azure Ensure Trusted Microsoft Services Enabled"
+rs_pt_ver 20180301
+type "policy"
+short_description "Report if any storage accounts do not have access enabled for Trusted Microsoft Services. \n See the [README](https://github.com/flexera/policy_templates/tree/master/security/azure/storage_trusted_services/) and [docs.rightscale.com/policies](https://docs.rightscale.com/policies/) to learn more."
+long_description ""
+category "Security"
+severity "high"
+default_frequency "daily"
+info(
+  version: "2.0",
+  provider: "Azure",
+  service: "Storage",
+  policy_set: "CIS",
+  cce_id: "",
+  benchmark_control: "3.7",
+  benchmark_version: "1.4.0",
+  cis_controls: "[\"4.4v8\", \"9.2v7\"]",
+  nist: "AC-4"
+)
+
+###############################################################################
+# Parameters
+###############################################################################
+
+parameter "param_email" do
+  type "list"
+  label "Email addresses of the recipients you wish to notify"
+end
+
+parameter "param_azure_endpoint" do
+  type "string"
+  label "Azure Endpoint"
+  allowed_values "management.azure.com", "management.chinacloudapi.cn"
+  default "management.azure.com"
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+credentials "azure_auth" do
+  schemes "oauth2"
+  label "Azure"
+  description "Select the Azure Resource Manager Credential from the list."
+  tags "provider=azure_rm"
+end
+
+###############################################################################
+# Pagination
+###############################################################################
+
+pagination "azure_pagination" do
+  get_page_marker do
+    body_path "nextLink"
+  end
+  set_page_marker do
+    uri true
+  end
+end
+
+###############################################################################
+# Datasources
+###############################################################################
+
+datasource "ds_subscriptions" do
+  request do
+    auth $azure_auth
+    pagination $azure_pagination
+    host $param_azure_endpoint
+    path "/subscriptions/"
+    query "api-version", "2019-06-01"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "value[*]") do
+      field "id", jmes_path(col_item, "subscriptionId")
+      field "displayName", jmes_path(col_item, "displayName")
+      field "state", jmes_path(col_item, "state")
+    end
+  end
+end
+
+datasource "ds_storage_accounts" do
+  iterate $ds_subscriptions
+  request do
+    auth $azure_auth
+    pagination $azure_pagination
+    host $param_azure_endpoint
+    path join(["/subscriptions/", val(iter_item, "id"), "/providers/Microsoft.Storage/storageAccounts"])
+    query "api-version", "2021-04-01"
+    header "User-Agent", "RS Policies"
+    header "Content-Type", "application/json"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "value[*]") do
+      field "id", jmes_path(col_item, "id")
+      field "kind", jmes_path(col_item, "kind")
+      field "location", jmes_path(col_item, "location")
+      field "name", jmes_path(col_item, "name")
+      field "accessTier", jmes_path(col_item, "properties.accessTier")
+      field "creationTime", jmes_path(col_item, "properties.creationTime")
+      field "primaryLocation", jmes_path(col_item, "properties.primaryLocation")
+      field "provisioningState", jmes_path(col_item, "properties.provisioningState")
+      field "statusOfPrimary", jmes_path(col_item, "properties.statusOfPrimary")
+      field "secure_transfer", jmes_path(col_item, "properties.supportsHttpsTrafficOnly")
+      field "encryption", jmes_path(col_item, "properties.encryption")
+      field "keyCreationTime", jmes_path(col_item, "properties.keyCreationTime")
+      field "networkAcls", jmes_path(col_item, "properties.networkAcls")
+      field "networkBypass", jmes_path(col_item, "properties.networkAcls.bypass")
+      field "primaryEndpoints", jmes_path(col_item, "properties.primaryEndpoints")
+      field "subscriptionId", val(iter_item, "id")
+      field "subscriptionName", val(iter_item, "displayName")
+    end
+  end
+end
+
+datasource "ds_bad_storage_accounts" do
+  run_script $js_bad_storage_accounts, $ds_storage_accounts
+end
+
+###############################################################################
+# Scripts
+###############################################################################
+
+script "js_bad_storage_accounts", type: "javascript" do
+  parameters "ds_storage_accounts"
+  result "result"
+  code <<-EOS
+  result = []
+
+  _.each(ds_storage_accounts, function(account) {
+    if (typeof(account['networkBypass']) == 'string') {
+      networkBypassItems = account['networkBypass'].split(',')
+    } else {
+      networkBypassItems = []
+    }
+
+    azureServicesNotFound = true
+
+    _.each(networkBypassItems, function(item) {
+      if (item.trim() == "AzureServices") {
+        azureServicesNotFound = false
+      }
+    })
+
+    if (azureServicesNotFound) {
+      result.push(account)
+    }
+  })
+EOS
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "policy_storage_trusted_services" do
+  validate $ds_bad_storage_accounts do
+    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} Storage Account(s) Found Without Access Enabled For Trusted Microsoft Services"
+    escalate $esc_email
+    check eq(size(data),0)
+    export do
+      field "name" do
+        label "Name"
+      end
+      field "kind" do
+        label "Kind"
+      end
+      field "location" do
+        label "Location"
+      end
+      field "accessTier" do
+        label "Access Tier"
+      end
+      field "networkBypass" do
+        label "Network Bypass"
+      end
+      field "id" do
+        label "Resource ID"
+      end
+      field "subscriptionId" do
+        label "Subscription ID"
+      end
+      field "subscriptionName" do
+        label "Subscription Name"
+      end
+    end
+  end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_email" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
+end
