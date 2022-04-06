@@ -266,6 +266,7 @@ Reference
 - [Azure Ensure Blob Containers Set To Private](./security/azure/private_blob_containers/)
 - [Azure Ensure Storage Logging Enabled For Queue Service](./security/azure/queue_storage_logging/)
 - [Azure Ensure Secure Transfer Required](./security/azure/secure_transfer_required/)
+- [Azure Ensure Soft Delete Enabled For Azure Storage](./security/azure/storage_soft_delete/)
 
 ##### Security
 
