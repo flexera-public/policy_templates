@@ -35,6 +35,7 @@ parameter "param_exclude_tags" do
   category "User Inputs"
   label "Exclusion Tag"
   description "List of tags that will exclude EC2 instances from being evaluated by this policy. Multiple tags are evaluated as an 'OR' condition. Tag keys or key/value pairs can be listed. Example: 'test,env=dev'."
+  default []
 end
 
 parameter "param_allowed_regions" do
@@ -49,6 +50,7 @@ parameter "param_automatic_action" do
   label "Automatic Actions"
   description "When this value is set, this policy will automatically take the selected action(s)"
   allowed_values ["Terminate Instances"]
+  default []
 end
 
 ###############################################################################
@@ -81,31 +83,51 @@ end
 # Datasources
 ###############################################################################
 
-#Generates list of Regions which User input.
-datasource "ds_regions_list" do
-  run_script $js_regions_map, $param_allowed_regions
+# Get a list of all active AWS regions on the account
+datasource "ds_all_regions" do
+  request do
+    auth $auth_aws
+    pagination $aws_pagination_xml
+    verb "GET"
+    host "ec2.amazonaws.com"
+    path "/"
+    query "Action", "DescribeRegions"
+    query "Version", "2016-11-15"
+  end
+  result do
+    encoding "xml"
+    collect xpath(response, "//DescribeRegionsResponse/regionInfo/item") do
+      field "regionName", xpath(col_item, "regionName")
+      field "regionEndpoint", xpath(col_item, "regionEndpoint")
+    end
+  end
 end
 
-#Get the list of all EC2 Instances across all regions.
-#https://docs.aws.amazon.com/AWSEC2/latest/APIReference/API_DescribeInstances.html
+# Generates list of Regions which User input.
+datasource "ds_regions_list" do
+  run_script $js_regions_map, $ds_all_regions, $param_allowed_regions
+end
+
+# Get the list of all EC2 Instances across all regions.
+# https://docs.aws.amazon.com/AWSEC2/latest/APIReference/API_DescribeInstances.html
 datasource "ds_disallowed_instances_list" do
   iterate $ds_regions_list
   request do
     auth $auth_aws
-  pagination $aws_pagination_xml
+    pagination $aws_pagination_xml
     verb "GET"
-    host join(["ec2.",val(iter_item,"region"),".amazonaws.com"])
+    host val(iter_item, "regionEndpoint")
     path "/"
     query "Action", "DescribeInstances"
     query "Version", "2016-11-15"
   end
   result do
     encoding "xml"
-    collect xpath(response, "//DescribeInstancesResponse/reservationSet/item/instancesSet/item","array") do
+    collect xpath(response, "//DescribeInstancesResponse/reservationSet/item/instancesSet/item", "array") do
       field "instance_id", xpath(col_item, "instanceId")
-      field "region", val(iter_item,"region")
+      field "region", val(iter_item, "regionName")
       field "instance_state", xpath(col_item, "instanceState/name")
-      field "instance_type", xpath(col_item,"instanceType")
+      field "instance_type", xpath(col_item, "instanceType")
       field "tags" do
         collect xpath(col_item, "tagSet/item") do
           field "tagKey", xpath(col_item, "key")
@@ -117,12 +139,40 @@ datasource "ds_disallowed_instances_list" do
 end
 
 datasource "ds_list_aws_instances" do
-  run_script $js_filter_aws_instances,$ds_disallowed_instances_list,$param_exclude_tags
+  run_script $js_filter_aws_instances, $ds_disallowed_instances_list, $param_exclude_tags
 end
 
 ###############################################################################
 # Scripts
 ###############################################################################
+
+script "js_regions_map", type: "javascript" do
+  parameters "ds_all_regions", "param_allowed_regions"
+  result "regions_map"
+  code <<-EOS
+  regions_map = []
+
+  param_disallowed_regions = []
+
+  _.each(ds_all_regions, function(region) {
+    disallowed = true
+
+    _.each(param_allowed_regions, function(allowed_region) {
+      if (region['regionName'].trim() == allowed_region.trim()) {
+        disallowed = false
+      }
+    })
+
+    if (disallowed) {
+      param_disallowed_regions.push(region)
+    }
+  })
+
+  _.each(param_disallowed_regions, function(disallowed_region) {
+    regions_map.push(disallowed_region)
+  })
+EOS
+end
 
 script "js_filter_aws_instances", type: "javascript" do
   parameters "ds_disallowed_instances_list","param_exclude_tags"
@@ -166,45 +216,6 @@ script "js_filter_aws_instances", type: "javascript" do
   EOS
 end
 
-script "js_regions_map", type: "javascript" do
-  parameters "param_allowed_regions"
-  result "regions_map"
-  code <<-EOS
-  all_regions = [
-    "us-east-1", "us-east-2", "us-west-1", "us-west-2", "af-south-1",
-    "ap-east-1", "ap-southeast-3", "ap-south-1", "ap-northeast-3",
-    "ap-northeast-2", "ap-southeast-1", "ap-southeast-2",
-    "ap-northeast-1", "ca-central-1", "eu-central-1", "eu-west-1",
-    "eu-west-2", "eu-south-1", "eu-west-3", "eu-north-1",
-    "me-south-1", "sa-east-1", "us-gov-east-1", "us-gov-west-1"
-  ]
-
-  regions_map = []
-
-  param_disallowed_regions = []
-
-  _.each(all_regions, function(region) {
-    disallowed = true
-
-    _.each(param_allowed_regions, function(allowed_region) {
-      if (region == allowed_region.trim()) {
-        disallowed = false
-      }
-    })
-
-    if (disallowed) {
-      param_disallowed_regions.push(region.trim())
-    }
-  })
-
-  _.each(param_disallowed_regions, function(disallowed_region) {
-    regions_map.push({
-      "region": disallowed_region
-    })
-  })
-EOS
-end
-
 ###############################################################################
 # Escalations
 ###############################################################################
@@ -228,7 +239,7 @@ end
 ###############################################################################
 
 policy "pol_list_aws_instances" do
-  validate $ds_list_aws_instances do
+  validate $ds_all_regions do
     summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} AWS Instances in Disallowed regions"
     export do
       resource_level true
@@ -258,7 +269,7 @@ end
 # Cloud Workflow
 ###############################################################################
 
-#https://docs.aws.amazon.com/AWSEC2/latest/APIReference/API_TerminateInstances.html
+# https://docs.aws.amazon.com/AWSEC2/latest/APIReference/API_TerminateInstances.html
 define terminate_instances($data) return $all_responses do
   $$debug=true
   $all_responses = []
