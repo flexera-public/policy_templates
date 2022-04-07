@@ -2,11 +2,11 @@
 
 ## What it does
 
-This policy checks all instances in a set of disallowed regions. The user is given the option to Terminate the instance after approval.
+This policy checks all instances outside of a set of allowed regions. The user is given the option to Terminate the instance after approval.
 
 ## Functional Details
 
-- The policy leverages the AWS API to check all instances that exist in a disallowed region.
+- The policy leverages the AWS API to check all instances that exist outside of an allowed region.
 - When an EC2 instance in disallowed region is detected, an email action is triggered automatically to notify the specified users of the incident. Users then have the option to terminate instances after manual approval if needed.
 
 ## Input Parameters
@@ -14,7 +14,7 @@ This policy checks all instances in a set of disallowed regions. The user is giv
 - *Email addresses to notify* - Email addresses of the recipients you wish to notify when new incidents are created.
 - *Account Number* - The Account number for use with the AWS STS Cross Account Role. Leave blank when using AWS IAM Access key and secret. It only needs to be passed when the desired AWS account is different than the one associated with the Flexera One credential. [more](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_1982464505_1123608)
 - *Exclusion Tag* - List of tags that will exclude EC2 instances from being evaluated by this policy. Multiple tags are evaluated as an 'OR' condition. Tag keys or key/value pairs can be listed. Example: 'test,env=dev'.
-- *Disallowed Regions(s)* - List of regions to disallow.
+- *Allowed Regions(s)* - List of regions to allow.
 - *Automatic Actions* - When this value is set, this policy will automatically take the selected action(s).
 
 Note:Refer Region column under Amazon Elastic Compute Cloud (Amazon EC2) in below link for AWS supported regions \n See the [README](https://docs.aws.amazon.com/general/latest/gr/rande.html).
