@@ -271,6 +271,7 @@ Reference
 - [Azure Ensure Storage Logging Enabled For Table Service](./security/azure/table_storage_logging/)
 - [Azure Ensure Secure Transfer Required](./security/azure/secure_transfer_required/)
 - [Azure Ensure Soft Delete Enabled For Azure Storage](./security/azure/storage_soft_delete/)
+- [Azure Ensure Storage Accounts Require Secure TLS Version](./security/azure/storage_tls_version/)
 - [Azure Ensure Trusted Microsoft Services Enabled](./security/azure/storage_trusted_services/)
 
 ##### Security
