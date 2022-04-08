@@ -1,5 +1,9 @@
 # Changelog
 
+## v4.0
+
+- Updating to use oauth2 from embedded cm auth
+
 ## v2.15
 
 - Added default to aws_account_number parameter to enable existing API users.
