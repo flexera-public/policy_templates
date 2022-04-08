@@ -1,5 +1,9 @@
 # Changelog
 
+## v4.0
+
+- Updating to use oauth2 from embedded cm auth
+
 ## v1.7
 
 - Use rs_optima_host instead of hardcoded hostname
