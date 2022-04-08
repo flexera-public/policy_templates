@@ -1,5 +1,9 @@
 # Changelog
 
+## v4.0
+
+- Updating to use oauth2 from embedded cm auth
+
 ## v3.3
 
 - updated savings_currency to savingsCurrency
