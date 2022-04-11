@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.6
+
+- Flipped parameter to enable user to specify which reasons to allow instead of which to disallow.
+
 ## v2.5
 
 - Added default to aws_account_number parameter to enable existing API users.

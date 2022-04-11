@@ -1,12 +1,13 @@
 name "AWS Disallowed Regions"
 rs_pt_ver 20180301
 type "policy"
-short_description "Check for instances that are in a disallowed region with the option to terminate them. \n See the [README](https://github.com/flexera/policy_templates/tree/master/compliance/aws/disallowed_regions) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+short_description "Check for instances that are outside of an allowed region with the option to terminate them. \n See the [README](https://github.com/flexera/policy_templates/tree/master/compliance/aws/disallowed_regions) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 long_description ""
 category "Compliance"
 severity "low"
+default_frequency "weekly"
 info(
-  version: "2.5",
+  version: "2.6",
   provider: "AWS",
   service: "EC2",
   policy_set: "Disallowed Regions"
@@ -34,13 +35,14 @@ parameter "param_exclude_tags" do
   category "User Inputs"
   label "Exclusion Tag"
   description "List of tags that will exclude EC2 instances from being evaluated by this policy. Multiple tags are evaluated as an 'OR' condition. Tag keys or key/value pairs can be listed. Example: 'test,env=dev'."
+  default []
 end
 
-parameter "param_disallowed_region" do
+parameter "param_allowed_regions" do
   type "list"
-  label "Disallowed Regions(s)"
+  label "Allowed Regions(s)"
   allowed_pattern /([a-z])+\-([a-z])+\-([\d]?)+/
-  description "List of regions to disallow."
+  description "List of regions to allow."
 end
 
 parameter "param_automatic_action" do
@@ -80,31 +82,51 @@ end
 # Datasources
 ###############################################################################
 
-#Generates list of Regions which User input.
-datasource "ds_regions_list" do
-  run_script $js_regions_map,$param_disallowed_region
+# Get a list of all active AWS regions on the account
+datasource "ds_all_regions" do
+  request do
+    auth $auth_aws
+    pagination $aws_pagination_xml
+    verb "GET"
+    host "ec2.amazonaws.com"
+    path "/"
+    query "Action", "DescribeRegions"
+    query "Version", "2016-11-15"
+  end
+  result do
+    encoding "xml"
+    collect xpath(response, "//DescribeRegionsResponse/regionInfo/item") do
+      field "regionName", xpath(col_item, "regionName")
+      field "regionEndpoint", xpath(col_item, "regionEndpoint")
+    end
+  end
 end
 
-#Get the list of all EC2 Instances across all regions.
-#https://docs.aws.amazon.com/AWSEC2/latest/APIReference/API_DescribeInstances.html
+# Generates list of Regions which User input.
+datasource "ds_regions_list" do
+  run_script $js_regions_map, $ds_all_regions, $param_allowed_regions
+end
+
+# Get the list of all EC2 Instances across all regions.
+# https://docs.aws.amazon.com/AWSEC2/latest/APIReference/API_DescribeInstances.html
 datasource "ds_disallowed_instances_list" do
   iterate $ds_regions_list
   request do
     auth $auth_aws
-  pagination $aws_pagination_xml
+    pagination $aws_pagination_xml
     verb "GET"
-    host join(["ec2.",val(iter_item,"region"),".amazonaws.com"])
+    host val(iter_item, "regionEndpoint")
     path "/"
     query "Action", "DescribeInstances"
     query "Version", "2016-11-15"
   end
   result do
     encoding "xml"
-    collect xpath(response, "//DescribeInstancesResponse/reservationSet/item/instancesSet/item","array") do
+    collect xpath(response, "//DescribeInstancesResponse/reservationSet/item/instancesSet/item", "array") do
       field "instance_id", xpath(col_item, "instanceId")
-      field "region", val(iter_item,"region")
+      field "region", val(iter_item, "regionName")
       field "instance_state", xpath(col_item, "instanceState/name")
-      field "instance_type", xpath(col_item,"instanceType")
+      field "instance_type", xpath(col_item, "instanceType")
       field "tags" do
         collect xpath(col_item, "tagSet/item") do
           field "tagKey", xpath(col_item, "key")
@@ -116,12 +138,34 @@ datasource "ds_disallowed_instances_list" do
 end
 
 datasource "ds_list_aws_instances" do
-  run_script $js_filter_aws_instances,$ds_disallowed_instances_list,$param_exclude_tags
+  run_script $js_filter_aws_instances, $ds_disallowed_instances_list, $param_exclude_tags
 end
 
 ###############################################################################
 # Scripts
 ###############################################################################
+
+script "js_regions_map", type: "javascript" do
+  parameters "ds_all_regions", "param_allowed_regions"
+  result "regions_map"
+  code <<-EOS
+  regions_map = []
+
+  _.each(ds_all_regions, function(region) {
+    disallowed = true
+
+    _.each(param_allowed_regions, function(allowed_region) {
+      if (region['regionName'].trim() == allowed_region.trim()) {
+        disallowed = false
+      }
+    })
+
+    if (disallowed) {
+      regions_map.push(region)
+    }
+  })
+EOS
+end
 
 script "js_filter_aws_instances", type: "javascript" do
   parameters "ds_disallowed_instances_list","param_exclude_tags"
@@ -165,24 +209,6 @@ script "js_filter_aws_instances", type: "javascript" do
   EOS
 end
 
-script "js_regions_map", type: "javascript" do
-  parameters "param_disallowed_region"
-  result "regions_map"
-  code <<-EOS
-  regions_map=[]
-  var param_disallowed_region_lower=[];
-    for(var i=0; i < param_disallowed_region.length; i++){
-      param_disallowed_region_lower[i]=param_disallowed_region[i].toString().toLowerCase();
-    }
-    for (var j = 0; j < param_disallowed_region_lower.length; j++){
-      disallowed_region = param_disallowed_region_lower[j];
-      regions_map.push({
-        "region": disallowed_region
-      })
-    }
-  EOS
-end
-
 ###############################################################################
 # Escalations
 ###############################################################################
@@ -207,7 +233,7 @@ end
 
 policy "pol_list_aws_instances" do
   validate $ds_list_aws_instances do
-    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} AWS Instances in Disallowed regions"
+    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} AWS Instance(s) in Disallowed regions"
     export do
       resource_level true
       field "id" do
@@ -236,7 +262,7 @@ end
 # Cloud Workflow
 ###############################################################################
 
-#https://docs.aws.amazon.com/AWSEC2/latest/APIReference/API_TerminateInstances.html
+# https://docs.aws.amazon.com/AWSEC2/latest/APIReference/API_TerminateInstances.html
 define terminate_instances($data) return $all_responses do
   $$debug=true
   $all_responses = []
