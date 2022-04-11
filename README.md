@@ -254,6 +254,10 @@ Reference
 
 - [Azure Publicly Accessible Managed SQL Instance](./security/azure/sql_publicly_accessible_managed_instance/)
 
+###### CIS Policies
+
+- [Azure Ensure SQL Server Auditing Enabled](./security/azure/sql_server_auditing/)
+
 ##### Web Apps
 
 - [Azure Web App Minimum TLS Version](./security/azure/webapp_tls_version_support/)
