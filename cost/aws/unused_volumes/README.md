@@ -42,12 +42,21 @@ The following policy actions are taken on any resources found to be out of compl
 
 ## Prerequisites
 
-- This policy uses [credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for connecting to the cloud -- in order to apply this policy you must have a credential registered in the system that is compatible with this policy. If there are no credentials listed when you apply the policy, please contact your cloud admin and ask them to register a credential that is compatible with this policy. The information below should be consulted when creating the credential.
-- billing_center_viewer (note: this role must be applied at the Organization level)
+- This policy uses [credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for connecting to the cloud and to query Flexera endpoints -- in order to apply this policy you must have a credential registered in the system that is compatible with this policy. If there are no credentials listed when you apply the policy, please contact your cloud admin and ask them to register a credential that is compatible with this policy. The information below should be consulted when creating the credential.
 
 ### Credential configuration
 
-For administrators [creating and managing credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) to use with this policy, the following information is needed:
+#### Flexera
+
+An oauth2.0 token needs to be created for this policy. Please follow the guide here: [creating and managing credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm). You can either create a service account or use your refresh token. You will need the following rights:
+
+- View Cloud Costs
+
+Provider tag value to match this policy: `flexera`.
+
+#### AWS
+
+For administrators [creating and managing credentials](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_109256743_1121575) to use with this policy, the following information is needed:
 
 Provider tag value to match this policy: `aws` , `aws_sts`
 
