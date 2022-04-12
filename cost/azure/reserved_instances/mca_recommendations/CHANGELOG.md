@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.8
+
+- added subscription name field
+
 ## v2.7
 
 - updated README.md rightscale documentation links with docs.flexera documentation links

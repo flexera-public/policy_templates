@@ -7,7 +7,7 @@ severity "medium"
 category "Cost"
 default_frequency "daily"
 info(
-  version: "2.7",
+  version: "2.8",
   provider: "Azure",
   service: "Compute",
   policy_set: "Reserved Instance"
@@ -128,12 +128,12 @@ datasource "ds_subscriptions" do
   end
 end
 
-datasource "ds_ri_types" do
-  run_script $js_ri_types, $param_type, $ds_filtered_subscriptions, $param_scope
-end
-
 datasource "ds_filtered_subscriptions" do
   run_script $js_filtered_subscriptions, $ds_subscriptions, $param_subscription_whitelist
+end
+
+datasource "ds_ri_types" do
+  run_script $js_ri_types, $param_type, $ds_filtered_subscriptions, $param_scope
 end
 
 datasource "ds_ri_recommendations" do
@@ -156,12 +156,13 @@ datasource "ds_ri_recommendations" do
       field "scope", jmes_path(col_item,"properties.scope")
       field "subscriptionId", val(iter_item,"subscriptionId")
       field "service", val(iter_item,"service")
+      field "subscriptionName", val(iter_item,"subscriptionName")
     end
   end
 end
 
 datasource "ds_ri_normalization" do
-  run_script $js_ri_cleanup, $ds_ri_recommendations, $param_term
+  run_script $js_ri_normalization, $ds_ri_recommendations, $param_term
 end
 
 ###############################################################################
@@ -206,10 +207,10 @@ script "js_ri_types", type: "javascript" do
       _.each(subscriptions, function(subscription){
         if (param_service === "All"){
           _.each(services, function(service){
-            result.push({"service":service, "subscriptionId":subscription.subscriptionId})
+            result.push({"service":service, "subscriptionId":subscription.subscriptionId, "subscriptionName":subscription.subscriptionName})
           })
         } else {
-            result.push({"service":param_service, "subscriptionId":subscription.subscriptionId})
+            result.push({"service":param_service, "subscriptionId":subscription.subscriptionId, "subscriptionName":subscription.subscriptionName})
         }
       })
     }
@@ -244,7 +245,7 @@ script "js_ri_request", type: "javascript" do
   EOS
 end
 
-script "js_ri_cleanup", type: "javascript" do
+script "js_ri_normalization", type: "javascript" do
   parameters "ri_recos", "param_term"
   result "result"
   code <<-EOS
@@ -263,6 +264,7 @@ script "js_ri_cleanup", type: "javascript" do
 
       result.push({
         subscriptionId: reco["subscriptionId"],
+        subscriptionName: reco["subscriptionName"],
         service: reco["service"],
         skuName: reco["skuName"],
         term: term,
@@ -302,6 +304,9 @@ policy "azure_ri_recommendations" do
       resource_level false
       field "subscriptionId" do
         label "Subscription Id"
+      end
+      field "subscriptionName" do
+          label "Subscription Name"
       end
       field "service" do
         label "Service"
