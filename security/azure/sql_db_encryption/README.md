@@ -1,12 +1,12 @@
-# Azure Ensure SQL Server Auditing Enabled
+# Azure Ensure SQL Database Encryption
 
 ## What it does
 
-This policy checks all Azure SQL Servers to ensure that they have auditing enabled. An incident is raised with the offending SQL Servers if any are found that don't.
+This policy checks all Azure SQL databases to ensure that they have encryption enabled. An incident is raised with the offending SQL databases if any are found that don't.
 
 ## Functional Details
 
-The Azure Resource Manager API is used to get a list of subscriptions and SQL Servers within those subscriptions. The policy then queries the audit endpoint for each SQL Server and checks the "properties.state" field to determine if auditing is enabled or not.
+The Azure Resource Manager API is used to get a list of subscriptions, SQL Servers within those subscriptions, and databases within those SQL Servers. The policy then queries the "transparentDataEncryption" endpoint for each SQL database and checks the "properties.state" field to determine if encryption is enabled or not.
 
 ## Input Parameters
 
@@ -29,6 +29,8 @@ Required permissions in the provider:
 
 - Microsoft.Resources/subscriptions/read
 - Microsoft.Sql/servers/read
+- Microsoft.Sql/servers/databases/read
+- Microsoft.Sql/servers/databases/transparentDataEncryption/read
 
 ## Supported Clouds
 
