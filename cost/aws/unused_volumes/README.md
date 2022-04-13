@@ -48,11 +48,18 @@ The following policy actions are taken on any resources found to be out of compl
 
 #### Flexera
 
-An oauth2.0 token needs to be created for this policy. Please follow the guide here: [creating and managing credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm). You can either create a service account or use your refresh token. You will need the following rights:
+An oauth2.0 token needs to be created for this policy. Please follow the guide here: [creating and managing credentials](https://docs.flexera.com/flexera/EN/Automation/GenericCredentials.htm#automationadmin_109256743_1121393).
 
-- View Cloud Costs
+You can either create a service account or use your refresh token:
+
+- [Refresh Token](https://docs.flexera.com/flexera/EN/FlexeraAPI/GenerateRefreshToken.htm)
+- [Service Account](https://developer.flexera.com/docs/api/iam/v1#/Service%20Account/Service%20Account%23Create)
 
 Provider tag value to match this policy: `flexera`.
+
+You will need the following rights:
+
+- View Cloud Costs
 
 #### AWS
 
