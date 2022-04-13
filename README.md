@@ -257,6 +257,7 @@ Reference
 ###### CIS Policies
 
 - [Azure Ensure SQL Server Auditing Enabled](./security/azure/sql_server_auditing/)
+- [Azure Ensure SQL Server Vulnerability Assessment (VA) Enabled](./security/azure/sql_server_va/)
 
 ##### Web Apps
 
