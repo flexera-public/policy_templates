@@ -257,6 +257,8 @@ Reference
 ###### CIS Policies
 
 - [Azure Ensure SQL Server Auditing Enabled](./security/azure/sql_server_auditing/)
+- [Azure Ensure SQL Server VA Email Notifications](./security/azure/sql_server_va_emails/)
+- [Azure Ensure SQL Server VA Notify Admins/Subscription Owners](./security/azure/sql_server_va_admins/)
 
 ##### Web Apps
 
