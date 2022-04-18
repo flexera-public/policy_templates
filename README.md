@@ -256,6 +256,7 @@ Reference
 
 ###### CIS Policies
 
+- [Azure Ensure Correct PostgreSQL Servers Log Settings](./security/azure/pg_log_settings/)
 - [Azure Ensure SQL Server Auditing Enabled](./security/azure/sql_server_auditing/)
 - [Azure Ensure SQL Server Vulnerability Assessment (VA) Enabled](./security/azure/sql_server_va/)
 
