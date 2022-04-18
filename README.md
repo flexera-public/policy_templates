@@ -257,6 +257,8 @@ Reference
 ###### CIS Policies
 
 - [Azure Ensure SQL Database Encryption](./security/azure/sql_db_encryption/)
+- [Azure Ensure SQL Server Auditing Enabled](./security/azure/sql_server_auditing/)
+- [Azure Ensure SQL Server Vulnerability Assessment (VA) Enabled](./security/azure/sql_server_va/)
 
 ##### Web Apps
 
@@ -270,9 +272,12 @@ Reference
 
 - [Azure Ensure Storage Account Default Network Access Set To Deny](./security/azure/storage_network_deny/)
 - [Azure Ensure Blob Containers Set To Private](./security/azure/private_blob_containers/)
+- [Azure Ensure Storage Logging Enabled For Blob Service](./security/azure/blob_storage_logging/)
 - [Azure Ensure Storage Logging Enabled For Queue Service](./security/azure/queue_storage_logging/)
+- [Azure Ensure Storage Logging Enabled For Table Service](./security/azure/table_storage_logging/)
 - [Azure Ensure Secure Transfer Required](./security/azure/secure_transfer_required/)
 - [Azure Ensure Soft Delete Enabled For Azure Storage](./security/azure/storage_soft_delete/)
+- [Azure Ensure Storage Accounts Require Secure TLS Version](./security/azure/storage_tls_version/)
 - [Azure Ensure Trusted Microsoft Services Enabled](./security/azure/storage_trusted_services/)
 
 ##### Security
