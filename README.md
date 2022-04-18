@@ -258,6 +258,7 @@ Reference
 
 - [Azure Ensure SQL Server Auditing Enabled](./security/azure/sql_server_auditing/)
 - [Azure Ensure SQL Server VA Periodic Scans Enabled](./security/azure/sql_server_va_scans/)
+- [Azure Ensure SQL Server Vulnerability Assessment (VA) Enabled](./security/azure/sql_server_va/)
 
 ##### Web Apps
 
