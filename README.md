@@ -256,6 +256,7 @@ Reference
 
 ###### CIS Policies
 
+- [Azure Ensure MySQL Servers Enforce SSL Connections](./security/azure/mysql_ssl/)
 - [Azure Ensure SQL Server Auditing Enabled](./security/azure/sql_server_auditing/)
 - [Azure Ensure SQL Server Vulnerability Assessment (VA) Enabled](./security/azure/sql_server_va/)
 
