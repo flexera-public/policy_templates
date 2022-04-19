@@ -256,6 +256,7 @@ Reference
 
 ###### CIS Policies
 
+- [Azure Ensure MySQL Flexible Servers Use Secure TLS](./security/azure/mysql_tls_version/)
 - [Azure Ensure PostgreSQL Servers Connection Throttling Enabled](./security/azure/pg_conn_throttling/)
 - [Azure Ensure SQL Server Auditing Enabled](./security/azure/sql_server_auditing/)
 - [Azure Ensure SQL Server Vulnerability Assessment (VA) Enabled](./security/azure/sql_server_va/)
