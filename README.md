@@ -256,8 +256,9 @@ Reference
 
 ###### CIS Policies
 
-- [Azure Ensure SQL Database Encryption](./security/azure/sql_db_encryption/)
+- [Azure Ensure MySQL Flexible Servers Use Secure TLS](./security/azure/mysql_tls_version/)
 - [Azure Ensure SQL Server Auditing Enabled](./security/azure/sql_server_auditing/)
+- [Azure Ensure SQL Database Encryption](./security/azure/sql_db_encryption/)
 - [Azure Ensure SQL Server Vulnerability Assessment (VA) Enabled](./security/azure/sql_server_va/)
 
 ##### Web Apps
