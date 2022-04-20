@@ -1,4 +1,4 @@
-# Azure Ensure SQL Servers AD Admin Configured
+# Azure Ensure SQL Server AD Admin Configured
 
 ## What it does
 
