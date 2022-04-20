@@ -1,16 +1,21 @@
 # Changelog
 
+## v2.9
+
+- Added the following attributes to policy output: instanceFlexibilityGroup, instanceFlexibilityRatio, normalizedSize, recommendedQuantityNormalized
+- Fixed indentation to make consistent
+
 ## v2.8
 
-- added subscription name field
+- Added subscription name field
 
 ## v2.7
 
-- updated README.md rightscale documentation links with docs.flexera documentation links
+- Updated README.md rightscale documentation links with docs.flexera documentation links
 
 ## v2.6
 
-- updated policy to only pull from first subscription to avoid duplicate data. this will fix the shared repeating data
+- Updated policy to only pull from first subscription to avoid duplicate data. this will fix the shared repeating data
 
 ## v2.5
 
