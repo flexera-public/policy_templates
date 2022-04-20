@@ -257,7 +257,7 @@ Reference
 ###### CIS Policies
 
 - [Azure Ensure SQL Server Auditing Enabled](./security/azure/sql_server_auditing/)
-- [Azure Ensure SQL Servers Have AD Admin Configured](./security/azure/sql_ad_admin/)
+- [Azure Ensure SQL Server AD Admin Configured](./security/azure/sql_ad_admin/)
 - [Azure Ensure SQL Server Vulnerability Assessment (VA) Enabled](./security/azure/sql_server_va/)
 
 ##### Web Apps
