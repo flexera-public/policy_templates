@@ -1,4 +1,4 @@
-# Straight-Line Forecasting (Simple Model) Policy
+# Straight-Line Forecasting (Simple Model)
 
 ## What it does
 
