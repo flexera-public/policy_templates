@@ -1,4 +1,4 @@
-# Straight-Line Forecasting (Linear Regression Model) Policy
+# Straight-Line Forecasting (Linear Regression Model)
 
 ## What it does
 
