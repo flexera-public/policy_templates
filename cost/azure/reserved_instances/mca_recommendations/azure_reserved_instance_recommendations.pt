@@ -7,15 +7,15 @@ severity "medium"
 category "Cost"
 default_frequency "daily"
 info(
-  version: "2.8",
+  version: "2.9",
   provider: "Azure",
   service: "Compute",
   policy_set: "Reserved Instance"
 )
 
-##################
-# User inputs    #
-##################
+###############################################################################
+# Parameters
+###############################################################################
 
 parameter "param_days" do
   category "RI"
@@ -157,6 +157,10 @@ datasource "ds_ri_recommendations" do
       field "subscriptionId", val(iter_item,"subscriptionId")
       field "service", val(iter_item,"service")
       field "subscriptionName", val(iter_item,"subscriptionName")
+      field "instanceFlexibilityGroup", jmes_path(col_item,"properties.instanceFlexibilityGroup")
+      field "instanceFlexibilityRatio", jmes_path(col_item,"properties.instanceFlexibilityRatio")
+      field "normalizedSize", jmes_path(col_item,"properties.normalizedSize")
+      field "recommendedQuantityNormalized", jmes_path(col_item,"properties.recommendedQuantityNormalized")
     end
   end
 end
@@ -173,19 +177,19 @@ script "js_filtered_subscriptions", type: "javascript" do
   parameters "ds_subscriptions", "param_subscription_whitelist"
   result "results"
   code <<-EOS
-  var results = []
-  if ( param_subscription_whitelist.length != 0){
-    results = []
-    _.each(param_subscription_whitelist, function(sub){
-      var found = _.find(ds_subscriptions, function(item){
-        return item.subscriptionId == sub || item.subscriptionName.toLowerCase() == sub.toLowerCase();
+    var results = []
+    if ( param_subscription_whitelist.length != 0){
+      results = []
+      _.each(param_subscription_whitelist, function(sub){
+        var found = _.find(ds_subscriptions, function(item){
+          return item.subscriptionId == sub || item.subscriptionName.toLowerCase() == sub.toLowerCase();
+        })
+        results.push(found)
       })
-      results.push(found)
-    })
-  } else {
-    results = ds_subscriptions
-  }
-EOS
+    } else {
+      results = ds_subscriptions
+    }
+  EOS
 end
 
 script "js_ri_types", type: "javascript" do
@@ -225,22 +229,22 @@ script "js_ri_request", type: "javascript" do
     var scope_str="'"+param_scope+"'";
     var type_str="'"+param_type+"'";
     var request = {
-    auth: "azure_auth",
-    pagination: "azure_pagination",
-    host: param_azure_endpoint,
-    /*
-      {"code":"400","message":"Cost management data is unavailable for subscription XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX. The offer MS-AZR-0243P is not supported."}
-      {"code":"404","message":"Cost Management supports only Enterprise Agreement, Web direct and Microsoft Customer Agreement offer types. Subscription XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX is not associated with a valid offer type."}
-    */
-    ignore_status: [400,404],
-    path: "/subscriptions/"+subscriptionId+"/providers/Microsoft.Consumption/reservationRecommendations",
-    query_params: {
-        "api-version": "2021-10-01",
-        "$filter": "properties/resourceType eq "+ type_str +" and properties/scope eq "+ scope_str + " and properties/lookBackPeriod eq "+quote_str
-    },
-    headers: {
-        "User-Agent": "RS Policies"
-    }
+      auth: "azure_auth",
+      pagination: "azure_pagination",
+      host: param_azure_endpoint,
+      /*
+        {"code":"400","message":"Cost management data is unavailable for subscription XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX. The offer MS-AZR-0243P is not supported."}
+        {"code":"404","message":"Cost Management supports only Enterprise Agreement, Web direct and Microsoft Customer Agreement offer types. Subscription XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX is not associated with a valid offer type."}
+      */
+      ignore_status: [400,404],
+      path: "/subscriptions/"+subscriptionId+"/providers/Microsoft.Consumption/reservationRecommendations",
+      query_params: {
+          "api-version": "2021-10-01",
+          "$filter": "properties/resourceType eq "+ type_str +" and properties/scope eq "+ scope_str + " and properties/lookBackPeriod eq "+quote_str
+      },
+      headers: {
+          "User-Agent": "RS Policies"
+      }
     }
   EOS
 end
@@ -276,6 +280,10 @@ script "js_ri_normalization", type: "javascript" do
         netSavings: (Math.round(reco["netSavings"] * 100) / 100).toString(10),
         firstUsageDate: reco["firstUsageDate"]
         meterId: reco["meterId"],
+        instanceFlexibilityGroup: reco["instanceFlexibilityGroup"],
+        instanceFlexibilityRatio: reco["instanceFlexibilityRatio"],
+        normalizedSize: reco["normalizedSize"],
+        recommendedQuantityNormalized: reco["recommendedQuantityNormalized"]
       })
     })
 
@@ -338,6 +346,18 @@ policy "azure_ri_recommendations" do
       field "id" do
         label "Resource MeterID"
         path "meterId"
+      end
+      field "instanceFlexibilityGroup" do
+        label "instanceFlexibilityGroup"
+      end
+      field "instanceFlexibilityRatio" do
+        label "instanceFlexibilityRatio"
+      end
+      field "normalizedSize" do
+        label "normalizedSize"
+      end
+      field "recommendedQuantityNormalized" do
+        label "recommendedQuantityNormalized"
       end
     end
   end
