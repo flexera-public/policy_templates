@@ -2,7 +2,7 @@
 
 ## What it does
 
-This Policy uses Optima to determine a forecast for a Billing Center or the entire Organization. The policy uses the specified previous number of months, not including the current month to determine a straight-line forecast using a simple model. For a more sophisticated model of straight-line forecasting see [Straight-Line Forecast (Linear Regression Model)](./cost/forecasting/straight_line_forecast/linear_regression/).
+This Policy uses Optima to determine a forecast for a Billing Center or the entire Organization. The policy uses the specified previous number of months, not including the current month to determine a straight-line forecast using a simple model.
 
 ## Functional Details
 
