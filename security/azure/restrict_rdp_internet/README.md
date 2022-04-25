@@ -1,12 +1,12 @@
-# Azure Network Security Groups with inbound 3389 open
+# Azure Network Security Groups With Inbound 3389 Open
 
 ## What it does
 
-This policy checks all azure subscriptions for Network Security Groups that have 3389 open to the internet.
+This policy checks all Azure subscriptions for Network Security Groups that have 3389 open to the internet. An incident is raised with the offending Network Security Groups if any are found with port 3389 open."
 
 ## Functional Details
 
-The policy leverages the Azure API to identify the network security groups which have port 3389 or a port range containing 3389 open to the internet and produces a report on them.
+This policy connects to the Azure Resource Manager API to get a list of Network Security Groups. It then checks the rules field of each group to see if any rules are open inbound on port 3389
 
 ## Input Parameters
 
