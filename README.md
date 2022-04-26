@@ -46,7 +46,8 @@ Reference
 
 ##### Forecasting
 
-- [Straight-Line Forecast](./cost/forecasting/straight_line_forecast/)
+- [Straight-Line Forecast (Simple Model)](./cost/forecasting/straight_line_forecast/simple/)
+- [Straight-Line Forecast (Linear Regression Model)](./cost/forecasting/straight_line_forecast/linear_regression/)
 - [Moving Average](./cost/forecasting/moving_average/)
 - [Vendor Commitment Forecast](./cost/forecasting/commitment_forecast/)
 
