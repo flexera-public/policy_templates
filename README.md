@@ -285,7 +285,7 @@ Reference
 - [Azure Ensure Owners Receive Security Alerts](./security/azure/security_alert_owners/)
 - [Azure Ensure High Severity Alerts](./security/azure/high_severity_alerts/)
 - [Azure Ensure Security Contact Email](./security/azure/security_contact_email/)
-- [Azure Network Security Groups With Inbound 3389 Open] (./security/azure/restrict_rdp_internet/)
+- [Azure Network Security Groups With Inbound RDP Open] (./security/azure/restrict_rdp_internet/)
 
 #### Google
 

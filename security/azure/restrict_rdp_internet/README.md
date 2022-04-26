@@ -1,4 +1,4 @@
-# Azure Network Security Groups With Inbound 3389 Open
+# Azure Network Security Groups With Inbound RDP Open
 
 ## What it does
 
