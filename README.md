@@ -286,7 +286,7 @@ Reference
 - [Azure Ensure High Severity Alerts](./security/azure/high_severity_alerts/)
 - [Azure Ensure Security Contact Email](./security/azure/security_contact_email/)
 - [Azure Ensure that RDP access is restricted from the internet] (./security/azure/restrict_rdp_internet)
-- [Azure ensure that SSH access is restricted from the internet] (./security/azure/restrict_ssh_internet)
+- [Azure Network Security Groups With Inbound SSH Open] (./security/azure/restrict_ssh_internet/)
 
 #### Google
 
