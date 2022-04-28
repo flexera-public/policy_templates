@@ -1,8 +1,8 @@
-# Straight-Line Forecasting Policy
+# Straight-Line Forecasting (Simple Model)
 
 ## What it does
 
-This Policy uses Optima to determine a forecast for a Billing Center or the entire Organization. The policy uses the specified previous number of months, not including the current month to determine a straight-line forecast.
+This Policy uses Optima to determine a forecast for a Billing Center or the entire Organization. The policy uses the specified previous number of months, not including the current month to determine a straight-line forecast using a simple model.
 
 ## Functional Details
 

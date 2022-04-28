@@ -46,7 +46,8 @@ Reference
 
 ##### Forecasting
 
-- [Straight-Line Forecast](./cost/forecasting/straight_line_forecast/)
+- [Straight-Line Forecast (Simple Model)](./cost/forecasting/straight_line_forecast/simple/)
+- [Straight-Line Forecast (Linear Regression Model)](./cost/forecasting/straight_line_forecast/linear_regression/)
 - [Moving Average](./cost/forecasting/moving_average/)
 - [Vendor Commitment Forecast](./cost/forecasting/commitment_forecast/)
 
@@ -256,7 +257,14 @@ Reference
 
 ###### CIS Policies
 
+- [Azure Ensure MySQL Flexible Servers Use Secure TLS](./security/azure/mysql_tls_version/)
+- [Azure Ensure MySQL Servers Enforce SSL Connections](./security/azure/mysql_ssl/)
+- [Azure Ensure PostgreSQL Servers Infrastructure Encryption](./security/azure/pg_infra_encryption/)
 - [Azure Ensure SQL Server Auditing Enabled](./security/azure/sql_server_auditing/)
+- [Azure Ensure SQL Server AD Admin Configured](./security/azure/sql_ad_admin/)
+- [Azure Ensure SQL Server VA Email Notifications](./security/azure/sql_server_va_emails/)
+- [Azure Ensure SQL Server VA Notify Admins/Subscription Owners](./security/azure/sql_server_va_admins/)
+- [Azure Ensure SQL Server Vulnerability Assessment (VA) Enabled](./security/azure/sql_server_va/)
 
 ##### Web Apps
 
@@ -285,8 +293,8 @@ Reference
 - [Azure Ensure Owners Receive Security Alerts](./security/azure/security_alert_owners/)
 - [Azure Ensure High Severity Alerts](./security/azure/high_severity_alerts/)
 - [Azure Ensure Security Contact Email](./security/azure/security_contact_email/)
-- [Azure Network Security Groups With Inbound RDP Open] (./security/azure/restrict_rdp_internet/)
-- [Azure Network Security Groups With Inbound SSH Open] (./security/azure/restrict_ssh_internet/)
+- [Azure Network Security Groups With Inbound RDP Open](./security/azure/restrict_rdp_internet/)
+- [Azure Network Security Groups With Inbound SSH Open](./security/azure/restrict_ssh_internet/)
 
 #### Google
 
