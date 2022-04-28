@@ -2,7 +2,7 @@
 
 ## What it does
 
-This policy checks all azure subscriptions for Network Security Groups that have SSH (22) open to the internet. An incident is raised with the offending Network Security Groups if any are found with port 22 open.
+This policy checks all Azure subscriptions for Network Security Groups that have SSH (22) open to the internet. An incident is raised with the offending Network Security Groups if any are found with port 22 open.
 
 ## Functional Details
 
