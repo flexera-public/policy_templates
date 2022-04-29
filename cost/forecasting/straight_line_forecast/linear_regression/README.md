@@ -1,4 +1,4 @@
-# Straight-Line Forecasting (Linear Regression Model)
+# Straight-Line Forecast (Linear Regression Model)
 
 ## What it does
 
