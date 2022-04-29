@@ -1,4 +1,4 @@
-# Straight-Line Forecasting (Simple Model)
+# Straight-Line Forecast (Simple Model)
 
 ## What it does
 
