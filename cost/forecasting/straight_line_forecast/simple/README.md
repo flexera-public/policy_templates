@@ -1,8 +1,8 @@
-# Straight-Line Forecast (Simple Model)
+# Cloud Spend Forecast - Straight-Line (Simple Model)
 
 ## What it does
 
-This Policy uses Optima to determine a forecast for a Billing Center or the entire Organization. The policy uses the specified previous number of months, not including the current month to determine a straight-line forecast using a simple model.
+This Policy uses Optima to determine a cloud spend forecast for a Billing Center or the entire Organization. The policy uses the specified previous number of months, not including the current month to determine a straight-line forecast using a simple model.
 
 ## Functional Details
 
