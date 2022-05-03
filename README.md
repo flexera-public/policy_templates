@@ -295,6 +295,7 @@ Reference
 - [Azure Ensure Security Contact Email](./security/azure/security_contact_email/)
 - [Azure Network Security Groups With Inbound RDP Open](./security/azure/restrict_rdp_internet/)
 - [Azure Network Security Groups With Inbound SSH Open](./security/azure/restrict_ssh_internet/)
+- [Azure SQL Databases With Ingress 0.0.0.0/0](./security/azure/sql_no_ingress_any/)
 
 #### Google
 
