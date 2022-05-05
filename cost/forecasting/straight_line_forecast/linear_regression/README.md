@@ -1,8 +1,8 @@
-# Straight-Line Forecasting (Linear Regression Model)
+# Cloud Spend Forecast - Straight-Line (Linear Regression Model)
 
 ## What it does
 
-This Policy uses Optima to determine a forecast for a Billing Center or the entire Organization. The policy uses the specified previous number of months, not including the current month to to determine a straight-line forecast using a linear regression model.
+This Policy uses Optima to determine a cloud spend forecast for a Billing Center or the entire Organization. The policy uses the specified previous number of months, not including the current month to to determine a straight-line forecast using a linear regression model.
 
 ## Functional Details
 

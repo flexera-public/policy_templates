@@ -1,4 +1,4 @@
-# AWS Number of Instance vCPUs Used Policy Template
+# AWS Usage Report - Number of Instance vCPUs Used
 
 ## What it does
 
