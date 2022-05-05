@@ -1,16 +1,17 @@
-# Google Idle IP Address Recommender
+# Google Idle Persistent Disk Recommender
 
 ## What it does
 
-This Policy finds Idle IP Address Recommendations and reports when it finds them. You can then delete the idle addresses
+This Policy finds Idle Persistent Disk Recommendations and reports when it finds them. You can then delete the idle volumes
 
 ## Input Parameters
 
 This policy has the following input parameters required when launching the policy.
 
 - *Email addresses* - A list of email addresses to notify
-- *Region* - Location to check, it is specifically Google regions
+- *Region* - Location to check, it is specifically Google zones
 - *Project ID* - Google Projects to Query. Leave blank to query all projects.
+- *Unattached Days* - Days a volume has been unattached. Default is 30 days
 
 ## Policy Actions
 

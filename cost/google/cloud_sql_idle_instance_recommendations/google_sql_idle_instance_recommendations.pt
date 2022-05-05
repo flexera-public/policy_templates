@@ -1,15 +1,15 @@
-name "Google Idle IP Address Recommender"
+name "Google Cloud SQL Idle Instance Recommender"
 rs_pt_ver 20180301
 type "policy"
-short_description "This Policy finds Google Idle IP Address Recommendations and reports when it finds them. See the [README](https://github.com/flexera/policy_templates/tree/master/cost/google/recommender) and [docs.rightscale.com/policies](https://docs.rightscale.com/policies/) to learn more."
+short_description "This Policy finds Google Idle Cloud SQL Instance Recommendations and reports when it finds them. See the [README](https://github.com/flexera/policy_templates/tree/master/cost/google/recommender) and [docs.rightscale.com/policies](https://docs.rightscale.com/policies/) to learn more."
 category "Cost"
 severity "low"
 default_frequency "daily"
 info(
   version: "2.0",
-  provider:"Google",
-  service: "Network",
-  policy_set: "Native Recommendations"
+  provider:"GCE",
+  service: "SQL",
+  policy_set: "Unused Database Service"
 )
 
 ###############################################################################
@@ -113,25 +113,28 @@ datasource "ds_google_project" do
 end
 
 #https://cloud.google.com/compute/docs/reference/rest/v1/regions/list
-datasource "ds_regions_list" do
+datasource "ds_zones" do
   iterate $ds_google_project
   request do
     auth $auth_google
-    pagination $google_pagination
     host "compute.googleapis.com"
-    path join(["/compute/v1/projects/",val(iter_item, "accountID"),"/regions/"])
+    verb "GET"
+    path join(["/compute/v1/projects/", val(iter_item, "accountID"), "/zones"])
+    query "project", val(iter_item, "accountID")
+    pagination $google_pagination
     ignore_status [403,404]
   end
   result do
     encoding "json"
-      collect jmes_path(response, "items[*]") do
-      field "region", jmes_path(col_item, "name")
+    collect jmes_path(response,"items[*]") do
       field "accountID", val(iter_item, "accountID")
-      field "accountName", val(iter_item, "accountName")
       field "accountNumber", val(iter_item, "accountNumber")
+      field "accountName", val(iter_item, "accountName")
+      field "region", jmes_path(col_item, "name")
     end
   end
 end
+
 
 datasource "ds_recommenders" do
   run_script $js_recommenders, $ds_google_project, $param_project, $param_regions
@@ -163,40 +166,32 @@ datasource "ds_recommendations" do
   end
 end
 
-datasource "ds_addresses" do
-  iterate $ds_regions_list
+datasource "ds_get_sql_instances" do
+  iterate $ds_google_project
   request do
-    run_script $js_get_addresses, val(iter_item, "accountID"), val(iter_item, "region")
+    run_script $js_get_sql_instances, val(iter_item, "accountID")
   end
   result do
     encoding "json"
     collect jmes_path(response,"items[*]") do
-      field "resourceID", jmes_path(col_item,"address")
-      field "resourceType", jmes_path(col_item,"addressType")
-      field "creationTimestamp", jmes_path(col_item,"creationTimestamp")
-      field "description", jmes_path(col_item,"description")
-      field "id", jmes_path(col_item,"id")
-      field "resourceName", jmes_path(col_item,"name")
-      field "purpose", jmes_path(col_item,"purpose")
-      field "selfLink", jmes_path(col_item,"selfLink")
-      field "status", jmes_path(col_item,"status")
-      field "subnetwork", jmes_path(col_item,"subnetwork")
-      field "tags", jmes_path(col_item, "labels")
+      field "resourceName", jmes_path(col_item, "name")
+      field "state", jmes_path(col_item,"state")
+      field "selfLink", jmes_path(col_item, "selfLink")
+      field "tier", jmes_path(col_item, "settings.tier")
+      field "region", jmes_path(col_item, "region")
+      field "tags", jmes_path(col_item,"settings.userLabels")
       field "accountID", val(iter_item, "accountID")
-      field "accountName", val(iter_item, "accountName")
-      field "accountNumber", val(iter_item, "accountNumber")
-      field "resourceType", jmes_path(col_item, "kind")
-      field "region", val(iter_item, "region")
+      field "resourceType", val(col_item, "instanceType")
     end
   end
 end
 
-datasource "ds_sanitize_ips" do
-  run_script $js_sanitize_data, $ds_addresses, $param_exclude_tags
+datasource "ds_sanitize_sql_instances" do
+  run_script $js_sanitize_data, $ds_get_sql_instances, $param_exclude_tags
 end
 
-datasource "ds_ip_cost_mapping" do
-  run_script $js_instance_cost_mapping, $ds_sanitize_ips, $ds_recommendations, $ds_currency_reference
+datasource "ds_sql_cost_mapping" do
+  run_script $js_instance_cost_mapping, $ds_sanitize_sql_instances, $ds_recommendations, $ds_currency_reference
 end
 
 ###############################################################################
@@ -235,41 +230,37 @@ script "js_recommender_call", type: "javascript" do
     pagination: "google_pagination",
     host: "recommender.googleapis.com",
     ignore_status: 403,
-    path: "/v1/projects/"+ accountID +"/locations/" + region + "/recommenders/google.compute.address.IdleResourceRecommender/recommendations",
+    path: "/v1/projects/"+ accountID +"/locations/" + region + "/recommenders/google.cloudsql.instance.IdleRecommender/recommendations",
     query_strings: { alt: "json" }
   }
 EOF
 end
 
-script "js_get_addresses", type: "javascript" do
+script "js_get_sql_instances", type: "javascript" do
   result "request"
-  parameters "project","region"
+  parameters "accountID"
   code <<-EOS
     request = {
       "auth": "auth_google",
       "host": "www.googleapis.com",
       "verb": "GET",
-      "path": "/compute/beta/projects/"+project+"/regions/"+region+"/addresses",
-      "ignore_status": [403,404]
+      "path": "/sql/v1beta4/projects/"+accountID+"/instances",
       "headers": {
         "User-Agent": "RS Policies",
         "Content-Type": "application/json"
       }
-      //check this
-      "query_params": {
-        "filter": '(status != "IN_USE") AND (addressType != "INTERNAL")'
-      }
+      "ignore_status": [403,404]
     }
   EOS
 end
 
 script "js_sanitize_data", type: "javascript" do
   result "results"
-  parameters "ds_addresses", "param_exclude_tags"
+  parameters "databases", "param_exclude_tags"
   code <<-EOS
     label_key = param_exclude_tags.split(':')[0]
     label_value = param_exclude_tags.split(':')[1]
-    results = _.filter(ds_addresses, function(data){
+    results = _.filter(databases, function(data){
       if ( data.resourceID != null ){
         if ( data.tags != null && data.tags !== undefined ){
           if ( data.tags[label_key] != null && data.tags[label_key] !== undefined ){
@@ -290,7 +281,7 @@ end
 
 script "js_instance_cost_mapping", type:"javascript" do
   result "result"
-  parameters  "addresses", "recommendations", "ds_currency_reference"
+  parameters  "databases", "recommendations", "ds_currency_reference"
   code <<-EOS
     var instances = [];
     var result={};
@@ -316,9 +307,9 @@ script "js_instance_cost_mapping", type:"javascript" do
     }
     total = 0
     cur = ""
-    _.each(addresses, function(address) {
+    _.each(databases, function(database) {
       _.each(recommendations, function(recommendation){
-        if(address.resourceName == recommendation.resourceName) {
+        if(database.resourceName == recommendation.resourceName) {
           count++
           if(recommendation['currency'] !== undefined ) {
             if (ds_currency_reference[recommendation['currency']] !== undefined ) {
@@ -326,7 +317,7 @@ script "js_instance_cost_mapping", type:"javascript" do
             } else {
               var cur = "$"
             }
-            address['savingsCurrency'] = cur
+            database['savingsCurrency'] = cur
           } else {
             var cur = "$"
             var separator = ","
@@ -342,21 +333,24 @@ script "js_instance_cost_mapping", type:"javascript" do
           monthsDuration = parseFloat(recommendation.duration.replace("s",""))/2628288
           monthlySavings = combine / monthsDuration
           total = total+monthlySavings
-          address['savings']= (Math.round( monthlySavings * 1000) / 1000)
-          address['savingsCurrency'] = cur
-          address['priority'] = recommendation['priority']
-          address['primaryImpact'] = recommendation['primaryImpact']
-          address['recommenderSubtype'] = recommendation['recommenderSubtype']
-          address['state'] = recommendation['state']
-          address['service'] = "Network"
+          database['savings']= (Math.round( monthlySavings * 1000) / 1000)
+          database['savingsCurrency'] = cur
+          database['accountNumber'] = recommendation['accountNumber']
+          database['accountName'] = recommendation['accountName']
+          database['priority'] = recommendation['priority']
+          database['primaryImpact'] = recommendation['primaryImpact']
+          database['recommenderSubtype'] = recommendation['recommenderSubtype']
+          database['state'] = recommendation['state']
+          database['region'] = recommendation['region']
+          database['service'] = "SQL"
           tags = []
-          if (address['tags'] != null) {
-            Object.keys(address.tags).forEach(function(key) {
-              tags.push(key+'='+address.tags[key])
+          if (database['tags'] != null) {
+            Object.keys(database.tags).forEach(function(key) {
+              tags.push(key+'='+database.tags[key])
             });
           }
-          address['tags'] = tags
-          instances.push(address)
+          database['tags'] = tags
+          instances.push(database)
         }
       })
     })
@@ -384,11 +378,10 @@ end
 ###############################################################################
 
 policy "policy_recommendations" do
-  validate $ds_ip_cost_mapping do
-    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} rows found for Idle IP Addresses"
+  validate $ds_sql_cost_mapping do
+    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} rows found for Idle Cloud SQL Instances"
     check eq(size(val(data, "instances")), 0)
     escalate $esc_email
-    escalate $approve_delete_addresses
     export "instances" do
       resource_level true
       field "accountID" do
@@ -415,9 +408,6 @@ policy "policy_recommendations" do
       field "tags" do
         label "Tags"
       end
-      field "description" do
-        label "Description"
-      end
       field "service" do
         label "Service"
       end
@@ -438,6 +428,7 @@ policy "policy_recommendations" do
       end
       field "id" do
         label "ID"
+        path "accountID"
       end
     end
   end
@@ -454,55 +445,6 @@ escalation "esc_email" do
   email $param_email
 end
 
-escalation "approve_delete_addresses" do
-  automatic contains($param_automatic_action, "Delete IP Addresses")
-  label "Delete IP Addresses"
-  description "Approval to delete all selected IP addresses"
-  run "delete_addresses", data, $param_log_to_cm_audit_entries
-end
-
 ###############################################################################
 # Cloud Workflow
 ###############################################################################
-
-# https://cloud.google.com/compute/docs/reference/rest/v1/addresses/delete
-define delete_addresses($data,$param_log_to_cm_audit_entries) return $all_responses do
-  $$debug = $param_log_to_cm_audit_entries == "Yes"
-  $all_responses = []
-  $syslog_subject = "Google Idle IP Addresses: "
-  call sys_log(join([$syslog_subject, "Identified Addresses"]),to_s($data))
-  foreach $item in $data do
-    sub on_error: handle_error($response) do
-      $response = http_delete(
-        url: $item["selfLink"],
-        auth: $$auth_google,
-        headers: {
-          "cache-control": "no-cache",
-          "content-type": "application/json"
-        }
-      )
-      $all_responses << $response
-    end
-  end
-  call sys_log(join([$syslog_subject, "Responses"]),to_s($all_responses))
-end
-
-define handle_error($response) do
-  $status_code = $response["code"]
-  $syslog_subject = "Google Idle IP Addresses Deletion Error: "
-  call sys_log(join([$syslog_subject, $status_code]),to_s($response))
-  $_error_behavior = "skip"
-end
-
-define sys_log($subject, $detail) do
-  if $$debug
-    rs_cm.audit_entries.create(
-      notify: "None",
-      audit_entry: {
-        auditee_href: @@account,
-        summary: $subject,
-        detail: $detail
-      }
-    )
-  end
-end

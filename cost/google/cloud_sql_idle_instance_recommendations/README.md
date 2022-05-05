@@ -1,8 +1,8 @@
-# Google Idle IP Address Recommender
+# Google Idle Persistent Disk Recommender
 
 ## What it does
 
-This Policy finds Idle IP Address Recommendations and reports when it finds them. You can then delete the idle addresses
+This Policy finds Idle Cloud SQL Instance Recommendations and reports when it finds them. You can then delete the idle volumes
 
 ## Input Parameters
 
@@ -33,7 +33,7 @@ Provider tag value to match this policy: `gce`
 Required permissions in the provider:
 
 - The `resourcemanager.projects.get` permission
-- The `roles/recommender.computeAdmin` role
+- The `roles/recommender.cloudsqlAdmin` role
 
 ## Supported Clouds
 
