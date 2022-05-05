@@ -14,8 +14,8 @@ This Policy uses Optima to determine a view of total savings realized from using
 
 This policy has the following input parameters required when launching the policy.
 
-- *Period Start Date* - The starting month of the historical data to analyze
-- *Period End Date* - The ending month of the historical data to analyze
+- *Period Start Date* - The starting month of the historical data to analyze (in YYYY-MM format e.g., "2021-10")
+- *Period End Date* - The ending month of the historical data to analyze (in YYYY-MM format)
 - *Email addresses* - A list of email addresses to notify
 
 ## Required CMP Roles
