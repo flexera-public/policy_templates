@@ -1,4 +1,4 @@
-# AWS Number of Instance Hours Used Policy Template
+# AWS Usage Report - Number of Instance Hours Used
 
 ## What it does
 
