@@ -1,4 +1,4 @@
-# Google Idle Persistent Disk Recommender
+# Google Idle VM Recommender
 
 ## What it does
 
