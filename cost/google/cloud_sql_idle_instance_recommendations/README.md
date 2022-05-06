@@ -1,4 +1,4 @@
-# Google Idle Persistent Disk Recommender
+# Google Cloud SQL Idle Instance Recommender
 
 ## What it does
 
