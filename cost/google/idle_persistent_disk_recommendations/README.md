@@ -9,7 +9,7 @@ This Policy finds Idle Persistent Disk Recommendations and reports when it finds
 This policy has the following input parameters required when launching the policy.
 
 - *Email addresses* - A list of email addresses to notify
-- *Region* - Location to check, it is specifically Google zones
+- *Zone* - Location to check, it is specifically Google zones
 - *Project ID* - Google Projects to Query. Leave blank to query all projects.
 - *Unattached Days* - Days a volume has been unattached. Default is 30 days
 
