@@ -124,21 +124,24 @@ Reference
 
 - [Google Inefficient Instance Utilization using StackDriver](./cost/google/instances_stackdriver_utilization/)
 - [Google Committed Use Discount (CUD)](./cost/google/cud_report/)
-- [Google Committed Use Discount Recommendations (CUD)](./cost/google/cud_recommendations/)
+- [Google Committed Use Discount Recommender (CUD)](./cost/google/cud_recommendations/)
 - [Google Idle Compute Instances](./cost/google/idle_compute_instances/)
 - [Google Expiring Committed Use Discount (CUD)](./cost/google/cud_expiration/)
 - [Google Schedule Instance](./cost/google/schedule_instance/)
+- [Google Idle VM Recommender](./cost/google/idle_vm_recommendations)
 
 ##### Database
 
 - [Google Unused CloudSQL Instances](./cost/google/unused_cloudsql_instances)
 - [Google Rightsize CloudSQL Instances](./cost/google/cloudsql_rightsizing/)
+- [Google Cloud SQL Idle Instance Recommender](./cost/google/cloud_sql_idle_instance_recommendations)
 
 ##### Storage
 
 - [Google Object Storage Optimization](./cost/google/object_storage_optimization/)
 - [Google Old Snapshots](./cost/google/old_snapshots/)
 - [Google Unused Volumes](./cost/google/unattached_volumes/)
+- [Google Idle Persistent Disk Recommender"](./cost/google/idle_persistent_disk_recommendations)
 
 ##### Native Recommendations
 
@@ -147,6 +150,7 @@ Reference
 ##### Other
 
 - [Google Unutilized IP Addresses](./cost/google/unutilized_ip_addresses/)
+- [Google Idle IP Address Recommender](./cost/google/idle_ip_address_recommendations)
 
 ### Security
 

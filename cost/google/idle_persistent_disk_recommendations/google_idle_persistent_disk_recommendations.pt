@@ -1,0 +1,640 @@
+name "Google Idle Persistent Disk Recommender"
+rs_pt_ver 20180301
+type "policy"
+short_description "This Policy finds Google Idle Persistent Disk Recommendations and reports when it finds them. See the [README](https://github.com/flexera/policy_templates/tree/master/cost/google/idle_persistent_disk_recommendations) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+category "Cost"
+severity "low"
+default_frequency "daily"
+info(
+  version: "2.0",
+  provider:"Google",
+  service: "Storage",
+  policy_set: "Unused Volumes"
+)
+
+###############################################################################
+# Parameters
+###############################################################################
+
+parameter "param_email" do
+  type "list"
+  label "Email addresses to notify"
+  description "Email addresses of the recipients you wish to notify when new incidents are created"
+end
+
+parameter "param_unattached_days" do
+  type "number"
+  label "Unattached days"
+  description "The number of days a volume has been unattached"
+  default 30
+end
+
+parameter "param_zones" do
+  type "list"
+  label "Zones"
+  description "Location to check, this is zone names"
+end
+
+parameter "param_project" do
+  type "list"
+  label "Project ID"
+  description "Google Projects to Query. Leave blank to query all projects."
+end
+
+parameter "param_create_final_snapshot" do
+  label "Create Final Snapshot"
+  description "Boolean for whether or not to take a final snapshot before deleting"
+  type "string"
+  allowed_values "true", "false"
+end
+
+parameter "param_exclude_tags" do
+  category "User Inputs"
+  label "Exclusion Tag Key:Value"
+  description "Cloud native tag (label) to ignore Volumes. Format: Key:Value"
+  type "string"
+  allowed_pattern /(^$)|([\w]?)+\:([\w]?)/
+end
+
+parameter "param_automatic_action" do
+  type "list"
+  label "Automatic Actions"
+  description "When this value is set, this policy will automatically take the selected action(s)"
+  allowed_values ["Delete Volumes"]
+end
+
+parameter "param_log_to_cm_audit_entries" do
+  type "string"
+  label "Log to CM Audit Entries"
+  description "Boolean for whether or not to log any debugging information from actions to CM Audit Entries, this should be left set to No on Flexera EU"
+  default "No"
+  allowed_values "Yes", "No"
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+# authenticate with Google
+credentials "auth_google" do
+  schemes "oauth2"
+  label "Google"
+  description "Select the Google Cloud Credential from the list."
+  tags "provider=gce"
+end
+
+###############################################################################
+# Pagination
+###############################################################################
+
+pagination "google_pagination" do
+  get_page_marker do
+    body_path "nextPageToken"
+  end
+  set_page_marker do
+    query "pageToken"
+  end
+end
+
+###############################################################################
+# Datasources
+###############################################################################
+
+datasource "ds_currency_reference" do
+  request do
+    host "raw.githubusercontent.com"
+    path "/rightscale/policy_templates/master/cost/scheduled_reports/currency_reference.json"
+    header "User-Agent", "RS Policies"
+  end
+end
+
+#get all google project
+datasource "ds_google_project" do
+  request do
+    auth $auth_google
+    pagination $google_pagination
+    host "cloudresourcemanager.googleapis.com"
+    path "/v1/projects/"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "projects[*]") do
+      field "accountNumber", jmes_path(col_item,"projectNumber")
+      field "accountID", jmes_path(col_item,"projectId")
+      field "accountName", jmes_path(col_item,"name")
+    end
+  end
+end
+
+datasource "ds_recommenders" do
+  run_script $js_recommenders, $ds_google_project, $param_project, $param_zones
+end
+
+datasource "ds_recommendations" do
+  iterate $ds_recommenders
+  request do
+    run_script $js_recommender_call, val(iter_item,"accountID"), val(iter_item, "region")
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "recommendations[*]") do
+      field "accountID", val(iter_item, "accountID")
+      field "region", val(iter_item, "region")
+      field "id", jmes_path(col_item, "name")
+      field "description", jmes_path(col_item, "description")
+      field "resourceName", jmes_path(col_item, "content.overview.resourceName")
+      field "primaryImpact", jmes_path(col_item, "primaryImpact")
+      field "costUnits", jmes_path(col_item, "primaryImpact.costProjection.cost.units")
+      field "costNanos", jmes_path(col_item, "primaryImpact.costProjection.cost.nanos")
+      field "duration", jmes_path(col_item, "primaryImpact.costProjection.duration")
+      field "currency", jmes_path(col_item, "primaryImpact.costProjection.cost.currencyCode")
+      field "priority", jmes_path(col_item, "priority")
+      field "recommenderSubtype", jmes_path(col_item, "recommenderSubtype")
+      field "state", jmes_path(col_item, "stateInfo.state")
+    end
+  end
+end
+
+#region in this context can be confusing. region is the spend api's definition of region, not GCP's. this is still technically GCP's "Zone"
+datasource "ds_zones" do
+  iterate $ds_google_project
+  request do
+    auth $auth_google
+    host "compute.googleapis.com"
+    verb "GET"
+    path join(["/compute/v1/projects/", val(iter_item, "accountID"), "/zones"])
+    query "project", val(iter_item, "accountID")
+    pagination $google_pagination
+    ignore_status [403,404]
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response,"items[*]") do
+      field "accountID", val(iter_item, "accountID")
+      field "accountNumber", val(iter_item, "accountNumber")
+      field "accountName", val(iter_item, "accountName")
+      field "region", jmes_path(col_item, "name")
+    end
+  end
+end
+
+datasource "ds_volumes" do
+  iterate $ds_zones
+  request do
+    run_script $js_get_disks, val(iter_item, "accountID"), val(iter_item, "region")
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response,"items[*]") do
+      field "accountID", val(iter_item, "accountID")
+      field "accountNumber", val(iter_item, "accountNumber")
+      field "accountName", val(iter_item, "accountName")
+      field "region", val(iter_item, "region")
+      field "selfLink", jmes_path(col_item,"selfLink")
+      field "resourceType", jmes_path(col_item, "kind")
+      field "resourceID", jmes_path(col_item, "id")
+      field "resourceName", jmes_path(col_item, "name")
+      field "diskSizeGb", jmes_path(col_item, "sizeGb")
+      field "status", jmes_path(col_item, "status")
+      field "lastAttachTimestamp", jmes_path(col_item, "lastAttachTimestamp")
+      field "lastDetachTimestamp", jmes_path(col_item, "lastDetachTimestamp")
+      field "creationTimestamp", jmes_path(col_item, "creationTimestamp")
+      field "tags", jmes_path(col_item, "labels")
+    end
+  end
+end
+
+datasource "ds_sanitize_disks" do
+  run_script $js_sanitize_data, $ds_volumes, $param_exclude_tags
+end
+
+datasource "ds_disk_cost_mapping" do
+  run_script $js_instance_cost_mapping, $ds_sanitize_disks, $ds_recommendations, $ds_currency_reference
+end
+
+###############################################################################
+# Scripts
+###############################################################################
+script "js_recommenders", type: "javascript" do
+  parameters "ds_google_project", "param_project", "param_regions"
+  result "results"
+  code <<-EOF
+  var results = []
+
+  _.each(ds_google_project, function(project){
+    if (_.contains(param_project, project.accountID) || param_project.length == 0) {
+      _.each(param_regions, function(region){
+        results.push({
+          accountNumber: project.accountNumber,
+          accountID: project.accountID,
+          region: region
+        })
+      })
+    }
+  })
+EOF
+end
+
+script "js_recommender_call", type: "javascript" do
+  parameters "accountID", "region"
+  result "request"
+  code <<-EOF
+  var now = new Date().getTime();
+  var sleepDuration = 10000
+  while(new Date().getTime() < now + sleepDuration){ /* Do nothing */ }
+  var request = {
+    auth: "auth_google",
+    pagination: "google_pagination",
+    host: "recommender.googleapis.com",
+    ignore_status: 403,
+    path: "/v1/projects/"+ accountID +"/locations/" + region + "/recommenders/google.compute.disk.IdleResourceRecommender/recommendations",
+    query_strings: { alt: "json" }
+  }
+EOF
+end
+
+script "js_get_disks", type: "javascript" do
+  result "request"
+  parameters "project","region"
+  code <<-EOS
+    request = {
+      "auth": "auth_google",
+      "host": "compute.googleapis.com",
+      "verb": "GET",
+      "path": "/compute/v1/projects/"+project+"/zones/"+region+"/disks",
+      "ignore_status": [403,404]
+      "headers": {
+        "User-Agent": "RS Policies",
+        "Content-Type": "application/json"
+      }
+    }
+  EOS
+end
+
+script "js_sanitize_data", type: "javascript" do
+  parameters "ds_volumes", "param_exclusion_tags"
+  result "filtered_volumes"
+  code <<-EOS
+  var sanitized_volumes = _.filter(ds_volumes, function(volume){
+    if (volume.selfLink != null && volume.selfLink !== undefined){
+      return volume
+    }
+  })
+  var volumes_to_check = _.filter(sanitized_volumes, function(volume){
+    if( (volume.lastDetachTimestamp != null)  && (volume.lastDetachTimestamp > volume.lastAttachTimestamp )){
+      return volume
+    }
+    if( volume.lastDetachTimestamp == null && volume.lastAttachTimestamp == null){
+      return volume
+    }
+  })
+
+  var tag_filter_volumes = _.filter(volumes_to_check, function(volume){
+    var count = 0
+    _.each(param_exclusion_tags, function(tag)
+      {
+        tag_key = tag.split(':')[0]
+        tag_value = tag.split(':')[1]
+        if (volume.tags != null && volume.tags !== undefined ){
+          if ( volume.tags[tag_key] != null && volume.tags[tag_key] !== undefined){
+            if (volume.tags[tag_key] == tag_value){
+              count = 1
+            }
+          }
+        }
+      }
+    )
+    if (count == 0){
+      var tagsList = "";
+      for(var prop in volume.tags){
+        tagsList = tagsList + prop+" : "+volume.tags[prop]+", ";
+      }
+      if(tagsList.length > 0){
+        volume.tags = tagsList.substring(0, tagsList.length - 2);
+      }
+      return volume
+    }
+  }
+  )
+  var now = new Date()
+  var one_day=1000*60*60*24
+  _.each(tag_filter_volumes, function(volume){
+    if (volume.lastDetachTimestamp != null && volume.lastDetachTimestamp !== undefined){
+      var creation_time = new Date(volume.lastDetachTimestamp)
+    } else {
+      var creation_time = new Date(volume.creationTimestamp)
+    }
+    var difference = now.getTime() - creation_time.getTime()
+    var daysOld=(difference/one_day).toFixed(2)
+    if (volume.lastAttachTimestamp == null) {
+      volume.lastAttachTimestamp = "null"
+    }
+    if (volume.lastDetachTimestamp == null) {
+      volume.lastDetachTimestamp = "null"
+    }
+    volume["daysOld"] = Math.round(daysOld)
+  }
+  )
+
+  var filtered_volumes = _(tag_filter_volumes)
+    .chain()
+    .sortBy(function(volume){
+      return volume.name;
+    }).sortBy(function(volume){
+      return volume.region;
+    }).value();
+  EOS
+end
+
+script "js_instance_cost_mapping", type:"javascript" do
+  result "result"
+  parameters  "disks", "recommendations", "ds_currency_reference"
+  code <<-EOS
+    var instances = [];
+    var result={};
+    var message=''
+    var count=0;
+
+    function formatNumber(number, separator){
+      var numString =number.toString();
+      var values=numString.split(".");
+      var result = ''
+      while (values[0].length > 3){
+        var chunk = values[0].substr(-3)
+        values[0] = values[0].substr(0, values[0].length - 3)
+        result = separator + chunk + result
+      }
+      if (values[0].length > 0){
+        result = values[0] + result
+      }
+      if(values[1]==undefined){
+        return result;
+      }
+      return result+"."+values[1];
+    }
+    total = 0
+    cur = ""
+    _.each(disks, function(disk) {
+      _.each(recommendations, function(recommendation){
+        if(disk.resourceName == recommendation.resourceName) {
+          count++
+          if(recommendation['currency'] !== undefined ) {
+            if (recommendation['costUnits'] == null) {
+              recommendation['costUnits'] = 0
+            }
+            if (recommendation['costNanos'] == null) {
+              recommendation['costNanos'] = 0
+            }
+            if (ds_currency_reference[recommendation['currency']] !== undefined ) {
+            var cur = ds_currency_reference[recommendation['currency']]['symbol']
+            } else {
+              var cur = "$"
+            }
+            disk['savingsCurrency'] = cur
+          } else {
+            var cur = "$"
+            var separator = ","
+          }
+          if (recommendation.costNanos<0) {
+            recommendation.costNanos = recommendation.costNanos * -1
+          }
+          if (recommendation.costUnits<0) {
+            recommendation.costUnits = recommendation.costUnits * -1
+          }
+          strNano = "."+recommendation.costNanos
+          combine = recommendation.costUnits + parseFloat(strNano)
+          monthsDuration = parseFloat(recommendation.duration.replace("s",""))/2628288
+          monthlySavings = combine / monthsDuration
+          total = total+monthlySavings
+          disk['savings']= (Math.round( monthlySavings * 1000) / 1000)
+          disk['savingsCurrency'] = cur
+          disk['priority'] = recommendation['priority']
+          disk['primaryImpact'] = recommendation['primaryImpact']
+          disk['recommenderSubtype'] = recommendation['recommenderSubtype']
+          disk['state'] = recommendation['state']
+          disk['service'] = "Storage"
+          tags = []
+          if (disk['tags'] != null) {
+            if( typeof disk['tags'] == 'object') {
+              Object.keys(disk.tags).forEach(function(key) {
+                if (disk.tags[key] == null || disk.tags[key]=="") {
+                  disk.tags[key] = "null"
+                }
+                tags.push(String(key)+'='+String(disk.tags[key]))
+              });
+            } else {
+              tags.push(disk["tags"].replace(":","=null"))
+            }
+          }
+          disk['tags'] = tags
+          instances.push(disk)
+        }
+      })
+    })
+    if (instances.length != 0){
+      if(count){
+        total=cur + ' '+formatNumber((Math.round(total * 100) / 100));
+        message="The total estimated monthly savings are " +total;
+      } else {
+        message="The Flexera Optima system does not have any data to calculate savings for these resources";
+      }
+    }else{
+      message="unable to find resources between recommender and resource api";
+    }
+    result={
+      "instances": instances,
+      "message": message
+    };
+    result.instances = _.sortBy(result.instances,"region");
+    result.instances = _.sortBy(result.instances,"accountName");
+  EOS
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "policy_recommendations" do
+  validate $ds_disk_cost_mapping do
+    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} rows found for Idle Persistent Disks(Unattached Volumes)"
+    check eq(size(val(data, "instances")), 0)
+    escalate $esc_email
+    escalate $esc_approve_delete_volumes
+    export "instances" do
+      resource_level true
+      field "accountID" do
+        label "Account ID"
+      end
+      field "accountNumber" do
+        label "Account Number"
+      end
+      field "accountName" do
+        label "Account Name"
+      end
+      field "resourceID" do
+        label "Resource ID"
+      end
+      field "resourceName" do
+        label "Resource Name"
+      end
+      field "resourceType" do
+        label "Resource Type"
+      end
+      field "region" do
+        label "Zone"
+      end
+      field "daysOld" do
+        label "Age In Days"
+      end
+      field "diskSizeGb" do
+        label "Size"
+      end
+      field "tags" do
+        label "Tags"
+      end
+      field "description" do
+        label "Description"
+      end
+      field "service" do
+        label "Service"
+      end
+      field "savingsCurrency" do
+        label "Currency"
+      end
+      field "priority" do
+        label "Priority"
+      end
+      field "recommenderSubtype" do
+        label "Sub Type"
+      end
+      field "state" do
+        label "State"
+      end
+      field "status" do
+        label "Status"
+      end
+      field "id" do
+        label "ID"
+        path "resourceID"
+      end
+      field "service" do
+        label "Service"
+      end
+    end
+  end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_email" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
+end
+
+escalation "esc_approve_delete_volumes" do
+  automatic contains($param_automatic_action, "Delete Volumes")
+  label "Delete Volumes"
+  description "Approval to delete all selected volumes"
+  run "delete_volumes", data, $param_create_final_snapshot, $param_log_to_cm_audit_entries
+end
+
+###############################################################################
+# Cloud Workflow
+###############################################################################
+
+define delete_volumes($data,$param_create_final_snapshot,$param_log_to_cm_audit_entries) return $all_responses,$snapshot_responses do
+  $$debug = $param_log_to_cm_audit_entries == "Yes"
+  $snapshot_responses = []
+  $all_responses = []
+  $syslog_subject = "Google Idle Persistent Disk: "
+  call sys_log(join([$syslog_subject, "Google volume"]),to_s($data))
+  foreach $item in $data do
+    if ($param_create_final_snapshot == "true")
+      call create_snapshot($item) retrieve $response
+      $snapshot_responses << $response
+    end
+    sub on_error: handle_error($response) do
+      $response = http_delete(
+        url: $item["selfLink"],
+        auth: $$auth_google,
+        headers: {
+          "cache-control": "no-cache",
+          "content-type": "application/json"
+        }
+      )
+      $all_responses << $response
+    end
+  end
+  call sys_log(join([$syslog_subject, "Responses"]),to_s($all_responses))
+end
+
+define create_snapshot($volume) return $response do
+  $response = []
+  $postResponse = {}
+
+  sub on_error: handle_error($postResponse) do
+    $postResponse = http_post(
+      url: join([$item["selfLink"],"/createSnapshot"]),
+      auth: $$auth_google,
+      headers: {
+        "cache-control": "no-cache",
+        "content-type": "application/json"
+      },
+      body: {
+        name: join([$item["name"], "-final-snapshot"])
+      }
+    )
+  end
+  $response << $postResponse
+
+  call sys_log("Post Response", to_s($postResponse))
+  sub on_error: handle_error($getResponse) do
+    $getResponse = http_get(
+      url: $postResponse["body"]["selfLink"],
+      auth: $$auth_google,
+      headers: {
+        "cache-control": "no-cache",
+        "content-type": "application/json"
+      }
+    )
+    call sys_log("Get Response", to_s($getResponse))
+    while $getResponse["body"]["status"] != "DONE" do
+      sleep(1)
+      $getResponse = http_get(
+        url: $getResponse["body"]["selfLink"],
+        auth: $$auth_google,
+        headers: {
+          "cache-control": "no-cache",
+          "content-type": "application/json"
+        }
+      )
+      call sys_log("Get Response", to_s($getResponse))
+    end
+    $response << $getResponse
+  end
+
+  sleep(10)
+end
+
+define handle_error($response) do
+  $syslog_subject = "Google Persistent Disk Deletion Error: "
+  call sys_log($syslog_subject,to_s($response))
+  $_error_behavior = "skip"
+end
+
+define sys_log($subject, $detail) do
+  if $$debug
+    rs_cm.audit_entries.create(
+      notify: "None",
+      audit_entry: {
+        auditee_href: @@account,
+        summary: $subject,
+        detail: $detail
+      }
+    )
+  end
+end

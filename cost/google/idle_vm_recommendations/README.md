@@ -1,16 +1,17 @@
-# Google Committed Use Discount Recommender
+# Google Idle VM Recommender
 
 ## What it does
 
-This Policy finds Google Committed Use Discount Recommendations and reports when it finds them.
+This Policy finds Idle Virtual Machine Recommendations and reports when it finds them. You can then delete the idle instances
 
 ## Input Parameters
 
 This policy has the following input parameters required when launching the policy.
 
 - *Email addresses* - A list of email addresses to notify
-- *Region* - Region to check, it is GCP Region locations
+- *Zone* - Location to check, it is specifically Google zones
 - *Project ID* - Google Projects to Query. Leave blank to query all projects.
+- *Unattached Days* - Days a volume has been unattached. Default is 30 days
 
 ## Policy Actions
 
@@ -33,8 +34,7 @@ Provider tag value to match this policy: `gce`
 Required permissions in the provider:
 
 - The `resourcemanager.projects.get` permission
-- The `roles/recommender.billingAccountCudViewer` role
-- The `roles/recommender.projectCudViewer` role
+- The `roles/recommender.computeAdmin` role
 
 ## Supported Clouds
 
