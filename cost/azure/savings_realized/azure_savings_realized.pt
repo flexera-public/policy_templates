@@ -1,7 +1,7 @@
 name "Azure Savings Realized from Reservations"
 rs_pt_ver 20180301
 type "policy"
-short_description "Calculate savings realised by RI purchases - subtract RI run cost from on-demand cost per instance type and region. See the [README](https://github.com/flexera/policy_templates/tree/master/cost/azure/saivngs_realized/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+short_description "This policy calculates savings realized by Reserved Instance purchases for Azure. See the [README](https://github.com/flexera/policy_templates/tree/master/cost/azure/saivngs_realized/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 long_description ""
 default_frequency "monthly"
 severity "low"
@@ -22,6 +22,12 @@ parameter "param_email" do
   label "Email addresses"
 end
 
+parameter "param_billing_centers" do
+  label "Billing Center Name"
+  description "List of Billing Center Names to check Savings Realized for. Leave blank for whole Organization view."
+  type "list"
+end
+
 parameter "param_period_start" do
   type "string"
   label "Period Start Date"
@@ -34,6 +40,14 @@ parameter "param_period_end" do
   label "Period End Date"
   description "Billing Period from Fastly Billing YYYY-MM"
   allowed_pattern /20[2-9][0-9]-[0-1][0-9]/
+end
+
+parameter "param_chart_type" do
+  type "string"
+  label "Chart Type"
+  description "The type of bar chart to view savings realized data by"
+  allowed_values "Grouped Bar Chart", "Stacked Bar Chart"
+  default "Grouped Bar Chart"
 end
 
 ###############################################################################
@@ -75,24 +89,10 @@ datasource "ds_billing_centers" do
   end  
 end
 
-#GET TOP-LEVEL BILLING CENTERS
-datasource "ds_top_level_bcs" do
-  run_script $js_get_top_level_bc, $ds_billing_centers
-end
-
-script "js_get_top_level_bc", type: "javascript" do
-  parameters "billing_centers"
-  result "filtered_billing_centers"
-  code <<-EOS
-  var filtered_billing_centers = 
-  _.filter(billing_centers, function(bc){ return bc.parent_id == null })
-  EOS
-end
-
 #GET RESERVED INSTANCE COSTS
 datasource "ds_ri_aggregated_costs" do
   request do
-    run_script $js_get_ri_aggregated_costs, $ds_top_level_bcs, $param_period_start, $param_period_end, rs_org_id, rs_optima_host
+    run_script $js_get_ri_aggregated_costs, $ds_billing_centers, $param_period_start, $param_period_end, $param_billing_centers, rs_org_id, rs_optima_host
   end
   result do
     encoding "json"
@@ -108,13 +108,19 @@ datasource "ds_ri_aggregated_costs" do
 end
 
 script "js_get_ri_aggregated_costs", type: "javascript" do
-  parameters "billing_centers", "start_date", "end_date", "org_id", "optima_host"
+  parameters "ds_billing_centers", "start_date", "end_date", "param_billing_centers", "org_id", "optima_host"
   result "request"
   code <<-EOS
+
+  //Get billing centers. If user specifies no billing centers, retrieve all top level billing centers. Else get array of billing centers that match the names stated in BC param
   var billing_center_ids = []
-  _.each(billing_centers, function(bc){
-    billing_center_ids.push(bc.id)
-  })
+  if (param_billing_centers.length === 0){
+    var top_billing_centers = _.reject(ds_billing_centers, function(bc){ return bc.parent_id != null });
+    billing_center_ids = _.map(top_billing_centers, function(value, key){ return value.id });
+  } else {
+    billing_center_names = _.map(param_billing_centers, function(name){ return name.toLowerCase(); });
+    billing_center_ids = _.compact(_.map(ds_billing_centers, function(value){ if(_.contains(billing_center_names, value.name.toLowerCase())){return value.id} }));
+  }
 
   var payload = {
     "billing_center_ids": billing_center_ids,
@@ -160,7 +166,7 @@ end
 #GET BASE COSTS
 datasource "ds_base_aggregated_costs" do
   request do
-    run_script $js_get_base_aggregated_costs, $ds_top_level_bcs, $param_period_start, $param_period_end, rs_org_id, rs_optima_host
+    run_script $js_get_base_aggregated_costs, $ds_billing_centers, $param_period_start, $param_period_end, $param_billing_centers, rs_org_id, rs_optima_host
   end
   result do
     encoding "json"
@@ -176,13 +182,19 @@ datasource "ds_base_aggregated_costs" do
 end
 
 script "js_get_base_aggregated_costs", type: "javascript" do
-  parameters "billing_centers", "start_date", "end_date", "org_id", "optima_host"
+  parameters "ds_billing_centers", "start_date", "end_date", "param_billing_centers", "org_id", "optima_host"
   result "request"
   code <<-EOS
+
+  //Get billing centers. If user specifies no billing centers, retrieve all top level billing centers. Else get array of billing centers that match the names stated in BC param
   var billing_center_ids = []
-  _.each(billing_centers, function(bc){
-    billing_center_ids.push(bc.id)
-  })
+  if (param_billing_centers.length === 0){
+    var top_billing_centers = _.reject(ds_billing_centers, function(bc){ return bc.parent_id != null });
+    billing_center_ids = _.map(top_billing_centers, function(value, key){ return value.id });
+  } else {
+    billing_center_names = _.map(param_billing_centers, function(name){ return name.toLowerCase(); });
+    billing_center_ids = _.compact(_.map(ds_billing_centers, function(value){ if(_.contains(billing_center_names, value.name.toLowerCase())){return value.id} }));
+  }
 
   var payload = {
     "billing_center_ids": billing_center_ids,
@@ -228,39 +240,17 @@ script "js_get_base_aggregated_costs", type: "javascript" do
   EOS
 end
 
-#GET CSV WITH NFU
-datasource "ds_isf_ratio_csv" do
-  request do
-    host "isfratio.blob.core.windows.net"
-    path "/isfratio/ISFRatio.csv"
-  end
-  result do
-    encoding "text"
-  end
-end
-
 #CALCULATE SAVINGS REALIZED (BASE COST - RI COST) FOR EACH INSTANCE TYPE, FOR EACH REGION
 datasource "ds_savings_realized" do
-  run_script $js_get_savings_realized, $ds_ri_aggregated_costs, $ds_base_aggregated_costs, $ds_isf_ratio_csv
+  run_script $js_get_savings_realized, $ds_ri_aggregated_costs, $ds_base_aggregated_costs
 end
 
 script "js_get_savings_realized", type: "javascript" do
-  parameters "ri_costs", "base_costs", "isf_ratio_csv"
+  parameters "ri_costs", "base_costs"
   result "savings_realized_data"
   code <<-'EOS'
   var temp_result = []
   var savings_realized_data = []
-
-  //convert normalization factor csv to json
-  var isf_ratio_array = isf_ratio_csv.toString().split("\r\n")
-  var isf_ratio_json = []
-  _.each(isf_ratio_array, function(ratio){
-    isf_ratio_json.push({
-      "instance_family": ratio.split(",")[0],
-      "arm_sku_name": ratio.split(",")[1],
-      "ratio": ratio.split(",")[2]
-    })
-  })
 
   //Get list of Instance Types, Regions, Months
   inst_type = _.pluck( _.uniq(ri_costs, function(ri){ return ri.instance_type }), "instance_type" )
@@ -279,7 +269,7 @@ script "js_get_savings_realized", type: "javascript" do
     _.each(base_costs, function(base){
       if(base.month == mo){ total_month_cost += base.cost }
     })
-    savings_realized_data.push({ "month": mo, "cost": total_month_cost, "dimension": "Total Actual Spend" })
+    savings_realized_data.push({ "month": mo, "cost": total_month_cost, "dimension": "Total Actual Spend On Discountable Compute" })
   })
 
   //calculate base cost of instance per hour across all months for each instance type/region/operating system combination
@@ -313,6 +303,8 @@ script "js_get_savings_realized", type: "javascript" do
         if(ri.cost > 0 ){
           savings_realized = savings_realized_per_inst_hr * ri.usage_amount
         }
+        //console.log("On-Demand Rate: " + inst_hr.avg_base_cost_inst_hr, "Reserved Rate: " + (ri.cost/ri.usage_amount), ri.region, ri.instance_type)
+
         temp_result.push(
           { 
             "month": ri.month, 
@@ -333,7 +325,7 @@ script "js_get_savings_realized", type: "javascript" do
         savings_realized += res.savings_realized
       }
     })
-    savings_realized_data.push({ "month": mo, "cost": savings_realized, "dimension": "Savings Realized" })
+    savings_realized_data.push({ "month": mo, "cost": savings_realized, "dimension": "Savings Realized On Compute Reservations" })
   })
   
   //sort by month
@@ -343,19 +335,46 @@ end
 
 #CHART CREATION
 datasource "ds_chart_data" do
-  run_script $js_create_chart_data, $ds_savings_realized
+  run_script $js_create_chart_data, $ds_savings_realized, $param_chart_type
 end
 
 script "js_create_chart_data", type: "javascript" do
-  parameters "savings_realized_data"
+  parameters "savings_realized_data", "param_chart_type"
   result "report"
   code <<-EOS
 
-  var report = savings_realized_data
+  //Get months
+  var months = _.pluck( _.uniq(savings_realized_data, function(data){ return data.month }), "month" )
+
+  //Create report data (Concatenate savings realized and total costs into one object/row of data)
+  var report = []
+  _.each(months, function(mo){
+    savings_realized = 0
+    total_spend = 0
+    _.each(savings_realized_data, function(data){
+      if(mo == data.month && data.dimension == "Savings Realized On Compute Reservations"){
+        savings_realized = data.cost
+      }
+      if(mo == data.month && data.dimension == "Total Actual Spend On Discountable Compute"){
+        total_spend = data.cost
+      }
+    })
+    report.push({ 
+      "month": mo, 
+      "total_spend": parseFloat(total_spend).toFixed(2), 
+      "savings_realized": parseFloat(savings_realized).toFixed(2),
+      "percentage": parseFloat((savings_realized/(total_spend + savings_realized))*100).toFixed(0).toString() + "%"
+    })
+  })
 
   //Group data by Cost Dimension
   group_by_dimension = 
   _.groupBy(savings_realized_data, function(data){ return data.dimension })
+  
+  //Determine chart type
+  chart_type = "cht="
+  if (param_chart_type == "Grouped Bar Chart") { chart_type += "bvg" }
+  else if (param_chart_type == "Stacked Bar Chart" ) { chart_type += "bvs" }
   
   //Create chart axis labels
   chart_axis_labels = 
@@ -396,20 +415,20 @@ script "js_create_chart_data", type: "javascript" do
 
   //Whole Chart object
   chart = {
-    chart_type: encodeURI("cht=bvs"),
-    chart_size: encodeURI("chs=900x500"),
+    chart_type: encodeURI(chart_type),
+    chart_size: encodeURI("chs=999x450"),
     chart_data: encodeURI(chart_data),
-    chart_title: encodeURI("chtt=Savings Realized For Organization"),
+    chart_title: encodeURI("chtt=Savings Realized On Compute Reservations For Organization"),
     chart_image: encodeURI("chof=.png"),  
-    chart_label_position: encodeURI("chdlp=b"),
     chart_y_axis: encodeURI("chxt=y,x"),
     chart_axis_label: encodeURI(chart_axis_labels),
-    chart_axis_format: encodeURI("chxs=0N*cUSD0sz*"),
+    chart_axis_format: encodeURI("chxs=0N*cUSD0sz*|1,min40"),
     chart_line_style: encodeURI("chls=3|3|3|3|3|3|3|3|3|3|3"),
-    chart_line_color: encodeURI("chco=6929c4,9f1853,198038,b28600,1192e8,009d9a,005d5d,007d79"),
+    chart_line_color: encodeURI("chco=1f5ab8,55b81f,198038,b28600,1192e8,009d9a,005d5d,007d79"),
     chart_data_scale: encodeURI("chds=a"),
     chart_legend: encodeURI(chart_legend),
-    chart_legend_size: encodeURI("chdls=000000,5")
+    chart_legend_size: encodeURI("chdls=000000,10"),
+    chart_legend_position: encodeURI("chdlp=r")
   }
 
   report[0]["chart_dimensions"] = chart
@@ -435,8 +454,8 @@ policy "policy_purchase_option_by_inst_type_and_region" do
   validate_each $ds_chart_data do
     summary_template "Savings Realized"
     detail_template <<-EOS
-    # Savings Realized Per Instance Type Report
-    ![Savings Realized Per Instance Type Chart](https://image-charts.com/chart?{{ with index data 0 }}{{ .chart_dimensions.chart_data }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_size }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_type }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_image }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_title }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_label_position }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_y_axis }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_axis_label }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_line_style }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_line_color }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_data_scale }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_legend_size }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_legend }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_axis_format }}{{ end }})
+    # Savings Realized On Compute Reservations Report
+    ![Savings Realized On Compute Reservations Chart](https://image-charts.com/chart?{{ with index data 0 }}{{ .chart_dimensions.chart_data }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_size }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_type }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_image }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_title }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_y_axis }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_axis_label }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_line_style }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_line_color }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_data_scale }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_legend_size }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_legend }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_axis_format }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_legend_position }}{{ end }})
     EOS
     escalate $esc_savings_realized_report
     check eq(0,1)
@@ -446,11 +465,14 @@ policy "policy_purchase_option_by_inst_type_and_region" do
       field "month" do
         label "Month"
       end
-      field "dimension" do
-        label "Amount Type"
+      field "total_spend" do
+        label "Total Actual Spend On Discountable Compute"
       end
-      field "cost" do
-        label "Cost Amount"
+      field "savings_realized" do
+        label "Savings Realized On Compute Reservations"
+      end
+      field "percentage" do
+        label "Savings Rate"
       end
     end
   end
