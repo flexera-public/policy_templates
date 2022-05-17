@@ -14,9 +14,11 @@ This Policy uses Optima to determine a view of total savings realized from using
 
 This policy has the following input parameters required when launching the policy.
 
+- *Billing Center Name* - List of Billing Center Names to check Savings Realized for. Leave blank for whole Organization view
 - *Period Start Date* - The starting month of the historical data to analyze (in YYYY-MM format e.g., "2021-10")
 - *Period End Date* - The ending month of the historical data to analyze (in YYYY-MM format)
 - *Email addresses* - A list of email addresses to notify
+- *Chart Type* - The type of bar chart to view savings realized data by
 
 ## Required CMP Roles
 
