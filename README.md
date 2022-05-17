@@ -104,6 +104,7 @@ Reference
 - [Azure Reserved Instance Utilization](./cost/azure/reserved_instances/utilization/)
 - [Azure Reserved Instance Recommendations](./cost/azure/reserved_instances/mca_recommendations)
 - [Azure Unused IP Addresses](./cost/azure/unused_ip_addresses)
+- [Azure Savings Realized from Reservations](./cost/azure/savings_realized)
 - [Azure Schedule Instance](./cost/azure/schedule_instance/)
 
 ##### Database
