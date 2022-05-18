@@ -24,3 +24,7 @@
 - Change to template name from "Google Committed Use Discount Recommender Policy" to "Google Committed Use Discount Recommender"
 
 - updates to output of cud recommendations savings, addition of monthly calculations
+
+## v3.1
+
+- Fixed missing savings field
