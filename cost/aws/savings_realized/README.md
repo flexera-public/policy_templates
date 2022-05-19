@@ -2,7 +2,7 @@
 
 ## What it does
 
-This Policy uses Optima to determine a view of total savings realized from using Compute Reservations, Savings Plans, and Spot Instances in AWS, for the entire Organization or specific billing centers across a period of historical months.
+This Policy uses Optima to determine a view of total savings realized from using Compute Reservations, Savings Plans, and Spot Instances in AWS, for the entire Organization or specified billing centers across a period of historical months.
 
 ## Functional Details
 
