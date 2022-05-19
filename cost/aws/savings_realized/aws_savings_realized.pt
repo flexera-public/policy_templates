@@ -1,0 +1,489 @@
+name "AWS Savings Realized from Reservations"
+rs_pt_ver 20180301
+type "policy"
+short_description "This policy calculates savings realized by Reserved Instance, Savings Plan, and Spot Instance purchases for AWS. See the [README](https://github.com/flexera/policy_templates/tree/master/cost/aws/savings_realized/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+long_description ""
+default_frequency "monthly"
+severity "low"
+category "Cost"
+info(
+  version: "2.0",
+  provider: "Flexera",
+  service: "All",
+  policy_set: "N/A"
+)
+
+###############################################################################
+# Parameters
+###############################################################################
+
+parameter "param_email" do
+  type "list"
+  label "Email addresses"
+end
+
+parameter "param_billing_centers" do
+  label "Billing Center Name"
+  description "List of Billing Center Names to check Savings Realized for. Leave blank for whole Organization view."
+  type "list"
+end
+
+parameter "param_period_start" do
+  type "string"
+  label "Period Start Date"
+  description "Billing Period from Fastly Billing YYYY-MM"
+  allowed_pattern /20[2-9][0-9]-[0-1][0-9]/
+end
+
+parameter "param_period_end" do
+  type "string"
+  label "Period End Date"
+  description "Billing Period from Fastly Billing YYYY-MM"
+  allowed_pattern /20[2-9][0-9]-[0-1][0-9]/
+end
+
+parameter "param_chart_type" do
+  type "string"
+  label "Chart Type"
+  description "The type of bar chart to view savings realized data by"
+  allowed_values "Grouped Bar Chart", "Stacked Bar Chart"
+  default "Grouped Bar Chart"
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+#authenticate with RightScale/Optima
+credentials "auth_rs" do
+  schemes "oauth2"
+  label "Flexera_Automation"
+  description "Select FlexeraOne OAuth2 credentials"
+  tags "provider=flexera"
+end
+
+###############################################################################
+# Datasources and Scripts
+###############################################################################
+
+#GET BILLING CENTERS FOR ORG
+datasource "ds_billing_centers" do
+  request do
+    auth $auth_rs
+    host rs_optima_host
+    path join(["/analytics/orgs/",rs_org_id,"/billing_centers"])
+    header "Api-Version", "1.0"
+    header "User-Agent", "RS Policies"
+    query "view", "allocation_table"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response,"[*]") do
+      field "href", jmes_path(col_item,"href")
+      field "id", jmes_path(col_item,"id")
+      field "name", jmes_path(col_item,"name")
+      field "parent_id", jmes_path(col_item,"parent_id")
+      field "ancestor_ids", jmes_path(col_item,"ancestor_ids")
+      field "allocation_table", jmes_path(col_item,"allocation_table")
+    end
+  end  
+end
+
+#GET ALL COSTS (IGNORING COSTS NOT ASSOCIATED WITH AN INSTANCE TYPE)
+datasource "ds_aggregated_costs" do
+  request do
+    run_script $js_get_aggregated_costs, $ds_billing_centers, $param_period_start, $param_period_end, $param_billing_centers, rs_org_id, rs_optima_host
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "rows") do
+      field "instance_type", jmes_path(col_item, "dimensions.instance_type")
+      field "region", jmes_path(col_item, "dimensions.region")
+      field "purchase_option", jmes_path(col_item, "dimensions.purchase_option")
+      field "usage_unit", jmes_path(col_item, "dimensions.usage_unit")
+      field "usage_amount", jmes_path(col_item, "metrics.usage_amount")
+      field "cost", jmes_path(col_item, "metrics.cost_amortized_unblended_adj")
+      field "month", jmes_path(col_item, "timestamp")
+    end
+  end
+end
+
+script "js_get_aggregated_costs", type: "javascript" do
+  parameters "ds_billing_centers", "start_date", "end_date", "param_billing_centers", "org_id", "optima_host"
+  result "request"
+  code <<-EOS
+  
+  //Get billing centers. If user specifies no billing centers, retrieve all top level billing centers. Else get array of billing centers that match the names stated in BC param
+  var billing_center_ids = []
+  if (param_billing_centers.length === 0){
+    var top_billing_centers = _.reject(ds_billing_centers, function(bc){ return bc.parent_id != null });
+    billing_center_ids = _.map(top_billing_centers, function(value, key){ return value.id });
+  } else {
+    billing_center_names = _.map(param_billing_centers, function(name){ return name.toLowerCase(); });
+    billing_center_ids = _.compact(_.map(ds_billing_centers, function(value){ if(_.contains(billing_center_names, value.name.toLowerCase())){return value.id} }));
+  }
+
+  var payload = {
+    "billing_center_ids": billing_center_ids,
+    "filter": {
+      "type": "and",
+      "expressions": [
+        { "dimension": "vendor", "type": "equal", "value": "AWS" },
+        {
+          "type": "not",
+          "expression": { "dimension": "instance_type", "type": "equal", "value": "None" }
+        },
+        {
+          "type": "not",
+          "expression": { "dimension": "category", "type": "equal", "value": "Commitments" }
+        },
+        {
+          "type": "not",
+          "expression": { "dimension": "purchase_option", "type": "equal", "value": "On Demand (Non-Discountable)" }
+        }
+      ]
+    },
+    "dimensions": [
+      "instance_type",
+      "region",
+      "purchase_option",
+      "usage_unit"
+    ],
+    "granularity": "month",
+    "metrics": [
+      "cost_amortized_unblended_adj",
+      "usage_amount"
+    ]
+    "end_at": end_date,
+    "start_at": start_date
+  }
+
+  var request = {
+    auth: "auth_rs",
+    host: optima_host,
+    path: "/bill-analysis/orgs/" + org_id + "/costs/aggregated",
+    verb: "POST",
+    body_fields: payload,
+    headers: {
+      "User-Agent": "RS Policies"
+    }
+  }
+  EOS
+end 
+
+#CALCULATE SAVINGS REALIZED FOR EACH INSTANCE TYPE, FOR EACH REGION
+datasource "ds_savings_realized" do
+  run_script $js_get_savings_realized, $ds_aggregated_costs
+end
+
+script "js_get_savings_realized", type: "javascript" do
+  parameters "all_costs"
+  result "savings_realized_data"
+  code <<-'EOS'
+  var temp_result = []
+  var savings_realized_data = []
+
+  //Get arrays for Purchase Option 
+  od_costs = _.filter(all_costs, function(cost){ return cost.purchase_option == "On Demand" })
+  ri_costs = _.filter(all_costs, function(cost){ return cost.purchase_option == "Reserved" })
+  sp_costs = _.filter(all_costs, function(cost){ return cost.purchase_option == "Savings Plan" })
+  spot_costs = _.filter(all_costs, function(cost){ return cost.purchase_option == "Spot" })
+
+
+  //Get list of Instance Types, Regions, Purchase Options, Months
+  inst_type = _.pluck( _.uniq(all_costs, function(all){ return all.instance_type }), "instance_type" )
+  region = _.pluck( _.uniq(all_costs, function(all){ return all.region }), "region" )
+  months = _.pluck( _.uniq(all_costs, function(all){ return all.month }), "month" )
+
+  //calculate total cost for each month
+  _.each(months, function(mo){
+    total_month_cost = 0
+    _.each(all_costs, function(all){
+      if(all.month == mo){ total_month_cost += all.cost }
+    })
+    savings_realized_data.push({ "month": mo, "cost": total_month_cost, "dimension": "Total Actual Spend On Discountable Compute" })
+  }) 
+  
+  //calculate On-Demand cost of instance per hour across all months for each instance type/region/operating system combination
+  unique_cost_inst_hrs = []
+  _.each(inst_type, function(inst){
+    _.each(region, function(rg){
+      od_cost_inst_hr_tot = 0, count = 0
+      _.each(od_costs, function(od){
+        if(od.instance_type == inst && od.region == rg){
+          od_cost_inst_hr_tot += (od.cost / od.usage_amount)
+          count ++
+        }
+      })
+      avg_od_cost_inst_hr = 0 
+      if(count > 0){ avg_od_cost_inst_hr = od_cost_inst_hr_tot / count }
+      //console.log(avg_od_cost_inst_hr, rg, inst)
+
+      unique_cost_inst_hrs.push({
+        "instance_type": inst,
+        "region": rg,
+        "avg_od_cost_inst_hr": avg_od_cost_inst_hr
+      })
+    })
+  })
+  //console.log("Cost instance hours", unique_cost_inst_hrs)
+
+  //apply cost_inst_hr to calculate savings realized
+  _.each(unique_cost_inst_hrs, function(inst_hr){
+
+    //Reserved Instance savings
+    _.each(ri_costs, function(ri){
+      if (ri.instance_type == inst_hr.instance_type && ri.region == inst_hr.region){
+        savings_realized_per_inst_hr = inst_hr.avg_od_cost_inst_hr - (ri.cost / ri.usage_amount)
+        //console.log(savings_realized_per_inst_hr, ri.region, ri.instance_type)
+
+        savings_realized = 0
+        if(ri.cost > 0 ){
+          savings_realized = savings_realized_per_inst_hr * ri.usage_amount
+        }
+        //console.log("On-Demand Rate: " + inst_hr.avg_od_cost_inst_hr, "Reserved Rate: " + (ri.cost/ri.usage_amount), ri.region, ri.instance_type)
+
+        temp_result.push(
+          { 
+            "month": ri.month, 
+            "region": ri.region, 
+            "instance_type": ri.instance_type,
+            "savings_realized": savings_realized,
+            "purchase_option": "Reservations"
+          }
+        )
+      }
+    })
+
+    //Savings Plan savings
+    _.each(sp_costs, function(sp){
+      if (sp.instance_type == inst_hr.instance_type && sp.region == inst_hr.region){
+        savings_realized_per_inst_hr = inst_hr.avg_od_cost_inst_hr - (sp.cost / sp.usage_amount)
+        console.log(savings_realized_per_inst_hr, sp.region, sp.instance_type)
+
+        savings_realized = 0
+        if(sp.cost > 0 ){
+          savings_realized = savings_realized_per_inst_hr * sp.usage_amount
+        }
+        //console.log("On-Demand Rate: " + inst_hr.avg_od_cost_inst_hr, "Savings Plan Rate: " + (sp.cost/sp.usage_amount), sp.region, sp.instance_type)
+
+        temp_result.push(
+          { 
+            "month": sp.month, 
+            "region": sp.region, 
+            "instance_type": sp.instance_type,
+            "savings_realized": savings_realized,
+            "purchase_option": "Savings Plans"
+          }
+        )
+      }
+    })
+
+    //Spot Instance savings
+    _.each(spot_costs, function(spot){
+      if (spot.instance_type == inst_hr.instance_type && spot.region == inst_hr.region){
+        savings_realized_per_inst_hr = inst_hr.avg_od_cost_inst_hr - (spot.cost / spot.usage_amount)
+        savings_realized = 0
+        if(spot.cost > 0 ){
+          savings_realized = savings_realized_per_inst_hr * spot.usage_amount
+        }
+        temp_result.push(
+          { 
+            "month": spot.month, 
+            "region": spot.region, 
+            "instance_type": spot.instance_type,
+            "savings_realized": savings_realized,
+            "purchase_option": "Spot Instances"
+          }
+        )
+      }
+    })
+
+  })
+  
+  //reduce list - aggregate SAVINGS REALIZED costs for same purchase option for same month
+  purchase_options = _.pluck( _.sortBy( _.uniq( temp_result, function(data){ return data.purchase_option }), "purchase_option" ), "purchase_option" )
+  console.log(purchase_options)
+  _.each(purchase_options, function(po){
+    _.each(months, function(mo){
+      savings_realized = 0
+      _.each(temp_result, function(res){
+        if(po == res.purchase_option && mo == res.month){
+          savings_realized += res.savings_realized
+        }
+      })
+      savings_realized_data.push({ "month": mo, "cost": savings_realized, "dimension": "Savings Realized On Compute " + po })
+    })
+  })
+  
+  //sort by month
+  savings_realized_data = _.sortBy(savings_realized_data, "month")
+  EOS
+end
+
+#CHART CREATION
+datasource "ds_chart_data" do
+  run_script $js_create_chart_data, $ds_savings_realized, $param_chart_type
+end
+
+script "js_create_chart_data", type: "javascript" do
+  parameters "savings_realized_data", "param_chart_type"
+  result "report"
+  code <<-EOS
+
+  //Get months
+  var months = _.pluck( _.uniq(savings_realized_data, function(data){ return data.month }), "month" )
+
+  //Create report data (Concatenate savings realized and total costs into one object/row of data)
+  var report = []
+  _.each(months, function(mo){
+    savings_realized_ri = 0; savings_realized_sp = 0; savings_realized_spot = 0
+    total_spend = 0
+    _.each(savings_realized_data, function(data){
+      if(mo == data.month && data.dimension == "Savings Realized On Compute Reservations"){
+        savings_realized_ri = data.cost
+      }
+      if(mo == data.month && data.dimension == "Savings Realized On Compute Savings Plans"){
+        savings_realized_sp = data.cost
+      }
+      if(mo == data.month && data.dimension == "Savings Realized On Compute Spot Instances"){
+        savings_realized_spot = data.cost
+      }
+      if(mo == data.month && data.dimension == "Total Actual Spend On Discountable Compute"){
+        total_spend = data.cost
+      }
+    })
+    report.push({ 
+      "month": mo, 
+      "total_spend": parseFloat(total_spend).toFixed(2), 
+      "savings_realized_ri": parseFloat(savings_realized_ri).toFixed(2),
+      "savings_realized_sp": parseFloat(savings_realized_sp).toFixed(2),
+      "savings_realized_spot": parseFloat(savings_realized_spot).toFixed(2),
+      "percentage_ri": parseFloat((savings_realized_ri/(total_spend + savings_realized_ri))*100).toFixed(0).toString() + "%",
+      "percentage_sp": parseFloat((savings_realized_sp/(total_spend + savings_realized_sp))*100).toFixed(0).toString() + "%",
+      "percentage_spot": parseFloat((savings_realized_spot/(total_spend + savings_realized_spot))*100).toFixed(0).toString() + "%"
+    })
+  })
+
+  //Group data by Cost Dimension
+  group_by_dimension = 
+  _.groupBy(savings_realized_data, function(data){ return data.dimension })
+  
+  //Determine chart type
+  chart_type = "cht="
+  if (param_chart_type == "Grouped Bar Chart") { chart_type += "bvg" }
+  else if (param_chart_type == "Stacked Bar Chart" ) { chart_type += "bvs" }
+  
+  //Create chart axis labels
+  chart_axis_labels = 
+  ("chxl=1:," + 
+    _.uniq(savings_realized_data, function(sr) { return sr.month })
+    .map(function(sr){ return sr.month.substring(0,7) })
+  ).split(",").join("|")
+
+  //Create legend
+  chart_legend = "chdl="
+  var i = 0 
+  for (var key in group_by_dimension) {
+    chart_legend += key
+    i++
+    if (i < _.size(group_by_dimension)) { chart_legend += "|" }
+  }
+  //chart_legend = "chdl=Savings%20Realized%20For%20Organization"
+
+  //calculate scale
+  //chart_range = ("chxr=0," +
+  max = (Math.max.apply(Math, savings_realized_data.map(function(sr){ return sr.savings_realized }))*1.1).toFixed(2)
+  min = (Math.min.apply(Math, savings_realized_data.map(function(sr){ return sr.savings_realized }))*0.9).toFixed(2)
+  chart_range = "chxr=0," + min + "," + max
+
+  //Create chart dataset
+  chart_data = "chd=t:"
+  var count_1 = 0
+  _.each(group_by_dimension, function(o){
+    var count_2 = 0
+    _.each(o, function(p){
+      chart_data = chart_data + p.cost
+      count_2++
+      if (count_2 < _.size(o)){ chart_data = chart_data + "," } 
+    })
+    count_1++
+    if (count_1 < _.size(group_by_dimension)){ chart_data = chart_data + "|" }
+  })
+
+  //Whole Chart object
+  chart = {
+    chart_type: encodeURI(chart_type),
+    chart_size: encodeURI("chs=999x500"),
+    chart_data: encodeURI(chart_data),
+    chart_title: encodeURI("chtt=Savings Realized For Organization"),
+    chart_image: encodeURI("chof=.png"),  
+    chart_y_axis: encodeURI("chxt=y,x"),
+    chart_axis_label: encodeURI(chart_axis_labels),
+    chart_axis_format: encodeURI("chxs=0N*cUSD0sz*|1,min40"),
+    chart_line_style: encodeURI("chls=3|3|3|3|3|3|3|3|3|3|3"),
+    chart_line_color: encodeURI("chco=1f5ab8,55b81f,fc9803,b28600,1192e8,009d9a,005d5d,007d79"),
+    chart_data_scale: encodeURI("chds=a"),
+    chart_legend: encodeURI(chart_legend),
+    chart_legend_size: encodeURI("chdls=000000,10"),
+    chart_legend_position: encodeURI("chdlp=r")
+  }
+
+  report[0]["chart_dimensions"] = chart
+  EOS
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_savings_realized_report" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "policy_purchase_option_by_inst_type_and_region" do
+  validate_each $ds_chart_data do
+    summary_template "Savings Realized"
+    detail_template <<-EOS
+    # Savings Realized Per Instance Type Report
+    ![Savings Realized Per Instance Type Chart](https://image-charts.com/chart?{{ with index data 0 }}{{ .chart_dimensions.chart_data }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_size }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_type }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_image }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_title }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_y_axis }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_axis_label }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_line_style }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_line_color }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_data_scale }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_legend_size }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_legend }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_axis_format }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_legend_position }}{{ end }})
+    EOS
+    escalate $esc_savings_realized_report
+    check eq(0,1)
+    export do
+      # no actions so resource_level can be false
+      resource_level false
+      field "month" do
+        label "Month"
+      end
+      field "total_spend" do
+        label "Total Actual Spend On Discountable Compute"
+      end
+      field "savings_realized_ri" do
+        label "Savings Realized On Compute Reservations"
+      end
+      field "savings_realized_sp" do
+        label "Savings Realized On Compute Savings Plans"
+      end
+      field "savings_realized_spot" do
+        label "Savings Realized On Compute Spot Instances"
+      end
+      field "percentage_ri" do
+        label "Savings Rate from Reservation usage"
+      end
+      field "percentage_sp" do
+        label "Savings Rate from Savings Plan usage"
+      end
+      field "percentage_spot" do
+        label "Savings Rate from Spot Instance usage"
+      end
+    end
+  end
+end
