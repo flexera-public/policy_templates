@@ -2,11 +2,12 @@
 
 ## What it does
 
-This Policy uses Optima to determine a view of total savings realized from using Compute reservations in Azure for the entire Organization across a period of historical months.
+This Policy uses Optima to determine a view of total savings realized from using Compute Reservations in Azure, for the entire Organization or specified billing centers across a period of historical months.
 
 ## Functional Details
 
-- This policy supports only a view of savings realized from Azure reservations for the entire Organization.
+- This policy currently supports only a view of savings realized from Azure Reserved Instances. 
+- This policy supports a view of savings realized for a list of specific billing centers or for the entire Organization.
 - This policy uses the on-demand rate and the reserved instance rate by instance type and region to derive a savings rate. The policy then uses usage amount to calculate total savings realized.
 - This policy produces a bar chart showing savings realized vs. total actual spend for the period of historical months specified.
 
