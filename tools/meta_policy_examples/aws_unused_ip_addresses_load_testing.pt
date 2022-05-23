@@ -1,0 +1,550 @@
+name "AWS Unused IP Addresses Load Testing"
+rs_pt_ver 20180301
+type "policy"
+short_description "Checks AWS for unused IP Addresses and, optionally, deletes them. See the [README](https://github.com/flexera/policy_templates/tree/master/cost/aws/unused_ip_addresses/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+long_description ""
+severity "low"
+category "Cost"
+default_frequency "daily"
+info(
+    version: "1.0",
+    provider: "AWS",
+    service: "EC2",
+    policy_set: "Unused IP Addresses"
+  )
+
+##############################################################################
+# Parameters
+##############################################################################
+
+parameter "param_allowed_regions" do
+  type "list"
+  label "Allowed Regions"
+  allowed_pattern /^([a-zA-Z-_]+-[a-zA-Z0-9-_]+-[0-9-_]+,*|)+$/
+  description "A list of allowed regions. See the README for more details"
+end
+
+parameter "param_exclude_tags" do
+  type "list"
+  label "Exclusion Tags"
+  description "A list of AWS tags to ignore Elastic IPs. Format: Key=Value"
+end
+
+parameter "param_email" do
+  type "list"
+  label "Email addresses"
+  description "Email addresses of the recipients you wish to notify when new incidents are created"
+end
+
+parameter "param_aws_account_number" do
+  type "string"
+  label "Account Number"
+  description "The account number for AWS STS Cross Account Roles."
+  default ""
+end
+
+parameter "param_automatic_action" do
+  type "list"
+  label "Automatic Actions"
+  description "When this value is set, this policy will automatically take the selected action(s)"
+  allowed_values ["Delete Unused IPs"]
+end
+
+parameter "param_log_to_cm_audit_entries" do
+  type "string"
+  label "Log to CM Audit Entries"
+  description "Boolean for whether or not to log any debugging information from actions to CM Audit Entries, this should be left set to No on Flexera EU"
+  default "No"
+  allowed_values "Yes", "No"
+end
+
+parameter "param_incident_rows_per_region" do
+  type "number"
+  label "Number of Rows in the incidents per region looked at"
+  description "Size of the incident violation data. 10 by default. Increases by number of regions set in 'Allowed Regions.' Selecting two there will by default result in a table with 20 rows (10 x 2)."
+  default 10
+end
+
+parameter "param_versioning" do
+  type "number"
+  label "allow the meta parent policy to generate unique duplicates easier"
+  description "The meta parent policy will pass this to allow it to use the same credentials for multiple child policies and still be abel to distringuish between them."
+  default 10
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+credentials "auth_aws" do
+  schemes "aws","aws_sts"
+  label "AWS"
+  description "Select the AWS Cloud Credential from the list."
+  tags "provider=aws"
+  aws_account_number $param_aws_account_number
+end
+
+auth "auth_rs", type: "rightscale"
+
+pagination "pagination_aws" do
+  get_page_marker do
+    body_path "//DescribeAddressesResponse/nextToken"
+  end
+  set_page_marker do
+    query "nextToken"
+  end
+end
+
+pagination "pagination_aws_products" do
+  get_page_marker do
+    body_path "NextToken"
+  end
+  set_page_marker do
+    body_field "NextToken"
+  end
+end
+
+###############################################################################
+# Datasources
+###############################################################################
+
+# ^^^^^ From the default policy ^^^^^
+# vvvvv Added for the self-terminating policy vvvvv
+
+# If the meta_parent_policy_id is not set it will evaluate to an empty string and we will look for the policy itself,
+# if it is set we will look for the parent policy.
+datasource "ds_get_policy" do
+  request do
+    auth $auth_rs
+    host rs_governance_host
+    ignore_status [404]
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", switch(ne(meta_parent_policy_id,""), meta_parent_policy_id, policy_id) ])
+    header "Api-Version", "1.0"
+  end
+  result do
+    encoding "json"
+    field "id", jmes_path(response, "id")
+  end
+end
+
+
+datasource "ds_decide_if_self_terminate" do
+  run_script $js_decide_if_self_terminate, $ds_get_policy, policy_id, meta_parent_policy_id
+end
+
+# If the policy was applied by a meta_parent_policy we confirm it exists if it doesn't we confirm we are deleting
+# This information is used in two places:
+# - determining whether or not we make a delete call
+# - determining if we should create an incident (we don't want to create an incident on the run where we terminate)
+script "js_decide_if_self_terminate", type: "javascript" do
+  parameters "found", "self_policy_id", "meta_parent_policy_id"
+  result "result"
+  code <<-EOS
+  var result
+  if (meta_parent_policy_id != "" && found.id == undefined) {
+    result = true
+  } else {
+    result = false
+  }
+  EOS
+end
+
+# Two potentials ways to set this up:
+# - this way and make a unneeded 'get' request when not deleting
+# - make the delete request an interate and have it iterate over an empty array when not deleting and an array with one item when deleting
+script "js_make_terminate_request", type: "javascript" do
+  parameters "should_delete", "policy_id", "rs_project_id", "rs_governance_host"
+  result "request"
+  code <<-EOS
+
+  var request = {
+    auth:  'auth_rs',
+    host: rs_governance_host,
+    path: "/api/governance/projects/" + rs_project_id + "/applied_policies/" + policy_id,
+    headers: {
+      "API-Version": "1.0",
+      "Content-Type":"application/json"
+    },
+  }
+
+  if (should_delete) {
+    request.verb = 'DELETE'
+  }
+  EOS
+end
+
+datasource "ds_terminate_self" do
+  request do
+    run_script $js_make_terminate_request, $ds_decide_if_self_terminate, policy_id, rs_project_id, rs_governance_host
+  end
+end
+
+datasource "ds_is_deleted" do
+  run_script $js_check_deleted, $ds_terminate_self
+end
+
+# This is just a way to have the check delete request connect to the farthest leaf from policy.
+# We want the delete check to the first thing the policy does to avoid the policy erroring before it can decide whether or not it needs to self terminate
+# Example a customer deletes a credential and then terminates the parent policy. We still want the children to self terminate
+# The only way I could see this not happening is if the user who applied the parent_meta_policy was offboarded or lost policy access, the policies who are impersonating the user
+# would not have access to self-terminate
+# It may be useful for the backend to enable a mass terminate at some point for all meta_child_policies associated with an id.
+script "js_check_deleted", type: "javascript" do
+  parameters "response"
+  result "result"
+  code <<-EOS
+  result = {"path":"/"}
+  EOS
+end
+
+# ^^^^^ Added for the self-terminating policy ^^^^^
+
+# vvvvv From the default policy vvvvv
+
+# Get list of enabled regions for an account
+datasource "ds_regions_list" do
+  request do
+    auth $auth_aws
+    verb "GET"
+    host "ec2.amazonaws.com"
+    path val($ds_is_deleted, "path")
+    query "Action", "DescribeRegions"
+    query "Version", "2016-11-15"
+  end
+  result do
+    encoding "xml"
+    collect xpath(response, "//DescribeRegionsResponse/regionInfo/item", "array") do
+      field "region", xpath(col_item, "regionName")
+    end
+  end
+end
+
+# Get only SCP enabled regions
+datasource "ds_regions" do
+  run_script $js_regions, $param_allowed_regions, $ds_regions_list
+end
+
+datasource "ds_aws_elastic_ip_address" do
+  iterate $ds_regions
+  request do
+    auth $auth_aws
+    pagination $pagination_aws
+    host join(["ec2.",val(iter_item,"region"), ".amazonaws.com"])
+    path "/"
+    query "Action", "DescribeAddresses"
+    query "Version", "2016-11-15"
+  end
+  result do
+    encoding "xml"
+    collect xpath(response, "//DescribeAddressesResponse/addressesSet/item") do
+      field "publicIp", xpath(col_item,"publicIp")
+      field "domain" , xpath(col_item,"domain")
+      field "instance_id", xpath(col_item, "instanceId")
+      field "region", val(iter_item,"region")
+      field "association_id", xpath(col_item,"associationId")
+      field "allocation_id", xpath(col_item,"allocationId")
+      field "tags" do
+        collect xpath(col_item, "tagSet/item") do
+          field "tagKey", xpath(col_item, "key")
+          field "tagValue", xpath(col_item, "value")
+        end
+      end
+    end
+  end
+end
+
+datasource "ds_get_caller_identity" do
+  request do
+    auth $auth_aws
+    verb "GET"
+    host "sts.amazonaws.com"
+    path "/"
+    header "User-Agent", "RS Policies"
+    query "Action", "GetCallerIdentity"
+    query "Version", "2011-06-15"
+  end
+  result do
+    encoding "xml"
+    collect xpath(response, "//GetCallerIdentityResponse/GetCallerIdentityResult") do
+      field "account",xpath(col_item, "Account")
+    end
+  end
+end
+
+datasource "ds_aws_products" do
+  request do
+    auth $auth_aws
+    pagination $pagination_aws_products
+    host "api.pricing.us-east-1.amazonaws.com"
+    verb "POST"
+    path "/"
+    header "Content-Type", "application/x-amz-json-1.1"
+    header "X-Amz-Target", "AWSPriceListService.GetProducts"
+    body_field "Filters", [{Field: "productFamily", Type: "TERM_MATCH", Value: "IP Address"}]
+    body_field "ServiceCode", "AmazonEC2"
+  end
+  result do
+    collect jq(response, '.PriceList[] | fromjson | select(.product.attributes.usagetype | test("ElasticIP:IdleAddress"))') do
+      field 'price_per_unit', jq(col_item, '.terms.OnDemand[].priceDimensions[] | select(.description | test("Elastic IP address not attached to a running instance per hour")).pricePerUnit.USD')
+      field 'region', jq(col_item, '.product.attributes.regionCode')
+    end
+  end
+end
+
+datasource "ds_filter_ip" do
+  run_script $js_filter_ip_response, $ds_aws_elastic_ip_address, $param_exclude_tags, $ds_get_caller_identity
+end
+
+datasource "ds_ip_cost_mapping" do
+  run_script $js_ip_cost_mapping, $ds_filter_ip, $ds_get_caller_identity, $ds_aws_products, $param_incident_rows_per_region, $param_allowed_regions
+end
+
+###############################################################################
+# Scripts
+###############################################################################
+
+script "js_regions", type:"javascript" do
+  parameters "user_entered_regions", "all_regions"
+  result "regions"
+  code <<-EOS
+    if(_.isEmpty(user_entered_regions)){
+      regions = all_regions;
+    }else{
+      //Filter unique regions
+      var uniqueRegions = _.uniq(user_entered_regions);
+      var all_regions_list = [];
+      all_regions.forEach(function(all_region){
+        all_regions_list.push(all_region.region)
+      })
+
+      //Filter valid regions
+      var valid_regions = [];
+      _.map(uniqueRegions, function(uniqueRegion){
+        if(all_regions_list.indexOf(uniqueRegion) > -1){
+          valid_regions.push({"region": uniqueRegion})
+        }
+      })
+
+      //Throw an error if no valid regions found
+      if (_.isEmpty(valid_regions)) {
+        regions = all_regions;
+      }else{
+        regions = valid_regions
+      }
+    }
+  EOS
+end
+
+script "js_filter_ip_response", type: "javascript" do
+  parameters "ds_aws_elastic_ip_address", "exclusion_tag", "ds_get_caller_identity"
+  result "result"
+  code <<-EOS
+    var result=[];
+    for(var i=0;i<ds_aws_elastic_ip_address.length;i++){
+      instance = ds_aws_elastic_ip_address[i];
+      var isTagMatched = false;
+      var instance_tags = {}
+      var tags = []
+      _.each(instance['tags'], function(inst){
+        tags.push(inst.tagKey+'='+inst.tagValue)
+      })
+      _.each(exclusion_tag, function(exclude){
+        if ( _.contains(tags, exclude)){
+          isTagMatched = true
+        }
+      })
+
+      //If the instance id is empty and IP tag does not match with entered param_exclude_tags
+      if(instance['instance_id']=="" && instance['association_id'] == ""){
+        if(!(isTagMatched)){
+          result.push({
+            accountID: ds_get_caller_identity[0]['account'],
+            tags: tags,
+            domain: instance['domain'],
+            publicIp: instance['publicIp'],
+            region: instance["region"],
+            allocation_id: instance["allocation_id"]
+          })
+        }
+      }
+    }
+  EOS
+end
+
+script "js_ip_cost_mapping", type:"javascript" do
+  parameters "ip_list", "ds_get_caller_identity", "aws_products", "param_incident_rows_per_region", "param_allowed_regions"
+  result "result"
+  code <<-EOS
+  result={
+    "accountID" : ds_get_caller_identity[0]['account'],
+    "ip_list" : [],
+    "message" : "The total estimated monthly savings are $ made up"
+  }
+
+  for (x=0; x<param_allowed_regions.length; x++) {
+    for (y=0; y<param_incident_rows_per_region; y++) {
+      result.ip_list.push({
+        "accountID": ds_get_caller_identity[0]['account'],
+        "allocation_id": "",
+        "domain": "vpc",
+        "id": "00.000." + x + "." + y,
+        "region": param_allowed_regions[x],
+        "resourceID": "",
+        "savings": 3.6,
+        "savingsCurrency": "$",
+        "service": "EC2",
+        "tags": []
+      })
+    }
+  }
+  EOS
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_email" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
+end
+
+# escalation "esc_delete_ip_address" do
+#   automatic contains($param_automatic_action, "Delete Unused IPs")
+#   label "Delete IP"
+#   description "Delete Selected Unused IP"
+#   run "delete_unused_instances", data, $param_log_to_cm_audit_entries
+# end
+
+###############################################################################
+# Policy
+##############################################################################
+
+policy "policy_unused_ip_addresses" do
+  validate $ds_ip_cost_mapping do
+    summary_template "AWS Account ID: {{ data.accountID }} - {{ len data.ip_list }} Unused IP Addresses Found"
+    detail_template <<-EOS
+{{data.message}}
+EOS
+    # vvvvv Edited for the self-terminating policy vvvvv
+    # check used to be eq(size(data),0)
+    # logic is we should only create an incident of we don't terminate the policy
+    # ds_decide_if_self_terminate only factors into the logic if true, so if the parent meta policy exists or the applied policy doesn't have one, this evaluates as normal
+    # in the case of a policy with multiple checks, each check must have this logic as each check is evaluated seperately
+    check logic_or($ds_decide_if_self_terminate, eq(size(val(data, "ip_list")),0))
+    # ^^^^^ Edited for the self-terminating policy ^^^^^
+    escalate $esc_email
+    # comment out action because the data is fake
+    # escalate $esc_delete_ip_address
+    export "ip_list" do
+      resource_level true
+      field "accountID" do
+        label "Account Id"
+      end
+      field "resourceID" do
+        label "Resource ID"
+        path "publicIp"
+      end
+      field "domain" do
+        label "Domain"
+      end
+      field "region" do
+        label "Region"
+      end
+      field "tags" do
+        label "Tags"
+      end
+      field "allocation_id" do
+        label "Allocation Id"
+      end
+      field "savings" do
+        label "Estimated Monthly Savings"
+      end
+      field "savingsCurrency" do
+        label "Savings Currency"
+      end
+      field "id" do
+        label "ID"
+        path "publicIp"
+      end
+      field "service" do
+        label "Service"
+      end
+    end
+  end
+end
+
+###############################################################################
+# Cloud Workflow
+###############################################################################
+
+# define delete_unused_instances($data, $param_log_to_cm_audit_entries) do
+#   $$debug = $param_log_to_cm_audit_entries == "Yes"
+#   $$errors = []
+#   $all_responses = []
+#   foreach $item in $data do
+#     sub on_error: skip_error_and_append($item["id"]) do
+#       if $item["domain"]=="standard"
+#         $response = http_request(
+#           verb: "get",
+#           host: join(["ec2.", $item["region"], ".amazonaws.com"]),
+#           auth: $$auth_aws,
+#           href: "/",
+#           query_strings:{
+#             "Action": "ReleaseAddress",
+#             "PublicIp": $item["id"],
+#             "Version": "2016-11-15"
+#           },
+#           https: true
+#         )
+#       elsif $item["domain"]=="vpc"
+#         $response = http_request(
+#           verb: "get",
+#           host: join(["ec2.", $item["region"], ".amazonaws.com"]),
+#           auth: $$auth_aws,
+#           href: "/",
+#           query_strings:{
+#             "Action": "ReleaseAddress",
+#             "AllocationId": $item["allocation_id"],
+#             "Version": "2016-11-15"
+#           },
+#           https: true
+#         )
+#       end
+#       call check_response_and_append_if_error($response, "Release Address " + $item["id"], $$errors) retrieve $$errors
+#       $all_responses << $response
+#     end
+#   end
+#   call sys_log("Responses", to_s($all_responses))
+#   if size($$errors) > 0
+#     $error = join($$errors, "\n")
+#     call sys_log("Errors", $error)
+#     raise $error
+#   end
+# end
+
+# define skip_error_and_append($subject) do
+#   $$errors << "Unexpected error for " + $subject + "\n  " + to_s($_error)
+#   $_error_behavior = "skip"
+# end
+
+# define check_response_and_append_if_error($response, $request_description, $errors) return $errors do
+#   if $response["code"] > 299 || $response["code"] < 200
+#     $errors << "Unexpected status code from " + $request_description + " request\n  " + to_s($response)
+#   end
+# end
+
+# define sys_log($subject, $detail) on_error: skip_error_and_append("Creating audit entry for " + $subject) do
+#   if $$debug
+#     rs_cm.audit_entries.create(
+#       notify: "None",
+#       audit_entry: {
+#         auditee_href: @@account,
+#         summary: "AWS Unused IP Addresses Policy :- " + $subject,
+#         detail: $detail
+#       }
+#     )
+#   end
+# end
