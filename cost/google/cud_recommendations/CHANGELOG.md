@@ -1,8 +1,9 @@
 # Changelog
 
-## v2.0
+## v3.1
 
-- Initial Release
+- Fixed missing savings field
+- updated changelog ordering
 
 ## v3.0
 
@@ -25,6 +26,6 @@
 
 - updates to output of cud recommendations savings, addition of monthly calculations
 
-## v3.1
+## v2.0
 
-- Fixed missing savings field
+- Initial Release
