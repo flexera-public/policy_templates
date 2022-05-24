@@ -7,6 +7,7 @@
 ## v1.5
 
 - updated README.md rightscale documentation links with docs.flexera documentation links
+- Use rs_optima_host variable instead of hardcoded optima.rightscale.com (different in EU region)
 
 ## v1.4
 
