@@ -2,12 +2,12 @@
 
 ## What it does
 
-This Policy leverages Optima to determine a usage forecast for a view of AWS instance vCPUs used within the entire Organization. The policy uses the specified previous number of months, not including the current month to to determine a straight-line forecast using a linear regression model. 
+This Policy leverages Optima to determine a usage forecast for a view of AWS instance vCPUs used within the entire Organization. The policy uses the specified previous number of months, not including the current month to to determine a straight-line forecast using a linear regression model.
 
 ## Functional Details
 
 - This policy uses the last month before current to guarantee full data.
-- This policy supports filtering by a specific AWS region or the entire Organization. 
+- This policy supports filtering by a specific AWS region or the entire Organization.
 - This policy produces a straight-line forecast by calculating a line of best fit (linear regression line) from the historical dataset and then extrapolating this to calculate forecasted costs.
 - The forecast is displayed as a stacked-bar chart showing Total Instance vCPUs by Instance Family for the top 8 most used Instance Families. All other Instance Families will be aggregated and displayed as "Other". Values shown in the graph are for the past 12 months.
 
