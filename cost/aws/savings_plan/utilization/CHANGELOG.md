@@ -2,8 +2,9 @@
 
 ## v2.1
 
-- updated policy "summary_template" name
+- Updated policy "summary_template" name
+- Updated image-charts url
 
 ## v2.0
 
-- initial release
+- Initial release
