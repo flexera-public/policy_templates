@@ -3,6 +3,7 @@
 ## v2.5
 
 - Updated policy "summary_template" name, changed legend font size, changed x-axis label to diagonal
+- Updated image-charts url
 
 ## v2.4
 
