@@ -389,6 +389,8 @@ Reference
 - [AWS Lambda Functions with high error rate](./operational/aws/lambda_functions_with_high_error_rate/)
 - [AWS Usage Report - Number of Instance Hours Used](./operational/aws/total_instance_hours/)
 - [AWS Usage Report - Number of Instance vCPUs Used](./operational/aws/total_instance_vcpus/)
+- [AWS Usage Forecast - Number of Instance Hours Used](./operational/aws/total_instance_hours_forecast/)
+- [AWS Usage Forecast - Number of Instance vCPUs Used](./operational/aws/total_instance_vcpus_forecast/)
 
 #### Azure
 
