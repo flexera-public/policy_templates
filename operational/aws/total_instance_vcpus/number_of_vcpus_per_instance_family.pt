@@ -1,13 +1,13 @@
-name "AWS Number of Instance Hours Used"
+name "AWS Usage Report - Number of Instance vCPUs Used"
 rs_pt_ver 20180301
 type "policy"
-short_description "Number of Hours used for each AWS Instance Family"
+short_description "This policy produces a usage report showing the number of vCPUs used for each AWS Instance Family. See the [README](https://github.com/flexera/policy_templates/tree/master/operational/aws/total_instance_vcpus) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 long_description ""
 severity "low"
-category "Cost"
+category "Operational"
 default_frequency "monthly"
 info(
-  version: "2.0",
+  version: "2.1",
   provider: "Flexera Optima",
   service: "",
   policy_set: ""
@@ -173,7 +173,7 @@ script "js_get_usage_data", type: "javascript" do
   EOS
 end
 
-#GET DATA WITH NORMALIZATION FACTOR UNITS FOR INSTANCE TYPES
+#GET DATA WITH VCPU COUNTS FOR INSTANCE TYPES
 datasource "ds_aws_instance_size_map" do
   request do
     verb "GET"
@@ -184,93 +184,93 @@ datasource "ds_aws_instance_size_map" do
 end
 
 
-#GROUP INSTANCE TYPES INTO INSTANCE FAMILIES AND CALCULATE INSTANCE HOURS
-datasource "ds_instance_hours_per_fam" do
-  run_script $js_get_instance_hours_per_fam, $ds_aws_instance_size_map, $ds_usage_data
+#GROUP INSTANCE TYPES INTO INSTANCE FAMILIES AND CALCULATE INSTANCE VCPUS
+datasource "ds_instance_vcpus_per_fam" do
+  run_script $js_get_instance_vcpus_per_fam, $ds_aws_instance_size_map, $ds_usage_data
 end
 
-script "js_get_instance_hours_per_fam", type: "javascript" do
+script "js_get_instance_vcpus_per_fam", type: "javascript" do
   parameters "aws_instance_data", "usage_data"
   result "result"
   code <<-'EOS'
   temp_result = []
   result = []
 
-  //Get Normalization Factor units from Instance Data json
-  var instance_types = _.keys(aws_instance_data)
-  var nfu_ratios = []
+  //Get vCPU counts from Instance Data json
+  instance_types = _.keys(aws_instance_data)
+  var vcpu_data = []
   _.each(instance_types, function(inst){
-    var nfu = aws_instance_data[inst].nfu
-    if(aws_instance_data[inst].nfu == null){ nfu = 1 }
-    nfu_ratios.push({
+    var vcpu_count = aws_instance_data[inst].vcpu
+    if(aws_instance_data[inst].vcpu == null){ vcpu = 0 }
+    vcpu_data.push({
       "instance_type": inst,
-      "nfu": nfu
+      "vcpu_count": vcpu_count
     })
   })
 
-  //Enrich current data with Instance Family, and then calculate Normalized Instance Hours using NFU
+  //Enrich current data with Instance Family, and then vCPU count.  - //then calculate Normalized Instance Hours using NFU
   _.each(usage_data, function(data){
     data["instance_family"] = data.instance_type.split(".")[0]
-    _.each(nfu_ratios, function(ratio){
-      if(data.instance_type == ratio.instance_type ){
-        data["normalized_instance_hours"] = data.usage_amount * ratio.nfu
+    _.each(vcpu_data, function(vcpu){
+      if(data.instance_type == vcpu.instance_type ){ 
+        data["vcpu_count"] = (data.usage_amount / 730 ) * vcpu.vcpu_count //Normalize Usage Amount (divide by 730 ) to get more accurate vCPU count
       }
     })
   })
 
   //For each month, sum Instance Hours for each Instance Family
-  month = _.pluck(_.uniq(usage_data, function (data) { return data.month }), "month")
-  inst_family = _.pluck(_.uniq(usage_data, function (data) { return data.instance_family }), "instance_family")
+  month = _.pluck( _.uniq(usage_data, function(data){ return data.month }), "month" )
+  inst_family = _.pluck( _.uniq(usage_data, function(data){ return data.instance_family }), "instance_family" )
 
-  _.each(month, function (mo) {
-    _.each(inst_family, function (fam) {
-      total_inst_hrs = 0
-      _.each(usage_data, function (data) {
-        if (data.month == mo && data.instance_family == fam) {
-          if(data.normalized_instance_hours == null){
-            data.normalized_instance_hours = 0
+  _.each(month, function(mo){
+    _.each(inst_family, function(fam){
+      total_vcpu_count = 0
+      _.each(usage_data, function(data){
+        if(data.month == mo && data.instance_family == fam){
+          if(data.vcpu_count == null){
+            data.vcpu_count = 0
           }
-          total_inst_hrs += data.normalized_instance_hours
+          total_vcpu_count += data.vcpu_count 
         }
       })
       temp_result.push({
         "month": mo,
         "instance_family": fam,
-        "total_instance_hours": total_inst_hrs
+        "total_vcpu_count": total_vcpu_count
       })
-    })
+    })  
   })
 
-  //Get highest 8 Instance Families for Instance Hours used
-  inst_hr_totals_per_fam = []
-  _.each(inst_family, function (fam) {
-    total_inst_hrs_12_months = 0
-    _.each(temp_result, function (data) {
-      if (data.instance_family == fam) {
-        total_inst_hrs_12_months += data.total_instance_hours
+  //Get highest 8 Instance Families for vCPUs used
+  vcpu_totals_per_fam = []
+  _.each(inst_family, function(fam){
+    total_vcpus_12_months = 0
+    _.each(temp_result, function(data){
+      if(data.instance_family == fam){
+        total_vcpus_12_months += data.total_vcpu_count 
       }
     })
-    inst_hr_totals_per_fam.push({
-      "total_inst_hrs_12_months": total_inst_hrs_12_months,
+    vcpu_totals_per_fam.push({
+      "total_vcpus_12_months": total_vcpus_12_months,
       "instance_family": fam
     })
   })
 
-  top_8_inst_fams = _.last(_.pluck(_.sortBy(inst_hr_totals_per_fam, "total_inst_hrs_12_months"), "instance_family"), [8])
+  top_8_inst_fams = _.last( _.pluck( _.sortBy(vcpu_totals_per_fam,"total_vcpus_12_months"), "instance_family" ), [8] )
 
-  //If Instance Family is not in 8 highest Hours used, then put into "Other" category
-  _.each(month, function (mo) {
-    total_inst_hrs_other = 0
-    _.each(temp_result, function (data) {
-      if (data.month == mo) {
-        exists = _.find(top_8_inst_fams, function (inst_fam) { return inst_fam == data.instance_family })
-        if (exists == null) {
-          total_inst_hrs_other += data.total_instance_hours
+  //If Instance Family is not in 8 highest vCPUs used, then put into "Other" category
+  _.each(month, function(mo){
+    total_vcpus_other = 0
+    _.each(temp_result, function(data){
+      if(data.month == mo ){
+        exists = _.find(top_8_inst_fams, function(inst_fam){ return inst_fam == data.instance_family })
+        if(exists == null){
+          total_vcpus_other += data.total_vcpu_count
         } else {
           result.push({
             "month": data.month,
             "instance_family": data.instance_family,
-            "total_instance_hours": data.total_instance_hours
+            "total_vcpu_count": data.total_vcpu_count
           })
         }
       }
@@ -278,7 +278,7 @@ script "js_get_instance_hours_per_fam", type: "javascript" do
     result.push({
       "month": mo,
       "instance_family": "Other",
-      "total_instance_hours": total_inst_hrs_other
+      "total_vcpu_count": total_vcpus_other
     })
   })
   EOS
@@ -286,23 +286,23 @@ end
 
 #CHART CREATION
 datasource "ds_chart_creation" do
-  run_script $js_create_chart_data, $ds_instance_hours_per_fam, $param_region
+  run_script $js_create_chart_data, $ds_instance_vcpus_per_fam, $param_region
 end
 
 script "js_create_chart_data", type: "javascript" do
-  parameters "inst_hrs_data", "param_region"
+  parameters "inst_vcpu_data", "param_region"
   result "report"
   code <<-EOS
 
   //Group data by Instance Family
   group_by_inst_fam = 
-  _.groupBy(inst_hrs_data, function(data){ return data.instance_family })
-  report = inst_hrs_data
+  _.groupBy(inst_vcpu_data, function(data){ return data.instance_family })
+  report = inst_vcpu_data
 
   //Create chart axis labels
   chart_axis_labels = 
   ("chxl=1:," + 
-    _.uniq(inst_hrs_data, function(data) { return data.month })
+    _.uniq(inst_vcpu_data, function(data) { return data.month })
     .map(function(data){ return data.month.substring(0,7) })
   ).split(",").join("|")
 
@@ -321,7 +321,7 @@ script "js_create_chart_data", type: "javascript" do
   _.each(group_by_inst_fam, function(o){
     var count_2 = 0
     _.each(o, function(p){
-      chart_data = chart_data + p.total_instance_hours
+      chart_data = chart_data + p.total_vcpu_count
       count_2++
       if (count_2 < _.size(o)){ chart_data = chart_data + "," } 
     })
@@ -330,10 +330,10 @@ script "js_create_chart_data", type: "javascript" do
   })
 
   //Create Chart Title
-  policy_title = "Total Instance Hours Used Per Instance Family For " + param_region
+  policy_title = "Total Instance vCPUs Used Per Instance Family For " + param_region
   chart_title = "chtt=" + policy_title
   if( param_region == "" ){
-    policy_title = "Total Instance Hours Used Per Instance Family"
+    policy_title = "Total Instance vCPUs Used Per Instance Family"
     chart_title = "chtt=" + policy_title
   }
 
@@ -347,7 +347,7 @@ script "js_create_chart_data", type: "javascript" do
     chart_label_position: encodeURI("chdlp=b"),
     chart_axis: encodeURI("chxt=y,x"),
     chart_axis_label: encodeURI(chart_axis_labels),
-    chart_axis_format: encodeURI("chxs=0N*f" + "0sz* Hours"),
+    chart_axis_format: encodeURI("chxs=0N*f" + "0sz* vCPUs"),
     chart_line_style: encodeURI("chls=3|3|3|3|3|3|3|3|3|3|3"),
     chart_line_color: encodeURI("chco=6929c4,9f1853,198038,b28600,1192e8,009d9a,005d5d,007d79"),
     chart_data_scale: encodeURI("chds=a"),
@@ -375,9 +375,9 @@ end
 # Policy
 ###############################################################################
 
-policy "pol_inst_hrs_per_inst_fam" do
+policy "pol_inst_vcpu_per_inst_fam" do
   validate_each $ds_chart_creation do
-    summary_template "AWS - Instance Hours Used per Instance Family (Normalized - past 12 months)"
+    summary_template "AWS - Instance vCPUs Used per Instance Family (Normalized - past 12 months)"
     detail_template <<-EOS
     # AWS - {{ with index data 0 }}{{ .chart_dimensions.policy_title }}{{ end }} Report
     ![Instance Hours Used Per Instance Family Chart](https://image-charts.com/chart?{{ with index data 0 }}{{ .chart_dimensions.chart_data }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_size }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_type }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_image }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_title }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_label_position }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_axis }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_axis_label }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_line_style }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_line_color }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_data_scale }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_legend_size }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_legend }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_axis_format }}{{ end }})
@@ -395,8 +395,8 @@ policy "pol_inst_hrs_per_inst_fam" do
       field "instance_family" do
         label "Instance Family"
       end
-      field "total_instance_hours" do
-        label "Instance Hours Used"
+      field "total_vcpu_count" do
+        label "vCPUs Used"
       end
     end
   end

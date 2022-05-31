@@ -46,9 +46,9 @@ Reference
 
 ##### Forecasting
 
-- [Straight-Line Forecast (Simple Model)](./cost/forecasting/straight_line_forecast/simple/)
-- [Straight-Line Forecast (Linear Regression Model)](./cost/forecasting/straight_line_forecast/linear_regression/)
-- [Moving Average](./cost/forecasting/moving_average/)
+- [Cloud Spend Forecast - Moving Average](./cost/forecasting/moving_average/)
+- [Cloud Spend Forecast - Straight-Line (Linear Regression Model)](./cost/forecasting/straight_line_forecast/linear_regression/)
+- [Cloud Spend Forecast - Straight-Line (Simple Model)](./cost/forecasting/straight_line_forecast/simple/)
 - [Vendor Commitment Forecast](./cost/forecasting/commitment_forecast/)
 
 #### AWS
@@ -63,8 +63,6 @@ Reference
 - [AWS Expiring Reserved Instances](./cost/aws/reserved_instances/expiration/)
 - [AWS Idle Compute Instances](./cost/aws/idle_compute_instances/)
 - [AWS Inefficient Instance Utilization using CloudWatch](./cost/aws/instance_cloudwatch_utilization/)
-- [AWS Number of Instance Hours Used](./cost/aws/total_instance_hours/)
-- [AWS Number of Instance vCPUs Used](./cost/aws/total_instance_vcpus/)
 - [AWS Reserved Instances Utilization](./cost/aws/reserved_instances/utilization/)
 - [AWS Reserved Instance Reservation Coverage](./cost/aws/reserved_instances/coverage/)
 - [AWS Reserved Instances Report by Billing Center](./cost/aws/reserved_instances/report_by_bc)
@@ -293,6 +291,8 @@ Reference
 - [Azure Ensure Owners Receive Security Alerts](./security/azure/security_alert_owners/)
 - [Azure Ensure High Severity Alerts](./security/azure/high_severity_alerts/)
 - [Azure Ensure Security Contact Email](./security/azure/security_contact_email/)
+- [Azure Network Security Groups With Inbound RDP Open](./security/azure/restrict_rdp_internet/)
+- [Azure Network Security Groups With Inbound SSH Open](./security/azure/restrict_ssh_internet/)
 
 #### Google
 
@@ -381,6 +381,8 @@ Reference
 - [AWS Long Running Instances](./operational/aws/long_running_instances/)
 - [AWS Instance Scheduled Events](./operational/aws/instance_scheduled_events)
 - [AWS Lambda Functions with high error rate](./operational/aws/lambda_functions_with_high_error_rate/)
+- [AWS Usage Report - Number of Instance Hours Used](./operational/aws/total_instance_hours/)
+- [AWS Usage Report - Number of Instance vCPUs Used](./operational/aws/total_instance_vcpus/)
 
 #### Azure
 
