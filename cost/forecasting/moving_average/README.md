@@ -1,8 +1,8 @@
-# Moving Average Policy
+# Cloud Spend Forecast - Moving Average
 
 ## What it does
 
-This Policy uses Optima to determine a moving average for a Billing Center or the entire Organization. The policy uses the specified previous number of months, not including the current month to determine a straight-line forecast.
+This Policy uses Optima to determine a moving average forecast of cloud spend for a Billing Center or the entire Organization. The policy uses the specified previous number of months, not including the current month to determine a straight-line forecast.
 
 ## Functional Details
 
