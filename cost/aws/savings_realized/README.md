@@ -1,14 +1,14 @@
-# Azure Savings Realized from Reservations
+# AWS Savings Realized from Reservations
 
 ## What it does
 
-This Policy uses Optima to determine a view of total savings realized from using Compute Reservations in Azure, for the entire Organization or specified billing centers across a period of historical months.
+This Policy uses Optima to determine a view of total savings realized from using Compute Reservations, Savings Plans, and Spot Instances in AWS, for the entire Organization or specified billing centers across a period of historical months.
 
 ## Functional Details
 
-- This policy currently supports only a view of savings realized from Azure Reserved Instances.
+- This policy supports a view of savings realized from AWS Compute Reserved Instances, Savings Plans and Spot Instances
 - This policy supports a view of savings realized for a list of specific billing centers or for the entire Organization.
-- This policy uses the on-demand rate and the reserved instance rate by instance type and region to derive a savings rate. The policy then uses usage amount to calculate total savings realized.
+- This policy uses the on-demand rate and the reserved instance/savings plan/spot instance rate by instance type and region to derive a savings rate. The policy then uses usage amount to calculate total savings realized.
 - This policy produces a bar chart showing savings realized vs. total actual spend for the period of historical months specified.
 
 ### Input Parameters
@@ -27,7 +27,7 @@ This policy has the following input parameters required when launching the polic
 
 ## Supported Clouds
 
-- Azure
+- AWS
 
 ## Cost
 
