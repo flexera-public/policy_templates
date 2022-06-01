@@ -2,7 +2,7 @@
 
 ## v1.7
 
-- Use provided keyword for Optima endpoint
+- Use rs_optima_host instead of hardcoded hostname
 
 ## v1.6
 
