@@ -594,6 +594,20 @@ define check_response_and_append_if_error($response, $request_description, $erro
   end
 end
 
+define sys_log($subject, $detail) on_error: skip_error_and_append("Creating audit entry for " + $subject) do
+  if $$debug
+    rs_cm.audit_entries.create(
+      notify: "None",
+      audit_entry: {
+        auditee_href: @@account,
+        summary: "AWS Unused IP Addresses Policy :- " + $subject,
+        detail: $detail
+      }
+    )
+  end
+end
+
+
 ###############################################################################
 # Meta Policy [alpha]
 # Not intended to be modified or used by policy developers
@@ -603,7 +617,7 @@ end
 # if it is set we will look for the parent policy.
 datasource "ds_get_policy" do
   request do
-    auth $auth_flexera
+    auth $auth_rs
     host rs_governance_host
     ignore_status [404]
     path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", switch(ne(meta_parent_policy_id,""), meta_parent_policy_id, policy_id) ])
@@ -646,7 +660,7 @@ script "js_make_terminate_request", type: "javascript" do
   code <<-EOS
 
   var request = {
-    auth:  'auth_flexera',
+    auth:  'auth_rs',
     host: rs_governance_host,
     path: "/api/governance/projects/" + rs_project_id + "/applied_policies/" + policy_id,
     headers: {
