@@ -1,9 +1,14 @@
 # Changelog
 
+## v2.2
+
+- Updated policy "summary_template" name, changed legend font size, changed x-axis label to diagonal
+- Updated image-charts url
+
 ## v2.1
 
-- updated policy template name and description
+- Updated policy template name and description
 
 ## v2.0
 
-- initial release
+- Initial release

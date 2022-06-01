@@ -8,7 +8,9 @@ This Policy uses Optima to determine a cloud spend forecast for a Billing Center
 
 - This policy supports a group of Billing Centers or the entire Organization.
 - This policy uses the last month before current to guarantee full data.
+- This policy supports different dimensions to break down costs by, such as Category, Service and Region.
 - This policy produces a straight-line forecast by dividing the earliest month in the dataset by the last month in the dataset.
+- This policy omits costs for Commitments, as refunds are difficult to forecast.
 
 ### Input Parameters
 

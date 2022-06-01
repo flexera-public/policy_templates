@@ -10,7 +10,7 @@ This Policy uses Optima to determine a cloud spend forecast for a Billing Center
 - This policy uses the last month before current to guarantee full data.
 - This policy supports different dimensions to break down costs by, such as Category, Service and Region.
 - This policy produces a straight-line forecast by calculating a line of best fit (linear regression line) from the historical dataset and then extrapolating this to calculate forecasted costs.
-- This policy ommits costs for Commitments, as refunds are difficult to forecast.
+- This policy omits costs for Commitments, as refunds are difficult to forecast.
 
 ### Input Parameters
 
