@@ -40,6 +40,13 @@ parameter "param_policy_schedule" do
   allowed_values "daily", "weekly", "monthly"
 end
 
+parameter "param_policy_href" do
+  type "string"
+  label "Child Policy Template Href"
+  description "Href for the `AWS Unused IP Addresses` Policy Template for child applied policies."
+  default "/api/governance/projects/113453/policy_templates/6297b4fd1f946c0001e88e39"
+end
+
 ## Child Policy Parameters
 parameter "param_allowed_regions" do
   type "list"
@@ -157,12 +164,14 @@ datasource "ds_child_policy_information" do
   request do
     auth $auth_rs
     host rs_governance_host
-    path "/api/governance/projects/116186/policy_templates/628d653be8d4450001794985"
+    path $param_policy_href
     header "Api-Version", "1.0"
   end
   result do
     encoding "json"
     field "name", jmes_path(response, "name")
+    field "href", jmes_path(response, "href")
+    field "short_description", jmes_path(response, "short_description")
   end
 end
 
@@ -441,7 +450,7 @@ script "js_take_in_parameters", type: "javascript" do
     cur = aws_account_ids[x]
 
     name = child_policy.name + ": " + cur.aws_account_name + " (" + cur.aws_account_id + ") (child policy)"
-    description = child_policy.name + " policy applied by [" + parent_policy.name + "](" + automation_api_project_url_prefix + "/applied-policies/" + meta_parent_policy_id + ") to AWS Account **" + cur.aws_account_name +"** (`" + cur.aws_account_id + "`)"
+    description = child_policy.name + " policy applied by [" + parent_policy.name + "](" + automation_api_project_url_prefix + "/applied-policies/" + meta_parent_policy_id + ") to AWS Account **" + cur.aws_account_name +"** (`" + cur.aws_account_id + "`).  " + child_policy.short_description
     options = [
       {
         "name": "param_email",
@@ -478,7 +487,7 @@ script "js_take_in_parameters", type: "javascript" do
           "options" : options,
           "frequency" : param_policy_schedule,
           "meta_parent_policy_id": meta_parent_policy_id,
-          "template_href": "/api/governance/projects/116186/policy_templates/628d653be8d4450001794985",
+          "template_href": child_policy.href
         })
         policy_status={
           "policy_name": name,
