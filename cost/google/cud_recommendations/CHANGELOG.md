@@ -1,11 +1,11 @@
 # Changelog
 
-## v3.1
+## v2.2
 
 - Fixed missing savings field
 - updated changelog ordering
 
-## v3.0
+## v2.1
 
 - Changes to fields for spend recommendations
   - changed "location" to "region"
