@@ -1,5 +1,10 @@
 # Changelog
 
+## v3.4
+
+- fixed issue with multiple datapoints on cpu_usage to not show duplicate, incorrect cpu data
+- updated memory usage fields to map with correct field and return value.
+
 ## v3.3
 
 - updated savings_currency to savingsCurrency and fixed possible N/A value to 0.0
