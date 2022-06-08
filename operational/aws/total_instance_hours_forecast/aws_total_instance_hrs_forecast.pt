@@ -1,13 +1,13 @@
-name "AWS Usage Report - Number of Instance Hours Used"
+name "AWS Usage Forecast - Number of Instance Hours Used"
 rs_pt_ver 20180301
 type "policy"
-short_description "This policy produces a usage report showing the number of Hours used for each AWS Instance Family. See the [README](https://github.com/flexera/policy_templates/tree/master/operational/aws/total_instance_hours) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+short_description "This policy uses a linear-regression model to produce a forecast of the number of hours used for AWS instances, categorized by Instance Family. See the [README](https://github.com/flexera/policy_templates/tree/master/operational/aws/total_instance_hours_forecast) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 long_description ""
 severity "low"
 category "Operational"
 default_frequency "monthly"
 info(
-  version: "2.2",
+  version: "2.0",
   provider: "Flexera Optima",
   service: "",
   policy_set: ""
@@ -26,6 +26,20 @@ parameter "param_region" do
   type "string"
   label "Region"
   description "Name of the AWS Region to filter by. Example: 'US West (Oregon)'. Leave this blank for 'Organization' scope"
+end
+
+parameter "param_lookback_months" do
+  label "Lookback Months"
+  description "Number of months to lookback to generate forecast"
+  type "number"
+  default 10
+end
+
+parameter "param_forecasted_months" do
+  label "Months to forecast"
+  description "Number of months in the future to forecast"
+  type "number"
+  default 6
 end
 
 ###############################################################################
@@ -81,10 +95,51 @@ script "js_top_level_bc", type: "javascript" do
   EOS
 end
 
+#CREATE LIST OF PAST MONTHS
+datasource "ds_past_month_list" do
+  run_script $js_generate_past_month_list, $param_lookback_months
+end
+
+script "js_generate_past_month_list", type: "javascript" do
+  parameters "param_lookback_months"
+  result "month_list"
+  code <<-EOS
+  var month_list = [];
+  // format the date for the `daily` API
+  // returns date formatted as string: YYYY-mm-dd
+  function getFormattedDailyDate(date) {
+    var year = date.getFullYear();
+    var month = (1 + date.getMonth()).toString();
+    month = month.length > 1 ? month : '0' + month;
+    return year + '-' + month;
+  }
+
+  function getStartDate( date, month_counter ) {
+    date.setMonth(date.getMonth() - month_counter);
+    return date;
+  }
+
+  function getEndDate( date, month_counter ) {
+    date.setMonth(date.getMonth() - (month_counter - 1));
+    return date;
+  }
+
+  _.each(_.range(1, param_lookback_months + 1), function (month_counter) {
+    var start_date = getFormattedDailyDate(getStartDate(new Date(), month_counter));
+    var end_date = getFormattedDailyDate(getEndDate(new Date(), month_counter));
+    month_list.push({
+      'start_date': start_date,
+      'end_date': end_date,
+    });
+  });
+  EOS
+end
+
 #GET USAGE DATA FOR INSTANCE TYPES
 datasource "ds_usage_data" do
+  iterate $ds_past_month_list
   request do
-    run_script $js_get_usage_data, $ds_top_level_billing_centers, $param_region, rs_org_id, rs_optima_host
+    run_script $js_get_usage_data, $ds_top_level_billing_centers, $param_region, rs_org_id, rs_optima_host, val(iter_item, 'start_date'), val(iter_item, 'end_date')
   end
   result do
     encoding "json"
@@ -100,7 +155,7 @@ datasource "ds_usage_data" do
 end
 
 script "js_get_usage_data", type: "javascript" do
-  parameters "top_level_billing_centers", "region", "org_id", "optima_host"
+  parameters "top_level_billing_centers", "region", "org_id", "optima_host", "start_date", "end_date"
   result "request"
   code <<-EOS 
   //Billing Center IDs into array
@@ -108,11 +163,6 @@ script "js_get_usage_data", type: "javascript" do
   _.each(top_level_billing_centers, function(bc){
     billing_center_ids.push(bc.id)
   })
-
-  //Get Start and End dates
-  start_date = new Date(), end_date = new Date()
-  start_date.setMonth(start_date.getMonth() - 13)
-  end_date.setMonth(end_date.getMonth() - 1)
 
   //get expressions for payload based on region parameter
   expressions = []
@@ -155,8 +205,8 @@ script "js_get_usage_data", type: "javascript" do
       "cost_nonamortized_unblended_adj",
       "usage_amount"
     ],
-    "end_at": end_date.toLocaleDateString("en-US").split("-")[0] + "-" + end_date.toLocaleDateString("en-US").split("-")[1]
-    "start_at": start_date.toLocaleDateString("en-US").split("-")[0] + "-" + start_date.toLocaleDateString("en-US").split("-")[1]
+    "end_at": end_date
+    "start_at": start_date
   }
 
   //Request
@@ -182,7 +232,6 @@ datasource "ds_aws_instance_size_map" do
     header "User-Agent", "RS Policies"
   end
 end
-
 
 #GROUP INSTANCE TYPES INTO INSTANCE FAMILIES AND CALCULATE INSTANCE HOURS
 datasource "ds_instance_hours_per_fam" do
@@ -284,9 +333,114 @@ script "js_get_instance_hours_per_fam", type: "javascript" do
   EOS
 end
 
+#CALCULATE FORECAST DATA
+datasource "ds_forecast_data" do
+  run_script $js_get_forecast_data, $ds_instance_hours_per_fam, $param_forecasted_months
+end
+
+script "js_get_forecast_data", type: "javascript" do
+  parameters "data_package", "param_forecast_months"
+  result "report_data"
+  code <<-EOS
+
+  report_data = []
+
+  //Aggregate historical data for each historical month
+  months = _.pluck(_.uniq(data_package, function (data){ return data.month }), "month").reverse()
+  _.each(months, function(mo){
+    total_historic_inst_hrs = 0
+    _.each(data_package, function(data){
+      if(mo == data.month){
+        total_historic_inst_hrs += data.total_instance_hours
+      }
+    })
+
+    report_data.push({
+      "month": mo.split("-")[0] + "-" + mo.split("-")[1],
+      "instance_family": "Historical Instance Hours",
+      "total_instance_hours": total_historic_inst_hrs
+    })
+  })
+  
+  //Group data by Instance Family
+  var group_by_inst_fam = _.groupBy(data_package, function(data){ return data.instance_family})
+
+  //Calculate linear regression line (line of best fit) across data
+  var forecast_data = []
+  var instance_fams = _.keys(group_by_inst_fam)
+  _.each(instance_fams, function(family_key){
+    n = 0
+    sum_x = 0, sum_x_squared = 0, x_mean = 0
+    sum_y = 0, sum_x_y = 0, y_mean = 0
+
+    _.each(group_by_inst_fam[family_key], function(fam){
+      //get the cost and the month (as an integer e.g. 2021-02 is x=1, 2021-03 is x=2, etc.)
+      x = group_by_inst_fam[family_key].length - n          //represents month on the x axis
+      y = fam.total_instance_hours                          //represents cost on the y axis
+      x_squared = x * x   
+      x_y = x * y
+
+      sum_x += x, sum_x_squared += x_squared
+      sum_y += y, sum_x_y += x_y
+      n++
+    })
+
+    x_mean = sum_x / n    // n = number of months
+    y_mean = sum_y / n
+
+    //Calculate Sxx and Sxy to then calculate Beta
+    s_xx = sum_x_squared - ((sum_x * sum_x) / n)
+    s_xy = sum_x_y - ((sum_x * sum_y) / n)
+    beta = s_xy / s_xx
+
+    //Calculate Alpha
+    alpha = y_mean - (beta * x_mean)
+
+    //Data required to calculate forecast costs
+    forecast_data.push({
+      "instance_family": family_key,
+      "alpha": alpha,
+      "beta": beta,
+      "historical_months": n
+    })
+  })
+
+  //Function to get formatted month
+  function getFormattedDailyDate( date ){
+    var year = date.getFullYear();
+    var month = (1 + date.getMonth()).toString();
+    month = month.length > 1 ? month : '0' + month;
+    return year + '-' + month;
+  }
+
+  //Function to get future forecasted months
+  function getFutureMonth( date, month_counter ){
+    date.setMonth(date.getMonth() + month_counter);
+    return date;
+  }
+
+  //Calculate forecasted costs for each future month (For each month use linear regression line to extrapolate instance hours for each instance family)
+  for(i = 0; i < param_forecast_months; i++){
+    var forecast_month = getFormattedDailyDate( getFutureMonth( new Date(), i ) )
+    _.each(forecast_data, function(data){
+      x_value = data.historical_months + (i + 1)        //'x' in y = bx + a (x represents forecasted month)
+      y_value = (data.beta * x_value) + data.alpha      //'y' in y = bx + a (y represents forecasted cost)
+      
+      if(y_value < 0){ y_value = 0 }                    //To stop downward trends in cost from going below 0
+      
+      report_data.push({
+        "month": forecast_month,
+        "instance_family": data.instance_family,
+        "total_instance_hours": y_value
+      })
+    })
+  }
+  EOS
+end
+
 #CHART CREATION
 datasource "ds_chart_creation" do
-  run_script $js_create_chart_data, $ds_instance_hours_per_fam, $param_region
+  run_script $js_create_chart_data, $ds_forecast_data, $param_region
 end
 
 script "js_create_chart_data", type: "javascript" do
@@ -298,6 +452,25 @@ script "js_create_chart_data", type: "javascript" do
   group_by_inst_fam = 
   _.groupBy(inst_hrs_data, function(data){ return data.instance_family })
   report = inst_hrs_data
+  
+  //Inject historical months into dimension forecast data
+  historical_months = []
+  _.each( group_by_inst_fam["Historical Instance Hours"], function(hist){
+    historical_months.push({"month": hist.month})
+  })
+
+  for (var key in group_by_inst_fam){
+    if( key != "Historical Instance Hours" ){
+      _.each(historical_months, function(hist){
+        group_by_inst_fam[key].push({ 
+          "month": hist.month,
+          "instance_family": key,
+          "total_instance_hours": "_"
+        })
+      })
+    }
+    group_by_inst_fam[key] = _.sortBy(group_by_inst_fam[key], "month")
+  }
 
   //Create chart axis labels
   chart_axis_labels = 
@@ -340,7 +513,7 @@ script "js_create_chart_data", type: "javascript" do
   //Whole Chart object
   chart = {
     chart_type: encodeURI("cht=bvs"),
-    chart_size: encodeURI("chs=900x500"),
+    chart_size: encodeURI("chs=999x450"),
     chart_data: encodeURI(chart_data),
     chart_title: encodeURI(chart_title),
     chart_image: encodeURI("chof=.png"),  
@@ -349,7 +522,7 @@ script "js_create_chart_data", type: "javascript" do
     chart_axis_label: encodeURI(chart_axis_labels),
     chart_axis_format: encodeURI("chxs=0N*f" + "0sz* Hours|1,min40"),
     chart_line_style: encodeURI("chls=3|3|3|3|3|3|3|3|3|3|3"),
-    chart_line_color: encodeURI("chco=6929c4,9f1853,198038,b28600,1192e8,009d9a,005d5d,007d79"),
+    chart_line_color: encodeURI("chco=777877,6929c4,9f1853,198038,b28600,1192e8,009d9a,005d5d,007d79,6929c4"),
     chart_data_scale: encodeURI("chds=a"),
     chart_legend: encodeURI(chart_legend),
     chart_legend_size: encodeURI("chdls=000000,10"),
@@ -375,12 +548,12 @@ end
 # Policy
 ###############################################################################
 
-policy "pol_inst_hrs_per_inst_fam" do
+policy "pol_usage_forecast_inst_hrs" do
   validate_each $ds_chart_creation do
-    summary_template "AWS Usage Report - Number of Instance Hours Used (Normalized - past 12 months)"
+    summary_template "AWS Usage Forecast - Instance Hours Used per Instance Family (Normalized)"
     detail_template <<-EOS
-    # AWS - {{ with index data 0 }}{{ .chart_dimensions.policy_title }}{{ end }} Report
-    ![Instance Hours Used Per Instance Family Chart](https://api.image-charts-auth.flexeraeng.com/ic-function?rs_org_id={{ rs_org_id }}&rs_project_id={{ rs_project_id }}&{{ with index data 0 }}{{ .chart_dimensions.chart_data }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_size }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_type }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_image }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_title }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_label_position }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_axis }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_axis_label }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_line_style }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_line_color }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_data_scale }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_legend_size }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_legend }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_axis_format }}{{ end }})
+    # AWS Usage Forecast - {{ with index data 0 }}{{ .chart_dimensions.policy_title }}{{ end }} Report
+    ![AWS Usage Forecast - Instance Hours Used Per Instance Family Chart](https://api.image-charts-auth.flexeraeng.com/ic-function?rs_org_id={{ rs_org_id }}&rs_project_id={{ rs_project_id }}&{{ with index data 0 }}{{ .chart_dimensions.chart_data }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_size }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_type }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_image }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_title }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_label_position }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_axis }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_axis_label }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_line_style }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_line_color }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_data_scale }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_legend_size }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_legend }}{{ end }}&{{ with index data 0 }}{{ .chart_dimensions.chart_axis_format }}{{ end }})
     ___
     ###### Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }}) within Org: {{ rs_org_name }} (Org ID: {{ rs_org_id }})
     EOS

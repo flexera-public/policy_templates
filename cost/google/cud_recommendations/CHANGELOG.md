@@ -1,10 +1,11 @@
 # Changelog
 
-## v2.0
+## v2.2
 
-- Initial Release
+- Fixed missing savings field
+- updated changelog ordering
 
-## v3.0
+## v2.1
 
 - Changes to fields for spend recommendations
   - changed "location" to "region"
@@ -24,3 +25,7 @@
 - Change to template name from "Google Committed Use Discount Recommender Policy" to "Google Committed Use Discount Recommender"
 
 - updates to output of cud recommendations savings, addition of monthly calculations
+
+## v2.0
+
+- Initial Release

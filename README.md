@@ -69,6 +69,7 @@ Reference
 - [AWS Reserved Instance Recommendations](./cost/aws/reserved_instances/recommendations)
 - [AWS Savings Plan Recommendations](./cost/aws/savings_plan/recommendations)
 - [AWS Savings Plan Utilization](./cost/aws/savings_plan/utilization)
+- [AWS Savings Realized from Reservations](./cost/aws/savings_realized)
 - [AWS Schedule Instance](./cost/aws/schedule_instance/)
 - [AWS Unused IP Addresses](./cost/aws/unused_ip_addresses)
 
@@ -142,7 +143,7 @@ Reference
 - [Google Object Storage Optimization](./cost/google/object_storage_optimization/)
 - [Google Old Snapshots](./cost/google/old_snapshots/)
 - [Google Unused Volumes](./cost/google/unattached_volumes/)
-- [Google Idle Persistent Disk Recommender"](./cost/google/idle_persistent_disk_recommendations)
+- [Google Idle Persistent Disk Recommender](./cost/google/idle_persistent_disk_recommendations)
 
 ##### Native Recommendations
 
@@ -388,6 +389,8 @@ Reference
 - [AWS Lambda Functions with high error rate](./operational/aws/lambda_functions_with_high_error_rate/)
 - [AWS Usage Report - Number of Instance Hours Used](./operational/aws/total_instance_hours/)
 - [AWS Usage Report - Number of Instance vCPUs Used](./operational/aws/total_instance_vcpus/)
+- [AWS Usage Forecast - Number of Instance Hours Used](./operational/aws/total_instance_hours_forecast/)
+- [AWS Usage Forecast - Number of Instance vCPUs Used](./operational/aws/total_instance_vcpus_forecast/)
 
 #### Azure
 
