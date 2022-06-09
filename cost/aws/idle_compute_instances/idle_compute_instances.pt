@@ -7,7 +7,7 @@ severity "low"
 category "Cost"
 default_frequency "daily"
 info(
-  version: "3.3",
+  version: "3.4",
   provider: "AWS",
   service: "EC2",
   policy_set: "Idle Compute Instances"
@@ -516,49 +516,67 @@ script "js_merged_metrics", type: "javascript" do
   result "merged_results"
   code <<-EOS
   var merged_results = []
+  var instance_values = []
   for ( i = 0; i < ds_cloudwatch_cpu_usage.length; i++){
+
     var instance = ds_cloudwatch_cpu_usage[i]
     var instance_id = instance.instanceId
-    if (instance.platform == 'windows'){
+    found = false
+    var obj
+    var index
+    Object.keys(instance_values).forEach(function(key) {
+      if (instance_values[key].id === instance_id) {
+        found = true
+        obj = instance_values[key]
+        index = key
+      }
+    });
+
+    if (found) {
+      if (obj.cpu_maximum < instance.cpu_maximum) {
+        obj.cpu_maximum = instance.cpu_maximum
+      }
+      if (obj.cpu_minimum > instance.cpu_minimum) {
+        obj.cpu_minimum = instance.cpu_minimum
+      }
+      obj.total_cpu_average.push(instance.cpu_average)
+      instance_values[index] = obj
+    } else {
+      if (instance.platform == 'windows'){
       var mem_usage_record = _.find(ds_cloudwatch_windows_mem_usage, function(record) { return record.instanceId == instance_id; })
 
       if (mem_usage_record != null && mem_usage_record !== undefined) {
-        var mem_maximum = parseFloat(mem_usage_record.mem_maximum).toFixed(2)
-        var mem_average = parseFloat(mem_usage_record.mem_average).toFixed(2)
-        var mem_minimum = parseFloat(mem_usage_record.mem_minimum).toFixed(2)
+        var mem_maximum = (Math.round(mem_usage_record.mem_maximum * 100) / 100)
+        var mem_average = (Math.round(mem_usage_record.mem_average * 100) / 100)
+        var mem_minimum = (Math.round(mem_usage_record.mem_minimum * 100) / 100)
       } else {
-        var mem_maximum = "101"
-        var mem_average = "101"
-        var mem_minimum = "101"
-        var mem_maximum_value = "NA"
-        var mem_minimum_value = "NA"
-        var mem_average_value = "NA"
+        var mem_maximum = "NA"
+        var mem_minimum = "NA"
+        var mem_average = "NA"
       }
     } else {
       instance.platform = 'linux'
       var mem_usage_record = _.find(ds_cloudwatch_mem_usage, function(record) { return record.instanceId == instance_id; })
 
       if (mem_usage_record != null && mem_usage_record !== undefined) {
-        var mem_maximum = parseFloat(mem_usage_record.mem_maximum).toFixed(2)
-        var mem_average = parseFloat(mem_usage_record.mem_average).toFixed(2)
-        var mem_minimum = parseFloat(mem_usage_record.mem_minimum).toFixed(2)
+        var mem_maximum = (Math.round(mem_usage_record.mem_maximum * 100) / 100)
+        var mem_average = (Math.round(mem_usage_record.mem_average * 100) / 100)
+        var mem_minimum = (Math.round(mem_usage_record.mem_minimum * 100) / 100)
       } else {
-        var mem_maximum = "101"
-        var mem_average = "101"
-        var mem_minimum = "101"
-        var mem_maximum_value = "NA"
-        var mem_minimum_value = "NA"
-        var mem_average_value = "NA"
+        var mem_maximum = "NA"
+        var mem_minimum = "NA"
+        var mem_average = "NA"
       }
     }
-    if((param_avg_used_memory >= mem_average && param_avg_used_memory != -1) || (param_avg_cpu >= parseFloat(instance.cpu_average).toFixed(2) && param_avg_cpu != -1)){
       var resourceType = ""
       _.each(ds_instances, function(inst){
         if (inst.instanceId === instance.instanceId){
           resourceType = inst.resourceType
         }
       })
-      merged_results.push(
+      var total_cpu_average = []
+      total_cpu_average.push(instance.cpu_average)
+      instance_values.push(
         {
           "region": instance.region,
           "id": instance.instanceId,
@@ -567,19 +585,43 @@ script "js_merged_metrics", type: "javascript" do
           "hostname": instance.privateDnsName.split('.')[0],
           "tags": instance.tags,
           "resourceType": resourceType,
-          "cpu_minimum": parseFloat(instance.cpu_minimum).toFixed(2),
-          "cpu_maximum": parseFloat(instance.cpu_maximum).toFixed(2),
-          "cpu_average": parseFloat(instance.cpu_average).toFixed(2),
+          "cpu_minimum": instance.cpu_minimum,
+          "cpu_maximum": instance.cpu_maximum,
+          "total_cpu_average": total_cpu_average,
           "mem_maximum": mem_maximum,
           "mem_minimum": mem_minimum,
           "mem_average": mem_average,
-          "mem_maximum_value": mem_maximum_value,
-          "mem_average_value": mem_average_value,
-          "savings":0.0
         }
       )
     }
   }
+  instance_values.forEach(function(instance) {
+    cpu_calc = 0
+    instance.total_cpu_average.forEach(function(average){
+      cpu_calc = average + cpu_calc
+    })
+    cpu_calc = (cpu_calc / instance.total_cpu_average.length)
+    if((param_avg_used_memory >= instance.mem_average && param_avg_used_memory != -1) || (param_avg_cpu >= (Math.round(cpu_calc * 100) / 100) && param_avg_cpu != -1)){
+      merged_results.push(
+        {
+          "region": instance.region,
+          "id": instance.id,
+          "platform": instance.platform,
+          "privateDnsName": instance.privateDnsName,
+          "hostname": instance.hostname,
+          "tags": instance.tags,
+          "resourceType": instance.resourceType,
+          "cpu_minimum": (Math.round(instance.cpu_minimum * 100) / 100),
+          "cpu_maximum": (Math.round(instance.cpu_maximum * 100) / 100),
+          "cpu_average": (Math.round(cpu_calc * 100) / 100),
+          "mem_maximum": instance.mem_maximum,
+          "mem_minimum": instance.mem_minimum,
+          "mem_average": instance.mem_average,
+          "savings":0.0
+        }
+      )
+    }
+  });
 EOS
 end
 
@@ -732,8 +774,6 @@ script "js_instance_cost_mapping", type:"javascript" do
           "mem_maximum": instance["mem_maximum"],
           "mem_minimum": instance["mem_minimum"],
           "mem_average": instance["mem_average"],
-          "mem_maximum_value": instance["mem_maximum_value"],
-          "mem_average_value": instance["mem_average_value"]
           "savings": (Math.round(monthly_savings * 1000) / 1000),
           "savingsCurrency": cur,
           "service": "EC2"
@@ -754,8 +794,6 @@ script "js_instance_cost_mapping", type:"javascript" do
           "mem_maximum": instance["mem_maximum"],
           "mem_minimum": instance["mem_minimum"],
           "mem_average": instance["mem_average"],
-          "mem_maximum_value": instance["mem_maximum_value"],
-          "mem_average_value": instance["mem_average_value"]
           "savings": 0.0,
           "savingsCurrency": cur,
           "service": "EC2"
@@ -824,16 +862,22 @@ EOS
       field "cpu_maximum" do
         label "CPU Maximum %"
       end
+      field "cpu_minimum" do
+        label "CPU Minimum %"
+      end
       field "cpu_average" do
         label "CPU Average %"
       end
       field "resourceType" do
         label "Resource Type"
       end
-      field "mem_maximum_value" do
+      field "mem_maximum" do
         label "Memory Maximum %"
       end
-      field "mem_average_value" do
+      field "mem_minimum" do
+        label "Memory Minimum %"
+      end
+      field "mem_average" do
         label "Memory Average %"
       end
       field "tags" do
