@@ -3,6 +3,7 @@
 ## v2.15
 
 - Added 'timespan' parameter
+- Updated README.md 'input parameters' section to reflect added 'timespan' parameter
 
 ## v2.14
 
