@@ -7,28 +7,39 @@ category "Cost"
 tenancy "single"
 default_frequency "15 minutes"
 info(
-  version: "0.1",
+  version: "0.1"
 )
 
 ##############################################################################
 # Parameters
 ##############################################################################
 
+## Meta Parent Parameters
+## These are params specific to the meta parent policy.
 parameter "param_rbd_name" do
   type "string"
   label "Rule Based Dimension Filter Name"
   description "The name of the filter used to determine which AWS accounts the policy should be run in. During each run this policy will use this along with the filter value to match with Billing Center accounts who have both values set."
-  default "rbd_meta_policy_test"
+  default "rbd_team"
 end
 
 parameter "param_rbd_value" do
   type "string"
   label "Rule Based Dimension Filter Value"
   description "The valuie of the filter used to determine which AWS accounts the policy should be run in. During each run this policy will use this along with the name value to match with Billing Center accounts who have both values set."
-  default "staging"
+  default "solution-engineering"
 end
 
+parameter "param_policy_schedule" do
+  type "string"
+  label "Child Policy Schedule"
+  description "The interval at which the child policy checks for conditions and generates incidents."
+  default "daily"
+  allowed_values "daily", "weekly", "monthly"
+end
 
+## Child Policy Parameters
+## These are params from the child policy, excluding param_email and param_aws_account_number
 parameter "param_allowed_regions" do
   type "list"
   label "Allowed Regions"
@@ -108,7 +119,7 @@ auth "auth_rs", type: "rightscale"
 # Datasources
 ###############################################################################
 
-# Get Policy itself
+# Get Applied Parent Policy Details
 datasource "ds_self_policy_information" do
   request do
     auth $auth_rs
@@ -118,6 +129,7 @@ datasource "ds_self_policy_information" do
   end
   result do
     encoding "json"
+    field "name", jmes_path(response, "name")
     field "creator_id", jmes_path(response, "created_by.id")
     field "credentials", jmes_path(response, "credentials")
     field "options", jmes_path(response, "options")
@@ -133,10 +145,13 @@ script "js_format_self", type: "javascript" do
   result "formatted"
   code <<-EOS
   formatted={
+    "name": unformatted["name"],
     "creator_id": unformatted["creator_id"],
     "credentials": unformatted["credentials"],
     "options": {
+      // param_email should always be an empty list
       "param_email": [],
+      // All other child policy params excluding param_aws_account_number
       "param_allowed_regions": [],
       "param_avg_used_memory": -1,
       "param_avg_cpu": -1,
@@ -151,6 +166,22 @@ script "js_format_self", type: "javascript" do
     }
   }
   EOS
+end
+
+# Get Child Policy Details
+datasource "ds_child_policy_information" do
+  request do
+    auth $auth_rs
+    host rs_governance_host
+    path "/api/governance/projects/113453/policy_templates/629e8e0d10d4720001a1ec78"
+    header "Api-Version", "1.0"
+  end
+  result do
+    encoding "json"
+    field "name", jmes_path(response, "name")
+    field "href", jmes_path(response, "href")
+    field "short_description", jmes_path(response, "short_description")
+  end
 end
 
 # policy_created_by_id
@@ -302,9 +333,12 @@ script "js_format_existing_policies", type: "javascript" do
   tracking = {}
 
   for (x=0; x<unformatted.length; x++) {
-    options= {
+    options = {
+      // param_email should always be an empty list
       "param_email": [],
+      // param_aws_account_number should default to empty string
       "param_aws_account_number": "",
+      // All other child policy params excluding param_aws_account_number and param_email
       "param_allowed_regions": [],
       "param_avg_used_memory": -1,
       "param_avg_cpu": -1,
@@ -370,7 +404,7 @@ script "js_format_existing_policies", type: "javascript" do
 end
 
 datasource "ds_take_in_parameters" do
-  run_script $js_take_in_parameters, $ds_get_aws_accounts, $ds_format_self, $ds_format_existing_policies, policy_id, f1_app_host, rs_org_id, rs_project_id
+  run_script $js_take_in_parameters, $ds_get_aws_accounts, $ds_format_self, $ds_child_policy_information, $ds_format_existing_policies, policy_id, f1_app_host, rs_org_id, rs_project_id, $param_policy_schedule
 end
 
 # hardcode template href with id from catalog
@@ -383,26 +417,28 @@ end
 # param_exclude_tags and param_allowed_regions are arrays. I'm doing an update on the order changing but the values remaining the same.
 # If we only want to do an update on the values changing we could sort before doing the equality check.
 script "js_take_in_parameters", type: "javascript" do
-  parameters "aws_account_ids", "parent_policy", "existing_policies", "meta_parent_policy_id", "f1_app_host", "rs_org_id", "rs_project_id"
+  parameters "aws_account_ids", "parent_policy", "child_policy", "existing_policies", "meta_parent_policy_id", "f1_app_host", "rs_org_id", "rs_project_id", "param_policy_schedule"
   result "grid_and_cwf"
   code <<-EOS
 
-  max_actions = 20
+  max_actions = 50
 
   grid_and_cwf={grid:[], to_create:[], to_update:[], to_delete:[]}
 
   should_keep = existing_policies.tracking
 
+  project_url_prefix = "https://" + f1_app_host + "/orgs/" + rs_org_id + "/policy/projects/" + rs_project_id
+
   function add_to_grid(ep, action) {
     policy_status={
       "policy_name": ep["applied_policy_name"],
-      "policy_link": "https://" + f1_app_host + "/orgs/" + rs_org_id + "/policy/projects/" + rs_project_id + "/applied-policies/" + ep["applied_policy_id"],
+      "policy_link":project_url_prefix + "/applied-policies/" + ep["applied_policy_id"],
       "meta_policy_status": action,
       "policy_status": ep["status"],
       "policy_last_update": ep["updated_at"],
     }
     if (ep.incident != null) {
-      policy_status["incident_link"] = "https://" + f1_app_host + "/orgs/" + rs_org_id + "/policy/projects/" + rs_project_id + "/incidents/" + ep.incident.incident_id
+      policy_status["incident_link"] = project_url_prefix + "/incidents/" + ep.incident.incident_id
       policy_status["incident_state"] = ep.incident.state
       policy_status["incident_violation_data_count"] = ep.incident.violation_data_count
       policy_status["incident_last_update"] = ep.incident.updated_at
@@ -423,16 +459,20 @@ script "js_take_in_parameters", type: "javascript" do
   for (x=0; x<aws_account_ids.length; x++) {
     cur = aws_account_ids[x]
     if (existing_policies.formatted[cur.aws_account_id] == undefined) {
-      name = "Bucket Tracking for: " + cur.aws_account_name
+      name = child_policy.name + ": " + cur.aws_account_name + " (" + cur.aws_account_id + ") (child policy)"
+      description = child_policy.name + " policy applied by [" + parent_policy.name + "](" + project_url_prefix + "/applied-policies/" + meta_parent_policy_id + ") to AWS Account **" + cur.aws_account_name +"** (`" + cur.aws_account_id + "`).  " + child_policy.short_description
       options = [
+        // param_email should always be an empty list
         {
           "name": "param_email",
-          "value": parent_policy.options.param_email
+          "value": []
         },
+        // param_aws_account_number should be set to current account id
         {
           "name": "param_aws_account_number",
           "value": cur.aws_account_id
         },
+        // All other child policy params excluding param_aws_account_number and param_email
         {
           "name": "param_allowed_regions",
           "value": parent_policy.options.param_allowed_regions,
@@ -461,11 +501,12 @@ script "js_take_in_parameters", type: "javascript" do
       if (grid_and_cwf.to_create.length < max_actions) {
         grid_and_cwf.to_create.push({
           "name" : name,
+          "description" : description,
           "credentials" : parent_policy.credentials,
           "options" : options,
-          "frequency" : "daily",
+          "frequency" : param_policy_schedule,
           "meta_parent_policy_id": meta_parent_policy_id,
-          "template_href": "/api/governance/projects/113453/policy_templates/629e8e0d10d4720001a1ec78",
+          "template_href": child_policy.href
         })
         policy_status={
           "policy_name": name,
@@ -487,14 +528,17 @@ script "js_take_in_parameters", type: "javascript" do
       should_keep[cur.aws_account_id]= true
       should_update = false
       options = [
+        // param_email should always be an empty list
         {
           "name": "param_email",
-          "value": parent_policy.options.param_email
+          "value": []
         },
+        // param_aws_account_number should be set to current account id
         {
           "name": "param_aws_account_number",
           "value": cur.aws_account_id
         },
+        // All other child policy params excluding param_aws_account_number and param_email
         {
           "name": "param_allowed_regions",
           "value": parent_policy.options.param_allowed_regions,
@@ -521,19 +565,27 @@ script "js_take_in_parameters", type: "javascript" do
         }
       ]
 
-      if (parent_policy.options.param_automatic_action.length != existing_policies["formatted"][cur.aws_account_id]["options"]["param_automatic_action"].length) {
-        should_update = true
-      }
-
-      if (parent_policy.options.param_log_to_cm_audit_entries != existing_policies["formatted"][cur.aws_account_id]["options"]["param_log_to_cm_audit_entries"]) {
-        should_update = true
-      }
-
       if (!_.isEqual(parent_policy.options.param_allowed_regions, existing_policies["formatted"][cur.aws_account_id]["options"]["param_allowed_regions"])) {
         should_update = true
       }
 
-      if (!_.isEqual(parent_policy.options.param_exclude_tags, existing_policies["formatted"][cur.aws_account_id]["options"]["param_exclude_tags"])) {
+      if (!_.isEqual(parent_policy.options.param_avg_used_memory, existing_policies["formatted"][cur.aws_account_id]["options"]["param_avg_used_memory"])) {
+        should_update = true
+      }
+
+      if (!_.isEqual(parent_policy.options.param_avg_cpu, existing_policies["formatted"][cur.aws_account_id]["options"]["param_avg_cpu"])) {
+        should_update = true
+      }
+
+      if (!_.isEqual(parent_policy.options.param_exclusion_tag_key, existing_policies["formatted"][cur.aws_account_id]["options"]["param_exclusion_tag_key"])) {
+        should_update = true
+      }
+
+      if (!_.isEqual(parent_policy.options.param_automatic_action, existing_policies["formatted"][cur.aws_account_id]["options"]["param_automatic_action"])) {
+        should_update = true
+      }
+
+      if (!_.isEqual(parent_policy.options.param_log_to_cm_audit_entries, existing_policies["formatted"][cur.aws_account_id]["options"]["param_log_to_cm_audit_entries"])) {
         should_update = true
       }
 
@@ -544,9 +596,10 @@ script "js_take_in_parameters", type: "javascript" do
           grid_and_cwf.to_update.push({
             "applied_policy_id": existing_policies.formatted[cur.aws_account_id].applied_policy_id,
             "name" : name,
+            "description" : description,
             "credentials" : parent_policy.credentials,
             "options" : options,
-            "frequency" : "daily",
+            "frequency" : param_policy_schedule,
           })
         } else {
           add_to_grid(existing_policies.formatted[cur.aws_account_id], "to be updated")
@@ -630,13 +683,51 @@ policy "policy_scheduled_report" do
     detail_template <<-EOS
 The current status of this Policy's Meta Child Policies:
 
-| Appplied Policy | Meta Child Policy Status | Policy Status | Policy Last Update | Incident | Violation Count | Incident Last Update |
-| --------------- | ------------------------ | ------------- | ------------------ | -------- | --------------- | -------------------- |
+Total Child Applied Policies: {{ len data }}
+
+| Applied Policy | Meta Child Policy Status | Policy Status | Policy Last Update | Incident | Incident State | Violation Count | Incident Last Update |
+| -------------- | ------------------------ | ------------- | ------------------ | -------- | -------------- | --------------- | -------------------- |
 {{ range data -}}
 | {{- if .policy_link }} [{{ .policy_name }}]({{ .policy_link }}) {{ else }} {{ .policy_name }} {{- end }} | {{- if .meta_policy_status }} {{ .meta_policy_status }} {{ else }} No value {{- end }} | {{- if .policy_status }} {{ .policy_status }} {{ else }} No value {{- end }} | {{- if .policy_last_update }} {{ .policy_last_update }} {{ else }} No value {{- end }} | {{- if .incident_link }} [Incident]({{ .incident_link }}) {{ else }} No Incident {{- end }} | {{- if .incident_state }} {{ .incident_state }} {{ else }} No Incident {{- end }} | {{- if .incident_last_update }} {{ .incident_violation_data_count }} {{ else }} No Incident {{- end }} | {{- if .incident_last_update }} {{ .incident_last_update }} {{ else }} No Incident {{- end }} |
 {{ end -}}
+
 EOS
     check false
+    # Export Table disabled for now until UI can support URL / linking
+    # Without linking the `policy_link`, `incident_link` values are not usable directly from UI
+    # export "policy_scheduled_report" do
+    #   resource_level true
+    #   field "id" do
+    #     label "Applied Policy ID"
+    #   end
+    #   field "policy_name" do
+    #     label "Applied Policy Name"
+    #   end
+    #   field "policy_link" do
+    #     label "Applied Policy Link"
+    #   end
+    #   field "meta_policy_status" do
+    #     label "Meta Child Policy Status"
+    #   end
+    #   field "policy_status" do
+    #     label "Policy Status"
+    #   end
+    #   field "policy_last_update" do
+    #     label "Policy Last Update"
+    #   end
+    #   field "incident_link" do
+    #     label "Incident Link"
+    #   end
+    #   field "incident_state" do
+    #     label "Incident State"
+    #   end
+    #   field "incident_violation_data_count" do
+    #     label "Incident Violation Count"
+    #   end
+    #   field "incident_last_update" do
+    #     label "Incident Last Update"
+    #   end
+    # end
   end
   validate $ds_to_create do
     summary_template "Policies being created"
@@ -689,7 +780,9 @@ end
 # if name !=null
 define create_applied_policies($data, $governance_host, $rs_project_id) return $responses do
   $responses = []
+  $$debug = []
   foreach $item in $data do
+    task_label("Creating Applied Policy with Options: " + to_json($item["options"]))
     $response = http_request(
       verb: "post",
       https: true,
@@ -698,6 +791,7 @@ define create_applied_policies($data, $governance_host, $rs_project_id) return $
       headers: { "Api-Version": "1.0" },
       body: {
         "name": $item["name"],
+        "description": $item["description"],
         "template_href": $item["template_href"],
         "frequency": $item["frequency"],
         "options": $item["options"],
@@ -706,6 +800,11 @@ define create_applied_policies($data, $governance_host, $rs_project_id) return $
       }
     )
     $responses << $response
+    $$debug << to_json({
+      "response": $response,
+      "item": $item,
+      "governance_host": $governance_host
+    })
   end
 end
 
@@ -715,7 +814,9 @@ end
 
 define update_applied_policies($data, $governance_host, $rs_project_id) return $responses do
   $responses = []
+  $$debug = []
   foreach $item in $data do
+    task_label("Updating Applied Policy with Options: " + to_json($item["options"]))
     $response = http_request(
       verb: "patch",
       https: true,
@@ -727,6 +828,11 @@ define update_applied_policies($data, $governance_host, $rs_project_id) return $
       }
     )
     $responses << $response
+    $$debug << to_json({
+      "response": $response,
+      "item": $item,
+      "governance_host": $governance_host
+    })
   end
 end
 
@@ -737,7 +843,9 @@ end
 
 define delete_applied_policies($data, $governance_host, $rs_project_id) return $responses do
   $responses = []
+  $$debug = []
   foreach $item in $data do
+    task_label("Deleting Applied Policy: " + $item["id"])
     $response = http_request(
       verb: "delete",
       https: true,
@@ -746,6 +854,10 @@ define delete_applied_policies($data, $governance_host, $rs_project_id) return $
       headers: { "Api-Version": "1.0" }
     )
     $responses << $response
+    $$debug << to_json({
+      "response": $response,
+      "item": $item,
+      "governance_host": $governance_host
+    })
   end
 end
-

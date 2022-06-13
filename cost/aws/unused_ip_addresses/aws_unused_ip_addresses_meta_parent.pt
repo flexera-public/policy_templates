@@ -2,34 +2,32 @@ name "AWS Unused IP Addresses Meta Parent"
 rs_pt_ver 20180301
 type "policy"
 short_description "Applies and manages \"child\" [AWS Unused IP Addresses](https://github.com/flexera/policy_templates/tree/master/cost/aws/unused_ip_addresses/) Policies."
-long_description ""
 severity "low"
 category "Cost"
 tenancy "single"
 default_frequency "15 minutes"
 info(
-  version: "0.1",
-  provider: "AWS",
-  service: "EC2",
-  policy_set: "Unused IP Addresses Meta Parent"
+  version: "0.1"
 )
 
 ##############################################################################
 # Parameters
 ##############################################################################
 
-
 ## Meta Parent Parameters
+## These are params specific to the meta parent policy.
 parameter "param_rbd_name" do
   type "string"
   label "Rule Based Dimension Filter Name"
   description "The name of the filter used to determine which AWS accounts the policy should be run in. During each run this policy will use this along with the filter value to match with Billing Center accounts who have both values set."
+  default "rbd_team"
 end
 
 parameter "param_rbd_value" do
   type "string"
   label "Rule Based Dimension Filter Value"
   description "The valuie of the filter used to determine which AWS accounts the policy should be run in. During each run this policy will use this along with the name value to match with Billing Center accounts who have both values set."
+  default "solution-engineering"
 end
 
 parameter "param_policy_schedule" do
@@ -40,21 +38,13 @@ parameter "param_policy_schedule" do
   allowed_values "daily", "weekly", "monthly"
 end
 
-parameter "param_policy_href" do
-  type "string"
-  label "Child Policy Template Href"
-  description "Href for the `AWS Unused IP Addresses` Policy Template for child applied policies."
-  default "/api/governance/projects/113453/policy_templates/6297b4fd1f946c0001e88e39"
-end
-
 ## Child Policy Parameters
+## These are params from the child policy, excluding param_email and param_aws_account_number
 parameter "param_allowed_regions" do
   type "list"
   label "Allowed Regions"
   allowed_pattern /^([a-zA-Z-_]+-[a-zA-Z0-9-_]+-[0-9-_]+,*|)+$/
   description "A list of allowed regions. See the README for more details"
-  # TODO: Remove default values to match child policy param spec
-  default ["us-west-2", "us-east-2", "us-east-1", "us-west-1"]
 end
 
 parameter "param_exclude_tags" do
@@ -63,16 +53,12 @@ parameter "param_exclude_tags" do
   description "A list of AWS tags to ignore Elastic IPs. Format: Key=Value"
 end
 
-# param_email is disabled for Meta Parent Policies
-# Prevents children policies from sending e-mail incidents
 # parameter "param_email" do
 #   type "list"
 #   label "Email addresses"
 #   description "Email addresses of the recipients you wish to notify when new incidents are created"
 # end
 
-# param_aws_account_number is disabled for Meta Parent Policies
-# AWS Account Number is identified by Flexera Platform and does not need to be provided by the user
 # parameter "param_aws_account_number" do
 #   type "string"
 #   label "Account Number"
@@ -113,7 +99,6 @@ auth "auth_rs", type: "rightscale"
 # Datasources
 ###############################################################################
 
-## Begin Standard Meta Parent Policy Declarations
 # Get Applied Parent Policy Details
 datasource "ds_self_policy_information" do
   request do
@@ -144,7 +129,9 @@ script "js_format_self", type: "javascript" do
     "creator_id": unformatted["creator_id"],
     "credentials": unformatted["credentials"],
     "options": {
+      // param_email should always be an empty list
       "param_email": [],
+      // All other child policy params excluding param_aws_account_number
       "param_allowed_regions": [],
       "param_exclude_tags": [],
       "param_automatic_action": [],
@@ -164,7 +151,7 @@ datasource "ds_child_policy_information" do
   request do
     auth $auth_rs
     host rs_governance_host
-    path $param_policy_href
+    path "/api/governance/projects/113453/policy_templates/6297b4fd1f946c0001e88e39"
     header "Api-Version", "1.0"
   end
   result do
@@ -309,8 +296,6 @@ datasource "ds_format_existing_policies" do
   run_script $js_format_existing_policies, $ds_get_existing_policies, $ds_format_incidents
 end
 
-## End Standard Meta Parent Policy Declarations
-
 # format
 # duplicates logic should compare updated at
 # we can validate update here when destructring the existing policy options, don't need updated at
@@ -327,12 +312,15 @@ script "js_format_existing_policies", type: "javascript" do
 
   for (x=0; x<unformatted.length; x++) {
     options= {
+      // param_email should always be an empty list
       "param_email": [],
+      // param_aws_account_number should default to empty string
+      "param_aws_account_number": "",
+      // All other child policy params excluding param_aws_account_number and param_email
       "param_allowed_regions": [],
       "param_exclude_tags": [],
       "param_automatic_action": [],
-      "param_log_to_cm_audit_entries": "No",
-      "param_aws_account_number": ""
+      "param_log_to_cm_audit_entries": "No"
     }
     for (y=0;y<unformatted[x].options.length; y++) {
       if (options[unformatted[x].options[y]["name"]] != undefined) {
@@ -415,20 +403,18 @@ script "js_take_in_parameters", type: "javascript" do
 
   should_keep = existing_policies.tracking
 
-  automation_api_project_url_prefix = "https://" + f1_app_host + "/orgs/" + rs_org_id + "/policy/projects/" + rs_project_id
+  project_url_prefix = "https://" + f1_app_host + "/orgs/" + rs_org_id + "/policy/projects/" + rs_project_id
 
   function add_to_grid(ep, action) {
     policy_status={
-      "id": ep["applied_policy_id"],
       "policy_name": ep["applied_policy_name"],
-      "policy_link": automation_api_project_url_prefix + "/applied-policies/" + ep["applied_policy_id"],
+      "policy_link":project_url_prefix + "/applied-policies/" + ep["applied_policy_id"],
       "meta_policy_status": action,
       "policy_status": ep["status"],
       "policy_last_update": ep["updated_at"],
     }
     if (ep.incident != null) {
-      policy_status["incident_id"] = ep.incident.id
-      policy_status["incident_link"] = automation_api_project_url_prefix + "/incidents/" + ep.incident.incident_id
+      policy_status["incident_link"] = project_url_prefix + "/incidents/" + ep.incident.incident_id
       policy_status["incident_state"] = ep.incident.state
       policy_status["incident_violation_data_count"] = ep.incident.violation_data_count
       policy_status["incident_last_update"] = ep.incident.updated_at
@@ -445,40 +431,40 @@ script "js_take_in_parameters", type: "javascript" do
     }
   }
 
-
   for (x=0; x<aws_account_ids.length; x++) {
     cur = aws_account_ids[x]
-
-    name = child_policy.name + ": " + cur.aws_account_name + " (" + cur.aws_account_id + ") (child policy)"
-    description = child_policy.name + " policy applied by [" + parent_policy.name + "](" + automation_api_project_url_prefix + "/applied-policies/" + meta_parent_policy_id + ") to AWS Account **" + cur.aws_account_name +"** (`" + cur.aws_account_id + "`).  " + child_policy.short_description
-    options = [
-      {
-        "name": "param_email",
-        "value": parent_policy.options.param_email
-      },
-      {
-        "name": "param_allowed_regions",
-        "value": parent_policy.options.param_allowed_regions
-      },
-      {
-        "name": "param_exclude_tags",
-        "value": parent_policy.options.param_exclude_tags
-      },
-      {
-        "name": "param_automatic_action",
-        "value": parent_policy.options.param_automatic_action
-      },
-      {
-        "name": "param_log_to_cm_audit_entries",
-        "value": parent_policy.options.param_log_to_cm_audit_entries
-      },
-      {
-        "name": "param_aws_account_number",
-        "value": cur.aws_account_id
-      },
-    ]
-
     if (existing_policies.formatted[cur.aws_account_id] == undefined) {
+      name = child_policy.name + ": " + cur.aws_account_name + " (" + cur.aws_account_id + ") (child policy)"
+      description = child_policy.name + " policy applied by [" + parent_policy.name + "](" + project_url_prefix + "/applied-policies/" + meta_parent_policy_id + ") to AWS Account **" + cur.aws_account_name +"** (`" + cur.aws_account_id + "`).  " + child_policy.short_description
+      options = [
+        // param_email should always be an empty list
+        {
+          "name": "param_email",
+          "value": []
+        },
+        // param_aws_account_number should be set to current account id
+        {
+          "name": "param_aws_account_number",
+          "value": cur.aws_account_id
+        },
+        // All other child policy params excluding param_aws_account_number and param_email
+        {
+          "name": "param_allowed_regions",
+          "value": parent_policy.options.param_allowed_regions
+        },
+        {
+          "name": "param_exclude_tags",
+          "value": parent_policy.options.param_exclude_tags
+        },
+        {
+          "name": "param_automatic_action",
+          "value": parent_policy.options.param_automatic_action
+        },
+        {
+          "name": "param_log_to_cm_audit_entries",
+          "value": parent_policy.options.param_log_to_cm_audit_entries
+        }
+      ]
       if (grid_and_cwf.to_create.length < max_actions) {
         grid_and_cwf.to_create.push({
           "name" : name,
@@ -508,13 +494,49 @@ script "js_take_in_parameters", type: "javascript" do
     } else {
       should_keep[cur.aws_account_id]= true
       should_update = false
+      options = [
+        // param_email should always be an empty list
+        {
+          "name": "param_email",
+          "value": []
+        },
+        // param_aws_account_number should be set to current account id
+        {
+          "name": "param_aws_account_number",
+          "value": cur.aws_account_id
+        },
+        // All other child policy params excluding param_aws_account_number and param_email
+        {
+          "name": "param_allowed_regions",
+          "value": parent_policy.options.param_allowed_regions
+        },
+        {
+          "name": "param_exclude_tags",
+          "value": parent_policy.options.param_exclude_tags
+        },
+        {
+          "name": "param_automatic_action",
+          "value": parent_policy.options.param_automatic_action
+        },
+        {
+          "name": "param_log_to_cm_audit_entries",
+          "value": parent_policy.options.param_log_to_cm_audit_entries
+        }
+      ]
 
-      // Omit param_aws_account_number as that will always be different between parent and child
-      options_parent = _.omit(parent_policy.options, 'param_aws_account_number')
-      options_child = _.omit(existing_policies["formatted"][cur.aws_account_id]["options"], 'param_aws_account_number')
+      if (!_.isEqual(parent_policy.options.param_allowed_regions, existing_policies["formatted"][cur.aws_account_id]["options"]["param_allowed_regions"])) {
+        should_update = true
+      }
 
-      // If any of the options are different, then we need to update the child policy
-      if ( ! _.isEqual(options_parent, options_child) ) {
+      if (!_.isEqual(parent_policy.options.param_exclude_tags, existing_policies["formatted"][cur.aws_account_id]["options"]["param_exclude_tags"])) {
+        should_update = true
+      }
+
+      if (!_.isEqual(parent_policy.options.param_automatic_action, existing_policies["formatted"][cur.aws_account_id]["options"]["param_automatic_action"])) {
+        should_update = true
+      }
+
+      if (!_.isEqual(parent_policy.options.param_log_to_cm_audit_entries, existing_policies["formatted"][cur.aws_account_id]["options"]["param_log_to_cm_audit_entries"])) {
         should_update = true
       }
 
@@ -611,6 +633,8 @@ policy "policy_scheduled_report" do
     summary_template "Status of Meta Child Policies"
     detail_template <<-EOS
 The current status of this Policy's Meta Child Policies:
+
+Total Child Applied Policies: {{ len data }}
 
 | Applied Policy | Meta Child Policy Status | Policy Status | Policy Last Update | Incident | Incident State | Violation Count | Incident Last Update |
 | -------------- | ------------------------ | ------------- | ------------------ | -------- | -------------- | --------------- | -------------------- |
