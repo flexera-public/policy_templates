@@ -1,5 +1,10 @@
 # CHANGELOG
 
+
+## v1.14
+
+- Add `auth: $$auth_rs` to `upload_template()` definition
+
 ## v1.13
 
 - updating for flexera-public
