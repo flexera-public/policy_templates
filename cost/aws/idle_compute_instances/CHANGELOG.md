@@ -1,5 +1,15 @@
 # Changelog
 
+## v3.4
+
+- fixed issue with multiple datapoints on cpu_usage to not show duplicate, incorrect cpu data
+- updated memory usage fields to map with correct field and return value.
+- updated output fields:
+  - added "mem_minimum"
+  - added "cpu_minimum"
+  - changed "mem_maximum_value" to mem_maximum"
+  - changed "mem_average_value" to "mem_average"
+
 ## v3.3
 
 - updated savings_currency to savingsCurrency and fixed possible N/A value to 0.0
