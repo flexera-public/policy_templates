@@ -1,8 +1,13 @@
 # Changelog
 
+## v2.15
+
+- Added 'timespan' parameter
+- Updated README.md 'input parameters' section to reflect added 'timespan' parameter
+
 ## v2.14
 
-- updated README.md rightscale documentation links with docs.flexera documentation links
+- Updated README.md rightscale documentation links with docs.flexera documentation links
 
 ## v2.13
 
@@ -30,28 +35,28 @@
 
 ## v2.7
 
-- updated policy to check for log analytics and diagnostic enabled VM using resource properties field
+- Updated policy to check for log analytics and diagnostic enabled VM using resource properties field
 
 ## v2.6
 
 - Updated escalation block
-- fix spelling in path
+- Fix spelling in path
 
 ## v2.5
 
-- modified policy for handling 404 error
+- Modified policy for handling 404 error
 
 ## v2.4
 
-- adjusted Log Analytics auth provider tag
+- Adjusted Log Analytics auth provider tag
 
 ## v2.3
 
-- adding incident resource table
+- Adding incident resource table
 
 ## v2.2
 
-- remove unnecessary permissions block
+- Remove unnecessary permissions block
 
 ## v2.1
 
@@ -69,4 +74,4 @@
 
 ## v1.0
 
-- initial release
+- Initial release
