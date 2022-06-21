@@ -1,0 +1,163 @@
+name "AWS Expiring Savings Plan"
+rs_pt_ver 20180301
+type "policy"
+short_description "A policy that sends email notifications before AWS Savings Plan expire. See the [README](https://github.com/rightscale/policy_templates/tree/master/cost/aws/reserved_instances/expiration) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+long_description ""
+severity "medium"
+category "Cost"
+tenancy "single"
+default_frequency "daily"
+info(
+  version: "2.0",
+  provider: "Flexera Optima",
+  service: "",
+  policy_set: ""
+)
+
+###############################################################################
+# User inputs
+###############################################################################
+
+parameter "param_heads_up_days" do
+  type "number"
+  label "Number of days to prior to expiration date to trigger incident"
+  default 7
+end
+
+parameter "param_email" do
+  type "list"
+  label "Email addresses of the recipients you wish to notify"
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+#AUTHENTICATE WITH AWS
+credentials "auth_aws" do
+  schemes "aws","aws_sts"
+  label "AWS"
+  description "Select the AWS Credential from the list"
+  tags "provider=aws"
+end
+
+###############################################################################
+# Datasources
+###############################################################################
+
+datasource "ds_savings_plans" do
+  request do
+    run_script $js_describe_savings_plans
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "savingsPlan[*]") do
+      field "savingsPlanID", jmes_path(col_item, "savingsPlanId")
+      field "savingsPlanArn", jmes_path(col_item, "savingsPlanArn")
+      field "state", jmes_path(col_item, "state")
+      field "tags", jmes_path(col_item, "tags")
+      field "termDurationInSeconds", jmes_path(col_item, "termDurationInSeconds")
+      field "end", jmes_path(col_item, "end")
+      field "start", jmes_path(col_item, "start")
+      field "commitment", jmes_path(col_item, "commitment")
+      field "offeringID", jmes_path(col_item, "offeringId")
+    end
+  end
+end
+
+datasource "ds_filter_savings_plans" do
+  run_script $js_filter_savings_plans, $ds_savings_plans, $param_heads_up_days
+end
+###############################################################################
+# Scripts
+###############################################################################
+
+script "js_describe_savings_plans", type: "javascript" do
+  result "results"
+  code <<-EOS
+    results = {
+        "auth": "auth_aws",
+        "host": 'savingsplans.us-east-1.amazonaws.com',
+        "verb": "POST",
+        "path": "/DescribeSavingsPlans",
+        "headers": {
+          "User-Agent": "RS Policies"
+        }
+    }
+  EOS
+end
+
+script "js_filter_savings_plans", type: "javascript" do
+  result "results"
+  parameters "ds_savings_plans", "param_heads_up_days"
+  code <<-EOS
+  var results = [];
+  var currentDate = new Date()
+  currentDate = currentDate.toISOString().split('T')[0]
+  for(var i=0; i < ds_savings_plans.length; i++){
+    var plan = ds_savings_plan[i];
+    var tags = []
+    _.each(plan.tags, function(plan){
+        tags.push(plan.tagKey+'='+plan.tagValue)
+    })
+    var endDate = new Date(plan.end)
+    var notifyDate = endDate.setDate(endDate.getDate() - param_heads_up_days)
+    if (currrentDate > notifyDate) {
+      plan.tags = tags
+      results.push(plan)
+    }
+  }
+  EOS
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "savings_plan_expiration" do
+  validate $ds_filter_savings_plans do
+    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): Savings Plans are nearing expiration."
+    escalate $esc_email
+    check eq(size(data), 0)
+    export do
+      field "savingsPlanID" do
+        label "Savings Plan ID"
+      end
+      field "savingsPlanArn" do
+        label "Savings Plan Arn"
+      end
+      field "state" do
+        label "State"
+      end
+      field "termDurationInSeconds" do
+        label "Term Duration"
+      end
+      field "offeringID" do
+        label "Offering ID"
+      end
+      field "start" do
+        label "Start Date"
+      end
+      field "end" do
+        label "End Date"
+      end
+      field "commitment" do
+        label "Commitment"
+      end
+      field "offeringID" do
+        label "Offering ID"
+      end
+    end
+  end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_email" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
+end
