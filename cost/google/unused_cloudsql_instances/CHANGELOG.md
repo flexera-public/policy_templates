@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.8
+
+- Modified `sys_log` definition to disable `rs_cm.audit_entry.create` outside Flexera NAM
+
 ## v2.7
 
 - updated README.md rightscale documentation links with docs.flexera documentation links

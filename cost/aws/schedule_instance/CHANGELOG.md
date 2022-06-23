@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.12
+
+- Modified `sys_log` definition to disable `rs_cm.audit_entry.create` outside Flexera NAM
+
 ## v2.11
 
 - Added filter for DescribeRegion to only return regions that are `opted-in` or `opt-in-not-required` [exclude `not-opted-in`] in the current AWS account.

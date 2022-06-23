@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.6
+
+- Modified `sys_log` definition to disable `rs_cm.audit_entry.create` outside Flexera NAM
+
 ## v2.5
 
 - Added default to aws_account_number parameter to enable existing API users.
