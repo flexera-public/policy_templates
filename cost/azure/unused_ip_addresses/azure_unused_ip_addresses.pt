@@ -480,7 +480,7 @@ escalation "delete_unused_ip_addresses" do
   automatic contains($param_automatic_action, "Delete Unused IP Addresses")
   label "Delete Resources"
   description "Delete selected unused IP addresses"
-  run "delete_ip_addresses", data, $param_azure_endpoint
+  run "delete_ip_addresses", data, $param_azure_endpoint, rs_optima_host
 end
 
 ###############################################################################
@@ -556,7 +556,7 @@ end
 # Cloud Workflow
 ###############################################################################
 
-define delete_ip_addresses($data, $param_azure_endpoint) return $all_responses do
+define delete_ip_addresses($data, $param_azure_endpoint, $$rs_optima_host) return $all_responses do
   $$debug = false
   $all_responses = []
   foreach $item in $data do
@@ -583,14 +583,35 @@ define azure_delete_ip_addresses($resourceId, $param_azure_endpoint) do
 end
 
 define sys_log($subject, $detail) do
-  if $$debug
-    rs_cm.audit_entries.create(
-      notify: "None",
-      audit_entry: {
-        auditee_href: @@account,
-        summary: join(["Azure unused IP addresses - ", $subject]),
-        detail: $detail
-      }
-    )
+  # Create empty errors array if doesn't already exist
+  if !$$errors
+    $$errors = []
   end
+  # Check if debug is enabled
+  if $$debug
+    # Append to global $$errors
+    # This is the suggested way to capture errors
+    $$errors << "Unexpected error for " + $subject + "\n  " + to_s($detail)
+    # If Flexera NAM Zone, create audit_entries [to be deprecated]
+    # This is the legacy method for capturing errors and only supported on Flexera NAM
+    if $$rs_optima_host == "api.optima.flexeraeng.com"
+      # skip_error_and_append is used to catch error if rs_cm.audit_entries.create fails unexpectedly
+      $task_label = "Creating audit entry for " + $subject
+      sub task_label: $task on_error: skip_error_and_append($task) do
+        rs_cm.audit_entries.create(
+          notify: "None",
+          audit_entry: {
+            auditee_href: @@account,
+            summary: $subject,
+            detail: $detail
+          }
+        )
+      end # End sub on_error
+    end # End if rs_optima_host
+  end # End if debug is enabled
+end
+
+define skip_error_and_append($subject) do
+  $$errors << "Unexpected error for " + $subject + "\n  " + to_s($_error)
+  $_error_behavior = "skip"
 end

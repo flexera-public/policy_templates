@@ -342,7 +342,7 @@ escalation "esc_delete_ip_address" do
   automatic contains($param_automatic_action, "Delete Unused IPs")
   label "Delete IP"
   description "Delete Selected Unused IP"
-  run "delete_unused_instances", data, $param_log_to_cm_audit_entries
+  run "delete_unused_instances", data, $param_log_to_cm_audit_entries, rs_optima_host
 end
 
 ###############################################################################
@@ -400,7 +400,7 @@ end
 # Cloud Workflow
 ###############################################################################
 
-define delete_unused_instances($data, $param_log_to_cm_audit_entries) do
+define delete_unused_instances($data, $param_log_to_cm_audit_entries, $$rs_optima_host) do
   $$debug = $param_log_to_cm_audit_entries == "Yes"
   $$errors = []
   $all_responses = []
@@ -445,26 +445,36 @@ define delete_unused_instances($data, $param_log_to_cm_audit_entries) do
   end
 end
 
+define sys_log($subject, $detail) do
+  # Create empty errors array if doesn't already exist
+  if !$$errors
+    $$errors = []
+  end
+  # Check if debug is enabled
+  if $$debug
+    # Append to global $$errors
+    # This is the suggested way to capture errors
+    $$errors << "Unexpected error for " + $subject + "\n  " + to_s($detail)
+    # If Flexera NAM Zone, create audit_entries [to be deprecated]
+    # This is the legacy method for capturing errors and only supported on Flexera NAM
+    if $$rs_optima_host == "api.optima.flexeraeng.com"
+      # skip_error_and_append is used to catch error if rs_cm.audit_entries.create fails unexpectedly
+      $task_label = "Creating audit entry for " + $subject
+      sub task_label: $task on_error: skip_error_and_append($task) do
+        rs_cm.audit_entries.create(
+          notify: "None",
+          audit_entry: {
+            auditee_href: @@account,
+            summary: $subject,
+            detail: $detail
+          }
+        )
+      end # End sub on_error
+    end # End if rs_optima_host
+  end # End if debug is enabled
+end
+
 define skip_error_and_append($subject) do
   $$errors << "Unexpected error for " + $subject + "\n  " + to_s($_error)
   $_error_behavior = "skip"
-end
-
-define check_response_and_append_if_error($response, $request_description, $errors) return $errors do
-  if $response["code"] > 299 || $response["code"] < 200
-    $errors << "Unexpected status code from " + $request_description + " request\n  " + to_s($response)
-  end
-end
-
-define sys_log($subject, $detail) on_error: skip_error_and_append("Creating audit entry for " + $subject) do
-  if $$debug
-    rs_cm.audit_entries.create(
-      notify: "None",
-      audit_entry: {
-        auditee_href: @@account,
-        summary: "AWS Unused IP Addresses Policy :- " + $subject,
-        detail: $detail
-      }
-    )
-  end
 end
