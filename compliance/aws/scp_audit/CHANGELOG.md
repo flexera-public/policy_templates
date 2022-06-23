@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.6
+
+- Removed unused `sys_log` definition
+
 ## v2.5
 
 - Added default to aws_account_number parameter to enable existing API users.

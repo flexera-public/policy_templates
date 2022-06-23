@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.3
+
+- Removed unused `sys_log` definition
+
 ## v2.2
 
 - updated README.md rightscale documentation links with docs.flexera documentation links
