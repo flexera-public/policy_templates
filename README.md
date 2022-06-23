@@ -466,5 +466,5 @@ Github issues contain a template for three types of requests(Bugs, New Features 
 
 ### Troubleshooting Danger Locally
 
-- You can test against a pull request via: `bundle exec danger pr https://github.com/flexera/policy_templates/pull/73 --pry`
+- You can test against a pull request via: `bundle exec danger pr https://github.com/flexera-public/policy_templates/pull/73 --pry`
 - [Danger Troubleshooting](http://danger.systems/guides/troubleshooting.html)
