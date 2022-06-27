@@ -1,8 +1,8 @@
-## Security Groups with ICMP Enabled Policy Template
+## Security Groups with ICMP Enabled
 
 ## Deprecated
 
-This policy is no longer being updated.  
+This policy is no longer being updated.
 
 ### What it does
 

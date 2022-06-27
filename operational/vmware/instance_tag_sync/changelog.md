@@ -2,7 +2,7 @@
 
 ## v1.8
 
-- Policy is no longer being updated.  
+- Policy is no longer being updated.
 
 ## v1.7
 

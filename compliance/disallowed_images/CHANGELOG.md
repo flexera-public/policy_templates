@@ -2,7 +2,7 @@
 
 ## v1.5
 
-This policy is no longer being updated.  
+This policy is no longer being updated.
 
 ## v1.4
 
