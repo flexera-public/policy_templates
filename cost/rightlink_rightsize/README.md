@@ -1,6 +1,6 @@
 ## Inefficient Instance Utilization using RightLink
 
-## Deprecated
+### Deprecated
 
 This policy is no longer being updated.
 
