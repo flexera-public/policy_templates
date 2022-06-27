@@ -31,7 +31,7 @@ Inefficient Instance Utilization using RightLink is used to actually resize inst
 - Email address to send escalation emails to - Example: noreply@example.com
 - Days to cooldown between checks of same machine - Number of days to cooldown between checks of the same instance. This drives the `Inefficient Instance Utilization using RightLink Add Tags`
 
-### Policy Actions
+#### Policy Actions
 
 The following policy actions are taken on any resources found to be out of compliance.
 
@@ -43,13 +43,12 @@ The following policy actions are taken on any resources found to be out of compl
 - Instance tags used to filter instances that must validate policy. Example: rs_monitoring:resize=1
 - Email address to send escalation emails to - Example: noreply@example.com
 
-### Policy Actions
+#### Policy Actions
 
 The following policy actions are taken on any resources found to be out of compliance.
 
 - Add or remove tags for rightsizing
 - Send an email report
-
 
 ### Required Permissions
 
