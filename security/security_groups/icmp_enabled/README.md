@@ -1,5 +1,9 @@
 ## Security Groups with ICMP Enabled Policy Template
 
+## Deprecated
+
+This policy is no longer being updated.  
+
 ### What it does
 
 This Policy Template reviews your security group and alerts if any security group have ICMP types `0,3,8` enabled.

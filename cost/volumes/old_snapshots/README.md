@@ -1,4 +1,8 @@
-# Discover Old Snapshots Policy Template
+# Discover Old Snapshots
+
+## Deprecated
+
+This policy is no longer being updated. 
 
 ## What it does
 

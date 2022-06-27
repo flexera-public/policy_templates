@@ -1,5 +1,9 @@
 # Unattached IP Addresses
 
+## Deprecated
+
+This policy is no longer being updated. 
+
 ## What it does
 
 This Policy Template will check your account for unattached IP addresses and deletes them after approval.

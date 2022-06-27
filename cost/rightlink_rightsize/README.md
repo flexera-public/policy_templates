@@ -1,5 +1,9 @@
 ## Inefficient Instance Utilization using RightLink
 
+## Deprecated
+
+This policy is no longer being updated.  
+
 ### What it does
 
 This policy checks Flexera CMP for inefficient instance utilization using

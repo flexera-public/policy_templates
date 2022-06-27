@@ -1,5 +1,9 @@
 # Disallowed Cloud Images
 
+## Deprecated
+
+This policy is no longer being updated.  
+
 ## What it does
 
 This policy checks all running instances for disallowed cloud images. The user is given the option to Terminate the instance after approval.

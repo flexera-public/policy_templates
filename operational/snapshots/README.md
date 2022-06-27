@@ -1,4 +1,7 @@
 # No Recent Snapshots Policy Template
+## Deprecated
+
+This policy is no longer being updated.  
 
 ## What it does
 

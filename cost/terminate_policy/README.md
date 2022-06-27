@@ -1,4 +1,8 @@
-# Terminate Instances with End Date Policy
+# Terminate Instances with End Date
+
+## Deprecated
+
+This policy is no longer being updated. 
 
 ## What it does
 
