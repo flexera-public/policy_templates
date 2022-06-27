@@ -1,6 +1,6 @@
 # Changelog
 
-## v1.5
+## v1.8
 
 - Policy is no longer being updated.  
 
