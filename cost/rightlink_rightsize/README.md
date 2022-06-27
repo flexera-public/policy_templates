@@ -1,16 +1,16 @@
-## Inefficient Instance Utilization using RightLink
+# Inefficient Instance Utilization using RightLink
 
-### Deprecated
+## Deprecated
 
 This policy is no longer being updated.
 
-### What it does
+## What it does
 
 This policy checks Flexera CMP for inefficient instance utilization using
 provided CPU and Memory thresholds and RightLink 10 monitoring metrics.  Instances
 matching the criteria can be resized after user approval.
 
-### Functional Details
+## Functional Details
 
 The policy leverages the CMP monitoring metics API to identify inefficient instances using the provided CPU and Memory thresholds.  If the instance can be rightsized the incident escalation will automatically change the instance size after the users approval.
 
@@ -20,9 +20,9 @@ Inefficient Instance Utilization using RightLink is used to actually resize inst
 
 **_This policy requires [RightLink 10](http://docs.rightscale.com/rl10/getting_started.html) with monitoring enabled and collecting metrics_**, see [Installation](http://docs.rightscale.com/rl10/about.html)
 
-### Input Parameters
+## Input Parameters
 
-#### Inefficient Instance Utilization using RightLink
+### Inefficient Instance Utilization using RightLink
 
 - Average free memory percent to allow for downsize - Value: 0-100, -1 disables this metric
 - Maximum free memory percent to allow for downsize - Value: 0-100, -1 disables this metric
@@ -31,19 +31,19 @@ Inefficient Instance Utilization using RightLink is used to actually resize inst
 - Email address to send escalation emails to - Example: noreply@example.com
 - Days to cooldown between checks of same machine - Number of days to cooldown between checks of the same instance. This drives the `Inefficient Instance Utilization using RightLink Add Tags`
 
-#### Policy Actions
+### Policy Actions
 
 The following policy actions are taken on any resources found to be out of compliance.
 
 - Downsize instances after approval
 - Send an email report
 
-#### Inefficient Instance Utilization using RightLink Add Tags
+### Inefficient Instance Utilization using RightLink Add Tags
 
 - Instance tags used to filter instances that must validate policy. Example: rs_monitoring:resize=1
 - Email address to send escalation emails to - Example: noreply@example.com
 
-#### Policy Actions
+### Policy Actions
 
 The following policy actions are taken on any resources found to be out of compliance.
 
