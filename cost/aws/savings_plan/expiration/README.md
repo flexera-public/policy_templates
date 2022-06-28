@@ -1,4 +1,4 @@
-# AWS Expiring Reserved Instances
+# AWS Expiring Savings Plans
 
 ## What it does
 

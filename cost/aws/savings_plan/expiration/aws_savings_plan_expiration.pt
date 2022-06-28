@@ -1,4 +1,4 @@
-name "AWS Expiring Savings Plan"
+name "AWS Expiring Savings Plans"
 rs_pt_ver 20180301
 type "policy"
 short_description "A policy that sends email notifications before AWS Savings Plan expire. See the [README](https://github.com/rightscale/policy_templates/tree/master/cost/aws/reserved_instances/expiration) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
@@ -52,6 +52,7 @@ datasource "ds_savings_plans" do
     verb "POST"
     path "/DescribeSavingsPlans"
     header "User-Agent", "RS Policies"
+    header "Content-Type", "application/json"
   end
   result do
     encoding "json"
@@ -98,16 +99,19 @@ script "js_filter_savings_plans", type: "javascript" do
   code <<-EOS
   var results = [];
   var currentDate = new Date()
-  currentDate = currentDate.toISOString().split('T')[0]
+  currentDate = Date.parse(currentDate)
   for(var i=0; i < ds_savings_plans.length; i++){
-    var plan = ds_savings_plan[i];
-    var tags = []
-    _.each(plan.tags, function(plan){
-        tags.push(plan.tagKey+'='+plan.tagValue)
-    })
+    var plan = ds_savings_plans[i];
     var endDate = new Date(plan.end)
-    var notifyDate = endDate.setDate(endDate.getDate() - param_heads_up_days)
-    if (currrentDate > notifyDate) {
+    var millisecondsDays = param_heads_up_days * 86400000
+    var endParse = Date.parse(plan.end)
+    var notifyDate = endParse - millisecondsDays
+    if (currentDate > notifyDate && endParse > currentDate && plan.status != "retired") {
+      var tags = []
+      _.each(plan.tags, function(plan){
+        tags.push(plan.tagKey+'='+plan.tagValue)
+      })
+      plan.term = Math.round((plan.termDurationInSeconds/31536000) * 100) / 100
       plan.tags = tags
       results.push(plan)
     }
@@ -133,6 +137,9 @@ policy "savings_plan_expiration" do
       end
       field "state" do
         label "State"
+      end
+      field "term" do
+        label "Term (Rounded to Year)"
       end
       field "termDurationInSeconds" do
         label "Term Duration"
