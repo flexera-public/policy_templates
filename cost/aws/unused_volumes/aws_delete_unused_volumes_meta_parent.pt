@@ -16,18 +16,24 @@ info(
 
 ## Meta Parent Parameters
 ## These are params specific to the meta parent policy.
-parameter "param_rbd_name" do
-  type "string"
-  label "Rule Based Dimension Filter Name"
-  description "The name of the filter used to determine which AWS accounts the policy should be run in. During each run this policy will use this along with the filter value to match with Billing Center accounts who have both values set."
-  default "rbd_team"
+parameter "param_rbd_filters_include" do
+  type "list"
+  label "Rule Based Dimension Include Filters"
+  description <<-EOS
+  Key=Value pairs of filters to determine which AWS Accounts the policy should **INCLUDE** and be applied to.
+  During each run this policy will select AWS Accounts who match **all** the filters defined and apply a child policy for each.
+  EOS
+  default ["rbd_team=solution-engineering"]
 end
 
-parameter "param_rbd_value" do
-  type "string"
-  label "Rule Based Dimension Filter Value"
-  description "The valuie of the filter used to determine which AWS accounts the policy should be run in. During each run this policy will use this along with the name value to match with Billing Center accounts who have both values set."
-  default "solution-engineering"
+parameter "param_rbd_filters_exclude" do
+  type "list"
+  label "Rule Based Dimension Exclude Filters"
+  description <<-EOS
+  Key=Value pairs of filters to determine which AWS Accounts the policy should **EXCLUDE** and *not* be applied to.
+  During each run this policy will select AWS Accounts who match **all** the filters defined here and excludes them from results.
+  Example: `vendor_account=123456789012`
+  EOS
 end
 
 parameter "param_policy_schedule" do
@@ -179,7 +185,7 @@ datasource "ds_child_policy_information" do
   request do
     auth $auth_rs
     host rs_governance_host
-    path "/api/governance/projects/113453/policy_templates/6297c90f1f946c0001e88e3f"
+    path "/api/governance/projects/116186/policy_templates/62b3a6f9e8d4450001795209"
     header "Api-Version", "1.0"
   end
   result do
@@ -202,7 +208,7 @@ datasource "ds_get_billing_centers" do
 end
 
 script "js_make_billing_center_request", type: "javascript" do
-  parameters "rs_org_id", "rs_optima_host", "billing_centers_unformatted", "param_rbd_name", "param_rbd_value"
+  parameters "rs_org_id", "rs_optima_host", "billing_centers_unformatted", "param_rbd_filters_include", "param_rbd_filters_exclude"
   result "request"
   code <<-EOS
 
@@ -218,8 +224,39 @@ script "js_make_billing_center_request", type: "javascript" do
   start.setDate(start.getDate() - 30)
   startFormatted = start.toJSON().split("T")[0]
 
+  // Default dimensions and filter expressions required for meta parent policy
+  var dimensions = ["vendor_account", "vendor_account_name"];
+  var filter_expressions = [
+    { dimension: "vendor", type: "equal", value: "AWS" }
+  ]
+
+  // Append to default dimensions and filter expressions using parent policy params
+  _.each(param_rbd_filters_include, function (v) {
+    // split key=value string
+    var split = v.split("=");
+    var k = split[0];
+    var v = split[1];
+    // append to lists
+    dimensions.push(k);
+    filter_expressions.push({ dimension: k, type: "equal", value: v });
+  });
+
+  // Append to filter expressions using exclude policy params
+  _.each(param_rbd_filters_exclude, function (v) {
+    // split key=value string
+    var split = v.split("=");
+    var k = split[0];
+    var v = split[1];
+    // append to lists
+    dimensions.push(k);
+    filter_expressions.push({ "type": "not", "expression": { "dimension": k, "type": "equal", "value": v } });
+  });
+
+  // Produces a duplicate-free version of the array
+  dimensions = _.uniq(dimensions);
+
   var body = {
-    "dimensions":["vendor_account", "vendor_account_name", param_rbd_name],
+    "dimensions": dimensions,
     "granularity":"day",
     "start_at": startFormatted,
     "end_at": finishFormatted,
@@ -228,10 +265,7 @@ script "js_make_billing_center_request", type: "javascript" do
     "filter":
     {
       "type": "and",
-      "expressions": [
-        { "dimension": "vendor", "type": "equal", "value": "AWS" },
-        { "dimension": param_rbd_name, "type":"equal", "value": param_rbd_value }
-      ]
+      "expressions": filter_expressions
     },
     "summarized": true
   }
@@ -253,7 +287,7 @@ end
 # Get the AWS acounts
 datasource "ds_get_aws_accounts" do
   request do
-    run_script $js_make_billing_center_request, rs_org_id, rs_optima_host, $ds_get_billing_centers, $param_rbd_name, $param_rbd_value
+    run_script $js_make_billing_center_request, rs_org_id, rs_optima_host, $ds_get_billing_centers, $param_rbd_filters_include, $param_rbd_filters_exclude
   end
   result do
     encoding "json"
