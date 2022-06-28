@@ -17,11 +17,23 @@ The following policy actions are taken on any resources found to be out of compl
 
 - Send an email report
 
-## Required RightScale Roles
+## Required AWS Roles
 
-- Cloud Management - Actor
-- Cloud Management - Observer
-- Cloud Management - credential_viewer
+{
+  "Version": "2012-10-17",
+  "Statement":[
+    {
+      "Effect":"Allow",
+      "Action":["savingsplans"],
+      "Resource":"*",
+      "Condition":{
+        "Bool":{
+          "aws:SecureTransport":"true"
+        }
+      }
+    }
+  ]
+}
 
 ## Supported Clouds
 
