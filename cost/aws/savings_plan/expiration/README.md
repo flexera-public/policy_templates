@@ -8,7 +8,7 @@ This Policy Template leverages the Savings Plan API for savings plan information
 
 This policy has the following input parameters required when launching the policy.
 
-- *Number of days to prior to expiration date to trigger incident* - enter the number of days you want before the Reserved Instance expires.
+- *Number of days to prior to expiration date to trigger incident* - enter the number of days you want before the Savings Plan expires.
 - *Email addresses of the recipients you wish to notify* - A list of email addresses to notify
 
 ## Policy Actions
