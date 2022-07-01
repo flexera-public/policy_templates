@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.12
+
+- Added SageMaker to param_savings_plan_type list of allowed values
+
 ## v2.11
 
 - Added default to aws_account_number parameter to enable existing API users.
