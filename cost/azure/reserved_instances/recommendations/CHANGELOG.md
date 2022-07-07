@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.5
+
+- updated policy to include subscription name for incident rows
+
 ## v2.4
 
 - updated README.md rightscale documentation links with docs.flexera documentation links

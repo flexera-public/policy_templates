@@ -7,12 +7,16 @@ severity "medium"
 category "Cost"
 default_frequency "daily"
 info(
-  version: "2.4",
+  version: "2.5",
   provider: "Azure",
   service: "",
   policy_set: "",
   publish: 'false'
 )
+
+###############################################################################
+# Parameters
+###############################################################################
 
 permission "perm_read_creds" do
   actions   "rs_cm.show_sensitive","rs_cm.index_sensitive"
@@ -48,12 +52,20 @@ parameter "param_email" do
   description "Email addresses of the recipients you wish to notify"
 end
 
+###############################################################################
+# Authentication
+###############################################################################
+
 credentials "azure_ea_auth" do
   schemes "api_key"
   label "Azure"
   description "Select the Azure EA Credential from the list."
   tags "provider=azure_ea"
 end
+
+###############################################################################
+# Pagination
+###############################################################################
 
 pagination "azure_pagination" do
   get_page_marker do
@@ -63,6 +75,58 @@ pagination "azure_pagination" do
     uri true
   end
 end
+
+###############################################################################
+# Datasources
+###############################################################################
+
+#get all subscription details.
+datasource "ds_subscriptions" do
+  request do
+    auth $azure_ea_auth
+    pagination $azure_pagination
+    host "management.azure.com"
+    path "/subscriptions/"
+    query "api-version","2020-01-01"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "value[*]") do
+      field "subscriptionID", jmes_path(col_item,"subscriptionId")
+      field "subscriptionName", jmes_path(col_item,"displayName")
+    end
+  end
+end
+
+datasource "ds_ri_recommendations" do
+  request do
+    run_script $js_ri_request, $param_enrollment, $param_days
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "[*]") do
+      field "subscriptionID", jmes_path(col_item, "subscriptionId")
+      field "meterID", jmes_path(col_item, "meterId")
+      field "skuName", jmes_path(col_item, "skuName")
+      field "term", jmes_path(col_item, "term")
+      field "region", jmes_path(col_item, "region")
+      field "costWithNoRI", jmes_path(col_item, "costWithNoRI")
+      field "recommendedQuantity", jmes_path(col_item, "recommendedQuantity")
+      field "totalCostWithRI", jmes_path(col_item, "totalCostWithRI")
+      field "netSavings", jmes_path(col_item, "netSavings")
+      field "firstUsageDate", jmes_path(col_item, "firstUsageDate")
+    end
+  end
+end
+
+datasource "ds_ri_normalization" do
+  run_script $js_ri_cleanup, $ds_ri_recommendations, $ds_subscriptions
+end
+
+###############################################################################
+# Scripts
+###############################################################################
 
 script "js_ri_request", type: "javascript" do
   parameters "enrollment","param_days"
@@ -89,44 +153,27 @@ script "js_ri_request", type: "javascript" do
   EOS
 end
 
-datasource "ds_ri_recommendations" do
-  request do
-    run_script $js_ri_request, $param_enrollment, $param_days
-  end
-  result do
-    encoding "json"
-    collect jmes_path(response, "[*]") do
-      field "meterId", jmes_path(col_item,"meterId")
-      field "skuName", jmes_path(col_item,"skuName")
-      field "term", jmes_path(col_item,"term")
-      field "region", jmes_path(col_item,"region")
-      field "costWithNoRI", jmes_path(col_item,"costWithNoRI")
-      field "recommendedQuantity", jmes_path(col_item,"recommendedQuantity")
-      field "totalCostWithRI", jmes_path(col_item,"totalCostWithRI")
-      field "netSavings", jmes_path(col_item,"netSavings")
-      field "firstUsageDate", jmes_path(col_item,"firstUsageDate")
-    end
-  end
-end
-
-datasource "ds_ri_normalization" do
-  run_script $js_ri_cleanup, $ds_ri_recommendations
-end
-
 script "js_ri_cleanup", type: "javascript" do
-  parameters "ri_recos"
+  parameters "ds_ri_recommendations", "ds_subscriptions"
   result "result"
   code <<-EOS
     var result = [];
-    _.each(ri_recos, function(reco){
+    _.each(ds_ri_recommendations, function(reco){
       if (reco.term === "P1Y"){
         var term = "1 Year";
       }
       if (reco.term === "P3Y"){
         var term = "3 Year";
       }
+      _.each(ds_subscriptions, function(subscription){
+        if (recos.subscriptionID = subscription.subscriptionID) {
+            recos.subscriptionName = subscription.subscriptionName
+        }
+      })
       result.push({
-        meterId: reco["meterId"],
+        subscriptionID: reco["subscriptionID"],
+        subscriptionName: reco["subscriptionName"],
+        meterID: reco["meterID"],
         skuName: reco["skuName"],
         term: term,
         region: reco["region"],
@@ -143,6 +190,10 @@ script "js_ri_cleanup", type: "javascript" do
   EOS
 end
 
+###############################################################################
+# Policy
+###############################################################################
+
 policy "azure_ri_recommendations" do
   validate_each $ds_ri_normalization do
     summary_template "(Enrollment ID: {{parameters.param_enrollment}}): {{ len data }} Azure Reserved Instances Purchase Recommendations"
@@ -150,6 +201,12 @@ policy "azure_ri_recommendations" do
     check lt(to_n(val(item,"netSavings")),$param_savings_threshold)
     export do
       resource_level true
+      field "subscriptionID" do
+        label "Subscription ID"
+      end
+      field "subscriptionName" do
+        label "Subscription Name"
+      end
       field "skuName" do
         label "SKU Name"
       end
@@ -181,6 +238,10 @@ policy "azure_ri_recommendations" do
     end
   end
 end
+
+###############################################################################
+# Escalation
+###############################################################################
 
 escalation "email" do
   automatic true
