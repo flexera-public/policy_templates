@@ -2,7 +2,8 @@
 
 ## v3.5
 
-- GetMetricData is now used to gather metrics data in batches, resulting in faster policy execution.
+- GetMetricData is now used to gather metrics data in batches for faster policy execution.
+- Added parameter to allow user to decide whether both CPU and memory need to be under the specified threshold for an instance to be considered idle.
 
 ## v3.4
 

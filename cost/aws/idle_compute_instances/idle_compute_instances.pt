@@ -48,6 +48,14 @@ parameter "param_avg_used_memory" do
   max_value 100
 end
 
+parameter "param_check_both" do
+  type "string"
+  label "Idle for both CPU/Memory or either"
+  description "Whether an instance should be considered idle only if both CPU and memory are under the thresholds or if either CPU or memory are under."
+  default "Both CPU and Memory"
+  allowed_values "Both CPU and Memory", "Either CPU or Memory"
+end
+
 parameter "param_allowed_regions" do
   type "list"
   label "Allowed Regions"
@@ -298,7 +306,7 @@ datasource "ds_merged_metrics" do
 end
 
 datasource "ds_idle_instances" do
-  run_script $js_idle_instances, $ds_merged_metrics, $ds_instances_costs, $param_avg_cpu, $param_avg_used_memory, $ds_currency
+  run_script $js_idle_instances, $ds_merged_metrics, $ds_instances_costs, $param_avg_cpu, $param_avg_used_memory, $ds_currency, $param_check_both
 end
 
 ###############################################################################
@@ -718,7 +726,7 @@ EOS
 end
 
 script "js_idle_instances", type:"javascript" do
-  parameters "ds_merged_metrics", "ds_instances_costs", "param_avg_cpu", "param_avg_used_memory", "currency"
+  parameters "ds_merged_metrics", "ds_instances_costs", "param_avg_cpu", "param_avg_used_memory", "currency", "param_check_both"
   result "result"
   code <<-EOS
   // Used for formatting numbers to look pretty
@@ -759,8 +767,14 @@ script "js_idle_instances", type:"javascript" do
       }
 
       if (param_avg_cpu != -1 && param_avg_used_memory != -1) {
-        if (instance['cpu_average'] < param_avg_cpu || instance['mem_average'] < param_avg_used_memory) {
-          include_instance = true
+        if (param_check_both == "Both CPU and Memory") {
+          if (instance['cpu_average'] < param_avg_cpu && instance['mem_average'] < param_avg_used_memory) {
+            include_instance = true
+          }
+        } else {
+          if (instance['cpu_average'] < param_avg_cpu || instance['mem_average'] < param_avg_used_memory) {
+            include_instance = true
+          }
         }
       }
 
