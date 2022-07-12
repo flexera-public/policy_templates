@@ -132,10 +132,12 @@ datasource "ds_currency_code" do
   end
 end
 
+# Create a simple object containing the currency code and number separator for later usage
 datasource "ds_currency" do
   run_script $js_currency, $ds_currency_reference, $ds_currency_code
 end
 
+# Get the AWS account number to filter requests to just the account being checked
 datasource "ds_get_caller_identity" do
   request do
     auth $auth_aws
@@ -171,6 +173,7 @@ datasource "ds_regions_list" do
   end
 end
 
+# Filter the regions list by just the regions allowed by the parameter
 datasource "ds_regions" do
   run_script $js_regions, $param_allowed_regions, $ds_regions_list
 end
@@ -211,14 +214,18 @@ datasource "ds_instances_set" do
   end
 end
 
+# Filter the instances list by just the regions allowed by the parameter
 datasource "ds_instances" do
   run_script $js_instances, $ds_instances_set, $param_exclusion_tag_key
 end
 
+# Build out a list of queries to send into Cloudwatch for the above instances
 datasource "ds_instances_queries" do
   run_script $js_instances_queries, $ds_instances, $param_avg_cpu, $param_avg_used_memory
 end
 
+# Combine the above queries into discrete requests of 500 or fewer queries to
+# send into the API
 datasource "ds_instances_requests" do
   run_script $js_instances_requests, $ds_instances_queries
 end
@@ -269,6 +276,7 @@ datasource "ds_top_level_billing_centers" do
   run_script $js_top_level_bc, $ds_billing_centers
 end
 
+# Build the request to send into the Optima API for cost data
 datasource "ds_instances_costs_request" do
   run_script $js_instances_costs_request, $ds_get_caller_identity, $ds_top_level_billing_centers
 end
@@ -301,10 +309,12 @@ datasource "ds_instances_costs" do
   end
 end
 
+# Combine the list of instances with the CloudWatch data
 datasource "ds_merged_metrics" do
   run_script $js_merged_metrics, $ds_cloudwatch_data_sorted, $ds_instances, $ds_get_caller_identity, $ds_currency
 end
 
+# Create a final list of idle instances and incorporate cost data into it
 datasource "ds_idle_instances" do
   run_script $js_idle_instances, $ds_merged_metrics, $ds_instances_costs, $param_avg_cpu, $param_avg_used_memory, $ds_currency, $param_check_both
 end
@@ -347,8 +357,8 @@ script "js_regions", type:"javascript" do
     regions = all_regions
   } else {
     //Filter unique regions
-    var uniqueRegions = _.uniq(user_entered_regions);
-    var all_regions_list = [];
+    var uniqueRegions = _.uniq(user_entered_regions)
+    var all_regions_list = []
     all_regions.forEach(function(all_region){
       all_regions_list.push(all_region.region)
     })
@@ -363,7 +373,7 @@ script "js_regions", type:"javascript" do
 
     //Throw an error if no valid regions found
     if (_.isEmpty(valid_regions)) {
-      regions = all_regions;
+      regions = all_regions
     }else{
       regions = valid_regions
     }
@@ -399,6 +409,7 @@ script "js_instances_queries", type: "javascript" do
   queries = {}
 
   _.each(ds_instances, function(instance) {
+    // Make sure the queries object has an array for the region to push items to
     if (queries[instance['region']] == undefined || queries[instance['region']] == null) {
       queries[instance['region']] = []
     }
@@ -539,6 +550,7 @@ script "js_instances_requests", type: "javascript" do
     for (i = 0; i < queries[region].length; i += query_block_size) {
       chunk = queries[region].slice(i, i + query_block_size)
 
+      // body field is for debugging purposes. body_string is actually used for making the requests
       result.push({
         'body': { "StartTime": start_date, "EndTime": end_date, "MetricDataQueries": chunk },
         'body_string': JSON.stringify({ "StartTime": start_date, "EndTime": end_date, "MetricDataQueries": chunk }),
@@ -583,6 +595,8 @@ script "js_cloudwatch_data_sorted", type: "javascript" do
   result "result"
   parameters "ds_cloudwatch_data"
   code <<-EOS
+  // Sort the CloudWatch data into an object with keys for regions and instance names.
+  // This eliminates the need to "double loop" later on to match it with our instances list.
   result = {}
 
   _.each(ds_cloudwatch_data, function(item) {
@@ -643,6 +657,7 @@ script "js_instances_costs_request", type:"javascript" do
     "metrics": ["cost_nonamortized_unblended_adj"],
     "billing_center_ids": _.compact(_.map(billing_centers, function(value){ return value.id })),
     "limit": 100000,
+    // Speed up execution by filtering the result set for only what we need.
     "filter": {
       "expressions": [
         {
@@ -677,8 +692,11 @@ script "js_merged_metrics", type: "javascript" do
     region = instance['region']
     id = instance['instanceId']
 
+    // Only proceed of the CloudWatch data actually has the region and instance id.
+    // Otherwise, we have no usage data on the instance and thus don't include it in the results.
     if (cloudwatch_data[region] != undefined) {
       if (cloudwatch_data[region][id] != undefined) {
+        // Grab CPU usage data for the instance if it is present
         if (cloudwatch_data[region][id]['cpumax'] != undefined && cloudwatch_data[region][id]['cpumax'] != null) {
           cpu_maximum = parseFloat(cloudwatch_data[region][id]['cpumax']).toFixed(2)
           cpu_minimum = parseFloat(cloudwatch_data[region][id]['cpumin']).toFixed(2)
@@ -689,6 +707,7 @@ script "js_merged_metrics", type: "javascript" do
           cpu_average = null
         }
 
+        // Grab memory usage data for the instance if it is present
         if (cloudwatch_data[region][id]['memmax'] != undefined && cloudwatch_data[region][id]['memmax'] != null) {
           mem_maximum = parseFloat(cloudwatch_data[region][id]['memmax']).toFixed(2)
           mem_minimum = parseFloat(cloudwatch_data[region][id]['memmin']).toFixed(2)
@@ -699,6 +718,8 @@ script "js_merged_metrics", type: "javascript" do
           mem_average = null
         }
 
+        // Send the instance information with the CloudWatch data into the final result.
+        // Also adds in the account ID and currency symbol since it'll be needed for the incident.
         result.push({
           "region": instance['region'],
           "id": instance['instanceId'],
@@ -758,14 +779,18 @@ script "js_idle_instances", type:"javascript" do
       // Do not include instance in the result set unless it meets the requirements
       include_instance = false
 
+      // If we're not checking memory and CPU usage is below threshold, include it.
       if (param_avg_used_memory == -1 && instance['cpu_average'] < param_avg_cpu) {
         include_instance = true
       }
 
+      // If we're not checking CPU and memory usage is below threshold, include it.
       if (param_avg_cpu == -1 && instance['mem_average'] < param_avg_used_memory) {
         include_instance = true
       }
 
+      // If we're checking both CPU and memory, look at the parameter to see whether the user
+      // wants to do an AND comparison or an OR comparison.
       if (param_avg_cpu != -1 && param_avg_used_memory != -1) {
         if (param_check_both == "Both CPU and Memory") {
           if (instance['cpu_average'] < param_avg_cpu && instance['mem_average'] < param_avg_used_memory) {
@@ -778,7 +803,9 @@ script "js_idle_instances", type:"javascript" do
         }
       }
 
-      // Only find the cost data if we're including the instance in the result set
+      // Only find the cost data if we're including the instance in the result set.
+      // This speeds up execution by not pointlessly gathering this data for instances
+      // we won't be reporting on.
       if (include_instance) {
         _.each(ds_instances_costs, function(cost) {
           if (instance['id'] == cost['resource_id']) {
