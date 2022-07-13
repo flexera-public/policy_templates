@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.6
+
+- Refactored datasources from `cloudwatch:GetMetricStatistics` to `cloudwatch:GetMetricData` to improve efficiency of metric data collection
+
 ## v3.5
 
 - Updating to keyword from string
