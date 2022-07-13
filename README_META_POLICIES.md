@@ -10,9 +10,8 @@
    - Terraform [aws_iam_role resource docs]
    - AWS APIs directly [AWS Docs]
 
-2. **Create Rule Based Dimension in Flexera Platform [Flexera Docs]**
-
-3. **Create AWS STS Credential in "Master" Project associated with your Organization on the Flexera Platform [Flexera Docs]**
+2. **Create AWS STS Credential on the Flexera Platform [Flexera Docs]**
+   > Note: if your Organization in on **app.flexera.com** has multiple "Projects" within the Organization, you must use your Org "Master" Project.
 
 #### **BEGIN TEMPORARY STEPS**
 These steps must be completed until the Child Policy Templates are published (PR: [`master` <- `POL-649/meta_policies`](https://github.com/flexera-public/policy_templates/compare/master...POL-649/meta_policies))
@@ -26,9 +25,9 @@ b) Modify Meta Parent Policy Template Policy Template URL in datasource `ds_chil
 
 #### **END TEMPORARY STEPS**
 
-4. **Upload Meta Parent Policy to Flexera Platform [Flexera Docs]**
+3. **Upload Meta Parent Policy to Flexera Platform [Flexera Docs]**
 
-5. **Apply Meta Parent Policy to Org Master Account**
+4. **Apply Meta Parent Policy to Org Master Account**
    - Org "Master" Project must be used for recommendations to get created from policy incidents
    - "15 Minute" frequency recommended for all Meta Parent Policies
    - "Daily" frequency is currently suggested for all Child Policies frequency due to limitations on Policies Engine.
