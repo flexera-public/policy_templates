@@ -237,7 +237,7 @@ end
 datasource "ds_cloudwatch_data" do
   iterate $ds_instances_requests
   request do
-    run_script $js_cloudwatch_data, val(iter_item, "region"), val(iter_item, "body_string")
+    run_script $js_cloudwatch_data, val(iter_item, "region"), val(iter_item, "body")
   end
   result do
     encoding "json"
@@ -483,16 +483,23 @@ script "js_instances_queries", type: "javascript" do
 
     // Only query for MEM usage if we're actually checking it
     if (param_avg_used_memory != -1) {
-      mem_metricname = "mem_used_percent"
-      dimensions = [{ "Name": "host", "Value": instance['privateDnsName'].split('.')[0] }]
 
       if (instance['platform'] == "Windows") {
+        // If platform is Windows, we need to use the Windows custom metric
         mem_metricname = "Memory % Committed Bytes In Use"
         dimensions = [
           { "Name": "ImageId", "Value": instance['imageId'] },
           { "Name": "InstanceId", "Value": instance['instanceId'] },
           { "Name": "InstanceType", "Value": instance['resourceType'] },
           { "Name": "objectname", "Value": "Memory" }
+        ]
+      } else {
+        // Else assume Platform is Linux, and use the Linux custom metric
+        mem_metricname = "mem_used_percent"
+        dimensions = [
+          { "Name": "ImageId", "Value": instance['imageId'] },
+          { "Name": "InstanceId", "Value": instance['instanceId'] },
+          { "Name": "InstanceType", "Value": instance['resourceType'] }
         ]
       }
 
@@ -562,10 +569,8 @@ script "js_instances_requests", type: "javascript" do
     for (i = 0; i < queries[region].length; i += query_block_size) {
       chunk = queries[region].slice(i, i + query_block_size)
 
-      // body field is for debugging purposes. body_string is actually used for making the requests
       result.push({
         'body': { "StartTime": start_date, "EndTime": end_date, "MetricDataQueries": chunk },
-        'body_string': JSON.stringify({ "StartTime": start_date, "EndTime": end_date, "MetricDataQueries": chunk }),
         'region': region
       })
     }
@@ -575,7 +580,7 @@ end
 
 script "js_cloudwatch_data", type: "javascript" do
   result "results"
-  parameters "region", "body_string"
+  parameters "region", "body"
   code <<-EOS
   // Slow down rate of requests to prevent throttling
   var now = new Date().getTime()
@@ -598,7 +603,7 @@ script "js_cloudwatch_data", type: "javascript" do
       'Action': 'GetMetricData',
       'Version': '2010-08-01'
     },
-    body: body_string
+    body: JSON.stringify(body)
   }
 EOS
 end
