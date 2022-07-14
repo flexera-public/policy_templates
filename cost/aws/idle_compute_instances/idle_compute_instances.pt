@@ -156,6 +156,10 @@ datasource "ds_get_caller_identity" do
   end
 end
 
+datasource "ds_aws_account" do
+  run_script $js_aws_account, $ds_get_caller_identity
+end
+
 datasource "ds_regions_list" do
   request do
     auth $auth_aws
@@ -278,7 +282,7 @@ end
 
 # Build the request to send into the Optima API for cost data
 datasource "ds_instances_costs_request" do
-  run_script $js_instances_costs_request, $ds_get_caller_identity, $ds_top_level_billing_centers
+  run_script $js_instances_costs_request, $ds_aws_account, $ds_top_level_billing_centers
 end
 
 datasource "ds_instances_costs" do
@@ -311,7 +315,7 @@ end
 
 # Combine the list of instances with the CloudWatch data
 datasource "ds_merged_metrics" do
-  run_script $js_merged_metrics, $ds_cloudwatch_data_sorted, $ds_instances, $ds_get_caller_identity, $ds_currency
+  run_script $js_merged_metrics, $ds_cloudwatch_data_sorted, $ds_instances, $ds_aws_account, $ds_currency
 end
 
 # Create a final list of idle instances and incorporate cost data into it
@@ -349,6 +353,14 @@ script "js_currency", type:"javascript" do
 EOS
 end
 
+script "js_aws_account", type:"javascript" do
+  parameters "ds_get_caller_identity"
+  result "result"
+  code <<-EOS
+  result = ds_get_caller_identity[0]['account']
+EOS
+end
+
 script "js_regions", type:"javascript" do
   parameters "user_entered_regions", "all_regions"
   result "regions"
@@ -364,7 +376,7 @@ script "js_regions", type:"javascript" do
     })
 
     //Filter valid regions
-    var valid_regions = [];
+    var valid_regions = []
     _.map(uniqueRegions, function(uniqueRegion){
       if(all_regions_list.indexOf(uniqueRegion) > -1){
         valid_regions.push({"region": uniqueRegion})
@@ -566,8 +578,8 @@ script "js_cloudwatch_data", type: "javascript" do
   parameters "region", "body_string"
   code <<-EOS
   // Slow down rate of requests to prevent throttling
-  var now = new Date().getTime();
-  var sleepDuration = 10000
+  var now = new Date().getTime()
+  var sleepDuration = 1000
   while(new Date().getTime() < now + sleepDuration){ /* Do nothing */ }
 
   results = {
@@ -633,7 +645,7 @@ EOS
 end
 
 script "js_instances_costs_request", type:"javascript" do
-  parameters "ds_get_caller_identity", "billing_centers"
+  parameters "aws_account", "billing_centers"
   result "result"
   code <<-EOS
   // returns date formatted as string: YYYY-mm-dd
@@ -673,7 +685,7 @@ script "js_instances_costs_request", type:"javascript" do
         {
           "dimension": "vendor_account",
           "type": "equal",
-          "value": ds_get_caller_identity[0]['account']
+          "value": aws_account
         }
       ],
       "type": "and"
@@ -684,7 +696,7 @@ end
 
 script "js_merged_metrics", type: "javascript" do
   result "result"
-  parameters "cloudwatch_data", "ds_instances", "ds_get_caller_identity", "currency"
+  parameters "cloudwatch_data", "ds_instances", "aws_account", "currency"
   code <<-EOS
   result = []
 
@@ -737,7 +749,7 @@ script "js_merged_metrics", type: "javascript" do
           "mem_minimum": mem_minimum,
           "mem_average": mem_average,
           "savings": null,
-          "accountID": ds_get_caller_identity[0]['account'],
+          "accountID": aws_account,
           "savingsCurrency": currency['symbol']
         })
       }
@@ -752,8 +764,8 @@ script "js_idle_instances", type:"javascript" do
   code <<-EOS
   // Used for formatting numbers to look pretty
   function formatNumber(number, separator){
-    var numString =number.toString();
-    var values=numString.split(".");
+    var numString =number.toString()
+    var values=numString.split(".")
     var result = ''
     while (values[0].length > 3){
       var chunk = values[0].substr(-3)
@@ -764,9 +776,9 @@ script "js_idle_instances", type:"javascript" do
       result = values[0] + result
     }
     if(values[1]==undefined){
-      return result;
+      return result
     }
-    return result+"."+values[1];
+    return result+"."+values[1]
   }
 
   idle_instances = []
