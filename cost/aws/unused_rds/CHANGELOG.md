@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.5
+
+- Added account name call and field
+
 ## v3.4
 
 - Use provided keyword for Optima endpoint

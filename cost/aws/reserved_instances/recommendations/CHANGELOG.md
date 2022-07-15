@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.12
+
+- Added account name call and field
+
 ## v2.11
 
 - Added default to aws_account_number parameter to enable existing API users.

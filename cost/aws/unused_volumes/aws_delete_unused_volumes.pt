@@ -6,7 +6,7 @@ category "Cost"
 severity "low"
 default_frequency "daily"
 info(
-  version: "3.5",
+  version: "3.6",
   provider: "AWS",
   service: "EBS",
   policy_set: "Unused Volumes"
@@ -128,6 +128,18 @@ datasource "ds_regions_list" do
     encoding "xml"
     collect xpath(response, "//DescribeRegionsResponse/regionInfo/item", "array") do
       field "region", xpath(col_item, "regionName")
+    end
+  end
+end
+
+datasource "ds_describe_account" do
+  request do
+    run_script $js_describe_account, $ds_get_caller_identity
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "Account") do
+      field "accountName", jmes_path(col_item, "Name")
     end
   end
 end
@@ -271,6 +283,7 @@ datasource "ds_get_caller_identity" do
     encoding "xml"
     collect xpath(response, "//GetCallerIdentityResponse/GetCallerIdentityResult") do
       field "account", xpath(col_item, "Account")
+      field "userID", xpath(col_item, "UserId")
     end
   end
 end
@@ -289,12 +302,35 @@ datasource "ds_volume_costs" do
 end
 
 datasource "ds_volume_cost_mapping" do
-  run_script $js_volume_cost_mapping, $ds_check_volumes_read_or_write_operations, $ds_volume_costs, $ds_currency_code, $ds_currency_reference, $ds_billing_centers, $ds_get_caller_identity
+  run_script $js_volume_cost_mapping, $ds_check_volumes_read_or_write_operations, $ds_volume_costs, $ds_currency_code, $ds_currency_reference, $ds_billing_centers, $ds_get_caller_identity, $ds_describe_account
 end
 
 ###############################################################################
 # Script
 ###############################################################################
+
+script "js_describe_account", type: "javascript" do
+  parameters "ds_get_caller_identity"
+  result "results"
+  code <<-EOS
+  var payload = {
+    "AccountId": ds_get_caller_identity[0]['account']
+  }
+
+  var results = {
+    auth: "auth_aws",
+    host: "organizations.us-east-1.amazonaws.com",
+    path: '/',
+    verb: 'POST',
+    body_fields: payload,
+    headers: {
+      "User-Agent": "RS Policies",
+      "X-Amz-Target": "AWSOrganizationsV20161128.DescribeAccount",
+      "Content-Type": "application/x-amz-json-1.1",
+    }
+  }
+  EOS
+end
 
 script "js_regions", type: "javascript" do
   parameters "user_entered_regions", "all_regions"
@@ -602,7 +638,7 @@ script "js_get_costs", type: "javascript" do
 end
 
 script "js_volume_cost_mapping", type:"javascript" do
-  parameters "volumes", "volume_costs", "ds_currency_code", "ds_currency_reference", "ds_billing_centers", "ds_get_caller_identity"
+  parameters "volumes", "volume_costs", "ds_currency_code", "ds_currency_reference", "ds_billing_centers", "ds_get_caller_identity", "ds_describe_account"
   result "result"
   code <<-EOS
   var unused_volumes=[];
@@ -665,6 +701,7 @@ script "js_volume_cost_mapping", type:"javascript" do
         total_savings=total_savings+monthly_savings;
         unused_volumes.push({
           accountID: ds_get_caller_identity[0]['account'],
+          accountName: ds_describe_account[0]['accountName'],
           volumeId : volume['volumeId'],
           region : volume['region'],
           availabilityZone : volume['availabilityZone'],
@@ -679,6 +716,7 @@ script "js_volume_cost_mapping", type:"javascript" do
       } else {
         unused_volumes.push({
           accountID: ds_get_caller_identity[0]['account'],
+          accountName: ds_describe_account[0]['accountName'],
           volumeId : volume['volumeId'],
           region : volume['region'],
           availabilityZone : volume['availabilityZone'],
@@ -731,6 +769,9 @@ EOS
       resource_level true
       field "accountID" do
         label "Account Id"
+      end
+      field "accountName" do
+        label "Account Name"
       end
       field "region" do
         label "Region"

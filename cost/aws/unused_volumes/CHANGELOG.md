@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.6
+
+- Added account name call and field
+
 ## v3.5
 
 - Updating to keyword from string

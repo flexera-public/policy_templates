@@ -6,7 +6,7 @@ category "Cost"
 severity "low"
 default_frequency "daily"
 info(
-  version: "3.3",
+  version: "3.4",
   provider: "AWS",
   service: "EBS",
   policy_set: "Old Snapshots"
@@ -113,6 +113,18 @@ end
 ###############################################################################
 # Datasources
 ###############################################################################
+
+datasource "ds_describe_account" do
+  request do
+    run_script $js_describe_account, $ds_get_caller_identity
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "Account") do
+      field "accountName", jmes_path(col_item, "Name")
+    end
+  end
+end
 
 datasource "ds_currency_reference" do
   request do
@@ -267,16 +279,39 @@ datasource "ds_get_snapshot_ami" do
 end
 
 datasource "ds_filter_ami_snapshots" do
-  run_script $js_filter_ami_snapshots, $ds_get_snapshot_ami, $ds_filter_old_snapshots, $ds_get_caller_identity
+  run_script $js_filter_ami_snapshots, $ds_get_snapshot_ami, $ds_filter_old_snapshots, $ds_get_caller_identity, $ds_describe_account
 end
 
 datasource "ds_snapshots_cost_mapping" do
-  run_script $js_snapshots_cost_mapping, $ds_filter_ami_snapshots, $ds_snapshot_costs, $ds_currency_code, $ds_currency_reference, $ds_billing_centers, $ds_get_caller_identity
+  run_script $js_snapshots_cost_mapping, $ds_filter_ami_snapshots, $ds_snapshot_costs, $ds_currency_code, $ds_currency_reference, $ds_billing_centers, $ds_get_caller_identity, $ds_describe_account
 end
 
 ###############################################################################
 # Scripts
 ###############################################################################
+
+script "js_describe_account", type: "javascript" do
+  parameters "ds_get_caller_identity"
+  result "results"
+  code <<-EOS
+  var payload = {
+    "AccountId": ds_get_caller_identity[0]['account']
+  }
+
+  var results = {
+    auth: "auth_aws",
+    host: "organizations.us-east-1.amazonaws.com",
+    path: '/',
+    verb: 'POST',
+    body_fields: payload,
+    headers: {
+      "User-Agent": "RS Policies",
+      "X-Amz-Target": "AWSOrganizationsV20161128.DescribeAccount",
+      "Content-Type": "application/x-amz-json-1.1",
+    }
+  }
+  EOS
+end
 
 script "js_regions", type: "javascript" do
   parameters "user_entered_regions", "all_regions"
@@ -385,7 +420,7 @@ script "js_get_costs", type: "javascript" do
 end
 
 script "js_snapshots_cost_mapping", type: "javascript" do
-  parameters "snapshots", "snapshot_costs", "ds_currency_code", "ds_currency_reference", "ds_billing_centers", "ds_get_caller_identity"
+  parameters "snapshots", "snapshot_costs", "ds_currency_code", "ds_currency_reference", "ds_billing_centers", "ds_get_caller_identity", "ds_describe_account"
   result "results"
   code <<-EOS
   var result = [];
@@ -446,6 +481,7 @@ script "js_snapshots_cost_mapping", type: "javascript" do
       total=total+monthly_savings;
       result.push({
         accountID: ds_get_caller_identity[0]['account'],
+        accountName: ds_describe_account[0]['accountName'],
         snapshotId : snapshot['snapshotId'],
         region : snapshot['region'],
         tags : snapshot['tagKeyValue'],
@@ -460,6 +496,7 @@ script "js_snapshots_cost_mapping", type: "javascript" do
     } else {
       result.push({
         accountID: ds_get_caller_identity[0]['account'],
+        accountName: ds_describe_account[0]['accountName'],
         snapshotId : snapshot['snapshotId'],
         region : snapshot['region'],
         tags : snapshot['tagKeyValue'],
@@ -580,7 +617,7 @@ end
 
 script "js_filter_ami_snapshots", type: "javascript" do
   result "results"
-  parameters "snapshotImagesList", "snapshotsList", "ds_get_caller_identity"
+  parameters "snapshotImagesList", "snapshotsList", "ds_get_caller_identity", "ds_describe_account"
   code <<-EOS
     var results = [];
     var snapshotImageIds = [];
@@ -601,6 +638,7 @@ script "js_filter_ami_snapshots", type: "javascript" do
         tagKeyValue : snapshot['tagKeyValue'],
         daysOld : snapshot['daysOld'],
         accountID: ds_get_caller_identity[0]['account'],
+        accountName: ds_describe_account[0]['accountName'],
         imageId : snapshotImageIds,
         snapshotImageIdFormat : (snapshotImageIdFormat.slice(0,snapshotImageIdFormat.length - 2)),
         volumeSize: snapshot['volumeSize']
@@ -630,6 +668,9 @@ EOS
       resource_level true
       field "accountID" do
         label "Account ID"
+      end
+      field "accountName" do
+        label "Account Name"
       end
       field "region" do
         label "Region"

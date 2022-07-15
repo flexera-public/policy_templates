@@ -7,7 +7,7 @@ severity "medium"
 category "Cost"
 default_frequency "daily"
 info(
-  version: "2.11",
+  version: "2.12",
   provider: "AWS",
   service: "",
   policy_set: ""
@@ -113,8 +113,116 @@ pagination "aws_pagination" do
 end
 
 ###############################################################################
+# Datasources
+###############################################################################
+
+datasource "ds_describe_account" do
+  request do
+    run_script $js_describe_account, $ds_sp_recommendations
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "Account") do
+      field "accountName", jmes_path(col_item, "Name")
+    end
+  end
+end
+
+datasource "ds_sp_recommendations" do
+  request do
+    run_script $js_sp_request, $param_days, $param_payment_option, $param_term, $param_savings_plan_type, $param_scope
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "SavingsPlansPurchaseRecommendation.SavingsPlansPurchaseRecommendationDetails[*]") do
+      field "accountID", jmes_path(col_item,"AccountId")
+      field "currencyCode", jmes_path(col_item,"CurrencyCode")
+      field "currentAverageHourlyOnDemandSpend", jmes_path(col_item,"CurrentAverageHourlyOnDemandSpend")
+      field "currentMaximumHourlyOnDemandSpend", jmes_path(col_item,"CurrentMaximumHourlyOnDemandSpend")
+      field "currentMinimumHourlyOnDemandSpend", jmes_path(col_item,"CurrentMinimumHourlyOnDemandSpend")
+      field "estimatedAverageUtilization", jmes_path(col_item,"EstimatedAverageUtilization")
+      field "estimatedMonthlySavingsAmount", jmes_path(col_item,"EstimatedMonthlySavingsAmount")
+      field "estimatedOnDemandCost", jmes_path(col_item,"EstimatedOnDemandCost")
+      field "estimatedROI", jmes_path(col_item,"EstimatedROI")
+      field "estimatedSavingsAmount", jmes_path(col_item,"EstimatedSavingsAmount")
+      field "estimatedSavingsPercentage", jmes_path(col_item,"EstimatedSavingsPercentage")
+      field "estimatedSavingsPlanCost", jmes_path(col_item,"EstimatedSPCost")
+      field "hourlyCommitmentToPurchase", jmes_path(col_item,"HourlyCommitmentToPurchase")
+      field "instanceFamily", jmes_path(col_item,"SavingsPlansDetails.InstanceFamily")
+      field "offeringId", jmes_path(col_item,"SavingsPlansDetails.OfferingId")
+      field "region", jmes_path(col_item,"SavingsPlansDetails.Region")
+      field "upfrontCost", jmes_path(col_item,"UpfrontCost")
+    end
+  end
+end
+
+datasource "ds_sp_normalization" do
+  run_script $js_sp_cleanup, $ds_sp_recommendations, $param_currency_adjustment, $ds_describe_account
+end
+
+###############################################################################
 # Scripts
 ###############################################################################
+
+script "js_describe_account", type: "javascript" do
+  parameters "ds_sp_recommendations"
+  result "results"
+  code <<-EOS
+  var payload = {
+    "AccountId": ds_sp_recommendations[0]['accountID']
+  }
+
+  var results = {
+    auth: "auth_aws",
+    host: "organizations.us-east-1.amazonaws.com",
+    path: '/',
+    verb: 'POST',
+    body_fields: payload,
+    headers: {
+      "User-Agent": "RS Policies",
+      "X-Amz-Target": "AWSOrganizationsV20161128.DescribeAccount",
+      "Content-Type": "application/x-amz-json-1.1",
+    }
+  }
+  EOS
+end
+
+script "js_sp_cleanup", type: "javascript" do
+  parameters "sp_recos", "currency_adjustment", "ds_describe_account"
+  result "result"
+  code <<-EOS
+    var result = [];
+    _.each(sp_recos, function(reco){
+        result.push({
+          accountID: reco["accountID"],
+          accountName: ds_describe_account[0]["accountName"],
+          currencyCode: reco["currencyCode"],
+          currentAverageHourlyOnDemandSpend: (Math.round(reco["currentAverageHourlyOnDemandSpend"] * 100) / 100).toString(10),
+          currentMaximumHourlyOnDemandSpend: (Math.round(reco["currentMaximumHourlyOnDemandSpend"] * 100) / 100).toString(10),
+          currentMinimumHourlyOnDemandSpend: (Math.round(reco["currentMinimumHourlyOnDemandSpend"] * 100) / 100).toString(10),
+          estimatedAverageUtilization: (Math.round(reco["estimatedAverageUtilization"] * 100) / 100).toString(10),
+          estimatedMonthlySavingsAmount: (Math.round(reco["estimatedMonthlySavingsAmount"] * 100) / 100 * currency_adjustment).toString(10),
+          estimatedOnDemandCost: (Math.round(reco["estimatedOnDemandCost"] * 100) / 100).toString(10),
+          estimatedROI: (Math.round(reco["estimatedROI"] * 100) / 100).toString(10),
+          estimatedSavingsAmount: (Math.round(reco["estimatedSavingsAmount"] * 100) / 100).toString(10),
+          estimatedSavingsPercentage: (Math.round(reco["estimatedSavingsPercentage"] * 100) / 100).toString(10),
+          estimatedSavingsPlanCost: (Math.round(reco["estimatedSavingsPlanCost"] * 100) / 100).toString(10),
+          hourlyCommitmentToPurchase: (Math.round(reco["hourlyCommitmentToPurchase"] * 100) / 100).toString(10),
+          instanceFamily: reco["instanceFamily"],
+          offeringId: reco["offeringId"],
+          region: reco["region"],
+          upfrontCost: (Math.round(reco["upfrontCost"] * 100) / 100).toString(10),
+          estimatedMonthlySavingsAmountWithCurrencyCode : (Math.round(reco["estimatedMonthlySavingsAmount"] * 100) / 100).toString(10)+" "+reco["currencyCode"],
+          estimatedSavingsPlanCostWithCurrencyCode : (Math.round(reco["estimatedSavingsPlanCost"] * 100) / 100).toString(10)+" "+reco["currencyCode"],
+          hourlyCommitmentToPurchaseWithCurrencyCode : (Math.round(reco["hourlyCommitmentToPurchase"] * 100) / 100).toString(10)+" "+reco["currencyCode"],
+          upfrontCostWithCurrencyCode : (Math.round(reco["upfrontCost"] * 100) / 100).toString(10)+" "+reco["currencyCode"],
+          currentAverageHourlyOnDemandSpendWithCurrencyCode : (Math.round(reco["currentAverageHourlyOnDemandSpend"] * 100) / 100).toString(10)+" "+reco["currencyCode"],
+          currentMaximumHourlyOnDemandSpendWithCurrencyCode : (Math.round(reco["currentMaximumHourlyOnDemandSpend"] * 100) / 100).toString(10)+" "+reco["currencyCode"],
+          currentMinimumHourlyOnDemandSpendWithCurrencyCode : (Math.round(reco["currentMinimumHourlyOnDemandSpend"] * 100) / 100).toString(10)+" "+reco["currencyCode"]
+      })
+    })
+EOS
+end
 
 script "js_sp_request", type: "javascript" do
   parameters "param_days","param_payment_option","param_term","param_savings_plan_type", "param_scope"
@@ -175,78 +283,6 @@ script "js_sp_request", type: "javascript" do
 end
 
 ###############################################################################
-# Datasources
-###############################################################################
-
-datasource "ds_sp_recommendations" do
-  request do
-    run_script $js_sp_request, $param_days, $param_payment_option, $param_term, $param_savings_plan_type, $param_scope
-  end
-  result do
-    encoding "json"
-    collect jmes_path(response, "SavingsPlansPurchaseRecommendation.SavingsPlansPurchaseRecommendationDetails[*]") do
-      field "accountId", jmes_path(col_item,"AccountId")
-      field "currencyCode", jmes_path(col_item,"CurrencyCode")
-      field "currentAverageHourlyOnDemandSpend", jmes_path(col_item,"CurrentAverageHourlyOnDemandSpend")
-      field "currentMaximumHourlyOnDemandSpend", jmes_path(col_item,"CurrentMaximumHourlyOnDemandSpend")
-      field "currentMinimumHourlyOnDemandSpend", jmes_path(col_item,"CurrentMinimumHourlyOnDemandSpend")
-      field "estimatedAverageUtilization", jmes_path(col_item,"EstimatedAverageUtilization")
-      field "estimatedMonthlySavingsAmount", jmes_path(col_item,"EstimatedMonthlySavingsAmount")
-      field "estimatedOnDemandCost", jmes_path(col_item,"EstimatedOnDemandCost")
-      field "estimatedROI", jmes_path(col_item,"EstimatedROI")
-      field "estimatedSavingsAmount", jmes_path(col_item,"EstimatedSavingsAmount")
-      field "estimatedSavingsPercentage", jmes_path(col_item,"EstimatedSavingsPercentage")
-      field "estimatedSavingsPlanCost", jmes_path(col_item,"EstimatedSPCost")
-      field "hourlyCommitmentToPurchase", jmes_path(col_item,"HourlyCommitmentToPurchase")
-      field "instanceFamily", jmes_path(col_item,"SavingsPlansDetails.InstanceFamily")
-      field "offeringId", jmes_path(col_item,"SavingsPlansDetails.OfferingId")
-      field "region", jmes_path(col_item,"SavingsPlansDetails.Region")
-      field "upfrontCost", jmes_path(col_item,"UpfrontCost")
-    end
-  end
-end
-
-datasource "ds_sp_normalization" do
-  run_script $js_sp_cleanup, $ds_sp_recommendations, $param_currency_adjustment
-end
-
-script "js_sp_cleanup", type: "javascript" do
-  parameters "sp_recos", "currency_adjustment"
-  result "result"
-  code <<-EOS
-    var result = [];
-    _.each(sp_recos, function(reco){
-        result.push({
-          accountId: reco["accountId"],
-          currencyCode: reco["currencyCode"],
-          currentAverageHourlyOnDemandSpend: (Math.round(reco["currentAverageHourlyOnDemandSpend"] * 100) / 100).toString(10),
-          currentMaximumHourlyOnDemandSpend: (Math.round(reco["currentMaximumHourlyOnDemandSpend"] * 100) / 100).toString(10),
-          currentMinimumHourlyOnDemandSpend: (Math.round(reco["currentMinimumHourlyOnDemandSpend"] * 100) / 100).toString(10),
-          estimatedAverageUtilization: (Math.round(reco["estimatedAverageUtilization"] * 100) / 100).toString(10),
-          estimatedMonthlySavingsAmount: (Math.round(reco["estimatedMonthlySavingsAmount"] * 100) / 100 * currency_adjustment).toString(10),
-          estimatedOnDemandCost: (Math.round(reco["estimatedOnDemandCost"] * 100) / 100).toString(10),
-          estimatedROI: (Math.round(reco["estimatedROI"] * 100) / 100).toString(10),
-          estimatedSavingsAmount: (Math.round(reco["estimatedSavingsAmount"] * 100) / 100).toString(10),
-          estimatedSavingsPercentage: (Math.round(reco["estimatedSavingsPercentage"] * 100) / 100).toString(10),
-          estimatedSavingsPlanCost: (Math.round(reco["estimatedSavingsPlanCost"] * 100) / 100).toString(10),
-          hourlyCommitmentToPurchase: (Math.round(reco["hourlyCommitmentToPurchase"] * 100) / 100).toString(10),
-          instanceFamily: reco["instanceFamily"],
-          offeringId: reco["offeringId"],
-          region: reco["region"],
-          upfrontCost: (Math.round(reco["upfrontCost"] * 100) / 100).toString(10),
-          estimatedMonthlySavingsAmountWithCurrencyCode : (Math.round(reco["estimatedMonthlySavingsAmount"] * 100) / 100).toString(10)+" "+reco["currencyCode"],
-          estimatedSavingsPlanCostWithCurrencyCode : (Math.round(reco["estimatedSavingsPlanCost"] * 100) / 100).toString(10)+" "+reco["currencyCode"],
-          hourlyCommitmentToPurchaseWithCurrencyCode : (Math.round(reco["hourlyCommitmentToPurchase"] * 100) / 100).toString(10)+" "+reco["currencyCode"],
-          upfrontCostWithCurrencyCode : (Math.round(reco["upfrontCost"] * 100) / 100).toString(10)+" "+reco["currencyCode"],
-          currentAverageHourlyOnDemandSpendWithCurrencyCode : (Math.round(reco["currentAverageHourlyOnDemandSpend"] * 100) / 100).toString(10)+" "+reco["currencyCode"],
-          currentMaximumHourlyOnDemandSpendWithCurrencyCode : (Math.round(reco["currentMaximumHourlyOnDemandSpend"] * 100) / 100).toString(10)+" "+reco["currencyCode"],
-          currentMinimumHourlyOnDemandSpendWithCurrencyCode : (Math.round(reco["currentMinimumHourlyOnDemandSpend"] * 100) / 100).toString(10)+" "+reco["currencyCode"]
-      })
-    })
-EOS
-end
-
-###############################################################################
 # Policy
 ##############################################################################
 
@@ -264,6 +300,12 @@ policy "aws_sp_recommendations" do
     ### Lookback Period: {{parameters.param_days}}
     export do
       resource_level true
+      field "accountID" do
+        label "Account ID"
+      end
+      field "accountName" do
+        label "Account Name"
+      end
       field "region" do
         label "Region"
       end
@@ -299,11 +341,15 @@ policy "aws_sp_recommendations" do
       end
       field "id" do
         label "Account Id"
-        path "accountId"
+        path "accountID"
       end
     end
   end
 end
+
+###############################################################################
+# Escalations
+###############################################################################
 
 escalation "email" do
   automatic true

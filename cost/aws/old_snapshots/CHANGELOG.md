@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.4
+
+- Added account name call and field
+
 ## v3.3
 
 - updated savings_currency to savingsCurrency

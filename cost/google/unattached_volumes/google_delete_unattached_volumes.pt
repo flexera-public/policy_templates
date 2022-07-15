@@ -6,7 +6,7 @@ category "Cost"
 severity "low"
 default_frequency "daily"
 info(
-  version: "2.9",
+  version: "2.10",
   provider:"Google",
   service: "Storage",
   policy_set: "Unused Volumes"
@@ -99,7 +99,8 @@ datasource "ds_projects" do
   result do
     encoding "json"
     collect jmes_path(response,"projects[*]") do
-      field "projectId", jmes_path(col_item, "projectId")
+      field "projectID", jmes_path(col_item, "projectId")
+      field "projectName", jmes_path(col_item,"projectName")
       end
   end
 end
@@ -110,15 +111,16 @@ datasource "ds_zones" do
     auth $auth_google
     host "compute.googleapis.com"
     verb "GET"
-    path join(["/compute/v1/projects/", val(iter_item, "projectId"), "/zones"])
-    query "project", val(iter_item, "projectId")
+    path join(["/compute/v1/projects/", val(iter_item, "projectID"), "/zones"])
+    query "project", val(iter_item, "projectID")
     pagination $google_pagination
     ignore_status [403,404]
   end
   result do
     encoding "json"
     collect jmes_path(response,"items[*]") do
-      field "projectId", val(iter_item, "projectId")
+      field "projectID", val(iter_item, "projectID")
+      field "projectName", val(iter_item, "projectName")
       field "region", last(split(jmes_path(col_item, "region"),'/'))
       field "zone", jmes_path(col_item, "name")
     end
@@ -131,7 +133,7 @@ datasource "ds_volumes" do
     auth $auth_google
     host "compute.googleapis.com"
     verb "GET"
-    path join(["/compute/v1/projects/", val(iter_item, "projectId"), "/zones/", val(iter_item, "zone"), "/disks"])
+    path join(["/compute/v1/projects/", val(iter_item, "projectID"), "/zones/", val(iter_item, "zone"), "/disks"])
     query "project", val(iter_item, "project_name")
     pagination $google_pagination
     ignore_status [403,404]
@@ -139,7 +141,8 @@ datasource "ds_volumes" do
   result do
     encoding "json"
     collect jmes_path(response,"items[*]") do
-      field "projectId", val(iter_item, "projectId")
+      field "projectID", val(iter_item, "projectID")
+      field "projectName", val(iter_item, "project_name")
       field "zone", val(iter_item, "zone")
       field "selfLink", jmes_path(col_item,"selfLink")
       field "id", jmes_path(col_item, "id")
@@ -244,8 +247,11 @@ policy 'policy_google_unattached_volumes' do
     escalate $esc_approve_delete_volumes
     export do
       resource_level true
-      field "projectId" do
+      field "projectID" do
         label "Project ID"
+      end
+      field "projectName" do
+        label "Project Name"
       end
       field "zone" do
         label "Zone"

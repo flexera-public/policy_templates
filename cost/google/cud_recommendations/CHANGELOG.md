@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.3
+
+- added project name/id/number fields and moved account versions to end
+
 ## v2.2
 
 - Fixed missing savings field

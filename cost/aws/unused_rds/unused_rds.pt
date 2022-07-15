@@ -7,7 +7,7 @@ severity "low"
 category "Cost"
 default_frequency "daily"
 info(
-  version: "3.4",
+  version: "3.5",
   provider: "AWS",
   service: "RDS",
   policy_set: "Unused Database Services"
@@ -68,6 +68,18 @@ auth "auth_rs", type: "rightscale"
 ###############################################################################
 # Datasources
 ###############################################################################
+
+datasource "ds_describe_account" do
+  request do
+    run_script $js_describe_account, $ds_get_caller_identity
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "Account") do
+      field "accountName", jmes_path(col_item, "Name")
+    end
+  end
+end
 
 #Get list of enabled regions for an account
 datasource "ds_regions_list" do
@@ -233,12 +245,35 @@ datasource "ds_instance_costs" do
 end
 
 datasource "ds_instance_cost_mapping" do
-  run_script $js_instance_cost_mapping, $ds_rds_instances, $ds_instance_costs, $ds_currency_code, $ds_currency_reference, $ds_billing_centers, $ds_get_caller_identity
+  run_script $js_instance_cost_mapping, $ds_rds_instances, $ds_instance_costs, $ds_currency_code, $ds_currency_reference, $ds_billing_centers, $ds_get_caller_identity, $ds_describe_account
 end
 
 ###############################################################################
 # Scripts
 ###############################################################################
+
+script "js_describe_account", type: "javascript" do
+  parameters "ds_get_caller_identity"
+  result "results"
+  code <<-EOS
+  var payload = {
+    "AccountId": ds_get_caller_identity[0]['account']
+  }
+
+  var results = {
+    auth: "auth_aws",
+    host: "organizations.us-east-1.amazonaws.com",
+    path: '/',
+    verb: 'POST',
+    body_fields: payload,
+    headers: {
+      "User-Agent": "RS Policies",
+      "X-Amz-Target": "AWSOrganizationsV20161128.DescribeAccount",
+      "Content-Type": "application/x-amz-json-1.1",
+    }
+  }
+  EOS
+end
 
 script "js_regions", type:"javascript" do
   parameters "user_entered_regions", "all_regions"
@@ -337,7 +372,7 @@ end
 # merge the instances and tags and remove instances that have the exclusion tag
 script "js_rds_instances", type: "javascript" do
   result "results"
-  parameters "ds_rds_instance_set", "ds_list_tags_for_resource", "ds_cloudwatch_connections", "param_exclusion_tag_key", "ds_currency_code", "ds_currency_reference", "ds_get_caller_identity"
+  parameters "ds_rds_instance_set", "ds_list_tags_for_resource", "ds_cloudwatch_connections", "param_exclusion_tag_key", "ds_currency_code", "ds_currency_reference", "ds_get_caller_identity", "ds_describe_account"
   code <<-EOS
   var tag_key = param_exclusion_tag_key.split(':')[0]
   var tag_value = param_exclusion_tag_key.split(':')[1]
@@ -379,6 +414,7 @@ script "js_rds_instances", type: "javascript" do
     } else {
       results.push({
         accountID: ds_get_caller_identity[0]['account'],
+        accountName: ds_describe_account[0]['accountName'],
         region: instance.region,
         name: instance.name,
         arn: instance.instanceArn,
@@ -593,6 +629,9 @@ EOS
       resource_level true
       field "accountID" do
         label "Account ID"
+      end
+      field "accountName" do
+        label "Account Name"
       end
       field "region" do
         label "Region"

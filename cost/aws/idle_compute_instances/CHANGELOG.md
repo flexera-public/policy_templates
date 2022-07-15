@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.5
+
+- Added account name call and field
+
 ## v3.4
 
 - fixed issue with multiple datapoints on cpu_usage to not show duplicate, incorrect cpu data

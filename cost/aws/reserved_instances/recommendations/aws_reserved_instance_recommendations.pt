@@ -7,7 +7,7 @@ severity "medium"
 category "Cost"
 default_frequency "daily"
 info(
-  version: "2.11",
+  version: "2.12",
   provider: "AWS",
   service: "EC2",
   policy_set: ""
@@ -126,6 +126,181 @@ pagination "aws_pagination" do
   end
 end
 
+###############################################################################
+# Datasources
+###############################################################################
+
+datasource "ds_ri_types" do
+  run_script $js_ri_types, $param_service
+end
+
+script "js_ri_types", type: "javascript" do
+  parameters "param_service"
+  result "result"
+  code <<-EOS
+    var result = []
+    if (param_service === "All"){
+      var services = ["ElastiCache","Elastic Compute Cloud (EC2)","Elasticsearch Service (ES)","Redshift","Relational Database Service (RDS)"]
+      _.each(services, function(service){
+        result.push({"service":service})
+      })
+    } else {
+      result.push({"service":param_service})
+    }
+  EOS
+end
+
+datasource "ds_describe_account" do
+  request do
+    run_script $js_describe_account, $ds_ri_recommendations
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "Account") do
+      field "accountName", jmes_path(col_item, "Name")
+    end
+  end
+end
+
+datasource "ds_ri_recommendations" do
+  iterate $ds_ri_types
+  request do
+    run_script $js_ri_request, $param_days, $param_payment_option, val(iter_item,'service'), $param_service_spec, $param_term, $param_scope
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "Recommendations[*]") do
+      field "accountScope", jmes_path(col_item,"AccountScope")
+      field "lookbackPeriodInDays", jmes_path(col_item,"LookbackPeriodInDays")
+      field "paymentOption", jmes_path(col_item,"PaymentOption")
+      field "termInYears", jmes_path(col_item,"TermInYears")
+      field "service", val(iter_item,"service")
+      field "recommendationDetails" do
+        collect jmes_path(col_item, "RecommendationDetails[*]") do
+          field "accountID", jmes_path(col_item,"AccountId")
+          field "averageNormalizedUnitsUsedPerHour", jmes_path(col_item,"AverageNormalizedUnitsUsedPerHour")
+          field "averageNumberOfInstancesUsedPerHour", jmes_path(col_item,"AverageNumberOfInstancesUsedPerHour")
+          field "averageUtilization", jmes_path(col_item,"AverageUtilization")
+          field "estimatedBreakEvenInMonths", jmes_path(col_item,"EstimatedBreakEvenInMonths")
+          field "estimatedMonthlyOnDemandCost", jmes_path(col_item,"EstimatedMonthlyOnDemandCost")
+          field "estimatedMonthlySavingsAmount", jmes_path(col_item,"EstimatedMonthlySavingsAmount")
+          field "estimatedMonthlySavingsPercentage", jmes_path(col_item,"EstimatedMonthlySavingsPercentage")
+          field "estimatedReservationCostForLookbackPeriod", jmes_path(col_item,"EstimatedReservationCostForLookbackPeriod")
+          field "availabilityZone", jmes_path(col_item,"InstanceDetails.*.AvailabilityZone")
+          field "currentGeneration", jmes_path(col_item,"InstanceDetails.*.CurrentGeneration")
+          field "family", jmes_path(col_item,"InstanceDetails.*.Family")
+          field "instanceType", jmes_path(col_item,"InstanceDetails.*.InstanceType")
+          field "platform", jmes_path(col_item,"InstanceDetails.*.Platform")
+          field "region", jmes_path(col_item,"InstanceDetails.*.Region")
+          field "sizeFlexEligible", jmes_path(col_item,"InstanceDetails.*.SizeFlexEligible")
+          field "tenancy", jmes_path(col_item,"InstanceDetails.*.Tenancy")
+          field "nodeType", jmes_path(col_item,"InstanceDetails.*.NodeType")
+          field "productDescription", jmes_path(col_item,"InstanceDetails.*.ProductDescription")
+          field "instanceClass", jmes_path(col_item,"InstanceDetails.*.InstanceClass")
+          field "instanceSize", jmes_path(col_item,"InstanceDetails.*.InstanceSize")
+          field "databaseEngine", jmes_path(col_item,"InstanceDetails.*.DatabaseEngine")
+          field "databaseEdition", jmes_path(col_item,"InstanceDetails.*.DatabaseEdition")
+          field "deploymentOption", jmes_path(col_item,"InstanceDetails.*.DeploymentOption")
+          field "licenseModel", jmes_path(col_item,"InstanceDetails.*.LicenseModel")
+          field "maximumNormalizedUnitsUsedPerHour", jmes_path(col_item,"MaximumNormalizedUnitsUsedPerHour")
+          field "maximumNumberOfInstancesUsedPerHour", jmes_path(col_item,"MaximumNumberOfInstancesUsedPerHour")
+          field "minimumNormalizedUnitsUsedPerHour", jmes_path(col_item,"MinimumNormalizedUnitsUsedPerHour")
+          field "minimumNumberOfInstancesUsedPerHour", jmes_path(col_item,"MinimumNumberOfInstancesUsedPerHour")
+          field "recommendedNormalizedUnitsToPurchase", jmes_path(col_item,"RecommendedNormalizedUnitsToPurchase")
+          field "recommendedNumberOfInstancesToPurchase", jmes_path(col_item,"RecommendedNumberOfInstancesToPurchase")
+          field "recurringStandardMonthlyCost", jmes_path(col_item,"RecurringStandardMonthlyCost")
+          field "upfrontCost", jmes_path(col_item,"UpfrontCost")
+        end
+      end
+    end
+  end
+end
+
+datasource "ds_ri_normalization" do
+  run_script $js_ri_cleanup, $ds_ri_recommendations, $param_currency_adjustment, $ds_describe_account
+end
+
+###############################################################################
+# Scripts
+###############################################################################
+
+script "js_describe_account", type: "javascript" do
+  parameters "ri_recos"
+  result "results"
+  code <<-EOS
+
+  var payload = {
+    "AccountId": ri_recos[0]["recommendationDetails"][0]['accountID']
+  }
+
+  var results = {
+    auth: "auth_aws",
+    host: "organizations.us-east-1.amazonaws.com",
+    path: '/',
+    verb: 'POST',
+    body_fields: payload,
+    headers: {
+      "User-Agent": "RS Policies",
+      "X-Amz-Target": "AWSOrganizationsV20161128.DescribeAccount",
+      "Content-Type": "application/x-amz-json-1.1",
+    }
+  }
+  EOS
+end
+
+script "js_ri_cleanup", type: "javascript" do
+  parameters "ri_recos", "currency_adjustment", "ds_describe_account"
+  result "result"
+  code <<-EOS
+    var result = [];
+    console.log(ds_describe_account)
+    _.each(ri_recos, function(recos){
+      var reco_details = recos["recommendationDetails"];
+      _.each(reco_details, function(reco){
+        result.push({
+          accountID: reco["accountID"],
+          accountName: ds_describe_account[0]["accountName"],
+          service: recos["service"],
+          accountScope: recos["accountScope"],
+          lookbackPeriodInDays: recos["lookbackPeriodInDays"],
+          paymentOption: recos["paymentOption"],
+          availabilityZone: reco["availabilityZone"].toString(),
+          averageNormalizedUnitsUsedPerHour: (Math.round(reco["averageNormalizedUnitsUsedPerHour"] * 100) / 100).toString(10),
+          averageNumberOfInstancesUsedPerHour: (Math.round(reco["averageNumberOfInstancesUsedPerHour"] * 100) / 100).toString(10),
+          averageUtilization: (Math.round(reco["averageUtilization"] * 100) / 100).toString(10),
+          databaseEdition: reco["databaseEdition"].toString(),
+          databaseEngine: reco["databaseEngine"].toString(),
+          deploymentOption: reco["deploymentOption"].toString(),
+          estimatedBreakEvenInMonths: (Math.round(reco["estimatedBreakEvenInMonths"] * 100) / 100).toString(10),
+          estimatedMonthlyOnDemandCost: (Math.round(reco["estimatedMonthlyOnDemandCost"] * 100) / 100).toString(10),
+          estimatedMonthlySavingsAmount: (Math.round(reco["estimatedMonthlySavingsAmount"] * 100) / 100 * currency_adjustment).toString(10),
+          estimatedMonthlySavingsPercentage: (Math.round(reco["estimatedMonthlySavingsPercentage"] * 100) / 100).toString(10),
+          estimatedReservationCostForLookbackPeriod: (Math.round(reco["estimatedReservationCostForLookbackPeriod"] * 100) / 100).toString(10),
+          family: reco["family"].toString(),
+          instanceClass: reco["instanceClass"].toString(),
+          instanceSize: reco["instanceSize"].toString(),
+          instanceType: reco["instanceType"].toString(),
+          licenseModel: reco["licenseModel"].toString(),
+          maximumNormalizedUnitsUsedPerHour: (Math.round(reco["maximumNormalizedUnitsUsedPerHour"] * 100) / 100).toString(10),
+          maximumNumberOfInstancesUsedPerHour: (Math.round(reco["maximumNumberOfInstancesUsedPerHour"] * 100) / 100).toString(10),
+          minimumNormalizedUnitsUsedPerHour: (Math.round(reco["minimumNormalizedUnitsUsedPerHour"] * 100) / 100).toString(10),
+          minimumNumberOfInstancesUsedPerHour: (Math.round(reco["minimumNumberOfInstancesUsedPerHour"] * 100) / 100).toString(10),
+          nodeType: reco["nodeType"].toString(),
+          platform: reco["platform"].toString(),
+          productDescription: reco["productDescription"].toString(),
+          recommendedNormalizedUnitsToPurchase: reco["recommendedNormalizedUnitsToPurchase"].toString(),
+          recommendedNumberOfInstancesToPurchase: reco["recommendedNumberOfInstancesToPurchase"].toString(),
+          recurringStandardMonthlyCost: (Math.round(reco["recurringStandardMonthlyCost"] * 100) / 100).toString(10),
+          region: reco["region"].toString(),
+          sizeFlexEligible: reco["sizeFlexEligible"].toString(),
+          tenancy: reco["tenancy"].toString(),
+          upfrontCost: (Math.round(reco["upfrontCost"] * 100) / 100).toString(10)
+        })
+      })
+    })
+  EOS
+end
+
 script "js_ri_request", type: "javascript" do
   parameters "param_days","param_payment_option","param_service","param_service_spec","param_term","param_scope"
   result "request"
@@ -205,139 +380,8 @@ script "js_ri_request", type: "javascript" do
 end
 
 ###############################################################################
-# Datasources
+# Policy
 ###############################################################################
-
-datasource "ds_ri_types" do
-  run_script $js_ri_types, $param_service
-end
-
-script "js_ri_types", type: "javascript" do
-  parameters "param_service"
-  result "result"
-  code <<-EOS
-    var result = []
-    if (param_service === "All"){
-      var services = ["ElastiCache","Elastic Compute Cloud (EC2)","Elasticsearch Service (ES)","Redshift","Relational Database Service (RDS)"]
-      _.each(services, function(service){
-        result.push({"service":service})
-      })
-    } else {
-      result.push({"service":param_service})
-    }
-  EOS
-end
-
-datasource "ds_ri_recommendations" do
-  iterate $ds_ri_types
-  request do
-    run_script $js_ri_request, $param_days, $param_payment_option, val(iter_item,'service'), $param_service_spec, $param_term, $param_scope
-  end
-  result do
-    encoding "json"
-    collect jmes_path(response, "Recommendations[*]") do
-      field "accountScope", jmes_path(col_item,"AccountScope")
-      field "lookbackPeriodInDays", jmes_path(col_item,"LookbackPeriodInDays")
-      field "paymentOption", jmes_path(col_item,"PaymentOption")
-      field "termInYears", jmes_path(col_item,"TermInYears")
-      field "service", val(iter_item,"service")
-      field "recommendationDetails" do
-        collect jmes_path(col_item, "RecommendationDetails[*]") do
-          field "accountId", jmes_path(col_item,"AccountId")
-          field "averageNormalizedUnitsUsedPerHour", jmes_path(col_item,"AverageNormalizedUnitsUsedPerHour")
-          field "averageNumberOfInstancesUsedPerHour", jmes_path(col_item,"AverageNumberOfInstancesUsedPerHour")
-          field "averageUtilization", jmes_path(col_item,"AverageUtilization")
-          field "estimatedBreakEvenInMonths", jmes_path(col_item,"EstimatedBreakEvenInMonths")
-          field "estimatedMonthlyOnDemandCost", jmes_path(col_item,"EstimatedMonthlyOnDemandCost")
-          field "estimatedMonthlySavingsAmount", jmes_path(col_item,"EstimatedMonthlySavingsAmount")
-          field "estimatedMonthlySavingsPercentage", jmes_path(col_item,"EstimatedMonthlySavingsPercentage")
-          field "estimatedReservationCostForLookbackPeriod", jmes_path(col_item,"EstimatedReservationCostForLookbackPeriod")
-          field "availabilityZone", jmes_path(col_item,"InstanceDetails.*.AvailabilityZone")
-          field "currentGeneration", jmes_path(col_item,"InstanceDetails.*.CurrentGeneration")
-          field "family", jmes_path(col_item,"InstanceDetails.*.Family")
-          field "instanceType", jmes_path(col_item,"InstanceDetails.*.InstanceType")
-          field "platform", jmes_path(col_item,"InstanceDetails.*.Platform")
-          field "region", jmes_path(col_item,"InstanceDetails.*.Region")
-          field "sizeFlexEligible", jmes_path(col_item,"InstanceDetails.*.SizeFlexEligible")
-          field "tenancy", jmes_path(col_item,"InstanceDetails.*.Tenancy")
-          field "nodeType", jmes_path(col_item,"InstanceDetails.*.NodeType")
-          field "productDescription", jmes_path(col_item,"InstanceDetails.*.ProductDescription")
-          field "instanceClass", jmes_path(col_item,"InstanceDetails.*.InstanceClass")
-          field "instanceSize", jmes_path(col_item,"InstanceDetails.*.InstanceSize")
-          field "databaseEngine", jmes_path(col_item,"InstanceDetails.*.DatabaseEngine")
-          field "databaseEdition", jmes_path(col_item,"InstanceDetails.*.DatabaseEdition")
-          field "deploymentOption", jmes_path(col_item,"InstanceDetails.*.DeploymentOption")
-          field "licenseModel", jmes_path(col_item,"InstanceDetails.*.LicenseModel")
-          field "maximumNormalizedUnitsUsedPerHour", jmes_path(col_item,"MaximumNormalizedUnitsUsedPerHour")
-          field "maximumNumberOfInstancesUsedPerHour", jmes_path(col_item,"MaximumNumberOfInstancesUsedPerHour")
-          field "minimumNormalizedUnitsUsedPerHour", jmes_path(col_item,"MinimumNormalizedUnitsUsedPerHour")
-          field "minimumNumberOfInstancesUsedPerHour", jmes_path(col_item,"MinimumNumberOfInstancesUsedPerHour")
-          field "recommendedNormalizedUnitsToPurchase", jmes_path(col_item,"RecommendedNormalizedUnitsToPurchase")
-          field "recommendedNumberOfInstancesToPurchase", jmes_path(col_item,"RecommendedNumberOfInstancesToPurchase")
-          field "recurringStandardMonthlyCost", jmes_path(col_item,"RecurringStandardMonthlyCost")
-          field "upfrontCost", jmes_path(col_item,"UpfrontCost")
-        end
-      end
-    end
-  end
-end
-
-datasource "ds_ri_normalization" do
-  run_script $js_ri_cleanup, $ds_ri_recommendations, $param_currency_adjustment
-end
-
-script "js_ri_cleanup", type: "javascript" do
-  parameters "ri_recos", "currency_adjustment"
-  result "result"
-  code <<-EOS
-    var result = [];
-    _.each(ri_recos, function(recos){
-      var reco_details = recos["recommendationDetails"];
-
-      _.each(reco_details, function(reco){
-        result.push({
-          accountId: reco["accountId"],
-          service: recos["service"],
-          accountScope: recos["accountScope"],
-          lookbackPeriodInDays: recos["lookbackPeriodInDays"],
-          paymentOption: recos["paymentOption"],
-          availabilityZone: reco["availabilityZone"].toString(),
-          averageNormalizedUnitsUsedPerHour: (Math.round(reco["averageNormalizedUnitsUsedPerHour"] * 100) / 100).toString(10),
-          averageNumberOfInstancesUsedPerHour: (Math.round(reco["averageNumberOfInstancesUsedPerHour"] * 100) / 100).toString(10),
-          averageUtilization: (Math.round(reco["averageUtilization"] * 100) / 100).toString(10),
-          databaseEdition: reco["databaseEdition"].toString(),
-          databaseEngine: reco["databaseEngine"].toString(),
-          deploymentOption: reco["deploymentOption"].toString(),
-          estimatedBreakEvenInMonths: (Math.round(reco["estimatedBreakEvenInMonths"] * 100) / 100).toString(10),
-          estimatedMonthlyOnDemandCost: (Math.round(reco["estimatedMonthlyOnDemandCost"] * 100) / 100).toString(10),
-          estimatedMonthlySavingsAmount: (Math.round(reco["estimatedMonthlySavingsAmount"] * 100) / 100 * currency_adjustment).toString(10),
-          estimatedMonthlySavingsPercentage: (Math.round(reco["estimatedMonthlySavingsPercentage"] * 100) / 100).toString(10),
-          estimatedReservationCostForLookbackPeriod: (Math.round(reco["estimatedReservationCostForLookbackPeriod"] * 100) / 100).toString(10),
-          family: reco["family"].toString(),
-          instanceClass: reco["instanceClass"].toString(),
-          instanceSize: reco["instanceSize"].toString(),
-          instanceType: reco["instanceType"].toString(),
-          licenseModel: reco["licenseModel"].toString(),
-          maximumNormalizedUnitsUsedPerHour: (Math.round(reco["maximumNormalizedUnitsUsedPerHour"] * 100) / 100).toString(10),
-          maximumNumberOfInstancesUsedPerHour: (Math.round(reco["maximumNumberOfInstancesUsedPerHour"] * 100) / 100).toString(10),
-          minimumNormalizedUnitsUsedPerHour: (Math.round(reco["minimumNormalizedUnitsUsedPerHour"] * 100) / 100).toString(10),
-          minimumNumberOfInstancesUsedPerHour: (Math.round(reco["minimumNumberOfInstancesUsedPerHour"] * 100) / 100).toString(10),
-          nodeType: reco["nodeType"].toString(),
-          platform: reco["platform"].toString(),
-          productDescription: reco["productDescription"].toString(),
-          recommendedNormalizedUnitsToPurchase: reco["recommendedNormalizedUnitsToPurchase"].toString(),
-          recommendedNumberOfInstancesToPurchase: reco["recommendedNumberOfInstancesToPurchase"].toString(),
-          recurringStandardMonthlyCost: (Math.round(reco["recurringStandardMonthlyCost"] * 100) / 100).toString(10),
-          region: reco["region"].toString(),
-          sizeFlexEligible: reco["sizeFlexEligible"].toString(),
-          tenancy: reco["tenancy"].toString(),
-          upfrontCost: (Math.round(reco["upfrontCost"] * 100) / 100).toString(10)
-
-        })
-      })
-    })
-  EOS
-end
 
 policy "aws_ri_recommendations" do
   validate_each $ds_ri_normalization do
@@ -353,9 +397,11 @@ policy "aws_ri_recommendations" do
       field "service" do
         label "Service"
       end
-      field "AccountId" do
+      field "accountID" do
         label "Account Id"
-        path "accountId"
+      end
+      field "accountName" do
+        label "Account Name"
       end
       field "estimatedMonthlySavingsAmount" do
         label "Estimated Monthly Savings Amount"
@@ -456,6 +502,10 @@ policy "aws_ri_recommendations" do
     end
   end
 end
+
+###############################################################################
+# Escalations
+###############################################################################
 
 escalation "email" do
   automatic true

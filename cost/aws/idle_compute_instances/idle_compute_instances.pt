@@ -7,7 +7,7 @@ severity "low"
 category "Cost"
 default_frequency "daily"
 info(
-  version: "3.4",
+  version: "3.5",
   provider: "AWS",
   service: "EC2",
   policy_set: "Idle Compute Instances"
@@ -96,6 +96,18 @@ auth "auth_rs", type: "rightscale"
 ###############################################################################
 # Datasources
 ###############################################################################
+
+datasource "ds_describe_account" do
+  request do
+    run_script $js_describe_account, $ds_get_caller_identity
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "Account") do
+      field "accountName", jmes_path(col_item, "Name")
+    end
+  end
+end
 
 #Get list of enabled regions for an account
 datasource "ds_regions_list" do
@@ -298,12 +310,35 @@ datasource "ds_instances_costs" do
 end
 
 datasource "ds_instance_cost_mapping" do
-  run_script $js_instance_cost_mapping, $ds_merged_metrics, $ds_instances_costs, $ds_currency_code, $ds_currency_reference, $ds_billing_centers, $ds_get_caller_identity
+  run_script $js_instance_cost_mapping, $ds_merged_metrics, $ds_instances_costs, $ds_currency_code, $ds_currency_reference, $ds_billing_centers, $ds_get_caller_identity, $ds_describe_account
 end
 
 ###############################################################################
 # Scripts
 ###############################################################################
+
+script "js_describe_account", type: "javascript" do
+  parameters "ds_get_caller_identity"
+  result "results"
+  code <<-EOS
+  var payload = {
+    "AccountId": ds_get_caller_identity[0]['account']
+  }
+
+  var results = {
+    auth: "auth_aws",
+    host: "organizations.us-east-1.amazonaws.com",
+    path: '/',
+    verb: 'POST',
+    body_fields: payload,
+    headers: {
+      "User-Agent": "RS Policies",
+      "X-Amz-Target": "AWSOrganizationsV20161128.DescribeAccount",
+      "Content-Type": "application/x-amz-json-1.1",
+    }
+  }
+  EOS
+end
 
 script "js_regions", type:"javascript" do
   parameters "user_entered_regions", "all_regions"
@@ -693,7 +728,7 @@ script "js_get_costs", type:"javascript" do
 end
 
 script "js_instance_cost_mapping", type:"javascript" do
-  parameters  "instances","instance_costs","ds_currency_code","ds_currency_reference", "ds_billing_centers", "ds_get_caller_identity"
+  parameters  "instances","instance_costs","ds_currency_code","ds_currency_reference", "ds_billing_centers", "ds_get_caller_identity", "ds_describe_account"
   result "result"
   code <<-EOS
   var result = {};
@@ -761,6 +796,7 @@ script "js_instance_cost_mapping", type:"javascript" do
         total_savings=total_savings+monthly_savings;
         idle_instance.push({
           "accountID": ds_get_caller_identity[0]['account'],
+          "accountName": ds_describe_account[0]['accountName'],
           "region": instance["region"],
           "resourceID": instance["id"],
           "resourceType": instance["resourceType"],
@@ -781,6 +817,7 @@ script "js_instance_cost_mapping", type:"javascript" do
       } else {
         idle_instance.push({
           "accountID": ds_get_caller_identity[0]['account']
+          "accountName": ds_describe_account[0]['accountName'],
           "region": instance["region"],
           "resourceID": instance["id"],
           "resourceType": instance["resourceType"],
@@ -836,7 +873,10 @@ EOS
     export "idle_instances" do
       resource_level true
       field "accountID" do
-        label "Account Id"
+        label "Account ID"
+      end
+      field "accountName" do
+        label "Account Name"
       end
       field "resourceID" do
         label "Resource ID"
@@ -893,7 +933,6 @@ EOS
     end
   end
 end
-
 
 ###############################################################################
 # Escalations
