@@ -81,6 +81,15 @@ parameter "param_automatic_action" do
   default []
 end
 
+parameter "param_api_wait" do
+  type "number"
+  label "CloudWatch API wait time"
+  description "Amount of time to wait between CloudWatch API requests to avoid throttling (milliseconds)"
+  default 5000
+  min_value 1000
+  max_value 60000
+end
+
 parameter "param_log_to_cm_audit_entries" do
   type "string"
   label "Log to CM Audit Entries"
@@ -237,7 +246,7 @@ end
 datasource "ds_cloudwatch_data" do
   iterate $ds_instances_requests
   request do
-    run_script $js_cloudwatch_data, val(iter_item, "region"), val(iter_item, "body")
+    run_script $js_cloudwatch_data, val(iter_item, "region"), val(iter_item, "body"), $param_api_wait
   end
   result do
     encoding "json"
@@ -580,12 +589,11 @@ end
 
 script "js_cloudwatch_data", type: "javascript" do
   result "results"
-  parameters "region", "body"
+  parameters "region", "body", "api_wait"
   code <<-EOS
   // Slow down rate of requests to prevent throttling
   var now = new Date().getTime()
-  var sleepDuration = 1000
-  while(new Date().getTime() < now + sleepDuration){ /* Do nothing */ }
+  while(new Date().getTime() < now + api_wait){ /* Do nothing */ }
 
   results = {
     "auth": "auth_aws",
