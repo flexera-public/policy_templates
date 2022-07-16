@@ -3,6 +3,7 @@
 ## v3.5
 
 - Added account name call and field
+- updated fields to match new field conventions of camel-case
 
 ## v3.4
 
