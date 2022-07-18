@@ -1,8 +1,12 @@
 # Changelog
 
-## v2.12
+## v2.13
 
 - Added account name call and field
+
+## v2.12
+
+- Added SageMaker to param_savings_plan_type list of allowed values
 
 ## v2.11
 
