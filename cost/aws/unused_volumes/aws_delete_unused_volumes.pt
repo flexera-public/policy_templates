@@ -190,23 +190,22 @@ script "js_metricdataqueries", type: "javascript" do
   parameters "ds_unattached_volumes_map"
   code <<-EOS
 queries = {}
-// Construct MetricDataQueries for each instance
-_.each(ds_unattached_volumes_map, function(volume) {
+// Construct MetricDataQueries for each resource
+_.each(ds_unattached_volumes_map, function(resource) {
   // Foreach Metric that is used by the Policy Template
   _.each(["VolumeReadBytes", "VolumeWriteBytes"], function(metric) {
-
     // Foreach statistic that is used by the Policy Template
     _.each(["Average"], function(statistic) {
       query = {
         // Replace `-` with `_` in the Id to avoid CloudWatch API error
-        "Id": volume['vol_id'].replace('-', '_') + "_" + metric + "_" + statistic,
-        "Label": volume['vol_id'] + " " + metric + " " + statistic,
+        "Id": resource['vol_id'].replace(/\-/g, '_') + "_" + metric + "_" + statistic,
+        "Label": resource['vol_id'] + " " + metric + " " + statistic,
         "MetricStat": {
           "Metric": {
             "Namespace": "AWS/EBS",
             "MetricName": metric,
             "Dimensions": [
-              { "Name": "VolumeId", "Value": volume['vol_id'] }
+              { "Name": "VolumeId", "Value": resource['vol_id'] }
             ]
           },
           "Period": 2592000,
@@ -214,10 +213,10 @@ _.each(ds_unattached_volumes_map, function(volume) {
         },
         "ReturnData": true
       };
-      if (queries[volume['region']] == undefined || queries[volume['region']] == null) {
-        queries[volume['region']] = [];
+      if (queries[resource['region']] == undefined || queries[resource['region']] == null) {
+        queries[resource['region']] = [];
       }
-      queries[volume['region']].push(query);
+      queries[resource['region']].push(query);
     });
   });
 });
@@ -263,11 +262,11 @@ script "js_cloudwatch_getmetricdata", type: "javascript" do
   var now = new Date().getTime();
   var sleepDuration = 1000; // 1000ms == 1 second
   while(new Date().getTime() < now + sleepDuration){ /* Do nothing */ }
-  // Difference between start and end time is 30 days
-  // Period for each metricdataquery is 28 days.
-  // This combination results in average over larger time returned as one value [because period < (end_date - start_date)]
+  // Difference between start and end time is 28 days
+  // Period for each metricdataquery is 30 days.
+  // This combination results in average over larger time returned as one value [because period > (end_date - start_date)]
   end_date = parseInt(new Date().getTime() / 1000);
-  start_date = parseInt(new Date(new Date().setDate(new Date().getDate() - 30)).getTime() / 1000);
+  start_date = parseInt(new Date(new Date().setDate(new Date().getDate() - 28)).getTime() / 1000);
   results = {
     "auth": "auth_aws",
     "host": 'monitoring.' + region + '.amazonaws.com',
@@ -305,8 +304,16 @@ _.each(ds_unattached_volumes_map, function(volume) {
   // Use _.findWhere() to select the Average MetricDataQuery results for the volume
   // Select VolumeReadBytes Average from GetMetricData results
   volume_read_metrics = _.findWhere(ds_cloudwatch_getmetricdata, { 'label': volume_id+' VolumeReadBytes Average' });
+  // If no results found, set volume_read_metrics.values to empty array before proceeding
+  if (volume_read_metrics == undefined || volume_read_metrics.values == undefined) {
+    volume_read_metrics = { 'values': [] };
+  }
   // Select VolumeWriteBytes Average from GetMetricData results
   volume_write_metrics = _.findWhere(ds_cloudwatch_getmetricdata, { 'label': volume_id+' VolumeWriteBytes Average' });
+  // If no results found, set volume_read_metrics.values to empty array before proceeding
+  if (volume_write_metrics == undefined || volume_write_metrics.values == undefined) {
+    volume_write_metrics = { 'values': [] };
+  }
 
   // Check if volume has no metrics at all which means it has not been used
   if (volume_read_metrics.values.length + volume_write_metrics.values.length == 0) {
