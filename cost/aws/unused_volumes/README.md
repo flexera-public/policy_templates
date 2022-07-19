@@ -29,6 +29,7 @@ This policy has the following input parameters required when launching the polic
 - *Create Final Snapshot* - Boolean for whether or not to take a final snapshot before deleting
 - *Automatic Actions* - When this value is set, this policy will automatically take the selected action(s).
 - *Flexera One Org ID for Optima* - The Flexera One org ID for Optima queries used to determine estimated costs, by default the current org is used.
+- *CloudWatch API Wait Time* - The amount of time in seconds to wait between requests to the CloudWatch API to avoid being throttled by AWS. Default is recommended.
 
 Please note that the "Automatic Actions" parameter contains a list of action(s) that can be performed on the resources. When it is selected, the policy will automatically execute the corresponding action on the data that failed the checks, post incident generation. Please leave it blank for *manual* action.
 For example if a user selects the "Delete Volumes" action while applying the policy, all the volumes that didn't satisfy the policy condition will be deleted.

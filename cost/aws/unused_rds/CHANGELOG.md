@@ -3,6 +3,7 @@
 ## v3.5
 
 - Refactored datasources from `cloudwatch:GetMetricStatistics` to `cloudwatch:GetMetricData` to improve efficiency of metric data collection
+- Added `param_api_wait` - The amount of time in seconds to wait between requests to the CloudWatch API to avoid being throttled by AWS
 
 ## v3.4
 
