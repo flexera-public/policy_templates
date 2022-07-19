@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.5
+
+- Refactored datasources from `cloudwatch:GetMetricStatistics` to `cloudwatch:GetMetricData` to improve efficiency of metric data collection
+
 ## v3.4
 
 - Use provided keyword for Optima endpoint
