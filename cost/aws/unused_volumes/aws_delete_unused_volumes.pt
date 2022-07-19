@@ -82,6 +82,15 @@ parameter "param_log_to_cm_audit_entries" do
   allowed_values "Yes", "No"
 end
 
+parameter "param_api_wait" do
+  type "number"
+  label "CloudWatch API Wait Time"
+  description "Amount of time to wait between CloudWatch API requests to avoid throttling (seconds)"
+  default 5
+  min_value 1
+  max_value 60
+end
+
 ###############################################################################
 # Authentication
 ###############################################################################
@@ -241,7 +250,7 @@ end
 datasource "ds_cloudwatch_getmetricdata" do
   iterate $ds_metricdataqueries
   request do
-    run_script $js_cloudwatch_getmetricdata, val(iter_item, "region"), val(iter_item, "MetricDataQueries")
+    run_script $js_cloudwatch_getmetricdata, val(iter_item, "region"), val(iter_item, "MetricDataQueries"), $param_api_wait
   end
   result do
     encoding "json"
@@ -255,13 +264,12 @@ datasource "ds_cloudwatch_getmetricdata" do
 end
 
 script "js_cloudwatch_getmetricdata", type: "javascript" do
-  parameters "region", "MetricDataQueries"
+  parameters "region", "MetricDataQueries", "param_api_wait"
   result "results"
   code <<-EOS
   // Slow down rate of requests to prevent throttling
-  var now = new Date().getTime();
-  var sleepDuration = 1000; // 1000ms == 1 second
-  while(new Date().getTime() < now + sleepDuration){ /* Do nothing */ }
+  var now = new Date().getTime()
+  while(new Date().getTime() < now + (param_api_wait * 1000)) { /* Do nothing */ }
   // Difference between start and end time is 28 days
   // Period for each metricdataquery is 30 days.
   // This combination results in average over larger time returned as one value [because period > (end_date - start_date)]
@@ -673,9 +681,11 @@ script "js_volume_cost_mapping", type:"javascript" do
         // Set savings_found flag to true
         savings_found = true;
         // Sum of costs from volume_costs is the estimated 24hr cost of volume
-        volume_daily_cost = volume_costs[0].cost_nonamortized_unblended_adj;
+        // Calculate sum of costs for instance with underscorejs reduce function
+        // https://underscorejs.org/#reduce
+        var one_day_cost = _.reduce(_.compact(_.map(volume_costs, function(value){return value.cost_nonamortized_unblended_adj})), function(memo, num){ return memo + num; }, 0);
         // Estimate monthly [30day] cost of volume
-        volume_monthly_cost = volume_daily_cost*30;
+        volume_monthly_cost = one_day_cost*30;
         // Add volume cost to total_potential_savings
         total_potential_savings = total_potential_savings + volume_monthly_cost;
       }

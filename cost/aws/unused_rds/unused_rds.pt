@@ -50,6 +50,15 @@ parameter "param_automatic_action" do
   allowed_values ["Delete Instances"]
 end
 
+parameter "param_api_wait" do
+  type "number"
+  label "CloudWatch API Wait Time"
+  description "Amount of time to wait between CloudWatch API requests to avoid throttling (seconds)"
+  default 5
+  min_value 1
+  max_value 60
+end
+
 ###############################################################################
 # Authentication
 ###############################################################################
@@ -211,7 +220,7 @@ end
 datasource "ds_cloudwatch_getmetricdata" do
   iterate $ds_metricdataqueries
   request do
-    run_script $js_cloudwatch_getmetricdata, val(iter_item, "region"), val(iter_item, "MetricDataQueries")
+    run_script $js_cloudwatch_getmetricdata, val(iter_item, "region"), val(iter_item, "MetricDataQueries"), $param_api_wait
   end
   result do
     encoding "json"
@@ -225,13 +234,12 @@ datasource "ds_cloudwatch_getmetricdata" do
 end
 
 script "js_cloudwatch_getmetricdata", type: "javascript" do
-  parameters "region", "MetricDataQueries"
+  parameters "region", "MetricDataQueries", "param_api_wait"
   result "results"
   code <<-EOS
   // Slow down rate of requests to prevent throttling
-  var now = new Date().getTime();
-  var sleepDuration = 1000; // 1000ms == 1 second
-  while(new Date().getTime() < now + sleepDuration){ /* Do nothing */ }
+  var now = new Date().getTime()
+  while(new Date().getTime() < now + (param_api_wait * 1000)) { /* Do nothing */ }
   // Difference between start and end time is 28 days
   // Period for each metricdataquery is 30 days.
   // This combination results in average over larger time returned as one value [because period > (end_date - start_date)]
@@ -662,21 +670,23 @@ script "js_instance_cost_mapping", type:"javascript" do
         unused_rds_instance_list.push(instance);
       }
       else {
-        // If volume cost exists, lets calculate estimated monthly cost for the volume
+        // If cost(s) exists, lets calculate estimated monthly cost for the volume
         // Set savings_found flag to true
-        var savings_found=true;
+        savings_found = true;
         // Sum of costs from cost_objects is the estimated 24hr cost of instance which can include storage, compute, and transfer costs
         // Calculate sum of costs for instance with underscorejs reduce function
         // https://underscorejs.org/#reduce
-        var sum = _.reduce(_.compact(_.map(cost_objects, function(value){return value.cost_nonamortized_unblended_adj})), function(memo, num){ return memo + num; }, 0);
-        var monthly_savings = sum*30;
+        var one_day_cost = _.reduce(_.compact(_.map(cost_objects, function(value){return value.cost_nonamortized_unblended_adj})), function(memo, num){ return memo + num; }, 0);
+        // Estimate monthly [30day] cost of volume
+        var monthly_savings = one_day_cost*30;
+        // Add volume cost to total_potential_savings
         total_savings=total_savings+monthly_savings;
         instance['savings']= (Math.round(monthly_savings * 1000) / 1000);
         instance['savingsCurrency']= cur;
         unused_rds_instance_list.push(instance);
       }
     });
-    if(count > 0){
+    if(savings_found){
       total_savings=cur + ' '+formatNumber((Math.round(total_savings * 100) / 100), separator);
       message="The total estimated monthly savings are "+total_savings;
     }
