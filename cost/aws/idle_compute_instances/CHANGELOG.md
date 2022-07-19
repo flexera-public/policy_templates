@@ -1,8 +1,14 @@
 # Changelog
 
-## v3.5
+## v3.6
 
 - Added account name call and field
+
+## v3.5
+
+- GetMetricData is now used to gather metrics data in batches for faster policy execution.
+- Added parameter to allow user to decide whether both CPU and memory need to be under the specified threshold for an instance to be considered idle.
+- Added an instance launch time field.
 
 ## v3.4
 
