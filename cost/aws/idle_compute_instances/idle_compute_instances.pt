@@ -7,7 +7,7 @@ severity "low"
 category "Cost"
 default_frequency "daily"
 info(
-  version: "3.4",
+  version: "3.5",
   provider: "AWS",
   service: "EC2",
   policy_set: "Idle Compute Instances"
@@ -17,33 +17,17 @@ info(
 # Parameters
 ###############################################################################
 
-parameter "param_allowed_regions" do
-  type "list"
-  label "Allowed Regions"
-  allowed_pattern /^([a-zA-Z-_]+-[a-zA-Z0-9-_]+-[0-9-_]+,*|)+$/
-  description "A list of allowed regions. See the README for more details"
+parameter "param_aws_account_number" do
+  type "string"
+  label "Account Number"
+  description "The account number for AWS STS Cross Account Roles."
+  default ""
 end
 
 parameter "param_email" do
   type "list"
   label "Email addresses to notify"
   description "Email addresses of the recipients you wish to notify when new incidents are created"
-end
-
-parameter "param_avg_used_memory" do
-  type "number"
-  label "Average used memory percentage"
-  description "Set to -1 to ignore memory utilization"
-  default -1
-  min_value -1
-  max_value 100
-end
-
-parameter "param_aws_account_number" do
-  type "string"
-  label "Account Number"
-  description "The account number for AWS STS Cross Account Roles."
-  default ""
 end
 
 parameter "param_avg_cpu" do
@@ -55,12 +39,38 @@ parameter "param_avg_cpu" do
   max_value 100
 end
 
+parameter "param_avg_used_memory" do
+  type "number"
+  label "Average used memory percentage"
+  description "Set to -1 to ignore memory utilization"
+  default -1
+  min_value -1
+  max_value 100
+end
+
+parameter "param_check_both" do
+  type "string"
+  label "Idle for both CPU/Memory or either"
+  description "Whether an instance should be considered idle only if both CPU and memory are under the thresholds or if either CPU or memory are under."
+  default "Either CPU or Memory"
+  allowed_values "Both CPU and Memory", "Either CPU or Memory"
+end
+
+parameter "param_allowed_regions" do
+  type "list"
+  label "Allowed Regions"
+  allowed_pattern /^([a-zA-Z-_]+-[a-zA-Z0-9-_]+-[0-9-_]+,*|)+$/
+  description "A list of allowed regions. See the README for more details"
+  default []
+end
+
 parameter "param_exclusion_tag_key" do
   category "User Inputs"
   label "Exclusion Tag Key:Value"
   description "Cloud native tag to ignore instances. Format: Key:Value"
   type "string"
   allowed_pattern /(^$)|([\w]?)+\:([\w]?)+/
+  default ""
 end
 
 parameter "param_automatic_action" do
@@ -68,6 +78,16 @@ parameter "param_automatic_action" do
   label "Automatic Actions"
   description "When this value is set, this policy will automatically take the selected action(s)"
   allowed_values ["Terminate Instances"]
+  default []
+end
+
+parameter "param_api_wait" do
+  type "number"
+  label "CloudWatch API Wait Time"
+  description "Amount of time to wait between CloudWatch API requests to avoid throttling (seconds)"
+  default 5
+  min_value 1
+  max_value 60
 end
 
 parameter "param_log_to_cm_audit_entries" do
@@ -97,126 +117,6 @@ auth "auth_rs", type: "rightscale"
 # Datasources
 ###############################################################################
 
-#Get list of enabled regions for an account
-datasource "ds_regions_list" do
-  request do
-    auth $auth_aws
-    verb "GET"
-    host "ec2.amazonaws.com"
-    path "/"
-    query "Action", "DescribeRegions"
-    query "Version", "2016-11-15"
-  end
-  result do
-    encoding "xml"
-    collect xpath(response, "//DescribeRegionsResponse/regionInfo/item", "array") do
-      field "region", xpath(col_item, "regionName")
-    end
-  end
-end
-
-# Get only SCP enabled regions
-datasource "ds_regions" do
-  run_script $js_regions, $param_allowed_regions, $ds_regions_list
-end
-
-datasource "ds_instances" do
-  run_script $js_instances, $ds_instances_set, $param_exclusion_tag_key
-end
-
-datasource "ds_instances_set" do
-  iterate $ds_regions
-  request do
-    run_script $js_instances_set, val(iter_item,"region")
-  end
-  result do
-    encoding "xml"
-    collect xpath(response, "//DescribeInstancesResponse/reservationSet/item", "array") do
-      field "instances_set" do
-        collect xpath(col_item,"instancesSet/item","array") do
-          field "region",val(iter_item, "region")
-          field "instanceId", xpath(col_item,"instanceId")
-          field "imageId", xpath(col_item,"imageId")
-          field "resourceType", xpath(col_item, "instanceType")
-          field "platform", xpath(col_item, "platform")
-          field "privateDnsName", xpath(col_item, "privateDnsName")
-          field "tags" do
-            collect xpath(col_item,"tagSet/item","array") do
-              field "key", xpath(col_item, "key")
-              field "value", xpath(col_item, "value")
-            end
-          end
-        end
-      end
-    end
-  end
-end
-
-datasource "ds_cloudwatch_cpu_usage" do
-  iterate $ds_instances
-  request do
-    run_script $js_cloudwatch_cpu_usage, val(iter_item, "region"), val(iter_item, "instanceId")
-  end
-  result do
-    encoding "json"
-    collect jmes_path(response, "GetMetricStatisticsResponse.GetMetricStatisticsResult.Datapoints[*]") do
-      field "region", val(iter_item, "region")
-      field "instanceId", val(iter_item, "instanceId")
-      field "platform", val(iter_item, "platform")
-      field "privateDnsName", val(iter_item, "privateDnsName")
-      field "tags", val(iter_item, "tags")
-      field "cpu_unit", jmes_path(col_item,"Unit")
-      field "cpu_maximum", jmes_path(col_item, "Maximum")
-      field "cpu_minimum", jmes_path(col_item, "Minimum")
-      field "cpu_average", jmes_path(col_item, "Average")
-    end
-  end
-end
-
-datasource "ds_cloudwatch_mem_usage" do
-  iterate $ds_instances
-  request do
-    run_script $js_cloudwatch_mem_usage, val(iter_item, "region"), val(iter_item, "instanceId"), val(iter_item,"privateDnsName")
-  end
-  result do
-    encoding "json"
-    collect jmes_path(response,"GetMetricStatisticsResponse.GetMetricStatisticsResult.Datapoints[*]") do
-      field "region", val(iter_item, "region")
-      field "instanceId", val(iter_item, "instanceId")
-      field "privateDnsName", val(iter_item, "privateDnsName")
-      field "tags", val(iter_item, "tags")
-      field "mem_unit", jmes_path(col_item,"Unit")
-      field "mem_maximum", jmes_path(col_item, "Maximum")
-      field "mem_minimum", jmes_path(col_item, "Minimum")
-      field "mem_average", jmes_path(col_item, "Average")
-    end
-  end
-end
-
-datasource "ds_cloudwatch_windows_mem_usage" do
-  iterate $ds_instances
-  request do
-    run_script $js_cloudwatch_windows_memory_usage, val(iter_item, "region"), val(iter_item, "instanceId"), val(iter_item, "imageId"), val(iter_item, "resourceType")
-  end
-  result do
-    encoding "json"
-    collect jmes_path(response,"GetMetricStatisticsResponse.GetMetricStatisticsResult.Datapoints[*]") do
-      field "region", val(iter_item, "region")
-      field "instanceId", val(iter_item, "instanceId")
-      field "privateDnsName", val(iter_item, "privateDnsName")
-      field "tags", val(iter_item, "tags")
-      field "mem_unit", jmes_path(col_item,"Unit")
-      field "mem_maximum", jmes_path(col_item, "Maximum")
-      field "mem_minimum", jmes_path(col_item, "Minimum")
-      field "mem_average", jmes_path(col_item, "Average")
-    end
-  end
-end
-
-datasource "ds_merged_metrics" do
-  run_script $js_merged_metrics, $ds_cloudwatch_cpu_usage, $ds_cloudwatch_mem_usage, $ds_cloudwatch_windows_mem_usage, $param_avg_used_memory, $param_avg_cpu, $ds_instances
-end
-
 datasource "ds_currency_reference" do
   request do
     host "raw.githubusercontent.com"
@@ -239,6 +139,130 @@ datasource "ds_currency_code" do
     field "id", jmes_path(response,"id")
     field "value", jmes_path(response,"value")
   end
+end
+
+# Create a simple object containing the currency code and number separator for later usage
+datasource "ds_currency" do
+  run_script $js_currency, $ds_currency_reference, $ds_currency_code
+end
+
+# Get the AWS account number to filter requests to just the account being checked
+datasource "ds_get_caller_identity" do
+  request do
+    auth $auth_aws
+    verb "GET"
+    host "sts.amazonaws.com"
+    path "/"
+    header "User-Agent", "RS Policies"
+    query "Action", "GetCallerIdentity"
+    query "Version", "2011-06-15"
+  end
+  result do
+    encoding "xml"
+    collect xpath(response, "//GetCallerIdentityResponse/GetCallerIdentityResult") do
+      field "account", xpath(col_item, "Account")
+    end
+  end
+end
+
+datasource "ds_aws_account" do
+  run_script $js_aws_account, $ds_get_caller_identity
+end
+
+datasource "ds_regions_list" do
+  request do
+    auth $auth_aws
+    verb "GET"
+    host "ec2.amazonaws.com"
+    path "/"
+    query "Action", "DescribeRegions"
+    query "Version", "2016-11-15"
+  end
+  result do
+    encoding "xml"
+    collect xpath(response, "//DescribeRegionsResponse/regionInfo/item", "array") do
+      field "region", xpath(col_item, "regionName")
+    end
+  end
+end
+
+# Filter the regions list by just the regions allowed by the parameter
+datasource "ds_regions" do
+  run_script $js_regions, $param_allowed_regions, $ds_regions_list
+end
+
+datasource "ds_instances_set" do
+  iterate $ds_regions
+  request do
+    auth $auth_aws
+    host join(['ec2.', val(iter_item, 'region'), '.amazonaws.com'])
+    path '/'
+    header 'User-Agent', 'RS Policies'
+    header 'Content-Type', 'text/xml'
+    query 'Action', 'DescribeInstances'
+    query 'Version', '2016-11-15'
+    query 'Filter.1.Name', 'instance-state-name'
+    query 'Filter.1.Value.1', 'running'
+  end
+  result do
+    encoding "xml"
+    collect xpath(response, "//DescribeInstancesResponse/reservationSet/item", "array") do
+      field "instances_set" do
+        collect xpath(col_item,"instancesSet/item","array") do
+          field "region",val(iter_item, "region")
+          field "instanceId", xpath(col_item,"instanceId")
+          field "imageId", xpath(col_item,"imageId")
+          field "resourceType", xpath(col_item, "instanceType")
+          field "platform", xpath(col_item, "platformDetails")
+          field "privateDnsName", xpath(col_item, "privateDnsName")
+          field "launchTime", xpath(col_item, "launchTime")
+          field "tags" do
+            collect xpath(col_item,"tagSet/item","array") do
+              field "key", xpath(col_item, "key")
+              field "value", xpath(col_item, "value")
+            end
+          end
+        end
+      end
+    end
+  end
+end
+
+# Filter the instances list by just the regions allowed by the parameter
+datasource "ds_instances" do
+  run_script $js_instances, $ds_instances_set, $param_exclusion_tag_key
+end
+
+# Build out a list of queries to send into Cloudwatch for the above instances
+datasource "ds_instances_queries" do
+  run_script $js_instances_queries, $ds_instances, $param_avg_cpu, $param_avg_used_memory
+end
+
+# Combine the above queries into discrete requests of 500 or fewer queries to
+# send into the API
+datasource "ds_instances_requests" do
+  run_script $js_instances_requests, $ds_instances_queries
+end
+
+datasource "ds_cloudwatch_data" do
+  iterate $ds_instances_requests
+  request do
+    run_script $js_cloudwatch_data, val(iter_item, "region"), val(iter_item, "body"), $param_api_wait
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "MetricDataResults[*]") do
+      field "region", val(iter_item, "region")
+      field "id", jmes_path(col_item, "Id")
+      field "label", jmes_path(col_item, "Label")
+      field "values", jmes_path(col_item, "Values")
+    end
+  end
+end
+
+# Organize the CloudWatch data into a JavaScript object
+datasource "ds_cloudwatch_data_sorted" do
+  run_script $js_cloudwatch_data_sorted, $ds_cloudwatch_data
 end
 
 datasource "ds_billing_centers" do
@@ -266,27 +290,29 @@ datasource "ds_top_level_billing_centers" do
   run_script $js_top_level_bc, $ds_billing_centers
 end
 
-datasource "ds_get_caller_identity" do
-  request do
-    auth $auth_aws
-    verb "GET"
-    host "sts.amazonaws.com"
-    path "/"
-    header "User-Agent", "RS Policies"
-    query "Action", "GetCallerIdentity"
-    query "Version", "2011-06-15"
-  end
-  result do
-    encoding "xml"
-    collect xpath(response, "//GetCallerIdentityResponse/GetCallerIdentityResult") do
-      field "account",xpath(col_item, "Account")
-    end
-  end
+# Build the request to send into the Optima API for cost data
+datasource "ds_instances_costs_request" do
+  run_script $js_instances_costs_request, $ds_aws_account, $ds_top_level_billing_centers
 end
 
 datasource "ds_instances_costs" do
+  iterate $ds_instances_costs_request
   request do
-    run_script $js_get_costs, $ds_get_caller_identity, $ds_top_level_billing_centers, rs_org_id, rs_optima_host
+    auth $auth_rs
+    host rs_optima_host
+    verb "POST"
+    path join(["/bill-analysis/orgs/", rs_org_id, "/costs/select"])
+    header "Api-Version", "1.0"
+    header "User-Agent", "RS Policies"
+    ignore_status [400]
+    body_field "dimensions", val(iter_item, "dimensions")
+    body_field "granularity", val(iter_item, "granularity")
+    body_field "start_at", val(iter_item, "start_at")
+    body_field "end_at", val(iter_item, "end_at")
+    body_field "metrics", val(iter_item, "metrics")
+    body_field "billing_center_ids", val(iter_item, "billing_center_ids")
+    body_field "limit", val(iter_item, "limit")
+    body_field "filter", val(iter_item, "filter")
   end
   result do
     encoding "json"
@@ -297,412 +323,464 @@ datasource "ds_instances_costs" do
   end
 end
 
-datasource "ds_instance_cost_mapping" do
-  run_script $js_instance_cost_mapping, $ds_merged_metrics, $ds_instances_costs, $ds_currency_code, $ds_currency_reference, $ds_billing_centers, $ds_get_caller_identity
+# Combine the list of instances with the CloudWatch data
+datasource "ds_merged_metrics" do
+  run_script $js_merged_metrics, $ds_cloudwatch_data_sorted, $ds_instances, $ds_aws_account, $ds_currency
+end
+
+# Create a final list of idle instances and incorporate cost data into it
+datasource "ds_idle_instances" do
+  run_script $js_idle_instances, $ds_merged_metrics, $ds_instances_costs, $param_avg_cpu, $param_avg_used_memory, $ds_currency, $param_check_both
 end
 
 ###############################################################################
 # Scripts
 ###############################################################################
 
+script "js_currency", type:"javascript" do
+  parameters "ds_currency_reference", "ds_currency_code"
+  result "result"
+  code <<-EOS
+  symbol = ""
+  separator = ""
+
+  if( ds_currency_code['value'] !== undefined ) {
+    if (ds_currency_reference[ds_currency_code['value']] !== undefined ) {
+      symbol = ds_currency_reference[ds_currency_code['value']]['symbol']
+      if( ds_currency_reference[ds_currency_code['value']]['t_separator'] !== undefined ) {
+        separator = ds_currency_reference[ds_currency_code['value']]['t_separator']
+      }
+    }
+  } else {
+    symbol = "$"
+    separator = ","
+  }
+
+  result = {
+    'symbol': symbol,
+    'separator': separator
+  }
+EOS
+end
+
+script "js_aws_account", type:"javascript" do
+  parameters "ds_get_caller_identity"
+  result "result"
+  code <<-EOS
+  result = ds_get_caller_identity[0]['account']
+EOS
+end
+
 script "js_regions", type:"javascript" do
   parameters "user_entered_regions", "all_regions"
   result "regions"
   code <<-EOS
-    if(_.isEmpty(user_entered_regions)){
-      regions = all_regions;
-    }else{
-      //Filter unique regions
-      var uniqueRegions = _.uniq(user_entered_regions);
-      var all_regions_list = [];
-      all_regions.forEach(function(all_region){
-        all_regions_list.push(all_region.region)
-      })
+  if (_.isEmpty(user_entered_regions)) {
+    regions = all_regions
+  } else {
+    //Filter unique regions
+    var uniqueRegions = _.uniq(user_entered_regions)
+    var all_regions_list = []
+    all_regions.forEach(function(all_region){
+      all_regions_list.push(all_region.region)
+    })
 
-      //Filter valid regions
-      var valid_regions = [];
-      _.map(uniqueRegions, function(uniqueRegion){
-        if(all_regions_list.indexOf(uniqueRegion) > -1){
-          valid_regions.push({"region": uniqueRegion})
-        }
-      })
-
-      //Throw an error if no valid regions found
-      if (_.isEmpty(valid_regions)) {
-        regions = all_regions;
-      }else{
-        regions = valid_regions
+    //Filter valid regions
+    var valid_regions = []
+    _.map(uniqueRegions, function(uniqueRegion){
+      if(all_regions_list.indexOf(uniqueRegion) > -1){
+        valid_regions.push({"region": uniqueRegion})
       }
+    })
+
+    //Throw an error if no valid regions found
+    if (_.isEmpty(valid_regions)) {
+      regions = all_regions
+    }else{
+      regions = valid_regions
     }
-  EOS
+  }
+EOS
 end
 
 script "js_instances", type: "javascript" do
-  result "results"
+  result "result"
   parameters "ds_instance_set", "param_exclusion_tag_key"
   code <<-EOS
   var tag_key = param_exclusion_tag_key.split(':')[0]
   var tag_value = param_exclusion_tag_key.split(':')[1]
-  var results = []
-  for ( n=0; n < ds_instance_set.length; n++) {
-    var instance_set = ds_instance_set[n].instances_set
-    for ( i=0; i < instance_set.length; i++) {
-      var instance = instance_set[i]
+  var result = []
+
+  _.each(ds_instance_set, function(ds_item) {
+    _.each(ds_item['instances_set'], function(instance) {
       var tags = instance.tags
-      if (_.contains(_.pluck(tags,'key'), tag_key) && _.contains(_.pluck(tags,'value'), tag_value)){
-        continue
-      } else {
-        results.push({
-          "region": instance.region,
-          "instanceId": instance.instanceId,
-          "imageId": instance.imageId,
-          "resourceType": instance.resourceType,
-          "platform": instance.platform,
-          "privateDnsName": instance.privateDnsName,
-          "tags": instance.tags
-        })
+
+      if (!(_.contains(_.pluck(tags,'key'), tag_key) && _.contains(_.pluck(tags,'value'), tag_value))) {
+        result.push(instance)
       }
-    }
-  }
-EOS
-end
-
-script "js_instances_set", type: "javascript" do
-  result "results"
-  parameters "region"
-  code <<-EOS
-  var end_date = new Date().toISOString()
-  var start_date = new Date(new Date().setDate(new Date().getDate() - 30)).toISOString();
-  results = {
-    "auth": "auth_aws",
-    "host": 'ec2.'+region+'.amazonaws.com',
-    "verb": "GET",
-    "path": "/",
-    "headers": {
-      "User-Agent": "RS Policies",
-      "Content-Type": "text/xml"
-    }
-    "query_params": {
-      'Action': 'DescribeInstances',
-      'Version': '2016-11-15',
-      'Filter.1.Name': 'instance-state-name',
-      'Filter.1.Value.1': 'running'
-    }
-  }
-EOS
-end
-
-script "js_cloudwatch_cpu_usage", type: "javascript" do
-  result "results"
-  parameters "region","instance_id"
-  code <<-EOS
-  var end_date = new Date().toISOString()
-  var start_date = new Date(new Date().setDate(new Date().getDate() - 30)).toISOString();
-  results = {
-    "auth": "auth_aws",
-    "host": 'monitoring.'+region+'.amazonaws.com',
-    "verb": "GET",
-    "path": "/",
-    "headers": {
-      "User-Agent": "RS Policies",
-      "Content-Type": "application/json",
-      "x-amz-target": "GraniteServiceVersion20100801.GetMetricStatistics",
-      "Accept": "application/json",
-      "Content-Encoding": "amz-1.0"
-    }
-    "query_params": {
-      'Action': 'GetMetricStatistics',
-      'Version': '2010-08-01',
-      'Namespace': 'AWS/EC2',
-      'MetricName': 'CPUUtilization',
-      'Dimensions.member.1.Name': 'InstanceId',
-      'Dimensions.member.1.Value': instance_id,
-      'StartTime': start_date,
-      'EndTime': end_date,
-      'Period': "2592000",
-      'Statistics.member.1': 'Maximum',
-      'Statistics.member.2': 'Average',
-      'Statistics.member.3': 'Minimum'
-    }
-  }
-EOS
-end
-
-script "js_cloudwatch_mem_usage", type: "javascript" do
-  result "results"
-  parameters "region","instance_id","privateDnsName"
-  code <<-EOS
-  if (privateDnsName != null && privateDnsName !== undefined && privateDnsName.length != 0) {
-    var hostname = privateDnsName.split('.')[0]
-  } else {
-    var hostname = "ip-127-0-0-1"
-  }
-  var end_date = new Date().toISOString()
-  var start_date = new Date(new Date().setDate(new Date().getDate() - 30)).toISOString();
-  results = {
-    "auth": "auth_aws",
-    "host": 'monitoring.'+region+'.amazonaws.com',
-    "verb": "GET",
-    "path": "/",
-    "headers": {
-      "User-Agent": "RS Policies",
-      "Content-Type": "application/json",
-      "x-amz-target": "GraniteServiceVersion20100801.GetMetricStatistics",
-      "Accept": "application/json",
-      "Content-Encoding": "amz-1.0"
-    }
-    "query_params": {
-      'Action': 'GetMetricStatistics',
-      'Version': '2010-08-01',
-      'Namespace': 'CWAgent',
-      'MetricName': 'mem_used_percent',
-      'Dimensions.member.1.Name': 'host',
-      'Dimensions.member.1.Value': hostname,
-      'StartTime': start_date,
-      'EndTime': end_date,
-      'Period': "2592000",
-      'Statistics.member.1': 'Maximum',
-      'Statistics.member.2': 'Average',
-      'Statistics.member.3': 'Minimum'
-    }
-  }
-EOS
-end
-
-script "js_cloudwatch_windows_memory_usage", type: "javascript" do
-  result "results"
-  parameters "region","instance_id", "image_id", "instance_type"
-  code <<-EOS
-  var end_date = new Date().toISOString()
-  var start_date = new Date(new Date().setDate(new Date().getDate() - 30)).toISOString();
-  results = {
-    "auth": "auth_aws",
-    "host": 'monitoring.'+region+'.amazonaws.com',
-    "verb": "GET",
-    "path": "/",
-    "headers": {
-      "User-Agent": "RS Policies",
-      "Content-Type": "application/json",
-      "x-amz-target": "GraniteServiceVersion20100801.GetMetricStatistics",
-      "Accept": "application/json",
-      "Content-Encoding": "amz-1.0"
-    }
-    "query_params": {
-      'Action': 'GetMetricStatistics',
-      'Version': '2010-08-01',
-      'Namespace': 'CWAgent',
-      'MetricName': 'Memory % Committed Bytes In Use',
-      'Dimensions.member.1.Name': 'ImageId',
-      'Dimensions.member.1.Value': image_id,
-      'Dimensions.member.2.Name': 'InstanceId',
-      'Dimensions.member.2.Value': instance_id,
-      'Dimensions.member.3.Name': 'InstanceType',
-      'Dimensions.member.3.Value': instance_type,
-      'Dimensions.member.4.Name': 'objectname',
-      'Dimensions.member.4.Value': 'Memory',
-      'StartTime': start_date,
-      'EndTime': end_date,
-      'Period': "2592000",
-      'Statistics.member.1': 'Maximum',
-      'Statistics.member.2': 'Average',
-      'Statistics.member.3': 'Minimum'
-    }
-  }
-EOS
-end
-
-script "js_merged_metrics", type: "javascript" do
-  parameters "ds_cloudwatch_cpu_usage", "ds_cloudwatch_mem_usage", "ds_cloudwatch_windows_mem_usage", "param_avg_used_memory", "param_avg_cpu", "ds_instances"
-  result "merged_results"
-  code <<-EOS
-  var merged_results = []
-  var instance_values = []
-  for ( i = 0; i < ds_cloudwatch_cpu_usage.length; i++){
-
-    var instance = ds_cloudwatch_cpu_usage[i]
-    var instance_id = instance.instanceId
-    found = false
-    var obj
-    var index
-    Object.keys(instance_values).forEach(function(key) {
-      if (instance_values[key].id === instance_id) {
-        found = true
-        obj = instance_values[key]
-        index = key
-      }
-    });
-
-    if (found) {
-      if (obj.cpu_maximum < instance.cpu_maximum) {
-        obj.cpu_maximum = instance.cpu_maximum
-      }
-      if (obj.cpu_minimum > instance.cpu_minimum) {
-        obj.cpu_minimum = instance.cpu_minimum
-      }
-      obj.total_cpu_average.push(instance.cpu_average)
-      instance_values[index] = obj
-    } else {
-      if (instance.platform == 'windows'){
-      var mem_usage_record = _.find(ds_cloudwatch_windows_mem_usage, function(record) { return record.instanceId == instance_id; })
-
-      if (mem_usage_record != null && mem_usage_record !== undefined) {
-        var mem_maximum = (Math.round(mem_usage_record.mem_maximum * 100) / 100)
-        var mem_average = (Math.round(mem_usage_record.mem_average * 100) / 100)
-        var mem_minimum = (Math.round(mem_usage_record.mem_minimum * 100) / 100)
-      } else {
-        var mem_maximum = "NA"
-        var mem_minimum = "NA"
-        var mem_average = "NA"
-      }
-    } else {
-      instance.platform = 'linux'
-      var mem_usage_record = _.find(ds_cloudwatch_mem_usage, function(record) { return record.instanceId == instance_id; })
-
-      if (mem_usage_record != null && mem_usage_record !== undefined) {
-        var mem_maximum = (Math.round(mem_usage_record.mem_maximum * 100) / 100)
-        var mem_average = (Math.round(mem_usage_record.mem_average * 100) / 100)
-        var mem_minimum = (Math.round(mem_usage_record.mem_minimum * 100) / 100)
-      } else {
-        var mem_maximum = "NA"
-        var mem_minimum = "NA"
-        var mem_average = "NA"
-      }
-    }
-      var resourceType = ""
-      _.each(ds_instances, function(inst){
-        if (inst.instanceId === instance.instanceId){
-          resourceType = inst.resourceType
-        }
-      })
-      var total_cpu_average = []
-      total_cpu_average.push(instance.cpu_average)
-      instance_values.push(
-        {
-          "region": instance.region,
-          "id": instance.instanceId,
-          "platform": instance.platform,
-          "privateDnsName": instance.privateDnsName,
-          "hostname": instance.privateDnsName.split('.')[0],
-          "tags": instance.tags,
-          "resourceType": resourceType,
-          "cpu_minimum": instance.cpu_minimum,
-          "cpu_maximum": instance.cpu_maximum,
-          "total_cpu_average": total_cpu_average,
-          "mem_maximum": mem_maximum,
-          "mem_minimum": mem_minimum,
-          "mem_average": mem_average,
-        }
-      )
-    }
-  }
-  instance_values.forEach(function(instance) {
-    cpu_calc = 0
-    instance.total_cpu_average.forEach(function(average){
-      cpu_calc = average + cpu_calc
     })
-    cpu_calc = (cpu_calc / instance.total_cpu_average.length)
-    if((param_avg_used_memory >= instance.mem_average && param_avg_used_memory != -1) || (param_avg_cpu >= (Math.round(cpu_calc * 100) / 100) && param_avg_cpu != -1)){
-      merged_results.push(
-        {
-          "region": instance.region,
-          "id": instance.id,
-          "platform": instance.platform,
-          "privateDnsName": instance.privateDnsName,
-          "hostname": instance.hostname,
-          "tags": instance.tags,
-          "resourceType": instance.resourceType,
-          "cpu_minimum": (Math.round(instance.cpu_minimum * 100) / 100),
-          "cpu_maximum": (Math.round(instance.cpu_maximum * 100) / 100),
-          "cpu_average": (Math.round(cpu_calc * 100) / 100),
-          "mem_maximum": instance.mem_maximum,
-          "mem_minimum": instance.mem_minimum,
-          "mem_average": instance.mem_average,
-          "savings":0.0
-        }
-      )
+  })
+EOS
+end
+
+script "js_instances_queries", type: "javascript" do
+  result "queries"
+  parameters "ds_instances", "param_avg_cpu", "param_avg_used_memory"
+  code <<-EOS
+  // Create the various queries we're going to send to CloudWatch for each instance
+  queries = {}
+
+  _.each(ds_instances, function(instance) {
+    // Make sure the queries object has an array for the region to push items to
+    if (queries[instance['region']] == undefined || queries[instance['region']] == null) {
+      queries[instance['region']] = []
     }
-  });
+
+    // Only query for CPU usage if we're actually checking it
+    if (param_avg_cpu != -1) {
+      query_cpuavg = {
+        "Id": instance['instanceId'].replace('-', '_') + "_cpuavg",
+        "MetricStat": {
+          "Metric": {
+            "Namespace": "AWS/EC2",
+            "MetricName": "CPUUtilization",
+            "Dimensions": [
+              { "Name": "InstanceId", "Value": instance['instanceId'] }
+            ]
+          },
+          "Period": 2592000,
+          "Stat": "Average"
+        },
+        "ReturnData": true
+      }
+
+      query_cpumin = {
+        "Id": instance['instanceId'].replace('-', '_') + "_cpumin",
+        "MetricStat": {
+          "Metric": {
+            "Namespace": "AWS/EC2",
+            "MetricName": "CPUUtilization",
+            "Dimensions": [
+              { "Name": "InstanceId", "Value": instance['instanceId'] }
+            ]
+          },
+          "Period": 2592000,
+          "Stat": "Minimum"
+        },
+        "ReturnData": true
+      }
+
+      query_cpumax = {
+        "Id": instance['instanceId'].replace('-', '_') + "_cpumax",
+        "MetricStat": {
+          "Metric": {
+            "Namespace": "AWS/EC2",
+            "MetricName": "CPUUtilization",
+            "Dimensions": [
+              { "Name": "InstanceId", "Value": instance['instanceId'] }
+            ]
+          },
+          "Period": 2592000,
+          "Stat": "Maximum"
+        },
+        "ReturnData": true
+      }
+
+      queries[instance['region']].push(query_cpuavg)
+      queries[instance['region']].push(query_cpumax)
+      queries[instance['region']].push(query_cpumin)
+    }
+
+    // Only query for MEM usage if we're actually checking it
+    if (param_avg_used_memory != -1) {
+
+      if (instance['platform'] == "Windows") {
+        // If platform is Windows, we need to use the Windows custom metric
+        mem_metricname = "Memory % Committed Bytes In Use"
+        dimensions = [
+          { "Name": "ImageId", "Value": instance['imageId'] },
+          { "Name": "InstanceId", "Value": instance['instanceId'] },
+          { "Name": "InstanceType", "Value": instance['resourceType'] },
+          { "Name": "objectname", "Value": "Memory" }
+        ]
+      } else {
+        // Else assume Platform is Linux, and use the Linux custom metric
+        mem_metricname = "mem_used_percent"
+        dimensions = [
+          { "Name": "ImageId", "Value": instance['imageId'] },
+          { "Name": "InstanceId", "Value": instance['instanceId'] },
+          { "Name": "InstanceType", "Value": instance['resourceType'] }
+        ]
+      }
+
+      query_memavg = {
+        "Id": instance['instanceId'].replace('-', '_') + "_memavg",
+        "MetricStat": {
+          "Metric": {
+            "Namespace": "CWAgent",
+            "MetricName": mem_metricname,
+            "Dimensions": dimensions
+          },
+          "Period": 2592000,
+          "Stat": "Average"
+        },
+        "ReturnData": true
+      }
+
+      query_memmin = {
+        "Id": instance['instanceId'].replace('-', '_') + "_memmin",
+        "MetricStat": {
+          "Metric": {
+            "Namespace": "CWAgent",
+            "MetricName": mem_metricname,
+            "Dimensions": dimensions
+          },
+          "Period": 2592000,
+          "Stat": "Minimum"
+        },
+        "ReturnData": true
+      }
+
+      query_memmax = {
+        "Id": instance['instanceId'].replace('-', '_') + "_memmax",
+        "MetricStat": {
+          "Metric": {
+            "Namespace": "CWAgent",
+            "MetricName": mem_metricname,
+            "Dimensions": dimensions
+          },
+          "Period": 2592000,
+          "Stat": "Maximum"
+        },
+        "ReturnData": true
+      }
+
+      queries[instance['region']].push(query_memavg)
+      queries[instance['region']].push(query_memmax)
+      queries[instance['region']].push(query_memmin)
+    }
+  })
+EOS
+end
+
+script "js_instances_requests", type: "javascript" do
+  result "result"
+  parameters "queries"
+  code <<-EOS
+  // Organize the queries into discrete requests to send in.
+  // Queries are first sorted by region and then split into 500 item blocks.
+  result = []
+  end_date = parseInt(new Date().getTime() / 1000)
+  start_date = parseInt(new Date(new Date().setDate(new Date().getDate() - 30)).getTime() / 1000)
+
+  query_block_size = 500
+
+  _.each(Object.keys(queries), function(region) {
+    for (i = 0; i < queries[region].length; i += query_block_size) {
+      chunk = queries[region].slice(i, i + query_block_size)
+
+      result.push({
+        'body': { "StartTime": start_date, "EndTime": end_date, "MetricDataQueries": chunk },
+        'region': region
+      })
+    }
+  })
+EOS
+end
+
+script "js_cloudwatch_data", type: "javascript" do
+  result "results"
+  parameters "region", "body", "api_wait"
+  code <<-EOS
+  // Slow down rate of requests to prevent throttling
+  var now = new Date().getTime()
+  while(new Date().getTime() < now + (api_wait * 1000)) { /* Do nothing */ }
+
+  results = {
+    "auth": "auth_aws",
+    "host": 'monitoring.' + region + '.amazonaws.com',
+    "verb": "POST",
+    "path": "/",
+    "headers": {
+      "User-Agent": "RS Policies",
+      "Content-Type": "application/json",
+      "x-amz-target": "GraniteServiceVersion20100801.GetMetricData",
+      "Accept": "application/json",
+      "Content-Encoding": "amz-1.0"
+    }
+    "query_params": {
+      'Action': 'GetMetricData',
+      'Version': '2010-08-01'
+    },
+    body: JSON.stringify(body)
+  }
+EOS
+end
+
+script "js_cloudwatch_data_sorted", type: "javascript" do
+  result "result"
+  parameters "ds_cloudwatch_data"
+  code <<-EOS
+  // Sort the CloudWatch data into an object with keys for regions and instance names.
+  // This eliminates the need to "double loop" later on to match it with our instances list.
+  result = {}
+
+  _.each(ds_cloudwatch_data, function(item) {
+    region = item['region']
+    instance_name = item['id'].split('_')[0] + '-' + item['id'].split('_')[1]
+    metric = item['id'].split('_')[2]
+    value = item['values'][0]
+
+    if (result[region] == undefined) {
+      result[region] = {}
+    }
+
+    if (result[region][instance_name] == undefined) {
+      result[region][instance_name] = {}
+    }
+
+    result[region][instance_name][metric] = value
+  })
 EOS
 end
 
 script "js_top_level_bc", type: "javascript" do
   parameters "billing_centers"
-  result "filtered_billing_centers"
+  result "result"
   code <<-EOS
-  var filtered_billing_centers =
-    _.reject(billing_centers, function(bc){ return bc.parent_id != null });
+  result = []
+
+  _.each(billing_centers, function(bc) {
+    if (bc['parent_id'] == null || bc['parent_id'] == undefined) {
+      result.push(bc)
+    }
+  })
 EOS
 end
 
-script "js_get_costs", type:"javascript" do
-  parameters  "account_id","billing_centers","org", "optima_host"
-  result "request"
-  code <<-EOS
-    // returns date formatted as string: YYYY-mm-dd
-    function getFormattedDailyDate(date) {
-      var year = date.getFullYear();
-      var month = (1 + date.getMonth()).toString();
-      month = month.length > 1 ? month : '0' + month;
-      var day = date.getDate().toString();
-      day = day.length > 1 ? day : '0' + day;
-      return year + '-' + month + '-' + day;
-    }
-    var start_date = getFormattedDailyDate(new Date(new Date().setDate(new Date().getDate() - 3)));
-    var end_date = getFormattedDailyDate(new Date(new Date().setDate(new Date().getDate() - 2)));
-    var request = {
-      auth: "auth_rs",
-      host: optima_host,
-      verb: "POST",
-      path: "/bill-analysis/orgs/" + org + "/costs/select",
-      body_fields: {
-        "dimensions": ["resource_id"],
-        "granularity": "day",
-        "start_at": start_date,
-        "end_at": end_date,
-        "metrics": ["cost_nonamortized_unblended_adj"],
-        "billing_center_ids": _.compact(_.map(billing_centers, function(value){ return value.id})),
-        "limit": 10000,
-        "filter": {
-          "expressions": [
-            {
-              "dimension": "service",
-              "type": "equal",
-              "value": "AmazonEC2"
-            },
-            {
-              "dimension": "resource_type",
-              "type": "equal",
-              "value": "Compute Instance"
-            },
-            {
-              "dimension": "vendor_account",
-              "type": "equal",
-              "value": account_id[0]["account"]
-            }
-          ],
-          "type": "and"
-        }
-      },
-      headers: {
-        "User-Agent": "RS Policies",
-        "Api-Version": "1.0"
-      },
-      ignore_status: [400]
-    }
-  EOS
-end
-
-script "js_instance_cost_mapping", type:"javascript" do
-  parameters  "instances","instance_costs","ds_currency_code","ds_currency_reference", "ds_billing_centers", "ds_get_caller_identity"
+script "js_instances_costs_request", type:"javascript" do
+  parameters "aws_account", "billing_centers"
   result "result"
   code <<-EOS
-  var result = {};
-  var message='';
-  var count=0;
-  var idle_instance=[];
+  // returns date formatted as string: YYYY-mm-dd
+  function getFormattedDailyDate(date) {
+    var year = date.getFullYear()
+    var month = (1 + date.getMonth()).toString()
+    month = month.length > 1 ? month : '0' + month
+    var day = date.getDate().toString()
+    day = day.length > 1 ? day : '0' + day
+    return year + '-' + month + '-' + day
+  }
+
+  start_date = getFormattedDailyDate(new Date(new Date().setDate(new Date().getDate() - 3)))
+  end_date = getFormattedDailyDate(new Date(new Date().setDate(new Date().getDate() - 2)))
+
+  result = [{
+    "dimensions": ["resource_id"],
+    "granularity": "day",
+    "start_at": start_date,
+    "end_at": end_date,
+    "metrics": ["cost_nonamortized_unblended_adj"],
+    "billing_center_ids": _.compact(_.map(billing_centers, function(value){ return value.id })),
+    "limit": 100000,
+    // Speed up execution by filtering the result set for only what we need.
+    "filter": {
+      "expressions": [
+        {
+          "dimension": "service",
+          "type": "equal",
+          "value": "AmazonEC2"
+        },
+        {
+          "dimension": "resource_type",
+          "type": "equal",
+          "value": "Compute Instance"
+        },
+        {
+          "dimension": "vendor_account",
+          "type": "equal",
+          "value": aws_account
+        }
+      ],
+      "type": "and"
+    }
+  }]
+EOS
+end
+
+script "js_merged_metrics", type: "javascript" do
+  result "result"
+  parameters "cloudwatch_data", "ds_instances", "aws_account", "currency"
+  code <<-EOS
+  result = []
+
+  _.each(ds_instances, function(instance) {
+    region = instance['region']
+    id = instance['instanceId']
+
+    // Only proceed of the CloudWatch data actually has the region and instance id.
+    // Otherwise, we have no usage data on the instance and thus don't include it in the results.
+    if (cloudwatch_data[region] != undefined) {
+      if (cloudwatch_data[region][id] != undefined) {
+        // Grab CPU usage data for the instance if it is present
+        if (cloudwatch_data[region][id]['cpumax'] != undefined && cloudwatch_data[region][id]['cpumax'] != null) {
+          cpu_maximum = parseFloat(cloudwatch_data[region][id]['cpumax']).toFixed(2)
+          cpu_minimum = parseFloat(cloudwatch_data[region][id]['cpumin']).toFixed(2)
+          cpu_average = parseFloat(cloudwatch_data[region][id]['cpuavg']).toFixed(2)
+        } else {
+          cpu_maximum = null
+          cpu_minimum = null
+          cpu_average = null
+        }
+
+        // Grab memory usage data for the instance if it is present
+        if (cloudwatch_data[region][id]['memmax'] != undefined && cloudwatch_data[region][id]['memmax'] != null) {
+          mem_maximum = parseFloat(cloudwatch_data[region][id]['memmax']).toFixed(2)
+          mem_minimum = parseFloat(cloudwatch_data[region][id]['memmin']).toFixed(2)
+          mem_average = parseFloat(cloudwatch_data[region][id]['memavg']).toFixed(2)
+        } else {
+          mem_maximum = null
+          mem_minimum = null
+          mem_average = null
+        }
+
+        // Send the instance information with the CloudWatch data into the final result.
+        // Also adds in the account ID and currency symbol since it'll be needed for the incident.
+        result.push({
+          "region": instance['region'],
+          "id": instance['instanceId'],
+          "resourceID": instance['instanceId'],
+          "platform": instance['platform'],
+          "service": "EC2",
+          "privateDnsName": instance['privateDnsName'],
+          "launchTime": instance['launchTime'],
+          "hostname": instance['privateDnsName'].split('.')[0],
+          "tags": instance['tags'],
+          "resourceType": instance['resourceType'],
+          "cpu_maximum": cpu_maximum,
+          "cpu_minimum": cpu_minimum,
+          "cpu_average": cpu_average,
+          "mem_maximum": mem_maximum,
+          "mem_minimum": mem_minimum,
+          "mem_average": mem_average,
+          "savings": null,
+          "accountID": aws_account,
+          "savingsCurrency": currency['symbol']
+        })
+      }
+    }
+  })
+EOS
+end
+
+script "js_idle_instances", type:"javascript" do
+  parameters "ds_merged_metrics", "ds_instances_costs", "param_avg_cpu", "param_avg_used_memory", "currency", "param_check_both"
+  result "result"
+  code <<-EOS
+  // Used for formatting numbers to look pretty
   function formatNumber(number, separator){
-    var numString =number.toString();
-    var values=numString.split(".");
+    var numString =number.toString()
+    var values=numString.split(".")
     var result = ''
     while (values[0].length > 3){
       var chunk = values[0].substr(-3)
@@ -713,111 +791,94 @@ script "js_instance_cost_mapping", type:"javascript" do
       result = values[0] + result
     }
     if(values[1]==undefined){
-      return result;
+      return result
     }
-    return result+"."+values[1];
+    return result+"."+values[1]
   }
-  if(ds_billing_centers.length!=0){
-    // Put costs into a map by resource ID and only include them for resource IDs we actually need
-    var costs_by_resource_id = {};
-    _.each(instances, function(instance) {
-      costs_by_resource_id[instance.id] = [];
-    });
-    _.each(instance_costs, function(cost) {
-      var costs = costs_by_resource_id[cost.resource_id];
-      if (costs != null) {
-        costs.push(cost);
+
+  idle_instances = []
+  total_savings = 0.00
+  cost_data_found = false
+
+  // Only bother doing anything if we're checking at least one metric
+  if (param_avg_cpu != -1 || param_avg_used_memory != -1) {
+    _.each(ds_merged_metrics, function(instance) {
+      // Do not include instance in the result set unless it meets the requirements
+      include_instance = false
+
+      // If we're not checking memory and CPU usage is below threshold, include it.
+      if (param_avg_used_memory == -1 && instance['cpu_average'] < param_avg_cpu) {
+        include_instance = true
       }
-    });
-    // Format costs with currency symbol and thousands separator
-    if( ds_currency_code['value'] !== undefined ) {
-      if (ds_currency_reference[ds_currency_code['value']] !== undefined ) {
-        var cur = ds_currency_reference[ds_currency_code['value']]['symbol']
-        if( ds_currency_reference[ds_currency_code['value']]['t_separator'] !== undefined ) {
-          var separator = ds_currency_reference[ds_currency_code['value']]['t_separator']
+
+      // If we're not checking CPU and memory usage is below threshold, include it.
+      if (param_avg_cpu == -1 && instance['mem_average'] < param_avg_used_memory) {
+        include_instance = true
+      }
+
+      // If we're checking both CPU and memory, look at the parameter to see whether the user
+      // wants to do an AND comparison or an OR comparison.
+      if (param_avg_cpu != -1 && param_avg_used_memory != -1) {
+        if (param_check_both == "Both CPU and Memory") {
+          if (instance['cpu_average'] < param_avg_cpu && instance['mem_average'] < param_avg_used_memory) {
+            include_instance = true
+          }
         } else {
-          var separator = ""
+          if (instance['cpu_average'] < param_avg_cpu || instance['mem_average'] < param_avg_used_memory) {
+            include_instance = true
+          }
         }
-      } else {
-        var cur = ""
-        var separator = ""
       }
-    } else {
-      var cur = "$"
-      var separator = ","
-    }
-    var total_savings=0;
-    _.each(instances, function(instance){
-      var instance_tags = {}
-      var tags = []
-      _.each(instance["tags"], function(inst){
-        tags.push(inst.key+'='+inst.value)
-      })
-      var cost_objects = costs_by_resource_id[instance.id];
-      if (_.size(cost_objects) > 0){
-        count++;
-        var sum = _.reduce(_.compact(_.map(cost_objects, function(value){ return value.cost_nonamortized_unblended_adj})), function(memo, num){ return memo + num; }, 0);
-        var monthly_savings = sum*30;
-        total_savings=total_savings+monthly_savings;
-        idle_instance.push({
-          "accountID": ds_get_caller_identity[0]['account'],
-          "region": instance["region"],
-          "resourceID": instance["id"],
-          "resourceType": instance["resourceType"],
-          "platform": instance["platform"],
-          "privateDnsName": instance["privateDnsName"],
-          "hostname": instance["hostname"],
-          "tags": tags,
-          "cpu_minimum": instance["cpu_minimum"],
-          "cpu_maximum": instance["cpu_maximum"],
-          "cpu_average": instance["cpu_average"],
-          "mem_maximum": instance["mem_maximum"],
-          "mem_minimum": instance["mem_minimum"],
-          "mem_average": instance["mem_average"],
-          "savings": (Math.round(monthly_savings * 1000) / 1000),
-          "savingsCurrency": cur,
-          "service": "EC2"
+
+      // Only find the cost data if we're including the instance in the result set.
+      // This speeds up execution by not pointlessly gathering this data for instances
+      // we won't be reporting on.
+      if (include_instance) {
+        _.each(ds_instances_costs, function(cost) {
+          if (instance['id'] == cost['resource_id']) {
+            if (isNaN(cost['cost_nonamortized_unblended_adj']) == false) {
+              instance['savings'] = parseFloat(cost['cost_nonamortized_unblended_adj'] * 30).toFixed(2)
+              cost_data_found = true
+            }
+          }
         })
-      } else {
-        idle_instance.push({
-          "accountID": ds_get_caller_identity[0]['account']
-          "region": instance["region"],
-          "resourceID": instance["id"],
-          "resourceType": instance["resourceType"],
-          "platform": instance["platform"],
-          "privateDnsName": instance["privateDnsName"],
-          "hostname": instance["hostname"],
-          "tags": tags,
-          "cpu_minimum": instance["cpu_minimum"],
-          "cpu_maximum": instance["cpu_maximum"],
-          "cpu_average": instance["cpu_average"],
-          "mem_maximum": instance["mem_maximum"],
-          "mem_minimum": instance["mem_minimum"],
-          "mem_average": instance["mem_average"],
-          "savings": 0.0,
-          "savingsCurrency": cur,
-          "service": "EC2"
-        })
+
+        if (isNaN(instance['savings']) == false) {
+          total_savings += parseFloat(instance['savings'])
+        }
+
+        idle_instances.push(instance)
       }
     })
-    if(count){
-      total_savings=cur + ' '+formatNumber(total_savings.toFixed(2), separator);
-      message="The total estimated monthly savings are "+total_savings;
+  }
+
+  // Create the message to include in the incident output
+  message = ''
+
+  if (param_avg_cpu == -1 && param_avg_used_memory == -1) {
+    message = "No results found because average CPU and average used memory parameters are both set to -1.\\n\\n"
+    message += "Please set a valid threshold for at least one metric when using this policy."
+  } else {
+    if (idle_instances.length == 0) {
+      message = "No idle instances found."
     }
-    else{
-      message="The Flexera Optima system does not have any data to calculate savings for these resources";
-    }
   }
-  else{
-    idle_instance=instances;
-    message="You do not have the minimum required role of billing_center_viewer to view the savings";
+
+  if (idle_instances.length > 0 && cost_data_found == true) {
+    pretty_savings = currency['symbol'] + ' ' + formatNumber(total_savings.toFixed(2), currency['separator'])
+    message = "The total estimated monthly savings are " + pretty_savings + '.'
   }
-  result={
-    "idle_instances":idle_instance,
-    "message":message
+
+  if (idle_instances.length > 0 && cost_data_found == false) {
+    message = "No cost data found. Either the Flexera Optima system does not have any data to calculate savings for these resources, or you do not have the minimum required role of billing_center_viewer to view cost data."
   }
-  result.idle_instances=_.sortBy(result.idle_instances, 'region');
-  EOS
+
+  // Create final result
+  result = {
+    'idle_instances': idle_instances,
+    'message': message
+  }
+EOS
 end
 
 ###############################################################################
@@ -825,8 +886,8 @@ end
 ###############################################################################
 
 policy "pol_utilization" do
-  validate $ds_instance_cost_mapping do
-    summary_template "AWS Account ID: {{with index data.idle_instances 0}}{{ .accountID }}{{end}} - {{ len data.idle_instances}} rows containing AWS instance CloudWatch utilization data"
+  validate $ds_idle_instances do
+    summary_template "AWS Account ID: {{with index data.idle_instances 0}}{{ .accountID }}{{end}} - {{ len data.idle_instances}} Idle AWS EC2 Instances Found"
     detail_template <<-EOS
 {{data.message}}
 EOS
@@ -850,6 +911,9 @@ EOS
       field "hostname" do
         label "Hostname"
       end
+      field "resourceType" do
+        label "Resource Type"
+      end
       field "savings" do
         label "Estimated Monthly Savings"
       end
@@ -859,6 +923,9 @@ EOS
       field "privateDnsName" do
         label "Private DNS Name"
       end
+      field "launchTime" do
+        label "Launch Time"
+      end
       field "cpu_maximum" do
         label "CPU Maximum %"
       end
@@ -867,9 +934,6 @@ EOS
       end
       field "cpu_average" do
         label "CPU Average %"
-      end
-      field "resourceType" do
-        label "Resource Type"
       end
       field "mem_maximum" do
         label "Memory Maximum %"
@@ -894,7 +958,6 @@ EOS
   end
 end
 
-
 ###############################################################################
 # Escalations
 ###############################################################################
@@ -917,7 +980,7 @@ end
 # Cloud Workflow
 ###############################################################################
 
-define terminate_resources($data,$param_log_to_cm_audit_entries) return $all_responses do
+define terminate_resources($data, $param_log_to_cm_audit_entries) return $all_responses do
   $$debug = $param_log_to_cm_audit_entries == "Yes"
   $$log = []
   $all_responses = []
