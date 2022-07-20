@@ -117,18 +117,6 @@ auth "auth_rs", type: "rightscale"
 # Datasources
 ###############################################################################
 
-datasource "ds_describe_account" do
-  request do
-    run_script $js_describe_account, $ds_get_caller_identity
-  end
-  result do
-    encoding "json"
-    collect jmes_path(response, "Account") do
-      field "accountName", jmes_path(col_item, "Name")
-    end
-  end
-end
-
 datasource "ds_currency_reference" do
   request do
     host "raw.githubusercontent.com"
@@ -181,7 +169,18 @@ datasource "ds_aws_account" do
   run_script $js_aws_account, $ds_get_caller_identity
 end
 
-#Get list of enabled regions for an account
+datasource "ds_describe_account" do
+  request do
+    run_script $js_describe_account, $ds_aws_account
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "Account") do
+      field "accountName", jmes_path(col_item, "Name")
+    end
+  end
+end
+
 datasource "ds_regions_list" do
   request do
     auth $auth_aws
@@ -336,13 +335,9 @@ datasource "ds_instances_costs" do
   end
 end
 
-datasource "ds_instance_cost_mapping" do
-  run_script $js_instance_cost_mapping, $ds_merged_metrics, $ds_instances_costs, $ds_currency_code, $ds_currency_reference, $ds_billing_centers, $ds_get_caller_identity, $ds_describe_account
-end
-
 # Combine the list of instances with the CloudWatch data
 datasource "ds_merged_metrics" do
-  run_script $js_merged_metrics, $ds_cloudwatch_data_sorted, $ds_instances, $ds_aws_account, $ds_currency
+  run_script $js_merged_metrics, $ds_cloudwatch_data_sorted, $ds_instances, $ds_aws_account, $ds_currency, $ds_describe_account
 end
 
 # Create a final list of idle instances and incorporate cost data into it
@@ -354,13 +349,12 @@ end
 # Scripts
 ###############################################################################
 
-
 script "js_describe_account", type: "javascript" do
-  parameters "ds_get_caller_identity"
+  parameters "aws_account"
   result "results"
   code <<-EOS
   var payload = {
-    "AccountId": ds_get_caller_identity[0]['account']
+    "AccountId": "aws_account"
   }
 
   var results = {
@@ -376,6 +370,7 @@ script "js_describe_account", type: "javascript" do
     }
   }
   EOS
+end
 
 script "js_currency", type:"javascript" do
   parameters "ds_currency_reference", "ds_currency_code"
@@ -383,7 +378,6 @@ script "js_currency", type:"javascript" do
   code <<-EOS
   symbol = ""
   separator = ""
-
   if( ds_currency_code['value'] !== undefined ) {
     if (ds_currency_reference[ds_currency_code['value']] !== undefined ) {
       symbol = ds_currency_reference[ds_currency_code['value']]['symbol']
@@ -395,7 +389,6 @@ script "js_currency", type:"javascript" do
     symbol = "$"
     separator = ","
   }
-
   result = {
     'symbol': symbol,
     'separator': separator
@@ -424,7 +417,6 @@ script "js_regions", type:"javascript" do
     all_regions.forEach(function(all_region){
       all_regions_list.push(all_region.region)
     })
-
     //Filter valid regions
     var valid_regions = []
     _.map(uniqueRegions, function(uniqueRegion){
@@ -432,7 +424,6 @@ script "js_regions", type:"javascript" do
         valid_regions.push({"region": uniqueRegion})
       }
     })
-
     //Throw an error if no valid regions found
     if (_.isEmpty(valid_regions)) {
       regions = all_regions
@@ -450,11 +441,9 @@ script "js_instances", type: "javascript" do
   var tag_key = param_exclusion_tag_key.split(':')[0]
   var tag_value = param_exclusion_tag_key.split(':')[1]
   var result = []
-
   _.each(ds_instance_set, function(ds_item) {
     _.each(ds_item['instances_set'], function(instance) {
       var tags = instance.tags
-
       if (!(_.contains(_.pluck(tags,'key'), tag_key) && _.contains(_.pluck(tags,'value'), tag_value))) {
         result.push(instance)
       }
@@ -467,16 +456,14 @@ script "js_instances_queries", type: "javascript" do
   result "queries"
   parameters "ds_instances", "param_avg_cpu", "param_avg_used_memory"
   code <<-EOS
-  // Create the various queries we're going to send to CloudWatch for each instance
+  // Create the various queries were going to send to CloudWatch for each instance
   queries = {}
-
   _.each(ds_instances, function(instance) {
     // Make sure the queries object has an array for the region to push items to
     if (queries[instance['region']] == undefined || queries[instance['region']] == null) {
       queries[instance['region']] = []
     }
-
-    // Only query for CPU usage if we're actually checking it
+    // Only query for CPU usage if were actually checking it
     if (param_avg_cpu != -1) {
       query_cpuavg = {
         "Id": instance['instanceId'].replace('-', '_') + "_cpuavg",
@@ -493,7 +480,6 @@ script "js_instances_queries", type: "javascript" do
         },
         "ReturnData": true
       }
-
       query_cpumin = {
         "Id": instance['instanceId'].replace('-', '_') + "_cpumin",
         "MetricStat": {
@@ -509,7 +495,6 @@ script "js_instances_queries", type: "javascript" do
         },
         "ReturnData": true
       }
-
       query_cpumax = {
         "Id": instance['instanceId'].replace('-', '_') + "_cpumax",
         "MetricStat": {
@@ -525,15 +510,12 @@ script "js_instances_queries", type: "javascript" do
         },
         "ReturnData": true
       }
-
       queries[instance['region']].push(query_cpuavg)
       queries[instance['region']].push(query_cpumax)
       queries[instance['region']].push(query_cpumin)
     }
-
-    // Only query for MEM usage if we're actually checking it
+    // Only query for MEM usage if were actually checking it
     if (param_avg_used_memory != -1) {
-
       if (instance['platform'] == "Windows") {
         // If platform is Windows, we need to use the Windows custom metric
         mem_metricname = "Memory % Committed Bytes In Use"
@@ -552,7 +534,6 @@ script "js_instances_queries", type: "javascript" do
           { "Name": "InstanceType", "Value": instance['resourceType'] }
         ]
       }
-
       query_memavg = {
         "Id": instance['instanceId'].replace('-', '_') + "_memavg",
         "MetricStat": {
@@ -566,7 +547,6 @@ script "js_instances_queries", type: "javascript" do
         },
         "ReturnData": true
       }
-
       query_memmin = {
         "Id": instance['instanceId'].replace('-', '_') + "_memmin",
         "MetricStat": {
@@ -580,7 +560,6 @@ script "js_instances_queries", type: "javascript" do
         },
         "ReturnData": true
       }
-
       query_memmax = {
         "Id": instance['instanceId'].replace('-', '_') + "_memmax",
         "MetricStat": {
@@ -594,7 +573,6 @@ script "js_instances_queries", type: "javascript" do
         },
         "ReturnData": true
       }
-
       queries[instance['region']].push(query_memavg)
       queries[instance['region']].push(query_memmax)
       queries[instance['region']].push(query_memmin)
@@ -612,13 +590,10 @@ script "js_instances_requests", type: "javascript" do
   result = []
   end_date = parseInt(new Date().getTime() / 1000)
   start_date = parseInt(new Date(new Date().setDate(new Date().getDate() - 30)).getTime() / 1000)
-
   query_block_size = 500
-
   _.each(Object.keys(queries), function(region) {
     for (i = 0; i < queries[region].length; i += query_block_size) {
       chunk = queries[region].slice(i, i + query_block_size)
-
       result.push({
         'body': { "StartTime": start_date, "EndTime": end_date, "MetricDataQueries": chunk },
         'region': region
@@ -635,7 +610,6 @@ script "js_cloudwatch_data", type: "javascript" do
   // Slow down rate of requests to prevent throttling
   var now = new Date().getTime()
   while(new Date().getTime() < now + (api_wait * 1000)) { /* Do nothing */ }
-
   results = {
     "auth": "auth_aws",
     "host": 'monitoring.' + region + '.amazonaws.com',
@@ -662,23 +636,19 @@ script "js_cloudwatch_data_sorted", type: "javascript" do
   parameters "ds_cloudwatch_data"
   code <<-EOS
   // Sort the CloudWatch data into an object with keys for regions and instance names.
-  // This eliminates the need to "double loop" later on to match it with our instances list.
+  // This eliminates the need to double loop later on to match it with our instances list.
   result = {}
-
   _.each(ds_cloudwatch_data, function(item) {
     region = item['region']
     instance_name = item['id'].split('_')[0] + '-' + item['id'].split('_')[1]
     metric = item['id'].split('_')[2]
     value = item['values'][0]
-
     if (result[region] == undefined) {
       result[region] = {}
     }
-
     if (result[region][instance_name] == undefined) {
       result[region][instance_name] = {}
     }
-
     result[region][instance_name][metric] = value
   })
 EOS
@@ -689,7 +659,6 @@ script "js_top_level_bc", type: "javascript" do
   result "result"
   code <<-EOS
   result = []
-
   _.each(billing_centers, function(bc) {
     if (bc['parent_id'] == null || bc['parent_id'] == undefined) {
       result.push(bc)
@@ -711,10 +680,8 @@ script "js_instances_costs_request", type:"javascript" do
     day = day.length > 1 ? day : '0' + day
     return year + '-' + month + '-' + day
   }
-
   start_date = getFormattedDailyDate(new Date(new Date().setDate(new Date().getDate() - 3)))
   end_date = getFormattedDailyDate(new Date(new Date().setDate(new Date().getDate() - 2)))
-
   result = [{
     "dimensions": ["resource_id"],
     "granularity": "day",
@@ -750,16 +717,14 @@ end
 
 script "js_merged_metrics", type: "javascript" do
   result "result"
-  parameters "cloudwatch_data", "ds_instances", "aws_account", "currency"
+  parameters "cloudwatch_data", "ds_instances", "aws_account", "currency", "ds_describe_account"
   code <<-EOS
   result = []
-
   _.each(ds_instances, function(instance) {
     region = instance['region']
     id = instance['instanceId']
-
     // Only proceed of the CloudWatch data actually has the region and instance id.
-    // Otherwise, we have no usage data on the instance and thus don't include it in the results.
+    // Otherwise, we have no usage data on the instance and thus dont include it in the results.
     if (cloudwatch_data[region] != undefined) {
       if (cloudwatch_data[region][id] != undefined) {
         // Grab CPU usage data for the instance if it is present
@@ -772,7 +737,6 @@ script "js_merged_metrics", type: "javascript" do
           cpu_minimum = null
           cpu_average = null
         }
-
         // Grab memory usage data for the instance if it is present
         if (cloudwatch_data[region][id]['memmax'] != undefined && cloudwatch_data[region][id]['memmax'] != null) {
           mem_maximum = parseFloat(cloudwatch_data[region][id]['memmax']).toFixed(2)
@@ -783,9 +747,8 @@ script "js_merged_metrics", type: "javascript" do
           mem_minimum = null
           mem_average = null
         }
-
         // Send the instance information with the CloudWatch data into the final result.
-        // Also adds in the account ID and currency symbol since it'll be needed for the incident.
+        // Also adds in the account ID and currency symbol since itll be needed for the incident.
         result.push({
           "region": instance['region'],
           "id": instance['instanceId'],
@@ -805,16 +768,13 @@ script "js_merged_metrics", type: "javascript" do
           "mem_average": mem_average,
           "savings": null,
           "accountID": aws_account,
+          "accountName": ds_describe_account[0]['accountName'],
           "savingsCurrency": currency['symbol']
         })
       }
     }
   })
 EOS
-end
-
-script "js_instance_cost_mapping", type:"javascript" do
-  parameters  "instances","instance_costs","ds_currency_code","ds_currency_reference", "ds_billing_centers", "ds_get_caller_identity", "ds_describe_account"
 end
 
 script "js_idle_instances", type:"javascript" do
@@ -839,28 +799,23 @@ script "js_idle_instances", type:"javascript" do
     }
     return result+"."+values[1]
   }
-
   idle_instances = []
   total_savings = 0.00
   cost_data_found = false
-
-  // Only bother doing anything if we're checking at least one metric
+  // Only bother doing anything if were checking at least one metric
   if (param_avg_cpu != -1 || param_avg_used_memory != -1) {
     _.each(ds_merged_metrics, function(instance) {
       // Do not include instance in the result set unless it meets the requirements
       include_instance = false
-
       // If we're not checking memory and CPU usage is below threshold, include it.
       if (param_avg_used_memory == -1 && instance['cpu_average'] < param_avg_cpu) {
         include_instance = true
       }
-
       // If we're not checking CPU and memory usage is below threshold, include it.
       if (param_avg_cpu == -1 && instance['mem_average'] < param_avg_used_memory) {
         include_instance = true
       }
-
-      // If we're checking both CPU and memory, look at the parameter to see whether the user
+      // If were checking both CPU and memory, look at the parameter to see whether the user
       // wants to do an AND comparison or an OR comparison.
       if (param_avg_cpu != -1 && param_avg_used_memory != -1) {
         if (param_check_both == "Both CPU and Memory") {
@@ -873,68 +828,9 @@ script "js_idle_instances", type:"javascript" do
           }
         }
       }
-    } else {
-      var cur = "$"
-      var separator = ","
-    }
-    
-    var total_savings=0;
-    _.each(instances, function(instance){
-      var instance_tags = {}
-      var tags = []
-      _.each(instance["tags"], function(inst){
-        tags.push(inst.key+'='+inst.value)
-      })
-      var cost_objects = costs_by_resource_id[instance.id];
-      if (_.size(cost_objects) > 0){
-        count++;
-        var sum = _.reduce(_.compact(_.map(cost_objects, function(value){ return value.cost_nonamortized_unblended_adj})), function(memo, num){ return memo + num; }, 0);
-        var monthly_savings = sum*30;
-        total_savings=total_savings+monthly_savings;
-        idle_instance.push({
-          "accountID": ds_get_caller_identity[0]['account'],
-          "accountName": ds_describe_account[0]['accountName'],
-          "region": instance["region"],
-          "resourceID": instance["id"],
-          "resourceType": instance["resourceType"],
-          "platform": instance["platform"],
-          "privateDnsName": instance["privateDnsName"],
-          "hostname": instance["hostname"],
-          "tags": tags,
-          "cpu_minimum": instance["cpu_minimum"],
-          "cpu_maximum": instance["cpu_maximum"],
-          "cpu_average": instance["cpu_average"],
-          "mem_maximum": instance["mem_maximum"],
-          "mem_minimum": instance["mem_minimum"],
-          "mem_average": instance["mem_average"],
-          "savings": (Math.round(monthly_savings * 1000) / 1000),
-          "savingsCurrency": cur,
-          "service": "EC2"
-        })
-      } else {
-        idle_instance.push({
-          "accountID": ds_get_caller_identity[0]['account']
-          "accountName": ds_describe_account[0]['accountName'],
-          "region": instance["region"],
-          "resourceID": instance["id"],
-          "resourceType": instance["resourceType"],
-          "platform": instance["platform"],
-          "privateDnsName": instance["privateDnsName"],
-          "hostname": instance["hostname"],
-          "tags": tags,
-          "cpu_minimum": instance["cpu_minimum"],
-          "cpu_maximum": instance["cpu_maximum"],
-          "cpu_average": instance["cpu_average"],
-          "mem_maximum": instance["mem_maximum"],
-          "mem_minimum": instance["mem_minimum"],
-          "mem_average": instance["mem_average"],
-          "savings": 0.0,
-          "savingsCurrency": cur,
-          "service": "EC2"
-         })
-      // Only find the cost data if we're including the instance in the result set.
+      // Only find the cost data if were including the instance in the result set.
       // This speeds up execution by not pointlessly gathering this data for instances
-      // we won't be reporting on.
+      // we wont be reporting on.
       if (include_instance) {
         _.each(ds_instances_costs, function(cost) {
           if (instance['id'] == cost['resource_id']) {
@@ -944,19 +840,15 @@ script "js_idle_instances", type:"javascript" do
             }
           }
         })
-
         if (isNaN(instance['savings']) == false) {
           total_savings += parseFloat(instance['savings'])
         }
-
         idle_instances.push(instance)
       }
     })
   }
-
   // Create the message to include in the incident output
   message = ''
-
   if (param_avg_cpu == -1 && param_avg_used_memory == -1) {
     message = "No results found because average CPU and average used memory parameters are both set to -1.\\n\\n"
     message += "Please set a valid threshold for at least one metric when using this policy."
@@ -965,16 +857,13 @@ script "js_idle_instances", type:"javascript" do
       message = "No idle instances found."
     }
   }
-
   if (idle_instances.length > 0 && cost_data_found == true) {
     pretty_savings = currency['symbol'] + ' ' + formatNumber(total_savings.toFixed(2), currency['separator'])
     message = "The total estimated monthly savings are " + pretty_savings + '.'
   }
-
   if (idle_instances.length > 0 && cost_data_found == false) {
     message = "No cost data found. Either the Flexera Optima system does not have any data to calculate savings for these resources, or you do not have the minimum required role of billing_center_viewer to view cost data."
   }
-
   // Create final result
   result = {
     'idle_instances': idle_instances,
@@ -999,7 +888,7 @@ EOS
     export "idle_instances" do
       resource_level true
       field "accountID" do
-        label "Account ID"
+        label "Account Id"
       end
       field "accountName" do
         label "Account Name"
