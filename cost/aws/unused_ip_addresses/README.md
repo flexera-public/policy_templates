@@ -60,6 +60,18 @@ Required permissions in the provider:
         "pricing:GetProducts"
       ],
       "Resource": "*"
+    },
+    {
+      "Effect":"Allow",
+      "Action":[
+        "organizations:DescribeAccount"
+      ],
+      "Resource":"*",
+      "Condition":{
+        "Bool":{
+          "aws:SecureTransport":"true"
+        }
+      }
     }
   ]
 }

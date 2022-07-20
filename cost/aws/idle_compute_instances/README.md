@@ -82,6 +82,18 @@ Required permissions in the provider:
           "aws:SecureTransport":"true"
         }
       }
+    },
+    {
+      "Effect":"Allow",
+      "Action":[
+        "organizations:DescribeAccount"
+      ],
+      "Resource":"*",
+      "Condition":{
+        "Bool":{
+          "aws:SecureTransport":"true"
+        }
+      }
     }
   ]
 }

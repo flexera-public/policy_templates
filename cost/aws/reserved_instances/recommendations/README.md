@@ -52,6 +52,18 @@ Required permissions in the provider:
       "Resource": [
         "*"
       ]
+    },
+    {
+      "Effect":"Allow",
+      "Action":[
+        "organizations:DescribeAccount"
+      ],
+      "Resource":"*",
+      "Condition":{
+        "Bool":{
+          "aws:SecureTransport":"true"
+        }
+      }
     }
   ]
 }

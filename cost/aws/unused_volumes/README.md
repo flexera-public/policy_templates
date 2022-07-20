@@ -78,6 +78,18 @@ The following AWS permissions must be allowed for the policy to run.
           "aws:SecureTransport":"true"
         }
       }
+    },
+    {
+      "Effect":"Allow",
+      "Action":[
+        "organizations:DescribeAccount"
+      ],
+      "Resource":"*",
+      "Condition":{
+        "Bool":{
+          "aws:SecureTransport":"true"
+        }
+      }
     }
   ]
 }

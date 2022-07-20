@@ -69,6 +69,18 @@ Required permissions in the provider:
         "ec2:DescribeRegions"
       ],
       "Resource": "*"
+    },
+    {
+      "Effect":"Allow",
+      "Action":[
+        "organizations:DescribeAccount"
+      ],
+      "Resource":"*",
+      "Condition":{
+        "Bool":{
+          "aws:SecureTransport":"true"
+        }
+      }
     }
   ]
 }
