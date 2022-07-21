@@ -1,6 +1,6 @@
 # Changelog
 
-## v4.0
+## v3.5
 
 - Improved accuracy of metric collection by using a different Statistic to identify idle resources
 - Fixed bug with Tag Exclusion Key parameter in `v3.x`.  Resources once again get excluded from results if containing provided `key:value` tag
