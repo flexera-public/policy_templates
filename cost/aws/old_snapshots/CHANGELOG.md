@@ -1,5 +1,10 @@
 # Changelog
 
+## v3.4
+
+- Modified Image (AMI) datasource collection to improve policy efficiency
+- Modified "Delete Snapshots" Escalation Action to improve execution efficiency
+
 ## v3.3
 
 - updated savings_currency to savingsCurrency
