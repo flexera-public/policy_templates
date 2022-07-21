@@ -2,7 +2,7 @@
 
 ## v2.12
 
-- Added account name field
+- Added accountName field
 
 ## v2.11
 
