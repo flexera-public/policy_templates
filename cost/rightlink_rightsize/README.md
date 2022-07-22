@@ -22,7 +22,7 @@ Inefficient Instance Utilization using RightLink is used to actually resize inst
 
 ## Input Parameters
 
-### Inefficient Instance Utilization using RightLink
+### Inefficient Instance Utilization using RightLink Policy
 
 - Average free memory percent to allow for downsize - Value: 0-100, -1 disables this metric
 - Maximum free memory percent to allow for downsize - Value: 0-100, -1 disables this metric
@@ -38,7 +38,7 @@ The following policy actions are taken on any resources found to be out of compl
 - Downsize instances after approval
 - Send an email report
 
-#### Inefficient Instance Utilization using RightLink Add Tags
+#### Inefficient Instance Utilization using RightLink Add Tags Policy
 
 - Instance tags used to filter instances that must validate policy. Example: rs_monitoring:resize=1
 - Email address to send escalation emails to - Example: noreply@example.com
