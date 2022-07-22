@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.17
+
+- This policy is no longer being updated.\n
+
 ## v1.16
 
 - updated README.md rightscale documentation links with docs.flexera documentation links

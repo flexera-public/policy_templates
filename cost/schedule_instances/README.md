@@ -1,5 +1,9 @@
 # Schedule Instances Policy Template
 
+## Deprecated
+
+This policy is no longer being updated.
+
 ## What it does
 
 This Policy Template allows you to schedule start and stop times for your compute.
