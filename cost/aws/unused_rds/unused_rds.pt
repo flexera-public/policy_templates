@@ -7,7 +7,7 @@ severity "low"
 category "Cost"
 default_frequency "daily"
 info(
-  version: "3.4",
+  version: "3.5",
   provider: "AWS",
   service: "RDS",
   policy_set: "Unused Database Services"
@@ -50,6 +50,15 @@ parameter "param_automatic_action" do
   allowed_values ["Delete Instances"]
 end
 
+parameter "param_api_wait" do
+  type "number"
+  label "CloudWatch API Wait Time"
+  description "Amount of time to wait between CloudWatch API requests to avoid throttling (seconds)"
+  default 5
+  min_value 1
+  max_value 60
+end
+
 ###############################################################################
 # Authentication
 ###############################################################################
@@ -64,6 +73,19 @@ credentials "auth_aws" do
 end
 
 auth "auth_rs", type: "rightscale"
+
+###############################################################################
+# Pagination
+###############################################################################
+
+pagination "aws_getmetricdata_pagination" do
+  get_page_marker do
+    body_path "NextToken"
+  end
+  set_page_marker do
+    body_field "NextToken"
+  end
+end
 
 ###############################################################################
 # Datasources
@@ -93,8 +115,8 @@ datasource "ds_regions" do
 end
 
 # get all the RDS instances merged together with the tags and CloudWatch
-datasource "ds_rds_instances" do
-  run_script $js_rds_instances, $ds_rds_instances_set, $ds_list_tags_for_resource,$ds_cloudwatch_connections, $param_exclusion_tag_key, $ds_currency_code, $ds_currency_reference, $ds_get_caller_identity
+datasource "ds_rds_instances_without_connections" do
+  run_script $js_rds_instances_without_connections, $ds_rds_instances_set, $ds_list_tags_for_resource, $ds_cloudwatch_getmetricdata, $param_exclusion_tag_key, $ds_currency_code, $ds_currency_reference, $ds_get_caller_identity
 end
 
 # get all the RDS instances
@@ -134,27 +156,120 @@ datasource "ds_list_tags_for_resource" do
 end
 
 # get the DBConnections from CloudWatch
-datasource "ds_cloudwatch_connections" do
-  iterate $ds_rds_instances_set
+datasource "ds_metricdataqueries" do
+  run_script $js_metricdataqueries, $ds_rds_instances_set
+end
+
+script "js_metricdataqueries", type: "javascript" do
+  result "result"
+  parameters "ds_rds_instances_set"
+  code <<-EOS
+queries = {};
+// Construct MetricDataQueries for each resource
+_.each(ds_rds_instances_set, function(resource) {
+  // Foreach Metric that is used by the Policy Template
+  _.each(["DatabaseConnections"], function(metric) {
+    // Foreach statistic that is used by the Policy Template
+    _.each(["Average"], function(statistic) {
+      query = {
+        // Replace `-` with `_` in the Id to avoid CloudWatch API error
+        "Id": resource['name'].replace(/\-/g, '_') + "_" + metric + "_" + statistic,
+        "Label": resource['name'] + " " + metric + " " + statistic,
+        "MetricStat": {
+          "Metric": {
+            "Namespace": "AWS/RDS",
+            "MetricName": metric,
+            "Dimensions": [
+              { "Name": "DBInstanceIdentifier", "Value": resource['name'] }
+            ]
+          },
+          "Period": 2592000,
+          "Stat": statistic
+        },
+        "ReturnData": true
+      };
+      if (queries[resource['region']] == undefined || queries[resource['region']] == null) {
+        queries[resource['region']] = [];
+      }
+      queries[resource['region']].push(query);
+    });
+  });
+});
+result = [];
+
+end_date = parseInt(new Date().getTime() / 1000);
+start_date = parseInt(new Date(new Date().setDate(new Date().getDate() - 30)).getTime() / 1000);
+// MetricDataQueries[] max is 500
+chunk_size=500;
+// Chunk MetricDataQueries to iterate and collect all with multiple requests
+_.each(Object.keys(queries), function(region) {
+  for (i = 0; i < queries[region].length; i += chunk_size) {
+    // Select the next chunk of queries
+    chunk = queries[region].slice(i, i + chunk_size);
+    // Construct the request and append to result[]
+    result.push({
+      'MetricDataQueries': chunk,
+      'region': region
+    });
+  }
+});
+EOS
+end
+
+datasource "ds_cloudwatch_getmetricdata" do
+  iterate $ds_metricdataqueries
   request do
-    run_script $js_cloudwatch_connections, val(iter_item, "region"), val(iter_item, "name")
+    run_script $js_cloudwatch_getmetricdata, val(iter_item, "region"), val(iter_item, "MetricDataQueries"), $param_api_wait
   end
   result do
     encoding "json"
-    collect jmes_path(response, "GetMetricStatisticsResponse.GetMetricStatisticsResult.Datapoints[*]") do
+    collect jmes_path(response, "MetricDataResults[*]") do
       field "region", val(iter_item, "region")
-      field "instanceId", val(iter_item, "instanceId")
-      field "name", val(iter_item, "name")
-      field "privateDnsName", val(iter_item, "privateDnsName")
-      field "sample_count", jmes_path(col_item, "SampleCount")
+      field "id", jmes_path(col_item, "Id")
+      field "label", jmes_path(col_item, "Label")
+      field "values", jmes_path(col_item, "Values")
     end
   end
+end
+
+script "js_cloudwatch_getmetricdata", type: "javascript" do
+  parameters "region", "MetricDataQueries", "param_api_wait"
+  result "results"
+  code <<-EOS
+  // Slow down rate of requests to prevent throttling
+  var now = new Date().getTime()
+  while(new Date().getTime() < now + (param_api_wait * 1000)) { /* Do nothing */ }
+  // Difference between start and end time is 28 days
+  // Period for each metricdataquery is 30 days.
+  // This combination results in average over larger time returned as one value [because period > (end_date - start_date)]
+  end_date = parseInt(new Date().getTime() / 1000);
+  start_date = parseInt(new Date(new Date().setDate(new Date().getDate() - 28)).getTime() / 1000);
+  results = {
+    "auth": "auth_aws",
+    "host": 'monitoring.' + region + '.amazonaws.com',
+    "verb": "POST",
+    "path": "/",
+    "pagination": 'aws_getmetricdata_pagination',
+    "headers": {
+      "User-Agent": "RS Policies",
+      "Content-Type": "application/json",
+      "x-amz-target": "GraniteServiceVersion20100801.GetMetricData",
+      "Accept": "application/json",
+      "Content-Encoding": "amz-1.0"
+    }
+    "query_params": {
+      'Action': 'GetMetricData',
+      'Version': '2010-08-01'
+    },
+    body: JSON.stringify({ "StartTime": start_date, "EndTime": end_date, "MetricDataQueries": MetricDataQueries })
+  }
+EOS
 end
 
 datasource "ds_currency_reference" do
   request do
     host "raw.githubusercontent.com"
-    path "/rightscale/policy_templates/master/cost/scheduled_reports/currency_reference.json"
+    path "/flexera-public/policy_templates/master/cost/scheduled_reports/currency_reference.json"
     header "User-Agent", "RS Policies"
   end
 end
@@ -220,7 +335,7 @@ end
 
 datasource "ds_instance_costs" do
   request do
-    run_script $js_get_costs, $ds_get_caller_identity, $ds_top_level_billing_centers, rs_org_id, rs_optima_host
+    run_script $js_instance_costs, $ds_get_caller_identity, $ds_top_level_billing_centers, rs_org_id, rs_optima_host
   end
   result do
     encoding "json"
@@ -233,7 +348,7 @@ datasource "ds_instance_costs" do
 end
 
 datasource "ds_instance_cost_mapping" do
-  run_script $js_instance_cost_mapping, $ds_rds_instances, $ds_instance_costs, $ds_currency_code, $ds_currency_reference, $ds_billing_centers, $ds_get_caller_identity
+  run_script $js_instance_cost_mapping, $ds_rds_instances_without_connections, $ds_instance_costs, $ds_currency_code, $ds_currency_reference, $ds_billing_centers, $ds_get_caller_identity
 end
 
 ###############################################################################
@@ -281,7 +396,7 @@ script "js_top_level_bc", type: "javascript" do
 EOS
 end
 
-script "js_get_costs", type:"javascript" do
+script "js_instance_costs", type:"javascript" do
   parameters  "account_id","billing_centers","org","rs_optima_host"
   result "request"
   code <<-EOS
@@ -335,9 +450,9 @@ script "js_get_costs", type:"javascript" do
 end
 
 # merge the instances and tags and remove instances that have the exclusion tag
-script "js_rds_instances", type: "javascript" do
+script "js_rds_instances_without_connections", type: "javascript" do
   result "results"
-  parameters "ds_rds_instance_set", "ds_list_tags_for_resource", "ds_cloudwatch_connections", "param_exclusion_tag_key", "ds_currency_code", "ds_currency_reference", "ds_get_caller_identity"
+  parameters "ds_rds_instance_set", "ds_list_tags_for_resource", "ds_cloudwatch_getmetricdata", "param_exclusion_tag_key", "ds_currency_code", "ds_currency_reference", "ds_get_caller_identity"
   code <<-EOS
   var tag_key = param_exclusion_tag_key.split(':')[0]
   var tag_value = param_exclusion_tag_key.split(':')[1]
@@ -359,41 +474,47 @@ script "js_rds_instances", type: "javascript" do
     var cur = "$"
     var separator = ","
   }
-  for ( n=0; n < ds_rds_instance_set.length; n++) {
-    var instance = ds_rds_instance_set[n]
+  _.each(ds_rds_instance_set, function(instance){
     // get tags for instance
     var instances_w_tags = _.where(ds_list_tags_for_resource, {instanceId: instance.instanceId})
     var instance_tags = {}
     var tags = []
     _.each(instances_w_tags, function(instance){
-      tags.push(instance.key+'='+instance.value)
+      tags.push(instance.key+':'+instance.value)
     })
-    instance_tags[instance.instanceId] = tags
-    // get dbconnection metrics for instance
-    var metrics = _.where(ds_cloudwatch_connections, {instanceId: instance.instanceId})
-    var sample_count = _.pluck(metrics, 'sample_count')
-    var connections = _.reduce(sample_count, function(memo, num){ return memo + num; }, 0);
-    //check instance for exclusion tag
-    if ( _.contains(instance_tags[instance.instanceId], param_exclusion_tag_key) || connections>0){
-      continue
-    } else {
-      results.push({
-        accountID: ds_get_caller_identity[0]['account'],
-        region: instance.region,
-        name: instance.name,
-        arn: instance.instanceArn,
-        id: instance.instanceId,
-        resourceType: instance.resourceType,
-        resourceID: instance.instanceId,
-        privateDnsName: instance.privateDnsName,
-        status: instance.status,
-        connections: connections,
-        tags: instance_tags[instance.instanceId],
-        savings: 0.0
-        savingsCurrency: cur
-      })
+    instance_tags[instance.instanceId] = tags;
+    console.log(instance_tags);
+
+    // Use _.findWhere() to find any Average MetricDataQuery results for the instance
+    // Select DatabaseConnections Average from GetMetricData results
+    var metrics = _.findWhere(ds_cloudwatch_getmetricdata, {label: instance.name+' DatabaseConnections Average'})
+
+    // Check if metric values were found
+    if ( !_.isUndefined(metrics) ) {
+      // Calculate total connections with underscorejs reduce function
+      // https://underscorejs.org/#reduce
+      connections_total = _.reduce(metrics.values, function(memo, num){ return memo + num; }, 0);
+      // There have been recent database connections for this instance if DatabaseConnections Average > 0
+      if ( !_.contains(instance_tags[instance.instanceId], param_exclusion_tag_key) && connections_total == 0){
+        // Add instance to results if it does not have the exclusion tag and has not been recently used
+        results.push({
+          accountID: ds_get_caller_identity[0]['account'],
+          region: instance.region,
+          name: instance.name,
+          arn: instance.instanceArn,
+          id: instance.instanceId,
+          resourceType: instance.resourceType,
+          resourceID: instance.instanceId,
+          privateDnsName: instance.privateDnsName,
+          status: instance.status,
+          tags: instance_tags[instance.instanceId],
+          // Savings is 0.0 [float] until later where we estimate savings
+          savings: 0.0,
+          savingsCurrency: cur
+        });
+      }
     }
-  }
+  });
 EOS
 end
 
@@ -475,105 +596,112 @@ script "js_cloudwatch_connections", type: "javascript" do
       'StartTime': start_date,
       'EndTime': end_date,
       'Period': "2592000",
-      'Statistics.member.1': 'SampleCount',
+      'Statistics.member.1': 'Average',
     }
   }
 EOS
 end
 
 script "js_instance_cost_mapping", type:"javascript" do
-  parameters  "instance_list","instance_costs","ds_currency_code","ds_currency_reference", "ds_billing_centers","ds_get_caller_identity"
+  parameters  "ds_rds_instances_without_connections","ds_instance_costs","ds_currency_code","ds_currency_reference", "ds_billing_centers","ds_get_caller_identity"
   result "result"
   code <<-EOS
-    var result = {};
-    var unused_rds_instance_list=[];
-    var message='';
-    var count=0;
-    function formatNumber(number, separator){
-      var numString =number.toString();
-      var values=numString.split(".");
-      var result = ''
-      while (values[0].length > 3){
-        var chunk = values[0].substr(-3)
-        values[0] = values[0].substr(0, values[0].length - 3)
-        result = separator + chunk + result
-      }
-      if (values[0].length > 0){
-        result = values[0] + result
-      }
-      if(values[1]==undefined){
-        return result;
-      }
-      return result+"."+values[1];
+  var unused_rds_instance_list=[];
+  var result = {};
+  var message='';
+  var savings_found=false;
+  function formatNumber(number, separator){
+    var numString =number.toString();
+    var values=numString.split(".");
+    var result = ''
+    while (values[0].length > 3){
+      var chunk = values[0].substr(-3)
+      values[0] = values[0].substr(0, values[0].length - 3)
+      result = separator + chunk + result
     }
-    if(ds_billing_centers.length!=0){
-      // Put costs into a map by resource ID and only include them for resource IDs we actually need
-      var costs_by_resource_id = {};
-      _.each(instance_list, function(instance) {
-        costs_by_resource_id[instance.name] = [];
-      });
-      _.each(instance_costs, function(cost) {
-        var costs = costs_by_resource_id[cost.resource_id.replace(/^db:/, '')];
-        if (costs != null) {
-          costs.push(cost);
-        }
-      });
-      // Format costs with currency symbol and thousands separator
-      if( ds_currency_code['value'] !== undefined ) {
-        if (ds_currency_reference[ds_currency_code['value']] !== undefined ) {
-          var cur = ds_currency_reference[ds_currency_code['value']]['symbol']
-          if( ds_currency_reference[ds_currency_code['value']]['t_separator'] !== undefined ) {
-            var separator = ds_currency_reference[ds_currency_code['value']]['t_separator']
-          } else {
-            var separator = ""
-          }
+    if (values[0].length > 0){
+      result = values[0] + result
+    }
+    if(values[1]==undefined){
+      return result;
+    }
+    return result+"."+values[1];
+  }
+
+  // Check if ds_billing_centers results empty
+  if(ds_billing_centers.length==0){
+    unused_rds_instance_list=ds_rds_instances_without_connections;
+    message="You do not have the minimum required role of billing_center_viewer to view the savings";
+  }
+  else {
+    // There is potentially cost savings to calculate if we have access to billing centers
+
+    // Format costs with currency symbol and thousands separator
+    if( ds_currency_code['value'] !== undefined ) {
+      if (ds_currency_reference[ds_currency_code['value']] !== undefined ) {
+        var cur = ds_currency_reference[ds_currency_code['value']]['symbol'];
+        if( ds_currency_reference[ds_currency_code['value']]['t_separator'] !== undefined ) {
+          var separator = ds_currency_reference[ds_currency_code['value']]['t_separator'];
         } else {
-          var cur = ""
-          var separator = ""
+          var separator = "";
         }
       } else {
-        var cur = "$"
-        var separator = ","
+        var cur = "";
+        var separator = "";
       }
-      var total_savings=0;
-      _.each(instance_list, function(instance){
-        instance['resourceType']=instance.resourceType;
-        instance['service']="RDS"
-        var cost_objects = costs_by_resource_id[instance.name];
-        if (_.size(cost_objects) > 0){
-          count++;
-          var sum = _.reduce(_.compact(_.map(cost_objects, function(value){return value.cost_nonamortized_unblended_adj})), function(memo, num){ return memo + num; }, 0);
-          var monthly_savings = sum*30;
-          total_savings=total_savings+monthly_savings;
-          instance['savings']= (Math.round(monthly_savings * 1000) / 1000);
-          instance['savingsCurrency']= cur;
-          unused_rds_instance_list.push(instance);
-        } else {
-          instance['savings']= 0.0;
-          instance['savingsCurrency']= cur;
-          unused_rds_instance_list.push(instance);
-        }
-      })
-      if(count){
-        total_savings=cur + ' '+formatNumber((Math.round(total_savings * 100) / 100), separator);
-        message="The total estimated monthly savings are "+total_savings;
+    } else {
+      var cur = "$";
+      var separator = ",";
+    }
+
+    // Total potential savings starts at 0
+    var total_savings=0;
+    // Loop through all instances without connections
+    _.each(ds_rds_instances_without_connections, function(instance){
+      instance['resourceType'] = instance.resourceType;
+      instance['service'] = "RDS";
+      // Select all costs related to instance from ds_instance_costs
+      var cost_objects = _.where(ds_instance_costs, {'resource_id': 'db:'+instance.name});
+      if (_.size(cost_objects) == 0){
+        // If no volume cost found, assume 0.0 monthly costs/savings estimation
+        instance['savings']= 0.0;
+        instance['savingsCurrency']= cur;
+        unused_rds_instance_list.push(instance);
       }
-      else{
-        message="The Flexera Optima system does not have any data to calculate savings for these resources";
+      else {
+        // If cost(s) exists, lets calculate estimated monthly cost for the volume
+        // Set savings_found flag to true
+        savings_found = true;
+        // Sum of costs from cost_objects is the estimated 24hr cost of instance which can include storage, compute, and transfer costs
+        // Calculate sum of costs for instance with underscorejs reduce function
+        // https://underscorejs.org/#reduce
+        var one_day_cost = _.reduce(_.compact(_.map(cost_objects, function(value){return value.cost_nonamortized_unblended_adj})), function(memo, num){ return memo + num; }, 0);
+        // Estimate monthly [30day] cost of volume
+        var monthly_savings = one_day_cost*30;
+        // Add volume cost to total_potential_savings
+        total_savings=total_savings+monthly_savings;
+        instance['savings']= (Math.round(monthly_savings * 1000) / 1000);
+        instance['savingsCurrency']= cur;
+        unused_rds_instance_list.push(instance);
       }
+    });
+    if(savings_found){
+      total_savings=cur + ' '+formatNumber((Math.round(total_savings * 100) / 100), separator);
+      message="The total estimated monthly savings are "+total_savings;
     }
     else{
-      unused_rds_instance_list=instance_list;
-      message="You do not have the minimum required role of billing_center_viewer to view the savings";
+      message="The Flexera Optima system does not have any data to calculate savings for these resources";
     }
-    result={
-      "instance_list": unused_rds_instance_list,
-      "message": message,
-      "accountID": ds_get_caller_identity[0]['account']
-    }
-    result.instance_list = _.sortBy(result.instance_list,"region");
-    result.instance_list = _.sortBy(result.instance_list,"id");
-  EOS
+  }
+
+  result={
+    "instance_list": unused_rds_instance_list,
+    "message": message,
+    "accountID": ds_get_caller_identity[0]['account']
+  };
+  result.instance_list = _.sortBy(result.instance_list,"region");
+  result.instance_list = _.sortBy(result.instance_list,"id");
+EOS
 end
 
 ###############################################################################
@@ -618,9 +746,6 @@ EOS
       field "resourceType" do
         label "Resource Type"
       end
-      field "connections" do
-        label "Connections"
-      end
       field "arn" do
         label "ARN"
       end
@@ -637,7 +762,6 @@ EOS
     end
   end
 end
-
 
 ###############################################################################
 # Escalations
