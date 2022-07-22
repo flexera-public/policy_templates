@@ -43,7 +43,7 @@ The following policy actions are taken on any resources found to be out of compl
 - Instance tags used to filter instances that must validate policy. Example: rs_monitoring:resize=1
 - Email address to send escalation emails to - Example: noreply@example.com
 
-#### Policy Actions
+#### Policy Actions for RightLink Add Tags
 
 The following policy actions are taken on any resources found to be out of compliance.
 
