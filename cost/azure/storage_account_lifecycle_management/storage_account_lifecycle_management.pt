@@ -7,7 +7,7 @@ severity "low"
 category "Cost"
 default_frequency "daily"
 info(
-  version: "2.3",
+  version: "2.4",
   provider: "Azure",
   service: "Storage Accounts",
   policy_set: "Lifecycle Management"
@@ -22,6 +22,7 @@ parameter "param_exclusion_tag_key" do
   label "Exclusion Tag Key"
   description "Cloud native tag key to ignore instances. Example: exclude_utilization"
   type "string"
+  default ""
 end
 
 parameter "param_email" do
@@ -41,6 +42,16 @@ parameter "param_subscription_whitelist" do
   label "Subscription Whitelist"
   type "list"
   description "Whitelisted Subscriptions, if empty, all subscriptions will be checked"
+  default []
+end
+
+parameter "param_api_wait" do
+  type "number"
+  label "Azure API Wait Time"
+  description "Amount of time to wait between Azure API requests to avoid throttling (seconds)"
+  default 1
+  min_value 0
+  max_value 60
 end
 
 ###############################################################################
@@ -58,6 +69,7 @@ end
 ###############################################################################
 # Pagination
 ###############################################################################
+
 pagination "azure_pagination" do
   get_page_marker do
     body_path "nextLink"
@@ -73,19 +85,14 @@ end
 
 datasource "ds_subscriptions" do
   request do
-    auth $azure_auth
-    pagination $azure_pagination
-    host $param_azure_endpoint
-    path "/subscriptions/"
-    query "api-version","2019-06-01"
-    header "User-Agent", "RS Policies"
+    run_script $js_subscriptions_request, $param_azure_endpoint, $param_api_wait
   end
   result do
     encoding "json"
     collect jmes_path(response, "value[*]") do
-      field "subscriptionId", jmes_path(col_item,"subscriptionId")
-      field "displayName", jmes_path(col_item,"displayName")
-      field "state", jmes_path(col_item,"state")
+      field "subscriptionId", jmes_path(col_item, "subscriptionId")
+      field "displayName", jmes_path(col_item, "displayName")
+      field "state", jmes_path(col_item, "state")
     end
   end
 end
@@ -94,17 +101,10 @@ datasource "ds_filtered_subscriptions" do
   run_script $js_filtered_subscriptions, $ds_subscriptions, $param_subscription_whitelist
 end
 
-#https://docs.microsoft.com/en-us/rest/api/resources/resources/list
 datasource "ds_storage_accounts" do
   iterate $ds_filtered_subscriptions
   request do
-    auth $azure_auth
-    pagination $azure_pagination
-    host $param_azure_endpoint
-    path join(["/subscriptions/", val(iter_item,"subscriptionId"), "/providers/Microsoft.Storage/storageAccounts"])
-    query "api-version","2021-04-01"
-    header "User-Agent", "RS Policies"
-    ignore_status [400,403,404]
+    run_script $js_storage_accounts_request, val(iter_item, "subscriptionId"), $param_azure_endpoint, $param_api_wait
   end
   result do
     encoding "json"
@@ -122,25 +122,19 @@ end
 datasource "ds_management_policies" do
   iterate $ds_storage_accounts
   request do
-    auth $azure_auth
-    pagination $azure_pagination
-    host $param_azure_endpoint
-    ignore_status [403, 404]
-    path join([val(iter_item,"id"), "/managementPolicies/default"])
-    query "api-version","2021-04-01"
-    header "User-Agent", "RS Policies"
+    run_script $js_management_policies_request, val(iter_item,"id"), $param_azure_endpoint, $param_api_wait
   end
   result do
     encoding "json"
     field "id", val(iter_item, "id")
-    field "management_policy_id", jmes_path(response,"id")
-    field "management_policy_name", jmes_path(response,"name")
+    field "management_policy_id", jmes_path(response, "id")
+    field "management_policy_name", jmes_path(response, "name")
     field "management_policy", jmes_path(response, "properties.policy")
-    field "name", val(iter_item,"name")
-    field "location", val(iter_item,"location")
-    field "tags", val(iter_item,"tags")
-    field "subscriptionId", val(iter_item,"subscriptionId")
-    field "subscriptionName", val(iter_item,"displayName")
+    field "name", val(iter_item, "name")
+    field "location", val(iter_item, "location")
+    field "tags", val(iter_item, "tags")
+    field "subscriptionId", val(iter_item, "subscriptionId")
+    field "subscriptionName", val(iter_item, "displayName")
   end
 end
 
@@ -151,6 +145,102 @@ end
 ###############################################################################
 # Scripts
 ###############################################################################
+
+script "js_subscriptions_request", type: "javascript" do
+  result "result"
+  parameters "azure_endpoint", "api_wait"
+  code <<-EOS
+  // Slow down rate of requests to prevent throttling
+  var now = new Date().getTime()
+  while(new Date().getTime() < now + (api_wait * 1000)) { /* Do nothing */ }
+
+  result = {
+    "auth": "azure_auth",
+    "pagination": "azure_pagination",
+    "host": azure_endpoint,
+    "verb": "GET",
+    "path": "/subscriptions/",
+    "headers": {
+      "User-Agent": "RS Policies",
+      "Content-Type": "application/json"
+    },
+    "query_params": {
+      'api-version': '2019-06-01'
+    }
+  }
+EOS
+end
+
+script "js_filtered_subscriptions", type: "javascript" do
+  parameters "ds_subscriptions", "param_subscription_whitelist"
+  result "results"
+  code <<-EOS
+  var results = []
+  if ( param_subscription_whitelist.length != 0){
+    results = []
+    _.each(param_subscription_whitelist, function(sub){
+      var found = _.find(ds_subscriptions, function(item){
+        return item.subscriptionId == sub || item.displayName.toLowerCase() == sub.toLowerCase();
+      })
+      results.push(found)
+    })
+  } else {
+    results = ds_subscriptions
+  }
+EOS
+end
+
+script "js_storage_accounts_request", type: "javascript" do
+  result "result"
+  parameters "subscription_id", "azure_endpoint", "api_wait"
+  code <<-EOS
+  // Slow down rate of requests to prevent throttling
+  var now = new Date().getTime()
+  while(new Date().getTime() < now + (api_wait * 1000)) { /* Do nothing */ }
+
+  result = {
+    "auth": "azure_auth",
+    "pagination": "azure_pagination",
+    "host": azure_endpoint,
+    "verb": "GET",
+    "path": "/subscriptions/" + subscription_id + "/providers/Microsoft.Storage/storageAccounts",
+    "headers": {
+      "User-Agent": "RS Policies",
+      "Content-Type": "application/json"
+    },
+    "query_params": {
+      'api-version': '2021-04-01'
+    },
+    "ignore_status": [400, 403, 404]
+  }
+EOS
+end
+
+script "js_management_policies_request", type: "javascript" do
+  result "result"
+  parameters "storage_id", "azure_endpoint", "api_wait"
+  code <<-EOS
+  // Slow down rate of requests to prevent throttling
+  var now = new Date().getTime()
+  while(new Date().getTime() < now + (api_wait * 1000)) { /* Do nothing */ }
+
+  result = {
+    "auth": "azure_auth",
+    "pagination": "azure_pagination",
+    "host": azure_endpoint,
+    "verb": "GET",
+    "path": storage_id + "/managementPolicies/default",
+    "headers": {
+      "User-Agent": "RS Policies",
+      "Content-Type": "application/json"
+    },
+    "query_params": {
+      'api-version': '2021-04-01'
+    },
+    "ignore_status": [403, 404]
+  }
+EOS
+end
 
 script "js_merged_metrics", type: "javascript" do
   parameters "ds_storage_accounts", "ds_management_policies", "param_exclusion_tag_key"
@@ -176,25 +266,6 @@ script "js_merged_metrics", type: "javascript" do
       results.push(storage_account)
     }
   })
-EOS
-end
-
-script "js_filtered_subscriptions", type: "javascript" do
-  parameters "ds_subscriptions", "param_subscription_whitelist"
-  result "results"
-  code <<-EOS
-  var results = []
-  if ( param_subscription_whitelist.length != 0){
-    results = []
-    _.each(param_subscription_whitelist, function(sub){
-      var found = _.find(ds_subscriptions, function(item){
-        return item.subscriptionId == sub || item.displayName.toLowerCase() == sub.toLowerCase();
-      })
-      results.push(found)
-    })
-  } else {
-    results = ds_subscriptions
-  }
 EOS
 end
 
