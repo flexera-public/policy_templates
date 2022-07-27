@@ -22,6 +22,7 @@ This policy has the following input parameters required when launching the polic
 - *Email addresses to notify* - Email addresses of the recipients you wish to notify when new incidents are created
 - *Exclusion Tag Key:Value* - AWS tag key to ignore instances. Format: Key:Value
 - *Automatic Actions* - When this value is set, this policy will automatically take the selected action(s).
+- *CloudWatch API Wait Time* - The amount of time in seconds to wait between requests to the CloudWatch API to avoid being throttled by AWS. Default is recommended.
 
 Please note that the "Automatic Actions" parameter contains a list of action(s) that can be performed on the resources. When it is selected, the policy will automatically execute the corresponding action on the data that failed the checks, post incident generation. Please leave it blank for *manual* action.
 For example, if a user selects the "Delete Instances" action while applying the policy, all the resources that didn't satisfy the policy condition will be deleted.

@@ -1,5 +1,9 @@
 # Unapproved Instance Types
 
+## Deprecated
+
+This policy is no longer being updated.
+
 ## What it does
 
 This policy checks for instances that are using instance types that are not in the specified list and stops them after approval.

@@ -1,4 +1,8 @@
-# Downsize Instances Policy Template
+# Downsize Instances
+
+## Deprecated
+
+This policy is no longer being updated.
 
 ## What it does
 

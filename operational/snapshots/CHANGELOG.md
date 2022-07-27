@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.10
+
+- Policy is no longer being updated.
+
 ## v1.9
 
 - Modified escalation label and description for consistency
