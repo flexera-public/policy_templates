@@ -42,7 +42,12 @@ parameter "force_upgrade" do
   allowed_values 0,1
 end
 
-auth "auth_rs", type: "rightscale"
+credentials "auth_rs" do
+  schemes "oauth2"
+  label "flexera"
+  description "Select FlexeraOne OAuth2 credentials"
+  tags "provider=flexera"
+end
 
 datasource "ds_active_policy_list" do
   request do
@@ -179,6 +184,10 @@ define upload_template($data, $project_id, $param_governance_host, $param_publis
         insecure: false,
         url: $url
       )
+      log_info(to_s($policy_request))
+      if $policy_request["code"] != 200
+        raise join([$policy_request["code"], "-", $policy_request["body"]])
+      end
       $policy_source = $policy_request["body"]
       $file_name = last(split($item["file_name"],'/'))
 
@@ -186,11 +195,13 @@ define upload_template($data, $project_id, $param_governance_host, $param_publis
         auth: $$auth_rs,
         verb: "post",
         https: true,
+        auth: $$auth_rs,
         host: $param_governance_host,
         href: join(["/api/governance/projects/",$project_id,"/policy_templates"]),
         headers: { "Api-Version": "1.0" },
         body: { "source": $policy_source, filename: $file_name }
       )
+      log_info(to_s($create_response))
       $response_array << $create_response
       $policy_template_href = ""
       $policy_template_name = ""
@@ -203,11 +214,13 @@ define upload_template($data, $project_id, $param_governance_host, $param_publis
           auth: $$auth_rs,
           verb: "put",
           https: true,
+          auth: $$auth_rs,
           host: $param_governance_host,
           href: $create_response["headers"]["Location"],
           headers: { "Api-Version": "1.0" },
           body: { "source": $policy_source, filename: $file_name }
         )
+        log_info(to_s($update_response))
         $response_array << $update_response
         $policy_template_href = $update_response["body"]["href"]
         $policy_template_name = $update_response["body"]["name"]
@@ -217,17 +230,20 @@ define upload_template($data, $project_id, $param_governance_host, $param_publis
           auth: $$auth_rs,
           verb: "post",
           https: true,
+          auth: $$auth_rs,
           host: $param_governance_host,
           href: join(["/api/governance/orgs/",$rs_org_id,"/published_templates"]),
           headers: { "Api-Version": "1.0" },
           body: { "template_href": $policy_template_href }
         )
+        log_info(to_s($publish_response))
         $response_array << $publish_response
         if $publish_response["code"] == 409
           $upublish_response = http_request(
             auth: $$auth_rs,
             verb: "put",
             https: true,
+            auth: $$auth_rs,
             host: $param_governance_host,
             href: $publish_response["headers"]["Location"],
             headers: { "Api-Version": "1.0" },

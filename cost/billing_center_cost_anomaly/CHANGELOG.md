@@ -1,12 +1,20 @@
 # Changelog
 
 ## v1.11
+<<<<<<< HEAD
 
 - Use provided keyword for Optima endpoint
 
 ## v1.10
+=======
+>>>>>>> EU_Policies
 
 - updated README.md rightscale documentation links with docs.flexera documentation links
+- Now using OAuth2 credentials instead of the built-in Rightscale authentication
+
+## v1.10
+
+- Use rs_optima_host variable everywhere, instead of literal string
 
 ## v1.9
 
