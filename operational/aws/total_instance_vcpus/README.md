@@ -2,7 +2,7 @@
 
 ## What it does
 
-This Policy Template leverages Optima to produce a stacked bar chart showing Total Instance Hours for AWS Instance Families used per month for the last 12 months.
+This Policy Template leverages Optima to produce a stacked bar chart showing Total Instance vCPUs for AWS Instance Families used per month for the last 12 months.
 This policy allows the user to specify a *Region* to filter results by, and will email the user specified in *Email addresses to notify*.
 
 ## Functional Details
