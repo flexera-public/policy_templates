@@ -18,6 +18,7 @@ info(
 ## These are params specific to the meta parent policy.
 parameter "param_dimension_filter_includes" do
   type "list"
+  default []
   label "Dimension Include Filters"
   description <<-EOS
   Filters [`dimension_name=dimension_value` pairs] to determine which AWS Accounts returned by the Flexera Bill Analysis API to **INCLUDE** and be applied to.
@@ -29,6 +30,7 @@ end
 
 parameter "param_dimension_filter_excludes" do
   type "list"
+  default []
   label "Dimension Exclude Filters"
   description <<-EOS
   Filters [`dimension_name=dimension_value` pairs] to determine which AWS Accounts returned by  the Flexera Bill Analysis API to **EXCLUDE** and *not* have policy applied to.
@@ -47,7 +49,7 @@ parameter "param_policy_schedule" do
 end
 
 ## Child Policy Parameters
-## These are params from the child policy, excluding param_email and param_aws_account_number
+## These are params from the child policy, excluding param_email and param_aws_account_number [disabled by commenting out]
 parameter "param_allowed_regions" do
   type "list"
   label "Allowed Regions"
@@ -62,9 +64,10 @@ end
 # end
 
 parameter "param_exclusion_tag_key" do
+  type "string"
+  default ""
   label "Exclusion Tag Key:Value"
   description "AWS tag key to ignore instances. Format: Key:Value"
-  type "string"
 end
 
 # parameter "param_aws_account_number" do
@@ -76,6 +79,7 @@ end
 
 parameter "param_automatic_action" do
   type "list"
+  default []
   label "Automatic Actions"
   description "When this value is set, this policy will automatically take the selected action(s)"
   allowed_values ["Delete Instances"]
@@ -125,33 +129,62 @@ datasource "ds_self_policy_information" do
   end
 end
 
+datasource "ds_child_policy_options" do
+  run_script $js_child_policy_options, $ds_self_policy_information
+end
+
+script "js_child_policy_options", type: "javascript" do
+  parameters "ds_self_policy_information"
+  result "options"
+  code <<-EOS
+  // Filter Options that are not appropriate for Child Policy
+  var options = _.map(ds_self_policy_information.options, function(option){
+    // param_dimension_filter_includes, param_dimension_filter_excludes, param_policy_schedule are exclusion to Meta Parent Policy Parameters
+    if (!_.contains(["param_dimension_filter_includes", "param_dimension_filter_excludes", "param_policy_schedule"], option.name)) {
+      return { "name": option.name, "value": option.value };
+    }
+  });
+  // Explicitly add param_email which is disabled/does not exist in meta parent policy
+  options.push({
+    "name": "param_email",
+    "value": []
+  });
+  EOS
+end
+
+datasource "ds_child_policy_options_map" do
+  run_script $js_child_policy_options_map, $ds_child_policy_options
+end
+
+script "js_child_policy_options_map", type: "javascript" do
+  parameters "ds_child_policy_options"
+  result "options"
+  code <<-EOS
+  function format_options_keyvalue(options) {
+    var options_keyvalue_map = {};
+    _.each(options, function(option) {
+      options_keyvalue_map[option.name] = option.value;
+    });
+    return options_keyvalue_map;
+  }
+  var options = format_options_keyvalue(ds_child_policy_options)
+  EOS
+end
+
 datasource "ds_format_self" do
-  run_script $js_format_self, $ds_self_policy_information
+  run_script $js_format_self, $ds_self_policy_information, $ds_child_policy_options_map
 end
 
 script "js_format_self", type: "javascript" do
-  parameters "unformatted"
+  parameters "ds_self_policy_information", "ds_child_policy_options_map"
   result "formatted"
   code <<-EOS
-  formatted={
-    "name": unformatted["name"],
-    "creator_id": unformatted["creator_id"],
-    "credentials": unformatted["credentials"],
-    "options": {
-      // param_email should always be an empty list
-      "param_email": [],
-      // All other child policy params excluding param_aws_account_number
-      "param_allowed_regions": [],
-      "param_exclusion_tag_key": "",
-      "param_automatic_action": [],
-      "param_api_wait": 5
-    }
-  }
-  for (x=0;x<unformatted.options.length; x++) {
-    if (formatted["options"][unformatted.options[x]["name"]] != undefined) {
-      formatted["options"][unformatted.options[x]["name"]] = unformatted.options[x]["value"]
-    }
-  }
+  var formatted = {
+    "name": ds_self_policy_information["name"],
+    "creator_id": ds_self_policy_information["creator_id"],
+    "credentials": ds_self_policy_information["credentials"],
+    "options": ds_child_policy_options_map
+  };
   EOS
 end
 
@@ -339,40 +372,34 @@ end
 # we can validate update here when destructring the existing policy options, don't need updated at
 # format options
 script "js_format_existing_policies", type: "javascript" do
-  parameters "unformatted", "incidents"
+  parameters "ds_get_existing_policies", "ds_format_incidents"
   result "result"
   code <<-EOS
+  function format_options_keyvalue(options) {
+    var options_keyvalue_map = {};
+    _.each(options, function(option) {
+      options_keyvalue_map[option.name] = option.value;
+    });
+    return options_keyvalue_map;
+  }
 
   result = {}
   formatted = {}
   duplicates = []
+  // tracking holds all existing policies and later can be used to determine if existing policies should be deleted [i.e. if cloud account was removed]
   tracking = {}
 
-  for (x=0; x<unformatted.length; x++) {
-    options= {
-      // param_email should always be an empty list
-      "param_email": [],
-      // param_aws_account_number should default to empty string
-      "param_aws_account_number": "",
-      // All other child policy params excluding param_aws_account_number and param_email
-      "param_allowed_regions": [],
-      "param_exclusion_tag_key": "",
-      "param_automatic_action": [],
-      "param_api_wait": 5
-    }
-    for (y=0;y<unformatted[x].options.length; y++) {
-      if (options[unformatted[x].options[y]["name"]] != undefined) {
-        options[unformatted[x].options[y]["name"]] = unformatted[x].options[y]["value"]
-      }
-    }
+  for (x=0; x<ds_get_existing_policies.length; x++) {
+    options = format_options_keyvalue(ds_get_existing_policies[x].options);
+
     aws_account_id=options["param_aws_account_number"]
     if (formatted[aws_account_id] == undefined) {
       formatted[aws_account_id] = {
-        "applied_policy_id":unformatted[x]["applied_policy_id"],
-        "applied_policy_name":unformatted[x]["name"],
-        "status":unformatted[x]["status"],
-        "updated_at":unformatted[x]["updated_at"],
-        "incident": incidents[unformatted[x]["applied_policy_id"]],
+        "applied_policy_id":ds_get_existing_policies[x]["applied_policy_id"],
+        "applied_policy_name":ds_get_existing_policies[x]["name"],
+        "status":ds_get_existing_policies[x]["status"],
+        "updated_at":ds_get_existing_policies[x]["updated_at"],
+        "incident": ds_format_incidents[ds_get_existing_policies[x]["applied_policy_id"]],
         "options": options
       }
       tracking[aws_account_id] = false
@@ -380,15 +407,15 @@ script "js_format_existing_policies", type: "javascript" do
       current = formatted[aws_account_id]
 
       currDate = new Date(current.updated_at)
-      newDate = new Date(unformatted[x].updated_at)
+      newDate = new Date(ds_get_existing_policies[x].updated_at)
 
       if (currDate > newDate) {
         duplicates.push({
-          "applied_policy_id":unformatted[x]["applied_policy_id"],
-          "applied_policy_name":unformatted[x]["name"],
-          "status":unformatted[x]["status"],
-          "updated_at":unformatted[x]["updated_at"],
-          "incident": incidents[unformatted[x]["applied_policy_id"]]
+          "applied_policy_id":ds_get_existing_policies[x]["applied_policy_id"],
+          "applied_policy_name":ds_get_existing_policies[x]["name"],
+          "status":ds_get_existing_policies[x]["status"],
+          "updated_at":ds_get_existing_policies[x]["updated_at"],
+          "incident": ds_format_incidents[ds_get_existing_policies[x]["applied_policy_id"]]
         })
       } else {
         duplicates.push({
@@ -399,11 +426,11 @@ script "js_format_existing_policies", type: "javascript" do
           "incident": current["incident"]
         })
         formatted[aws_account_id] = {
-          "applied_policy_id":unformatted[x]["applied_policy_id"],
-          "applied_policy_name":unformatted[x]["name"],
-          "status":unformatted[x]["status"],
-          "updated_at":unformatted[x]["updated_at"],
-          "incident": incidents[unformatted[x]["applied_policy_id"]],
+          "applied_policy_id":ds_get_existing_policies[x]["applied_policy_id"],
+          "applied_policy_name":ds_get_existing_policies[x]["name"],
+          "status":ds_get_existing_policies[x]["status"],
+          "updated_at":ds_get_existing_policies[x]["updated_at"],
+          "incident": ds_format_incidents[ds_get_existing_policies[x]["applied_policy_id"]],
           "options": options
         }
 
@@ -418,7 +445,7 @@ script "js_format_existing_policies", type: "javascript" do
 end
 
 datasource "ds_take_in_parameters" do
-  run_script $js_take_in_parameters, $ds_get_aws_accounts, $ds_format_self, $ds_child_policy_information, $ds_format_existing_policies, policy_id, f1_app_host, rs_org_id, rs_project_id, $param_policy_schedule
+  run_script $js_take_in_parameters, $ds_get_aws_accounts, $ds_format_self, $ds_child_policy_information,  $ds_format_existing_policies, $ds_child_policy_options, $ds_child_policy_options_map, $param_policy_schedule, policy_id, f1_app_host, rs_org_id, rs_project_id
 end
 
 # hardcode template href with id from catalog
@@ -431,20 +458,20 @@ end
 # param_exclude_tags and param_allowed_regions are arrays. I'm doing an update on the order changing but the values remaining the same.
 # If we only want to do an update on the values changing we could sort before doing the equality check.
 script "js_take_in_parameters", type: "javascript" do
-  parameters "aws_account_ids", "parent_policy", "child_policy", "existing_policies", "meta_parent_policy_id", "f1_app_host", "rs_org_id", "rs_project_id", "param_policy_schedule"
+  parameters "ds_get_aws_accounts", "ds_format_self", "ds_child_policy_information", "ds_format_existing_policies", "ds_child_policy_options", "ds_child_policy_options_map", "param_policy_schedule", "meta_parent_policy_id", "f1_app_host", "rs_org_id", "rs_project_id"
   result "grid_and_cwf"
   code <<-EOS
 
-  max_actions = 50
+  max_actions = 50;
 
-  grid_and_cwf={grid:[], to_create:[], to_update:[], to_delete:[]}
+  grid_and_cwf={grid:[], to_create:[], to_update:[], to_delete:[]};
 
-  should_keep = existing_policies.tracking
+  should_keep = ds_format_existing_policies.tracking;
 
   // Construct UI URL prefixes for policy template summary
-  ui_url_prefix = "https://" + f1_app_host + "/orgs/" + rs_org_id
-  applied_policy_url_prefix = ui_url_prefix + "/policy/projects/" + rs_project_id + "/applied-policies/"
-  incident_url_prefix       = ui_url_prefix + "/automation/incidents/projects/" + rs_project_id + "?incidentId="
+  ui_url_prefix = "https://" + f1_app_host + "/orgs/" + rs_org_id;
+  applied_policy_url_prefix = ui_url_prefix + "/policy/projects/" + rs_project_id + "/applied-policies/";
+  incident_url_prefix       = ui_url_prefix + "/automation/incidents/projects/" + rs_project_id + "?incidentId=";
 
   function add_to_grid(ep, action) {
     policy_status={
@@ -453,68 +480,58 @@ script "js_take_in_parameters", type: "javascript" do
       "meta_policy_status": action,
       "policy_status": ep["status"],
       "policy_last_update": ep["updated_at"],
-    }
+    };
     if (ep.incident != null) {
-      policy_status["incident_link"] = incident_url_prefix + ep.incident.incident_id
-      policy_status["incident_state"] = ep.incident.state
-      policy_status["incident_violation_data_count"] = ep.incident.violation_data_count
-      policy_status["incident_last_update"] = ep.incident.updated_at
+      policy_status["incident_link"] = incident_url_prefix + ep.incident.incident_id;
+      policy_status["incident_state"] = ep.incident.state;
+      policy_status["incident_violation_data_count"] = ep.incident.violation_data_count;
+      policy_status["incident_last_update"] = ep.incident.updated_at;
     }
-    grid_and_cwf.grid.push(policy_status)
+    grid_and_cwf.grid.push(policy_status);
   }
 
-  for (x=0; x<existing_policies.duplicates.length; x++) {
+  for (x=0; x<ds_format_existing_policies.duplicates.length; x++) {
     if (grid_and_cwf.to_delete.length < max_actions) {
-      grid_and_cwf.to_delete.push({"id":existing_policies.duplicates[x]["applied_policy_id"], "name": existing_policies.duplicates[x]["applied_policy_name"]})
-      add_to_grid(existing_policies.duplicates[x], "terminating")
+      grid_and_cwf.to_delete.push({"id":ds_format_existing_policies.duplicates[x]["applied_policy_id"], "name": ds_format_existing_policies.duplicates[x]["applied_policy_name"]})
+      add_to_grid(ds_format_existing_policies.duplicates[x], "terminating")
     } else {
-      add_to_grid(existing_policies.duplicates[x], "to be terminated")
+      add_to_grid(ds_format_existing_policies.duplicates[x], "to be terminated")
     }
   }
 
-  for (x=0; x<aws_account_ids.length; x++) {
-    cur = aws_account_ids[x]
-    if (existing_policies.formatted[cur.aws_account_id] == undefined) {
-      name = child_policy.name + ": " + cur.aws_account_name + " (" + cur.aws_account_id + ") (child policy)"
-      description = child_policy.name + " policy applied by [" + parent_policy.name + "](" + applied_policy_url_prefix + meta_parent_policy_id + ") to AWS Account **" + cur.aws_account_name +"** (`" + cur.aws_account_id + "`).  " + child_policy.short_description
-      options = [
-        // param_email should always be an empty list
-        {
-          "name": "param_email",
-          "value": []
-        },
-        // param_aws_account_number should be set to current account id
-        {
-          "name": "param_aws_account_number",
-          "value": cur.aws_account_id
-        },
-        // All other child policy params excluding param_aws_account_number and param_email
-        {
-          "name": "param_allowed_regions",
-          "value": parent_policy.options.param_allowed_regions
-        },
-        {
-          "name": "param_exclusion_tag_key",
-          "value": parent_policy.options.param_exclusion_tag_key
-        },
-        {
-          "name": "param_automatic_action",
-          "value": parent_policy.options.param_automatic_action
-        },
-        {
-          "name": "param_api_wait",
-          "value": parent_policy.options.param_api_wait
-        }
-      ]
+  for (x=0; x<ds_get_aws_accounts.length; x++) {
+    cur = ds_get_aws_accounts[x];
+    cur_aws_account_id = cur.aws_account_id.replace(/['"]+/g, '');
+
+    // Name and description do not vary between create or updates so defining them here
+    name = ds_child_policy_information.name + ": " + cur.aws_account_name + " (" + cur_aws_account_id + ") (child policy)";
+    description = ds_child_policy_information.name + " policy applied by [" + ds_format_self.name + "](" + applied_policy_url_prefix + meta_parent_policy_id + ") to AWS Account **" + cur.aws_account_name +"** (`" + cur_aws_account_id + "`).  " + ds_child_policy_information.short_description;
+
+    // Check if child policy exists for current account id
+    if ( ! _.contains(_.keys(ds_format_existing_policies.formatted), cur_aws_account_id) ) {
+      console.log("Child Policy for "+cur_aws_account_id+" does not exist and should be created");
+
+      // Child Policy does not exist for current account ID and should be created
+
+
+      // Use the options from the parent policy in "name value" list format
+      options = _.toArray(ds_child_policy_options);
+
+      // Set param_aws_account_id values for this child policy
+      options.push({
+        "name": "param_aws_account_number",
+        "value": cur_aws_account_id
+      });
+
       if (grid_and_cwf.to_create.length < max_actions) {
         grid_and_cwf.to_create.push({
           "name" : name,
           "description" : description,
-          "credentials" : parent_policy.credentials,
+          "credentials" : ds_format_self.credentials,
           "options" : options,
           "frequency" : param_policy_schedule,
           "meta_parent_policy_id": meta_parent_policy_id,
-          "template_href": child_policy.href
+          "template_href": ds_child_policy_information.href
         })
         policy_status={
           "policy_name": name,
@@ -533,85 +550,72 @@ script "js_take_in_parameters", type: "javascript" do
         grid_and_cwf.grid.push(policy_status)
       }
     } else {
-      should_keep[cur.aws_account_id]= true
-      should_update = false
-      options = [
-        // param_email should always be an empty list
-        {
-          "name": "param_email",
-          "value": []
-        },
-        // param_aws_account_number should be set to current account id
-        {
-          "name": "param_aws_account_number",
-          "value": cur.aws_account_id
-        },
-        // All other child policy params excluding param_aws_account_number and param_email
-        {
-          "name": "param_allowed_regions",
-          "value": parent_policy.options.param_allowed_regions
-        },
-        {
-          "name": "param_exclusion_tag_key",
-          "value": parent_policy.options.param_exclusion_tag_key
-        },
-        {
-          "name": "param_automatic_action",
-          "value": parent_policy.options.param_automatic_action
-        },
-        {
-          "name": "param_api_wait",
-          "value": parent_policy.options.param_api_wait
+      console.log("Child Policy for "+cur_aws_account_id+" does exist for current account ID and may need to be updated or deleted");
+      // Child Policy does exist for current account ID and may need to be updated or deleted
+      // Assume by default we should keep it and not update it
+      should_keep[cur_aws_account_id] = true;
+      should_update = false;
+
+      // Use the options from the parent policy in "name value" list format
+      options = _.toArray(ds_child_policy_options);
+
+      // Set param_aws_account_id values for this child policy
+      options.push({
+        "name": "param_aws_account_number",
+        "value": cur_aws_account_id
+      });
+
+      // Check if child policy params match parent policy params
+      _.each(ds_format_self.options, function(value, key) {
+        // If any child and parent param values do not match, mark the child policy as should_update
+        if ( !_.isEqual(value, ds_format_existing_policies["formatted"][cur_aws_account_id]["options"][key]) ) {
+          console.log("Child Policy Param does not match Parent Policy and should be updated. "+key+" does not match "+value+"!="+ds_format_existing_policies["formatted"][cur_aws_account_id]["options"][key]);
+          should_update = true;
         }
-      ]
+      });
 
-      if (!_.isEqual(parent_policy.options.param_allowed_regions, existing_policies["formatted"][cur.aws_account_id]["options"]["param_allowed_regions"])) {
-        should_update = true
-      }
-
-      if (!_.isEqual(parent_policy.options.param_exclusion_tag_key, existing_policies["formatted"][cur.aws_account_id]["options"]["param_exclusion_tag_key"])) {
-        should_update = true
-      }
-
-      if (!_.isEqual(parent_policy.options.param_automatic_action, existing_policies["formatted"][cur.aws_account_id]["options"]["param_automatic_action"])) {
-        should_update = true
-      }
-
-      if (!_.isEqual(parent_policy.options.param_api_wait, existing_policies["formatted"][cur.aws_account_id]["options"]["param_api_wait"])) {
-        should_update = true
-      }
 
       if (should_update) {
+        // Child policy needs to be updated
         if (grid_and_cwf.to_update.length < max_actions) {
-          add_to_grid(existing_policies.formatted[cur.aws_account_id], "updating")
-          name = existing_policies.formatted[cur.aws_account_id].applied_policy_name
+          // Child policy needs to be updated and is within the max_actions limit
+          console.log("Child Policy needs to be updated. ds_format_existing_policies.formatted[cur_aws_account_id]="+JSON.stringify(ds_format_existing_policies.formatted[cur_aws_account_id]));
+          add_to_grid(ds_format_existing_policies.formatted[cur_aws_account_id], "updating")
+          name = ds_format_existing_policies.formatted[cur_aws_account_id].applied_policy_name
+          // Add to_update
           grid_and_cwf.to_update.push({
-            "applied_policy_id": existing_policies.formatted[cur.aws_account_id].applied_policy_id,
+            "applied_policy_id": ds_format_existing_policies.formatted[cur_aws_account_id].applied_policy_id,
             "name" : name,
             "description" : description,
-            "credentials" : parent_policy.credentials,
+            "credentials" : ds_format_self.credentials,
             "options" : options,
             "frequency" : param_policy_schedule,
           })
         } else {
-          add_to_grid(existing_policies.formatted[cur.aws_account_id], "to be updated")
+          // Child policy needs to be updated but is outside the max_actions limit
+          // Add to grid but do not add to to_update
+          console.log("Child Policy needs to be updated. ds_format_existing_policies.formatted[cur_aws_account_id]="+JSON.stringify(ds_format_existing_policies.formatted[cur_aws_account_id]));
+          add_to_grid(ds_format_existing_policies.formatted[cur_aws_account_id], "to be updated");
         }
       } else {
-        add_to_grid(existing_policies.formatted[cur.aws_account_id], "running")
+        // Child policy does not need to be updated
+        add_to_grid(ds_format_existing_policies.formatted[cur_aws_account_id], "running");
       }
     }
   }
 
-  for (key in should_keep) {
-    if (!should_keep[key]) {
+  console.log("Checking if policies should be deleted. "+JSON.stringify(should_keep));
+  _.each(should_keep, function(keep, account_id) {
+    console.log("Should keep "+account_id+"="+keep);
+    if (!keep) {
       if (grid_and_cwf.to_delete.length < max_actions) {
-        grid_and_cwf.to_delete.push({"id":existing_policies.formatted[key].applied_policy_id, "name": existing_policies.formatted[key].applied_policy_name})
-        add_to_grid(existing_policies.formatted[key], "terminating")
+        grid_and_cwf.to_delete.push({"id":ds_format_existing_policies.formatted[account_id].applied_policy_id, "name": ds_format_existing_policies.formatted[account_id].applied_policy_name})
+        add_to_grid(ds_format_existing_policies.formatted[account_id], "terminating")
       } else {
-        add_to_grid(existing_policies.formatted[key], "to be terminated")
+        add_to_grid(ds_format_existing_policies.formatted[account_id], "to be terminated")
       }
     }
-  }
+  });
 
   EOS
 end
@@ -773,8 +777,12 @@ end
 define create_applied_policies($data, $governance_host, $rs_project_id) return $responses do
   $responses = []
   $$debug = []
+  $item_index = 0
+  $item_total = size($data)
   foreach $item in $data do
-    task_label("Creating Applied Policy with Options: " + to_json($item["options"]))
+    $item_index = $item_index + 1
+    $status = to_s("("+$item_index+"/"+$item_total+")")
+    task_label($status+" Creating Applied Policy with Options: " + to_json($item["options"]))
     $response = http_request(
       auth: $$auth_rs,
       verb: "post",
@@ -808,8 +816,12 @@ end
 define update_applied_policies($data, $governance_host, $rs_project_id) return $responses do
   $responses = []
   $$debug = []
+  $item_index = 0
+  $item_total = size($data)
   foreach $item in $data do
-    task_label("Updating Applied Policy with Options: " + to_json($item["options"]))
+    $item_index = $item_index + 1
+    $status = to_s("("+$item_index+"/"+$item_total+")")
+    task_label($status+" Updating Applied Policy with Options: " + to_json($item["options"]))
     $response = http_request(
       auth: $$auth_rs,
       verb: "patch",
@@ -838,8 +850,12 @@ end
 define delete_applied_policies($data, $governance_host, $rs_project_id) return $responses do
   $responses = []
   $$debug = []
+  $item_index = 0
+  $item_total = size($data)
   foreach $item in $data do
-    task_label("Deleting Applied Policy: " + $item["id"])
+    $item_index = $item_index + 1
+    $status = to_s("("+$item_index+"/"+$item_total+")")
+    task_label($status+" Deleting Applied Policy: " + $item["id"])
     $response = http_request(
       auth: $$auth_rs,
       verb: "delete",
