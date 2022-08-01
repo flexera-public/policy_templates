@@ -6,6 +6,15 @@ This Policy Template can be used to synchronize (upload, overwrite, or alert) RS
 
 ![Policy Sync]("policy_sync.png")
 
+## Prerequisites
+This policy uses [Credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for authenticating to datasources -- in order to apply this policy you must have a Credential registered in the system that is compatible with this policy. If there are no Credentials listed when you apply the policy, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy. The information below should be consulted when creating the credential(s).
+
+- [**Flexera Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#Flexera) (*provider=flexera*) which has the following roles:
+  - `policy_designer`
+  - `policy_manager`
+
+The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) page in the docs has detailed instructions for setting up Credentials for the most common providers.
+
 ## Usage
 
 - The Policy Template Synchronization Policy Template will need to be uploaded to your account and set active.

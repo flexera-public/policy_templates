@@ -4,12 +4,13 @@
 
 This Policy Template leverages the Optima Bill Data Azure Reserved Instances. It will notify only if expiration is within the time frame specified in `Number of days to prior to expiration date to trigger incident` field. It will email the user specified in Email addresses of the recipients you wish to notify.
 
+## Prerequisites
+This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for authenticating to datasources -- in order to apply this policy you must have a Credential registered in the system that is compatible with this policy. If there are no Credentials listed when you apply the policy, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy. The information below should be consulted when creating the credential(s).
 
-## Required Permissions
+- [**Flexera Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#Flexera) (*provider=flexera*) which has the following roles:
+  - `ca_user`
 
-This policy requires permissions to access RightScale resources (Optima).  Before applying this policy add the following roles to the user applying the policy.  The roles should be applied at the Organization level. For more information on modifying roles visit the [Governance Docs](https://docs.rightscale.com/cm/ref/user_roles.html)
-
-- Optima - ca_user (at the organization level)
+The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) page in the docs has detailed instructions for setting up Credentials for the most common providers.
 
 ## Input Parameters
 
