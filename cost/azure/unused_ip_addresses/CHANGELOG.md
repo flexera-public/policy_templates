@@ -1,12 +1,12 @@
 # Changelog
 
-## 3.3
+## v3.3
 
 - Updated policy template to make fewer calls to Azure APIs
 - Added 'ipAddress' field to policy export
 - Changed default_frequency to "monthly"
 
-## 3.2
+## v3.2
 
 - Added new check properties.natGatway == null for unused IP check
 
