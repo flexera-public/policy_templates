@@ -162,8 +162,12 @@ datasource "ds_filter_disks" do
   run_script $js_filter_disks, $param_exclusion_tag_key, $ds_azure_disks
 end
 
+datasource "ds_subscription_refilter_log_activity" do
+  run_script $js_refilter_disks, $ds_filter_disks
+end
+
 datasource "ds_azure_log_activity" do
-  iterate $ds_filtered_subscriptions
+  iterate $ds_subscription_refilter_log_activity
   request do
     run_script $js_get_logactivity, val(iter_item,"subscriptionID"), $param_unattached_days, $param_azure_endpoint
   end
@@ -474,6 +478,24 @@ code <<-EOS
     }
   }
 EOS
+end
+
+script "js_refilter_disks", type: "javascript" do
+  parameters "ds_filter_disks"
+  result "result"
+  code <<-EOS
+  var result = []
+  console.log(ds_filter_disks)
+  _.each(ds_filter_disks, function(disk){
+    found = false
+    var found = _.find(result, function(subID) {
+      return subID === disk.subscriptionID
+    })
+    if (!found) {
+      result.push({"subscriptionID":disk.subscriptionID})
+    }
+  })
+  EOS
 end
 
 script "js_volume_cost_mapping", type:"javascript" do
