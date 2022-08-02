@@ -13,6 +13,7 @@ If the AWS bill for the AWS account is registered in Optima in a different Flexe
 The *Estimated Monthly Savings* and *Total Estimated Monthly Savings* are rounded to 3 decimal places, so the savings value will display 0.0 if the estimated savings is less than $0.0005.
 
 ## Prerequisites
+
 This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for authenticating to datasources -- in order to apply this policy you must have a Credential registered in the system that is compatible with this policy. If there are no Credentials listed when you apply the policy, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy. The information below should be consulted when creating the credential(s).
 
 - [**AWS Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_1982464505_1121575) (*provider=aws*) which has the following permissions:
