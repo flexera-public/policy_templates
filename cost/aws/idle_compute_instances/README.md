@@ -1,7 +1,5 @@
 # AWS Idle Compute Instances Policy
 
-## What it does
-
 This Policy Template checks for idle instance in AWS EC2 and then terminates them upon approval.
 
 ## Prerequisites
@@ -42,6 +40,7 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Auto
 The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) page in the docs has detailed instructions for setting up Credentials for the most common providers.
 
 ### Memory Support
+
 By default only CPU metrics are available from CloudWatch.  To enable support for memory utilization, you must have the CloudWatch Agent installed on your EC2 instance(s) to collect memory metrics.  Please reference [AWS Docs > Install CloudWatch Agent on EC2 Instance](https://docs.aws.amazon.com/AmazonCloudWatch/latest/monitoring/install-CloudWatch-Agent-on-EC2-Instance.html) for more information.
 
 ### Windows Support
