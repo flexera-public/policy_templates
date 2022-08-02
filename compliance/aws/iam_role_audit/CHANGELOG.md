@@ -2,7 +2,7 @@
 
 ## v2.5
 
-- Modified `sys_log` definition to disable `rs_cm.audit_entry.create` outside Flexera NAM
+- Removed unused `sys_log` definition
 - Replaced references `github.com/rightscale/policy_templates` and `github.com/flexera/policy_templates` with `github.com/flexera-public/policy_templates`
 
 ## v2.4
