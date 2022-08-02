@@ -24,6 +24,7 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Auto
   - `pricing:GetProducts`
 
   Example IAM Permission Policy:
+
   ```json
   {
       "Version": "2012-10-17",
