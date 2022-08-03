@@ -113,6 +113,8 @@ credentials "auth_aws" do
   aws_account_number $param_aws_account_number
 end
 
+auth "auth_rs", type: "rightscale"
+
 ###############################################################################
 # Pagination
 ###############################################################################
@@ -130,8 +132,67 @@ end
 # Datasources
 ###############################################################################
 
+datasource "ds_get_caller_identity" do
+  request do
+    auth $auth_aws
+    verb "GET"
+    host "sts.amazonaws.com"
+    path "/"
+    header "User-Agent", "RS Policies"
+    query "Action", "GetCallerIdentity"
+    query "Version", "2011-06-15"
+  end
+  result do
+    encoding "xml"
+    collect xpath(response, "//GetCallerIdentityResponse/GetCallerIdentityResult") do
+      field "account", xpath(col_item, "Account")
+    end
+  end
+end
+
+datasource "ds_flexera_optima" do
+  run_script $js_flexera_optima, $param_flexera_org_id_for_optima, rs_org_id
+end
+
+datasource "ds_billing_centers" do
+  request do
+    auth $auth_rs
+    host rs_optima_host
+    path join(["/analytics/orgs/", val($ds_flexera_optima, "org_id"), "/billing_centers"])
+    header "Api-Version", "1.0"
+    header "User-Agent", "RS Policies"
+    query "view", "allocation_table"
+  ignore_status [403]
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "[*]") do
+      field "href", jmes_path(col_item, "href")
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+      field "parent_id", jmes_path(col_item, "parent_id")
+    end
+  end
+end
+
+datasource "ds_top_level_billing_centers" do
+  run_script $js_top_level_bc, $ds_billing_centers
+end
+
 datasource "ds_ri_types" do
   run_script $js_ri_types, $param_service
+end
+
+datasource "ds_snapshot_costs" do
+  request do
+    run_script $js_get_costs, $ds_get_caller_identity, $ds_top_level_billing_centers, val($ds_flexera_optima, "org_id"), rs_optima_host
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "rows[*]") do
+      field "vendor_account_name", jmes_path(col_item, "dimensions.vendor_account_name")
+    end
+  end
 end
 
 script "js_ri_types", type: "javascript" do
@@ -148,18 +209,6 @@ script "js_ri_types", type: "javascript" do
       result.push({"service":param_service})
     }
   EOS
-end
-
-datasource "ds_describe_account" do
-  request do
-    run_script $js_describe_account, $ds_ri_recommendations
-  end
-  result do
-    encoding "json"
-    collect jmes_path(response, "Account") do
-      field "accountName", jmes_path(col_item, "Name")
-    end
-  end
 end
 
 datasource "ds_ri_recommendations" do
