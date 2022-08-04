@@ -7,7 +7,7 @@ severity "low"
 category "Cost"
 default_frequency "daily"
 info(
-  version: "3.0",
+  version: "3.1",
   provider: "Azure",
   service: "Storage",
   policy_set: "Unused Volumes"
@@ -163,9 +163,9 @@ datasource "ds_filter_disks" do
 end
 
 datasource "ds_azure_log_activity" do
-  iterate $ds_filtered_subscriptions
+  iterate $ds_filter_disks
   request do
-    run_script $js_get_logactivity, val(iter_item,"subscriptionID"), $param_unattached_days, $param_azure_endpoint
+    run_script $js_get_logactivity, val(iter_item,"subscriptionID"), val(iter_item, "disk_id"), $param_unattached_days, $param_azure_endpoint
   end
   result do
     encoding "json"
@@ -240,15 +240,11 @@ datasource "ds_volume_costs" do
 end
 
 datasource "ds_filter_activities" do
-  run_script $js_filter_activities, $ds_azure_log_activity
-end
-
-datasource "ds_combineddata" do
-  run_script $js_combineddata, $ds_filter_activities, $ds_filter_disks, $param_unattached_days
+  run_script $js_filter_activities, $ds_azure_log_activity, $ds_filter_disks, $param_unattached_days
 end
 
 datasource "ds_volume_cost_mapping" do
-  run_script $js_volume_cost_mapping, $ds_combineddata, $ds_volume_costs, $ds_currency_code, $ds_currency_reference, $ds_billing_centers
+  run_script $js_volume_cost_mapping, $ds_filter_activities, $ds_volume_costs, $ds_currency_code, $ds_currency_reference, $ds_billing_centers
 end
 
 ###############################################################################
@@ -337,7 +333,7 @@ script "js_get_costs", type:"javascript" do
 end
 
 script "js_get_logactivity", type: "javascript" do
-  parameters "subscriptionID", "param_unattached_days", "param_azure_endpoint"
+  parameters "subscriptionID", "resourceID", "param_unattached_days", "param_azure_endpoint"
   result "results"
   code <<-EOS
 
@@ -346,7 +342,7 @@ script "js_get_logactivity", type: "javascript" do
     var expectedDate=new Date();
     expectedDate.setDate(expectedDate.getDate()- parseInt(param_unattached_days));
     var date2=expectedDate.getFullYear()+'-'+(expectedDate.getMonth()+1)+'-'+expectedDate.getDate();
-    var filter= "eventTimestamp ge '"+date2+"T00:00:00Z' and eventTimestamp le '"+date1+"T23:59:59Z' and resourceProvider eq 'Microsoft.Compute' and resourceType eq 'Microsoft.Compute/VirtualMachines'"
+    var filter= "eventTimestamp ge '"+date2+"T00:00:00Z' and eventTimestamp le '"+date1+"T23:59:59Z' and eventChannels eq 'Admin, Operation' and resourceId eq '" + resourceID + "'"
 
     results = {
       host: param_azure_endpoint,
@@ -365,23 +361,45 @@ script "js_get_logactivity", type: "javascript" do
 end
 
 script "js_filter_activities", type: "javascript" do
-  parameters "ds_azure_log_activity"
-  result "res"
+  parameters "ds_azure_log_activity", "ds_filter_disks", "param_unattached_days"
+  result "results"
   code <<-EOS
-  var res = [];
-  _.each(ds_azure_log_activity, function (activity) {
-    var event = activity;
-    var responseBody = event['responseBody'];
-
-    if ((event['operationName'] == 'Create or Update Virtual Machine' || event['operationName'] == 'Microsoft.Compute/virtualMachines/write') && typeof responseBody != "undefined") {
-      if (responseBody.indexOf('toBeDetached') > -1) {
-        var tobedetach = responseBody.substring(responseBody.indexOf('toBeDetached'), responseBody.indexOf('toBeDetached') + 20);
-        if (tobedetach.indexOf('true') > -1) {
-          res.push(responseBody)
+  var results = []
+  var activities = ds_azure_log_activity;
+  for (i in ds_filter_disks) {
+    var ismatched = false;
+    var disk = ds_filter_disks[i];
+    var expectedDate = new Date();
+    var createdTime = new Date(disk['timeCreated']);
+    expectedDate.setDate(expectedDate.getDate() - parseInt(param_unattached_days));
+    var diskId = disk['disk_id'];
+    var diskName = disk['resourceName'];
+    for (var i = 0; i < activities.length; i++) {
+      var activity = activities[i].toString();
+      if (activity.indexOf(diskId) > -1 && activity.indexOf('toBeDetached') > -1) {
+        var diskString = activity.substring(activity.indexOf('toBeDetached') - 300, activity.indexOf('toBeDetached'));
+        var tobedetach = activity.substring(activity.indexOf('toBeDetached'), activity.indexOf('toBeDetached') + 20);
+        if (tobedetach.indexOf('true') > -1 && diskString.indexOf(diskId) > -1) {
+          ismatched = true;
         }
       }
     }
-  })
+    if ((!ismatched) && expectedDate.getTime() >= createdTime.getTime()) {
+      results.push({
+        disk_id: disk['disk_id'],
+        resourceName: disk['resourceName'],
+        region: disk['region'],
+        diskSize: disk['diskSize'],
+        subscriptionID: disk['subscriptionID'],
+        subscriptionName: disk['subscriptionName'],
+        resourceGroup: disk['resourceGroup'],
+        resourceType: disk['resourceType'],
+        tags: disk['tags'],
+        service: disk['service'],
+        savings: 0.0
+      })
+    }
+  }
 EOS
 end
 
@@ -430,49 +448,6 @@ script "js_filter_disks", type: "javascript" do
       })
     }
   })
-EOS
-end
-
-script "js_combineddata", type: "javascript" do
-parameters "ds_filter_activities", "ds_filter_disks", "param_unattached_days"
-result "results"
-code <<-EOS
-  var results = []
-  var activities = ds_filter_activities;
-  for (i in ds_filter_disks) {
-    var ismatched = false;
-    var disk = ds_filter_disks[i];
-    var expectedDate = new Date();
-    var createdTime = new Date(disk['timeCreated']);
-    expectedDate.setDate(expectedDate.getDate() - parseInt(param_unattached_days));
-    var diskId = disk['disk_id'];
-    var diskName = disk['resourceName'];
-    for (var i = 0; i < activities.length; i++) {
-      var activity = activities[i].toString();
-      if (activity.indexOf(diskId) > -1 && activity.indexOf('toBeDetached') > -1) {
-        var diskString = activity.substring(activity.indexOf('toBeDetached') - 300, activity.indexOf('toBeDetached'));
-        var tobedetach = activity.substring(activity.indexOf('toBeDetached'), activity.indexOf('toBeDetached') + 20);
-        if (tobedetach.indexOf('true') > -1 && diskString.indexOf(diskId) > -1) {
-          ismatched = true;
-        }
-      }
-    }
-    if ((!ismatched) && expectedDate.getTime() >= createdTime.getTime()) {
-      results.push({
-        disk_id: disk['disk_id'],
-        resourceName: disk['resourceName'],
-        region: disk['region'],
-        diskSize: disk['diskSize'],
-        subscriptionID: disk['subscriptionID'],
-        subscriptionName: disk['subscriptionName'],
-        resourceGroup: disk['resourceGroup'],
-        resourceType: disk['resourceType'],
-        tags: disk['tags'],
-        service: disk['service'],
-        savings: 0.0
-      })
-    }
-  }
 EOS
 end
 
