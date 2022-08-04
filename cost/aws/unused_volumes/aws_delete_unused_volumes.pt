@@ -132,18 +132,6 @@ datasource "ds_regions_list" do
   end
 end
 
-datasource "ds_describe_account" do
-  request do
-    run_script $js_describe_account, $ds_get_caller_identity
-  end
-  result do
-    encoding "json"
-    collect jmes_path(response, "Account") do
-      field "accountName", jmes_path(col_item, "Name")
-    end
-  end
-end
-
 # Get only SCP enabled regions
 datasource "ds_regions" do
   run_script $js_regions, $param_allowed_regions, $ds_regions_list
@@ -296,43 +284,19 @@ datasource "ds_volume_costs" do
     encoding "json"
     collect jmes_path(response, "rows[*]") do
       field "resource_id", jmes_path(col_item, "dimensions.resource_id")
-      field "vendor_account_name", jmes_path(col_item, "dimensions.vendor_account_name")
+      field "vendorAccountName", jmes_path(col_item, "dimensions.vendor_account_name")
       field "cost_nonamortized_unblended_adj", jmes_path(col_item, "metrics.cost_nonamortized_unblended_adj")
     end
   end
 end
 
 datasource "ds_volume_cost_mapping" do
-  run_script $js_volume_cost_mapping, $ds_check_volumes_read_or_write_operations, $ds_volume_costs, $ds_currency_code, $ds_currency_reference, $ds_billing_centers, $ds_get_caller_identity, $ds_describe_account
+  run_script $js_volume_cost_mapping, $ds_check_volumes_read_or_write_operations, $ds_volume_costs, $ds_currency_code, $ds_currency_reference, $ds_billing_centers, $ds_get_caller_identity
 end
 
 ###############################################################################
 # Script
 ###############################################################################
-
-script "js_describe_account", type: "javascript" do
-  parameters "ds_get_caller_identity"
-  result "results"
-  code <<-EOS
-  var payload = {
-    "AccountId": ds_get_caller_identity[0]['account']
-  }
-
-  var results = {
-    auth: "auth_aws",
-    host: "organizations.us-east-1.amazonaws.com",
-    path: '/',
-    verb: 'POST',
-    body_fields: payload,
-    headers: {
-      "User-Agent": "RS Policies",
-      "X-Amz-Target": "AWSOrganizationsV20161128.DescribeAccount",
-      "Content-Type": "application/x-amz-json-1.1",
-    },
-    ignore_status: [400]
-  }
-  EOS
-end
 
 script "js_regions", type: "javascript" do
   parameters "user_entered_regions", "all_regions"
@@ -640,7 +604,7 @@ script "js_get_costs", type: "javascript" do
 end
 
 script "js_volume_cost_mapping", type:"javascript" do
-  parameters "volumes", "volume_costs", "ds_currency_code", "ds_currency_reference", "ds_billing_centers", "ds_get_caller_identity", "ds_describe_account"
+  parameters "volumes", "volume_costs", "ds_currency_code", "ds_currency_reference", "ds_billing_centers", "ds_get_caller_identity"
   result "result"
   code <<-EOS
   var unused_volumes=[];
@@ -693,11 +657,13 @@ script "js_volume_cost_mapping", type:"javascript" do
       var cur = "$"
       var separator = ","
     }
-    var total_savings=0;
-    accountName = ""
-    if (ds_describe_account[0] != null) {
-      accountName = ds_describe_account[0]['accountName']
+
+    var accountName = ""
+    if (_.size(volume_costs) > 0) {
+      accountName = volume_costs[0].vendorAccountName
     }
+
+    var total_savings=0;
     _.each(volumes, function(volume){
       var cost_objects = costs_by_resource_id[volume.volumeId];
       if (_.size(cost_objects) > 0){

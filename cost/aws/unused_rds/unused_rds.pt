@@ -69,18 +69,6 @@ auth "auth_rs", type: "rightscale"
 # Datasources
 ###############################################################################
 
-datasource "ds_describe_account" do
-  request do
-    run_script $js_describe_account, $ds_get_caller_identity
-  end
-  result do
-    encoding "json"
-    collect jmes_path(response, "Account") do
-      field "accountName", jmes_path(col_item, "Name")
-    end
-  end
-end
-
 #Get list of enabled regions for an account
 datasource "ds_regions_list" do
   request do
@@ -106,7 +94,7 @@ end
 
 # get all the RDS instances merged together with the tags and CloudWatch
 datasource "ds_rds_instances" do
-  run_script $js_rds_instances, $ds_rds_instances_set, $ds_list_tags_for_resource,$ds_cloudwatch_connections, $param_exclusion_tag_key, $ds_currency_code, $ds_currency_reference, $ds_get_caller_identity, $ds_describe_account
+  run_script $js_rds_instances, $ds_rds_instances_set, $ds_list_tags_for_resource,$ds_cloudwatch_connections, $param_exclusion_tag_key, $ds_currency_code, $ds_currency_reference, $ds_get_caller_identity
 end
 
 # get all the RDS instances
@@ -238,7 +226,7 @@ datasource "ds_instance_costs" do
     encoding "json"
     collect jmes_path(response,"rows[*]") do
       field "resource_id", jmes_path(col_item, "dimensions.resource_id")
-      field "vendor_account_name", jmes_path(col_item, "dimensions.vendor_account_name")
+      field "vendorAccountName", jmes_path(col_item, "dimensions.vendor_account_name")
       field "resource_type", jmes_path(col_item, "dimensions.resource_type")
       field "cost_nonamortized_unblended_adj", jmes_path(col_item,"metrics.cost_nonamortized_unblended_adj")
     end
@@ -252,30 +240,6 @@ end
 ###############################################################################
 # Scripts
 ###############################################################################
-
-script "js_describe_account", type: "javascript" do
-  parameters "ds_get_caller_identity"
-  result "results"
-  code <<-EOS
-  var payload = {
-    "AccountId": ds_get_caller_identity[0]['account']
-  }
-
-  var results = {
-    auth: "auth_aws",
-    host: "organizations.us-east-1.amazonaws.com",
-    path: '/',
-    verb: 'POST',
-    body_fields: payload,
-    headers: {
-      "User-Agent": "RS Policies",
-      "X-Amz-Target": "AWSOrganizationsV20161128.DescribeAccount",
-      "Content-Type": "application/x-amz-json-1.1",
-    },
-    ignore_status: [400]
-  }
-  EOS
-end
 
 script "js_regions", type:"javascript" do
   parameters "user_entered_regions", "all_regions"
@@ -374,7 +338,7 @@ end
 # merge the instances and tags and remove instances that have the exclusion tag
 script "js_rds_instances", type: "javascript" do
   result "results"
-  parameters "ds_rds_instance_set", "ds_list_tags_for_resource", "ds_cloudwatch_connections", "param_exclusion_tag_key", "ds_currency_code", "ds_currency_reference", "ds_get_caller_identity", "ds_describe_account"
+  parameters "ds_rds_instance_set", "ds_list_tags_for_resource", "ds_cloudwatch_connections", "param_exclusion_tag_key", "ds_currency_code", "ds_currency_reference", "ds_get_caller_identity"
   code <<-EOS
   var tag_key = param_exclusion_tag_key.split(':')[0]
   var tag_value = param_exclusion_tag_key.split(':')[1]
@@ -396,10 +360,6 @@ script "js_rds_instances", type: "javascript" do
     var cur = "$"
     var separator = ","
   }
-  accountName = ""
-  if (ds_describe_account[0] != null) {
-    accountName = ds_describe_account[0]['accountName']
-  }
   for ( n=0; n < ds_rds_instance_set.length; n++) {
     var instance = ds_rds_instance_set[n]
     // get tags for instance
@@ -420,7 +380,7 @@ script "js_rds_instances", type: "javascript" do
     } else {
       results.push({
         accountID: ds_get_caller_identity[0]['account'],
-        accountName: accountName,
+        accountName: "",
         region: instance.region,
         name: instance.name,
         arn: instance.instanceArn,
@@ -548,6 +508,10 @@ script "js_instance_cost_mapping", type:"javascript" do
       }
       return result+"."+values[1];
     }
+    var accountName = ""
+    if (_.size(instance_costs) > 0) {
+      accountName = instance_costs[0].vendorAccountName
+    }
     if(ds_billing_centers.length!=0){
       // Put costs into a map by resource ID and only include them for resource IDs we actually need
       var costs_by_resource_id = {};
@@ -589,6 +553,7 @@ script "js_instance_cost_mapping", type:"javascript" do
           total_savings=total_savings+monthly_savings;
           instance['savings']= (Math.round(monthly_savings * 1000) / 1000);
           instance['savingsCurrency']= cur;
+          instance['accountName']= accountName;
           unused_rds_instance_list.push(instance);
         } else {
           instance['savings']= 0.0;
