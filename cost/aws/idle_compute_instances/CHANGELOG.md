@@ -2,7 +2,7 @@
 
 ## v3.6
 
-- Added account name call and field
+- Added accountName field
 
 ## v3.5
 

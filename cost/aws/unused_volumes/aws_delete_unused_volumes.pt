@@ -6,14 +6,14 @@ category "Cost"
 severity "low"
 default_frequency "daily"
 info(
-  version: "3.6",
+  version: "3.7",
   provider: "AWS",
   service: "EBS",
   policy_set: "Unused Volumes"
 )
 
 ###############################################################################
-# User inputs
+# Parameters
 ###############################################################################
 
 parameter "param_allowed_regions" do
@@ -82,6 +82,15 @@ parameter "param_log_to_cm_audit_entries" do
   allowed_values "Yes", "No"
 end
 
+parameter "param_api_wait" do
+  type "number"
+  label "CloudWatch API Wait Time"
+  description "Amount of time to wait between CloudWatch API requests to avoid throttling (seconds)"
+  default 5
+  min_value 1
+  max_value 60
+end
+
 ###############################################################################
 # Authentication
 ###############################################################################
@@ -110,8 +119,17 @@ pagination "aws_volumes_pagination_xml" do
   end
 end
 
+pagination "aws_getmetricdata_pagination" do
+  get_page_marker do
+    body_path "NextToken"
+  end
+  set_page_marker do
+    body_field "NextToken"
+  end
+end
+
 ###############################################################################
-# Datasource
+# Datasources
 ###############################################################################
 
 #Get list of enabled regions for an account
@@ -172,42 +190,164 @@ datasource "ds_unattached_volumes_map" do
   run_script $js_filter_aws_unattached_volumes, $ds_unattached_volumes_list, $param_exclude_tags, $param_unattached_days
 end
 
-datasource "ds_volume_read_bytes_metrics" do
-  iterate $ds_unattached_volumes_map
+datasource "ds_metricdataqueries" do
+  run_script $js_metricdataqueries, $ds_unattached_volumes_map
+end
+
+script "js_metricdataqueries", type: "javascript" do
+  result "result"
+  parameters "ds_unattached_volumes_map"
+  code <<-EOS
+queries = {}
+// Construct MetricDataQueries for each resource
+_.each(ds_unattached_volumes_map, function(resource) {
+  // Foreach Metric that is used by the Policy Template
+  _.each(["VolumeReadBytes", "VolumeWriteBytes"], function(metric) {
+    // Foreach statistic that is used by the Policy Template
+    _.each(["Average"], function(statistic) {
+      query = {
+        // Replace `-` with `_` in the Id to avoid CloudWatch API error
+        "Id": resource['vol_id'].replace(/\-/g, '_') + "_" + metric + "_" + statistic,
+        "Label": resource['vol_id'] + " " + metric + " " + statistic,
+        "MetricStat": {
+          "Metric": {
+            "Namespace": "AWS/EBS",
+            "MetricName": metric,
+            "Dimensions": [
+              { "Name": "VolumeId", "Value": resource['vol_id'] }
+            ]
+          },
+          "Period": 2592000,
+          "Stat": statistic
+        },
+        "ReturnData": true
+      };
+      if (queries[resource['region']] == undefined || queries[resource['region']] == null) {
+        queries[resource['region']] = [];
+      }
+      queries[resource['region']].push(query);
+    });
+  });
+});
+result = [];
+end_date = parseInt(new Date().getTime() / 1000);
+start_date = parseInt(new Date(new Date().setDate(new Date().getDate() - 30)).getTime() / 1000);
+// MetricDataQueries[] max is 500
+chunk_size=500;
+// Chunk MetricDataQueries to iterate and collect all with multiple requests
+_.each(Object.keys(queries), function(region) {
+  for (i = 0; i < queries[region].length; i += chunk_size) {
+    chunk = queries[region].slice(i, i + chunk_size)
+    result.push({
+      'MetricDataQueries': chunk,
+      'region': region
+    })
+  }
+})
+EOS
+end
+
+datasource "ds_cloudwatch_getmetricdata" do
+  iterate $ds_metricdataqueries
   request do
-    run_script $js_aws_volumes_cloud_watch_read_byte_metrics, val(iter_item, "vol_id"), val(iter_item, "region"), $param_unattached_days
+    run_script $js_cloudwatch_getmetricdata, val(iter_item, "region"), val(iter_item, "MetricDataQueries"), $param_api_wait
   end
   result do
     encoding "json"
-    collect jmes_path(response, "GetMetricStatisticsResponse.GetMetricStatisticsResult") do
-      field "volumeId", val(iter_item, "vol_id")
-      field "dataPoints", jmes_path(col_item, "Datapoints")
+    collect jmes_path(response, "MetricDataResults[*]") do
+      field "region", val(iter_item, "region")
+      field "id", jmes_path(col_item, "Id")
+      field "label", jmes_path(col_item, "Label")
+      field "values", jmes_path(col_item, "Values")
     end
   end
 end
 
-datasource "ds_volume_write_bytes_metrics" do
-  iterate $ds_unattached_volumes_map
-  request do
-    run_script $js_aws_volumes_cloud_watch_write_byte_metrics, val(iter_item, "vol_id"), val(iter_item, "region"), $param_unattached_days
-  end
-  result do
-    encoding "json"
-    collect jmes_path(response, "GetMetricStatisticsResponse.GetMetricStatisticsResult") do
-      field "volumeId", val(iter_item, "vol_id")
-      field "dataPoints", jmes_path(col_item, "Datapoints")
-    end
-  end
+script "js_cloudwatch_getmetricdata", type: "javascript" do
+  parameters "region", "MetricDataQueries", "param_api_wait"
+  result "results"
+  code <<-EOS
+  // Slow down rate of requests to prevent throttling
+  var now = new Date().getTime()
+  while(new Date().getTime() < now + (param_api_wait * 1000)) { /* Do nothing */ }
+  // Difference between start and end time is 28 days
+  // Period for each metricdataquery is 30 days.
+  // This combination results in average over larger time returned as one value [because period > (end_date - start_date)]
+  end_date = parseInt(new Date().getTime() / 1000);
+  start_date = parseInt(new Date(new Date().setDate(new Date().getDate() - 28)).getTime() / 1000);
+  results = {
+    "auth": "auth_aws",
+    "host": 'monitoring.' + region + '.amazonaws.com',
+    "verb": "POST",
+    "path": "/",
+    "pagination": 'aws_getmetricdata_pagination',
+    "headers": {
+      "User-Agent": "RS Policies",
+      "Content-Type": "application/json",
+      "x-amz-target": "GraniteServiceVersion20100801.GetMetricData",
+      "Accept": "application/json",
+      "Content-Encoding": "amz-1.0"
+    }
+    "query_params": {
+      'Action': 'GetMetricData',
+      'Version': '2010-08-01'
+    },
+    body: JSON.stringify({ "StartTime": start_date, "EndTime": end_date, "MetricDataQueries": MetricDataQueries })
+  }
+EOS
 end
 
-datasource "ds_check_volumes_read_or_write_operations" do
-  run_script $js_check_volumes_read_or_write_operations, $ds_unattached_volumes_map, $ds_volume_read_bytes_metrics, $ds_volume_write_bytes_metrics
+datasource "ds_unattached_volumes_without_read_or_write_operations" do
+  run_script $js_unattached_volumes_without_read_or_write_operations, $ds_unattached_volumes_map, $ds_cloudwatch_getmetricdata
+end
+
+script "js_unattached_volumes_without_read_or_write_operations", type: "javascript" do
+  parameters "ds_unattached_volumes_map", "ds_cloudwatch_getmetricdata"
+  result "results"
+  code <<-EOS
+results = [];
+_.each(ds_unattached_volumes_map, function(volume) {
+  var volume_id = volume['vol_id'];
+
+  // Use _.findWhere() to select the Average MetricDataQuery results for the volume
+  // Select VolumeReadBytes Average from GetMetricData results
+  volume_read_metrics = _.findWhere(ds_cloudwatch_getmetricdata, { 'label': volume_id+' VolumeReadBytes Average' });
+  // If no results found, set volume_read_metrics.values to empty array before proceeding
+  if (volume_read_metrics == undefined || volume_read_metrics.values == undefined) {
+    volume_read_metrics = { 'values': [] };
+  }
+  // Select VolumeWriteBytes Average from GetMetricData results
+  volume_write_metrics = _.findWhere(ds_cloudwatch_getmetricdata, { 'label': volume_id+' VolumeWriteBytes Average' });
+  // If no results found, set volume_read_metrics.values to empty array before proceeding
+  if (volume_write_metrics == undefined || volume_write_metrics.values == undefined) {
+    volume_write_metrics = { 'values': [] };
+  }
+
+  // Check if volume has no metrics at all which means it has not been used
+  if (volume_read_metrics.values.length + volume_write_metrics.values.length == 0) {
+    // If no metrics, unattached volume can be considered "unused"
+    // Add volume to results
+    volume_result = {
+      volumeId : volume['vol_id'],
+      region : volume['region'],
+      availabilityZone : volume['availability_zone'],
+      volumeType : volume['volume_Type'],
+      tags : volume['tagKeyValue'],
+      createdTime : volume['createdTime'],
+      size : volume['size'],
+      // Savings is 0 until later where we estimate savings
+      savings: 0.0
+    }
+    results.push(volume_result);
+  }
+});
+EOS
 end
 
 datasource "ds_currency_reference" do
   request do
     host "raw.githubusercontent.com"
-    path "/rightscale/policy_templates/master/cost/scheduled_reports/currency_reference.json"
+    path "/flexera-public/policy_templates/master/cost/scheduled_reports/currency_reference.json"
     header "User-Agent", "RS Policies"
   end
 end
@@ -291,7 +431,7 @@ datasource "ds_volume_costs" do
 end
 
 datasource "ds_volume_cost_mapping" do
-  run_script $js_volume_cost_mapping, $ds_check_volumes_read_or_write_operations, $ds_volume_costs, $ds_currency_code, $ds_currency_reference, $ds_billing_centers, $ds_get_caller_identity
+  run_script $js_volume_cost_mapping, $ds_unattached_volumes_without_read_or_write_operations, $ds_volume_costs, $ds_currency_code, $ds_currency_reference, $ds_billing_centers, $ds_get_caller_identity
 end
 
 ###############################################################################
@@ -351,7 +491,7 @@ script "js_aws_unattached_volumes_list", type: "javascript" do
 end
 
 script "js_filter_aws_unattached_volumes", type: "javascript" do
-  parameters "ds_unattached_volumes_list", "param_exclude_tags", "unattachedDays"
+  parameters "ds_unattached_volumes_list", "param_exclude_tags", "param_unattached_days"
   result "content"
   code <<-EOS
   var content = [];
@@ -375,8 +515,8 @@ script "js_filter_aws_unattached_volumes", type: "javascript" do
       }
     })
 
-    //If the volume tag does not match with entered param_exclude_tags
-    if(daysDifference > unattachedDays){
+    if(daysDifference > param_unattached_days){
+      // If the volume tag does not match with entered param_exclude_tags
       if(!(isTagMatched)){
         content.push({
           tagKeyValue : tags,
@@ -389,136 +529,6 @@ script "js_filter_aws_unattached_volumes", type: "javascript" do
           size : vol['size']+" GB"
         })
       }
-    }
-  }
-  EOS
-end
-
-script "js_aws_volumes_cloud_watch_read_byte_metrics", type: "javascript" do
-  parameters "volume_id", "region", "unattachedDays"
-  result "metrics"
-  code <<-EOS
-    var endDate = new Date().toISOString();
-    var startDate = new Date(new Date().setDate(new Date().getDate() - unattachedDays)).toISOString();
-    var period = 2592000;
-    var datapoints = (unattachedDays / 30).toFixed(2);
-    if(datapoints > 1440){
-      period = period * 60;
-    }
-    period = ""+period+"";
-    metrics = {
-      "auth": "auth_aws",
-      "host": 'monitoring.'+region+'.amazonaws.com',
-      "verb": "GET",
-      "path": "/",
-      "headers": {
-        "User-Agent": "RS Policies",
-        "Content-Type": "application/json",
-        "x-amz-target": "GraniteServiceVersion20100801.GetMetricStatistics",
-        "Accept": "application/json",
-        "Content-Encoding": "amz-1.0"
-      }
-      "query_params": {
-        'Action': 'GetMetricStatistics',
-        'Version': '2010-08-01',
-        'Namespace': 'AWS/EBS',
-        'MetricName': 'VolumeReadBytes',
-        'Dimensions.member.1.Name': 'VolumeId',
-        'Dimensions.member.1.Value': volume_id,
-        'StartTime': startDate,
-        'EndTime': endDate,
-        'Period': period,
-        'Statistics.member.1': 'Maximum',
-        'Statistics.member.2': 'Average',
-        'Statistics.member.3': 'Minimum'
-      }
-    }
-  EOS
-end
-
-script "js_aws_volumes_cloud_watch_write_byte_metrics", type: "javascript" do
-  parameters "volume_id", "region", "unattachedDays"
-  result "metrics"
-  code <<-EOS
-    var endDate = new Date().toISOString();
-    var startDate = new Date(new Date().setDate(new Date().getDate() - unattachedDays)).toISOString();
-    var period = 2592000;
-    var dataPoints = (unattachedDays/30).toFixed(2);
-    if(dataPoints > 1440){
-      period = period * 60;
-    }
-    period = ""+period+"";
-    metrics = {
-      "auth": "auth_aws",
-      "host": 'monitoring.'+region+'.amazonaws.com',
-      "verb": "GET",
-      "path": "/",
-      "headers": {
-        "User-Agent": "RS Policies",
-        "Content-Type": "application/json",
-        "x-amz-target": "GraniteServiceVersion20100801.GetMetricStatistics",
-        "Accept": "application/json",
-        "Content-Encoding": "amz-1.0"
-      }
-      "query_params": {
-        'Action': 'GetMetricStatistics',
-        'Version': '2010-08-01',
-        'Namespace': 'AWS/EBS',
-        'MetricName': 'VolumeWriteBytes',
-        'Dimensions.member.1.Name': 'VolumeId',
-        'Dimensions.member.1.Value': volume_id,
-        'StartTime': startDate,
-        'EndTime': endDate,
-        'Period': period,
-        'Statistics.member.1': 'Maximum',
-        'Statistics.member.2': 'Average',
-        'Statistics.member.3': 'Minimum'
-      }
-    }
-  EOS
-end
-
-script "js_check_volumes_read_or_write_operations", type: 'javascript' do
-  parameters "volumesList", "volumesReadMetricsData", "volumesWriteMetricsData"
-  result "unattachedVolumes"
-  code <<-EOS
-  var unattachedVolumes = [];
-  for(var i=0; i < volumesList.length; i++){
-    var volume = volumesList[i];
-    var readWriteOperationDone = false;
-    for(var j=0; j < volumesReadMetricsData.length; j++){
-      var readMetricData = volumesReadMetricsData[j];
-      if(volume['vol_id'] === readMetricData['volumeId']){
-        var readMetricDataPoints = readMetricData['dataPoints'];
-        if(readMetricDataPoints.length > 0){
-          readWriteOperationDone = true;
-        }
-        break;
-      }
-    }
-    if(!readWriteOperationDone){
-      for(var k=0; k < volumesWriteMetricsData.length; k++){
-        var writeMetricData = volumesWriteMetricsData[k];
-        if(volume['vol_id'] === writeMetricData['volumeId']){
-          var writeMetricDataPoints = writeMetricData['dataPoints'];
-          if(writeMetricDataPoints.length > 0){
-            readWriteOperationDone = true;
-          }
-          break;
-        }
-      }
-    }
-    if(!readWriteOperationDone){
-      unattachedVolumes.push({
-        volumeId : volume['vol_id'],
-        region : volume['region'],
-        availabilityZone : volume['availability_zone'],
-        volumeType : volume['volume_Type'],
-        tags : volume['tagKeyValue'],
-        createdTime : volume['createdTime'],
-        size : volume['size'],
-        savings:0.0
-      })
     }
   }
   EOS
@@ -557,6 +567,8 @@ script "js_get_costs", type: "javascript" do
       return year + '-' + month + '-' + day;
     }
 
+    // Time between start and end date is 1 day
+    // Use billing period of 3days ago to 2days ago [start date, end date] which typically has more accurate bill data
     var start_date = getFormattedDailyDate(new Date(new Date().setDate(new Date().getDate() - 3)));
     var end_date = getFormattedDailyDate(new Date(new Date().setDate(new Date().getDate() - 2)));
 
@@ -604,13 +616,13 @@ script "js_get_costs", type: "javascript" do
 end
 
 script "js_volume_cost_mapping", type:"javascript" do
-  parameters "volumes", "volume_costs", "ds_currency_code", "ds_currency_reference", "ds_billing_centers", "ds_get_caller_identity"
+  parameters "ds_unattached_volumes_without_read_or_write_operations", "ds_volume_costs", "ds_currency_code", "ds_currency_reference", "ds_billing_centers", "ds_get_caller_identity"
   result "result"
   code <<-EOS
   var unused_volumes=[];
   var result = {};
   var message='';
-  var count=0;
+  var savings_found=false;
   function formatNumber(number, separator){
     var numString =number.toString();
     var values=numString.split(".");
@@ -628,18 +640,14 @@ script "js_volume_cost_mapping", type:"javascript" do
     }
     return result+"."+values[1];
   }
-  if(ds_billing_centers.length!=0){
-    // Put costs into a map by resource ID and only include them for resource IDs we actually need
-    var costs_by_resource_id = {};
-    _.each(volumes, function(volume) {
-      costs_by_resource_id[volume.volumeId] = [];
-    });
-    _.each(volume_costs, function(cost) {
-      var costs = costs_by_resource_id[cost.resource_id];
-      if (costs != null) {
-        costs.push(cost);
-      }
-    });
+  // Check if ds_billing_centers results empty
+  if(ds_billing_centers.length==0){
+    unused_volumes=ds_unattached_volumes_without_read_or_write_operations;
+    message="You do not have the minimum required role of billing_center_viewer to view the savings";
+  }
+  else{
+    // There is potentially cost savings to calculate if we have access to billing centers
+
     // Format costs with currency symbol and thousands separator
     if( ds_currency_code['value'] !== undefined ) {
       if (ds_currency_reference[ds_currency_code['value']] !== undefined ) {
@@ -658,69 +666,70 @@ script "js_volume_cost_mapping", type:"javascript" do
       var separator = ","
     }
 
+    var total_savings=0;
     var accountName = ""
-    if (_.size(volume_costs) > 0) {
-      accountName = volume_costs[0].vendorAccountName
+    if (_.size(ds_volume_costs) > 0) {
+      accountName = ds_volume_costs[0].vendorAccountName
     }
 
-    var total_savings=0;
-    _.each(volumes, function(volume){
-      var cost_objects = costs_by_resource_id[volume.volumeId];
-      if (_.size(cost_objects) > 0){
-        count++;
-        var sum = _.reduce(_.compact(_.map(cost_objects, function(value){ return value.cost_nonamortized_unblended_adj})), function(memo, num){ return memo + num; }, 0);
-        var monthly_savings = sum*30;
-        total_savings=total_savings+monthly_savings;
-        unused_volumes.push({
-          accountID: ds_get_caller_identity[0]['account'],
-          accountName: accountName,
-          volumeId : volume['volumeId'],
-          region : volume['region'],
-          availabilityZone : volume['availabilityZone'],
-          resourceType : volume['volumeType'],
-          tags : volume['tags'],
-          createdTime : volume['createdTime'],
-          size : volume['size'],
-          savings: (Math.round(monthly_savings * 1000) / 1000),
-          savingsCurrency: cur,
-          service: "EBS"
-        })
-      } else {
-        unused_volumes.push({
-          accountID: ds_get_caller_identity[0]['account'],
-          accountName: accountName,
-          volumeId : volume['volumeId'],
-          region : volume['region'],
-          availabilityZone : volume['availabilityZone'],
-          resourceType : volume['volumeType'],
-          tags : volume['tags'],
-          createdTime : volume['createdTime'],
-          size : volume['size'],
-          savings: 0.0,
-          savingsCurrency: cur,
-          service: "EBS"
-        })
-      }
-    })
+    // Total potential savings starts at 0
+    var total_potential_savings=0;
+    // Loop through all unattached volumes
+    _.each(ds_unattached_volumes_without_read_or_write_operations, function(volume) {
+      // Select volumes cost from ds_volume_costs
+      volume_costs = _.where(ds_volume_costs, { resource_id: volume.volumeId });
 
-    if(count){
-      total_savings=cur + ' '+formatNumber((Math.round(total_savings * 100) / 100), separator);
+      // Check to see if theres any costs for the volume
+      if (_.size(volume_costs) == 0) {
+        // If no volume cost found, assume 0.0 monthly costs/savings estimation
+        volume_monthly_cost = 0.0;
+      } else {
+        // If volume cost exists, lets calculate estimated monthly cost for the volume
+        // Set savings_found flag to true
+        savings_found = true;
+        // Sum of costs from volume_costs is the estimated 24hr cost of volume
+        // Calculate sum of costs for instance with underscorejs reduce function
+        // https://underscorejs.org/#reduce
+        var one_day_cost = _.reduce(_.compact(_.map(volume_costs, function(value){return value.cost_nonamortized_unblended_adj})), function(memo, num){ return memo + num; }, 0);
+        // Estimate monthly [30day] cost of volume
+        volume_monthly_cost = one_day_cost*30;
+        // Add volume cost to total_potential_savings
+        total_potential_savings = total_potential_savings + volume_monthly_cost;
+      }
+
+      // Append volume with estimated savings to unused_volumes results
+      unused_volumes.push({
+        accountID: ds_get_caller_identity[0]['account'],
+        accountName: accountName,
+        volumeId: volume['volumeId'],
+        region: volume['region'],
+        availabilityZone: volume['availabilityZone'],
+        resourceType: volume['volumeType'],
+        tags: volume['tags'],
+        createdTime: volume['createdTime'],
+        size: volume['size'],
+        savings: (Math.round(volume_monthly_cost * 1000) / 1000),
+        savingsCurrency: cur,
+        service: "EBS"
+      });
+    });
+
+    // Check savings_items to see if there are any savings and include message
+    if(savings_found){
+      // Format number with currency symbol and thousands separator
+      total_savings=cur + ' '+formatNumber((Math.round(total_potential_savings * 100) / 100), separator);
       message="The total estimated monthly savings are "+total_savings;
     }
     else{
       message="The Flexera Optima system does not have any data to calculate savings for these resources";
     }
   }
-  else{
-    unused_volumes=volumes;
-    message="You do not have the minimum required role of billing_center_viewer to view the savings";
-  }
-  result={
+  result = {
     "unused_volumes": unused_volumes,
     "message": message,
     "accountID": ds_get_caller_identity[0]['account']
-  }
-  result.unused_volumes=_.sortBy(result.unused_volumes,'region')
+  };
+  result.unused_volumes=_.sortBy(result.unused_volumes,'region');
   EOS
 end
 

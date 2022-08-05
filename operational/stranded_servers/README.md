@@ -1,5 +1,9 @@
 # Stranded Servers
 
+## Deprecated
+
+This policy is no longer being updated.
+
 ## What it does
 
 This policy checks all Servers in Cloud Management and reports on any that have stranded during the boot process. It provides the option to terminate any stranded servers after approval.

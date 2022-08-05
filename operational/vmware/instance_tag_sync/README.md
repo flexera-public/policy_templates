@@ -1,5 +1,9 @@
 # VMWare Instance Tag Sync
 
+## Deprecated
+
+This policy is no longer being updated.
+
 ## What it does
 
 This Policy Template is used to automatically synchronize the CMP Tags to VMWare.
