@@ -1,8 +1,14 @@
 # Changelog
 
-## v3.1
+## v3.2
 
 - remove duplicate data fields for subscriptionID and subscriptionName
+
+## v3.1
+- update policy for optimization, changes go as follows:
+  - removal of filtering on events and combining data of disks and activity
+  - iterate through filtered unattached disks rather than subscriptions to lower number of api requests due to pagination
+  - changed Azure insight filter from event resource type to resource id
 
 ## v3.0
 
