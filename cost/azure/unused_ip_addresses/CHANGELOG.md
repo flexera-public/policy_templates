@@ -1,8 +1,14 @@
 # Changelog
 
-## 3.2
+## v3.3
 
-- added new check properties.natGatway == null for unused IP check
+- Updated policy template to make fewer calls to Azure APIs
+- Added 'ipAddress' field to policy export
+- Changed default_frequency to "monthly"
+
+## v3.2
+
+- Added new check properties.natGatway == null for unused IP check
 
 ## v3.1
 
@@ -10,12 +16,12 @@
 
 ## v3.0
 
-- applying data normalization updates for spend recommendations api. this change breaks current iterations expecting specific output types being pushed.
-- fixed issue with potential nil pointer type error issue
-- updated savings field to round to 3rd decimal
-- updated displayName to subscription name more consistently
+- Applying data normalization updates for spend recommendations api. this change breaks current iterations expecting specific output types being pushed.
+- Fixed issue with potential nil pointer type error issue
+- Updated savings field to round to 3rd decimal
+- Updated displayName to subscription name more consistently
 - Normalizing fields for recommendations:
-  - updated 'tags' field to slice of string values
+  - Updated 'tags' field to slice of string values
   - Renamed 'ipAddressID' to 'resourceID' field
   - Added 'subscriptionID' field
   - Added 'accountID' field with subscriptionID value
@@ -30,7 +36,7 @@
 
 ## v2.8
 
-- updated README.md rightscale documentation links with docs.flexera documentation links
+- Updated README.md rightscale documentation links with docs.flexera documentation links
 
 ## v2.7
 
