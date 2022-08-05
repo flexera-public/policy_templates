@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.1
+
+- remove duplicate data fields for subscriptionID and subscriptionName
+
 ## v3.0
 
 - applying data normalization updates for spend recommendations api. this change breaks current iterations expecting specific output types being pushed.

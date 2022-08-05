@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.3
+
+- remove duplicate data fields for subscriptionID and subscriptionName
+
 ## 3.2
 
 - added new check properties.natGatway == null for unused IP check
