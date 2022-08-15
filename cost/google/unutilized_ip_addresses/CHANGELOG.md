@@ -1,9 +1,5 @@
 # Changelog
 
-## v2.10
-
-- Added accountName field
-
 ## v2.9
 
 - updated README.md rightscale documentation links with docs.flexera documentation links

@@ -7,7 +7,7 @@ severity "low"
 category "Cost"
 default_frequency "daily"
 info(
-      version: "2.8",
+      version: "2.7",
       provider: "GCE",
       service: "SQL",
       policy_set: "Unused Database Services"
@@ -98,8 +98,7 @@ datasource "ds_google_project" do
     encoding "json"
     collect jmes_path(response, "projects[*]") do
       field "projectNumber", jmes_path(col_item,"projectNumber")
-      field "projectID", jmes_path(col_item,"projectId")
-      field "projectName", jmes_path(col_item,"projectName")
+      field "projectId", jmes_path(col_item,"projectId")
       field "end_date", val(iter_item,"end_date")
       field "start_date", val(iter_item,"start_date")
     end
@@ -115,7 +114,7 @@ datasource "ds_connections" do
   request do
     auth $auth_google
     host "monitoring.googleapis.com"
-    path join(["/v3/projects/",val(iter_item,"projectID"),"/timeSeries/"])
+    path join(["/v3/projects/",val(iter_item,"projectId"),"/timeSeries/"])
     query "filter", 'metric.type="cloudsql.googleapis.com/database/network/connections"'
     query "interval.endTime", val(iter_item,"end_date")
     query "interval.startTime", val(iter_item,"start_date")
@@ -128,8 +127,7 @@ datasource "ds_connections" do
       field "labels", jmes_path(col_item, "resource.labels")
       field "database_id", jmes_path(col_item, "resource.labels.database_id")
       field "points", jmes_path(col_item, "points[*].value.int64Value")
-      field "projectID", val(iter_item, "projectID")
-      field "projectName", val(iter_item, "projectName")
+      field "projectId", val(iter_item, "projectId")
     end
   end
 end
@@ -137,7 +135,7 @@ end
 datasource "ds_add_instance_data" do
   iterate $ds_google_project
   request do
-    run_script $js_add_instance_data, val(iter_item,"projectID")
+    run_script $js_add_instance_data, val(iter_item,"projectId")
   end
   result do
     encoding "json"
@@ -148,7 +146,7 @@ datasource "ds_add_instance_data" do
       field "tier", jmes_path(col_item, "settings.tier")
       field "region", jmes_path(col_item, "region")
       field "userLabels", jmes_path(col_item,"settings.userLabels")
-      field "projectID", val(iter_item, "projectID")
+      field "projectId", val(iter_item, "projectId")
     end
   end
 end
@@ -250,7 +248,7 @@ result.name){
     }
   }
   results = _.sortBy(results, 'region');
-  results= _.sortBy(results, 'projectID');
+  results= _.sortBy(results, 'projectId');
   EOS
 end
 ###############################################################################
@@ -269,11 +267,8 @@ policy "pol_utilization" do
     escalate $terminate_resources
     export do
       resource_level true
-      field "projectID" do
+      field "projectId" do
         label "Project ID"
-      end
-      field "projectName" do
-        label "Project Name"
       end
       field "region" do
         label "Zone"

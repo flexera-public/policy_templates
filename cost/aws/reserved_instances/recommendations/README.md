@@ -38,7 +38,7 @@ For administrators [creating and managing credentials](https://docs.flexera.com/
 
 Provider tag value to match this policy: `aws`
 
-#### organization.DescribeAccount requires the master account to run correctly. if organization.DescribeAccount is unavailable, it will run normally but produce a blank accountName
+#### organization.DescribeAccount requires the master account to run correctly. If organization.DescribeAccount is unavailable, it will run normally but produce a blank accountName
 
 Required permissions in the provider:
 

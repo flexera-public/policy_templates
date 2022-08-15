@@ -7,7 +7,7 @@ severity "low"
 category "Cost"
 default_frequency "daily"
 info(
-      version: "2.10",
+      version: "2.9",
       provider: "GCE",
       service: "",
       policy_set: "Unused IP Addresses"
@@ -88,8 +88,7 @@ datasource "ds_google_project" do
     encoding "json"
     collect jmes_path(response, "projects[*]") do
       field "projectNumber", jmes_path(col_item,"projectNumber")
-      field "projectName", jmes_path(col_item,"projectName")
-      field "projectID", jmes_path(col_item,"projectId")
+      field "projectId", jmes_path(col_item,"projectId")
     end
   end
 end
@@ -101,15 +100,14 @@ datasource "ds_regions_list" do
     auth $auth_google
     pagination $google_pagination
     host "compute.googleapis.com"
-    path join(["/compute/v1/projects/",val(iter_item, "projectID"),"/regions/"])
+    path join(["/compute/v1/projects/",val(iter_item, "projectId"),"/regions/"])
     ignore_status [403,404]
   end
   result do
     encoding "json"
       collect jmes_path(response, "items[*]") do
       field "region", jmes_path(col_item, "name")
-      field "projectID", val(iter_item, "projectID")
-      field "projectName", val(iter_item, "projectName")
+      field "projectId", val(iter_item, "projectId")
     end
   end
 end
@@ -118,7 +116,7 @@ end
 datasource "ds_addresses" do
   iterate $ds_regions_list
   request do
-    run_script $js_get_addresses, val(iter_item, "projectID"), val(iter_item, "region")
+    run_script $js_get_addresses, val(iter_item, "projectId"), val(iter_item, "region")
   end
   result do
     encoding "json"
@@ -134,8 +132,7 @@ datasource "ds_addresses" do
       field "status", jmes_path(col_item,"status")
       field "subnetwork", jmes_path(col_item,"subnetwork")
       field "labels", jmes_path(col_item,"labels")
-      field "projectID", val(iter_item, "projectID")
-      field "projectName", val(iter_item, "projectName")
+      field "projectId", val(iter_item, "projectId")
     end
   end
 end
@@ -191,7 +188,7 @@ script "js_sanitize_data", type: "javascript" do
         }
       }
     })
-    results= _.sortBy(results, 'projectID');
+    results= _.sortBy(results, 'projectId');
   EOS
 end
 
@@ -207,11 +204,8 @@ policy "pol_unutilized_addresses" do
     escalate $approve_delete_addresses
     export do
       resource_level true
-      field "projectID" do
+      field "projectId" do
         label "Project ID"
-      end
-      field "projectName" do
-        label "Project Name"
       end
       field "address" do
         label "Address"

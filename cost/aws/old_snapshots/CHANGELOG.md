@@ -1,10 +1,10 @@
 # Changelog
 
-## v3.6
+## v3.5
 
 - Added accountName field
 
-## v3.5
+## v3.4
 
 - Modified Image (AMI) datasource collection to improve policy efficiency
 - Modified "Delete Snapshots" Escalation Action to improve execution efficiency

@@ -1,10 +1,10 @@
 # Changelog
 
-## v3.3
+## v3.4
 
 - remove duplicate data fields for subscriptionID and subscriptionName
 
-## 3.2
+## v3.3
 
 - Updated policy template to make fewer calls to Azure APIs
 - Added 'ipAddress' field to policy export

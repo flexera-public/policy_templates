@@ -6,7 +6,7 @@ category "Cost"
 severity "low"
 default_frequency "daily"
 info(
-  version: "2.12",
+  version: "2.11",
   provider:"Google",
   service: "Storage",
   policy_set: "Old Snapshots"
@@ -91,8 +91,7 @@ datasource "ds_google_project" do
     encoding "json"
     collect jmes_path(response, "projects[*]") do
       field "projectNumber", jmes_path(col_item,"projectNumber")
-      field "projectID", jmes_path(col_item,"projectId")
-      field "projectName", jmes_path(col_item,"projectName")
+      field "projectId", jmes_path(col_item,"projectId")
     end
   end
 end
@@ -103,15 +102,14 @@ datasource "ds_snapshots" do
     auth $auth_google
     pagination $google_pagination
     host "compute.googleapis.com"
-    path join(["/compute/v1/projects/",val(iter_item,"projectID"),"/global/snapshots"])
+    path join(["/compute/v1/projects/",val(iter_item,"projectId"),"/global/snapshots"])
     query "filter","status=READY"
     ignore_status [403,404]
   end
   result do
     encoding "json"
     collect jmes_path(response, "items[*]") do
-      field "projectID", val(iter_item, "projectID")
-      field "projectName", val(iter_item, "projectName")
+      field "projectId", val(iter_item, "projectId")
       field "creationTimestamp", jmes_path(col_item,"creationTimestamp")
       field "diskSizeGb", jmes_path(col_item, "diskSizeGb")
       field "labels", jmes_path(col_item, "labels")
@@ -170,7 +168,7 @@ _.each(filtered_snapshots, function(snapshot){
   snapshot["days_old"] = days_old
 }
 )
-var filtered_snapshots = _.sortBy(filtered_snapshots, "projectID")
+var filtered_snapshots = _.sortBy(filtered_snapshots, "projectId")
 var filtered_snapshots = _.sortBy(filtered_snapshots, "id")
 var filtered_snapshots = _.sortBy(filtered_snapshots, "days_old")
 EOF
@@ -188,11 +186,8 @@ policy "policy_old_snapshots" do
     escalate $esc_approve_delete_snapshots
     export do
       resource_level true
-      field "projectID" do
+      field "projectId" do
         label "Project ID"
-      end
-      field "projectName" do
-        label "Project Name"
       end
       field "id" do
         label "Name"
