@@ -1,0 +1,37 @@
+name: Publish CloudFormation Templates
+
+on:
+  # Workflow Dispatch can be used to manually trigger a build
+  workflow_dispatch:
+    branches: [master,feat/bk/add_cloudformation_template] # Should only be run against default branch
+  # Workflow run will trigger build for new commits to master which pass the test workflow
+  workflow_run:
+    workflows: ["Test CloudFormation Templates"]
+    branches: [master]
+    types:
+      - completed
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    name: Publish
+    strategy:
+      matrix:
+        template_files:
+          - ./cost/aws/FlexeraReadOnlyPolicy.template
+          - ./tools/cloudformation-template/FlexeraAutomationPolicies.template
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@master
+        with:
+          role-to-assume: arn:aws:iam::440514240447:role/GitHubActionsFlexeraPublicPolicyTemplatesAccessRole
+          role-session-name: GitHubActionsPublishCloudFormationTemplates
+          aws-region: us-east-2 # flexera-cloudformation-public S3 bucket is in us-east-2
+      
+      - name:  Copy CloudFormation Templates to S3
+        run: |
+          aws s3 cp ./tools/cloudformation-template/releases/*.template s3://flexera-cloudformation-public/ --acl public-read
+          aws s3 cp ./tools/cloudformation-template/FlexeraAutomationPolicies.template s3://flexera-cloudformation-public/FlexeraAutomationPolicies_latest.template --acl public-read
