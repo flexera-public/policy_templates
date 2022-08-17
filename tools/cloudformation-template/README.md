@@ -22,20 +22,20 @@ See [AWS Docs > CloudFormation > Working with StackSets](https://docs.aws.amazon
 <summary><b><i>Click to expand instructions</i>: Create <i>CloudFormation StackSet</i> with AWS Console</b></summary>
 
 > <i>**Note**: The following steps are very closely aligned with AWS Official Docs here:</i>
-> 
-> [AWS Docs > CloudFormation > Create a stack set with service-managed permissions using the AWS CloudFormation console](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/stacksets-getting-started-create.html#stacksets-orgs-associate-stackset-with-org).
+>
+> [AWS Docs > CloudFormation > Create a stack set with service-managed permissions using the AWS CloudFormation console](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/stacksets-getting-started-create.html#stacksets-orgs-associate-stackset-with-org)
 
 As you follow the official docs, you can use the recommended configurations below.
 
  - Under **Permissions**, choose **Service-managed permissions**
 
-   > If trusted access with AWS Organizations is disabled, a banner displays. Trusted access is required to create or update a stack set with service-managed permissions. Only the administrator in the organization's management account has permissions to [manage trusted access](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/stacksets-orgs-enable-trusted-access.html).
+   > If trusted access with AWS Organizations is disabled, a banner displays. Trusted access is required to create or update a stack set with service-managed permissions. Only the administrator in the organization's management account has permissions to [manage trusted access](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/stacksets-orgs-enable-trusted-access.html)
 
  - Under **Prepare template**, choose **Template is ready**.
 
  - Under **Specify template**, provide the template S3 URL:
 
-   `https://flexera-cloudformation-public.s3.us-east-2.amazonaws.com/FlexeraAutomationPolicies_v0.1.0.template`
+   <https://flexera-cloudformation-public.s3.us-east-2.amazonaws.com/FlexeraAutomationPolicies_v0.1.0.template>
 
    It's recommended to use an official release for Production use-cases (i.e. *vX.Y.Z*) but we also provide *[FlexeraAutomationPolicies_latest.template](https://flexera-cloudformation-public.s3.us-east-2.amazonaws.com/FlexeraAutomationPolicies_latest.template)* which will always have the most recent changes.
 
@@ -44,7 +44,7 @@ As you follow the official docs, you can use the recommended configurations belo
  - On the **Specify StackSet details** page, provide a name for the stack set, specify *Flexera Organization ID* and any other parameters, and then choose **Next**.
 
    > Naming the Stack Name the same value as *IAM Role Name* parameter is recommended.
-   >  
+   >
    > For example, if *IAM Role Name* parameter is `FlexeraAutomationPolicies-Org12345`, then the recommended StackSet name is `FlexeraAutomationPolicies-Org12345`.
 
  - On the **Configure StackSet options** page, under **Tags**, specify any tags to apply to resources in your stack.  This is optional. The resources created by the template do not have any cost associated and so the need for tags may only apply for certain use-cases.
@@ -58,30 +58,31 @@ As you follow the official docs, you can use the recommended configurations belo
  - If you enabled automatic deployment, under **Account removal behavior**, `Delete stacks` recommended to remove access when an account is removed from organization or target OUs in the future.
 
  - Under **Specify regions**, choose only **1 region** to deploy the StackSet to.
-   
+
    We recommend to use the same region the CloudFormation StackSet is deployed to.
-   
+
    *This template creates IAM Role and IAM Policy resources, which are "Global" resources.  If this CloudFormation Template is deployed to more than 1 region using the same "IAM Role Name" and "IAM Role Path" parameter value, there will be a conflict trying to create IAM Roles that have the same name.*
 
  - On the **Deployment options**
    - Under **Maximum concurrent accounts**, choose `Percent` and set field value to `100`.  
-   
+
      Using **100%** maximum concurrent accounts is recommended to increase deployment speed of the Stack instances.
-   - Under **Maximum concurrent accounts**, choose `Percent` and set field value to `100`.  
-   
+   - Under **Maximum concurrent accounts**, choose `Percent` and set field value to `100`.
+
      Using **100%** failure tolerance is recommended to allow all account Stack instances to attempt even if one Stack instance fails.
-   - Under **Region Concurrency**, choose `Sequential`.  
-   
+
+   - Under **Region Concurrency**, choose `Sequential`.
+
      This ultimately has no affect as the CloudFormation StackSet should be deployed to only 1 region.
 
   - Click **Next**, and review the summary of the StackSet before continuing.
-  
+
   - At bottom, under **Capabilities**, check the box next to `I acknowledge that AWS CloudFormation might create IAM resources with custom names` and click **Submit** button to create the StackSet
 
     This acknowledgement is required because AWS CloudFormation will create an IAM Role and an IAM Policy (as expected).
 
   - Allow Stack instances to deploy and get to *"Current"* Status.  If any fail, you can review the details of the failed Stack instances and take action as needed.
-  
+
   - Construct **IAM Role ARN** for AWS STS Credential Setup in Flexera Automation
 
     The *IAM Role ARN* is the ARN of the IAM Role created by the CloudFormation Template and is needed when creating the [AWS STS Credential in Flexera Automation](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm).  You only need to create **1** AWS STS Credential in Flexera Automation for each StackSet that is created because all IAM Roles created by the StackSet will have the same name and can leverage [AWS STS Multi-Account Credential Usage](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_109256743_1136870).
@@ -123,7 +124,7 @@ If you do not have an AWS Organization setup, or you prefer to deploy to a singl
 #### **Recommended:** Create <i>CloudFormation Stack</i> with AWS Console using "Quick-create" link
 
   - [Quick-create with Default Permissions (Read Only)](https://us-east-2.console.aws.amazon.com/cloudformation/home?region=us-east-2#/stacks/quickcreate?templateUrl=https://flexera-cloudformation-public.s3.us-east-2.amazonaws.com/FlexeraAutomationPolicies_latest.template&stackName=FlexeraAutomationAccessRole)
-  
+
   - [Quick-create with Read and Take Action Permissions](https://us-east-2.console.aws.amazon.com/cloudformation/home?region=us-east-2#/stacks/quickcreate?templateUrl=https://flexera-cloudformation-public.s3.us-east-2.amazonaws.com/FlexeraAutomationPolicies_latest.template&stackName=FlexeraAutomationAccessRole&param_paramFlexeraOrgId=&param_paramFlexeraZone=app.flexera.com&param_paramPermsAWSOldSnapshots=Read%20and%20Take%20Action&param_paramPermsAWSUnusedIPAddresses=Read%20and%20Take%20Action&param_paramPermsAWSUnusedVolumes=Read%20and%20Take%20Action)
 
 #### <i>Alternatives to create CloudFormation Stack</i>:
