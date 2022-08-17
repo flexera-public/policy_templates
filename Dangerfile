@@ -126,7 +126,7 @@ md_files.each do |file|
       # MD013 Line length
       # MD033 Inline HTML. Required for example snippets.
       # MD034 Bare URL used - Bugged. No bare URLs are actually used in this README.
-      mdl = `mdl -r "~MD033","~MD034" #{file}`
+      mdl = `mdl -r "~MD013","~MD033","~MD034" #{file}`
   else
     # use .mdlrc rules
     mdl = `mdl #{file}`
