@@ -5,6 +5,7 @@
 Template to create a CloudFormation Stack with IAM Role and Permission Policy resources required by [Flexera Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm).
 
 ## Usage
+
 The CloudFormation Template can be deployed to multiple accounts (as a CloudFormation StackSet) or to a single account (as a CloudFormation Stack).
 
 ---
@@ -13,7 +14,7 @@ The CloudFormation Template can be deployed to multiple accounts (as a CloudForm
 
 AWS CloudFormation StackSets extends the capability of stacks by enabling you to create, update, or delete stacks across multiple accounts with a single operation.
 
-*Read More: [AWS Docs > CloudFormation > Working with StackSets](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/what-is-cfnstacksets.html)*
+See [AWS Docs > CloudFormation > Working with StackSets](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/what-is-cfnstacksets.html) for more information.
 
 #### **Recommended:** Create *CloudFormation StackSet* with AWS Console
 
@@ -49,7 +50,6 @@ As you follow the official docs, you can use the recommended configurations belo
  - On the **Configure StackSet options** page, under **Tags**, specify any tags to apply to resources in your stack.  This is optional. The resources created by the template do not have any cost associated and so the need for tags may only apply for certain use-cases.
 
  - For **Execution configuration**, choose **Active** so that StackSets performs non-conflicting operations concurrently and queues conflicting operations.
-
 
  - On the **Set deployment options** page, under Deployment targets, we recommend choosing **Deploy to organization** to deploy to all accounts in your organization.
 
@@ -100,15 +100,18 @@ As you follow the official docs, you can use the recommended configurations belo
 </details>
 
 <!-- TODO
+
 #### <i>Alternatives to create CloudFormation StackSet</i>:
 
 <details>
 <summary><b><i>Click to expand instructions</i>: Create <i>CloudFormation StackSet</i> with AWS CLI</b></summary>
 
 ##### Prerequisites
+
  - **Root ID** (`r-abcd` -- used to deploy to all existing/new accounts) or **Org Unit (OU) ID** (`ou-abcd-zyxwvuts` -- to deploy to subset of accounts)
 
 </details>
+
 -->
 
 ---
@@ -122,7 +125,6 @@ If you do not have an AWS Organization setup, or you prefer to deploy to a singl
   - [Quick-create with Default Permissions (Read Only)](https://us-east-2.console.aws.amazon.com/cloudformation/home?region=us-east-2#/stacks/quickcreate?templateUrl=https://flexera-cloudformation-public.s3.us-east-2.amazonaws.com/FlexeraAutomationPolicies_latest.template&stackName=FlexeraAutomationAccessRole)
   
   - [Quick-create with Read and Take Action Permissions](https://us-east-2.console.aws.amazon.com/cloudformation/home?region=us-east-2#/stacks/quickcreate?templateUrl=https://flexera-cloudformation-public.s3.us-east-2.amazonaws.com/FlexeraAutomationPolicies_latest.template&stackName=FlexeraAutomationAccessRole&param_paramFlexeraOrgId=&param_paramFlexeraZone=app.flexera.com&param_paramPermsAWSOldSnapshots=Read%20and%20Take%20Action&param_paramPermsAWSUnusedIPAddresses=Read%20and%20Take%20Action&param_paramPermsAWSUnusedVolumes=Read%20and%20Take%20Action)
-
 
 #### <i>Alternatives to create CloudFormation Stack</i>:
 
