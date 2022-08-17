@@ -64,7 +64,7 @@ As you follow the official docs, you can use the recommended configurations belo
    *This template creates IAM Role and IAM Policy resources, which are "Global" resources.  If this CloudFormation Template is deployed to more than 1 region using the same "IAM Role Name" and "IAM Role Path" parameter value, there will be a conflict trying to create IAM Roles that have the same name.*
 
  - On the **Deployment options**
-   - Under **Maximum concurrent accounts**, choose `Percent` and set field value to `100`.  
+   - Under **Maximum concurrent accounts**, choose `Percent` and set field value to `100`.
 
      Using **100%** maximum concurrent accounts is recommended to increase deployment speed of the Stack instances.
    - Under **Maximum concurrent accounts**, choose `Percent` and set field value to `100`.
