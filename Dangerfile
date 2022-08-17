@@ -118,13 +118,14 @@ mdl = nil
 md_files.each do |file|
   # Exemptions for top-level README.md
   if file == 'README.md'
-    # MD024  Multiple headers with the same content
-    # MD013 disable line length
+    # MD013 Line length
+    # MD024 Multiple headers with the same content
     mdl = `mdl -r "~MD024","~MD013" #{file}`
   # Exemptions for tools/cloudformation-template/README.md
   elsif file == 'tools/cloudformation-template/README.md'
-      # MD033 MD033 Inline HTML. Required for example snippets.
-      # MD034 MD034 Bare URL used - Bugged. No bare URLs are actually used in this README.
+      # MD013 Line length
+      # MD033 Inline HTML. Required for example snippets.
+      # MD034 Bare URL used - Bugged. No bare URLs are actually used in this README.
       mdl = `mdl -r "~MD033","~MD034" #{file}`
   else
     # use .mdlrc rules
