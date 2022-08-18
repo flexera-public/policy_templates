@@ -8,6 +8,7 @@
   - reservation amount paid to date
   - reservation amount remaining to be paid
 - Added description to policy incident summary for total wasted spend on reservations
+- Updated default_frequency to "weekly"
 - Updated README.md to reflect new parameters added
 
 ## v2.4
