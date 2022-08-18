@@ -5,30 +5,48 @@ short_description "A policy that sends email notifications when utilization fall
 long_description ""
 severity "medium"
 category "Cost"
-default_frequency "daily"
+default_frequency "weekly"
 info(
-  version: "2.4",
+  version: "2.5",
   provider: "Azure",
   service: "Compute",
   policy_set: ""
 )
 
-#############
+###############################################################################
 # Parameters
-#############
+###############################################################################
 
 # Could maybe get this from the EA key, but for now just ask for it
-parameter "param_enrollment" do
+parameter "param_enrollment_id" do
   type "string"
   label "Azure Enrollment ID"
 end
 
 parameter "param_utilization" do
   category "RI"
-  label "Show RI's with utilization below this value"
+  label "Show Reservations with utilization below this value (%)"
   type "number"
   min_value 1
   max_value 100
+  default 100
+end
+
+parameter "param_azure_endpoint" do
+  type "string"
+  label "Azure Endpoint"
+  description "Azure Endpoint to access resources"
+  allowed_values "management.azure.com", "management.chinacloudapi.cn"
+  default "management.azure.com"
+end
+
+parameter "param_lookback_period" do
+  category "Savings Plan"
+  label "Look Back Period"
+  default "Last 7 days"
+  description "The number of days of past Azure Reservation Utilization data to analyze"
+  allowed_values "Last 7 days", "Last 30 days"
+  type "string"
 end
 
 parameter "param_email" do
@@ -36,9 +54,9 @@ parameter "param_email" do
   label "Email addresses of the recipients you wish to notify"
 end
 
-#################
+###############################################################################
 # Authentication
-#################
+###############################################################################
 
 credentials "azure_ea_auth" do
   schemes "api_key"
@@ -47,9 +65,9 @@ credentials "azure_ea_auth" do
   tags "provider=azure_ea"
 end
 
-#############
+###############################################################################
 # Pagination
-#############
+###############################################################################
 
 pagination "azure_pagination" do
   get_page_marker do
@@ -60,64 +78,179 @@ pagination "azure_pagination" do
   end
 end
 
-##############
-# Datasources
-##############
+###############################################################################
+# Datasources & Scripts
+###############################################################################
 
-# Use the request object above to make the API call and get the data
-datasource "scripted" do
+#GET CURRENCY REFERENCE AND CURRENCY CODE
+datasource "ds_currency_reference" do
   request do
-    run_script $azure_ri_request, $param_enrollment
+    host "raw.githubusercontent.com"
+    path "/rightscale/policy_templates/master/cost/scheduled_reports/currency_reference.json"
+    header "User-Agent", "RS Policies"
+  end
+end
+
+#GET RESERVATION CHARGES DETAILS
+datasource "ds_reservation_charges" do
+  request do
+    run_script $js_get_reservation_charges, $param_azure_endpoint, $param_enrollment_id
   end
   result do
     encoding "json"
     collect jmes_path(response, "[*]") do
-      field "reservationId", jmes_path(col_item,"reservationId")
-      field "skuName", jmes_path(col_item,"skuName")
-      field "minUtilizationPercentage", jmes_path(col_item,"minUtilizationPercentage")
-      field "avgUtilizationPercentage", jmes_path(col_item,"avgUtilizationPercentage")
-      field "maxUtilizationPercentage", jmes_path(col_item,"maxUtilizationPercentage")
-      field "reservedHours", jmes_path(col_item,"reservedHours")
-      field "usedHours", jmes_path(col_item,"usedHours")
+      field "billingFrequency", jmes_path(col_item, "billingFrequency")
+      field "purchasingEnrollment", jmes_path(col_item, "purchasingEnrollment")
+      field "currentEnrollment", jmes_path(col_item, "currentEnrollment")
+      field "skuName", jmes_path(col_item, "armSkuName")
+      field "term", jmes_path(col_item, "term")
+      field "region", jmes_path(col_item, "region")
+      field "purchasingSubscriptionGuid", jmes_path(col_item, "purchasingSubscriptionGuid")
+      field "purchasingSubscriptionName", jmes_path(col_item, "purchasingSubscriptionName")
+      field "departmentName", jmes_path(col_item, "departmentName")
+      field "costCenter", jmes_path(col_item, "costCenter")
+      field "eventDate", jmes_path(col_item, "eventDate")
+      field "eventType", jmes_path(col_item, "eventType")
+      field "reservationOrderId", jmes_path(col_item, "reservationOrderId")
+      field "reservationOrderName", jmes_path(col_item, "reservationOrderName")
+      field "quantity", jmes_path(col_item, "quantity")
+      field "amount", jmes_path(col_item, "amount")
+      field "currency", jmes_path(col_item, "currency")
+      field "description", jmes_path(col_item,"description")
     end
   end
 end
 
-# The Azure API returns a record per RI per day. This datasource uses the script
-# to group the data to be per-RI only, and average/sum the numbers across the
-# individual records
-datasource "grouped_utilizations" do
-  run_script $group_results,$scripted
-end
-
-##########
-# Scripts
-##########
-
-# Build the API request object dynamically because we need to
-#  calculate the startdate and enddate based on today
-# This is our API: https://docs.microsoft.com/en-us/rest/api/billing/enterprise/billing-enterprise-api-reserved-instance-usage#request-for--reserved-instance-usage-summary
-script "azure_ri_request", type: "javascript" do
-  parameters "enrollment"
+script "js_get_reservation_charges", type: "javascript" do
+  parameters "param_azure_endpoint", "param_enrollment_id"
   result "request"
   code <<-EOS
+    //Get start and end date (past 30 days)
+    var date = new Date()
+    date.setDate(date.getDate() - 2)
+    var end_date = date.toISOString().slice(0,10)
+    date.setDate(date.getDate() - 1095)
+    var start_date = date.toISOString().slice(0,10)
 
-    // Azure API allows you to specify which dates to retrieve utilization for. In order to keep with
-    // parity on how Optima does this for AWS RIs, and after consultation with COS team, the decision
-    // was made to use the last week's worth of data. We start from today-2 for a couple of reasons:
-    //  1 - that's what it is in Optima for AWS
-    //  2 - it's not clear how up-to-date the Azure data is, so specifying "today" might not work great
-    var date = new Date();
-    date.setDate(date.getDate() - 2);
-    var enddate = date.toISOString().slice(0,10);
-    date.setDate(date.getDate() - 7);
-    var startdate = date.toISOString().slice(0,10);
+    //API request
+    var request = {
+      auth: "azure_ea_auth",
+      pagination: "azure_pagination",
+      host: "consumption.azure.com",
+      path: "/v4/enrollments/" + param_enrollment_id + "/reservationcharges",
+      query_params: {
+        "grain": "monthly",
+        "startDate": start_date,
+        "endDate": end_date
+      },
+      headers: {
+        "User-Agent": "RS Policies"
+      }
+    }
+  EOS
+end
+
+#REMOVE DUPLICATE DATA
+datasource "ds_reduced_reservation_charges" do
+  run_script $js_reduce_reservation_charges_data, $ds_reservation_charges
+end
+
+script "js_reduce_reservation_charges_data", type: "javascript" do
+  parameters "ds_reservation_charges"
+  result "result"
+  code <<-EOS
+    result = []
+
+    //get rid of reservation charges that no longer apply (if even applicable)
+    charges_grouped_by_reservation_order = _.groupBy(ds_reservation_charges, "reservationOrderId")
+    reservation_orders = _.keys(charges_grouped_by_reservation_order, "reservationOrderId")
+    
+    var paid_to_date = []
+    _.each(reservation_orders, function(order){
+      var total_amount_paid = 0
+      var months_paid = 0
+
+      //get the monthlyAmount for the most recent date
+      var monthly_amount = _.last(charges_grouped_by_reservation_order[order]).amount
+      var event_type = _.last(charges_grouped_by_reservation_order[order]).eventType
+      
+      _.each(charges_grouped_by_reservation_order[order], function(charge){
+        total_amount_paid += charge.amount
+        months_paid ++ 
+      })
+
+      paid_to_date.push({ 
+        "reservationOrderId": order, 
+        "totalAmount": total_amount_paid, 
+        "months": months_paid,
+        "monthlyAmount": monthly_amount,
+        "eventType": event_type  
+      })
+    })
+
+    //remove all duplicates
+    result = _.uniq(ds_reservation_charges, function(x){ return x.reservationOrderId })
+
+    //enrich data with total amount paid to date, and total amount outstanding
+    _.each(result, function(charge){
+      
+      amount_paid = _.find(paid_to_date, function(amount){ return amount.reservationOrderId == charge.reservationOrderId })
+      charge["eventType"] = amount_paid.eventType
+      charge["amountPaidToDate"] = parseFloat(amount_paid.totalAmount).toFixed(2)
+
+      if( charge.billingFrequency == "Recurring" ){
+        if (charge.term == "P1Y" ){
+          charge["amountOutstandingToDate"] = parseFloat((12 - amount_paid.months) * amount_paid.monthlyAmount).toFixed(2)
+        } else {
+          charge["amountOutstandingToDate"] = parseFloat((36 - amount_paid.months) * amount_paid.monthlyAmount).toFixed(2)
+        }
+      } else { 
+        charge["amountOutstandingToDate"] = 0
+      }
+
+      charge["amount"] = parseFloat(amount_paid.monthlyAmount).toFixed(2)
+    })
+  EOS
+end
+
+#GET RESERVATION SUMMARIES DETAILS
+datasource "ds_reservation_summaries" do
+  request do
+    run_script $js_get_reservation_summaries, $param_azure_endpoint, $param_enrollment_id, $param_lookback_period
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "[*]") do
+      field "reservationOrderId", jmes_path(col_item, "reservationOrderId")
+      field "reservationId", jmes_path(col_item, "reservationId")
+      field "skuName", jmes_path(col_item, "skuName")
+      field "minUtilizationPercentage", jmes_path(col_item, "minUtilizationPercentage")
+      field "avgUtilizationPercentage", jmes_path(col_item, "avgUtilizationPercentage")
+      field "maxUtilizationPercentage", jmes_path(col_item, "maxUtilizationPercentage")
+      field "reservedHours", jmes_path(col_item, "reservedHours")
+      field "usedHours", jmes_path(col_item, "usedHours")
+    end
+  end
+end
+
+script "js_get_reservation_summaries", type: "javascript" do
+  parameters "param_azure_endpoint", "param_enrollment_id", "param_lookback_period"
+  result "request"
+  code <<-EOS
+    //Get start and end date based on lookback period parameter
+    var lookback_period = 30
+    if( param_lookback_period == "Last 7 days" ){ lookback_period = 7 } else { lookback_period = 30 }
+    var date = new Date()
+    date.setDate(date.getDate() - 2)
+    var enddate = date.toISOString().slice(0,10)
+    date.setDate(date.getDate() - lookback_period)
+    var startdate = date.toISOString().slice(0,10)
 
     var request = {
       auth: "azure_ea_auth",
       pagination: "azure_pagination",
       host: "consumption.azure.com",
-      path: "/v2/enrollments/" + enrollment + "/reservationsummaries",
+      path: "/v2/enrollments/" + param_enrollment_id + "/reservationsummaries",
       query_params: {
         "grain": "daily",
         "startdate": startdate,
@@ -130,76 +263,198 @@ script "azure_ri_request", type: "javascript" do
   EOS
 end
 
-# See note above - this groups the data from the Azure API into a per-RI
-# record instead of per-RI per-day
-script "group_results", type: "javascript" do
-  parameters "result"
-  result "groupings"
+#COMBINE CHARGES DETAILS AND SUMMARY DETAILS FOR RESERVATIONS
+datasource "ds_reservation_purchase_details" do
+  run_script $js_combine_reservation_details, $ds_reduced_reservation_charges, $ds_reservation_summaries, $ds_currency_reference, $param_utilization
+end
+
+script "js_combine_reservation_details", type: "javascript" do
+  parameters "reservation_charges_data", "reservation_summaries_data", "currency_reference", "param_utilization"
+  result "all_data"
   code <<-EOS
-    var groupings = _.map(_.groupBy(result, 'reservationId'), function(v, k){
+    
+  //function for formatting spend number
+  function formatNumber(number, separator) {
+    var numString = number.toString();
+    var values = numString.split(".");
+    var result = ''
+    while ( values[0].length > 3 ) {
+      var chunk = values[0].substr(-3)
+      values[0] = values[0].substr(0, values[0].length - 3)
+      result = separator + chunk + result
+    }
+    if ( values[0].length > 0 ) {
+      result = values[0] + result
+    }
+    if ( values[1] == undefined ) {
+      return result;
+    }
+    return result + "." + values[1];
+  }
+  
+  //format costs with currency symbol and thousands separator
+  var cur = "", separator = ""
+  if ( reservation_charges_data[0].currency !== undefined ) {
+    if ( currency_reference[ reservation_charges_data[0].currency ] !== undefined ) {
+      cur = currency_reference[ reservation_charges_data[0].currency ].symbol
+      if ( currency_reference[ reservation_charges_data[0].currency ].t_separator !== undefined ) {
+        separator = currency_reference[ reservation_charges_data[0].currency ].t_separator
+      } else {
+        separator = ""
+      }
+    } else {
+      cur = ""
+      separator = ""
+    }
+  } else {
+    cur = "$"
+    separator = ","
+  }
+  
+  //combine reservation charge data with reservation utilization data, and calculate total wasted spend per month
+  var total_wastage = 0
 
-      // Average the "average" utilization
-      avgUtil = _.reduce(v, function(memo, num) {
-            return memo + num.avgUtilizationPercentage;
-        }, 0) / (v.length === 0 ? 1 : v.length);
+    _.each(reservation_charges_data, function(charge){
+      var summary_details = _.find(reservation_summaries_data, function(summary){ 
+        return summary.reservationOrderId == charge.reservationOrderId
+      })
 
-      // Sum the reserved hours
-      sumReserved = _.reduce(v, function(memo, num) {
-            return memo + num.reservedHours;
-        }, 0);
-
-      // Sum the used hours
-      sumUsed = _.reduce(v, function(memo, num) {
-            return memo + num.usedHours;
-        }, 0);
-
-      return {
-        id: k,
-        sku: v[0].skuName,
-        util: avgUtil,
-        reserved: sumReserved,
-        used: sumUsed
+      if( summary_details != undefined ){
+        charge["reservationId"] = summary_details.reservationId
+        charge["minUtilizationPercentage"] = summary_details.minUtilizationPercentage
+        charge["avgUtilizationPercentage"] = summary_details.avgUtilizationPercentage
+        charge["maxUtilizationPercentage"] = summary_details.maxUtilizationPercentage
+        charge["reservedHours"] = summary_details.reservedHours
+        charge["usedHours"] = summary_details.usedHours
+        
+        var wastage_amount = ((100 - Number(summary_details.avgUtilizationPercentage)) / 100) * Number(charge.amount)
+        total_wastage += wastage_amount
+        charge["wastageAmount"] = parseFloat(wastage_amount).toFixed(2)
+      } else {
+        charge["reservationId"] = ""
+        charge["minUtilizationPercentage"] = ""
+        charge["avgUtilizationPercentage"] = ""
+        charge["maxUtilizationPercentage"] = ""
+        charge["reservedHours"] = ""
+        charge["usedHours"] = ""
       }
     })
-    groupings=_.sortBy(groupings, 'id');
-    groupings=_.sortBy(groupings, 'sku');
-    groupings=_.sortBy(groupings, 'reserved');
+
+    combined_reservation_details = _.reject(reservation_charges_data, function(data){ return data.reservationId == "" })
+    combined_reservation_details = _.reject(combined_reservation_details, function(data){ return Number(data.avgUtilizationPercentage) > param_utilization })
+
+    total_wastage = cur + ' ' + formatNumber((Math.round(total_wastage * 100) / 100), separator)
+
+    all_data = {
+      "reservation_details": combined_reservation_details,
+      "message": "The total estimated monthly wasted spend is " + total_wastage
+    }
   EOS
 end
 
-##########
+###############################################################################
 # Policy
-##########
+###############################################################################
 
-policy "azure_superseded_instances_policy" do
-  validate_each $grouped_utilizations do
-    summary_template "(Enrollment ID: {{parameters.param_enrollment}}): {{ len data }} Underutilized Azure Reserved Instances"
+policy "policy_azure_active_reserved_instances" do
+  validate $ds_reservation_purchase_details do
+    summary_template "(Enrollment ID: {{parameters.param_enrollment_id}}): {{ len data.reservation_details }} active Azure Reserved Instances - {{ parameters.param_lookback_period }}"
+    detail_template <<-EOS
+{{data.message}}
+EOS
     escalate $email
-    check logic_not(lt(to_n(val(item,"util")),$param_utilization))
-    export do
+    check eq(size(val(data, "reservation_details")), 0)
+    export "reservation_details" do
       resource_level true
-      field "id" do
-        label "RI ID"
+      field "reservationId" do
+        label "Reservation ID"
       end
-      field "sku" do
+      field "purchasingSubscriptionGuid" do
+        label "Purchasing Subscription GUID"
+      end
+      field "skuName" do
         label "SKU Name"
       end
-      field "reserved" do
-        label "Reserved Hours"
+      field "region" do
+        label "Region"
       end
-      field "used" do
+      field "term" do
+        label "Term"
+      end
+      field "quantity" do
+        label "Quantity Purchased"
+      end
+      field "eventDate" do
+        label "Purchase Date"
+      end
+      field "eventType" do
+        label "Event Type"
+      end
+      #field "expirationDate" do
+      #  label "Expiration Date"
+      #end
+      field "avgUtilizationPercentage" do
+        label "Avg. Utilizaton %"
+      end
+      field "usedHours" do
         label "Used Hours"
       end
-      field "util" do
-        label "Avg Util Pct"
+      field "reservedHours" do
+        label "Reserved Hours"
+      end
+      field "amount" do
+        label "Reservation Monthly Cost"
+      end
+      field "amountPaidToDate" do
+        label "Reservation Amount Paid to Date"
+      end
+      field "amountOutstandingToDate" do
+        label "Reservation Amount Outstanding"
+      end
+      field "wastageAmount" do
+        label "Reservation Monthly Wasted Spend"
+      end
+      field "currency" do
+        label "Currency"
+      end
+      field "purchasingSubscriptionName" do
+        label "Purchasing Subscription Name"
+      end
+      field "reservationOrderId" do
+        label "Reservation Order ID"
+      end
+      field "reservationOrderName" do
+        label "Reservation Order Name"
+      end
+      field "departmentName" do
+        label "Department Name"
+      end      
+      field "costCenter" do
+        label "Cost Center"
+      end
+      field "description" do
+        label "Description"
+      end
+      field "billingFrequency" do
+        label "Billing Frequency"
+      end
+      field "purchasingEnrollment" do
+        label "Purchasing Enrollment"
+      end
+      field "currentEnrollment" do
+        label "Current Enrollment"
+      end
+      field "id" do
+        label "ID"
+        path "reservationOrderId"
       end
     end
   end
 end
 
-##############
+###############################################################################
 # Escalations
-##############
+###############################################################################
 
 escalation "email" do
   automatic true
