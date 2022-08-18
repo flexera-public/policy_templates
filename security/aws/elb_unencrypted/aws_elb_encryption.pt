@@ -6,7 +6,7 @@ long_description ""
 category "Security"
 severity "medium"
 info(
-  version: "2.8",
+  version: "2.9",
   provider: "AWS",
   service: "ELB",
   policy_set: ""
@@ -80,9 +80,25 @@ end
 # Datasources
 ###############################################################################
 
-#Generates list of Regions
-#Get list of enabled regions for an account
+# ds_opt_in_params contains list of opt-in-status param values needed to get all regions except "not-opted-in"
+datasource "ds_opt_in_params" do
+  run_script $js_opt_in_params
+end
+
+# js_opt_in_params takes no parameters and returns list of 2 strings
+script "js_opt_in_params", type:"javascript" do
+  result "result"
+  code <<-EOS
+  result = ["opt-in-not-required", "opted-in"];
+EOS
+end
+
+# ds_region_list is a list of regions that are opted-in or opt-in-not-required
 datasource "ds_regions_list" do
+  # iterate through opt-in-status param values and collect list of regions
+  # Effectively `iterate: ["opt-in-not-required", "opted-in"]` but policy template requires iterate over datasource (ds_opt_in_params)
+  # https://docs.aws.amazon.com/AWSEC2/latest/APIReference/API_DescribeRegions.html
+  iterate $ds_opt_in_params
   request do
     auth $auth_aws
     verb "GET"
@@ -90,6 +106,8 @@ datasource "ds_regions_list" do
     path "/"
     query "Action", "DescribeRegions"
     query "Version", "2016-11-15"
+    query "Filter.1.Name", "opt-in-status"
+    query "Filter.1.Value.1", iter_item
   end
   result do
     encoding "xml"
