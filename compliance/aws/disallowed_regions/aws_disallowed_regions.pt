@@ -82,25 +82,9 @@ end
 # Datasources
 ###############################################################################
 
-# ds_opt_in_params contains list of opt-in-status param values needed to get all regions except "not-opted-in"
-datasource "ds_opt_in_params" do
-  run_script $js_opt_in_params
-end
-
-# js_opt_in_params takes no parameters and returns list of 2 strings
-script "js_opt_in_params", type:"javascript" do
-  result "result"
-  code <<-EOS
-  result = ["opt-in-not-required", "opted-in"];
-EOS
-end
-
 # ds_region_list is a list of regions that are opted-in or opt-in-not-required
 datasource "ds_regions_list" do
-  # iterate through opt-in-status param values and collect list of regions
-  # Effectively `iterate: ["opt-in-not-required", "opted-in"]` but policy template requires iterate over datasource (ds_opt_in_params)
   # https://docs.aws.amazon.com/AWSEC2/latest/APIReference/API_DescribeRegions.html
-  iterate $ds_opt_in_params
   request do
     auth $auth_aws
     verb "GET"
@@ -109,26 +93,25 @@ datasource "ds_regions_list" do
     query "Action", "DescribeRegions"
     query "Version", "2016-11-15"
     query "Filter.1.Name", "opt-in-status"
-    query "Filter.1.Value.1", iter_item
+    query "Filter.1.Value.1", "opt-in-not-required"
+    query "Filter.1.Value.2", "opted-in"
   end
   result do
     encoding "xml"
-    collect xpath(response, "//DescribeRegionsResponse/regionInfo/item") do
-      field "regionName", xpath(col_item, "regionName")
-      field "regionEndpoint", xpath(col_item, "regionEndpoint")
+    collect xpath(response, "//DescribeRegionsResponse/regionInfo/item", "array") do
+      field "region", xpath(col_item, "regionName")
     end
   end
 end
 
-# Generates list of Regions which User input.
-datasource "ds_regions_list" do
-  run_script $js_regions_map, $ds_all_regions, $param_allowed_regions
+# Get only SCP enabled regions
+datasource "ds_regions" do
+  run_script $js_regions, $param_allowed_regions, $ds_regions_list
 end
-
 # Get the list of all EC2 Instances across all regions.
 # https://docs.aws.amazon.com/AWSEC2/latest/APIReference/API_DescribeInstances.html
 datasource "ds_disallowed_instances_list" do
-  iterate $ds_regions_list
+  iterate $ds_regions
   request do
     auth $auth_aws
     pagination $aws_pagination_xml
@@ -163,26 +146,36 @@ end
 # Scripts
 ###############################################################################
 
-script "js_regions_map", type: "javascript" do
-  parameters "ds_all_regions", "param_allowed_regions"
-  result "regions_map"
+script "js_regions", type:"javascript" do
+  parameters "user_entered_regions", "all_regions"
+  result "regions"
   code <<-EOS
-  regions_map = []
+    if(_.isEmpty(user_entered_regions)){
+      regions = all_regions;
+    }else{
+      //Filter unique regions
+      var uniqueRegions = _.uniq(user_entered_regions);
+      var all_regions_list = [];
+      all_regions.forEach(function(all_region){
+        all_regions_list.push(all_region.region)
+      })
 
-  _.each(ds_all_regions, function(region) {
-    disallowed = true
+      //Filter valid regions
+      var valid_regions = [];
+      _.map(uniqueRegions, function(uniqueRegion){
+        if(all_regions_list.indexOf(uniqueRegion) > -1){
+          valid_regions.push({"region": uniqueRegion})
+        }
+      })
 
-    _.each(param_allowed_regions, function(allowed_region) {
-      if (region['regionName'].trim() == allowed_region.trim()) {
-        disallowed = false
+      //Throw an error if no valid regions found
+      if (_.isEmpty(valid_regions)) {
+        regions = all_regions;
+      }else{
+        regions = valid_regions
       }
-    })
-
-    if (disallowed) {
-      regions_map.push(region)
     }
-  })
-EOS
+  EOS
 end
 
 script "js_filter_aws_instances", type: "javascript" do
