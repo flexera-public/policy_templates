@@ -4,14 +4,16 @@
 
 ## What it does
 
-This Policy Template leverages the [Azure EA API for Reserved Instance Utilization](https://docs.microsoft.com/en-us/rest/api/billing/enterprise/billing-enterprise-api-reserved-instance-usage#request-for--reserved-instance-usage-summary). It will notify only if utilization of a RI falls below the value specified in the `Show RI's with utilization below this value` field. It examines the RI utilization for the prior 7 days (starting from 2 days ago) in making this determination.
+This Policy Template leverages the [Azure EA API for Reserved Instance Utilization](https://docs.microsoft.com/en-us/rest/api/billing/enterprise/billing-enterprise-api-reserved-instance-usage#request-for--reserved-instance-usage-summary). It will notify only if utilization of a RI falls below the value specified in the `Show RI's with utilization below this value` field. It examines the RI utilization for the prior 7 days or 30 days (starting from 2 days ago) in making this determination.
 
 ## Input Parameters
 
 This policy has the following input parameters required when launching the policy.
 
-- *Enrollment ID* - the Azure EA enrollment ID
-- *Show RI's with utilization below this value* - Number between 1 and 100
+- *Enrollment ID* - Your Azure EA Enrollment ID
+- *Azure Endpoint* - Azure Endpoint to access resources
+- *Look Back Period* - The number of days of past Azure Reservation Utilization data to analyze
+- *Show Reservations with utilization below this value (%)* - Number between 1 and 100
 - *Email addresses of the recipients you wish to notify* - A list of email addresses to notify
 
 ## Policy Actions
