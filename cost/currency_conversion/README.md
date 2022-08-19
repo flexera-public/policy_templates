@@ -7,10 +7,10 @@ This Policy creates an adjustment rule that converts the currency of the cost as
 ## Functional Details
 
 - This policy supports currency codes as per [ISO 4217](https://www.xe.com/iso4217.php), and uses the xe.com API to retrieve monthly average exchange rate.
-- This policy requires an API credential added to the tenant to use the xe.com API
+- This policy requires an API credential added to the tenant to use the xe.com API.
 - This policy supports three cloud providers: AWS, Azure and Google Cloud.
 - This policy creates an adjustment rule for currency conversion using the exchange rate from xe.com.
-- This policy can be customized to suit user requirements, such as supporting vendors other than AWS, Azure and GCP. 
+- This policy can be customized to suit user requirements, such as supporting vendors other than AWS, Azure and GCP.
 
 ### Input Parameters
 
