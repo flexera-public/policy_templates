@@ -4,6 +4,8 @@
 
 This Policy creates an adjustment rule that converts the currency of the cost associated with the Cloud Vendor of choice. It utilizes xe.com to retrieve the latest exchange rates.
 
+This Policy requires an xe.com API Credential to be added to the tenant. Please contact your Customer Support or Services representative to get this added. 
+
 ## Functional Details
 
 - This policy supports currency codes as per [ISO 4217](https://www.xe.com/iso4217.php), and uses the xe.com API to retrieve monthly average exchange rate.
