@@ -6,7 +6,7 @@ long_description ""
 category "Security"
 severity "high"
 info(
-  version: "2.8",
+  version: "2.9",
   provider: "AWS",
   service: "ELB",
   policy_set: ""
@@ -79,7 +79,9 @@ end
 # Datasources
 ###############################################################################
 
-datasource "ds_region_list" do
+# ds_region_list is a list of regions that are opted-in or opt-in-not-required
+datasource "ds_regions_list" do
+  # https://docs.aws.amazon.com/AWSEC2/latest/APIReference/API_DescribeRegions.html
   request do
     auth $auth_aws
     verb "GET"
@@ -87,6 +89,9 @@ datasource "ds_region_list" do
     path "/"
     query "Action", "DescribeRegions"
     query "Version", "2016-11-15"
+    query "Filter.1.Name", "opt-in-status"
+    query "Filter.1.Value.1", "opt-in-not-required"
+    query "Filter.1.Value.2", "opted-in"
   end
   result do
     encoding "xml"
@@ -98,17 +103,17 @@ end
 
 # Get only SCP enabled regions
 datasource "ds_regions" do
-  run_script $js_regions, $param_allowed_regions, $ds_region_list
+  run_script $js_regions, $param_allowed_regions, $ds_regions_list
 end
 
 #Generates list of Regions with Load Balancer type and API version.
-datasource "ds_regions_list" do
+datasource "ds_regions_map" do
   run_script $js_regions_map, $ds_regions
 end
 
 #Get the list of all Classic and application load Balancers
 datasource "ds_elb_list" do
-  iterate $ds_regions_list
+  iterate $ds_regions_map
   request do
     run_script $js_elb_list, val(iter_item,"region"), val(iter_item,"API_version")
   end

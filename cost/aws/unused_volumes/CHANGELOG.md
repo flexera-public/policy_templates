@@ -1,8 +1,12 @@
 # Changelog
 
-## v3.7
+## v3.8
 
 - Added accountName field
+
+## v3.7
+
+- Added filter for DescribeRegion to only return regions that are `opted-in` or `opt-in-not-required` [exclude `not-opted-in`] in the current AWS account.
 
 ## v3.6
 

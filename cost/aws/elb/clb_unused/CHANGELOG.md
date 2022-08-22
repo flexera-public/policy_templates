@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.16
+
+- Added filter for DescribeRegion to only return regions that are `opted-in` or `opt-in-not-required` [exclude `not-opted-in`] in the current AWS account.
+
 ## v2.15
 
 - Added default to aws_account_number parameter to enable existing API users.

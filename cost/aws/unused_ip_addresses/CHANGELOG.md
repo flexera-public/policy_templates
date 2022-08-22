@@ -1,9 +1,13 @@
 # Changelog
 
-## v3.5
+## v3.6
 
 - Added accountName call and field
 - updated fields to match new field conventions of camel-case
+
+## v3.5
+
+- Added filter for DescribeRegion to only return regions that are `opted-in` or `opt-in-not-required` [exclude `not-opted-in`] in the current AWS account.
 
 ## v3.4
 
