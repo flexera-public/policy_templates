@@ -47,26 +47,40 @@ Required Flexera Role: billing_center_viewer (note: this role must be applied at
 
 Provider tag value to match this policy: `aws` , `aws_sts`
 
+#### organization.DescribeAccount requires the master account to run correctly. If organization.DescribeAccount is unavailable, it will run normally but produce a blank accountName
+
 The following AWS permissions must be allowed for the policy to run.
 
 ```javascript
 {
-    "Version": "2012-10-17",
-    "Statement": [
-        {
-            "Sid": "VisualEditor0",
-            "Effect": "Allow",
-            "Action": [
-                "ec2:DeleteSnapshot",
-                "ec2:DescribeSnapshots",
-                "ec2:DescribeImages",
-                "ec2:DeregisterImage",
-                "sts:GetCallerIdentity",
-                "ec2:DescribeRegions"
-            ],
-            "Resource": "*"
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "VisualEditor0",
+      "Effect": "Allow",
+      "Action": [
+        "ec2:DeleteSnapshot",
+        "ec2:DescribeSnapshots",
+        "ec2:DescribeImages",
+        "ec2:DeregisterImage",
+        "sts:GetCallerIdentity",
+        "ec2:DescribeRegions"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Effect":"Allow",
+      "Action":[
+        "organizations:DescribeAccount"
+      ],
+      "Resource":"*",
+      "Condition":{
+        "Bool":{
+          "aws:SecureTransport":"true"
         }
-    ]
+      }
+    }
+  ]
 }
 ```
 

@@ -45,6 +45,8 @@ For administrators [creating and managing credentials](https://docs.flexera.com/
 
 Provider tag value to match this policy: `aws` , `aws_sts`
 
+#### organization.DescribeAccount requires the master account to run correctly. If organization.DescribeAccount is unavailable, it will run normally but produce a blank accountName
+
 Required permissions in the provider:
 
 ```javascript
@@ -60,6 +62,18 @@ Required permissions in the provider:
         "pricing:GetProducts"
       ],
       "Resource": "*"
+    },
+    {
+      "Effect":"Allow",
+      "Action":[
+        "organizations:DescribeAccount"
+      ],
+      "Resource":"*",
+      "Condition":{
+        "Bool":{
+          "aws:SecureTransport":"true"
+        }
+      }
     }
   ]
 }

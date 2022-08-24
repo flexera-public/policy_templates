@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.2
+
+- remove duplicate data fields for subscriptionID and subscriptionName
+
 ## v3.1
 
 - update policy for optimization, changes go as follows:

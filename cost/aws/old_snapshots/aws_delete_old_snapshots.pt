@@ -6,7 +6,7 @@ category "Cost"
 severity "low"
 default_frequency "daily"
 info(
-  version: "3.5",
+  version: "3.6",
   provider: "AWS",
   service: "EBS",
   policy_set: "Old Snapshots"
@@ -186,6 +186,7 @@ datasource "ds_snapshot_costs" do
     encoding "json"
     collect jmes_path(response, "rows[*]") do
       field "resource_id", jmes_path(col_item, "dimensions.resource_id")
+      field "vendorAccountName", jmes_path(col_item, "dimensions.vendor_account_name")
       field "cost_nonamortized_unblended_adj", jmes_path(col_item, "metrics.cost_nonamortized_unblended_adj")
     end
   end
@@ -360,7 +361,7 @@ script "js_get_costs", type: "javascript" do
       verb: "POST",
       path: "/bill-analysis/orgs/" + org + "/costs/select",
       body_fields: {
-        "dimensions": ["resource_id"],
+        "dimensions": ["resource_id", "vendor_account_name"],
         "granularity": "day",
         "start_at": start_date,
         "end_at": end_date,
@@ -450,6 +451,10 @@ script "js_snapshots_cost_mapping", type: "javascript" do
       var separator = ","
     }
   }
+  var accountName = ""
+  if (_.size(snapshot_costs) > 0) {
+    accountName = snapshot_costs[0].vendorAccountName
+  }
   var total=0;
   _.each(snapshots, function(snapshot){
     var cost_objects = costs_by_resource_id[snapshot.formatSnapId];
@@ -459,6 +464,7 @@ script "js_snapshots_cost_mapping", type: "javascript" do
       total=total+monthly_savings;
       result.push({
         accountID: ds_get_caller_identity[0]['account'],
+        accountName: accountName,
         snapshotId : snapshot['snapshotId'],
         region : snapshot['region'],
         tags : snapshot['tagKeyValue'],
@@ -472,6 +478,7 @@ script "js_snapshots_cost_mapping", type: "javascript" do
     } else {
       result.push({
         accountID: ds_get_caller_identity[0]['account'],
+        accountName: accountName,
         snapshotId : snapshot['snapshotId'],
         region : snapshot['region'],
         tags : snapshot['tagKeyValue'],
@@ -648,6 +655,9 @@ EOS
       resource_level true
       field "accountID" do
         label "Account ID"
+      end
+      field "accountName" do
+        label "Account Name"
       end
       field "region" do
         label "Region"

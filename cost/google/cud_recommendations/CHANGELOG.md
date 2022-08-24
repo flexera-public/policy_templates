@@ -1,5 +1,13 @@
 # Changelog
 
+## v2.4
+
+- remove duplicate data fields for subscriptionID and subscriptionName
+
+## v2.3
+
+- added project name/id/number fields and moved account versions to end
+
 ## v2.2
 
 - Fixed missing savings field

@@ -7,7 +7,7 @@ severity "medium"
 category "Cost"
 default_frequency "daily"
 info(
-  version: "2.11",
+  version: "2.13",
   provider: "AWS",
   service: "",
   policy_set: ""
@@ -64,7 +64,7 @@ parameter "param_savings_plan_type" do
   category "Savings Plan"
   label "Savings Plan Type"
   default "Compute Savings Plan"
-  allowed_values "Compute Savings Plan","EC2 Instance Savings Plan", "SageMaker Savings Plans"
+  allowed_values "Compute Savings Plan","EC2 Instance Savings Plan","SageMaker Savings Plans"
   type "string"
 end
 
@@ -103,6 +103,17 @@ credentials "auth_aws" do
   aws_account_number $param_aws_account_number
 end
 
+credentials "auth_rs" do
+  schemes "oauth2"
+  label "Flexera_Automation"
+  description "Select FlexeraOne OAuth2 credentials"
+  tags "provider=flexera"
+end
+
+###############################################################################
+# Pagination
+###############################################################################
+
 pagination "aws_pagination" do
   get_page_marker do
     body_path "NextPageToken"
@@ -113,8 +124,191 @@ pagination "aws_pagination" do
 end
 
 ###############################################################################
+# Datasources
+###############################################################################
+
+datasource "ds_get_caller_identity" do
+  request do
+    auth $auth_aws
+    verb "GET"
+    host "sts.amazonaws.com"
+    path "/"
+    header "User-Agent", "RS Policies"
+    query "Action", "GetCallerIdentity"
+    query "Version", "2011-06-15"
+  end
+  result do
+    encoding "xml"
+    collect xpath(response, "//GetCallerIdentityResponse/GetCallerIdentityResult") do
+      field "account",xpath(col_item, "Account")
+    end
+  end
+end
+
+datasource "ds_billing_centers" do
+  request do
+    auth $auth_rs
+    host rs_optima_host
+    path join(["/analytics/orgs/", rs_org_id, "/billing_centers"])
+    header "Api-Version", "1.0"
+    header "User-Agent", "RS Policies"
+    query "view", "allocation_table"
+  ignore_status [403]
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "[*]") do
+      field "href", jmes_path(col_item, "href")
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+      field "parent_id", jmes_path(col_item, "parent_id")
+    end
+  end
+end
+
+datasource "ds_top_level_billing_centers" do
+  run_script $js_top_level_bc, $ds_billing_centers
+end
+
+datasource "ds_account_name" do
+  request do
+    run_script $js_get_account_name, $ds_get_caller_identity, $ds_top_level_billing_centers, rs_org_id, rs_optima_host
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "rows[*]") do
+      field "vendorAccountName", jmes_path(col_item, "dimensions.vendor_account_name")
+    end
+  end
+end
+
+datasource "ds_sp_recommendations" do
+  request do
+    run_script $js_sp_request, $param_days, $param_payment_option, $param_term, $param_savings_plan_type, $param_scope
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "SavingsPlansPurchaseRecommendation.SavingsPlansPurchaseRecommendationDetails[*]") do
+      field "accountID", jmes_path(col_item,"AccountId")
+      field "currencyCode", jmes_path(col_item,"CurrencyCode")
+      field "currentAverageHourlyOnDemandSpend", jmes_path(col_item,"CurrentAverageHourlyOnDemandSpend")
+      field "currentMaximumHourlyOnDemandSpend", jmes_path(col_item,"CurrentMaximumHourlyOnDemandSpend")
+      field "currentMinimumHourlyOnDemandSpend", jmes_path(col_item,"CurrentMinimumHourlyOnDemandSpend")
+      field "estimatedAverageUtilization", jmes_path(col_item,"EstimatedAverageUtilization")
+      field "estimatedMonthlySavingsAmount", jmes_path(col_item,"EstimatedMonthlySavingsAmount")
+      field "estimatedOnDemandCost", jmes_path(col_item,"EstimatedOnDemandCost")
+      field "estimatedROI", jmes_path(col_item,"EstimatedROI")
+      field "estimatedSavingsAmount", jmes_path(col_item,"EstimatedSavingsAmount")
+      field "estimatedSavingsPercentage", jmes_path(col_item,"EstimatedSavingsPercentage")
+      field "estimatedSavingsPlanCost", jmes_path(col_item,"EstimatedSPCost")
+      field "hourlyCommitmentToPurchase", jmes_path(col_item,"HourlyCommitmentToPurchase")
+      field "instanceFamily", jmes_path(col_item,"SavingsPlansDetails.InstanceFamily")
+      field "offeringId", jmes_path(col_item,"SavingsPlansDetails.OfferingId")
+      field "region", jmes_path(col_item,"SavingsPlansDetails.Region")
+      field "upfrontCost", jmes_path(col_item,"UpfrontCost")
+    end
+  end
+end
+
+datasource "ds_sp_normalization" do
+  run_script $js_sp_cleanup, $ds_sp_recommendations, $param_currency_adjustment, $ds_account_name
+end
+
+###############################################################################
 # Scripts
 ###############################################################################
+script "js_get_account_name", type: "javascript" do
+  parameters "account_id", "billing_centers", "org", "optima_host"
+  result "request"
+  code <<-EOS
+    // returns date formatted as string: YYYY-mm-dd
+    function getFormattedDailyDate(date) {
+      var year = date.getFullYear();
+      var month = (1 + date.getMonth()).toString();
+      month = month.length > 1 ? month : '0' + month;
+      var day = date.getDate().toString();
+      day = day.length > 1 ? day : '0' + day;
+      return year + '-' + month + '-' + day;
+    }
+    var start_date = getFormattedDailyDate(new Date(new Date().setDate(new Date().getDate() - 3)));
+    var end_date = getFormattedDailyDate(new Date(new Date().setDate(new Date().getDate() - 2)));
+    var request = {
+      auth: "auth_rs",
+      host: optima_host,
+      verb: "POST",
+      path: "/bill-analysis/orgs/" + org + "/costs/select",
+      body_fields: {
+        "dimensions": ["vendor_account_name"],
+        "granularity": "day",
+        "start_at": start_date,
+        "end_at": end_date,
+        "metrics": ["cost_nonamortized_unblended_adj"],
+        "billing_center_ids": _.compact(_.map(billing_centers, function(value){ return value.id})),
+        "limit": 1,
+        "filter": {
+          "dimension": "vendor_account",
+          "type": "equal",
+          "value": account_id[0]["account"]
+        }
+      },
+      headers: {
+        "User-Agent": "RS Policies",
+        "Api-Version": "1.0"
+      },
+      ignore_status: [400]
+    }
+  EOS
+end
+
+script "js_top_level_bc", type: "javascript" do
+  parameters "billing_centers"
+  result "filtered_billing_centers"
+  code <<-EOS
+    var filtered_billing_centers =_.reject(billing_centers, function(bc){ return bc.parent_id != null });
+  EOS
+end
+
+script "js_sp_cleanup", type: "javascript" do
+  parameters "sp_recos", "currency_adjustment", "ds_account_name"
+  result "result"
+  code <<-EOS
+    var result = [];
+    accountName = ""
+    if (ds_account_name[0] != null) {
+      accountName = ds_account_name[0]['vendorAccountName']
+    }
+    _.each(sp_recos, function(reco){
+        result.push({
+          accountID: reco["accountID"],
+          accountName: accountName,
+          currencyCode: reco["currencyCode"],
+          currentAverageHourlyOnDemandSpend: (Math.round(reco["currentAverageHourlyOnDemandSpend"] * 100) / 100).toString(10),
+          currentMaximumHourlyOnDemandSpend: (Math.round(reco["currentMaximumHourlyOnDemandSpend"] * 100) / 100).toString(10),
+          currentMinimumHourlyOnDemandSpend: (Math.round(reco["currentMinimumHourlyOnDemandSpend"] * 100) / 100).toString(10),
+          estimatedAverageUtilization: (Math.round(reco["estimatedAverageUtilization"] * 100) / 100).toString(10),
+          estimatedMonthlySavingsAmount: (Math.round(reco["estimatedMonthlySavingsAmount"] * 100) / 100 * currency_adjustment).toString(10),
+          estimatedOnDemandCost: (Math.round(reco["estimatedOnDemandCost"] * 100) / 100).toString(10),
+          estimatedROI: (Math.round(reco["estimatedROI"] * 100) / 100).toString(10),
+          estimatedSavingsAmount: (Math.round(reco["estimatedSavingsAmount"] * 100) / 100).toString(10),
+          estimatedSavingsPercentage: (Math.round(reco["estimatedSavingsPercentage"] * 100) / 100).toString(10),
+          estimatedSavingsPlanCost: (Math.round(reco["estimatedSavingsPlanCost"] * 100) / 100).toString(10),
+          hourlyCommitmentToPurchase: (Math.round(reco["hourlyCommitmentToPurchase"] * 100) / 100).toString(10),
+          instanceFamily: reco["instanceFamily"],
+          offeringId: reco["offeringId"],
+          region: reco["region"],
+          upfrontCost: (Math.round(reco["upfrontCost"] * 100) / 100).toString(10),
+          estimatedMonthlySavingsAmountWithCurrencyCode : (Math.round(reco["estimatedMonthlySavingsAmount"] * 100) / 100).toString(10)+" "+reco["currencyCode"],
+          estimatedSavingsPlanCostWithCurrencyCode : (Math.round(reco["estimatedSavingsPlanCost"] * 100) / 100).toString(10)+" "+reco["currencyCode"],
+          hourlyCommitmentToPurchaseWithCurrencyCode : (Math.round(reco["hourlyCommitmentToPurchase"] * 100) / 100).toString(10)+" "+reco["currencyCode"],
+          upfrontCostWithCurrencyCode : (Math.round(reco["upfrontCost"] * 100) / 100).toString(10)+" "+reco["currencyCode"],
+          currentAverageHourlyOnDemandSpendWithCurrencyCode : (Math.round(reco["currentAverageHourlyOnDemandSpend"] * 100) / 100).toString(10)+" "+reco["currencyCode"],
+          currentMaximumHourlyOnDemandSpendWithCurrencyCode : (Math.round(reco["currentMaximumHourlyOnDemandSpend"] * 100) / 100).toString(10)+" "+reco["currencyCode"],
+          currentMinimumHourlyOnDemandSpendWithCurrencyCode : (Math.round(reco["currentMinimumHourlyOnDemandSpend"] * 100) / 100).toString(10)+" "+reco["currencyCode"]
+      })
+    })
+EOS
+end
+
 
 script "js_sp_request", type: "javascript" do
   parameters "param_days","param_payment_option","param_term","param_savings_plan_type", "param_scope"
@@ -175,78 +369,6 @@ script "js_sp_request", type: "javascript" do
 end
 
 ###############################################################################
-# Datasources
-###############################################################################
-
-datasource "ds_sp_recommendations" do
-  request do
-    run_script $js_sp_request, $param_days, $param_payment_option, $param_term, $param_savings_plan_type, $param_scope
-  end
-  result do
-    encoding "json"
-    collect jmes_path(response, "SavingsPlansPurchaseRecommendation.SavingsPlansPurchaseRecommendationDetails[*]") do
-      field "accountId", jmes_path(col_item,"AccountId")
-      field "currencyCode", jmes_path(col_item,"CurrencyCode")
-      field "currentAverageHourlyOnDemandSpend", jmes_path(col_item,"CurrentAverageHourlyOnDemandSpend")
-      field "currentMaximumHourlyOnDemandSpend", jmes_path(col_item,"CurrentMaximumHourlyOnDemandSpend")
-      field "currentMinimumHourlyOnDemandSpend", jmes_path(col_item,"CurrentMinimumHourlyOnDemandSpend")
-      field "estimatedAverageUtilization", jmes_path(col_item,"EstimatedAverageUtilization")
-      field "estimatedMonthlySavingsAmount", jmes_path(col_item,"EstimatedMonthlySavingsAmount")
-      field "estimatedOnDemandCost", jmes_path(col_item,"EstimatedOnDemandCost")
-      field "estimatedROI", jmes_path(col_item,"EstimatedROI")
-      field "estimatedSavingsAmount", jmes_path(col_item,"EstimatedSavingsAmount")
-      field "estimatedSavingsPercentage", jmes_path(col_item,"EstimatedSavingsPercentage")
-      field "estimatedSavingsPlanCost", jmes_path(col_item,"EstimatedSPCost")
-      field "hourlyCommitmentToPurchase", jmes_path(col_item,"HourlyCommitmentToPurchase")
-      field "instanceFamily", jmes_path(col_item,"SavingsPlansDetails.InstanceFamily")
-      field "offeringId", jmes_path(col_item,"SavingsPlansDetails.OfferingId")
-      field "region", jmes_path(col_item,"SavingsPlansDetails.Region")
-      field "upfrontCost", jmes_path(col_item,"UpfrontCost")
-    end
-  end
-end
-
-datasource "ds_sp_normalization" do
-  run_script $js_sp_cleanup, $ds_sp_recommendations, $param_currency_adjustment
-end
-
-script "js_sp_cleanup", type: "javascript" do
-  parameters "sp_recos", "currency_adjustment"
-  result "result"
-  code <<-EOS
-    var result = [];
-    _.each(sp_recos, function(reco){
-        result.push({
-          accountId: reco["accountId"],
-          currencyCode: reco["currencyCode"],
-          currentAverageHourlyOnDemandSpend: (Math.round(reco["currentAverageHourlyOnDemandSpend"] * 100) / 100).toString(10),
-          currentMaximumHourlyOnDemandSpend: (Math.round(reco["currentMaximumHourlyOnDemandSpend"] * 100) / 100).toString(10),
-          currentMinimumHourlyOnDemandSpend: (Math.round(reco["currentMinimumHourlyOnDemandSpend"] * 100) / 100).toString(10),
-          estimatedAverageUtilization: (Math.round(reco["estimatedAverageUtilization"] * 100) / 100).toString(10),
-          estimatedMonthlySavingsAmount: (Math.round(reco["estimatedMonthlySavingsAmount"] * 100) / 100 * currency_adjustment).toString(10),
-          estimatedOnDemandCost: (Math.round(reco["estimatedOnDemandCost"] * 100) / 100).toString(10),
-          estimatedROI: (Math.round(reco["estimatedROI"] * 100) / 100).toString(10),
-          estimatedSavingsAmount: (Math.round(reco["estimatedSavingsAmount"] * 100) / 100).toString(10),
-          estimatedSavingsPercentage: (Math.round(reco["estimatedSavingsPercentage"] * 100) / 100).toString(10),
-          estimatedSavingsPlanCost: (Math.round(reco["estimatedSavingsPlanCost"] * 100) / 100).toString(10),
-          hourlyCommitmentToPurchase: (Math.round(reco["hourlyCommitmentToPurchase"] * 100) / 100).toString(10),
-          instanceFamily: reco["instanceFamily"],
-          offeringId: reco["offeringId"],
-          region: reco["region"],
-          upfrontCost: (Math.round(reco["upfrontCost"] * 100) / 100).toString(10),
-          estimatedMonthlySavingsAmountWithCurrencyCode : (Math.round(reco["estimatedMonthlySavingsAmount"] * 100) / 100).toString(10)+" "+reco["currencyCode"],
-          estimatedSavingsPlanCostWithCurrencyCode : (Math.round(reco["estimatedSavingsPlanCost"] * 100) / 100).toString(10)+" "+reco["currencyCode"],
-          hourlyCommitmentToPurchaseWithCurrencyCode : (Math.round(reco["hourlyCommitmentToPurchase"] * 100) / 100).toString(10)+" "+reco["currencyCode"],
-          upfrontCostWithCurrencyCode : (Math.round(reco["upfrontCost"] * 100) / 100).toString(10)+" "+reco["currencyCode"],
-          currentAverageHourlyOnDemandSpendWithCurrencyCode : (Math.round(reco["currentAverageHourlyOnDemandSpend"] * 100) / 100).toString(10)+" "+reco["currencyCode"],
-          currentMaximumHourlyOnDemandSpendWithCurrencyCode : (Math.round(reco["currentMaximumHourlyOnDemandSpend"] * 100) / 100).toString(10)+" "+reco["currencyCode"],
-          currentMinimumHourlyOnDemandSpendWithCurrencyCode : (Math.round(reco["currentMinimumHourlyOnDemandSpend"] * 100) / 100).toString(10)+" "+reco["currencyCode"]
-      })
-    })
-EOS
-end
-
-###############################################################################
 # Policy
 ##############################################################################
 
@@ -264,6 +386,12 @@ policy "aws_sp_recommendations" do
     ### Lookback Period: {{parameters.param_days}}
     export do
       resource_level true
+      field "accountID" do
+        label "Account ID"
+      end
+      field "accountName" do
+        label "Account Name"
+      end
       field "region" do
         label "Region"
       end
@@ -299,11 +427,15 @@ policy "aws_sp_recommendations" do
       end
       field "id" do
         label "Account Id"
-        path "accountId"
+        path "accountID"
       end
     end
   end
 end
+
+###############################################################################
+# Escalations
+###############################################################################
 
 escalation "email" do
   automatic true

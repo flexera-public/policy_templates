@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.4
+
+- remove duplicate data fields for subscriptionID and subscriptionName
+
 ## v3.3
 
 - Updated policy template to make fewer calls to Azure APIs

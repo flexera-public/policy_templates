@@ -7,7 +7,7 @@ severity "low"
 category "Cost"
 default_frequency "daily"
 info(
-  version: "3.6",
+  version: "3.7",
   provider: "AWS",
   service: "RDS",
   policy_set: "Unused Database Services"
@@ -345,6 +345,7 @@ datasource "ds_instance_costs" do
     encoding "json"
     collect jmes_path(response,"rows[*]") do
       field "resource_id", jmes_path(col_item, "dimensions.resource_id")
+      field "vendorAccountName", jmes_path(col_item, "dimensions.vendor_account_name")
       field "resource_type", jmes_path(col_item, "dimensions.resource_type")
       field "cost_nonamortized_unblended_adj", jmes_path(col_item,"metrics.cost_nonamortized_unblended_adj")
     end
@@ -421,7 +422,7 @@ script "js_instance_costs", type:"javascript" do
         verb: "POST",
         path: "/bill-analysis/orgs/" + org + "/costs/select",
         body_fields: {
-          "dimensions": ["resource_id", "resource_type"],
+          "dimensions": ["resource_id", "resource_type", "vendor_account_name"],
           "granularity": "day",
           "start_at": start_date,
           "end_at": end_date,
@@ -478,6 +479,7 @@ script "js_rds_instances_without_connections", type: "javascript" do
     var cur = "$"
     var separator = ","
   }
+
   _.each(ds_rds_instance_set, function(instance){
     // get tags for instance
     var instances_w_tags = _.where(ds_list_tags_for_resource, {instanceId: instance.instanceId})
@@ -503,6 +505,7 @@ script "js_rds_instances_without_connections", type: "javascript" do
         // Add instance to results if it does not have the exclusion tag and has not been recently used
         results.push({
           accountID: ds_get_caller_identity[0]['account'],
+          accountName: "",
           region: instance.region,
           name: instance.name,
           arn: instance.instanceArn,
@@ -631,7 +634,10 @@ script "js_instance_cost_mapping", type:"javascript" do
     }
     return result+"."+values[1];
   }
-
+  var accountName = ""
+  if (_.size(ds_instance_costs) > 0) {
+    accountName = ds_instance_costs[0].vendorAccountName
+  }
   // Check if ds_billing_centers results empty
   if(ds_billing_centers.length==0){
     unused_rds_instance_list=ds_rds_instances_without_connections;
@@ -685,6 +691,7 @@ script "js_instance_cost_mapping", type:"javascript" do
         // Add volume cost to total_potential_savings
         total_savings=total_savings+monthly_savings;
         instance['savings']= (Math.round(monthly_savings * 1000) / 1000);
+        instance['accountName'] = accountName
         instance['savingsCurrency']= cur;
         unused_rds_instance_list.push(instance);
       }
@@ -725,6 +732,9 @@ EOS
       resource_level true
       field "accountID" do
         label "Account ID"
+      end
+      field "accountName" do
+        label "Account Name"
       end
       field "region" do
         label "Region"
