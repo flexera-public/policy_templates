@@ -21,8 +21,10 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Auto
   - `ec2:DescribeImages`
   - `ec2:DescribeSnapshots`
   - `sts:GetCallerIdentity`
+  - `organizations:DescribeAccount` - Only available in AWS Org Master Account. If <i>organizations:DescribeAccount</i> is unavailable, the policy will run normally but produce a blank accountName
   - `ec2:DeregisterImage`
   - `ec2:DeleteSnapshot`
+
 
   Example IAM Permission Policy:
 
@@ -33,12 +35,13 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Auto
           {
               "Effect": "Allow",
               "Action": [
-                  "ec2:DeleteSnapshot",
-                  "ec2:DescribeSnapshots",
+                  "ec2:DescribeRegions",
                   "ec2:DescribeImages",
-                  "ec2:DeregisterImage",
+                  "ec2:DescribeSnapshots",
                   "sts:GetCallerIdentity",
-                  "ec2:DescribeRegions"
+                  "organizations:DescribeAccount",
+                  "ec2:DeregisterImage",
+                  "ec2:DeleteSnapshot"
               ],
               "Resource": "*"
           }

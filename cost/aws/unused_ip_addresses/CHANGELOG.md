@@ -6,6 +6,11 @@
 - Modified `sys_log` definition to disable `rs_cm.audit_entry.create` outside Flexera NAM
 - Replaced references `github.com/rightscale/policy_templates` and `github.com/flexera/policy_templates` with `github.com/flexera-public/policy_templates`
 
+## v3.6
+
+- Added accountName call and field
+- updated fields to match new field conventions of camel-case
+
 ## v3.5
 
 - Added filter for DescribeRegion to only return regions that are `opted-in` or `opt-in-not-required` [exclude `not-opted-in`] in the current AWS account.

@@ -6,6 +6,10 @@
 - Modified `sys_log` definition to disable `rs_cm.audit_entry.create` outside Flexera NAM
 - Replaced references `github.com/rightscale/policy_templates` and `github.com/flexera/policy_templates` with `github.com/flexera-public/policy_templates`
 
+## v3.4
+
+- remove duplicate data fields for subscriptionID and subscriptionName
+
 ## v3.3
 
 - Updated policy template to make fewer calls to Azure APIs

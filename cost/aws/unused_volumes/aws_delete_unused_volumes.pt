@@ -420,6 +420,7 @@ datasource "ds_get_caller_identity" do
     encoding "xml"
     collect xpath(response, "//GetCallerIdentityResponse/GetCallerIdentityResult") do
       field "account", xpath(col_item, "Account")
+      field "userID", xpath(col_item, "UserId")
     end
   end
 end
@@ -432,6 +433,7 @@ datasource "ds_volume_costs" do
     encoding "json"
     collect jmes_path(response, "rows[*]") do
       field "resource_id", jmes_path(col_item, "dimensions.resource_id")
+      field "vendorAccountName", jmes_path(col_item, "dimensions.vendor_account_name")
       field "cost_nonamortized_unblended_adj", jmes_path(col_item, "metrics.cost_nonamortized_unblended_adj")
     end
   end
@@ -585,7 +587,7 @@ script "js_get_costs", type: "javascript" do
       verb: "POST",
       path: "/bill-analysis/orgs/" + org + "/costs/select",
       body_fields: {
-        "dimensions": ["resource_id"],
+        "dimensions": ["resource_id", "vendor_account_name"],
         "granularity": "day",
         "start_at": start_date,
         "end_at": end_date,
@@ -673,6 +675,12 @@ script "js_volume_cost_mapping", type:"javascript" do
       var separator = ","
     }
 
+    var total_savings=0;
+    var accountName = ""
+    if (_.size(ds_volume_costs) > 0) {
+      accountName = ds_volume_costs[0].vendorAccountName
+    }
+
     // Total potential savings starts at 0
     var total_potential_savings=0;
     // Loop through all unattached volumes
@@ -684,8 +692,7 @@ script "js_volume_cost_mapping", type:"javascript" do
       if (_.size(volume_costs) == 0) {
         // If no volume cost found, assume 0.0 monthly costs/savings estimation
         volume_monthly_cost = 0.0;
-      }
-      else {
+      } else {
         // If volume cost exists, lets calculate estimated monthly cost for the volume
         // Set savings_found flag to true
         savings_found = true;
@@ -702,6 +709,7 @@ script "js_volume_cost_mapping", type:"javascript" do
       // Append volume with estimated savings to unused_volumes results
       unused_volumes.push({
         accountID: ds_get_caller_identity[0]['account'],
+        accountName: accountName,
         volumeId: volume['volumeId'],
         region: volume['region'],
         availabilityZone: volume['availabilityZone'],
@@ -751,6 +759,9 @@ EOS
       resource_level true
       field "accountID" do
         label "Account Id"
+      end
+      field "accountName" do
+        label "Account Name"
       end
       field "region" do
         label "Region"

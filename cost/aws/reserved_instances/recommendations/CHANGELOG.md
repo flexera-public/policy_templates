@@ -1,8 +1,12 @@
 # Changelog
 
-## v2.12
+## v2.13
 
 - Replaced references `github.com/rightscale/policy_templates` and `github.com/flexera/policy_templates` with `github.com/flexera-public/policy_templates`
+
+## v2.12
+
+- Added accountName call and field
 
 ## v2.11
 
