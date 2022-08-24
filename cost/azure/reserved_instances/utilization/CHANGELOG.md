@@ -1,5 +1,11 @@
 # Changelog
 
+## v2.6
+
+- Added field for Instance Family to policy incident export
+- Updated "Quantity Purchased" to reflect quantity purchased as of most recent month, rather than at start of term
+- Fixed "Average Utilization Percentage" to reflect full 7/30 day period
+
 ## v2.5
 
 - Added parameter for 7/30 day utilization lookback period
