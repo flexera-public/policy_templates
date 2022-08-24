@@ -25,7 +25,6 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Auto
   - `ec2:DeregisterImage`
   - `ec2:DeleteSnapshot`
 
-
   Example IAM Permission Policy:
 
   ```json
