@@ -26,7 +26,6 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Auto
   - `ec2:DescribeVolumes`
   - `ec2:DescribeSnapshots`
   - `cloudwatch:GetMetricStatistics`
-  - `organizations:DescribeAccount` - Only available in AWS Org Master Account. If *organizations:DescribeAccount* is unavailable, the policy will run normally but produce a blank accountName
   - `ec2:CreateTags`
   - `ec2:CreateSnapshot`
   - `ec2:DeleteVolume`
@@ -44,7 +43,6 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Auto
                   "ec2:DescribeVolumes",
                   "ec2:DescribeSnapshots",
                   "cloudwatch:GetMetricStatistics",
-                  "organizations:DescribeAccount",
                   "ec2:CreateTags",
                   "ec2:CreateSnapshot",
                   "ec2:DeleteVolume"

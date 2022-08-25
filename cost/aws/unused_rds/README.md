@@ -12,7 +12,6 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Auto
   - `ec2:DescribeRegions`
   - `cloudwatch:GetMetricStatistics`
   - `cloudwatch:ListMetrics`
-  - `organizations:DescribeAccount` - Only available in AWS Org Master Account. If *organizations:DescribeAccount* is unavailable, the policy will run normally but produce a blank accountName
 
   Example IAM Permission Policy:
 
@@ -26,7 +25,6 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Auto
                   "ec2:DescribeRegions",
                   "cloudwatch:GetMetricStatistics",
                   "cloudwatch:ListMetrics",
-                  "organizations:DescribeAccount"
               ],
               "Resource": "*"
           }
