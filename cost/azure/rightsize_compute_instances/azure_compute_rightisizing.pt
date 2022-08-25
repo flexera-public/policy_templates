@@ -1,0 +1,860 @@
+name "Azure Rightsize Compute Instances"
+rs_pt_ver 20180301
+type "policy"
+short_description "Checks for instances that have inefficient utilization for the last 30 days and rightsizes or terminates them after approval. \n See the [README](https://github.com/flexera/policy_templates/tree/master/cost/azure/idle_compute_instances/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+long_description ""
+category "Cost"
+severity "low"
+default_frequency "monthly"
+info(
+  version: "3.0",
+  provider: "Azure",
+  service: "Compute",
+  policy_set: "Rightsize Compute Instances"
+)
+
+###############################################################################
+# Parameters
+###############################################################################
+
+parameter "param_email" do
+  type "list"
+  label "Email addresses"
+  description "Email addresses of the recipients you wish to notify when new incidents are created"
+end
+
+parameter "param_cpu_idle_avg_percentage" do
+  type "number"
+  label "Idle Instance CPU Threshold (%)"
+  description "Average CPU threshold at which to trigger instance termination"
+  default 5
+  min_value 0
+  max_value 100
+end
+
+parameter "param_cpu_underutil_avg_percentage" do
+  type "number"
+  label "Inefficient Instance CPU Threshold (%)"
+  description "Average CPU threshold at which to trigger instance downsize"
+  default 40
+  min_value 0
+  max_value 100
+end
+
+parameter "param_subscription_whitelist" do
+  label "Subscription Whitelist"
+  type "list"
+  description "Whitelisted Subscriptions, if empty, all subscriptions will be checked"
+end
+
+parameter "param_exclusion_tag_key" do
+  category "User Inputs"
+  label "Exclusion Tag Key"
+  description "An Azure-native instance tag key to ignore instances that you don't want to consider for downsizing. Example: exclude_utilization"
+  type "string"
+end
+
+parameter "param_automatic_action" do
+  type "list"
+  label "Automatic Actions"
+  description "When this value is set, this policy will automatically take the selected action(s)"
+  allowed_values ["Terminate Instances"]
+end
+
+parameter "param_log_to_cm_audit_entries" do
+  type "string"
+  label "Log to CM Audit Entries"
+  description "Boolean for whether or not to log any debugging information from actions to CM Audit Entries, this should be left set to No on Flexera EU"
+  default "No"
+  allowed_values "Yes", "No"
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+#AUTHENTICATE WITH AZURE
+credentials "azure_auth" do
+  schemes "oauth2"
+  label "Azure"
+  description "Select the Azure Resource Manager Credential from the list."
+  tags "provider=azure_rm"
+end
+
+#AUTHENTICATE WITH RIGHTSCALE/OPTIMA
+credentials "auth_rs" do
+  schemes "oauth2"
+  label "Flexera_Automation"
+  description "Select FlexeraOne OAuth2 credentials"
+  tags "provider=flexera"
+end
+
+###############################################################################
+# Pagination
+###############################################################################
+
+#PAGINATION FOR AZURE APIS
+pagination "azure_pagination" do
+  get_page_marker do
+    body_path "nextLink"
+  end
+  set_page_marker do
+    uri true
+  end
+end
+
+###############################################################################
+# Datasources & Scripts
+###############################################################################
+
+#GET CURRENCY REFERENCE AND CURRENCY CODE FOR ORG
+datasource "ds_currency_reference" do
+  request do
+    host "raw.githubusercontent.com"
+    path "/rightscale/policy_templates/master/cost/scheduled_reports/currency_reference.json"
+    header "User-Agent", "RS Policies"
+  end
+end
+
+datasource "ds_currency_code" do
+  request do
+    auth $auth_rs
+    host rs_optima_host
+    path join(["/bill-analysis/orgs/", rs_org_id, "/settings/currency_code"])
+    header "Api-Version", "0.1"
+    header "User-Agent", "RS Policies"
+    ignore_status [403]
+  end
+  result do
+    encoding "json"
+    field "id", jmes_path(response, "id")
+    field "value", jmes_path(response, "value")
+  end
+end
+
+#GET ALL SUBSCRIPTION DETAILS
+datasource "ds_subscriptions" do
+  request do
+    auth $azure_auth
+    pagination $azure_pagination
+    host "management.azure.com"
+    path "/subscriptions/"
+    query "api-version","2020-01-01"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "value[*]") do
+      field "subscriptionId", jmes_path(col_item, "subscriptionId")
+      field "subscriptionName", jmes_path(col_item, "displayName")
+      field "state", jmes_path(col_item, "state")
+    end
+  end
+end
+
+#FILTER SUBSCRIPTION BASED ON WHITELIST PARAMETER
+datasource "ds_filtered_subscriptions" do
+  run_script $js_filtered_subscriptions, $ds_subscriptions, $param_subscription_whitelist
+end
+
+script "js_filtered_subscriptions", type: "javascript" do
+  parameters "ds_subscriptions", "param_subscription_whitelist"
+  result "results"
+  code <<-EOS
+  var results = []
+  if ( param_subscription_whitelist.length != 0){
+    results = []
+    _.each(param_subscription_whitelist, function(sub){
+      var found = _.find(ds_subscriptions, function(item){
+        return item.subscriptionId == sub || item.subscriptionName.toLowerCase() == sub.toLowerCase();
+      })
+      results.push(found)
+    })
+
+  } else {
+    results = ds_subscriptions
+  }
+  EOS
+end
+
+=begin
+#GET AZURE SKUS FOR EACH SUBSCRIPTION
+datasource "ds_azure_skus" do
+  iterate $ds_filtered_subscriptions
+  request do
+    auth $azure_auth
+    pagination $azure_pagination
+    host "management.azure.com"
+    path join(["/subscriptions/", val(iter_item,"subscriptionId"), "/providers/Microsoft.Compute/skus"])
+    query "api-version","2017-09-01"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "value") do
+      field "resourceType", jmes_path(col_item,"resourceType")
+      field "name", jmes_path(col_item,"name")
+      field "locations", jmes_path(col_item,"locations")
+      field "capabilities", jmes_path(col_item,"capabilities")
+      field "restrictions", jmes_path(col_item,"restrictions")
+    end
+  end
+end
+
+#FILTER SKU DATA BASED ON LOCATION RESTRICTIONS
+datasource "ds_azure_vm_sizes" do
+  run_script $js_azure_vm_sizes, $ds_azure_skus
+end
+
+script "js_azure_vm_sizes", type: "javascript" do
+  parameters "ds_azure_skus"
+  result "result"
+  code <<-EOS
+    var result = [];
+    _.each(ds_azure_skus, function(sku){
+
+      if (sku.resourceType === "virtualMachines") {
+        var skipVmSku = false
+        _.each(sku.restrictions, function(restriction){
+          if (restriction.type === "Location" && restriction.reasonCode === "NotAvailableForSubscription") {
+            skipVmSku = true
+          }
+        })
+
+        if (skipVmSku) {
+          // VM Sku not available in this location for this subscription
+        } else {
+          var capabilities = [];
+          _.each(sku.capabilities, function(capability){
+            capabilities[capability.name] = capability.value
+          })
+
+          result.push({
+            name: sku.name,
+            resourceType: sku.resourceType,
+            locations: sku.locations,
+            MaxResourceVolumeMB: capabilities.MaxResourceVolumeMB,
+            OSVhdSizeMB: capabilities.OSVhdSizeMB,
+            vCPUs: capabilities.vCPUs,
+            HyperVGenerations: capabilities.HyperVGenerations,
+            MemoryGB: capabilities.MemoryGB,
+            MaxDataDiskCount: capabilities.MaxDataDiskCount,
+            LowPriorityCapable: capabilities.LowPriorityCapable,
+            PremiumIO: capabilities.PremiumIO,
+            vCPUsAvailable: capabilities.vCPUsAvailable,
+            ACUs: capabilities.ACUs,
+            vCPUsPerCore: capabilities.vCPUsPerCore,
+            CombinedTempDiskAndCachedIOPS: capabilities.CombinedTempDiskAndCachedIOPS,
+            CombinedTempDiskAndCachedReadBytesPerSecond: capabilities.CombinedTempDiskAndCachedReadBytesPerSecond,
+            CombinedTempDiskAndCachedWriteBytesPerSecond: capabilities.CombinedTempDiskAndCachedWriteBytesPerSecond,
+            CachedDiskBytes: capabilities.CachedDiskBytes,
+            UncachedDiskIOPS: capabilities.UncachedDiskIOPS,
+            UncachedDiskBytesPerSecond: capabilities.UncachedDiskBytesPerSecond,
+            EphemeralOSDiskSupported: capabilities.EphemeralOSDiskSupported
+          })
+        }
+      }
+    })
+  EOS
+end
+=end
+
+#GET AZURE VIRTUAL MACHINE INSTANCES FOR EACH SUBSCRIPTION
+datasource "ds_azure_instances" do
+  iterate $ds_filtered_subscriptions
+  request do
+    auth $azure_auth
+    pagination $azure_pagination
+    host "management.azure.com"
+    path join(["/subscriptions/", val(iter_item, "subscriptionId"), "/providers/Microsoft.Compute/virtualMachines"])
+    query "api-version","2019-03-01"
+    header "User-Agent", "RS Policies"
+    ignore_status [400, 403, 404]
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "value[*]") do
+      field "resourceId", jmes_path(col_item, "id")
+      field "resourceGroup", get(4, split(jmes_path(col_item, "id"), '/'))
+      field "resourceType", jmes_path(col_item, "type")
+      field "name", jmes_path(col_item, "name")
+      field "region", jmes_path(col_item, "location")
+      field "osType", jmes_path(col_item, "properties.storageProfile.osDisk.osType")
+      field "vmSize", jmes_path(col_item, "properties.hardwareProfile.vmSize")
+      field "tags", jmes_path(col_item, "tags")
+      field "subscriptionId",val(iter_item, "subscriptionId")
+      field "subscriptionName",val(iter_item, "subscriptionName")
+    end
+  end
+end
+
+#FILTER VIRTUAL MACHINE INSTANCES ON EXCLUSING TAG KEY PARAMETER
+datasource "ds_filtered_instances" do
+  run_script $js_filter_instances, $ds_azure_instances, $param_exclusion_tag_key
+end
+
+script "js_filter_instances", type: "javascript" do
+  parameters "ds_azure_virtualmachines", "param_exclusion_tag_key"
+  result "results"
+  code <<-EOS
+    var results = _.filter(ds_azure_virtualmachines, function(instance){
+      var tags = []
+      if ( _.has(instance.tags, param_exclusion_tag_key) ){
+      } else if (typeof instance.tags === "undefined" || instance.tags === null){
+        instance.tags = tags
+      } else {
+        Object.keys(instance.tags).forEach(function(key) {
+          tags.push( key + '=' + instance.tags[key] )
+        });
+        instance.tags = tags
+        resourceTypeSplit = instance['resourceType'].split("/")
+        service = resourceTypeSplit[0]
+        instance['service'] = service
+        return instance
+      }
+    })
+  EOS
+end
+
+#GET CPU PERFORMANCE STATS
+datasource "ds_azure_instance_utilization" do
+  iterate $ds_filtered_instances
+  request do
+    auth $azure_auth
+    pagination $azure_pagination
+    host "management.azure.com"
+    path join(["/subscriptions/", val(iter_item, "subscriptionId"), "/resourceGroups/", val(iter_item, "resourceGroup"), "/providers/Microsoft.Compute/virtualMachines/", val(iter_item, "name"), "/providers/microsoft.insights/metrics"])
+    query "api-version", "2018-01-01"
+    query "timespan", "P30D"
+    query "interval", "P1D"
+    header "User-Agent", "RS Policies"
+    ignore_status [400, 403, 404]
+  end
+  result do
+    encoding "json"
+    field "resourceName", val(iter_item, "name")
+    field "resourceGroup", val(iter_item, "resourceGroup")
+    field "resourceId", val(iter_item, "resourceId")
+    field "resourceType", val(iter_item, "resourceType")
+    field "region", val(iter_item, "region")
+    field "tags", val(iter_item, "tags")
+    field "osType", val(iter_item, "osType")
+    field "vmSize", val(iter_item, "vmSize")
+    field "service", val(iter_item, "service")
+    field "subscriptionId",val(iter_item, "subscriptionId")
+    field "subscriptionName",val(iter_item, "subscriptionName")
+    field "averages" do
+      collect jmes_path(response, "value[].timeseries[].data[]") do
+        field "average", jmes_path(col_item, "average")
+      end
+    end
+  end
+end
+
+#FILTER VIRTUAL MACHINE INSTANCES ON CPU UTILIZATION PARAMETER
+datasource "ds_filtered_instance_utilization" do
+  run_script $js_filter_instance_utilization, $param_cpu_underutil_avg_percentage, $ds_azure_instance_utilization
+end
+
+script "js_filter_instance_utilization", type: "javascript" do
+  parameters "param_cpu_underutil_avg_percentage", "ds_azure_instance_utilization"
+  result "results"
+  code <<-EOS
+    var results = []
+    _.each(ds_azure_instance_utilization, function(data){
+      total_of_avgs = 0, count = 0
+      _.each(data.averages, function(avg){
+        total_of_avgs += avg.average
+        count ++
+      })
+      total_average = total_of_avgs / count
+      if( total_average < param_cpu_underutil_avg_percentage && total_average != 0 ){
+        data["averageCPU"] = total_average
+      } else {
+        data["averageCPU"] = 0
+      }
+      data["savings"] = 0.0
+
+      data = _.omit(data, "averages")
+    })
+
+    results = ds_azure_instance_utilization
+  EOS
+end
+
+#GET AZURE INSTANCE SIZE MAP
+datasource "ds_azure_instance_size_map" do
+  request do
+    verb "GET"
+    host "raw.githubusercontent.com"
+    path "/rightscale/policy_templates/master/data/azure/instance_types.json"
+    header "User-Agent", "RS Policies"
+  end
+end
+
+#ADD AZURE INSTANCE DOWNSIZE DATA
+datasource "ds_rightsizing_and_utilization_data" do
+  run_script $js_add_instance_downsize_data, $ds_filtered_instance_utilization, $ds_azure_instance_size_map, $param_cpu_idle_avg_percentage
+end
+
+script "js_add_instance_downsize_data", type: "javascript" do
+  result "result"
+  parameters "data", "instance_size_map", "param_cpu_idle_avg_percentage"
+  code <<-EOS
+    _.each(data, function(inst){
+      next_vm_size = ''
+      if( inst.averageCPU > param_cpu_idle_avg_percentage ){
+        if( instance_size_map[inst.vmSize] != undefined && instance_size_map[inst.vmSize] != null ){
+          next_vm_size = instance_size_map[inst.vmSize].down
+          if(next_vm_size == null ){ 
+            next_vm_size = "N/A"
+          }
+        }
+      } else {
+        next_vm_size = 'Terminate Instance'
+      }
+      inst["recommendedVmSize"] = next_vm_size
+    })
+    result = data
+  EOS
+end
+
+#GET BILLING CENTERS FOR ORG
+datasource "ds_billing_centers" do
+  request do
+    auth $auth_rs
+    host rs_optima_host
+    path join(["/analytics/orgs/", rs_org_id, "/billing_centers"])
+    header "Api-Version", "1.0"
+    header "User-Agent", "RS Policies"
+    query "view", "allocation_table"
+    ignore_status [403]
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "[*]") do
+      field "href", jmes_path(col_item, "href")
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+      field "parent_id", jmes_path(col_item, "parent_id")
+    end
+  end
+end
+
+#FILTER BILLING CENTERS FOR TOP LEVEL BCS
+datasource "ds_top_level_billing_centers" do
+  run_script $js_top_level_bc, $ds_billing_centers
+end
+
+script "js_top_level_bc", type: "javascript" do
+  parameters "billing_centers"
+  result "filtered_billing_centers"
+  code <<-EOS
+    var filtered_billing_centers =
+      _.reject(billing_centers, function(bc){ return bc.parent_id != null });
+  EOS
+end
+
+#GET INSTANCE COSTS FOR EACH BILLING CENTER
+datasource "ds_instance_costs" do
+  iterate $ds_filtered_subscriptions
+  request do
+    run_script $js_get_costs, val(iter_item, "subscriptionId"), $ds_top_level_billing_centers, rs_org_id, rs_optima_host
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response,"rows[*]") do
+      field "resource_id", jmes_path(col_item, "dimensions.resource_id")
+      field "resource_type", jmes_path(col_item, "dimensions.resource_type")
+      field "cost", jmes_path(col_item, "metrics.cost_nonamortized_unblended_adj")
+    end
+  end
+end
+
+script "js_get_costs", type: "javascript" do
+  parameters "account_id","billing_centers","org","optima_host"
+  result "request"
+  code <<-EOS
+    // returns date formatted as string: YYYY-mm-dd
+    function getFormattedDailyDate(date) {
+      var year = date.getFullYear();
+      var month = (1 + date.getMonth()).toString();
+      month = month.length > 1 ? month : '0' + month;
+      var day = date.getDate().toString();
+      day = day.length > 1 ? day : '0' + day;
+      return year + '-' + month + '-' + day;
+    }
+    var start_date = getFormattedDailyDate(new Date(new Date().setDate(new Date().getDate() - 32)));
+    var end_date = getFormattedDailyDate(new Date(new Date().setDate(new Date().getDate() - 2)));
+    var request = {
+      auth: "auth_rs",
+      host: optima_host,
+      verb: "POST",
+      path: "/bill-analysis/orgs/" + org + "/costs/select",
+      body_fields: {
+        "dimensions": ["resource_id", "resource_type"],
+        "granularity": "day",
+        "start_at": start_date,
+        "end_at": end_date,
+        "metrics": ["cost_nonamortized_unblended_adj"],
+        "billing_center_ids": _.compact(_.map(billing_centers, function(value){ return value.id})),
+        "limit": 10000,
+        "filter": {
+          "expressions": [
+            {
+              "dimension": "service",
+              "type": "equal",
+              "value": "Microsoft.Compute"
+            },
+            {
+              "dimension": "vendor_account",
+              "type": "equal",
+              "value": account_id
+            }
+          ],
+          "type": "and"
+        }
+      },
+      headers: {
+        "User-Agent": "RS Policies",
+        "Api-Version": "1.0"
+      },
+      ignore_status: [400]
+    }
+  EOS
+end
+
+#COMBINE INSTANCE UTILIZATION DATA WITH INSTANCE COST DATA
+datasource "ds_combined_data" do
+  run_script $js_combine_data, $ds_rightsizing_and_utilization_data, $ds_instance_costs, $ds_currency_code, $ds_currency_reference, $ds_billing_centers
+end
+
+script "js_combine_data", type: "javascript" do
+  parameters "instance_utilization_data", "instance_cost_data", "ds_currency_code", "ds_currency_reference", "ds_billing_centers"
+  result "result"
+  code <<-EOS
+    var result = {}
+    var instance_data = []
+    var message = ''
+    var count = 0
+    
+    function formatNumber(number, separator){
+      var numString = number.toString()
+      var values = numString.split(".")
+      var result = ''
+      while( values[0].length > 3 ){
+        var chunk = values[0].substr(-3)
+        values[0] = values[0].substr(0, values[0].length - 3)
+        result = separator + chunk + result
+      }
+      if( values[0].length > 0 ){
+        result = values[0] + result
+      }
+      if( values[1] == undefined ){
+        return result
+      }
+      return result + "." + values[1]
+    }
+
+    //Format costs with currency symbol and thousands separator
+    if( ds_currency_code['value'] !== undefined ){
+      if ( ds_currency_reference[ds_currency_code['value']] !== undefined ) {
+        var cur = ds_currency_reference[ds_currency_code['value']]['symbol']
+        if( ds_currency_reference[ds_currency_code['value']]['t_separator'] !== undefined ) {
+          var separator = ds_currency_reference[ds_currency_code['value']]['t_separator']
+        } else {
+          var separator = ""
+        }
+      } else {
+        var cur = ""
+        var separator = ""
+      }
+    } else {
+      var cur = "$"
+      var separator = ","
+    }
+      
+    //ADD COSTS TO INSTANCE UTILIZATION DATA
+    _.each(instance_utilization_data, function(util_data){
+      var count = 0
+      var total_cost = 0
+      _.each(instance_cost_data, function(cost_data){
+        if( util_data.resourceId == cost_data.resource_id ){
+          if ( cost_data.cost ){
+            total_cost += 0
+          } else {
+            total_cost += cost_data.cost
+          }
+          count++ 
+        }
+      })
+      console.log(count)
+      util_data["savings"] = parseFloat(total_cost).toFixed(3)
+      util_data['savingsCurrency'] = cur
+    })
+
+    //maybe use count to account for scenarios where instance launched within the past 30 days to get more accurate monlthy cost?
+
+    //result = { 
+    //  "instance_data": instance_data,
+    //  "message": message
+    //}
+    //result.instance_data = _.sortBy(result.instance_data, "region")
+    //result.instance_data = _.sortBy(result.instance_data, "subscriptionName")
+
+    result = _.sortBy(instance_utilization_data, "region")
+    result = _.sortBy(result, "subscriptionName")
+  EOS
+end
+
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "policy_azure_rightsizing_data" do
+  validate_each $ds_combined_data do
+    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): Azure idle compute instances found"
+    detail_template <<-EOS
+EOS
+    check gt(to_n(val(item,"averageCPU")), $param_cpu_idle_avg_percentage)
+    escalate $email
+    escalate $esc_downsize_instances
+    escalate $esc_terminate_instances
+    export "instance_data" do
+      resource_level true
+      field "subscriptionName" do
+        label "Subscription Name"
+      end
+      field "subscriptionId" do
+        label "Subscription ID"
+      end
+      field "resourceId" do
+        label "Resource ID"
+      end
+      field "resourceName" do
+        label "Resource Name"
+      end
+      field "resourceType" do
+        label "Resource Type"
+      end
+      field "vmSize" do
+        label "Instance Size"
+      end
+      field "recommendedVmSize" do
+        label "Recommended Instance Size"
+      end
+      field "osType" do
+        label "OS Type"
+      end      
+      field "region" do
+        label "Region"
+      end
+      field "savings" do
+        label "Estimated Monthly Savings"
+      end
+      field "savingsCurrency" do
+        label "Savings Currency"
+      end
+      field "averageCPU" do
+        label "CPU Average"
+      end
+      field "resourceGroup" do
+        label "Resource Group"
+      end
+      field "tags" do
+        label "Tags"
+      end
+      field "service" do
+        label "Service"
+      end
+      field "id" do
+        label "ID"
+        path "resourceId"
+      end
+      field "accountName" do
+        label "Account Name"
+        path "subscriptionName"
+      end
+      field "accountId" do
+        label "Account ID"
+        path "subscriptionId"
+      end
+    end
+  end
+  validate_each $ds_combined_data do
+    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): Azure underutilized compute instances found"
+    detail_template <<-EOS
+EOS
+    check le(to_n(val(item,"averageCPU")), $param_cpu_idle_avg_percentage)
+    escalate $email
+    escalate $esc_downsize_instances
+    export "instance_data" do
+      resource_level true
+      field "subscriptionName" do
+        label "Subscription Name"
+      end
+      field "subscriptionId" do
+        label "Subscription ID"
+      end
+      field "resourceId" do
+        label "Resource ID"
+      end
+      field "resourceName" do
+        label "Resource Name"
+      end
+      field "resourceType" do
+        label "Resource Type"
+      end
+      field "vmSize" do
+        label "Instance Size"
+      end
+      field "recommendedVmSize" do
+        label "Recommended Instance Size"
+      end
+      field "osType" do
+        label "OS Type"
+      end      
+      field "region" do
+        label "Region"
+      end
+      field "savings" do
+        label "Estimated Monthly Savings"
+      end
+      field "savingsCurrency" do
+        label "Savings Currency"
+      end
+      field "averageCPU" do
+        label "CPU Average (%)"
+      end
+      field "resourceGroup" do
+        label "Resource Group"
+      end
+      field "tags" do
+        label "Tags"
+      end
+      field "service" do
+        label "Service"
+      end
+      field "id" do
+        label "ID"
+        path "resourceId"
+      end
+      field "accountName" do
+        label "Account Name"
+        path "subscriptionName"
+      end
+      field "accountId" do
+        label "Account ID"
+        path "subscriptionID"
+      end
+    end
+  end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "email" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
+end
+
+escalation "esc_downsize_instances" do
+  automatic contains($param_automatic_action, "Downsize Instances")
+  label "Downsize Instances"
+  description "Approval to downsize all selected instances"
+  run "downsize_instance", data, $param_log_to_cm_audit_entries
+end
+
+escalation "esc_terminate_instances" do
+  automatic contains($param_automatic_action, "Terminate Instances")
+  label "Terminate Instances"
+  description "Approval to terminate all selected instances"
+  run "delete_instance", data, $param_log_to_cm_audit_entries
+end
+
+###############################################################################
+# Cloud Workflow
+###############################################################################
+
+#DOWNSIZE AZURE VM INSTANCE DEFINITION
+define downsize_instance($data,$param_log_to_cm_audit_entries) return $all_responses do
+  $response={}
+  $$debug = $param_log_to_cm_audit_entries == "Yes"
+  $syslog_subject = "Azure Instance Utilization with Log Analytics Policy: "
+  foreach $item in $data do
+    if $item["recommendedVmSize"] != "N/A"
+      sub on_error: skip do
+        $response = http_request(
+          auth: $$azure_auth,
+          verb: "patch",
+          host: "management.azure.com",
+          https: true,
+          href: $item["id"],
+          query_strings: {
+            "api-version": "2019-03-01"
+          },
+          headers:{
+            "content-type": "application/json"
+          },
+          body: {
+            "properties":{
+              "hardwareProfile": {
+                "vmSize": $item["next_vm_size"]
+              }
+            }
+          }
+        )
+      call sys_log(join([$syslog_subject, "Response"]),to_s($response))
+      end
+  end
+  end
+end
+
+#TERMINATE AZURE VM INSTANCE DEFINITION
+define delete_instance($data,$param_log_to_cm_audit_entries) return $all_responses do
+  $$debug = $param_log_to_cm_audit_entries == "Yes"
+  $$log = []
+  $all_responses = []
+  $syslog_subject = "Azure Terminate Instance: "
+  call sys_log(join([$syslog_subject, "Identified Instances"]),to_s($data))
+  $all_responses = []
+  foreach $item in $data do
+    sub on_error: skip do
+      $response = http_request(
+        verb: "delete",
+        host: "management.azure.com",
+        auth: $$azure_auth,
+        href: join(["/subscriptions/", $item['subscriptionID'], "/resourceGroups/", $item["resourceGroup"], "/providers/Microsoft.Compute/virtualMachines/",$item["resourceName"]]),
+        https: true,
+        query_strings: {
+          "api-version": "2018-06-01"
+        },
+        headers: {
+          "cache-control": "no-cache",
+          "content-type": "application/json"
+        }
+      )
+      $all_responses << $response
+    end
+  end
+  call sys_log(join([$syslog_subject, "Responses"]),to_s($all_responses))
+end
+
+#function to log
+define sys_log($subject, $detail) do
+  if $$debug
+    rs_cm.audit_entries.create(
+      notify: "None",
+      audit_entry: {
+        auditee_href: @@account,
+        summary: $subject,
+        detail: $detail
+      }
+    )
+  end
+end
