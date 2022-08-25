@@ -1,5 +1,5 @@
 # Changelog
 
-## v2.1
+## v1.0
 
 - Initial release
