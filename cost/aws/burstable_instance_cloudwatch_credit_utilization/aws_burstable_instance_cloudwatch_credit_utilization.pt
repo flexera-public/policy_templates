@@ -1,13 +1,13 @@
 name "AWS Burstable Instance CloudWatch Utilization"
 rs_pt_ver 20180301
 type "policy"
-short_description "Gathers AWS CloudWatch CPU and Burst Credit data for instances on 30 day intervals. See the [README](https://github.com/flexera/policy_templates/tree/master/cost/aws/burstable_instance_cloudwatch_credit_utilization/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+short_description "Gathers AWS CloudWatch CPU and Burst Credit data for instances on 30 day intervals. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/burstable_instance_cloudwatch_credit_utilization/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 long_description ""
 severity "low"
 category "Cost"
 default_frequency "daily"
 info(
-  version: "2.11",
+  version: "2.12",
   provider: "AWS",
   service: "EC2",
   policy_set: ""
@@ -651,7 +651,7 @@ escalation "esc_resize_instance" do
   automatic contains($param_automatic_action, "Resize Instances")
   label "Resize Instances"
   description "Resize selected instances"
-  run "resize_instances", data, $param_cooldown_days
+  run "resize_instances", data, $param_cooldown_days, rs_optima_host
 end
 
 ###############################################################################
@@ -715,7 +715,7 @@ end
 # Cloud Workflow
 ###############################################################################
 
-define resize_instances($data,$param_cooldown_days) do
+define resize_instances($data,$param_cooldown_days, $$rs_optima_host) do
   foreach $item in $data do
 
     @current_instance = rs_cm.instances.empty()
@@ -856,14 +856,36 @@ define delete_cooldown_tag($data,$param_cooldown_days) do
   end
 end
 
-# logging to the Accounts Audit Entries
 define sys_log($subject, $detail) do
-  rs_cm.audit_entries.create(
-    notify: "None",
-    audit_entry: {
-      auditee_href: @@account,
-      summary: "Downsize Instance: "+ $subject,
-      detail: $detail
-    }
-  )
+  # Create empty errors array if doesn't already exist
+  if !$$errors
+    $$errors = []
+  end
+  # Check if debug is enabled
+  if $$debug
+    # Append to global $$errors
+    # This is the suggested way to capture errors
+    $$errors << "Unexpected error for " + $subject + "\n  " + to_s($detail)
+    # If Flexera NAM Zone, create audit_entries [to be deprecated]
+    # This is the legacy method for capturing errors and only supported on Flexera NAM
+    if $$rs_optima_host == "api.optima.flexeraeng.com"
+      # skip_error_and_append is used to catch error if rs_cm.audit_entries.create fails unexpectedly
+      $task_label = "Creating audit entry for " + $subject
+      sub task_label: $task, on_error: skip_error_and_append($task) do
+        rs_cm.audit_entries.create(
+          notify: "None",
+          audit_entry: {
+            auditee_href: @@account,
+            summary: $subject,
+            detail: $detail
+          }
+        )
+      end # End sub on_error
+    end # End if rs_optima_host
+  end # End if debug is enabled
+end
+
+define skip_error_and_append($subject) do
+  $$errors << "Unexpected error for " + $subject + "\n  " + to_s($_error)
+  $_error_behavior = "skip"
 end

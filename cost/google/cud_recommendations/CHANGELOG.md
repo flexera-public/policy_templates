@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.5
+
+- Replaced references `github.com/rightscale/policy_templates` and `github.com/flexera/policy_templates` with `github.com/flexera-public/policy_templates`
+
 ## v2.4
 
 - remove duplicate data fields for subscriptionID and subscriptionName

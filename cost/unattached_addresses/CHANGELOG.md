@@ -2,7 +2,7 @@
 
 ## v1.9
 
-- This policy is no longer being updated.
+- Deprecated: This policy is no longer being updated.
 
 ## v1.8
 

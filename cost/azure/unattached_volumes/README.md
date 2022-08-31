@@ -17,6 +17,21 @@ Optionally, the user can specify one or more tags that if found on a volume will
 The policy includes the estimated savings.  The estimated savings is recognized if the resource is terminated.   Optima is used to receive the estimated savings which is the product of the most recent full day’s cost of the resource * 30.  The savings is displayed in the Estimated Monthly Savings column.  If the resource can not be found in Optima the value is 0.0.  The incident detail message includes the sum of each resource Estimated Monthly Savings as Total Estimated Monthly Savings.
 If the user is not having the minimum required role of `billing_center_viewer` or if there is no enough data received from Optima to calculate savings, appropriate message is displayed in the incident detail message along with the estimated monthly savings column value as 0.0 in the incident table.
 
+## Prerequisites
+
+This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for authenticating to datasources -- in order to apply this policy you must have a Credential registered in the system that is compatible with this policy. If there are no Credentials listed when you apply the policy, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy. The information below should be consulted when creating the credential(s).
+
+- [**Azure Resource Manager Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_109256743_1124668) (*provider=azure_rm*) which has the following permissions:
+  - `Microsoft.StorSimple/managers/devices/iscsiservers/disks/read`
+  - `Microsoft.StorSimple/managers/devices/iscsiservers/disks/delete`
+  - `Microsoft.StorSimple/managers/devices/iscsiservers/disks/write`
+  - `Microsoft.Compute/snapshots/write`
+
+- [**Flexera Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) (*provider=flexera*) which has the following roles:
+  - `billing_center_viewer`
+
+The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) page in the docs has detailed instructions for setting up Credentials for the most common providers.
+
 ## Input Parameters
 
 This policy has the following input parameters required when launching the policy.
@@ -38,24 +53,6 @@ The following policy actions are taken on any resources found to be out of compl
 
 - Delete Unused volumes after approval
 - Send an email report
-
-## Prerequisites
-
-- This policy uses [credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for connecting to the cloud -- in order to apply this policy you must have a credential registered in the system that is compatible with this policy. If there are no credentials listed when you apply the policy, please contact your cloud admin and ask them to register a credential that is compatible with this policy. The information below should be consulted when creating the credential.
-- billing_center_viewer (note: this role must be applied at the Organization level).
-
-### Credential configuration
-
-For administrators [creating and managing credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) to use with this policy, the following information is needed:
-
-Provider tag value to match this policy: `azure_rm`
-
-Required permissions in the provider:
-
-- Microsoft.StorSimple/managers/devices/iscsiservers/disks/read
-- Microsoft.StorSimple/managers/devices/iscsiservers/disks/delete
-- Microsoft.StorSimple/managers/devices/iscsiservers/disks/write
-- Microsoft.Compute/snapshots/write
 
 ## Supported Clouds
 

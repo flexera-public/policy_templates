@@ -4,6 +4,16 @@
 
 The Cost Anomaly Policy will analyze the spend of all Billing Centers in an Organization over a specified time period.  If the percentage change of the most recent period compared to the previous period exceeds the specified threshold, then an Incident will be raised.
 
+## Prerequisites
+
+This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for authenticating to datasources -- in order to apply this policy you must have a Credential registered in the system that is compatible with this policy. If there are no Credentials listed when you apply the policy, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy. The information below should be consulted when creating the credential(s).
+
+- [**Flexera Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) (*provider=flexera*) which has the following roles:
+  - `billing_center_viewer`
+  - `policy_manager`
+
+The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) page in the docs has detailed instructions for setting up Credentials for the most common providers.
+
 ## Functional Details
 
 - The policy polls all Billing Centers, looking for any that have exceeded the Percent Change threshold and the Minimum Period Spend requirement
@@ -20,11 +30,6 @@ The Cost Anomaly Policy will analyze the spend of all Billing Centers in an Orga
 - *Email addresses of the recipients you wish to notify* - A list of email addresses to notify
 - *Billing Center List* - List of Billing Center names you want to report on. Names must be exactly as shown in Optima.
   Leave the field blank to report on all Billing Centers.
-
-### Required RightScale Roles
-
-- policy_manager
-- billing_center_viewer
 
 ### Supported Clouds
 

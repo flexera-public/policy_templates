@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.6
+
+- Replaced references `github.com/rightscale/policy_templates` and `github.com/flexera/policy_templates` with `github.com/flexera-public/policy_templates`
+
 ## v2.5
 
 - Added parameter for 7/30 day utilization lookback period
