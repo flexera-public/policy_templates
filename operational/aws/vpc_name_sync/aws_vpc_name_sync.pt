@@ -1,13 +1,13 @@
 name "AWS VPC Name Tag Sync"
 rs_pt_ver 20180301
 type "policy"
-short_description "Ensures a Network name in Cloud Management reflects the value of the Network name tag in AWS. See the [README](https://github.com/rightscale/policy_templates/tree/master/operational/aws/vpc_name_sync) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+short_description "Ensures a Network name in Cloud Management reflects the value of the Network name tag in AWS. See the [README](https://github.com/flexera-public/policy_templates/tree/master/operational/aws/vpc_name_sync) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 long_description ""
 severity "medium"
 category "Operational"
 info(
   publish: "false",
-  version: "2.9",
+  version: "2.10",
   provider: "AWS",
   service: "VPC",
   policy_set: "",
@@ -292,14 +292,14 @@ escalation "escalate_resources" do
   automatic contains($param_automatic_action, "Update VPC")
   label "Update VPC"
   description "Update selected VPC"
-  run "update_vpcs", data
+  run "update_vpcs", data, rs_optima_host
 end
 
 ###############################################################################
 # Cloud Workflow
 ###############################################################################
 
-define update_vpcs($data) do
+define update_vpcs($data, $$rs_optima_host) do
   $$debug=false
   call sys_log('AWS VPC Name Sync Policy: Affected VPCs',to_s($data))
   foreach $vpc in $data do
@@ -310,14 +310,35 @@ define update_vpcs($data) do
 end
 
 define sys_log($subject, $detail) do
-  if $$debug
-    rs_cm.audit_entries.create(
-      notify: "None",
-      audit_entry: {
-        auditee_href: @@account,
-        summary: $subject,
-        detail: $detail
-      }
-    )
+  # Create empty errors array if doesn't already exist
+  if !$$errors
+    $$errors = []
   end
+  # Check if debug is enabled
+  if $$debug
+    # Append to global $$errors
+    # This is the suggested way to capture errors
+    $$errors << "Unexpected error for " + $subject + "\n  " + to_s($detail)
+    # If Flexera NAM Zone, create audit_entries [to be deprecated]
+    # This is the legacy method for capturing errors and only supported on Flexera NAM
+    if $$rs_optima_host == "api.optima.flexeraeng.com"
+      # skip_error_and_append is used to catch error if rs_cm.audit_entries.create fails unexpectedly
+      $task_label = "Creating audit entry for " + $subject
+      sub task_label: $task, on_error: skip_error_and_append($task) do
+        rs_cm.audit_entries.create(
+          notify: "None",
+          audit_entry: {
+            auditee_href: @@account,
+            summary: $subject,
+            detail: $detail
+          }
+        )
+      end # End sub on_error
+    end # End if rs_optima_host
+  end # End if debug is enabled
+end
+
+define skip_error_and_append($subject) do
+  $$errors << "Unexpected error for " + $subject + "\n  " + to_s($_error)
+  $_error_behavior = "skip"
 end

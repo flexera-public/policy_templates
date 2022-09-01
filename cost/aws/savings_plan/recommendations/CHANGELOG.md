@@ -1,8 +1,13 @@
 # Changelog
 
+## v2.13
+
+- Added accountName call and field
+
 ## v2.12
 
 - Added SageMaker to param_savings_plan_type list of allowed values
+- Replaced references `github.com/rightscale/policy_templates` and `github.com/flexera/policy_templates` with `github.com/flexera-public/policy_templates`
 
 ## v2.11
 

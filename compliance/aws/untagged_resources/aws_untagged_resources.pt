@@ -1,12 +1,12 @@
 name "AWS Untagged Resources"
 rs_pt_ver 20180301
 type "policy"
-short_description "Find all AWS resources missing any of the user provided tags with the option to update the resources with the missing tags. See the [README](https://github.com/flexera/policy_templates/tree/master/compliance/aws/untagged_resources/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+short_description "Find all AWS resources missing any of the user provided tags with the option to update the resources with the missing tags. See the [README](https://github.com/flexera-public/policy_templates/tree/master/compliance/aws/untagged_resources/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 long_description ""
 category "Compliance"
 severity "low"
 info(
-  version: "2.7",
+  version: "2.8",
   provider: "AWS",
   service: "",
   policy_set:"Untagged resources"
@@ -260,7 +260,7 @@ escalation "esc_add_tags" do
     label "Add Tags"
     description "Add Tags of format 'Key=Value' to the resource"
   end
-  run "cwf_add_tags", data, $param_tags_to_add
+  run "cwf_add_tags", data, $param_tags_to_add, rs_optima_host
 end
 
 ###############################################################################
@@ -301,7 +301,7 @@ end
 # Cloud Workflow
 ###############################################################################
 
-define cwf_add_tags($data,$tags_to_add) return $all_response do
+define cwf_add_tags($data,$tags_to_add, $$rs_optima_host) return $all_response do
   $$debug=true
   $all_response=[];
   $tags_obj={}
@@ -330,14 +330,35 @@ define cwf_add_tags($data,$tags_to_add) return $all_response do
 end
 
 define sys_log($subject, $detail) do
-  if $$debug
-    rs_cm.audit_entries.create(
-      notify: "None",
-      audit_entry: {
-        auditee_href: @@account,
-        summary: "AWS add Tags "+ $subject,
-        detail: $detail
-      }
-    )
+  # Create empty errors array if doesn't already exist
+  if !$$errors
+    $$errors = []
   end
+  # Check if debug is enabled
+  if $$debug
+    # Append to global $$errors
+    # This is the suggested way to capture errors
+    $$errors << "Unexpected error for " + $subject + "\n  " + to_s($detail)
+    # If Flexera NAM Zone, create audit_entries [to be deprecated]
+    # This is the legacy method for capturing errors and only supported on Flexera NAM
+    if $$rs_optima_host == "api.optima.flexeraeng.com"
+      # skip_error_and_append is used to catch error if rs_cm.audit_entries.create fails unexpectedly
+      $task_label = "Creating audit entry for " + $subject
+      sub task_label: $task, on_error: skip_error_and_append($task) do
+        rs_cm.audit_entries.create(
+          notify: "None",
+          audit_entry: {
+            auditee_href: @@account,
+            summary: $subject,
+            detail: $detail
+          }
+        )
+      end # End sub on_error
+    end # End if rs_optima_host
+  end # End if debug is enabled
+end
+
+define skip_error_and_append($subject) do
+  $$errors << "Unexpected error for " + $subject + "\n  " + to_s($_error)
+  $_error_behavior = "skip"
 end

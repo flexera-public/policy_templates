@@ -1,12 +1,12 @@
 name "Google Idle IP Address Recommender"
 rs_pt_ver 20180301
 type "policy"
-short_description "This Policy finds Google Idle IP Address Recommendations and reports when it finds them. See the [README](https://github.com/flexera/policy_templates/tree/master/cost/google/idle_ip_address_recommendations) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+short_description "This Policy finds Google Idle IP Address Recommendations and reports when it finds them. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/google/idle_ip_address_recommendations) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 category "Cost"
 severity "low"
 default_frequency "daily"
 info(
-  version: "2.1",
+  version: "2.4",
   provider:"Google",
   service: "Other",
   policy_set: "Native Recommendations"
@@ -105,7 +105,7 @@ datasource "ds_google_project" do
   result do
     encoding "json"
     collect jmes_path(response, "projects[*]") do
-      field "accountNumber", jmes_path(col_item,"projectNumber")
+      field "projectNumber", jmes_path(col_item,"projectNumber")
       field "accountID", jmes_path(col_item,"projectId")
       field "accountName", jmes_path(col_item,"name")
     end
@@ -128,7 +128,7 @@ datasource "ds_regions_list" do
       field "region", jmes_path(col_item, "name")
       field "accountID", val(iter_item, "accountID")
       field "accountName", val(iter_item, "accountName")
-      field "accountNumber", val(iter_item, "accountNumber")
+      field "projectNumber", val(iter_item, "projectNumber")
     end
   end
 end
@@ -146,7 +146,7 @@ datasource "ds_recommendations" do
     encoding "json"
     collect jmes_path(response, "recommendations[*]") do
       field "accountID", val(iter_item, "accountID")
-      field "accountNumber", val(iter_item, "accountNumber")
+      field "projectNumber", val(iter_item, "projectNumber")
       field "region", val(iter_item, "region")
       field "id", jmes_path(col_item, "name")
       field "description", jmes_path(col_item, "description")
@@ -184,7 +184,7 @@ datasource "ds_addresses" do
       field "tags", jmes_path(col_item, "labels")
       field "accountID", val(iter_item, "accountID")
       field "accountName", val(iter_item, "accountName")
-      field "accountNumber", val(iter_item, "accountNumber")
+      field "projectNumber", val(iter_item, "projectNumber")
       field "resourceType", jmes_path(col_item, "kind")
       field "region", val(iter_item, "region")
     end
@@ -212,7 +212,7 @@ script "js_recommenders", type: "javascript" do
     if (_.contains(param_project, project.accountID) || param_project.length == 0) {
       _.each(param_regions, function(region){
         results.push({
-          accountNumber: project.accountNumber,
+          projectNumber: project.projectNumber,
           accountID: project.accountID,
           accountName: project.accountName
           region: region
@@ -392,13 +392,13 @@ policy "policy_recommendations" do
     export "instances" do
       resource_level true
       field "accountID" do
-        label "Account ID"
-      end
-      field "accountNumber" do
-        label "Account Number"
+        label "Project ID"
       end
       field "accountName" do
-        label "Account Name"
+        label "Project Name"
+      end
+      field "projectNumber" do
+        label "Project Number"
       end
       field "resourceID" do
         label "Resource ID"
@@ -461,7 +461,7 @@ escalation "esc_approve_delete_addresses" do
   automatic contains($param_automatic_action, "Delete IP Addresses")
   label "Delete IP Addresses"
   description "Approval to delete all selected IP addresses"
-  run "delete_addresses", data, $param_log_to_cm_audit_entries
+  run "delete_addresses", data, $param_log_to_cm_audit_entries, rs_optima_host
 end
 
 ###############################################################################
@@ -469,7 +469,7 @@ end
 ###############################################################################
 
 # https://cloud.google.com/compute/docs/reference/rest/v1/addresses/delete
-define delete_addresses($data,$param_log_to_cm_audit_entries) return $all_responses do
+define delete_addresses($data,$param_log_to_cm_audit_entries, $$rs_optima_host) return $all_responses do
   $$debug = $param_log_to_cm_audit_entries == "Yes"
   $all_responses = []
   $syslog_subject = "Google Idle IP Addresses: "
@@ -498,14 +498,35 @@ define handle_error($response) do
 end
 
 define sys_log($subject, $detail) do
-  if $$debug
-    rs_cm.audit_entries.create(
-      notify: "None",
-      audit_entry: {
-        auditee_href: @@account,
-        summary: $subject,
-        detail: $detail
-      }
-    )
+  # Create empty errors array if doesn't already exist
+  if !$$errors
+    $$errors = []
   end
+  # Check if debug is enabled
+  if $$debug
+    # Append to global $$errors
+    # This is the suggested way to capture errors
+    $$errors << "Unexpected error for " + $subject + "\n  " + to_s($detail)
+    # If Flexera NAM Zone, create audit_entries [to be deprecated]
+    # This is the legacy method for capturing errors and only supported on Flexera NAM
+    if $$rs_optima_host == "api.optima.flexeraeng.com"
+      # skip_error_and_append is used to catch error if rs_cm.audit_entries.create fails unexpectedly
+      $task_label = "Creating audit entry for " + $subject
+      sub task_label: $task, on_error: skip_error_and_append($task) do
+        rs_cm.audit_entries.create(
+          notify: "None",
+          audit_entry: {
+            auditee_href: @@account,
+            summary: $subject,
+            detail: $detail
+          }
+        )
+      end # End sub on_error
+    end # End if rs_optima_host
+  end # End if debug is enabled
+end
+
+define skip_error_and_append($subject) do
+  $$errors << "Unexpected error for " + $subject + "\n  " + to_s($_error)
+  $_error_behavior = "skip"
 end

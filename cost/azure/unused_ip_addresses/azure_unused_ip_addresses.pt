@@ -1,12 +1,12 @@
 name "Azure Unused IP Addresses"
 rs_pt_ver 20180301
 type "policy"
-short_description "Checks for unused IP addresses in the given account and, optionally deletes them. See the [README](https://github.com/flexera/policy_templates/tree/master/cost/azure/unused_ip_addresses) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more"
+short_description "Checks for unused IP addresses in the given account and, optionally deletes them. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/unused_ip_addresses) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more"
 severity "low"
 category "Cost"
 default_frequency "monthly"
 info(
-  version: "3.3",
+  version: "4.0",
   provider: "Azure",
   service: "Compute",
   policy_set: "Unused IP Addresses"
@@ -62,11 +62,10 @@ credentials "azure_auth" do
   tags "provider=azure_rm"
 end
 
-#AUTHENTICATE WITH RIGHTSCALE/OPTIMA
-credentials "auth_rs" do
+credentials "auth_flexera" do
   schemes "oauth2"
-  label "Flexera_Automation"
-  description "Select FlexeraOne OAuth2 credentials"
+  label "flexera"
+  description "Select Flexera One OAuth2 credentials"
   tags "provider=flexera"
 end
 
@@ -166,7 +165,7 @@ end
 
 datasource "ds_currency_code" do
   request do
-    auth $auth_rs
+    auth $auth_flexera
     host rs_optima_host
     path join(["/bill-analysis/orgs/", rs_org_id, "/settings/currency_code"])
     header "Api-Version", "0.1"
@@ -183,7 +182,7 @@ end
 #GET BILLING CENTERS FOR ORG
 datasource "ds_billing_centers" do
   request do
-    auth $auth_rs
+    auth $auth_flexera
     host rs_optima_host
     path join(["/analytics/orgs/",rs_org_id,"/billing_centers"])
     header "Api-Version", "1.0"
@@ -247,7 +246,7 @@ script "js_get_costs", type:"javascript" do
     var start_date = getFormattedDailyDate(new Date(new Date().setDate(new Date().getDate() - 3)));
     var end_date = getFormattedDailyDate(new Date(new Date().setDate(new Date().getDate() - 2)));
     var request = {
-      auth: "auth_rs",
+      auth: "auth_flexera",
       host: rs_optima_host,
       verb: "POST",
       path: "/bill-analysis/orgs/" + org + "/costs/select",
@@ -457,7 +456,7 @@ script "js_ip_cost_mapping", type:"javascript" do
       unused_ip_list = ip_list;
       message = "You do not have the minimum required role of billing_center_viewer to view the savings"
     }
-    result = { 
+    result = {
       "ip_list": unused_ip_list,
       "message": message
     }
@@ -481,7 +480,7 @@ escalation "delete_unused_ip_addresses" do
   automatic contains($param_automatic_action, "Delete Unused IP Addresses")
   label "Delete Resources"
   description "Delete selected unused IP addresses"
-  run "delete_ip_addresses", data, $param_azure_endpoint
+  run "delete_ip_addresses", data, $param_azure_endpoint, rs_optima_host
 end
 
 ###############################################################################
@@ -499,11 +498,13 @@ EOS
     escalate $delete_unused_ip_addresses
     export "ip_list" do
       resource_level true
-      field "subscriptionId" do
+      field "accountID" do
         label "Subscription ID"
+        path "subscriptionId"
       end
-      field "subscriptionName" do
+      field "accountName" do
         label "Subscription Name"
+        path "subscriptionName"
       end
       field "resourceGroup" do
         label "Resource Group"
@@ -537,14 +538,6 @@ EOS
       field "savingsCurrency" do
         label "Savings Currency"
       end
-      field "accountID" do
-        label "Account ID"
-        path "subscriptionId"
-      end
-      field "accountName" do
-        label "Account Name"
-        path "subscriptionName"
-      end
       field "id" do
         label "Resource ID"
         path "resourceId"
@@ -557,7 +550,7 @@ end
 # Cloud Workflow
 ###############################################################################
 
-define delete_ip_addresses($data, $param_azure_endpoint) return $all_responses do
+define delete_ip_addresses($data, $param_azure_endpoint, $$rs_optima_host) return $all_responses do
   $$debug = false
   $all_responses = []
   foreach $item in $data do
@@ -584,14 +577,35 @@ define azure_delete_ip_addresses($resourceId, $param_azure_endpoint) do
 end
 
 define sys_log($subject, $detail) do
-  if $$debug
-    rs_cm.audit_entries.create(
-      notify: "None",
-      audit_entry: {
-        auditee_href: @@account,
-        summary: join(["Azure unused IP addresses - ", $subject]),
-        detail: $detail
-      }
-    )
+  # Create empty errors array if doesn't already exist
+  if !$$errors
+    $$errors = []
   end
+  # Check if debug is enabled
+  if $$debug
+    # Append to global $$errors
+    # This is the suggested way to capture errors
+    $$errors << "Unexpected error for " + $subject + "\n  " + to_s($detail)
+    # If Flexera NAM Zone, create audit_entries [to be deprecated]
+    # This is the legacy method for capturing errors and only supported on Flexera NAM
+    if $$rs_optima_host == "api.optima.flexeraeng.com"
+      # skip_error_and_append is used to catch error if rs_cm.audit_entries.create fails unexpectedly
+      $task_label = "Creating audit entry for " + $subject
+      sub task_label: $task, on_error: skip_error_and_append($task) do
+        rs_cm.audit_entries.create(
+          notify: "None",
+          audit_entry: {
+            auditee_href: @@account,
+            summary: $subject,
+            detail: $detail
+          }
+        )
+      end # End sub on_error
+    end # End if rs_optima_host
+  end # End if debug is enabled
+end
+
+define skip_error_and_append($subject) do
+  $$errors << "Unexpected error for " + $subject + "\n  " + to_s($_error)
+  $_error_behavior = "skip"
 end

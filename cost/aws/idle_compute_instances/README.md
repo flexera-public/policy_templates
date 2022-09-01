@@ -1,8 +1,62 @@
 # AWS Idle Compute Instances Policy
 
-## What it does
-
 This Policy Template checks for idle instance in AWS EC2 and then terminates them upon approval.
+
+## Prerequisites
+
+This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for authenticating to datasources -- in order to apply this policy you must have a Credential registered in the system that is compatible with this policy. If there are no Credentials listed when you apply the policy, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy. The information below should be consulted when creating the credential(s).
+
+- [**AWS Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_1982464505_1121575) (*provider=aws*) which has the following permissions:
+  - `ec2:DescribeRegions`
+  - `ec2:DescribeInstances`
+  - `ec2:DescribeTags`
+  - `cloudwatch:GetMetricStatistics`
+  - `cloudwatch:ListMetrics`
+
+  Example IAM Permission Policy:
+
+  ```json
+  {
+      "Version": "2012-10-17",
+      "Statement": [
+          {
+              "Effect": "Allow",
+              "Action": [
+                  "ec2:DescribeRegions",
+                  "ec2:DescribeInstances",
+                  "ec2:DescribeTags",
+                  "cloudwatch:GetMetricStatistics",
+                  "cloudwatch:ListMetrics"
+              ],
+              "Resource": "*"
+          }
+      ]
+  }
+  ```
+
+- [**Flexera Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) (*provider=flexera*) which has the following roles:
+  - `billing_center_viewer`
+
+The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) page in the docs has detailed instructions for setting up Credentials for the most common providers.
+
+### Memory Support
+
+By default only CPU metrics are available from CloudWatch.  To enable support for memory utilization, you must have the CloudWatch Agent installed on your EC2 instance(s) to collect memory metrics.  Please reference [AWS Docs > Install CloudWatch Agent on EC2 Instance](https://docs.aws.amazon.com/AmazonCloudWatch/latest/monitoring/install-CloudWatch-Agent-on-EC2-Instance.html) for more information.
+
+### Windows Support
+
+To enable windows support you will need to add the following to your cloudwatch config.json and restart cloudwatch agent
+
+```json
+"metrics": {
+  "append_dimensions": {
+    "AutoScalingGroupName": "${aws:AutoScalingGroupName}",
+    "ImageId": "${aws:ImageId}",
+    "InstanceId": "${aws:InstanceId}",
+    "InstanceType": "${aws:InstanceType}"
+  }
+}
+```
 
 ## Functional Details
 
@@ -38,69 +92,6 @@ For example if a user selects the "Terminate Instances" action while applying th
 
 - Sends an email notification
 - Terminates instances after approval
-
-## Prerequisites
-
-- This policy uses [credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for connecting to the cloud -- in order to apply this policy you must have a credential registered in the system that is compatible with this policy. If there are no credentials listed when you apply the policy, please contact your cloud admin and ask them to register a credential that is compatible with this policy. The information below should be consulted when creating the credential.
-- billing_center_viewer (note: this role must be applied at the Organization level)
-
-### Credential configuration
-
-For administrators [creating and managing credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) to use with this policy, the following information is needed:
-
-Provider tag value to match this policy: `aws` , `aws_sts`
-
-Required permissions in the provider:
-
-```javascript
-{
-  "Version": "2012-10-17",
-  "Statement":[
-    {
-      "Effect":"Allow",
-      "Action":[
-        "cloudwatch:GetMetricStatistics",
-        "cloudwatch:ListMetrics"
-      ],
-      "Resource":"*",
-      "Condition":{
-        "Bool":{
-          "aws:SecureTransport":"true"
-        }
-      }
-    },
-    {
-      "Effect":"Allow",
-      "Action":[
-        "ec2:DescribeInstances",
-        "ec2:DescribeTags",
-        "ec2:DescribeRegions"
-      ],
-      "Resource":"*",
-      "Condition":{
-        "Bool":{
-          "aws:SecureTransport":"true"
-        }
-      }
-    }
-  ]
-}
-```
-
-### Windows Support
-
-To enable windows support you will need to add the following to your cloudwatch config.json and restart cloudwatch agent
-
-```json
-"metrics": {
-  "append_dimensions": {
-    "AutoScalingGroupName": "${aws:AutoScalingGroupName}",
-    "ImageId": "${aws:ImageId}",
-    "InstanceId": "${aws:InstanceId}",
-    "InstanceType": "${aws:InstanceType}"
-  }
-}
-```
 
 ## Supported Clouds
 

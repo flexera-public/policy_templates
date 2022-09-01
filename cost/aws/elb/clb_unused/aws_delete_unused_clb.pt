@@ -1,13 +1,13 @@
 name "AWS Delete Unused Classic Load Balancers"
 rs_pt_ver 20180301
 type "policy"
-short_description "Report and remediate any Classic Load Balancers (CLB) that are not currently in use. \n See the [README](https://github.com/flexera/policy_templates/tree/master/cost/aws/elb/clb_unused) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+short_description "Report and remediate any Classic Load Balancers (CLB) that are not currently in use. \n See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/elb/clb_unused) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 long_description ""
 category "Cost"
 severity "low"
 default_frequency "daily"
 info(
-  version: "2.16",
+  version: "3.0",
   provider: "AWS",
   service: "ELB",
   policy_set: ""
@@ -72,7 +72,12 @@ credentials "auth_aws" do
   aws_account_number $param_aws_account_number
 end
 
-auth "auth_rs", type: "rightscale"
+credentials "auth_flexera" do
+  schemes "oauth2"
+  label "flexera"
+  description "Select Flexera One OAuth2 credentials"
+  tags "provider=flexera"
+end
 
 ###############################################################################
 # Datasources
@@ -198,7 +203,7 @@ end
 
 datasource "ds_currency_code" do
   request do
-    auth $auth_rs
+    auth $auth_flexera
     host rs_optima_host
     path join(["/bill-analysis/orgs/",rs_org_id,"/settings/currency_code"])
     header "Api-Version", "0.1"
@@ -214,7 +219,7 @@ end
 
 datasource "ds_billing_centers" do
   request do
-    auth $auth_rs
+    auth $auth_flexera
     host rs_optima_host
     path join(["/analytics/orgs/",rs_org_id,"/billing_centers"])
     header "Api-Version", "1.0"
@@ -407,7 +412,7 @@ script "js_get_costs", type:"javascript" do
     var start_date = getFormattedDailyDate(new Date(new Date().setDate(new Date().getDate() - 3)));
     var end_date = getFormattedDailyDate(new Date(new Date().setDate(new Date().getDate() - 2)));
     var request = {
-      auth: "auth_rs",
+      auth: "auth_flexera",
       host: optima_host,
       verb: "POST",
       path: "/bill-analysis/orgs/" + org + "/costs/select",
@@ -566,7 +571,7 @@ escalation "esc_delete_clb" do
   automatic contains($param_automatic_action, "Delete Load balancers")
   label "Delete CLB"
   description "Delete selected unused CLB"
-  run "delete_CLB", data, $param_log_to_cm_audit_entries
+  run "delete_CLB", data, $param_log_to_cm_audit_entries, rs_optima_host
 end
 
 ###############################################################################
@@ -614,7 +619,7 @@ end
 ###############################################################################
 
 #https://docs.aws.amazon.com/elasticloadbalancing/2012-06-01/APIReference/API_DeleteLoadBalancer.html
-define delete_CLB($data,$param_log_to_cm_audit_entries) return $all_responses do
+define delete_CLB($data,$param_log_to_cm_audit_entries, $$rs_optima_host) return $all_responses do
   $$debug = $param_log_to_cm_audit_entries == "Yes"
   $all_responses = []
   foreach $item in $data do
@@ -637,14 +642,35 @@ define delete_CLB($data,$param_log_to_cm_audit_entries) return $all_responses do
 end
 
 define sys_log($subject, $detail) do
-  if $$debug
-    rs_cm.audit_entries.create(
-      notify: "None",
-      audit_entry: {
-        auditee_href: @@account,
-        summary: "AWS Delete Unused Classic Load Balancers Policy "+ $subject,
-        detail: $detail
-      }
-    )
+  # Create empty errors array if doesn't already exist
+  if !$$errors
+    $$errors = []
   end
+  # Check if debug is enabled
+  if $$debug
+    # Append to global $$errors
+    # This is the suggested way to capture errors
+    $$errors << "Unexpected error for " + $subject + "\n  " + to_s($detail)
+    # If Flexera NAM Zone, create audit_entries [to be deprecated]
+    # This is the legacy method for capturing errors and only supported on Flexera NAM
+    if $$rs_optima_host == "api.optima.flexeraeng.com"
+      # skip_error_and_append is used to catch error if rs_cm.audit_entries.create fails unexpectedly
+      $task_label = "Creating audit entry for " + $subject
+      sub task_label: $task, on_error: skip_error_and_append($task) do
+        rs_cm.audit_entries.create(
+          notify: "None",
+          audit_entry: {
+            auditee_href: @@account,
+            summary: $subject,
+            detail: $detail
+          }
+        )
+      end # End sub on_error
+    end # End if rs_optima_host
+  end # End if debug is enabled
+end
+
+define skip_error_and_append($subject) do
+  $$errors << "Unexpected error for " + $subject + "\n  " + to_s($_error)
+  $_error_behavior = "skip"
 end
