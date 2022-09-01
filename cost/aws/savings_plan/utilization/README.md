@@ -33,6 +33,7 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Auto
 - [**Flexera Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) (*provider=flexera*) which has the following roles:
   - `billing_center_viewer`
   
+
 ## Functional Details
 
 - This policy produces a pie chart showing Used Commitment, Unused Commitment and Utilization for a Savings Plan.
