@@ -26,10 +26,6 @@ This policy has the following input parameters required when launching the polic
 - *Region* - Name of the AWS Region to filter by. Example: 'US West (Oregon)'. Leave this blank for 'Organization' scope
 - *Email addresses to notify* - A list of email addresses to notify
 
-## Required CMP Roles
-
-- billing_center_viewer (note: this role must be applied at the Organization level)
-
 ## Supported Clouds
 
 - AWS
