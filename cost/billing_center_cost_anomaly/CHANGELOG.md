@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.12
+
+- Deprecating this policy as it's replaced by [the new version](../cloud_cost_anomalies)
+
 ## v1.11
 
 - Use provided keyword for Optima endpoint
