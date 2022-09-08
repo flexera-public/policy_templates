@@ -1,7 +1,7 @@
 name "Azure Rightsize Compute Instances"
 rs_pt_ver 20180301
 type "policy"
-short_description "Checks for instances that have inefficient utilization for the last 30 days and rightsizes or terminates them after approval. \n See the [README](https://github.com/flexera/policy_templates/tree/master/cost/azure/idle_compute_instances/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+short_description "Checks for instances that have inefficient utilization for the last 30 days and rightsizes or terminates them after approval. \n See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/rightsize_compute_instances/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 long_description ""
 category "Cost"
 severity "low"
@@ -177,88 +177,6 @@ script "js_filtered_subscriptions", type: "javascript" do
   EOS
 end
 
-=begin
-#GET AZURE SKUS FOR EACH SUBSCRIPTION
-datasource "ds_azure_skus" do
-  iterate $ds_filtered_subscriptions
-  request do
-    auth $azure_auth
-    pagination $azure_pagination
-    host "management.azure.com"
-    path join(["/subscriptions/", val(iter_item,"subscriptionId"), "/providers/Microsoft.Compute/skus"])
-    query "api-version","2017-09-01"
-    header "User-Agent", "RS Policies"
-  end
-  result do
-    encoding "json"
-    collect jmes_path(response, "value") do
-      field "resourceType", jmes_path(col_item,"resourceType")
-      field "name", jmes_path(col_item,"name")
-      field "locations", jmes_path(col_item,"locations")
-      field "capabilities", jmes_path(col_item,"capabilities")
-      field "restrictions", jmes_path(col_item,"restrictions")
-    end
-  end
-end
-
-#FILTER SKU DATA BASED ON LOCATION RESTRICTIONS
-datasource "ds_azure_vm_sizes" do
-  run_script $js_azure_vm_sizes, $ds_azure_skus
-end
-
-script "js_azure_vm_sizes", type: "javascript" do
-  parameters "ds_azure_skus"
-  result "result"
-  code <<-EOS
-    var result = [];
-    _.each(ds_azure_skus, function(sku){
-
-      if (sku.resourceType === "virtualMachines") {
-        var skipVmSku = false
-        _.each(sku.restrictions, function(restriction){
-          if (restriction.type === "Location" && restriction.reasonCode === "NotAvailableForSubscription") {
-            skipVmSku = true
-          }
-        })
-
-        if (skipVmSku) {
-          // VM Sku not available in this location for this subscription
-        } else {
-          var capabilities = [];
-          _.each(sku.capabilities, function(capability){
-            capabilities[capability.name] = capability.value
-          })
-
-          result.push({
-            name: sku.name,
-            resourceType: sku.resourceType,
-            locations: sku.locations,
-            MaxResourceVolumeMB: capabilities.MaxResourceVolumeMB,
-            OSVhdSizeMB: capabilities.OSVhdSizeMB,
-            vCPUs: capabilities.vCPUs,
-            HyperVGenerations: capabilities.HyperVGenerations,
-            MemoryGB: capabilities.MemoryGB,
-            MaxDataDiskCount: capabilities.MaxDataDiskCount,
-            LowPriorityCapable: capabilities.LowPriorityCapable,
-            PremiumIO: capabilities.PremiumIO,
-            vCPUsAvailable: capabilities.vCPUsAvailable,
-            ACUs: capabilities.ACUs,
-            vCPUsPerCore: capabilities.vCPUsPerCore,
-            CombinedTempDiskAndCachedIOPS: capabilities.CombinedTempDiskAndCachedIOPS,
-            CombinedTempDiskAndCachedReadBytesPerSecond: capabilities.CombinedTempDiskAndCachedReadBytesPerSecond,
-            CombinedTempDiskAndCachedWriteBytesPerSecond: capabilities.CombinedTempDiskAndCachedWriteBytesPerSecond,
-            CachedDiskBytes: capabilities.CachedDiskBytes,
-            UncachedDiskIOPS: capabilities.UncachedDiskIOPS,
-            UncachedDiskBytesPerSecond: capabilities.UncachedDiskBytesPerSecond,
-            EphemeralOSDiskSupported: capabilities.EphemeralOSDiskSupported
-          })
-        }
-      }
-    })
-  EOS
-end
-=end
-
 #GET AZURE VIRTUAL MACHINE INSTANCES FOR EACH SUBSCRIPTION
 datasource "ds_azure_instances" do
   iterate $ds_filtered_subscriptions
@@ -358,9 +276,11 @@ end
 
 script "js_filter_instance_utilization", type: "javascript" do
   parameters "param_cpu_underutil_avg_percentage", "ds_azure_instance_utilization"
-  result "results"
+  result "result"
   code <<-EOS
     var results = []
+
+    //Calculate average CPU for each instance
     _.each(ds_azure_instance_utilization, function(data){
       total_of_avgs = 0, count = 0
       _.each(data.averages, function(avg){
@@ -378,7 +298,11 @@ script "js_filter_instance_utilization", type: "javascript" do
       data = _.omit(data, "averages")
     })
 
-    results = ds_azure_instance_utilization
+    //Filter out instances if the CPU usage is above the Underutilized CPU threshold
+    var filtered_instances = _.reject(ds_azure_instance_utilization, function(util_data){ 
+      return util_data.averageCPU >= param_cpu_underutil_avg_percentage
+    })
+    result = filtered_instances
   EOS
 end
 
@@ -466,7 +390,7 @@ datasource "ds_instance_costs" do
     collect jmes_path(response,"rows[*]") do
       field "resource_id", jmes_path(col_item, "dimensions.resource_id")
       field "resource_type", jmes_path(col_item, "dimensions.resource_type")
-      field "cost", jmes_path(col_item, "metrics.cost_nonamortized_unblended_adj")
+      field "cost", jmes_path(col_item, "metrics.cost_amortized_unblended_adj")
     end
   end
 end
@@ -475,17 +399,11 @@ script "js_get_costs", type: "javascript" do
   parameters "account_id","billing_centers","org","optima_host"
   result "request"
   code <<-EOS
-    // returns date formatted as string: YYYY-mm-dd
-    function getFormattedDailyDate(date) {
-      var year = date.getFullYear();
-      var month = (1 + date.getMonth()).toString();
-      month = month.length > 1 ? month : '0' + month;
-      var day = date.getDate().toString();
-      day = day.length > 1 ? day : '0' + day;
-      return year + '-' + month + '-' + day;
-    }
-    var start_date = getFormattedDailyDate(new Date(new Date().setDate(new Date().getDate() - 32)));
-    var end_date = getFormattedDailyDate(new Date(new Date().setDate(new Date().getDate() - 2)));
+    //Get Start and End dates
+    start_date = new Date(), end_date = new Date()
+    start_date.setMonth(start_date.getMonth() - 1)
+    end_date.setMonth(end_date.getMonth() - 0)
+
     var request = {
       auth: "auth_rs",
       host: optima_host,
@@ -493,10 +411,10 @@ script "js_get_costs", type: "javascript" do
       path: "/bill-analysis/orgs/" + org + "/costs/select",
       body_fields: {
         "dimensions": ["resource_id", "resource_type"],
-        "granularity": "day",
-        "start_at": start_date,
-        "end_at": end_date,
-        "metrics": ["cost_nonamortized_unblended_adj"],
+        "granularity": "month",
+        "start_at": start_date.toLocaleDateString("en-US").split("-")[0] + "-" + start_date.toLocaleDateString("en-US").split("-")[1],
+        "end_at": end_date.toLocaleDateString("en-US").split("-")[0] + "-" + end_date.toLocaleDateString("en-US").split("-")[1],
+        "metrics": ["cost_amortized_unblended_adj"],
         "billing_center_ids": _.compact(_.map(billing_centers, function(value){ return value.id})),
         "limit": 10000,
         "filter": {
@@ -510,6 +428,13 @@ script "js_get_costs", type: "javascript" do
               "dimension": "vendor_account",
               "type": "equal",
               "value": account_id
+            },
+            {
+              "type": "or",
+              "expressions": [
+                { "dimension": "adjustment_name", "type": "equal", "value": "" },
+                { "dimension": "adjustment_name", "type": "equal", "value": "Raw Cost" }
+              ]
             }
           ],
           "type": "and"
@@ -526,11 +451,11 @@ end
 
 #COMBINE INSTANCE UTILIZATION DATA WITH INSTANCE COST DATA
 datasource "ds_combined_data" do
-  run_script $js_combine_data, $ds_rightsizing_and_utilization_data, $ds_instance_costs, $ds_currency_code, $ds_currency_reference, $ds_billing_centers
+  run_script $js_combine_data, $ds_rightsizing_and_utilization_data, $ds_instance_costs, $ds_currency_code, $ds_currency_reference, $ds_billing_centers, $param_cpu_idle_avg_percentage, $param_cpu_underutil_avg_percentage
 end
 
 script "js_combine_data", type: "javascript" do
-  parameters "instance_utilization_data", "instance_cost_data", "ds_currency_code", "ds_currency_reference", "ds_billing_centers"
+  parameters "instance_utilization_data", "instance_cost_data", "ds_currency_code", "ds_currency_reference", "ds_billing_centers", "param_idle_prc", "param_underutil_prc"
   result "result"
   code <<-EOS
     var result = {}
@@ -575,32 +500,32 @@ script "js_combine_data", type: "javascript" do
     }
       
     //ADD COSTS TO INSTANCE UTILIZATION DATA
+    _.each(instance_cost_data, function(cost_data){ cost_data["resource_id"] = cost_data.resource_id.toLowerCase() })
+    var grouped_cost_data = _.groupBy(instance_cost_data, function(cost_data){ return cost_data.resource_id })
+
     _.each(instance_utilization_data, function(util_data){
+      var util_resource_id = util_data.resourceId.toLowerCase()
       var count = 0
       var total_cost = 0
-      _.each(instance_cost_data, function(cost_data){
-        if( util_data.resourceId == cost_data.resource_id ){
-          if ( cost_data.cost ){
-            total_cost += 0
-          } else {
-            total_cost += cost_data.cost
-          }
-          count++ 
+      _.each(grouped_cost_data[util_resource_id], function(cost_data){
+        if ( cost_data.cost == 0 ){
+          total_cost += 0
+        } else {
+          total_cost += cost_data.cost
         }
+        count++ 
       })
-      console.log(count)
-      util_data["savings"] = parseFloat(total_cost).toFixed(3)
-      util_data['savingsCurrency'] = cur
+
+      //console.log(count)
+
+      if( util_data.averageCPU < param_idle_prc ){
+        util_data["savings"] = parseFloat(total_cost).toFixed(3)
+      } else if( util_data.averageCPU < param_underutil_prc ){
+        util_data["savings"] = parseFloat(total_cost / 2).toFixed(3)
+      }
+      util_data["savingsCurrency"] = cur
+      util_data["averageCPU"] = parseFloat(util_data.averageCPU).toFixed(2)
     })
-
-    //maybe use count to account for scenarios where instance launched within the past 30 days to get more accurate monlthy cost?
-
-    //result = { 
-    //  "instance_data": instance_data,
-    //  "message": message
-    //}
-    //result.instance_data = _.sortBy(result.instance_data, "region")
-    //result.instance_data = _.sortBy(result.instance_data, "subscriptionName")
 
     result = _.sortBy(instance_utilization_data, "region")
     result = _.sortBy(result, "subscriptionName")
