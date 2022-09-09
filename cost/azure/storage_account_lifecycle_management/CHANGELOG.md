@@ -1,5 +1,10 @@
 # Changelog
 
+## v2.4
+
+- Added "Azure API Wait Time" parameter to prevent Azure API throttling
+- Replaced references `github.com/rightscale/policy_templates` and `github.com/flexera/policy_templates` with `github.com/flexera-public/policy_templates`
+
 ## v2.3
 
 - updated README.md rightscale documentation links with docs.flexera documentation links

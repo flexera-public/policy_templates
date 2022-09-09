@@ -25,7 +25,7 @@ Please note that `_` is being used for separating the start-stop time, days of t
 Instances are off during the weekend and start back up on Monday morning at 8:30am and are off at 5:15pm every weekday. Times are UTC unless the Timezone field is provided.
 
 Note: Please note that for this policy to work, the time should be in 24 hour format and both hours and minutes must have 2 digits: `0800`for `8am` or `2130` for `9:30pm`.
-Please refer the [formatted timezones list](https://github.com/flexera/policy_templates/blob/master/data/tz_database/timezones_list.json) having timezone in the above mentioned format as key and corresponding TZ database timezone as value.
+Please refer the [formatted timezones list](https://github.com/flexera-public/policy_templates/blob/master/data/tz_database/timezones_list.json) having timezone in the above mentioned format as key and corresponding TZ database timezone as value.
 
 ## Input Parameters
 

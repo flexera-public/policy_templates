@@ -1,13 +1,13 @@
 name "AWS Disallowed Regions"
 rs_pt_ver 20180301
 type "policy"
-short_description "Check for instances that are outside of an allowed region with the option to terminate them. \n See the [README](https://github.com/flexera/policy_templates/tree/master/compliance/aws/disallowed_regions) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+short_description "Check for instances that are outside of an allowed region with the option to terminate them. \n See the [README](https://github.com/flexera-public/policy_templates/tree/master/compliance/aws/disallowed_regions) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 long_description ""
 category "Compliance"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "2.6",
+  version: "2.8",
   provider: "AWS",
   service: "EC2",
   policy_set: "Disallowed Regions"
@@ -82,35 +82,36 @@ end
 # Datasources
 ###############################################################################
 
-# Get a list of all active AWS regions on the account
-datasource "ds_all_regions" do
+# ds_region_list is a list of regions that are opted-in or opt-in-not-required
+datasource "ds_regions_list" do
+  # https://docs.aws.amazon.com/AWSEC2/latest/APIReference/API_DescribeRegions.html
   request do
     auth $auth_aws
-    pagination $aws_pagination_xml
     verb "GET"
     host "ec2.amazonaws.com"
     path "/"
     query "Action", "DescribeRegions"
     query "Version", "2016-11-15"
+    query "Filter.1.Name", "opt-in-status"
+    query "Filter.1.Value.1", "opt-in-not-required"
+    query "Filter.1.Value.2", "opted-in"
   end
   result do
     encoding "xml"
-    collect xpath(response, "//DescribeRegionsResponse/regionInfo/item") do
-      field "regionName", xpath(col_item, "regionName")
-      field "regionEndpoint", xpath(col_item, "regionEndpoint")
+    collect xpath(response, "//DescribeRegionsResponse/regionInfo/item", "array") do
+      field "region", xpath(col_item, "regionName")
     end
   end
 end
 
-# Generates list of Regions which User input.
-datasource "ds_regions_list" do
-  run_script $js_regions_map, $ds_all_regions, $param_allowed_regions
+# Get only SCP enabled regions
+datasource "ds_regions" do
+  run_script $js_regions, $param_allowed_regions, $ds_regions_list
 end
-
 # Get the list of all EC2 Instances across all regions.
 # https://docs.aws.amazon.com/AWSEC2/latest/APIReference/API_DescribeInstances.html
 datasource "ds_disallowed_instances_list" do
-  iterate $ds_regions_list
+  iterate $ds_regions
   request do
     auth $auth_aws
     pagination $aws_pagination_xml
@@ -145,26 +146,36 @@ end
 # Scripts
 ###############################################################################
 
-script "js_regions_map", type: "javascript" do
-  parameters "ds_all_regions", "param_allowed_regions"
-  result "regions_map"
+script "js_regions", type:"javascript" do
+  parameters "user_entered_regions", "all_regions"
+  result "regions"
   code <<-EOS
-  regions_map = []
+    if(_.isEmpty(user_entered_regions)){
+      regions = all_regions;
+    }else{
+      //Filter unique regions
+      var uniqueRegions = _.uniq(user_entered_regions);
+      var all_regions_list = [];
+      all_regions.forEach(function(all_region){
+        all_regions_list.push(all_region.region)
+      })
 
-  _.each(ds_all_regions, function(region) {
-    disallowed = true
+      //Filter valid regions
+      var valid_regions = [];
+      _.map(uniqueRegions, function(uniqueRegion){
+        if(all_regions_list.indexOf(uniqueRegion) > -1){
+          valid_regions.push({"region": uniqueRegion})
+        }
+      })
 
-    _.each(param_allowed_regions, function(allowed_region) {
-      if (region['regionName'].trim() == allowed_region.trim()) {
-        disallowed = false
+      //Throw an error if no valid regions found
+      if (_.isEmpty(valid_regions)) {
+        regions = all_regions;
+      }else{
+        regions = valid_regions
       }
-    })
-
-    if (disallowed) {
-      regions_map.push(region)
     }
-  })
-EOS
+  EOS
 end
 
 script "js_filter_aws_instances", type: "javascript" do
@@ -224,7 +235,7 @@ escalation "esc_terminate_instances_disallowed_region" do
   automatic contains($param_automatic_action, "Terminate Instances")
   label "Delete Instances"
   description "Delete instances found in disallowd regions."
-  run "terminate_instances", data
+  run "terminate_instances", data, rs_optima_host
 end
 
 ###############################################################################
@@ -263,7 +274,7 @@ end
 ###############################################################################
 
 # https://docs.aws.amazon.com/AWSEC2/latest/APIReference/API_TerminateInstances.html
-define terminate_instances($data) return $all_responses do
+define terminate_instances($data, $$rs_optima_host) return $all_responses do
   $$debug=true
   $all_responses = []
   foreach $item in $data do
@@ -286,14 +297,35 @@ define terminate_instances($data) return $all_responses do
 end
 
 define sys_log($subject, $detail) do
-  if $$debug
-    rs_cm.audit_entries.create(
-      notify: "None",
-      audit_entry: {
-        auditee_href: @@account,
-        summary: "AWS Instances in disallowed region Policy "+ $subject,
-        detail: $detail
-      }
-    )
+  # Create empty errors array if doesn't already exist
+  if !$$errors
+    $$errors = []
   end
+  # Check if debug is enabled
+  if $$debug
+    # Append to global $$errors
+    # This is the suggested way to capture errors
+    $$errors << "Unexpected error for " + $subject + "\n  " + to_s($detail)
+    # If Flexera NAM Zone, create audit_entries [to be deprecated]
+    # This is the legacy method for capturing errors and only supported on Flexera NAM
+    if $$rs_optima_host == "api.optima.flexeraeng.com"
+      # skip_error_and_append is used to catch error if rs_cm.audit_entries.create fails unexpectedly
+      $task_label = "Creating audit entry for " + $subject
+      sub task_label: $task, on_error: skip_error_and_append($task) do
+        rs_cm.audit_entries.create(
+          notify: "None",
+          audit_entry: {
+            auditee_href: @@account,
+            summary: $subject,
+            detail: $detail
+          }
+        )
+      end # End sub on_error
+    end # End if rs_optima_host
+  end # End if debug is enabled
+end
+
+define skip_error_and_append($subject) do
+  $$errors << "Unexpected error for " + $subject + "\n  " + to_s($_error)
+  $_error_behavior = "skip"
 end

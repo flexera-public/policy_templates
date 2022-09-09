@@ -1,5 +1,13 @@
 # Changelog
 
+## v2.11
+
+- Replaced references `github.com/rightscale/policy_templates` and `github.com/flexera/policy_templates` with `github.com/flexera-public/policy_templates`
+
+## v2.10
+
+- changed subscriptionID and subscriptionName value to accountID and accountName
+
 ## v2.9
 
 - Added the following attributes to policy output: instanceFlexibilityGroup, instanceFlexibilityRatio, normalizedSize, recommendedQuantityNormalized

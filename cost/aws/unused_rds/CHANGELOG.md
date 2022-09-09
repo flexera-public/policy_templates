@@ -1,5 +1,26 @@
 # Changelog
 
+## v4.0
+
+- Deprecated `auth_rs` authentication (type: `rightscale`) and replaced with `auth_flexera` (type: `oauth2`).  This is a breaking change which requires a Credential for `auth_flexera` [`provider=flexera`] before the policy can be applied.  Please see docs for setting up [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm)
+- Modified `sys_log` definition to disable `rs_cm.audit_entry.create` outside Flexera NAM
+- Replaced references `github.com/rightscale/policy_templates` and `github.com/flexera/policy_templates` with `github.com/flexera-public/policy_templates`
+
+## v3.7
+
+- Added accountName field
+
+## v3.6
+
+- Added filter for DescribeRegion to only return regions that are `opted-in` or `opt-in-not-required` [exclude `not-opted-in`] in the current AWS account.
+
+## v3.5
+
+- Improved accuracy of metric collection by using a different Statistic to identify idle resources
+- Fixed bug with Tag Exclusion Key parameter in `v3.x`.  Resources once again get excluded from results if containing provided `key:value` tag
+- Refactored datasources from `cloudwatch:GetMetricStatistics` to `cloudwatch:GetMetricData` to improve efficiency of metric data collection
+- Added `param_api_wait` - The amount of time in seconds to wait between requests to the CloudWatch API to avoid being throttled by AWS
+
 ## v3.4
 
 - Use provided keyword for Optima endpoint

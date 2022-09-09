@@ -1,5 +1,25 @@
 # Changelog
 
+## v4.0
+
+- Deprecated `auth_rs` authentication (type: `rightscale`) and replaced with `auth_flexera` (type: `oauth2`).  This is a breaking change which requires a Credential for `auth_flexera` [`provider=flexera`] before the policy can be applied.  Please see docs for setting up [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm)
+- Modified `sys_log` definition to disable `rs_cm.audit_entry.create` outside Flexera NAM
+- Replaced references `github.com/rightscale/policy_templates` and `github.com/flexera/policy_templates` with `github.com/flexera-public/policy_templates`
+
+## v3.7
+
+- Added accountName field
+
+## v3.6
+
+- Added filter for DescribeRegion to only return regions that are `opted-in` or `opt-in-not-required` [exclude `not-opted-in`] in the current AWS account.
+
+## v3.5
+
+- GetMetricData is now used to gather metrics data in batches for faster policy execution.
+- Added parameter to allow user to decide whether both CPU and memory need to be under the specified threshold for an instance to be considered idle.
+- Added an instance launch time field.
+
 ## v3.4
 
 - fixed issue with multiple datapoints on cpu_usage to not show duplicate, incorrect cpu data
