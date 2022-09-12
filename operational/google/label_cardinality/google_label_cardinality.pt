@@ -1,0 +1,309 @@
+name "Google Label Cardinality Report"
+rs_pt_ver 20180301
+type "policy"
+short_description "Generates a label cardinality report for Google Projects and Resources. See the [README](https://github.com/flexera-public/policy_templates/tree/master/operational/google/label_cardinality) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+long_description ""
+severity "low"
+category "Operational"
+default_frequency "weekly"
+info(
+  version: "2.0",
+  provider: "Google",
+  service: "Labels",
+  policy_set: "Tag Cardinality"
+)
+
+###############################################################################
+# Parameters
+###############################################################################
+
+###############################################################################
+# Parameters
+###############################################################################
+
+parameter "param_email" do
+  type "list"
+  label "Email addresses to notify"
+  description "Email addresses of the recipients you wish to notify"
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+credentials "auth_google" do
+  schemes "oauth2"
+  label "Google"
+  description "Select the Google Cloud Credential from the list."
+  tags "provider=gce"
+end
+
+###############################################################################
+# Pagination
+###############################################################################
+
+pagination "google_pagination" do
+  get_page_marker do
+    body_path "nextPageToken"
+  end
+  set_page_marker do
+    query "pageToken"
+  end
+end
+
+###############################################################################
+# Datasources
+###############################################################################
+
+datasource "ds_google_projects" do
+  request do
+    auth $auth_google
+    pagination $google_pagination
+    host "cloudresourcemanager.googleapis.com"
+    path "/v1/projects/"
+    query "filter", "lifecycleState=ACTIVE"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "projects[*]") do
+      field "id", jmes_path(col_item, "projectId")
+      field "number", jmes_path(col_item, "projectNumber")
+      field "name", jmes_path(col_item, "name")
+      field "labels", jmes_path(col_item, "labels")
+      field "createTime", jmes_path(col_item, "createTime")
+      field "lifecycleState", jmes_path(col_item, "lifecycleState")
+    end
+  end
+end
+
+datasource "ds_google_resources_disks" do
+  iterate $ds_google_projects
+  request do
+    auth $auth_google
+    pagination $google_pagination
+    host "compute.googleapis.com"
+    path join(["/compute/v1/projects/", val(iter_item, "id"), "/aggregated/disks"])
+    ignore_status [403, 404]
+  end
+end
+
+datasource "ds_google_resources_vpn_global" do
+  iterate $ds_google_projects
+  request do
+    auth $auth_google
+    pagination $google_pagination
+    host "compute.googleapis.com"
+    path join(["/compute/v1/projects/", val(iter_item, "id"), "/global/externalVpnGateways"])
+    ignore_status [403, 404]
+  end
+end
+
+datasource "ds_google_resources_vpn_aggregated" do
+  iterate $ds_google_projects
+  request do
+    auth $auth_google
+    pagination $google_pagination
+    host "compute.googleapis.com"
+    path join(["/compute/v1/projects/", val(iter_item, "id"), "/aggregated/vpnGateways"])
+    ignore_status [403, 404]
+  end
+end
+
+datasource "ds_google_resources_images" do
+  iterate $ds_google_projects
+  request do
+    auth $auth_google
+    pagination $google_pagination
+    host "compute.googleapis.com"
+    path join(["/compute/v1/projects/", val(iter_item, "id"), "/global/images"])
+    ignore_status [403, 404]
+  end
+end
+
+datasource "ds_google_resources_instances" do
+  iterate $ds_google_projects
+  request do
+    auth $auth_google
+    pagination $google_pagination
+    host "compute.googleapis.com"
+    path join(["/compute/v1/projects/", val(iter_item, "id"), "/aggregated/instances"])
+    ignore_status [403, 404]
+  end
+end
+
+datasource "ds_google_resources_snapshots" do
+  iterate $ds_google_projects
+  request do
+    auth $auth_google
+    pagination $google_pagination
+    host "compute.googleapis.com"
+    path join(["/compute/v1/projects/", val(iter_item, "id"), "/global/snapshots"])
+    ignore_status [403, 404]
+  end
+end
+
+
+
+# datasource "ds_google_resources" do
+#   run_script $js_google_resources, $ds_google_resources_raw
+# end
+
+# datasource "ds_google_storage_buckets" do
+#   iterate $ds_google_projects
+#   request do
+#     auth $auth_google
+#     host "www.googleapis.com"
+#     path "/storage/v1/b"
+#     query "projection", "full"
+#     query "project", val(iter_item,"projectId")
+#     ignore_status [403,404]
+#   end
+#   result do
+#     encoding "json"
+#     collect jq(response, ".") do
+#       field "name", jmes_path(col_item, "name")
+#       field "all_res", col_item
+#     end
+#   end
+# end
+
+# datasource "ds_azure_subscriptions_tag_list" do
+#   run_script $js_tag_lister, $ds_azure_subscriptions, "Subscription"
+# end
+
+# datasource "ds_azure_resource_groups_tag_list" do
+#   run_script $js_tag_lister, $ds_azure_resource_groups, "Resource Group"
+# end
+
+# datasource "ds_azure_resources_tag_list" do
+#   run_script $js_tag_lister, $ds_azure_resources, "Resource"
+# end
+
+# datasource "ds_tag_report" do
+#   run_script $js_tag_report, $ds_azure_subscriptions_tag_list, $ds_azure_resource_groups_tag_list, $ds_azure_resources_tag_list
+# end
+
+###############################################################################
+# Scripts
+###############################################################################
+
+script "js_google_resources", type: "javascript" do
+  parameters "ds_google_resources_raw"
+  result "resource_list"
+  code <<-EOS
+  result = []
+  resource_list = []
+
+  _.each(ds_google_resources_raw, function(request_item) {
+    _.each(Object.keys(request_item['items']), function(region) {
+      results_found = false
+
+      if (request_item['items'][region]['warning'] == undefined && request_item['items'][region]['error'] == undefined) {
+        results_found = true
+      }
+
+      if (request_item['items'][region]['warning'] != undefined) {
+        if (request_item['items'][region]['warning']['code'] != 'NO_RESULTS_ON_PAGE') {
+          results_found = true
+        }
+      }
+
+      if (results_found) {
+        _.each(Object.keys(request_item['items'][region]), function(type) {
+          _.each(Object.keys(request_item['items'][region][type]), function(item) {
+            resource_list.push(item)
+          })
+        })
+      }
+    })
+  })
+EOS
+end
+
+script "js_tag_lister", type: "javascript" do
+  parameters "tagged_list", "tag_type"
+  result "result"
+  code <<-EOS
+  tags = {}
+  result = []
+
+  _.each(tagged_list, function(item) {
+    if (item['tags'] != undefined && item['tags'] != null) {
+      _.each(Object.keys(item['tags']), function(key) {
+        value = item['tags'][key]
+        if (value == "" || value == null || value == undefined) {
+          value = "[Empty Value]"
+        }
+
+        if (tags[key] == undefined || tags[key] == null) {
+          tags[key] = {}
+        }
+
+        if (tags[key][value] == undefined || tags[key][value] == null) {
+          tags[key][value] = 1
+        } else {
+          tags[key][value] += 1
+        }
+      })
+    }
+  })
+
+  _.each(Object.keys(tags), function(key) {
+    _.each(Object.keys(tags[key]), function(value) {
+      result.push({
+        'type': tag_type,
+        'key': key,
+        'value': value,
+        'cardinality': tags[key][value]
+      })
+    })
+  })
+
+  result = _.sortBy(result, 'cardinality').reverse()
+EOS
+end
+
+script "js_tag_report", type: "javascript" do
+  parameters "ds_azure_subscriptions_tag_list", "ds_azure_resource_groups_tag_list", "ds_azure_resources_tag_list"
+  result "result"
+  code <<-EOS
+  result = ds_azure_subscriptions_tag_list.concat(ds_azure_resource_groups_tag_list, ds_azure_resources_tag_list)
+EOS
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "pol_gcp_label_cardinality_report" do
+  validate $ds_google_projects do
+    summary_template "GCP Label Cardinality Report"
+    check eq(1, 0)
+    escalate $esc_email
+    export do
+      resource_level false
+      field "type" do
+        label "Type"
+      end
+      field "key" do
+        label "Key"
+      end
+      field "value" do
+        label "Value"
+      end
+      field "cardinality" do
+        label "Cardinality"
+      end
+    end
+  end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_email" do
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
+end
