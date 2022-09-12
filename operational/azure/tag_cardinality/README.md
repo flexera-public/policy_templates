@@ -1,15 +1,14 @@
-# AWS Tag Cardinality Report
+# Azure Tag Cardinality Report
 
 ## What it does
 
-This Policy Template is used to generate a tag cardinality (how frequently each tag value occurs) report for AWS. The report includes cardinality for all tag values for both AWS Accounts and Resources.
+This Policy Template is used to generate a tag cardinality (how frequently each tag value occurs) report for Azure. The report includes cardinality for all tag values for Azure Subscriptions, Resource Groups, and Resources.
 
 ## Functional Details
 
 This policy performs the following action:
 
-- Connect to the AWS Organizations API to get a list of AWS Accounts and their tags.
-- Connect to the AWS Tagging API to get a list of AWS Resources and their tags.
+- Connect to the Azure Resource Manager API to get a list of Azure Subscriptions, Resource Groups, and Resources, along with their tags.
 
 ## Input Parameters
 
@@ -29,31 +28,19 @@ This policy uses [credentials](https://docs.flexera.com/flexera/EN/Automation/Ma
 
 For administrators [creating and managing credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) to use with this policy, the following information is needed:
 
-Provider tag value to match this policy: `aws` , `aws_sts`
+Provider tag value to match this policy: `azure_rm`
 
 Required permissions in the provider:
 
-```javascript
-{
-  "Version": "2012-10-17",
-  "Statement": [
-    {
-      "Effect": "Allow",
-      "Action": [
-        "tag:GetResources",
-        "ec2:DescribeRegions",
-        "organizations:ListAccounts",
-        "organizations:ListTagsForResource"
-      ],
-      "Resource": "*"
-    }
-  ]
-}
-```
+- Microsoft.Resources/subscriptions/resources/read
+- Microsoft.Resources/subscriptions/providers/read
+- Microsoft.Resources/subscriptions/read
+- Microsoft.Resources/resourceGroups/read
+- Microsoft.Resources/tags/read
 
 ## Supported Clouds
 
-- AWS
+- Azure
 
 ## Cost
 
