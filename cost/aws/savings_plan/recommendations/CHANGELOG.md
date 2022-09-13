@@ -2,7 +2,7 @@
 
 ## v2.15
 
-- change the `auth_rs` Credential to `auth_flexera` name and label to `flexera` for consistency with other policy templates 
+- change the `auth_rs` Credential to `auth_flexera` name and label to `flexera` for consistency with other policy templates
 
 ## v2.14
 
