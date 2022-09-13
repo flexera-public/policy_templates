@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.14
+
+- Added policySet as Reserved Instance to populate the Total Potential Savings
+
 ## v2.13
 
 - Replaced references `github.com/rightscale/policy_templates` and `github.com/flexera/policy_templates` with `github.com/flexera-public/policy_templates`
