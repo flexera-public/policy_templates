@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.5
+
+- Added policySet as Unused IP Addresses to populate the Total Potential Savings
+
 ## v2.4
 
 - Modified `sys_log` definition to disable `rs_cm.audit_entry.create` outside Flexera NAM
