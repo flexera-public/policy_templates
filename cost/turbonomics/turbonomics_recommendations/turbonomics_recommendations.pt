@@ -1,0 +1,234 @@
+name "Turbonomics Recommendations POC"
+rs_pt_ver 20180301
+type "policy"
+short_description "Checks for snapshots older than specified number of days and, optionally, deletes them. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/old_snapshots) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+severity "low"
+category "Cost"
+default_frequency "daily"
+info(
+  version: "4.0",
+  provider: "Azure",
+  service: "Storage",
+  policy_set: "Old Snapshots"
+)
+
+##################
+# Parameters   #
+##################
+
+## only using for POC at the moment. likely will drop this after
+parameter "param_limit" do
+  label "Response Limit"
+  description "Number of recommendations to return"
+  type "number"
+  default 30
+  min_value 1
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+#authenticate with password and username - not implemented
+#credentials "turbo_auth" do
+#  schemes "basic"
+#  label "Turbonomics"
+#  description "Select the Turbonomic Basic Auth Credential from the list."
+#end
+
+###############################################################################
+# Pagination
+###############################################################################
+
+
+###############################################################################
+# Datasources
+###############################################################################
+
+datasource "ds_turbo_auth_request" do
+  request do
+    run_script $js_turbo_auth_request
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response,"[*]") do
+      field "authToken", jmes_path(col_item,"authToken")
+    end
+  end
+end
+
+#get all subscription details. VERIFY IT ONLY CONTAINS ONE VDISK
+datasource "ds_get_turbonomics_recommendations" do
+  request do
+    run_script $js_get_turbonomics_recommendations, $ds_turbo_auth_request
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "value[*]") do
+      field "accountID", jmes_path(col_item, "target.uuid")
+      field "accountName", jmes_path(col_item, "target.displayName")
+      field "resourceGroup", jmes_path(col_item, "target.aspects.resourceGroup.displayName")
+      field "volumeID", jmes_path(col_item, "target.aspects.virtualDisksAspect.virtualDisks[0].uuid")
+      field "volumeName", jmes_path(col_item, "target.aspects.virtualDisksAspect.virtualDisks[0].displayName")
+      field "region", jmes_path(col_item, "target.aspects.virtualDisksAspect.virtualDisks[0].dataCenter.displayName")
+      field "volumeType", jmes_path(col_item, "target.aspects.virtualDisksAspect.virtualDisks[0].tier")
+      field "tags", jmes_path(col_item, "target.tags")
+      field "createdTime", jmes_path(col_item, "createTime")
+      field "attachmentState", jmes_path(col_item, "target.aspects.virtualDisksAspect.virtualDisks[0].attachmentState")
+      field "daysUnattached", jmes_path(col_item, "target.aspects.virtualDisksAspect.virtualDisks[0].numDaysUnattached")
+      field "size", jmes_path(col_item, "target.uuid")
+      field "savings", jmes_path(col_item, "stats[0].value")
+      field "savingsCurrency", jmes_path(col_item, "stats[0].units")
+    end
+  end
+end
+
+
+datasource "ds_filtered_turbonomics_recommendations" do
+  run_script $js_filtered_turbonomics_recommendations, $ds_get_turbonomics_recommendations
+end
+
+###############################################################################
+# Scripts
+###############################################################################
+script "js_turbo_auth_request", type: "javascript" do
+  result "request"
+  code <<-EOS
+  var request = {
+      verb: "POST",
+      host: "sales1.demo.turbonomic.com",
+      path: "/api/v3/login",
+      query_params: {
+        'password': 'Flexera%21',
+        'username': 'flexera_sales_reader',
+      },
+      scheme: "http"
+      rejectUnauthorized: false,
+      verify: false,
+      agent: false,
+      strictSSL: false,
+      headers: {
+        "Content-Type": "text/plain",
+      }
+  }
+EOS
+end
+
+script "js_get_turbonomics_recommendations", type: "javascript" do
+  parameters "js_turbo_auth_request"
+  result "request"
+  code <<-EOS
+    var request = {
+      auth: js_turbo_auth_request[0],
+      verb: "POST",
+      host: "sales1.demo.turbonomic.com/api/v3",
+      path: "/markets/Market/actions",
+      body_fields: {
+        "actionStateList": ["READY", "ACCEPTED", "QUEUED", "IN_PROGRESS"],
+        "actionTypeList":["DELETE"],
+        "relatedEntityTypes":["VirtualVolume"],
+        "environmentType":"CLOUD",
+        "detailLevel":"EXECUTION"
+      },
+      query_params: {
+        'limit': param_limit
+      },
+      headers: {
+        "Content-Type": "application/json",
+      }
+    }
+EOS
+end
+
+script "js_filtered_turbonomics_recommendations", type: "javascript" do
+  result "result"
+  parameters "ds_get_turbonomics_recommendations"
+  code <<-EOS
+    result = []
+    _.each(ds_get_turbonomics_recommendations, function(volume){
+      if (volume.attachmentState == "UNATTACHED" && volume.numDaysUnattached >= 0) {
+        if (volume.savingsCurrency.includes("$")) {
+          volume.savingsCurrency = "$"
+        }
+        savingsString = ""
+        if (volume.savings.includes("E")) {
+          savingsString = volume.savings.split("E")[0]
+        } else {
+          savingsString = volume.savings
+        }
+        volume.savings = (Math.round(parseFloat(savingsString) * 730 * 1000) / 1000)
+        result.push(volume)
+      }
+    })
+EOS
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "pol_turbonomics_unused_volumes" do
+  validate $ds_filtered_turbonomics_recommendations do
+    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data.instances }} Old Snapshots Found"
+    detail_template <<-EOS
+{{data.message}}.
+EOS
+    check eq(1,0)
+    export do
+      field "id" do
+        label "Account ID"
+        path "accountID"
+      end
+      field "accountID" do
+        label "Account ID"
+        path "accountID"
+      end
+      field "acountName" do
+        label "Account Name"
+      end
+      field "resourceGroup" do
+        label "Resource Group"
+      end
+      field "volumeID" do
+        label "Volume ID"
+      end
+      field "volumeName" do
+        label "Volume Name"
+      end
+      field "region" do
+        label "Region"
+      end
+      field "volumeType" do
+        label "Volume Type"
+      end
+      field "tags" do
+        label "Tags"
+      end
+      field "createdTime" do
+        label "Created Time"
+      end
+      field "attachmentState" do
+        label "Attachment State"
+      end
+      field "daysUnattached" do
+        label "Days Unattached"
+      end
+      field "Size" do
+        label "Size"
+      end
+      field "Savings" do
+        label "Savings"
+      end
+    end
+  end
+end
+
+
+
+###############################################################################
+# Escalations
+###############################################################################
+
+###############################################################################
+# Cloud Workflow
+###############################################################################
