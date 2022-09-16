@@ -1,0 +1,243 @@
+name "Azure Tag Cardinality Report"
+rs_pt_ver 20180301
+type "policy"
+short_description "Generates a tag cardinality report for Azure Subscriptions, Resource Groups, and Resources. See the [README](https://github.com/flexera-public/policy_templates/tree/master/operational/azure/tag_cardinality) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+long_description ""
+severity "low"
+category "Operational"
+default_frequency "weekly"
+info(
+  version: "2.0",
+  provider: "Azure",
+  service: "Tags",
+  policy_set: "Tag Cardinality"
+)
+
+###############################################################################
+# Parameters
+###############################################################################
+
+parameter "param_email" do
+  type "list"
+  label "Email addresses to notify"
+  description "Email addresses of the recipients you wish to notify"
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+credentials "auth_azure" do
+  schemes "oauth2"
+  label "Azure"
+  description "Select the Azure Resource Manager Credential from the list."
+  tags "provider=azure_rm"
+end
+
+###############################################################################
+# Pagination
+###############################################################################
+
+pagination "azure_pagination" do
+  get_page_marker do
+    body_path "nextLink"
+  end
+  set_page_marker do
+    uri true
+  end
+end
+
+###############################################################################
+# Datasources
+###############################################################################
+
+datasource "ds_azure_subscriptions_tagless" do
+  request do
+    auth $auth_azure
+    pagination $azure_pagination
+    host "management.azure.com"
+    path "/subscriptions/"
+    query "api-version","2018-06-01"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "value[*]") do
+      field "id", jmes_path(col_item,"subscriptionId")
+      field "name", jmes_path(col_item,"displayName")
+    end
+  end
+end
+
+datasource "ds_azure_subscriptions" do
+  iterate $ds_azure_subscriptions_tagless
+  request do
+    auth $auth_azure
+    pagination $azure_pagination
+    host "management.azure.com"
+    path join(["/subscriptions/", val(iter_item, "id"), "/providers/Microsoft.Resources/tags/default"])
+    query "api-version","2021-04-01"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+    field "id", val(iter_item, "id")
+    field "name", val(iter_item, "name")
+    field "tags", jmes_path(response, "properties.tags")
+  end
+end
+
+datasource "ds_azure_resource_groups" do
+  iterate $ds_azure_subscriptions_tagless
+  request do
+    auth $auth_azure
+    pagination $azure_pagination
+    host "management.azure.com"
+    path join(["/subscriptions/", val(iter_item, "id"), "/resourcegroups"])
+    query "api-version","2021-04-01"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "value[*]") do
+      field "subscriptionName", val(iter_item, "name")
+      field "subscriptionId", val(iter_item, "id")
+      field "id", jmes_path(col_item, "id")
+      field "location", jmes_path(col_item, "location")
+      field "name", jmes_path(col_item, "name")
+      field "tags", jmes_path(col_item, "tags")
+    end
+  end
+end
+
+datasource "ds_azure_resources" do
+  iterate $ds_azure_subscriptions_tagless
+  request do
+    auth $auth_azure
+    pagination $azure_pagination
+    host "management.azure.com"
+    path join(["/subscriptions/", val(iter_item, "id"), "/resources"])
+    query "api-version","2021-04-01"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "value[*]") do
+      field "subscriptionName", val(iter_item, "name")
+      field "subscriptionId", val(iter_item, "id")
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+      field "location", jmes_path(col_item, "location")
+      field "type", jmes_path(col_item, "type")
+      field "tags", jmes_path(col_item, "tags")
+    end
+  end
+end
+
+datasource "ds_azure_subscriptions_tag_list" do
+  run_script $js_tag_lister, $ds_azure_subscriptions, "Subscription"
+end
+
+datasource "ds_azure_resource_groups_tag_list" do
+  run_script $js_tag_lister, $ds_azure_resource_groups, "Resource Group"
+end
+
+datasource "ds_azure_resources_tag_list" do
+  run_script $js_tag_lister, $ds_azure_resources, "Resource"
+end
+
+datasource "ds_tag_report" do
+  run_script $js_tag_report, $ds_azure_subscriptions_tag_list, $ds_azure_resource_groups_tag_list, $ds_azure_resources_tag_list
+end
+
+###############################################################################
+# Scripts
+###############################################################################
+
+script "js_tag_lister", type: "javascript" do
+  parameters "tagged_list", "tag_type"
+  result "result"
+  code <<-EOS
+  tags = {}
+  result = []
+
+  _.each(tagged_list, function(item) {
+    if (item['tags'] != undefined && item['tags'] != null) {
+      _.each(Object.keys(item['tags']), function(key) {
+        value = item['tags'][key]
+        if (value == "" || value == null || value == undefined) {
+          value = "[Empty Value]"
+        }
+
+        if (tags[key] == undefined || tags[key] == null) {
+          tags[key] = {}
+        }
+
+        if (tags[key][value] == undefined || tags[key][value] == null) {
+          tags[key][value] = 1
+        } else {
+          tags[key][value] += 1
+        }
+      })
+    }
+  })
+
+  _.each(Object.keys(tags), function(key) {
+    _.each(Object.keys(tags[key]), function(value) {
+      result.push({
+        'type': tag_type,
+        'key': key,
+        'value': value,
+        'cardinality': tags[key][value]
+      })
+    })
+  })
+
+  result = _.sortBy(result, 'cardinality').reverse()
+EOS
+end
+
+script "js_tag_report", type: "javascript" do
+  parameters "ds_azure_subscriptions_tag_list", "ds_azure_resource_groups_tag_list", "ds_azure_resources_tag_list"
+  result "result"
+  code <<-EOS
+  result = ds_azure_subscriptions_tag_list.concat(ds_azure_resource_groups_tag_list, ds_azure_resources_tag_list)
+EOS
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "pol_azure_tag_cardinality_report" do
+  validate $ds_tag_report do
+    summary_template "Azure Tag Cardinality Report"
+    check eq(1, 0)
+    escalate $esc_email
+    export do
+      resource_level false
+      field "type" do
+        label "Type"
+      end
+      field "key" do
+        label "Key"
+      end
+      field "value" do
+        label "Value"
+      end
+      field "cardinality" do
+        label "Cardinality"
+      end
+    end
+  end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_email" do
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
+end
