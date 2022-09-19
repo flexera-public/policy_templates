@@ -1,5 +1,7 @@
 # Billing Center Cost Anomaly Policy
 
+**NOTE:** This policy is be deprecated and replaced by this [new version](../cloud_cost_anomalies)
+
 ## What it does
 
 The Cost Anomaly Policy will analyze the spend of all Billing Centers in an Organization over a specified time period.  If the percentage change of the most recent period compared to the previous period exceeds the specified threshold, then an Incident will be raised.
