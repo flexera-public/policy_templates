@@ -51,16 +51,15 @@ datasource "ds_turbo_auth_request" do
   end
   result do
     encoding "json"
-    collect jmes_path(response,"[*]") do
-      field "authToken", jmes_path(col_item,"authToken")
-    end
+    field "authToken", jmes_path(response,"authToken")
+    field "headers", response
   end
 end
 
 #get all subscription details. VERIFY IT ONLY CONTAINS ONE VDISK
 datasource "ds_get_turbonomics_recommendations" do
   request do
-    run_script $js_get_turbonomics_recommendations, $ds_turbo_auth_request
+    run_script $js_get_turbonomics_recommendations, $ds_turbo_auth_request, $param_limit
   end
   result do
     encoding "json"
@@ -99,30 +98,25 @@ script "js_turbo_auth_request", type: "javascript" do
       host: "sales1.demo.turbonomic.com",
       path: "/api/v3/login",
       query_params: {
-        'password': 'Flexera%21',
+        'password': 'Flexera!',
         'username': 'flexera_sales_reader',
       },
-      scheme: "http"
-      rejectUnauthorized: false,
-      verify: false,
-      agent: false,
-      strictSSL: false,
       headers: {
-        "Content-Type": "text/plain",
+        "Content-Type": "text/plain"
       }
   }
 EOS
 end
 
 script "js_get_turbonomics_recommendations", type: "javascript" do
-  parameters "js_turbo_auth_request"
+  parameters "js_turbo_auth_request", "param_limit"
   result "request"
   code <<-EOS
     var request = {
-      auth: js_turbo_auth_request[0],
+      auth: "Bearer " + js_turbo_auth_request.authToken,
       verb: "POST",
-      host: "sales1.demo.turbonomic.com/api/v3",
-      path: "/markets/Market/actions",
+      host: "sales1.demo.turbonomic.com",
+      path: "/api/v3/markets/Market/actions",
       body_fields: {
         "actionStateList": ["READY", "ACCEPTED", "QUEUED", "IN_PROGRESS"],
         "actionTypeList":["DELETE"],
@@ -135,6 +129,7 @@ script "js_get_turbonomics_recommendations", type: "javascript" do
       },
       headers: {
         "Content-Type": "application/json",
+        "Authorization": js_turbo_auth_request.authToken
       }
     }
 EOS
