@@ -30,11 +30,11 @@ end
 ###############################################################################
 
 #authenticate with password and username - not implemented
-#credentials "turbo_auth" do
-#  schemes "basic"
-#  label "Turbonomics"
-#  description "Select the Turbonomic Basic Auth Credential from the list."
-#end
+credentials "turbo_auth" do
+  schemes "api_key"
+  label "Turbonomics"
+  description "Select the Turbonomic Basic Auth Credential from the list."
+end
 
 ###############################################################################
 # Pagination
@@ -44,22 +44,21 @@ end
 ###############################################################################
 # Datasources
 ###############################################################################
-
-datasource "ds_turbo_auth_request" do
-  request do
-    run_script $js_turbo_auth_request
-  end
-  result do
-    encoding "json"
-    field "authToken", jmes_path(response,"authToken")
-    field "headers", response
-  end
-end
-
 #get all subscription details. VERIFY IT ONLY CONTAINS ONE VDISK
 datasource "ds_get_turbonomics_recommendations" do
   request do
-    run_script $js_get_turbonomics_recommendations, $ds_turbo_auth_request, $param_limit
+    auth $turbo_auth
+    host "sales1.demo.turbonomic.com"
+    path "/api/v3/markets/Market/actions"
+    query "limit",30
+    header "Cookie", "JSESSIONID=node017d5hyj7lxu4slwyit48jx5w018.node0"
+    header "Content-Type", "application/json"
+    body_field "actionStateList", ["READY", "ACCEPTED", "QUEUED", "IN_PROGRESS"]
+    body_field "actionTypeList", ["DELETE"]
+    body_field "relatedEntityTypes", ["VirtualVolume"]
+    body_field "environmentType", "CLOUD"
+    body_field "detailLevel", "EXECUTION"
+    ignore_status [400,403,404]
   end
   result do
     encoding "json"
@@ -109,11 +108,11 @@ EOS
 end
 
 script "js_get_turbonomics_recommendations", type: "javascript" do
-  parameters "js_turbo_auth_request", "param_limit"
+  parameters "param_limit"
   result "request"
   code <<-EOS
     var request = {
-      auth: "Bearer " + js_turbo_auth_request.authToken,
+      auth: "turbo_auth",
       verb: "POST",
       host: "sales1.demo.turbonomic.com",
       path: "/api/v3/markets/Market/actions",
@@ -129,7 +128,7 @@ script "js_get_turbonomics_recommendations", type: "javascript" do
       },
       headers: {
         "Content-Type": "application/json",
-        "Authorization": js_turbo_auth_request.authToken
+        "Cookie": "JSESSIONID=node017d5hyj7lxu4slwyit48jx5w018.node0"
       }
     }
 EOS
