@@ -134,7 +134,7 @@ The majority of additions for child policies are common to all policies.  Genera
 # if it is set we will look for the parent policy.
 datasource "ds_get_policy" do
   request do
-    auth $auth_rs
+    auth $auth_flexera
     host rs_governance_host
     ignore_status [404]
     path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", switch(ne(meta_parent_policy_id,""), meta_parent_policy_id, policy_id) ])
@@ -177,7 +177,7 @@ script "js_make_terminate_request", type: "javascript" do
   code <<-EOS
 
   var request = {
-    auth:  'auth_rs',
+    auth:  'auth_flexera',
     host: rs_governance_host,
     path: "/api/governance/projects/" + rs_project_id + "/applied_policies/" + policy_id,
     headers: {
@@ -298,7 +298,12 @@ credentials "auth_aws" do
   aws_account_number $param_aws_account_number
 end
 
-auth "auth_rs", type: "rightscale"
+credentials "auth_flexera" do
+  schemes "oauth2"
+  label "flexera"
+  description "Select Flexera One OAuth2 credentials"
+  tags "provider=flexera"
+end
 
 ###############################################################################
 # Datasources
@@ -307,7 +312,7 @@ auth "auth_rs", type: "rightscale"
 # Get Applied Parent Policy Details
 datasource "ds_self_policy_information" do
   request do
-    auth $auth_rs
+    auth $auth_flexera
     host rs_governance_host
     path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
     header "Api-Version", "1.0"
@@ -383,7 +388,7 @@ end
 # Get Child Policy Details
 datasource "ds_child_policy_information" do
   request do
-    auth $auth_rs
+    auth $auth_flexera
     host rs_governance_host
     path "__PLACEHOLDER_FOR_CHILD_POLICY_TEMPLATE_HREF__"
     header "Api-Version", "1.0"
@@ -400,7 +405,7 @@ end
 # Get the Billing Center IDs the customer has access to
 datasource "ds_get_billing_centers" do
   request do
-    auth $auth_rs
+    auth $auth_flexera
     host rs_optima_host
     path join(["/analytics/users/", val($ds_format_self, "creator_id"), "/orgs/", rs_org_id, "/billing_centers"])
     header "Api-Version", "0.1"
@@ -470,7 +475,7 @@ script "js_make_billing_center_request", type: "javascript" do
     "summarized": true
   }
   var request = {
-    auth:  'auth_rs',
+    auth:  'auth_flexera',
     host:  rs_optima_host,
     scheme: 'https',
     verb: 'POST',
@@ -501,7 +506,7 @@ end
 # Get Child policies
 datasource "ds_get_existing_policies" do
   request do
-    auth $auth_rs
+    auth $auth_flexera
     host rs_governance_host
     path join(["/api/governance/projects/", rs_project_id, "/applied_policies"])
     header "Api-Version", "1.0"
@@ -521,7 +526,7 @@ end
 # Get Child policies incidents
 datasource "ds_get_existing_policies_incidents" do
   request do
-    auth $auth_rs
+    auth $auth_flexera
     host rs_governance_host
     path join(["/api/governance/projects/", rs_project_id, "/incidents"])
     header "Api-Version", "1.0"
@@ -976,7 +981,7 @@ define create_applied_policies($data, $governance_host, $rs_project_id) return $
     $status = to_s("("+$item_index+"/"+$item_total+")")
     task_label($status+" Creating Applied Policy with Options: " + to_json($item["options"]))
     $response = http_request(
-      auth: $$auth_rs,
+      auth: $$auth_flexera,
       verb: "post",
       https: true,
       host: $governance_host,
@@ -1015,7 +1020,7 @@ define update_applied_policies($data, $governance_host, $rs_project_id) return $
     $status = to_s("("+$item_index+"/"+$item_total+")")
     task_label($status+" Updating Applied Policy with Options: " + to_json($item["options"]))
     $response = http_request(
-      auth: $$auth_rs,
+      auth: $$auth_flexera,
       verb: "patch",
       https: true,
       host: $governance_host,
@@ -1049,7 +1054,7 @@ define delete_applied_policies($data, $governance_host, $rs_project_id) return $
     $status = to_s("("+$item_index+"/"+$item_total+")")
     task_label($status+" Deleting Applied Policy: " + $item["id"])
     $response = http_request(
-      auth: $$auth_rs,
+      auth: $$auth_flexera,
       verb: "delete",
       https: true,
       host: $governance_host,
