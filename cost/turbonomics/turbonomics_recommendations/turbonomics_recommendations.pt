@@ -16,13 +16,10 @@ info(
 # Parameters   #
 ##################
 
-## only using for POC at the moment. likely will drop this after
-parameter "param_limit" do
-  label "Response Limit"
-  description "Number of recommendations to return"
-  type "number"
-  default 30
-  min_value 1
+parameter "param_email" do
+  type "list"
+  label "Email addresses to notify"
+  description "Email addresses of the recipients you wish to notify when new incidents are created"
 end
 
 ###############################################################################
@@ -30,11 +27,11 @@ end
 ###############################################################################
 
 #authenticate with password and username - not implemented
-credentials "turbo_auth" do
-  schemes "api_key"
-  label "Turbonomics"
-  description "Select the Turbonomic Basic Auth Credential from the list."
-end
+#credentials "turbo_auth" do
+#  schemes "api_key"
+#  label "Turbonomics"
+#  description "Select the Turbonomic Basic Auth Credential from the list."
+#end
 
 ###############################################################################
 # Pagination
@@ -44,28 +41,18 @@ end
 ###############################################################################
 # Datasources
 ###############################################################################
+
 #get all subscription details. VERIFY IT ONLY CONTAINS ONE VDISK
 datasource "ds_get_turbonomics_recommendations" do
   request do
-    auth $turbo_auth
-    host "sales1.demo.turbonomic.com"
-    path "/api/v3/markets/Market/actions"
-    query "limit",30
-    header "Cookie", "JSESSIONID=node017d5hyj7lxu4slwyit48jx5w018.node0"
-    header "Content-Type", "application/json"
-    body_field "actionStateList", ["READY", "ACCEPTED", "QUEUED", "IN_PROGRESS"]
-    body_field "actionTypeList", ["DELETE"]
-    body_field "relatedEntityTypes", ["VirtualVolume"]
-    body_field "environmentType", "CLOUD"
-    body_field "detailLevel", "EXECUTION"
-    ignore_status [400,403,404]
+    run_script $js_get_turbonomics_recommendations
   end
   result do
     encoding "json"
-    collect jmes_path(response, "value[*]") do
+    collect jmes_path(response, "[*]") do
       field "accountID", jmes_path(col_item, "target.uuid")
       field "accountName", jmes_path(col_item, "target.displayName")
-      field "resourceGroup", jmes_path(col_item, "target.aspects.resourceGroup.displayName")
+      field "resourceGroup", jmes_path(col_item, "target.aspects.cloudAspect.resourceGroup.displayName")
       field "volumeID", jmes_path(col_item, "target.aspects.virtualDisksAspect.virtualDisks[0].uuid")
       field "volumeName", jmes_path(col_item, "target.aspects.virtualDisksAspect.virtualDisks[0].displayName")
       field "region", jmes_path(col_item, "target.aspects.virtualDisksAspect.virtualDisks[0].dataCenter.displayName")
@@ -74,7 +61,7 @@ datasource "ds_get_turbonomics_recommendations" do
       field "createdTime", jmes_path(col_item, "createTime")
       field "attachmentState", jmes_path(col_item, "target.aspects.virtualDisksAspect.virtualDisks[0].attachmentState")
       field "daysUnattached", jmes_path(col_item, "target.aspects.virtualDisksAspect.virtualDisks[0].numDaysUnattached")
-      field "size", jmes_path(col_item, "target.uuid")
+      field "sizeStats", jmes_path(col_item, "target.aspects.virtualDisksAspect.virtualDisks[0].stats")
       field "savings", jmes_path(col_item, "stats[0].value")
       field "savingsCurrency", jmes_path(col_item, "stats[0].units")
     end
@@ -89,33 +76,15 @@ end
 ###############################################################################
 # Scripts
 ###############################################################################
-script "js_turbo_auth_request", type: "javascript" do
-  result "request"
-  code <<-EOS
-  var request = {
-      verb: "POST",
-      host: "sales1.demo.turbonomic.com",
-      path: "/api/v3/login",
-      query_params: {
-        'password': 'Flexera!',
-        'username': 'flexera_sales_reader',
-      },
-      headers: {
-        "Content-Type": "text/plain"
-      }
-  }
-EOS
-end
 
 script "js_get_turbonomics_recommendations", type: "javascript" do
-  parameters "param_limit"
   result "request"
   code <<-EOS
+  //replace cookie every day this is run
     var request = {
-      auth: "turbo_auth",
       verb: "POST",
       host: "sales1.demo.turbonomic.com",
-      path: "/api/v3/markets/Market/actions",
+      path: "/api/v3/markets/Market/actions"
       body_fields: {
         "actionStateList": ["READY", "ACCEPTED", "QUEUED", "IN_PROGRESS"],
         "actionTypeList":["DELETE"],
@@ -123,12 +92,9 @@ script "js_get_turbonomics_recommendations", type: "javascript" do
         "environmentType":"CLOUD",
         "detailLevel":"EXECUTION"
       },
-      query_params: {
-        'limit': param_limit
-      },
       headers: {
-        "Content-Type": "application/json",
-        "Cookie": "JSESSIONID=node017d5hyj7lxu4slwyit48jx5w018.node0"
+        "Content-Type": "application/json"
+        "Cookie": "JSESSIONID=node019whsjcv7387p7arsnad2rkzn1081.node0"
       }
     }
 EOS
@@ -138,22 +104,58 @@ script "js_filtered_turbonomics_recommendations", type: "javascript" do
   result "result"
   parameters "ds_get_turbonomics_recommendations"
   code <<-EOS
-    result = []
+    instances = []
+    monthlySavings = 0.0
+    function formatNumber(number, separator){
+    var numString =number.toString()
+    var values=numString.split(".")
+    var result = ''
+    while (values[0].length > 3){
+      var chunk = values[0].substr(-3)
+      values[0] = values[0].substr(0, values[0].length - 3)
+      result = separator + chunk + result
+    }
+    if (values[0].length > 0){
+      result = values[0] + result
+    }
+    if(values[1]==undefined){
+      return result
+    }
+    return result+"."+values[1]
+    }
+
     _.each(ds_get_turbonomics_recommendations, function(volume){
-      if (volume.attachmentState == "UNATTACHED" && volume.numDaysUnattached >= 0) {
-        if (volume.savingsCurrency.includes("$")) {
+      if (volume.attachmentState == "UNATTACHED" && volume.daysUnattached >= 0) {
+        if (volume.savingsCurrency.indexOf("$") != -1) {
           volume.savingsCurrency = "$"
         }
-        savingsString = ""
-        if (volume.savings.includes("E")) {
-          savingsString = volume.savings.split("E")[0]
-        } else {
-          savingsString = volume.savings
+        _.each(volume.sizeStats, function(stat){
+          if (stat.name === "StorageAmount") {
+            volume.size = stat.value + " " + stat.units
+            return
+          }
+        })
+        tags = []
+        if (typeof volume.tags === "undefined" || volume.tags === null){
+          volume.tags = tags
+        }else{
+          Object.keys(volume['tags']).forEach(function(key) {
+            tags.push(key+'='+volume['tags'][key])
+          });
         }
-        volume.savings = (Math.round(parseFloat(savingsString) * 730 * 1000) / 1000)
-        result.push(volume)
+        volume.tags = tags
+        savingsString = ""
+        volume.savings = (Math.round(volume.savings * 730 * 1000) / 1000)
+        monthlySavings = monthlySavings + volume.savings
+        instances.push(volume)
       }
     })
+    pretty_savings = ds_get_turbonomics_recommendations[0].savingsCurrency + ' ' + formatNumber(monthlySavings.toFixed(2), ",")
+    message = "The total estimated monthly savings are " + pretty_savings + '.'
+    result = {
+      'instances': instances,
+      'message': message
+    }
 EOS
 end
 
@@ -163,31 +165,34 @@ end
 
 policy "pol_turbonomics_unused_volumes" do
   validate $ds_filtered_turbonomics_recommendations do
-    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data.instances }} Old Snapshots Found"
+    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data.instances }} Turbonomic Unattached Volumes found"
     detail_template <<-EOS
-{{data.message}}.
+## Turbonomics Unattached Volumes POC
+{{data.message}}
 EOS
-    check eq(1,0)
-    export do
-      field "id" do
-        label "Account ID"
-        path "accountID"
-      end
+    check eq(size(val(data, "instances")), 0)
+    export "instances" do
       field "accountID" do
         label "Account ID"
         path "accountID"
       end
-      field "acountName" do
+      field "accountName" do
         label "Account Name"
-      end
-      field "resourceGroup" do
-        label "Resource Group"
       end
       field "volumeID" do
         label "Volume ID"
       end
       field "volumeName" do
         label "Volume Name"
+      end
+      field "savingsCurrency" do
+        label "Savings Currency"
+      end
+      field "savings" do
+        label "Savings"
+      end
+      field "resourceGroup" do
+        label "Resource Group"
       end
       field "region" do
         label "Region"
@@ -207,13 +212,15 @@ EOS
       field "daysUnattached" do
         label "Days Unattached"
       end
-      field "Size" do
+      field "size" do
         label "Size"
       end
-      field "Savings" do
-        label "Savings"
+      field "id" do
+        label "Account ID"
+        path "accountID"
       end
     end
+    escalate $esc_email
   end
 end
 
@@ -222,6 +229,13 @@ end
 ###############################################################################
 # Escalations
 ###############################################################################
+
+escalation "esc_email" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
+end
 
 ###############################################################################
 # Cloud Workflow
