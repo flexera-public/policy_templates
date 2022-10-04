@@ -1,5 +1,10 @@
 # Changelog
 
+## v2.7
+
+- Modified cloud workflow Azure API to change `powerOff` to `deallocate` to release resources and start savings
+- Mofified Azure API version to most updated `2022-08-01`
+
 ## v2.6
 
 - Modified `sys_log` definition to disable `rs_cm.audit_entry.create` outside Flexera NAM
