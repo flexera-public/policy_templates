@@ -7,7 +7,7 @@ severity "medium"
 category "Cost"
 default_frequency "weekly"
 info(
-  version: "2.6",
+  version: "2.7",
   provider: "Azure",
   service: "Compute",
   policy_set: ""
@@ -91,7 +91,7 @@ datasource "ds_currency_reference" do
   end
 end
 
-#GET RESERVATION CHARGES DETAILS
+#GET RESERVATION CHARGES DETAILS - https://docs.microsoft.com/en-us/rest/api/billing/enterprise/billing-enterprise-api-reserved-instance-charges 
 datasource "ds_reservation_charges" do
   request do
     run_script $js_get_reservation_charges, $param_azure_endpoint, $param_enrollment_id
@@ -171,8 +171,10 @@ script "js_reduce_reservation_charges_data", type: "javascript" do
       var months_paid = 0
 
       //get the monthlyAmount for the most recent date
-      var monthly_amount = _.last(charges_grouped_by_reservation_order[order]).amount
-      var event_type = _.last(charges_grouped_by_reservation_order[order]).eventType
+      var most_recent_month = _.last(charges_grouped_by_reservation_order[order])
+      var monthly_amount = most_recent_month.amount
+      var event_type = most_recent_month.eventType
+      var quantity_purchased = most_recent_month.quantity
       
       _.each(charges_grouped_by_reservation_order[order], function(charge){
         total_amount_paid += charge.amount
@@ -184,7 +186,8 @@ script "js_reduce_reservation_charges_data", type: "javascript" do
         "totalAmount": total_amount_paid, 
         "months": months_paid,
         "monthlyAmount": monthly_amount,
-        "eventType": event_type  
+        "eventType": event_type,
+        "quantity": quantity_purchased  
       })
     })
 
@@ -197,6 +200,7 @@ script "js_reduce_reservation_charges_data", type: "javascript" do
       amount_paid = _.find(paid_to_date, function(amount){ return amount.reservationOrderId == charge.reservationOrderId })
       charge["eventType"] = amount_paid.eventType
       charge["amountPaidToDate"] = parseFloat(amount_paid.totalAmount).toFixed(2)
+      charge["quantity"] = amount_paid.quantity
 
       if( charge.billingFrequency == "Recurring" ){
         if (charge.term == "P1Y" ){
@@ -213,7 +217,7 @@ script "js_reduce_reservation_charges_data", type: "javascript" do
   EOS
 end
 
-#GET RESERVATION SUMMARIES DETAILS
+#GET RESERVATION SUMMARIES (UTILIZATION) DETAILS - https://docs.microsoft.com/en-us/rest/api/billing/enterprise/billing-enterprise-api-reserved-instance-usage 
 datasource "ds_reservation_summaries" do
   request do
     run_script $js_get_reservation_summaries, $param_azure_endpoint, $param_enrollment_id, $param_lookback_period
@@ -263,56 +267,119 @@ script "js_get_reservation_summaries", type: "javascript" do
   EOS
 end
 
+#CALCULATE AVERAGE UTILIZATION OVER LOOKBACK PERIOD FOR EACH RESERVATION ORDER ID
+datasource "ds_reduced_reservation_summaries" do
+  run_script $js_reduce_reservation_summaries, $ds_reservation_summaries
+end
+
+script "js_reduce_reservation_summaries", type: "javascript" do
+  parameters "ds_reservation_summaries"
+  result "result"
+  code <<-EOS
+
+    //group utilization data by reservation order ID
+    util_grouped_by_reservation_order = _.groupBy(ds_reservation_summaries, "reservationOrderId")
+    reservation_orders = _.keys(util_grouped_by_reservation_order, "reservationOrderId")
+
+    //calculate average utilization and totals for reserved/used hours over period
+    var period = []
+    _.each(reservation_orders, function(order){
+      var total_reserved_hours = 0, total_used_hours = 0
+      var days = 0
+      var sku_name = _.last(util_grouped_by_reservation_order[order]).skuName
+      var reservation_id = _.last(util_grouped_by_reservation_order[order]).reservationId
+      
+      _.each(util_grouped_by_reservation_order[order], function(util){
+        total_reserved_hours += util.reservedHours
+        total_used_hours += util.usedHours
+        days ++ 
+      })
+
+      period.push({ 
+        "reservationOrderId": order, 
+        "reservedHours": total_reserved_hours, 
+        "usedHours": total_used_hours,
+        "avgUtilizationPercentage": (total_used_hours / total_reserved_hours) * 100,
+        "skuName": sku_name
+        "reservationId": reservation_id
+      })
+    })
+    result = period
+  EOS
+end
+
+#GET DATA WITH INSTANCE FAMILIES FOR INSTANCE TYPES
+datasource "ds_isf_ratio_csv" do
+  request do
+    host "isfratio.blob.core.windows.net"
+    path "/isfratio/ISFRatio.csv"
+  end
+  result do
+    encoding "text"
+  end
+end
+
 #COMBINE CHARGES DETAILS AND SUMMARY DETAILS FOR RESERVATIONS
 datasource "ds_reservation_purchase_details" do
-  run_script $js_combine_reservation_details, $ds_reduced_reservation_charges, $ds_reservation_summaries, $ds_currency_reference, $param_utilization
+  run_script $js_combine_reservation_details, $ds_reduced_reservation_charges, $ds_reduced_reservation_summaries, $ds_isf_ratio_csv, $ds_currency_reference, $param_utilization
 end
 
 script "js_combine_reservation_details", type: "javascript" do
-  parameters "reservation_charges_data", "reservation_summaries_data", "currency_reference", "param_utilization"
+  parameters "reservation_charges_data", "reservation_summaries_data", "isf_ratio_csv", "currency_reference", "param_utilization"
   result "all_data"
-  code <<-EOS
+  code <<-'EOS'
     
-  //function for formatting spend number
-  function formatNumber(number, separator) {
-    var numString = number.toString();
-    var values = numString.split(".");
-    var result = ''
-    while ( values[0].length > 3 ) {
-      var chunk = values[0].substr(-3)
-      values[0] = values[0].substr(0, values[0].length - 3)
-      result = separator + chunk + result
+    //function for formatting spend number
+    function formatNumber(number, separator) {
+      var numString = number.toString();
+      var values = numString.split(".");
+      var result = ''
+      while ( values[0].length > 3 ) {
+        var chunk = values[0].substr(-3)
+        values[0] = values[0].substr(0, values[0].length - 3)
+        result = separator + chunk + result
+      }
+      if ( values[0].length > 0 ) {
+        result = values[0] + result
+      }
+      if ( values[1] == undefined ) {
+        return result;
+      }
+      return result + "." + values[1];
     }
-    if ( values[0].length > 0 ) {
-      result = values[0] + result
-    }
-    if ( values[1] == undefined ) {
-      return result;
-    }
-    return result + "." + values[1];
-  }
-  
-  //format costs with currency symbol and thousands separator
-  var cur = "", separator = ""
-  if ( reservation_charges_data[0].currency !== undefined ) {
-    if ( currency_reference[ reservation_charges_data[0].currency ] !== undefined ) {
-      cur = currency_reference[ reservation_charges_data[0].currency ].symbol
-      if ( currency_reference[ reservation_charges_data[0].currency ].t_separator !== undefined ) {
-        separator = currency_reference[ reservation_charges_data[0].currency ].t_separator
+    
+    //format costs with currency symbol and thousands separator
+    var cur = "", separator = ""
+    if ( reservation_charges_data[0].currency !== undefined ) {
+      if ( currency_reference[ reservation_charges_data[0].currency ] !== undefined ) {
+        cur = currency_reference[ reservation_charges_data[0].currency ].symbol
+        if ( currency_reference[ reservation_charges_data[0].currency ].t_separator !== undefined ) {
+          separator = currency_reference[ reservation_charges_data[0].currency ].t_separator
+        } else {
+          separator = ""
+        }
       } else {
+        cur = ""
         separator = ""
       }
     } else {
-      cur = ""
-      separator = ""
+      cur = "$"
+      separator = ","
     }
-  } else {
-    cur = "$"
-    separator = ","
-  }
-  
-  //combine reservation charge data with reservation utilization data, and calculate total wasted spend per month
-  var total_wastage = 0
+
+    //convert normalization factor csv to json
+    var isf_ratio_array = isf_ratio_csv.toString().split("\r\n")
+    var instance_data = []
+    _.each(isf_ratio_array, function(ratio){
+      instance_data.push({
+        "instance_family": ratio.split(",")[0],
+        "instance_type": ratio.split(",")[1],                 //specifying 'toLowerCase()' in If condition on line 374 results in cannot access member 'toLowerCase()' as is undefined in some cases
+        "nfu": ratio.split(",")[2]
+      })
+    })
+    
+    //combine reservation charge data with reservation utilization data, and calculate total wasted spend per month
+    var total_wastage = 0
 
     _.each(reservation_charges_data, function(charge){
       var summary_details = _.find(reservation_summaries_data, function(summary){ 
@@ -321,9 +388,7 @@ script "js_combine_reservation_details", type: "javascript" do
 
       if( summary_details != undefined ){
         charge["reservationId"] = summary_details.reservationId
-        charge["minUtilizationPercentage"] = summary_details.minUtilizationPercentage
         charge["avgUtilizationPercentage"] = summary_details.avgUtilizationPercentage
-        charge["maxUtilizationPercentage"] = summary_details.maxUtilizationPercentage
         charge["reservedHours"] = summary_details.reservedHours
         charge["usedHours"] = summary_details.usedHours
         
@@ -332,9 +397,7 @@ script "js_combine_reservation_details", type: "javascript" do
         charge["wastageAmount"] = parseFloat(wastage_amount).toFixed(2)
       } else {
         charge["reservationId"] = ""
-        charge["minUtilizationPercentage"] = ""
         charge["avgUtilizationPercentage"] = ""
-        charge["maxUtilizationPercentage"] = ""
         charge["reservedHours"] = ""
         charge["usedHours"] = ""
       }
@@ -342,6 +405,17 @@ script "js_combine_reservation_details", type: "javascript" do
 
     combined_reservation_details = _.reject(reservation_charges_data, function(data){ return data.reservationId == "" })
     combined_reservation_details = _.reject(combined_reservation_details, function(data){ return Number(data.avgUtilizationPercentage) > param_utilization })
+
+    //enrich combined_reservation_details with instance family
+    _.each(combined_reservation_details, function(reservation){
+      var instance_family = _.find(instance_data, function(inst){ return reservation.skuName == inst.instance_type })           //find where instance type name matches (non-case sensitive)
+      
+      if( instance_family == undefined ){ 
+        reservation["instanceFamily"] = ""
+      } else {
+        reservation["instanceFamily"] = instance_family.instance_family
+      }
+    })
 
     total_wastage = cur + ' ' + formatNumber((Math.round(total_wastage * 100) / 100), separator)
 
@@ -374,6 +448,9 @@ EOS
       end
       field "skuName" do
         label "SKU Name"
+      end
+      field "instanceFamily" do
+        label "Instance Family"
       end
       field "region" do
         label "Region"

@@ -1,4 +1,4 @@
-# Azure Reserved Instances Utilization Policy Template
+# Azure Reserved Instances Utilization
 
 **As a best practice, this policy should only be applied to the Master Account, and not to each individual RightScale Account.**
 
