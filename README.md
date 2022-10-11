@@ -15,6 +15,7 @@ Categories
 - [Compliance](#compliance)
 - [Operational](#operational)
 - [SaaS Management](#saas-management)
+- [Common Bill Ingestion](#common-bill-ingestion)
 
 Reference
 
@@ -426,6 +427,10 @@ Reference
 - [SaaS Manager - Duplicate User Accounts](./saas/fsm/duplicate_users)
 - [SaaS Manager - Unsanctioned Applications with Existing Contract](./saas/fsm/unsanctioned_apps_with_contract)
 - [SaaS Manager - SaaS App User Report by Category](./saas/fsm/users_by_category)
+
+### Common Bill Ingestion
+
+- [Oracle Cloud Common Bill Ingestion](./cbi/oracle/oracle_cbi)
 
 ### Policy Data Sets
 
