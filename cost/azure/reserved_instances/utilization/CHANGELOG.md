@@ -1,6 +1,7 @@
 # Changelog
 
 ## v2.8
+
 - Added fix for "Reservation ID" to reflect the most recent Reservation ID for each Reservation Order
 - Updated escalation name to have correct prefix
 
