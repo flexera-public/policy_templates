@@ -7,7 +7,7 @@ severity "medium"
 category "Cost"
 default_frequency "weekly"
 info(
-  version: "2.7",
+  version: "2.8",
   provider: "Azure",
   service: "Compute",
   policy_set: ""
@@ -233,6 +233,7 @@ datasource "ds_reservation_summaries" do
       field "maxUtilizationPercentage", jmes_path(col_item, "maxUtilizationPercentage")
       field "reservedHours", jmes_path(col_item, "reservedHours")
       field "usedHours", jmes_path(col_item, "usedHours")
+      field "usageDate", jmes_path(col_item, "usageDate")
     end
   end
 end
@@ -284,10 +285,12 @@ script "js_reduce_reservation_summaries", type: "javascript" do
     //calculate average utilization and totals for reserved/used hours over period
     var period = []
     _.each(reservation_orders, function(order){
+      
       var total_reserved_hours = 0, total_used_hours = 0
       var days = 0
-      var sku_name = _.last(util_grouped_by_reservation_order[order]).skuName
-      var reservation_id = _.last(util_grouped_by_reservation_order[order]).reservationId
+      var sorted_utilization_data = _.sortBy(util_grouped_by_reservation_order[order], "usageDate")
+      var sku_name = _.last(sorted_utilization_data).skuName
+      var reservation_id = _.last(sorted_utilization_data).reservationId
       
       _.each(util_grouped_by_reservation_order[order], function(util){
         total_reserved_hours += util.reservedHours
@@ -436,7 +439,7 @@ policy "policy_azure_active_reserved_instances" do
     detail_template <<-EOS
 {{data.message}}
 EOS
-    escalate $email
+    escalate $esc_email
     check eq(size(val(data, "reservation_details")), 0)
     export "reservation_details" do
       resource_level true
@@ -533,7 +536,7 @@ end
 # Escalations
 ###############################################################################
 
-escalation "email" do
+escalation "esc_email" do
   automatic true
   label "Send Email"
   description "Sends incident email"
