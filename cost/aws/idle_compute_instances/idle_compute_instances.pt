@@ -30,10 +30,13 @@ parameter "param_email" do
   description "Email addresses of the recipients you wish to notify when new incidents are created"
 end
 
+#TODO: param_avg_cpu and param_avg_used_memory need to be renamed to param_threshold_cpu_value and param_threshold_mem_used
+#Changing parameter names is a breaking change for users managing policies via api
+
 parameter "param_avg_cpu" do
   type "number"
-  label "Average used CPU percentage"
-  description "Set to -1 to ignore CPU utilization"
+  label "Used CPU Threshold"
+  description "The threshold at which to consider an instance to be 'idle'. Set to -1 to ignore CPU utilization"
   default -1
   min_value -1
   max_value 100
@@ -41,8 +44,8 @@ end
 
 parameter "param_avg_used_memory" do
   type "number"
-  label "Average used memory percentage"
-  description "Set to -1 to ignore memory utilization"
+  label "Used Memory Threshold"
+  description "The threshold at which to consider an instance to be 'idle'. Set to -1 to ignore memory utilization"
   default -1
   min_value -1
   max_value 100
@@ -54,6 +57,14 @@ parameter "param_check_both" do
   description "Whether an instance should be considered idle only if both CPU and memory are under the thresholds or if either CPU or memory are under."
   default "Either CPU or Memory"
   allowed_values "Both CPU and Memory", "Either CPU or Memory"
+end
+
+parameter "param_threshold_statistic" do
+  type "string"
+  label "Threshold Statistic"
+  description "Statistic to use for the metric threshold"
+  default "Average"
+  allowed_values "Average", "p99"
 end
 
 parameter "param_allowed_regions" do
@@ -341,7 +352,7 @@ end
 
 # Create a final list of idle instances and incorporate cost data into it
 datasource "ds_idle_instances" do
-  run_script $js_idle_instances, $ds_merged_metrics, $ds_instances_costs, $param_avg_cpu, $param_avg_used_memory, $ds_currency, $param_check_both
+  run_script $js_idle_instances, $ds_merged_metrics, $ds_instances_costs, $param_avg_cpu, $param_avg_used_memory, $ds_currency, $param_check_both, $param_threshold_statistic
 end
 
 ###############################################################################
@@ -439,56 +450,28 @@ script "js_instances_queries", type: "javascript" do
     if (queries[instance['region']] == undefined || queries[instance['region']] == null) {
       queries[instance['region']] = []
     }
+    //We want to collect each of these list of statistics we care about
+    stats = ["Average", "Minimum", "Maximum", "p99"]
     // Only query for CPU usage if we're actually checking it
     if (param_avg_cpu != -1) {
-      query_cpuavg = {
-        "Id": instance['instanceId'].replace('-', '_') + "_cpuavg",
-        "MetricStat": {
-          "Metric": {
-            "Namespace": "AWS/EC2",
-            "MetricName": "CPUUtilization",
-            "Dimensions": [
-              { "Name": "InstanceId", "Value": instance['instanceId'] }
-            ]
+      _.each(stats, function(stat) {
+        query = {
+          "Id": instance['instanceId'].replace('-', '_') + "_cpu" + stat,
+          "MetricStat": {
+            "Metric": {
+              "Namespace": "AWS/EC2",
+              "MetricName": "CPUUtilization",
+              "Dimensions": [
+                { "Name": "InstanceId", "Value": instance['instanceId'] }
+              ]
+            },
+            "Period": 2592000,
+            "Stat": stat
           },
-          "Period": 2592000,
-          "Stat": "Average"
-        },
-        "ReturnData": true
-      }
-      query_cpumin = {
-        "Id": instance['instanceId'].replace('-', '_') + "_cpumin",
-        "MetricStat": {
-          "Metric": {
-            "Namespace": "AWS/EC2",
-            "MetricName": "CPUUtilization",
-            "Dimensions": [
-              { "Name": "InstanceId", "Value": instance['instanceId'] }
-            ]
-          },
-          "Period": 2592000,
-          "Stat": "Minimum"
-        },
-        "ReturnData": true
-      }
-      query_cpumax = {
-        "Id": instance['instanceId'].replace('-', '_') + "_cpumax",
-        "MetricStat": {
-          "Metric": {
-            "Namespace": "AWS/EC2",
-            "MetricName": "CPUUtilization",
-            "Dimensions": [
-              { "Name": "InstanceId", "Value": instance['instanceId'] }
-            ]
-          },
-          "Period": 2592000,
-          "Stat": "Maximum"
-        },
-        "ReturnData": true
-      }
-      queries[instance['region']].push(query_cpuavg)
-      queries[instance['region']].push(query_cpumax)
-      queries[instance['region']].push(query_cpumin)
+          "ReturnData": true
+        }
+        queries[instance['region']].push(query)
+      })
     }
     // Only query for MEM usage if we're actually checking it
     if (param_avg_used_memory != -1) {
@@ -510,48 +493,22 @@ script "js_instances_queries", type: "javascript" do
           { "Name": "InstanceType", "Value": instance['resourceType'] }
         ]
       }
-      query_memavg = {
-        "Id": instance['instanceId'].replace('-', '_') + "_memavg",
-        "MetricStat": {
-          "Metric": {
-            "Namespace": "CWAgent",
-            "MetricName": mem_metricname,
-            "Dimensions": dimensions
+      _.each(stats, function(stat) {
+        query = {
+          "Id": instance['instanceId'].replace('-', '_') + "_mem" + stat,
+          "MetricStat": {
+            "Metric": {
+              "Namespace": "CWAgent",
+              "MetricName": mem_metricname,
+              "Dimensions": dimensions
+            },
+            "Period": 2592000,
+            "Stat": stat
           },
-          "Period": 2592000,
-          "Stat": "Average"
-        },
-        "ReturnData": true
-      }
-      query_memmin = {
-        "Id": instance['instanceId'].replace('-', '_') + "_memmin",
-        "MetricStat": {
-          "Metric": {
-            "Namespace": "CWAgent",
-            "MetricName": mem_metricname,
-            "Dimensions": dimensions
-          },
-          "Period": 2592000,
-          "Stat": "Minimum"
-        },
-        "ReturnData": true
-      }
-      query_memmax = {
-        "Id": instance['instanceId'].replace('-', '_') + "_memmax",
-        "MetricStat": {
-          "Metric": {
-            "Namespace": "CWAgent",
-            "MetricName": mem_metricname,
-            "Dimensions": dimensions
-          },
-          "Period": 2592000,
-          "Stat": "Maximum"
-        },
-        "ReturnData": true
-      }
-      queries[instance['region']].push(query_memavg)
-      queries[instance['region']].push(query_memmax)
-      queries[instance['region']].push(query_memmin)
+          "ReturnData": true
+        }
+        queries[instance['region']].push(query)
+      })
     }
   })
 EOS
@@ -696,6 +653,8 @@ script "js_merged_metrics", type: "javascript" do
   parameters "cloudwatch_data", "ds_instances", "aws_account", "currency"
   code <<-EOS
   result = []
+  //We want to collect each of these list of statistics we care about
+  stats = ["Average", "Minimum", "Maximum", "p99"]
 
   _.each(ds_instances, function(instance) {
     region = instance['region']
@@ -704,29 +663,7 @@ script "js_merged_metrics", type: "javascript" do
     // Otherwise, we have no usage data on the instance and thus dont include it in the results.
     if (cloudwatch_data[region] != undefined) {
       if (cloudwatch_data[region][id] != undefined) {
-        // Grab CPU usage data for the instance if it is present
-        if (cloudwatch_data[region][id]['cpumax'] != undefined && cloudwatch_data[region][id]['cpumax'] != null) {
-          cpu_maximum = parseFloat(cloudwatch_data[region][id]['cpumax']).toFixed(2)
-          cpu_minimum = parseFloat(cloudwatch_data[region][id]['cpumin']).toFixed(2)
-          cpu_average = parseFloat(cloudwatch_data[region][id]['cpuavg']).toFixed(2)
-        } else {
-          cpu_maximum = null
-          cpu_minimum = null
-          cpu_average = null
-        }
-        // Grab memory usage data for the instance if it is present
-        if (cloudwatch_data[region][id]['memmax'] != undefined && cloudwatch_data[region][id]['memmax'] != null) {
-          mem_maximum = parseFloat(cloudwatch_data[region][id]['memmax']).toFixed(2)
-          mem_minimum = parseFloat(cloudwatch_data[region][id]['memmin']).toFixed(2)
-          mem_average = parseFloat(cloudwatch_data[region][id]['memavg']).toFixed(2)
-        } else {
-          mem_maximum = null
-          mem_minimum = null
-          mem_average = null
-        }
-        // Send the instance information with the CloudWatch data into the final result.
-        // Also adds in the account ID and currency symbol since itll be needed for the incident.
-        result.push({
+        r = {
           "region": instance['region'],
           "id": instance['instanceId'],
           "resourceID": instance['instanceId'],
@@ -737,17 +674,27 @@ script "js_merged_metrics", type: "javascript" do
           "hostname": instance['privateDnsName'].split('.')[0],
           "tags": instance['tags'],
           "resourceType": instance['resourceType'],
-          "cpu_maximum": cpu_maximum,
-          "cpu_minimum": cpu_minimum,
-          "cpu_average": cpu_average,
-          "mem_maximum": mem_maximum,
-          "mem_minimum": mem_minimum,
-          "mem_average": mem_average,
           "savings": null,
           "accountID": aws_account,
           "accountName": "",
           "savingsCurrency": currency['symbol']
+        }
+        // Grab usage data for the instance if it is present
+        _.each(stats, function(stat) {
+          _.each(["cpu", "mem"], function(metric) {
+            statname = metric + stat
+            //legacyStatName is the name of the attribute that was used in all versions up to version 4.X
+            //We use this instead of statname to keep backwards compatability for the exported data
+            legacyStatName = metric + "_" + stat.toLowerCase()
+            r[legacyStatName] = null
+            if (cloudwatch_data[region][id][statname] != undefined && cloudwatch_data[region][id][statname] != null) {
+              r[legacyStatName] = cloudwatch_data[region][id][statname]
+            }
+          })
         })
+        // Send the instance information with the CloudWatch data into the final result.
+        // Also adds in the account ID and currency symbol since itll be needed for the incident.
+        result.push(r)
       }
     }
   })
@@ -755,7 +702,7 @@ EOS
 end
 
 script "js_idle_instances", type:"javascript" do
-  parameters "ds_merged_metrics", "ds_instances_costs", "param_avg_cpu", "param_avg_used_memory", "currency", "param_check_both"
+  parameters "ds_merged_metrics", "ds_instances_costs", "param_avg_cpu", "param_avg_used_memory", "currency", "param_check_both", "param_threshold_statistic"
   result "result"
   code <<-EOS
   // Used for formatting numbers to look pretty
@@ -785,28 +732,31 @@ script "js_idle_instances", type:"javascript" do
   idle_instances = []
   total_savings = 0.00
   cost_data_found = false
+  // The key name is lowercase, param value needs to be lowercase.
+  // We use this to keep backwards compatability for the exported data.
+  param_threshold_statistic = param_threshold_statistic.toLowerCase()
   // Only bother doing anything if we're checking at least one metric
   if (param_avg_cpu != -1 || param_avg_used_memory != -1) {
     _.each(ds_merged_metrics, function(instance) {
-      // Do not include instance in the result set unless it meets the requirements
+      // Do not include instance in the result set unless it meets the requirements.
       include_instance = false
       // If we're not checking memory and CPU usage is below threshold, include it.
-      if (param_avg_used_memory == -1 && instance['cpu_average'] < param_avg_cpu) {
+      if (param_avg_used_memory == -1 && instance['cpu' + "_" + param_threshold_statistic] < param_avg_cpu) {
         include_instance = true
       }
       // If we're not checking CPU and memory usage is below threshold, include it.
-      if (param_avg_cpu == -1 && instance['mem_average'] < param_avg_used_memory) {
+      if (param_avg_cpu == -1 && instance['mem' + "_" + param_threshold_statistic] < param_avg_used_memory) {
         include_instance = true
       }
       // If we're checking both CPU and memory, look at the parameter to see whether the user
       // wants to do an AND comparison or an OR comparison.
       if (param_avg_cpu != -1 && param_avg_used_memory != -1) {
         if (param_check_both == "Both CPU and Memory") {
-          if (instance['cpu_average'] < param_avg_cpu && instance['mem_average'] < param_avg_used_memory) {
+          if (instance['cpu' + "_" + param_threshold_statistic] < param_avg_cpu && instance['mem' + "_" + param_threshold_statistic] < param_avg_used_memory) {
             include_instance = true
           }
         } else {
-          if (instance['cpu_average'] < param_avg_cpu || instance['mem_average'] < param_avg_used_memory) {
+          if (instance['cpu' + "_" + param_threshold_statistic] < param_avg_cpu || instance['mem' + "_" + param_threshold_statistic] < param_avg_used_memory) {
             include_instance = true
           }
         }
@@ -914,6 +864,9 @@ EOS
       field "cpu_average" do
         label "CPU Average %"
       end
+      field "cpu_p99" do
+        label "CPU p99"
+      end
       field "mem_maximum" do
         label "Memory Maximum %"
       end
@@ -922,6 +875,9 @@ EOS
       end
       field "mem_average" do
         label "Memory Average %"
+      end
+      field "mem_p99" do
+        label "Memory p99"
       end
       field "tags" do
         label "Tags"
