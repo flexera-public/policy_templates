@@ -2,7 +2,7 @@
 
 ## v4.2
 
-- Added the following options to `param_threshold_statistic`, `"p95", "p90"`
+- Added the following options to `param_threshold_statistic`: `p95` `p90`
 
 ## v4.1
 
