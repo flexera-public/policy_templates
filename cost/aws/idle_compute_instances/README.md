@@ -78,9 +78,10 @@ This policy has the following input parameters required when launching the polic
 - *Allowed Regions* - A list of allowed regions for an AWS account. Please enter the allowed regions code if SCP is enabled, see [Available Regions](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/using-regions-availability-zones.html#concepts-available-regions) in AWS; otherwise, the policy may fail on regions that are disabled via SCP. Leave blank to consider all the regions.
 - *Email addresses to notify* - Email addresses of the recipients you wish to notify when new incidents are created
 - *Account Number* - The Account number for use with the AWS STS Cross Account Role. Leave blank when using AWS IAM Access key and secret. It only needs to be passed when the desired AWS account is different than the one associated with the Flexera One credential. [more](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_1982464505_1123608)
-- *Average used memory percentage* - Set to -1 to ignore memory utilization
-- *Average used CPU percentage* - Set to -1 to ignore CPU utilization
+- *Used Memory Threshold* - The threshold at which to consider an instance to be 'idle'. Set to -1 to ignore memory utilization
+- *Used CPU Threshold* - The threshold at which to consider an instance to be 'idle'. Set to -1 to ignore CPU utilization
 - *Idle for both CPU/Memory or either* - Set to Both CPU and Memory to consider an instance idle only if it is below both the CPU and memory utilization parameters. Set to Either CPU or Memory to consider an instance idle if either CPU or memory are below the parameter values. Has no effect if either of the utilization parameters are set to -1.
+- *Threshold Statistic* - Statistic to use for the metric threshold
 - *Exclusion Tag Key:Value* - Cloud native tag to ignore instances. Format: Key:Value
 - *CloudWatch API Wait Time* - The amount of time in seconds to wait between requests to the CloudWatch API to avoid being throttled by AWS. Default is recommended.
 - *Automatic Actions* - When this value is set, this policy will automatically take the selected action(s).
