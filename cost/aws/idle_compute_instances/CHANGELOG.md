@@ -1,5 +1,9 @@
 # Changelog
 
+## v4.2
+
+- Added the following options to `param_threshold_statistic`, `"p95", "p90"`
+
 ## v4.1
 
 - Added `param_threshold_statistic` which can be used to select the statistic used in determining an instance idle
