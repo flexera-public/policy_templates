@@ -25,18 +25,21 @@ parameter "param_cbi_endpoint" do
   type "string"
   label "Flexera CBI Endpoint"
   description "Name of the Flexera CBI endpoint to use. Ex: cbi-oi-oracle-oraclecloud"
+  default "cbi-oi-oracle-oraclecloud"
 end
 
 parameter "param_region" do
   type "string"
   label "Oracle Cloud Region"
   description "Region of the Oracle Cloud Object Storage bucket containing the cost and usage reports. Ex: us-phoenix-1"
+  default "us-ashburn-1"
 end
 
 parameter "param_bucket" do
   type "string"
   label "Oracle Cloud Cost & Usage Bucket"
   description "OCID of the Oracle Cloud Object Storage bucket containing the Cost and Usage reports."
+  default "ocid1.tenancy.oc1..aaaaaaaaznclrhaiswplktt7cco2vrqvfyx5viaoropfe37ee5zj4o6w76uq"
 end
 
 parameter "param_block_size" do
@@ -46,6 +49,15 @@ parameter "param_block_size" do
   default 20
   min_value 1
   max_value 20
+end
+
+parameter "param_commit_delay" do
+  type "number"
+  label "Commit Delay (Hours)"
+  description "Number of hours to wait between comitting bill uploads."
+  default 12
+  min_value 8
+  max_value 24
 end
 
 ###############################################################################
@@ -149,8 +161,12 @@ datasource "ds_cost_object_list" do
   end
 end
 
+datasource "ds_cost_object_list_current_month" do
+  run_script $js_cost_object_list_current_month, $ds_cost_object_list, $ds_dates
+end
+
 datasource "ds_cost_object_list_filtered" do
-  run_script $js_cost_object_list_filtered, $ds_cost_object_list, $ds_dates, $ds_bill_upload, $param_block_size
+  run_script $js_cost_object_list_filtered, $ds_cost_object_list_current_month, $ds_bill_upload, $param_block_size
 end
 
 datasource "ds_cost_objects" do
@@ -185,7 +201,7 @@ datasource "ds_upload_file" do
 end
 
 datasource "ds_commit_assess" do
-  run_script $js_commit_assess, $ds_upload_file, $ds_cost_object_list, $ds_dates, $ds_bill_upload
+  run_script $js_commit_assess, $ds_upload_file, $ds_cost_object_list_current_month, $ds_dates, $ds_bill_upload, $param_commit_delay
 end
 
 datasource "ds_commit_bill_upload" do
@@ -203,6 +219,10 @@ datasource "ds_commit_bill_upload" do
     field "status", jmes_path(response, "status")
     field "updatedAt", jmes_path(response, "updatedAt")
   end
+end
+
+datasource "ds_status" do
+  run_script $js_status, $ds_create_bill_upload, $ds_commit_bill_upload, $ds_bill_upload, $ds_cost_object_list_current_month, $ds_cost_object_list_filtered, $ds_dates, $param_commit_delay
 end
 
 ###############################################################################
@@ -268,8 +288,8 @@ script "js_bill_upload", type: "javascript" do
 EOS
 end
 
-script "js_cost_object_list_filtered", type: "javascript" do
-  parameters "ds_cost_object_list", "ds_dates", "ds_bill_upload", "param_block_size"
+script "js_cost_object_list_current_month", type: "javascript" do
+  parameters "ds_cost_object_list", "ds_dates"
   result "result"
   code <<-EOS
   result = []
@@ -282,6 +302,14 @@ script "js_cost_object_list_filtered", type: "javascript" do
       result.push(object)
     }
   })
+EOS
+end
+
+script "js_cost_object_list_filtered", type: "javascript" do
+  parameters "ds_cost_object_list_current_month", "ds_bill_upload", "param_block_size"
+  result "result"
+  code <<-EOS
+  result = []
 
   if (ds_bill_upload['files'] != null && ds_bill_upload['files'] != undefined) {
     bill_upload_length = ds_bill_upload['files'].length
@@ -289,11 +317,11 @@ script "js_cost_object_list_filtered", type: "javascript" do
     bill_upload_length = 0
   }
 
-  if (bill_upload_length < result.length) {
+  if (bill_upload_length < ds_cost_object_list_current_month.length) {
     start_block = bill_upload_length
     end_block = bill_upload_length + param_block_size
 
-    result = _.sortBy(result, "timeModified").slice(start_block, end_block)
+    result = _.sortBy(ds_cost_object_list_current_month, "timeModified").slice(start_block, end_block)
   } else {
     result = []
   }
@@ -323,27 +351,24 @@ EOS
 end
 
 script "js_commit_assess", type: "javascript" do
-  parameters "ds_upload_file", "ds_cost_object_list", "ds_dates", "ds_bill_upload"
+  parameters "ds_upload_file", "ds_cost_object_list_current_month", "ds_dates", "ds_bill_upload", "param_commit_delay"
   result "result"
   code <<-EOS
-  month_objects = []
-
-  _.each(ds_cost_object_list, function(object) {
-    object_month = object['timeModified'].split('T')[0]
-    object_month = object_month.split('-')[0] + '-' + object_month.split('-')[1]
-
-    if (object_month == ds_dates['period']) {
-      month_objects.push(object)
-    }
-  })
-
   if (ds_bill_upload['files'] != null && ds_bill_upload['files'] != undefined) {
     bill_upload_length = ds_bill_upload['files'].length
   } else {
     bill_upload_length = 0
   }
 
-  if (bill_upload_length == month_objects.length) {
+  now = new Date()
+  now = now.getTime()
+
+  bill_upload_created = new Date(ds_bill_upload['createdAt'])
+  bill_upload_created = bill_upload_created.getTime()
+
+  time_difference = (now - bill_upload_created) / 1000 / 60 / 60
+
+  if (bill_upload_length == ds_cost_object_list_current_month.length && time_difference >= param_commit_delay) {
     result = [ds_bill_upload]
   } else {
     result = []
@@ -373,14 +398,79 @@ script "js_cbi_commit", type: "javascript" do
 EOS
 end
 
+script "js_status", type: "javascript" do
+  parameters "ds_create_bill_upload", "ds_commit_bill_upload", "ds_bill_upload", "ds_cost_object_list_current_month", "ds_cost_object_list_filtered", "ds_dates", "param_commit_delay"
+  result "result"
+  code <<-'EOS'
+  result = {
+    message: '',
+    title: '',
+    files: ds_cost_object_list_filtered
+  }
+
+  message = []
+
+  if (ds_create_bill_upload.length == 0) {
+    message.push("Existing bill upload ", ds_bill_upload['id'], " found. Bill uploaded was created at ", ds_bill_upload['createdAt'], '.', "\n\n\n")
+  } else {
+    message.push("New bill upload ", ds_bill_upload['id'], " created at ", ds_bill_upload['createdAt'], '.', "\n\n\n")
+  }
+
+  total_files = ds_cost_object_list_current_month.length
+  files_uploaded = ds_cost_object_list_filtered.length
+  total_files_uploaded = ds_bill_upload['files'].length + ds_cost_object_list_filtered.length
+  files_remaining = total_files - total_files_uploaded
+
+  message.push('Total files to upload for ', ds_dates['period'], ': ', total_files, "\n\n")
+  message.push('Files uploaded so far: ', total_files_uploaded, "\n\n")
+  message.push('Files uploaded during most recent execution: ', files_uploaded, "\n\n")
+  message.push('Files remaining: ', files_remaining, "\n\n\n")
+
+  if (ds_commit_bill_upload.length != 0) {
+    message.push('Bill Upload was committed. Cycle will restart with next execution.')
+    result['title'] = 'OCI Bill Ingestion: Bill Upload Committed'
+  }
+
+  if (ds_commit_bill_upload.length == 0 && files_remaining == 0) {
+    message.push('All files uploaded. Bill Upload will be committed on next execution if ', param_commit_delay, ' hour(s) have passed since previous commit.')
+    result['title'] = 'OCI Bill Ingestion: All Files Uploaded'
+  }
+
+  if (ds_commit_bill_upload.length == 0 && files_remaining != 0) {
+    message.push('Additional files still need to be uploaded. More files will be uploaded on next execution.')
+    result['title'] = 'OCI Bill Ingestion: Some Files Uploaded. More Files Remain.'
+  }
+
+  result['message'] = message.join('')
+EOS
+end
+
 ###############################################################################
 # Policy
 ###############################################################################
 
 policy "pol_oracle_bill_ingestion" do
-  validate $ds_commit_bill_upload do
-    summary_template "OCI Cost Data Sent To CBI"
-    detail_template "OCI Cost Data Sent To CBI"
-    check eq(0, 0)
+  validate $ds_status do
+    summary_template "{{ data.title }}"
+    detail_template "{{ data.message }}"
+    check eq(0, 1)
+    export "files" do
+      resource_level false
+      field "name" do
+        label "Object Name"
+      end
+      field "timeCreated" do
+        label "Created"
+      end
+      field "timeModified" do
+        label "Last Modified"
+      end
+      field "etag" do
+        label "Entity Tag"
+      end
+      field "md5" do
+        label "MD5"
+      end
+    end
   end
 end
