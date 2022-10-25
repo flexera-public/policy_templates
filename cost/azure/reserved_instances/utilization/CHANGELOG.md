@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.5
+
+- Deprecating this policy as it's replaced by [the new version](../mca_utilization)
+
 ## v2.4
 
 - updated README.md rightscale documentation links with docs.flexera documentation links

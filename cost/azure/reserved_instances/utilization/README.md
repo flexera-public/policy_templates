@@ -1,5 +1,7 @@
 # Azure Reserved Instances Utilization Policy Template
 
+**NOTE:** This policy is be deprecated and replaced by this [new version](../mca_utilization)
+
 **As a best practice, this policy should only be applied to the Master Account, and not to each individual RightScale Account.**
 
 ## What it does
