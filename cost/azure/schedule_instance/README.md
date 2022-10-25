@@ -65,7 +65,7 @@ Required permissions in the provider:
 - Microsoft.Compute/virtualMachines/write
 - Microsoft.Compute/virtualMachines/delete
 - Microsoft.Compute/virtualMachines/start/action
-- Microsoft.Compute/virtualMachines/powerOff/action
+- Microsoft.Compute/virtualMachines/deallocate/action
 
 ## Supported Clouds
 

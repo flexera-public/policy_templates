@@ -1,5 +1,9 @@
 # Unapproved Instance Types
 
+## Deprecated
+
+This policy is no longer being updated.
+
 ## What it does
 
 This policy checks for instances that are using instance types that are not in the specified list and stops them after approval.
@@ -8,7 +12,7 @@ This policy checks for instances that are using instance types that are not in t
 
 The policy leverages the RightScale APIs to check instances across all supported clouds. When a non-approved instance type is detected, a report is emailed and the user can choose to Stop the instance after manual approval.
 
-## Note: You can find Instance Types of all Supported Clouds under 'Policy Data Sets' section of root [README.md](https://github.com/flexera/policy_templates/blob/master/README.md)
+## Note: You can find Instance Types of all Supported Clouds under 'Policy Data Sets' section of root [README.md](https://github.com/flexera-public/policy_templates/blob/master/README.md)
 
 ## Input Parameters
 

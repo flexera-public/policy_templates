@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.2
+
+- Replaced references `github.com/rightscale/policy_templates` and `github.com/flexera/policy_templates` with `github.com/flexera-public/policy_templates`
+
 ## v1.1
 
 - Modified escalation label and description for consistency

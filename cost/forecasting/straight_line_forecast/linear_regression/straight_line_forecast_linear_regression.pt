@@ -1,14 +1,14 @@
 name "Cloud Spend Forecast - Straight-Line (Linear Regression Model)"
 rs_pt_ver 20180301
 type "policy"
-short_description "Pulls the cost data for lookback period then generates a Straight-Line Forecast for the specified months using a Linear Regression model. See the [README](https://github.com/flexera/policy_templates/tree/master/cost/forecasting/straight_line_forecast/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+short_description "Pulls the cost data for lookback period then generates a Straight-Line Forecast for the specified months using a Linear Regression model. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/forecasting/straight_line_forecast/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 long_description ""
 severity "high"
 category "Cost"
 tenancy "single"
 default_frequency "monthly"
 info(
-  version: "2.2",
+  version: "3.0",
   provider: "Flexera Optima",
   service: "",
   policy_set: "Forecasting"
@@ -68,11 +68,11 @@ end
 # Authentication
 ###############################################################################
 
-#AUTHENTICATE WITH RIGHTSCALE/OPTIMA
-credentials "auth_rs" do
+#AUTHENTICATE WITH FLEXERA/OPTIMA
+credentials "auth_flexera" do
   schemes "oauth2"
-  label "Flexera_Automation"
-  description "Select FlexeraOne OAuth2 credentials"
+  label "flexera"
+  description "Select Flexera One OAuth2 credentials"
   tags "provider=flexera"
 end
 
@@ -92,7 +92,7 @@ end
 #GET CURRENCY CODE FOR ORG
 datasource "ds_currency_code" do
   request do
-    auth $auth_rs
+    auth $auth_flexera
     host rs_optima_host
     path join(["/bill-analysis/orgs/",rs_org_id,"/settings/currency_code"])
     header "Api-Version", "0.1"
@@ -108,7 +108,7 @@ end
 #GET ALL BILLING CENTERS FOR ORG
 datasource "ds_billing_centers" do
   request do
-    auth $auth_rs
+    auth $auth_flexera
     host rs_optima_host
     path join(["/analytics/orgs/",rs_org_id,"/billing_centers"])
     header "Api-Version", "1.0"
@@ -219,7 +219,7 @@ script "js_new_costs_request", type: "javascript" do
 
   //POST Request
   var request = {
-    auth: "auth_rs",
+    auth: "auth_flexera",
     verb: "POST",
     host: rs_optima_host,
     path: "/bill-analysis/orgs/" + org_id + "/costs/aggregated",
@@ -356,7 +356,7 @@ script "js_get_forecast_data", type: "javascript" do
   code <<-EOS
 
   //Group data by Dimension (Category/Region/Vendor Account etc.)
-  var group_by_dimension = _.groupBy(data_package[0].costs, function(data){ return data.dimension }) 
+  var group_by_dimension = _.groupBy(data_package[0].costs, function(data){ return data.dimension })
 
   //Calculate linear regression line/line of best fit across data
   var forecast_data = []
@@ -370,7 +370,7 @@ script "js_get_forecast_data", type: "javascript" do
       //get the cost and the month (as an integer e.g. 2021-02 is x=1, 2021-03 is x=2, etc.)
       x = group_by_dimension[dim_from_list].length - n          //represents month on the x axis
       y = dim.cost                //represents cost on the y axis
-      x_squared = x * x   
+      x_squared = x * x
       x_y = x * y
 
       if(dim_from_list == "Database"){
@@ -402,7 +402,7 @@ script "js_get_forecast_data", type: "javascript" do
       "historical_months": n
     })
   })
-  
+
   //Function to get formatted month
   function getFormattedDailyDate( date ){
     var year = date.getFullYear();
@@ -410,13 +410,13 @@ script "js_get_forecast_data", type: "javascript" do
     month = month.length > 1 ? month : '0' + month;
     return year + '-' + month;
   }
-  
+
   //Function to get future forecasted months
   function getFutureMonth( date, month_counter ){
     date.setMonth(date.getMonth() + month_counter);
     return date;
   }
-  
+
   //Calculate forecasted costs for each future month (For each month use linear regression line to extrapolate costs for each dimension)
   report_data = []
   for(i = 0; i < data_package[0].forecasted_months; i++){
@@ -424,9 +424,9 @@ script "js_get_forecast_data", type: "javascript" do
     _.each(forecast_data, function(data){
       x_value = data.historical_months + (i + 1)        //'x' in y = bx + a (x represents forecasted month)
       y_value = (data.beta * x_value) + data.alpha      //'y' in y = bx + a (y represents forecasted cost)
-      
+
       if(y_value < 0){ y_value = 0 }                    //To stop downward trends in cost from going below 0
-      
+
       report_data.push({
         "month": forecast_month,
         "dimension": data.dimension,
@@ -448,20 +448,20 @@ script "js_create_chart_data", type: "javascript" do
   code <<-EOS
 
   //Group data by Dimension
-  group_by_dimension = 
+  group_by_dimension =
   _.groupBy(forecast_data, function(data){ return data.dimension })
   report = forecast_data
 
   //Create chart axis labels
-  chart_axis_labels = 
-  ("chxl=0:," + 
+  chart_axis_labels =
+  ("chxl=0:," +
     _.uniq(forecast_data, function(data){ return data.month })
     .map(function(data){ return data.month })
   ).split(",").join("|")
 
   //Create legend
   chart_legend = "chdl="
-  var i = 0 
+  var i = 0
   for (var key in group_by_dimension) {
     chart_legend += key
     i++
@@ -476,7 +476,7 @@ script "js_create_chart_data", type: "javascript" do
     _.each(o, function(p){
       chart_data = chart_data + p.forecasted_cost
       count_2++
-      if (count_2 < _.size(o)){ chart_data = chart_data + "," } 
+      if (count_2 < _.size(o)){ chart_data = chart_data + "," }
     })
     count_1++
     if (count_1 < _.size(group_by_dimension)){ chart_data = chart_data + "|" }
@@ -500,7 +500,7 @@ script "js_create_chart_data", type: "javascript" do
     chart_size: encodeURI("chs=900x500"),
     chart_data: encodeURI(chart_data),
     chart_title: encodeURI(chart_title),
-    chart_image: encodeURI("chof=.png"),  
+    chart_image: encodeURI("chof=.png"),
     chart_label_position: encodeURI("chdlp=b"),
     chart_axis: encodeURI("chxt=x,y"),
     chart_axis_label: encodeURI(chart_axis_labels),

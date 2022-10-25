@@ -1,12 +1,12 @@
 name "AWS Old Snapshots"
 rs_pt_ver 20180301
 type "policy"
-short_description "Checks for snapshots older than a specified number of days and, optionally, deletes them. See the [README](https://github.com/flexera/policy_templates/tree/master/cost/aws/old_snapshots) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+short_description "Checks for snapshots older than a specified number of days and, optionally, deletes them. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/old_snapshots) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 category "Cost"
 severity "low"
 default_frequency "daily"
 info(
-  version: "3.3",
+  version: "4.0",
   provider: "AWS",
   service: "EBS",
   policy_set: "Old Snapshots"
@@ -95,15 +95,31 @@ credentials "auth_aws" do
   aws_account_number $param_aws_account_number
 end
 
-auth "auth_rs", type: "rightscale"
+credentials "auth_flexera" do
+  schemes "oauth2"
+  label "flexera"
+  description "Select Flexera One OAuth2 credentials"
+  tags "provider=flexera"
+end
 
 ###############################################################################
 # Pagination
 ###############################################################################
 
-pagination "aws_pagination_xml" do
+pagination "aws_pagination_describesnapshots_xml" do
   get_page_marker do
     body_path "//DescribeSnapshotsResponse/nextToken"
+  end
+  set_page_marker do
+    query "NextToken"
+  end
+end
+
+# The documentation for DescribeImages does not show any pagination, but using assumption it exists and matches other EC2 APIs
+# https://docs.aws.amazon.com/AWSEC2/latest/APIReference/API_DescribeImages.html
+pagination "aws_pagination_describeimages_xml" do
+  get_page_marker do
+    body_path "//DescribeImagessResponse/nextToken"
   end
   set_page_marker do
     query "NextToken"
@@ -128,7 +144,7 @@ end
 
 datasource "ds_currency_code" do
   request do
-    auth $auth_rs
+    auth $auth_flexera
     host rs_optima_host
     path join(["/bill-analysis/orgs/", val($ds_flexera_optima, "org_id"), "/settings/currency_code"])
     header "Api-Version", "0.1"
@@ -144,7 +160,7 @@ end
 
 datasource "ds_billing_centers" do
   request do
-    auth $auth_rs
+    auth $auth_flexera
     host rs_optima_host
     path join(["/analytics/orgs/", val($ds_flexera_optima, "org_id"), "/billing_centers"])
     header "Api-Version", "1.0"
@@ -175,13 +191,15 @@ datasource "ds_snapshot_costs" do
     encoding "json"
     collect jmes_path(response, "rows[*]") do
       field "resource_id", jmes_path(col_item, "dimensions.resource_id")
+      field "vendorAccountName", jmes_path(col_item, "dimensions.vendor_account_name")
       field "cost_nonamortized_unblended_adj", jmes_path(col_item, "metrics.cost_nonamortized_unblended_adj")
     end
   end
 end
 
-#Get list of enabled regions for an account
+# ds_region_list is a list of regions that are opted-in or opt-in-not-required
 datasource "ds_regions_list" do
+  # https://docs.aws.amazon.com/AWSEC2/latest/APIReference/API_DescribeRegions.html
   request do
     auth $auth_aws
     verb "GET"
@@ -189,6 +207,9 @@ datasource "ds_regions_list" do
     path "/"
     query "Action", "DescribeRegions"
     query "Version", "2016-11-15"
+    query "Filter.1.Name", "opt-in-status"
+    query "Filter.1.Value.1", "opt-in-not-required"
+    query "Filter.1.Value.2", "opted-in"
   end
   result do
     encoding "xml"
@@ -249,19 +270,17 @@ datasource "ds_filter_old_snapshots" do
 end
 
 datasource "ds_get_snapshot_ami" do
-  iterate $ds_filter_old_snapshots
+  iterate $ds_regions
   request do
-    run_script $js_get_snapshot_ami, val(iter_item, "snapshotId"), val(iter_item, "region")
+    run_script $js_get_snapshot_ami, val(iter_item, "region"), $ds_get_caller_identity
   end
   result do
     encoding "xml"
     collect xpath(response, "//DescribeImagesResponse/imagesSet/item", "array") do
-      field "imageId", xpath(col_item, "imageId")
       field "region", val(iter_item, "region")
-      field "snapshotId", val(iter_item, "snapshotId")
-      field "tags", val(iter_item, "tagKeyValue")
-      field "daysOld", val(iter_item, "daysOld")
-      field "volumeSize", val(iter_item, "volumeSize")
+      field "imageId", xpath(col_item, "imageId")
+      field "ownerId", xpath(col_item, "ownerId")
+      field "snapshotIds",  xpath(col_item, "blockDeviceMapping/item/*//snapshotId", "array") # An AMI can have mappings to more than one snapshot. Grab all the snapshot IDs associated with this AMI.
     end
   end
 end
@@ -342,12 +361,12 @@ script "js_get_costs", type: "javascript" do
     var start_date = getFormattedDailyDate(new Date(new Date().setDate(new Date().getDate() - 3)));
     var end_date = getFormattedDailyDate(new Date(new Date().setDate(new Date().getDate() - 2)));
     var request = {
-      auth: "auth_rs",
+      auth: "auth_flexera",
       host: optima_host,
       verb: "POST",
       path: "/bill-analysis/orgs/" + org + "/costs/select",
       body_fields: {
-        "dimensions": ["resource_id"],
+        "dimensions": ["resource_id", "vendor_account_name"],
         "granularity": "day",
         "start_at": start_date,
         "end_at": end_date,
@@ -437,6 +456,10 @@ script "js_snapshots_cost_mapping", type: "javascript" do
       var separator = ","
     }
   }
+  var accountName = ""
+  if (_.size(snapshot_costs) > 0) {
+    accountName = snapshot_costs[0].vendorAccountName
+  }
   var total=0;
   _.each(snapshots, function(snapshot){
     var cost_objects = costs_by_resource_id[snapshot.formatSnapId];
@@ -446,12 +469,12 @@ script "js_snapshots_cost_mapping", type: "javascript" do
       total=total+monthly_savings;
       result.push({
         accountID: ds_get_caller_identity[0]['account'],
+        accountName: accountName,
         snapshotId : snapshot['snapshotId'],
         region : snapshot['region'],
         tags : snapshot['tagKeyValue'],
         daysOld : snapshot['daysOld'],
         imageId : snapshot['imageId'],
-        snapshotImageIdFormat : snapshot['snapshotImageIdFormat'],
         savings : (Math.round(monthly_savings * 1000) / 1000),
         savingsCurrency : cur,
         volumeSize : snapshot['volumeSize'],
@@ -460,12 +483,12 @@ script "js_snapshots_cost_mapping", type: "javascript" do
     } else {
       result.push({
         accountID: ds_get_caller_identity[0]['account'],
+        accountName: accountName,
         snapshotId : snapshot['snapshotId'],
         region : snapshot['region'],
         tags : snapshot['tagKeyValue'],
         daysOld : snapshot['daysOld'],
         imageId : snapshot['imageId'],
-        snapshotImageIdFormat : snapshot['snapshotImageIdFormat'],
         savings: 0.0,
         savingsCurrency : cur,
         volumeSize : snapshot['volumeSize'],
@@ -495,7 +518,7 @@ script "js_describe_snapshots", type: "javascript" do
         "host": 'ec2.'+region+'.amazonaws.com',
         "verb": "GET",
         "path": "/",
-        "pagination": "aws_pagination_xml",
+        "pagination": "aws_pagination_describesnapshots_xml",
         "headers": {
           "User-Agent": "RS Policies",
           "Content-Type": "text/xml"
@@ -557,13 +580,14 @@ end
 
 script "js_get_snapshot_ami", type: "javascript" do
   result "results"
-  parameters "snapshotId", "region"
+  parameters "region", "ds_get_caller_identity"
   code <<-EOS
     results = {
       "auth": "auth_aws",
       "host": 'ec2.'+region+'.amazonaws.com',
       "verb": "GET",
       "path": "/",
+      "pagination": "aws_pagination_describeimages_xml",
       "headers": {
         "User-Agent": "RS Policies",
         "Content-Type": "text/xml"
@@ -571,8 +595,8 @@ script "js_get_snapshot_ami", type: "javascript" do
       "query_params": {
         'Action': 'DescribeImages',
         'Version': '2016-11-15',
-        'Filter.1.Name': 'block-device-mapping.snapshot-id',
-        'Filter.1.Value.1': snapshotId
+        'Filter.1.Name': 'owner-id',
+        'Filter.1.Value.1': ds_get_caller_identity[0]['account']
         }
     }
   EOS
@@ -580,34 +604,40 @@ end
 
 script "js_filter_ami_snapshots", type: "javascript" do
   result "results"
-  parameters "snapshotImagesList", "snapshotsList", "ds_get_caller_identity"
+  parameters "ds_get_snapshot_ami", "ds_filter_old_snapshots", "ds_get_caller_identity"
   code <<-EOS
     var results = [];
-    var snapshotImageIds = [];
-    var snapshotImageIdFormat = "";
-    for(var i=0; i < snapshotsList.length; i++){
-      var snapshot = snapshotsList[i];
-      for(var j=0; j < snapshotImagesList.length; j++){
-        var snapshotImage = snapshotImagesList[j];
-        if(snapshot['snapshotId'] === snapshotImage['snapshotId']){
-          snapshotImageIdFormat += snapshotImage['imageId']+", ";
-          snapshotImageIds.push(snapshotImage['imageId'])
+    // Loop through all the old snapshots and map them to AMI
+    _.each(ds_filter_old_snapshots, function(old_snapshot){
+      // Default to empty string for imageId
+      old_snapshot_imageId = ""
+      // Find if any AMI's maps to the old_snapshot
+      old_snapshot_ami = _.filter(ds_get_snapshot_ami, function(ami){
+        // Check if the old_snapshot is mapped to the AMI
+        if (_.contains(ami['snapshotIds'], old_snapshot['snapshotId'])) {
+          // Once we find the AMI, we can return value
+          return ami;
         }
+      });
+      // If we got a result, then we have a match
+      if (_.size(old_snapshot_ami) > 0){
+        // We expect a snapshot to match only one AMI so can safely select first from the old_snapshot_ami list
+        old_snapshot_ami = old_snapshot_ami[0];
+        // Override empty default with the identified AMI imageId
+        old_snapshot_imageId = old_snapshot_ami['imageId'];
       }
+      // Add the old snapshot to the results with AMI data
       results.push({
-        snapshotId : snapshot['snapshotId'],
-        formatSnapId : "snapshot/"+snapshot['snapshotId'],
-        region : snapshot['region'],
-        tagKeyValue : snapshot['tagKeyValue'],
-        daysOld : snapshot['daysOld'],
+        snapshotId : old_snapshot['snapshotId'],
+        formatSnapId : "snapshot/"+old_snapshot['snapshotId'],
+        region : old_snapshot['region'],
+        tagKeyValue : old_snapshot['tagKeyValue'],
+        daysOld : old_snapshot['daysOld'],
         accountID: ds_get_caller_identity[0]['account'],
-        imageId : snapshotImageIds,
-        snapshotImageIdFormat : (snapshotImageIdFormat.slice(0,snapshotImageIdFormat.length - 2)),
-        volumeSize: snapshot['volumeSize']
-      })
-      snapshotImageIds = [];
-      snapshotImageIdFormat = "";
-    }
+        imageId : old_snapshot_imageId,
+        volumeSize: old_snapshot['volumeSize']
+      });
+    });
   EOS
 end
 
@@ -631,6 +661,9 @@ EOS
       field "accountID" do
         label "Account ID"
       end
+      field "accountName" do
+        label "Account Name"
+      end
       field "region" do
         label "Region"
       end
@@ -644,7 +677,7 @@ EOS
         label "Resource ID"
         path "snapshotId"
       end
-      field "snapshotImageIdFormat" do
+      field "imageId" do
         label "AMI"
       end
       field "savings" do
@@ -682,34 +715,42 @@ escalation "esc_delete_snapshot" do
   automatic contains($param_automatic_action, "Delete Snapshots")
   label "Delete Snapshots"
   description "Approval to delete all selected snapshots"
-  run "take_action", data, $param_deregister_image, $param_log_to_cm_audit_entries
+  run "take_action", data, $param_deregister_image, $param_log_to_cm_audit_entries, rs_optima_host
 end
 
 ###############################################################################
 # Cloud Workflow
 ###############################################################################
 
-define take_action($data, $param_deregister_image, $param_log_to_cm_audit_entries) do
+define take_action($data, $param_deregister_image, $param_log_to_cm_audit_entries, $$rs_optima_host) do
   $$debug = $param_log_to_cm_audit_entries == "Yes"
+  # $$errors global to append error messages from subtasks
   $$errors = []
-  foreach $item in $data do
-    sub on_error: skip_error_and_append($item["id"]) do
-      $image_ids = []
 
-      if $item["snapshotImageIdFormat"] != ""
-        $image_ids = split($item["snapshotImageIdFormat"], ",")
-      end
-
-      if $param_deregister_image == "Yes"
-        call deregisterImageFromSnapshot($image_ids, $item["region"], $$errors) retrieve $$errors
-        call delete_snapshot($item, $$errors) retrieve $$errors
-      elsif $param_deregister_image == "No"
-        if empty?($image_ids)
-          call delete_snapshot($item, $$errors) retrieve $$errors
+  # Images need to be deregistered before snapshots can be deleted
+  # Check if Deregister Image parameter is enabled
+  if $param_deregister_image == "Yes"
+    # Loop through all the old snapshots and deregister the image
+    foreach $item in $data do
+      sub on_error: skip_error_and_append($item["imageId"]) do
+        # Only deregister if snapshot is mapped to an image
+        if $item['imageId'] != ""
+          call deregisterImageFromSnapshot($item["imageId"], $item["region"], $$errors) retrieve $$errors
         end
       end
     end
   end
+
+  # Images have been deregistered, so we can delete the snapshots
+  # Loop through all the old snapshots and delete them
+  foreach $item in $data do
+    # Run each item in it's own sub task to collect all errors for all items before raising errror
+    sub on_error: skip_error_and_append($item["id"]) do
+      call delete_snapshot($item, $$errors) retrieve $$errors
+    end
+  end
+
+  # Raise error if any errors were collected
   if size($$errors) > 0
     $error = join($$errors, "\n")
     call sys_log("Errors", $error)
@@ -717,39 +758,37 @@ define take_action($data, $param_deregister_image, $param_log_to_cm_audit_entrie
   end
 end
 
-define deregisterImageFromSnapshot($item, $region, $errors) return $errors do
-  foreach $image in $item do
-    $deregister_response = http_request(
-      auth: $$auth_aws,
-      https: true,
-      verb: "get",
-      host: "ec2." + $region + ".amazonaws.com",
-      href: "/",
-      query_strings: {
-      "Action": "DeregisterImage",
-      "Version": "2016-11-15",
-      "ImageId": strip($image)
-      }
-    )
-    call check_response_and_append_if_error($deregister_response, "Deregister Image", $errors) retrieve $errors
-    $deregisterResponseResult = $deregister_response["code"]
-    if $deregisterResponseResult != 200
-      call sys_log("Deregister image snapshot", to_s($deregister_response))
-    end
+define deregisterImageFromSnapshot($image, $region, $errors) return $errors do
+  $deregister_response = http_request(
+    auth: $$auth_aws,
+    https: true,
+    verb: "get",
+    host: "ec2." + $region + ".amazonaws.com",
+    href: "/",
+    query_strings: {
+    "Action": "DeregisterImage",
+    "Version": "2016-11-15",
+    "ImageId": strip($image)
+    }
+  )
+  call check_response_and_append_if_error($deregister_response, "Deregister Image", $errors) retrieve $errors
+  $deregisterResponseResult = $deregister_response["code"]
+  if $deregisterResponseResult != 200
+    call sys_log("Deregister image snapshot", to_s($deregister_response))
   end
 end
 
-define delete_snapshot($item, $errors) return $errors do
+define delete_snapshot($snapshot, $errors) return $errors do
   $delete_response = http_request(
     auth: $$auth_aws,
     https: true,
     verb: "get",
-    host: "ec2." + $item["region"] + ".amazonaws.com",
+    host: "ec2." + $snapshot["region"] + ".amazonaws.com",
     href: "/",
     query_strings: {
       "Action": "DeleteSnapshot",
       "Version": "2016-11-15",
-      "SnapshotId.1": strip($item["id"])
+      "SnapshotId.1": strip($snapshot["id"])
     }
   )
   call check_response_and_append_if_error($delete_response, "Delete Snapshot", $errors) retrieve $errors
@@ -759,26 +798,42 @@ define delete_snapshot($item, $errors) return $errors do
   end
 end
 
-define skip_error_and_append($subject) do
-  $$errors << "Unexpected error for " + $subject + "\n  " + to_s($_error)
-  $_error_behavior = "skip"
-end
-
 define check_response_and_append_if_error($response, $request_description, $errors) return $errors do
   if $response["code"] > 299 || $response["code"] < 200
     $errors << "Unexpected status code from " + $request_description + " request\n  " + to_s($response)
   end
 end
 
-define sys_log($subject, $detail) on_error: skip_error_and_append("Creating audit entry for " + $subject) do
-  if $$debug
-    rs_cm.audit_entries.create(
-      notify: "None",
-      audit_entry: {
-        auditee_href: @@account,
-        summary: "AWS Old Snapshots Policy :- " + $subject,
-        detail: $detail
-      }
-    )
+define sys_log($subject, $detail) do
+  # Create empty errors array if doesn't already exist
+  if !$$errors
+    $$errors = []
   end
+  # Check if debug is enabled
+  if $$debug
+    # Append to global $$errors
+    # This is the suggested way to capture errors
+    $$errors << "Unexpected error for " + $subject + "\n  " + to_s($detail)
+    # If Flexera NAM Zone, create audit_entries [to be deprecated]
+    # This is the legacy method for capturing errors and only supported on Flexera NAM
+    if $$rs_optima_host == "api.optima.flexeraeng.com"
+      # skip_error_and_append is used to catch error if rs_cm.audit_entries.create fails unexpectedly
+      $task_label = "Creating audit entry for " + $subject
+      sub task_label: $task, on_error: skip_error_and_append($task) do
+        rs_cm.audit_entries.create(
+          notify: "None",
+          audit_entry: {
+            auditee_href: @@account,
+            summary: $subject,
+            detail: $detail
+          }
+        )
+      end # End sub on_error
+    end # End if rs_optima_host
+  end # End if debug is enabled
+end
+
+define skip_error_and_append($subject) do
+  $$errors << "Unexpected error for " + $subject + "\n  " + to_s($_error)
+  $_error_behavior = "skip"
 end

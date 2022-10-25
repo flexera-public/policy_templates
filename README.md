@@ -26,10 +26,10 @@ Reference
 
 #### Multi-cloud
 
-- [Billing Center Cost Anomaly](./cost/billing_center_cost_anomaly/)
 - [Budget Alerts](./cost/budget_alerts/)
 - [Budget Alerts by Cloud Account](./cost/budget_alerts_by_account/)
 - [Cheaper Regions](./cost/cheaper_regions/)
+- [Cloud Cost Anomaly](./cost/cloud_cost_anomalies/)
 - [Downsize Instances](./cost/downsize_instance/)
 - [Inefficient Instance Utilization using RightLink](./cost/rightlink_rightsize)
 - [Old Snapshots](./cost/volumes/old_snapshots/)
@@ -387,6 +387,7 @@ Reference
 - [AWS Long Running Instances](./operational/aws/long_running_instances/)
 - [AWS Instance Scheduled Events](./operational/aws/instance_scheduled_events)
 - [AWS Lambda Functions with high error rate](./operational/aws/lambda_functions_with_high_error_rate/)
+- [AWS Tag Cardinality Report](./operational/aws/tag_cardinality/)
 - [AWS Usage Report - Number of Instance Hours Used](./operational/aws/total_instance_hours/)
 - [AWS Usage Report - Number of Instance vCPUs Used](./operational/aws/total_instance_vcpus/)
 - [AWS Usage Forecast - Number of Instance Hours Used](./operational/aws/total_instance_hours_forecast/)
@@ -400,6 +401,7 @@ Reference
 - [AzureAD Group Sync](./operational/azure/azuread_group_sync/)
 - [Azure Sync Tags with Optima](./operational/azure/sync_tags_with_optima/)
 - [Azure SQL Databases without Elastic Pools](./operational/azure/azure_sql_using_elastic_pool/)
+- [Azure Tag Cardinality Report](./operational/azure/tag_cardinality/)
 
 #### VMWare
 
@@ -466,5 +468,5 @@ Github issues contain a template for three types of requests(Bugs, New Features 
 
 ### Troubleshooting Danger Locally
 
-- You can test against a pull request via: `bundle exec danger pr https://github.com/flexera/policy_templates/pull/73 --pry`
+- You can test against a pull request via: `bundle exec danger pr https://github.com/flexera-public/policy_templates/pull/73 --pry`
 - [Danger Troubleshooting](http://danger.systems/guides/troubleshooting.html)

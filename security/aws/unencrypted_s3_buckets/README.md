@@ -26,7 +26,7 @@ For example if a user selects the "Encrypt Buckets" action while applying the po
 
 Perform below steps to enable delete action.
 
-- Edit the pt file in this location [AWS_Unencrypted_S3_Buckets] <https://github.com/flexera/policy_templates/tree/master/security/aws/unencrypted_s3_buckets>
+- Edit the pt file in this location [AWS_Unencrypted_S3_Buckets] <https://github.com/flexera-public/policy_templates/tree/master/security/aws/unencrypted_s3_buckets>
 - uncomment below mentioned line
 
 ```ruby

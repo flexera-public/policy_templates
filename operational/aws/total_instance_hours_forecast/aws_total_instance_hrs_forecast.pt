@@ -1,13 +1,13 @@
 name "AWS Usage Forecast - Number of Instance Hours Used"
 rs_pt_ver 20180301
 type "policy"
-short_description "This policy uses a linear-regression model to produce a forecast of the number of hours used for AWS instances, categorized by Instance Family. See the [README](https://github.com/flexera/policy_templates/tree/master/operational/aws/total_instance_hours_forecast) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+short_description "This policy uses a linear-regression model to produce a forecast of the number of hours used for AWS instances, categorized by Instance Family. See the [README](https://github.com/flexera-public/policy_templates/tree/master/operational/aws/total_instance_hours_forecast) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 long_description ""
 severity "low"
 category "Operational"
 default_frequency "monthly"
 info(
-  version: "2.0",
+  version: "3.0",
   provider: "Flexera Optima",
   service: "",
   policy_set: ""
@@ -46,11 +46,11 @@ end
 # Authentication
 ###############################################################################
 
-#AUTHENTICATE WITH RIGHTSCALE/OPTIMA
-credentials "auth_rs" do
+#AUTHENTICATE WITH FLEXERA/OPTIMA
+credentials "auth_flexera" do
   schemes "oauth2"
-  label "Flexera_Automation"
-  description "Select FlexeraOne OAuth2 credentials"
+  label "flexera"
+  description "Select Flexera One OAuth2 credentials"
   tags "provider=flexera"
 end
 
@@ -61,7 +61,7 @@ end
 #GET BILLING CENTERS FOR ORG
 datasource "ds_billing_centers" do
   request do
-    auth $auth_rs
+    auth $auth_flexera
     host rs_optima_host
     path join(["/analytics/orgs/",rs_org_id,"/billing_centers"])
     header "Api-Version", "1.0"
@@ -78,14 +78,14 @@ datasource "ds_billing_centers" do
       field "ancestor_ids", jmes_path(col_item,"ancestor_ids")
       field "allocation_table", jmes_path(col_item,"allocation_table")
     end
-  end  
+  end
 end
-  
+
 #GET TOP-LEVEL BILLING CENTERS
 datasource "ds_top_level_billing_centers" do
   run_script $js_top_level_bc, $ds_billing_centers
 end
-  
+
 script "js_top_level_bc", type: "javascript" do
   parameters "billing_centers"
   result "filtered_billing_centers"
@@ -157,7 +157,7 @@ end
 script "js_get_usage_data", type: "javascript" do
   parameters "top_level_billing_centers", "region", "org_id", "optima_host", "start_date", "end_date"
   result "request"
-  code <<-EOS 
+  code <<-EOS
   //Billing Center IDs into array
   billing_center_ids = []
   _.each(top_level_billing_centers, function(bc){
@@ -166,7 +166,7 @@ script "js_get_usage_data", type: "javascript" do
 
   //get expressions for payload based on region parameter
   expressions = []
-  if( region == "" ){ 
+  if( region == "" ){
     expressions = [
       { "dimension": "category", "type": "equal", "value": "Compute" },
       { "dimension": "resource_type", "type":"equal", "value":"Compute Instance" },
@@ -176,7 +176,7 @@ script "js_get_usage_data", type: "javascript" do
         "expression": { "dimension": "instance_type", "type": "equal", "value": "None" }
       }
     ]
-  } else { 
+  } else {
     expressions = [
       { "dimension": "category", "type": "equal", "value": "Compute" },
       { "dimension": "resource_type", "type":"equal", "value":"Compute Instance" },
@@ -188,7 +188,7 @@ script "js_get_usage_data", type: "javascript" do
       }
     ]
   }
-  
+
   //POST JSON payload
   payload = {
     "billing_center_ids": billing_center_ids,
@@ -211,7 +211,7 @@ script "js_get_usage_data", type: "javascript" do
 
   //Request
   request = {
-    auth: "auth_rs",
+    auth: "auth_flexera",
     host: optima_host,
     path: "/bill-analysis/orgs/" + org_id + "/costs/aggregated",
     verb: "POST",
@@ -361,7 +361,7 @@ script "js_get_forecast_data", type: "javascript" do
       "total_instance_hours": total_historic_inst_hrs
     })
   })
-  
+
   //Group data by Instance Family
   var group_by_inst_fam = _.groupBy(data_package, function(data){ return data.instance_family})
 
@@ -377,7 +377,7 @@ script "js_get_forecast_data", type: "javascript" do
       //get the cost and the month (as an integer e.g. 2021-02 is x=1, 2021-03 is x=2, etc.)
       x = group_by_inst_fam[family_key].length - n          //represents month on the x axis
       y = fam.total_instance_hours                          //represents cost on the y axis
-      x_squared = x * x   
+      x_squared = x * x
       x_y = x * y
 
       sum_x += x, sum_x_squared += x_squared
@@ -425,9 +425,9 @@ script "js_get_forecast_data", type: "javascript" do
     _.each(forecast_data, function(data){
       x_value = data.historical_months + (i + 1)        //'x' in y = bx + a (x represents forecasted month)
       y_value = (data.beta * x_value) + data.alpha      //'y' in y = bx + a (y represents forecasted cost)
-      
+
       if(y_value < 0){ y_value = 0 }                    //To stop downward trends in cost from going below 0
-      
+
       report_data.push({
         "month": forecast_month,
         "instance_family": data.instance_family,
@@ -449,10 +449,10 @@ script "js_create_chart_data", type: "javascript" do
   code <<-EOS
 
   //Group data by Instance Family
-  group_by_inst_fam = 
+  group_by_inst_fam =
   _.groupBy(inst_hrs_data, function(data){ return data.instance_family })
   report = inst_hrs_data
-  
+
   //Inject historical months into dimension forecast data
   historical_months = []
   _.each( group_by_inst_fam["Historical Instance Hours"], function(hist){
@@ -462,7 +462,7 @@ script "js_create_chart_data", type: "javascript" do
   for (var key in group_by_inst_fam){
     if( key != "Historical Instance Hours" ){
       _.each(historical_months, function(hist){
-        group_by_inst_fam[key].push({ 
+        group_by_inst_fam[key].push({
           "month": hist.month,
           "instance_family": key,
           "total_instance_hours": "_"
@@ -473,15 +473,15 @@ script "js_create_chart_data", type: "javascript" do
   }
 
   //Create chart axis labels
-  chart_axis_labels = 
-  ("chxl=1:," + 
+  chart_axis_labels =
+  ("chxl=1:," +
     _.uniq(inst_hrs_data, function(data) { return data.month })
     .map(function(data){ return data.month.substring(0,7) })
   ).split(",").join("|")
 
   //Create legend
   chart_legend = "chdl="
-  var i = 0 
+  var i = 0
   for (var key in group_by_inst_fam) {
     chart_legend += key
     i++
@@ -496,7 +496,7 @@ script "js_create_chart_data", type: "javascript" do
     _.each(o, function(p){
       chart_data = chart_data + p.total_instance_hours
       count_2++
-      if (count_2 < _.size(o)){ chart_data = chart_data + "," } 
+      if (count_2 < _.size(o)){ chart_data = chart_data + "," }
     })
     count_1++
     if (count_1 < _.size(group_by_inst_fam)){ chart_data = chart_data + "|" }
@@ -516,7 +516,7 @@ script "js_create_chart_data", type: "javascript" do
     chart_size: encodeURI("chs=999x450"),
     chart_data: encodeURI(chart_data),
     chart_title: encodeURI(chart_title),
-    chart_image: encodeURI("chof=.png"),  
+    chart_image: encodeURI("chof=.png"),
     chart_label_position: encodeURI("chdlp=b"),
     chart_axis: encodeURI("chxt=y,x"),
     chart_axis_label: encodeURI(chart_axis_labels),

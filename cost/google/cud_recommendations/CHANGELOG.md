@@ -1,5 +1,21 @@
 # Changelog
 
+## 2.6
+
+- Added policySet as Reserved Instance to populate the Total Potential Savings
+
+## v2.5
+
+- Replaced references `github.com/rightscale/policy_templates` and `github.com/flexera/policy_templates` with `github.com/flexera-public/policy_templates`
+
+## v2.4
+
+- remove duplicate data fields for subscriptionID and subscriptionName
+
+## v2.3
+
+- added project name/id/number fields and moved account versions to end
+
 ## v2.2
 
 - Fixed missing savings field

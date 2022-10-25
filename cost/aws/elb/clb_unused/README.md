@@ -1,21 +1,57 @@
 # AWS Unused Classic Load Balancers (CLB)
 
-## What it does
-
 This policy checks all Classic Load Balancers (CLB) to determine if any are unused (have no healthy instances) and allows them to be deleted by the user after approval.
 
-Note:Elastic Load Balancing (ELB) supports three types of load balancers: Application Load Balancers, Network Load Balancers and Classic Load Balancers.
+Note: Elastic Load Balancing (ELB) supports three types of load balancers: Application Load Balancers, Network Load Balancers and Classic Load Balancers.
 
-### Policy savings details
+## Prerequisites
 
-The policy includes the estimated savings.  The estimated savings is recognized if the resource is terminated.   Optima is used to receive the estimated savings which is the product of the most recent full day’s cost of the resource * 30.  The savings is displayed in the Estimated Monthly Savings column.  If the resource can not be found in Optima the value is n/a.  The incident detail message includes the sum of each resource Estimated Monthly Savings as Total Estimated Monthly Savings.
-If the user is missing the minimum required role of `billing_center_viewer`or if there is no enough data received from Optima to calculate savings, appropriate message is displayed in the incident detail message along with the estimated monthly savings column value as N/A in the incident table.
+This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for authenticating to datasources -- in order to apply this policy you must have a Credential registered in the system that is compatible with this policy. If there are no Credentials listed when you apply the policy, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy. The information below should be consulted when creating the credential(s).
+
+- [**AWS Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_1982464505_1121575) (*provider=aws*) which has the following permissions:
+  - `ec2:DescribeRegions`
+  - `elasticloadbalancing:DescribeLoadBalancers`
+  - `elasticloadbalancing:DescribeInstanceHealth`
+  - `elasticloadbalancing:DescribeTags`
+  - `elasticloadbalancing:DeleteLoadBalancer`
+
+  Example IAM Permission Policy:
+
+  ```json
+  {
+      "Version": "2012-10-17",
+      "Statement": [
+          {
+              "Effect": "Allow",
+              "Action": [
+                  "ec2:DescribeRegions",
+                  "elasticloadbalancing:DescribeLoadBalancers",
+                  "elasticloadbalancing:DescribeInstanceHealth",
+                  "elasticloadbalancing:DescribeTags",
+                  "elasticloadbalancing:DeleteLoadBalancer"
+              ],
+              "Resource": "*"
+          }
+      ]
+  }
+  ```
+
+- [**Flexera Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) (*provider=flexera*) which has the following roles:
+  - `billing_center_viewer`
+
+The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) page in the docs has detailed instructions for setting up Credentials for the most common providers.
 
 ## Functional Details
 
 The policy leverages the AWS elasticloadbalancing API to determine if the CLB is in use.
 
 When an unused CLB is detected, an email action is triggered automatically to notify the specified users of the incident. Users then have the option to delete the CLB after manual approval if needed.
+
+### Policy savings details
+
+The policy includes the estimated savings.  The estimated savings is recognized if the resource is terminated.   Optima is used to receive the estimated savings which is the product of the most recent full day’s cost of the resource * 30.  The savings is displayed in the Estimated Monthly Savings column.  If the resource can not be found in Optima the value is n/a.  The incident detail message includes the sum of each resource Estimated Monthly Savings as Total Estimated Monthly Savings.
+
+If the user is missing the minimum required role of `billing_center_viewer`or if there is no enough data received from Optima to calculate savings, appropriate message is displayed in the incident detail message along with the estimated monthly savings column value as N/A in the incident table.
 
 ## Input Parameters
 
@@ -32,39 +68,6 @@ For example if a user selects the "Delete Load Balancers" action while applying 
 
 - Sends an email notification.
 - Delete unused CLB after approval.
-
-## Prerequisites
-
-- This policy uses [credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for connecting to the cloud -- in order to apply this policy you must have a credential registered in the system that is compatible with this policy. If there are no credentials listed when you apply the policy, please contact your cloud admin and ask them to register a credential that is compatible with this policy. The information below should be consulted when creating the credential.
-- billing_center_viewer (note: this role must be applied at the Organization level).
-
-### Credential configuration
-
-For administrators [creating and managing credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) to use with this policy, the following information is needed:
-
-Provider tag value to match this policy: `aws` , `aws_sts`
-
-Required permissions in the provider:
-
-```javascript
-{
-    "Version": "2012-10-17",
-    "Statement":[{
-    "Effect":"Allow",
-    "Action":["elasticloadbalancing:DescribeLoadBalancers",
-              "elasticloadbalancing:DescribeInstanceHealth",
-              "elasticloadbalancing:DescribeTags",
-              "elasticloadbalancing:DeleteLoadBalancer"],
-    "Resource":"*"
-    },
-    {
-      "Effect":"Allow",
-      "Action":["ec2:DescribeRegions"],
-      "Resource":"*"
-    }
-  ]
-}
-```
 
 ## Supported Clouds
 
