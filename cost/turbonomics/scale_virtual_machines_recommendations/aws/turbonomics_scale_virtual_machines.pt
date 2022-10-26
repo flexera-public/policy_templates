@@ -1,15 +1,16 @@
-name "Turbonomics Scale Virtual Volumes Recommendations AWS"
+name "Turbonomics Scale Virtual Machine Recommendations AWS"
 rs_pt_ver 20180301
 type "policy"
-short_description "POC turbonomics policy for scaling volumes [README](https://github.com/flexera-public/policy_templates/tree/master/cost/turbonomics/scale_virtual_volumes_recommendations) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+short_description "POC turbonomics policy for scaling virtual machines [README](https://github.com/flexera-public/policy_templates/tree/master/cost/turbonomics/scale_virtual_machines_recommendations) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 severity "low"
 category "Cost"
 default_frequency "daily"
 info(
   version: "0.1",
   provider: "AWS",
-  service: "Storage",
-  policy_set: "Scale Volumes",
+  source: "Turbonomics",
+  service: "Compute",
+  policy_set: "Scale VMs",
   recommendation_type: "Usage Reduction"
 )
 
@@ -17,11 +18,12 @@ info(
 # Parameters   #
 ##################
 
+## once functionality allows, this will contain "ALL", "AWS", "Azure Subscription", "GCP Project" and we will remove the policies from thier folders
 parameter "param_provider" do
   type "string"
   label "Recommendation Vendor"
   description "authorization cookie pulled from manual source. Allows \"\", GCP Project, AWS, or Azure Subscription as a value"
-  allowed_values "ALL", "AWS", "Azure Subscription", "GCP Project"
+  allowed_values "AWS"
 end
 
 parameter "param_auth_cookie" do
@@ -51,7 +53,7 @@ end
 # Pagination
 ###############################################################################
 
-pagination "turbonomics_volumes_pagination_header" do
+pagination "turbonomics_vm_pagination_header" do
   get_page_marker do
     header "x-next-cursor"
   end
@@ -72,49 +74,91 @@ datasource "ds_get_turbonomics_recommendations" do
   result do
     encoding "json"
     collect jmes_path(response, "[*]") do
-      field "vendorIDValues", jmes_path(col_item, "virtualDisks[0].businessAccount.vendorIds")
+      field "uuid", jmes_path(col_item, "uuid")
+      field "accountID", jmes_path(col_item, "target.aspects.cloudAspect.businessAccount.displayName")
+      field "accountName", jmes_path(col_item, "currentEntity.discoveredBy.displayName")
       field "resourceGroup", jmes_path(col_item, "target.aspects.cloudAspect.resourceGroup.displayName")
       field "resourceID", jmes_path(col_item, "target.vendorIds")
       field "resourceName", jmes_path(col_item, "target.displayName")
       field "region", jmes_path(col_item, "currentLocation.displayName")
-      field "currentResourceType", jmes_path(col_item, "currentEntity.displayName")
+      field "resourceType", jmes_path(col_item, "currentEntity.displayName")
       field "newResourceType", jmes_path(col_item, "newEntity.displayName")
       field "provider", jmes_path(col_item, "target.discoveredBy.type")
       field "details", jmes_path(col_item, "details")
       field "tags", jmes_path(col_item, "target.tags")
       field "createdTime", jmes_path(col_item, "createTime")
-      field "size", jmes_path(col_item, "virtualDisks[0].stats")
       field "savings", jmes_path(col_item, "stats[0].value")
       field "savingsCurrency", jmes_path(col_item, "stats[0].units")
     end
   end
 end
 
+##this will potentially be a lot of calls. how to make this more performant
+datasource "ds_get_action_details" do
+  request do
+    run_script $js_get_action_details, $param_auth_cookie, $ds_get_turbonomics_recommendations
+  end
+  result do
+    encoding "json"
+    field "uuids", response
+  end
+end
+
 datasource "ds_filtered_turbonomics_recommendations" do
-  run_script $js_filtered_turbonomics_recommendations, $ds_get_turbonomics_recommendations, $param_provider
+  run_script $js_filtered_turbonomics_recommendations, $ds_get_turbonomics_recommendations, $ds_get_action_details, $param_provider
 end
 
 ###############################################################################
 # Scripts
 ###############################################################################
 
-##script using a manually acquired turbonomic cookie and pulls hard coded scale volume data
+##script using a manually acquired turbonomic cookie and pulls hard coded scalable vm data
 script "js_get_turbonomics_recommendations", type: "javascript" do
   result "request"
   parameters "param_auth_cookie"
   code <<-EOS
   //replace cookie every day this is run
+  //up this limit value to 1000 etc when done with POC testing
     var request = {
       verb: "POST",
+      pagination: "turbonomics_vm_pagination_header",
       host: "sales1.demo.turbonomic.com",
-      pagination: "turbonomics_volumes_pagination_header",
-      path: "/api/v3/markets/Market/actions"
+      path: "/api/v3/markets/Market/actions",
       body_fields: {
         "actionStateList": ["READY", "ACCEPTED", "QUEUED", "IN_PROGRESS"],
         "actionTypeList":["SCALE"],
-        "relatedEntityTypes":["VirtualVolume"],
+        "relatedEntityTypes":["VirtualMachine"],
         "environmentType":"CLOUD",
-        "detailLevel":"EXECUTION"
+        "detailLevel":"EXECUTION",
+        "costType":"SAVING"
+      },
+      query_params: {
+        "limit": '100'
+      },
+      headers: {
+        "Content-Type": "application/json"
+        "Cookie": param_auth_cookie
+      }
+    }
+EOS
+end
+
+##
+script "js_get_action_details", type: "javascript" do
+  result "request"
+  parameters "param_auth_cookie", "ds_get_turbonomics_recommendations"
+  code <<-EOS
+  //replace cookie every day this is run
+    var uuids = []
+    _.each(ds_get_turbonomics_recommendations, function(instance){
+      uuids.push(instance.uuid)
+    })
+    var request = {
+      verb: "POST",
+      host: "sales1.demo.turbonomic.com",
+      path: "/api/v3/actions/details",
+      body_fields: {
+        "uuids": uuids,
       },
       query_params: {
         "limit": '100'
@@ -129,7 +173,7 @@ end
 
 script "js_filtered_turbonomics_recommendations", type: "javascript" do
   result "result"
-  parameters "ds_get_turbonomics_recommendations", "param_provider"
+  parameters "ds_get_turbonomics_recommendations", "ds_get_action_details", "param_provider"
   code <<-EOS
     instances = []
     monthlySavings = 0.0
@@ -150,50 +194,52 @@ script "js_filtered_turbonomics_recommendations", type: "javascript" do
     }
     return result+"."+values[1]
     }
-
-    _.each(ds_get_turbonomics_recommendations, function(volume){
-      if (volume.provider === param_provider || param_provider === "ALL") {
-        if (volume.savingsCurrency === undefined || volume.savingsCurrency === null) {
-          volume.savingsCurrency = "$"
+    Object.keys(ds_get_action_details.uuids).forEach(function(uuid, index) {
+      _.each(ds_get_turbonomics_recommendations, function(vm){
+        if (vm.uuid === uuid) {
+          ds_get_turbonomics_recommendations[index].uptime = ds_get_action_details.uuids[uuid].entityUptime.uptimePercentage
+        }
+      })
+    })
+    _.each(ds_get_turbonomics_recommendations, function(vm){
+      if (vm.provider === param_provider || param_provider === "ALL") {
+        if (vm.savingsCurrency === undefined || vm.savingsCurrency === null) {
+          vm.savingsCurrency = "$"
         } else {
-          if (volume.savingsCurrency.indexOf("$") != -1) {
-            volume.savingsCurrency = "$"
+          if (vm.savingsCurrency.indexOf("$") != -1) {
+            vm.savingsCurrency = "$"
           }
         }
 
-        _.each(volume.size, function(stat){
-          if (stat.name === "StorageAmount") {
-            volume.size = stat.capacity.total + " " + stat.units
-            return
-          }
-        })
         tags = []
-        if (typeof volume.tags === "undefined" || volume.tags === null){
-          volume.tags = tags
+        if (typeof vm.tags === "undefined" || vm.tags === null){
+          vm.tags = tags
         }else{
-          Object.keys(volume['tags']).forEach(function(key) {
-            tags.push(key+'='+volume['tags'][key][0])
+          Object.keys(vm['tags']).forEach(function(key) {
+            tags.push(key+'='+vm['tags'][key][0])
           });
         }
-        volume.tags = tags
-        Object.keys(volume.resourceID).forEach(function(key) {
-            volume.resourceID = volume.resourceID[key]
+        vm.tags = tags
+        if (vm.provider === "Azure Subscription") {
+          Object.keys(vm.resourceID).forEach(function(key) {
+            vm.resourceID = "/subscriptions/" + vm.resourceID[key] + "/resourceGroups/" + vm.resourceGroup + "/providers/Microsoft.Compute/virtualMachines/" + vm.resourceName
             return
-        });
-        Object.keys(volume.vendorIDValues).forEach(function(key) {
-            volume.accountID = volume.vendorIDValues[key]
-            volume.accountName = key
+          });
+        } else {
+          Object.keys(vm.resourceID).forEach(function(key) {
+            vm.resourceID = vm.resourceID[key]
             return
-        });
-        volume.service = "Storage"
+          });
+        }
+        vm.service = "Compute"
         savingsString = ""
-        if (typeof volume.savings === "undefined" || volume.savings === null || volume.savings === "" || isNaN(volume.savings)) {
-          volume.savings = 0.0
+        if (typeof vm.savings === "undefined" || vm.savings === null || vm.savings === "" || isNaN(vm.savings)) {
+          vm.savings = 0.0
         }
 
-        volume.savings = (Math.round(volume.savings * 730 * 1000) / 1000)
-        monthlySavings = monthlySavings + volume.savings
-        instances.push(volume)
+        vm.savings = (Math.round(vm.savings * 730 * 1000 * (vm.uptime/100)) / 1000)
+        monthlySavings = monthlySavings + vm.savings
+        instances.push(vm)
       }
     })
     pretty_savings = instances[0].savingsCurrency + ' ' + formatNumber(monthlySavings.toFixed(2), ",")
@@ -209,11 +255,11 @@ end
 # Policy
 ###############################################################################
 
-policy "pol_turbonomics_unused_volumes" do
+policy "pol_turbonomics_unused_vms" do
   validate $ds_filtered_turbonomics_recommendations do
-    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data.instances }} Turbonomic Scalable Virtual Volumes found"
+    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data.instances }} Turbonomic Scalable Virtual Machines found"
     detail_template <<-EOS
-## Turbonomics Scale Virtual Volumes POC
+## Turbonomics Scale Virtual Machines POC
 {{data.message}}
 EOS
     check eq(size(val(data, "instances")), 0)
@@ -239,18 +285,15 @@ EOS
       field "details" do
         label "Recommendation Details"
       end
-      field "resourceType" do
-        label "Current Storage Tier"
-        path "currentResourceType"
+      field "uptime" do
+        label "Virtual Machine Uptime Percentage"
+      end
+      field "currentResourceType" do
+        label "Current Compute Tier"
+        path "resourceType"
       end
       field "newResourceType" do
-        label "New Storage Tier"
-      end
-      field "provider" do
-        label "Cloud Provider"
-      end
-      field "size" do
-        label "Size"
+        label "New Compute Tier"
       end
       field "region" do
         label "Region"
@@ -263,6 +306,9 @@ EOS
       end
       field "tags" do
         label "Tags"
+      end
+      field "provider" do
+        label "Cloud Provider"
       end
       field "createdTime" do
         label "Created Time"
