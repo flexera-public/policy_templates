@@ -1,16 +1,16 @@
-name "Turbonomics Scale Virtual Volumes Recommendations AWS"
+name "Turbonomics Scale Database Servers Recommendations GCP"
 rs_pt_ver 20180301
 type "policy"
-short_description "POC turbonomics policy for scaling volumes [README](https://github.com/flexera-public/policy_templates/tree/master/cost/turbonomics/scale_virtual_volumes_recommendations) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+short_description "POC turbonomics policy for scaling database servers [README](https://github.com/flexera-public/policy_templates/tree/master/cost/turbonomics/scale_database_server_recommendations) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 severity "low"
 category "Cost"
 default_frequency "daily"
 info(
   version: "0.1",
-  provider: "AWS",
+  provider: "GCE",
   source: "Turbonomics",
-  service: "Storage",
-  policy_set: "Scale Volumes",
+  service: "SQL",
+  policy_set: "Scale Database Servers",
   recommendation_type: "Usage Reduction"
 )
 
@@ -23,7 +23,7 @@ parameter "param_provider" do
   type "string"
   label "Recommendation Vendor"
   description "authorization cookie pulled from manual source. Allows \"\", GCP Project, AWS, or Azure Subscription as a value"
-  allowed_values "AWS"
+  allowed_values "GCP Project"
 end
 
 parameter "param_auth_cookie" do
@@ -53,7 +53,7 @@ end
 # Pagination
 ###############################################################################
 
-pagination "turbonomics_volumes_pagination_header" do
+pagination "turbonomics_databases_pagination_header" do
   get_page_marker do
     header "x-next-cursor"
   end
@@ -74,7 +74,8 @@ datasource "ds_get_turbonomics_recommendations" do
   result do
     encoding "json"
     collect jmes_path(response, "[*]") do
-      field "vendorIDValues", jmes_path(col_item, "virtualDisks[0].businessAccount.vendorIds")
+      field "accountID", jmes_path(col_item, "target.aspects.cloudAspect.businessAccount.displayName")
+      field "accountName", jmes_path(col_item, "target.discoveredBy.displayName")
       field "resourceGroup", jmes_path(col_item, "target.aspects.cloudAspect.resourceGroup.displayName")
       field "resourceID", jmes_path(col_item, "target.vendorIds")
       field "resourceName", jmes_path(col_item, "target.displayName")
@@ -85,7 +86,6 @@ datasource "ds_get_turbonomics_recommendations" do
       field "details", jmes_path(col_item, "details")
       field "tags", jmes_path(col_item, "target.tags")
       field "createdTime", jmes_path(col_item, "createTime")
-      field "size", jmes_path(col_item, "virtualDisks[0].stats")
       field "savings", jmes_path(col_item, "stats[0].value")
       field "savingsCurrency", jmes_path(col_item, "stats[0].units")
     end
@@ -100,7 +100,7 @@ end
 # Scripts
 ###############################################################################
 
-##script using a manually acquired turbonomic cookie and pulls hard coded scale volume data
+##script using a manually acquired turbonomic cookie and pulls hard coded scale database data
 script "js_get_turbonomics_recommendations", type: "javascript" do
   result "request"
   parameters "param_auth_cookie"
@@ -109,12 +109,12 @@ script "js_get_turbonomics_recommendations", type: "javascript" do
     var request = {
       verb: "POST",
       host: "sales1.demo.turbonomic.com",
-      pagination: "turbonomics_volumes_pagination_header",
+      pagination: "turbonomics_databases_pagination_header",
       path: "/api/v3/markets/Market/actions"
       body_fields: {
         "actionStateList": ["READY", "ACCEPTED", "QUEUED", "IN_PROGRESS"],
         "actionTypeList":["SCALE"],
-        "relatedEntityTypes":["VirtualVolume"],
+        "relatedEntityTypes":["DatabaseServer"],
         "environmentType":"CLOUD",
         "detailLevel":"EXECUTION",
         "costType":"SAVING"
@@ -154,49 +154,38 @@ script "js_filtered_turbonomics_recommendations", type: "javascript" do
     return result+"."+values[1]
     }
 
-    _.each(ds_get_turbonomics_recommendations, function(volume){
-      if (volume.provider === param_provider || param_provider === "ALL") {
-        if (volume.savingsCurrency === undefined || volume.savingsCurrency === null) {
-          volume.savingsCurrency = "$"
+    _.each(ds_get_turbonomics_recommendations, function(db){
+      if (db.provider === param_provider || param_provider === "ALL") {
+        if (db.savingsCurrency === undefined || db.savingsCurrency === null) {
+          db.savingsCurrency = "$"
         } else {
-          if (volume.savingsCurrency.indexOf("$") != -1) {
-            volume.savingsCurrency = "$"
+          if (db.savingsCurrency.indexOf("$") != -1) {
+            db.savingsCurrency = "$"
           }
         }
 
-        _.each(volume.size, function(stat){
-          if (stat.name === "StorageAmount") {
-            volume.size = stat.capacity.total + " " + stat.units
-            return
-          }
-        })
         tags = []
-        if (typeof volume.tags === "undefined" || volume.tags === null){
-          volume.tags = tags
+        if (typeof db.tags === "undefined" || db.tags === null){
+          db.tags = tags
         }else{
-          Object.keys(volume['tags']).forEach(function(key) {
-            tags.push(key+'='+volume['tags'][key][0])
+          Object.keys(db['tags']).forEach(function(key) {
+            tags.push(key+'='+db['tags'][key][0])
           });
         }
-        volume.tags = tags
-        Object.keys(volume.resourceID).forEach(function(key) {
-            volume.resourceID = volume.resourceID[key]
+        db.tags = tags
+        Object.keys(db.resourceID).forEach(function(key) {
+            db.resourceID = db.resourceID[key]
             return
         });
-        Object.keys(volume.vendorIDValues).forEach(function(key) {
-            volume.accountID = volume.vendorIDValues[key]
-            volume.accountName = key
-            return
-        });
-        volume.service = "Storage"
+        db.service = "SQL"
         savingsString = ""
-        if (typeof volume.savings === "undefined" || volume.savings === null || volume.savings === "" || isNaN(volume.savings)) {
-          volume.savings = 0.0
+        if (typeof db.savings === "undefined" || db.savings === null || db.savings === "" || isNaN(db.savings)) {
+          db.savings = 0.0
         }
 
-        volume.savings = (Math.round(volume.savings * 730 * 1000) / 1000)
-        monthlySavings = monthlySavings + volume.savings
-        instances.push(volume)
+        db.savings = (Math.round(db.savings * 730 * 1000) / 1000)
+        monthlySavings = monthlySavings + db.savings
+        instances.push(db)
       }
     })
     pretty_savings = instances[0].savingsCurrency + ' ' + formatNumber(monthlySavings.toFixed(2), ",")
@@ -212,11 +201,11 @@ end
 # Policy
 ###############################################################################
 
-policy "pol_turbonomics_scale_volumes" do
+policy "pol_turbonomics_scale_databases" do
   validate $ds_filtered_turbonomics_recommendations do
-    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data.instances }} Turbonomic Scalable Virtual Volumes found"
+    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data.instances }} Turbonomic Scalable Database Servers found"
     detail_template <<-EOS
-## Turbonomics Scale Virtual Volumes POC
+## Turbonomics Scale Database Servers POC
 {{data.message}}
 EOS
     check eq(size(val(data, "instances")), 0)
@@ -251,9 +240,6 @@ EOS
       end
       field "provider" do
         label "Cloud Provider"
-      end
-      field "size" do
-        label "Size"
       end
       field "region" do
         label "Region"
