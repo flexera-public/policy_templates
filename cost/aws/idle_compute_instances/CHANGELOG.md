@@ -1,5 +1,9 @@
 # Changelog
 
+## v4.3
+
+- Added logic required for "Meta Policy" use-cases
+
 ## v4.2
 
 - Added the following options to `param_threshold_statistic`: `p95` `p90`
