@@ -1,5 +1,9 @@
 # Changelog
 
+## v4.1
+
+- Added logic required for "Meta Policy" use-cases
+
 ## v4.0
 
 - Deprecated `auth_rs` authentication (type: `rightscale`) and replaced with `auth_flexera` (type: `oauth2`).  This is a breaking change which requires a Credential for `auth_flexera` [`provider=flexera`] before the policy can be applied.  Please see docs for setting up [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm)
@@ -17,7 +21,7 @@
 
 ## v3.4
 
-- updated savings_currency to savingsCurrency
+- Updated savings_currency to savingsCurrency
 
 ## v3.3
 
