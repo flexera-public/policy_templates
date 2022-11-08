@@ -75,10 +75,9 @@ datasource "ds_get_turbonomics_recommendations" do
     encoding "json"
     collect jmes_path(response, "[*]") do
       field "uuid", jmes_path(col_item, "uuid")
-      field "accountID", jmes_path(col_item, "target.aspects.cloudAspect.businessAccount.displayName")
-      field "accountName", jmes_path(col_item, "currentEntity.discoveredBy.displayName")
+      field "vendorIDValues", jmes_path(col_item, "target.vendorIds")
+      field "businessUUID", jmes_path(col_item, "target.aspects.cloudAspect.businessAccount.uuid")
       field "resourceGroup", jmes_path(col_item, "target.aspects.cloudAspect.resourceGroup.displayName")
-      field "resourceID", jmes_path(col_item, "target.vendorIds")
       field "resourceName", jmes_path(col_item, "target.displayName")
       field "region", jmes_path(col_item, "currentLocation.displayName")
       field "resourceType", jmes_path(col_item, "currentEntity.displayName")
@@ -104,8 +103,23 @@ datasource "ds_get_action_details" do
   end
 end
 
+##this will potentially be a lot of calls. how to make this more performant
+datasource "ds_get_business_units" do
+  request do
+    run_script $js_get_business_units, $param_auth_cookie, $param_provider
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "[*]") do
+      field "uuid", jmes_path(col_item, "uuid")
+      field "accountID", jmes_path(col_item, "accountId")
+      field "displayName", jmes_path(col_item, "displayName")
+    end
+  end
+end
+
 datasource "ds_filtered_turbonomics_recommendations" do
-  run_script $js_filtered_turbonomics_recommendations, $ds_get_turbonomics_recommendations, $ds_get_action_details, $param_provider
+  run_script $js_filtered_turbonomics_recommendations, $ds_get_turbonomics_recommendations, $ds_get_action_details, $ds_get_business_units, $param_provider
 end
 
 ###############################################################################
@@ -143,6 +157,33 @@ script "js_get_turbonomics_recommendations", type: "javascript" do
 EOS
 end
 
+## verified that discovered is the only one we need
+script "js_get_business_units", type: "javascript" do
+  result "request"
+  parameters "param_auth_cookie", "param_provider"
+  code <<-EOS
+  //replace cookie every day this is run
+    var providers = {
+      "AWS":"AWS",
+      "Azure Subscription":"AZURE",
+      "GCP Project": "GCP",
+    }
+    var request = {
+      verb: "GET",
+      host: "sales1.demo.turbonomic.com",
+      path: "/api/v3/businessunits",
+      query_params: {
+        "cloud_type": providers[param_provider],
+        "type":"DISCOVERED"
+      },
+      headers: {
+        "Content-Type": "application/json"
+        "Cookie": param_auth_cookie
+      }
+    }
+EOS
+end
+
 ##
 script "js_get_action_details", type: "javascript" do
   result "request"
@@ -160,9 +201,6 @@ script "js_get_action_details", type: "javascript" do
       body_fields: {
         "uuids": uuids,
       },
-      query_params: {
-        "limit": '100'
-      },
       headers: {
         "Content-Type": "application/json"
         "Cookie": param_auth_cookie
@@ -173,7 +211,7 @@ end
 
 script "js_filtered_turbonomics_recommendations", type: "javascript" do
   result "result"
-  parameters "ds_get_turbonomics_recommendations", "ds_get_action_details", "param_provider"
+  parameters "ds_get_turbonomics_recommendations", "ds_get_action_details", "ds_get_business_units", "param_provider"
   code <<-EOS
     instances = []
     monthlySavings = 0.0
@@ -201,20 +239,31 @@ script "js_filtered_turbonomics_recommendations", type: "javascript" do
         }
       })
     })
+    _.each(ds_get_business_units, function(businessUnit) {
+      _.each(ds_get_turbonomics_recommendations, function(vm, index){
+        if (vm.businessUUID === businessUnit.uuid) {
+          ds_get_turbonomics_recommendations[index].accountID = businessUnit.accountID
+          ds_get_turbonomics_recommendations[index].accountName = businessUnit.displayName
+        }
+      })
+    })
+
+    var provider_service = {
+      "AWS":"EC2",
+      "Azure Subscription":"Microsoft.Compute",
+      "GCP Project": "Compute"
+    }
     _.each(ds_get_turbonomics_recommendations, function(vm){
       if (vm.provider === param_provider || param_provider === "ALL") {
-        var provider_service = {
-          "AWS":"EC2",
-          "Azure Subscription":"Microsoft.Compute",
-          "GCP Project": "Compute"
-        }
-        if (typeof vm.savingsCurrency === undefined || vm.savingsCurrency === null) {
-          vm.savingsCurrency = "$"
-        } else {
+
+        if (typeof vm.savingsCurrency != "undefined" && vm.savingsCurrency != null) {
           if (vm.savingsCurrency.indexOf("$") != -1) {
             vm.savingsCurrency = "$"
           }
+        } else {
+          vm.savingsCurrency = "$"
         }
+
 
         tags = []
         if (typeof vm.tags === "undefined" || vm.tags === null){
@@ -226,13 +275,18 @@ script "js_filtered_turbonomics_recommendations", type: "javascript" do
         }
         vm.tags = tags
         if (vm.provider === "Azure Subscription") {
-          Object.keys(vm.resourceID).forEach(function(key) {
-            vm.resourceID = "/subscriptions/" + vm.resourceID[key] + "/resourceGroups/" + vm.resourceGroup + "/providers/Microsoft.Compute/virtualMachines/" + vm.resourceName
+          Object.keys(vm.vendorIDValues).forEach(function(key) {
+            vm.resourceID = "/subscriptions/" + vm.vendorIDValues[key] + "/resourceGroups/" + vm.resourceGroup + "/providers/Microsoft.Compute/virtualMachines/" + vm.resourceName
+            return
+          });
+        } else if (vm.provider === "GCP Project") {
+          Object.keys(vm.vendorIDValues).forEach(function(key) {
+            vm.resourceID = vm.vendorIDValues[key]
             return
           });
         } else {
-          Object.keys(vm.resourceID).forEach(function(key) {
-            vm.resourceID = vm.resourceID[key]
+          Object.keys(vm.vendorIDValues).forEach(function(key) {
+            vm.resourceID = vm.vendorIDValues[key]
             return
           });
         }
