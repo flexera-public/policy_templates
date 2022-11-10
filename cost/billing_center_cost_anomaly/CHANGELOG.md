@@ -2,7 +2,7 @@
 
 ## v2.1
 
-- Deprecating this policy as it's replaced by [the new version](../cloud_cost_anomalies)
+- Deprecated: This policy is no longer being updated.
 
 ## v2.0
 
