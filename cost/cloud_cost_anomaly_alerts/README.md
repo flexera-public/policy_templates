@@ -1,4 +1,4 @@
-# Cloud Cost Anomaly Alerts Policy
+# Cloud Cost Anomaly Alerts
 
 ## What it does
 
