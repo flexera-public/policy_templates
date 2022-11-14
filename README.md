@@ -120,6 +120,10 @@ Reference
 - [Azure Unused Volumes](./cost/azure/unattached_volumes)
 - [Azure Storage Accounts without Lifecycle Management Policies](./cost/azure/storage_account_lifecycle_management/)
 
+##### Common Bill Ingestion
+
+- [Azure China Common Bill Ingestion](./cost/azure/azure_china_cbi)
+
 #### Google
 
 ##### Compute
