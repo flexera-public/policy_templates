@@ -1,7 +1,7 @@
 name "Turbonomics Buy Reserved Instances AWS"
 rs_pt_ver 20180301
 type "policy"
-short_description "POC turbonomics policy for deleting unattached volumes [README](https://github.com/flexera-public/policy_templates/tree/master/cost/turbonomics/buy_reserved_instances_recommendations) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+short_description "POC turbonomics policy for recommending purchaseable reserved instances [README](https://github.com/flexera-public/policy_templates/tree/master/cost/turbonomics/buy_reserved_instances_recommendations) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 severity "low"
 category "Cost"
 default_frequency "daily"
@@ -9,8 +9,8 @@ info(
   version: "0.1",
   provider: "AWS",
   source: "Turbonomics",
-  service: "Storage",
-  policy_set: "Unused Volumes",
+  service: "RIs",
+  policy_set: "Buy RIs",
   recommendation_type: "Rate Reduction"
 )
 
@@ -53,7 +53,7 @@ end
 # Pagination
 ###############################################################################
 
-pagination "turbonomics_volumes_pagination_header" do
+pagination "turbonomics_buy_ris_pagination_header" do
   get_page_marker do
     header "x-next-cursor"
   end
@@ -74,19 +74,21 @@ datasource "ds_get_turbonomics_recommendations" do
   result do
     encoding "json"
     collect jmes_path(response, "[*]") do
-      field "vendorIDValues", jmes_path(col_item, "target.aspects.virtualDisksAspect.virtualDisks[0].businessAccount.vendorIds")
-      field "resourceGroup", jmes_path(col_item, "target.aspects.cloudAspect.resourceGroup.displayName")
-      field "resourceID", jmes_path(col_item, "target.vendorIds")
-      field "resourceName", jmes_path(col_item, "target.displayName")
-      field "region", jmes_path(col_item, "target.aspects.virtualDisksAspect.virtualDisks[0].dataCenter.displayName")
-      field "resourceType", jmes_path(col_item, "target.aspects.virtualDisksAspect.virtualDisks[0].tier")
-      field "provider", jmes_path(col_item, "target.aspects.virtualDisksAspect.virtualDisks[0].businessAccount.discoveredBy.type")
+      field "businessUUID", jmes_path(col_item, "reservedInstance.accountId")
+      field "termValue", jmes_path(col_item, "reservedInstance.term.value")
+      field "termUnits", jmes_path(col_item, "reservedInstance.term.units")
+      field "paymentOptions", jmes_path(col_item, "reservedInstance.payment")
+      field "tenancy", jmes_path(col_item, "reservedInstance.tenancy")
+      field "region", jmes_path(col_item, "currentLocation.displayName")
+      field "resourceType", jmes_path(col_item, "newEntity.displayName")
+      field "provider", jmes_path(col_item, "target.discoveredBy.type")
+      field "numberOfInstances", jmes_path(col_item, "reservedInstance.instanceCount")
       field "details", jmes_path(col_item, "details")
-      field "tags", jmes_path(col_item, "target.tags")
-      field "createdTime", jmes_path(col_item, "createTime")
-      field "attachmentState", jmes_path(col_item, "target.aspects.virtualDisksAspect.virtualDisks[0].attachmentState")
-      field "daysUnattached", jmes_path(col_item, "target.aspects.virtualDisksAspect.virtualDisks[0].numDaysUnattached")
-      field "size", jmes_path(col_item, "target.aspects.virtualDisksAspect.virtualDisks[0].stats")
+      field "platform", jmes_path(col_item, "reservedInstance.platform")
+      field "upfrontCost", jmes_path(col_item, "reservedInstance.upFrontCost")
+      field "recurringCost", jmes_path(col_item, "reservedInstance.actualHourlyCost")
+      field "effectiveCost", jmes_path(col_item, "reservedInstance.effectiveHourlyCost")
+      field "sizeFlexible", jmes_path(col_item, "reservedInstance.sizeFlexible")
       field "savings", jmes_path(col_item, "stats[0].value")
       field "savingsCurrency", jmes_path(col_item, "stats[0].units")
     end
@@ -109,14 +111,14 @@ datasource "ds_get_business_units" do
 end
 
 datasource "ds_filtered_turbonomics_recommendations" do
-  run_script $js_filtered_turbonomics_recommendations, $ds_get_turbonomics_recommendations, $param_provider
+  run_script $js_filtered_turbonomics_recommendations, $ds_get_turbonomics_recommendations, $ds_get_business_units, $param_provider
 end
 
 ###############################################################################
 # Scripts
 ###############################################################################
 
-##script using a manually acquired turbonomic cookie and pulls hard coded unused volume data
+##script using a manually acquired turbonomic cookie and pulls hard coded purchasable ri data
 script "js_get_turbonomics_recommendations", type: "javascript" do
   result "request"
   parameters "param_auth_cookie"
@@ -124,13 +126,13 @@ script "js_get_turbonomics_recommendations", type: "javascript" do
   //replace cookie every day this is run
     var request = {
       verb: "POST",
-      pagination: "turbonomics_volumes_pagination_header",
+      pagination: "turbonomics_buy_ris_pagination_header",
       host: "sales1.demo.turbonomic.com",
       path: "/api/v3/markets/Market/actions",
       body_fields: {
         "actionStateList": ["READY", "ACCEPTED", "QUEUED", "IN_PROGRESS"],
-        "actionTypeList":["DELETE"],
-        "relatedEntityTypes":["VirtualVolume"],
+        "relatedEntityTypes":["Region"],
+        "actionTypeList":["BUY_RI"],
         "environmentType":"CLOUD",
         "detailLevel":"EXECUTION",
         "costType":"SAVING"
@@ -175,7 +177,7 @@ end
 
 script "js_filtered_turbonomics_recommendations", type: "javascript" do
   result "result"
-  parameters "ds_get_turbonomics_recommendations", "param_days_unattached", "ds_get_business_units", "param_provider"
+  parameters "ds_get_turbonomics_recommendations", "ds_get_business_units", "param_provider"
   code <<-EOS
     instances = []
     monthlySavings = 0.0
@@ -198,62 +200,44 @@ script "js_filtered_turbonomics_recommendations", type: "javascript" do
     }
 
     _.each(ds_get_business_units, function(businessUnit) {
-      _.each(ds_get_turbonomics_recommendations, function(vm, index){
-        if (vm.businessUUID === businessUnit.uuid) {
+      _.each(ds_get_turbonomics_recommendations, function(ri, index){
+        if (ri.businessUUID === businessUnit.uuid) {
+          console.log(businessUnit)
           ds_get_turbonomics_recommendations[index].accountID = businessUnit.accountID
           ds_get_turbonomics_recommendations[index].accountName = businessUnit.displayName
         }
       })
     })
-
+    console.log(ds_get_turbonomics_recommendations)
     var provider_service = {
       "AWS":"EC2",
       "Azure Subscription":"Microsoft.Compute",
       "GCP Project": "Compute"
     }
-    _.each(ds_get_turbonomics_recommendations, function(volume){
-      if (volume.attachmentState == "UNATTACHED" && volume.daysUnattached > param_days_unattached && (volume.provider === param_provider || param_provider === "ALL")) {
-        if (typeof vm.savingsCurrency != "undefined" && vm.savingsCurrency != null) {
-          if (vm.savingsCurrency.indexOf("$") != -1) {
-            vm.savingsCurrency = "$"
+    _.each(ds_get_turbonomics_recommendations, function(ri){
+      if (ri.provider === param_provider || param_provider === "ALL") {
+        if (typeof ri.savingsCurrency != "undefined" && ri.savingsCurrency != null) {
+          if (ri.savingsCurrency.indexOf("$") != -1) {
+            ri.savingsCurrency = "$"
           }
         } else {
-          vm.savingsCurrency = "$"
+          ri.savingsCurrency = "$"
         }
 
-        _.each(volume.size, function(stat){
-          if (stat.name === "StorageAmount") {
-            volume.size = stat.capacity.total + " " + stat.units
-            return
-          }
-        })
-        tags = []
-        if (typeof volume.tags === "undefined" || volume.tags === null){
-          volume.tags = tags
-        }else{
-          Object.keys(volume['tags']).forEach(function(key) {
-            tags.push(key+'='+volume['tags'][key][0])
-          });
-        }
-        volume.tags = tags
-        Object.keys(volume.resourceID).forEach(function(key) {
-          volume.resourceID = volume.resourceID[key]
-          return
-        });
-        Object.keys(volume.vendorIDValues).forEach(function(key) {
-          volume.accountID = volume.vendorIDValues[key]
-          volume.accountName = key
-          return
-        });
-        volume.service = provider_service[volume.provider]
+        ri.term = ri.termValue + " " + ri.termUnits
+
+        ri.service = provider_service[ri.provider]
         savingsString = ""
-        if (typeof volume.savings === "undefined" || volume.savings === null || volume.savings === "" || isNaN(volume.savings)) {
-          volume.savings = 0.0
+        if (typeof ri.savings === "undefined" || ri.savings === null || ri.savings === "" || isNaN(ri.savings)) {
+          ri.savings = 0.0
         }
-
-        volume.savings = (Math.round(volume.savings * 730 * 1000) / 1000)
-        monthlySavings = monthlySavings + volume.savings
-        instances.push(volume)
+        if (typeof ri.effectiveCost === "undefined" || ri.effectiveCost === null || ri.effectiveCost === "" || isNaN(ri.effectiveCost)) {
+          ri.effectiveCost = 0.0
+        }
+        ri.savings = (Math.round(ri.savings * 730 * 1000) / 1000)
+        ri.effectiveCost = (Math.round(ri.effectiveCost * 730 * 1000) / 1000)
+        monthlySavings = monthlySavings + ri.savings
+        instances.push(ri)
       }
     })
     message = ""
@@ -261,6 +245,7 @@ script "js_filtered_turbonomics_recommendations", type: "javascript" do
       pretty_savings = instances[0].savingsCurrency + ' ' + formatNumber(monthlySavings.toFixed(2), ",")
       message = "The total estimated monthly savings are " + pretty_savings + '.'
     }
+
     result = {
       'instances': instances,
       'message': message
@@ -272,11 +257,11 @@ end
 # Policy
 ###############################################################################
 
-policy "pol_turbonomics_unused_volumes" do
+policy "pol_turbonomics_buy_ri" do
   validate $ds_filtered_turbonomics_recommendations do
-    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data.instances }} Turbonomic Unattached Volumes found"
+    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data.instances }} Turbonomic Purchase Reserved Instance Recommendations found"
     detail_template <<-EOS
-## Turbonomics Unattached Volumes POC
+## Turbonomics Buy RI POC
 {{data.message}}
 EOS
     check eq(size(val(data, "instances")), 0)
@@ -287,12 +272,6 @@ EOS
       field "accountName" do
         label "Account Name"
       end
-      field "resourceID" do
-        label "Resource ID"
-      end
-      field "resourceName" do
-        label "Resource Name"
-      end
       field "savingsCurrency" do
         label "Savings Currency"
       end
@@ -302,8 +281,14 @@ EOS
       field "details" do
         label "Recommendation Details"
       end
+      field "numberOfInstances" do
+        label "Number of Reserved Instances"
+      end
       field "resourceType" do
         label "Resource Type"
+      end
+      field "term" do
+        label "Term"
       end
       field "provider" do
         label "Cloud Provider"
@@ -314,34 +299,28 @@ EOS
       field "service" do
         label "Service"
       end
-      field "resourceGroup" do
-        label "Resource Group"
+      field "platform" do
+        label "Platform"
       end
-      field "tags" do
-        label "Tags"
+      field "tenancy" do
+        label "Tenancy"
       end
-      field "createdTime" do
-        label "Created Time"
+      field "upfrontCost" do
+        label "Up Front Cost"
       end
-      field "attachmentState" do
-        label "Attachment State"
+      field "recurringCost" do
+        label "Recurring Cost"
       end
-      field "daysUnattached" do
-        label "Days Unattached"
+      field "effectiveCost" do
+        label "Effective Cost"
       end
-      field "size" do
-        label "Size"
-      end
-      field "id" do
-        label "Resource ID"
-        path "resourceID"
+      field "sizeFlexible" do
+        label "Size Flexible"
       end
     end
     escalate $esc_email
   end
 end
-
-
 
 ###############################################################################
 # Escalations
