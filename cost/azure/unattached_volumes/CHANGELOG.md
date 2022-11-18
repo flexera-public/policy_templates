@@ -1,5 +1,12 @@
 # Changelog
 
+## v4.1
+
+- bugfix for logic reguarding activity log and what constitutes as unattached/unused. Changed logic to verify that activiies lenght is 0 rather than using "toBeDetached" keyword
+- updated max limit on activity log call to 89 days to avoid api day limit
+- updated response to contain usable information of resourceID and operation name
+- changed ds field responseBody to resourceID
+
 ## v4.0
 
 - Deprecated `auth_rs` authentication (type: `rightscale`) and replaced with `auth_flexera` (type: `oauth2`).  This is a breaking change which requires a Credential for `auth_flexera` [`provider=flexera`] before the policy can be applied.  Please see docs for setting up [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm)
