@@ -4,9 +4,9 @@ type "policy"
 short_description "Checks for unused IP addresses in the given account and, optionally deletes them. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/unused_ip_addresses) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more"
 severity "low"
 category "Cost"
-default_frequency "monthly"
+default_frequency "weekly"
 info(
-  version: "4.0",
+  version: "4.1",
   provider: "Azure",
   service: "Compute",
   policy_set: "Unused IP Addresses"
@@ -137,6 +137,7 @@ datasource "ds_public_ip_addresses" do
     host $param_azure_endpoint
     path join(["/subscriptions/", val(iter_item,"subscriptionId"), "/providers/Microsoft.Network/publicIPAddresses"])
     query "api-version", "2021-08-01"
+    ignore_status [400, 404]
   end
   result do
     encoding "json"
@@ -283,7 +284,7 @@ script "js_get_costs", type:"javascript" do
         "User-Agent": "RS Policies",
         "Api-Version": "1.0"
       },
-      ignore_status: [400]
+      ignore_status: [400, 404]
     }
   EOS
 end
@@ -317,9 +318,12 @@ script "js_exclude_tags", type: "javascript" do
           tags.push(key+'='+ipAddress.tags[key])
         });
 
-        resourceTypeSplit = ipAddress.resourceType.split("/")
-        service = resourceTypeSplit[0]
-
+        var service = ""
+        if (ipAddress.resourceType != null){
+          resourceTypeSplit = ipAddress.resourceType.split("/")
+          service = resourceTypeSplit[0]
+        }
+        
         if( properties.ipConfiguration == null && properties.natGateway == null ){
           results.push({
             "subscriptionId": ipAddress["subscriptionId"],
