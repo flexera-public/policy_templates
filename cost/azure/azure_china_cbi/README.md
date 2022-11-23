@@ -2,12 +2,12 @@
 
 ## What it does
 
-This Policy Template is used to automatically take billing data for Azure China and send them to Flexera CBI so that Azure China costs are visible in Flexera One.
+This Policy Template is used to automatically take billing data for Azure China and send the data to Flexera CBI so that Azure China costs are visible in Flexera One.
 
 ## Functional Details
 
 - The policy uses the Azure China Usage Report API to retrieve Azure China billing data for the current month for the provided Enrollment ID.
-- The policy then sends this data, unmodified, into the Flexera Common Bill Ingestion endpoint so that they can be ingested and then visible on the platform.
+- The policy then sends this data, unmodified, into the Flexera Common Bill Ingestion endpoint so that the data can be ingested and then become visible on the Flexera One platform.
 - The policy requires a valid Azure China EA API key credential in Flexera One
 
 ## Input Parameters
@@ -30,7 +30,7 @@ Provider tag value to match this policy: `azure_ea_china`
 
 Required permissions from the provider:
 
-This policy will require you to generate or retrive your Enterprise Agreement API Key with Admin permissions.
+This policy will require you to generate or retrieve your Enterprise Agreement API Key with Admin permissions.
 
 Your API Key can be retrieved from the 'Usage + charges' blade under 'Billing' in your Azure Portal.
 ![image](https://user-images.githubusercontent.com/92175447/203563225-e816dd01-de3c-4f2e-ac46-65d284ec9a3e.png)
