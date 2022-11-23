@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.2
+
+- changed cost metric map key from api call value to more readable value
+
 ## v2.1
 
 - changed parameter value for dimensions from "Cloud Vendor Account Name" to "Cloud Vendor Account"
