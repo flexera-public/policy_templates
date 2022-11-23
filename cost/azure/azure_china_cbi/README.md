@@ -30,6 +30,11 @@ Provider tag value to match this policy: `azure_ea_china`
 
 Required permissions from the provider:
 
+This policy will require you to generate or retrive your Enterprise Agreement API Key with Admin permissions.
+
+Your API Key can be retrieved from the 'Usage + Charges' blade under 'Billing' in your Azure Portal.
+![image](https://user-images.githubusercontent.com/92175447/203563225-e816dd01-de3c-4f2e-ac46-65d284ec9a3e.png)
+
 ## Supported Clouds
 
 - Azure China
