@@ -39,31 +39,19 @@ For example if a user selects the "Terminate Instances" action while applying th
 
 This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for authenticating to datasources -- in order to apply this policy you must have a Credential registered in the system that is compatible with this policy. If there are no Credentials listed when you apply the policy, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy. The information below should be consulted when creating the credential(s).
 
-- [**Azure Resource Manager Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_109256743_1124668) (*provider=azure_rm*) which has the following permissions:
-  - `Microsoft.Compute/virtualMachines/read`
-  - `Microsoft.Compute/virtualMachines/write`
-
-- [**Flexera Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) (*provider=flexera*) which has the following roles:
-  - `billing_center_viewer`
-
-The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) page in the docs has detailed instructions for setting up Credentials for the most common providers.
-
 ### Credential configuration
 
 For administrators [creating and managing credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) to use with this policy, the following information is needed:
-Two provider tags needs to be created using the same credentials for running this policy.
 
-Provider tag value to match this policy: `azure_rm` and `azure_log`
+Provider tag value to match this policy: azure_rm
 
-Required role and permission in the provider:
+Required permissions in the provider:
 
-Role:
+- Microsoft.Compute/virtualMachines/read
+- Microsoft.Compute/virtualMachines/write
 
-- [Log Analytics Reader](https://docs.microsoft.com/en-us/azure/azure-monitor/platform/manage-access)
-
-Permission:
-
-- [Microsoft.Compute/virtualMachines/write](https://docs.microsoft.com/en-us/azure/role-based-access-control/resource-provider-operations#microsoftcompute)
+[**Flexera Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) (*provider=flexera*) which has the following roles:
+  - `billing_center_viewer`
 
 ## Supported Clouds
 
