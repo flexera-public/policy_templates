@@ -43,15 +43,14 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Auto
 
 For administrators [creating and managing credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) to use with this policy, the following information is needed:
 
-Provider tag value to match this policy: azure_rm
+- [**Azure Resource Manager Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_109256743_1124668) (*provider=azure_rm*) which has the following permissions:
+  - `Microsoft.Compute/virtualMachines/read`
+  - `Microsoft.Compute/virtualMachines/write`
 
-Required permissions in the provider:
-
-- Microsoft.Compute/virtualMachines/read
-- Microsoft.Compute/virtualMachines/write
-
-[**Flexera Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) (*provider=flexera*) which has the following roles:
+- [**Flexera Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) (*provider=flexera*) which has the following roles:
   - `billing_center_viewer`
+
+The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) page in the docs has detailed instructions for setting up Credentials for the most common providers.
 
 ## Supported Clouds
 
