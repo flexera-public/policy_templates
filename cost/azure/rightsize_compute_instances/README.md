@@ -1,4 +1,4 @@
-# Azure Rightsizing Compute Instances
+# Azure Rightsize Compute Instances
 
 ## What it does
 
