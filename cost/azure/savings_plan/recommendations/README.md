@@ -35,7 +35,7 @@ Provider tag value to match this policy: `azure_rm`
 
 Required permissions in the provider:
 
-- Microsoft.Consumption/reservationRecommendations/read*
+- Microsoft.CostManagement/*/read
 
 ## Supported Clouds
 
