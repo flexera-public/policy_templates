@@ -7,6 +7,7 @@ This Policy leverages the [Azure API](https://learn.microsoft.com/en-us/rest/api
 ## Input Parameters
 
 This policy has the following input parameters required when launching the policy.
+
 - *Look Back Period* - Number of days of prior usage to analyze.
 - *Net Savings Threshold* - Specify the minimum net savings that should result in a recommendation
 - *Reservation Scope* - Single or Shared Scoped Reservations
