@@ -11,6 +11,7 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Auto
   - `ec2:DescribeInstances`
   - `ec2:DescribeTags`
   - `cloudwatch:GetMetricStatistics`
+  - `cloudwatch:GetMetricData`
   - `cloudwatch:ListMetrics`
 
   Example IAM Permission Policy:
@@ -26,6 +27,7 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Auto
                   "ec2:DescribeInstances",
                   "ec2:DescribeTags",
                   "cloudwatch:GetMetricStatistics",
+                  "cloudwatch:GetMetricData",
                   "cloudwatch:ListMetrics"
               ],
               "Resource": "*"
