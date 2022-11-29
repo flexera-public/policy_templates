@@ -2,7 +2,7 @@
 
 ## v4.1
 
-- bugfix for logic reguarding activity log and what constitutes as unattached/unused. Changed logic to verify that activiies lenght is 0 rather than using "toBeDetached" keyword
+- bugfix for logic regarding activity log and what constitutes as unattached/unused. Changed logic to verify that activities length is 0 rather than using "toBeDetached" keyword
 - updated max limit on activity log call to 89 days to avoid api day limit
 - updated response to contain usable information of resourceID and operation name
 - changed ds field responseBody to resourceID
