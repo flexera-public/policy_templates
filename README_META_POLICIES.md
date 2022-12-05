@@ -13,18 +13,6 @@
 2. **Create AWS STS Credential on the Flexera Platform [Flexera Docs]**
    > Note: if your Organization in on **app.flexera.com** has multiple "Projects" within the Organization, you must use your Org "Master" Project.
 
-#### **BEGIN TEMPORARY STEPS**
-These steps must be completed until the Child Policy Templates are published (PR: [`master` <- `POL-649/meta_policies`](https://github.com/flexera-public/policy_templates/compare/master...POL-649/meta_policies))
-
-a) Upload Child Policy Template
-
-b) Modify Meta Parent Policy Template Policy Template URL in datasource `ds_child_policy_information`.
-
-   Example:
-   `/api/governance/projects/<PROJECT_ID>/policy_templates/<TEMPLATE_ID>`
-
-#### **END TEMPORARY STEPS**
-
 3. **Upload Meta Parent Policy to Flexera Platform [Flexera Docs]**
 
 4. **Apply Meta Parent Policy to Org Master Account**
