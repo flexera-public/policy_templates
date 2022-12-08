@@ -104,6 +104,7 @@ Reference
 - [Azure Expiring Reserved Instances](./cost/azure/reserved_instances/expiration)
 - [Azure Reserved Instance Utilization](./cost/azure/reserved_instances/utilization/)
 - [Azure Reserved Instance Recommendations](./cost/azure/reserved_instances/mca_recommendations)
+- [Azure Rightsize Compute Instances](./cost/azure/rightsize_compute_instances)
 - [Azure Savings Plan Recommendations](./cost/azure/savings_plan/recommendations)
 - [Azure Savings Realized from Reservations](./cost/azure/savings_realized)
 - [Azure Schedule Instance](./cost/azure/schedule_instance/)
