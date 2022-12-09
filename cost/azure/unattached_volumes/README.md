@@ -2,7 +2,7 @@
 
 ## What it does
 
-This Policy Template scans all volumes in the given account and identifies any volume that has been unused for at least the number of days specified by user. Using activity logs, we will determine the number of days the volume has been unused. If any are found, an incident report will show the volumes and related information. An email will be sent to the user-specified email address.
+This Policy Template scans all volumes in the given account and identifies any unattached volume that has been unused for at least the number of days specified by user. Using activity logs, we will determine whether any activity related to the unattached disk occurred in the range specified by user. If no activity detected, then the disk is deemed to be unused. If any unused disks are found, an incident report will show the volumes and related information. An email will be sent to the user-specified email address.
 
 If the user approves that the volumes should be deleted, the policy will delete the volumes.
 If the volume is not getting deleted, say, because it is locked, then the volume will be tagged to indicate the error that was received.

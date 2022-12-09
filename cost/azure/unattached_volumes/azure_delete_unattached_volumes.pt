@@ -7,7 +7,7 @@ severity "low"
 category "Cost"
 default_frequency "daily"
 info(
-  version: "4.0",
+  version: "4.1",
   provider: "Azure",
   service: "Storage",
   policy_set: "Unused Volumes"
@@ -176,7 +176,7 @@ datasource "ds_azure_log_activity" do
     encoding "json"
     collect jmes_path(response, "value[*]") do
       field "operationName", jmes_path(col_item,"operationName.localizedValue")
-      field "responseBody", jmes_path(col_item,"properties.responseBody")
+      field "resourceID", jmes_path(col_item,"resourceId")
     end
   end
 end
@@ -341,7 +341,10 @@ script "js_get_logactivity", type: "javascript" do
   parameters "subscriptionID", "resourceID", "param_unattached_days", "param_azure_endpoint"
   result "results"
   code <<-EOS
-
+  // filter only allows for 90 days worth of logs, hardset to maximum value to avoid api error response
+    if (param_unattached_days > 89) {
+      param_unattached_days = 89
+    }
     var currentDate=new Date();
     var date1=currentDate.getFullYear()+'-'+(currentDate.getMonth()+1)+'-'+currentDate.getDate();
     var expectedDate=new Date();
@@ -370,7 +373,15 @@ script "js_filter_activities", type: "javascript" do
   result "results"
   code <<-EOS
   var results = []
-  var activities = ds_azure_log_activity;
+  _.each(ds_filter_disks, function(disk, diskIndex) {
+    ds_filter_disks[diskIndex].activities = []
+    _.each(ds_azure_log_activity, function(activity, actIndex){
+      if (activity.resourceID === disk['disk_id']) {
+        ds_filter_disks[diskIndex].activities.push(activity)
+      }
+    })
+  })
+
   for (i in ds_filter_disks) {
     var ismatched = false;
     var disk = ds_filter_disks[i];
@@ -379,17 +390,8 @@ script "js_filter_activities", type: "javascript" do
     expectedDate.setDate(expectedDate.getDate() - parseInt(param_unattached_days));
     var diskId = disk['disk_id'];
     var diskName = disk['resourceName'];
-    for (var i = 0; i < activities.length; i++) {
-      var activity = activities[i].toString();
-      if (activity.indexOf(diskId) > -1 && activity.indexOf('toBeDetached') > -1) {
-        var diskString = activity.substring(activity.indexOf('toBeDetached') - 300, activity.indexOf('toBeDetached'));
-        var tobedetach = activity.substring(activity.indexOf('toBeDetached'), activity.indexOf('toBeDetached') + 20);
-        if (tobedetach.indexOf('true') > -1 && diskString.indexOf(diskId) > -1) {
-          ismatched = true;
-        }
-      }
-    }
-    if ((!ismatched) && expectedDate.getTime() >= createdTime.getTime()) {
+
+    if (disk.activities.length === 0 && expectedDate.getTime() >= createdTime.getTime()) {
       results.push({
         disk_id: disk['disk_id'],
         resourceName: disk['resourceName'],
