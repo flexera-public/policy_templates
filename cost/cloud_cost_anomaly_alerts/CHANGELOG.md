@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.3
+
+- changed message from "js_filter_anomalies" script, dynamic TLD (.com or .eu)
+
 ## v2.2
 
 - changed cost metric map key from api call value to more readable value
