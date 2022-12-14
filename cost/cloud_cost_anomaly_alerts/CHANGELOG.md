@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.3
+
+- adding an input list for custom rule based dimensions
+
 ## v2.2
 
 - changed cost metric map key from api call value to more readable value

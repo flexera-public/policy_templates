@@ -8,7 +8,7 @@ category "Cost"
 tenancy "single"
 default_frequency "daily"
 info(
-  version: "2.2",
+  version: "2.3",
   provider: "Flexera Optima",
   service: "",
   policy_set:""
@@ -50,6 +50,12 @@ parameter "param_dimensions" do
   description "Dimensions to run anomaly report. Unable to take in custom tags as a dimension"
   allowed_values "Cloud Vendor","Cloud Vendor Account Name","Cloud Vendor Account","Manufacturer Name","Spend Type","Flexera Capability","Category","Instance Type","Region","Operation","Resource Type","Service","Billing Account ID","Usage Unit","Usage Type","Line Item Type","Purchase Option","Resource Group","Bill Entity","Bill Source","Invoice ID"
   default ["Cloud Vendor Account Name", "Cloud Vendor", "Service"]
+end
+
+parameter "param_rbd_dimensions" do
+  type "list"
+  label "Cost Anomaly RBD Dimensions"
+  description "Enter the name of the custom Rule Based Dimensions to run anomaly report."
 end
 
 parameter "param_window_size" do
@@ -150,7 +156,7 @@ end
 
 datasource "ds_get_anomalies" do
   request do
-    run_script $js_get_anomalies, rs_optima_host, rs_org_id, $ds_top_level_billing_centers, $param_cost_metric, $param_days, $param_dimensions, $param_window_size, $param_standard_deviations, $param_anomaly_limit
+    run_script $js_get_anomalies, rs_optima_host, rs_org_id, $ds_top_level_billing_centers, $param_cost_metric, $param_days, $param_dimensions, $param_rbd_dimensions, $param_window_size, $param_standard_deviations, $param_anomaly_limit
   end
   result do
     encoding "json"
@@ -161,7 +167,7 @@ datasource "ds_get_anomalies" do
 end
 
 datasource "ds_filter_anomalies" do
-  run_script $js_filter_anomalies, $ds_get_anomalies, $param_min_spend, rs_org_id, $param_days, $param_dimensions, $param_cost_metric, $param_anomaly_limit
+  run_script $js_filter_anomalies, $ds_get_anomalies, $param_min_spend, rs_org_id, $param_days, $param_dimensions, $param_rbd_dimensions, $param_cost_metric, $param_anomaly_limit
 end
 
 ###############################################################################
@@ -202,7 +208,7 @@ script "js_top_level_bc", type: "javascript" do
 end
 
 script "js_get_anomalies", type: "javascript" do
-  parameters "rs_optima_host", "org_id","bc_ids","param_cost_metric","param_days", "param_dimensions", "param_window_size", "param_standard_deviations", "param_anomaly_limit"
+  parameters "rs_optima_host", "org_id","bc_ids","param_cost_metric","param_days", "param_dimensions", "param_rbd_dimensions","param_window_size", "param_standard_deviations", "param_anomaly_limit"
   result "request"
   code <<-EOS
     var start_at = "";
@@ -270,6 +276,9 @@ script "js_get_anomalies", type: "javascript" do
     _.each(param_dimensions, function(dimension){
       dimensions.push(api_dimensions[dimension])
     })
+    _.each(param_rbd_dimensions, function(dimension){
+      dimensions.push(dimension)
+    })
     start_at = getFormattedDailyDate(getStartDate(new Date()))
     end_at = getFormattedDailyDate(getEndDate(new Date()))
 
@@ -298,7 +307,7 @@ script "js_get_anomalies", type: "javascript" do
 end
 
 script "js_filter_anomalies", type: "javascript" do
-  parameters "ds_get_anomalies", "param_min_spend", "org_id", "param_days", "param_dimensions", "param_cost_metric", "param_anomaly_limit"
+  parameters "ds_get_anomalies", "param_min_spend", "org_id", "param_days", "param_dimensions", "param_rbd_dimensions","param_cost_metric", "param_anomaly_limit"
   result "result"
   code <<-EOS
     var start_at = "";
@@ -364,6 +373,11 @@ script "js_filter_anomalies", type: "javascript" do
     _.each(param_dimensions, function(dimension){
       dimensions.push(api_dimensions[dimension])
       dimensionAPIString = dimensionAPIString + "&" + "groupBy=" + api_dimensions[dimension]
+      dimensionsReadable =  dimensionsReadable + " " + dimension + ","
+    })
+    _.each(param_rbd_dimensions, function(dimension){
+      dimensions.push(dimension)
+      dimensionAPIString = dimensionAPIString + "&" + "groupBy=" + dimension
       dimensionsReadable =  dimensionsReadable + " " + dimension + ","
     })
     dimensionsReadable = dimensionsReadable.substring(0, dimensionsReadable.length - 1);

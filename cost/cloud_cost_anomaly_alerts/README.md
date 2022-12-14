@@ -8,8 +8,7 @@ The upper and lower band are calculated as distance of a given number of standar
 Any point outside of the bands is considered as anomalous. If multiple cost anomalies are detected for the given dimensions, the data point with the greatest deviation is reported as incident. Additionally, a URL link is provided to a graphical report where all detected anomalies are shown.
 
 ## Functional Details
-
-- The policy queries the /anomalies/report endpoint for the bill analysis API and based on the parameters returns values that are deemed anomalies by the API
+multiple/report endpoint for the bill analysis API and based on the parameters returns values that are deemed anomalies by the API
 - The time granularity of the policy is daily, maximum of 31 days
 
 ### Input Parameters
@@ -23,6 +22,7 @@ Any point outside of the bands is considered as anomalous. If multiple cost anom
   - Default: 1000
 - *Cost Anomaly Dimensions* - Dimensions to group data for the analysis. Multiple dimensions can be provided. Currently, custom tags cannot be used as dimensions.
   - Default: ["Cloud Vendor Account", "Cloud Vendor", "Service"]
+- *Rule Based Dimensions* - Rule Based Dimensions to group data for the analysis. Multiple rbd id's can be provided.
 - *Cost Metric* - Cost metric used for the analysis: amortized vs nonamortized and blended vs unblended costs.
 - *Email addresses of the recipients you wish to notify* - A list of email addresses to notify
 - *Window Size* - Number of days used in the calculation of the moving average
