@@ -8,7 +8,8 @@ The upper and lower band are calculated as distance of a given number of standar
 Any point outside of the bands is considered as anomalous. If multiple cost anomalies are detected for the given dimensions, the data point with the greatest deviation is reported as incident. Additionally, a URL link is provided to a graphical report where all detected anomalies are shown.
 
 ## Functional Details
-multiple/report endpoint for the bill analysis API and based on the parameters returns values that are deemed anomalies by the API
+
+- The policy queries the /anomalies/report endpoint for the bill analysis API and based on the parameters returns values that are deemed anomalies by the API
 - The time granularity of the policy is daily, maximum of 31 days
 
 ### Input Parameters
