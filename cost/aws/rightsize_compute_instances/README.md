@@ -80,3 +80,34 @@ For administrators [creating and managing credentials](https://docs.flexera.com/
       ]
   }
   ```
+- [**Flexera Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) (*provider=flexera*) which has the following roles:
+  - `billing_center_viewer`
+
+The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) page in the docs has detailed instructions for setting up Credentials for the most common providers.
+
+### Memory Support
+
+By default only CPU metrics are available from CloudWatch.  To enable support for memory utilization, you must have the CloudWatch Agent installed on your EC2 instance(s) to collect memory metrics.  Please reference [AWS Docs > Install CloudWatch Agent on EC2 Instance](https://docs.aws.amazon.com/AmazonCloudWatch/latest/monitoring/install-CloudWatch-Agent-on-EC2-Instance.html) for more information.
+
+### Windows Support
+
+To enable windows support you will need to add the following to your cloudwatch config.json and restart cloudwatch agent
+
+```json
+"metrics": {
+  "append_dimensions": {
+    "AutoScalingGroupName": "${aws:AutoScalingGroupName}",
+    "ImageId": "${aws:ImageId}",
+    "InstanceId": "${aws:InstanceId}",
+    "InstanceType": "${aws:InstanceType}"
+  }
+}
+```
+
+## Supported Clouds
+
+- Azure
+
+## Cost
+
+This Policy Template does not incur any cloud costs.
