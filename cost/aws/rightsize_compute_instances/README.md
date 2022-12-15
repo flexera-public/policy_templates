@@ -26,16 +26,10 @@ The policy includes the estimated savings. The estimated savings is recognized i
 - *Idle Instance Memory Threshold (%)* - The Memory threshold at which to consider an instance to be 'idle' and therefore be flagged for termination. Set to -1 to ignore memory utilization.
 - *Underutilized Instance CPU Threshold (%)* - The CPU threshold at which to consider an instance to be 'underutilized' and therefore be flagged for downsizing. Set to -1 to ignore CPU utilization.
 - *Underutilized Instance Memory Threshold (%)* - The Memory threshold at which to consider an instance to be 'underutilized' and therefore be flagged for downsizing. Set to -1 to ignore memory utilization.
-- *Idle/Utilized for both CPU/Memory or either* - Set whether an instance should be considered idle and/or underutilized only if both CPU and memory are under the thresholds or if either CPU or memory are under. Note: this parameter is only valid when at least one Memory Utilization threshold and one CPU Utilization threshold is NOT set to -1
-- *Exclusion Tag Key* - An Azure-native instance tag key to ignore instances that you don't want to consider for downsizing. Example: exclude_utilization.
+- *Idle/Utilized for both CPU/Memory or either* - Set whether an instance should be considered idle and/or underutilized only if both CPU and memory are under the thresholds or if either CPU or memory are under. Note: this parameter is only valid when at least one Memory Utilization threshold and one CPU Utilization threshold is NOT set to -1.
+- *Threshold Statistic* - Statistic to use for the metric threshold.
+- *Exclusion Tag Key:Value* - Cloud native tag to ignore instances that you don't want to consider for downsizing or termination. Format: Key:Value
+- *CloudWatch API Wait Time* - The amount of time in seconds to wait between requests to the CloudWatch API to avoid being throttled by AWS. Default is recommended.
 - *Automatic Actions* - When this value is set, this policy will automatically take the selected action(s).
 - *Subscription Whitelist* - Whitelisted Subscriptions, if empty, all subscriptions will be checked.
 - *Log to CM Audit Entries* - Boolean for whether or not to log any debugging information from actions to CM Audit Entries, this should be left set to No on Flexera EU.
-
-
-
-- *Idle for both CPU/Memory or either* - Set to Both CPU and Memory to consider an instance idle only if it is below both the CPU and memory utilization parameters. Set to Either CPU or Memory to consider an instance idle if either CPU or memory are below the parameter values. Has no effect if either of the utilization parameters are set to -1.
-- *Threshold Statistic* - Statistic to use for the metric threshold
-- *Exclusion Tag Key:Value* - Cloud native tag to ignore instances. Format: Key:Value
-- *CloudWatch API Wait Time* - The amount of time in seconds to wait between requests to the CloudWatch API to avoid being throttled by AWS. Default is recommended.
-- *Automatic Actions* - When this value is set, this policy will automatically take the selected action(s).
