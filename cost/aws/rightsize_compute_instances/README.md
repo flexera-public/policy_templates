@@ -33,3 +33,50 @@ The policy includes the estimated savings. The estimated savings is recognized i
 - *Automatic Actions* - When this value is set, this policy will automatically take the selected action(s).
 - *Subscription Whitelist* - Whitelisted Subscriptions, if empty, all subscriptions will be checked.
 - *Log to CM Audit Entries* - Boolean for whether or not to log any debugging information from actions to CM Audit Entries, this should be left set to No on Flexera EU.
+
+Please note that the "Automatic Actions" parameter contains a list of action(s) that can be performed on the resources. When it is selected, the policy will automatically execute the corresponding action on the data that failed the checks, post incident generation. Please leave it blank for *manual* action.
+For example if a user selects the "Terminate Instances" action while applying the policy, all the resources that didn't satisfy the policy condition will be terminated.
+
+## Policy Actions
+
+- Sends an email notification
+- (Coming soon) Terminate virtual machines (if idle) after approval
+- (Coming soon) Downsize virtual machines (if underutilized) after approval
+
+## Prerequisites
+
+This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for authenticating to datasources -- in order to apply this policy you must have a Credential registered in the system that is compatible with this policy. If there are no Credentials listed when you apply the policy, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy. The information below should be consulted when creating the credential(s).
+
+### Credential configuration
+
+For administrators [creating and managing credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) to use with this policy, the following information is needed:
+
+- [**AWS Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_1982464505_1121575) (*provider=aws*) which has the following permissions:
+  - `ec2:DescribeRegions`
+  - `ec2:DescribeInstances`
+  - `ec2:DescribeTags`
+  - `cloudwatch:GetMetricStatistics`
+  - `cloudwatch:GetMetricData`
+  - `cloudwatch:ListMetrics`
+
+  Example IAM Permission Policy:
+
+  ```json
+  {
+      "Version": "2012-10-17",
+      "Statement": [
+          {
+              "Effect": "Allow",
+              "Action": [
+                  "ec2:DescribeRegions",
+                  "ec2:DescribeInstances",
+                  "ec2:DescribeTags",
+                  "cloudwatch:GetMetricStatistics",
+                  "cloudwatch:GetMetricData",
+                  "cloudwatch:ListMetrics"
+              ],
+              "Resource": "*"
+          }
+      ]
+  }
+  ```
