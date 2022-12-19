@@ -2,7 +2,7 @@
 
 ## v2.3
 
-- adding an input list for custom rule based dimensions
+- adding an input list for a rule based dimensions
 
 ## v2.2
 
