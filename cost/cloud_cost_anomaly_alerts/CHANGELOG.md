@@ -2,7 +2,7 @@
 
 ## v2.3
 
-- changed message from "js_filter_anomalies" script, dynamic TLD (.com or .eu)
+- changed message from "js_filter_anomalies" script, dynamic TLD (.com, .eu or .au)
 
 ## v2.2
 
