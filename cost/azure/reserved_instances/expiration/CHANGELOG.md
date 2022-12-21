@@ -1,5 +1,10 @@
 # Changelog
 
+## v2.1
+
+- Previous versions included already expired instances in the report, that was marked as
+a bug and in this release those instances are now filtered.
+
 ## v2.0
 
 - Deprecated `auth_rs` authentication (type: `rightscale`) and replaced with `auth_flexera` (type: `oauth2`).  This is a breaking change which requires a Credential for `auth_flexera` [`provider=flexera`] before the policy can be applied.  Please see docs for setting up [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm)
