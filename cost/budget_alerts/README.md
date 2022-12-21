@@ -1,5 +1,7 @@
 # Budget Alerts Policy
 
+**NOTE:** This policy is be deprecated and replaced by this [new version](../budget_report_alerts)
+
 ## What it does
 
 This Policy uses Optima to determine if a Billing Center or the entire Organization has exceeded its monthly cost budget. The policy should be run daily and will take into account data from 3 days ago to ensure there is a complete set.
