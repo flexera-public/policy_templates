@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.5
+
+- Replaced the term **whitelist** with **allowed list**.
+
 ## v2.4
 
 - Added "Azure API Wait Time" parameter to prevent Azure API throttling

@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.4
+
+- Replaced the term **whitelist** with **allowed list**.
+
 ## v2.3
 
 - Removed unused `sys_log` definition
