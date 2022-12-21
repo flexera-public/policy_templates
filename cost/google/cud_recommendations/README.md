@@ -2,7 +2,7 @@
 
 ## What it does
 
-This Policy finds Google Committed Use Discount Recommendations and reports when it finds them.
+This Policy finds Google Committed Use Discount Recommendations and reports when it finds them. These recommendations fall under Rate Reduction.
 
 ## Input Parameters
 
