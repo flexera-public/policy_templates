@@ -1,7 +1,7 @@
 name "Turbonomics Scale Virtual Machine Recommendations GCP"
 rs_pt_ver 20180301
 type "policy"
-short_description "Turbonomics policy for scaling virtual machines [README](https://github.com/flexera-public/policy_templates/tree/master/cost/turbonomics/scale_virtual_machines_recommendations) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+short_description "Turbonomics policy for scaling virtual machines [README](https://github.com/flexera-public/policy_templates/tree/master/cost/turbonomics/scale_virtual_machines_recommendations/gcp) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 severity "low"
 category "Cost"
 default_frequency "daily"
@@ -11,7 +11,7 @@ info(
   source: "Turbonomics",
   service: "Compute",
   policy_set: "Scale VMs",
-  recommendation_type: "Usage Reduction"
+  recommendation_type: "Usage Reduction",
   publish: "false"
 )
 
@@ -232,34 +232,36 @@ script "js_filtered_turbonomics_recommendations", type: "javascript" do
     })
 
     _.each(ds_get_turbonomics_recommendations, function(vm){
-      if (typeof vm.savingsCurrency != "undefined" && vm.savingsCurrency != null) {
-        if (vm.savingsCurrency.indexOf("$") != -1) {
+      if (vm.provider === "GCP Project") {
+        if (typeof vm.savingsCurrency != "undefined" && vm.savingsCurrency != null) {
+          if (vm.savingsCurrency.indexOf("$") != -1) {
+            vm.savingsCurrency = "$"
+          }
+        } else {
           vm.savingsCurrency = "$"
         }
-      } else {
-        vm.savingsCurrency = "$"
-      }
-      tags = []
-      if (typeof vm.tags === "undefined" || vm.tags === null){
+        tags = []
+        if (typeof vm.tags === "undefined" || vm.tags === null){
+          vm.tags = tags
+        }else{
+          Object.keys(vm['tags']).forEach(function(key) {
+            tags.push(key+'='+vm['tags'][key][0])
+          });
+        }
         vm.tags = tags
-      }else{
-        Object.keys(vm['tags']).forEach(function(key) {
-          tags.push(key+'='+vm['tags'][key][0])
+        Object.keys(vm.vendorIDValues).forEach(function(key) {
+          vm.resourceID = vm.vendorIDValues[key]
+          return
         });
+        vm.service = "Compute"
+        savingsString = ""
+        if (typeof vm.savings === "undefined" || vm.savings === null || vm.savings === "" || isNaN(vm.savings)) {
+          vm.savings = 0.0
+        }
+        vm.savings = (Math.round(vm.savings * 730 * 1000 * (vm.uptime/100)) / 1000)
+        monthlySavings = monthlySavings + vm.savings
+        instances.push(vm)
       }
-      vm.tags = tags
-      Object.keys(vm.vendorIDValues).forEach(function(key) {
-        vm.resourceID = vm.vendorIDValues[key]
-        return
-      });
-      vm.service = "Compute"
-      savingsString = ""
-      if (typeof vm.savings === "undefined" || vm.savings === null || vm.savings === "" || isNaN(vm.savings)) {
-        vm.savings = 0.0
-      }
-      vm.savings = (Math.round(vm.savings * 730 * 1000 * (vm.uptime/100)) / 1000)
-      monthlySavings = monthlySavings + vm.savings
-      instances.push(vm)
     })
 
     message = ""

@@ -1,7 +1,7 @@
 name "Turbonomics Scale Virtual Volumes Recommendations GCP"
 rs_pt_ver 20180301
 type "policy"
-short_description "Turbonomics policy for scaling volumes [README](https://github.com/flexera-public/policy_templates/tree/master/cost/turbonomics/scale_virtual_volumes_recommendations) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+short_description "Turbonomics policy for scaling volumes [README](https://github.com/flexera-public/policy_templates/tree/master/cost/turbonomics/scale_virtual_volumes_recommendations/gcp) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 severity "low"
 category "Cost"
 default_frequency "daily"
@@ -11,7 +11,7 @@ info(
   source: "Turbonomics",
   service: "Storage",
   policy_set: "Scale Volumes",
-  recommendation_type: "Usage Reduction"
+  recommendation_type: "Usage Reduction",
   publish: "false"
 )
 
@@ -195,47 +195,49 @@ script "js_filtered_turbonomics_recommendations", type: "javascript" do
     })
 
     _.each(ds_get_turbonomics_recommendations, function(volume){
-      if (typeof volume.savingsCurrency != "undefined" && volume.savingsCurrency != null) {
-        if (volume.savingsCurrency.indexOf("$") != -1) {
+      if (vm.provider === "GCP Project") {
+        if (typeof volume.savingsCurrency != "undefined" && volume.savingsCurrency != null) {
+          if (volume.savingsCurrency.indexOf("$") != -1) {
+            volume.savingsCurrency = "$"
+          }
+        } else {
           volume.savingsCurrency = "$"
         }
-      } else {
-        volume.savingsCurrency = "$"
-      }
 
-      _.each(volume.size, function(stat){
-        if (stat.name === "StorageAmount") {
-          volume.size = stat.capacity.total + " " + stat.units
-          return
+        _.each(volume.size, function(stat){
+          if (stat.name === "StorageAmount") {
+            volume.size = stat.capacity.total + " " + stat.units
+            return
+          }
+        })
+        tags = []
+        if (typeof volume.tags === "undefined" || volume.tags === null){
+          volume.tags = tags
+        }else{
+          Object.keys(volume['tags']).forEach(function(key) {
+            tags.push(key+'='+volume['tags'][key][0])
+          });
         }
-      })
-      tags = []
-      if (typeof volume.tags === "undefined" || volume.tags === null){
         volume.tags = tags
-      }else{
-        Object.keys(volume['tags']).forEach(function(key) {
-          tags.push(key+'='+volume['tags'][key][0])
+        Object.keys(volume.resourceID).forEach(function(key) {
+            volume.resourceID = volume.resourceID[key]
+            return
         });
-      }
-      volume.tags = tags
-      Object.keys(volume.resourceID).forEach(function(key) {
-          volume.resourceID = volume.resourceID[key]
-          return
-      });
-      Object.keys(volume.vendorIDValues).forEach(function(key) {
-          volume.accountID = volume.vendorIDValues[key]
-          volume.accountName = key
-          return
-      });
-      volume.service = "Compute"
-      savingsString = ""
-      if (typeof volume.savings === "undefined" || volume.savings === null || volume.savings === "" || isNaN(volume.savings)) {
-        volume.savings = 0.0
-      }
+        Object.keys(volume.vendorIDValues).forEach(function(key) {
+            volume.accountID = volume.vendorIDValues[key]
+            volume.accountName = key
+            return
+        });
+        volume.service = "Compute"
+        savingsString = ""
+        if (typeof volume.savings === "undefined" || volume.savings === null || volume.savings === "" || isNaN(volume.savings)) {
+          volume.savings = 0.0
+        }
 
-      volume.savings = (Math.round(volume.savings * 730 * 1000) / 1000)
-      monthlySavings = monthlySavings + volume.savings
-      instances.push(volume)
+        volume.savings = (Math.round(volume.savings * 730 * 1000) / 1000)
+        monthlySavings = monthlySavings + volume.savings
+        instances.push(volume)
+      }
     })
     message = ""
     if (instances.length != 0) {

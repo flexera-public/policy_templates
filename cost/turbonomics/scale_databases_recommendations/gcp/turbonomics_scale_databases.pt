@@ -1,7 +1,7 @@
 name "Turbonomics Scale Databases Recommendations GCP"
 rs_pt_ver 20180301
 type "policy"
-short_description "Turbonomics policy for scaling Databases [README](https://github.com/flexera-public/policy_templates/tree/master/cost/turbonomics/scale_database_server_recommendations) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+short_description "Turbonomics policy for scaling Databases [README](https://github.com/flexera-public/policy_templates/tree/master/cost/turbonomics/scale_database_server_recommendations/gcp) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 severity "low"
 category "Cost"
 default_frequency "daily"
@@ -11,7 +11,7 @@ info(
   source: "Turbonomics",
   service: "SQL",
   policy_set: "Scale Databases",
-  recommendation_type: "Usage Reduction"
+  recommendation_type: "Usage Reduction",
   publish: "false"
 )
 
@@ -188,35 +188,37 @@ script "js_filtered_turbonomics_recommendations", type: "javascript" do
     })
 
     _.each(ds_get_turbonomics_recommendations, function(db){
-      if (typeof db.savingsCurrency != "undefined" && db.savingsCurrency != null) {
-        if (db.savingsCurrency.indexOf("$") != -1) {
+      if (vm.provider === "GCP Project") {
+        if (typeof db.savingsCurrency != "undefined" && db.savingsCurrency != null) {
+          if (db.savingsCurrency.indexOf("$") != -1) {
+            db.savingsCurrency = "$"
+          }
+        } else {
           db.savingsCurrency = "$"
         }
-      } else {
-        db.savingsCurrency = "$"
-      }
-      tags = []
-      if (typeof db.tags === "undefined" || db.tags === null){
+        tags = []
+        if (typeof db.tags === "undefined" || db.tags === null){
+          db.tags = tags
+        }else{
+          Object.keys(db['tags']).forEach(function(key) {
+            tags.push(key+'='+db['tags'][key][0])
+          });
+        }
         db.tags = tags
-      }else{
-        Object.keys(db['tags']).forEach(function(key) {
-          tags.push(key+'='+db['tags'][key][0])
+        Object.keys(db.resourceID).forEach(function(key) {
+            db.resourceID = db.resourceID[key]
+            return
         });
-      }
-      db.tags = tags
-      Object.keys(db.resourceID).forEach(function(key) {
-          db.resourceID = db.resourceID[key]
-          return
-      });
-      db.service = "SQL"
-      savingsString = ""
-      if (typeof db.savings === "undefined" || db.savings === null || db.savings === "" || isNaN(db.savings)) {
-        db.savings = 0.0
-      }
+        db.service = "SQL"
+        savingsString = ""
+        if (typeof db.savings === "undefined" || db.savings === null || db.savings === "" || isNaN(db.savings)) {
+          db.savings = 0.0
+        }
 
-      db.savings = (Math.round(db.savings * 730 * 1000) / 1000)
-      monthlySavings = monthlySavings + db.savings
-      instances.push(db)
+        db.savings = (Math.round(db.savings * 730 * 1000) / 1000)
+        monthlySavings = monthlySavings + db.savings
+        instances.push(db)
+      }
     })
     message = ""
     if (instances.length != 0) {

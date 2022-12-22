@@ -1,7 +1,7 @@
 name "Turbonomics Buy Reserved Instances AWS"
 rs_pt_ver 20180301
 type "policy"
-short_description "Turbonomics policy for recommending purchaseable reserved instances [README](https://github.com/flexera-public/policy_templates/tree/master/cost/turbonomics/buy_reserved_instances_recommendations) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+short_description "Turbonomics policy for recommending purchaseable reserved instances [README](https://github.com/flexera-public/policy_templates/tree/master/cost/turbonomics/buy_reserved_instances_recommendations/aws) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 severity "low"
 category "Cost"
 default_frequency "daily"
@@ -11,7 +11,7 @@ info(
   source: "Turbonomics",
   service: "RIs",
   policy_set: "Buy RIs",
-  recommendation_type: "Rate Reduction"
+  recommendation_type: "Rate Reduction",
   publish: "false"
 )
 
@@ -197,27 +197,29 @@ script "js_filtered_turbonomics_recommendations", type: "javascript" do
     })
 
     _.each(ds_get_turbonomics_recommendations, function(ri){
-      if (typeof ri.savingsCurrency != "undefined" && ri.savingsCurrency != null) {
-        if (ri.savingsCurrency.indexOf("$") != -1) {
+      if (vm.provider === "AWS") {
+        if (typeof ri.savingsCurrency != "undefined" && ri.savingsCurrency != null) {
+          if (ri.savingsCurrency.indexOf("$") != -1) {
+            ri.savingsCurrency = "$"
+          }
+        } else {
           ri.savingsCurrency = "$"
         }
-      } else {
-        ri.savingsCurrency = "$"
+        ri.term = ri.termValue + " " + ri.termUnits
+        ri.service = "EC2"
+        savingsString = ""
+        if (typeof ri.savings === "undefined" || ri.savings === null || ri.savings === "" || isNaN(ri.savings)) {
+          ri.savings = 0.0
+        }
+        if (typeof ri.effectiveCost === "undefined" || ri.effectiveCost === null || ri.effectiveCost === "" || isNaN(ri.effectiveCost)) {
+          ri.effectiveCost = 0.0
+        }
+        ri.savings = (Math.round(ri.savings * 730 * 1000) / 1000)
+        ri.effectiveCost = (Math.round(ri.effectiveCost * 730 * 1000) / 1000)
+        ri.recurringCost = (Math.round(ri.recurringCost * 730 * 1000) / 1000)
+        monthlySavings = monthlySavings + ri.savings
+        instances.push(ri)
       }
-      ri.term = ri.termValue + " " + ri.termUnits
-      ri.service = "EC2"
-      savingsString = ""
-      if (typeof ri.savings === "undefined" || ri.savings === null || ri.savings === "" || isNaN(ri.savings)) {
-        ri.savings = 0.0
-      }
-      if (typeof ri.effectiveCost === "undefined" || ri.effectiveCost === null || ri.effectiveCost === "" || isNaN(ri.effectiveCost)) {
-        ri.effectiveCost = 0.0
-      }
-      ri.savings = (Math.round(ri.savings * 730 * 1000) / 1000)
-      ri.effectiveCost = (Math.round(ri.effectiveCost * 730 * 1000) / 1000)
-      ri.recurringCost = (Math.round(ri.recurringCost * 730 * 1000) / 1000)
-      monthlySavings = monthlySavings + ri.savings
-      instances.push(ri)
     })
 
     message = ""

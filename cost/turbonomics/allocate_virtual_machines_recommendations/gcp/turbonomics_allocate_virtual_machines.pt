@@ -1,7 +1,7 @@
 name "Turbonomics Allocate Virtual Machine Recommendations GCP"
 rs_pt_ver 20180301
 type "policy"
-short_description "Turbonomics policy for allocating RI coverage for virtual machines [README](https://github.com/flexera-public/policy_templates/tree/master/cost/turbonomics/allocate_virtual_machines_recommendations) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+short_description "Turbonomics policy for allocating RI coverage for virtual machines [README](https://github.com/flexera-public/policy_templates/tree/master/cost/turbonomics/allocate_virtual_machines_recommendations/gcp) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 severity "low"
 category "Cost"
 default_frequency "daily"
@@ -11,7 +11,7 @@ info(
   source: "Turbonomics",
   service: "Compute",
   policy_set: "Allocate VMs",
-  recommendation_type: "Rate Reduction"
+  recommendation_type: "Rate Reduction",
   publish: "false"
 )
 
@@ -35,13 +35,6 @@ end
 ###############################################################################
 # Authentication
 ###############################################################################
-
-#authenticate with password and username - not implemented and needs work done
-#credentials "turbo_auth" do
-#  schemes "api_key"
-#  label "Turbonomics"
-#  description "Select the Turbonomic Basic Auth Credential from the list."
-#end
 
 ###############################################################################
 # Pagination
@@ -89,7 +82,7 @@ end
 ##this will potentially be a lot of calls. how to make this more performant
 datasource "ds_get_business_units" do
   request do
-    run_script $js_get_business_units, $auth_cookie, $param_provider
+    run_script $js_get_business_units, $auth_cookie
   end
   result do
     encoding "json"
@@ -113,7 +106,7 @@ datasource "ds_get_action_details" do
 end
 
 datasource "ds_filtered_turbonomics_recommendations" do
-  run_script $js_filtered_turbonomics_recommendations, $ds_get_turbonomics_recommendations, $ds_get_business_units, $ds_get_action_details, $param_provider
+  run_script $js_filtered_turbonomics_recommendations, $ds_get_turbonomics_recommendations, $ds_get_business_units, $ds_get_action_details
 end
 
 ###############################################################################
@@ -153,20 +146,15 @@ end
 ## verified that discovered is the only one we need
 script "js_get_business_units", type: "javascript" do
   result "request"
-  parameters "auth_cookie", "param_provider"
+  parameters "auth_cookie"
   code <<-EOS
   //replace cookie every day this is run
-    var providers = {
-      "AWS":"AWS",
-      "Azure Subscription":"AZURE",
-      "GCP Project": "GCP",
-    }
     var request = {
       verb: "GET",
       host: "sales1.demo.turbonomic.com",
       path: "/api/v3/businessunits",
       query_params: {
-        "cloud_type": providers[param_provider],
+        "cloud_type": "GCP",
         "type":"DISCOVERED"
       },
       headers: {
@@ -203,7 +191,7 @@ end
 
 script "js_filtered_turbonomics_recommendations", type: "javascript" do
   result "result"
-  parameters "ds_get_turbonomics_recommendations", "ds_get_business_units", "ds_get_action_details", "param_provider"
+  parameters "ds_get_turbonomics_recommendations", "ds_get_business_units", "ds_get_action_details"
   code <<-EOS
     instances = []
     monthlySavings = 0.0
@@ -243,13 +231,8 @@ script "js_filtered_turbonomics_recommendations", type: "javascript" do
       })
     })
 
-    var provider_service = {
-      "AWS":"EC2",
-      "Azure Subscription":"Microsoft.Compute",
-      "GCP Project": "Compute"
-    }
     _.each(ds_get_turbonomics_recommendations, function(vm){
-      if (vm.provider === param_provider || param_provider === "ALL") {
+      if (vm.provider === "GCP Project") {
         if (typeof vm.savingsCurrency != "undefined" && vm.savingsCurrency != null) {
           if (vm.savingsCurrency.indexOf("$") != -1) {
             vm.savingsCurrency = "$"
@@ -275,7 +258,7 @@ script "js_filtered_turbonomics_recommendations", type: "javascript" do
         if (typeof vm.riCoverageBefore === "undefined" || vm.riCoverageBefore === null){
           vm.riCoverageBefore = 0
         }
-        vm.service = provider_service[vm.provider]
+        vm.service = "Compute"
         savingsString = ""
         if (typeof vm.savings === "undefined" || vm.savings === null || vm.savings === "" || isNaN(vm.savings)) {
           vm.savings = 0.0
@@ -304,7 +287,7 @@ end
 
 policy "pol_turbonomics_scale_vms" do
   validate $ds_filtered_turbonomics_recommendations do
-    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data.instances }} Turbonomic Scalable Virtual Machines found"
+    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data.instances }} Turbonomic Allocatable Virtual Machines found"
     detail_template <<-EOS
 ## Turbonomics Scale Virtual Machines
 {{data.message}}
