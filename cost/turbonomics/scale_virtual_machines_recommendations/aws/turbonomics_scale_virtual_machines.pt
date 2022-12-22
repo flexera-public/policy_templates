@@ -1,30 +1,23 @@
 name "Turbonomics Scale Virtual Machine Recommendations AWS"
 rs_pt_ver 20180301
 type "policy"
-short_description "POC turbonomics policy for scaling virtual machines [README](https://github.com/flexera-public/policy_templates/tree/master/cost/turbonomics/scale_virtual_machines_recommendations) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+short_description "Turbonomics policy for scaling virtual machines [README](https://github.com/flexera-public/policy_templates/tree/master/cost/turbonomics/scale_virtual_machines_recommendations) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 severity "low"
 category "Cost"
 default_frequency "daily"
 info(
-  version: "0.1",
+  version: "2.0",
   provider: "AWS",
   source: "Turbonomics",
   service: "Compute",
   policy_set: "Scale VMs",
   recommendation_type: "Usage Reduction"
+  publish: "false"
 )
 
 ##################
 # Parameters   #
 ##################
-
-## once functionality allows, this will contain "ALL", "AWS", "Azure Subscription", "GCP Project" and we will remove the policies from thier folders
-parameter "param_provider" do
-  type "string"
-  label "Recommendation Vendor"
-  description "authorization cookie pulled from manual source. Allows \"\", GCP Project, AWS, or Azure Subscription as a value"
-  allowed_values "AWS"
-end
 
 parameter "auth_cookie" do
   type "string"
@@ -42,13 +35,6 @@ end
 ###############################################################################
 # Authentication
 ###############################################################################
-
-#authenticate with password and username - not implemented and needs work done
-#credentials "turbo_auth" do
-#  schemes "api_key"
-#  label "Turbonomics"
-#  description "Select the Turbonomic Basic Auth Credential from the list."
-#end
 
 ###############################################################################
 # Pagination
@@ -107,7 +93,7 @@ end
 ##this will potentially be a lot of calls. how to make this more performant
 datasource "ds_get_business_units" do
   request do
-    run_script $js_get_business_units, $auth_cookie, $param_provider
+    run_script $js_get_business_units, $auth_cookie
   end
   result do
     encoding "json"
@@ -120,7 +106,7 @@ datasource "ds_get_business_units" do
 end
 
 datasource "ds_filtered_turbonomics_recommendations" do
-  run_script $js_filtered_turbonomics_recommendations, $ds_get_turbonomics_recommendations, $ds_get_action_details, $ds_get_business_units, $param_provider
+  run_script $js_filtered_turbonomics_recommendations, $ds_get_turbonomics_recommendations, $ds_get_action_details, $ds_get_business_units
 end
 
 ###############################################################################
@@ -133,7 +119,7 @@ script "js_get_turbonomics_recommendations", type: "javascript" do
   parameters "auth_cookie"
   code <<-EOS
   //replace cookie every day this is run
-  //up this limit value to 1000 etc when done with POC testing
+  //up this limit value to 1000 etc when done with testing
     var request = {
       verb: "POST",
       pagination: "turbonomics_vm_pagination_header",
@@ -148,7 +134,7 @@ script "js_get_turbonomics_recommendations", type: "javascript" do
         "costType":"SAVING"
       },
       query_params: {
-        "limit": '100'
+        "limit": '1000'
       },
       headers: {
         "Content-Type": "application/json"
@@ -161,20 +147,15 @@ end
 ## verified that discovered is the only one we need
 script "js_get_business_units", type: "javascript" do
   result "request"
-  parameters "auth_cookie", "param_provider"
+  parameters "auth_cookie"
   code <<-EOS
   //replace cookie every day this is run
-    var providers = {
-      "AWS":"AWS",
-      "Azure Subscription":"AZURE",
-      "GCP Project": "GCP",
-    }
     var request = {
       verb: "GET",
       host: "sales1.demo.turbonomic.com",
       path: "/api/v3/businessunits",
       query_params: {
-        "cloud_type": providers[param_provider],
+        "cloud_type": "AWS",
         "type":"DISCOVERED"
       },
       headers: {
@@ -212,7 +193,7 @@ end
 
 script "js_filtered_turbonomics_recommendations", type: "javascript" do
   result "result"
-  parameters "ds_get_turbonomics_recommendations", "ds_get_action_details", "ds_get_business_units", "param_provider"
+  parameters "ds_get_turbonomics_recommendations", "ds_get_action_details", "ds_get_business_units"
   code <<-EOS
     instances = []
     monthlySavings = 0.0
@@ -249,59 +230,37 @@ script "js_filtered_turbonomics_recommendations", type: "javascript" do
       })
     })
 
-    var provider_service = {
-      "AWS":"EC2",
-      "Azure Subscription":"Microsoft.Compute",
-      "GCP Project": "Compute"
-    }
     _.each(ds_get_turbonomics_recommendations, function(vm){
-      if (vm.provider === param_provider || param_provider === "ALL") {
-
-        if (typeof vm.savingsCurrency != "undefined" && vm.savingsCurrency != null) {
-          if (vm.savingsCurrency.indexOf("$") != -1) {
-            vm.savingsCurrency = "$"
-          }
-        } else {
+      if (typeof vm.savingsCurrency != "undefined" && vm.savingsCurrency != null) {
+        if (vm.savingsCurrency.indexOf("$") != -1) {
           vm.savingsCurrency = "$"
         }
-
-
-        tags = []
-        if (typeof vm.tags === "undefined" || vm.tags === null){
-          vm.tags = tags
-        }else{
-          Object.keys(vm['tags']).forEach(function(key) {
-            tags.push(key+'='+vm['tags'][key][0])
-          });
-        }
-        vm.tags = tags
-        if (vm.provider === "Azure Subscription") {
-          Object.keys(vm.vendorIDValues).forEach(function(key) {
-            vm.resourceID = "/subscriptions/" + vm.vendorIDValues[key] + "/resourceGroups/" + vm.resourceGroup + "/providers/Microsoft.Compute/virtualMachines/" + vm.resourceName
-            return
-          });
-        } else if (vm.provider === "GCP Project") {
-          Object.keys(vm.vendorIDValues).forEach(function(key) {
-            vm.resourceID = vm.vendorIDValues[key]
-            return
-          });
-        } else {
-          Object.keys(vm.vendorIDValues).forEach(function(key) {
-            vm.resourceID = vm.vendorIDValues[key]
-            return
-          });
-        }
-        vm.service = provider_service[vm.provider]
-        savingsString = ""
-        if (typeof vm.savings === "undefined" || vm.savings === null || vm.savings === "" || isNaN(vm.savings)) {
-          vm.savings = 0.0
-        }
-
-        vm.savings = (Math.round(vm.savings * 730 * 1000 * (vm.uptime/100)) / 1000)
-        monthlySavings = monthlySavings + vm.savings
-        instances.push(vm)
+      } else {
+        vm.savingsCurrency = "$"
       }
+      tags = []
+      if (typeof vm.tags === "undefined" || vm.tags === null){
+        vm.tags = tags
+      }else{
+        Object.keys(vm['tags']).forEach(function(key) {
+          tags.push(key+'='+vm['tags'][key][0])
+        });
+      }
+      vm.tags = tags
+      Object.keys(vm.vendorIDValues).forEach(function(key) {
+        vm.resourceID = vm.vendorIDValues[key]
+        return
+      });
+      vm.service = "EC2"
+      savingsString = ""
+      if (typeof vm.savings === "undefined" || vm.savings === null || vm.savings === "" || isNaN(vm.savings)) {
+        vm.savings = 0.0
+      }
+      vm.savings = (Math.round(vm.savings * 730 * 1000 * (vm.uptime/100)) / 1000)
+      monthlySavings = monthlySavings + vm.savings
+      instances.push(vm)
     })
+
     message = ""
     if (instances.length != 0) {
       pretty_savings = instances[0].savingsCurrency + ' ' + formatNumber(monthlySavings.toFixed(2), ",")
@@ -322,7 +281,7 @@ policy "pol_turbonomics_scale_vms" do
   validate $ds_filtered_turbonomics_recommendations do
     summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data.instances }} Turbonomic Scalable Virtual Machines found"
     detail_template <<-EOS
-## Turbonomics Scale Virtual Machines POC
+## Turbonomics Scale Virtual Machines
 {{data.message}}
 EOS
     check eq(size(val(data, "instances")), 0)

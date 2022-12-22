@@ -1,30 +1,23 @@
 name "Turbonomics Allocate Virtual Machine Recommendations GCP"
 rs_pt_ver 20180301
 type "policy"
-short_description "POC turbonomics policy for allocating RI coverage for virtual machines [README](https://github.com/flexera-public/policy_templates/tree/master/cost/turbonomics/allocate_virtual_machines_recommendations) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+short_description "Turbonomics policy for allocating RI coverage for virtual machines [README](https://github.com/flexera-public/policy_templates/tree/master/cost/turbonomics/allocate_virtual_machines_recommendations) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 severity "low"
 category "Cost"
 default_frequency "daily"
 info(
-  version: "0.1",
+  version: "2.0",
   provider: "GCP",
   source: "Turbonomics",
   service: "Compute",
   policy_set: "Allocate VMs",
   recommendation_type: "Rate Reduction"
+  publish: "false"
 )
 
 ##################
 # Parameters   #
 ##################
-
-## once functionality allows, this will contain "ALL", "AWS", "Azure Subscription", "GCP Project" and we will remove the policies from thier folders
-parameter "param_provider" do
-  type "string"
-  label "Recommendation Vendor"
-  description "authorization cookie pulled from manual source. Allows \"\", GCP Project, AWS, or Azure Subscription as a value"
-  allowed_values "GCP Project"
-end
 
 parameter "auth_cookie" do
   type "string"
@@ -133,7 +126,6 @@ script "js_get_turbonomics_recommendations", type: "javascript" do
   parameters "auth_cookie"
   code <<-EOS
   //replace cookie every day this is run
-  //up this limit value to 1000 etc when done with POC testing
     var request = {
       verb: "POST",
       pagination: "turbonomics_vm_pagination_header",
@@ -148,7 +140,7 @@ script "js_get_turbonomics_recommendations", type: "javascript" do
         "costType":"SAVING"
       },
       query_params: {
-        "limit": '100'
+        "limit": '1000'
       },
       headers: {
         "Content-Type": "application/json"
@@ -275,22 +267,10 @@ script "js_filtered_turbonomics_recommendations", type: "javascript" do
           });
         }
         vm.tags = tags
-        if (vm.provider === "Azure Subscription") {
-          Object.keys(vm.vendorIDValues).forEach(function(key) {
-            vm.resourceID = "/subscriptions/" + vm.vendorIDValues[key] + "/resourceGroups/" + vm.resourceGroup + "/providers/Microsoft.Compute/virtualMachines/" + vm.resourceName
-            return
-          });
-        } else if (vm.provider === "GCP Project") {
-          Object.keys(vm.vendorIDValues).forEach(function(key) {
-            vm.resourceID = vm.vendorIDValues[key]
-            return
-          });
-        } else {
-          Object.keys(vm.vendorIDValues).forEach(function(key) {
-            vm.resourceID = vm.vendorIDValues[key]
-            return
-          });
-        }
+        Object.keys(vm.vendorIDValues).forEach(function(key) {
+          vm.resourceID = vm.vendorIDValues[key]
+          return
+        });
 
         if (typeof vm.riCoverageBefore === "undefined" || vm.riCoverageBefore === null){
           vm.riCoverageBefore = 0
@@ -326,7 +306,7 @@ policy "pol_turbonomics_scale_vms" do
   validate $ds_filtered_turbonomics_recommendations do
     summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data.instances }} Turbonomic Scalable Virtual Machines found"
     detail_template <<-EOS
-## Turbonomics Scale Virtual Machines POC
+## Turbonomics Scale Virtual Machines
 {{data.message}}
 EOS
     check eq(size(val(data, "instances")), 0)
