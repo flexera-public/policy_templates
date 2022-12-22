@@ -3,7 +3,7 @@
 ## v2.3
 
 - adding an input list for a rule based dimensions
-- adding an input list for a user dimensions
+- adding an input list for a default dimensions
 
 ## v2.2
 
