@@ -106,38 +106,16 @@ datasource "ds_vm_list" do
       field "id", jmes_path(col_item,"id")
       field "rg", get(4, split(jmes_path(col_item,"id"), "/"))
       field "name", jmes_path(col_item,"name")
+      field "statuses", jmes_path(col_item,"properties.instanceView.statuses")
       field "subscriptionId",val(iter_item,"subscriptionId")
       field "subscriptionName",val(iter_item,"displayName")
     end
   end
 end
 
-# Retrieves information about the run-time state of each virtual machine
-datasource "ds_vm_instanceview" do
-  # https://learn.microsoft.com/en-us/rest/api/compute/virtual-machines/instance-view?tabs=HTTP
-  iterate $ds_vm_list
-  request do
-    auth $auth_azure
-    pagination $pagination_azure
-    host "management.azure.com"
-    path join(["/subscriptions/", val(iter_item,"subscriptionId"), "/resourceGroups/", val(iter_item,"rg"), "/providers/Microsoft.Compute/virtualMachines/",val(iter_item,"name"),"/instanceView"])
-    query "api-version","2022-08-01"
-    header "User-Agent", "RS Policies"
-    ignore_status [404]
-  end
-  result do
-    encoding "json"
-    field "rg", val(iter_item,"rg")
-    field "name", val(iter_item,"name")
-    field "statuses", jmes_path(response,"statuses")
-    field "subscriptionId",val(iter_item,"subscriptionId")
-    field "subscriptionName",val(iter_item,"subscriptionName")
-  end
-end
-
 # Calls the script to get only the virtual machines that are running
 datasource "ds_vm_running" do
-    run_script $js_filter_vm_running, $ds_vm_instanceview, $param_days_old
+    run_script $js_filter_vm_running, $ds_vm_list, $param_days_old
   end
 
 ###############################################################################
@@ -146,11 +124,11 @@ datasource "ds_vm_running" do
 
 # Returns instances that are long running
 script "js_filter_vm_running", type: "javascript" do
-  parameters "ds_vm_instanceview", "param_days_old"
+  parameters "ds_vm_list", "param_days_old"
   result "result"
   code <<-EOS
   var result=[];
-  _.each(ds_vm_instanceview, function(instance){
+  _.each(ds_vm_list, function(instance){
     var codes = _.pluck(instance.statuses, 'code')
     if ( _.contains(codes, "PowerState/running") ) {
       var runningState = _.where(instance.statuses, {"code": "PowerState/running"});
