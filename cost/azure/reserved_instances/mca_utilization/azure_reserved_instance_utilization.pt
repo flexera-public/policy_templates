@@ -105,6 +105,7 @@ datasource "ds_ri_utilization" do
   result do
     encoding "json"
     collect jmes_path(response, "value[*]") do
+      field "reservationOrderId", jmes_path(col_item, "properties.reservationOrderId")
       field "reservationId", jmes_path(col_item,"properties.reservationId")
       field "skuName", jmes_path(col_item,"properties.skuName")
       field "minUtilizationPercentage", jmes_path(col_item,"properties.minUtilizationPercentage")
@@ -193,37 +194,37 @@ end
 # record instead of per-RI per-day
 script "group_results", type: "javascript" do
   parameters "result"
-  result "groupings"
+  result "result"
   code <<-EOS
-    var groupings = _.map(_.groupBy(result, 'reservationId'), function(v, k){
+  //group utilization data by reservation order ID
+  util_grouped_by_reservation_order = _.groupBy(result, "reservationOrderId")
+  reservation_orders = _.keys(util_grouped_by_reservation_order, "reservationOrderId")
 
-      // Average the "average" utilization
-      avgUtil = _.reduce(v, function(memo, num) {
-            return memo + num.avgUtilizationPercentage;
-        }, 0) / (v.length === 0 ? 1 : v.length);
+  //calculate average utilization and totals for reserved/used hours over period
+  var period = []
+  _.each(reservation_orders, function(order){
+    var total_reserved_hours = 0, total_used_hours = 0
+    var days = 0
+    var sku_name = _.last(util_grouped_by_reservation_order[order]).skuName
+    var reservation_id = _.last(util_grouped_by_reservation_order[order]).reservationId
 
-      // Sum the reserved hours
-      sumReserved = _.reduce(v, function(memo, num) {
-            return memo + num.reservedHours;
-        }, 0);
-
-      // Sum the used hours
-      sumUsed = _.reduce(v, function(memo, num) {
-            return memo + num.usedHours;
-        }, 0);
-
-      return {
-        id: k,
-        sku: v[0].skuName,
-        util: avgUtil,
-        reserved: sumReserved,
-        used: sumUsed
-      }
+    _.each(util_grouped_by_reservation_order[order], function(util){
+      total_reserved_hours += util.reservedHours
+      total_used_hours += util.usedHours
+      days ++
     })
-    groupings=_.sortBy(groupings, 'id');
-    groupings=_.sortBy(groupings, 'sku');
-    groupings=_.sortBy(groupings, 'reserved');
-  EOS
+
+    period.push({
+      "reservationOrderId": order,
+      "reservedHours": total_reserved_hours,
+      "usedHours": total_used_hours,
+      "avgUtilizationPercentage": (total_used_hours / total_reserved_hours) * 100,
+      "skuName": sku_name
+      "reservationId": reservation_id
+    })
+  })
+  result = period
+EOS
 end
 
 ##########
@@ -238,18 +239,22 @@ policy "azure_superseded_instances_policy" do
     export do
       resource_level true
       field "id" do
-        label "RI ID"
+        label "ReservationOrder ID"
+        path "reservationOrderId"
       end
-      field "sku" do
+      field "reservationId" do
+        label "Reservation ID"
+      end
+      field "skuName" do
         label "SKU Name"
       end
-      field "reserved" do
+      field "reservedHours" do
         label "Reserved Hours"
       end
-      field "used" do
+      field "usedHours" do
         label "Used Hours"
       end
-      field "util" do
+      field "avgUtilizationPercentage" do
         label "Avg Util Pct"
       end
     end
