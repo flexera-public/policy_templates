@@ -1,46 +1,258 @@
-# Azure Reserved Instances Utilization Policy Template
+name "Azure Reserved Instances Utilization"
+rs_pt_ver 20180301
+type "policy"
+short_description "A policy that sends email notifications when utilization falls below a threshold. See the [README](https://github.com/flexera/policy_templates/tree/master/cost/azure/reserved_instances/utilization) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+long_description ""
+severity "medium"
+category "Cost"
+default_frequency "daily"
+info(
+  version: "2.0",
+  provider: "Azure",
+  service: "Compute",
+  policy_set: ""
+)
 
-**As a best practice, this policy should only be applied to the Master Account, and not to each individual RightScale Account.**
+#############
+# Parameters
+#############
 
-## What it does
+parameter "param_utilization" do
+  category "RI"
+  label "Show RI's with utilization below this value"
+  type "number"
+  min_value 1
+  max_value 100
+end
 
-This Policy Template leverages the [Azure MCA API for Reserved Instance Utilization](https://docs.microsoft.com/en-us/rest/api/consumption/reservations-summaries/list?tabs=HTTP). It will notify only if utilization of a RI falls below the value specified in the `Show RI's with utilization below this value` field. It examines the RI utilization for the prior 7 days (starting from 2 days ago) in making this determination.
+parameter "param_azure_endpoint" do
+  type "string"
+  label "Azure Endpoint"
+  allowed_values "management.azure.com", "management.chinacloudapi.cn"
+  default "management.azure.com"
+end
 
-## Input Parameters
+parameter "param_email" do
+  type "list"
+  label "Email addresses of the recipients you wish to notify"
+end
 
-This policy has the following input parameters required when launching the policy.
+#################
+# Authentication
+#################
 
-- *Azure Endpoint* - the Azure endpoint - defaults to management.azure.com
-- *Show RI's with utilization below this value* - Number between 1 and 100
-- *Email addresses of the recipients you wish to notify* - A list of email addresses to notify
+#authenticate with Azure
+credentials "azure_auth" do
+  schemes "oauth2"
+  label "Azure"
+  description "Select the Azure Resource Manager Credential from the list."
+  tags "provider=azure_rm"
+end
 
-## Policy Actions
+#############
+# Pagination
+#############
 
-The following policy actions are taken on any resources found to be out of compliance.
+pagination "azure_pagination" do
+  get_page_marker do
+    body_path "nextLink"
+  end
+  set_page_marker do
+    uri true
+  end
+end
 
-- Send an email report
+##############
+# Datasources
+##############
 
-## Prerequisites
+datasource "ds_billing_account" do
+  request do
+    auth $azure_auth
+    pagination $azure_pagination
+    host $param_azure_endpoint
+    path "/providers/Microsoft.Billing/billingAccounts"
+    query "api-version","2019-10-01-preview"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "value[*]") do
+      field "billingName", jmes_path(col_item,"name")
+    end
+  end
+end
 
-This policy uses [credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm)
-for connecting to the cloud -- in order to apply this policy you must have a credential registered in the system that is compatible with this policy. If there are no
-credentials listed when you apply the policy, please contact your cloud admin and ask them to register a credential that is compatible with this policy. The information below should be consulted when creating the credential.
+datasource "ds_billing_profile" do
+  iterate $ds_billing_account
+  request do
+    run_script $js_azure_billing_profile, val(iter_item, "billingName"), $param_azure_endpoint
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "value[*]") do
+      field "billingProfileID", jmes_path(col_item, "id")
+    end
+  end
+end
 
-### Credential configuration
+# Use the request object above to make the API call and get the data
+datasource "ds_ri_utilization" do
+  iterate $ds_billing_profile
+  request do
+    run_script $js_azure_ri_request, val(iter_item,"billingProfileID"), $param_azure_endpoint
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "value[*]") do
+      field "reservationId", jmes_path(col_item,"properties.reservationId")
+      field "skuName", jmes_path(col_item,"properties.skuName")
+      field "minUtilizationPercentage", jmes_path(col_item,"properties.minUtilizationPercentage")
+      field "avgUtilizationPercentage", jmes_path(col_item,"properties.avgUtilizationPercentage")
+      field "maxUtilizationPercentage", jmes_path(col_item,"properties.maxUtilizationPercentage")
+      field "reservedHours", jmes_path(col_item,"properties.reservedHours")
+      field "usedHours", jmes_path(col_item,"properties.usedHours")
+    end
+  end
+end
 
-For administrators [creating and managing credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) to use with this policy, the following information is needed:
+# The Azure API returns a record per RI per day. This datasource uses the script
+# to group the data to be per-RI only, and average/sum the numbers across the
+# individual records
+datasource "grouped_utilizations" do
+  run_script $group_results, $ds_ri_utilization
+end
 
-Provider tag value to match this policy: `azure_auth`
+##########
+# Scripts
+##########
 
-Required permissions in the provider:
+script "js_azure_billing_profile", type: "javascript" do
+  parameters "billingName", "param_azure_endpoint"
+  result "request"
+  code <<-EOS
+    var request = {
+      auth: "azure_auth",
+      pagination: "azure_pagination",
+      host: param_azure_endpoint,
+      ignore_status: [400,404],
+      path: "/providers/Microsoft.Billing/billingAccounts/"+billingName+"/billingProfiles",
+      query_params: {
+          "api-version": "2019-10-01-preview",
+      },
+      headers: {
+          "User-Agent": "RS Policies"
+      }
+    }
+  EOS
+end
 
-- Microsoft.Consumption/reservationSummaries/read
-- Microsoft.Billing/billingAccounts/read
+# Build the API request object dynamically because we need to
+#  calculate the startdate and enddate based on today
+# This is our API: https://docs.microsoft.com/en-us/rest/api/billing/enterprise/billing-enterprise-api-reserved-instance-usage#request-for--reserved-instance-usage-summary
+script "js_azure_ri_request", type: "javascript" do
+  parameters "billingProfileID", "param_azure_endpoint"
+  result "request"
+  code <<-EOS
 
-## Supported Clouds
-
-- Azure
-
-## Cost
-
-This Policy Template does not launch any instances, and so does not incur any cloud costs.
+    // Azure API allows you to specify which dates to retrieve utilization for. In order to keep with
+    // parity on how Optima does this for AWS RIs, and after consultation with COS team, the decision
+    // was made to use the last week's worth of data. We start from today-2 for a couple of reasons:
+    //  1 - that's what it is in Optima for AWS
+    //  2 - it's not clear how up-to-date the Azure data is, so specifying "today" might not work great
+    var date = new Date();
+    date.setDate(date.getDate() - 2);
+    var enddate = date.toISOString().slice(0,10);
+    date.setDate(date.getDate() - 7);
+    var startdate = date.toISOString().slice(0,10);
+    var request = {
+      auth: "azure_auth",
+      pagination: "azure_pagination",
+      host: param_azure_endpoint,
+      /*
+        {"code":"400","message":"Cost management data is unavailable for subscription XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX. The offer MS-AZR-0243P is not supported."}
+        {"code":"404","message":"Cost Management supports only Enterprise Agreement, Web direct and Microsoft Customer Agreement offer types. Subscription XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX is not associated with a valid offer type."}
+      */
+      ignore_status: [400,404],
+      path: ""+billingProfileID+"/providers/Microsoft.Consumption/reservationSummaries",
+      query_params: {
+          "grain": "daily",
+          "api-version": "2021-10-01",
+          "startDate": startdate,
+          "endDate": enddate
+      },
+      headers: {
+          "User-Agent": "RS Policies"
+      }
+    }
+  EOS
+end
+# See note above - this groups the data from the Azure API into a per-RI
+# record instead of per-RI per-day
+script "group_results", type: "javascript" do
+  parameters "result"
+  result "groupings"
+  code <<-EOS
+    var groupings = _.map(_.groupBy(result, 'reservationId'), function(v, k){
+      // Average the "average" utilization
+      avgUtil = _.reduce(v, function(memo, num) {
+            return memo + num.avgUtilizationPercentage;
+        }, 0) / (v.length === 0 ? 1 : v.length);
+      // Sum the reserved hours
+      sumReserved = _.reduce(v, function(memo, num) {
+            return memo + num.reservedHours;
+        }, 0);
+      // Sum the used hours
+      sumUsed = _.reduce(v, function(memo, num) {
+            return memo + num.usedHours;
+        }, 0);
+      return {
+        id: k,
+        sku: v[0].skuName,
+        util: avgUtil,
+        reserved: sumReserved,
+        used: sumUsed
+      }
+    })
+    groupings=_.sortBy(groupings, 'id');
+    groupings=_.sortBy(groupings, 'sku');
+    groupings=_.sortBy(groupings, 'reserved');
+  EOS
+end
+##########
+# Policy
+##########
+policy "azure_superseded_instances_policy" do
+  validate_each $grouped_utilizations do
+    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} Underutilized Azure Reserved Instances"
+    escalate $email
+    check logic_not(lt(to_n(val(item,"util")),$param_utilization))
+    export do
+      resource_level true
+      field "id" do
+        label "RI ID"
+      end
+      field "sku" do
+        label "SKU Name"
+      end
+      field "reserved" do
+        label "Reserved Hours"
+      end
+      field "used" do
+        label "Used Hours"
+      end
+      field "util" do
+        label "Avg Util Pct"
+      end
+    end
+  end
+end
+##############
+# Escalations
+##############
+escalation "email" do
+  automatic true
+  label "Send Email"
+  description "Sends incident email"
+  email $param_email
+end
