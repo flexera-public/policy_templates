@@ -44,6 +44,10 @@ Reference
 - [Superseded Instance Remediation](./cost/superseded_instance_remediation/)
 - [Terminate Instances with End Date](./cost/terminate_policy/)
 
+##### Currency Conversion
+
+- [Currency Conversion](./cost/currency_conversion/)
+
 ##### Forecasting
 
 - [Cloud Spend Forecast - Moving Average](./cost/forecasting/moving_average/)
