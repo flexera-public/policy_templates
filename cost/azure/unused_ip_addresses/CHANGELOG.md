@@ -1,5 +1,10 @@
 # Changelog
 
+## v4.1
+
+- Added `ignore_status` for 400 and 404 to Azure API calls
+- Added logic to handle where `resourceType` is null
+
 ## v4.0
 
 - Deprecated `auth_rs` authentication (type: `rightscale`) and replaced with `auth_flexera` (type: `oauth2`).  This is a breaking change which requires a Credential for `auth_flexera` [`provider=flexera`] before the policy can be applied.  Please see docs for setting up [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm)
@@ -8,7 +13,7 @@
 
 ## v3.4
 
-- remove duplicate data fields for subscriptionID and subscriptionName
+- Removed duplicate data fields for subscriptionID and subscriptionName
 
 ## v3.3
 
