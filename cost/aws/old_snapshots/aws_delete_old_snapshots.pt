@@ -34,7 +34,7 @@ parameter "snapshot_age" do
   label "Snapshot age"
   default 30
   description "The number of days since the snapshot was created."
-  min_value 1
+  min_value 0
 end
 
 parameter "param_aws_account_number" do
@@ -268,8 +268,29 @@ datasource "ds_describe_snapshots" do
   end
 end
 
+datasource "ds_describe_rds_snapshots" do
+  iterate $ds_regions
+  request do
+    run_script $js_describe_rds_snapshots, val(iter_item,"region"), $ds_get_caller_identity
+  end
+  result do
+    encoding "xml"
+    collect xpath(response, "//DescribeDBSnapshotsResponse/DescribeDBSnapshotsResult/DBSnapshots/DBSnapshot", "array") do
+      field "tags", []
+      field "region", val(iter_item, "region")
+      field "snapshotId", xpath(col_item, "DBSnapshotIdentifier")
+      field "rdsDatabaseId", xpath(col_item, "DBInstanceIdentifier")
+      #todo: verify OriginalSnapshotCreateTime vs SnapshotCreateTime
+      field "startTime", xpath(col_item, "OriginalSnapshotCreateTime")
+      #todo: need to get account id
+      field "ownerId", "123456789012"
+      field "volumeSize", xpath(col_item, "AllocatedStorage")
+    end
+  end
+end
+
 datasource "ds_filter_old_snapshots" do
-  run_script $js_filter_old_snapshots, $snapshot_age, $ds_describe_snapshots, $param_exclude_tags
+  run_script $js_filter_old_snapshots, $snapshot_age, $ds_filter_ami_snapshots, $param_exclude_tags, $ds_describe_rds_snapshots
 end
 
 datasource "ds_get_snapshot_ami" do
@@ -289,11 +310,11 @@ datasource "ds_get_snapshot_ami" do
 end
 
 datasource "ds_filter_ami_snapshots" do
-  run_script $js_filter_ami_snapshots, $ds_get_snapshot_ami, $ds_filter_old_snapshots, $ds_get_caller_identity
+  run_script $js_filter_ami_snapshots, $ds_get_snapshot_ami, $ds_describe_snapshots, $ds_get_caller_identity, $ds_describe_rds_snapshots
 end
 
 datasource "ds_snapshots_cost_mapping" do
-  run_script $js_snapshots_cost_mapping, $ds_filter_ami_snapshots, $ds_snapshot_costs, $ds_currency_code, $ds_currency_reference, $ds_billing_centers, $ds_get_caller_identity
+  run_script $js_snapshots_cost_mapping, $ds_filter_old_snapshots, $ds_snapshot_costs, $ds_currency_code, $ds_currency_reference, $ds_billing_centers, $ds_get_caller_identity
 end
 
 ###############################################################################
@@ -478,6 +499,7 @@ script "js_snapshots_cost_mapping", type: "javascript" do
         tags : snapshot['tagKeyValue'],
         daysOld : snapshot['daysOld'],
         imageId : snapshot['imageId'],
+        rdsDatabaseId : snapshot['rdsDatabaseId'],
         savings : (Math.round(monthly_savings * 1000) / 1000),
         savingsCurrency : cur,
         volumeSize : snapshot['volumeSize'],
@@ -492,6 +514,7 @@ script "js_snapshots_cost_mapping", type: "javascript" do
         tags : snapshot['tagKeyValue'],
         daysOld : snapshot['daysOld'],
         imageId : snapshot['imageId'],
+        rdsDatabaseId : snapshot['rdsDatabaseId'],
         savings: 0.0,
         savingsCurrency : cur,
         volumeSize : snapshot['volumeSize'],
@@ -538,17 +561,42 @@ script "js_describe_snapshots", type: "javascript" do
   EOS
 end
 
+script "js_describe_rds_snapshots", type: "javascript" do
+  result "results"
+  parameters "region", "ds_get_caller_identity"
+  code <<-EOS
+    results = {
+        "auth": "auth_aws",
+        "host": 'rds.'+region+'.amazonaws.com',
+        "verb": "GET",
+        "path": "/",
+        "pagination": "aws_pagination_describesnapshots_xml",
+        "headers": {
+          "User-Agent": "RS Policies",
+          "Content-Type": "text/xml"
+        },
+        "query_params": {
+          'Action': 'DescribeDBSnapshots',
+          'Version': '2014-10-31',
+          'IncludePublic': 'true',
+          'IncludeShared': 'true'
+        }
+    }
+  EOS
+end
+
 script "js_filter_old_snapshots", type: "javascript" do
   result "results"
-  parameters "snapshot_age", "ds_describe_snapshots", "param_exclude_tags"
+  parameters "snapshot_age", "ds_describe_snapshots", "param_exclude_tags", "ds_describe_rds_snapshots"
   code <<-EOS
     var param_exclude_tags_lower=[];
     for(var j=0;j<param_exclude_tags.length;j++){
         param_exclude_tags_lower[j] = param_exclude_tags[j].toString().toLowerCase();
     }
     var results = [];
-    for(var i=0; i < ds_describe_snapshots.length; i++){
-      var snapshot = ds_describe_snapshots[i];
+    var merged_snapshots = [].concat(ds_describe_snapshots, ds_describe_rds_snapshots);
+    for(var i=0; i < merged_snapshots.length; i++){
+      var snapshot = merged_snapshots[i];
       // Check, if the tag present in entered param_exclude_tags, ignore the snapshot if tag matches/present
       var isTagMatched = false;
       var instance_tags = {}
@@ -568,6 +616,7 @@ script "js_filter_old_snapshots", type: "javascript" do
         if(daysOld > snapshot_age){
           results.push({
             snapshotId : snapshot['snapshotId'],
+            rdsDatabaseId : snapshot['rdsDatabaseId'],
             region : snapshot['region'],
             tagKeyValue : tags,
             daysOld : daysOld,
@@ -576,6 +625,7 @@ script "js_filter_old_snapshots", type: "javascript" do
         }
       }
     }
+    console.log(results);
     results = _.sortBy(results,'region');
     results = _.sortBy(results,'daysOld');
   EOS
@@ -607,7 +657,7 @@ end
 
 script "js_filter_ami_snapshots", type: "javascript" do
   result "results"
-  parameters "ds_get_snapshot_ami", "ds_filter_old_snapshots", "ds_get_caller_identity"
+  parameters "ds_get_snapshot_ami", "ds_filter_old_snapshots", "ds_get_caller_identity", "ds_describe_rds_snapshots"
   code <<-EOS
     var results = [];
     // Loop through all the old snapshots and map them to AMI
@@ -677,12 +727,15 @@ EOS
       field "volumeSize" do
         label "Size"
       end
-      field "resourceID" do
+      field "resourceId" do
         label "Resource ID"
         path "snapshotId"
       end
       field "imageId" do
-        label "AMI"
+        label "EC2 AMI"
+      end
+      field "rdsDatabaseId" do
+        label "RDS Database"
       end
       field "savings" do
         label "Estimated Monthly Savings"
