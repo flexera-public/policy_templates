@@ -44,6 +44,10 @@ Reference
 - [Superseded Instance Remediation](./cost/superseded_instance_remediation/)
 - [Terminate Instances with End Date](./cost/terminate_policy/)
 
+##### Currency Conversion
+
+- [Currency Conversion](./cost/currency_conversion/)
+
 ##### Forecasting
 
 - [Cloud Spend Forecast - Moving Average](./cost/forecasting/moving_average/)
@@ -105,9 +109,10 @@ Reference
 - [Azure Reserved Instance Utilization](./cost/azure/reserved_instances/utilization/)
 - [Azure Reserved Instance Recommendations](./cost/azure/reserved_instances/mca_recommendations)
 - [Azure Rightsize Compute Instances](./cost/azure/rightsize_compute_instances)
-- [Azure Unused IP Addresses](./cost/azure/unused_ip_addresses)
+- [Azure Savings Plan Recommendations](./cost/azure/savings_plan/recommendations)
 - [Azure Savings Realized from Reservations](./cost/azure/savings_realized)
 - [Azure Schedule Instance](./cost/azure/schedule_instance/)
+- [Azure Unused IP Addresses](./cost/azure/unused_ip_addresses)
 
 ##### Database
 
