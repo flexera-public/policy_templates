@@ -43,7 +43,6 @@ parameter "param_cost_metric" do
   description "Select the cost metric for your report.  See the README file for more details"
 end
 
-##
 parameter "param_dimensions" do
   type "list"
   label "Cost Anomaly Dimensions"
@@ -135,8 +134,8 @@ datasource "ds_get_dimensions" do
   end
 end
 
-datasource "ds_default_dimensions" do
-  run_script $js_default_dimensions, $param_dimensions, $ds_get_dimensions
+datasource "ds_dimensions" do
+  run_script $js_filter_dimensions, $param_dimensions, $ds_get_dimensions
 end
 
 datasource "billing_centers" do
@@ -171,7 +170,7 @@ end
 
 datasource "ds_get_anomalies" do
   request do
-    run_script $js_get_anomalies, rs_optima_host, rs_org_id, $ds_top_level_billing_centers, $param_cost_metric, $param_days, $param_dimensions,$ds_default_dimensions, $param_window_size, $param_standard_deviations, $param_anomaly_limit
+    run_script $js_get_anomalies, rs_optima_host, rs_org_id, $ds_top_level_billing_centers, $param_cost_metric, $param_days, $param_dimensions,$ds_dimensions, $param_window_size, $param_standard_deviations, $param_anomaly_limit
   end
   result do
     encoding "json"
@@ -182,34 +181,34 @@ datasource "ds_get_anomalies" do
 end
 
 datasource "ds_filter_anomalies" do
-  run_script $js_filter_anomalies, $ds_get_anomalies, $param_min_spend, rs_org_id, $param_days, $param_dimensions,$ds_default_dimensions, $param_cost_metric, $param_anomaly_limit
+  run_script $js_filter_anomalies, $ds_get_anomalies, $param_min_spend, rs_org_id, $param_days, $param_dimensions,$ds_dimensions, $param_cost_metric, $param_anomaly_limit
 end
 
 ###############################################################################
 # Scripts
 ###############################################################################
 
-script "js_default_dimensions", type: "javascript" do
+script "js_filter_dimensions", type: "javascript" do
   parameters "param_dimensions", "ds_get_dimensions"
-  result "cleaned_default_dimensions"
+  result "filtered_dimensions"
   code <<-EOS
-    var cleaned_default_dimensions = {
-      default_dimensions_ids: [],
-      default_dimensions_names: [],
+    var filtered_dimensions = {
+      dimensions_ids: [],
+      dimensions_names: [],
       messagesu: []
     };
     var exist = false;
-    _.each(param_dimensions, function(default_dimension) {
+    _.each(param_dimensions, function(user_input_dimension) {
       exist = false;
       _.each(ds_get_dimensions, function(dimension) {
-        if (default_dimension === dimension.name || default_dimension === dimension.id) {
-          cleaned_default_dimensions.default_dimensions_ids.push(dimension.id);
-          cleaned_default_dimensions.default_dimensions_names.push(dimension.name);
+        if (user_input_dimension === dimension.name || user_input_dimension === dimension.id) {
+          filtered_dimensions.dimensions_ids.push(dimension.id);
+          filtered_dimensions.dimensions_names.push(dimension.name);
           exist = true;
         }
       });
       if (!exist) {
-        cleaned_default_dimensions.messagesu.push(default_dimension);
+        filtered_dimensions.messagesu.push(user_input_dimension);
       }
     });
   EOS
@@ -249,7 +248,7 @@ script "js_top_level_bc", type: "javascript" do
 end
 
 script "js_get_anomalies", type: "javascript" do
-  parameters "rs_optima_host", "org_id","bc_ids","param_cost_metric","param_days", "param_dimensions", "ds_default_dimensions", "param_window_size", "param_standard_deviations", "param_anomaly_limit"
+  parameters "rs_optima_host", "org_id","bc_ids","param_cost_metric","param_days", "param_dimensions", "ds_dimensions", "param_window_size", "param_standard_deviations", "param_anomaly_limit"
   result "request"
   code <<-EOS
     var start_at = "";
@@ -290,7 +289,7 @@ script "js_get_anomalies", type: "javascript" do
     })
 
     dimensions = []
-    _.each(ds_default_dimensions.default_dimensions_ids, function(dimension){
+    _.each(ds_dimensions.dimensions_ids, function(dimension){
       dimensions.push(dimension)
     })
 
@@ -322,7 +321,7 @@ script "js_get_anomalies", type: "javascript" do
 end
 
 script "js_filter_anomalies", type: "javascript" do
-  parameters "ds_get_anomalies", "param_min_spend", "org_id", "param_days", "param_dimensions","ds_default_dimensions", "param_cost_metric", "param_anomaly_limit"
+  parameters "ds_get_anomalies", "param_min_spend", "org_id", "param_days", "param_dimensions","ds_dimensions", "param_cost_metric", "param_anomaly_limit"
   result "result"
   code <<-EOS
     var start_at = "";
@@ -360,12 +359,10 @@ script "js_filter_anomalies", type: "javascript" do
     dimensions = []
     dimensionAPIString = ""
     dimensionsReadable = ""
-    count = 0
-    _.each(ds_default_dimensions.default_dimensions_ids, function(dimension){
+    _.each(ds_dimensions.dimensions_ids, function(dimension, index){
       dimensions.push(dimension)
       dimensionAPIString = dimensionAPIString + "&" + "groupBy=" + dimension
-      dimensionsReadable =  dimensionsReadable + " " + ds_default_dimensions.default_dimensions_names[count] + ","
-      count = count + 1
+      dimensionsReadable =  dimensionsReadable + " " + ds_dimensions.dimensions_names[index] + ","
     })
 
     dimensionsReadable = dimensionsReadable.substring(0, dimensionsReadable.length - 1);
@@ -408,8 +405,8 @@ script "js_filter_anomalies", type: "javascript" do
       "anomalies":anomalies,
       "message":message,
       "dimensionsReadable":dimensionsReadable,
-      "errorsu": ds_default_dimensions.messagesu,
-      "resid": ds_default_dimensions.default_dimensions_ids,
+      "errors": ds_dimensions.messagesu,
+      "used_dimensions": ds_dimensions.dimensions_names,
     }
     result.anomalies=_.sortBy(result.anomalies, 'cost');
     result.anomalies = result.anomalies.reverse().slice(0, param_anomaly_limit);
@@ -435,16 +432,20 @@ policy "budget_alert" do
   validate $ds_filter_anomalies do
     summary_template "Cloud Cost Anomalies: {{ len data.anomalies}} rows of detected anomalies for dimensions: {{ data.dimensionsReadable }}"
     detail_template <<-EOS
-Cost anomalies reference link: {{data.message}}
-Dimensions used on this Anomaly Report:
-{{ range data.default_dimensions_names -}}
-   * {{ . }}
-{{ end -}}
 
-The following dimensions aren't exist:
-{{ range data.errorsu -}}
-   * {{ . }}
-{{ end -}}
+Cost anomalies reference link: {{data.message}}
+
+Dimensions used on this Anomaly Report:
+{{ range data.used_dimensions }}
+\n   + {{ . }}
+{{ end }}
+
+
+Dimensions not used:
+{{ range data.errors }}
+\n   - {{ . }}
+{{ end }}
+
 EOS
     escalate $esc_budget_alert
     check eq(size(val(data, "anomalies")), 0)
