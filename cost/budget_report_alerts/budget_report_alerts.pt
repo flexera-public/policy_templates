@@ -8,7 +8,7 @@ tenancy "single"
 default_frequency "daily"
 
 info(
-  version: "1.0",
+  version: "2.0",
   provider: "Flexera Optima",
   service: "",
   policy_set: ""
@@ -20,20 +20,6 @@ parameter "param_budget_name_id" do
   type "string"
 end
 
-parameter "param_granularity" do
-  label "Granularity"
-  type "string"
-  default "Monthly"
-  allowed_values "Monthly", "Summarized"
-  description "Report granularity"
-end
-
-parameter "param_start_date" do
-  label "Start date (yyyy-mm). Leave it blank to check only the last month"
-  description "Provide the year and month to start tracking"
-  type "string"
-end
-
 parameter "param_threshold_percentage" do
   label "Threshold Percentage"
   type "number"
@@ -41,11 +27,20 @@ parameter "param_threshold_percentage" do
   default 90
 end
 
-parameter "param_dimensions" do
-  type "list"
-  label "Dimensions"
-  allowed_values "vendor", "service"
-  description "List of dimension groups for the policy"
+parameter "param_type" do
+  label "Budget Alert Type"
+  type "string"
+  allowed_values "Actual Spend","Forecasted Spend"
+  description "Actual Spend alerts are based off incurred costs. Forecasted Spend alerts are based off monthly runrates."
+  default "Actual Spend"
+end
+
+parameter "param_use_groups" do
+  type "string"
+  label "Data grouping"
+  allowed_values "Summarized","By dimensions"
+  default "Summarized"
+  description "Use this parameter to specify how to group the data"
 end
 
 parameter "param_email" do
@@ -110,7 +105,6 @@ datasource "ds_filtered_budgets" do
   run_script $js_filter_budgets, $ds_budgets, $param_budget_name_id
 end
 
-#
 script "js_filter_budgets", type: "javascript" do
   parameters "budgets", "budget_name_id"
   result "results"
@@ -120,11 +114,14 @@ script "js_filter_budgets", type: "javascript" do
     _.filter(budgets, function(b){
       b.start_date = Date.now();
       b.end_date = 0;
-      var has_curr_month = _.some(b.budgetYearMonths, function (yearMonth) {
+      var has_curr_month = false;
+      _.each(b.budgetYearMonths, function (yearMonth) {
         var curr = currDate.getFullYear() + '-' + (currDate.getMonth()+1);
         b.start_date = Math.min(b.start_date, Date.parse(yearMonth))
         b.end_date = Math.max(b.end_date, Date.parse(yearMonth))
-        return yearMonth == curr
+        if (yearMonth == curr) {
+          has_curr_month = true;
+        }
       })
       return (!budget_name_id || b.name == budget_name_id || b.id == budget_name_id) && has_curr_month;
     });
@@ -134,7 +131,7 @@ end
 datasource "ds_reports" do
   iterate $ds_filtered_budgets
   request do
-    run_script $report_request, rs_optima_host, rs_org_id, $param_start_date, $param_granularity, $param_dimensions, iter_item
+    run_script $report_request, rs_optima_host, rs_org_id, $param_use_groups, iter_item
   end
   result do
     encoding "json"
@@ -150,16 +147,11 @@ datasource "ds_reports" do
 end
 
 script "report_request", type: "javascript" do
-  parameters "rs_optima_host", "org","start_date","granularity", "dimensions", "budget"
+  parameters "rs_optima_host", "org", "use_groups", "budget"
   result "request"
   code <<-EOS
   var current = new Date();
-  if (!start_date) {
-    start_date = current.getFullYear() + '-' + ('0' + (current.getMonth()+1)).slice(-2);
-  } else {
-    var start = new Date(Math.max(Date.parse(start_date), budget.start_date))
-    start_date = start.getFullYear() + '-' + ('0' + (start.getMonth()+1)).slice(-2);
-  }
+  var start_date = current.getFullYear() + '-' + ('0' + (current.getMonth()+1)).slice(-2);
   current.setMonth(current.getMonth()+1);
   var end_date = current.getFullYear() + '-' + ('0' + (current.getMonth()+1)).slice(-2);
 
@@ -169,11 +161,10 @@ script "report_request", type: "javascript" do
     verb: "POST",
     path: "/bill-analysis/v0/orgs/" + org + "/budgets/" + budget.id + "/report",
     body_fields: {
-      "dimensions": dimensions,
+      "dimensions": use_groups == "Summarized" ? [] : budget.dimensions,
       "endAt": end_date,
       "startAt": start_date,
       "includeUnbudgeted": false,
-      "summarized": granularity == 'Summarized',
     },
     headers: {
       "User-Agent": "RS Policies",
@@ -185,12 +176,12 @@ end
 
 
 datasource "ds_aggregated" do
-  run_script $js_aggregated, $ds_reports, $ds_currency_code, $ds_currency_reference, $param_threshold_percentage
+  run_script $js_aggregated, $ds_reports, $ds_currency_code, $ds_currency_reference, $param_threshold_percentage, $param_type
 end
 
 
 script "js_aggregated", type: "javascript" do
-  parameters "reports", "currency_code", "currency_reference", "threshold_percent"
+  parameters "reports", "currency_code", "currency_reference", "threshold_percent", "param_type"
   result "results"
   code <<-EOS
   var results = {
@@ -234,8 +225,10 @@ script "js_aggregated", type: "javascript" do
       item.spend = item.spendAmount;
       item.overBudget = item.overBudgetAmount;
       item.overBudgetForec = item.overBudgetAmountForec;
-      item.vendor = item.dimensions && item.dimensions.vendor || "All";
-      item.service = item.dimensions && item.dimensions.service || "All";
+      item.group = "";
+      if (item.dimensions) {
+        item.group = _.values(item.dimensions).join("|");
+      }
       item.metric = (item.metric || '').replace("cost_", "").replace("_adj", "").replace("_", " ")
 
 
@@ -253,18 +246,26 @@ script "js_aggregated", type: "javascript" do
       }
 
       var budget_percent = item.spentPercent
+      var budget_percent_forec = item.spentPercentForec
       item.spentPercent += "%"
       item.spentPercentForec += "%"
 
-      if (item.spendAmount > item.budgetAmount) {
-        item.details = "Budget exceeded"
-        results.exceeded.push(item);
-      } else if (threshold_percent < budget_percent) {
-        item.details = "Threshold exceeded"
-        results.exceeded.push(item);
-      } else if (item.forecastedAmount > item.budgetAmount) {
-        item.details = "Forecasted Budget exceeded"
-        results.forecasted.push(item);
+      if (param_type == "Actual Spend") {
+        if (item.spendAmount > item.budgetAmount) {
+          item.details = "Budget exceeded"
+          results.exceeded.push(item);
+        } else if (threshold_percent < budget_percent) {
+          item.details = "Threshold exceeded"
+          results.exceeded.push(item);
+        }
+      } else {
+        if (item.forecastedAmount > item.budgetAmount) {
+          item.details = "Forecasted Budget exceeded"
+          results.forecasted.push(item);
+        } else if (threshold_percent < budget_percent_forec) {
+          item.details = "Threshold exceeded"
+          results.exceeded.push(item);
+        }
       }
     }
   });
@@ -315,11 +316,8 @@ policy "budget_alert" do
       field "date" do
         label "Date"
       end
-      field "vendor" do
-        label "Vendor"
-      end
-      field "service" do
-        label "Service"
+      field "group" do
+        label "Group"
       end
       field "budget" do
         label "Budget"
@@ -354,11 +352,8 @@ policy "budget_alert" do
       field "date" do
         label "Date"
       end
-      field "vendor" do
-        label "Vendor"
-      end
-      field "service" do
-        label "Service"
+      field "group" do
+        label "Group"
       end
       field "budget" do
         label "Budget"
