@@ -1,8 +1,14 @@
 # Changelog
 
-## v2.3
+## v2.4
 
 - changed URL link to Cost Anomalies report, now it's constructed dynamically based on detected shard
+
+## v2.3
+
+- adding an input list for a mix of dimensions
+- Validate each input from the list if exists
+
 
 ## v2.2
 
