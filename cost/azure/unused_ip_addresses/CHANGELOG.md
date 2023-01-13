@@ -1,5 +1,9 @@
 # Changelog
 
+## v4.2
+
+- Replaced the term **whitelist** with **allowed list**.
+
 ## v4.1
 
 - Added `ignore_status` for 400 and 404 to Azure API calls

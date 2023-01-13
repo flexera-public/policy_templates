@@ -1,5 +1,9 @@
 # Changelog
 
+## v4.2
+
+- Replaced the term **whitelist** with **allowed list**.
+
 ## v4.1
 
 - bugfix for logic regarding activity log and what constitutes unattached/unused. Changed logic to verify that activities length is 0 rather than using "toBeDetached" keyword

@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.8
+
+- Replaced the term **whitelist** with **allowed list**.
+
 ## v2.7
 
 - Modified cloud workflow Azure API to change `powerOff` to `deallocate` to release resources and start savings

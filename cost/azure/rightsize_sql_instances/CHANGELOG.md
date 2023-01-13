@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.11
+
+- Replaced the term **whitelist** with **allowed list**.
+
 ## v2.10
 
 - Modified `sys_log` definition to disable `rs_cm.audit_entry.create` outside Flexera NAM
