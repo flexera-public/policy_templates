@@ -8,7 +8,7 @@ category "Cost"
 tenancy "single"
 default_frequency "daily"
 info(
-  version: "2.2",
+  version: "2.3",
   provider: "Flexera Optima",
   service: "",
   policy_set:""
@@ -43,12 +43,10 @@ parameter "param_cost_metric" do
   description "Select the cost metric for your report.  See the README file for more details"
 end
 
-##
 parameter "param_dimensions" do
   type "list"
   label "Cost Anomaly Dimensions"
-  description "Dimensions to run anomaly report. Unable to take in custom tags as a dimension"
-  allowed_values "Cloud Vendor","Cloud Vendor Account Name","Cloud Vendor Account","Manufacturer Name","Spend Type","Flexera Capability","Category","Instance Type","Region","Operation","Resource Type","Service","Billing Account ID","Usage Unit","Usage Type","Line Item Type","Purchase Option","Resource Group","Bill Entity","Bill Source","Invoice ID"
+  description "Add please the exact name or id of a Default or Rule Based Dimensions you wish to run anomaly report."
   default ["Cloud Vendor Account Name", "Cloud Vendor", "Service"]
 end
 
@@ -118,6 +116,28 @@ datasource "ds_currency_code" do
   end
 end
 
+datasource "ds_get_dimensions" do
+  request do
+    auth $auth_flexera
+    host rs_optima_host
+    path join(["/bill-analysis/orgs/",rs_org_id,"/costs/dimensions"])
+    header "Api-Version", "0.1"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "dimensions[].{id: id, name: name, type:type}") do
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+      field "type", jmes_path(col_item, "type")
+    end
+  end
+end
+
+datasource "ds_dimensions" do
+  run_script $js_filter_dimensions, $param_dimensions, $ds_get_dimensions
+end
+
 datasource "billing_centers" do
   request do
     auth $auth_flexera
@@ -150,7 +170,7 @@ end
 
 datasource "ds_get_anomalies" do
   request do
-    run_script $js_get_anomalies, rs_optima_host, rs_org_id, $ds_top_level_billing_centers, $param_cost_metric, $param_days, $param_dimensions, $param_window_size, $param_standard_deviations, $param_anomaly_limit
+    run_script $js_get_anomalies, rs_optima_host, rs_org_id, $ds_top_level_billing_centers, $param_cost_metric, $param_days, $param_dimensions,$ds_dimensions, $param_window_size, $param_standard_deviations, $param_anomaly_limit
   end
   result do
     encoding "json"
@@ -161,12 +181,38 @@ datasource "ds_get_anomalies" do
 end
 
 datasource "ds_filter_anomalies" do
-  run_script $js_filter_anomalies, $ds_get_anomalies, $param_min_spend, rs_org_id, $param_days, $param_dimensions, $param_cost_metric, $param_anomaly_limit
+  run_script $js_filter_anomalies, $ds_get_anomalies, $param_min_spend, rs_org_id, $param_days, $param_dimensions,$ds_dimensions, $param_cost_metric, $param_anomaly_limit
 end
 
 ###############################################################################
 # Scripts
 ###############################################################################
+
+script "js_filter_dimensions", type: "javascript" do
+  parameters "param_dimensions", "ds_get_dimensions"
+  result "filtered_dimensions"
+  code <<-EOS
+    var filtered_dimensions = {
+      dimensions_ids: [],
+      dimensions_names: [],
+      messages: []
+    };
+    var exist = false;
+    _.each(param_dimensions, function(user_input_dimension) {
+      exist = false;
+      _.each(ds_get_dimensions, function(dimension) {
+        if (user_input_dimension === dimension.name || user_input_dimension === dimension.id) {
+          filtered_dimensions.dimensions_ids.push(dimension.id);
+          filtered_dimensions.dimensions_names.push(dimension.name);
+          exist = true;
+        }
+      });
+      if (!exist) {
+        filtered_dimensions.messages.push(user_input_dimension);
+      }
+    });
+  EOS
+end
 
 script "js_listed_billing_centers", type: "javascript" do
   parameters "billing_centers"
@@ -202,7 +248,7 @@ script "js_top_level_bc", type: "javascript" do
 end
 
 script "js_get_anomalies", type: "javascript" do
-  parameters "rs_optima_host", "org_id","bc_ids","param_cost_metric","param_days", "param_dimensions", "param_window_size", "param_standard_deviations", "param_anomaly_limit"
+  parameters "rs_optima_host", "org_id","bc_ids","param_cost_metric","param_days", "param_dimensions", "ds_dimensions", "param_window_size", "param_standard_deviations", "param_anomaly_limit"
   result "request"
   code <<-EOS
     var start_at = "";
@@ -212,30 +258,6 @@ script "js_get_anomalies", type: "javascript" do
       "Amortized Unblended":"cost_amortized_unblended_adj",
       "Unamortized Blended": "cost_nonamortized_blended_adj",
       "Amortized Blended":"cost_amortized_blended_adj"
-    }
-
-    var api_dimensions = {
-      "Cloud Vendor":"vendor"
-	    "Cloud Vendor Account":"vendor_account"
-	    "Cloud Vendor Account Name":"vendor_account_name"
-	    "Manufacturer Name":"manufacturer_name"
-      "Spend Type":"spend_type"
-	    "Flexera Capability":"capability"
-	    "Category":"category"
-	    "Instance Type":"instance_type"
-	    "Region":"region"
-	    "Operation":"operation"
-	    "Resource Type":"resource_type"
-	    "Service":"service"
-	    "Billing Account ID":"billing_center_id"
-	    "Usage Unit":"usage_unit"
-	    "Usage Type":"usage_type"
-	    "Line Item Type":"line_item_type"
-	    "Purchase Option":"purchase_option"
-	    "Resource Group":"resource_group"
-	    "Bill Entity":"bill_entity"
-	    "Bill Source":"bill_source"
-	    "Invoice ID":"invoice_id"
     }
 
     // format the date for the `daily` API
@@ -267,9 +289,10 @@ script "js_get_anomalies", type: "javascript" do
     })
 
     dimensions = []
-    _.each(param_dimensions, function(dimension){
-      dimensions.push(api_dimensions[dimension])
+    _.each(ds_dimensions.dimensions_ids, function(dimension){
+      dimensions.push(dimension)
     })
+
     start_at = getFormattedDailyDate(getStartDate(new Date()))
     end_at = getFormattedDailyDate(getEndDate(new Date()))
 
@@ -298,7 +321,7 @@ script "js_get_anomalies", type: "javascript" do
 end
 
 script "js_filter_anomalies", type: "javascript" do
-  parameters "ds_get_anomalies", "param_min_spend", "org_id", "param_days", "param_dimensions", "param_cost_metric", "param_anomaly_limit"
+  parameters "ds_get_anomalies", "param_min_spend", "org_id", "param_days", "param_dimensions","ds_dimensions", "param_cost_metric", "param_anomaly_limit"
   result "result"
   code <<-EOS
     var start_at = "";
@@ -309,31 +332,6 @@ script "js_filter_anomalies", type: "javascript" do
       "Amortized Unblended":"cost_amortized_unblended_adj",
       "Unamortized Blended": "cost_nonamortized_blended_adj",
       "Amortized Blended":"cost_amortized_blended_adj"
-    }
-
-    var api_dimensions = {
-      "Cloud Vendor":"vendor"
-	    "Cloud Vendor Account":"vendor_account"
-	    "Cloud Vendor Account Name":"vendor_account_name"
-	    "Manufacturer Name":"manufacturer_name"
-      "Spend Type":"spend_type"
-	    "Flexera Capability":"capability"
-	    "Category":"category"
-	    "Instance Type":"instance_type"
-	    "Region":"region"
-	    "Operation":"operation"
-      "Operating System":"operating_system"
-	    "Resource Type":"resource_type"
-	    "Service":"service"
-	    "Billing Account ID":"billing_center_id"
-	    "Usage Unit":"usage_unit"
-	    "Usage Type":"usage_type"
-	    "Line Item Type":"line_item_type"
-	    "Purchase Option":"purchase_option"
-	    "Resource Group":"resource_group"
-	    "Bill Entity":"bill_entity"
-	    "Bill Source":"bill_source"
-	    "Invoice ID":"invoice_id"
     }
 
     // format the date for the `daily` API
@@ -361,11 +359,12 @@ script "js_filter_anomalies", type: "javascript" do
     dimensions = []
     dimensionAPIString = ""
     dimensionsReadable = ""
-    _.each(param_dimensions, function(dimension){
-      dimensions.push(api_dimensions[dimension])
-      dimensionAPIString = dimensionAPIString + "&" + "groupBy=" + api_dimensions[dimension]
-      dimensionsReadable =  dimensionsReadable + " " + dimension + ","
+    _.each(ds_dimensions.dimensions_ids, function(dimension, index){
+      dimensions.push(dimension)
+      dimensionAPIString = dimensionAPIString + "&" + "groupBy=" + dimension
+      dimensionsReadable =  dimensionsReadable + " " + ds_dimensions.dimensions_names[index] + ","
     })
+
     dimensionsReadable = dimensionsReadable.substring(0, dimensionsReadable.length - 1);
     start_at = getFormattedDailyDate(getStartDate(new Date()))
     end_at = getFormattedDailyDate(getEndDate(new Date()))
@@ -405,7 +404,9 @@ script "js_filter_anomalies", type: "javascript" do
     result={
       "anomalies":anomalies,
       "message":message,
-      "dimensionsReadable":dimensionsReadable
+      "dimensionsReadable":dimensionsReadable,
+      "errors": ds_dimensions.messages,
+      "used_dimensions": ds_dimensions.dimensions_names,
     }
     result.anomalies=_.sortBy(result.anomalies, 'cost');
     result.anomalies = result.anomalies.reverse().slice(0, param_anomaly_limit);
@@ -427,10 +428,24 @@ end
 ###############################################################################
 
 policy "budget_alert" do
+
   validate $ds_filter_anomalies do
     summary_template "Cloud Cost Anomalies: {{ len data.anomalies}} rows of detected anomalies for dimensions: {{ data.dimensionsReadable }}"
     detail_template <<-EOS
+
 Cost anomalies reference link: {{data.message}}
+
+Dimensions used on this Anomaly Report:
+{{ range data.used_dimensions }}
+\n   + {{ . }}
+{{ end }}
+
+
+Dimensions not used because not exist:
+{{ range data.errors }}
+\n   - {{ . }}
+{{ end }}
+
 EOS
     escalate $esc_budget_alert
     check eq(size(val(data, "anomalies")), 0)
