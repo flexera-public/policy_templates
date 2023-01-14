@@ -2,8 +2,7 @@
 
 ## v2.1
 
-- Previous versions included already expired instances in the report, that was marked as
-a bug and in this release those instances are now filtered.
+- Previous versions included already expired instances in the report, that was marked as a bug and in this release those instances are now filtered.
 
 ## v2.0
 
