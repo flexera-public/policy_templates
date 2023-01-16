@@ -13,7 +13,7 @@ It will email the user specified in `Email addresses of the recipients you wish 
 This policy has the following input parameters required when launching the policy.
 
 - *Look Back Period* - Number of days of prior usage to analyze
-- *Service* - AWS Service for which to scan for RI Recommendations.  Select All to include all services in a single incident.
+- *Service* - AWS Service for which to scan for RI Recommendations.  Select  All to include all services in a single incident and "All Except EC2" to include all services except the Elastic Compute Cloud (EC2) to avoid creating exaggerated potential savings.
 - *Account Number* - The Account number for use with the AWS STS Cross Account Role. Leave blank when using AWS IAM Access key and secret. It only needs to be passed when the desired AWS account is different than the one associated with the Flexera One credential. [more](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_1982464505_1123608)
 - *EC2 Specification* - EC2 RI type. Note: this parameter will be ignored if the Service parameter is not \"Elastic Compute Cloud (EC2)\"
 - *RI Term* - Length of RI term
