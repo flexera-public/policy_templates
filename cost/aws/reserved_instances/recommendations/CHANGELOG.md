@@ -1,9 +1,5 @@
 # Changelog
 
-## v2.16
-
-- Added new selection "All Except EC2" for the service input list, Updated new option as default value, And Updated the datasources.
-
 ## v2.15
 
 - change the `auth_rs` Credential to `auth_flexera` name and label to `flexera` for consistency with other policy templates
