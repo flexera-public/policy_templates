@@ -20,6 +20,7 @@ This policy has the following input parameters required when launching the polic
 - *Oracle Cloud Region* - The region of the Oracle Cloud Object Storage bucket containing the cost and usage reports. Example: us-phoenix-1
 - *Oracle Cloud Cost & Usage Bucket* - OCID of the Oracle Cloud Object Storage bucket containing the Cost and Usage reports.
 - *Block Size* - The number of files to upload with each execution of the policy. Changing from the default value of 20 is not recommended.
+- *Commit Delay (Hours)* - The number of hours to wait between committing bill uploads. This is to avoid overloading the CBI system and to ensure bill ingestion occurs at a predictable cadence. The default value of 12 is recommended.
 
 ## Prerequisites
 
