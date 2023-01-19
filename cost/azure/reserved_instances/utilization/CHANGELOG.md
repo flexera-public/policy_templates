@@ -1,10 +1,17 @@
 # Changelog
 
+## v2.8
+
+- Added fix for "Reservation ID" to reflect the most recent Reservation ID for each Reservation Order
+- Updated escalation name to have correct prefix
+- Added logic to handle reservation with null Utilization data such as Azure Databricks
+- Updated README.md to correctly reflect 'param_utilization' parameter description
+
 ## v2.7
 
 - Added field for Instance Family to policy incident export
 - Updated "Quantity Purchased" to reflect quantity purchased as of most recent month, rather than at start of term
-- Fixed "Average Utilization Percentage" to reflect full 7/30 day period
+- Added fix for "Average Utilization Percentage" to reflect full 7/30 day period
 
 ## v2.6
 
