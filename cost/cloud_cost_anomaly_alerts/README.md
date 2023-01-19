@@ -2,7 +2,7 @@
 
 ## What it does
 
-The Cloud Cost Anomaly Alerts policy analyzes the spend in an organization over a specified time period and sends email notifications if anomalies were detected, it can be used in ".com", ".eu" and ".au" TLDs. The cost anomalies are identified using Bollinger Bands. The bands are defined as follows:
+The Cloud Cost Anomaly Alerts policy analyzes the spend in an organization over a specified time period and sends email notifications if anomalies were detected. The cost anomalies are identified using Bollinger Bands. The bands are defined as follows:
 The moving average is calculated using a window size specified.
 The upper and lower band are calculated as distance of a given number of standard deviations from the moving average.
 Any point outside of the bands is considered as anomalous. If multiple cost anomalies are detected for the given dimensions, the data point with the greatest deviation is reported as incident. Additionally, a URL link is provided to a graphical report where all detected anomalies are shown.

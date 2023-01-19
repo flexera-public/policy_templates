@@ -2,7 +2,7 @@
 
 ## v2.3
 
-- changed message from "js_filter_anomalies" script, dynamic TLD (.com, .eu or .au)
+- changed URL link to Cost Anomalies report, now it's constructed dynamically based on detected shard
 
 ## v2.2
 
