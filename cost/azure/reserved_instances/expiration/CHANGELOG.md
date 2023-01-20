@@ -2,7 +2,7 @@
 
 ## v2.1
 
-- Previous versions included already expired instances in the report, that was marked as a bug and in this release those instances are now filtered.
+- Bug fix: Already expired reserved instances are no longer included.
 
 ## v2.0
 
