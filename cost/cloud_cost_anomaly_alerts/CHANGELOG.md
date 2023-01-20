@@ -7,8 +7,7 @@
 ## v2.3
 
 - adding an input list for a mix of dimensions
-- Validate each input from the list if exists
-
+- validate each input from the list if exists
 
 ## v2.2
 
