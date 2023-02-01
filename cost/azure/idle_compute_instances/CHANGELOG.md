@@ -1,5 +1,9 @@
 # Changelog
 
+## v4.1
+
+- Fixed bug when filtering by tag key when Azure API does not return tag data for an instance
+
 ## v4.0
 
 - Deprecated `auth_rs` authentication (type: `rightscale`) and replaced with `auth_flexera` (type: `oauth2`).  This is a breaking change which requires a Credential for `auth_flexera` [`provider=flexera`] before the policy can be applied.  Please see docs for setting up [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm)
