@@ -1,5 +1,9 @@
 # Changelog
 
+## v4.2
+
+- Added `ignore_status [400,403,404]` for API calls to Azure API to ignore errors related to legacy subscription types
+
 ## v4.1
 
 - Fixed bug when filtering by tag key when Azure API does not return tag data for an instance

@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.8
+
+- Added `ignore_status [400,403,404]` for API calls to Azure API to ignore errors related to legacy subscription types
+
 ## v2.7
 
 - Modified cloud workflow Azure API to change `powerOff` to `deallocate` to release resources and start savings
