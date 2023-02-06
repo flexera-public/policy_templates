@@ -268,27 +268,27 @@ datasource "ds_describe_snapshots" do
   end
 end
 
-datasource "ds_describe_rds_snapshots" do
-  iterate $ds_regions
-  request do
-    run_script $js_describe_rds_snapshots, val(iter_item,"region"), $ds_get_caller_identity
-  end
-  result do
-    encoding "xml"
-    collect xpath(response, "//DescribeDBSnapshotsResponse/DescribeDBSnapshotsResult/DBSnapshots/DBSnapshot", "array") do
-      field "tags", []
-      field "region", val(iter_item, "region")
-      field "snapshotId", xpath(col_item, "DBSnapshotIdentifier")
-      field "rdsDatabaseId", xpath(col_item, "DBInstanceIdentifier")
-      #todo: verify OriginalSnapshotCreateTime vs SnapshotCreateTime
-      field "startTime", xpath(col_item, "OriginalSnapshotCreateTime")
-      #todo: need to get account id
-      field "ownerId", "123456789012"
-      field "volumeSize", xpath(col_item, "AllocatedStorage")
-      field "snapShotType", xpath(col_item, "SnapshotType")
-    end
-  end
-end
+# datasource "ds_describe_rds_snapshots" do
+#   iterate $ds_regions
+#   request do
+#     run_script $js_describe_rds_snapshots, val(iter_item,"region"), $ds_get_caller_identity
+#   end
+#   result do
+#     encoding "xml"
+#     collect xpath(response, "//DescribeDBSnapshotsResponse/DescribeDBSnapshotsResult/DBSnapshots/DBSnapshot", "array") do
+#       field "tags", []
+#       field "region", val(iter_item, "region")
+#       field "snapshotId", xpath(col_item, "DBSnapshotIdentifier")
+#       field "rdsDatabaseId", xpath(col_item, "DBInstanceIdentifier")
+#       #todo: verify OriginalSnapshotCreateTime vs SnapshotCreateTime
+#       field "startTime", xpath(col_item, "OriginalSnapshotCreateTime")
+#       #todo: need to get account id
+#       field "ownerId", "123456789012"
+#       field "volumeSize", xpath(col_item, "AllocatedStorage")
+#       field "snapShotType", xpath(col_item, "SnapshotType")
+#     end
+#   end
+# end
 
 datasource "ds_describe_db_clusters" do
   iterate $ds_regions
@@ -326,7 +326,7 @@ datasource "ds_describe_db_cluster_snapshots" do
 end
 
 datasource "ds_filter_old_snapshots" do
-  run_script $js_filter_old_snapshots, $snapshot_age, $ds_filter_ami_snapshots, $param_exclude_tags, $ds_describe_rds_snapshots, $ds_describe_db_clusters, $ds_describe_db_cluster_snapshots
+  run_script $js_filter_old_snapshots, $snapshot_age, $ds_filter_ami_snapshots, $param_exclude_tags, $ds_describe_db_clusters, $ds_describe_db_cluster_snapshots
 end
 
 datasource "ds_get_snapshot_ami" do
@@ -346,7 +346,7 @@ datasource "ds_get_snapshot_ami" do
 end
 
 datasource "ds_filter_ami_snapshots" do
-  run_script $js_filter_ami_snapshots, $ds_get_snapshot_ami, $ds_describe_snapshots, $ds_get_caller_identity, $ds_describe_rds_snapshots
+  run_script $js_filter_ami_snapshots, $ds_get_snapshot_ami, $ds_describe_snapshots, $ds_get_caller_identity
 end
 
 datasource "ds_snapshots_cost_mapping" do
@@ -418,8 +418,8 @@ script "js_get_costs", type: "javascript" do
       day = day.length > 1 ? day : '0' + day;
       return year + '-' + month + '-' + day;
     }
-    var start_date = getFormattedDailyDate(new Date(new Date().setDate(new Date().getDate() - 16)));
-    var end_date = getFormattedDailyDate(new Date(new Date().setDate(new Date().getDate() - 2)));
+    var start_date = getFormattedDailyDate(new Date(new Date().setDate(new Date().getDate() - 4)));
+    var end_date = getFormattedDailyDate(new Date(new Date().setDate(new Date().getDate() - 3)));
     var request = {
       auth: "auth_flexera",
       host: optima_host,
@@ -492,9 +492,6 @@ script "js_snapshots_cost_mapping", type: "javascript" do
     _.each(ds_filter_old_snapshots, function(snapshot) {
       costs_by_resource_id[snapshot.formatSnapId] = [];
     });
-    //console.log(ds_filter_old_snapshots);
-    //console.log(costs_by_resource_id);
-    //console.log(ds_snapshot_costs);
     _.each(ds_snapshot_costs, function(cost) {
       var costs = costs_by_resource_id[cost.resource_id];
       if (costs != null) {
@@ -522,7 +519,6 @@ script "js_snapshots_cost_mapping", type: "javascript" do
   var accountName = ""
   if (_.size(ds_snapshot_costs) > 0) {
     accountName = ds_snapshot_costs[0].vendorAccountName
-    //console.log(accountName);
   }
   var total=0;
   _.each(ds_filter_old_snapshots, function(snapshot){
@@ -532,8 +528,10 @@ script "js_snapshots_cost_mapping", type: "javascript" do
       service = "EBS"
     } else if (snapshot["snapshotId"].indexOf("arn:aws:rds:") == 0) {
       service = "RDS"
-    } else {
+    } else if (snapshot["snapshotId"].indexOf("rds:") == 0) {
       service = "RDS"
+    } else {
+      service = "N/A"
     }
     //possible ID instead of Id
     var cost_objects = costs_by_resource_id[snapshot.formatSnapId];
@@ -541,7 +539,6 @@ script "js_snapshots_cost_mapping", type: "javascript" do
       var sum = _.reduce(_.compact(_.map(cost_objects, function(value){ return value.cost_nonamortized_unblended_adj})), function(memo, num){ return memo + num; }, 0);
       var monthly_savings = sum*30;
       total=total+monthly_savings;
-      //console.log(monthly_savings);
       result.push({
         accountID: ds_get_caller_identity[0]['account'],
         accountName: accountName,
@@ -551,7 +548,7 @@ script "js_snapshots_cost_mapping", type: "javascript" do
         daysOld : snapshot['daysOld'],
         imageId : snapshot['imageId'],
         rdsDatabaseId : snapshot['rdsDatabaseId'],
-        savings : (Math.round(monthly_savings * 1000) / 1000),
+        savings : (Math.round(monthly_savings)),
         savingsCurrency : cur,
         volumeSize : snapshot['volumeSize'],
         service : service
@@ -629,7 +626,7 @@ script "js_describe_rds_snapshots", type: "javascript" do
         "query_params": {
           'Action': 'DescribeDBSnapshots',
           'Version': '2014-10-31',
-          'IncludePublic': 'true',
+          //'IncludePublic': 'true',
           'IncludeShared': 'true',
         }
     }
@@ -684,23 +681,18 @@ end
 
 script "js_filter_old_snapshots", type: "javascript" do
   result "results"
-  parameters "snapshot_age", "ds_describe_snapshots", "param_exclude_tags", "ds_describe_rds_snapshots", "ds_describe_db_clusters", "ds_describe_db_cluster_snapshots"
+  parameters "snapshot_age", "ds_describe_snapshots", "param_exclude_tags", "ds_describe_db_clusters", "ds_describe_db_cluster_snapshots"
   code <<-EOS
-    //formating ids
-    // _.each(ds_describe_db_clusters, function(snapshot){
-    //   snapshot['formatSnapId'] = "cluster:" + snapshot['dbClusterResourceId'];
-    // })
-    _.each(ds_describe_rds_snapshots, function(snapshot){
-       snapshot['formatSnapId'] = "db:" + snapshot['rdsDatabaseId'];
-    })
     //need to compare ds_describe_db_clusters and ds_describe_db_cluster_snapshots in order to combine resourceid with snapshot info. db cluster snapshot call did not provide what we need for resource id to match with optima
     var merged_db_cluster_info = [];
     _.each(ds_describe_db_cluster_snapshots, function(snapshot){
       _.each(ds_describe_db_clusters, function(db_cluster){
-        if(db_cluster.dbClusterIdentifier = snapshot.dbClusterIdentifier)
+        if(db_cluster.dbClusterIdentifier == snapshot.dbClusterIdentifier)
           merged_db_cluster_info.push({
             region : snapshot['region']
-            snapshotId : snapshot['dbClusterSnapshotIdentifier'],
+            snapshotId : snapshot['dbClusterSnapshotIdentifier'].split(":").pop(),
+            //might need to do cluster-snapshot: snapshot['dbClusterResourceId]
+            //dbClusterResourceId : "cluster-snapshot:" + snapshot['dbClusterSnapshotIdentifier'].toLowerCase(),
             formatSnapId : "cluster:" + db_cluster['dbClusterResourceId'].toLowerCase(),
             snapShotType : snapshot['snapShotType'],
             startTime : snapshot['startTime'],
@@ -708,15 +700,12 @@ script "js_filter_old_snapshots", type: "javascript" do
         })
       })
     })
-    //merged_db_cluster_info.toLowerCase();
-    console.log(merged_db_cluster_info);
     var param_exclude_tags_lower=[];
     for(var j=0;j<param_exclude_tags.length;j++){
         param_exclude_tags_lower[j] = param_exclude_tags[j].toString().toLowerCase();
     }
     var results = [];
-    var merged_snapshots = [].concat(merged_db_cluster_info, ds_describe_snapshots, ds_describe_rds_snapshots);
-    //console.log(merged_snapshots);
+    var merged_snapshots = [].concat(merged_db_cluster_info, ds_describe_snapshots);
     for(var i=0; i < merged_snapshots.length; i++){
       var snapshot = merged_snapshots[i];
       // Check, if the tag present in entered param_exclude_tags, ignore the snapshot if tag matches/present
@@ -740,7 +729,7 @@ script "js_filter_old_snapshots", type: "javascript" do
             snapshotId : snapshot['snapshotId'],
             formatSnapId : snapshot['formatSnapId'],
             rdsDatabaseId : snapshot['rdsDatabaseId'],
-            //formatClusterResourceId : snapshot['formatClusterResourceId'],
+            //dbClusterResourceId : snapshot['dbClusterResourceId'],
             region : snapshot['region'],
             tagKeyValue : tags,
             daysOld : daysOld,
@@ -749,7 +738,6 @@ script "js_filter_old_snapshots", type: "javascript" do
         }
       }
     }
-    //console.log(results);
     results = _.sortBy(results,'region');
     results = _.sortBy(results,'daysOld');
   EOS
@@ -781,7 +769,7 @@ end
 
 script "js_filter_ami_snapshots", type: "javascript" do
   result "results"
-  parameters "ds_get_snapshot_ami", "ds_filter_old_snapshots", "ds_get_caller_identity", "ds_describe_rds_snapshots"
+  parameters "ds_get_snapshot_ami", "ds_filter_old_snapshots", "ds_get_caller_identity"
   code <<-EOS
     var results = [];
     // Loop through all the old snapshots and map them to AMI
