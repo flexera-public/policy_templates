@@ -7,7 +7,7 @@ category "Cost"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "1.0",
+  version: "1.1",
   provider: "Azure",
   service: "Compute",
   policy_set: "Rightsize Compute Instances",
@@ -188,7 +188,8 @@ datasource "ds_azure_instances" do
     path join(["/subscriptions/", val(iter_item, "subscriptionId"), "/providers/Microsoft.Compute/virtualMachines"])
     query "api-version","2019-03-01"
     header "User-Agent", "RS Policies"
-    ignore_status [400, 403, 404]
+    # Ignore status 400, 403, and 404 which can be returned in certain (legacy) types of Azure Subscriptions
+    ignore_status [400,403,404]
   end
   result do
     encoding "json"
@@ -247,7 +248,8 @@ datasource "ds_azure_instance_utilization" do
     query "timespan", "P30D"
     query "interval", "P1D"
     header "User-Agent", "RS Policies"
-    ignore_status [400, 403, 404]
+    # Ignore status 400, 403, and 404 which can be returned in certain (legacy) types of Azure Subscriptions
+    ignore_status [400,403,404]
   end
   result do
     encoding "json"
@@ -301,7 +303,7 @@ script "js_filter_instance_utilization", type: "javascript" do
     })
 
     //Filter out instances if the CPU usage is above the Underutilized CPU threshold
-    var filtered_instances = _.reject(ds_azure_instance_utilization, function(util_data){ 
+    var filtered_instances = _.reject(ds_azure_instance_utilization, function(util_data){
       return util_data.averageCPU >= param_cpu_underutil_avg_percentage
     })
     result = filtered_instances
@@ -332,7 +334,7 @@ script "js_add_instance_downsize_data", type: "javascript" do
       if( inst.averageCPU > param_cpu_idle_avg_percentage ){
         if( instance_size_map[inst.vmSize] != undefined && instance_size_map[inst.vmSize] != null ){
           next_vm_size = instance_size_map[inst.vmSize].down
-          if(next_vm_size == null ){ 
+          if(next_vm_size == null ){
             next_vm_size = "N/A"
           }
         }
@@ -466,7 +468,7 @@ script "js_combine_data", type: "javascript" do
     var instance_data = []
     var message = ''
     var count = 0
-    
+
     function formatNumber(number, separator){
       var numString = number.toString()
       var values = numString.split(".")
@@ -502,7 +504,7 @@ script "js_combine_data", type: "javascript" do
       var cur = "$"
       var separator = ","
     }
-      
+
     //ADD COSTS TO INSTANCE UTILIZATION DATA
     var underutil_total_savings = 0, idle_total_savings = 0
 
@@ -519,7 +521,7 @@ script "js_combine_data", type: "javascript" do
         } else {
           total_cost += cost_data.cost
         }
-        count++ 
+        count++
       })
 
       console.log(count)
@@ -544,7 +546,7 @@ script "js_combine_data", type: "javascript" do
     summary_data = {
       "underutilMessage": "The total estimated monthly savings is " + underutil_total_savings,
       "idleMessage": "The total estimated monthly savings is " + idle_total_savings,
-      "underutilInstanceCount": _.size( _.filter(result, function(res){ 
+      "underutilInstanceCount": _.size( _.filter(result, function(res){
         return Number(res.averageCPU) >= param_idle_prc }) ),
       "idleInstanceCount": _.size( _.reject(result, function(res){
         return Number(res.averageCPU) >= param_idle_prc }) )
@@ -597,7 +599,7 @@ policy "policy_azure_rightsizing_data" do
       end
       field "osType" do
         label "OS Type"
-      end      
+      end
       field "region" do
         label "Region"
       end
@@ -670,7 +672,7 @@ EOS
       end
       field "osType" do
         label "OS Type"
-      end      
+      end
       field "region" do
         label "Region"
       end
