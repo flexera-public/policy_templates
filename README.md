@@ -59,7 +59,7 @@ Reference
 
 ##### Credential Setup
 
-- [Read Only CFT](./cost/aws/FlexeraReadOnlyPolicy.template)
+- [Flexera Automation CloudFormation Template](./tools/cloudformation-template)
 
 ##### Compute
 
