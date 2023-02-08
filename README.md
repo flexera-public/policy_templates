@@ -126,6 +126,10 @@ Reference
 - [Azure Unused Volumes](./cost/azure/unattached_volumes)
 - [Azure Storage Accounts without Lifecycle Management Policies](./cost/azure/storage_account_lifecycle_management/)
 
+##### Common Bill Ingestion
+
+- [Azure China Common Bill Ingestion](./cost/azure/azure_china_cbi)
+
 #### Google
 
 ##### Compute
@@ -159,6 +163,12 @@ Reference
 
 - [Google Unutilized IP Addresses](./cost/google/unutilized_ip_addresses/)
 - [Google Idle IP Address Recommender](./cost/google/idle_ip_address_recommendations)
+
+#### Oracle
+
+##### Common Bill Ingestion
+
+- [Oracle Cloud Common Bill Ingestion](./cost/oracle/oracle_cbi)
 
 ### Security
 

@@ -49,14 +49,20 @@ Required permissions in the provider:
 
 ```javascript
 {
-  "Version": "2012-10-17",
-  "Statement":[{
-  "Effect":"Allow",
-  "Action":["ec2:DescribeRegions"],
-    "Resource":"*"
-    }
-  ]
-}
+      "Version": "2012-10-17",
+      "Statement": [
+          {
+              "Effect": "Allow",
+              "Action": [
+                  "cloudwatch:GetMetricStatistics",
+                  "ec2:DescribeRegions",
+                  "rds:DescribeDBInstances",
+                  "sts:GetCallerIdentity"
+              ],
+              "Resource": "*"
+          }
+      ]
+  }
 ```
 
 ## Supported Clouds

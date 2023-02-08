@@ -1,8 +1,12 @@
 # Changelog
 
-## v3.1
+## v3.2
 
 - Replaced the term **whitelist** with **allowed list**.
+
+## v3.1
+
+- Added `ignore_status [400,403,404]` for API calls to Azure API to ignore errors related to legacy subscription types
 
 ## v3.0
 

@@ -7,7 +7,7 @@ category "Cost"
 severity "low"
 default_frequency "daily"
 info(
-  version: "4.1",
+  version: "4.3",
   provider: "Azure",
   service: "Compute",
   policy_set: "Idle Compute Instances"
@@ -131,6 +131,7 @@ datasource "ds_azure_virtualmachines" do
     path join(["/subscriptions/", val(iter_item,"subscriptionID"), "/providers/Microsoft.Compute/virtualMachines"])
     query "api-version","2019-03-01"
     header "User-Agent", "RS Policies"
+    # Ignore status 400, 403, and 404 which can be returned in certain (legacy) types of Azure Subscriptions
     ignore_status [400,403,404]
   end
   result do
@@ -164,6 +165,7 @@ datasource "ds_azure_instance_performance" do
     query "timespan","P30D"
     query "interval", "P1D"
     header "User-Agent", "RS Policies"
+    # Ignore status 400, 403, and 404 which can be returned in certain (legacy) types of Azure Subscriptions
     ignore_status [400,403,404]
   end
   result do
@@ -345,24 +347,25 @@ end
 
 script "js_filter_instances", type: "javascript" do
   parameters "ds_azure_virtualmachines", "param_exclusion_tag_key"
-  result "results"
+  result "result"
   code <<-EOF
-  var results = _.filter(ds_azure_virtualmachines, function(instance){
-    var tags = []
-    if (_.has(instance.tags, param_exclusion_tag_key)) {
-    } else if (typeof instance.tags === "undefined" || instance.tags === null){
-      instance.tags = tags
-    }else{
-      Object.keys(instance.tags).forEach(function(key) {
-        tags.push(key+'='+instance.tags[key])
-      });
-      instance.tags = tags
-      resourceTypeSplit = instance['resourceType'].split("/")
-      service = resourceTypeSplit[0]
-      instance['service'] = service
-      return instance
-    }
-  })
+  if (param_exclusion_tag_key == "" || param_exclusion_tag_key == null || param_exclusion_tag_key == undefined) {
+    result = ds_azure_virtualmachines
+  } else {
+    result = []
+
+    _.each(ds_azure_virtualmachines, function(vm) {
+      if (vm['tags'] != null && vm['tags'] != undefined) {
+        tag_keys = Object.keys(vm['tags'])
+      } else {
+        tag_keys = []
+      }
+
+      if (_.contains(tag_keys, param_exclusion_tag_key) == false) {
+        result.push(vm)
+      }
+    })
+  }
 EOF
 end
 

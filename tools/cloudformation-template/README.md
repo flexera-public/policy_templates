@@ -39,7 +39,7 @@ As you follow the official docs, you can use the recommended configurations belo
 
    > It's recommended to use an official release for Production use-cases (i.e. *vX.Y.Z*).  All official releases can be found under [releases/](./releases/) folder and are published to  `https://flexera-cloudformation-public.s3.us-east-2.amazonaws.com/FlexeraAutomationPolicies_vX.Y.Z.template`. An example of an release template S3 URL:
    >
-   > **https://flexera-cloudformation-public.s3.us-east-2.amazonaws.com/FlexeraAutomationPolicies_v0.1.1.template**
+   > **https://flexera-cloudformation-public.s3.us-east-2.amazonaws.com/FlexeraAutomationPolicies_v0.2.0.template**
 
  - On the **Specify StackSet details** page, provide a name for the stack set, specify *Flexera Organization ID* and any other parameters, and then choose **Next**.
 
