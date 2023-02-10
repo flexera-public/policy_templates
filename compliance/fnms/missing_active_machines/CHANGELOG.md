@@ -2,7 +2,7 @@
 
 ## v2.2
 
-- Replaced hardcoded `host` in `ds_inventories` using `f1_app_host` as base 
+- Replaced hardcoded `host` in `ds_inventories` using `f1_app_host` as base
 
 ## v2.1
 
