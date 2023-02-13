@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.10
+
+- Fixed bug related to Instance Status in the resulting incident data
+
 ## v2.9
 
 - Replaced the term **whitelist** with **allowed list**.
