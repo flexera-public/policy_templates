@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.10
+
+- Case-insensitive matching of computerName from report with Azure VM name
+
 ## v2.9
 
 - Replaced the term **whitelist** with **allowed list**.
@@ -14,7 +18,7 @@
 
 ## v2.6
 
-- updated README.md rightscale documentation links with docs.flexera documentation links
+- Updated README.md rightscale documentation links with docs.flexera documentation links
 
 ## v2.5
 
@@ -34,7 +38,7 @@
 
 ## v2.1
 
-- remove unnecessary permissions block
+- Remove unnecessary permissions block
 
 ## v2.0
 
@@ -43,4 +47,4 @@
 
 ## v1.0
 
-- initial release
+- Initial release
