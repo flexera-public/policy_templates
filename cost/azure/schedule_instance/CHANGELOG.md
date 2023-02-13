@@ -1,6 +1,6 @@
 # Changelog
 
-## v3.0
+## v2.10
 
 - Changed `'.statuses[1].code/"/"|.[1]'` to `'.statuses[] | select( .code | match("PowerState")) | .code[11:50]'` so that the right item in an array is selected for status
 
