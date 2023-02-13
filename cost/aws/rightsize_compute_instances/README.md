@@ -107,7 +107,7 @@ To enable windows support you will need to add the following to your cloudwatch 
 
 ## Supported Clouds
 
-- Azure
+- AWS
 
 ## Cost
 
