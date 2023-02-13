@@ -15,7 +15,7 @@ This policy checks all the instances in an AWS Account for CPU and Memory usage 
 
 ### Policy savings details
 
-The policy includes the estimated savings. The estimated savings is recognized if the resource is terminated, or downsized. Optima is used to receive the estimated savings which is the cost of the resource for the last full month. The savings is displayed in the Estimated Monthly Savings column. If the resource can not be found in Optima the value is 0.0. The incident message detail includes the sum of each resource Estimated Monthly Savings as Total Estimated Monthly Savings.
+The policy includes the estimated savings. The estimated savings is recognized if the resource is terminated, or downsized. Optima is used to retrieve and calculate the estimated savings which is the cost of the resource for the last full month. The savings is displayed in the Estimated Monthly Savings column. If the resource can not be found in Optima the value is 0.0. The incident message detail includes the sum of each resource *Estimated Monthly Savings* as *Total Estimated Monthly Savings*.
 
 ## Input Parameters
 
