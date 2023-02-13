@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.3
+
+- changed URL link to Cost Anomalies report, now it's constructed dynamically based on detected shard
+
 ## v2.2
 
 - changed cost metric map key from api call value to more readable value
