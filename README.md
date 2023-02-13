@@ -418,6 +418,7 @@ Reference
 - [Azure Sync Tags with Optima](./operational/azure/sync_tags_with_optima/)
 - [Azure SQL Databases without Elastic Pools](./operational/azure/azure_sql_using_elastic_pool/)
 - [Azure Tag Cardinality Report](./operational/azure/tag_cardinality/)
+- [Azure Long Running Instances](./operational/azure/azure_long_running_instances/)
 
 #### VMWare
 
