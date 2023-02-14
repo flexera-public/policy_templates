@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.1
+
+- Updated `js_generate_past_month_list` logic to fix bug where start date and end date clash when running policy at the end of January
+
 ## v3.0
 
 - Deprecated `auth_rs` authentication (type: `rightscale`) and replaced with `auth_flexera` (type: `oauth2`).  This is a breaking change which requires a Credential for `auth_flexera` [`provider=flexera`] before the policy can be applied.  Please see docs for setting up [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm)
