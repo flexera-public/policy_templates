@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.14
+
+- Fixed subscriptionName empty in the Incident
+
 ## v2.13
 
 - Replaced the term **whitelist** with **allowed list**.
