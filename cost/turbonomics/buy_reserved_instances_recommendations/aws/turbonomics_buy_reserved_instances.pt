@@ -1,0 +1,307 @@
+name "Turbonomics Buy Reserved Instances Recommendations AWS"
+rs_pt_ver 20180301
+type "policy"
+short_description "Turbonomics policy for recommending purchasable reserved instances [README](https://github.com/flexera-public/policy_templates/tree/master/cost/turbonomics/buy_reserved_instances_recommendations/aws) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+severity "low"
+category "Cost"
+default_frequency "daily"
+info(
+  version: "2.0",
+  provider: "AWS",
+  source: "Turbonomics",
+  service: "RIs",
+  policy_set: "Buy RIs",
+  recommendation_type: "Rate Reduction",
+  publish: "false"
+)
+
+##################
+# Parameters #
+##################
+parameter "param_turbonomic_endpoint" do
+  type "string"
+  label "Turbonomic Endpoint"
+  default "sales1.demo.turbonomic.com"
+end
+
+parameter "auth_cookie" do
+  type "string"
+  label "Authorization Cookie"
+  no_echo true
+  description "authorization cookie pulled from manual source"
+end
+
+parameter "param_email" do
+  type "list"
+  label "Email addresses to notify"
+  description "Email addresses of the recipients you wish to notify when new incidents are created"
+end
+
+###############################################################################
+# Pagination
+###############################################################################
+
+pagination "turbonomics_buy_ris_pagination_header" do
+  get_page_marker do
+    header "x-next-cursor"
+  end
+  set_page_marker do
+    query "cursor"
+  end
+end
+
+###############################################################################
+# Datasources
+###############################################################################
+
+#get turbonomic recommendation data
+datasource "ds_get_turbonomics_recommendations" do
+  request do
+    run_script $js_get_turbonomics_recommendations, $param_turbonomic_endpoint,$auth_cookie
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "[*]") do
+      field "businessUUID", jmes_path(col_item, "reservedInstance.accountId")
+      field "termValue", jmes_path(col_item, "reservedInstance.term.value")
+      field "termUnits", jmes_path(col_item, "reservedInstance.term.units")
+      field "paymentOptions", jmes_path(col_item, "reservedInstance.payment")
+      field "tenancy", jmes_path(col_item, "reservedInstance.tenancy")
+      field "region", jmes_path(col_item, "currentLocation.displayName")
+      field "resourceType", jmes_path(col_item, "newEntity.displayName")
+      field "riType", jmes_path(col_item, "reservedInstance.type")
+      field "provider", jmes_path(col_item, "target.discoveredBy.type")
+      field "numberOfInstances", jmes_path(col_item, "reservedInstance.instanceCount")
+      field "details", jmes_path(col_item, "details")
+      field "platform", jmes_path(col_item, "reservedInstance.platform")
+      field "upfrontCost", jmes_path(col_item, "reservedInstance.upFrontCost")
+      field "recurringCost", jmes_path(col_item, "reservedInstance.actualHourlyCost")
+      field "effectiveCost", jmes_path(col_item, "reservedInstance.effectiveHourlyCost")
+      field "sizeFlexible", jmes_path(col_item, "reservedInstance.sizeFlexible")
+      field "savings", jmes_path(col_item, "stats[0].value")
+      field "savingsCurrency", jmes_path(col_item, "stats[0].units")
+    end
+  end
+end
+
+##this will potentially be a lot of calls. how to make this more performant
+datasource "ds_get_business_units" do
+  request do
+    run_script $js_get_business_units, $param_turbonomic_endpoint,$auth_cookie
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "[*]") do
+      field "uuid", jmes_path(col_item, "uuid")
+      field "accountID", jmes_path(col_item, "accountId")
+      field "displayName", jmes_path(col_item, "displayName")
+    end
+  end
+end
+
+datasource "ds_filtered_turbonomics_recommendations" do
+  run_script $js_filtered_turbonomics_recommendations, $ds_get_turbonomics_recommendations, $ds_get_business_units
+end
+
+###############################################################################
+# Scripts
+###############################################################################
+
+##script using a manually acquired turbonomic cookie and pulls hard coded purchasable ri data
+script "js_get_turbonomics_recommendations", type: "javascript" do
+  result "request"
+  parameters "param_turbonomic_endpoint","auth_cookie"
+  code <<-EOS
+  //replace cookie every day this is run
+    var request = {
+      verb: "POST",
+      pagination: "turbonomics_buy_ris_pagination_header",
+      host: param_turbonomic_endpoint,
+      path: "/api/v3/markets/Market/actions",
+      body_fields: {
+        "actionStateList": ["READY", "ACCEPTED", "QUEUED", "IN_PROGRESS"],
+        "relatedEntityTypes":["Region"],
+        "actionTypeList":["BUY_RI"],
+        "environmentType":"CLOUD",
+        "detailLevel":"EXECUTION",
+        "costType":"SAVING"
+      },
+      query_params: {
+        "limit": '1000'
+      },
+      headers: {
+        "Content-Type": "application/json"
+        "Cookie": auth_cookie
+      }
+    }
+EOS
+end
+
+## verified that discovered is the only one we need
+script "js_get_business_units", type: "javascript" do
+  result "request"
+  parameters "param_turbonomic_endpoint","auth_cookie"
+  code <<-EOS
+  //replace cookie every day this is run
+    var request = {
+      verb: "GET",
+      host: param_turbonomic_endpoint,
+      path: "/api/v3/businessunits",
+      query_params: {
+        "cloud_type": "AWS",
+        "type":"DISCOVERED"
+      },
+      headers: {
+        "Content-Type": "application/json"
+        "Cookie": auth_cookie
+      }
+    }
+EOS
+end
+
+script "js_filtered_turbonomics_recommendations", type: "javascript" do
+  result "result"
+  parameters "ds_get_turbonomics_recommendations", "ds_get_business_units"
+  code <<-EOS
+    instances = []
+    monthlySavings = 0.0
+    function formatNumber(number, separator){
+    var numString =number.toString()
+    var values=numString.split(".")
+    var result = ''
+    while (values[0].length > 3){
+      var chunk = values[0].substr(-3)
+      values[0] = values[0].substr(0, values[0].length - 3)
+      result = separator + chunk + result
+    }
+    if (values[0].length > 0){
+      result = values[0] + result
+    }
+    if(values[1]==undefined){
+      return result
+    }
+    return result+"."+values[1]
+    }
+
+    _.each(ds_get_business_units, function(businessUnit) {
+      _.each(ds_get_turbonomics_recommendations, function(ri, index){
+        if (ri.businessUUID === businessUnit.uuid) {
+          if (ri.provider === "AWS") {
+            if (typeof ri.savingsCurrency != "undefined" && ri.savingsCurrency != null) {
+              if (ri.savingsCurrency.indexOf("$") != -1) {
+                ri.savingsCurrency = "$"
+              }
+            } else {
+              ri.savingsCurrency = "$"
+            }
+            ri.term = ri.termValue + " " + ri.termUnits
+            ri.service = "EC2"
+            if (typeof ri.savings === "undefined" || ri.savings === null || ri.savings === "" || isNaN(ri.savings)) {
+              ri.savings = 0.0
+            }
+            if (typeof ri.effectiveCost === "undefined" || ri.effectiveCost === null || ri.effectiveCost === "" || isNaN(ri.effectiveCost)) {
+              ri.effectiveCost = 0.0
+            }
+            ri.accountID=businessUnit.accountID
+            ri.accountName=businessUnit.accountName
+            ri.savings = (Math.round(ri.savings * 730 * 1000) / 1000)
+            ri.effectiveCost = (Math.round(ri.effectiveCost * 730 * 1000) / 1000)
+            ri.recurringCost = (Math.round(ri.recurringCost * 730 * 1000) / 1000)
+            monthlySavings = monthlySavings + ri.savings
+            instances.push(ri)
+        }
+      }
+      })
+    })
+
+    message = ""
+    if (instances.length != 0) {
+      pretty_savings = instances[0].savingsCurrency + ' ' + formatNumber(monthlySavings.toFixed(2), ",")
+      message = "The total estimated monthly savings are " + pretty_savings + '.'
+    }
+
+    result = {
+      'instances': instances,
+      'message': message
+    }
+EOS
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "pol_turbonomics_buy_ri" do
+  validate $ds_filtered_turbonomics_recommendations do
+    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data.instances }} Turbonomic Purchase Reserved Instance Recommendations found"
+    detail_template <<-EOS
+{{data.message}}
+EOS
+    check eq(size(val(data, "instances")), 0)
+    export "instances" do
+      field "accountID" do
+        label "Account ID"
+      end
+      field "accountName" do
+        label "Account Name"
+      end
+      field "savingsCurrency" do
+        label "Savings Currency"
+      end
+      field "savings" do
+        label "Savings"
+      end
+      field "details" do
+        label "Recommendation Details"
+      end
+      field "numberOfInstances" do
+        label "Number of Reserved Instances"
+      end
+      field "resourceType" do
+        label "Resource Type"
+      end
+      field "riType" do
+        label "Reserved Instance Type"
+      end
+      field "term" do
+        label "Term"
+      end
+      field "region" do
+        label "Region"
+      end
+      field "service" do
+        label "Service"
+      end
+      field "platform" do
+        label "Platform"
+      end
+      field "tenancy" do
+        label "Tenancy"
+      end
+      field "upfrontCost" do
+        label "Up Front Cost"
+      end
+      field "recurringCost" do
+        label "Recurring Cost"
+      end
+      field "effectiveCost" do
+        label "Effective Cost"
+      end
+      field "sizeFlexible" do
+        label "Size Flexible"
+      end
+    end
+    escalate $esc_email
+  end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_email" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
+end
