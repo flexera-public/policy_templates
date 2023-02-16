@@ -293,6 +293,10 @@ script "js_get_anomalies", type: "javascript" do
       dimensions.push(dimension)
     })
 
+    _.each(ds_dimensions.messages, function(dimension, index){
+      dimensions.push(dimension)
+    })
+
     start_at = getFormattedDailyDate(getStartDate(new Date()))
     end_at = getFormattedDailyDate(getEndDate(new Date()))
 
@@ -364,6 +368,11 @@ script "js_filter_anomalies", type: "javascript" do
       dimensionAPIString = dimensionAPIString + "&" + "groupBy=" + dimension
       dimensionsReadable =  dimensionsReadable + " " + ds_dimensions.dimensions_names[index] + ","
     })
+    _.each(ds_dimensions.messages, function(dimension, index){
+      dimensions.push(dimension)
+      dimensionAPIString = dimensionAPIString + "&" + "groupBy=" + dimension
+      dimensionsReadable =  dimensionsReadable + " " + ds_dimensions.messages + ","
+    })
 
     dimensionsReadable = dimensionsReadable.substring(0, dimensionsReadable.length - 1);
     start_at = getFormattedDailyDate(getStartDate(new Date()))
@@ -431,6 +440,23 @@ end
 
 policy "budget_alert" do
 
+  validate $ds_dimensions do
+    summary_template "Cloud Cost Anomalies : {{ data.messages}}"
+    detail_template <<-EOS
+  Cost anomalies report : You entered a(n) invalid dimension(s) for your report, please add the exact name
+  also is case sensitive.
+    Invalid dimensions :
+
+    {{ range data.messages }}
+  \n   + {{ . }}
+  {{ end }}
+
+    EOS
+    check eq(size(val(data,"messages")),0)
+    escalate $esc_budget_alert
+  end
+
+
   validate $ds_filter_anomalies do
     summary_template "Cloud Cost Anomalies: {{ len data.anomalies}} rows of detected anomalies for dimensions: {{ data.dimensionsReadable }}"
     detail_template <<-EOS
@@ -442,10 +468,11 @@ Dimensions used on this Anomaly Report:
 \n   + {{ . }}
 {{ end }}
 
-
+{{ if data.errors }}
 Dimensions not used because not exist:
 {{ range data.errors }}
 \n   - {{ . }}
+{{ end }}
 {{ end }}
 
 EOS
