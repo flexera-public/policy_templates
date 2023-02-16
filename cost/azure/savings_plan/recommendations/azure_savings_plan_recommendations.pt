@@ -7,7 +7,7 @@ severity "medium"
 category "Cost"
 default_frequency "daily"
 info(
-  version: "1.0",
+  version: "1.2",
   provider: "Azure",
   service: "Compute",
   policy_set: "Savings Plan",
@@ -66,10 +66,10 @@ parameter "param_azure_endpoint" do
   default "management.azure.com"
 end
 
-parameter "param_subscription_whitelist" do
-  label "Subscription Whitelist"
+parameter "param_subscription_allowed_list" do
+  label "Subscription Allowed List"
   type "list"
-  description "Whitelisted Subscriptions, if empty, all subscriptions will be checked"
+  description "Allowed Subscriptions, if empty, all subscriptions will be checked"
 end
 
 ###############################################################################
@@ -122,17 +122,17 @@ end
 
 #FILTER SUBSCRIPTIONS BASED ON USER-DEFINED PARAMETER
 datasource "ds_filtered_subscriptions" do
-  run_script $js_filtered_subscriptions, $ds_subscriptions, $param_subscription_whitelist
+  run_script $js_filtered_subscriptions, $ds_subscriptions, $param_subscription_allowed_list
 end
 
 script "js_filtered_subscriptions", type: "javascript" do
-  parameters "ds_subscriptions", "param_subscription_whitelist"
+  parameters "ds_subscriptions", "param_subscription_allowed_list"
   result "results"
   code <<-EOS
     var results = []
-    if ( param_subscription_whitelist.length != 0){
+    if ( param_subscription_allowed_list.length != 0){
       results = []
-      _.each(param_subscription_whitelist, function(sub){
+      _.each(param_subscription_allowed_list, function(sub){
         var found = _.find(ds_subscriptions, function(item){
           return item.subscriptionId == sub || item.subscriptionName.toLowerCase() == sub.toLowerCase();
         })
@@ -173,7 +173,9 @@ datasource "ds_sp_recommendations" do
     query "api-version", "2022-10-01"
     query "$filter", join(["properties/scope eq ", "'", $param_scope, "'", " and properties/term eq ", "'", val($ds_term, "term"), "'", " and properties/lookBackPeriod eq ", "'", $param_days, "'"])
     header "User-Agent", "RS Policies"
-    ignore_status [400, 401, 404, 422]
+    # Ignore status 400, 403, and 404 which can be returned in certain (legacy) types of Azure Subscriptions
+    # Ignore status 401 and 422 which can get returned when the user does not have access to the subscription
+    ignore_status [400, 401, 403, 404, 422]
   end
   result do
     encoding "json"
@@ -244,7 +246,7 @@ policy "azure_sp_recommendations" do
       resource_level false
       field "name" do
         label "Reservation Recommendation Name"
-      end 
+      end
       field "accountID" do
         label "Subscription ID"
         path "subscriptionId"
@@ -267,7 +269,7 @@ policy "azure_sp_recommendations" do
         label "Savings Percentage (%)"
       end
       field "overageCost" do
-        label "Overage Cost (Over Lookback Period)" 
+        label "Overage Cost (Over Lookback Period)"
       end
       field "totalCost" do
         label "Total Cost (Over Lookback Period)"

@@ -1,5 +1,13 @@
 # Changelog
 
+## v2.9
+
+- Replaced the term **whitelist** with **allowed list**.
+
+## v2.8
+
+- Added `ignore_status [400,403,404]` to mitigate errors from certain legacy subscription types
+
 ## v2.7
 
 - Replaced references `github.com/rightscale/policy_templates` and `github.com/flexera/policy_templates` with `github.com/flexera-public/policy_templates`

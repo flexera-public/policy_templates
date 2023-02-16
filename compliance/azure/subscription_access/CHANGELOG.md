@@ -1,5 +1,13 @@
 # Changelog
 
+## v2.9
+
+- Replaced the term **whitelist** with **allowed list**.
+
+## v2.8
+
+- Added `ignore_status [400,403,404]` for API calls to Azure API to ignore errors related to legacy subscription types
+
 ## v2.7
 
 - Removed unused `sys_log` definition

@@ -1,5 +1,13 @@
 # Changelog
 
+## v2.18
+
+- Replaced the term **whitelist** with **allowed list**.
+
+## v2.17
+
+- Added `ignore_status [400,403,404]` for API calls to Azure API to ignore errors related to legacy subscription types
+
 ## v2.16
 
 - Modified `sys_log` definition to disable `rs_cm.audit_entry.create` outside Flexera NAM
