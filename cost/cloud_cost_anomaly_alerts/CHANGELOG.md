@@ -1,6 +1,6 @@
 # Changelog
 
-## v2.3
+## v2.4
 
 - adding an input list for a mix of dimensions
 - validate each input from the user input list, if at least one exists, it runs anomaly report
