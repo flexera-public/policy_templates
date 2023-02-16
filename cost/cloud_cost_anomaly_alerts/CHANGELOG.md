@@ -2,12 +2,12 @@
 
 ## v2.4
 
-- changed URL link to Cost Anomalies report, now it's constructed dynamically based on detected shard
+- adding an input list for a mix of dimensions
+- validate each input from the user input list, if at least one exists, it runs anomaly report
 
 ## v2.3
 
-- adding an input list for a mix of dimensions
-- validate each input from the list if exists
+- changed URL link to Cost Anomalies report, now it's constructed dynamically based on detected shard
 
 ## v2.2
 
