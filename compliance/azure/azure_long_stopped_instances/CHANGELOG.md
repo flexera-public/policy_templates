@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.9
+
+- Replaced the term **whitelist** with **allowed list**.
+
 ## v2.8
 
 - Added `ignore_status [400,403,404]` to mitigate errors from certain legacy subscription types

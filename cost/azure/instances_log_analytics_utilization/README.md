@@ -19,7 +19,7 @@ This policy has the following input parameters required when launching the polic
 - *Exclusion Tag Key* - An Azure-native instance tag to ignore instances that you don't want to consider for downsizing. Only supply the tag key
 - *Email addresses of the recipients you wish to notify* - A list of email addresses to notify
 - *Automatic Actions* - When this value is set, this policy will automatically take the selected action(s).
-- *Subscription Whitelist* - Whitelisted Subscriptions, if empty, all subscriptions will be checked
+- *Subscription Allowed List* - Allowed Subscriptions, if empty, all subscriptions will be checked
 - *Log to CM Audit Entries* - Boolean for whether or not to log any debugging information from actions to CM Audit Entries, this should be left set to No on Flexera EU
 
 Please note that the "Automatic Actions" parameter contains a list of action(s) that can be performed on the resources. When it is selected, the policy will automatically execute the corresponding action on the data that failed the checks, post incident generation. Please leave it blank for *manual* action.

@@ -59,7 +59,7 @@ Reference
 
 ##### Credential Setup
 
-- [Read Only CFT](./cost/aws/FlexeraReadOnlyPolicy.template)
+- [Flexera Automation CloudFormation Template](./tools/cloudformation-template)
 
 ##### Compute
 
@@ -71,6 +71,7 @@ Reference
 - [AWS Reserved Instance Reservation Coverage](./cost/aws/reserved_instances/coverage/)
 - [AWS Reserved Instances Report by Billing Center](./cost/aws/reserved_instances/report_by_bc)
 - [AWS Reserved Instance Recommendations](./cost/aws/reserved_instances/recommendations)
+- [AWS Rightsize Compute Instances](./cost/aws/rightsize_compute_instances)
 - [AWS Rightsize EBS Volumes](./cost/aws/rightsize_ebs_volumes)
 - [AWS Savings Plan Recommendations](./cost/aws/savings_plan/recommendations)
 - [AWS Savings Plan Utilization](./cost/aws/savings_plan/utilization)
@@ -419,6 +420,7 @@ Reference
 - [Azure Sync Tags with Optima](./operational/azure/sync_tags_with_optima/)
 - [Azure SQL Databases without Elastic Pools](./operational/azure/azure_sql_using_elastic_pool/)
 - [Azure Tag Cardinality Report](./operational/azure/tag_cardinality/)
+- [Azure Long Running Instances](./operational/azure/azure_long_running_instances/)
 
 #### VMWare
 

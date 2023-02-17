@@ -1,5 +1,13 @@
 # Changelog
 
+## v2.14
+
+- Fixed subscriptionName empty in the Incident
+
+## v2.13
+
+- Replaced the term **whitelist** with **allowed list**.
+
 ## v2.12
 
 - Added `ignore_status [400,403,404]` for API calls to Azure API to ignore errors related to legacy subscription types
