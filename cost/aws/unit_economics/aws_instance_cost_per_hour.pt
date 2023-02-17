@@ -1,7 +1,7 @@
 name "AWS Cost Report - Instance Cost Per Hour"
 rs_pt_ver 20180301
 type "policy"
-short_description "This policy creates a Unit Economics report showing AWS Compute instance cost per hour."
+short_description "This policy creates a Unit Economics report showing AWS Compute instance cost per hour. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/unit_economics/aws_instance_cost_per_hour) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 long_description ""
 severity "low"
 category "Cost"
@@ -9,8 +9,8 @@ default_frequency "monthly"
 info(
   version: "2.0",
   provider: "Flexera Optima",
-  service: "All",
-  policy_set: "N/A"
+  service: "",
+  policy_set: "Unit Economics"
 )
 
 ###############################################################################
@@ -57,10 +57,10 @@ end
 ###############################################################################
 
 #AUTHENTICATE WITH FLEXERA/OPTIMA
-credentials "auth_rs" do
+credentials "auth_flexera" do
   schemes "oauth2"
   label "Flexera_Automation"
-  description "Select FlexeraOne OAuth2 credentials"
+  description "Select Flexera One OAuth2 credentials"
   tags "provider=flexera"
 end
 
@@ -68,10 +68,26 @@ end
 # Datasources and Scripts
 ###############################################################################
 
+#GET CURRENCY CODE FOR ORG
+datasource "ds_currency_code" do
+  request do
+    auth $auth_flexera
+    host rs_optima_host
+    path join(["/bill-analysis/orgs/",rs_org_id,"/settings/currency_code"])
+    header "Api-Version", "0.1"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+    field "id", jmes_path(response,"id")
+    field "value", jmes_path(response,"value")
+  end
+end
+
 #GET BILLING CENTERS FOR ORG
 datasource "ds_billing_centers" do
   request do
-    auth $auth_rs
+    auth $auth_flexera
     host rs_optima_host
     path join(["/analytics/orgs/",rs_org_id,"/billing_centers"])
     header "Api-Version", "1.0"
@@ -145,7 +161,7 @@ script "js_get_instance_types", type: "javascript" do
     ]
 
     var request = {
-      auth: "auth_rs",
+      auth: "auth_flexera",
       host: optima_host,
       verb: "POST",
       path: "/bill-analysis/orgs/" + org_id + "/costs/aggregated",
@@ -293,20 +309,25 @@ script "js_get_normalized_cost_instance_hours", type: "javascript" do
 
   }
   
-  console.log(result)
+  //console.log(result)
 
   EOS
 end
 
 #CHART CREATION
 datasource "ds_chart_creation" do
-  run_script $js_create_chart_data, $ds_normalized_cost_instance_hour_data
+  run_script $js_create_chart_data, $ds_normalized_cost_instance_hour_data, $ds_currency_code
 end
 
 script "js_create_chart_data", type: "javascript" do
-  parameters "cost_inst_hrs_data"
+  parameters "cost_inst_hrs_data", "curr_code"
   result "report"
   code <<-EOS
+
+  var curr = "USD"
+  if (curr_code.value !== undefined){
+    curr = curr_code.value
+  }
 
   //Group data by Billing Center (will just show BC as "Aggregate" if param_group_by="Aggregate")
   group_by_bc = _.groupBy(cost_inst_hrs_data, function(data) { return data.billing_center })
@@ -357,7 +378,7 @@ script "js_create_chart_data", type: "javascript" do
     chartLegend: encodeURI(chart_legend),        // populate from Billing Centers - comma separated
     chartLegendPosition: encodeURI("chdlp=r"),
     chartAxis: encodeURI("chxt=y,x"),
-    chartAxisFormat: encodeURI("chxs=0N*cUSD2z*|1,min40"),
+    chartAxisFormat: encodeURI("chxs=0N*c" + curr + "2z*|1,min40"),
     chartAxisLabel: encodeURI(chart_axis_labels),
     chartScale: encodeURI(chart_range),
     chartLineStyle: encodeURI("chls=2|2|2|2|2|2|2|2|2|2|2|2|2|2|2|2"),
@@ -395,6 +416,7 @@ policy "pol_instance_cost_hour" do
     escalate $esc_normalization_factor_report
     check eq(0,1)
     export do
+      # no actions so resource_level can be false
       resource_level false
       #field "instance_type" do
       #  label "Instance Type"
