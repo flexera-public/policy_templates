@@ -1,0 +1,220 @@
+name "AWS Rule-Based Dimension From Account Tag"
+rs_pt_ver 20180301
+type "policy"
+short_description "Creates and/or updates individual Rule-Based Dimensions based on AWS account tags. See the [README](https://github.com/flexera-public/policy_templates/tree/master/automation/aws/aws_rbd_from_tag) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+long_description ""
+severity "low"
+category "Cost"
+default_frequency "daily"
+info(
+  version: "2.0",
+  provider: "Flexera",
+  service: "Optima",
+  policy_set: "Automation"
+)
+
+###############################################################################
+# Parameters
+###############################################################################
+
+parameter "param_tag_list" do
+  type "list"
+  label "Tag Keys"
+  description "A list of AWS account tag keys to build Rule-Based Dimensions from"
+end
+
+parameter "param_effective_date" do
+  type "string"
+  label "Year/month you want rules to start applying in YYYY-MM format"
+  default "2010-01"
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+credentials "auth_aws" do
+  schemes "aws","aws_sts"
+  label "AWS"
+  description "Select the AWS credential."
+  tags "provider=aws"
+end
+
+credentials "auth_flexera" do
+  schemes "oauth2"
+  label "flexera"
+  description "Select FlexeraOne OAuth2 credential."
+  tags "provider=flexera"
+end
+
+###############################################################################
+# Pagination
+###############################################################################
+
+pagination "pagination_aws" do
+  get_page_marker do
+    body_path jmes_path(response, "NextToken")
+  end
+  set_page_marker do
+    body_field "NextToken"
+  end
+end
+
+###############################################################################
+# Datasources
+###############################################################################
+
+datasource "ds_aws_accounts_without_tags" do
+  request do
+    auth $auth_aws
+    pagination $pagination_aws
+    host "organizations.us-east-1.amazonaws.com"
+    path '/'
+    verb "POST"
+    header "User-Agent", "RS Policies"
+    header "X-Amz-Target", "AWSOrganizationsV20161128.ListAccounts"
+    header "Content-Type", "application/x-amz-json-1.1"
+    body "{}"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "Accounts") do
+      field "arn", jmes_path(col_item, "Arn")
+      field "id", jmes_path(col_item, "Id")
+      field "name", jmes_path(col_item, "Name")
+      field "status", jmes_path(col_item, "Status")
+    end
+  end
+end
+
+datasource "ds_aws_accounts_with_tags" do
+  iterate $ds_aws_accounts_without_tags
+  request do
+    auth $auth_aws
+    pagination $pagination_aws
+    host "organizations.us-east-1.amazonaws.com"
+    path '/'
+    verb "POST"
+    header "User-Agent", "RS Policies"
+    header "X-Amz-Target", "AWSOrganizationsV20161128.ListTagsForResource"
+    header "Content-Type", "application/x-amz-json-1.1"
+    body_field "ResourceId", val(iter_item, "id")
+  end
+  result do
+    encoding "json"
+    field "arn", val(iter_item, "arn")
+    field "id", val(iter_item, "id")
+    field "name", val(iter_item, "name")
+    field "status", val(iter_item, "status")
+    field "tags", jmes_path(response, "Tags")
+  end
+end
+
+datasource "ds_aws_accounts" do
+  run_script $js_aws_accounts, $ds_aws_accounts_with_tags
+end
+
+datasource "ds_rbds" do
+  run_script $js_rbds, $param_tag_list, $param_effective_date, $ds_aws_accounts
+end
+
+datasource "ds_apply_rbds" do
+  iterate $ds_rbds
+  request do
+    auth $auth_flexera
+    host rs_optima_host
+    path join(["/bill-analysis/orgs/", rs_org_id, "/settings/rule_based_dimensions/", val(iter_item, "id")])
+    verb "POST"
+    header "Api-Version", "1.0"
+    header "content-type", "application/json"
+    body_field "name", val(iter_item, "name")
+    body_field "dated_rules", val(iter_item, "dated_rules")
+  end
+  result do
+    encoding "text"
+  end
+end
+
+###############################################################################
+# Scripts
+###############################################################################
+
+script "js_aws_accounts", type: "javascript" do
+  parameters "ds_aws_accounts_with_tags"
+  result "result"
+  code <<-EOS
+  result = []
+
+  _.each(ds_aws_accounts_with_tags, function(account) {
+    tags = {}
+
+    if (account['tags'] != null && account['tags'] != undefined) {
+      _.each(account['tags'], function(tag) {
+        key = tag['Key']
+        value = tag['Value']
+        tags[key] = value
+      })
+    }
+
+    result.push({
+      arn: account['arn'],
+      id: account['id'],
+      name: account['name'],
+      status: account['status'],
+      tags: tags
+    })
+  })
+EOS
+end
+
+script "js_rbds", type: "javascript" do
+  parameters "param_tag_list", "param_effective_date", "accounts"
+  result "result"
+  code <<-EOS
+  result = []
+
+  _.each(param_tag_list, function(tag) {
+    rules = []
+
+    _.each(accounts, function(account) {
+      if (account['tags'][tag] != undefined && account['tags'][tag] != null) {
+        rules.push({
+          "condition": {
+            "type": "dimension_equals",
+            "dimension": "vendor_account",
+            "value": account['id']
+          },
+          "value": {
+            "text": account['tags'][tag]
+          }
+        })
+      }
+    })
+
+    if (rules.length > 0) {
+      result.push({
+        id: tag,
+        name: tag,
+        dated_rules: [
+          {
+            "effective_at": param_effective_date,
+            "rules": rules
+          }
+        ]
+      })
+    }
+  })
+EOS
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "rbds" do
+  validate $ds_apply_rbds do
+    summary_template "RBDs Generated & Applied"
+    check eq(0, 0)
+    detail_template ''
+  end
+end

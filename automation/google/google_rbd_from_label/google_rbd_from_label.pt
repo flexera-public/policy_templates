@@ -1,0 +1,166 @@
+name "Google Rule-Based Dimension From Project Label"
+rs_pt_ver 20180301
+type "policy"
+short_description "Creates and/or updates individual Rule-Based Dimensions based on Google project labels. See the [README](https://github.com/flexera-public/policy_templates/tree/master/automation/azure/azure_rbd_from_tag) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+long_description ""
+severity "low"
+category "Cost"
+default_frequency "daily"
+info(
+  version: "2.0",
+  provider: "Flexera",
+  service: "Optima",
+  policy_set: "Automation"
+)
+
+###############################################################################
+# Parameters
+###############################################################################
+
+parameter "param_tag_list" do
+  type "list"
+  label "Label Keys"
+  description "A list of Google project label keys to build Rule-Based Dimensions from"
+end
+
+parameter "param_effective_date" do
+  type "string"
+  label "Year/month you want rules to start applying in YYYY-MM format"
+  default "2010-01"
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+credentials "auth_google" do
+  schemes "oauth2"
+  label "Google"
+  description "Select the Google Cloud Credential from the list."
+  tags "provider=gce"
+end
+
+credentials "auth_flexera" do
+  schemes "oauth2"
+  label "flexera"
+  description "Select FlexeraOne OAuth2 credential."
+  tags "provider=flexera"
+end
+
+###############################################################################
+# Pagination
+###############################################################################
+
+pagination "pagination_google" do
+  get_page_marker do
+    body_path "nextPageToken"
+  end
+  set_page_marker do
+    query "pageToken"
+  end
+end
+
+###############################################################################
+# Datasources
+###############################################################################
+
+datasource "ds_google_projects" do
+  request do
+    auth $auth_google
+    pagination $pagination_google
+    host "cloudresourcemanager.googleapis.com"
+    path "/v1/projects/"
+    query "filter", "lifecycleState=ACTIVE"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "projects[*]") do
+      field "id", jmes_path(col_item, "projectId")
+      field "number", jmes_path(col_item, "projectNumber")
+      field "name", jmes_path(col_item, "name")
+      field "parent", jmes_path(col_item, "parent")
+      field "createTime", jmes_path(col_item,"createTime")
+      field "lifecycleState", jmes_path(col_item, "lifecycleState")
+      field "tags", jmes_path(col_item, "labels")
+    end
+  end
+end
+
+datasource "ds_rbds" do
+  run_script $js_rbds, $param_tag_list, $param_effective_date, $ds_google_projects
+end
+
+datasource "ds_apply_rbds" do
+  iterate $ds_rbds
+  request do
+    auth $auth_flexera
+    host rs_optima_host
+    path join(["/bill-analysis/orgs/", rs_org_id, "/settings/rule_based_dimensions/", val(iter_item, "id")])
+    verb "POST"
+    header "Api-Version", "1.0"
+    header "content-type", "application/json"
+    body_field "name", val(iter_item, "name")
+    body_field "dated_rules", val(iter_item, "dated_rules")
+  end
+  result do
+    encoding "text"
+  end
+end
+
+###############################################################################
+# Scripts
+###############################################################################
+
+script "js_rbds", type: "javascript" do
+  parameters "param_tag_list", "param_effective_date", "accounts"
+  result "result"
+  code <<-EOS
+  result = []
+
+  _.each(param_tag_list, function(tag) {
+    rules = []
+
+    _.each(accounts, function(account) {
+      if (account['tags'] != undefined && account['tags'] != null) {
+        if (account['tags'][tag] != undefined && account['tags'][tag] != null) {
+          rules.push({
+            "condition": {
+              "type": "dimension_equals",
+              "dimension": "vendor_account",
+              "value": account['id']
+            },
+            "value": {
+              "text": account['tags'][tag]
+            }
+          })
+        }
+      }
+    })
+
+    if (rules.length > 0) {
+      result.push({
+        id: tag,
+        name: tag,
+        dated_rules: [
+          {
+            "effective_at": param_effective_date,
+            "rules": rules
+          }
+        ]
+      })
+    }
+  })
+EOS
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "rbds" do
+  validate $ds_apply_rbds do
+    summary_template "RBDs Generated & Applied"
+    check eq(0, 0)
+    detail_template ''
+  end
+end

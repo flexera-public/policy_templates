@@ -1,0 +1,180 @@
+name "Azure Rule-Based Dimension From Subscription Tag"
+rs_pt_ver 20180301
+type "policy"
+short_description "Creates and/or updates individual Rule-Based Dimensions based on Azure subscription tags. See the [README](https://github.com/flexera-public/policy_templates/tree/master/automation/azure/azure_rbd_from_tag) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+long_description ""
+severity "low"
+category "Cost"
+default_frequency "daily"
+info(
+  version: "2.0",
+  provider: "Flexera",
+  service: "Optima",
+  policy_set: "Automation"
+)
+
+###############################################################################
+# Parameters
+###############################################################################
+
+parameter "param_tag_list" do
+  type "list"
+  label "Tag Keys"
+  description "A list of Azure subscription tag keys to build Rule-Based Dimensions from"
+end
+
+parameter "param_effective_date" do
+  type "string"
+  label "Year/month you want rules to start applying in YYYY-MM format"
+  default "2010-01"
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+credentials "auth_azure" do
+  schemes "oauth2"
+  label "Azure"
+  description "Select the Azure Resource Manager Credential from the list."
+  tags "provider=azure_rm"
+end
+
+credentials "auth_flexera" do
+  schemes "oauth2"
+  label "flexera"
+  description "Select FlexeraOne OAuth2 credential."
+  tags "provider=flexera"
+end
+
+###############################################################################
+# Pagination
+###############################################################################
+
+pagination "pagination_azure" do
+  get_page_marker do
+    body_path "nextLink"
+  end
+  set_page_marker do
+    uri true
+  end
+end
+
+###############################################################################
+# Datasources
+###############################################################################
+
+datasource "ds_azure_subscriptions_without_tags" do
+  request do
+    auth $auth_azure
+    pagination $pagination_azure
+    host "management.azure.com"
+    path "/subscriptions/"
+    query "api-version","2018-06-01"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "value[*]") do
+      field "id", jmes_path(col_item, "subscriptionId")
+      field "name", jmes_path(col_item, "displayName")
+    end
+  end
+end
+
+datasource "ds_azure_subscriptions" do
+  iterate $ds_azure_subscriptions_without_tags
+  request do
+    auth $auth_azure
+    pagination $pagination_azure
+    host "management.azure.com"
+    path join(["/subscriptions/", val(iter_item, "id"), "/providers/Microsoft.Resources/tags/default"])
+    query "api-version","2021-04-01"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+    field "id", val(iter_item, "id")
+    field "name", val(iter_item, "name")
+    field "tags", jmes_path(response, "properties.tags")
+  end
+end
+
+datasource "ds_rbds" do
+  run_script $js_rbds, $param_tag_list, $param_effective_date, $ds_azure_subscriptions
+end
+
+datasource "ds_apply_rbds" do
+  iterate $ds_rbds
+  request do
+    auth $auth_flexera
+    host rs_optima_host
+    path join(["/bill-analysis/orgs/", rs_org_id, "/settings/rule_based_dimensions/", val(iter_item, "id")])
+    verb "POST"
+    header "Api-Version", "1.0"
+    header "content-type", "application/json"
+    body_field "name", val(iter_item, "name")
+    body_field "dated_rules", val(iter_item, "dated_rules")
+  end
+  result do
+    encoding "text"
+  end
+end
+
+###############################################################################
+# Scripts
+###############################################################################
+
+script "js_rbds", type: "javascript" do
+  parameters "param_tag_list", "param_effective_date", "accounts"
+  result "result"
+  code <<-EOS
+  result = []
+
+  _.each(param_tag_list, function(tag) {
+    rules = []
+
+    _.each(accounts, function(account) {
+      if (account['tags'] != undefined && account['tags'] != null) {
+        if (account['tags'][tag] != undefined && account['tags'][tag] != null) {
+          rules.push({
+            "condition": {
+              "type": "dimension_equals",
+              "dimension": "vendor_account",
+              "value": account['id']
+            },
+            "value": {
+              "text": account['tags'][tag]
+            }
+          })
+        }
+      }
+    })
+
+    if (rules.length > 0) {
+      result.push({
+        id: tag,
+        name: tag,
+        dated_rules: [
+          {
+            "effective_at": param_effective_date,
+            "rules": rules
+          }
+        ]
+      })
+    }
+  })
+EOS
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "rbds" do
+  validate $ds_apply_rbds do
+    summary_template "RBDs Generated & Applied"
+    check eq(0, 0)
+    detail_template ''
+  end
+end
