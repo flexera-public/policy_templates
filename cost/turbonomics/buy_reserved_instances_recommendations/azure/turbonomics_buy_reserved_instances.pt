@@ -16,7 +16,7 @@ info(
 )
 
 ##################
-# Parameters   #
+# Parameters #
 ##################
 
 parameter "param_turbonomic_endpoint" do
@@ -58,7 +58,7 @@ end
 #get turbonomic recommendation data
 datasource "ds_get_turbonomics_recommendations" do
   request do
-    run_script $js_get_turbonomics_recommendations, $param_turbonomic_endpoint $auth_cookie
+    run_script $js_get_turbonomics_recommendations, $param_turbonomic_endpoint, $auth_cookie
   end
   result do
     encoding "json"
@@ -85,7 +85,7 @@ end
 ##this will potentially be a lot of calls. how to make this more performant
 datasource "ds_get_business_units" do
   request do
-    run_script $js_get_business_units, $auth_cookie
+    run_script $js_get_business_units, $param_turbonomic_endpoint, $auth_cookie
   end
   result do
     encoding "json"
@@ -111,27 +111,27 @@ script "js_get_turbonomics_recommendations", type: "javascript" do
   parameters "param_turbonomic_endpoint","auth_cookie"
   code <<-EOS
   //replace cookie every day this is run
-    var request = {
+  var request = {
       verb: "POST",
       pagination: "turbonomics_buy_ris_pagination_header",
       host: param_turbonomic_endpoint,
       path: "/api/v3/markets/Market/actions",
       body_fields: {
-        "actionStateList": ["READY", "ACCEPTED", "QUEUED", "IN_PROGRESS"],
-        "relatedEntityTypes":["Region"],
-        "actionTypeList":["BUY_RI"],
-        "environmentType":"CLOUD",
-        "detailLevel":"EXECUTION",
-        "costType":"SAVING"
+          "actionStateList": ["READY", "ACCEPTED", "QUEUED", "IN_PROGRESS"],
+          "relatedEntityTypes": ["Region"],
+          "actionTypeList": ["BUY_RI"],
+          "environmentType": "CLOUD",
+          "detailLevel": "EXECUTION",
+          "costType": "SAVING"
       },
       query_params: {
-        "limit": '1000'
+          "limit": '1000'
       },
       headers: {
-        "Content-Type": "application/json"
-        "Cookie": auth_cookie
+          "Content-Type": "application/json"
+          "Cookie": auth_cookie
       }
-    }
+  }
 EOS
 end
 
@@ -141,19 +141,19 @@ script "js_get_business_units", type: "javascript" do
   parameters "param_turbonomic_endpoint","auth_cookie"
   code <<-EOS
   //replace cookie every day this is run
-    var request = {
+  var request = {
       verb: "GET",
       host: param_turbonomic_endpoint,
       path: "/api/v3/businessunits",
       query_params: {
-        "cloud_type": "AZURE",
-        "type":"DISCOVERED"
+          "cloud_type": "AZURE",
+          "type": "DISCOVERED"
       },
       headers: {
-        "Content-Type": "application/json"
-        "Cookie": auth_cookie
+          "Content-Type": "application/json"
+          "Cookie": auth_cookie
       }
-    }
+  }
 EOS
 end
 
@@ -163,64 +163,65 @@ script "js_filtered_turbonomics_recommendations", type: "javascript" do
   code <<-EOS
     instances = []
     monthlySavings = 0.0
-    function formatNumber(number, separator){
-    var numString =number.toString()
-    var values=numString.split(".")
-    var result = ''
-    while (values[0].length > 3){
-      var chunk = values[0].substr(-3)
-      values[0] = values[0].substr(0, values[0].length - 3)
-      result = separator + chunk + result
-    }
-    if (values[0].length > 0){
-      result = values[0] + result
-    }
-    if(values[1]==undefined){
-      return result
-    }
-    return result+"."+values[1]
+
+    function formatNumber(number, separator) {
+        var numString = number.toString()
+        var values = numString.split(".")
+        var result = ''
+        while (values[0].length > 3) {
+            var chunk = values[0].substr(-3)
+            values[0] = values[0].substr(0, values[0].length - 3)
+            result = separator + chunk + result
+        }
+        if (values[0].length > 0) {
+            result = values[0] + result
+        }
+        if (values[1] == undefined) {
+            return result
+        }
+        return result + "." + values[1]
     }
 
     _.each(ds_get_business_units, function(businessUnit) {
-      _.each(ds_get_turbonomics_recommendations, function(ri, index){
-        if (ri.businessUUID === businessUnit.uuid) {
-          if (ri.provider === "Azure Subscription") {
-            if (typeof ri.savingsCurrency != "undefined" && ri.savingsCurrency != null) {
-              if (ri.savingsCurrency.indexOf("$") != -1) {
-                ri.savingsCurrency = "$"
-              }
-            } else {
-              ri.savingsCurrency = "$"
+        _.each(ds_get_turbonomics_recommendations, function(ri, index) {
+            if (ri.businessUUID === businessUnit.uuid) {
+                if (ri.provider === "Azure Subscription") {
+                    if (typeof ri.savingsCurrency != "undefined" && ri.savingsCurrency != null) {
+                        if (ri.savingsCurrency.indexOf("$") != -1) {
+                            ri.savingsCurrency = "$"
+                        }
+                    } else {
+                        ri.savingsCurrency = "$"
+                    }
+                    ri.term = ri.termValue + " " + ri.termUnits
+                    ri.service = "Microsoft.Compute"
+                    if (typeof ri.savings === "undefined" || ri.savings === null || ri.savings === "" || isNaN(ri.savings)) {
+                        ri.savings = 0.0
+                    }
+                    if (typeof ri.effectiveCost === "undefined" || ri.effectiveCost === null || ri.effectiveCost === "" || isNaN(ri.effectiveCost)) {
+                        ri.effectiveCost = 0.0
+                    }
+                    ri.accountID = businessUnit.accountID
+                    ri.accountName = businessUnit.displayName
+                    ri.savings = (Math.round(ri.savings * 730 * 1000) / 1000)
+                    ri.effectiveCost = (Math.round(ri.effectiveCost * 730 * 1000) / 1000)
+                    ri.recurringCost = (Math.round(ri.recurringCost * 730 * 1000) / 1000)
+                    monthlySavings = monthlySavings + ri.savings
+                    instances.push(ri)
+                }
             }
-            ri.term = ri.termValue + " " + ri.termUnits
-            ri.service = "Microsoft.Compute"
-            if (typeof ri.savings === "undefined" || ri.savings === null || ri.savings === "" || isNaN(ri.savings)) {
-              ri.savings = 0.0
-            }
-            if (typeof ri.effectiveCost === "undefined" || ri.effectiveCost === null || ri.effectiveCost === "" || isNaN(ri.effectiveCost)) {
-              ri.effectiveCost = 0.0
-            }
-            ri.accountID=businessUnit.accountID
-            ri.accountName=businessUnit.accountName
-            ri.savings = (Math.round(ri.savings * 730 * 1000) / 1000)
-            ri.effectiveCost = (Math.round(ri.effectiveCost * 730 * 1000) / 1000)
-            ri.recurringCost = (Math.round(ri.recurringCost * 730 * 1000) / 1000)
-            monthlySavings = monthlySavings + ri.savings
-            instances.push(ri)
-          }
-        }
-      })
+        })
     })
 
     message = ""
     if (instances.length != 0) {
-      pretty_savings = instances[0].savingsCurrency + ' ' + formatNumber(monthlySavings.toFixed(2), ",")
-      message = "The total estimated monthly savings are " + pretty_savings + '.'
+        pretty_savings = instances[0].savingsCurrency + ' ' + formatNumber(monthlySavings.toFixed(2), ",")
+        message = "The total estimated monthly savings are " + pretty_savings + '.'
     }
 
     result = {
-      'instances': instances,
-      'message': message
+        'instances': instances,
+        'message': message
     }
 EOS
 end
