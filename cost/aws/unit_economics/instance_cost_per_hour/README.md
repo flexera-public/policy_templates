@@ -2,7 +2,7 @@
 
 ## What it does
 
-This policy creates a Unit Economics report showing the average AWS instance cost per hour. 
+This policy creates a Unit Economics report showing the average AWS instance cost per hour.
 
 ## Prerequisites
 
