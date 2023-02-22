@@ -182,6 +182,16 @@ datasource "ds_flexera_optima" do
   run_script $js_flexera_optima, $param_flexera_org_id_for_optima, rs_org_id
 end
 
+script "js_flexera_optima", type: "javascript" do
+  parameters "flexera_org_id_for_optima", "current_flexera_org_id"
+  result "flexera_optima"
+  code <<-EOS
+  var flexera_optima = {
+    org_id: flexera_org_id_for_optima == "current" ? current_flexera_org_id : flexera_org_id_for_optima,
+  };
+  EOS
+end
+
 datasource "ds_currency_code" do
   request do
     auth $auth_flexera
@@ -223,6 +233,14 @@ datasource "ds_top_level_billing_centers" do
   run_script $js_top_level_bc, $ds_billing_centers
 end
 
+script "js_top_level_bc", type: "javascript" do
+  parameters "billing_centers"
+  result "filtered_billing_centers"
+  code <<-EOS
+    var filtered_billing_centers =_.reject(billing_centers, function(bc){ return bc.parent_id != null });
+  EOS
+end
+
 datasource "ds_snapshot_costs" do
   request do
     run_script $js_get_costs, $ds_get_caller_identity, $ds_top_level_billing_centers, val($ds_flexera_optima, "org_id"), rs_optima_host
@@ -235,6 +253,64 @@ datasource "ds_snapshot_costs" do
       field "cost_nonamortized_unblended_adj", jmes_path(col_item, "metrics.cost_nonamortized_unblended_adj")
     end
   end
+end
+
+script "js_get_costs", type: "javascript" do
+  parameters "account_id", "billing_centers", "org", "optima_host"
+  result "request"
+  code <<-EOS
+    // returns date formatted as string: YYYY-mm-dd
+    function getFormattedDailyDate(date) {
+      var year = date.getFullYear();
+      var month = (1 + date.getMonth()).toString();
+      month = month.length > 1 ? month : '0' + month;
+      var day = date.getDate().toString();
+      day = day.length > 1 ? day : '0' + day;
+      return year + '-' + month + '-' + day;
+    }
+    var start_date = getFormattedDailyDate(new Date(new Date().setDate(new Date().getDate() - 3)));
+    var end_date = getFormattedDailyDate(new Date(new Date().setDate(new Date().getDate() - 2)));
+    var request = {
+      auth: "auth_flexera",
+      host: optima_host,
+      verb: "POST",
+      path: "/bill-analysis/orgs/" + org + "/costs/select",
+      body_fields: {
+        "dimensions": ["resource_id", "vendor_account_name"],
+        "granularity": "day",
+        "start_at": start_date,
+        "end_at": end_date,
+        "metrics": ["cost_nonamortized_unblended_adj"],
+        "billing_center_ids": _.compact(_.map(billing_centers, function(value){ return value.id})),
+        "limit": 10000,
+        "filter": {
+          "expressions": [
+            {
+              "dimension": "service",
+              "type": "equal",
+              "value": "AmazonEC2"
+            },
+            {
+              "dimension": "resource_type",
+              "type": "equal",
+              "value": "Storage Snapshot"
+            },
+            {
+              "dimension": "vendor_account",
+              "type": "equal",
+              "value": account_id[0]["account"]
+            }
+          ],
+          "type": "and"
+        }
+      },
+      headers: {
+        "User-Agent": "RS Policies",
+        "Api-Version": "1.0"
+      },
+      ignore_status: [400]
+    }
+  EOS
 end
 
 # ds_region_list is a list of regions that are opted-in or opt-in-not-required
@@ -265,6 +341,36 @@ end
 # Get only SCP enabled regions
 datasource "ds_regions" do
   run_script $js_regions, $param_allowed_regions, $ds_regions_list
+end
+
+script "js_regions", type: "javascript" do
+  parameters "user_entered_regions", "all_regions"
+  result "regions"
+  code <<-EOS
+    if(_.isEmpty(user_entered_regions)){
+      regions = all_regions;
+    }else{
+      //Filter unique regions
+      var uniqueRegions = _.uniq(user_entered_regions);
+      var all_regions_list = [];
+      all_regions.forEach(function(all_region){
+        all_regions_list.push(all_region.region)
+      })
+      //Filter valid regions
+      var valid_regions = [];
+      _.map(uniqueRegions, function(uniqueRegion){
+        if(all_regions_list.indexOf(uniqueRegion) > -1){
+          valid_regions.push({"region": uniqueRegion})
+        }
+      })
+      //Throw an error if no valid regions found
+      if (_.isEmpty(valid_regions)) {
+        regions = all_regions;
+      }else{
+        regions = valid_regions
+      }
+    }
+  EOS
 end
 
 datasource "ds_get_caller_identity" do
@@ -306,6 +412,32 @@ datasource "ds_describe_snapshots" do
       field "volumeSize", xpath(col_item, "volumeSize")
     end
   end
+end
+
+script "js_describe_snapshots", type: "javascript" do
+  result "results"
+  parameters "region", "ds_get_caller_identity"
+  code <<-EOS
+    results = {
+        "auth": "auth_aws",
+        "host": 'ec2.'+region+'.amazonaws.com',
+        "verb": "GET",
+        "path": "/",
+        "pagination": "aws_pagination_describesnapshots_xml",
+        "headers": {
+          "User-Agent": "RS Policies",
+          "Content-Type": "text/xml"
+        },
+        "query_params": {
+          'Action': 'DescribeSnapshots',
+          'Version': '2016-11-15',
+          'Filter.1.Name': 'status',
+          'Filter.1.Value.1': 'completed',
+          'Filter.2.Name': 'owner-id',
+          'Filter.2.Value.1': ds_get_caller_identity[0]['account']
+        }
+    }
+  EOS
 end
 
 datasource "ds_describe_db_clusters" do
@@ -492,6 +624,49 @@ datasource "ds_filter_old_snapshots" do
   run_script $js_filter_old_snapshots, $snapshot_age, $ds_describe_snapshots, $param_exclude_tags
 end
 
+script "js_filter_old_snapshots", type: "javascript" do
+  result "results"
+  parameters "snapshot_age", "ds_describe_snapshots", "param_exclude_tags"
+  code <<-EOS
+    var param_exclude_tags_lower=[];
+    for(var j=0;j<param_exclude_tags.length;j++){
+        param_exclude_tags_lower[j] = param_exclude_tags[j].toString().toLowerCase();
+    }
+    var results = [];
+    for(var i=0; i < ds_describe_snapshots.length; i++){
+      var snapshot = ds_describe_snapshots[i];
+      // Check, if the tag present in entered param_exclude_tags, ignore the snapshot if tag matches/present
+      var isTagMatched = false;
+      var instance_tags = {}
+      var tags = []
+      _.each(snapshot['tags'], function(instance){
+        tags.push(instance.tagKey+'='+instance.tagValue)
+      })
+      _.each(param_exclude_tags, function(exclude){
+        if ( _.contains(tags, exclude)){
+          isTagMatched = true
+        }
+      })
+      if(!(isTagMatched)){
+        var snapshotTime = Date.parse(snapshot['startTime']);
+        var daysOld = (new Date().getTime() - new Date(snapshotTime).getTime()) / (1000 * 3600 * 24);
+        daysOld = Math.round(daysOld);
+        if(daysOld > snapshot_age){
+          results.push({
+            snapshotId : snapshot['snapshotId'],
+            region : snapshot['region'],
+            tagKeyValue : tags,
+            daysOld : daysOld,
+            volumeSize : snapshot['volumeSize']
+          })
+        }
+      }
+    }
+    results = _.sortBy(results,'region');
+    results = _.sortBy(results,'daysOld');
+  EOS
+end
+
 datasource "ds_get_snapshot_ami" do
   iterate $ds_regions
   request do
@@ -508,122 +683,75 @@ datasource "ds_get_snapshot_ami" do
   end
 end
 
+script "js_get_snapshot_ami", type: "javascript" do
+  result "results"
+  parameters "region", "ds_get_caller_identity"
+  code <<-EOS
+    results = {
+      "auth": "auth_aws",
+      "host": 'ec2.'+region+'.amazonaws.com',
+      "verb": "GET",
+      "path": "/",
+      "pagination": "aws_pagination_describeimages_xml",
+      "headers": {
+        "User-Agent": "RS Policies",
+        "Content-Type": "text/xml"
+      },
+      "query_params": {
+        'Action': 'DescribeImages',
+        'Version': '2016-11-15',
+        'Filter.1.Name': 'owner-id',
+        'Filter.1.Value.1': ds_get_caller_identity[0]['account']
+        }
+    }
+  EOS
+end
+
 datasource "ds_filter_ami_snapshots" do
   run_script $js_filter_ami_snapshots, $ds_get_snapshot_ami, $ds_filter_old_snapshots, $ds_get_caller_identity
 end
 
+script "js_filter_ami_snapshots", type: "javascript" do
+  result "results"
+  parameters "ds_get_snapshot_ami", "ds_filter_old_snapshots", "ds_get_caller_identity"
+  code <<-EOS
+    var results = [];
+    // Loop through all the old snapshots and map them to AMI
+    _.each(ds_filter_old_snapshots, function(old_snapshot){
+      // Default to empty string for imageId
+      old_snapshot_imageId = ""
+      // Find if any AMI's maps to the old_snapshot
+      old_snapshot_ami = _.filter(ds_get_snapshot_ami, function(ami){
+        // Check if the old_snapshot is mapped to the AMI
+        if (_.contains(ami['snapshotIds'], old_snapshot['snapshotId'])) {
+          // Once we find the AMI, we can return value
+          return ami;
+        }
+      });
+      // If we got a result, then we have a match
+      if (_.size(old_snapshot_ami) > 0){
+        // We expect a snapshot to match only one AMI so can safely select first from the old_snapshot_ami list
+        old_snapshot_ami = old_snapshot_ami[0];
+        // Override empty default with the identified AMI imageId
+        old_snapshot_imageId = old_snapshot_ami['imageId'];
+      }
+      // Add the old snapshot to the results with AMI data
+      results.push({
+        snapshotId : old_snapshot['snapshotId'],
+        formatSnapId : "snapshot/"+old_snapshot['snapshotId'],
+        region : old_snapshot['region'],
+        tagKeyValue : old_snapshot['tagKeyValue'],
+        daysOld : old_snapshot['daysOld'],
+        accountID: ds_get_caller_identity[0]['account'],
+        imageId : old_snapshot_imageId,
+        volumeSize: old_snapshot['volumeSize']
+      });
+    });
+  EOS
+end
+
 datasource "ds_snapshots_cost_mapping" do
   run_script $js_snapshots_cost_mapping, $ds_filter_ami_snapshots, $ds_snapshot_costs, $ds_currency_code, $ds_currency_reference, $ds_billing_centers, $ds_get_caller_identity
-end
-
-###############################################################################
-# Scripts
-###############################################################################
-
-script "js_regions", type: "javascript" do
-  parameters "user_entered_regions", "all_regions"
-  result "regions"
-  code <<-EOS
-    if(_.isEmpty(user_entered_regions)){
-      regions = all_regions;
-    }else{
-      //Filter unique regions
-      var uniqueRegions = _.uniq(user_entered_regions);
-      var all_regions_list = [];
-      all_regions.forEach(function(all_region){
-        all_regions_list.push(all_region.region)
-      })
-      //Filter valid regions
-      var valid_regions = [];
-      _.map(uniqueRegions, function(uniqueRegion){
-        if(all_regions_list.indexOf(uniqueRegion) > -1){
-          valid_regions.push({"region": uniqueRegion})
-        }
-      })
-      //Throw an error if no valid regions found
-      if (_.isEmpty(valid_regions)) {
-        regions = all_regions;
-      }else{
-        regions = valid_regions
-      }
-    }
-  EOS
-end
-
-script "js_flexera_optima", type: "javascript" do
-  parameters "flexera_org_id_for_optima", "current_flexera_org_id"
-  result "flexera_optima"
-  code <<-EOS
-  var flexera_optima = {
-    org_id: flexera_org_id_for_optima == "current" ? current_flexera_org_id : flexera_org_id_for_optima,
-  };
-  EOS
-end
-
-script "js_top_level_bc", type: "javascript" do
-  parameters "billing_centers"
-  result "filtered_billing_centers"
-  code <<-EOS
-    var filtered_billing_centers =_.reject(billing_centers, function(bc){ return bc.parent_id != null });
-  EOS
-end
-
-script "js_get_costs", type: "javascript" do
-  parameters "account_id", "billing_centers", "org", "optima_host"
-  result "request"
-  code <<-EOS
-    // returns date formatted as string: YYYY-mm-dd
-    function getFormattedDailyDate(date) {
-      var year = date.getFullYear();
-      var month = (1 + date.getMonth()).toString();
-      month = month.length > 1 ? month : '0' + month;
-      var day = date.getDate().toString();
-      day = day.length > 1 ? day : '0' + day;
-      return year + '-' + month + '-' + day;
-    }
-    var start_date = getFormattedDailyDate(new Date(new Date().setDate(new Date().getDate() - 3)));
-    var end_date = getFormattedDailyDate(new Date(new Date().setDate(new Date().getDate() - 2)));
-    var request = {
-      auth: "auth_flexera",
-      host: optima_host,
-      verb: "POST",
-      path: "/bill-analysis/orgs/" + org + "/costs/select",
-      body_fields: {
-        "dimensions": ["resource_id", "vendor_account_name"],
-        "granularity": "day",
-        "start_at": start_date,
-        "end_at": end_date,
-        "metrics": ["cost_nonamortized_unblended_adj"],
-        "billing_center_ids": _.compact(_.map(billing_centers, function(value){ return value.id})),
-        "limit": 100000,
-        "filter": {
-          "expressions": [
-            {
-              "dimension": "service",
-              "type": "equal",
-              "value": "AmazonEC2"
-            },
-            {
-              "dimension": "resource_type",
-              "type": "equal",
-              "value": "Storage Snapshot"
-            },
-            {
-              "dimension": "vendor_account",
-              "type": "equal",
-              "value": account_id[0]["account"]
-            }
-          ],
-          "type": "and"
-        }
-      },
-      headers: {
-        "User-Agent": "RS Policies",
-        "Api-Version": "1.0"
-      },
-      ignore_status: [400]
-    }
-  EOS
 end
 
 script "js_snapshots_cost_mapping", type: "javascript" do
@@ -729,138 +857,6 @@ script "js_snapshots_cost_mapping", type: "javascript" do
     "result": result,
     "message": message
   };
-  EOS
-end
-
-script "js_describe_snapshots", type: "javascript" do
-  result "results"
-  parameters "region", "ds_get_caller_identity"
-  code <<-EOS
-    results = {
-        "auth": "auth_aws",
-        "host": 'ec2.'+region+'.amazonaws.com',
-        "verb": "GET",
-        "path": "/",
-        "pagination": "aws_pagination_describesnapshots_xml",
-        "headers": {
-          "User-Agent": "RS Policies",
-          "Content-Type": "text/xml"
-        },
-        "query_params": {
-          'Action': 'DescribeSnapshots',
-          'Version': '2016-11-15',
-          'Filter.1.Name': 'status',
-          'Filter.1.Value.1': 'completed',
-          'Filter.2.Name': 'owner-id',
-          'Filter.2.Value.1': ds_get_caller_identity[0]['account']
-        }
-    }
-  EOS
-end
-
-script "js_filter_old_snapshots", type: "javascript" do
-  result "results"
-  parameters "snapshot_age", "ds_describe_snapshots", "param_exclude_tags"
-  code <<-EOS
-    var param_exclude_tags_lower=[];
-    for(var j=0;j<param_exclude_tags.length;j++){
-        param_exclude_tags_lower[j] = param_exclude_tags[j].toString().toLowerCase();
-    }
-    var results = [];
-    for(var i=0; i < ds_describe_snapshots.length; i++){
-      var snapshot = ds_describe_snapshots[i];
-      // Check, if the tag present in entered param_exclude_tags, ignore the snapshot if tag matches/present
-      var isTagMatched = false;
-      var instance_tags = {}
-      var tags = []
-      _.each(snapshot['tags'], function(instance){
-        tags.push(instance.tagKey+'='+instance.tagValue)
-      })
-      _.each(param_exclude_tags, function(exclude){
-        if ( _.contains(tags, exclude)){
-          isTagMatched = true
-        }
-      })
-      if(!(isTagMatched)){
-        var snapshotTime = Date.parse(snapshot['startTime']);
-        var daysOld = (new Date().getTime() - new Date(snapshotTime).getTime()) / (1000 * 3600 * 24);
-        daysOld = Math.round(daysOld);
-        if(daysOld > snapshot_age){
-          results.push({
-            snapshotId : snapshot['snapshotId'],
-            region : snapshot['region'],
-            tagKeyValue : tags,
-            daysOld : daysOld,
-            volumeSize : snapshot['volumeSize']
-          })
-        }
-      }
-    }
-    results = _.sortBy(results,'region');
-    results = _.sortBy(results,'daysOld');
-  EOS
-end
-
-script "js_get_snapshot_ami", type: "javascript" do
-  result "results"
-  parameters "region", "ds_get_caller_identity"
-  code <<-EOS
-    results = {
-      "auth": "auth_aws",
-      "host": 'ec2.'+region+'.amazonaws.com',
-      "verb": "GET",
-      "path": "/",
-      "pagination": "aws_pagination_describeimages_xml",
-      "headers": {
-        "User-Agent": "RS Policies",
-        "Content-Type": "text/xml"
-      },
-      "query_params": {
-        'Action': 'DescribeImages',
-        'Version': '2016-11-15',
-        'Filter.1.Name': 'owner-id',
-        'Filter.1.Value.1': ds_get_caller_identity[0]['account']
-        }
-    }
-  EOS
-end
-
-script "js_filter_ami_snapshots", type: "javascript" do
-  result "results"
-  parameters "ds_get_snapshot_ami", "ds_filter_old_snapshots", "ds_get_caller_identity"
-  code <<-EOS
-    var results = [];
-    // Loop through all the old snapshots and map them to AMI
-    _.each(ds_filter_old_snapshots, function(old_snapshot){
-      // Default to empty string for imageId
-      old_snapshot_imageId = ""
-      // Find if any AMI's maps to the old_snapshot
-      old_snapshot_ami = _.filter(ds_get_snapshot_ami, function(ami){
-        // Check if the old_snapshot is mapped to the AMI
-        if (_.contains(ami['snapshotIds'], old_snapshot['snapshotId'])) {
-          // Once we find the AMI, we can return value
-          return ami;
-        }
-      });
-      // If we got a result, then we have a match
-      if (_.size(old_snapshot_ami) > 0){
-        // We expect a snapshot to match only one AMI so can safely select first from the old_snapshot_ami list
-        old_snapshot_ami = old_snapshot_ami[0];
-        // Override empty default with the identified AMI imageId
-        old_snapshot_imageId = old_snapshot_ami['imageId'];
-      }
-      // Add the old snapshot to the results with AMI data
-      results.push({
-        snapshotId : old_snapshot['snapshotId'],
-        formatSnapId : "snapshot/"+old_snapshot['snapshotId'],
-        region : old_snapshot['region'],
-        tagKeyValue : old_snapshot['tagKeyValue'],
-        daysOld : old_snapshot['daysOld'],
-        accountID: ds_get_caller_identity[0]['account'],
-        imageId : old_snapshot_imageId,
-        volumeSize: old_snapshot['volumeSize']
-      });
-    });
   EOS
 end
 
