@@ -2,14 +2,14 @@
 
 ## What it does
 
-This policy creates and updates custom Rule-Based Dimensions that surface the specified AWS account tag keys in the Flexera One platform. This allows costs to be sliced by the values of the tag keys in question.
+This policy creates and updates custom Rule-Based Dimensions that surface the specified AWS Account tag keys in the Flexera One platform. This allows costs to be sliced by the values of the tag keys in question.
 
 ## Input Parameters
 
 This policy has the following input parameters required when launching the policy.
 
 - *Effective Date* - The month and year in YYYY-MM format that you want the rules to apply. This should be left at its default value in most cases to ensure that the rules apply to all costs, including historical costs.
-- *Tag Keys* - A list of AWS account tag keys to create custom Rule-Based Dimensions for.
+- *Tag Keys* - A list of AWS Account tag keys to create custom Rule-Based Dimensions for.
 
 ## Prerequisites
 
