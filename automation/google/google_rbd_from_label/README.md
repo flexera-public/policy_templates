@@ -9,7 +9,7 @@ This policy creates and updates custom Rule-Based Dimensions that surface the sp
 This policy has the following input parameters required when launching the policy.
 
 - *Effective Date* - The month and year in YYYY-MM format that you want the rules to apply. This should be left at its default value in most cases to ensure that the rules apply to all costs, including historical costs.
-- *label Keys* - A list of Google Project label keys to create custom Rule-Based Dimensions for.
+- *Label Keys* - A list of Google Project label keys to create custom Rule-Based Dimensions for.
 
 ## Prerequisites
 
