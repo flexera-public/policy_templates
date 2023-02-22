@@ -1,13 +1,13 @@
-name "Turbonomics Allocate Virtual Machine Recommendations Azure"
+name "Turbonomics Allocate Virtual Machine Recommendations AWS"
 rs_pt_ver 20180301
 type "policy"
-short_description "Turbonomics policy for allocating RI coverage for virtual machines [README](https://github.com/flexera-public/policy_templates/tree/master/cost/turbonomics/allocate_virtual_machines_recommendations/azure) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+short_description "Turbonomics policy for allocating RI coverage for virtual machines [README](https://github.com/flexera-public/policy_templates/tree/master/cost/turbonomics/allocate_virtual_machines_recommendations/aws) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 severity "low"
 category "Cost"
 default_frequency "daily"
 info(
   version: "2.1",
-  provider: "Azure",
+  provider: "AWS",
   source: "Turbonomics",
   service: "Compute",
   policy_set: "Allocate VMs",
@@ -154,7 +154,7 @@ script "js_get_business_units", type: "javascript" do
       host: "sales1.demo.turbonomic.com",
       path: "/api/v3/businessunits",
       query_params: {
-        "cloud_type": "AZURE",
+        "cloud_type": "AWS",
         "type":"DISCOVERED"
       },
       headers: {
@@ -221,6 +221,7 @@ script "js_filtered_turbonomics_recommendations", type: "javascript" do
         }
       })
     })
+
     _.each(ds_get_business_units, function(businessUnit) {
       _.each(ds_get_turbonomics_recommendations, function(vm, index){
         if (vm.businessUUID === businessUnit.uuid) {
@@ -231,7 +232,7 @@ script "js_filtered_turbonomics_recommendations", type: "javascript" do
     })
 
     _.each(ds_get_turbonomics_recommendations, function(vm){
-      if (vm.provider === "Azure Subscription") {
+      if (vm.provider === "AWS") {
         if (typeof vm.savingsCurrency != "undefined" && vm.savingsCurrency != null) {
           if (vm.savingsCurrency.indexOf("$") != -1) {
             vm.savingsCurrency = "$"
@@ -249,15 +250,16 @@ script "js_filtered_turbonomics_recommendations", type: "javascript" do
           });
         }
         vm.tags = tags
-          Object.keys(vm.vendorIDValues).forEach(function(key) {
-            vm.resourceID = "/subscriptions/" + vm.accountID + "/resourceGroups/" + vm.resourceGroup + "/providers/Microsoft.Compute/virtualMachines/" + vm.resourceName
-            return
-          });
+
+        Object.keys(vm.vendorIDValues).forEach(function(key) {
+          vm.resourceID = vm.vendorIDValues[key]
+          return
+        });
 
         if (typeof vm.riCoverageBefore === "undefined" || vm.riCoverageBefore === null){
           vm.riCoverageBefore = 0
         }
-        vm.service = "Microsoft.Compute"
+        vm.service = provider_service[vm.provider]
         savingsString = ""
         if (typeof vm.savings === "undefined" || vm.savings === null || vm.savings === "" || isNaN(vm.savings)) {
           vm.savings = 0.0
@@ -269,7 +271,6 @@ script "js_filtered_turbonomics_recommendations", type: "javascript" do
         instances.push(vm)
       }
     })
-
     message = ""
     if (instances.length != 0) {
       pretty_savings = instances[0].savingsCurrency + ' ' + formatNumber(monthlySavings.toFixed(2), ",")
