@@ -2,8 +2,8 @@
 
 ## v2.4
 
-- adding an input list for a mix of dimensions
-- validate each input from the user input list, if all are valid dimensions, it will run an anomaly report. Otherwise, when the user inputs at least one invalid dimension, policy will fail, escalating to emailing you about invalid dimension you used.
+- added an input list for a mix of dimensions
+- validated each input from the user input list, if all are valid dimensions, it will run an anomaly report. Otherwise, when the user inputs at least one invalid dimension, policy will fail, escalating to emailing you about invalid dimension you used.
 
 ## v2.3
 
