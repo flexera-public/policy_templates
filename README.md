@@ -22,6 +22,20 @@ Reference
 
 ---
 
+### Automation
+
+#### AWS
+
+- [AWS Rule-Based Dimension From Account Tags](./automation/aws/aws_rbd_from_tag/)
+
+#### Azure
+
+- [Azure Rule-Based Dimension From Subscription Tags](./automation/azure/azure_rbd_from_tag/)
+
+#### Google
+
+- [Google Rule-Based Dimension From Project Labels](./automation/google/google_rbd_from_tag/)
+
 ### Cost
 
 #### Multi-cloud
