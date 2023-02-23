@@ -2,17 +2,17 @@
 
 ## What it does
 
-The Turbonomics Allocate Virtual Machines Recommendations AWS policy utilizes Turbonomics /api/v3/markets/{market_uuid}/actions endpoint to provide AWS VM allocation recommendations for Reserved Instance coverage. From these recommendations we provide monthly savings estimates based on Turbonomics per hour costs
+The Turbonomics Allocate Virtual Machines Recommendations AWS policy utilizes Turbonomics [Credentials](https://turbonomic.com/api/v3/markets/{market_uuid}/actions) endpoint to provide AWS VM allocation recommendations for Reserved Instance coverage. From these recommendations we provide monthly savings estimates based on Turbonomics per hour costs
 
 ## Functional Details
 
 - The policy queries the /api/v3/markets/{market_uuid}/actions endpoint for the turbonomics api and based on action will return action details and savings for on-boarded cloud instances
 - The policy will error after a day, the authorization cookie parameter will need to be refreshed and re-run manually
-- there is a need to run the login credentials against the /api/v3/login endpoint to manually recieve cookie authorization
+- There is a need to run the login credentials against the [Credentials](https://xxxx.turbonomic.com/api/v3/login) endpoint to manually recieve cookie authorization
 
 ### Input Parameters
 
-- *Authorization Cookie"* - authorization cookie pulled from turbonomic login endpoint: /api/v3/login
+- *Authorization Cookie"* - authorization cookie pulled from turbonomic login endpoint: [Credentials](https://xxxx.turbonomic.com/api/v3/login)
   - no_echo: true
 - *Email addresses* - A list of email addresses to notify
 
