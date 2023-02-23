@@ -2,5 +2,5 @@
 
 ## v2.1
 
-- Field **source** was added to the report.
+- Field **source** was added to the template.
 
