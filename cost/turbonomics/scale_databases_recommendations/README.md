@@ -7,7 +7,7 @@ The Turbonomics Scale Databases Recommendations policy uses Turbonomics Actions 
 ## Input Parameters
 
 - *Provider* - Cloud provider where we get recommendations, it supports AWS, Azure, Google or All of them together.
-- *Authorization Cookie* - Authorization cookie pulled from turbonomic login endpoint: (https://xxxx.turbonomic.com/api/v3/login)
+- *Authorization Cookie* - Authorization cookie pulled from manual source.
   - no_echo: true
 - *Email addresses to notify* - A list of email addresses to notify.
 
