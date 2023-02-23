@@ -23,13 +23,19 @@ parameter "auth_cookie" do
   type "string"
   label "Authorization Cookie"
   no_echo true
-  description "authorization cookie pulled from manual source"
+  description "Valid authorization cookie (pulled from Turbonomic)."
+end
+
+parameter "param_turbonomic_host" do
+  type "string"
+  label "Turbonomic Host"
+  description "Your Turbonomic host or IP."
 end
 
 parameter "param_email" do
   type "list"
   label "Email addresses to notify"
-  description "Email addresses of the recipients you wish to notify when new incidents are created"
+  description "Email addresses of the recipients you wish to notify when new incidents are created."
 end
 
 ###############################################################################
@@ -56,7 +62,7 @@ end
 #get turbonomic recommendation data
 datasource "ds_get_turbonomics_recommendations" do
   request do
-    run_script $js_get_turbonomics_recommendations, $auth_cookie
+    run_script $js_get_turbonomics_recommendations, $auth_cookie, $param_turbonomic_host
   end
   result do
     encoding "json"
@@ -82,7 +88,7 @@ end
 ##this will potentially be a lot of calls. how to make this more performant
 datasource "ds_get_business_units" do
   request do
-    run_script $js_get_business_units, $auth_cookie
+    run_script $js_get_business_units, $auth_cookie, $param_turbonomic_host
   end
   result do
     encoding "json"
@@ -97,7 +103,7 @@ end
 ##this will potentially be a lot of calls. how to make this more performant
 datasource "ds_get_action_details" do
   request do
-    run_script $js_get_action_details, $auth_cookie, $ds_get_turbonomics_recommendations
+    run_script $js_get_action_details, $auth_cookie, $ds_get_turbonomics_recommendations, $param_turbonomic_host
   end
   result do
     encoding "json"
@@ -116,13 +122,13 @@ end
 ##script using a manually acquired turbonomic cookie and pulls hard coded scalable vm data
 script "js_get_turbonomics_recommendations", type: "javascript" do
   result "request"
-  parameters "auth_cookie"
+  parameters "auth_cookie", "param_turbonomic_host"
   code <<-EOS
   //replace cookie every day this is run
     var request = {
       verb: "POST",
       pagination: "turbonomics_vm_pagination_header",
-      host: "sales1.demo.turbonomic.com",
+      host: param_turbonomic_host,
       path: "/api/v3/markets/Market/actions",
       body_fields: {
         "actionStateList": ["READY", "ACCEPTED", "QUEUED", "IN_PROGRESS"],
@@ -146,12 +152,12 @@ end
 ## verified that discovered is the only one we need
 script "js_get_business_units", type: "javascript" do
   result "request"
-  parameters "auth_cookie"
+  parameters "auth_cookie", "param_turbonomic_host"
   code <<-EOS
   //replace cookie every day this is run
     var request = {
       verb: "GET",
-      host: "sales1.demo.turbonomic.com",
+      host: param_turbonomic_host,
       path: "/api/v3/businessunits",
       query_params: {
         "cloud_type": "GCP",
@@ -167,7 +173,7 @@ end
 
 script "js_get_action_details", type: "javascript" do
   result "request"
-  parameters "auth_cookie", "ds_get_turbonomics_recommendations"
+  parameters "auth_cookie", "ds_get_turbonomics_recommendations", "param_turbonomic_host"
   code <<-EOS
   //replace cookie every day this is run
     var uuids = []
@@ -176,7 +182,7 @@ script "js_get_action_details", type: "javascript" do
     })
     var request = {
       verb: "POST",
-      host: "sales1.demo.turbonomic.com",
+      host: param_turbonomic_host,
       path: "/api/v3/actions/details",
       body_fields: {
         "uuids": uuids,
