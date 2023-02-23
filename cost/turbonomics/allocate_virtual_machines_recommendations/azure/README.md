@@ -1,12 +1,12 @@
-# Turbonomics Allocate Virtual Machine Recommendations Azure
+# Turbonomic Allocate Virtual Machine Recommendations Azure
 
 ## What it does
 
-The Turbonomics Allocate Virtual Machines Recommendations Azure policy utilizes Turbonomics [Credentials](https://turbonomic.com/api/v3/markets/{market_uuid}/actions) endpoint to provide Azure VM allocation recommendations for Reserved Instance coverage. From these recommendations we provide monthly savings estimates based on Turbonomics per hour costs
+The Turbonomic Allocate Virtual Machines Recommendations Azure policy utilizes Turbonomic [Credentials](https://turbonomic.com/api/v3/markets/{market_uuid}/actions) endpoint to provide Azure VM allocation recommendations for Reserved Instance coverage. From these recommendations we provide monthly savings estimates based on Turbonomic per hour costs
 
 ## Functional Details
 
-- The policy queries the /api/v3/markets/{market_uuid}/actions endpoint for the turbonomics api and based on action will return action details and savings for on-boarded cloud instances
+- The policy queries the /api/v3/markets/{market_uuid}/actions endpoint for the Turbonomic API and based on action will return action details and savings for on-boarded cloud instances
 - The policy will error after a day, the authorization cookie parameter will need to be refreshed and re-run manually
 - There is a need to run the login credentials against the [Credentials](https://xxxx.turbonomic.com/api/v3/login) endpoint to manually recieve cookie authorization
 
@@ -21,7 +21,7 @@ The Turbonomics Allocate Virtual Machines Recommendations Azure policy utilizes 
 - policy_manager
 - billing_center_viewer
 
-- Turbonomics - administrator
+- Turbonomic - administrator
 
 ### Cost
 
