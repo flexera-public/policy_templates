@@ -106,8 +106,12 @@ datasource "ds_google_projects" do
   end
 end
 
+datasource "ds_google_projects_normalized" do
+  run_script $js_google_projects_normalized, $ds_google_projects
+end
+
 datasource "ds_rbds" do
-  run_script $js_rbds, $ds_google_projects, $ds_existing_rbds, $param_tag_list, $param_effective_date
+  run_script $js_rbds, $ds_google_projects_normalized, $ds_existing_rbds, $param_tag_list, $param_effective_date
 end
 
 datasource "ds_apply_rbds" do
@@ -123,6 +127,35 @@ end
 ###############################################################################
 # Scripts
 ###############################################################################
+
+script "js_google_projects_normalized", type: "javascript" do
+  parameters "accounts"
+  result "result"
+  code <<-'EOS'
+  result = []
+
+  _.each(accounts, function(account) {
+    tags = {}
+
+    if (account['tags'] != null && account['tags'] != undefined) {
+      _.each(Object.keys(account['tags']), function(key) {
+        normalized_key = key.toLowerCase().trim()
+        tags[normalized_key] = account['tags'][key]
+      })
+    }
+
+    result.push({
+      id: account['id'],
+      number: account['number'],
+      name: account['name'],
+      parent: account['parent'],
+      createTime: account['createTime'],
+      lifecycleState: account['lifecycleState'],
+      tags: tags
+    })
+  })
+EOS
+end
 
 script "js_rbds", type: "javascript" do
   parameters "accounts", "existing_rbds", "param_tag_list", "param_effective_date"
