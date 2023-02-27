@@ -39,8 +39,9 @@ end
 
 parameter "param_tags_to_check" do
   type "list"
-  label "Tags"
-  description "List of tag keys e.g., 'env' against which the resources will be compared."
+  label "Tag Keys"
+  category "AWS"
+  description "List of tag keys e.g., 'Environment' to find resources which are not tagged by given inputs."
 end
 
 ###############################################################################
@@ -171,6 +172,7 @@ script "js_filter_resources", type: "javascript" do
   code <<-EOS
   //For each Resource in Resource List
   _.each(ds_resources, function(resource){
+    
     //Create a field for Missing tags
     resource["missingTagKeys"] = []
     resource["missingTagValues"] = []
@@ -201,17 +203,17 @@ script "js_filter_resources", type: "javascript" do
   //Enrich filtered_resources data with Resource ID and Resource Type, also convert existing tags to string (so it can be viewed in Policy Incident)
   _.each(filtered_resources, function(resource){
     //Inject ID and Type
-    //var id = "";
+    //var resourceId = "";
     //var type = "";
     var arn_last = resource.arn.split(":")
     if ( arn_last[arn_last.length - 1].indexOf("/") != -1 ) {
         var arr = arn_last[arn_last.length - 1].split("/")
         resource["type"] = arr[0]
-        resource["id"] = arr[1]
+        resource["resourceId"] = arr[1]
     }
     else {
         resource["type"] = "< Not Available >"
-        resource["id"] = arn_last[arn_last.length - 1]
+        resource["resourceId"] = arn_last[arn_last.length - 1]
     }
 
     //Create string for existing Tags
@@ -224,7 +226,7 @@ script "js_filter_resources", type: "javascript" do
   })
 
   //Sort result data
-  result = _.sortBy(filtered_resources, 'id')
+  result = _.sortBy(filtered_resources, 'resourceId')
   result = _.sortBy(result, 'region')
   EOS
 end
@@ -233,6 +235,7 @@ end
 # Escalations
 ###############################################################################
 
+#SEND EMAIL
 escalation "esc_email" do
   automatic true
   label "Send Email"
@@ -240,14 +243,28 @@ escalation "esc_email" do
   email $param_email
 end
 
+# escalation "esc_add_tags" do
+#   automatic false
+#   label "Add Tags"
+#   description "Update tags of the selected resource"
+#   parameter "param_tags_to_add" do
+#     type "list"
+#     label "Add Tags"
+#     description "Add Tags of format 'Key=Value' to the resource"
+#   end
+#   run "cwf_add_tags", data, $param_tags_to_add, rs_optima_host
+# end
+
+#ADD TAGS TO UNTAGGED RESOURCES
 escalation "esc_add_tags" do
   automatic false
   label "Add Tags"
   description "Update tags of the selected resource"
   parameter "param_tags_to_add" do
+    #test tags to check parameter in here too
     type "list"
-    label "Add Tags"
-    description "Add Tags of format 'Key=Value' to the resource"
+    label "Add Tags - Enter the list of tags you wish to add to the selected resource. Tags should follow 'Key=Value' format."
+    description "Enter the list of tags you wish to add to the selected resource. Tags should follow 'Key=Value' format."
   end
   run "cwf_add_tags", data, $param_tags_to_add, rs_optima_host
 end
@@ -267,7 +284,7 @@ policy "policy_untagged_resources" do
       field "region" do
         label "Region"
       end
-      field "id" do
+      field "resourceId" do
         label "Resource ID"
       end
       field "type" do
@@ -282,8 +299,9 @@ policy "policy_untagged_resources" do
       field "missingTagValues" do
         label "Tag Keys with Missing Tag Values"
       end
-      field "arn" do
+      field "id" do
         label "ARN"
+        path "arn"
       end
     end
   end
@@ -293,18 +311,38 @@ end
 # Cloud Workflow
 ###############################################################################
 
-define cwf_add_tags($data,$tags_to_add, $$rs_optima_host) return $all_response do
-  $$debug=true
-  $all_response=[];
-  $tags_obj={}
-  foreach $tag in $tags_to_add do
-    $tags_obj[first(split($tag,"="))]=last(split($tag,"="))
-  end
+#ADD TAGS TO UNTAGGED RESOURCE
+define cwf_add_tags($data, $param_tags_to_add, $$rs_optima_host) return $all_responses, $list_of_tags_to_add_foreach_data do
+  $$debug = true
+  $all_responses = []
+
+  #Used to show list of tags in the Output in Self-Service
+  $list_of_tags_to_add_foreach_data = []
+
+  #For each resource to action on:
   foreach $item in $data do
-    $response=http_request(
+
+    #Get list of Missing Tag Keys and Tag Keys Missing Tag Values
+    $missing_tag_keys = $item["missingTagKeys"]
+    $missing_tag_values = $item["missingTagValues"]
+
+    $filtered_tags_to_add_obj = {}
+    foreach $tag in $param_tags_to_add do
+      $tag_key_to_add = first(split( $tag, "=" ))
+      $tag_value_to_add = ""
+      if $tag_key_to_add != last(split( $tag, "=")) 
+        $tag_value_to_add = last(split( $tag, "="))
+      end
+      $filtered_tags_to_add_obj[$tag_key_to_add] = $tag_value_to_add
+    end
+
+    $list_of_tags_to_add_foreach_data << $filtered_tags_to_add_obj
+
+    #Create POST request to update resource with new tags
+    $response = http_request(
       verb: "post",
       auth: $$auth_aws,
-      host: join(["tagging."+$item["region"]+".amazonaws.com"]),
+      host: join(["tagging.", $item["region"], ".amazonaws.com"]),
       href: "/",
       https: true,
       headers:{
@@ -312,42 +350,27 @@ define cwf_add_tags($data,$tags_to_add, $$rs_optima_host) return $all_response d
         "content-type": "application/x-amz-json-1.1"
       },
       body: {
-        "ResourceARNList": [ $item["arn"] ],
-        "Tags": $tags_obj
+        "ResourceARNList": [ $item["id"] ],
+        "Tags": $filtered_tags_to_add_obj
       }
     )
-    $all_response << $response
+    call sys_log('Create AWS Tags for response: ',to_s($response))
+    $all_responses << $response
   end
-  call sys_log('Response',to_s($all_response))
 end
 
+#DEFINE SYSLOG
 define sys_log($subject, $detail) do
-  # Create empty errors array if doesn't already exist
-  if !$$errors
-    $$errors = []
-  end
-  # Check if debug is enabled
   if $$debug
-    # Append to global $$errors
-    # This is the suggested way to capture errors
-    $$errors << "Unexpected error for " + $subject + "\n  " + to_s($detail)
-    # If Flexera NAM Zone, create audit_entries [to be deprecated]
-    # This is the legacy method for capturing errors and only supported on Flexera NAM
-    if $$rs_optima_host == "api.optima.flexeraeng.com"
-      # skip_error_and_append is used to catch error if rs_cm.audit_entries.create fails unexpectedly
-      $task_label = "Creating audit entry for " + $subject
-      sub task_label: $task, on_error: skip_error_and_append($task) do
-        rs_cm.audit_entries.create(
-          notify: "None",
-          audit_entry: {
-            auditee_href: @@account,
-            summary: $subject,
-            detail: $detail
-          }
-        )
-      end # End sub on_error
-    end # End if rs_optima_host
-  end # End if debug is enabled
+    rs_cm.audit_entries.create(
+      notify: "None",
+      audit_entry: {
+        auditee_href: @@account,
+        summary: "AWS add Tags "+ $subject,
+        detail: $detail
+      }
+    )
+  end
 end
 
 define skip_error_and_append($subject) do
