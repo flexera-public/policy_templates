@@ -47,7 +47,10 @@ Required permissions in the provider:
       "Action": [
         "tag:GetResources",
         "tag:TagResources",
-        "ec2:DescribeRegions"
+        "ec2:DescribeRegions",
+        "ec2:CreateTags",
+        "rds:AddTagsToResource",
+        "config:TagResource"
       ],
       "Resource": "*"
     }
