@@ -992,10 +992,12 @@ define take_action($data, $param_deregister_image, $param_log_to_cm_audit_entrie
   if $param_deregister_image == "Yes"
     # Loop through all the old snapshots and deregister the image
     foreach $item in $data do
-      sub on_error: skip_error_and_append($item["imageId"]) do
-        # Only deregister if snapshot is mapped to an image
-        if $item['imageId'] != ""
-          call deregisterImageFromSnapshot($item["imageId"], $item["region"], $$errors) retrieve $$errors
+      if $item['service'] == "EBS"
+        sub on_error: skip_error_and_append($item["imageId"]) do
+          # Only deregister if snapshot is mapped to an image
+          if $item['imageId'] != ""
+            call deregisterImageFromSnapshot($item["imageId"], $item["region"], $$errors) retrieve $$errors
+          end
         end
       end
     end
@@ -1006,7 +1008,15 @@ define take_action($data, $param_deregister_image, $param_log_to_cm_audit_entrie
   foreach $item in $data do
     # Run each item in it's own sub task to collect all errors for all items before raising errror
     sub on_error: skip_error_and_append($item["id"]) do
-      call delete_snapshot($item, $$errors) retrieve $$errors
+      if $item['service'] == "EBS"
+        call ec2_delete_snapshot($item, $$errors) retrieve $$errors
+      elsif $item['service'] == "RDS"
+        if $item['dbInstanceId'] != ""
+          call rds_delete_db_instance_snapshot($item, $$errors) retrieve $$errors
+        elsif $item['dbClusterId'] != ""
+          call rds_delete_db_cluster_snapshot($item, $$errors) retrieve $$errors
+        end
+      end
     end
   end
 
@@ -1038,7 +1048,7 @@ define deregisterImageFromSnapshot($image, $region, $errors) return $errors do
   end
 end
 
-define delete_snapshot($snapshot, $errors) return $errors do
+define ec2_delete_snapshot($snapshot, $errors) return $errors do
   $delete_response = http_request(
     auth: $$auth_aws,
     https: true,
@@ -1054,7 +1064,55 @@ define delete_snapshot($snapshot, $errors) return $errors do
   call check_response_and_append_if_error($delete_response, "Delete Snapshot", $errors) retrieve $errors
   $splitResult = $delete_response["code"]
   if $splitResult != 200
-    call sys_log("Inside delete_snapshot definition", to_s($delete_response))
+    call sys_log("Inside ec2_delete_snapshot definition", to_s($delete_response))
+  end
+end
+
+define rds_delete_db_instance_snapshot($snapshot, $errors) return $errors do
+  $delete_response = http_request(
+    auth: $$auth_aws,
+    https: true,
+    verb: "get",
+    host: 'rds.' + $snapshot["region"] + '.amazonaws.com',
+    href: "/",
+    headers: {
+      "User-Agent": "RS Policies"
+    },
+    query_strings: {
+      'Action': 'DeleteDBSnapshot',
+      'Version': '2014-10-31',
+      'DBSnapshotIdentifier': strip($snapshot["id"])
+    }
+  )
+
+  call check_response_and_append_if_error($delete_response, "Delete Snapshot", $errors) retrieve $errors
+  $splitResult = $delete_response["code"]
+  if $splitResult != 200
+    call sys_log("Inside rds_delete_db_instance_snapshot definition", to_s($delete_response))
+  end
+end
+
+define rds_delete_db_cluster_snapshot($snapshot, $errors) return $errors do
+  $delete_response = http_request(
+    auth: $$auth_aws,
+    https: true,
+    verb: "get",
+    host: 'rds.' + $snapshot["region"] + '.amazonaws.com',
+    href: "/",
+    headers: {
+      "User-Agent": "RS Policies"
+    },
+    query_strings: {
+      'Action': 'DeleteDBClusterSnapshot',
+      'Version': '2014-10-31',
+      'DBClusterSnapshotIdentifier': strip($snapshot["id"])
+    }
+  )
+
+  call check_response_and_append_if_error($delete_response, "Delete Snapshot", $errors) retrieve $errors
+  $splitResult = $delete_response["code"]
+  if $splitResult != 200
+    call sys_log("Inside rds_delete_db_cluster_snapshot definition", to_s($delete_response))
   end
 end
 
