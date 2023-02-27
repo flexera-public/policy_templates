@@ -20,9 +20,15 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Auto
   - `ec2:DescribeRegions`
   - `ec2:DescribeImages`
   - `ec2:DescribeSnapshots`
+  - `rds:DescribeDBInstances`
+  - `rds:DescribeDBSnapshots`
+  - `rds:DescribeDBClusters`
+  - `rds:DescribeDBClusterSnapshots`
   - `sts:GetCallerIdentity`
   - `ec2:DeregisterImage`
   - `ec2:DeleteSnapshot`
+  - `rds:DeleteDBClusterSnapshot`
+  - `rds:DeleteDBSnapshot`
 
   Example IAM Permission Policy:
 
@@ -36,8 +42,14 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Auto
                   "ec2:DescribeRegions",
                   "ec2:DescribeImages",
                   "ec2:DescribeSnapshots",
+                  "rds:DescribeDBInstances",
+                  "rds:DescribeDBSnapshots",
+                  "rds:DescribeDBClusters",
+                  "rds:DescribeDBClusterSnapshots",
                   "sts:GetCallerIdentity",
                   "ec2:DeregisterImage",
+                  "rds:DeleteDBSnapshot",
+                  "rds:DeleteDBClusterSnapshot",
                   "ec2:DeleteSnapshot"
               ],
               "Resource": "*"
