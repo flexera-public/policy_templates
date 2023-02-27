@@ -1,4 +1,4 @@
-name "Turbonomics Scale Databases Recommendations"
+name "Turbonomics Scale Databases Recommendations GCP"
 rs_pt_ver 20180301
 type "policy"
 short_description "Turbonomics policy that gives recommendations to scale Databases/DatabaseServers."
@@ -7,9 +7,9 @@ category "Cost"
 default_frequency "daily"
 info(
   version: "1.0",
-  source: "Turbonomics",
-  service: "SQL",
-  provider: "Flexera Optima",
+  source: "Turbonomic",
+  service: "Usage Discount",
+  provider: "GCP",
   policy_set: "Rigthsize Database Instances",
   recommendation_type: "Usage Reduction"
 )
@@ -18,19 +18,26 @@ info(
 # Parameters   #
 ##################
 
+parameter "param_turbonomic_endpoint" do
+  type "string"
+  label "Turbonomic endpoint"
+end
+
 parameter "param_provider" do
   type "string"
   label "Provider"
   description "Specifies provider where you want to get recommendations"
-  allowed_values "All", "AWS", "Azure Subscription", "GCP Project"
-  default "All"
+  # Once we can add multiple providers, allow: "All", "AWS", "Azure Subscription", "GCP Project"
+  allowed_values "GCP Project"
+  # Once we can add multiple providers change this default value
+  default "GCP Project"
 end
 
-parameter "auth_cookie" do
+parameter "param_auth_cookie" do
   type "string"
   label "Authorization Cookie"
   no_echo true
-  description "Authorization cookie pulled from manual source."
+  description "Valid authorization cookie."
 end
 
 parameter "param_email" do
@@ -58,7 +65,7 @@ end
 
 datasource "ds_get_turbonomics_recommendations" do
   request do
-    run_script $js_get_turbonomics_recommendations, $auth_cookie
+    run_script $js_get_turbonomics_recommendations, $param_turbonomic_endpoint, $param_auth_cookie
   end
   result do
     encoding "json"
@@ -83,7 +90,7 @@ end
 
 datasource "ds_get_business_units" do
   request do
-    run_script $js_get_business_units, $auth_cookie, $param_provider
+    run_script $js_get_business_units, $param_turbonomic_endpoint, $param_auth_cookie, $param_provider
   end
   result do
     encoding "json"
@@ -105,11 +112,11 @@ end
 
 script "js_get_turbonomics_recommendations", type: "javascript" do
   result "request"
-  parameters "auth_cookie"
+  parameters "turbonomic_endpoint", "auth_cookie"
   code <<-EOS
     request = {
       verb: "POST",
-      host: "sales1.demo.turbonomic.com",
+      host: turbonomic_endpoint,
       pagination: "turbonomics_databases_pagination_header",
       path: "/api/v3/markets/Market/actions"
       body_fields: {
@@ -133,25 +140,25 @@ end
 
 script "js_get_business_units", type: "javascript" do
   result "request"
-  parameters "auth_cookie", "param_provider"
+  parameters "turbonomic_endpoint", "auth_cookie", "provider"
   code <<-EOS
     query_params = {"type": "DISCOVERED"}
 
     // Since /api/v3/businessunits only support "AWS", "Azure Subscription" and "GCP Project", in case
     // user selects "All", we shouldn't add "cloud_type" param in order to get all records.
-    if (param_provider !== "All") {
+    if (provider !== "All") {
       providers = {
         "AWS":"AWS",
         "Azure Subscription":"AZURE",
         "GCP Project": "GCP",
       }
 
-      query_params["cloud_type"] = providers[param_provider]
+      query_params["cloud_type"] = providers[provider]
     }
 
     request = {
       verb: "GET",
-      host: "sales1.demo.turbonomic.com",
+      host: turbonomic_endpoint,
       path: "/api/v3/businessunits",
       query_params: query_params,
       headers: {
