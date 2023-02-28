@@ -21,8 +21,6 @@ The Turbonomic Allocate Virtual Machines Recommendations GCP policy utilizes Tur
 - policy_manager
 - billing_center_viewer
 
-- Turbonomic - administrator
-
 ### Cost
 
 This Policy Template does not incur any cloud costs.
