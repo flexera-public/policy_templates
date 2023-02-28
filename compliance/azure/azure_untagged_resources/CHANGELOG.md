@@ -2,7 +2,7 @@
 
 ## v2.13
 
-- Added the bility to check for key=value pairs
+- Added the ability to check for key=value pairs
 - Added the ability to select a resource in the incident and enter a tag in key=value format to add to the specific resource
 
 ## v2.12
