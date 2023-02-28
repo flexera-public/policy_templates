@@ -1,5 +1,9 @@
 # Changelog
 
+## v4.3
+
+- Raised API limit to handle situations where more than 10,000 line items need to be retrieved.
+
 ## v4.2
 
 - Replaced the term **whitelist** with **allowed list**.

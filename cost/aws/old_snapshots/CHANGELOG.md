@@ -1,5 +1,9 @@
 # Changelog
 
+## v4.2
+
+- Raised API limit to handle situations where more than 10,000 line items need to be retrieved.
+
 ## v4.1
 
 - Added logic required for "Meta Policy" use-cases
