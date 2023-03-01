@@ -1,12 +1,12 @@
-name "Turbonomics Scale Databases Recommendations GCP"
+name "Turbonomic Rightsize Databases Recommendations GCP"
 rs_pt_ver 20180301
 type "policy"
-short_description "Turbonomics policy that gives recommendations to scale Databases/DatabaseServers."
+short_description "Turbonomic policy that gives recommendations to rightsize Databases/DatabaseServers."
 severity "low"
 category "Cost"
 default_frequency "daily"
 info(
-  version: "1.0",
+  version: "0.1",
   source: "Turbonomic",
   service: "Usage Discount",
   provider: "GCP",
@@ -50,7 +50,7 @@ end
 # Pagination
 ###############################################################################
 
-pagination "turbonomics_databases_pagination_header" do
+pagination "turbonomic_databases_pagination_header" do
   get_page_marker do
     header "x-next-cursor"
   end
@@ -63,9 +63,9 @@ end
 # Datasources
 ###############################################################################
 
-datasource "ds_get_turbonomics_recommendations" do
+datasource "ds_get_turbonomic_recommendations" do
   request do
-    run_script $js_get_turbonomics_recommendations, $param_turbonomic_endpoint, $param_auth_cookie
+    run_script $js_get_turbonomic_recommendations, $param_turbonomic_endpoint, $param_auth_cookie
   end
   result do
     encoding "json"
@@ -102,22 +102,22 @@ datasource "ds_get_business_units" do
   end
 end
 
-datasource "ds_filtered_turbonomics_recommendations" do
-  run_script $js_filtered_turbonomics_recommendations, $ds_get_turbonomics_recommendations, $ds_get_business_units, $param_provider
+datasource "ds_filtered_turbonomic_recommendations" do
+  run_script $js_filtered_turbonomic_recommendations, $ds_get_turbonomic_recommendations, $ds_get_business_units, $param_provider
 end
 
 ###############################################################################
 # Scripts
 ###############################################################################
 
-script "js_get_turbonomics_recommendations", type: "javascript" do
+script "js_get_turbonomic_recommendations", type: "javascript" do
   result "request"
   parameters "turbonomic_endpoint", "auth_cookie"
   code <<-EOS
     request = {
       verb: "POST",
       host: turbonomic_endpoint,
-      pagination: "turbonomics_databases_pagination_header",
+      pagination: "turbonomic_databases_pagination_header",
       path: "/api/v3/markets/Market/actions"
       body_fields: {
         "actionStateList": ["READY", "ACCEPTED", "QUEUED", "IN_PROGRESS"],
@@ -169,9 +169,9 @@ script "js_get_business_units", type: "javascript" do
   EOS
 end
 
-script "js_filtered_turbonomics_recommendations", type: "javascript" do
+script "js_filtered_turbonomic_recommendations", type: "javascript" do
   result "result"
-  parameters "ds_get_turbonomics_recommendations", "ds_get_business_units", "param_provider"
+  parameters "ds_get_turbonomic_recommendations", "ds_get_business_units", "param_provider"
   code <<-EOS
     instances = []
     monthlySavings = 0.0
@@ -195,10 +195,10 @@ script "js_filtered_turbonomics_recommendations", type: "javascript" do
     }
     
     _.each(ds_get_business_units, function (businessUnit) {
-        _.each(ds_get_turbonomics_recommendations, function (db, index) {
+        _.each(ds_get_turbonomic_recommendations, function (db, index) {
             if (db.businessUUID === businessUnit.uuid) {
-                ds_get_turbonomics_recommendations[index].accountID = businessUnit.accountID
-                ds_get_turbonomics_recommendations[index].accountName = businessUnit.displayName
+                ds_get_turbonomic_recommendations[index].accountID = businessUnit.accountID
+                ds_get_turbonomic_recommendations[index].accountName = businessUnit.displayName
             }
         })
     })
@@ -209,7 +209,7 @@ script "js_filtered_turbonomics_recommendations", type: "javascript" do
         "GCP Project": "Cloud SQL"
     }
     
-    _.each(ds_get_turbonomics_recommendations, function (db) {
+    _.each(ds_get_turbonomic_recommendations, function (db) {
         if (db.provider === param_provider || param_provider === "All") {
             if (typeof db.savingsCurrency != "undefined" && db.savingsCurrency != null) {
                 if (db.savingsCurrency.indexOf("$") != -1) {
@@ -261,11 +261,11 @@ end
 # Policy
 ###############################################################################
 
-policy "pol_turbonomics_scale_databases" do
-  validate $ds_filtered_turbonomics_recommendations do
-    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data.instances }} Turbonomic Scalable Databases found"
+policy "pol_turbonomic_rightsize_databases" do
+  validate $ds_filtered_turbonomic_recommendations do
+    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data.instances }} Turbonomic Databases to Rightsize found"
     detail_template <<-EOS
-      ## Turbonomics Scale Databases Recommendations
+      ## Turbonomic Rightsize Databases Recommendations
       {{data.message}}
     EOS
     check eq(size(val(data, "instances")), 0)
@@ -286,17 +286,17 @@ policy "pol_turbonomics_scale_databases" do
         label "Savings Currency"
       end
       field "savings" do
-        label "Savings amount"
+        label "Savings Amount"
       end
       field "details" do
         label "Recommendation Details"
       end
       field "resourceType" do
-        label "Current Instance Type and storage tier"
+        label "Current Instance Type"
         path "currentResourceType"
       end
       field "newResourceType" do
-        label "Recommended instance type and storage tier"
+        label "Recommended Instance Type"
       end
       field "region" do
         label "Region"

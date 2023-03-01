@@ -1,8 +1,8 @@
-# Turbonomics Scale Databases Recommendations GCP
+# Turbonomic Rightsize Databases Recommendations GCP
 
 ## What it does
 
-The Turbonomics Scale Databases Recommendations GCP policy uses Turbonomic Actions endpoint (POST xxxx.turbonomic.com/api/v3/markets/Market/actions) and Business Units endpoint (GET xxxx.turbonomic.com/api/v3/businessunits) to provide Scale Database/DatabaseServer recommendations. From these recommendations we provide monthly savings estimates based on Turbonomic per hour costs.
+The Turbonomic Rightsize Databases Recommendations GCP policy uses Turbonomic Actions endpoint (POST xxxx.turbonomic.com/api/v3/markets/Market/actions) and Business Units endpoint (GET xxxx.turbonomic.com/api/v3/businessunits) to provide rightsize Database/DatabaseServer recommendations. From these recommendations we provide monthly savings estimates based on Turbonomic per hour costs.
 
 ## Input Parameters
 
