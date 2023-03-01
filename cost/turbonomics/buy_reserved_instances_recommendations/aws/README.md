@@ -2,7 +2,7 @@
 
 ## What it does
 
-The Turbonomics Buy Reserved Instances Recommendations AWS policy utilizes Turbonomics [Credentials]https://turbonomic.com/api/v3/markets/{market_uuid}/actions endpoint to provide AWS purchasable RI recommendations for Reserved Instance coverage. From these recommendations we provide monthly savings estimates based on Turbonomics per hour costs
+The Turbonomics Buy Reserved Instances Recommendations AWS policy utilizes Turbonomic Actions API endpoint to provide AWS RI purchase recommendations.
 
 ## Functional Details
 
