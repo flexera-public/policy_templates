@@ -10,6 +10,7 @@ The Turbonomic Rightsize Databases Recommendations Azure policy uses Turbonomic 
 - *Authorization Cookie* - Authorization cookie pulled from manual source.
   - no_echo: true
 - *Email addresses to notify* - A list of email addresses to notify.
+- *Turbonomic endpoint* - Turbonomic endpoint where we'll get all data and authorization validation.
 
 ## Supported Clouds
 
