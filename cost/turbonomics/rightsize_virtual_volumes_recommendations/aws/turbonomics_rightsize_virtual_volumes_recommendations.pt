@@ -1,12 +1,12 @@
-name "Turbonomics Scale Virtual Volumes Recommendations AWS"
+name "Turbonomic Rightsize Virtual Volumes Recommendations AWS"
 rs_pt_ver 20180301
 type "policy"
-short_description "Turbonomics policy that gives recommendations to scale Virtual Volumes."
+short_description "Turbonomic policy that gives recommendations to rightsize Virtual Volumes."
 severity "low"
 category "Cost"
 default_frequency "daily"
 info(
-  version: "1.0",
+  version: "0.1",
   source: "Turbonomic",
   service: "Usage Discount",
   provider: "AWS",
@@ -50,7 +50,7 @@ end
 # Pagination
 ###############################################################################
 
-pagination "turbonomics_volumes_pagination_header" do
+pagination "turbonomic_volumes_pagination_header" do
   get_page_marker do
     header "x-next-cursor"
   end
@@ -63,9 +63,9 @@ end
 # Datasources
 ###############################################################################
 
-datasource "ds_get_turbonomics_recommendations" do
+datasource "ds_get_turbonomic_recommendations" do
   request do
-    run_script $js_get_turbonomics_recommendations, $param_turbonomic_endpoint, $param_auth_cookie
+    run_script $js_get_turbonomic_recommendations, $param_turbonomic_endpoint, $param_auth_cookie
   end
   result do
     encoding "json"
@@ -102,22 +102,22 @@ datasource "ds_get_business_units" do
   end
 end
 
-datasource "ds_filtered_turbonomics_recommendations" do
-  run_script $js_filtered_turbonomics_recommendations, $ds_get_turbonomics_recommendations, $ds_get_business_units, $param_provider
+datasource "ds_filtered_turbonomic_recommendations" do
+  run_script $js_filtered_turbonomic_recommendations, $ds_get_turbonomic_recommendations, $ds_get_business_units, $param_provider
 end
 
 ###############################################################################
 # Scripts
 ###############################################################################
 
-script "js_get_turbonomics_recommendations", type: "javascript" do
+script "js_get_turbonomic_recommendations", type: "javascript" do
   result "request"
   parameters "turbonomic_endpoint", "auth_cookie"
   code <<-EOS
     request = {
       verb: "POST",
       host: turbonomic_endpoint,
-      pagination: "turbonomics_volumes_pagination_header",
+      pagination: "turbonomic_volumes_pagination_header",
       path: "/api/v3/markets/Market/actions"
       body_fields: {
         "actionStateList": ["READY", "ACCEPTED", "QUEUED", "IN_PROGRESS"],
@@ -169,9 +169,9 @@ script "js_get_business_units", type: "javascript" do
   EOS
 end
 
-script "js_filtered_turbonomics_recommendations", type: "javascript" do
+script "js_filtered_turbonomic_recommendations", type: "javascript" do
   result "result"
-  parameters "ds_get_turbonomics_recommendations", "ds_get_business_units", "param_provider"
+  parameters "ds_get_turbonomic_recommendations", "ds_get_business_units", "param_provider"
   code <<-EOS
     instances = []
     monthlySavings = 0.0
@@ -193,10 +193,10 @@ script "js_filtered_turbonomics_recommendations", type: "javascript" do
       return result + "." + values[1]
     }
     _.each(ds_get_business_units, function (businessUnit) {
-      _.each(ds_get_turbonomics_recommendations, function (volume, index) {
+      _.each(ds_get_turbonomic_recommendations, function (volume, index) {
         if (volume.businessUUID === businessUnit.uuid) {
-          ds_get_turbonomics_recommendations[index].accountID = businessUnit.accountID
-          ds_get_turbonomics_recommendations[index].accountName = businessUnit.displayName
+          ds_get_turbonomic_recommendations[index].accountID = businessUnit.accountID
+          ds_get_turbonomic_recommendations[index].accountName = businessUnit.displayName
         }
       })
     })
@@ -205,7 +205,7 @@ script "js_filtered_turbonomics_recommendations", type: "javascript" do
       "Azure Subscription": "Disk Storage",
       "GCP Project": "Persistent Disk"
     }
-    _.each(ds_get_turbonomics_recommendations, function (volume) {
+    _.each(ds_get_turbonomic_recommendations, function (volume) {
       if (volume.provider === param_provider || param_provider === "ALL") {
         if (typeof volume.savingsCurrency != "undefined" && volume.savingsCurrency != null) {
           if (volume.savingsCurrency.indexOf("$") != -1) {
@@ -264,11 +264,11 @@ end
 # Policy
 ###############################################################################
 
-policy "pol_turbonomics_scale_volumes" do
-  validate $ds_filtered_turbonomics_recommendations do
-    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data.instances }} Turbonomic Scalable Virtual Volumes found"
+policy "pol_turbonomic_rightsize_volumes" do
+  validate $ds_filtered_turbonomic_recommendations do
+    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data.instances }} Turbonomic Virtual Volumes to Rightsize found"
     detail_template <<-EOS
-      ## Turbonomics Scale Virtual Volumes Recommendations
+      ## Turbonomic Rightsize Virtual Volumes Recommendations
       {{data.message}}
     EOS
     check eq(size(val(data, "instances")), 0)
@@ -289,17 +289,17 @@ policy "pol_turbonomics_scale_volumes" do
         label "Savings Currency"
       end
       field "savings" do
-        label "Savings amount"
+        label "Savings Amount"
       end
       field "details" do
         label "Recommendation Details"
       end
       field "resourceType" do
-        label "Current Instance Type and storage tier"
+        label "Current Storage tier"
         path "currentResourceType"
       end
       field "newResourceType" do
-        label "Recommended instance type and storage tier"
+        label "Recommended Storage tier"
       end
       field "region" do
         label "Region"
