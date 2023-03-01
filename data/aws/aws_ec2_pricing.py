@@ -27,9 +27,10 @@ for key in raw_data["products"]:
     regionCode = raw_data["products"][key]["attributes"]["regionCode"]
     sku = raw_data["products"][key]["sku"]
     operatingSystem = raw_data["products"][key]["attributes"]["operatingSystem"]
+    preInstalledSw = raw_data["products"][key]["attributes"]["preInstalledSw"]
     prices = []
 
-    if key in raw_data["terms"]["OnDemand"]:
+    if key in raw_data["terms"]["OnDemand"] and preInstalledSw == "NA":
       for pricing_key in raw_data["terms"]["OnDemand"][key]:
         offerTermCode = raw_data["terms"]["OnDemand"][key][pricing_key]["offerTermCode"]
         priceDimensions = []
