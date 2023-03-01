@@ -1,5 +1,5 @@
 # Instructions for updating the price list:
-#   (1) Download the flexera-public/policy-templates repository locally.
+#   (1) Download the flexera-public/policy_templates repository locally.
 #   (2) Run this Python script. It should replace aws_rds_pricing.json with a new updated file.
 #   (3) Add and commit the new file, push it to the repository, and then make a pull request.
 #
@@ -28,7 +28,7 @@ for key in raw_data["products"]:
     databaseEngine = raw_data["products"][key]["attributes"]["databaseEngine"]
     deploymentOption = raw_data["products"][key]["attributes"]["deploymentOption"]
     sku = raw_data["products"][key]["sku"]
-    
+
     prices = []
 
     if key in raw_data["terms"]["OnDemand"]:
@@ -97,7 +97,7 @@ for item in starting_list:
       "sku": sku,
       "pricePerUnit": pricePerUnit
     }
-  
+
 price_file = open(output_filename, "w")
 price_file.write(json.dumps(final_list, sort_keys=True, indent=2))
 price_file.close()

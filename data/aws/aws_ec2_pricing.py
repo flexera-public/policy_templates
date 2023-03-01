@@ -1,5 +1,5 @@
 # Instructions for updating the price list:
-#   (1) Download the flexera-public/policy-templates repository locally.
+#   (1) Download the flexera-public/policy_templates repository locally.
 #   (2) Run this Python script. It should replace aws_ec2_pricing.json with a new updated file.
 #   (3) Add and commit the new file, push it to the repository, and then make a pull request.
 #
