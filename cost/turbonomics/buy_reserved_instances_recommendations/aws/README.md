@@ -8,11 +8,11 @@ The Turbonomics Buy Reserved Instances Recommendations AWS policy utilizes Turbo
 
 - The policy queries the /api/v3/markets/{market_uuid}/actions endpoint for the turbonomics api and based on action will return action details and savings for on-boarded cloud instances
 - The policy will error after a day, the authorization cookie parameter will need to be refreshed and re-run manually
-- there is a need to run the login credentials against the [Credentials]https://xxxx.turbonomic.com/api/v3/login endpoint to manually recieve cookie authoriztion
+- there is a need to run the login credentials against the (`https://xxxx.turbonomic.com/api/v3/login`) endpoint to manually recieve cookie authoriztion
 
 ### Input Parameters
 
-- *Authorization Cookie"* - authorization cookie pulled from turbonomic login endpoint: [Credentials]https://xxxx.turbonomic.com/api/v3/login
+- *Authorization Cookie"* - authorization cookie pulled from turbonomic login endpoint: (POST `https://xxxx.turbonomic.com/api/v3/login`)
 - no_echo: true
 - *Email addresses* - A list of email addresses to notify
 
@@ -20,8 +20,6 @@ The Turbonomics Buy Reserved Instances Recommendations AWS policy utilizes Turbo
 
 - policy_manager
 - billing_center_viewer
-
-- Turbonomics - administrator
 
 ### Cost
 
