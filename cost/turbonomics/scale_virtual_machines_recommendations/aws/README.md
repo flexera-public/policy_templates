@@ -1,8 +1,8 @@
-# Turbonomics Scale Virtual Machines Recommendations AWS
+# Turbonomic Rightsize Virtual Machines Recommendations AWS
 
 ## What it does
 
-The Turbonomics Scale Virtual Machines Recommendations AWS policy utilizes Turbonomic Actions endpoint (POST xxxx.turbonomic.com/api/v3/markets/Market/actions), Business Units endpoint (GET xxxx.turbonomic.com/api/v3/businessunits) and Actions Details endpoint (POST xxxx.turbonomic.com/api/v3/actions/details) to provide Scale Virtual Machines Recommendations. From these recommendations we provide monthly savings estimates based on Turbonomic per hour costs.
+The Turbonomic Rightsize Virtual Machines Recommendations AWS policy utilizes Turbonomic Actions endpoint (POST xxxx.turbonomic.com/api/v3/markets/Market/actions), Business Units endpoint (GET xxxx.turbonomic.com/api/v3/businessunits) and Actions Details endpoint (POST xxxx.turbonomic.com/api/v3/actions/details) to provide Scale Virtual Machines Recommendations. From these recommendations we provide monthly savings estimates based on Turbonomic per hour costs.
 
 ### Input Parameters
 
