@@ -1,18 +1,18 @@
-# Turbonomics Buy Reserved Instances Recommendations AWS
+# Turbonomic Buy Reserved Instances Recommendations AWS
 
 ## What it does
 
-The Turbonomics Buy Reserved Instances Recommendations AWS policy utilizes Turbonomic Actions API endpoint to provide AWS RI purchase recommendations.
+The Turbonomic Buy Reserved Instances Recommendations AWS policy utilizes Turbonomic Actions API endpoint (POST `https://turbonomic.com/api/v3/markets/{market_uuid}/actions`)  to provide AWS RI purchase recommendations.
 
 ## Functional Details
 
-- The policy queries the /api/v3/markets/{market_uuid}/actions endpoint for the turbonomics api and based on action will return action details and savings for on-boarded cloud instances
+- The policy queries the /api/v3/markets/{market_uuid}/actions endpoint for the Turbonomic api and based on action will return action details and savings for on-boarded cloud instances
 - The policy will error after a day, the authorization cookie parameter will need to be refreshed and re-run manually
-- there is a need to run the login credentials against the (`https://xxxx.turbonomic.com/api/v3/login`) endpoint to manually recieve cookie authoriztion
+- there is a need to run the login credentials against the (`https://xxxx.turbonomic.com/api/v3/login`) endpoint to manually receive cookie authorization
 
 ### Input Parameters
 
-- *Authorization Cookie"* - authorization cookie pulled from turbonomic login endpoint: (POST `https://xxxx.turbonomic.com/api/v3/login`)
+- *Authorization Cookie"* - authorization cookie pulled from Turbonomic login endpoint: (POST `https://xxxx.turbonomic.com/api/v3/login`)
 - no_echo: true
 - *Email addresses* - A list of email addresses to notify
 
