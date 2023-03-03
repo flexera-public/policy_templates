@@ -34,11 +34,18 @@ for item in price_list:
 
   if "Windows" in item['productName']:
     operatingSystem = "Windows"
+<<<<<<< HEAD
+  else:
+    operatingSystem = "Linux"
+
+  if region != "" and instanceType != "" and operatingSystem != "" and sku != "":
+=======
 
   if "Linux" in item['productName']:
     operatingSystem = "Linux"
 
   if operatingSystem != "":
+>>>>>>> b4b4366650e033b6e3d9c719576937a0d726543d
     if not region in final_list:
       final_list[region] = {}
 
