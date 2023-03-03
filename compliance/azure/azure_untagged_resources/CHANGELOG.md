@@ -2,8 +2,8 @@
 
 ## v2.13
 
-- Added the ability to check for key=value pairs
-- Added the ability to select a resource in the incident and enter a tag in key=value format to add to the specific resource
+- Updated `param_tags_to_check` parameter to take a list of tag keys, as opposed to a list of tag key-value pairs
+- Updated tag logic to return 'Missing Tag Keys' as well as 'Tag Keys with Missing Tag Values' in incident
 
 ## v2.12
 
