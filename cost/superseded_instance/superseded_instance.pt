@@ -71,6 +71,15 @@ datasource "ds_billing_centers" do
     header "User-Agent", "RS Policies"
     query "view", "allocation_table"
   end
+  result do
+    encoding "json"
+    collect jmes_path(response,"[*]") do
+      field "href", jmes_path(col_item, "href")
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+      field "parent_id", jmes_path(col_item, "parent_id")
+    end
+  end
 end
 
 datasource "ds_new_bc_costs" do
@@ -90,7 +99,7 @@ datasource "ds_new_bc_costs" do
       field "cost_amortized_unblended_adj", jmes_path(col_item, "metrics.cost_amortized_unblended_adj")
       field "region", jmes_path(col_item, "dimensions.region")
       field "instance_type", jmes_path(col_item, "dimensions.instance_type")
-      field "id", jmes_path(col_item, "dimensions.billing_center_id")
+      field "billing_center_id", jmes_path(col_item, "dimensions.billing_center_id")
       field "resource_id", jmes_path(col_item, "dimensions.resource_id")
     end
   end
@@ -351,7 +360,7 @@ end
 
 script "js_format_costs", type: "javascript" do
   parameters "new_bc_costs", "ds_billing_centers"
-  result "formatted_data"
+  result "result"
   code <<-EOS
   //https://www.w3resource.com/javascript-exercises/javascript-date-exercise-3.php
   var getDaysInMonth = function(month, year) {
@@ -360,38 +369,37 @@ script "js_format_costs", type: "javascript" do
 
   var date = new Date()
   var today = date.getDate()
-  var numdays = getDaysInMonth(date.getUTCMonth(),date.getUTCFullYear())
+  var numdays = getDaysInMonth(date.getUTCMonth(), date.getUTCFullYear())
   var monthcomplete = today / numdays
 
-  var formatted_data = []
-  var unsorted_results = []
-  var bcs = _.uniq(_.pluck(new_bc_costs, 'id'))
+  bc_object = {}
 
-  _.each(bcs, function(bc_id) {
-    var new_bc_cost_objs = _.reject(new_bc_costs, function(new_bc_cost){ return new_bc_cost['id'] != bc_id })
+  _.each(ds_billing_centers, function(bc) {
+    bc_object[bc['id']] = bc['name']
+  })
 
-    _.each(new_bc_cost_objs, function(new_bc_cost_obj) {
-      var billing_center = _.reject(ds_billing_centers, function(bc) { return bc['id'] != new_bc_cost_obj['id'] })[0]
-      var run_rate = new_bc_cost_obj['cost_amortized_unblended_adj'] / monthcomplete
+  var result = []
 
-      if (new_bc_cost_obj['cost_amortized_unblended_adj'] != 0) {
-        formatted_data.push({
-          name: billing_center['name'],
-          id: bc_id,
-          vendor: new_bc_cost_obj['vendor'],
-          vendor_account: new_bc_cost_obj['vendor_account'],
-          vendor_account_name: new_bc_cost_obj['vendor_account_name'],
-          resource_group: new_bc_cost_obj['resource_group'],
-          operating_system: new_bc_cost_obj['operating_system'],
-          resource_type: new_bc_cost_obj['resource_type'],
-          region: new_bc_cost_obj['region'],
-          service: new_bc_cost_obj['service'],
-          instance_type: new_bc_cost_obj['instance_type'],
-          resource_id: new_bc_cost_obj['resource_id'],
-          run_rate: parseFloat(run_rate).toFixed(2),
-        })
-      }
-    })
+  _.each(new_bc_costs, function(cost) {
+    var run_rate = cost['cost_amortized_unblended_adj'] / monthcomplete
+
+    if (cost['cost_amortized_unblended_adj'] != 0) {
+      result.push({
+        name: bc_object[cost['id']],
+        id: cost['id'],
+        vendor: cost['vendor'],
+        vendor_account: cost['vendor_account'],
+        vendor_account_name: cost['vendor_account_name'],
+        resource_group: cost['resource_group'],
+        operating_system: cost['operating_system'],
+        resource_type: cost['resource_type'],
+        region: cost['region'],
+        service: cost['service'],
+        instance_type: cost['instance_type'],
+        resource_id: cost['resource_id'],
+        run_rate: parseFloat(run_rate).toFixed(2),
+      })
+    }
   })
 EOS
 end
