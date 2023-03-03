@@ -1,9 +1,9 @@
 # Changelog
 
-## v4.0
+## v3.1
 
-- General code modernization and clean-up
 - Added potential savings and cost information to raised incidents
+- General code modernization and clean-up
 
 ## v3.0
 
