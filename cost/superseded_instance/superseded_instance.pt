@@ -8,7 +8,7 @@ severity "low"
 default_frequency "daily"
 tenancy "single"
 info(
-  version: "3.1",
+  version: "4.0",
   provider: "Flexera Optima",
   service: "",
   policy_set: ""
@@ -129,7 +129,7 @@ datasource "ds_aws_region_map" do
 end
 
 datasource "ds_format_costs" do
-  run_script $js_format_costs, $ds_new_bc_costs, $ds_billing_centers, $ds_aws_region_map
+  run_script $js_format_costs, $ds_new_bc_costs, $ds_billing_centers
 end
 
 datasource "ds_aws_instance_size_map" do
@@ -177,7 +177,7 @@ datasource "ds_azure_instance_cost_map" do
 end
 
 datasource "ds_combined_instance_data" do
-  run_script $js_merge_instance_data, $ds_format_costs, $ds_aws_instance_size_map, $ds_azure_instance_size_map, $ds_google_instance_size_map, $ds_aws_instance_cost_map, $ds_azure_instance_cost_map, $param_new_instancetype_category, $ds_currency_code, $ds_currency_reference
+  run_script $js_merge_instance_data, $ds_format_costs, $ds_aws_instance_size_map, $ds_azure_instance_size_map, $ds_google_instance_size_map, $ds_aws_instance_cost_map, $ds_azure_instance_cost_map, $ds_aws_region_map, $param_new_instancetype_category, $ds_currency_code, $ds_currency_reference
 end
 
 ###############################################################################
@@ -212,7 +212,7 @@ script "js_new_costs_request", type: "javascript" do
     var top_billing_centers = _.reject(ds_billing_centers, function(bc) { return bc.parent_id != null })
     billing_center_ids = _.map(top_billing_centers, function(value, key) { return value.id })
   } else {
-    // get array of billing center id's that match the names in param_billing_centers.
+    // get array of billing center IDs that match the names in param_billing_centers.
     billing_center_names = _.map(param_billing_centers, function(name) { return name.toLowerCase(); })
     billing_center_ids = _.compact(_.map(ds_billing_centers, function(value) { if (_.contains(billing_center_names, value.name.toLowerCase())) { return value.id } }))
   }
@@ -293,22 +293,22 @@ script "js_new_costs_request", type: "javascript" do
     host: optima_host,
     verb: "POST",
     path: "/bill-analysis/orgs/" + org_id + "/costs/select",
+    headers: {
+      "Api-Version": "1.0",
+      "User-Agent": "RS Policies",
+    },
     body_fields: {
       "billing_center_ids": billing_center_ids,
       "dimensions": dimensions,
-      "metrics": ["usage_amount", "cost_amortized_unblended_adj"],
+      "metrics": [ "usage_amount", "cost_amortized_unblended_adj" ],
       "granularity": "month",
       "start_at": current_month,
       "end_at": next_month,
       "limit": 100000,
       "filter": {
-        "type":"or",
+        "type": "or",
         "expressions": expression
       }
-    },
-    headers: {
-      "Api-Version": "1.0",
-      "User-Agent": "RS Policies",
     }
   }
 EOS
@@ -353,7 +353,7 @@ EOS
 end
 
 script "js_format_costs", type: "javascript" do
-  parameters "new_bc_costs", "ds_billing_centers", "ds_aws_region_map"
+  parameters "new_bc_costs", "ds_billing_centers"
   result "formatted_data"
   code <<-EOS
   //https://www.w3resource.com/javascript-exercises/javascript-date-exercise-3.php
@@ -371,11 +371,12 @@ script "js_format_costs", type: "javascript" do
   var bcs = _.uniq(_.pluck(new_bc_costs, 'id'))
 
   _.each(bcs, function(bc_id) {
-    var new_bc_cost_objs = _.reject(new_bc_costs, function(new_bc_cost){ return new_bc_cost.id != bc_id })
+    var new_bc_cost_objs = _.reject(new_bc_costs, function(new_bc_cost){ return new_bc_cost['id'] != bc_id })
 
-    _.each(new_bc_cost_objs, function(new_bc_cost_obj){
-      var billing_center = _.reject(ds_billing_centers, function(bc){ return bc.id != new_bc_cost_obj.id })[0]
-      run_rate = new_bc_cost_obj['cost_amortized_unblended_adj'] / monthcomplete
+    _.each(new_bc_cost_objs, function(new_bc_cost_obj) {
+      var billing_center = _.reject(ds_billing_centers, function(bc) { return bc['id'] != new_bc_cost_obj['id'] })[0]
+      var run_rate = new_bc_cost_obj['cost_amortized_unblended_adj'] / monthcomplete
+
       if (new_bc_cost_obj['cost_amortized_unblended_adj'] != 0) {
         formatted_data.push({
           name: billing_center['name'],
@@ -386,7 +387,6 @@ script "js_format_costs", type: "javascript" do
           operating_system: new_bc_cost_obj['operating_system'],
           resource_type: new_bc_cost_obj['resource_type'],
           region: new_bc_cost_obj['region'],
-          region_code: ds_aws_region_map[new_bc_cost_obj['region']],
           instance_type: new_bc_cost_obj['instance_type'],
           resource_id: new_bc_cost_obj['resource_id'],
           run_rate: parseFloat(run_rate).toFixed(2),
@@ -398,35 +398,41 @@ EOS
 end
 
 script "js_merge_instance_data", type: "javascript" do
-  parameters "ds_format_costs", "ds_aws_instance_size_map", "ds_azure_instance_size_map", "ds_google_instance_size_map", "ds_aws_instance_cost_map", "ds_azure_instance_cost_map", "param_new_instancetype_category", "ds_currency_code", "ds_currency_reference"
-  result "results"
+  parameters "ds_format_costs", "ds_aws_instance_size_map", "ds_azure_instance_size_map", "ds_google_instance_size_map", "ds_aws_instance_cost_map", "ds_azure_instance_cost_map", "ds_aws_region_map", "param_new_instancetype_category", "ds_currency_code", "ds_currency_reference"
+  result "result"
   code <<-EOS
-  var results = []
-  var superseded_instance_map = _.extend(ds_aws_instance_size_map,ds_azure_instance_size_map, ds_google_instance_size_map)
+  var result = []
+  var superseded_instance_map = _.extend(ds_aws_instance_size_map, ds_azure_instance_size_map, ds_google_instance_size_map)
+  var cost_map = { "AWS": ds_aws_instance_cost_map, "Azure": ds_azure_instance_cost_map }
 
-  function formatNumber(number, separator){
-    var numString =number.toString();
-    var values=numString.split(".");
-    var result = ''
-    while (values[0].length > 3){
+  function formatNumber(number, separator) {
+    var numString = number.toString()
+    var values=numString.split(".")
+    var formatted_result = ''
+
+    while (values[0].length > 3) {
       var chunk = values[0].substr(-3)
       values[0] = values[0].substr(0, values[0].length - 3)
-      result = separator + chunk + result
+      formatted_result = separator + chunk + formatted_result
     }
-    if (values[0].length > 0){
-      result = values[0] + result
+
+    if (values[0].length > 0) {
+      formatted_result = values[0] + formatted_result
     }
-    if(values[1]==undefined){
-      return result;
+
+    if (values[1] == undefined) {
+      return formatted_result
     }
-    return result+"."+values[1];
+
+    return formatted_result + "." + values[1]
   }
 
   // Format costs with currency symbol and thousands separator
-  if( ds_currency_code['value'] !== undefined ) {
-    if (ds_currency_reference[ds_currency_code['value']] !== undefined ) {
+  if (ds_currency_code['value'] !== undefined) {
+    if (ds_currency_reference[ds_currency_code['value']] !== undefined) {
       var cur = ds_currency_reference[ds_currency_code['value']]['symbol']
-      if( ds_currency_reference[ds_currency_code['value']]['t_separator'] !== undefined ) {
+
+      if (ds_currency_reference[ds_currency_code['value']]['t_separator'] !== undefined) {
         var separator = ds_currency_reference[ds_currency_code['value']]['t_separator']
       } else {
         var separator = ""
@@ -440,28 +446,45 @@ script "js_merge_instance_data", type: "javascript" do
     var separator = ","
   }
 
-  _.each(ds_format_costs, function(instance) {
+  // for loop instead of _.each() so that continue statements function as expected
+  for (var i = 0; i < ds_format_costs.length; i++) {
+    instance = ds_format_costs[i]
+
+    var vendor = instance['vendor']
+    var region = instance['region']
     var instance_type = instance['instance_type']
-    if (instance_type == "None" ) {continue;}
+    var operating_system = instance['operating_system']
+
+    if (instance_type == "None") { continue; }
+
+    if (vendor == "AWS") {
+      region_code = ds_aws_region_map[region]
+    } else {
+      region_code = region
+    }
+
     var found_instance_type = superseded_instance_map[instance_type]
-    if ( typeof(found_instance_type) === "undefined" || found_instance_type == null ){
+
+    if (typeof(found_instance_type) === "undefined" || found_instance_type == null) {
       instance["new_instance_type"] = "Unavailable"
-      results.push(instance)
+      result.push(instance)
     } else {
       var superseded = found_instance_type["superseded"]
-      if ( typeof(superseded) === "undefined" || superseded == null ){
+      if (typeof(superseded) === "undefined" || superseded == null) {
         continue
       } else {
         var new_instance_type = superseded[param_new_instancetype_category]
-        if (new_instance_type === "undefined" || new_instance_type == null || new_instance_type == "") {continue;}
+
+        if (new_instance_type === "undefined" || new_instance_type == null || new_instance_type == "") { continue; }
+
         var new_instance_type_info = superseded_instance_map[new_instance_type]
-        if ( new_instance_type_info === "undefined" ) {continue;}
+        if ( new_instance_type_info === "undefined" ) { continue; }
         old_instance_ena = found_instance_type.enhanced_networking || false
         new_instance_ena = new_instance_type_info.enhanced_networking || false
         old_instance_vpc = !found_instance_type.ec2_classic || false
         new_instance_vpc = !new_instance_type_info.ec2_classic || false
 
-        if ( !old_instance_ena && new_instance_ena ) {
+        if (!old_instance_ena && new_instance_ena) {
           var ena_incompatible = "true"
         } else {
           var ena_incompatible = "false"
@@ -477,37 +500,17 @@ script "js_merge_instance_data", type: "javascript" do
         new_list_price = null
         estimated_monthly_savings = null
 
-        if (instance['vendor'] == 'AWS') {
-          if (ds_aws_instance_cost_map[instance['region_code']] != undefined) {
-            if (ds_aws_instance_cost_map[instance['region_code']][instance['instance_type']] != undefined) {
-              if (ds_aws_instance_cost_map[instance['region_code']][instance['instance_type']][instance['operating_system']] != undefined) {
-                old_list_price = ds_aws_instance_cost_map[instance['region_code']][instance['instance_type']][instance['operating_system']]["pricePerUnit"]
-                old_list_price = old_list_price * 24 * 30
+        if (cost_map[vendor] != undefined) {
+          if (cost_map[vendor][region_code] != undefined) {
+            if (cost_map[vendor][region_code][instance_type] != undefined) {
+              if (cost_map[vendor][region_code][instance_type][operating_system] != undefined) {
+                old_list_price = cost_map[vendor][region_code][instance_type][operating_system]["pricePerUnit"] * 24 * 30
               }
             }
 
-            if (ds_aws_instance_cost_map[instance['region_code']][new_instance_type] != undefined) {
-              if (ds_aws_instance_cost_map[instance['region_code']][new_instance_type][instance['operating_system']] != undefined) {
-                new_list_price = ds_aws_instance_cost_map[instance['region_code']][new_instance_type][instance['operating_system']]["pricePerUnit"]
-                new_list_price = new_list_price * 24 * 30
-              }
-            }
-          }
-        }
-
-        if (instance['vendor'] == 'Azure') {
-          if (ds_azure_instance_cost_map[instance['region_code']] != undefined) {
-            if (ds_azure_instance_cost_map[instance['region_code']][instance['instance_type']] != undefined) {
-              if (ds_azure_instance_cost_map[instance['region_code']][instance['instance_type']][instance['operating_system']] != undefined) {
-                old_list_price = ds_azure_instance_cost_map[instance['region_code']][instance['instance_type']][instance['operating_system']]["pricePerUnit"]
-                old_list_price = old_list_price * 24 * 30
-              }
-            }
-
-            if (ds_azure_instance_cost_map[instance['region_code']][new_instance_type] != undefined) {
-              if (ds_azure_instance_cost_map[instance['region_code']][new_instance_type][instance['operating_system']] != undefined) {
-                new_list_price = ds_azure_instance_cost_map[instance['region_code']][new_instance_type][instance['operating_system']]["pricePerUnit"]
-                new_list_price = new_list_price * 24 * 30
+            if (cost_map[vendor][region_code][new_instance_type] != undefined) {
+              if (cost_map[vendor][region_code][new_instance_type][operating_system] != undefined) {
+                new_list_price = cost_map[vendor][region_code][new_instance_type][operating_system]["pricePerUnit"] * 24 * 30
               }
             }
           }
@@ -521,15 +524,15 @@ script "js_merge_instance_data", type: "javascript" do
           }
         }
 
-        results.push({
+        result.push({
           name: instance['name'],
-          vendor: instance['vendor'],
+          vendor: vendor,
           vendor_account: instance['vendor_account'],
           vendor_account_name: instance['vendor_account_name'],
-          region: instance['region'],
-          region_code: instance['region_code'],
-          operating_system: instance['operating_system'],
-          instance_type: instance['instance_type'],
+          region: region,
+          region_code: region_code,
+          operating_system: operating_system,
+          instance_type: instance_type,
           new_instance_type: new_instance_type,
           resourceID: instance['resource_id'],
           resourceType: instance['resource_type'],
@@ -543,7 +546,7 @@ script "js_merge_instance_data", type: "javascript" do
         })
       }
     }
-  })
+  }
 EOS
 end
 
@@ -567,7 +570,7 @@ policy "pol_superseded_instance" do
       field "vendor_account_name" do
         label "Account Name"
       end
-      field "region_code" do
+      field "region" do
         label "Region"
       end
       field "operating_system" do
