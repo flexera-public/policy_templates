@@ -8,7 +8,7 @@ severity "low"
 default_frequency "daily"
 tenancy "single"
 info(
-  version: "3.1",
+  version: "4.0",
   provider: "Flexera Optima",
   service: "",
   policy_set: ""
@@ -74,7 +74,12 @@ end
 
 datasource "ds_billing_centers" do
   request do
-    run_script $js_get_billing_centers, rs_org_id, rs_optima_host
+    auth $auth_flexera
+    host rs_optima_host
+    path join(["/analytics/orgs/", rs_org_id, "/billing_centers"])
+    header "Api-Version", "1.0"
+    header "User-Agent", "RS Policies"
+    query "view", "allocation_table"
   end
 end
 
@@ -84,16 +89,16 @@ datasource "ds_new_bc_costs" do
   end
   result do
     encoding "json"
-    collect jmes_path(response,"rows[*]") do
+    collect jmes_path(response, "rows[*]") do
       field "vendor", jmes_path(col_item, "dimensions.vendor")
-      field "vendor_account", jmes_path(col_item,"dimensions.vendor_account")
-      field "vendor_account_name", jmes_path(col_item,"dimensions.vendor_account_name")
-      field "operating_system", jmes_path(col_item,"dimensions.x_operating_system")
-      field "resource_type", jmes_path(col_item,"dimensions.resource_type")
-      field "cost_amortized_unblended_adj", jmes_path(col_item,"metrics.cost_amortized_unblended_adj")
+      field "vendor_account", jmes_path(col_item, "dimensions.vendor_account")
+      field "vendor_account_name", jmes_path(col_item, "dimensions.vendor_account_name")
+      field "operating_system", jmes_path(col_item, "dimensions.x_operating_system")
+      field "resource_type", jmes_path(col_item, "dimensions.resource_type")
+      field "cost_amortized_unblended_adj", jmes_path(col_item, "metrics.cost_amortized_unblended_adj")
       field "region", jmes_path(col_item, "dimensions.region")
       field "instance_type", jmes_path(col_item, "dimensions.instance_type")
-      field "id", jmes_path(col_item,"dimensions.billing_center_id")
+      field "id", jmes_path(col_item, "dimensions.billing_center_id")
       field "resource_id", jmes_path(col_item, "dimensions.resource_id")
     end
   end
@@ -111,15 +116,15 @@ datasource "ds_currency_code" do
   request do
     auth $auth_flexera
     host rs_optima_host
-    path join(["/bill-analysis/orgs/",rs_org_id,"/settings/currency_code"])
+    path join(["/bill-analysis/orgs/", rs_org_id, "/settings/currency_code"])
     header "Api-Version", "0.1"
     header "User-Agent", "RS Policies"
     ignore_status [403]
   end
   result do
     encoding "json"
-    field "id", jmes_path(response,"id")
-    field "value", jmes_path(response,"value")
+    field "id", jmes_path(response, "id")
+    field "value", jmes_path(response, "value")
   end
 end
 
@@ -182,150 +187,135 @@ end
 script "js_aws_region_table", type: "javascript" do
   result "result"
   code <<-EOS
-    result = {
-      "US East (Ohio)": "us-east-2",
-      "US East (N. Virginia)": "us-east-1",
-      "US West (N. California)": "us-west-1",
-      "US West (Oregon)": "us-west-2",
-      "Africa (Cape Town)": "af-south-1",
-      "Asia Pacific (Hong Kong)": "ap-east-1",
-      "Asia Pacific (Hyderabad)": "ap-south-2",
-      "Asia Pacific (Jakarta)": "ap-southeast-3",
-      "Asia Pacific (Melbourne)": "ap-southeast-4",
-      "Asia Pacific (Mumbai)": "ap-south-1",
-      "Asia Pacific (Osaka)": "ap-northeast-3",
-      "Asia Pacific (Seoul)": "ap-northeast-2",
-      "Asia Pacific (Singapore)": "ap-southeast-1",
-      "Asia Pacific (Sydney)": "ap-southeast-2",
-      "Asia Pacific (Tokyo)": "ap-northeast-1",
-      "Canada (Central)": "ca-central-1",
-      "Europe (Frankfurt)": "eu-central-1",
-      "Europe (Ireland)": "eu-west-1",
-      "Europe (London)": "eu-west-2",
-      "Europe (Milan)": "eu-south-1",
-      "Europe (Paris)": "eu-west-3",
-      "Europe (Spain)": "eu-south-2",
-      "Europe (Stockholm)": "eu-north-1",
-      "Europe (Zurich)": "eu-central-2",
-      "Middle East (Bahrain)": "me-south-1",
-      "Middle East (UAE)": "me-central-1",
-      "South America (São Paulo)": "sa-east-1",
-      "South America (Sao Paulo)": "sa-east-1",
-      "AWS GovCloud (US-East)": "us-gov-east-1",
-      "AWS GovCloud (US-West)": "us-gov-west-1"
-    }
+  result = {
+    "US East (Ohio)": "us-east-2",
+    "US East (N. Virginia)": "us-east-1",
+    "US West (N. California)": "us-west-1",
+    "US West (Oregon)": "us-west-2",
+    "Africa (Cape Town)": "af-south-1",
+    "Asia Pacific (Hong Kong)": "ap-east-1",
+    "Asia Pacific (Hyderabad)": "ap-south-2",
+    "Asia Pacific (Jakarta)": "ap-southeast-3",
+    "Asia Pacific (Melbourne)": "ap-southeast-4",
+    "Asia Pacific (Mumbai)": "ap-south-1",
+    "Asia Pacific (Osaka)": "ap-northeast-3",
+    "Asia Pacific (Seoul)": "ap-northeast-2",
+    "Asia Pacific (Singapore)": "ap-southeast-1",
+    "Asia Pacific (Sydney)": "ap-southeast-2",
+    "Asia Pacific (Tokyo)": "ap-northeast-1",
+    "Canada (Central)": "ca-central-1",
+    "Europe (Frankfurt)": "eu-central-1",
+    "Europe (Ireland)": "eu-west-1",
+    "Europe (London)": "eu-west-2",
+    "Europe (Milan)": "eu-south-1",
+    "Europe (Paris)": "eu-west-3",
+    "Europe (Spain)": "eu-south-2",
+    "Europe (Stockholm)": "eu-north-1",
+    "Europe (Zurich)": "eu-central-2",
+    "Middle East (Bahrain)": "me-south-1",
+    "Middle East (UAE)": "me-central-1",
+    "South America (São Paulo)": "sa-east-1",
+    "South America (Sao Paulo)": "sa-east-1",
+    "AWS GovCloud (US-East)": "us-gov-east-1",
+    "AWS GovCloud (US-West)": "us-gov-west-1"
+  }
 EOS
-end
-
-script "js_get_billing_centers", type: "javascript" do
-  parameters "rs_org_id","rs_optima_host"
-  result "request"
-  code <<-EOS
-    request = {
-      "auth": "auth_flexera",
-      "verb": "GET",
-      "host": rs_optima_host,
-      "path": "/analytics/orgs/"+rs_org_id+"/billing_centers",
-      "headers": { "Api-Version": "1.0" },
-      "query_params":{"view":"allocation_table"}
-    }
-  EOS
 end
 
 script "js_new_costs_request", type: "javascript" do
   parameters "org_id","ds_billing_centers", "param_billing_centers", "optima_host"
   result "request"
   code <<-EOS
-    var date = new Date();
-    // Make sure we get at least a month worth of costs
-    date.setMonth(date.getMonth()-1);
-    var year = date.getUTCFullYear();
-    var month =  (date.getUTCMonth()==11)?1:2 + date.getUTCMonth();
+  var date = new Date();
+  // Make sure we get at least a month worth of costs
+  date.setMonth(date.getMonth()-1);
+  var year = date.getUTCFullYear();
+  var month =  (date.getUTCMonth()==11)?1:2 + date.getUTCMonth();
 
-    if (month == 1){
-      var lmonth = 12;
-      var lyear = year ;
-      year=year+1;
-    } else {
-      var lmonth = month-1;
-      var lyear = year ;
-    }
+  if (month == 1){
+    var lmonth = 12;
+    var lyear = year ;
+    year=year+1;
+  } else {
+    var lmonth = month-1;
+    var lyear = year ;
+  }
 
-    mo = month.toString().length > 1 ? month : '0' + month;
-    lmo = lmonth.toString().length > 1 ? lmonth : '0' + lmonth;
-    var next_month = year + "-" + mo
-    var current_month = lyear + "-" + lmo
-    var billing_center_ids = []
-    if (param_billing_centers.length === 0){
-      var top_billing_centers = _.reject(ds_billing_centers, function(bc){ return bc.parent_id != null });
-      billing_center_ids = _.map(top_billing_centers, function(value, key){ return value.id });
-    } else {
-      // get array of billing center id's that match the names in param_billing_centers.
-      billing_center_names = _.map(param_billing_centers, function(name){ return name.toLowerCase(); });
-      billing_center_ids = _.compact(_.map(ds_billing_centers, function(value){ if(_.contains(billing_center_names, value.name.toLowerCase())){return value.id} }));
-    }
+  mo = month.toString().length > 1 ? month : '0' + month;
+  lmo = lmonth.toString().length > 1 ? lmonth : '0' + lmonth;
+  var next_month = year + "-" + mo
+  var current_month = lyear + "-" + lmo
+  var billing_center_ids = []
+  if (param_billing_centers.length === 0){
+    var top_billing_centers = _.reject(ds_billing_centers, function(bc){ return bc.parent_id != null });
+    billing_center_ids = _.map(top_billing_centers, function(value, key){ return value.id });
+  } else {
+    // get array of billing center id's that match the names in param_billing_centers.
+    billing_center_names = _.map(param_billing_centers, function(name){ return name.toLowerCase(); });
+    billing_center_ids = _.compact(_.map(ds_billing_centers, function(value){ if(_.contains(billing_center_names, value.name.toLowerCase())){return value.id} }));
+  }
 
-    var dimensions = ["billing_center_id","vendor","vendor_account","vendor_account_name", "category","instance_type","region","resource_type","service","usage_type","usage_unit","resource_id","x_operating_system"]
-    var expression = [
+  var dimensions = ["billing_center_id","vendor","vendor_account","vendor_account_name", "category","instance_type","region","resource_type","service","usage_type","usage_unit","resource_id","x_operating_system"]
+  var expression = [
+    {"type" : "and", "expressions" : [
+      {"dimension":"category","type":"equal","value":"Compute"},
+      {"dimension":"vendor","type":"equal","value":"Azure"},
+      {"dimension":"service", "type":"equal", value:"Microsoft.Compute"},
+      {"dimension":"resource_type","type":"substring","substring":"Virtual Machines"}
+    ]},
+    {"type" : "and", "expressions" : [
+      {"dimension":"category","type":"equal","value":"Compute"},
+      {"dimension":"vendor","type":"equal","value":"AzureCSP"},
+      {"dimension":"service", "type":"equal", value:"Microsoft.Compute"},
+      {"dimension":"resource_type","type":"substring","substring":"Virtual Machines"}
+    ]},
+    {"type" : "and", "expressions" : [
+      {"dimension":"category","type":"equal","value":"Compute"},
+      {"dimension":"resource_type","type":"equal","value":"Compute Instance"},
+      {"dimension":"vendor","type":"equal","value":"AWS"}
+    ]},
+    {"type" : "and", "expressions" : [
+      {"dimension":"category","type":"equal","value":"Compute"},
+      {"dimension":"vendor","type":"equal","value":"AzureMCA-Enterprise"},
+      {"dimension":"service", "type":"equal", value:"Microsoft.Compute"},
+      {"dimension":"resource_type","type":"substring","substring":"Virtual Machines"}
+    ]},
       {"type" : "and", "expressions" : [
-        {"dimension":"category","type":"equal","value":"Compute"},
-        {"dimension":"vendor","type":"equal","value":"Azure"},
-        {"dimension":"service", "type":"equal", value:"Microsoft.Compute"},
-        {"dimension":"resource_type","type":"substring","substring":"Virtual Machines"}
-      ]},
-      {"type" : "and", "expressions" : [
-        {"dimension":"category","type":"equal","value":"Compute"},
-        {"dimension":"vendor","type":"equal","value":"AzureCSP"},
-        {"dimension":"service", "type":"equal", value:"Microsoft.Compute"},
-        {"dimension":"resource_type","type":"substring","substring":"Virtual Machines"}
-      ]},
-      {"type" : "and", "expressions" : [
-        {"dimension":"category","type":"equal","value":"Compute"},
-        {"dimension":"resource_type","type":"equal","value":"Compute Instance"},
-        {"dimension":"vendor","type":"equal","value":"AWS"}
-      ]},
-      {"type" : "and", "expressions" : [
-        {"dimension":"category","type":"equal","value":"Compute"},
-        {"dimension":"vendor","type":"equal","value":"AzureMCA-Enterprise"},
-        {"dimension":"service", "type":"equal", value:"Microsoft.Compute"},
-        {"dimension":"resource_type","type":"substring","substring":"Virtual Machines"}
-      ]},
-        {"type" : "and", "expressions" : [
-        {"dimension":"category","type":"equal","value":"Compute"},
-        {"dimension":"vendor","type":"equal","value":"AzureMCA-CSP"},
-        {"dimension":"service", "type":"equal", value:"Microsoft.Compute"},
-        {"dimension":"resource_type","type":"substring","substring":"Virtual Machines"}
-      ]},
-      {"type" : "and", "expressions" : [
-        {"dimension":"vendor","type":"equal","value":"GCP"},
-        {"dimension":"service", "type":"equal", value:"Compute Engine"},
-        {"dimension":"resource_type","type":"substring","substring":"*running*"}
-      ]},
-    ]
+      {"dimension":"category","type":"equal","value":"Compute"},
+      {"dimension":"vendor","type":"equal","value":"AzureMCA-CSP"},
+      {"dimension":"service", "type":"equal", value:"Microsoft.Compute"},
+      {"dimension":"resource_type","type":"substring","substring":"Virtual Machines"}
+    ]},
+    {"type" : "and", "expressions" : [
+      {"dimension":"vendor","type":"equal","value":"GCP"},
+      {"dimension":"service", "type":"equal", value:"Compute Engine"},
+      {"dimension":"resource_type","type":"substring","substring":"*running*"}
+    ]},
+  ]
 
-    var request = {
-      auth: "auth_flexera",
-      host: optima_host,
-      verb: "POST",
-      path: "/bill-analysis/orgs/" + org_id + "/costs/select",
-      body_fields: {
-        "billing_center_ids": billing_center_ids,
-        "dimensions": dimensions,
-        "metrics": ["usage_amount", "cost_amortized_unblended_adj"],
-        "granularity": "month",
-        "start_at": current_month,
-        "end_at": next_month,
-        "limit": 100000,
-        "filter": {
-          "type":"or",
-          "expressions": expression
-        }
-      },
-      headers: {
-        "Api-Version": "1.0",
-        "User-Agent": "RS Policies",
+  var request = {
+    auth: "auth_flexera",
+    host: optima_host,
+    verb: "POST",
+    path: "/bill-analysis/orgs/" + org_id + "/costs/select",
+    body_fields: {
+      "billing_center_ids": billing_center_ids,
+      "dimensions": dimensions,
+      "metrics": ["usage_amount", "cost_amortized_unblended_adj"],
+      "granularity": "month",
+      "start_at": current_month,
+      "end_at": next_month,
+      "limit": 100000,
+      "filter": {
+        "type":"or",
+        "expressions": expression
       }
+    },
+    headers: {
+      "Api-Version": "1.0",
+      "User-Agent": "RS Policies",
     }
+  }
 EOS
 end
 
@@ -379,197 +369,157 @@ script "js_format_costs", type: "javascript" do
 EOS
 end
 
-script "js_azure_instance_cost_map", type: "javascript" do
-  parameters "ds_azure_instance_costs"
-  result "result"
-  code <<-EOS
-  result = {}
-
-  _.each(ds_azure_instance_costs, function(item) {
-    region = item['location']
-    instance_type = item['armSkuName']
-    sku = item['productId']
-    operating_system = null
-
-    if (_.contains(item["productName"].toLowerCase().split(' '), "windows")) {
-      operating_system = "Windows"
-    }
-
-    if (_.contains(item["productName"].toLowerCase().split(' '), "linux")) {
-      operating_system = "Linux"
-    }
-
-    if (operating_system != null) {
-      if (result[region] == undefined) {
-        result[region] = {}
-      }
-
-      if (result[region][instance_type] == undefined) {
-        result[region][instance_type] = {}
-      }
-
-      result[region][instance_type][operating_system] = {
-        "pricePerUnit": retailPrice,
-        "sku": sku
-      }
-    }
-  })
-EOS
-end
-
 script "js_merge_instance_data", type: "javascript" do
   parameters "ds_format_costs", "ds_aws_instance_size_map", "ds_azure_instance_size_map", "ds_google_instance_size_map", "param_new_instancetype_category", "ds_currency_code", "ds_currency_reference", "ds_aws_instance_cost_map", "ds_azure_instance_cost_map"
   result "results"
   code <<-EOS
-    var results = []
-    var superseded_instance_map = _.extend(ds_aws_instance_size_map,ds_azure_instance_size_map, ds_google_instance_size_map)
-    var ds_instances = ds_format_costs
+  var results = []
+  var superseded_instance_map = _.extend(ds_aws_instance_size_map,ds_azure_instance_size_map, ds_google_instance_size_map)
+  var ds_instances = ds_format_costs
 
-    function formatNumber(number, separator){
-      var numString =number.toString();
-      var values=numString.split(".");
-      var result = ''
-      while (values[0].length > 3){
-        var chunk = values[0].substr(-3)
-        values[0] = values[0].substr(0, values[0].length - 3)
-        result = separator + chunk + result
-      }
-      if (values[0].length > 0){
-        result = values[0] + result
-      }
-      if(values[1]==undefined){
-        return result;
-      }
-      return result+"."+values[1];
+  function formatNumber(number, separator){
+    var numString =number.toString();
+    var values=numString.split(".");
+    var result = ''
+    while (values[0].length > 3){
+      var chunk = values[0].substr(-3)
+      values[0] = values[0].substr(0, values[0].length - 3)
+      result = separator + chunk + result
     }
+    if (values[0].length > 0){
+      result = values[0] + result
+    }
+    if(values[1]==undefined){
+      return result;
+    }
+    return result+"."+values[1];
+  }
 
-    // Format costs with currency symbol and thousands separator
-    if( ds_currency_code['value'] !== undefined ) {
-      if (ds_currency_reference[ds_currency_code['value']] !== undefined ) {
-        var cur = ds_currency_reference[ds_currency_code['value']]['symbol']
-        var cur_code = ds_currency_reference[ds_currency_code['value']]['code']
-        if( ds_currency_reference[ds_currency_code['value']]['t_separator'] !== undefined ) {
-          var separator = ds_currency_reference[ds_currency_code['value']]['t_separator']
-        } else {
-          var separator = ""
-        }
+  // Format costs with currency symbol and thousands separator
+  if( ds_currency_code['value'] !== undefined ) {
+    if (ds_currency_reference[ds_currency_code['value']] !== undefined ) {
+      var cur = ds_currency_reference[ds_currency_code['value']]['symbol']
+      var cur_code = ds_currency_reference[ds_currency_code['value']]['code']
+      if( ds_currency_reference[ds_currency_code['value']]['t_separator'] !== undefined ) {
+        var separator = ds_currency_reference[ds_currency_code['value']]['t_separator']
       } else {
-        var cur = ""
         var separator = ""
       }
     } else {
-      var cur = "$"
-      var separator = ","
+      var cur = ""
+      var separator = ""
     }
+  } else {
+    var cur = "$"
+    var separator = ","
+  }
 
-    for ( i=0; i < ds_instances.length; i++) {
-      var instance = ds_instances[i]
-      var instance_type = instance.instance_type
-      if (instance_type == "None" ) {continue;}
-      var found_instance_type = superseded_instance_map[instance_type]
-      if ( typeof(found_instance_type) === "undefined" || found_instance_type == null ){
-        instance["new_instance_type"] = "Unavailable"
-        results.push(instance)
+  for ( i=0; i < ds_instances.length; i++) {
+    var instance = ds_instances[i]
+    var instance_type = instance.instance_type
+    if (instance_type == "None" ) {continue;}
+    var found_instance_type = superseded_instance_map[instance_type]
+    if ( typeof(found_instance_type) === "undefined" || found_instance_type == null ){
+      instance["new_instance_type"] = "Unavailable"
+      results.push(instance)
+    } else {
+      var superseded = found_instance_type["superseded"]
+      if ( typeof(superseded) === "undefined" || superseded == null ){
+        continue
       } else {
-        var superseded = found_instance_type["superseded"]
-        if ( typeof(superseded) === "undefined" || superseded == null ){
-          continue
+        var new_instance_type = superseded[param_new_instancetype_category]
+        if (new_instance_type === "undefined" || new_instance_type == null || new_instance_type == "") {continue;}
+        var new_instance_type_info = superseded_instance_map[new_instance_type]
+        if ( new_instance_type_info === "undefined" ) {continue;}
+        old_instance_ena = found_instance_type.enhanced_networking || false
+        new_instance_ena = new_instance_type_info.enhanced_networking || false
+        old_instance_vpc = !found_instance_type.ec2_classic || false
+        new_instance_vpc = !new_instance_type_info.ec2_classic || false
+
+        if ( !old_instance_ena && new_instance_ena ) {
+          var ena_incompatible = "true"
         } else {
-          var new_instance_type = superseded[param_new_instancetype_category]
-          if (new_instance_type === "undefined" || new_instance_type == null || new_instance_type == "") {continue;}
-          var new_instance_type_info = superseded_instance_map[new_instance_type]
-          if ( new_instance_type_info === "undefined" ) {continue;}
-          old_instance_ena = found_instance_type.enhanced_networking || false
-          new_instance_ena = new_instance_type_info.enhanced_networking || false
-          old_instance_vpc = !found_instance_type.ec2_classic || false
-          new_instance_vpc = !new_instance_type_info.ec2_classic || false
-
-          if ( !old_instance_ena && new_instance_ena ) {
-            var ena_incompatible = "true"
-          } else {
-            var ena_incompatible = "false"
-          }
-
-          if ((!old_instance_vpc) && (new_instance_vpc)) {
-            var vpc_incompatible_move = "true"
-          } else {
-            var vpc_incompatible_move = "false"
-          }
-
-          old_list_price = null
-          new_list_price = null
-          estimated_monthly_savings = null
-
-          if (instance.vendor == 'AWS') {
-            if (ds_aws_instance_cost_map[instance.region_code] != undefined) {
-              if (ds_aws_instance_cost_map[instance.region_code][instance.instance_type] != undefined) {
-                if (ds_aws_instance_cost_map[instance.region_code][instance.instance_type][instance.operating_system] != undefined) {
-                  old_list_price = ds_aws_instance_cost_map[instance.region_code][instance.instance_type][instance.operating_system]["pricePerUnit"]
-                  old_list_price = old_list_price * 24 * 30
-                }
-              }
-
-              if (ds_aws_instance_cost_map[instance.region_code][new_instance_type] != undefined) {
-                if (ds_aws_instance_cost_map[instance.region_code][new_instance_type][instance.operating_system] != undefined) {
-                  new_list_price = ds_aws_instance_cost_map[instance.region_code][new_instance_type][instance.operating_system]["pricePerUnit"]
-                  new_list_price = new_list_price * 24 * 30
-                }
-              }
-            }
-          }
-
-          if (instance.vendor == 'Azure') {
-            if (ds_azure_instance_cost_map[instance.region_code] != undefined) {
-              if (ds_azure_instance_cost_map[instance.region_code][instance.instance_type] != undefined) {
-                if (ds_azure_instance_cost_map[instance.region_code][instance.instance_type][instance.operating_system] != undefined) {
-                  old_list_price = ds_azure_instance_cost_map[instance.region_code][instance.instance_type][instance.operating_system]["pricePerUnit"]
-                  old_list_price = old_list_price * 24 * 30
-                }
-              }
-
-              if (ds_azure_instance_cost_map[instance.region_code][new_instance_type] != undefined) {
-                if (ds_azure_instance_cost_map[instance.region_code][new_instance_type][instance.operating_system] != undefined) {
-                  new_list_price = ds_azure_instance_cost_map[instance.region_code][new_instance_type][instance.operating_system]["pricePerUnit"]
-                  new_list_price = new_list_price * 24 * 30
-                }
-              }
-            }
-          }
-
-          if (old_list_price != null && new_list_price != null) {
-            estimated_monthly_savings = old_list_price - new_list_price
-
-            if (estimated_monthly_savings <= 0) {
-              estimated_monthly_savings = null
-            }
-          }
-
-          results.push(
-            {
-              name: instance.name,
-              vendor: instance.vendor,
-              vendor_account: instance.vendor_account,
-              vendor_account_name: instance.vendor_account_name,
-              region: instance.region,
-              region_code: instance.region_code,
-              operating_system: instance.operating_system,
-              instance_type: instance.instance_type,
-              new_instance_type: new_instance_type,
-              resourceID: instance.resource_id,
-              resourceType: instance.resource_type,
-              run_rate: Math.round(instance.run_rate * 1000) / 1000,
-              vpc_incompatible_move: vpc_incompatible_move,
-              ena_incompatible: ena_incompatible,
-              old_price: Math.round(old_list_price * 1000) / 1000,
-              new_price: Math.round(new_list_price * 1000) / 1000,
-              savings: Math.round(estimated_monthly_savings * 1000) / 1000,
-              savingsCurrency: cur
-            }
-          )
+          var ena_incompatible = "false"
         }
+
+        if ((!old_instance_vpc) && (new_instance_vpc)) {
+          var vpc_incompatible_move = "true"
+        } else {
+          var vpc_incompatible_move = "false"
+        }
+
+        old_list_price = null
+        new_list_price = null
+        estimated_monthly_savings = null
+
+        if (instance.vendor == 'AWS') {
+          if (ds_aws_instance_cost_map[instance.region_code] != undefined) {
+            if (ds_aws_instance_cost_map[instance.region_code][instance.instance_type] != undefined) {
+              if (ds_aws_instance_cost_map[instance.region_code][instance.instance_type][instance.operating_system] != undefined) {
+                old_list_price = ds_aws_instance_cost_map[instance.region_code][instance.instance_type][instance.operating_system]["pricePerUnit"]
+                old_list_price = old_list_price * 24 * 30
+              }
+            }
+
+            if (ds_aws_instance_cost_map[instance.region_code][new_instance_type] != undefined) {
+              if (ds_aws_instance_cost_map[instance.region_code][new_instance_type][instance.operating_system] != undefined) {
+                new_list_price = ds_aws_instance_cost_map[instance.region_code][new_instance_type][instance.operating_system]["pricePerUnit"]
+                new_list_price = new_list_price * 24 * 30
+              }
+            }
+          }
+        }
+
+        if (instance.vendor == 'Azure') {
+          if (ds_azure_instance_cost_map[instance.region_code] != undefined) {
+            if (ds_azure_instance_cost_map[instance.region_code][instance.instance_type] != undefined) {
+              if (ds_azure_instance_cost_map[instance.region_code][instance.instance_type][instance.operating_system] != undefined) {
+                old_list_price = ds_azure_instance_cost_map[instance.region_code][instance.instance_type][instance.operating_system]["pricePerUnit"]
+                old_list_price = old_list_price * 24 * 30
+              }
+            }
+
+            if (ds_azure_instance_cost_map[instance.region_code][new_instance_type] != undefined) {
+              if (ds_azure_instance_cost_map[instance.region_code][new_instance_type][instance.operating_system] != undefined) {
+                new_list_price = ds_azure_instance_cost_map[instance.region_code][new_instance_type][instance.operating_system]["pricePerUnit"]
+                new_list_price = new_list_price * 24 * 30
+              }
+            }
+          }
+        }
+
+        if (old_list_price != null && new_list_price != null) {
+          estimated_monthly_savings = old_list_price - new_list_price
+
+          if (estimated_monthly_savings <= 0) {
+            estimated_monthly_savings = null
+          }
+        }
+
+        results.push({
+          name: instance['name'],
+          vendor: instance['vendor'],
+          vendor_account: instance['vendor_account'],
+          vendor_account_name: instance['vendor_account_name'],
+          region: instance['region'],
+          region_code: instance['region_code'],
+          operating_system: instance['operating_system'],
+          instance_type: instance['instance_type'],
+          new_instance_type: new_instance_type,
+          resourceID: instance['resource_id'],
+          resourceType: instance['resource_type'],
+          run_rate: Math.round(instance['run_rate'] * 1000) / 1000,
+          vpc_incompatible_move: vpc_incompatible_move,
+          ena_incompatible: ena_incompatible,
+          old_price: Math.round(old_list_price * 1000) / 1000,
+          new_price: Math.round(new_list_price * 1000) / 1000,
+          savings: Math.round(estimated_monthly_savings * 1000) / 1000,
+          savingsCurrency: cur
+        })
       }
     }
-  EOS
+  }
+EOS
 end
 
 ###############################################################################
@@ -579,8 +529,8 @@ end
 policy "pol_aws_superseded_instance" do
   validate_each $ds_combined_instance_data do
     summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} possible superseded instances"
-    check logic_or(lt(to_n(val(item,"run_rate")),$param_threshold), lt(to_n(val(item,"run_rate")),$param_minimum_savings_threshold))
-    escalate $report_instances
+    check logic_or(lt(to_n(val(item, "run_rate")), $param_threshold), lt(to_n(val(item, "run_rate")), $param_minimum_savings_threshold))
+    escalate $esc_report_instances
     export do
       resource_level false
       field "vendor" do
@@ -646,13 +596,9 @@ end
 # Escalations
 ###############################################################################
 
-escalation "report_instances" do
+escalation "esc_report_instances" do
   automatic true
   label "Send Email"
   description "Send incident email"
-  email $param_email
-end
-
-resolution "report_and_resize_instances_resolution" do
   email $param_email
 end
