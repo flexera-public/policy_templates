@@ -10,8 +10,9 @@ tenancy "single"
 info(
   version: "4.0",
   provider: "Flexera Optima",
-  service: "",
-  policy_set: ""
+  service: "Compute",
+  policy_set: "",
+  recommendation_type: "Usage Reduction"
 )
 
 ###############################################################################
@@ -30,19 +31,12 @@ parameter "param_billing_centers" do
   description "List of Billing Center names you want to report on.  Leave blank to select all top level Billing Centers."
 end
 
-parameter "param_threshold" do
-  label "Minimum Instance Savings Threshold"
-  description "The recommended action for some recommendations may require an instance relaunch. Specify the minimum monthly savings value required for a recommendation of this nature to be issued, on a per instance basis. Note: this setting applies to multiple recommendations. Example: 100.00"
-  type "number"
-  default 10
-  min_value 1
-end
-
 parameter "param_minimum_savings_threshold" do
   label "Minimum Savings Threshold"
   description "Specify the minimum monthly savings value required for a recommendation to be issued, on a per resource basis. Note: this setting applies to all recommendations. Example: 1.00"
   type "number"
   default 1
+  min_value 0
 end
 
 parameter "param_new_instancetype_category" do
@@ -89,8 +83,10 @@ datasource "ds_new_bc_costs" do
       field "vendor", jmes_path(col_item, "dimensions.vendor")
       field "vendor_account", jmes_path(col_item, "dimensions.vendor_account")
       field "vendor_account_name", jmes_path(col_item, "dimensions.vendor_account_name")
+      field "resource_group", jmes_path(col_item, "dimensions.resource_group")
       field "operating_system", jmes_path(col_item, "dimensions.x_operating_system")
       field "resource_type", jmes_path(col_item, "dimensions.resource_type")
+      field "service", jmes_path(col_item, "dimensions.service")
       field "cost_amortized_unblended_adj", jmes_path(col_item, "metrics.cost_amortized_unblended_adj")
       field "region", jmes_path(col_item, "dimensions.region")
       field "instance_type", jmes_path(col_item, "dimensions.instance_type")
@@ -171,7 +167,7 @@ datasource "ds_azure_instance_cost_map" do
   request do
     verb "GET"
     host "raw.githubusercontent.com"
-    path "/rightscale/policy_templates/master/data/azure/azure_compute_pricing.json"
+    path "/rightscale/policy_templates/master/data/azure/azure_vm_pricing.json"
     header "User-Agent", "RS Policies"
   end
 end
@@ -222,6 +218,7 @@ script "js_new_costs_request", type: "javascript" do
     "vendor",
     "vendor_account",
     "vendor_account_name",
+    "resource_group",
     "category",
     "instance_type",
     "region",
@@ -384,9 +381,11 @@ script "js_format_costs", type: "javascript" do
           vendor: new_bc_cost_obj['vendor'],
           vendor_account: new_bc_cost_obj['vendor_account'],
           vendor_account_name: new_bc_cost_obj['vendor_account_name'],
+          resource_group: new_bc_cost_obj['resource_group'],
           operating_system: new_bc_cost_obj['operating_system'],
           resource_type: new_bc_cost_obj['resource_type'],
           region: new_bc_cost_obj['region'],
+          service: new_bc_cost_obj['service'],
           instance_type: new_bc_cost_obj['instance_type'],
           resource_id: new_bc_cost_obj['resource_id'],
           run_rate: parseFloat(run_rate).toFixed(2),
@@ -527,21 +526,22 @@ script "js_merge_instance_data", type: "javascript" do
         result.push({
           name: instance['name'],
           vendor: vendor,
-          vendor_account: instance['vendor_account'],
-          vendor_account_name: instance['vendor_account_name'],
-          region: region,
-          region_code: region_code,
+          accountID: instance['vendor_account'],
+          accountName: instance['vendor_account_name'],
+          resourceGroup: instance['resource_group'],
+          service: instance['service'],
+          region: region_code,
           operating_system: operating_system,
           instance_type: instance_type,
           new_instance_type: new_instance_type,
           resourceID: instance['resource_id'],
           resourceType: instance['resource_type'],
-          run_rate: Math.round(instance['run_rate'] * 1000) / 1000,
+          run_rate: run_rate,
           vpc_incompatible_move: vpc_incompatible_move,
           ena_incompatible: ena_incompatible,
-          old_price: Math.round(old_list_price * 1000) / 1000,
-          new_price: Math.round(new_list_price * 1000) / 1000,
-          savings: Math.round(estimated_monthly_savings * 1000) / 1000,
+          old_price: parseFloat(old_list_price).toFixed(2),
+          new_price: parseFloat(new_list_price).toFixed(2),
+          savings: parseFloat(estimated_monthly_savings).toFixed(2),
           savingsCurrency: cur
         })
       }
@@ -557,21 +557,27 @@ end
 policy "pol_superseded_instance" do
   validate_each $ds_combined_instance_data do
     summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} possible superseded instances"
-    check logic_or(lt(to_n(val(item, "run_rate")), $param_threshold), lt(to_n(val(item, "run_rate")), $param_minimum_savings_threshold))
+    check lt(to_n(val(item, "savings")), $param_minimum_savings_threshold)
     escalate $esc_report_instances
     export do
       resource_level false
       field "vendor" do
         label "Cloud Vendor"
       end
-      field "vendor_account" do
+      field "accountID" do
         label "Account Id"
       end
-      field "vendor_account_name" do
+      field "accountName" do
         label "Account Name"
+      end
+      field "resourceGroup" do
+        label "Resource Group"
       end
       field "region" do
         label "Region"
+      end
+      field "service" do
+        label "Service"
       end
       field "operating_system" do
         label "OS"
