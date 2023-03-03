@@ -1,5 +1,9 @@
 # Changelog
 
+## v4.4
+
+- Fixed error that prevented Cloud Workflow actions from completing as expected.
+
 ## v4.3
 
 - Replaced the term **whitelist** with **allowed list**.
