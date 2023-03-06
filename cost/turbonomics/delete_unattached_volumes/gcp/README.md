@@ -1,4 +1,4 @@
-# Turbonomics Delete Unattached Volumes Recommendations GCP
+# Turbonomic Delete Unattached Volumes Recommendations GCP
 
 ## What it does
 
@@ -12,9 +12,9 @@ The Turbonomics Delete Unattached Volumes Recommendations GCP policy utilizes Tu
 
 ## Input Parameters
 
-- *Authorization Cookie"* - authorization cookie pulled from Turbonomic login endpoint: (POST `https://xxxx.turbonomic.com/api/v3/login`)
+- *Authorization Cookie* - authorization cookie pulled from Turbonomic login endpoint: (POST `https://xxxx.turbonomic.com/api/v3/login`)
 - no_echo: true
-- *Email addresses"* - a list of email addresses to notify
+- *Email addresses* - a list of email addresses to notify
 
 ### Required Flexera Roles
 
