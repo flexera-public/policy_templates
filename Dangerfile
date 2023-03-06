@@ -116,10 +116,17 @@ end
 # .md files should follow these rules https://github.com/markdownlint/markdownlint/blob/master/docs/RULES.md
 mdl = nil
 md_files.each do |file|
+  # Exemptions for top-level README.md
   if file == 'README.md'
-    # MD024  Multiple headers with the same content
-    # MD013 disable line length
+    # MD013 Line length
+    # MD024 Multiple headers with the same content
     mdl = `mdl -r "~MD024","~MD013" #{file}`
+  # Exemptions for tools/cloudformation-template/README.md
+  elsif file == 'tools/cloudformation-template/README.md'
+      # MD013 Line length
+      # MD033 Inline HTML. Required for example snippets.
+      # MD034 Bare URL used - Bugged. No bare URLs are actually used in this README.
+      mdl = `mdl -r "~MD013","~MD033","~MD034" #{file}`
   else
     # use .mdlrc rules
     mdl = `mdl #{file}`

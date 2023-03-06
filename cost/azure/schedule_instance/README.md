@@ -29,7 +29,7 @@ This policy has the following input parameters required when launching the polic
 
 - *Email addresses* - A list of email addresses to notify
 - *Azure Endpoint* - Azure Endpoint to access resources
-- *Subscription Whitelist* - Whitelisted Subscriptions, if empty, all subscriptions will be checked
+- *Subscription Allowed List* - Allowed Subscriptions, if empty, all subscriptions will be checked
 - *Exclusion Tags* - List of tags that a virtual machine can have to exclude it from the list. Format: Key=Value.
 - *Automatic Actions(s)* - (Optional)When this value is set, this policy will automatically take the selected action(s).
 
@@ -65,7 +65,7 @@ Required permissions in the provider:
 - Microsoft.Compute/virtualMachines/write
 - Microsoft.Compute/virtualMachines/delete
 - Microsoft.Compute/virtualMachines/start/action
-- Microsoft.Compute/virtualMachines/powerOff/action
+- Microsoft.Compute/virtualMachines/deallocate/action
 
 ## Supported Clouds
 

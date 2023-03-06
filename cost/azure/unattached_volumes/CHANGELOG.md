@@ -1,5 +1,41 @@
 # Changelog
 
+## v4.4
+
+- Raised API limit to handle situations where more than 10,000 line items need to be retrieved.
+
+## v4.3
+
+- Replaced the term **whitelist** with **allowed list**.
+
+## v4.2
+
+- Added `ignore_status [400,403,404]` for API calls to Azure API to ignore errors related to legacy subscription types
+
+## v4.1
+
+- bugfix for logic regarding activity log and what constitutes unattached/unused. Changed logic to verify that activities length is 0 rather than using "toBeDetached" keyword
+- updated max limit on activity log call to 89 days to avoid api day limit
+- updated response to contain usable information of resourceID and operation name
+- changed ds field responseBody to resourceID
+
+## v4.0
+
+- Deprecated `auth_rs` authentication (type: `rightscale`) and replaced with `auth_flexera` (type: `oauth2`).  This is a breaking change which requires a Credential for `auth_flexera` [`provider=flexera`] before the policy can be applied.  Please see docs for setting up [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm)
+- Modified `sys_log` definition to disable `rs_cm.audit_entry.create` outside Flexera NAM
+- Replaced references `github.com/rightscale/policy_templates` and `github.com/flexera/policy_templates` with `github.com/flexera-public/policy_templates`
+
+## v3.2
+
+- remove duplicate data fields for subscriptionID and subscriptionName
+
+## v3.1
+
+- update policy for optimization, changes go as follows:
+  - removal of filtering on events and combining data of disks and activity
+  - iterate through filtered unattached disks rather than subscriptions to lower number of api requests due to pagination
+  - changed Azure insight filter from event resource type to resource id
+
 ## v3.0
 
 - applying data normalization updates for spend recommendations api. this change breaks current iterations expecting specific output types being pushed.

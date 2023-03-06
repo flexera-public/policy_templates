@@ -1,13 +1,13 @@
 name "AWS Unencrypted S3 Buckets"
 rs_pt_ver 20180301
 type "policy"
-short_description "Report any S3 buckets in AWS that are unencrypted and provide the option to set the default encryption after approval. \n See the [README](https://github.com/flexera/policy_templates/tree/master/security/aws/unencrypted_s3_buckets) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+short_description "Report any S3 buckets in AWS that are unencrypted and provide the option to set the default encryption after approval. \n See the [README](https://github.com/flexera-public/policy_templates/tree/master/security/aws/unencrypted_s3_buckets) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 long_description ""
 category "Security"
 severity "low"
 default_frequency "daily"
 info(
-  version: "2.7",
+  version: "2.8",
   provider: "AWS",
   service: "S3",
   policy_set: "CIS",
@@ -291,14 +291,14 @@ escalation "modify_encryption_s3_buckets_approval" do
   automatic contains($param_automatic_action, "Encrypt Buckets")
   label "Update S3 Encryption"
   description "Default encryption will be enabled(AES-256) for selected S3 Buckets."
-  run "enable_encryption_s3_buckets", data
+  run "enable_encryption_s3_buckets", data, rs_optima_host
 end
 
 escalation "delete_unencrypted_s3_buckets_approval" do
   automatic false
   label "Delete S3 Bucket"
   description "Delete selected S3 Buckets"
-  run "delete_unencrypted_s3_buckets", data
+  run "delete_unencrypted_s3_buckets", data, rs_optima_host
 end
 
 ###############################################################################
@@ -306,7 +306,7 @@ end
 ###############################################################################
 
 #https://docs.aws.amazon.com/AmazonS3/latest/API/RESTBucketPUTencryption.html
-define enable_encryption_s3_buckets($data) return $all_responses do
+define enable_encryption_s3_buckets($data, $$rs_optima_host) return $all_responses do
   $$debug=true
   $body_string="<ServerSideEncryptionConfiguration xmlns='http://s3.amazonaws.com/doc/2006-03-01/'><Rule><ApplyServerSideEncryptionByDefault><SSEAlgorithm>AES256</SSEAlgorithm></ApplyServerSideEncryptionByDefault></Rule></ServerSideEncryptionConfiguration>"
   $all_responses = []
@@ -326,7 +326,7 @@ define enable_encryption_s3_buckets($data) return $all_responses do
 end
 
 #https://docs.aws.amazon.com/AmazonS3/latest/API/RESTBucketDELETE.html
-define delete_unencrypted_s3_buckets($data) return $all_responses do
+define delete_unencrypted_s3_buckets($data, $$rs_optima_host) return $all_responses do
   $$debug=true
   $all_responses = []
   foreach $item in $data do
@@ -343,14 +343,35 @@ define delete_unencrypted_s3_buckets($data) return $all_responses do
 end
 
 define sys_log($subject, $detail) do
-  if $$debug
-    rs_cm.audit_entries.create(
-      notify: "None",
-      audit_entry: {
-        auditee_href: @@account,
-        summary: "AWS Unencrypted S3 Buckets Policy "+ $subject,
-        detail: $detail
-      }
-    )
+  # Create empty errors array if doesn't already exist
+  if !$$errors
+    $$errors = []
   end
+  # Check if debug is enabled
+  if $$debug
+    # Append to global $$errors
+    # This is the suggested way to capture errors
+    $$errors << "Unexpected error for " + $subject + "\n  " + to_s($detail)
+    # If Flexera NAM Zone, create audit_entries [to be deprecated]
+    # This is the legacy method for capturing errors and only supported on Flexera NAM
+    if $$rs_optima_host == "api.optima.flexeraeng.com"
+      # skip_error_and_append is used to catch error if rs_cm.audit_entries.create fails unexpectedly
+      $task_label = "Creating audit entry for " + $subject
+      sub task_label: $task, on_error: skip_error_and_append($task) do
+        rs_cm.audit_entries.create(
+          notify: "None",
+          audit_entry: {
+            auditee_href: @@account,
+            summary: $subject,
+            detail: $detail
+          }
+        )
+      end # End sub on_error
+    end # End if rs_optima_host
+  end # End if debug is enabled
+end
+
+define skip_error_and_append($subject) do
+  $$errors << "Unexpected error for " + $subject + "\n  " + to_s($_error)
+  $_error_behavior = "skip"
 end

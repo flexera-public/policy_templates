@@ -1,5 +1,9 @@
 # No Recent Snapshots Policy Template
 
+## Deprecated
+
+This policy is no longer being updated.
+
 ## What it does
 
 This Policy Template verifies that you have snapshots on all of your important volumes.

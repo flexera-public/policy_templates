@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.12
+
+- Deprecated: This policy is no longer being updated.
+
 ## v1.11
 
 - Added default_frequency "daily"
