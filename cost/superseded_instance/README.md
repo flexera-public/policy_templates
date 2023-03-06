@@ -2,7 +2,7 @@
 
 ## What it does
 
-The Superseded Instances Policy Template is used to monitor an account a generate a list of superseded instances. This policy supports AWS, Azure, and AzureCSP. It also allows use of AMD, and Burstable types as replacement. There are fundamental differences between this and Optima Superseded Instances recommendations.
+The Superseded Instances Policy Template is used to monitor an account a generate a list of superseded instances. This policy supports AWS, Azure, and AzureCSP. It also allows use of AMD, and Burstable types as replacement. The resulting incident will include an estimated savings based on the list price for the current instance size and the new recommended size.
 
 ## Prerequisites
 
@@ -15,7 +15,7 @@ The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automati
 
 ## Usage
 
-This policy used Optima data to get a list of instances used in the month and their possible new types, as well it uses data in [Policies Data](https://github.com/flexera-public/policy_templates/tree/master/data) to determine if an instance type has been superseded.  It will then list all the instances that have been superseded and their types. The `Monthly Estimated Cost` is an estimated cost for the instances with the current configuration, you will save a portion of that by moving to the instance type, the new instance types should be more performant as well. If the **New Instance Type** value in the incident report is "Unavailable", the current instance type does not currently exist in our Instance Type mapping.  Please raise an issue for the mapping to be updated with the current instance type.
+This policy used Optima data to get a list of instances used in the month and their possible new types, as well it uses data in [Policies Data](https://github.com/flexera-public/policy_templates/tree/master/data) to determine if an instance type has been superseded.  It will then list all the instances that have been superseded and their types. The `Monthly Estimated Cost` is an estimated cost for the instances with the current configuration, you will save a portion of that by moving to the instance type, the new instance types should be more performant as well. If the **New Instance Type** value in the incident report is "Unavailable", the current instance type does not currently exist in our Instance Type mapping. Please raise an issue for the mapping to be updated with the current instance type.
 
 ## Input Parameters
 
@@ -23,8 +23,7 @@ This policy has the following input parameters required when launching the polic
 
 - *Email addresses* - A list of email addresses to notify
 - *Billing Center Name* - List of Billing Center Names to check
-- *Minimum Savings Threshold* - Specify the minimum monthly savings value required for a recommendation to be issued, on a per resource basis. Note: this setting applies to all recommendations. Example: 1.00
-- *Minimum Instance Savings Threshold* - The recommended action for some recommendations may require an instance relaunch. Specify the minimum monthly savings value required for a recommendation of this nature to be issued, on a per instance basis. Note: this setting applies to multiple recommendations. Example: 100.00
+- *Minimum Savings Threshold* - Specify the minimum monthly savings value required for a recommendation to be issued on a per resource basis. Example: 1.00
 - *Instance Type Category* - Instance Type Category to pick from.
   1. regular: AWS/Azure - Matches Optima Recommendation data
   1. next_gen: AWS - Latest generation upgrade
