@@ -1,5 +1,31 @@
 # Changelog
 
+## v4.4
+
+- Fixed error that prevented Cloud Workflow actions from completing as expected.
+
+## v4.3
+
+- Replaced the term **whitelist** with **allowed list**.
+
+## v4.2
+
+- Added `ignore_status [400,403,404]` for API calls to Azure API to ignore errors related to legacy subscription types
+
+## v4.1
+
+- Fixed bug when filtering by tag key when Azure API does not return tag data for an instance
+
+## v4.0
+
+- Deprecated `auth_rs` authentication (type: `rightscale`) and replaced with `auth_flexera` (type: `oauth2`).  This is a breaking change which requires a Credential for `auth_flexera` [`provider=flexera`] before the policy can be applied.  Please see docs for setting up [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm)
+- Modified `sys_log` definition to disable `rs_cm.audit_entry.create` outside Flexera NAM
+- Replaced references `github.com/rightscale/policy_templates` and `github.com/flexera/policy_templates` with `github.com/flexera-public/policy_templates`
+
+## v3.1
+
+- remove duplicate data fields for subscriptionID and subscriptionName
+
 ## v3.0
 
 - applying data normalization updates for spend recommendations api. this change breaks current iterations expecting specific output types being pushed.

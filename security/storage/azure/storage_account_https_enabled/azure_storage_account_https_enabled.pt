@@ -1,13 +1,13 @@
 name "Azure Storage Accounts Without HTTPs Enforced"
 rs_pt_ver 20180301
 type "policy"
-short_description "Checks for Azure Storage Accounts with HTTPs not enforced.\n See the [README](https://github.com/flexera/policy_templates/tree/master/security/storage/azure/storage_account_https_enabled) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+short_description "Checks for Azure Storage Accounts with HTTPs not enforced.\n See the [README](https://github.com/flexera-public/policy_templates/tree/master/security/storage/azure/storage_account_https_enabled) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 long_description ""
 severity "low"
 category "Security"
 default_frequency "daily"
 info(
-  version: "2.2",
+  version: "2.5",
   provider: "Azure",
   service: "Storage Accounts",
   policy_set: "Storage Security"
@@ -30,10 +30,10 @@ parameter "param_azure_endpoint" do
   default "management.azure.com"
 end
 
-parameter "param_subscription_whitelist" do
-  label "Subscription Whitelist"
+parameter "param_subscription_allowed_list" do
+  label "Subscription Allowed List"
   type "list"
-  description "Whitelisted Subscriptions, if empty, all subscriptions will be checked"
+  description "Allowed Subscriptions, if empty, all subscriptions will be checked"
 end
 
 ###############################################################################
@@ -83,7 +83,7 @@ datasource "ds_subscriptions" do
 end
 
 datasource "ds_filtered_subscriptions" do
-  run_script $js_filtered_subscriptions, $ds_subscriptions, $param_subscription_whitelist
+  run_script $js_filtered_subscriptions, $ds_subscriptions, $param_subscription_allowed_list
 end
 
 #https://docs.microsoft.com/en-us/rest/api/storagerp/storageaccounts/list
@@ -91,11 +91,13 @@ datasource "ds_azure_storage_accounts_list" do
   iterate $ds_filtered_subscriptions
   request do
     auth $azure_auth
-      pagination $azure_pagination
-      host $param_azure_endpoint
-      path join(["/subscriptions/", val(iter_item,"subscriptionId"), "/providers/Microsoft.Storage/storageAccounts"])
-      query "api-version","2021-01-01"
-      header "User-Agent", "RS Policies"
+    pagination $azure_pagination
+    host $param_azure_endpoint
+    path join(["/subscriptions/", val(iter_item,"subscriptionId"), "/providers/Microsoft.Storage/storageAccounts"])
+    query "api-version","2021-01-01"
+    header "User-Agent", "RS Policies"
+    # Ignore status 400, 403, and 404 which can be returned in certain (legacy) types of Azure Subscriptions
+    ignore_status [400,403,404]
   end
   result do
     encoding "json"
@@ -121,13 +123,13 @@ end
 ###############################################################################
 
 script "js_filtered_subscriptions", type: "javascript" do
-  parameters "ds_subscriptions", "param_subscription_whitelist"
+  parameters "ds_subscriptions", "param_subscription_allowed_list"
   result "results"
   code <<-EOS
   var results = []
-  if ( param_subscription_whitelist.length != 0){
+  if ( param_subscription_allowed_list.length != 0){
     results = []
-    _.each(param_subscription_whitelist, function(sub){
+    _.each(param_subscription_allowed_list, function(sub){
       var found = _.find(ds_subscriptions, function(item){
         return item.subscriptionId == sub || item.subscriptionName.toLowerCase() == sub.toLowerCase();
       })
@@ -208,21 +210,4 @@ escalation "esc_email" do
   label "Send Mail"
   description "Sends incidents email"
   email $param_email
-end
-
-###############################################################################
-# Cloud Workflow
-###############################################################################
-
-define sys_log($subject, $detail) do
-  if $$debug
-    rs_cm.audit_entries.create(
-      notify: "None",
-      audit_entry: {
-        auditee_href: @@account,
-        summary: "Azure Storage Account HTTPs Enforcement Policy "+ $subject,
-        detail: $detail
-      }
-    )
-  end
 end

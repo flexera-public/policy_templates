@@ -26,10 +26,10 @@ Reference
 
 #### Multi-cloud
 
-- [Billing Center Cost Anomaly](./cost/billing_center_cost_anomaly/)
 - [Budget Alerts](./cost/budget_alerts/)
 - [Budget Alerts by Cloud Account](./cost/budget_alerts_by_account/)
 - [Cheaper Regions](./cost/cheaper_regions/)
+- [Cloud Cost Anomaly Alerts](./cost/cloud_cost_anomaly_alerts/)
 - [Downsize Instances](./cost/downsize_instance/)
 - [Inefficient Instance Utilization using RightLink](./cost/rightlink_rightsize)
 - [Old Snapshots](./cost/volumes/old_snapshots/)
@@ -44,17 +44,22 @@ Reference
 - [Superseded Instance Remediation](./cost/superseded_instance_remediation/)
 - [Terminate Instances with End Date](./cost/terminate_policy/)
 
+##### Currency Conversion
+
+- [Currency Conversion](./cost/currency_conversion/)
+
 ##### Forecasting
 
-- [Straight-Line Forecast](./cost/forecasting/straight_line_forecast/)
-- [Moving Average](./cost/forecasting/moving_average/)
+- [Cloud Spend Forecast - Moving Average](./cost/forecasting/moving_average/)
+- [Cloud Spend Forecast - Straight-Line (Linear Regression Model)](./cost/forecasting/straight_line_forecast/linear_regression/)
+- [Cloud Spend Forecast - Straight-Line (Simple Model)](./cost/forecasting/straight_line_forecast/simple/)
 - [Vendor Commitment Forecast](./cost/forecasting/commitment_forecast/)
 
 #### AWS
 
 ##### Credential Setup
 
-- [Read Only CFT](./cost/aws/FlexeraReadOnlyPolicy.template)
+- [Flexera Automation CloudFormation Template](./tools/cloudformation-template)
 
 ##### Compute
 
@@ -62,14 +67,15 @@ Reference
 - [AWS Expiring Reserved Instances](./cost/aws/reserved_instances/expiration/)
 - [AWS Idle Compute Instances](./cost/aws/idle_compute_instances/)
 - [AWS Inefficient Instance Utilization using CloudWatch](./cost/aws/instance_cloudwatch_utilization/)
-- [AWS Number of Instance Hours Used](./cost/aws/total_instance_hours/)
-- [AWS Number of Instance vCPUs Used](./cost/aws/total_instance_vcpus/)
 - [AWS Reserved Instances Utilization](./cost/aws/reserved_instances/utilization/)
 - [AWS Reserved Instance Reservation Coverage](./cost/aws/reserved_instances/coverage/)
 - [AWS Reserved Instances Report by Billing Center](./cost/aws/reserved_instances/report_by_bc)
 - [AWS Reserved Instance Recommendations](./cost/aws/reserved_instances/recommendations)
+- [AWS Rightsize Compute Instances](./cost/aws/rightsize_compute_instances)
+- [AWS Rightsize EBS Volumes](./cost/aws/rightsize_ebs_volumes)
 - [AWS Savings Plan Recommendations](./cost/aws/savings_plan/recommendations)
 - [AWS Savings Plan Utilization](./cost/aws/savings_plan/utilization)
+- [AWS Savings Realized from Reservations](./cost/aws/savings_realized)
 - [AWS Schedule Instance](./cost/aws/schedule_instance/)
 - [AWS Unused IP Addresses](./cost/aws/unused_ip_addresses)
 
@@ -104,8 +110,11 @@ Reference
 - [Azure Expiring Reserved Instances](./cost/azure/reserved_instances/expiration)
 - [Azure Reserved Instance Utilization](./cost/azure/reserved_instances/utilization/)
 - [Azure Reserved Instance Recommendations](./cost/azure/reserved_instances/mca_recommendations)
-- [Azure Unused IP Addresses](./cost/azure/unused_ip_addresses)
+- [Azure Rightsize Compute Instances](./cost/azure/rightsize_compute_instances)
+- [Azure Savings Plan Recommendations](./cost/azure/savings_plan/recommendations)
+- [Azure Savings Realized from Reservations](./cost/azure/savings_realized)
 - [Azure Schedule Instance](./cost/azure/schedule_instance/)
+- [Azure Unused IP Addresses](./cost/azure/unused_ip_addresses)
 
 ##### Database
 
@@ -119,27 +128,34 @@ Reference
 - [Azure Unused Volumes](./cost/azure/unattached_volumes)
 - [Azure Storage Accounts without Lifecycle Management Policies](./cost/azure/storage_account_lifecycle_management/)
 
+##### Common Bill Ingestion
+
+- [Azure China Common Bill Ingestion](./cost/azure/azure_china_cbi)
+
 #### Google
 
 ##### Compute
 
 - [Google Inefficient Instance Utilization using StackDriver](./cost/google/instances_stackdriver_utilization/)
 - [Google Committed Use Discount (CUD)](./cost/google/cud_report/)
-- [Google Committed Use Discount Recommendations (CUD)](./cost/google/cud_recommendations/)
+- [Google Committed Use Discount Recommender (CUD)](./cost/google/cud_recommendations/)
 - [Google Idle Compute Instances](./cost/google/idle_compute_instances/)
 - [Google Expiring Committed Use Discount (CUD)](./cost/google/cud_expiration/)
 - [Google Schedule Instance](./cost/google/schedule_instance/)
+- [Google Idle VM Recommender](./cost/google/idle_vm_recommendations)
 
 ##### Database
 
 - [Google Unused CloudSQL Instances](./cost/google/unused_cloudsql_instances)
 - [Google Rightsize CloudSQL Instances](./cost/google/cloudsql_rightsizing/)
+- [Google Cloud SQL Idle Instance Recommender](./cost/google/cloud_sql_idle_instance_recommendations)
 
 ##### Storage
 
 - [Google Object Storage Optimization](./cost/google/object_storage_optimization/)
 - [Google Old Snapshots](./cost/google/old_snapshots/)
 - [Google Unused Volumes](./cost/google/unattached_volumes/)
+- [Google Idle Persistent Disk Recommender](./cost/google/idle_persistent_disk_recommendations)
 
 ##### Native Recommendations
 
@@ -148,6 +164,13 @@ Reference
 ##### Other
 
 - [Google Unutilized IP Addresses](./cost/google/unutilized_ip_addresses/)
+- [Google Idle IP Address Recommender](./cost/google/idle_ip_address_recommendations)
+
+#### Oracle
+
+##### Common Bill Ingestion
+
+- [Oracle Cloud Common Bill Ingestion](./cost/oracle/oracle_cbi)
 
 ### Security
 
@@ -256,15 +279,18 @@ Reference
 
 ###### CIS Policies
 
+- [Azure Ensure Correct PostgreSQL Servers Log Settings](./security/azure/pg_log_settings/)
 - [Azure Ensure MySQL Flexible Servers Use Secure TLS](./security/azure/mysql_tls_version/)
 - [Azure Ensure MySQL Servers Enforce SSL Connections](./security/azure/mysql_ssl/)
+- [Azure Ensure PostgreSQL Servers Connection Throttling Enabled](./security/azure/pg_conn_throttling/)
 - [Azure Ensure PostgreSQL Servers Infrastructure Encryption](./security/azure/pg_infra_encryption/)
 - [Azure Ensure SQL Database Encryption](./security/azure/sql_db_encryption/)
 - [Azure Ensure SQL Server AD Admin Configured](./security/azure/sql_ad_admin/)
 - [Azure Ensure SQL Server Auditing Enabled](./security/azure/sql_server_auditing/)
-- [Azure Ensure SQL Server Vulnerability Assessment (VA) Enabled](./security/azure/sql_server_va/)
 - [Azure Ensure SQL Server VA Email Notifications](./security/azure/sql_server_va_emails/)
 - [Azure Ensure SQL Server VA Notify Admins/Subscription Owners](./security/azure/sql_server_va_admins/)
+- [Azure Ensure SQL Server VA Periodic Scans Enabled](./security/azure/sql_server_va_scans/)
+- [Azure Ensure SQL Server Vulnerability Assessment (VA) Enabled](./security/azure/sql_server_va/)
 
 ##### Web Apps
 
@@ -293,6 +319,8 @@ Reference
 - [Azure Ensure Owners Receive Security Alerts](./security/azure/security_alert_owners/)
 - [Azure Ensure High Severity Alerts](./security/azure/high_severity_alerts/)
 - [Azure Ensure Security Contact Email](./security/azure/security_contact_email/)
+- [Azure Network Security Groups With Inbound RDP Open](./security/azure/restrict_rdp_internet/)
+- [Azure Network Security Groups With Inbound SSH Open](./security/azure/restrict_ssh_internet/)
 
 #### Google
 
@@ -381,6 +409,11 @@ Reference
 - [AWS Long Running Instances](./operational/aws/long_running_instances/)
 - [AWS Instance Scheduled Events](./operational/aws/instance_scheduled_events)
 - [AWS Lambda Functions with high error rate](./operational/aws/lambda_functions_with_high_error_rate/)
+- [AWS Tag Cardinality Report](./operational/aws/tag_cardinality/)
+- [AWS Usage Report - Number of Instance Hours Used](./operational/aws/total_instance_hours/)
+- [AWS Usage Report - Number of Instance vCPUs Used](./operational/aws/total_instance_vcpus/)
+- [AWS Usage Forecast - Number of Instance Hours Used](./operational/aws/total_instance_hours_forecast/)
+- [AWS Usage Forecast - Number of Instance vCPUs Used](./operational/aws/total_instance_vcpus_forecast/)
 
 #### Azure
 
@@ -390,6 +423,8 @@ Reference
 - [AzureAD Group Sync](./operational/azure/azuread_group_sync/)
 - [Azure Sync Tags with Optima](./operational/azure/sync_tags_with_optima/)
 - [Azure SQL Databases without Elastic Pools](./operational/azure/azure_sql_using_elastic_pool/)
+- [Azure Tag Cardinality Report](./operational/azure/tag_cardinality/)
+- [Azure Long Running Instances](./operational/azure/azure_long_running_instances/)
 
 #### VMWare
 
@@ -456,5 +491,5 @@ Github issues contain a template for three types of requests(Bugs, New Features 
 
 ### Troubleshooting Danger Locally
 
-- You can test against a pull request via: `bundle exec danger pr https://github.com/flexera/policy_templates/pull/73 --pry`
+- You can test against a pull request via: `bundle exec danger pr https://github.com/flexera-public/policy_templates/pull/73 --pry`
 - [Danger Troubleshooting](http://danger.systems/guides/troubleshooting.html)

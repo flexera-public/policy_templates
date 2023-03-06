@@ -1,5 +1,25 @@
 # Changelog
 
+## v2.16
+
+- Added new selection "All Except EC2" for the service input list, Updated new option as default value, And Updated the datasources.
+
+## v2.15
+
+- change the `auth_rs` Credential to `auth_flexera` name and label to `flexera` for consistency with other policy templates
+
+## v2.14
+
+- Added policySet as Reserved Instance to populate the Total Potential Savings
+
+## v2.13
+
+- Replaced references `github.com/rightscale/policy_templates` and `github.com/flexera/policy_templates` with `github.com/flexera-public/policy_templates`
+
+## v2.12
+
+- Added accountName call and field
+
 ## v2.11
 
 - Added default to aws_account_number parameter to enable existing API users.

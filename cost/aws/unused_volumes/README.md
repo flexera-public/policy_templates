@@ -17,6 +17,47 @@ If the AWS bill for the AWS account is registered in Optima in a different Flexe
 
 If the user does not have the minimum required role of `billing_center_viewer` or if there is not enough data received from Optima to calculate savings, an appropriate message is displayed in the incident detail message along with the estimated monthly savings column value as 0.0 in the incident table.
 
+## Prerequisites
+
+This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for authenticating to datasources -- in order to apply this policy you must have a Credential registered in the system that is compatible with this policy. If there are no Credentials listed when you apply the policy, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy. The information below should be consulted when creating the credential(s).
+
+- [**AWS Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_1982464505_1121575) (*provider=aws*) which has the following permissions:
+  - `ec2:DescribeRegions`
+  - `ec2:DescribeVolumes`
+  - `ec2:DescribeSnapshots`
+  - `cloudwatch:GetMetricStatistics`
+  - `ec2:CreateTags`
+  - `ec2:CreateSnapshot`
+  - `ec2:DeleteVolume`
+
+  Example IAM Permission Policy:
+
+  ```json
+  {
+      "Version": "2012-10-17",
+      "Statement": [
+          {
+              "Effect": "Allow",
+              "Action": [
+                  "ec2:DescribeRegions",
+                  "ec2:DescribeVolumes",
+                  "ec2:DescribeSnapshots",
+                  "cloudwatch:GetMetricStatistics",
+                  "ec2:CreateTags",
+                  "ec2:CreateSnapshot",
+                  "ec2:DeleteVolume"
+              ],
+              "Resource": "*"
+          }
+      ]
+  }
+  ```
+
+- [**Flexera Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) (*provider=flexera*) which has the following roles:
+  - `billing_center_viewer`
+
+The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) page in the docs has detailed instructions for setting up Credentials for the most common providers.
+
 ## Input Parameters
 
 This policy has the following input parameters required when launching the policy.
@@ -29,6 +70,7 @@ This policy has the following input parameters required when launching the polic
 - *Create Final Snapshot* - Boolean for whether or not to take a final snapshot before deleting
 - *Automatic Actions* - When this value is set, this policy will automatically take the selected action(s).
 - *Flexera One Org ID for Optima* - The Flexera One org ID for Optima queries used to determine estimated costs, by default the current org is used.
+- *CloudWatch API Wait Time* - The amount of time in seconds to wait between requests to the CloudWatch API to avoid being throttled by AWS. Default is recommended.
 
 Please note that the "Automatic Actions" parameter contains a list of action(s) that can be performed on the resources. When it is selected, the policy will automatically execute the corresponding action on the data that failed the checks, post incident generation. Please leave it blank for *manual* action.
 For example if a user selects the "Delete Volumes" action while applying the policy, all the volumes that didn't satisfy the policy condition will be deleted.
@@ -39,49 +81,6 @@ The following policy actions are taken on any resources found to be out of compl
 
 - Delete Unused volumes after approval
 - Send an email report
-
-## Prerequisites
-
-- This policy uses [credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for connecting to the cloud -- in order to apply this policy you must have a credential registered in the system that is compatible with this policy. If there are no credentials listed when you apply the policy, please contact your cloud admin and ask them to register a credential that is compatible with this policy. The information below should be consulted when creating the credential.
-- billing_center_viewer (note: this role must be applied at the Organization level)
-
-### Credential configuration
-
-For administrators [creating and managing credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) to use with this policy, the following information is needed:
-
-Provider tag value to match this policy: `aws` , `aws_sts`
-
-The following AWS permissions must be allowed for the policy to run.
-
-```json
-{
-  "Version": "2012-10-17",
-  "Statement":[
-    {
-      "Effect":"Allow",
-      "Action":[
-        "ec2:DescribeVolumes",
-        "ec2:CreateTags",
-        "ec2:CreateSnapshot",
-        "ec2:DescribeSnapshots",
-        "ec2:DeleteVolume",
-        "ec2:DescribeRegions"
-      ],
-      "Resource":"*"
-    },
-    {
-      "Effect":"Allow",
-      "Action":["cloudwatch:GetMetricStatistics"],
-      "Resource":"*",
-      "Condition":{
-        "Bool":{
-          "aws:SecureTransport":"true"
-        }
-      }
-    }
-  ]
-}
-```
 
 ## Supported Clouds
 

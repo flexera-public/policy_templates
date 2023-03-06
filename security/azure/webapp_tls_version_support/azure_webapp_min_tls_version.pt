@@ -1,13 +1,13 @@
 name "Azure Web App Minimum TLS Version"
 rs_pt_ver 20180301
 type "policy"
-short_description "Checks for Azure Web Apps with a minimum TLS version less that the value specified.\n See the [README](https://github.com/flexera/policy_templates/tree/master/security/azure/webapp_tls_version_support) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+short_description "Checks for Azure Web Apps with a minimum TLS version less that the value specified.\n See the [README](https://github.com/flexera-public/policy_templates/tree/master/security/azure/webapp_tls_version_support) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 long_description ""
 severity "low"
 category "Security"
 default_frequency "daily"
 info(
-  version: "2.3",
+  version: "2.6",
   provider: "Azure",
   service: "App Service",
   policy_set: ""
@@ -30,10 +30,10 @@ parameter "param_azure_endpoint" do
   default "management.azure.com"
 end
 
-parameter "param_subscription_whitelist" do
-  label "Subscription Whitelist"
+parameter "param_subscription_allowed_list" do
+  label "Subscription Allowed List"
   type "list"
-  description "Whitelisted Subscriptions, if empty, all subscriptions will be checked"
+  description "Allowed Subscriptions, if empty, all subscriptions will be checked"
 end
 
 parameter "param_min_tls_version" do
@@ -90,7 +90,7 @@ datasource "ds_subscriptions" do
 end
 
 datasource "ds_filtered_subscriptions" do
-  run_script $js_filtered_subscriptions, $ds_subscriptions, $param_subscription_whitelist
+  run_script $js_filtered_subscriptions, $ds_subscriptions, $param_subscription_allowed_list
 end
 
 #https://docs.microsoft.com/en-us/rest/api/appservice/webapps/list
@@ -103,6 +103,7 @@ datasource "ds_azure_web_app_list" do
     path join(["/subscriptions/", val(iter_item,"subscriptionId"), "/providers/Microsoft.Web/sites"])
     query "api-version","2019-08-01"
     header "User-Agent", "RS Policies"
+    # Ignore status 400, 403, and 404 which can be returned in certain (legacy) types of Azure Subscriptions
     ignore_status [400,403,404]
   end
   result do
@@ -130,6 +131,8 @@ datasource "ds_azure_web_app_config" do
     path join([val(iter_item, "id"),"/config/web"])
     query "api-version","2019-08-01"
     header "User-Agent", "RS Policies"
+    # Ignore status 400, 403, and 404 which can be returned in certain (legacy) types of Azure Subscriptions
+    ignore_status [400,403,404]
   end
   result do
     encoding "json"
@@ -154,13 +157,13 @@ end
 ###############################################################################
 
 script "js_filtered_subscriptions", type: "javascript" do
-  parameters "ds_subscriptions", "param_subscription_whitelist"
+  parameters "ds_subscriptions", "param_subscription_allowed_list"
   result "results"
   code <<-EOS
   var results = []
-  if ( param_subscription_whitelist.length != 0){
+  if ( param_subscription_allowed_list.length != 0){
     results = []
-    _.each(param_subscription_whitelist, function(sub){
+    _.each(param_subscription_allowed_list, function(sub){
       var found = _.find(ds_subscriptions, function(item){
         return item.subscriptionId == sub || item.subscriptionName.toLowerCase() == sub.toLowerCase();
       })

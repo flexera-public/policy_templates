@@ -1,13 +1,13 @@
 name "Google Schedule Instance"
 rs_pt_ver 20180301
 type "policy"
-short_description "This Policy Template allows you to schedule start and stop times for your instance, along with the option to terminate instance, update and delete schedule. See the [README](https://github.com/flexera/policy_templates/tree/master/cost/google/schedule_instance/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+short_description "This Policy Template allows you to schedule start and stop times for your instance, along with the option to terminate instance, update and delete schedule. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/google/schedule_instance/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 long_description ""
 category "Cost"
 severity "low"
 default_frequency "daily"
 info(
-  version: "2.3",
+  version: "2.4",
   provider: "GCE",
   service: "Compute",
   policy_set:"Schedule Instance"
@@ -213,18 +213,19 @@ escalation "esc_email" do
   description "Sends Incident Email"
   email $param_email
 end
+
 escalation "esc_schedule_instance" do
   automatic contains($param_automatic_action, "Schedule Instances")
   label "Schedule"
   description "Stop or Start the Instance"
-  run "schedule_instance", data
+  run "schedule_instance", data, rs_optima_host
 end
 
 escalation "esc_terminate_instance" do
   automatic false
   label "Terminate Instance"
   description "Terminate or delete the Instance"
-  run "terminate_instance", data
+  run "terminate_instance", data, rs_optima_host
 end
 
 escalation "esc_update_schedule" do
@@ -236,14 +237,14 @@ escalation "esc_update_schedule" do
     label "New Schedule"
     description "Provide Schedule Value"
   end
-  run "update_schedule", data, $param_schedule
+  run "update_schedule", data, $param_schedule, rs_optima_host
 end
 
 escalation "esc_delete_schedule" do
   automatic false
   label "Delete Schedule"
   description "Delete Schedule Tag"
-  run "delete_schedule", data
+  run "delete_schedule", data, rs_optima_host
 end
 ###############################################################################
 # Policy
@@ -287,7 +288,7 @@ end
 # Cloud Workflow
 ###############################################################################
 
-define schedule_instance($data) return $all_response do
+define schedule_instance($data, $$rs_optima_host) return $all_response do
   $all_response=[]
   foreach $item in $data do
     $rule = split($item['schedule'],'_')[1]
@@ -422,7 +423,7 @@ define schedule_instance($data) return $all_response do
   end
 end
 
-define terminate_instance($data) return $all_response do
+define terminate_instance($data, $$rs_optima_host) return $all_response do
   $all_response=[]
   foreach $item in $data do
     call sys_log('> ' + $item['id'] + ': Terminating ...', to_s($item))
@@ -440,7 +441,7 @@ define terminate_instance($data) return $all_response do
   end
 end
 
-define delete_schedule($data) return $all_response do
+define delete_schedule($data, $$rs_optima_host) return $all_response do
   $all_response=[]
   foreach $item in $data do
     call get_labelfingerprint($item) retrieve $labelFingerprint, $labels_obj
@@ -471,7 +472,7 @@ define delete_schedule($data) return $all_response do
   end
 end
 
-define update_schedule($data, $param) return $all_response do
+define update_schedule($data, $param, $$rs_optima_host) return $all_response do
   $all_response=[]
   foreach $item in $data do
     $rule = split($param,'_')[1]
@@ -625,12 +626,35 @@ define handle_error($response) do
 end
 
 define sys_log($subject, $detail) do
-  rs_cm.audit_entries.create(
-    notify: "None",
-    audit_entry: {
-      auditee_href: @@account,
-      summary: $subject,
-      detail: $detail
-    }
-  )
+  # Create empty errors array if doesn't already exist
+  if !$$errors
+    $$errors = []
+  end
+  # Check if debug is enabled
+  if $$debug
+    # Append to global $$errors
+    # This is the suggested way to capture errors
+    $$errors << "Unexpected error for " + $subject + "\n  " + to_s($detail)
+    # If Flexera NAM Zone, create audit_entries [to be deprecated]
+    # This is the legacy method for capturing errors and only supported on Flexera NAM
+    if $$rs_optima_host == "api.optima.flexeraeng.com"
+      # skip_error_and_append is used to catch error if rs_cm.audit_entries.create fails unexpectedly
+      $task_label = "Creating audit entry for " + $subject
+      sub task_label: $task, on_error: skip_error_and_append($task) do
+        rs_cm.audit_entries.create(
+          notify: "None",
+          audit_entry: {
+            auditee_href: @@account,
+            summary: $subject,
+            detail: $detail
+          }
+        )
+      end # End sub on_error
+    end # End if rs_optima_host
+  end # End if debug is enabled
+end
+
+define skip_error_and_append($subject) do
+  $$errors << "Unexpected error for " + $subject + "\n  " + to_s($_error)
+  $_error_behavior = "skip"
 end

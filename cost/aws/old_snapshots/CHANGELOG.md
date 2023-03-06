@@ -1,5 +1,32 @@
 # Changelog
 
+## v4.2
+
+- Raised API limit to handle situations where more than 10,000 line items need to be retrieved.
+
+## v4.1
+
+- Added logic required for "Meta Policy" use-cases
+
+## v4.0
+
+- Deprecated `auth_rs` authentication (type: `rightscale`) and replaced with `auth_flexera` (type: `oauth2`).  This is a breaking change which requires a Credential for `auth_flexera` [`provider=flexera`] before the policy can be applied.  Please see docs for setting up [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm)
+- Modified `sys_log` definition to disable `rs_cm.audit_entry.create` outside Flexera NAM
+- Replaced references `github.com/rightscale/policy_templates` and `github.com/flexera/policy_templates` with `github.com/flexera-public/policy_templates`
+
+## v3.6
+
+- Added accountName field
+
+## v3.5
+
+- Added filter for DescribeRegion to only return regions that are `opted-in` or `opt-in-not-required` [exclude `not-opted-in`] in the current AWS account.
+
+## v3.4
+
+- Modified Image (AMI) datasource collection to improve policy efficiency
+- Modified "Delete Snapshots" Escalation Action to improve execution efficiency
+
 ## v3.3
 
 - updated savings_currency to savingsCurrency

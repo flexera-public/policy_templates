@@ -1,0 +1,202 @@
+name "Azure Network Security Groups With Inbound SSH Open"
+rs_pt_ver 20180301
+type "policy"
+short_description "Reports when an Azure Network Security Group has ssh (port 22) open to the internet. \n See the [README](https://github.com/flexera-public/policy_templates/tree/master/security/azure/restrict_ssh_internet) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+long_description ""
+severity "high"
+category "Security"
+default_frequency "hourly"
+info(
+  version: "2.3",
+  provider: "Azure",
+  service: "Network Security Group",
+  policy_set: "CIS",
+  cce_id: "",
+  benchmark_control: "6.2",
+  benchmark_version: "1.4.0",
+  cis_controls: "[\"4.4v8\", \"4.5v8\", \"9.2v7\]",
+  nist: "SC-8"
+)
+
+###############################################################################
+# Parameters
+###############################################################################
+
+parameter "param_email" do
+  type "list"
+  label "Email addresses of the recipients you wish to notify"
+end
+
+parameter "param_azure_endpoint" do
+  type "string"
+  label "Azure Endpoint"
+  allowed_values "management.azure.com", "management.chinacloudapi.cn"
+  default "management.azure.com"
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+credentials "azure_auth" do
+  schemes "oauth2"
+  label "Azure"
+  description "Select the Azure Resource Manager Credential from the list."
+  tags "provider=azure_rm"
+end
+
+###############################################################################
+# Pagination
+###############################################################################
+
+pagination "azure_pagination" do
+  get_page_marker do
+    body_path "nextLink"
+  end
+  set_page_marker do
+    uri true
+  end
+end
+
+###############################################################################
+# Datasources
+###############################################################################
+
+datasource "ds_subscriptions" do
+  request do
+    auth $azure_auth
+    pagination $azure_pagination
+    host $param_azure_endpoint
+    path "/subscriptions/"
+    query "api-version","2019-06-01"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "value[*]") do
+      field "subscriptionId", jmes_path(col_item,"subscriptionId")
+      field "displayName", jmes_path(col_item,"displayName")
+      field "state", jmes_path(col_item,"state")
+    end
+  end
+end
+
+datasource "ds_azure_resources" do
+  iterate $ds_subscriptions
+  request do
+    auth $azure_auth
+    pagination $azure_pagination
+    host $param_azure_endpoint
+    path join(["/subscriptions/", val(iter_item,"subscriptionId"),"/providers/Microsoft.Network/networkSecurityGroups"])
+    query "api-version","2021-05-01"
+    header "User-Agent", "RS Policies"
+    # Ignore status 400, 403, and 404 which can be returned in certain (legacy) types of Azure Subscriptions
+    ignore_status [400,403,404]
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "value[*]") do
+      field "name", jmes_path(col_item,"name")
+      field "id", jmes_path(col_item,"id")
+      field "type", jmes_path(col_item,"type")
+      field "region", jmes_path(col_item,"location")
+      field "securityRules", jmes_path(col_item, "properties.securityRules")
+      field "provisioningState", jmes_path(col_item,"properties.provisioningState")
+      field "description", jmes_path(col_item,"properties.description")
+      field "protocol", jmes_path(col_item,"properties.protocol")
+      field "destinationPortRange", jmes_path(col_item,"properties.destinationPortRange")
+      field "access", jmes_path(col_item,"properties.access")
+      field "direction", jmes_path(col_item,"propteries.direction")
+      field "sourceAddressPrefix", jmes_path(col_item,"properties.sourceAddressPrefix")
+    end
+  end
+end
+
+datasource "ds_filter_azure_resources" do
+  run_script $js_filter_azure_resources, $ds_azure_resources
+end
+
+###############################################################################
+# Scripts
+###############################################################################
+
+script "js_filter_azure_resources", type: "javascript" do
+  result "res"
+  parameters "ds_azure_resources"
+  code <<-EOS
+  var res = [];
+  _.each(ds_azure_resources, function (ds_azure_resource) {
+    bad_resource = false;
+    _.each(ds_azure_resource.securityRules, function (security_rule) {
+      if (security_rule.properties.access === "Allow") {
+        if (security_rule.properties.direction === 'Inbound') {
+          if (security_rule.properties.protocol === 'TCP') {
+            var bad_port = false;
+            var destinationPortRange = [];
+            if (security_rule.properties.destinationPortRange){
+              destinationPortRange = security_rule.properties.destinationPortRange.split('-');
+            }
+            if (destinationPortRange.length != 0 && destinationPortRange[1] != undefined) {
+              if (destinationPortRange[0] <= 22 && destinationPortRange[1] >= 22) {
+                bad_port = true;
+                console.log(destinationPortRange[0]);
+              }
+            } else {
+              if (destinationPortRange[0] == '22' || destinationPortRange[0] == '*') {
+                bad_port = true;
+              }
+            }
+            if (bad_port == true) {
+              if (_.contains(["*", "0.0.0.0", "<nw>/0", "/0", "internet", "Any"], security_rule.properties.sourceAddressPrefix)) {
+                bad_resource = true;
+              }
+            }
+          }
+        }
+      }
+    });
+    if (bad_resource) {
+      res.push(ds_azure_resource);
+    }
+
+  });
+  EOS
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "policy_azure_resource" do
+  validate $ds_filter_azure_resources do
+    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): Azure Network Security Group(s) Found With SSH Ports Exposed."
+    escalate $escalate_email
+    check eq(size(data),0)
+    export do
+      resource_level true
+      field "id" do
+        label "Azure Resource Id"
+      end
+      field "name" do
+        label "Network Security Group Name"
+      end
+      field "region" do
+        label "Region"
+      end
+      field "provisioningState" do
+        label "Provisioning State"
+      end
+    end
+  end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "escalate_email" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
+end

@@ -1,8 +1,18 @@
 # Azure Sync Tags with Optima
 
-## What it does
-
 This Policy identifies all Azure tag keys that are not being used as custom dimensions in Flexera Optima.
+
+## Prerequisites
+
+This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for authenticating to datasources -- in order to apply this policy you must have a Credential registered in the system that is compatible with this policy. If there are no Credentials listed when you apply the policy, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy. The information below should be consulted when creating the credential(s).
+
+- [**Azure Resource Manager Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_109256743_1124668) (*provider=azure_rm*) which has the following permissions:
+  - `Reader`
+
+- [**Flexera Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) (*provider=flexera*) which has the following roles:
+  - `enterprise_manager`
+
+The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) page in the docs has detailed instructions for setting up Credentials for the most common providers.
 
 ## Input Parameters
 
@@ -10,7 +20,7 @@ This policy has the following input parameters required when launching the polic
 
 - *Email addresses* - A list of email addresses to notify
 - *Azure Endpoint* - Azure Endpoint to access resources
-- *Subscription Whitelist* - Whitelisted Subscriptions, if empty, all subscriptions will be checked
+- *Subscription Allowed List* - Allowed Subscriptions, if empty, all subscriptions will be checked
 - *Exclusion Tag Keys* - list of tag keys that should be excluded from incidents.
 - *Minimum Number of Resources* - The minimum number of resources using a specific tag key which should trigger an incident.
 - *Automatic Actions* - When this value is set, this policy will automatically take the selected action(s).
@@ -24,26 +34,6 @@ The following policy actions are taken on any resources found to be out of compl
 
 - Send an email report
 - Add tags as custom dimensions to Flexera Optima, after an approval
-
-## Prerequisites
-
-This policy uses [credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for connecting to the cloud -- in order to apply this policy you must have a credential registered in the system that is compatible with this policy. If there are no credentials listed when you apply the policy, please contact your cloud admin and ask them to register a credential that is compatible with this policy. The information below should be consulted when creating the credential.
-
-### Credential configuration
-
-For administrators [creating and managing credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) to use with this policy, the following information is needed:
-
-Provider tag value to match this policy: `azure_rm`
-
-Required permissions in the provider:
-
-- `Reader`
-
-### Optima Permissions
-
-This policy inherits the Flexera Optima permissions of the user that applied the policy.  Users must have the following role(s):
-
-- `enterprise_manager`
 
 ## Supported Clouds
 
