@@ -1,12 +1,16 @@
-## Inefficient Instance Utilization using RightLink
+# Inefficient Instance Utilization using RightLink
 
-### What it does
+## Deprecated
+
+This policy is no longer being updated.
+
+## What it does
 
 This policy checks Flexera CMP for inefficient instance utilization using
 provided CPU and Memory thresholds and RightLink 10 monitoring metrics.  Instances
 matching the criteria can be resized after user approval.
 
-### Functional Details
+## Functional Details
 
 The policy leverages the CMP monitoring metics API to identify inefficient instances using the provided CPU and Memory thresholds.  If the instance can be rightsized the incident escalation will automatically change the instance size after the users approval.
 
@@ -16,9 +20,9 @@ Inefficient Instance Utilization using RightLink is used to actually resize inst
 
 **_This policy requires [RightLink 10](http://docs.rightscale.com/rl10/getting_started.html) with monitoring enabled and collecting metrics_**, see [Installation](http://docs.rightscale.com/rl10/about.html)
 
-### Input Parameters
+## Input Parameters
 
-#### Inefficient Instance Utilization using RightLink
+### Inefficient Instance Utilization using RightLink Policy
 
 - Average free memory percent to allow for downsize - Value: 0-100, -1 disables this metric
 - Maximum free memory percent to allow for downsize - Value: 0-100, -1 disables this metric
@@ -34,20 +38,19 @@ The following policy actions are taken on any resources found to be out of compl
 - Downsize instances after approval
 - Send an email report
 
-#### Inefficient Instance Utilization using RightLink Add Tags
+#### Inefficient Instance Utilization using RightLink Add Tags Policy
 
 - Instance tags used to filter instances that must validate policy. Example: rs_monitoring:resize=1
 - Email address to send escalation emails to - Example: noreply@example.com
 
-#### Policy Actions
+#### Policy Actions for RightLink Add Tags
 
 The following policy actions are taken on any resources found to be out of compliance.
 
 - Add or remove tags for rightsizing
 - Send an email report
 
-
-### Required Permissions
+#### Required Permissions
 
 This policy requires permissions to access RightScale resources (clouds, instances and tags).  Before applying this policy add the following roles to the user applying the policy.  The roles should be applied to all Accounts where the policy will run or the Organization. For more information on modifying roles visit the [Governance Docs](https://docs.rightscale.com/cm/ref/user_roles.html)
 

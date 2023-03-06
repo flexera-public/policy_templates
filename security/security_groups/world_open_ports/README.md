@@ -1,5 +1,9 @@
 # Security Group Rules with public ports
 
+## Deprecated
+
+This policy is no longer being updated.
+
 ## What it does
 
 This Policy Template reviews your security group and alerts if any security group rules are open to the public.  Deletion of the Security Group Rules only occur after approval.

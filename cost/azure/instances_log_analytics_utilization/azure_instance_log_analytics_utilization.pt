@@ -1,13 +1,13 @@
 name "Azure Inefficient Instance Utilization using Log Analytics"
 rs_pt_ver 20180301
 type "policy"
-short_description "This checks inefficient instance utilization using provided CPU and Memory thresholds. Instances matching the criteria can be resized after user approval. See the [README](https://github.com/flexera/policy_templates/tree/master/cost/azure/instances_log_analytics_utilization) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+short_description "This checks inefficient instance utilization using provided CPU and Memory thresholds. Instances matching the criteria can be resized after user approval. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/instances_log_analytics_utilization) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 long_description ""
 severity "low"
 category "Cost"
 default_frequency "daily"
 info(
-  version: "2.14",
+  version: "2.18",
   provider: "Azure",
   service: "Compute",
   policy_set: "Inefficient Instance Usage"
@@ -35,10 +35,18 @@ parameter "param_avg_cpu" do
   max_value 100
 end
 
-parameter "param_subscription_whitelist" do
-  label "Subscription Whitelist"
+parameter "param_subscription_allowed_list" do
+  label "Subscription Allowed List"
   type "list"
-  description "Whitelisted Subscriptions, if empty, all subscriptions will be checked"
+  description "Allowed Subscriptions, if empty, all subscriptions will be checked"
+end
+
+parameter "param_timespan" do
+  type "string"
+  label "Timespan"
+  description "The timespan over which to query the data"
+  allowed_values "30 Days", "60 Days", "90 Days"
+  default "30 Days"
 end
 
 parameter "param_exclusion_tag_key" do
@@ -107,7 +115,12 @@ end
 # Datasources
 ###############################################################################
 
-#get all subscription details.
+#GET TIMESPAN MAPPING
+datasource "ds_timespan_mapping" do
+  run_script $js_get_timespan_mapping, $param_timespan
+end
+
+#GET ALL SUBSCRIPTION DETAILS
 datasource "ds_subscriptions" do
   request do
     auth $azure_auth
@@ -127,10 +140,12 @@ datasource "ds_subscriptions" do
   end
 end
 
+#FILTER SUBSCRIPTION BASED ON ALLOWED LIST PARAMETER
 datasource "ds_filtered_subscriptions" do
-  run_script $js_filtered_subscriptions, $ds_subscriptions, $param_subscription_whitelist
+  run_script $js_filtered_subscriptions, $ds_subscriptions, $param_subscription_allowed_list
 end
 
+#GET AZURE SKUS FOR EACH SUBSCRIPTION
 datasource "ds_azure_skus" do
   iterate $ds_filtered_subscriptions
     request do
@@ -140,6 +155,8 @@ datasource "ds_azure_skus" do
       path join(["/subscriptions/", val(iter_item,"subscriptionId"), "/providers/Microsoft.Compute/skus"])
       query "api-version","2017-09-01"
       header "User-Agent", "RS Policies"
+      # Ignore status 400, 403, and 404 which can be returned in certain (legacy) types of Azure Subscriptions
+      ignore_status [400,403,404]
     end
     result do
       encoding "json"
@@ -153,10 +170,12 @@ datasource "ds_azure_skus" do
     end
 end
 
+#GET VM SIZES FROM SKU DATA
 datasource "ds_azure_vm_sizes" do
   run_script $js_azure_vm_sizes, $ds_azure_skus
 end
 
+#GET AZURE INSTANCES FOR EACH SUBSCRIPTION
 datasource "ds_azure_instances" do
   iterate $ds_filtered_subscriptions
     request do
@@ -166,6 +185,8 @@ datasource "ds_azure_instances" do
       path join(["/subscriptions/", val(iter_item,"subscriptionId"), "/providers/Microsoft.Compute/virtualMachines"])
       query "api-version","2018-10-01"
       header "User-Agent", "RS Policies"
+      # Ignore status 400, 403, and 404 which can be returned in certain (legacy) types of Azure Subscriptions
+      ignore_status [400,403,404]
   end
   result do
     encoding "json"
@@ -177,6 +198,7 @@ datasource "ds_azure_instances" do
   end
 end
 
+#GET VIEW OF EACH AZURE INSTANCE
 datasource "ds_azure_instances_view" do
   iterate $ds_azure_instances
   request do
@@ -184,9 +206,10 @@ datasource "ds_azure_instances_view" do
     pagination $azure_pagination
     host "management.azure.com"
     path val(iter_item, "id")
-    ignore_status [404]
     query "api-version","2018-10-01"
     header "User-Agent", "RS Policies"
+    # Ignore status 400, 403, and 404 which can be returned in certain (legacy) types of Azure Subscriptions
+    ignore_status [400,403,404]
   end
   result do
     encoding "json"
@@ -207,6 +230,7 @@ datasource "ds_oms_resources" do
   run_script $js_oms_resources, $ds_azure_instances_view, $param_exclusion_tag_key
 end
 
+#GET AZURE INSTANCE UTILIZATION DATA FROM LOG ANALYTICS
 datasource "ds_la_instances_utilization" do
   iterate $ds_oms_resources
   request do
@@ -214,7 +238,7 @@ datasource "ds_la_instances_utilization" do
     verb "POST"
     host "api.loganalytics.io"
     path join(["/v1/workspaces/", val(iter_item,"workspaceId"), "/query"])
-    query "timespan","P30D"
+    query "timespan",val($ds_timespan_mapping,"timespan")
     header "User-Agent", "RS Policies"
     ignore_status [403, 404]
     body_field "query", join(['Perf | where _ResourceId == tolower("',val(iter_item,"id"),'") | where CounterName == "% Processor Time" or CounterName == "Available MBytes Memory" or CounterName == "% Committed Bytes In Use" | summarize ["avg"] = avg(CounterValue), ["max"] = max(CounterValue), ["min"] = min(CounterValue) by _ResourceId,CounterName'])
@@ -235,7 +259,7 @@ datasource "ds_la_instances_utilization" do
   end
 end
 
-# get Azure instance size map
+#GET AZURE INSTANCE SIZE MAP
 datasource "ds_azure_instance_size_map" do
   request do
     verb "GET"
@@ -257,14 +281,29 @@ end
 # Scripts
 ###############################################################################
 
+#GET TIMESPAN MAPPING
+script "js_get_timespan_mapping", type: "javascript" do
+  parameters "param_timespan"
+  result "timespan"
+  code <<-EOS
+  timespan_mapping = {
+    "30 Days": "P30D",
+    "60 Days": "P60D",
+    "90 Days": "P90D"
+  }
+  timespan = { "timespan": _.values( _.pick(timespan_mapping, param_timespan) )[0] }
+  EOS
+end
+
+
 script "js_filtered_subscriptions", type: "javascript" do
-  parameters "ds_subscriptions", "param_subscription_whitelist"
+  parameters "ds_subscriptions", "param_subscription_allowed_list"
   result "results"
   code <<-EOS
   var results = []
-  if ( param_subscription_whitelist.length != 0){
+  if ( param_subscription_allowed_list.length != 0){
     results = []
-    _.each(param_subscription_whitelist, function(sub){
+    _.each(param_subscription_allowed_list, function(sub){
       var found = _.find(ds_subscriptions, function(item){
         return item.subscriptionId == sub || item.displayName.toLowerCase() == sub.toLowerCase();
       })
@@ -556,14 +595,14 @@ escalation "esc_downsize_instances" do
   automatic contains($param_automatic_action, "Downsize Instances")
   label "Downsize Instances"
   description "Approval to downsize all selected instances"
-  run "downsize_instances", data, $param_log_to_cm_audit_entries
+  run "downsize_instances", data, $param_log_to_cm_audit_entries, rs_optima_host
 end
 
 ###############################################################################
 # Cloud Workflow
 ###############################################################################
 
-define downsize_instances($data,$param_log_to_cm_audit_entries) return $all_responses do
+define downsize_instances($data,$param_log_to_cm_audit_entries, $$rs_optima_host) return $all_responses do
   $response={}
   $$debug = $param_log_to_cm_audit_entries == "Yes"
   $syslog_subject = "Azure Instance Utilization with Log Analytics Policy: "
@@ -596,16 +635,36 @@ define downsize_instances($data,$param_log_to_cm_audit_entries) return $all_resp
   end
 end
 
-
 define sys_log($subject, $detail) do
-  if $$debug
-    rs_cm.audit_entries.create(
-      notify: "None",
-      audit_entry: {
-        auditee_href: @@account,
-        summary: $subject,
-        detail: $detail
-      }
-  )
+  # Create empty errors array if doesn't already exist
+  if !$$errors
+    $$errors = []
   end
+  # Check if debug is enabled
+  if $$debug
+    # Append to global $$errors
+    # This is the suggested way to capture errors
+    $$errors << "Unexpected error for " + $subject + "\n  " + to_s($detail)
+    # If Flexera NAM Zone, create audit_entries [to be deprecated]
+    # This is the legacy method for capturing errors and only supported on Flexera NAM
+    if $$rs_optima_host == "api.optima.flexeraeng.com"
+      # skip_error_and_append is used to catch error if rs_cm.audit_entries.create fails unexpectedly
+      $task_label = "Creating audit entry for " + $subject
+      sub task_label: $task, on_error: skip_error_and_append($task) do
+        rs_cm.audit_entries.create(
+          notify: "None",
+          audit_entry: {
+            auditee_href: @@account,
+            summary: $subject,
+            detail: $detail
+          }
+        )
+      end # End sub on_error
+    end # End if rs_optima_host
+  end # End if debug is enabled
+end
+
+define skip_error_and_append($subject) do
+  $$errors << "Unexpected error for " + $subject + "\n  " + to_s($_error)
+  $_error_behavior = "skip"
 end

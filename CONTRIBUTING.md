@@ -12,10 +12,10 @@ All releases are tagged in git. To see the releases available to you see the cha
 
 ## Pull requests
 
-- <https://github.com/rightscale/policy_templates/pulls>
+- <https://github.com/flexera-public/policy_templates/pulls>
 
 ## Issues
 
 Need to report an issue? Use the github issues:
 
-- <https://github.com/rightscale/policy_templates/issues>
+- <https://github.com/flexera-public/policy_templates/issues>

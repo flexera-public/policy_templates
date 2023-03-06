@@ -1,5 +1,9 @@
 # AWS Cloud Credentials Rotation
 
+## Deprecated
+
+This policy is no longer being updated.
+
 ## What it does
 
 This Policy Template is used to automatically update the AWS IAM keys used to connect the RightScale account to the applicable AWS account.

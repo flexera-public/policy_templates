@@ -1,5 +1,9 @@
 # Superseded Instance Types Remediation Policy
 
+## Deprecated
+
+This policy is no longer being updated.
+
 ## What it does
 
 This Policy Template is used to automatically resize instances based on user-defined standards.  For example, the Policy uses a Disallowed Instance Type and its corresponding Superseded Instance Type.  If any Instances are found using the Disallowed type, they will be included in the corresponing Policy Incident.  Upon approval, Cloud Workflow will resize the Instance to the Superseded type.

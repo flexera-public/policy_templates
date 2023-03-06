@@ -15,7 +15,8 @@ This policy has the following input parameters required when launching the polic
 - *Exclusion Tag Key* - Cloud native tag key to ignore instances. Example: exclude_utilization
 - *Email addresses* - Email addresses of the recipients you wish to notify
 - *Azure Endpoint* - Azure Endpoint to access resources
-- *Subscription Whitelist* - Whitelisted Subscriptions, if empty, all subscriptions will be checked
+- *Subscription Allowed List* - Allowed Subscriptions, if empty, all subscriptions will be checked
+- *Azure API Wait Time* - Amount of time to wait between Azure API requests to avoid throttling (seconds)
 
 ## Actions
 

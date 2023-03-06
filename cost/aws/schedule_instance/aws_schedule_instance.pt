@@ -1,13 +1,13 @@
 name "AWS Schedule Instance"
 rs_pt_ver 20180301
 type "policy"
-short_description "This Policy Template allows you to schedule start and stop times for your instance, along with the option to terminate instance, update and delete schedule. See the [README](https://github.com/flexera/policy_templates/tree/master/cost/aws/schedule_instance/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+short_description "This Policy Template allows you to schedule start and stop times for your instance, along with the option to terminate instance, update and delete schedule. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/schedule_instance/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 long_description ""
 category "Cost"
 severity "low"
 default_frequency "daily"
 info(
-  version: "2.10",
+  version: "2.12",
   provider: "AWS",
   service: "EC2",
   policy_set:"Schedule Instance"
@@ -97,8 +97,9 @@ datasource "ds_get_caller_identity" do
   end
 end
 
-#Get list of enabled regions for an account
+# ds_region_list is a list of regions that are opted-in or opt-in-not-required
 datasource "ds_regions_list" do
+  # https://docs.aws.amazon.com/AWSEC2/latest/APIReference/API_DescribeRegions.html
   request do
     auth $auth_aws
     verb "GET"
@@ -106,6 +107,9 @@ datasource "ds_regions_list" do
     path "/"
     query "Action", "DescribeRegions"
     query "Version", "2016-11-15"
+    query "Filter.1.Name", "opt-in-status"
+    query "Filter.1.Value.1", "opt-in-not-required"
+    query "Filter.1.Value.2", "opted-in"
   end
   result do
     encoding "xml"
@@ -275,14 +279,14 @@ escalation "esc_schedule_instance" do
   automatic contains($param_automatic_action, "Schedule Instances")
   label "Schedule"
   description "Stop or Start the Instance"
-  run "schedule_instance", data
+  run "schedule_instance", data, rs_optima_host
 end
 
 escalation "esc_terminate_instance" do
   automatic false
   label "Terminate Instance"
   description "Terminate or delete the Instance"
-  run "terminate_instance", data
+  run "terminate_instance", data, rs_optima_host
 end
 
 escalation "esc_update_schedule" do
@@ -294,14 +298,14 @@ escalation "esc_update_schedule" do
     label "New Schedule"
     description "Provide Schedule Value"
   end
-  run "update_schedule", data, $param_schedule
+  run "update_schedule", data, $param_schedule, rs_optima_host
 end
 
 escalation "esc_delete_schedule" do
   automatic false
   label "Delete Schedule"
   description "Delete Schedule Tag"
-  run "delete_schedule", data
+  run "delete_schedule", data, rs_optima_host
 end
 
 ###############################################################################
@@ -346,7 +350,7 @@ end
 # Cloud Workflow
 ###############################################################################
 
-define schedule_instance($data) return $all_response do
+define schedule_instance($data, $$rs_optima_host) return $all_response do
   foreach $item in $data do
     $rule = split($item['schedule'],';')[1]
     $time_range = split($item['schedule'],';')[0]
@@ -447,7 +451,7 @@ define schedule_instance($data) return $all_response do
   end
 end
 
-define terminate_instance($data) return $all_response do
+define terminate_instance($data, $$rs_optima_host) return $all_response do
   foreach $item in $data do
     call sys_log('> ' + $item['id'] + ': Terminating ...', to_s($item))
     sub on_error: skip do
@@ -468,7 +472,7 @@ define terminate_instance($data) return $all_response do
   end
 end
 
-define delete_schedule($data) return $all_response do
+define delete_schedule($data, $$rs_optima_host) return $all_response do
   foreach $item in $data do
     call sys_log('> ' + $item['id'] + ': Deleting schedule Tag ...', to_s($item))
     sub on_error: skip do
@@ -492,7 +496,7 @@ define delete_schedule($data) return $all_response do
   end
 end
 
-define update_schedule($data, $param) return $all_response do
+define update_schedule($data, $param, $$rs_optima_host) return $all_response do
   foreach $item in $data do
     $rule = split($param,';')[1]
     $time_range = split($param,';')[0]
@@ -571,12 +575,35 @@ define window_active($start_hour, $start_minute, $start_rule, $stop_hour, $stop_
 end
 
 define sys_log($subject, $detail) do
-  rs_cm.audit_entries.create(
-    notify: "None",
-    audit_entry: {
-      auditee_href: @@account,
-      summary: $subject,
-      detail: $detail
-    }
-  )
+  # Create empty errors array if doesn't already exist
+  if !$$errors
+    $$errors = []
+  end
+  # Check if debug is enabled
+  if $$debug
+    # Append to global $$errors
+    # This is the suggested way to capture errors
+    $$errors << "Unexpected error for " + $subject + "\n  " + to_s($detail)
+    # If Flexera NAM Zone, create audit_entries [to be deprecated]
+    # This is the legacy method for capturing errors and only supported on Flexera NAM
+    if $$rs_optima_host == "api.optima.flexeraeng.com"
+      # skip_error_and_append is used to catch error if rs_cm.audit_entries.create fails unexpectedly
+      $task_label = "Creating audit entry for " + $subject
+      sub task_label: $task, on_error: skip_error_and_append($task) do
+        rs_cm.audit_entries.create(
+          notify: "None",
+          audit_entry: {
+            auditee_href: @@account,
+            summary: $subject,
+            detail: $detail
+          }
+        )
+      end # End sub on_error
+    end # End if rs_optima_host
+  end # End if debug is enabled
+end
+
+define skip_error_and_append($subject) do
+  $$errors << "Unexpected error for " + $subject + "\n  " + to_s($_error)
+  $_error_behavior = "skip"
 end

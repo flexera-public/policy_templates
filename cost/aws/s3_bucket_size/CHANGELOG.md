@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.9
+
+- Replaced references `github.com/rightscale/policy_templates` and `github.com/flexera/policy_templates` with `github.com/flexera-public/policy_templates`
+
 ## v2.8
 
 - Added default to aws_account_number parameter to enable existing API users.
