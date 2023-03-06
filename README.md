@@ -279,6 +279,7 @@ Reference
 
 ###### CIS Policies
 
+- [Azure Ensure Correct PostgreSQL Servers Log Settings](./security/azure/pg_log_settings/)
 - [Azure Ensure MySQL Flexible Servers Use Secure TLS](./security/azure/mysql_tls_version/)
 - [Azure Ensure MySQL Servers Enforce SSL Connections](./security/azure/mysql_ssl/)
 - [Azure Ensure PostgreSQL Servers Infrastructure Encryption](./security/azure/pg_infra_encryption/)
