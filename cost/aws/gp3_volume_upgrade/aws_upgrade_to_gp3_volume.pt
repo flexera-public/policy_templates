@@ -1,12 +1,12 @@
 name "AWS GP3 Upgradeable Volumes"
 rs_pt_ver 20180301
 type "policy"
-short_description "Checks for upgradeable volumes and report them for modification. See the [README](https://github.com/flexera/policy_templates/tree/master/cost/aws/gp3_volume_upgrade) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+short_description "Checks for upgradeable volumes and report them for modification. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/gp3_volume_upgrade) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 category "Cost"
 severity "low"
 default_frequency "daily"
 info(
-  version: "2.5",
+  version: "3.1",
   provider: "AWS",
   service: "EBS",
   policy_set: "GP3 Volumes"
@@ -81,7 +81,12 @@ credentials "auth_aws" do
   aws_account_number $param_aws_account_number
 end
 
-auth "auth_rs", type: "rightscale"
+credentials "auth_flexera" do
+  schemes "oauth2"
+  label "flexera"
+  description "Select Flexera One OAuth2 credentials"
+  tags "provider=flexera"
+end
 
 ###############################################################################
 # Pagination
@@ -109,8 +114,9 @@ end
 # Datasource
 ###############################################################################
 
-# Get list of enabled regions for an account
+# ds_region_list is a list of regions that are opted-in or opt-in-not-required
 datasource "ds_regions_list" do
+  # https://docs.aws.amazon.com/AWSEC2/latest/APIReference/API_DescribeRegions.html
   request do
     auth $auth_aws
     verb "GET"
@@ -118,6 +124,9 @@ datasource "ds_regions_list" do
     path "/"
     query "Action", "DescribeRegions"
     query "Version", "2016-11-15"
+    query "Filter.1.Name", "opt-in-status"
+    query "Filter.1.Value.1", "opt-in-not-required"
+    query "Filter.1.Value.2", "opted-in"
   end
   result do
     encoding "xml"
@@ -211,7 +220,7 @@ end
 
 datasource "ds_billing_centers" do
   request do
-    auth $auth_rs
+    auth $auth_flexera
     host rs_optima_host
     path join(["/analytics/orgs/", val($ds_flexera_optima, "org_id"), "/billing_centers"])
     header "Api-Version", "1.0"
@@ -393,7 +402,7 @@ script "js_get_costs", type: "javascript" do
     var end_date = getFormattedDailyDate(new Date(new Date().setDate(new Date().getDate() - 3)));
 
     var request = {
-      auth: "auth_rs",
+      auth: "auth_flexera",
       host: optima_host,
       verb: "POST",
       path: "/bill-analysis/orgs/" + org + "/costs/select",
@@ -404,7 +413,7 @@ script "js_get_costs", type: "javascript" do
         "end_at": end_date,
         "metrics": ["cost_nonamortized_unblended_adj"],
         "billing_center_ids": _.compact(_.map(billing_centers, function(value){ return value.id})),
-        "limit": 10000,
+        "limit": 100000,
         "filter": {
           "expressions": [
             {

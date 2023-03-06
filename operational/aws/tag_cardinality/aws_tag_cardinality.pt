@@ -1,0 +1,273 @@
+name "AWS Tag Cardinality Report"
+rs_pt_ver 20180301
+type "policy"
+short_description "Generates a tag cardinality report for AWS Accounts and Resources. See the [README](https://github.com/flexera-public/policy_templates/tree/master/operational/aws/tag_cardinality) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+long_description ""
+severity "low"
+category "Operational"
+default_frequency "weekly"
+info(
+  version: "2.0",
+  provider: "AWS",
+  service: "Tags",
+  policy_set: "Tag Cardinality"
+)
+
+###############################################################################
+# Parameters
+###############################################################################
+
+parameter "param_email" do
+  type "list"
+  label "Email addresses to notify"
+  description "Email addresses of the recipients you wish to notify"
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+credentials "auth_aws" do
+  schemes "aws","aws_sts"
+  label "AWS"
+  description "Select the AWS credential."
+  tags "provider=aws"
+end
+
+###############################################################################
+# Pagination
+###############################################################################
+
+pagination "aws_pagination" do
+  get_page_marker do
+    body_path jmes_path(response, "NextToken")
+  end
+  set_page_marker do
+    body_field "NextToken"
+  end
+end
+
+###############################################################################
+# Datasources
+###############################################################################
+
+datasource "ds_aws_accounts_without_tags" do
+  request do
+    auth $auth_aws
+    pagination $aws_pagination
+    host "organizations.us-east-1.amazonaws.com"
+    path '/'
+    verb "POST"
+    header "User-Agent", "RS Policies"
+    header "X-Amz-Target", "AWSOrganizationsV20161128.ListAccounts"
+    header "Content-Type", "application/x-amz-json-1.1"
+    body "{}"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "Accounts") do
+      field "org_arn", jmes_path(col_item, "Arn")
+      field "account_id", jmes_path(col_item, "Id")
+      field "account_name", jmes_path(col_item, "Name")
+      field "account_status", jmes_path(col_item, "Status")
+    end
+  end
+end
+
+datasource "ds_aws_accounts" do
+  iterate $ds_aws_accounts_without_tags
+  request do
+    auth $auth_aws
+    pagination $aws_pagination
+    host "organizations.us-east-1.amazonaws.com"
+    path '/'
+    verb "POST"
+    header "User-Agent", "RS Policies"
+    header "X-Amz-Target", "AWSOrganizationsV20161128.ListTagsForResource"
+    header "Content-Type", "application/x-amz-json-1.1"
+    body_field "ResourceId", val(iter_item, "account_id")
+  end
+  result do
+    encoding "json"
+    field "org_arn", val(iter_item, "org_arn")
+    field "account_id", val(iter_item, "account_id")
+    field "account_name", val(iter_item, "account_name")
+    field "account_status", val(iter_item, "account_status")
+    field "tags_unsorted", jmes_path(response, "Tags")
+  end
+end
+
+datasource "ds_regions" do
+  request do
+    auth $auth_aws
+    verb "GET"
+    host "ec2.amazonaws.com"
+    path "/"
+    query "Action", "DescribeRegions"
+    query "Version", "2016-11-15"
+    query "Filter.1.Name", "opt-in-status"
+    query "Filter.1.Value.1", "opt-in-not-required"
+    query "Filter.1.Value.2", "opted-in"
+  end
+  result do
+    encoding "xml"
+    collect xpath(response, "//DescribeRegionsResponse/regionInfo/item", "array") do
+      field "region", xpath(col_item, "regionName")
+    end
+  end
+end
+
+datasource "ds_aws_resources" do
+  iterate $ds_regions
+  request do
+    auth $auth_aws
+    pagination $aws_pagination
+    host join(["tagging.", val(iter_item, "region"), ".amazonaws.com"])
+    verb "POST"
+    path "/"
+    header "X-Amz-Target", "ResourceGroupsTaggingAPI_20170126.GetResources"
+    header "Content-Type", "application/x-amz-json-1.1"
+    body_field "ExcludeCompliantResources", "false"
+    body_field "IncludeComplianceDetails", "true"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "ResourceTagMappingList[*]") do
+      field "complianceDetails", val(iter_item, "ComplianceDetails")
+      field "arn", jmes_path(col_item, "ResourceARN")
+      field "tags_unsorted", jmes_path(col_item, "Tags")
+    end
+  end
+end
+
+datasource "ds_aws_accounts_sorted" do
+  run_script $js_tag_sorter, $ds_aws_accounts
+end
+
+datasource "ds_aws_resources_sorted" do
+  run_script $js_tag_sorter, $ds_aws_resources
+end
+
+datasource "ds_aws_accounts_tag_list" do
+  run_script $js_tag_lister, $ds_aws_accounts, "Account"
+end
+
+datasource "ds_aws_resources_tag_list" do
+  run_script $js_tag_lister, $ds_aws_resources, "Resource"
+end
+
+datasource "ds_tag_report" do
+  run_script $js_tag_report, $ds_aws_accounts_tag_list, $ds_aws_resources_tag_list
+end
+
+###############################################################################
+# Scripts
+###############################################################################
+
+script "js_tag_sorter", type: "javascript" do
+  parameters "tagged_list"
+  result "result"
+  code <<-EOS
+  result = []
+
+  _.each(tagged_list, function(item) {
+    sorted_tags = {}
+
+    _.each(item['tags_unsorted'], function(tag) {
+      sorted_tags[tag['Key']] = tag['Value']
+    })
+
+    item['tags'] = sorted_tags
+
+    result.push(item)
+  })
+EOS
+end
+
+script "js_tag_lister", type: "javascript" do
+  parameters "tagged_list", "tag_type"
+  result "result"
+  code <<-EOS
+  tags = {}
+  result = []
+
+  _.each(tagged_list, function(item) {
+    if (item['tags'] != undefined && item['tags'] != null) {
+      _.each(Object.keys(item['tags']), function(key) {
+        value = item['tags'][key]
+        if (value == "" || value == null || value == undefined) {
+          value = "[Empty Value]"
+        }
+
+        if (tags[key] == undefined || tags[key] == null) {
+          tags[key] = {}
+        }
+
+        if (tags[key][value] == undefined || tags[key][value] == null) {
+          tags[key][value] = 1
+        } else {
+          tags[key][value] += 1
+        }
+      })
+    }
+  })
+
+  _.each(Object.keys(tags), function(key) {
+    _.each(Object.keys(tags[key]), function(value) {
+      result.push({
+        'type': tag_type,
+        'key': key,
+        'value': value,
+        'cardinality': tags[key][value]
+      })
+    })
+  })
+
+  result = _.sortBy(result, 'cardinality').reverse()
+EOS
+end
+
+script "js_tag_report", type: "javascript" do
+  parameters "ds_aws_accounts_tag_list", "ds_aws_resources_tag_list"
+  result "result"
+  code <<-EOS
+  result = ds_aws_accounts_tag_list.concat(ds_aws_resources_tag_list)
+EOS
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "pol_aws_tag_cardinality_report" do
+  validate $ds_tag_report do
+    summary_template "AWS Tag Cardinality Report"
+    check eq(1, 0)
+    escalate $esc_email
+    export do
+      resource_level false
+      field "type" do
+        label "Type"
+      end
+      field "key" do
+        label "Key"
+      end
+      field "value" do
+        label "Value"
+      end
+      field "cardinality" do
+        label "Cardinality"
+      end
+    end
+  end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_email" do
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
+end

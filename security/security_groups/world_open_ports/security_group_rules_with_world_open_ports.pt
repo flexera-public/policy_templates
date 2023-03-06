@@ -1,12 +1,12 @@
 name "Security Group Rules with ports open to the world"
 rs_pt_ver 20180301
 type "policy"
-short_description "A policy that sends email notifications when a security group has ports open to the world. See the [README](https://github.com/rightscale/policy_templates/tree/master/security/security_groups/world_open_ports) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+short_description "**Deprecated: This policy is no longer being updated.**  A policy that sends email notifications when a security group has ports open to the world. See the [README](https://github.com/flexera-public/policy_templates/tree/master/security/security_groups/world_open_ports) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 long_description ""
 severity "high"
 category "Security"
 info(
-  version: "1.5",
+  version: "1.6",
   provider: "Flexera Cloud Management",
   service: "",
   policy_set: ""
@@ -159,7 +159,7 @@ escalation "report_security_groups_with_world_open_ports_description" do
   automatic contains($param_automatic_action, "Delete Security Groups")
   label "Delete Resources"
   description "Delete selected security group rules found to be violate the policy"
-  run "delete_rules", data
+  run "delete_rules", data, rs_optima_host
 end
 
 resolution "report_security_groups_with_world_open_ports_resolution" do
@@ -207,7 +207,7 @@ policy "ports_open_to_the_world" do
   end
 end
 
-define delete_rules($data) do
+define delete_rules($data, $$rs_optima_host) do
   foreach $item in $data do
     @security_group_rule = rs_cm.get(href: $item['id'])
     @security_group_rule.destroy()
@@ -216,12 +216,35 @@ define delete_rules($data) do
 end
 
 define sys_log($subject, $detail) do
-  rs_cm.audit_entries.create(
-    notify: "None",
-    audit_entry: {
-      auditee_href: @@account,
-      summary: "Security Group Rules with ports open to the world: "+$subject,
-      detail: $detail
-    }
-  )
+  # Create empty errors array if doesn't already exist
+  if !$$errors
+    $$errors = []
+  end
+  # Check if debug is enabled
+  if $$debug
+    # Append to global $$errors
+    # This is the suggested way to capture errors
+    $$errors << "Unexpected error for " + $subject + "\n  " + to_s($detail)
+    # If Flexera NAM Zone, create audit_entries [to be deprecated]
+    # This is the legacy method for capturing errors and only supported on Flexera NAM
+    if $$rs_optima_host == "api.optima.flexeraeng.com"
+      # skip_error_and_append is used to catch error if rs_cm.audit_entries.create fails unexpectedly
+      $task_label = "Creating audit entry for " + $subject
+      sub task_label: $task, on_error: skip_error_and_append($task) do
+        rs_cm.audit_entries.create(
+          notify: "None",
+          audit_entry: {
+            auditee_href: @@account,
+            summary: $subject,
+            detail: $detail
+          }
+        )
+      end # End sub on_error
+    end # End if rs_optima_host
+  end # End if debug is enabled
+end
+
+define skip_error_and_append($subject) do
+  $$errors << "Unexpected error for " + $subject + "\n  " + to_s($_error)
+  $_error_behavior = "skip"
 end

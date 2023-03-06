@@ -1,4 +1,8 @@
-# Downsize Instances Policy Template
+# Downsize Instances
+
+## Deprecated
+
+This policy is no longer being updated.
 
 ## What it does
 
@@ -47,9 +51,9 @@ This policy requires permissions to access RightScale resources (clouds, instanc
 
 This policy template uses instance mappings that we have defined in the following files:
 
-- AWS: [https://github.com/flexera/policy_templates/blob/master/data/aws/instance_types.json](https://github.com/flexera/policy_templates/blob/master/data/aws/instance_types.json)
-- Azure:  [https://github.com/flexera/policy_templates/blob/master/data/azure/instance_types.json](https://github.com/flexera/policy_templates/blob/master/data/azure/instance_types.json)
-- Google: [https://github.com/flexera/policy_templates/blob/master/data/google/instance_types.json](https://github.com/flexera/policy_templates/blob/master/data/google/instance_types.json)
+- AWS: [https://github.com/flexera-public/policy_templates/blob/master/data/aws/instance_types.json](https://github.com/flexera-public/policy_templates/blob/master/data/aws/instance_types.json)
+- Azure:  [https://github.com/flexera-public/policy_templates/blob/master/data/azure/instance_types.json](https://github.com/flexera-public/policy_templates/blob/master/data/azure/instance_types.json)
+- Google: [https://github.com/flexera-public/policy_templates/blob/master/data/google/instance_types.json](https://github.com/flexera-public/policy_templates/blob/master/data/google/instance_types.json)
 
 If you would like to modify the relationships, you can take the following steps:
 

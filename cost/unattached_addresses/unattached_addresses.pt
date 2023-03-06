@@ -1,13 +1,13 @@
 name "Unattached IP Addresses"
 rs_pt_ver 20180301
 type "policy"
-short_description "Checks Unutilized IP Addresses and deletes them with approval. See the [README](https://github.com/flexera/policy_templates/tree/master/cost/unattached_addresses) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+short_description "**Deprecated: This policy is no longer being updated.**  Checks Unutilized IP Addresses and deletes them with approval. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/unattached_addresses) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 long_description ""
 severity "low"
 category "Cost"
 default_frequency "daily"
 info(
-  version: "1.8",
+  version: "1.9",
   provider: "Flexera Cloud Management",
   service: "",
   policy_set: "Unused IP Addresses"
@@ -119,7 +119,7 @@ escalation "report_description" do
   automatic contains($param_automatic_action, "Delete IP Addresses")
   label "Delete Addresses"
   description "Approval to delete all selected addresses"
-  run "delete_unattached_addresses", data
+  run "delete_unattached_addresses", data, rs_optima_host
 end
 
 resolution "report_resolution" do
@@ -159,7 +159,7 @@ policy "unattached_ip_addresses" do
   end
 end
 
-define delete_unattached_addresses($data) do
+define delete_unattached_addresses($data, $$rs_optima_host) do
   foreach $item in $data do
     @ip_address = rs_cm.get(href: $item['href'])
     @ip_address.destroy()
@@ -168,12 +168,35 @@ define delete_unattached_addresses($data) do
 end
 
 define sys_log($subject, $detail) do
-  rs_cm.audit_entries.create(
-    notify: "None",
-    audit_entry: {
-      auditee_href: @@account,
-      summary: "Unattached IP Address: "+$subject,
-      detail: $detail
-    }
-  )
+  # Create empty errors array if doesn't already exist
+  if !$$errors
+    $$errors = []
+  end
+  # Check if debug is enabled
+  if $$debug
+    # Append to global $$errors
+    # This is the suggested way to capture errors
+    $$errors << "Unexpected error for " + $subject + "\n  " + to_s($detail)
+    # If Flexera NAM Zone, create audit_entries [to be deprecated]
+    # This is the legacy method for capturing errors and only supported on Flexera NAM
+    if $$rs_optima_host == "api.optima.flexeraeng.com"
+      # skip_error_and_append is used to catch error if rs_cm.audit_entries.create fails unexpectedly
+      $task_label = "Creating audit entry for " + $subject
+      sub task_label: $task, on_error: skip_error_and_append($task) do
+        rs_cm.audit_entries.create(
+          notify: "None",
+          audit_entry: {
+            auditee_href: @@account,
+            summary: $subject,
+            detail: $detail
+          }
+        )
+      end # End sub on_error
+    end # End if rs_optima_host
+  end # End if debug is enabled
+end
+
+define skip_error_and_append($subject) do
+  $$errors << "Unexpected error for " + $subject + "\n  " + to_s($_error)
+  $_error_behavior = "skip"
 end

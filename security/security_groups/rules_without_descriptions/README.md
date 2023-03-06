@@ -1,5 +1,9 @@
 # Security Group Rules without Descriptions Policy Template
 
+## Deprecated
+
+This policy is no longer being updated.
+
 ## What it does
 
 This Policy Template reviews your security group and alerts if any security group rules do not have descriptions. It will resolve when all security group rules have descriptions.

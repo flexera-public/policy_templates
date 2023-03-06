@@ -15,7 +15,7 @@ This policy has the following input parameters required when launching the polic
 
 - *Email addresses to notify* - Email addresses of the recipients you wish to notify when new incidents are created
 - *Azure Endpoint* - Azure Endpoint to access resources
-- *Subscription Whitelist* - Whitelisted Subscriptions, if empty, all subscriptions will be checked
+- *Subscription Allowed List* - Allowed Subscriptions, if empty, all subscriptions will be checked
 - *Allowed AHUB licenses* - Number of AHUB licenses that are allowed to be run on Azure
 - *Exclusion Tag Key* - Azure VMs instance tag to ignore instance that are with AHUB enabled. Only supply the tag key. The policy assumes that the tag value is irrelevant.
 

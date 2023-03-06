@@ -1,15 +1,15 @@
-# Google Committed Use Discount Recommendations
+# Google Committed Use Discount Recommender
 
 ## What it does
 
-This Policy finds Google Committed Use Discount Recommendations and reports when it finds them.
+This Policy finds Google Committed Use Discount Recommendations and reports when it finds them. These recommendations fall under Rate Reduction.
 
 ## Input Parameters
 
 This policy has the following input parameters required when launching the policy.
 
 - *Email addresses* - A list of email addresses to notify
-- *Location* - Location to check, it can be the zone, region or global
+- *Region* - Region to check, it is GCP Region locations
 - *Project ID* - Google Projects to Query. Leave blank to query all projects.
 
 ## Policy Actions

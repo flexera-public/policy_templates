@@ -1,14 +1,14 @@
 name "Vendor Commitment Forecast"
 rs_pt_ver 20180301
 type "policy"
-short_description "This policy allows the user to specify a Commitment target value (based on the commitment amount agreed with your Cloud Service Provider/s), and track the current commitment spend to date, as well as projected commitment spend over a period. See the [README](https://github.com/flexera/policy_templates/tree/master/cost/forecasting/commitment_forecast/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+short_description "This policy allows the user to specify a Commitment target value (based on the commitment amount agreed with your Cloud Service Provider/s), and track the current commitment spend to date, as well as projected commitment spend over a period. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/forecasting/commitment_forecast/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 long_description ""
 severity "medium"
 category "Cost"
 tenancy "single"
 default_frequency "monthly"
 info(
-  version: "2.0",
+  version: "3.1",
   provider: "Flexera Optima",
   service: "",
   policy_set:"Forecasting",
@@ -46,7 +46,7 @@ parameter "param_commitment_target" do
   description "Specify total commitment target for the given Cloud Vendor and the specified time period.  Currency is irrelevant; the policy will default to whichever currency is used in Optima"
   default 100000
 end
-  
+
 parameter "param_email" do
   label "Email addresses"
   type "list"
@@ -65,11 +65,11 @@ end
 # Authentication
 ###############################################################################
 
-#AUTHENTICATE WITH RIGHTSCALE/OPTIMA
-credentials "auth_rs" do
+#AUTHENTICATE WITH FLEXERA/OPTIMA
+credentials "auth_flexera" do
   schemes "oauth2"
-  label "Flexera_Automation"
-  description "Select FlexeraOne OAuth2 credentials"
+  label "flexera"
+  description "Select Flexera One OAuth2 credentials"
   tags "provider=flexera"
 end
 
@@ -89,7 +89,7 @@ end
 #GET CURRENCY CODE FOR ORG
 datasource "ds_currency_code" do
   request do
-    auth $auth_rs
+    auth $auth_flexera
     host rs_optima_host
     path join(["/bill-analysis/orgs/",rs_org_id,"/settings/currency_code"])
     header "Api-Version", "0.1"
@@ -105,7 +105,7 @@ end
 #GET ALL BILLING CENTERS FOR ORG
 datasource "ds_billing_centers" do
   request do
-    auth $auth_rs
+    auth $auth_flexera
     host rs_optima_host
     path join(["/analytics/orgs/",rs_org_id,"/billing_centers"])
     header "Api-Version", "1.0"
@@ -122,7 +122,7 @@ datasource "ds_billing_centers" do
       field "ancestor_ids", jmes_path(col_item,"ancestor_ids")
       field "allocation_table", jmes_path(col_item,"allocation_table")
     end
-  end  
+  end
 end
 
 #FILTER FOR TOP-LEVEL BILLING CENTERS
@@ -181,7 +181,7 @@ script "js_agg_costs_request", type: "javascript" do
 
   if(cloud_vendor.length <= 0){
     var request = {
-      auth: "auth_rs",
+      auth: "auth_flexera",
       host: optima_host,
       verb: "POST",
       path: "/bill-analysis/orgs/" + org_id + "/costs/aggregated",
@@ -200,7 +200,7 @@ script "js_agg_costs_request", type: "javascript" do
     }
   } else {
     var request = {
-      auth: "auth_rs",
+      auth: "auth_flexera",
       host: optima_host,
       verb: "POST",
       path: "/bill-analysis/orgs/" + org_id + "/costs/aggregated",
@@ -233,7 +233,7 @@ script "js_get_total_cost", type: "javascript" do
   code <<-EOS
   var totals = []
   total_cost = 0
-  _.each(aggregate_costs, function(agg){ 
+  _.each(aggregate_costs, function(agg){
     totals.push(agg[cost_metric.toLowerCase().replace(/ /g, "_") + "_costs"])
   })
   total_cost = _.reduce(totals, function(memo, num){ return memo + num; }, 0)
@@ -252,7 +252,7 @@ script "js_get_total_cost", type: "javascript" do
       id: null,
       vendor: aggregate_costs[0].vendor
     }]
-  } 
+  }
   EOS
 end
 
@@ -264,7 +264,7 @@ end
 script "js_get_forecasted_spend", type: "javascript" do
   parameters "total_cost", "start_date", "end_date", "commitment_target"
   result "result"
-  code <<-EOS 
+  code <<-EOS
   var period_length = (new Date( end_date+"-01" ) - new Date( start_date+"-01" )) / (1000 * 3600 * 24)
   var period_completed_to_date = ((new Date() - new Date( start_date+"-01" )) / (1000 * 3600 * 24)) / (period_length )
 
@@ -274,12 +274,12 @@ script "js_get_forecasted_spend", type: "javascript" do
       "commitment_period": period_length,
       "period_completed": period_completed_to_date,
       "actual_spend": tc.total,
-      "forecasted_spend": (tc.total * (1/period_completed_to_date)) - tc.total, 
-      "forecasted_total": tc.total * (1/period_completed_to_date) 
-      "commitment_target": commitment_target 
+      "forecasted_spend": (tc.total * (1/period_completed_to_date)) - tc.total,
+      "forecasted_total": tc.total * (1/period_completed_to_date)
+      "commitment_target": commitment_target
       "name": tc.name,
       "vendor": tc.vendor
-    }) 
+    })
   })
   EOS
 end
@@ -295,7 +295,7 @@ script "js_get_chart_data", type: "javascript" do
   code <<-EOS
   var spend_diff = spend_data[0].forecasted_total - commitment_target
   var curr = "$", separator = ",", target_name = "", over_commitment_data = "", over_commitment_label = "", over_commitment_amount_value = "", chart_data_values = ""
-  
+
   if (curr_code.value !== undefined){
     curr = curr_ref[curr_code.value].symbol,
     separator = curr_ref[curr_code.value].t_separator
@@ -352,7 +352,7 @@ script "js_get_chart_data", type: "javascript" do
     chart_y_axis_label: encodeURI("chxl=0:|+1:|+"),
     chart_data_autoscale: encodeURI("chds=a"),
     chart_data_value: encodeURI('chl=' + chart_data_values),
-    report_data: encodeURI(spend_data),
+    report_data: spend_data,
     target_adj: target_name,
     bc_org_name: spend_data[0].name,
     cloud_vendor: spend_data[0].vendor
@@ -377,13 +377,13 @@ end
 
 policy "policy_commitment_tracker" do
   validate $ds_chart_data do
-    summary_template "Total Commitment Actual and Forecasted Spend for {{ parameters.param_cloud_vendor }}"
+    summary_template "Vendor Commitment Forecast for {{ parameters.param_cloud_vendor }}"
     detail_template <<-EOS
     # Commitment Target {{ data.target_adj }}
     ### Cloud Vendor: {{ data.cloud_vendor }}
     ### Cost Metric: Unamortized Unblended
     ### Commitment Period: {{ parameters.param_start_date }} to {{ parameters.param_end_date }}
-    ![Spending Overview Chart](https://image-charts.com/chart?{{ data.chart_type }}&{{ data.chart_data }}&{{ data.chart_size }}&{{ data.chart_image }}&{{ data.chart_color }}&{{ data.chart_label }}&{{ data.chart_y_axis_label }}&{{ data.chart_y_axis }}&{{ data.chart_label_position }}&{{data.chart_data_autoscale}}&{{data.chart_data_value}}&{{ data.chart_title }})
+    ![Spending Overview Chart](https://api.image-charts-auth.flexeraeng.com/ic-function?rs_org_id={{ rs_org_id }}&rs_project_id={{ rs_project_id }}&{{ data.chart_type }}&{{ data.chart_data }}&{{ data.chart_size }}&{{ data.chart_image }}&{{ data.chart_color }}&{{ data.chart_label }}&{{ data.chart_y_axis_label }}&{{ data.chart_y_axis }}&{{ data.chart_label_position }}&{{data.chart_data_autoscale}}&{{data.chart_data_value}}&{{ data.chart_title }})
     ___
     ###### Policy Applied in Account: {{ rs_project_name }} (Account ID: {{ rs_project_id }}) within Org: {{ rs_org_name }} (Org ID: {{ rs_org_id }})
     EOS
