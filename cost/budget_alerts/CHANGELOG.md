@@ -2,7 +2,8 @@
 
 ## v2.1
 
-- Resolved issue with calculating forecast in the month of February. Leap years are now accounted for.
+- Resolved issues with calculating forecast in the months of January and February
+- Fixed issue with currentSpend subtracting 3 days unnecessarily
 
 ## v2.0
 
