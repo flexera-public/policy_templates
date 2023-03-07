@@ -2,7 +2,7 @@
 
 ## v2.2
 
-- Resolved issues with calculating forecast in the months of January and February
+- Resolved issues with calculating forecast
 
 ## v2.1
 

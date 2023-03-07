@@ -2,7 +2,7 @@
 
 ## v2.1
 
-- Resolved issues with calculating forecast in the months of January and February
+- Resolved issues with calculating forecast
 - Fixed issue with currentSpend subtracting 3 days unnecessarily
 
 ## v2.0
