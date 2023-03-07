@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.2
+
+- Resolved issue with calculating forecast in the month of February. Leap years are now accounted for.
+
 ## v2.1
 
 - Fixed image-charts url from free service endpoint to our paid service endpoint url
