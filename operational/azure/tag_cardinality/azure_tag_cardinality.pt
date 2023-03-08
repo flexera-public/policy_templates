@@ -7,7 +7,7 @@ severity "low"
 category "Operational"
 default_frequency "weekly"
 info(
-  version: "2.1",
+  version: "2.2",
   provider: "Azure",
   service: "Tags",
   policy_set: "Tag Cardinality"
@@ -59,6 +59,8 @@ datasource "ds_azure_subscriptions_tagless" do
     path "/subscriptions/"
     query "api-version","2018-06-01"
     header "User-Agent", "RS Policies"
+    # Ignore status 400, 403, and 404 which can be returned in certain (legacy) types of Azure Subscriptions
+    ignore_status [400, 403, 404]
   end
   result do
     encoding "json"
@@ -79,7 +81,7 @@ datasource "ds_azure_subscriptions" do
     query "api-version","2021-04-01"
     header "User-Agent", "RS Policies"
     # Ignore status 400, 403, and 404 which can be returned in certain (legacy) types of Azure Subscriptions
-    ignore_status [400,403,404]
+    ignore_status [400, 403, 404]
   end
   result do
     encoding "json"
@@ -99,7 +101,7 @@ datasource "ds_azure_resource_groups" do
     query "api-version","2021-04-01"
     header "User-Agent", "RS Policies"
     # Ignore status 400, 403, and 404 which can be returned in certain (legacy) types of Azure Subscriptions
-    ignore_status [400,403,404]
+    ignore_status [400, 403, 404]
   end
   result do
     encoding "json"
@@ -124,7 +126,7 @@ datasource "ds_azure_resources" do
     query "api-version","2021-04-01"
     header "User-Agent", "RS Policies"
     # Ignore status 400, 403, and 404 which can be returned in certain (legacy) types of Azure Subscriptions
-    ignore_status [400,403,404]
+    ignore_status [400, 403, 404]
   end
   result do
     encoding "json"
@@ -170,32 +172,20 @@ script "js_tag_lister", type: "javascript" do
   _.each(tagged_list, function(item) {
     if (item['tags'] != undefined && item['tags'] != null) {
       _.each(Object.keys(item['tags']), function(key) {
-        value = item['tags'][key]
-        if (value == "" || value == null || value == undefined) {
-          value = "[Empty Value]"
-        }
-
         if (tags[key] == undefined || tags[key] == null) {
-          tags[key] = {}
+          tags[key] = []
         }
 
-        if (tags[key][value] == undefined || tags[key][value] == null) {
-          tags[key][value] = 1
-        } else {
-          tags[key][value] += 1
-        }
+        tags[key].push(item['tags'][key])
       })
     }
   })
 
   _.each(Object.keys(tags), function(key) {
-    _.each(Object.keys(tags[key]), function(value) {
-      result.push({
-        'type': tag_type,
-        'key': key,
-        'value': value,
-        'cardinality': tags[key][value]
-      })
+    result.push({
+      'type': tag_type,
+      'key': key,
+      'cardinality': _.uniq(tags[key]).length
     })
   })
 
@@ -227,9 +217,6 @@ policy "pol_azure_tag_cardinality_report" do
       end
       field "key" do
         label "Key"
-      end
-      field "value" do
-        label "Value"
       end
       field "cardinality" do
         label "Cardinality"
