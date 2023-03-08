@@ -1,4 +1,4 @@
-name "Cloud Cost Anomaly Alerts"
+name "Cloud Cost Anomaly Alerts-2"
 rs_pt_ver 20180301
 type "policy"
 short_description "Uses the /anomalies/report for a specified number of days and dimensions. Will raise an incident if the algorythm catches anomalies. See the [README](https://github.com/rightscale/policy_templates/tree/master/cost/cloud_cost_anomaly_alerts/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
@@ -52,8 +52,8 @@ end
 
 parameter "param_dimension_anomaly_filter" do
   type "list"
-  label "Anomaly Filter"
-  description "Add please information related about dimension used like accounts names"
+  label "DimensionID for Key and filter for Value pair for Anomaly Filter"
+  description "Enter please the case sensitive key value pair for filter. e.g. dimension_id=filter as service=AmazonEC2 or vendor=AWS."
 end
 #What fields can i filter
 
@@ -177,7 +177,7 @@ end
 
 datasource "ds_get_anomalies" do
   request do
-    run_script $js_get_anomalies, rs_optima_host, rs_org_id, $ds_top_level_billing_centers, $param_cost_metric, $param_days, $param_dimensions,$ds_filter_dimensions, $param_window_size, $param_standard_deviations, $param_anomaly_limit
+    run_script $js_get_anomalies, rs_optima_host, rs_org_id, $ds_top_level_billing_centers, $param_cost_metric, $param_days, $param_dimensions,$ds_filter_dimensions, $param_window_size, $param_standard_deviations, $param_anomaly_limit, $param_dimension_anomaly_filter
   end
   result do
     encoding "json"
@@ -188,7 +188,7 @@ datasource "ds_get_anomalies" do
 end
 
 datasource "ds_filter_anomalies" do
-  run_script $js_filter_anomalies, $ds_get_anomalies, $param_min_spend, rs_org_id, $param_days, $param_dimensions,$ds_filter_dimensions, $param_cost_metric, $param_anomaly_limit, f1_app_host
+  run_script $js_filter_anomalies, $ds_get_anomalies, $param_min_spend, rs_org_id, $param_days, $param_dimensions,$ds_filter_dimensions, $param_cost_metric, $param_anomaly_limit, f1_app_host, $param_dimension_anomaly_filter
 end
 
 ###############################################################################
@@ -255,7 +255,7 @@ script "js_top_level_bc", type: "javascript" do
 end
 
 script "js_get_anomalies", type: "javascript" do
-  parameters "rs_optima_host", "org_id","bc_ids","param_cost_metric","param_days", "param_dimensions", "ds_filter_dimensions", "param_window_size", "param_standard_deviations", "param_anomaly_limit"
+  parameters "rs_optima_host", "org_id","bc_ids","param_cost_metric","param_days", "param_dimensions", "ds_filter_dimensions", "param_window_size", "param_standard_deviations", "param_anomaly_limit", "param_dimension_anomaly_filter"
   result "request"
   code <<-EOS
     var start_at = "";
@@ -307,25 +307,65 @@ script "js_get_anomalies", type: "javascript" do
     start_at = getFormattedDailyDate(getStartDate(new Date()))
     end_at = getFormattedDailyDate(getEndDate(new Date()))
 
-    var request = {
-      auth: "auth_flexera",
-      verb: "POST",
-      host: rs_optima_host,
-      path: "/bill-analysis/orgs/" + org_id + "/anomalies/report",
-      body_fields: {
-        "dimensions": dimensions,
-        "granularity": "day",
-        "windowSize": param_window_size,
-        "standardDeviations": param_standard_deviations,
-        "limit": param_anomaly_limit,
-        "metric": cost_metric[param_cost_metric],
-        "billingCenterIds": billingIDs,
-        "startAt": start_at,
-        "endAt": end_at
-      },
-      headers: {
-        "Api-Version": "1.0",
-        "User-Agent": "RS Policies",
+    if (param_dimension_anomaly_filter.length === 1){
+
+        dimension_filter_map = param_dimension_anomaly_filter[0].split("=")
+
+        var request = {
+          auth: "auth_flexera",
+          verb: "POST",
+          host: rs_optima_host,
+          path: "/bill-analysis/orgs/" + org_id + "/anomalies/report",
+          body_fields: {
+            "dimensions": dimensions,
+            "filter":{
+              "dimension":dimension_filter_map[0],
+              "type":"equal",
+              "value":dimension_filter_map[1]
+            },
+            "granularity": "day",
+            "windowSize": param_window_size,
+            "standardDeviations": param_standard_deviations,
+            "limit": param_anomaly_limit,
+            "metric": cost_metric[param_cost_metric],
+            "billingCenterIds": billingIDs,
+            "startAt": start_at,
+            "endAt": end_at
+          },
+          headers: {
+            "Api-Version": "1.0",
+            "User-Agent": "RS Policies",
+          }
+        }
+
+
+    }
+
+    if (param_dimension_anomaly_filter.length > 1){
+
+    }
+
+    if (param_dimension_anomaly_filter.length === 0){
+      var request = {
+        auth: "auth_flexera",
+        verb: "POST",
+        host: rs_optima_host,
+        path: "/bill-analysis/orgs/" + org_id + "/anomalies/report",
+        body_fields: {
+          "dimensions": dimensions,
+          "granularity": "day",
+          "windowSize": param_window_size,
+          "standardDeviations": param_standard_deviations,
+          "limit": param_anomaly_limit,
+          "metric": cost_metric[param_cost_metric],
+          "billingCenterIds": billingIDs,
+          "startAt": start_at,
+          "endAt": end_at
+        },
+        headers: {
+          "Api-Version": "1.0",
+          "User-Agent": "RS Policies",
+        }
       }
     }
   EOS
@@ -333,7 +373,7 @@ end
 
 script "js_filter_anomalies", type: "javascript" do
 
-  parameters "ds_get_anomalies", "param_min_spend", "org_id", "param_days", "param_dimensions", "ds_filter_dimensions","param_cost_metric", "param_anomaly_limit", "f1_app_host"
+  parameters "ds_get_anomalies", "param_min_spend", "org_id", "param_days", "param_dimensions", "ds_filter_dimensions","param_cost_metric", "param_anomaly_limit", "f1_app_host", "param_dimension_anomaly_filter"
   result "result"
   code <<-EOS
     var start_at = "";
