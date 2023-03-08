@@ -1,6 +1,5 @@
 # Budget Alerts Policy
 
-
 **NOTE:** This policy is be deprecated and replaced by this [new version](../budget_report_alerts)
 
 ## What it does
