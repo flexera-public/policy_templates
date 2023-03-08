@@ -99,7 +99,7 @@ datasource "ds_new_bc_costs" do
       field "cost_amortized_unblended_adj", jmes_path(col_item, "metrics.cost_amortized_unblended_adj")
       field "region", jmes_path(col_item, "dimensions.region")
       field "instance_type", jmes_path(col_item, "dimensions.instance_type")
-      field "billing_center_id", jmes_path(col_item, "dimensions.billing_center_id")
+      field "id", jmes_path(col_item, "dimensions.billing_center_id")
       field "resource_id", jmes_path(col_item, "dimensions.resource_id")
     end
   end
@@ -270,7 +270,7 @@ script "js_aws_region_map", type: "javascript" do
     "Europe (Zurich)": "eu-central-2",
     "Middle East (Bahrain)": "me-south-1",
     "Middle East (UAE)": "me-central-1",
-    "South America (SÃ£o Paulo)": "sa-east-1",
+    "South America (São Paulo)": "sa-east-1",
     "South America (Sao Paulo)": "sa-east-1",
     "AWS GovCloud (US-East)": "us-gov-east-1",
     "AWS GovCloud (US-West)": "us-gov-west-1"
@@ -286,7 +286,6 @@ script "js_format_costs", type: "javascript" do
   parameters "new_bc_costs", "ds_billing_centers"
   result "result"
   code <<-EOS
-  //https://www.w3resource.com/javascript-exercises/javascript-date-exercise-3.php
   var getDaysInMonth = function(month, year) {
     return new Date(year, month, 0).getDate()
   }
@@ -397,14 +396,14 @@ datasource "ds_azure_instance_cost_map" do
 end
 
 datasource "ds_combined_instance_data" do
-  run_script $js_merge_instance_data, $ds_format_costs, $ds_aws_instance_size_map, $ds_azure_instance_size_map, $ds_google_instance_size_map, $ds_aws_instance_cost_map, $ds_azure_instance_cost_map, $ds_aws_region_map, $param_new_instancetype_category, $ds_currency_code, $ds_currency_reference
+  run_script $js_merge_instance_data, $ds_format_costs, $ds_aws_instance_size_map, $ds_azure_instance_size_map, $ds_google_instance_size_map, $ds_aws_instance_cost_map, $ds_azure_instance_cost_map, $ds_aws_region_map, $param_new_instancetype_category, $ds_currency_code, $ds_currency_reference, $param_minimum_savings_threshold
 end
 
 script "js_merge_instance_data", type: "javascript" do
-  parameters "ds_format_costs", "ds_aws_instance_size_map", "ds_azure_instance_size_map", "ds_google_instance_size_map", "ds_aws_instance_cost_map", "ds_azure_instance_cost_map", "ds_aws_region_map", "param_new_instancetype_category", "ds_currency_code", "ds_currency_reference"
+  parameters "ds_format_costs", "ds_aws_instance_size_map", "ds_azure_instance_size_map", "ds_google_instance_size_map", "ds_aws_instance_cost_map", "ds_azure_instance_cost_map", "ds_aws_region_map", "param_new_instancetype_category", "ds_currency_code", "ds_currency_reference", "param_minimum_savings_threshold"
   result "result"
   code <<-EOS
-  var result = []
+  var final_list = []
   var superseded_instance_map = _.extend(ds_aws_instance_size_map, ds_azure_instance_size_map, ds_google_instance_size_map)
   var cost_map = { "AWS": ds_aws_instance_cost_map, "Azure": ds_azure_instance_cost_map }
 
@@ -449,6 +448,8 @@ script "js_merge_instance_data", type: "javascript" do
     var separator = ","
   }
 
+  total_savings = 0
+
   // for loop instead of _.each() so that continue statements function as expected
   for (var i = 0; i < ds_format_costs.length; i++) {
     instance = ds_format_costs[i]
@@ -470,7 +471,7 @@ script "js_merge_instance_data", type: "javascript" do
 
     if (typeof(found_instance_type) === "undefined" || found_instance_type == null) {
       instance["new_instance_type"] = "Unavailable"
-      result.push(instance)
+      //final_list.push(instance)
     } else {
       var superseded = found_instance_type["superseded"]
       if (typeof(superseded) === "undefined" || superseded == null) {
@@ -527,29 +528,39 @@ script "js_merge_instance_data", type: "javascript" do
           }
         }
 
-        result.push({
-          name: instance['name'],
-          vendor: vendor,
-          accountID: instance['vendor_account'],
-          accountName: instance['vendor_account_name'],
-          resourceGroup: instance['resource_group'],
-          service: instance['service'],
-          region: region_code,
-          operating_system: operating_system,
-          instance_type: instance_type,
-          new_instance_type: new_instance_type,
-          resourceID: instance['resource_id'],
-          resourceType: instance['resource_type'],
-          run_rate: instance['run_rate'],
-          vpc_incompatible_move: vpc_incompatible_move,
-          ena_incompatible: ena_incompatible,
-          old_price: parseFloat(old_list_price).toFixed(2),
-          new_price: parseFloat(new_list_price).toFixed(2),
-          savings: parseFloat(estimated_monthly_savings).toFixed(2),
-          savingsCurrency: cur
-        })
+        if (estimated_monthly_savings != null && estimated_monthly_savings >= param_minimum_savings_threshold) {
+          total_savings += estimated_monthly_savings
+
+          final_list.push({
+            name: instance['name'],
+            vendor: vendor,
+            accountID: instance['vendor_account'],
+            accountName: instance['vendor_account_name'],
+            resourceGroup: instance['resource_group'],
+            service: instance['service'],
+            region: region_code,
+            operating_system: operating_system,
+            instance_type: instance_type,
+            new_instance_type: new_instance_type,
+            resourceID: instance['resource_id'],
+            resourceType: instance['resource_type'],
+            run_rate: instance['run_rate'],
+            vpc_incompatible_move: vpc_incompatible_move,
+            ena_incompatible: ena_incompatible,
+            old_price: parseFloat(old_list_price).toFixed(2),
+            new_price: parseFloat(new_list_price).toFixed(2),
+            savings: parseFloat(estimated_monthly_savings).toFixed(2),
+            savingsCurrency: cur
+          })
+        }
       }
     }
+  }
+
+  result = {
+    instances: final_list,
+    total_savings: total_savings,
+    message: "Total Potential Savings: " + cur + total_savings.toFixed(2)
   }
 EOS
 end
@@ -559,11 +570,12 @@ end
 ###############################################################################
 
 policy "pol_superseded_instance" do
-  validate_each $ds_combined_instance_data do
-    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} possible superseded instances"
-    check lt(to_n(val(item, "savings")), $param_minimum_savings_threshold)
+  validate $ds_combined_instance_data do
+    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data.instances }} possible superseded instances"
+    detail_template "{{ data.message }}"
+    check eq(size(val(data, "instances")), 0)
     escalate $esc_report_instances
-    export do
+    export "instances" do
       resource_level false
       field "vendor" do
         label "Cloud Vendor"
