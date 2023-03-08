@@ -29,7 +29,7 @@ Reference
 - [Budget Alerts](./cost/budget_alerts/)
 - [Budget Alerts by Cloud Account](./cost/budget_alerts_by_account/)
 - [Cheaper Regions](./cost/cheaper_regions/)
-- [Cloud Cost Anomaly](./cost/cloud_cost_anomalies/)
+- [Cloud Cost Anomaly Alerts](./cost/cloud_cost_anomaly_alerts/)
 - [Downsize Instances](./cost/downsize_instance/)
 - [Inefficient Instance Utilization using RightLink](./cost/rightlink_rightsize)
 - [Old Snapshots](./cost/volumes/old_snapshots/)
@@ -44,6 +44,10 @@ Reference
 - [Superseded Instance Remediation](./cost/superseded_instance_remediation/)
 - [Terminate Instances with End Date](./cost/terminate_policy/)
 
+##### Currency Conversion
+
+- [Currency Conversion](./cost/currency_conversion/)
+
 ##### Forecasting
 
 - [Cloud Spend Forecast - Moving Average](./cost/forecasting/moving_average/)
@@ -55,7 +59,7 @@ Reference
 
 ##### Credential Setup
 
-- [Read Only CFT](./cost/aws/FlexeraReadOnlyPolicy.template)
+- [Flexera Automation CloudFormation Template](./tools/cloudformation-template)
 
 ##### Compute
 
@@ -67,6 +71,8 @@ Reference
 - [AWS Reserved Instance Reservation Coverage](./cost/aws/reserved_instances/coverage/)
 - [AWS Reserved Instances Report by Billing Center](./cost/aws/reserved_instances/report_by_bc)
 - [AWS Reserved Instance Recommendations](./cost/aws/reserved_instances/recommendations)
+- [AWS Rightsize Compute Instances](./cost/aws/rightsize_compute_instances)
+- [AWS Rightsize EBS Volumes](./cost/aws/rightsize_ebs_volumes)
 - [AWS Savings Plan Recommendations](./cost/aws/savings_plan/recommendations)
 - [AWS Savings Plan Utilization](./cost/aws/savings_plan/utilization)
 - [AWS Savings Realized from Reservations](./cost/aws/savings_realized)
@@ -104,9 +110,11 @@ Reference
 - [Azure Expiring Reserved Instances](./cost/azure/reserved_instances/expiration)
 - [Azure Reserved Instance Utilization](./cost/azure/reserved_instances/utilization/)
 - [Azure Reserved Instance Recommendations](./cost/azure/reserved_instances/mca_recommendations)
-- [Azure Unused IP Addresses](./cost/azure/unused_ip_addresses)
+- [Azure Rightsize Compute Instances](./cost/azure/rightsize_compute_instances)
+- [Azure Savings Plan Recommendations](./cost/azure/savings_plan/recommendations)
 - [Azure Savings Realized from Reservations](./cost/azure/savings_realized)
 - [Azure Schedule Instance](./cost/azure/schedule_instance/)
+- [Azure Unused IP Addresses](./cost/azure/unused_ip_addresses)
 
 ##### Database
 
@@ -119,6 +127,10 @@ Reference
 - [Azure Old Snapshots](./cost/azure/old_snapshots/)
 - [Azure Unused Volumes](./cost/azure/unattached_volumes)
 - [Azure Storage Accounts without Lifecycle Management Policies](./cost/azure/storage_account_lifecycle_management/)
+
+##### Common Bill Ingestion
+
+- [Azure China Common Bill Ingestion](./cost/azure/azure_china_cbi)
 
 #### Google
 
@@ -153,6 +165,12 @@ Reference
 
 - [Google Unutilized IP Addresses](./cost/google/unutilized_ip_addresses/)
 - [Google Idle IP Address Recommender](./cost/google/idle_ip_address_recommendations)
+
+#### Oracle
+
+##### Common Bill Ingestion
+
+- [Oracle Cloud Common Bill Ingestion](./cost/oracle/oracle_cbi)
 
 ### Security
 
@@ -261,13 +279,16 @@ Reference
 
 ###### CIS Policies
 
+- [Azure Ensure Correct PostgreSQL Servers Log Settings](./security/azure/pg_log_settings/)
 - [Azure Ensure MySQL Flexible Servers Use Secure TLS](./security/azure/mysql_tls_version/)
 - [Azure Ensure MySQL Servers Enforce SSL Connections](./security/azure/mysql_ssl/)
+- [Azure Ensure PostgreSQL Servers Connection Throttling Enabled](./security/azure/pg_conn_throttling/)
 - [Azure Ensure PostgreSQL Servers Infrastructure Encryption](./security/azure/pg_infra_encryption/)
-- [Azure Ensure SQL Server Auditing Enabled](./security/azure/sql_server_auditing/)
 - [Azure Ensure SQL Server AD Admin Configured](./security/azure/sql_ad_admin/)
+- [Azure Ensure SQL Server Auditing Enabled](./security/azure/sql_server_auditing/)
 - [Azure Ensure SQL Server VA Email Notifications](./security/azure/sql_server_va_emails/)
 - [Azure Ensure SQL Server VA Notify Admins/Subscription Owners](./security/azure/sql_server_va_admins/)
+- [Azure Ensure SQL Server VA Periodic Scans Enabled](./security/azure/sql_server_va_scans/)
 - [Azure Ensure SQL Server Vulnerability Assessment (VA) Enabled](./security/azure/sql_server_va/)
 
 ##### Web Apps
@@ -402,6 +423,7 @@ Reference
 - [Azure Sync Tags with Optima](./operational/azure/sync_tags_with_optima/)
 - [Azure SQL Databases without Elastic Pools](./operational/azure/azure_sql_using_elastic_pool/)
 - [Azure Tag Cardinality Report](./operational/azure/tag_cardinality/)
+- [Azure Long Running Instances](./operational/azure/azure_long_running_instances/)
 
 #### VMWare
 

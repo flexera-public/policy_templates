@@ -7,7 +7,7 @@ severity "high"
 category "Security"
 default_frequency "hourly"
 info(
-  version: "2.1",
+  version: "2.3",
   provider: "Azure",
   service: "Network Security Group",
   policy_set: "CIS",
@@ -90,8 +90,9 @@ datasource "ds_azure_resources" do
     path join(["/subscriptions/", val(iter_item,"subscriptionId"),"/providers/Microsoft.Network/networkSecurityGroups"])
     query "api-version","2021-05-01"
     header "User-Agent", "RS Policies"
+    # Ignore status 400, 403, and 404 which can be returned in certain (legacy) types of Azure Subscriptions
+    ignore_status [400,403,404]
   end
-
   result do
     encoding "json"
     collect jmes_path(response, "value[*]") do
@@ -131,8 +132,11 @@ script "js_filter_azure_resources", type: "javascript" do
         if (security_rule.properties.direction === 'Inbound') {
           if (security_rule.properties.protocol === 'TCP') {
             var bad_port = false;
-            var destinationPortRange = security_rule.properties.destinationPortRange.split('-');
-            if (destinationPortRange[1] != undefined) {
+            var destinationPortRange = [];
+            if (security_rule.properties.destinationPortRange){
+              destinationPortRange = security_rule.properties.destinationPortRange.split('-');
+            }
+            if (destinationPortRange.length != 0 && destinationPortRange[1] != undefined) {
               if (destinationPortRange[0] <= 3389 && destinationPortRange[1] >= 3389) {
                 bad_port = true;
                 console.log(destinationPortRange[0]);

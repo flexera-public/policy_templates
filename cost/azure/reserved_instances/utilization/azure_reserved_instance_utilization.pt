@@ -7,7 +7,7 @@ severity "medium"
 category "Cost"
 default_frequency "weekly"
 info(
-  version: "2.7",
+  version: "2.8",
   provider: "Azure",
   service: "Compute",
   policy_set: ""
@@ -91,7 +91,7 @@ datasource "ds_currency_reference" do
   end
 end
 
-#GET RESERVATION CHARGES DETAILS - https://docs.microsoft.com/en-us/rest/api/billing/enterprise/billing-enterprise-api-reserved-instance-charges 
+#GET RESERVATION CHARGES DETAILS - https://docs.microsoft.com/en-us/rest/api/billing/enterprise/billing-enterprise-api-reserved-instance-charges
 datasource "ds_reservation_charges" do
   request do
     run_script $js_get_reservation_charges, $param_azure_endpoint, $param_enrollment_id
@@ -164,7 +164,7 @@ script "js_reduce_reservation_charges_data", type: "javascript" do
     //get rid of reservation charges that no longer apply (if even applicable)
     charges_grouped_by_reservation_order = _.groupBy(ds_reservation_charges, "reservationOrderId")
     reservation_orders = _.keys(charges_grouped_by_reservation_order, "reservationOrderId")
-    
+
     var paid_to_date = []
     _.each(reservation_orders, function(order){
       var total_amount_paid = 0
@@ -175,19 +175,19 @@ script "js_reduce_reservation_charges_data", type: "javascript" do
       var monthly_amount = most_recent_month.amount
       var event_type = most_recent_month.eventType
       var quantity_purchased = most_recent_month.quantity
-      
+
       _.each(charges_grouped_by_reservation_order[order], function(charge){
         total_amount_paid += charge.amount
-        months_paid ++ 
+        months_paid ++
       })
 
-      paid_to_date.push({ 
-        "reservationOrderId": order, 
-        "totalAmount": total_amount_paid, 
+      paid_to_date.push({
+        "reservationOrderId": order,
+        "totalAmount": total_amount_paid,
         "months": months_paid,
         "monthlyAmount": monthly_amount,
         "eventType": event_type,
-        "quantity": quantity_purchased  
+        "quantity": quantity_purchased
       })
     })
 
@@ -196,7 +196,7 @@ script "js_reduce_reservation_charges_data", type: "javascript" do
 
     //enrich data with total amount paid to date, and total amount outstanding
     _.each(result, function(charge){
-      
+
       amount_paid = _.find(paid_to_date, function(amount){ return amount.reservationOrderId == charge.reservationOrderId })
       charge["eventType"] = amount_paid.eventType
       charge["amountPaidToDate"] = parseFloat(amount_paid.totalAmount).toFixed(2)
@@ -208,7 +208,7 @@ script "js_reduce_reservation_charges_data", type: "javascript" do
         } else {
           charge["amountOutstandingToDate"] = parseFloat((36 - amount_paid.months) * amount_paid.monthlyAmount).toFixed(2)
         }
-      } else { 
+      } else {
         charge["amountOutstandingToDate"] = 0
       }
 
@@ -217,7 +217,7 @@ script "js_reduce_reservation_charges_data", type: "javascript" do
   EOS
 end
 
-#GET RESERVATION SUMMARIES (UTILIZATION) DETAILS - https://docs.microsoft.com/en-us/rest/api/billing/enterprise/billing-enterprise-api-reserved-instance-usage 
+#GET RESERVATION SUMMARIES (UTILIZATION) DETAILS - https://docs.microsoft.com/en-us/rest/api/billing/enterprise/billing-enterprise-api-reserved-instance-usage
 datasource "ds_reservation_summaries" do
   request do
     run_script $js_get_reservation_summaries, $param_azure_endpoint, $param_enrollment_id, $param_lookback_period
@@ -233,6 +233,7 @@ datasource "ds_reservation_summaries" do
       field "maxUtilizationPercentage", jmes_path(col_item, "maxUtilizationPercentage")
       field "reservedHours", jmes_path(col_item, "reservedHours")
       field "usedHours", jmes_path(col_item, "usedHours")
+      field "usageDate", jmes_path(col_item, "usageDate")
     end
   end
 end
@@ -276,6 +277,7 @@ script "js_reduce_reservation_summaries", type: "javascript" do
   parameters "ds_reservation_summaries"
   result "result"
   code <<-EOS
+    console.log(ds_reservation_summaries)
 
     //group utilization data by reservation order ID
     util_grouped_by_reservation_order = _.groupBy(ds_reservation_summaries, "reservationOrderId")
@@ -284,22 +286,34 @@ script "js_reduce_reservation_summaries", type: "javascript" do
     //calculate average utilization and totals for reserved/used hours over period
     var period = []
     _.each(reservation_orders, function(order){
+
       var total_reserved_hours = 0, total_used_hours = 0
       var days = 0
-      var sku_name = _.last(util_grouped_by_reservation_order[order]).skuName
-      var reservation_id = _.last(util_grouped_by_reservation_order[order]).reservationId
-      
+      var sorted_utilization_data = _.sortBy(util_grouped_by_reservation_order[order], "usageDate")
+      var sku_name = _.last(sorted_utilization_data).skuName
+      var reservation_id = _.last(sorted_utilization_data).reservationId
+
       _.each(util_grouped_by_reservation_order[order], function(util){
-        total_reserved_hours += util.reservedHours
-        total_used_hours += util.usedHours
-        days ++ 
+        //This If Statement catches Reservations that do not have Utilization data, such as Azure Databricks
+        if( util.reservedHours != null ){
+          total_reserved_hours += util.reservedHours
+        }
+        if (util.usedHours != null ){
+          total_used_hours += util.usedHours
+        }
+        days ++
       })
 
-      period.push({ 
-        "reservationOrderId": order, 
-        "reservedHours": total_reserved_hours, 
+      var avg_utilization_percentage = 0
+      if (total_reserved_hours != 0){
+        avg_utilization_percentage = (total_used_hours / total_reserved_hours) * 100
+      }
+
+      period.push({
+        "reservationOrderId": order,
+        "reservedHours": total_reserved_hours,
         "usedHours": total_used_hours,
-        "avgUtilizationPercentage": (total_used_hours / total_reserved_hours) * 100,
+        "avgUtilizationPercentage": avg_utilization_percentage,
         "skuName": sku_name
         "reservationId": reservation_id
       })
@@ -328,7 +342,7 @@ script "js_combine_reservation_details", type: "javascript" do
   parameters "reservation_charges_data", "reservation_summaries_data", "isf_ratio_csv", "currency_reference", "param_utilization"
   result "all_data"
   code <<-'EOS'
-    
+
     //function for formatting spend number
     function formatNumber(number, separator) {
       var numString = number.toString();
@@ -347,7 +361,7 @@ script "js_combine_reservation_details", type: "javascript" do
       }
       return result + "." + values[1];
     }
-    
+
     //format costs with currency symbol and thousands separator
     var cur = "", separator = ""
     if ( reservation_charges_data[0].currency !== undefined ) {
@@ -369,6 +383,8 @@ script "js_combine_reservation_details", type: "javascript" do
 
     //convert normalization factor csv to json
     var isf_ratio_array = isf_ratio_csv.toString().split("\r\n")
+    isf_ratio_array = _.rest(isf_ratio_array)
+    //console.log(isf_ratio_array)
     var instance_data = []
     _.each(isf_ratio_array, function(ratio){
       instance_data.push({
@@ -377,12 +393,12 @@ script "js_combine_reservation_details", type: "javascript" do
         "nfu": ratio.split(",")[2]
       })
     })
-    
+
     //combine reservation charge data with reservation utilization data, and calculate total wasted spend per month
     var total_wastage = 0
 
     _.each(reservation_charges_data, function(charge){
-      var summary_details = _.find(reservation_summaries_data, function(summary){ 
+      var summary_details = _.find(reservation_summaries_data, function(summary){
         return summary.reservationOrderId == charge.reservationOrderId
       })
 
@@ -391,7 +407,7 @@ script "js_combine_reservation_details", type: "javascript" do
         charge["avgUtilizationPercentage"] = summary_details.avgUtilizationPercentage
         charge["reservedHours"] = summary_details.reservedHours
         charge["usedHours"] = summary_details.usedHours
-        
+
         var wastage_amount = ((100 - Number(summary_details.avgUtilizationPercentage)) / 100) * Number(charge.amount)
         total_wastage += wastage_amount
         charge["wastageAmount"] = parseFloat(wastage_amount).toFixed(2)
@@ -409,8 +425,8 @@ script "js_combine_reservation_details", type: "javascript" do
     //enrich combined_reservation_details with instance family
     _.each(combined_reservation_details, function(reservation){
       var instance_family = _.find(instance_data, function(inst){ return reservation.skuName == inst.instance_type })           //find where instance type name matches (non-case sensitive)
-      
-      if( instance_family == undefined ){ 
+
+      if( instance_family == undefined ){
         reservation["instanceFamily"] = ""
       } else {
         reservation["instanceFamily"] = instance_family.instance_family
@@ -436,7 +452,7 @@ policy "policy_azure_active_reserved_instances" do
     detail_template <<-EOS
 {{data.message}}
 EOS
-    escalate $email
+    escalate $esc_email
     check eq(size(val(data, "reservation_details")), 0)
     export "reservation_details" do
       resource_level true
@@ -505,7 +521,7 @@ EOS
       end
       field "departmentName" do
         label "Department Name"
-      end      
+      end
       field "costCenter" do
         label "Cost Center"
       end
@@ -533,7 +549,7 @@ end
 # Escalations
 ###############################################################################
 
-escalation "email" do
+escalation "esc_email" do
   automatic true
   label "Send Email"
   description "Sends incident email"

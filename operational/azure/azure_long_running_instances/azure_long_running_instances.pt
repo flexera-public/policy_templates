@@ -1,0 +1,269 @@
+name "Azure Long Running Instances"
+rs_pt_ver 20180301
+type "policy"
+short_description "Checks for running instances that have been running longer than the `Days Old` parameter. See the [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+long_description ""
+severity "low"
+category "Operational"
+default_frequency "daily"
+info(
+  version: "2.0",
+  provider: "Azure",
+  service: "Compute",
+  policy_set: "Long Running Instances"
+)
+
+###############################################################################
+# Parameters
+###############################################################################
+
+parameter "param_email" do
+  type "list"
+  label "Email notify list"
+  description "Email addresses of the recipients you wish to notify when new incidents are created"
+end
+
+parameter "param_days_old" do
+  type "number"
+  label "Days Old"
+  description "Number of days to be running before included in list"
+  default 180
+end
+
+parameter "param_automatic_action" do
+  type "string"
+  label "Automatic Actions"
+  description "When this value is set, this policy will automatically take the selected action(s)"
+  default "Select Action"
+  allowed_values "Select Action", "Stop Instances", "Terminate Instances"
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+#authenticate with Azure
+credentials "auth_azure" do
+  schemes "oauth2"
+  label "Azure Compute credential"
+  description "Select the Azure Credential from the list"
+  tags "provider=azure_rm"
+end
+
+###############################################################################
+# Pagination
+###############################################################################
+
+pagination "pagination_azure" do
+  get_page_marker do
+    body_path "nextLink"
+  end
+  set_page_marker do
+    uri true
+  end
+end  
+
+###############################################################################
+# Datasources
+###############################################################################
+
+# Gets all subscriptions
+datasource "ds_subscription_list" do
+  # https://learn.microsoft.com/en-us/rest/api/resources/subscriptions/list?tabs=HTTP
+  request do
+    auth $auth_azure
+    pagination $pagination_azure
+    host "management.azure.com"
+    path "/subscriptions/"
+    query "api-version","2020-01-01"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "value[*]") do
+      field "subscriptionId", jmes_path(col_item,"subscriptionId")
+      field "displayName", jmes_path(col_item,"displayName")
+      field "state", jmes_path(col_item,"state")
+    end
+  end
+end
+
+# Lists All Virtual Machines in each subscription
+datasource "ds_vm_list" do
+  # https://learn.microsoft.com/en-us/rest/api/compute/virtual-machines/list-all?tabs=HTTP
+  iterate $ds_subscription_list
+  request do
+    auth $auth_azure
+    pagination $pagination_azure
+    host "management.azure.com"
+    path join(["/subscriptions/", val(iter_item,"subscriptionId"), "/providers/Microsoft.Compute/virtualMachines"])
+    query "api-version","2022-08-01"
+    query "statusOnly", "true"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "value[*]") do
+      field "id", jmes_path(col_item,"id")
+      field "rg", get(4, split(jmes_path(col_item,"id"), "/"))
+      field "name", jmes_path(col_item,"name")
+      field "statuses", jmes_path(col_item,"properties.instanceView.statuses")
+      field "subscriptionId",val(iter_item,"subscriptionId")
+      field "subscriptionName",val(iter_item,"displayName")
+    end
+  end
+end
+
+# Calls the script to get only the virtual machines that are running
+datasource "ds_vm_running" do
+    run_script $js_filter_vm_running, $ds_vm_list, $param_days_old
+  end
+
+###############################################################################
+# Scripts
+###############################################################################
+
+# Returns instances that are long running
+script "js_filter_vm_running", type: "javascript" do
+  parameters "ds_vm_list", "param_days_old"
+  result "result"
+  code <<-EOS
+  var result=[];
+  _.each(ds_vm_list, function(instance){
+    var codes = _.pluck(instance.statuses, 'code')
+    if ( _.contains(codes, "PowerState/running") ) {
+      var runningState = _.where(instance.statuses, {"code": "PowerState/running"});
+      var displayStatus = runningState[0]["displayStatus"];
+      var provisionState = _.where(instance.statuses, {"code": "ProvisioningState/succeeded"});
+      var timeRunning = provisionState[0]["time"];
+      var timeofevent = new Date(timeRunning);
+      var nowtime = Date.now();
+      var res = Math.abs(timeofevent.valueOf() - nowtime.valueOf());
+      var daysElapsed = Math.ceil(res / (1000 * 3600 * 24));
+      result.push({
+        "name": instance["name"],
+        "status": displayStatus,
+        "time_running": timeRunning,
+        "days_elapsed": daysElapsed,
+        "resourcegroup" : instance["rg"]
+        "subscriptionId" : instance["subscriptionId"]
+        "subscriptionName" : instance["subscriptionName"]
+      })
+    }
+  })
+  EOS
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "policy_utilization" do
+  validate_each $ds_vm_running do
+    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} Azure VMs running longer than {{parameters.param_days_old}} day(s)"
+    escalate $esc_email
+    escalate $esc_stop_instances
+    escalate $esc_terminate_instances
+    check lt(to_n(val(item, "days_elapsed")), $param_days_old)
+    export do
+      resource_level false
+      field "subscriptionName" do
+        label "Subscription Name"
+      end
+      field "name" do
+        label "Name"
+      end
+      field "resourcegroup" do
+        label "Resource Group"
+      end
+      field "status" do
+        label "Status"
+      end
+      field "time_running" do
+        label "Time Running"
+      end
+      field "days_elapsed" do
+        label "Days Elapsed"
+      end
+    end
+  end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_email" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
+end
+
+escalation "esc_stop_instances" do
+  automatic eq($param_automatic_action, "Stop Instances")
+  label "Stop Instances"
+  description "Stop selected instances"
+  run "stop_instances", data
+end
+
+escalation "esc_terminate_instances" do
+  automatic eq($param_automatic_action, "Terminate Instances")
+  label "Terminate Instances"
+  description "Terminate selected instances"
+  run "terminate_instances", data
+end
+
+###############################################################################
+# Cloud Workflow
+###############################################################################
+
+# Workflow to power off the virtual machines
+define stop_instances($data) return $all_responses do
+  # https://learn.microsoft.com/en-us/rest/api/compute/virtual-machines/power-off?tabs=HTTP
+  $all_responses = []
+  foreach $item in $data do
+    sub on_error: skip do
+      $response = http_request(
+        auth: $$auth_azure,
+        verb: "POST",
+        host: "management.azure.com",
+        href: join(["/subscriptions/", $item['subscriptionId'], "/resourceGroups/", $item["resourcegroup"], "/providers/Microsoft.Compute/virtualMachines/", $item["name"], "/powerOff/"]),
+        https: true,
+        query_strings: {
+          "api-version": "2022-08-01"
+        },
+        headers: {
+          "cache-control": "no-cache",
+          "content-type": "application/json"
+        }
+      )
+      $all_responses << $response
+    end
+  end
+end
+
+# Workflow to delete the virtual machines
+define terminate_instances($data) return $all_responses do
+  # https://learn.microsoft.com/en-us/rest/api/compute/virtual-machines/delete?tabs=HTTP
+  $all_responses = []
+  foreach $item in $data do
+    sub on_error: skip do
+      $response = http_request(
+        auth: $$auth_azure,
+        verb: "DELETE",
+        host: "management.azure.com",
+        href: join(["/subscriptions/", $item['subscriptionId'], "/resourceGroups/", $item["resourcegroup"], "/providers/Microsoft.Compute/virtualMachines/",$item["name"]]),
+        https: true,
+        query_strings: {
+          "api-version": "2022-08-01"
+        },
+        headers: {
+          "cache-control": "no-cache",
+          "content-type": "application/json"
+        }
+      )
+      $all_responses << $response
+    end
+  end
+end

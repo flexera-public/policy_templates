@@ -9,7 +9,7 @@ Metadata:
     ParameterGroups:
       # ParameterGroup with paramFlexeraOrgId should be first.
       # paramFlexeraOrgId only param that is actually required (if Org is on app.flexera.com)
-      - Label: 
+      - Label:
           default: "Parameters related to your Organization on the Flexera Platform"
         Parameters:
           - paramFlexeraOrgId
@@ -27,6 +27,7 @@ Metadata:
           - paramPermsAWSUnusedIPAddresses
           - paramPermsAWSOldSnapshots
           - paramPermsAWSIdleComputeInstances
+          - paramPermsAttachExistingPolicies
     # https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-properties-cloudformation-interface-parameterlabel.html
     ParameterLabels:
       paramRoleName:
@@ -49,6 +50,8 @@ Metadata:
         default: "Permissions for Policy Template: AWS Old Snapshots"
       paramPermsAWSIdleComputeInstances:
         default: "Permissions for Policy Template: AWS Idle Compute Instances"
+      paramPermsAttachExistingPolicies:
+        default: "Additional IAM Permission Policies for IAM Role"
 
 Parameters:
   # ParameterGroup: Parameters related to your Organization on the Flexera Platform
@@ -67,6 +70,7 @@ Parameters:
     AllowedValues:
       - app.flexera.com
       - app.flexera.eu
+      - app.flexera.au
       - app.flexeratest.com
 
   # ParameterGroup: Parameters for the IAM Role that is created
@@ -120,6 +124,13 @@ Parameters:
     AllowedValues:
       - No Access
       - Read Only
+  paramPermsAttachExistingPolicies:
+    Description: 'Existing IAM Permission Policies to attach to the IAM Role that will be created. (Optional, comma separated list of IAM Policy ARNs)'
+    Type: String
+    #  AWS Managed Policy ARN:      arn:aws:iam::aws:policy/ReadOnlyAccess
+    #  Customer Managed Policy ARN: arn:aws:iam::123456789012:policy/CustomPolicy
+    AllowedPattern: '^((arn:aws:iam::(\d{12}|aws)?:policy\/[\w+=,.@-]{1,128})(,)?)*$'
+    ConstraintDescription: 'Malformed IAM Policy ARN.  Must match pattern ^((arn:aws:iam::(\d{12}|aws)?:policy\/[\w+=,.@-]{1,128})(,)?)*$'
 
 Conditions:
   CreatePolicyAWSUnusedVolumesRead: !Not
@@ -159,6 +170,10 @@ Conditions:
   # CreatePolicyAWSIdleComputeInstancesAction: !Equals
   #   - !Ref paramPermsAWSIdleComputeInstances
   #   - Read and Take Action
+  ValueProvidedparamPermsAttachExistingPolicies: !Not
+    - !Equals
+      - !Ref paramPermsAttachExistingPolicies
+      - ""
 
 Mappings:
   TrustedRoleMap:
@@ -166,6 +181,8 @@ Mappings:
       roleArn: "arn:aws:iam::451234325714:role/production_customer_access"
     app.flexera.eu:
       roleArn: "arn:aws:iam::451234325714:role/production_eu_customer_access"
+    app.flexera.au:
+      roleArn: "arn:aws:iam::451234325714:role/production_apac_customer_access"
     app.flexeratest.com:
       roleArn: "arn:aws:iam::274571843445:role/staging_customer_access"
   PermissionMap:
@@ -177,6 +194,7 @@ Mappings:
         - "ec2:DescribeVolumes"
         - "ec2:DescribeSnapshots"
         - "cloudwatch:GetMetricStatistics"
+        - "cloudwatch:GetMetricData"
       action:
         - "ec2:CreateTags"
         - "ec2:CreateSnapshot"
@@ -185,6 +203,7 @@ Mappings:
       read:
         - "ec2:DescribeRegions"
         - "cloudwatch:GetMetricStatistics"
+        - "cloudwatch:GetMetricData"
         - "cloudwatch:ListMetrics"
       action: []
     AWSUnusedIPAddresses:
@@ -199,6 +218,10 @@ Mappings:
         - "ec2:DescribeRegions"
         - "ec2:DescribeImages"
         - "ec2:DescribeSnapshots"
+        - "rds:DescribeDBInstances"
+        - "rds:DescribeDBSnapshots"
+        - "rds:DescribeDBClusters"
+        - "rds:DescribeDBClusterSnapshots"
         - "sts:GetCallerIdentity"
       action:
         - "ec2:DeregisterImage"
@@ -209,6 +232,7 @@ Mappings:
         - "ec2:DescribeInstances"
         - "ec2:DescribeTags"
         - "cloudwatch:GetMetricStatistics"
+        - "cloudwatch:GetMetricData"
         - "cloudwatch:ListMetrics"
       action: []
 
@@ -236,6 +260,13 @@ Resources:
             Condition:
               StringEquals:
                 "sts:ExternalId": !Ref paramFlexeraOrgId
+      # ManagedPolicyArns value is conditional based on input paramPermsAttachExistingPolicies
+      ManagedPolicyArns: !If
+        - ValueProvidedparamPermsAttachExistingPolicies
+        # If value is provided for paramPermsAttachExistingPolicies, split that comma-separated list into a list object
+        - !Split [ ",", !Ref paramPermsAttachExistingPolicies ]
+        # Provide a null value if nothing provided for paramPermsAttachExistingPolicies
+        - !Ref AWS::NoValue
   # Begin IAM Permission Policy Resources
   # 1 or 2 Permission Policies per Policy Template (read and action)
   # Policy create/attachment is conditional based on parameter input for each policy

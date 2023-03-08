@@ -35,11 +35,11 @@ As you follow the official docs, you can use the recommended configurations belo
 
  - Under **Specify template**, provide the template S3 URL:
 
-   <https://flexera-cloudformation-public.s3.us-east-2.amazonaws.com/FlexeraAutomationPolicies_v0.1.0.template>
+   <https://flexera-cloudformation-public.s3.us-east-2.amazonaws.com/FlexeraAutomationPolicies_latest.template>
 
-   It's recommended to use an official release for Production use-cases (i.e. *vX.Y.Z*) but we also provide *[FlexeraAutomationPolicies_latest.template](https://flexera-cloudformation-public.s3.us-east-2.amazonaws.com/FlexeraAutomationPolicies_latest.template)* which will always have the most recent changes.
-
-   All official releases can be found under [releases/](./releases/) folder and are published to  `https://flexera-cloudformation-public.s3.us-east-2.amazonaws.com/`
+   > It's recommended to use an official release for Production use-cases (i.e. *vX.Y.Z*).  All official releases can be found under [releases/](./releases/) folder and are published to  `https://flexera-cloudformation-public.s3.us-east-2.amazonaws.com/FlexeraAutomationPolicies_vX.Y.Z.template`. An example of an release template S3 URL:
+   >
+   > **https://flexera-cloudformation-public.s3.us-east-2.amazonaws.com/FlexeraAutomationPolicies_v0.2.1.template**
 
  - On the **Specify StackSet details** page, provide a name for the stack set, specify *Flexera Organization ID* and any other parameters, and then choose **Next**.
 

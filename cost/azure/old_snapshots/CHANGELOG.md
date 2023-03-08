@@ -1,5 +1,17 @@
 # Changelog
 
+## v4.3
+
+- Raised API limit to handle situations where more than 10,000 line items need to be retrieved.
+
+## v4.2
+
+- Replaced the term **whitelist** with **allowed list**.
+
+## v4.1
+
+- Added `ignore_status [400,403,404]` for API calls to Azure API to ignore errors related to legacy subscription types
+
 ## v4.0
 
 - Deprecated `auth_rs` authentication (type: `rightscale`) and replaced with `auth_flexera` (type: `oauth2`).  This is a breaking change which requires a Credential for `auth_flexera` [`provider=flexera`] before the policy can be applied.  Please see docs for setting up [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm)

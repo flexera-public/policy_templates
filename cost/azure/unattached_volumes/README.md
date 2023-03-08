@@ -2,7 +2,7 @@
 
 ## What it does
 
-This Policy Template scans all volumes in the given account and identifies any volume that has been unused for at least the number of days specified by user. Using activity logs, we will determine the number of days the volume has been unused. If any are found, an incident report will show the volumes and related information. An email will be sent to the user-specified email address.
+This Policy Template scans all volumes in the given account and identifies any unattached volume that has been unused for at least the number of days specified by user. Using activity logs, we will determine whether any activity related to the unattached disk occurred in the range specified by user. If no activity detected, then the disk is deemed to be unused. If any unused disks are found, an incident report will show the volumes and related information. An email will be sent to the user-specified email address.
 
 If the user approves that the volumes should be deleted, the policy will delete the volumes.
 If the volume is not getting deleted, say, because it is locked, then the volume will be tagged to indicate the error that was received.
@@ -41,7 +41,7 @@ This policy has the following input parameters required when launching the polic
 - *Exclusion Tag Key* - A list of tags used to excluded volumes from the incident.
 - *Create Final Snapshot* - Boolean for whether or not to take a final snapshot before deleting.
 - *Azure Endpoint* - Azure Endpoint to access resources
-- *Subscription Whitelist* - Whitelisted Subscriptions, if empty, all subscriptions will be checked
+- *Subscription Allowed List* - Allowed Subscriptions, if empty, all subscriptions will be checked
 - *Automatic Actions* - When this value is set, this policy will automatically take the selected action(s).
 
 Please note that the "*Automatic Actions*" parameter contains a list of action(s) that can be performed on the resources. When it is selected, the policy will automatically execute the corresponding action on the data that failed the checks, post incident generation. Please leave it blank for *manual* action.

@@ -12,7 +12,7 @@ The policy leverages the Azure API to identify the resources that have public IP
 
 - *Email addresses of the recipients you wish to notify* - A list of email addresses to notify
 - *Azure Endpoint* - Azure Endpoint to access resources
-- *Subscription Whitelist* - Whitelisted Subscriptions, if empty, all subscriptions will be checked
+- *Subscription Allowed List* - Allowed Subscriptions, if empty, all subscriptions will be checked
 
 ## Prerequisites
 

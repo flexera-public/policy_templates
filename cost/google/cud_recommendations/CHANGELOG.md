@@ -1,6 +1,11 @@
 # Changelog
 
-## 2.6
+## v2.7
+
+- Removed param_automatic_action parameter, no applicable CWF
+- hardset reduction type from Usage Reduction to Rate Reduction being set in scraper service
+
+## v2.6
 
 - Added policySet as Reserved Instance to populate the Total Potential Savings
 

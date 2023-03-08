@@ -7,7 +7,7 @@ severity "low"
 category "Cost"
 default_frequency "daily"
 info(
-  version: "4.0",
+  version: "4.4",
   provider: "Azure",
   service: "Storage",
   policy_set: "Unused Volumes"
@@ -52,10 +52,10 @@ parameter "param_azure_endpoint" do
   default "management.azure.com"
 end
 
-parameter "param_subscription_whitelist" do
-  label "Subscription Whitelist"
+parameter "param_subscription_allowed_list" do
+  label "Subscription Allowed List"
   type "list"
-  description "Whitelisted Subscriptions, if empty, all subscriptions will be checked"
+  description "Allowed Subscriptions, if empty, all subscriptions will be checked"
 end
 
 parameter "param_automatic_action" do
@@ -131,7 +131,7 @@ datasource "ds_subscriptions" do
 end
 
 datasource "ds_filtered_subscriptions" do
-  run_script $js_filtered_subscriptions, $ds_subscriptions, $param_subscription_whitelist
+  run_script $js_filtered_subscriptions, $ds_subscriptions, $param_subscription_allowed_list
 end
 
 #get all disks
@@ -143,6 +143,7 @@ datasource "ds_azure_disks" do
     host $param_azure_endpoint
     path join(["/subscriptions/", val(iter_item,"subscriptionID"), "/providers/Microsoft.Compute/disks"])
     query "api-version","2019-07-01"
+    # Ignore status 400, 403, and 404 which can be returned in certain (legacy) types of Azure Subscriptions
     ignore_status [400,403,404]
   end
   result do
@@ -176,7 +177,7 @@ datasource "ds_azure_log_activity" do
     encoding "json"
     collect jmes_path(response, "value[*]") do
       field "operationName", jmes_path(col_item,"operationName.localizedValue")
-      field "responseBody", jmes_path(col_item,"properties.responseBody")
+      field "resourceID", jmes_path(col_item,"resourceId")
     end
   end
 end
@@ -257,13 +258,13 @@ end
 ###############################################################################
 
 script "js_filtered_subscriptions", type: "javascript" do
-  parameters "ds_subscriptions", "param_subscription_whitelist"
+  parameters "ds_subscriptions", "param_subscription_allowed_list"
   result "results"
   code <<-EOS
   var results = []
-  if ( param_subscription_whitelist.length != 0){
+  if ( param_subscription_allowed_list.length != 0){
     results = []
-    _.each(param_subscription_whitelist, function(sub){
+    _.each(param_subscription_allowed_list, function(sub){
       var found = _.find(ds_subscriptions, function(item){
         return item.subscriptionID == sub || item.subscriptionName.toLowerCase() == sub.toLowerCase();
       })
@@ -311,7 +312,7 @@ script "js_get_costs", type:"javascript" do
         "end_at": end_date,
         "metrics": ["cost_nonamortized_unblended_adj"],
         "billing_center_ids": _.compact(_.map(billing_centers, function(value){ return value.id})),
-        "limit": 10000,
+        "limit": 100000,
         "filter": {
           "expressions": [
             {
@@ -341,7 +342,10 @@ script "js_get_logactivity", type: "javascript" do
   parameters "subscriptionID", "resourceID", "param_unattached_days", "param_azure_endpoint"
   result "results"
   code <<-EOS
-
+  // filter only allows for 90 days worth of logs, hardset to maximum value to avoid api error response
+    if (param_unattached_days > 89) {
+      param_unattached_days = 89
+    }
     var currentDate=new Date();
     var date1=currentDate.getFullYear()+'-'+(currentDate.getMonth()+1)+'-'+currentDate.getDate();
     var expectedDate=new Date();
@@ -353,6 +357,7 @@ script "js_get_logactivity", type: "javascript" do
       host: param_azure_endpoint,
       path: "/subscriptions/"+subscriptionID+"/providers/microsoft.insights/eventtypes/management/values",
       verb: 'GET',
+      // Ignore status 400, 403, and 404 which can be returned in certain (legacy) types of Azure Subscriptions
       ignore_status: [400,403,404],
       auth: "azure_auth",
       pagination: "azure_pagination",
@@ -370,7 +375,15 @@ script "js_filter_activities", type: "javascript" do
   result "results"
   code <<-EOS
   var results = []
-  var activities = ds_azure_log_activity;
+  _.each(ds_filter_disks, function(disk, diskIndex) {
+    ds_filter_disks[diskIndex].activities = []
+    _.each(ds_azure_log_activity, function(activity, actIndex){
+      if (activity.resourceID === disk['disk_id']) {
+        ds_filter_disks[diskIndex].activities.push(activity)
+      }
+    })
+  })
+
   for (i in ds_filter_disks) {
     var ismatched = false;
     var disk = ds_filter_disks[i];
@@ -379,17 +392,8 @@ script "js_filter_activities", type: "javascript" do
     expectedDate.setDate(expectedDate.getDate() - parseInt(param_unattached_days));
     var diskId = disk['disk_id'];
     var diskName = disk['resourceName'];
-    for (var i = 0; i < activities.length; i++) {
-      var activity = activities[i].toString();
-      if (activity.indexOf(diskId) > -1 && activity.indexOf('toBeDetached') > -1) {
-        var diskString = activity.substring(activity.indexOf('toBeDetached') - 300, activity.indexOf('toBeDetached'));
-        var tobedetach = activity.substring(activity.indexOf('toBeDetached'), activity.indexOf('toBeDetached') + 20);
-        if (tobedetach.indexOf('true') > -1 && diskString.indexOf(diskId) > -1) {
-          ismatched = true;
-        }
-      }
-    }
-    if ((!ismatched) && expectedDate.getTime() >= createdTime.getTime()) {
+
+    if (disk.activities.length === 0 && expectedDate.getTime() >= createdTime.getTime()) {
       results.push({
         disk_id: disk['disk_id'],
         resourceName: disk['resourceName'],

@@ -4,9 +4,9 @@ type "policy"
 short_description "Checks for unused IP addresses in the given account and, optionally deletes them. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/unused_ip_addresses) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more"
 severity "low"
 category "Cost"
-default_frequency "monthly"
+default_frequency "weekly"
 info(
-  version: "4.0",
+  version: "4.4",
   provider: "Azure",
   service: "Compute",
   policy_set: "Unused IP Addresses"
@@ -37,10 +37,10 @@ parameter "param_azure_endpoint" do
   default "management.azure.com"
 end
 
-parameter "param_subscription_whitelist" do
-  label "Subscription Whitelist"
+parameter "param_subscription_allowed_list" do
+  label "Subscription Allowed List"
   type "list"
-  description "Whitelisted Subscriptions, if empty, all subscriptions will be checked"
+  description "Allowed Subscriptions, if empty, all subscriptions will be checked"
 end
 
 parameter "param_automatic_action" do
@@ -105,19 +105,19 @@ datasource "ds_subscriptions" do
   end
 end
 
-#FILTER SUBSCRIPTIONS BASED ON WHITELIST PARAMETER
+#FILTER SUBSCRIPTIONS BASED ON ALLOWED LIST PARAMETER
 datasource "ds_filtered_subscriptions" do
-  run_script $js_filter_subscriptions, $ds_subscriptions, $param_subscription_whitelist
+  run_script $js_filter_subscriptions, $ds_subscriptions, $param_subscription_allowed_list
 end
 
 script "js_filter_subscriptions", type: "javascript" do
-  parameters "ds_subscriptions", "param_subscription_whitelist"
+  parameters "ds_subscriptions", "param_subscription_allowed_list"
   result "results"
   code <<-EOS
     var results = []
-    if( param_subscription_whitelist.length != 0 ){
+    if( param_subscription_allowed_list.length != 0 ){
       results = []
-      _.each(param_subscription_whitelist, function(sub){
+      _.each(param_subscription_allowed_list, function(sub){
         var found = _.find(ds_subscriptions, function(item){
           return item.subscriptionId == sub || item.subscriptionName.toLowerCase() == sub.toLowerCase();
         })
@@ -137,6 +137,8 @@ datasource "ds_public_ip_addresses" do
     host $param_azure_endpoint
     path join(["/subscriptions/", val(iter_item,"subscriptionId"), "/providers/Microsoft.Network/publicIPAddresses"])
     query "api-version", "2021-08-01"
+    # Ignore status 400, 403, and 404 which can be returned in certain (legacy) types of Azure Subscriptions
+    ignore_status [400,403,404]
   end
   result do
     encoding "json"
@@ -257,7 +259,7 @@ script "js_get_costs", type:"javascript" do
         "end_at": end_date,
         "metrics": ["cost_nonamortized_unblended_adj"],
         "billing_center_ids": _.compact(_.map(billing_centers, function(value){ return value.id })),
-        "limit": 10000,
+        "limit": 100000,
         "filter": {
           "expressions": [
             {
@@ -283,7 +285,7 @@ script "js_get_costs", type:"javascript" do
         "User-Agent": "RS Policies",
         "Api-Version": "1.0"
       },
-      ignore_status: [400]
+      ignore_status: [400, 404]
     }
   EOS
 end
@@ -317,8 +319,11 @@ script "js_exclude_tags", type: "javascript" do
           tags.push(key+'='+ipAddress.tags[key])
         });
 
-        resourceTypeSplit = ipAddress.resourceType.split("/")
-        service = resourceTypeSplit[0]
+        var service = ""
+        if (ipAddress.resourceType != null){
+          resourceTypeSplit = ipAddress.resourceType.split("/")
+          service = resourceTypeSplit[0]
+        }
 
         if( properties.ipConfiguration == null && properties.natGateway == null ){
           results.push({
