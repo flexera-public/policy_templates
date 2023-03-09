@@ -7,7 +7,7 @@ severity "low"
 category "Cost"
 default_frequency "daily"
 info(
-  version: "4.4",
+  version: "4.5",
   provider: "Azure",
   service: "Storage",
   policy_set: "Unused Volumes"
@@ -168,10 +168,24 @@ datasource "ds_filter_disks" do
   run_script $js_filter_disks, $param_exclusion_tag_key, $ds_azure_disks
 end
 
-datasource "ds_azure_log_activity" do
-  iterate $ds_filter_disks
+datasource "ds_azure_log_activity_disks" do
+  iterate $ds_filtered_subscriptions
   request do
-    run_script $js_get_logactivity, val(iter_item,"subscriptionID"), val(iter_item, "disk_id"), $param_unattached_days, $param_azure_endpoint
+    run_script $js_get_logactivity, val(iter_item,"subscriptionID"), $param_unattached_days, $param_azure_endpoint, "Microsoft.Compute/disks"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "value[*]") do
+      field "operationName", jmes_path(col_item,"operationName.localizedValue")
+      field "resourceID", jmes_path(col_item,"resourceId")
+    end
+  end
+end
+
+datasource "ds_azure_log_activity_deployments" do
+  iterate $ds_filtered_subscriptions
+  request do
+    run_script $js_get_logactivity, val(iter_item,"subscriptionID"), $param_unattached_days, $param_azure_endpoint, "Microsoft.Resources/deployments"
   end
   result do
     encoding "json"
@@ -246,7 +260,7 @@ datasource "ds_volume_costs" do
 end
 
 datasource "ds_filter_activities" do
-  run_script $js_filter_activities, $ds_azure_log_activity, $ds_filter_disks, $param_unattached_days
+  run_script $js_filter_activities, $ds_azure_log_activity_disks, $ds_azure_log_activity_deployments, $ds_filter_disks, $param_unattached_days
 end
 
 datasource "ds_volume_cost_mapping" do
@@ -339,7 +353,7 @@ script "js_get_costs", type:"javascript" do
 end
 
 script "js_get_logactivity", type: "javascript" do
-  parameters "subscriptionID", "resourceID", "param_unattached_days", "param_azure_endpoint"
+  parameters "subscriptionID", "param_unattached_days", "param_azure_endpoint", "resource_type"
   result "results"
   code <<-EOS
   // filter only allows for 90 days worth of logs, hardset to maximum value to avoid api error response
@@ -351,7 +365,7 @@ script "js_get_logactivity", type: "javascript" do
     var expectedDate=new Date();
     expectedDate.setDate(expectedDate.getDate()- parseInt(param_unattached_days));
     var date2=expectedDate.getFullYear()+'-'+(expectedDate.getMonth()+1)+'-'+expectedDate.getDate();
-    var filter= "eventTimestamp ge '"+date2+"T00:00:00Z' and eventTimestamp le '"+date1+"T23:59:59Z' and eventChannels eq 'Admin, Operation' and resourceId eq '" + resourceID + "'"
+    var filter= "eventTimestamp ge '"+date2+"T00:00:00Z' and eventTimestamp le '"+date1+"T23:59:59Z' and eventChannels eq 'Admin, Operation' and resourceType eq '" + resource_type +  "'"
 
     results = {
       host: param_azure_endpoint,
@@ -363,7 +377,7 @@ script "js_get_logactivity", type: "javascript" do
       pagination: "azure_pagination",
       query_params: {
         'api-version': '2015-04-01',
-        '$filter': filter,
+        '$filter': filter
         '$select': 'operationName,properties'
       }
     }
@@ -371,17 +385,14 @@ script "js_get_logactivity", type: "javascript" do
 end
 
 script "js_filter_activities", type: "javascript" do
-  parameters "ds_azure_log_activity", "ds_filter_disks", "param_unattached_days"
-  result "results"
+  parameters "log_activity_disks", "log_activity_deployments", "ds_filter_disks", "param_unattached_days"
+  result "result"
   code <<-EOS
-  var results = []
-  _.each(ds_filter_disks, function(disk, diskIndex) {
-    ds_filter_disks[diskIndex].activities = []
-    _.each(ds_azure_log_activity, function(activity, actIndex){
-      if (activity.resourceID === disk['disk_id']) {
-        ds_filter_disks[diskIndex].activities.push(activity)
-      }
-    })
+  result = []
+  azure_log_activity = {}
+
+  _.each(log_activity_disks.concat(log_activity_deployments), function(item) {
+    azure_log_activity[item['resourceID']] = true
   })
 
   for (i in ds_filter_disks) {
@@ -393,8 +404,8 @@ script "js_filter_activities", type: "javascript" do
     var diskId = disk['disk_id'];
     var diskName = disk['resourceName'];
 
-    if (disk.activities.length === 0 && expectedDate.getTime() >= createdTime.getTime()) {
-      results.push({
+    if (azure_log_activity[diskId] == undefined && expectedDate.getTime() >= createdTime.getTime()) {
+      result.push({
         disk_id: disk['disk_id'],
         resourceName: disk['resourceName'],
         region: disk['region'],
@@ -574,6 +585,10 @@ script "js_volume_cost_mapping", type:"javascript" do
 EOS
 end
 
+###############################################################################
+# Policy
+###############################################################################
+
 policy "pol_azure_unattached_volumes" do
   validate $ds_volume_cost_mapping do
     summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data.instances }} Unused Volumes Found"
@@ -634,6 +649,10 @@ EOS
     end
   end
 end
+
+###############################################################################
+# Escalations
+###############################################################################
 
 escalation "send_email_report" do
   automatic true

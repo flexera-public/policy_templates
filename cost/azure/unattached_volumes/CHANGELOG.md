@@ -1,5 +1,9 @@
 # Changelog
 
+## v4.5
+
+- Improved policy efficiency when gathering Azure log data
+
 ## v4.4
 
 - Raised API limit to handle situations where more than 10,000 line items need to be retrieved.
