@@ -1,5 +1,10 @@
 # Changelog
 
+## v1.4
+
+- Fixed check for underutilized compute instances
+- Added default values for parameters that are not required
+
 ## v1.3
 
 - Raised API limit to handle situations where more than 10,000 line items need to be retrieved.
