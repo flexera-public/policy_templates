@@ -37,7 +37,7 @@ end
 
 parameter "param_use_groups" do
   type "string"
-  label "Data grouping"
+  label "Degree of Summarization"
   allowed_values "Summarized","By dimensions"
   default "Summarized"
   description "Use this parameter to specify how to group the data"
@@ -182,12 +182,12 @@ end
 
 
 datasource "ds_aggregated" do
-  run_script $js_aggregated, $ds_reports, $ds_currency_code, $ds_currency_reference, $param_threshold_percentage, $param_type
+  run_script $js_aggregated, $ds_reports, $ds_currency_code, $ds_currency_reference, $param_threshold_percentage, $param_type, f1_app_host
 end
 
 
 script "js_aggregated", type: "javascript" do
-  parameters "reports", "currency_code", "currency_reference", "threshold_percent", "param_type"
+  parameters "reports", "currency_code", "currency_reference", "threshold_percent", "param_type", "f1_app_host"
   result "results"
   code <<-EOS
   var results = {
@@ -202,7 +202,10 @@ script "js_aggregated", type: "javascript" do
 
   function forecasted(curr) {
     var now = new Date();
-    var day = now.getUTCDate();
+    var day = now.getUTCDate()-1;
+		if (day < 1) {
+			return 0;
+		}
     var days = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate()
     return curr / day * days
   }
@@ -211,10 +214,11 @@ script "js_aggregated", type: "javascript" do
   var monthYear = current.getFullYear() + '-' + ('0' + (current.getMonth()+1)).slice(-2);
 
   _.each(reports, function (item) {
-    if (item.budgetAmount && item.spendAmount) {
-	  item.monthYear = monthYear;
+		item.budgetAmount = item.budgetAmount || 0;
+    if (item.spendAmount) {
+	    item.monthYear = monthYear;
       item.forecasted = "";
-	  item.currency = currency_code.value;
+	    item.currency = currency_code.value;
       item.forecastedAmount = item.spendAmount;
       var date = new Date(item.timestamp);
       item.date = date.toLocaleDateString();
@@ -227,10 +231,12 @@ script "js_aggregated", type: "javascript" do
       item.budgetAmount = Math.round(item.budgetAmount * 100) / 100;
       item.spendAmount = Math.round(item.spendAmount * 100) / 100;
       item.overBudgetAmount = Math.max(0, Math.round((item.spendAmount - item.budgetAmount) * 100) / 100);
-      item.remaining = Math.max(0, Math.round((item.budgetAmount-item.spendAmount) * 100) / 100);
-      item.spentPercent = Math.round(item.spendAmount / item.budgetAmount * 100)
+      item.remaining = Math.round((item.budgetAmount-item.spendAmount) * 100) / 100;
       item.overBudgetAmountForec = Math.max(0, Math.round((item.forecastedAmount - item.budgetAmount) * 100) / 100);
-      item.spentPercentForec = Math.round(item.forecastedAmount / item.budgetAmount * 100)
+			if (item.budgetAmount) {
+				item.spentPercent = Math.round(item.spendAmount / item.budgetAmount * 10000)/100
+				item.spentPercentForec = Math.round(item.forecastedAmount / item.budgetAmount * 10000)/100
+			}
 
       // values for export
       item.budget = item.budgetAmount;
@@ -260,26 +266,29 @@ script "js_aggregated", type: "javascript" do
         item.forecasted = currency + item.forecasted;
       }
 
-      var budget_percent = item.spentPercent
-      var budget_percent_forec = item.spentPercentForec
-      item.spentPercent += "%"
-      item.spentPercentForec += "%"
+			if (item.spentPercent !== undefined) {
+				var budget_percent = item.spentPercent;
+				var budget_percent_forec = item.spentPercentForec;
+				item.spentPercent += "%";
+				item.spentPercentForec += "%";
+			}
+			item.host = f1_app_host;
 
       if (param_type == "Actual Spend") {
         if (item.spendAmount > item.budgetAmount) {
           item.details = "Actual spend exceeded budget"
-          results.exceeded.push(item);
-        } else if (threshold_percent < budget_percent) {
-          item.details = "Actual spend exceeded budget threshold"
-          results.exceeded.push(item);
+					results.exceeded.push(item);
+        } else if (budget_percent === undefined || threshold_percent < budget_percent) {
+					item.details = "Actual spend exceeded budget threshold"
+					results.exceeded.push(item);
         }
       } else {
         if (item.forecastedAmount > item.budgetAmount) {
           item.details = "Projected spend exceeded budget"
-          results.forecasted.push(item);
-        } else if (threshold_percent < budget_percent_forec) {
+					results.forecasted.push(item);
+        } else if (budget_percent_forec === undefined || threshold_percent < budget_percent_forec) {
           item.details = "Projected spend exceeded budget threshold"
-          results.exceeded.push(item);
+					results.forecasted.push(item);
         }
       }
     }
@@ -326,7 +335,7 @@ policy "budget_alert" do
 ### Cost Metric: {{with index data 0}}{{ .metric }}{{end}}
 ### Budget Alert Type: {{ parameters.param_type }}
 ### Monthly Spend for {{with index data 0}}{{ .monthYear }}{{end}}
-[Link to budget report in Flexera One](https://{{ rs_cm_host }}/orgs/{{ rs_org_id }}/optima/budgets/{{with index data 0}}{{ .b_id }}{{end}})
+[Link to budget report in Flexera One](https://{{with index data 0}}{{ .host }}{{end}}/orgs/{{ rs_org_id }}/optima/budgets/{{with index data 0}}{{ .b_id }}{{end}})
 EOS
     hash_exclude "budgetAmount", "remaining", "spendAmount"
     escalate $esc_budget_alert
@@ -369,7 +378,7 @@ EOS
 ### Cost Metric: {{with index data 0}}{{ .metric }}{{end}}
 ### Budget Alert Type: {{ parameters.param_type }}
 ### Monthly Spend for {{with index data 0}}{{ .monthYear }}{{end}}
-[Link to budget report in Flexera One](https://app.flexera.com/orgs/{{ rs_org_id }}/optima/budgets/{{with index data 0}}{{ .b_id }}{{end}})
+[Link to budget report in Flexera One](https://{{with index data 0}}{{ .host }}{{end}}/orgs/{{ rs_org_id }}/optima/budgets/{{with index data 0}}{{ .b_id }}{{end}})
 EOS
     hash_exclude "budgetAmount", "remaining", "spendAmount"
     escalate $esc_budget_alert
