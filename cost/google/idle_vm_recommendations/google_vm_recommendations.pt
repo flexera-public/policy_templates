@@ -6,7 +6,7 @@ category "Cost"
 severity "low"
 default_frequency "daily"
 info(
-  version: "2.4",
+  version: "2.5",
   provider:"Google",
   service: "Compute",
   policy_set: "Idle Compute Instances"
@@ -148,31 +148,6 @@ datasource "ds_recommendations" do
   end
 end
 
-#region in this context can be confusing. region is the spend api's definition of region, not GCP's. this is still technically GCP's "Zone"
-datasource "ds_zones" do
-  iterate $ds_google_project
-  request do
-    auth $auth_google
-    host "compute.googleapis.com"
-    verb "GET"
-    path join(["/compute/v1/projects/", val(iter_item, "accountID"), "/zones"])
-    query "project", val(iter_item, "accountID")
-    pagination $google_pagination
-    ignore_status [403,404]
-  end
-  result do
-    encoding "json"
-    collect jmes_path(response,"items[*]") do
-      field "accountID", val(iter_item, "accountID")
-      field "projectNumber", val(iter_item, "projectNumber")
-      field "accountName", val(iter_item, "accountName")
-      field "region", jmes_path(col_item, "name")
-      field "endDate", val(iter_item,"endDate")
-      field "startDate", val(iter_item,"startDate")
-    end
-  end
-end
-
 datasource "ds_compute_utilization" do
   iterate $ds_google_project
   request do
@@ -205,7 +180,14 @@ end
 datasource "ds_get_vms" do
   iterate $ds_calculated_utilization
   request do
-    run_script $js_get_vms,  val(iter_item,"accountID"), val(iter_item,"zone"), val(iter_item,"resourceID")
+    auth $auth_google
+    host "compute.googleapis.com"
+    verb "GET"
+    path join(["/compute/v1/projects/", val(iter_item, "accountID"), "/aggregated/instances"])
+    ignore_status [403, 404]
+    header "User-Agent", "RS Policies"
+    header "Content-Type", "application/json"
+    query "filter", join(["(id=", val(iter_item,"resourceID"), ") AND (status=RUNNING)"])
   end
   result do
     encoding "json"
@@ -286,61 +268,44 @@ script "js_recommender_call", type: "javascript" do
 EOF
 end
 
-script "js_get_vms", type: "javascript" do
-  result "request"
-  parameters "accountID", "region", "resourceID"
-  code <<-EOS
-    request = {
-      "auth": "auth_google",
-      "host": "compute.googleapis.com",
-      "verb": "GET",
-      "path": "/compute/v1/projects/"+accountID+"/zones/"+region+"/instances",
-      "ignore_status": [403,404]
-      "headers": {
-        "User-Agent": "RS Policies",
-        "Content-Type": "application/json"
-      },
-      "query_params": {
-      "filter": "(id="+resourceID+") AND (status=RUNNING)"
-      }
-    }
-  EOS
-end
-
 script "js_calculated_utilization", type: "javascript" do
   result "results"
   parameters "ds_compute_utilization"
   code <<-EOS
   results = []
-  for ( i =0; i < ds_compute_utilization.length; i++ ){
+  for (i = 0; i < ds_compute_utilization.length; i++) {
     var resourceID = ds_compute_utilization[i].resourceID
-    if ( resourceID === null || resourceID === undefined ) {
+    if (resourceID === null || resourceID === undefined) {
       // No instance id, continue
     } else {
       var points = ds_compute_utilization[i].cpuPoints
-      if ( points === null || points === undefined ) {
+      if (points === null || points === undefined) {
         var cpuMaximum = "101"
         var cpuAverage = "101"
         var cpuMinimum = "101"
       } else {
-        var cpuMaximum = parseFloat( points.reduce( function (x, y) { return Math.max(x, y) } )).toFixed(2)
-        var cpu_sum = _.reduce(points, function(memo, num){ return memo + num; }, 0);
+        var cpuMaximum = parseFloat(points.reduce(function(x, y) {
+          return Math.max(x, y)
+        })).toFixed(2)
+        var cpu_sum = _.reduce(points, function(memo, num) {
+          return memo + num;
+        }, 0);
         var cpuAverage = parseFloat(cpu_sum / points.length).toFixed(2)
-        var cpuMinimum = parseFloat( points.reduce( function (x, y) { return Math.min(x, y) } )).toFixed(2)
+        var cpuMinimum = parseFloat(points.reduce(function(x, y) {
+          return Math.min(x, y)
+        })).toFixed(2)
       }
-      results.push(
-        {
-          zone: ds_compute_utilization[i].zone,
-          accountID: ds_compute_utilization[i].accountID,
-          accountName: ds_compute_utilization[i].accountName,
-          projectNumber: ds_compute_utilization[i].projectNumber
-          resourceID: resourceID,
-          resourceName: ds_compute_utilization[i].resourceName
-          cpuAverage: cpuAverage,
-          cpuMaximum: cpuMaximum,
-          cpuMinimum: cpuMinimum
-        }
-      )
+      results.push({
+        zone: ds_compute_utilization[i].zone,
+        accountID: ds_compute_utilization[i].accountID,
+        accountName: ds_compute_utilization[i].accountName,
+        projectNumber: ds_compute_utilization[i].projectNumber
+        resourceID: resourceID,
+        resourceName: ds_compute_utilization[i].resourceName
+        cpuAverage: cpuAverage,
+        cpuMaximum: cpuMaximum,
+        cpuMinimum: cpuMinimum
+      })
     }
   }
 EOS
