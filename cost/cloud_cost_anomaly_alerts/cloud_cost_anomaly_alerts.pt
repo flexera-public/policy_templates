@@ -46,16 +46,9 @@ end
 parameter "param_dimensions" do
   type "list"
   label "Cost Anomaly Dimensions"
-  description "Add please the exact case sensitive name(s) or id(s) of Default or Rule Based Dimension you wish to run anomaly report. e.g. 'CCO Environments' for name / e.g. 'rbd_cost_center' for id."
+  description "Add please the exact case sensitive name(s) or id(s) of Default or Rule Based Dimension you wish to run anomaly report. e.g. 'CCO Environments' for name / e.g. 'rbd_cost_center' for id. Also you can add more filters for anomalies on specific dimension by adding 'Vendor=AWS'; first criteria will be mandatory for consequent filters"
   default ["Cloud Vendor Account Name", "Cloud Vendor", "Service"]
 end
-
-parameter "param_dimension_anomaly_filter" do
-  type "list"
-  label "DimensionID for Key and filter for Value pair for Anomaly Filter"
-  description "Enter please the case sensitive key value pair for filter. e.g. dimension_id=filter as service=AmazonEC2 or vendor=AWS."
-end
-#What fields can i filter
 
 parameter "param_window_size" do
   type "number"
@@ -177,7 +170,7 @@ end
 
 datasource "ds_get_anomalies" do
   request do
-    run_script $js_get_anomalies, rs_optima_host, rs_org_id, $ds_top_level_billing_centers, $param_cost_metric, $param_days, $param_dimensions,$ds_filter_dimensions, $param_window_size, $param_standard_deviations, $param_anomaly_limit, $param_dimension_anomaly_filter
+    run_script $js_get_anomalies, rs_optima_host, rs_org_id, $ds_top_level_billing_centers, $param_cost_metric, $param_days, $param_dimensions,$ds_filter_dimensions, $param_window_size, $param_standard_deviations, $param_anomaly_limit
   end
   result do
     encoding "json"
@@ -188,7 +181,7 @@ datasource "ds_get_anomalies" do
 end
 
 datasource "ds_filter_anomalies" do
-  run_script $js_filter_anomalies, $ds_get_anomalies, $param_min_spend, rs_org_id, $param_days, $param_dimensions,$ds_filter_dimensions, $param_cost_metric, $param_anomaly_limit, f1_app_host, $param_dimension_anomaly_filter
+  run_script $js_filter_anomalies, $ds_get_anomalies, $param_min_spend, rs_org_id, $param_days, $param_dimensions,$ds_filter_dimensions, $param_cost_metric, $param_anomaly_limit, f1_app_host
 end
 
 ###############################################################################
@@ -202,16 +195,38 @@ script "js_filter_dimensions", type: "javascript" do
     var filtered_dimensions = {
       ids: [],
       names: [],
-      invalid_ids: []
+      invalid_ids: [],
+      filters:[]
     };
+
+
+
     var exist = false;
-    _.each(param_dimensions, function(user_input_dimension) {
+    _.each(param_dimensions, function(user_input_dimension, index) {
       exist = false;
+      filter = {
+        "dimensionid":"",
+        "dimensionname":"",
+        "type":"",
+        "value":""
+      }
+      dimension_filter_map = user_input_dimension.split("=")
+      hasfilter = false;
+      if (dimension_filter_map.length > 1){
+        hasfilter=true
+      }
       _.each(ds_dimensions, function(dimension) {
-        if (user_input_dimension === dimension.name || user_input_dimension === dimension.id) {
+        if (dimension_filter_map[0] === dimension.name || dimension_filter_map[0] === dimension.id) {
           filtered_dimensions.ids.push(dimension.id);
           filtered_dimensions.names.push(dimension.name);
           exist = true;
+          if (hasfilter) {
+            filter.dimensionid=dimension.id;
+            filter.dimensionname=dimension.name;
+            filter.type="equal";
+            filter.value=dimension_filter_map[1];
+            filtered_dimensions.filters.push(filter);
+          }
         }
       });
       if (!exist) {
@@ -255,7 +270,7 @@ script "js_top_level_bc", type: "javascript" do
 end
 
 script "js_get_anomalies", type: "javascript" do
-  parameters "rs_optima_host", "org_id","bc_ids","param_cost_metric","param_days", "param_dimensions", "ds_filter_dimensions", "param_window_size", "param_standard_deviations", "param_anomaly_limit", "param_dimension_anomaly_filter"
+  parameters "rs_optima_host", "org_id","bc_ids","param_cost_metric","param_days", "param_dimensions", "ds_filter_dimensions", "param_window_size", "param_standard_deviations", "param_anomaly_limit"
   result "request"
   code <<-EOS
     var start_at = "";
@@ -307,10 +322,7 @@ script "js_get_anomalies", type: "javascript" do
     start_at = getFormattedDailyDate(getStartDate(new Date()))
     end_at = getFormattedDailyDate(getEndDate(new Date()))
 
-    if (param_dimension_anomaly_filter.length === 1){
-
-        dimension_filter_map = param_dimension_anomaly_filter[0].split("=")
-
+    if (ds_filter_dimensions.filters.length === 1){
         var request = {
           auth: "auth_flexera",
           verb: "POST",
@@ -319,9 +331,9 @@ script "js_get_anomalies", type: "javascript" do
           body_fields: {
             "dimensions": dimensions,
             "filter":{
-              "dimension":dimension_filter_map[0],
-              "type":"equal",
-              "value":dimension_filter_map[1]
+              "dimension": ds_filter_dimensions.filters[0].dimensionid,
+              "type": ds_filter_dimensions.filters[0].type,
+              "value": ds_filter_dimensions.filters[0].value
             },
             "granularity": "day",
             "windowSize": param_window_size,
@@ -337,15 +349,50 @@ script "js_get_anomalies", type: "javascript" do
             "User-Agent": "RS Policies",
           }
         }
-
-
     }
 
-    if (param_dimension_anomaly_filter.length > 1){
+    if (ds_filter_dimensions.filters.length > 1){
+      expressions = [];
+      _.each(ds_filter_dimensions.filters, function(filter){
+        expression = {
+          "type":"",
+          "dimension":"",
+          "value":""
+        }
+        expression.type = "equal";
+        expression.dimension = filter.dimensionid;
+        expression.value = filter.value;
+        expressions.push(expression)
+      })
 
+      var request = {
+        auth: "auth_flexera",
+        verb: "POST",
+        host: rs_optima_host,
+        path: "/bill-analysis/orgs/" + org_id + "/anomalies/report",
+        body_fields: {
+          "dimensions": dimensions,
+          "filter":{
+            "type": "and",
+            "expressions": expressions
+          },
+          "granularity": "day",
+          "windowSize": param_window_size,
+          "standardDeviations": param_standard_deviations,
+          "limit": param_anomaly_limit,
+          "metric": cost_metric[param_cost_metric],
+          "billingCenterIds": billingIDs,
+          "startAt": start_at,
+          "endAt": end_at
+        },
+        headers: {
+          "Api-Version": "1.0",
+          "User-Agent": "RS Policies",
+        }
+      }
     }
 
-    if (param_dimension_anomaly_filter.length === 0){
+    if (ds_filter_dimensions.filters.length === 0){
       var request = {
         auth: "auth_flexera",
         verb: "POST",
@@ -373,7 +420,7 @@ end
 
 script "js_filter_anomalies", type: "javascript" do
 
-  parameters "ds_get_anomalies", "param_min_spend", "org_id", "param_days", "param_dimensions", "ds_filter_dimensions","param_cost_metric", "param_anomaly_limit", "f1_app_host", "param_dimension_anomaly_filter"
+  parameters "ds_get_anomalies", "param_min_spend", "org_id", "param_days", "param_dimensions", "ds_filter_dimensions","param_cost_metric", "param_anomaly_limit", "f1_app_host"
   result "result"
   code <<-EOS
     var start_at = "";
@@ -460,6 +507,7 @@ script "js_filter_anomalies", type: "javascript" do
       "message":message,
       "dimensionsReadable":dimensionsReadable,
       "errors": ds_filter_dimensions.invalid_ids,
+      "used_filters": ds_filter_dimensions.filters,
       "used_dimensions": ds_filter_dimensions.names,
     }
     result.anomalies=_.sortBy(result.anomalies, 'cost');
@@ -509,6 +557,14 @@ Group by dimension(s):
 {{ range data.used_dimensions }}
 \n   + {{ . }}
 {{ end }}
+
+{{ if data.used_filters }}
+  Filter(s):
+  {{ range data.used_filters }}
+  \n   + {{ .dimensionname }} = {{ .value }}
+  {{ end }}
+{{ end }}
+
 EOS
     escalate $esc_budget_alert
     check eq(size(val(data, "anomalies")), 0)
