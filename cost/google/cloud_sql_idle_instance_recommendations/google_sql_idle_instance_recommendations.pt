@@ -16,14 +16,13 @@ info(
 # Parameters
 ###############################################################################
 
-parameter "param_email" do
+parameter "param_emails" do
   type "list"
   label "Email addresses to notify"
   description "Email addresses of the recipients you wish to notify when new incidents are created"
 end
 
-# TODO: Change this to param_projects since it's plural
-parameter "param_project" do
+parameter "param_projects" do
   type "list"
   label "Project ID"
   description "Google Projects to Query. Leave blank to query all projects."
@@ -31,8 +30,8 @@ end
 
 parameter "param_regions" do
   type "list"
-  label "Region"
-  description "Location to check, this is region names"
+  label "Regions"
+  description "Locations to check, this are region names"
 end
 
 parameter "param_exclude_tags" do
@@ -41,23 +40,6 @@ parameter "param_exclude_tags" do
   description "Cloud native tag (label) to ignore IP addresses. Format: Key:Value"
   type "string"
   allowed_pattern /(^$)|([\w]?)+\:([\w]?)/
-end
-
-# TODO: Seems like we don't use this
-parameter "param_automatic_action" do
-  type "list"
-  label "Automatic Actions"
-  description "When this value is set, this policy will automatically take the selected action(s)"
-  allowed_values ["Delete IP Addresses"]
-end
-
-# TODO: Seems like we don't use this
-parameter "param_log_to_cm_audit_entries" do
-  type "string"
-  label "Log to CM Audit Entries"
-  description "Boolean for whether or not to log any debugging information from actions to CM Audit Entries, this should be left set to No on Flexera EU"
-  default "No"
-  allowed_values "Yes", "No"
 end
 
 ###############################################################################
@@ -97,14 +79,13 @@ datasource "ds_currency_reference" do
   end
 end
 
-#get all google project
-# TODO: Change this to ds_google_projects since it's plural
-datasource "ds_google_project" do
+datasource "ds_google_projects" do
   request do
     auth $auth_google
     pagination $google_pagination
     host "cloudresourcemanager.googleapis.com"
     path "/v1/projects/"
+    query "filter", "lifecycleState:ACTIVE"
   end
   result do
     encoding "json"
@@ -116,33 +97,8 @@ datasource "ds_google_project" do
   end
 end
 
-#https://cloud.google.com/compute/docs/reference/rest/v1/regions/list
-# TODO: we don't use this in other place
-datasource "ds_zones" do
-  iterate $ds_google_project
-  request do
-    auth $auth_google
-    host "compute.googleapis.com"
-    verb "GET"
-    path join(["/compute/v1/projects/", val(iter_item, "accountID"), "/zones"])
-    query "project", val(iter_item, "accountID")
-    pagination $google_pagination
-    ignore_status [403,404]
-  end
-  result do
-    encoding "json"
-    collect jmes_path(response,"items[*]") do
-      field "accountID", val(iter_item, "accountID")
-      field "projectNumber", val(iter_item, "projectNumber")
-      field "accountName", val(iter_item, "accountName")
-      field "region", jmes_path(col_item, "name")
-    end
-  end
-end
-# TODO: Delete this blank line
-
 datasource "ds_recommenders" do
-  run_script $js_recommenders, $ds_google_project, $param_project, $param_regions
+  run_script $js_recommenders, $ds_google_projects, $param_projects, $param_regions
 end
 
 datasource "ds_recommendations" do
@@ -172,7 +128,7 @@ datasource "ds_recommendations" do
 end
 
 datasource "ds_get_sql_instances" do
-  iterate $ds_google_project
+  iterate $ds_google_projects
   request do
     run_script $js_get_sql_instances, val(iter_item, "accountID")
   end
@@ -203,13 +159,13 @@ end
 # Scripts
 ###############################################################################
 script "js_recommenders", type: "javascript" do
-  parameters "ds_google_project", "param_project", "param_regions"
+  parameters "ds_google_projects", "param_projects", "param_regions"
   result "results"
   code <<-EOF
   var results = []
 
-  _.each(ds_google_project, function(project){
-    if (_.contains(param_project, project.accountID) || param_project.length == 0) {
+  _.each(ds_google_projects, function(project){
+    if (_.contains(param_projects, project.accountID) || param_projects.length == 0) {
       _.each(param_regions, function(region){
         results.push({
           projectNumber: project.projectNumber,
@@ -227,9 +183,6 @@ script "js_recommender_call", type: "javascript" do
   parameters "accountID", "region"
   result "request"
   code <<-EOF
-  var now = new Date().getTime();
-  var sleepDuration = 10000
-  while(new Date().getTime() < now + sleepDuration){ /* Do nothing */ }
   var request = {
     auth: "auth_google",
     pagination: "google_pagination",
@@ -451,7 +404,7 @@ escalation "esc_email" do
   automatic true
   label "Send Email"
   description "Send incident email"
-  email $param_email
+  email $param_emails
 end
 
 ###############################################################################
