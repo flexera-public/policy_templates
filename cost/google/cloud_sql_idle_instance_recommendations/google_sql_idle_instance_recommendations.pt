@@ -24,20 +24,20 @@ end
 
 parameter "param_projects" do
   type "list"
-  label "Project ID"
-  description "Google Projects to Query. Leave blank to query all projects."
+  label "Project IDs"
+  description "Google Projects to query. Leave blank to query all projects."
 end
 
 parameter "param_regions" do
   type "list"
   label "Regions"
-  description "Locations to check, this are region names"
+  description "Regions to query. Leave blank to query all available regions."
 end
 
 parameter "param_exclude_tags" do
   category "User Inputs"
-  label "Exclusion Tag Key:Value"
-  description "Cloud native tag (label) to ignore IP addresses. Format: Key:Value"
+  label "Tag to exclude (Key:Value)"
+  description "Cloud native tag (label) to ignore SQL instances. Format: Key:Value. Leave blank to query all tags."
   type "string"
   allowed_pattern /(^$)|([\w]?)+\:([\w]?)/
 end
@@ -79,6 +79,7 @@ datasource "ds_currency_reference" do
   end
 end
 
+# GCP projects with "lifecycleState" as "ACTIVE".
 datasource "ds_google_projects" do
   request do
     auth $auth_google
@@ -97,10 +98,33 @@ datasource "ds_google_projects" do
   end
 end
 
-datasource "ds_recommenders" do
-  run_script $js_recommenders, $ds_google_projects, $param_projects, $param_regions
+# SQL instances of Google projects from API.
+datasource "ds_sql_instances" do
+  iterate $ds_google_projects
+  request do
+    run_script $js_sql_instances_call, val(iter_item, "accountID"), $param_exclude_tags
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response,"items[*]") do
+      field "resourceID", jmes_path(col_item, "name")
+      field "state", jmes_path(col_item,"state")
+      field "selfLink", jmes_path(col_item, "selfLink")
+      field "tier", jmes_path(col_item, "settings.tier")
+      field "region", jmes_path(col_item, "region")
+      field "tags", jmes_path(col_item,"settings.userLabels")
+      field "accountID", val(iter_item, "accountID")
+      field "resourceType", val(col_item, "instanceType")
+    end
+  end
 end
 
+# Array of objects with Account ID and region each one to make a call to Recommender API.
+datasource "ds_recommenders" do
+  run_script $js_recommenders, $ds_google_projects, $ds_sql_instances, $param_projects, $param_regions
+end
+
+# SQL idle instances recommendations got from Recommender API.
 datasource "ds_recommendations" do
   iterate $ds_recommenders
   request do
@@ -127,117 +151,104 @@ datasource "ds_recommendations" do
   end
 end
 
-datasource "ds_get_sql_instances" do
-  iterate $ds_google_projects
-  request do
-    run_script $js_get_sql_instances, val(iter_item, "accountID")
-  end
-  result do
-    encoding "json"
-    collect jmes_path(response,"items[*]") do
-      field "resourceID", jmes_path(col_item, "name")
-      field "state", jmes_path(col_item,"state")
-      field "selfLink", jmes_path(col_item, "selfLink")
-      field "tier", jmes_path(col_item, "settings.tier")
-      field "region", jmes_path(col_item, "region")
-      field "tags", jmes_path(col_item,"settings.userLabels")
-      field "accountID", val(iter_item, "accountID")
-      field "resourceType", val(col_item, "instanceType")
-    end
-  end
-end
-
-datasource "ds_sanitize_sql_instances" do
-  run_script $js_sanitize_data, $ds_get_sql_instances, $param_exclude_tags
-end
-
+# Total estimated monthly savings based on SQL instances/recommendations.
 datasource "ds_sql_cost_mapping" do
-  run_script $js_instance_cost_mapping, $ds_sanitize_sql_instances, $ds_recommendations, $ds_currency_reference
+  run_script $js_instance_cost_mapping, $ds_sql_instances, $ds_recommendations, $ds_currency_reference
 end
 
 ###############################################################################
 # Scripts
 ###############################################################################
+
+script "js_sql_instances_call", type: "javascript" do
+  result "request"
+  parameters "accountID", "param_exclude_tags"
+  code <<-EOS
+    var filter = ""
+
+    // Apply filter only if "param_exclude_tags" was set.
+    if (param_exclude_tags.length != 0) {
+      // Key of tag to exclude.
+      var label_key = param_exclude_tags.split(':')[0]
+
+      // Value of tag to exclude.
+      var label_value = param_exclude_tags.split(':')[1]
+
+      // Apply logic operator "NOT" to get all SQL instances that don't have that tag.
+      filter = "NOT settings.userLabels." + label_key + ":" + label_value
+    }
+
+    request = {
+      "auth": "auth_google",
+      "host": "sqladmin.googleapis.com",
+      "verb": "GET",
+      "path": "/v1/projects/"+accountID+"/instances",
+      "headers": {
+        "User-Agent": "RS Policies",
+        "Content-Type": "application/json"
+      }
+      "ignore_status": [403,404],
+      "query_params": {
+        "filter": filter
+      },
+    }
+  EOS
+end
+
 script "js_recommenders", type: "javascript" do
-  parameters "ds_google_projects", "param_projects", "param_regions"
+  parameters "ds_google_projects", "ds_sql_instances", "param_projects", "param_regions"
   result "results"
   code <<-EOF
-  var results = []
+    var results = []
 
-  _.each(ds_google_projects, function(project){
-    if (_.contains(param_projects, project.accountID) || param_projects.length == 0) {
-      _.each(param_regions, function(region){
-        results.push({
-          projectNumber: project.projectNumber,
-          accountID: project.accountID,
-          accountName: project.accountName
-          region: region
-        })
-      })
-    }
-  })
-EOF
+    _.each(ds_google_projects, function (project) {
+      if (_.contains(param_projects, project.accountID) || param_projects.length == 0) {
+          // Available regions for this project
+          var regions = []
+
+          // SQL instances of this project
+          var sqlInstances = _.where(ds_sql_instances, { accountID: project.accountID })
+
+          _.each(sqlInstances, function (instance) {
+              // Validates if instance.region is already in regions array, to prevent duplicates.
+              if (!_.contains(regions, instance.region)) {
+                  // If user didn't put any value for "param_regions" all regions from sqlInstances will be added,
+                  // otherwise, instance.region will be added only if it's in "param_regions" too.
+                  if (_.contains(param_regions, instance.region) || param_regions.length == 0) {
+                      regions.push(instance.region)
+                  }
+              }
+          })
+
+          _.each(regions, function (region) {
+              results.push({
+                  projectNumber: project.projectNumber,
+                  accountID: project.accountID,
+                  accountName: project.accountName,
+                  region: region
+              })
+          })
+      }
+    })
+  EOF
 end
 
 script "js_recommender_call", type: "javascript" do
   parameters "accountID", "region"
   result "request"
   code <<-EOF
-  var now = new Date().getTime();
-  var sleepDuration = 10000
-  while(new Date().getTime() < now + sleepDuration){ /* Do nothing */ }
-  var request = {
-    auth: "auth_google",
-    pagination: "google_pagination",
-    host: "recommender.googleapis.com",
-    ignore_status: 403,
-    path: "/v1/projects/"+ accountID +"/locations/" + region + "/recommenders/google.cloudsql.instance.IdleRecommender/recommendations",
-    query_strings: { alt: "json" }
-  }
-EOF
-end
-
-script "js_get_sql_instances", type: "javascript" do
-  result "request"
-  parameters "accountID"
-  code <<-EOS
-    request = {
-      "auth": "auth_google",
-      "host": "www.googleapis.com",
-      "verb": "GET",
-      "path": "/sql/v1beta4/projects/"+accountID+"/instances",
-      "headers": {
-        "User-Agent": "RS Policies",
-        "Content-Type": "application/json"
-      }
-      "ignore_status": [403,404]
+    var now = new Date().getTime();
+    var sleepDuration = 10000
+    while(new Date().getTime() < now + sleepDuration){ /* Do nothing */ }
+    var request = {
+      auth: "auth_google",
+      pagination: "google_pagination",
+      host: "recommender.googleapis.com",
+      ignore_status: 403,
+      path: "/v1/projects/"+ accountID +"/locations/" + region + "/recommenders/google.cloudsql.instance.IdleRecommender/recommendations",
+      query_strings: { alt: "json" }
     }
-  EOS
-end
-
-script "js_sanitize_data", type: "javascript" do
-  result "results"
-  parameters "databases", "param_exclude_tags"
-  code <<-EOS
-    label_key = param_exclude_tags.split(':')[0]
-    label_value = param_exclude_tags.split(':')[1]
-    results = _.filter(databases, function(data){
-      if ( data.resourceID != null ){
-        if ( data.tags != null && data.tags !== undefined ){
-          if ( data.tags[label_key] != null && data.tags[label_key] !== undefined ){
-            if ( data.tags[label_key] != label_value ){
-              return data
-            }
-          } else {
-            return data
-          }
-        }else{
-          return data
-        }
-      }
-    })
-    results= _.sortBy(results, 'accountID');
-  EOS
+  EOF
 end
 
 script "js_instance_cost_mapping", type:"javascript" do
@@ -398,6 +409,64 @@ policy "policy_recommendations" do
     end
   end
 end
+=begin
+policy "policy_recommendations" do
+  validate $ds_sql_instances do
+    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} rows found for Idle Cloud SQL Instances"
+    check false
+    escalate $esc_email
+    export "*" do
+      field "resourceID" do
+        label "Resource ID"
+      end
+      field "state" do
+        label "State"
+      end
+      field "selfLink" do
+        label "Selflink"
+      end
+      field "tier" do
+        label "Tier"
+      end
+      field "region" do
+        label "Region"
+      end
+      field "tags" do
+        label "Tags"
+      end
+      field "accountID" do
+        label "Account ID"
+      end
+      field "resourceType" do
+        label "Resource Type"
+      end
+    end
+  end
+end
+=end
+=begin
+policy "policy_recommendations" do
+  validate $ds_recommenders do
+    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} rows found for Idle Cloud SQL Instances"
+    check false
+    escalate $esc_email
+    export "results" do
+      field "projectNumber" do
+        label "Project number"
+      end
+      field "accountID" do
+        label "Account ID"
+      end
+      field "accountName" do
+        label "Account name"
+      end
+      field "region" do
+        label "Region"
+      end
+    end
+  end
+end
+=end
 
 ###############################################################################
 # Escalations
