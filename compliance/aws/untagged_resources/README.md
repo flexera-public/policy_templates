@@ -4,6 +4,12 @@
 
 This Policy finds all AWS resources missing any of the user provided tags with the option to update the resources with the missing tags.
 
+## Functional Details
+
+- The policy leverages the AWS API to retrieve a list of all taggable resources in an AWS Account
+- Using the 'Tag Keys' parameter, the policy identifies all resources that are missing the tag keys specified by the user.
+- The policy outputs resources missing the specified tag keys as well as resources with the specified tag keys but are missing tag values.
+
 ## Input Parameters
 
 This policy has the following input parameters required when launching the policy.
@@ -11,7 +17,7 @@ This policy has the following input parameters required when launching the polic
 - *Allowed Regions* - A list of allowed regions for an AWS account. Please enter the allowed regions code if SCP is enabled, see [Available Regions](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/using-regions-availability-zones.html#concepts-available-regions) in AWS; otherwise, the policy may fail on regions that are disabled via SCP. Leave blank to consider all the regions.
 - *Email addresses* - A list of email addresses to notify
 - *Account Number* - The Account number for use with the AWS STS Cross Account Role. Leave blank when using AWS IAM Access key and secret. It only needs to be passed when the desired AWS account is different than the one associated with the Flexera One credential. [more](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_1982464505_1123608)
-- *Tags Key=Value* - List of tags against which the resources will be compared.
+- *Tags Keys* - List of tag keys e.g., 'Environment' to find resources which are not tagged by the given inputs.
 
 ## Policy Actions
 
@@ -41,7 +47,10 @@ Required permissions in the provider:
       "Action": [
         "tag:GetResources",
         "tag:TagResources",
-        "ec2:DescribeRegions"
+        "ec2:DescribeRegions",
+        "ec2:CreateTags",
+        "rds:AddTagsToResource",
+        "config:TagResource"
       ],
       "Resource": "*"
     }

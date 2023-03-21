@@ -1,5 +1,10 @@
 # Changelog
 
+## v5.0
+
+- Added support for RDS Snapshots
+- Changed Policy Template info field `Service` from `EBS` to `Storage`
+
 ## v4.2
 
 - Raised API limit to handle situations where more than 10,000 line items need to be retrieved.
