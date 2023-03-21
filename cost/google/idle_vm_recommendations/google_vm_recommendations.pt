@@ -106,6 +106,7 @@ datasource "ds_google_project" do
       pagination $google_pagination
       host "cloudresourcemanager.googleapis.com"
       path "/v1/projects/"
+      query "filter", "lifecycleState:ACTIVE"
     end
     result do
       encoding "json"
@@ -177,44 +178,37 @@ datasource "ds_calculated_utilization" do
   run_script $js_calculated_utilization, $ds_compute_utilization
 end
 
-datasource "ds_instance_ids_grouped_by_zone_and_accountID" do
-  run_script $js_instance_ids_grouped_by_zone_and_accountID, $ds_calculated_utilization
+datasource "ds_grouped_account_ids" do
+  run_script $js_grouped_account_ids, $ds_calculated_utilization
 end
 
 datasource "ds_get_vms" do
-  iterate $ds_instance_ids_grouped_by_zone_and_accountID
+  iterate $ds_grouped_account_ids
   request do
     auth $auth_google
     host "compute.googleapis.com"
     verb "GET"
-    path join(["/compute/v1/projects/", val(iter_item, "accountID"), "/zones/", val(iter_item, "zone"), "/instances"])
+    path join(["/compute/v1/projects/", iter_item, "/aggregated/instances"])
     ignore_status [403, 404]
     header "User-Agent", "RS Policies"
     header "Content-Type", "application/json"
-    query "filter", join(["(", val(iter_item,"instance_ids"), ") AND (status=RUNNING)"])
   end
   result do
     encoding "json"
-    collect jmes_path(response,"items[*]") do
-      field "resourceID", val(iter_item, "resourceID")
-      field "hostname", jmes_path(col_item,"name || resourceID")
-      field "selfLink", jmes_path(col_item, "selfLink")
-      field "resourceName",val(iter_item, "resourceName")
-      field "status", jmes_path(col_item, "status")
-      field "zone", val(iter_item, "zone")
-      field "tags", jmes_path(col_item,"settings.userLabels")
-      field "cpuAverage", val(iter_item, "cpuAverage")
-      field "cpuMaximum", val(iter_item, "cpuMaximum")
-      field "cpuMinimum", val(iter_item, "cpuMinimum")
-      field "accountID", val(iter_item,"accountID")
-      field "accountName", val(iter_item,"accountName")
-      field "projectNumber", val(iter_item,"projectNumber")
-    end
+    field "vms", jq(response, "[ .items | to_entries | map_values(.value) | map(select(has(\"instances\"))) | .[].instances | .[] | {id,name,selfLink,status,tags}]") 
   end
 end
 
+datasource "ds_collected_vms" do
+  run_script $js_collected_vms, $ds_get_vms
+end
+
+datasource "ds_vms_with_cpu_utilization" do
+  run_script $js_vms_with_cpu_utilization, $ds_collected_vms, $ds_calculated_utilization
+end
+
 datasource "ds_sanitize_vms" do
-  run_script $js_sanitize_data, $ds_get_vms, $param_exclude_tags
+  run_script $js_sanitize_data, $ds_vms_with_cpu_utilization, $param_exclude_tags
 end
 
 datasource "ds_vm_cost_mapping" do
@@ -272,83 +266,96 @@ script "js_recommender_call", type: "javascript" do
 EOF
 end
 
-script "js_instance_ids_grouped_by_zone_and_accountID", type: "javascript" do
-  parameters "ds_calculated_utilization"
-  result "instance_ids_grouped_by_zone_and_accountID"
-  code <<-EOS
-  function add_instance_id_to_group(resourceID, accountID, zone, instance_ids_grouped_by_zone_and_accountID) {
-    for (var i = 0; i < instance_ids_grouped_by_zone_and_accountID.length; i++) {
-      if (instance_ids_grouped_by_zone_and_accountID[i].accountID === accountID && instance_ids_grouped_by_zone_and_accountID[i].zone === zone) {
-          instance_ids_grouped_by_zone_and_accountID[i].instance_ids.push(resourceID)
-          return
-      }
-    }
-    instance_ids_grouped_by_zone_and_accountID.push(
-      {
-        accountID: accountID,
-        zone: zone,
-        instance_ids: [resourceID]
-      }
-    )
-  }
-
-  var instance_ids_grouped_by_zone_and_accountID = []
-
-  for (var i = 0; i < ds_calculated_utilization.length; i++) {
-    add_instance_id_to_group(
-      ds_calculated_utilization[i].resourceID,
-      ds_calculated_utilization[i].accountID,
-      ds_calculated_utilization[i].zone,
-      instance_ids_grouped_by_zone_and_accountID
-    )
-  }
-
-  for (var i = 0; i < instance_ids_grouped_by_zone_and_accountID.length; i++) {
-    ids = _.map(instance_ids_grouped_by_zone_and_accountID[i].instance_ids, function(id) {
-      return "id=" + id
-    })
-    instance_ids_grouped_by_zone_and_accountID[i].instance_ids = ids.join(" OR ")
-  }
-  EOS
-end
-
 script "js_calculated_utilization", type: "javascript" do
   result "results"
   parameters "ds_compute_utilization"
   code <<-EOS
   results = []
-  for ( i =0; i < ds_compute_utilization.length; i++ ){
+  for (i = 0; i < ds_compute_utilization.length; i++) {
     var resourceID = ds_compute_utilization[i].resourceID
-    if ( resourceID === null || resourceID === undefined ) {
+    if (resourceID === null || resourceID === undefined) {
       // No instance id, continue
     } else {
       var points = ds_compute_utilization[i].cpuPoints
-      if ( points === null || points === undefined ) {
+      if (points === null || points === undefined) {
         var cpuMaximum = "101"
         var cpuAverage = "101"
         var cpuMinimum = "101"
       } else {
-        var cpuMaximum = parseFloat( points.reduce( function (x, y) { return Math.max(x, y) } )).toFixed(2)
-        var cpu_sum = _.reduce(points, function(memo, num){ return memo + num; }, 0);
+        var cpuMaximum = parseFloat(points.reduce(function(x, y) {
+          return Math.max(x, y)
+        })).toFixed(2)
+        var cpu_sum = _.reduce(points, function(memo, num) {
+          return memo + num;
+        }, 0);
         var cpuAverage = parseFloat(cpu_sum / points.length).toFixed(2)
-        var cpuMinimum = parseFloat( points.reduce( function (x, y) { return Math.min(x, y) } )).toFixed(2)
+        var cpuMinimum = parseFloat(points.reduce(function(x, y) {
+          return Math.min(x, y)
+        })).toFixed(2)
       }
-      results.push(
-        {
-          zone: ds_compute_utilization[i].zone,
-          accountID: ds_compute_utilization[i].accountID,
-          accountName: ds_compute_utilization[i].accountName,
-          projectNumber: ds_compute_utilization[i].projectNumber
-          resourceID: resourceID,
-          resourceName: ds_compute_utilization[i].resourceName
-          cpuAverage: cpuAverage,
-          cpuMaximum: cpuMaximum,
-          cpuMinimum: cpuMinimum
-        }
-      )
+      results.push({
+        zone: ds_compute_utilization[i].zone,
+        accountID: ds_compute_utilization[i].accountID,
+        accountName: ds_compute_utilization[i].accountName,
+        projectNumber: ds_compute_utilization[i].projectNumber
+        resourceID: resourceID,
+        resourceName: ds_compute_utilization[i].resourceName
+        cpuAverage: cpuAverage,
+        cpuMaximum: cpuMaximum,
+        cpuMinimum: cpuMinimum
+      })
     }
   }
 EOS
+end
+
+script "js_collected_vms", type: "javascript" do
+  result "collected_vms"
+  parameters "ds_get_vms"
+  code <<-EOS
+  var collected_vms = []
+  for (var i = 0; i < ds_get_vms.length; i++) {
+    for (var j = 0; j < ds_get_vms[i].vms.length; j++) {
+      collected_vms.push(ds_get_vms[i].vms[j])
+    }
+  }
+  EOS
+end
+
+script "js_vms_with_cpu_utilization", type: "javascript" do
+  result "vms_with_cpu_utilization"
+  parameters "ds_collected_vms", "ds_calculated_utilization"
+  code <<-EOS 
+  var vms_with_cpu_utilization = []
+  for (var i = 0; i < ds_calculated_utilization.length; i++) {
+    matching_vm = _.find(ds_collected_vms, function(v) { return v.id === ds_calculated_utilization[i].resourceID })
+    if (matching_vm !== undefined) {
+      // Rename some fields
+      matching_vm.resourceID = matching_vm.id
+      matching_vm.hostname = matching_vm.name || matching_vm.id
+
+      // Add CPU utilization data
+      matching_vm.resourceName = ds_calculated_utilization[i].resourceName
+      matching_vm.zone = ds_calculated_utilization[i].zone
+      matching_vm.cpuAverage = ds_calculated_utilization[i].cpuAverage
+      matching_vm.cpuMaximum = ds_calculated_utilization[i].cpuMaximum
+      matching_vm.cpuMinimum = ds_calculated_utilization[i].cpuMinimum
+      matching_vm.accountID = ds_calculated_utilization[i].accountID
+      matching_vm.accountName = ds_calculated_utilization[i].accountName
+      matching_vm.projectNumber = ds_calculated_utilization[i].projectNumber
+
+      vms_with_cpu_utilization.push(matching_vm)
+    }
+  }
+  EOS
+end
+
+script "js_grouped_account_ids", type: "javascript" do
+  result "grouped_account_ids"
+  parameters "ds_calculated_utilization"
+  code <<-EOS
+  grouped_account_ids = _.keys(_.groupBy(ds_calculated_utilization, "accountID"))
+  EOS
 end
 
 script "js_sanitize_data", type: "javascript" do
@@ -656,4 +663,3 @@ define skip_error_and_append($subject) do
   $$errors << "Unexpected error for " + $subject + "\n  " + to_s($_error)
   $_error_behavior = "skip"
 end
-
