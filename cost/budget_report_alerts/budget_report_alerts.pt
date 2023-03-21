@@ -16,8 +16,10 @@ info(
 
 parameter "param_budget_name_id" do
   label "Budget Name or ID"
-  description "Provide the name or id of a Budget if the report scope is 'Budget'. Leave it blank for 'Organization' scope"
+  description "Provide the name or id of a Budget"
+  min_length 1
   type "string"
+  constraint_description "Budget Name or ID is a required field"
 end
 
 parameter "param_threshold_percentage" do
@@ -41,6 +43,14 @@ parameter "param_use_groups" do
   allowed_values "Summarized","By dimensions"
   default "Summarized"
   description "Use this parameter to specify how to group the data"
+end
+
+parameter "param_filter" do
+  label "Dimensions Filter"
+  type "string"
+  description <<-EOS
+If the "Degree of Summarization" option is equals "By dimensions", you can specify dimensions values as it appears in the "Group" column to only get an incident alert for that dimension.
+EOS
 end
 
 parameter "param_unbudgeted" do
@@ -128,7 +138,7 @@ script "js_filter_budgets", type: "javascript" do
           has_curr_month = true;
         }
       })
-      return (!budget_name_id || b.name == budget_name_id || b.id == budget_name_id) && has_curr_month;
+      return (b.name == budget_name_id || b.id == budget_name_id) && has_curr_month;
     });
 EOS
 end
@@ -182,12 +192,12 @@ end
 
 
 datasource "ds_aggregated" do
-  run_script $js_aggregated, $ds_reports, $ds_currency_code, $ds_currency_reference, $param_threshold_percentage, $param_type, f1_app_host
+  run_script $js_aggregated, $ds_reports, $ds_currency_code, $ds_currency_reference, $param_threshold_percentage, $param_type, f1_app_host, $param_filter
 end
 
 
 script "js_aggregated", type: "javascript" do
-  parameters "reports", "currency_code", "currency_reference", "threshold_percent", "param_type", "f1_app_host"
+  parameters "reports", "currency_code", "currency_reference", "threshold_percent", "param_type", "f1_app_host", "param_filter"
   result "results"
   code <<-EOS
   var results = {
@@ -203,22 +213,33 @@ script "js_aggregated", type: "javascript" do
   function forecasted(curr) {
     var now = new Date();
     var day = now.getUTCDate()-1;
-		if (day < 1) {
-			return 0;
-		}
+    if (day < 1) {
+      return 0;
+    }
     var days = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate()
     return curr / day * days
+  }
+
+  function get_group(dimesions) {
+    var vals = [];
+    var keys = _.sortBy(_.keys(dimesions), function (key) {return key;})
+    _.each(keys, function (k) {
+      if (k != "is_budgeted" || keys.length == 1){
+        vals.push(dimesions[k]);
+      }
+    })
+    return vals.join("|");
   }
 
   var current = new Date();
   var monthYear = current.getFullYear() + '-' + ('0' + (current.getMonth()+1)).slice(-2);
 
   _.each(reports, function (item) {
-		item.budgetAmount = item.budgetAmount || 0;
+    item.budgetAmount = item.budgetAmount || 0;
     if (item.spendAmount) {
-	    item.monthYear = monthYear;
+      item.monthYear = monthYear;
       item.forecasted = "";
-	    item.currency = currency_code.value;
+      item.currency = currency_code.value;
       item.forecastedAmount = item.spendAmount;
       var date = new Date(item.timestamp);
       item.date = date.toLocaleDateString();
@@ -233,10 +254,10 @@ script "js_aggregated", type: "javascript" do
       item.overBudgetAmount = Math.max(0, Math.round((item.spendAmount - item.budgetAmount) * 100) / 100);
       item.remaining = Math.round((item.budgetAmount-item.spendAmount) * 100) / 100;
       item.overBudgetAmountForec = Math.max(0, Math.round((item.forecastedAmount - item.budgetAmount) * 100) / 100);
-			if (item.budgetAmount) {
-				item.spentPercent = Math.round(item.spendAmount / item.budgetAmount * 10000)/100
-				item.spentPercentForec = Math.round(item.forecastedAmount / item.budgetAmount * 10000)/100
-			}
+      if (item.budgetAmount) {
+        item.spentPercent = Math.round(item.spendAmount / item.budgetAmount * 10000)/100
+        item.spentPercentForec = Math.round(item.forecastedAmount / item.budgetAmount * 10000)/100
+      }
 
       // values for export
       item.budget = item.budgetAmount;
@@ -245,10 +266,13 @@ script "js_aggregated", type: "javascript" do
       item.overBudgetForec = item.overBudgetAmountForec;
       item.group = "";
       if (item.dimensions) {
-        item.group = _.values(item.dimensions).join("|");
+        item.group = get_group(item.dimensions);
+        if (param_filter && item.group != param_filter) {
+          return;
+        }
+        item.is_budgeted = item.dimensions.is_budgeted === "Unbudgeted";
       }
       item.metric = (item.metric || '').replace("cost_", "").replace("_adj", "").replace("_", " ")
-
 
       if (item.budget > 0) {
         item.budget = currency + item.budget;
@@ -266,29 +290,35 @@ script "js_aggregated", type: "javascript" do
         item.forecasted = currency + item.forecasted;
       }
 
-			if (item.spentPercent !== undefined) {
-				var budget_percent = item.spentPercent;
-				var budget_percent_forec = item.spentPercentForec;
-				item.spentPercent += "%";
-				item.spentPercentForec += "%";
-			}
-			item.host = f1_app_host;
+      if (item.spentPercent !== undefined) {
+        var budget_percent = item.spentPercent;
+        var budget_percent_forec = item.spentPercentForec;
+        item.spentPercent += "%";
+        item.spentPercentForec += "%";
+      }
+      item.host = f1_app_host;
 
       if (param_type == "Actual Spend") {
-        if (item.spendAmount > item.budgetAmount) {
+        if (budget_percent === undefined) {
+          item.details = "Spend is unbudgeted"
+          results.exceeded.push(item);
+        } else if (item.spendAmount > item.budgetAmount) {
           item.details = "Actual spend exceeded budget"
-					results.exceeded.push(item);
-        } else if (budget_percent === undefined || threshold_percent < budget_percent) {
-					item.details = "Actual spend exceeded budget threshold"
-					results.exceeded.push(item);
+          results.exceeded.push(item);
+        } else if (threshold_percent < budget_percent) {
+          item.details = "Actual spend exceeded budget threshold"
+          results.exceeded.push(item);
         }
       } else {
-        if (item.forecastedAmount > item.budgetAmount) {
+        if (budget_percent_forec === undefined) {
+          item.details = "Spend is unbudgeted"
+          results.forecasted.push(item);
+        } else if  (item.forecastedAmount > item.budgetAmount) {
           item.details = "Projected spend exceeded budget"
-					results.forecasted.push(item);
-        } else if (budget_percent_forec === undefined || threshold_percent < budget_percent_forec) {
+          results.forecasted.push(item);
+        } else if (threshold_percent < budget_percent_forec) {
           item.details = "Projected spend exceeded budget threshold"
-					results.forecasted.push(item);
+          results.forecasted.push(item);
         }
       }
     }
@@ -329,26 +359,25 @@ end
 
 policy "budget_alert" do
   validate $ds_only_exceeded do
-    summary_template "{{parameters.param_threshold_percentage}}% Budget Threshold Is Exceeded ({{ parameters.param_type }})"
-	detail_template <<-EOS
-# Budget Exceeded
-### Cost Metric: {{with index data 0}}{{ .metric }}{{end}}
-### Budget Alert Type: {{ parameters.param_type }}
-### Monthly Spend for {{with index data 0}}{{ .monthYear }}{{end}}
+    summary_template "{{with index data 0}}{{ .name }}{{end}}: {{parameters.param_threshold_percentage}}% Budget Threshold Is Exceeded ({{ parameters.param_type }})"
+  detail_template <<-EOS
+# {{with index data 0}}{{ .name }}{{end}}: Budget Exceeded
+Budget Alert Type: **{{ parameters.param_type }}**
+
+Monthly Spend for **{{with index data 0}}{{ .monthYear }}{{end}}**
+
+Currency: **{{with index data 0}}{{ .currency }}{{end}}**
+
+Cost Metric: **{{with index data 0}}{{ .metric }}{{end}}**
+
 [Link to budget report in Flexera One](https://{{with index data 0}}{{ .host }}{{end}}/orgs/{{ rs_org_id }}/optima/budgets/{{with index data 0}}{{ .b_id }}{{end}})
 EOS
     hash_exclude "budgetAmount", "remaining", "spendAmount"
     escalate $esc_budget_alert
     check eq(size(data),0)
     export do
-      field "name" do
-        label "Budget Name"
-      end
       field "group" do
         label "Group"
-      end
-      field "currency" do
-        label "Currency"
       end
       field "budgetAmount" do
         label "Budget"
@@ -363,7 +392,7 @@ EOS
         label "Remaining amount"
       end
       field "spentPercent" do
-        label "Spent Percent"
+        label "% of budget spent"
       end
       field "details" do
         label "Details"
@@ -372,26 +401,25 @@ EOS
   end
 
   validate $ds_only_forecasted do
-    summary_template "{{parameters.param_threshold_percentage}}% Budget Threshold Is Exceeded ({{ parameters.param_type }})"
-	detail_template <<-EOS
-# Budget Exceeded
-### Cost Metric: {{with index data 0}}{{ .metric }}{{end}}
-### Budget Alert Type: {{ parameters.param_type }}
-### Monthly Spend for {{with index data 0}}{{ .monthYear }}{{end}}
+    summary_template "{{with index data 0}}{{ .name }}{{end}}: {{parameters.param_threshold_percentage}}% Budget Threshold Is Exceeded ({{ parameters.param_type }})"
+  detail_template <<-EOS
+# {{with index data 0}}{{ .name }}{{end}}: Budget Exceeded
+Budget Alert Type: **{{ parameters.param_type }}**
+
+Monthly Spend for **{{with index data 0}}{{ .monthYear }}{{end}}**
+
+Currency: **{{with index data 0}}{{ .currency }}{{end}}**
+
+Cost Metric: **{{with index data 0}}{{ .metric }}{{end}}**
+
 [Link to budget report in Flexera One](https://{{with index data 0}}{{ .host }}{{end}}/orgs/{{ rs_org_id }}/optima/budgets/{{with index data 0}}{{ .b_id }}{{end}})
 EOS
     hash_exclude "budgetAmount", "remaining", "spendAmount"
     escalate $esc_budget_alert
     check eq(size(data),0)
     export do
-      field "name" do
-        label "Budget Name"
-      end
       field "group" do
         label "Group"
-      end
-      field "currency" do
-        label "Currency"
       end
       field "budgetAmount" do
         label "Budget"
@@ -406,7 +434,7 @@ EOS
         label "Remaining amount"
       end
       field "spentPercent" do
-        label "Spent Percent"
+        label "% of budget spent"
       end
       field "details" do
         label "Details"
