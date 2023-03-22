@@ -6,7 +6,7 @@ category "Cost"
 severity "low"
 default_frequency "daily"
 info(
-  version: "2.4",
+  version: "2.5",
   provider:"Google",
   service: "Storage",
   policy_set: "Unused Volumes"
@@ -115,6 +115,7 @@ datasource "ds_google_project" do
     pagination $google_pagination
     host "cloudresourcemanager.googleapis.com"
     path "/v1/projects/"
+    query "filter", "lifecycleState:ACTIVE"
   end
   result do
     encoding "json"
@@ -155,57 +156,32 @@ datasource "ds_recommendations" do
   end
 end
 
-#region in this context can be confusing. region is the spend api's definition of region, not GCP's. this is still technically GCP's "Zone"
-datasource "ds_zones" do
+datasource "ds_volumes" do
   iterate $ds_google_project
   request do
     auth $auth_google
     host "compute.googleapis.com"
     verb "GET"
-    path join(["/compute/v1/projects/", val(iter_item, "accountID"), "/zones"])
-    query "project", val(iter_item, "accountID")
-    pagination $google_pagination
-    ignore_status [403,404]
+    path join(["/compute/v1/projects/", val(iter_item, "accountID"), "/aggregated/disks"])
+    ignore_status [403, 404]
+    header "User-Agent", "RS Policies"
+    header "Content-Type", "application/json"
   end
   result do
     encoding "json"
-    collect jmes_path(response,"items[*]") do
-      field "accountID", val(iter_item, "accountID")
-      field "projectNumber", val(iter_item, "projectNumber")
-      field "accountName", val(iter_item, "accountName")
-      field "region", jmes_path(col_item, "name")
-    end
+    field "volumes", jq(response, "[ .items | to_entries | map_values(.value) | map(select(has(\"disks\"))) | .[].disks | .[] | {selfLink,kind,id,name,sizeGb,status,lastAttachTimestamp,lastDetachTimestamp,creationTimestamp,labels,zone}]")
+    field "accountID", val(iter_item, "accountID")
+    field "projectNumber", val(iter_item, "projectNumber")
+    field "accountName", val(iter_item, "accountName")
   end
 end
 
-datasource "ds_volumes" do
-  iterate $ds_zones
-  request do
-    run_script $js_get_disks, val(iter_item, "accountID"), val(iter_item, "region")
-  end
-  result do
-    encoding "json"
-    collect jmes_path(response,"items[*]") do
-      field "accountID", val(iter_item, "accountID")
-      field "projectNumber", val(iter_item, "projectNumber")
-      field "accountName", val(iter_item, "accountName")
-      field "region", val(iter_item, "region")
-      field "selfLink", jmes_path(col_item,"selfLink")
-      field "resourceType", jmes_path(col_item, "kind")
-      field "resourceID", jmes_path(col_item, "id")
-      field "resourceName", jmes_path(col_item, "name")
-      field "diskSizeGb", jmes_path(col_item, "sizeGb")
-      field "status", jmes_path(col_item, "status")
-      field "lastAttachTimestamp", jmes_path(col_item, "lastAttachTimestamp")
-      field "lastDetachTimestamp", jmes_path(col_item, "lastDetachTimestamp")
-      field "creationTimestamp", jmes_path(col_item, "creationTimestamp")
-      field "tags", jmes_path(col_item, "labels")
-    end
-  end
+datasource "ds_collected_volumes" do
+  run_script $js_collected_volumes, $ds_volumes
 end
 
 datasource "ds_sanitize_disks" do
-  run_script $js_sanitize_data, $ds_volumes, $param_exclude_tags
+  run_script $js_sanitize_data, $ds_collected_volumes, $param_exclude_tags
 end
 
 datasource "ds_disk_cost_mapping" do
@@ -271,11 +247,45 @@ script "js_get_disks", type: "javascript" do
   EOS
 end
 
+script "js_collected_volumes", type: "javascript" do
+  result "collected_volumes"
+  parameters "ds_volumes"
+  code <<-EOS
+  var collected_volumes = []
+  for (var i = 0; i < ds_volumes.length; i++) {
+    var volumes = ds_volumes[i].volumes
+    var accountID = ds_volumes[i].accountID
+    var projectNumber = ds_volumes[i].projectNumber
+    var accountName = ds_volumes[i].accountName
+    for (var j = 0; j < volumes.length; j++) {
+      var region_url_splitted = volumes[j].zone.split("/")
+      var region = region_url_splitted[region_url_splitted.length - 1]
+      collected_volumes.push({
+        accountID: accountID,
+        projectNumber: projectNumber,
+        accountName: accountName,
+        region: region,
+        selfLink: volumes[j].selfLink,
+        resourceType: volumes[j].kind,
+        resourceID: volumes[j].id,
+        resourceName: volumes[j].name,
+        diskSizeGb: volumes[j].sizeGb,
+        status: volumes[j].status,
+        lastAttachTimestamp: volumes[j].lastAttachTimestamp,
+        lastDetachTimestamp: volumes[j].lastDetachTimestamp,
+        creationTimestamp: volumes[j].creationTimestamp,
+        tags: volumes[j].labels
+      })
+    }
+  }
+  EOS
+end
+
 script "js_sanitize_data", type: "javascript" do
-  parameters "ds_volumes", "param_exclusion_tags"
+  parameters "ds_collected_volumes", "param_exclusion_tags"
   result "filtered_volumes"
   code <<-EOS
-  var sanitized_volumes = _.filter(ds_volumes, function(volume){
+  var sanitized_volumes = _.filter(ds_collected_volumes, function(volume){
     if (volume.selfLink != null && volume.selfLink !== undefined){
       return volume
     }

@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.5
+
+- Modified to make this policy run faster by using aggregated GCP API endpoints.
+
 ## v2.4
 
 - Modified `sys_log` definition to disable `rs_cm.audit_entry.create` outside Flexera NAM
