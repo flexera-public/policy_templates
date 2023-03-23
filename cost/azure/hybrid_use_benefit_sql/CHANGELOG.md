@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.8
+
+- Added a filter to exclude SQL Server 2017 Developer and Express versions instances that Microsoft provides as free
+
 ## v2.7
 
 - Replaced the term **whitelist** with **allowed list**.
