@@ -2,7 +2,8 @@
 
 ## v2.5
 
-- Performance improved with next changes: Get only Google projects with "ACTIVE" lifecycle state, replace API to get SQL instances, replace "ds_sanitize_sql_instances" with filter "NOT settings.userLabels.[key]:[value]" in request to get SQL instances. Support for empty "param_regions" value.
+- Modified filters, previously applied in code, now those are applied in request
+- Support for empty "param_regions" value
 
 ## v2.4
 
