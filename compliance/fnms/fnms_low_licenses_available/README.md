@@ -1,5 +1,9 @@
 # FlexNet Manager Low Available Licenses
 
+## Deprecated
+
+This policy is no longer being updated.
+
 ## What it does
 
 This policy uses a FlexNet Manger Cloud and looks up all FlexNet Manager Licenses that has lower than user provided percentage.
