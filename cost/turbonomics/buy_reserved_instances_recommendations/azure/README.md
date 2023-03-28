@@ -14,7 +14,8 @@ The Turbonomic Buy Reserved Instances Recommendations AWS policy utilizes Turbon
 
 - *Authorization Cookie"* - authorization cookie pulled from Turbonomic login endpoint: (POST `https://xxxx.turbonomic.com/api/v3/login`)
 - no_echo: true
-- *Email addresses* - A list of email addresses to notify
+- *Email addresses* - A list of email addresses to notify.
+- *Turbonomic Endpoint* -Host of the Turbonomic endpoint.
 
 ### Required Flexera Roles
 
