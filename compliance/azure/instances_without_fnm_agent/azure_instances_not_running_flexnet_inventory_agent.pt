@@ -116,6 +116,25 @@ datasource "ds_filtered_subscriptions" do
   run_script $js_filtered_subscriptions, $ds_subscriptions, $param_subscription_allowed_list
 end
 
+script "js_filtered_subscriptions", type: "javascript" do
+  parameters "ds_subscriptions", "param_subscription_allowed_list"
+  result "results"
+  code <<-EOS
+  var results = []
+  if ( param_subscription_allowed_list.length != 0){
+    results = []
+    _.each(param_subscription_allowed_list, function(sub){
+      var found = _.find(ds_subscriptions, function(item){
+        return item.subscriptionId == sub || item.displayName.toLowerCase() == sub.toLowerCase();
+      })
+      results.push(found)
+    })
+  } else {
+    results = ds_subscriptions
+  }
+EOS
+end
+
 datasource "ds_list_virtual_machines" do
   iterate $ds_filtered_subscriptions
   request do
@@ -154,54 +173,6 @@ datasource 'ds_fnms_report' do
       field "computerName", xpath(col_item, "ComputerName")
     end
   end
-end
-
-datasource "ds_formatted_instances", type: "javascript" do
-  run_script $js_format_instances, $ds_list_virtual_machines, $ds_fnms_report, $param_exclusion_tag_key
-end
-
-###############################################################################
-# Scripts
-###############################################################################
-
-script "js_filtered_subscriptions", type: "javascript" do
-  parameters "ds_subscriptions", "param_subscription_allowed_list"
-  result "results"
-  code <<-EOS
-  var results = []
-  if ( param_subscription_allowed_list.length != 0){
-    results = []
-    _.each(param_subscription_allowed_list, function(sub){
-      var found = _.find(ds_subscriptions, function(item){
-        return item.subscriptionId == sub || item.displayName.toLowerCase() == sub.toLowerCase();
-      })
-      results.push(found)
-    })
-  } else {
-    results = ds_subscriptions
-  }
-EOS
-end
-
-#Formatter script for the Instance data
-script "js_format_instances", type: "javascript" do
-  parameters "azure_VMs","ds_fnms_report", "param_exclusion_tag_key"
-  result "result"
-  code <<-EOS
-    var result = [];
-  fnms_instance_name=[];
-    _.each(ds_fnms_report, function(instance){
-      fnms_instance_name.push(instance["computerName"].toLowerCase())
-    })
-
-    _.each(azure_VMs, function(vm){
-      if((!_.has(vm.tags, param_exclusion_tag_key)) && fnms_instance_name.indexOf(vm["name"].toLowerCase()) === -1){
-        result.push(vm)
-      }
-    })
-    result = _.sortBy(result, 'location');
-    result = _.sortBy(result, 'subscriptionName');
-  EOS
 end
 
 # Build the API request object dynamically to find the right authentiocation model.
@@ -244,6 +215,30 @@ script "js_fnms_report", type: "javascript" do
       },
       body: sBody
     }
+  EOS
+end
+
+datasource "ds_formatted_instances", type: "javascript" do
+  run_script $js_format_instances, $ds_list_virtual_machines, $ds_fnms_report, $param_exclusion_tag_key
+end
+
+script "js_format_instances", type: "javascript" do
+  parameters "azure_VMs","ds_fnms_report", "param_exclusion_tag_key"
+  result "result"
+  code <<-EOS
+    var result = [];
+  fnms_instance_name=[];
+    _.each(ds_fnms_report, function(instance){
+      fnms_instance_name.push(instance["computerName"].toLowerCase())
+    })
+
+    _.each(azure_VMs, function(vm){
+      if((!_.has(vm.tags, param_exclusion_tag_key)) && fnms_instance_name.indexOf(vm["name"].toLowerCase()) === -1){
+        result.push(vm)
+      }
+    })
+    result = _.sortBy(result, 'location');
+    result = _.sortBy(result, 'subscriptionName');
   EOS
 end
 

@@ -119,6 +119,38 @@ datasource "ds_regions" do
   run_script $js_regions, $param_allowed_regions, $ds_regions_list
 end
 
+script "js_regions", type:"javascript" do
+  parameters "user_entered_regions", "all_regions"
+  result "regions"
+  code <<-EOS
+    if(_.isEmpty(user_entered_regions)){
+      regions = all_regions;
+    }else{
+      //Filter unique regions
+      var uniqueRegions = _.uniq(user_entered_regions);
+      var all_regions_list = [];
+      all_regions.forEach(function(all_region){
+        all_regions_list.push(all_region.region)
+      })
+
+      //Filter valid regions
+      var valid_regions = [];
+      _.map(uniqueRegions, function(uniqueRegion){
+        if(all_regions_list.indexOf(uniqueRegion) > -1){
+          valid_regions.push({"region": uniqueRegion})
+        }
+      })
+
+      //Throw an error if no valid regions found
+      if (_.isEmpty(valid_regions)) {
+        regions = all_regions;
+      }else{
+        regions = valid_regions
+      }
+    }
+  EOS
+end
+
 #Get the list of all EC2 Instances across all regions.
 #https://docs.aws.amazon.com/AWSEC2/latest/APIReference/API_DescribeInstances.html
 datasource "ds_aws_ec2_instances_list" do
@@ -166,45 +198,51 @@ datasource 'ds_fnms_report' do
   end
 end
 
-datasource "ds_formatted_instances", type: "javascript" do
-  run_script $js_format_instances,  $ds_aws_ec2_instances_list, $ds_fnms_report, $param_exclude_tags
-end
-
-
-###############################################################################
-# Scripts
-###############################################################################
-
-script "js_regions", type:"javascript" do
-  parameters "user_entered_regions", "all_regions"
-  result "regions"
+# Build the API request object dynamically to find the right authentiocation model.
+script "js_fnms_report", type: "javascript" do
+  parameters "fnms_host", "report_id"
+  result "request"
   code <<-EOS
-    if(_.isEmpty(user_entered_regions)){
-      regions = all_regions;
-    }else{
-      //Filter unique regions
-      var uniqueRegions = _.uniq(user_entered_regions);
-      var all_regions_list = [];
-      all_regions.forEach(function(all_region){
-        all_regions_list.push(all_region.region)
-      })
+    var sHost = fnms_host.substr(fnms_host.indexOf('://')+3)
+    if (sHost.indexOf('/') > -1 && sHost.indexOf('_token') > -1){
+      var path=sHost.substr(sHost.indexOf('/'))+'ManageSoftServices/ComplianceAPIService/ComplianceAPIService.asmx';
+    } else{
+      var path='/ManageSoftServices/ComplianceAPIService/ComplianceAPIService.asmx';
+  }
+    if (sHost.indexOf('/') > -1)  sHost = sHost.substr(0,sHost.indexOf('/'))
 
-      //Filter valid regions
-      var valid_regions = [];
-      _.map(uniqueRegions, function(uniqueRegion){
-        if(all_regions_list.indexOf(uniqueRegion) > -1){
-          valid_regions.push({"region": uniqueRegion})
-        }
-      })
+    // Find the right schema
+    var sScheme = fnms_host.substr(0,fnms_host.indexOf('://'));
 
-      //Throw an error if no valid regions found
-      if (_.isEmpty(valid_regions)) {
-        regions = all_regions;
-      }else{
-        regions = valid_regions
-      }
+    //Token to authenticate
+    var sAuth = "fnms_api_key_auth";
+
+    var sBody = '<?xml version="1.0" encoding="utf-8"?>'
+    sBody    += '<soap:Envelope xmlns:soap="http://www.w3.org/2003/05/soap-envelope" xmlns:tem="http://tempuri.org/">'
+    sBody    += '  <soap:Body>'
+    sBody    += '    <tem:GetCustomView>'
+    sBody    += '      <tem:customViewID>' +report_id+ '</tem:customViewID>'
+    sBody    += '     <tem:rowLimit>100000</tem:rowLimit>'
+    sBody    += '   </tem:GetCustomView>'
+    sBody    += '  </soap:Body>'
+    sBody    += '</soap:Envelope>'
+
+    var request = {
+      auth: sAuth,
+      scheme: sScheme,
+      host: sHost,
+      path: path,
+      verb: "POST",
+      headers: {
+        "Content-Type": "text/xml;charset=utf-8"
+      },
+      body: sBody
     }
   EOS
+end
+
+datasource "ds_formatted_instances", type: "javascript" do
+  run_script $js_format_instances,  $ds_aws_ec2_instances_list, $ds_fnms_report, $param_exclude_tags
 end
 
 #Formatter script for the Instance data
@@ -251,49 +289,6 @@ script "js_format_instances", type: "javascript" do
       }
     })
     result =  _.sortBy(result, 'region');
-  EOS
-end
-
-# Build the API request object dynamically to find the right authentiocation model.
-script "js_fnms_report", type: "javascript" do
-  parameters "fnms_host", "report_id"
-  result "request"
-  code <<-EOS
-    var sHost = fnms_host.substr(fnms_host.indexOf('://')+3)
-    if (sHost.indexOf('/') > -1 && sHost.indexOf('_token') > -1){
-      var path=sHost.substr(sHost.indexOf('/'))+'ManageSoftServices/ComplianceAPIService/ComplianceAPIService.asmx';
-    } else{
-      var path='/ManageSoftServices/ComplianceAPIService/ComplianceAPIService.asmx';
-  }
-    if (sHost.indexOf('/') > -1)  sHost = sHost.substr(0,sHost.indexOf('/'))
-
-    // Find the right schema
-    var sScheme = fnms_host.substr(0,fnms_host.indexOf('://'));
-
-    //Token to authenticate
-    var sAuth = "fnms_api_key_auth";
-
-    var sBody = '<?xml version="1.0" encoding="utf-8"?>'
-    sBody    += '<soap:Envelope xmlns:soap="http://www.w3.org/2003/05/soap-envelope" xmlns:tem="http://tempuri.org/">'
-    sBody    += '  <soap:Body>'
-    sBody    += '    <tem:GetCustomView>'
-    sBody    += '      <tem:customViewID>' +report_id+ '</tem:customViewID>'
-    sBody    += '     <tem:rowLimit>100000</tem:rowLimit>'
-    sBody    += '   </tem:GetCustomView>'
-    sBody    += '  </soap:Body>'
-    sBody    += '</soap:Envelope>'
-
-    var request = {
-      auth: sAuth,
-      scheme: sScheme,
-      host: sHost,
-      path: path,
-      verb: "POST",
-      headers: {
-        "Content-Type": "text/xml;charset=utf-8"
-      },
-      body: sBody
-    }
   EOS
 end
 
