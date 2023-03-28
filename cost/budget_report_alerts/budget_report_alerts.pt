@@ -45,14 +45,6 @@ parameter "param_use_groups" do
   description "Use this parameter to specify how to group the data"
 end
 
-parameter "param_filter" do
-  label "Dimensions Filter"
-  type "string"
-  description <<-EOS
-If the "Degree of Summarization" option is equals "By dimensions", you can specify dimensions values as it appears in the "Group" column to only get an incident alert for that dimension.
-EOS
-end
-
 parameter "param_unbudgeted" do
   label "Unbudgeted spend"
   type "string"
@@ -192,17 +184,22 @@ end
 
 
 datasource "ds_aggregated" do
-  run_script $js_aggregated, $ds_reports, $ds_currency_code, $ds_currency_reference, $param_threshold_percentage, $param_type, f1_app_host, $param_filter
+  run_script $js_aggregated, $ds_reports, $ds_currency_code, $ds_currency_reference, $param_threshold_percentage, $param_type, f1_app_host, $param_budget_name_id
 end
 
 
 script "js_aggregated", type: "javascript" do
-  parameters "reports", "currency_code", "currency_reference", "threshold_percent", "param_type", "f1_app_host", "param_filter"
+  parameters "reports", "currency_code", "currency_reference", "threshold_percent", "param_type", "f1_app_host", "param_budget_name_id"
   result "results"
   code <<-EOS
   var results = {
+    invalid: [],
     exceeded: [],
     forecasted: [],
+  }
+
+  if (!reports || !reports.length) {
+    results.invalid.push(param_budget_name_id);
   }
   var currency = currency_code.value || '';
   var ref = currency ? currency_reference[currency] : undefined;
@@ -267,9 +264,6 @@ script "js_aggregated", type: "javascript" do
       item.group = "";
       if (item.dimensions) {
         item.group = get_group(item.dimensions);
-        if (param_filter && item.group != param_filter) {
-          return;
-        }
         item.is_budgeted = item.dimensions.is_budgeted === "Unbudgeted";
       }
       item.metric = (item.metric || '').replace("cost_", "").replace("_adj", "").replace("_", " ")
@@ -323,6 +317,9 @@ script "js_aggregated", type: "javascript" do
       }
     }
   });
+
+  results.exceeded = _.sortBy(results.exceeded, function (item) {return item.group;})
+  results.forecasted = _.sortBy(results.forecasted, function (item) {return item.group;})
 EOS
 end
 
@@ -358,9 +355,21 @@ escalation "esc_budget_alert" do
 end
 
 policy "budget_alert" do
+  validate $ds_aggregated do
+    summary_template "Budget Alerts: Invalid Budget Name or ID: {{parameters.param_budget_name_id}}"
+    detail_template <<-EOS
+  The following provided budget Name or ID is invalid or the budget refers to prior periods:
+  \n
+  - {{parameters.param_budget_name_id}}
+  \n
+EOS
+    escalate $esc_budget_alert
+    check eq(size(val(data, "invalid")),0)
+  end
+
   validate $ds_only_exceeded do
     summary_template "{{with index data 0}}{{ .name }}{{end}}: {{parameters.param_threshold_percentage}}% Budget Threshold Is Exceeded ({{ parameters.param_type }})"
-  detail_template <<-EOS
+    detail_template <<-EOS
 # {{with index data 0}}{{ .name }}{{end}}: Budget Exceeded
 Budget Alert Type: **{{ parameters.param_type }}**
 
@@ -372,7 +381,6 @@ Cost Metric: **{{with index data 0}}{{ .metric }}{{end}}**
 
 [Link to budget report in Flexera One](https://{{with index data 0}}{{ .host }}{{end}}/orgs/{{ rs_org_id }}/optima/budgets/{{with index data 0}}{{ .b_id }}{{end}})
 EOS
-    hash_exclude "budgetAmount", "remaining", "spendAmount"
     escalate $esc_budget_alert
     check eq(size(data),0)
     export do
@@ -414,7 +422,6 @@ Cost Metric: **{{with index data 0}}{{ .metric }}{{end}}**
 
 [Link to budget report in Flexera One](https://{{with index data 0}}{{ .host }}{{end}}/orgs/{{ rs_org_id }}/optima/budgets/{{with index data 0}}{{ .b_id }}{{end}})
 EOS
-    hash_exclude "budgetAmount", "remaining", "spendAmount"
     escalate $esc_budget_alert
     check eq(size(data),0)
     export do
