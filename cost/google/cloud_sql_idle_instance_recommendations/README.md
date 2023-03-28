@@ -8,9 +8,9 @@ This Policy finds Idle Cloud SQL Instance Recommendations and reports when it fi
 
 This policy has the following input parameters required when launching the policy.
 
-- *Email addresses* - A list of email addresses to notify
-- *Region* - Location to check, it is specifically Google regions
-- *Project ID* - Google Projects to Query. Leave blank to query all projects.
+- *Email addresses* - A list of email addresses to notify.
+- *Regions* - Regions to query. Leave blank to query all available regions.
+- *Project IDs* - Google Projects to query. Leave blank to query all projects.
 
 ## Policy Actions
 
