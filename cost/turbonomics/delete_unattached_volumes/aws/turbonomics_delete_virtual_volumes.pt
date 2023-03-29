@@ -6,12 +6,13 @@ severity "low"
 category "Cost"
 default_frequency "daily"
 info(
-  version: "1.0",
+  version: "0.1",
   provider: "AWS",
-  source: "Turbonomics",
+  source: "Turbonomic",
   service: "Storage",
   policy_set: "Unused Volumes",
-  recommendation_type: "Usage Reduction"
+  recommendation_type: "Usage Reduction",
+  publish: "false"
 )
 
 ##################
@@ -25,13 +26,14 @@ parameter "auth_cookie" do
   description "Valid authorization cookie"
 end
 
-## once functionality allows, this will contain "ALL", "AWS", "Azure Subscription", "GCP Project" and we will remove the policies from thier folders
 parameter "param_provider" do
   type "string"
   label "Cloud Provider"
-  description "AWS as recommendation vendor"
-  default "AWS"
+  description "Specifies provider where you want to get recommendations"
+  # Once we can add multiple providers, allow: "All", "AWS", "Azure Subscription", "GCP Project"
   allowed_values "AWS"
+  # Once we can add multiple providers change this default value
+  default "AWS"
 end
 
 parameter "param_days_unattached" do
@@ -61,7 +63,7 @@ end
 #authenticate with password and username - not implemented and needs work done
 #credentials "turbo_auth" do
 #  schemes "api_key"
-#  label "Turbonomics"
+#  label "Turbonomic"
 #  description "Select the Turbonomic Basic Auth Credential from the list."
 #end
 
@@ -90,6 +92,7 @@ datasource "ds_get_turbonomics_recommendations" do
   result do
     encoding "json"
     collect jmes_path(response, "[*]") do
+      field "businessUUID", jmes_path(col_item, "target.aspects.cloudAspect.businessAccount.uuid")
       field "vendorIDValues", jmes_path(col_item, "target.aspects.virtualDisksAspect.virtualDisks[0].businessAccount.vendorIds")
       field "resourceGroup", jmes_path(col_item, "target.aspects.cloudAspect.resourceGroup.displayName")
       field "resourceID", jmes_path(col_item, "target.vendorIds")
@@ -221,9 +224,9 @@ script "js_filtered_turbonomics_recommendations", type: "javascript" do
       })
     })
     var provider_service = {
-      "AWS":"EC2",
-      "Azure Subscription":"Microsoft.Compute",
-      "GCP Project": "Compute"
+      "AWS": "EBS",
+      "Azure Subscription": "Disk Storage",
+      "GCP Project": "Persistent Disk"
     }
     _.each(ds_get_turbonomics_recommendations, function(volume){
       if (volume.attachmentState == "UNATTACHED" && volume.daysUnattached > param_days_unattached && (volume.provider === param_provider || param_provider === "ALL")) {
@@ -251,11 +254,6 @@ script "js_filtered_turbonomics_recommendations", type: "javascript" do
         volume.tags = tags
         Object.keys(volume.resourceID).forEach(function(key) {
           volume.resourceID = volume.resourceID[key]
-          return
-        });
-        Object.keys(volume.vendorIDValues).forEach(function(key) {
-          volume.accountID = volume.vendorIDValues[key]
-          volume.accountName = key
           return
         });
         volume.service = provider_service[volume.provider]
@@ -288,7 +286,7 @@ policy "pol_turbonomics_unused_volumes" do
   validate $ds_filtered_turbonomics_recommendations do
     summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data.instances }} Turbonomic Unattached Volumes found"
     detail_template <<-EOS
-## Turbonomics Unattached Volumes POC
+## Turbonomic Unattached Volumes POC
 {{data.message}}
 EOS
     check eq(size(val(data, "instances")), 0)

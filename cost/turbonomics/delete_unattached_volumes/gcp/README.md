@@ -7,14 +7,21 @@ The Turbonomics Delete Unattached Volumes Recommendations GCP policy utilizes Tu
 ## Functional Details
 
 - The policy queries the /api/v3/market/{market_uuid}/actions endpoint for the Turbonomic API and based on action will return details and savings for unattached volumes for on-boarded cloud instances.
-- The policy will error after a day, the authorization cookie parameter will need to be refreshed and re-run manually
-- there is a need to run the login credentials against the (`https://xxxx.turbonomic.com/api/v3/login`) endpoint to manually receive cookie authorization
+- The policy will fail after a day, the authorization cookie parameter will need to be refreshed and re-run manually.
+- There is a need to run the login credentials against the (`https://xxxx.turbonomic.com/api/v3/login`) endpoint to manually receive cookie authorization.
 
 ## Input Parameters
 
-- *Authorization Cookie* - authorization cookie pulled from Turbonomic login endpoint: (POST `https://xxxx.turbonomic.com/api/v3/login`)
-- no_echo: true
-- *Email addresses* - a list of email addresses to notify
+- *Provider* - Cloud provider where we get recommendations, it supports Azure.
+- *Authorization Cookie* - Authorization cookie pulled from manual source.
+  - no_echo: true
+- *Email addresses to notify* - A list of email addresses to notify.
+- *Turbonomic endpoint* - Turbonomic endpoint where we'll get all data and authorization validation.
+- *Unused days* - The number of days a volume has been unused. The days should be greater than zero.
+
+## Supported Clouds
+
+- Google
 
 ### Required Flexera Roles
 
