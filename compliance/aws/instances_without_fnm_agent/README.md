@@ -56,7 +56,7 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Auto
   ```
 
 - [**Flexera Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) (*provider=flexera*) which has the following roles:
-  - `flexera_fnms`
+  - `fnms_user` role (`View IT assets` in the UI)
 
 The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) page in the docs has detailed instructions for setting up Credentials for the most common providers.
 
