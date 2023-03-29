@@ -262,9 +262,10 @@ script "js_aggregated", type: "javascript" do
       item.overBudget = item.overBudgetAmount;
       item.overBudgetForec = item.overBudgetAmountForec;
       item.group = "";
+      item.is_budgeted = true;
       if (item.dimensions) {
         item.group = get_group(item.dimensions, item.dimensionsNames);
-        item.is_budgeted = item.dimensions.is_budgeted === "Unbudgeted";
+        item.is_budgeted = !item.dimensions.is_budgeted || item.dimensions.is_budgeted === "Budgeted";
       }
       item.metric = (item.metric || '').replace("cost_", "").replace("_adj", "").replace("_", " ")
 
@@ -293,31 +294,29 @@ script "js_aggregated", type: "javascript" do
       item.host = f1_app_host;
       item.dimm = item.dimensionsNames.join(", ");
 
-      if (param_type == "Actual Spend") {
-        if (budget_percent === undefined) {
-          if (item.spendAmount > 0) {
+      if ((!item.is_budgeted && item.spendAmount > 0) || item.budgetAmount) {
+        if (param_type == "Actual Spend") {
+          if (!item.is_budgeted) {
             item.details = "Spend is unbudgeted"
             results.exceeded.push(item);
+          } else if (item.spendAmount > item.budgetAmount) {
+            item.details = "Actual spend exceeded budget"
+            results.exceeded.push(item);
+          } else if (threshold_percent < budget_percent) {
+            item.details = "Actual spend exceeded budget threshold"
+            results.exceeded.push(item);
           }
-        } else if (item.spendAmount > item.budgetAmount) {
-          item.details = "Actual spend exceeded budget"
-          results.exceeded.push(item);
-        } else if (threshold_percent < budget_percent) {
-          item.details = "Actual spend exceeded budget threshold"
-          results.exceeded.push(item);
-        }
-      } else {
-        if (budget_percent_forec === undefined) {
-          if (item.spendAmount > 0) {
+        } else {
+          if (!item.is_budgeted) {
             item.details = "Spend is unbudgeted"
             results.forecasted.push(item);
+          } else if  (item.forecastedAmount > item.budgetAmount) {
+            item.details = "Projected spend exceeded budget"
+            results.forecasted.push(item);
+          } else if (threshold_percent < budget_percent_forec) {
+            item.details = "Projected spend exceeded budget threshold"
+            results.forecasted.push(item);
           }
-        } else if  (item.forecastedAmount > item.budgetAmount) {
-          item.details = "Projected spend exceeded budget"
-          results.forecasted.push(item);
-        } else if (threshold_percent < budget_percent_forec) {
-          item.details = "Projected spend exceeded budget threshold"
-          results.forecasted.push(item);
         }
       }
     }
