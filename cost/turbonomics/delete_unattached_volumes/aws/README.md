@@ -2,7 +2,7 @@
 
 ## What it does
 
-The Turbonomics Delete Unattached Volumes Recommendations AWS policy utilizes Turbonomic Actions API endpoint (POST `https://turbonomic.com/api/v3/markets/{market_uuid}/actions`) to provide AWS Turbonomics Delete Unattached Volumes Recommendations.
+The Turbonomic Delete Unattached Volumes Recommendations AWS policy uses Turbonomic Actions API endpoint (POST xxxx.turbonomic.com/api/v3/markets/Market/actions) and Business Units endpoint (GET xxxx.turbonomic.com/api/v3/businessunits) to provide delete unattached volumes recommendations. From these recommendations we provide monthly savings estimates based on Turbonomic per hour costs.
 
 ## Functional Details
 
