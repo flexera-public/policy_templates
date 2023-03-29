@@ -103,7 +103,7 @@ datasource "ds_budgets" do
       field "name", jmes_path(col_item,"name")
       field "metric", jmes_path(col_item,"metric")
       field "dimensions", jmes_path(col_item,"dimensions")
-      field "budgetYearMonths", jmes_path(col_item,"budgetYearMonths")
+      field "budgetYearMonths", jmes_path(col_item,"yearMonths")
     end
   end
 end
@@ -145,6 +145,7 @@ datasource "ds_reports" do
     collect jmes_path(response,"[*]") do
       field "b_id", val(iter_item, "id")
       field "name", val(iter_item, "name")
+      field "dimensionsNames", val(iter_item, "dimensions")
       field "metric", val(iter_item, "metric")
       field "timestamp", jmes_path(col_item,"timestamp")
       field "dimensions", jmes_path(col_item,"dimensions")
@@ -217,12 +218,11 @@ script "js_aggregated", type: "javascript" do
     return curr / day * days
   }
 
-  function get_group(dimesions) {
+  function get_group(dimensions, dimensionsNames) {
     var vals = [];
-    var keys = _.sortBy(_.keys(dimesions), function (key) {return key;})
-    _.each(keys, function (k) {
-      if (k != "is_budgeted" || keys.length == 1){
-        vals.push(dimesions[k]);
+    _.each(dimensionsNames, function (k) {
+      if (k != "is_budgeted" || dimensionsNames.length == 1){
+        vals.push(dimensions[k]);
       }
     })
     return vals.join("|");
@@ -263,7 +263,7 @@ script "js_aggregated", type: "javascript" do
       item.overBudgetForec = item.overBudgetAmountForec;
       item.group = "";
       if (item.dimensions) {
-        item.group = get_group(item.dimensions);
+        item.group = get_group(item.dimensions, item.dimensionsNames);
         item.is_budgeted = item.dimensions.is_budgeted === "Unbudgeted";
       }
       item.metric = (item.metric || '').replace("cost_", "").replace("_adj", "").replace("_", " ")
@@ -291,11 +291,14 @@ script "js_aggregated", type: "javascript" do
         item.spentPercentForec += "%";
       }
       item.host = f1_app_host;
+      item.dimm = item.dimensionsNames.join(", ");
 
       if (param_type == "Actual Spend") {
         if (budget_percent === undefined) {
-          item.details = "Spend is unbudgeted"
-          results.exceeded.push(item);
+          if (item.spendAmount > 0) {
+            item.details = "Spend is unbudgeted"
+            results.exceeded.push(item);
+          }
         } else if (item.spendAmount > item.budgetAmount) {
           item.details = "Actual spend exceeded budget"
           results.exceeded.push(item);
@@ -305,8 +308,10 @@ script "js_aggregated", type: "javascript" do
         }
       } else {
         if (budget_percent_forec === undefined) {
-          item.details = "Spend is unbudgeted"
-          results.forecasted.push(item);
+          if (item.spendAmount > 0) {
+            item.details = "Spend is unbudgeted"
+            results.forecasted.push(item);
+          }
         } else if  (item.forecastedAmount > item.budgetAmount) {
           item.details = "Projected spend exceeded budget"
           results.forecasted.push(item);
@@ -379,6 +384,8 @@ Currency: **{{with index data 0}}{{ .currency }}{{end}}**
 
 Cost Metric: **{{with index data 0}}{{ .metric }}{{end}}**
 
+Dimensions: **{{with index data 0}}{{ .dimm }}{{end}}**
+
 [Link to budget report in Flexera One](https://{{with index data 0}}{{ .host }}{{end}}/orgs/{{ rs_org_id }}/optima/budgets/{{with index data 0}}{{ .b_id }}{{end}})
 EOS
     escalate $esc_budget_alert
@@ -419,6 +426,8 @@ Monthly Spend for **{{with index data 0}}{{ .monthYear }}{{end}}**
 Currency: **{{with index data 0}}{{ .currency }}{{end}}**
 
 Cost Metric: **{{with index data 0}}{{ .metric }}{{end}}**
+
+Dimensions: **{{with index data 0}}{{ .dimm }}{{end}}**
 
 [Link to budget report in Flexera One](https://{{with index data 0}}{{ .host }}{{end}}/orgs/{{ rs_org_id }}/optima/budgets/{{with index data 0}}{{ .b_id }}{{end}})
 EOS
