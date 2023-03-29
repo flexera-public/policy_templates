@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.5
+
+- added a filter for dimensions when user wants to filter by key pair value like Service=AmazonEC2
+
 ## v2.4
 
 - added an input list for a mix of dimensions

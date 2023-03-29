@@ -24,6 +24,7 @@ Any point outside of the bands is considered as anomalous. If multiple cost anom
 - *Cost Anomaly Dimensions* - Dimensions to group data for the analysis. Multiple dimensions can be provided.
   - Default: ["Cloud Vendor Account", "Cloud Vendor", "Service"]
   - Id(s) or name(s) for Rule Based Dimensions to group data for the analysis. Multiple rbd id(s) or name(s) can be provided. This allows for better visualization of data that was not tagged or difficult to tag in the native cloud platform, these new dimensions in Optima will be populated according to rules you define, you can use the new dimensions to look at your cost from new meaningful perspectives, a common use case is to create several dimensions like 'CCO Environments' or 'Product Line', populated based on know account values.
+  - Filters can now be added to the same values ​​of the dimensions, you can filter 1 to 1 value per dimension e.g. Service=AmazonEC2 , Cloud Vendor=AWS , Cloud Vendor Account Name=Flexera-prod.
 - *Cost Metric* - Cost metric used for the analysis: amortized vs nonamortized and blended vs unblended costs.
 - *Email addresses of the recipients you wish to notify* - A list of email addresses to notify
 - *Window Size* - Number of days used in the calculation of the moving average
