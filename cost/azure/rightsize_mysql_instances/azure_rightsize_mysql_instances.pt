@@ -412,7 +412,7 @@ script "js_merged_single_metrics", type: "javascript" do
           if (recommended_capacity === "n/a" && recommendation !== "-"){
             recommendation = "Change tier"
           }
-          if (average_cpu !== "n/a" && sku.name !== "ElasticPool"){
+          if (isNaN(average_cpu) == false && sku.name !== "ElasticPool"){
             result.push({
               id: databases_metrics[i].id,
               location: databases_metrics[i].location,
@@ -525,7 +525,7 @@ script "js_merged_flexible_metrics", type: "javascript" do
         if (recommended_capacity === "n/a" && recommendation !== "-"){
           recommendation = "Change tier"
         }
-        if(average_cpu !== "n/a" && sku.name !== "ElasticPool"){
+        if(isNaN(average_cpu) == false && sku.name !== "ElasticPool"){
           result.push({
             id: databases_metrics[i].id,
             location: databases_metrics[i].location,
@@ -765,14 +765,13 @@ end
 
 policy 'policy_azure_db_utilization' do
   validate $ds_merged_metrics do
-    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): Found {{ len data }} Azure Rightsize SQL single Database"
+    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): Found {{ len data }} Azure Rightsize MySQL Database"
     detail_template <<-EOS
       ### Thresholds for Consideration
       - Upsize Average CPU% threshold   : {{ parameters.param_avg_cpu_upsize }}
       - Downsize Average CPU% threshold : {{ parameters.param_avg_cpu_downsize }}
     EOS
     escalate $email_report
-    escalate $esc_update_rightsize_sql_databases_approval
     check eq(size(data),0)
     export do
       resource_level true
@@ -833,81 +832,6 @@ escalation "email_report" do
   email $param_email
 end
 
-escalation "esc_update_rightsize_sql_databases_approval" do
-  automatic contains($param_automatic_action, "Resize Instances")
-  label "Resize Database"
-  description "Resized selected  SQL database"
-  run "update_rightsize_sql_databases", data, $param_log_to_cm_audit_entries, $param_azure_endpoint, rs_optima_host
-end
-
 ###############################################################################
 # Cloud Workflow
 ###############################################################################
-
-define update_rightsize_sql_databases($data, $param_log_to_cm_audit_entries, $param_azure_endpoint, $$rs_optima_host) return $all_responses do
-  $$debug = $param_log_to_cm_audit_entries == "Yes"
-  $all_responses = []
-  foreach $item in $data do
-    if $item["recommended_capacity"] != "n/a"
-      sub on_error: skip do
-        $response = http_request(
-          auth: $$azure_auth,
-          verb: "patch",
-          host: $param_azure_endpoint,
-          https: true,
-          href: $item["id"],
-          query_strings: {
-            "api-version": "2017-10-01-preview"
-          },
-          headers: {
-            "cache-control": "no-cache",
-            "content-type": "application/json"
-          },
-          body: {
-            "sku": {
-              "name": $item["skuName"],
-              "tier": $item["skuTier"],
-              "capacity": $item["recommended_capacity"]
-            }
-          }
-        )
-        call sys_log('Update RightSize Azure SQL Databases: ',to_s($response))
-        $all_responses << $response
-      end
-    end
-  end
-end
-
-define sys_log($subject, $detail) do
-  # Create empty errors array if doesn't already exist
-  if !$$errors
-    $$errors = []
-  end
-  # Check if debug is enabled
-  if $$debug
-    # Append to global $$errors
-    # This is the suggested way to capture errors
-    $$errors << "Unexpected error for " + $subject + "\n  " + to_s($detail)
-    # If Flexera NAM Zone, create audit_entries [to be deprecated]
-    # This is the legacy method for capturing errors and only supported on Flexera NAM
-    if $$rs_optima_host == "api.optima.flexeraeng.com"
-      # skip_error_and_append is used to catch error if rs_cm.audit_entries.create fails unexpectedly
-      $task_label = "Creating audit entry for " + $subject
-      sub task_label: $task, on_error: skip_error_and_append($task) do
-        rs_cm.audit_entries.create(
-          notify: "None",
-          audit_entry: {
-            auditee_href: @@account,
-            summary: $subject,
-            detail: $detail
-          }
-        )
-      end # End sub on_error
-    end # End if rs_optima_host
-  end # End if debug is enabled
-end
-
-define skip_error_and_append($subject) do
-  $$errors << "Unexpected error for " + $subject + "\n  " + to_s($_error)
-  $_error_behavior = "skip"
-end
