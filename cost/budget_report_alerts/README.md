@@ -20,7 +20,7 @@ The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automati
 - Data can be grouped by Dimensions.
 - The policy allows the customer to include or exclude unbudgeted spend
 
-### Input Parameters
+## Input Parameters
 
 This policy has the following input parameters required when launching the policy.
 
