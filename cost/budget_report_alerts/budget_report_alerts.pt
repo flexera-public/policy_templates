@@ -88,6 +88,39 @@ datasource "ds_currency_code" do
   end
 end
 
+datasource "ds_get_dimensions" do
+  request do
+    auth $auth_flexera
+    host rs_optima_host
+    path join(["/bill-analysis/orgs/",rs_org_id,"/costs/dimensions"])
+    header "Api-Version", "0.1"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "dimensions[].{id: id, name: name, type:type}") do
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+      field "type", jmes_path(col_item, "type")
+    end
+  end
+end
+
+datasource "ds_dimensions" do
+  run_script $js_filter_dimensions, $ds_get_dimensions
+end
+
+script "js_filter_dimensions", type: "javascript" do
+  parameters "ds_get_dimensions"
+  result "result"
+  code <<-EOS
+    var result = {};
+		_.each(ds_get_dimensions, function(dimension) {
+			result[dimension.id] = dimension.name;
+		});
+  EOS
+end
+
 datasource "ds_budgets" do
   request do
     auth $auth_flexera
@@ -117,6 +150,7 @@ script "js_filter_budgets", type: "javascript" do
   result "results"
   code <<-EOS
   var currDate = new Date();
+	budget_name_id = budget_name_id.trim();
   var results =
     _.filter(budgets, function(b){
       b.start_date = Date.now();
@@ -145,7 +179,7 @@ datasource "ds_reports" do
     collect jmes_path(response,"[*]") do
       field "b_id", val(iter_item, "id")
       field "name", val(iter_item, "name")
-      field "dimensionsNames", val(iter_item, "dimensions")
+      field "dimensionsIDs", val(iter_item, "dimensions")
       field "metric", val(iter_item, "metric")
       field "timestamp", jmes_path(col_item,"timestamp")
       field "dimensions", jmes_path(col_item,"dimensions")
@@ -185,12 +219,12 @@ end
 
 
 datasource "ds_aggregated" do
-  run_script $js_aggregated, $ds_reports, $ds_currency_code, $ds_currency_reference, $param_threshold_percentage, $param_type, f1_app_host, $param_budget_name_id
+  run_script $js_aggregated, $ds_reports, $ds_currency_code, $ds_currency_reference, $param_threshold_percentage, $param_type, f1_app_host, $param_budget_name_id, $ds_dimensions
 end
 
 
 script "js_aggregated", type: "javascript" do
-  parameters "reports", "currency_code", "currency_reference", "threshold_percent", "param_type", "f1_app_host", "param_budget_name_id"
+  parameters "reports", "currency_code", "currency_reference", "threshold_percent", "param_type", "f1_app_host", "budget_name_id", "ds_dimensions"
   result "results"
   code <<-EOS
   var results = {
@@ -200,7 +234,7 @@ script "js_aggregated", type: "javascript" do
   }
 
   if (!reports || !reports.length) {
-    results.invalid.push(param_budget_name_id);
+    results.invalid.push(budget_name_id);
   }
   var currency = currency_code.value || '';
   var ref = currency ? currency_reference[currency] : undefined;
@@ -218,16 +252,33 @@ script "js_aggregated", type: "javascript" do
     return curr / day * days
   }
 
-  function get_group(dimensions, dimensionsNames) {
+  function get_group(dimensions, dimensionsIDs) {
     var vals = [];
-    _.each(dimensionsNames, function (k) {
-      if (dimensions[k] && (k != "is_budgeted" || dimensionsNames.length == 1)){
+    _.each(dimensionsIDs, function (k) {
+      if (dimensions[k] && (k != "is_budgeted" || dimensionsIDs.length == 1)){
         vals.push(dimensions[k]);
       }
     })
+		if (!vals.length && dimensions["is_budgeted"]) {
+			return dimensions["is_budgeted"];
+		}
     return vals.join("|");
   }
 
+	function get_dimm_names(dimensionsIDs) {
+		var vals = [];
+    _.each(dimensionsIDs, function (k) {
+      vals.push(ds_dimensions[k]||k);
+    })
+		return vals.join(", ");
+	}
+
+	var cost_metric = {
+		"cost_nonamortized_unblended_adj": "Unamortized Unblended",
+		"cost_amortized_unblended_adj": "Amortized Unblended",
+		"cost_nonamortized_blended_adj": "Unamortized Blended",
+		"cost_amortized_blended_adj": "Amortized Blended"
+	}
   var current = new Date();
   var monthYear = current.getFullYear() + '-' + ('0' + (current.getMonth()+1)).slice(-2);
 
@@ -264,10 +315,10 @@ script "js_aggregated", type: "javascript" do
       item.group = "";
       item.is_budgeted = true;
       if (item.dimensions) {
-        item.group = get_group(item.dimensions, item.dimensionsNames);
+        item.group = get_group(item.dimensions, item.dimensionsIDs);
         item.is_budgeted = !item.dimensions.is_budgeted || item.dimensions.is_budgeted === "Budgeted";
       }
-      item.metric = (item.metric || '').replace("cost_", "").replace("_adj", "").replace("_", " ")
+      item.metric = cost_metric[item.metric || ''] || item.metric;
 
       if (item.budget > 0) {
         item.budget = currency + item.budget;
@@ -292,7 +343,7 @@ script "js_aggregated", type: "javascript" do
         item.spentPercentForec += "%";
       }
       item.host = f1_app_host;
-      item.dimm = item.dimensionsNames.join(", ");
+      item.dimm = get_dimm_names(item.dimensionsIDs);
 
       if ((!item.is_budgeted && item.spendAmount > 0) || item.budgetAmount) {
         if (param_type == "Actual Spend") {
