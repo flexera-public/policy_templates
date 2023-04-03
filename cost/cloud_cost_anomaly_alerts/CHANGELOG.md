@@ -2,9 +2,9 @@
 
 ## v2.4
 
-- added a filter for dimensions when user wants to filter by key pair value like Service=AmazonEC2
+- added a filter for dimensions where the user wishes to filter by key pair values, such as Service=AmazonEC2
 - added an input list for a mix of dimensions
-- validated each input from the user input list, if all are valid dimensions, it will run an anomaly report. Otherwise, when the user inputs at least one invalid dimension, policy will fail, escalating to emailing you about invalid dimension you used.
+- if at least one invalid dimension is entered by the user, the policy will fail, resulting in an email to you about the invalid dimension
 
 ## v2.3
 
