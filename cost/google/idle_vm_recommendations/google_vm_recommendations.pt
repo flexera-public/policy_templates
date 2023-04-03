@@ -98,26 +98,22 @@ datasource "ds_currency_reference" do
   end
 end
 
-#get all google project
+# GCP projects filtered by "lifecycleState:ACTIVE" and "param_project".
 datasource "ds_google_project" do
   iterate $ds_time
-    request do
-      auth $auth_google
-      pagination $google_pagination
-      host "cloudresourcemanager.googleapis.com"
-      path "/v1/projects/"
-      query "filter", "lifecycleState:ACTIVE"
+  request do
+    run_script $js_google_project, $param_project
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "projects[*]") do
+      field "projectNumber", jmes_path(col_item, "projectNumber")
+      field "accountID", jmes_path(col_item, "projectId")
+      field "accountName", jmes_path(col_item, "name")
+      field "startDate", val(iter_item, "startDate")
+      field "endDate", val(iter_item, "endDate")
     end
-    result do
-      encoding "json"
-      collect jmes_path(response, "projects[*]") do
-        field "projectNumber", jmes_path(col_item,"projectNumber")
-        field "accountID", jmes_path(col_item,"projectId")
-        field "accountName", jmes_path(col_item,"name")
-        field "endDate", val(iter_item,"endDate")
-        field "startDate", val(iter_item,"startDate")
-      end
-    end
+  end
 end
 
 datasource "ds_recommenders" do
@@ -223,9 +219,42 @@ script "js_time", type: "javascript" do
   code <<-EOF
     var time = [{
       "endDate":  new Date().toISOString(),
-      "startDate": new Date(new Date().setDate(new Date().getDate() - 30)).toISOString()
+      "startDate": new Date(new Date().setDate(new Date().getDate() - 14)).toISOString()
     }]
 EOF
+end
+
+script "js_google_project", type: "javascript" do
+  parameters "param_project"
+  result "request"
+  code <<-EOS
+  var filter = "(lifecycleState:ACTIVE)"
+
+  // Apply filter by project only if "param_project" was set.
+  if (param_project.length != 0) {
+    // Since we already have a filter applied this AND is required to apply new filter.
+    filter += " AND ("
+    _.each(param_project, function (id, index) {
+      filter += '(projectId = "' + id + '")'
+
+      // Adds OR in case it isn't last item, means there are more items to be added.
+      if ((index + 1) != param_project.length) {
+        filter += " OR "
+      }
+    })
+    filter += ")"
+  }
+
+  var request = {
+    auth: "auth_google",
+    pagination: "google_pagination",
+    host: "cloudresourcemanager.googleapis.com",
+    path: "/v1/projects/",
+    query_params: {
+      "filter": filter
+    }
+  }
+  EOS
 end
 
 script "js_recommenders", type: "javascript" do
@@ -233,17 +262,14 @@ script "js_recommenders", type: "javascript" do
   result "results"
   code <<-EOF
   var results = []
-
-  _.each(ds_google_project, function(project){
-    if (_.contains(param_project, project.accountID) || param_project.length == 0) {
-      _.each(param_regions, function(region){
-        results.push({
-          projectNumber: project.projectNumber,
-          accountID: project.accountID,
-          region: region
-        })
+  _.each(ds_google_project, function(project) {
+    _.each(param_regions, function(region) {
+      results.push({
+        projectNumber: project.projectNumber,
+        accountID: project.accountID,
+        region: region
       })
-    }
+    })
   })
 EOF
 end
