@@ -28,6 +28,7 @@ This policy has the following input parameters required when launching the polic
 - _Budget Alert Type_ - can be "Actual" or "Forecasted". Actual Spend alerts are based off incurred costs. Forecasted Spend alerts are based off monthly runrates.
 - _Degree of Summarization_ - use this parameter to specify how to group the data. Can be "Summarized" or "By dimensions".
 - _Unbudgeted spend_ - parameter that allows including or excluding unbudgeted funds in the calculation
+- _Threshold Percentage_ - Percentage of budget amount to alert on
 - _Email addresses_ - A list of email addresses to notify
 
 ## Cost
