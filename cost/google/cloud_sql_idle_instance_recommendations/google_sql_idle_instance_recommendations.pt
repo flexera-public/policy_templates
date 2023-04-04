@@ -37,7 +37,7 @@ end
 parameter "param_exclude_tags" do
   category "User Inputs"
   label "Tag to exclude (Key:Value)"
-  description "Cloud native tag (label) to ignore SQL instances. Format: Key:Value. Leave blank to query all tags."
+  description "Exclusion Tag."
   type "string"
   allowed_pattern /(^$)|([\w]?)+\:([\w]?)/
 end
@@ -79,10 +79,14 @@ datasource "ds_currency_reference" do
   end
 end
 
-# GCP projects filtered by "lifecycleState:ACTIVE" and "param_project_ids".
-datasource "ds_projects" do
+# Gets all projects filtered by "lifecycleState:ACTIVE".
+datasource "ds_all_projects" do
   request do
-    run_script $js_projects, $param_project_ids
+    auth $auth_google
+    pagination $google_pagination
+    host "cloudresourcemanager.googleapis.com"
+    path "/v1/projects/"
+    query "filter", "(lifecycleState:ACTIVE)"
   end
   result do
     encoding "json"
@@ -94,16 +98,17 @@ datasource "ds_projects" do
   end
 end
 
-# Sets "sleep" flag to some projects to prevent quota error.
-datasource "ds_slept_projects" do
-  run_script $js_slept_projects, $ds_projects
+# Removes projects that aren't in "param_project_ids" (In case it isn't empty).
+# Sets "sleep" flag every 150 projects to prevent quota error.
+datasource "ds_projects" do
+  run_script $js_projects, $ds_all_projects, $param_project_ids
 end
 
-# SQL instances of Google projects from API.
-datasource "ds_sql_instances" do
-  iterate $ds_slept_projects
+# Gets all SQL instances of Google projects from "ds_projects".
+datasource "ds_all_sql_instances" do
+  iterate $ds_projects
   request do
-    run_script $js_sql_instances_call, val(iter_item, "accountID"), val(iter_item, "sleep"), $param_regions, $param_exclude_tags
+    run_script $js_sql_instances_call, val(iter_item, "accountID"), val(iter_item, "sleep"), $param_exclude_tags
   end
   result do
     encoding "json"
@@ -118,6 +123,11 @@ datasource "ds_sql_instances" do
       field "resourceType", val(col_item, "instanceType")
     end
   end
+end
+
+# Removes instances that aren't in "param_regions" (In case it isn't empty).
+datasource "ds_sql_instances" do
+  run_script $js_sql_instances, $ds_all_sql_instances, $param_regions
 end
 
 # Array of objects with Account ID and region each one to make a call to Recommender API.
@@ -162,62 +172,43 @@ end
 ###############################################################################
 
 script "js_projects", type: "javascript" do
-  parameters "param_project_ids"
-  result "request"
-  code <<-EOF
-  var filter = "(lifecycleState:ACTIVE)"
-  // Apply filter by project only if "param_project_ids" was set.
-  if (param_project_ids.length != 0) {
-      // Since we already have a filter applied this AND is required to apply new filter.
-      filter += " AND ("
-      _.each(param_project_ids, function (id, index) {
-          filter += '(projectId = "' + id + '")'
-          // Adds OR in case it isn't last item, means there are more items to be added.
-          if ((index + 1) != param_project_ids.length) {
-              filter += " OR "
-          }
-      })
-      filter += ")"
-  }
-  var request = {
-    auth: "auth_google",
-    pagination: "google_pagination",
-    host: "cloudresourcemanager.googleapis.com",
-    path: "/v1/projects/",
-    query_params: {
-      "filter": filter
-    }
-  }
-  EOF
-end
-
-script "js_slept_projects", type: "javascript" do
-  parameters "ds_projects"
+  parameters "ds_all_projects", "param_project_ids"
   result "projects"
   code <<-EOF
-  var projects = ds_projects
-  // It means, when we reach this counter, we'll use "sleep" function, to avoid quota error.
-  var callsPerMinute = 150
+    var projects = ds_all_projects
 
-  _.each(projects, function(p, index) {
-      // If we aren't at position 0 and if remainder of the division of index by
-      // "callsPerMinute" is 0 add "sleep" flag.
-      if (index != 0 && index % callsPerMinute == 0) {
-          p.sleep = true
-      }
-  })
+    // Apply filter only if "param_project_ids" was set.
+    if (param_project_ids.length > 0) {
+        projects = _.filter(projects, function (p) {
+            // Returns project only if its "accountID" (projectID) is in "param_project_ids".
+            if (_.contains(param_project_ids, p.accountID)) {
+                return p
+            }
+        })
+    }
+
+    // It means, when we reach this call counter, we'll use "sleep" function, to avoid quota error.
+    var callsPerMinute = 150
+
+    _.each(projects, function (p, index) {
+        // If we aren't at position 0 and if remainder of the division of index by
+        // "callsPerMinute" is 0 add "sleep" flag.
+        if (index != 0 && index % callsPerMinute == 0) {
+            p.sleep = true
+        }
+    })
   EOF
 end
 
 script "js_sql_instances_call", type: "javascript" do
+  parameters "accountID", "sleep", "param_exclude_tags"
   result "request"
-  parameters "accountID", "sleep", "param_regions", "param_exclude_tags"
   code <<-EOS
     if (sleep == true) {
       var now = new Date().getTime();
       // 1 minute and 30 seconds.
       var sleepDuration = 90000
-      while(new Date().getTime() < now + sleepDuration){ /* Do nothing to prevent quota error */ }
+      while (new Date().getTime() < now + sleepDuration) { /* Do nothing to prevent quota error */ }
     }
 
     var filter = ""
@@ -226,50 +217,47 @@ script "js_sql_instances_call", type: "javascript" do
     if (param_exclude_tags.length != 0) {
         // Key of tag to exclude.
         var label_key = param_exclude_tags.split(':')[0]
-    
+
         // Value of tag to exclude.
         var label_value = param_exclude_tags.split(':')[1]
-    
+
         // Apply logic operator "NOT" to get all SQL instances that don't have that tag.
         filter = "(NOT settings.userLabels." + label_key + ":" + label_value + ")"
     }
-    
-    // Apply filter by region only if "param_regions" was set.
-    if (param_regions.length != 0) {
-        if (param_exclude_tags.length != 0) {
-            // Since we already have a filter applied this AND is required to apply new filter.
-            filter += " AND "
-        }
-    
-        filter += "("
-    
-        _.each(param_regions, function (region, index) {
-            filter += '(region = "' + region + '")'
-    
-            // Adds OR in case it isn't last item, means there are more items to be added.
-            if ((index + 1) != param_regions.length) {
-                filter += " OR "
-            }
-        })
-    
-        filter += ")"
-    }
 
     request = {
-      "auth": "auth_google",
-      "host": "sqladmin.googleapis.com",
-      "verb": "GET",
-      "path": "/v1/projects/"+accountID+"/instances",
-      "headers": {
-        "User-Agent": "RS Policies",
-        "Content-Type": "application/json"
-      }
-      "ignore_status": [403,404],
-      "query_params": {
-        "filter": filter
-      },
+        "auth": "auth_google",
+        "host": "sqladmin.googleapis.com",
+        "verb": "GET",
+        "path": "/v1/projects/" + accountID + "/instances",
+        "headers": {
+            "User-Agent": "RS Policies",
+            "Content-Type": "application/json"
+        },
+        "ignore_status": [403, 404],
+        "query_params": {
+            "filter": filter
+        },
     }
   EOS
+end
+
+script "js_sql_instances", type: "javascript" do
+  parameters "ds_all_sql_instances", "param_regions"
+  result "sql_instances"
+  code <<-EOF
+    var sql_instances = ds_all_sql_instances
+
+    // Apply filter only if "param_regions" was set.
+    if (param_regions.length > 0) {
+        sql_instances = _.filter(sql_instances, function (i) {
+            // Returns instance only if its "region" is in "param_regions".
+            if (_.contains(param_regions, i.region)) {
+                return i
+            }
+        })
+    }
+  EOF
 end
 
 script "js_recommenders", type: "javascript" do
