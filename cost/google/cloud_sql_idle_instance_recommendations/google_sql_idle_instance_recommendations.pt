@@ -94,11 +94,16 @@ datasource "ds_projects" do
   end
 end
 
+# Sets "sleep" flag to some projects to prevent quota error.
+datasource "ds_slept_projects" do
+  run_script $js_slept_projects, $ds_projects
+end
+
 # SQL instances of Google projects from API.
 datasource "ds_sql_instances" do
-  iterate $ds_projects
+  iterate $ds_slept_projects
   request do
-    run_script $js_sql_instances_call, val(iter_item, "accountID"), $param_regions, $param_exclude_tags
+    run_script $js_sql_instances_call, val(iter_item, "accountID"), val(iter_item, "sleep"), $param_regions, $param_exclude_tags
   end
   result do
     encoding "json"
@@ -186,10 +191,35 @@ script "js_projects", type: "javascript" do
   EOF
 end
 
+script "js_slept_projects", type: "javascript" do
+  parameters "ds_projects"
+  result "projects"
+  code <<-EOF
+  var projects = ds_projects
+  // It means, when we reach this counter, we'll use "sleep" function, to avoid quota error.
+  var callsPerMinute = 150
+
+  _.each(projects, function(p, index) {
+      // If we aren't at position 0 and if remainder of the division of index by
+      // "callsPerMinute" is 0 add "sleep" flag.
+      //if (index != 0 && index % callsPerMinute == 0) {
+          p.sleep = true
+      //}
+  })
+  EOF
+end
+
 script "js_sql_instances_call", type: "javascript" do
   result "request"
-  parameters "accountID", "param_regions", "param_exclude_tags"
+  parameters "accountID", "sleep", "param_regions", "param_exclude_tags"
   code <<-EOS
+    if (sleep == true) {
+      var now = new Date().getTime();
+      // 1 minute and 30 seconds.
+      var sleepDuration = 90000
+      while(new Date().getTime() < now + sleepDuration){ /* Do nothing to prevent quota error */ }
+    }
+
     var filter = ""
 
     // Apply filter only if "param_exclude_tags" was set.
