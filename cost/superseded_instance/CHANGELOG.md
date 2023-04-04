@@ -1,9 +1,8 @@
 # Changelog
 
-## v4.0
+## v3.1
 
-- Added potential savings and cost information to raised incidents
-- General code modernization and clean-up
+- Deprecated: This policy is no longer being updated. Please use the vendor-specific Superseded Instance policies instead.
 
 ## v3.0
 
