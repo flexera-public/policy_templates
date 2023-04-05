@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.5
+
+- Fixed issue causing resources to be reported as both underutilized and idle instead of one or the other.
+
 ## v1.4
 
 - Fixed check for underutilized compute instances
