@@ -94,26 +94,35 @@ datasource "ds_currency_reference" do
   end
 end
 
-# GCP projects filtered by "lifecycleState:ACTIVE" and "param_project_ids".
-datasource "ds_projects" do
+# Gets all projects filtered by "lifecycleState:ACTIVE".
+datasource "ds_all_projects" do
   request do
-    run_script $js_projects, $param_project_ids
+    auth $auth_google
+    pagination $google_pagination
+    host "cloudresourcemanager.googleapis.com"
+    path "/v1/projects/"
+    query "filter", "(lifecycleState:ACTIVE)"
   end
   result do
     encoding "json"
     collect jmes_path(response, "projects[*]") do
-      field "accountID", jmes_path(col_item,"projectId")
       field "projectNumber", jmes_path(col_item,"projectNumber")
+      field "accountID", jmes_path(col_item,"projectId")
       field "accountName", jmes_path(col_item,"name")
     end
   end
 end
 
+# Removes projects that aren't in "param_project_ids" (In case it isn't empty).
+datasource "ds_projects" do
+    run_script $js_projects, $ds_all_projects, $param_project_ids
+end
+
 # Aggregated addresses by project, returns them by region.
-datasource "ds_aggregated_addresses" do
+datasource "ds_all_addresses" do
   iterate $ds_projects
   request do
-    run_script $js_aggregated_addresses, val(iter_item, "accountID"), $param_regions, $param_exclude_tags
+    run_script $js_aggregated_addresses_call, val(iter_item, "accountID"), $param_exclude_tags
   end
   result do
     encoding "json"
@@ -124,14 +133,14 @@ datasource "ds_aggregated_addresses" do
   end
 end
 
-# Sanitizes aggregated addresses.
-datasource "ds_sanitize_addresses" do
-  run_script $js_sanitize_addresses, $ds_aggregated_addresses
+# Removes addresses that aren't in "param_regions" (In case it isn't empty).
+datasource "ds_addresses" do
+  run_script $js_addresses, $ds_all_addresses, $param_regions
 end
 
 # Creates unique relationship between accountID and region.
 datasource "ds_recommenders" do
-  run_script $js_recommenders, $ds_sanitize_addresses
+  run_script $js_recommenders, $ds_addresses
 end
 
 # Gets recommendations from Recommender API for each "ds_recommender".
@@ -163,144 +172,104 @@ end
 
 # Gets estimated monthly savings.
 datasource "ds_addresses_cost_mapping" do
-  run_script $js_addresses_cost_mapping, $ds_sanitize_addresses, $ds_recommendations, $ds_currency_reference
+  run_script $js_addresses_cost_mapping, $ds_addresses, $ds_recommendations, $ds_currency_reference
 end
 
 ###############################################################################
 # Scripts
 ###############################################################################
 script "js_projects", type: "javascript" do
-  parameters "param_project_ids"
-  result "request"
+  parameters "ds_all_projects", "param_project_ids"
+  result "projects"
   code <<-EOF
-  var filter = "(lifecycleState:ACTIVE)"
-
-  // Apply filter by project only if "param_project_ids" was set.
-  if (param_project_ids.length != 0) {
-      // Since we already have a filter applied this AND is required to apply new filter.
-      filter += " AND ("
-      _.each(param_project_ids, function (id, index) {
-          filter += '(projectId = "' + id + '")'
-
-          // Adds OR in case it isn't last item, means there are more items to be added.
-          if ((index + 1) != param_project_ids.length) {
-              filter += " OR "
-          }
-      })
-      filter += ")"
-  }
-
-  var request = {
-    auth: "auth_google",
-    pagination: "google_pagination",
-    host: "cloudresourcemanager.googleapis.com",
-    path: "/v1/projects/",
-    query_params: {
-      "filter": filter
+    var projects = ds_all_projects
+    // Apply filter only if "param_project_ids" was set.
+    if (param_project_ids.length > 0) {
+        projects = _.filter(projects, function (p) {
+            // Returns project only if its "accountID" (projectID) is in "param_project_ids".
+            if (_.contains(param_project_ids, p.accountID)) {
+                return p
+            }
+        })
     }
-  }
   EOF
 end
 
-script "js_aggregated_addresses", type: "javascript" do
-  parameters "accountID", "param_regions", "param_exclude_tags"
+script "js_aggregated_addresses_call", type: "javascript" do
+  parameters "accountID", "param_exclude_tags"
   result "request"
   code <<-EOF
-  var filter = '(status != "IN_USE") AND (addressType != "INTERNAL")'
+    var filter = '(status != "IN_USE") AND (addressType != "INTERNAL")'
 
-  // Apply filter tags(labels) only if "param_exclude_tags" was set.
-  if (param_exclude_tags.length != 0) {
-      var label_key = param_exclude_tags.split(':')[0]
-      var label_value = param_exclude_tags.split(':')[1]
-
-      filter += " AND (NOT labels." + label_key + ":" + label_value + ")"
-  }
-
-  // Apply filter by region only if "param_regions" was set.
-  if (param_regions.length != 0) {
-      // We need this since region field for each item is URL.
-      var baseUrl = "https://www.googleapis.com/compute/v1/projects/" + accountID + "/regions/"
-
-      // Since we already have a filter applied this AND is required to apply new filter.
-      filter += " AND ("
-      _.each(param_regions, function (pr, index) {
-          var region = baseUrl + pr
-
-          // In case user inputs "global" in "param_regions" we set "region" value to empty, since
-          // those addresses don't have a region field.
-          if (pr == "global") {
-              region = ""
-          }
-
-          filter += '(region = "' + region + '")'
-          
-          // Adds OR in case it isn't last item, means there are more items to be added.
-          if ((index + 1) != param_regions.length) {
-              filter += " OR "
-          }
-      })
-      filter += ")"
-  }
-
-  var request = {
-    auth: "auth_google",
-    pagination: "google_pagination",
-    host: "compute.googleapis.com",
-    ignore_status: [403,404],
-    path: "/compute/v1/projects/" + accountID + "/aggregated/addresses",
-    query_params: {
-      "filter": filter
+    // Apply filter tags(labels) only if "param_exclude_tags" was set.
+    if (param_exclude_tags.length != 0) {
+        var label_key = param_exclude_tags.split(':')[0]
+        var label_value = param_exclude_tags.split(':')[1]
+    
+        filter += " AND (NOT labels." + label_key + ":" + label_value + ")"
     }
-  }
+    
+    var request = {
+        auth: "auth_google",
+        pagination: "google_pagination",
+        host: "compute.googleapis.com",
+        ignore_status: [403, 404],
+        path: "/compute/v1/projects/" + accountID + "/aggregated/addresses",
+        query_params: {
+            "filter": filter
+        }
+    }
   EOF
 end
 
-script "js_sanitize_addresses", type: "javascript" do
-  parameters "ds_aggregated_addresses"
+script "js_addresses", type: "javascript" do
+  parameters "ds_all_addresses", "param_regions"
   result "addresses"
   code <<-EOF
-  var addresses = []
+    var addresses = []
 
-  _.each(ds_aggregated_addresses, function (project_regions) {
-      // Addresses of current project.
-      var project_addresses = []
+    _.each(ds_all_addresses, function (project_regions) {
+        // Addresses of current project.
+        var project_addresses = []
 
-      _.each(project_regions.items, function (region, regionKey) {
-          if (region.addresses) {
-              project_addresses = _.union(project_addresses, _.map(region.addresses, function (address) {
-                  var region = regionKey
+        _.each(project_regions.items, function (region, regionKey) {
+            var regionName = regionKey
 
-                  // All regions (except "global") have this pattern: regions/[region_name] so, we separate them
-                  // and take value from position 1 that's actual region name.
-                  if (region != "global") {
-                      region = region.split("/")[1]
-                  }
+            // All regions (except "global") have this pattern: regions/[region_name] so, we separate them
+            // and take value from position 1 that's actual region name.
+            if (regionName != "global") {
+                regionName = regionName.split("/")[1]
+            }
 
-                  address.region = region
-                  address.accountID = project_regions.accountID
-                  address.projectNumber = project_regions.projectNumber
-                  address.accountName = project_regions.accountName
-                  address.resourceID = address.address
-                  address.resourceName = address.name
-                  address.resourceType = address.kind
+            if (region.addresses && (_.contains(param_regions, regionName) || param_regions.length == 0)) {
+                project_addresses = _.union(project_addresses, _.map(region.addresses, function (address) {
+                    if (address.selfLink != null && address.selfLink !== undefined) {
+                        address.region = regionName
+                        address.accountID = project_regions.accountID
+                        address.projectNumber = project_regions.projectNumber
+                        address.accountName = project_regions.accountName
+                        address.resourceID = address.address
+                        address.resourceName = address.name
+                        address.resourceType = address.kind
 
-                  return address
-              }))
-          }
-      })
+                        return address
+                    }
+                }))
+            }
+        })
 
-      addresses = _.union(addresses, project_addresses)
-  })
+        addresses = _.union(addresses, project_addresses)
+    })
   EOF
 end
 
 script "js_recommenders", type: "javascript" do
-  parameters "ds_sanitize_addresses"
+  parameters "ds_addresses"
   result "recommenders"
   code <<-EOF
   var recommenders = []
 
-  _.each(ds_sanitize_addresses, function (address) {
+  _.each(ds_addresses, function (address) {
       var objectToFind = { accountID: address.accountID, region: address.region }
       var found = _.findWhere(recommenders, objectToFind)
 
