@@ -64,37 +64,6 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Auto
 
 The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) page in the docs has detailed instructions for setting up Credentials for the most common providers.
 
-### Credential configuration
-
-For administrators [creating and managing credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) to use with this policy, the following information is needed:
-
-Provider tag value to match this policy: `aws`
-
-Required permissions in the provider:
-
-```json
-{
-  "Version": "2006-03-01",
-  "Statement":[
-    {
-      "Effect":"Allow",
-      "Action":[
-        "s3:ListAllMyBuckets",
-        "s3:GetBucketLocation",
-        "s3:ListBucket",
-        "s3:GetObject",
-        "s3:GetObjectTagging",
-        "s3:PutObject",
-        "s3:DeleteObject"
-      ],
-      "Resource":"*"
-    }
-  ]
-}
-```
-
-Note: To get the list and modify S3-objects present in the S3 bucket, user must have READ and Write access to the bucket.
-
 ## Supported Clouds
 
 - AWS
