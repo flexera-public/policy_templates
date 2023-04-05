@@ -113,14 +113,19 @@ datasource "ds_all_sql_instances" do
   result do
     encoding "json"
     collect jmes_path(response,"items[*]") do
+      field "accountID", val(iter_item, "accountID")
+      field "accountName", val(iter_item, "accountName")
+      field "projectNumber", val(iter_item, "projectNumber")
       field "resourceID", jmes_path(col_item, "name")
       field "state", jmes_path(col_item,"state")
       field "selfLink", jmes_path(col_item, "selfLink")
       field "tier", jmes_path(col_item, "settings.tier")
       field "region", jmes_path(col_item, "region")
       field "tags", jmes_path(col_item,"settings.userLabels")
-      field "accountID", val(iter_item, "accountID")
       field "resourceType", val(col_item, "instanceType")
+      field "resourceName", jmes_path(col_item, "name")
+      field "resourceType", jmes_path(col_item, "instanceType")
+      field "status", jmes_path(col_item, "state")
     end
   end
 end
@@ -164,7 +169,7 @@ end
 
 # Total estimated monthly savings based on SQL instances/recommendations.
 datasource "ds_sql_cost_mapping" do
-  run_script $js_instance_cost_mapping, $ds_sql_instances, $ds_recommendations, $ds_currency_reference
+  run_script $js_sql_instances_cost_mapping, $ds_sql_instances, $ds_recommendations, $ds_currency_reference
 end
 
 ###############################################################################
@@ -296,97 +301,95 @@ script "js_recommender_call", type: "javascript" do
   EOF
 end
 
-script "js_instance_cost_mapping", type:"javascript" do
+script "js_sql_instances_cost_mapping", type:"javascript" do
   result "result"
   parameters  "databases", "recommendations", "ds_currency_reference"
   code <<-EOS
     var instances = [];
-    var result={};
-    var message=''
-    var count=0;
-
-    function formatNumber(number, separator){
-      var numString =number.toString();
-      var values=numString.split(".");
-      var result = ''
-      while (values[0].length > 3){
-        var chunk = values[0].substr(-3)
-        values[0] = values[0].substr(0, values[0].length - 3)
-        result = separator + chunk + result
-      }
-      if (values[0].length > 0){
-        result = values[0] + result
-      }
-      if(values[1]==undefined){
-        return result;
-      }
-      return result+"."+values[1];
-    }
-    total = 0
-    cur = ""
-    _.each(databases, function(database) {
-      _.each(recommendations, function(recommendation){
-        if(database.resourceName == recommendation.resourceName) {
-          count++
-          if(recommendation['currency'] !== undefined ) {
-            if (ds_currency_reference[recommendation['currency']] !== undefined ) {
-            var cur = ds_currency_reference[recommendation['currency']]['symbol']
-            } else {
-              var cur = "$"
-            }
-            database['savingsCurrency'] = cur
-          } else {
-            var cur = "$"
-            var separator = ","
-          }
-          if (recommendation.costNanos<0) {
-            recommendation.costNanos = recommendation.costNanos * -1
-          }
-          if (recommendation.costUnits<0) {
-            recommendation.costUnits = recommendation.costUnits * -1
-          }
-          strNano = "."+recommendation.costNanos
-          combine = recommendation.costUnits + parseFloat(strNano)
-          monthsDuration = parseFloat(recommendation.duration.replace("s",""))/2628288
-          monthlySavings = combine / monthsDuration
-          total = total+monthlySavings
-          database['savings']= (Math.round( monthlySavings * 1000) / 1000)
-          database['savingsCurrency'] = cur
-          database['projectNumber'] = recommendation['projectNumber']
-          database['accountName'] = recommendation['accountName']
-          database['priority'] = recommendation['priority']
-          database['primaryImpact'] = recommendation['primaryImpact']
-          database['recommenderSubtype'] = recommendation['recommenderSubtype']
-          database['state'] = recommendation['state']
-          database['region'] = recommendation['region']
-          database['service'] = "SQL"
-          tags = []
-          if (database['tags'] != null) {
-            Object.keys(database.tags).forEach(function(key) {
-              tags.push(key+'='+database.tags[key])
-            });
-          }
-          database['tags'] = tags
-          instances.push(database)
+    var result = {};
+    var message = ''
+    var count = 0;
+    
+    function formatNumber(number, separator) {
+        var numString = number.toString();
+        var values = numString.split(".");
+        var result = ''
+        while (values[0].length > 3) {
+            var chunk = values[0].substr(-3)
+            values[0] = values[0].substr(0, values[0].length - 3)
+            result = separator + chunk + result
         }
-      })
-    })
-    if (instances.length != 0){
-      if(count){
-        total=cur + ' '+formatNumber((Math.round(total * 100) / 100));
-        message="The total estimated monthly savings are " +total;
-      } else {
-        message="The Flexera Optima system does not have any data to calculate savings for these resources";
-      }
-    }else{
-      message="unable to find resources between recommender and resource api";
+        if (values[0].length > 0) {
+            result = values[0] + result
+        }
+        if (values[1] == undefined) {
+            return result;
+        }
+        return result + "." + values[1];
     }
-    result={
-      "instances": instances,
-      "message": message
+    var total = 0
+    var cur = ""
+    _.each(databases, function (database) {
+        _.each(recommendations, function (recommendation) {
+            if (database.resourceName == recommendation.resourceName) {
+                count++
+                if (recommendation['currency'] !== undefined) {
+                    if (ds_currency_reference[recommendation['currency']] !== undefined) {
+                        var cur = ds_currency_reference[recommendation['currency']]['symbol']
+                    } else {
+                        var cur = "$"
+                    }
+                    database['savingsCurrency'] = cur
+                } else {
+                    var cur = "$"
+                    var separator = ","
+                }
+                if (recommendation.costNanos < 0) {
+                    recommendation.costNanos = recommendation.costNanos * -1
+                }
+                if (recommendation.costUnits < 0) {
+                    recommendation.costUnits = recommendation.costUnits * -1
+                }
+                var strNano = "." + recommendation.costNanos
+                var combine = recommendation.costUnits + parseFloat(strNano)
+                var monthsDuration = parseFloat(recommendation.duration.replace("s", "")) / 2628288
+                var monthlySavings = combine / monthsDuration
+                total = total + monthlySavings
+                database['savings'] = (Math.round(monthlySavings * 1000) / 1000)
+                database['savingsCurrency'] = cur
+                database['priority'] = recommendation['priority']
+                database['primaryImpact'] = recommendation['primaryImpact']
+                database['recommenderSubtype'] = recommendation['recommenderSubtype']
+                database['state'] = recommendation['state']
+                database['region'] = recommendation['region']
+                database['service'] = "SQL"
+                var tags = []
+                if (database['tags'] != null) {
+                    Object.keys(database.tags).forEach(function (key) {
+                        tags.push(key + '=' + database.tags[key])
+                    });
+                }
+                database['tags'] = tags
+                instances.push(database)
+            }
+        })
+    })
+    if (instances.length != 0) {
+        if (count) {
+            total = cur + ' ' + formatNumber((Math.round(total * 100) / 100));
+            message = "The total estimated monthly savings are " + total;
+        } else {
+            message = "The Flexera Optima system does not have any data to calculate savings for these resources";
+        }
+    } else {
+        message = "unable to find resources between recommender and resource api";
+    }
+    result = {
+        "instances": instances,
+        "message": message
     };
-    result.instances = _.sortBy(result.instances,"region");
-    result.instances = _.sortBy(result.instances,"accountName");
+    result.instances = _.sortBy(result.instances, "region");
+    result.instances = _.sortBy(result.instances, "accountName");
   EOS
 end
 
@@ -396,7 +399,7 @@ end
 
 policy "policy_recommendations" do
   validate $ds_sql_cost_mapping do
-    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} rows found for Idle Cloud SQL Instances"
+    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data.instances }} rows found for Idle Cloud SQL Instances"
     check eq(size(val(data, "instances")), 0)
     escalate $esc_email
     export "instances" do
