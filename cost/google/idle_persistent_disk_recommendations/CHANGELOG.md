@@ -1,6 +1,12 @@
 # Changelog
 
-## 2.5
+## v2.6
+
+- Fixed error getting zone name as region
+- Adding missing fields for policy logs
+- Filtering data before requests to avoid unnecessary requests to `/aggregated/disks` and `/recommenders/google.compute.disk.IdleResourceRecommender/recommendations` APIs
+
+## v2.5
 
 - Modified to make this policy run faster by using aggregated GCP API endpoints.
 
