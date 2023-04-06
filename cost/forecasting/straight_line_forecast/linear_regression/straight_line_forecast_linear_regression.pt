@@ -8,7 +8,7 @@ category "Cost"
 tenancy "single"
 default_frequency "monthly"
 info(
-  version: "3.2",
+  version: "3.3",
   provider: "Flexera Optima",
   service: "",
   policy_set: "Forecasting"
@@ -56,7 +56,7 @@ parameter "param_dimension" do
   label "Dimension"
   description "Select dimension, leave blank for no dimensions"
   type "string"
-  allowed_values ["Category", "Region", "Service", "Vendor Account Name"]
+  allowed_values ["Category", "Region", "Service", "Vendor Account Name", "Billing Center"]
   default "Category"
 end
 
@@ -124,6 +124,20 @@ datasource "ds_billing_centers" do
   end
 end
 
+#GET TOP-LEVEL BILLING CENTERS
+datasource "ds_top_level_billing_centers" do
+  run_script $js_top_level_bc, $ds_billing_centers
+end
+  
+script "js_top_level_bc", type: "javascript" do
+  parameters "billing_centers"
+  result "filtered_billing_centers"
+  code <<-EOS
+  var filtered_billing_centers =
+    _.reject(billing_centers, function(bc){ return bc.parent_id != null });
+  EOS
+end
+
 #CREATE LIST OF PAST MONTHS
 datasource "ds_past_month_list" do
   run_script $js_generate_past_month_list, $param_lookback_months
@@ -160,7 +174,7 @@ end
 datasource "ds_costs" do
   iterate $ds_past_month_list
   request do
-    run_script $js_new_costs_request, rs_optima_host, rs_org_id, $ds_billing_centers, $param_cost_metric, $param_billing_centers, $param_dimension, val(iter_item, 'start_date'), val(iter_item, 'end_date')
+    run_script $js_new_costs_request, rs_optima_host, rs_org_id, $ds_top_level_billing_centers, $param_cost_metric, $param_billing_centers, $param_dimension, val(iter_item, 'start_date'), val(iter_item, 'end_date')
   end
   result do
     encoding "json"
@@ -168,11 +182,11 @@ datasource "ds_costs" do
       field "start_date", val(iter_item,"start_date")
       field "cost_amortized_unblended_adj", jmes_path(col_item,"metrics.cost_amortized_unblended_adj")
       field "cost_amortized_blended_adj", jmes_path(col_item,"metrics.cost_amortized_blended_adj")
-      field "id", jmes_path(col_item,"dimensions.billing_center_id")
+      field "billing_center_id", jmes_path(col_item,"dimensions.billing_center_id")
       field "category", jmes_path(col_item,"dimensions.category")
       field "region", jmes_path(col_item,"dimensions.region")
       field "service", jmes_path(col_item,"dimensions.service")
-      field "vendor_account", jmes_path(col_item,"dimensions.vendor_account")
+      field "vendor_account_name", jmes_path(col_item,"dimensions.vendor_account_name")
       field "timestamp", jmes_path(col_item,"timestamp")
     end
   end
@@ -200,8 +214,10 @@ script "js_new_costs_request", type: "javascript" do
   }
 
   //Mapping for dimensions
-  dimensions = [ "billing_center_id", "category" ]
-  if(param_dimension != "" && param_dimension != "Category"){
+  var dimensions = []
+  if (param_dimension == "Category" || param_dimension == "Billing Center") {
+    dimensions = [ "billing_center_id", "category" ]
+  } else if (param_dimension != "") {
     dimensions = [ "billing_center_id", "category", (param_dimension.toLowerCase().replace(/ /g,"_")) ]
   }
 
@@ -229,11 +245,11 @@ end
 
 #GROUP COSTS BY DIMENSION AND BY MONTH
 datasource "ds_data_package" do
-  run_script $js_make_data_package, $param_cost_metric, $param_forecasted_months, $param_dimension, $ds_costs
+  run_script $js_make_data_package, $param_cost_metric, $param_forecasted_months, $param_dimension, $ds_costs, $ds_top_level_billing_centers
 end
 
 script "js_make_data_package", type: "javascript" do
-  parameters "param_cost_metric", "param_forecasted_months", "param_dimension", "ds_costs"
+  parameters "param_cost_metric", "param_forecasted_months", "param_dimension", "ds_costs", "ds_billing_centers"
   result "results"
   code <<-EOS
   var results = [];
@@ -249,15 +265,28 @@ script "js_make_data_package", type: "javascript" do
     "Category": "category",
     "Region": "region",
     "Service": "service",
-    "Vendor Account": "vendor_account"
+    "Vendor Account Name": "vendor_account_name"
+    "Billing Center": "billing_center_name"
+  }
+
+  //If param_dimension == "Billing Center", add Billing Center Name field to data
+  if (param_dimension == "Billing Center"){
+    _.each(ds_costs, function(cost) {
+      var matched_billing_center = _.find(ds_billing_centers, function(bc) { return cost.billing_center_id == bc.id })
+      if (matched_billing_center != undefined) {
+        cost["billing_center_name"] = matched_billing_center.name
+      } else {
+        cost["billing_center_name"] = cost.billing_center_id
+      }
+    })
   }
 
   //Ignore costs where Category is "Commitments"
   ds_costs = _.reject(ds_costs, function(cost){ return cost.category == "Commitments" })
 
   //For each month, for each type in dimension, sum costs
-  month = _.pluck(_.uniq(ds_costs, function(cost){ return cost.start_date }), "start_date" )
-  dimension = _.pluck(_.uniq(ds_costs, function(cost){ return cost[dimension_type[param_dimension]] }), dimension_type[param_dimension] )
+  var month = _.pluck(_.uniq(ds_costs, function(cost){ return cost.start_date }), "start_date" )
+  var dimension = _.pluck(_.uniq(ds_costs, function(cost){ return cost[dimension_type[param_dimension]] }), dimension_type[param_dimension] )
 
   sum_costs_by_dimension = []
   _.each(month, function(mo){
