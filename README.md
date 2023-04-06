@@ -25,7 +25,6 @@ These templates can generate savings estimates for your environment.
 - [AWS GP3 Upgradeable Volumes](./cost/aws/gp3_volume_upgrade)
 - [AWS Unused Volumes](./cost/aws/unused_volumes)
 - [AWS Unused IP Addresses](./cost/aws/unused_ip_addresses)
-- [AWS Delete Unused Classic Load Balancers](./cost/aws/elb/clb_unused)
 - [AWS Idle Compute Instances](./cost/aws/idle_compute_instances)
 - [AWS Unused RDS Instance](./cost/aws/unused_rds)
 - [AWS Rightsize EBS Volumes](./cost/aws/rightsize_ebs_volumes)
@@ -39,7 +38,6 @@ These templates can generate savings estimates for your environment.
 - [Azure Unused Volumes](./cost/azure/unattached_volumes)
 - [Azure Idle Compute Instances](./cost/azure/idle_compute_instances)
 - [Azure Savings Plan Recommendations](./cost/azure/savings_plan/recommendations)
-- [Azure Savings Plan Utilization](./cost/azure/savings_plan/utilization)
 
 #### Google
 
@@ -53,7 +51,7 @@ These templates can generate savings estimates for your environment.
 
 #### AWS
 
-  - [AWS Untagged Resources](./compliance/aws/untagged_resources)
+- [AWS Untagged Resources](./compliance/aws/untagged_resources)
 
 - EC2
 
@@ -75,9 +73,9 @@ These templates can generate savings estimates for your environment.
 
 #### Azure
 
-  - [Azure Regulatory Compliance](./compliance/azure/compliance_score)
-  - [Azure Untagged Resources](./compliance/azure/azure_untagged_resources)
-  - [Azure Tag Resources with Resource Group Name](./compliance/tags/azure_rg_tags)
+- [Azure Regulatory Compliance](./compliance/azure/compliance_score)
+- [Azure Untagged Resources](./compliance/azure/azure_untagged_resources)
+- [Azure Tag Resources with Resource Group Name](./compliance/tags/azure_rg_tags)
 
 - Compute
 
@@ -160,22 +158,22 @@ These templates can generate savings estimates for your environment.
 
 #### Flexera Cloud Management
 
-  - [Policy Update Notification](./compliance/policy_update_notification)
+- [Policy Update Notification](./compliance/policy_update_notification)
 
 #### Flexera FNMS
 
-  - [ITAM Overused Licenses](./compliance/fnms/overused_licenses)
+- [ITAM Overused Licenses](./compliance/fnms/overused_licenses)
 
 #### Flexera ITAM
 
-  - [ITAM Expiring Licenses](./compliance/fnms/fnms_licenses_expiring)
-  - [ITAM Missing Active Machines](./compliance/fnms/missing_active_machines)
-  - [ITAM VMs Missing Host ID](./compliance/fnms/vms_missing_hostid)
-  - [ITAM Ignored Recent Inventory Dates](./compliance/fnms/ignored_recent_inventory_dates)
+- [ITAM Expiring Licenses](./compliance/fnms/fnms_licenses_expiring)
+- [ITAM Missing Active Machines](./compliance/fnms/missing_active_machines)
+- [ITAM VMs Missing Host ID](./compliance/fnms/vms_missing_hostid)
+- [ITAM Ignored Recent Inventory Dates](./compliance/fnms/ignored_recent_inventory_dates)
 
 #### Flexera Optima
 
-  - [Billing Center Access Report](./compliance/billing_center_access_report)
+- [Billing Center Access Report](./compliance/billing_center_access_report)
 
 #### GCE
 
@@ -185,28 +183,28 @@ These templates can generate savings estimates for your environment.
 
 #### GitHub
 
-  - [GitHub.com Available Seats Report](./compliance/github/available_seats)
-  - [GitHub.com Repository Branches without Protection](./compliance/github/repository_branch_protection)
-  - [GitHub.com Unpermitted Top-Level Teams](./compliance/github/toplevel_teams)
-  - [GitHub.com Unpermitted Sized Repositories](./compliance/github/repository_size)
-  - [GitHub.com Unpermitted Outside Collaborators](./compliance/github/outside_collaborators)
-  - [GitHub.com Unpermitted Repository Names](./compliance/github/repository_naming)
-  - [GitHub.com Repositories without Admin Team](./compliance/github/repository_admin_team)
+- [GitHub.com Available Seats Report](./compliance/github/available_seats)
+- [GitHub.com Repository Branches without Protection](./compliance/github/repository_branch_protection)
+- [GitHub.com Unpermitted Top-Level Teams](./compliance/github/toplevel_teams)
+- [GitHub.com Unpermitted Sized Repositories](./compliance/github/repository_size)
+- [GitHub.com Unpermitted Outside Collaborators](./compliance/github/outside_collaborators)
+- [GitHub.com Unpermitted Repository Names](./compliance/github/repository_naming)
+- [GitHub.com Repositories without Admin Team](./compliance/github/repository_admin_team)
 
 #### Google
 
-  - [Google Unlabeled Resources](./compliance/google/unlabeled_resources)
+- [Google Unlabeled Resources](./compliance/google/unlabeled_resources)
 
 ### Policy Templates for Cost
 
 ####
 
-  - [Currency Conversion](./cost/currency_conversion)
+- [Currency Conversion](./cost/currency_conversion)
 
 #### AWS
 
-  - [AWS Savings Plan Recommendations](./cost/aws/savings_plan/recommendations)
-  - [AWS Savings Plan Utilization](./cost/aws/savings_plan/utilization)
+- [AWS Savings Plan Recommendations](./cost/aws/savings_plan/recommendations)
+- [AWS Savings Plan Utilization](./cost/aws/savings_plan/utilization)
 
 - Compute
 
@@ -250,9 +248,9 @@ These templates can generate savings estimates for your environment.
 
 #### Azure
 
-  - [Azure Hybrid Use Benefit for Windows Server](./cost/azure/hybrid_use_benefit)
-  - [Azure Reserved Instances Recommendations](./cost/azure/reserved_instances/recommendations)
-  - [Azure Savings Plan Utilization](./cost/azure/savings_plan/utilization)
+- [Azure Hybrid Use Benefit for Windows Server](./cost/azure/hybrid_use_benefit)
+- [Azure Reserved Instances Recommendations](./cost/azure/reserved_instances/recommendations)
+- [Azure Savings Plan Utilization](./cost/azure/savings_plan/utilization)
 
 - Blob Store
 
@@ -304,36 +302,37 @@ These templates can generate savings estimates for your environment.
 
 #### Flexera Cloud Management
 
-  - [Inefficient Instance Utilization using RightLink Add Tags](./cost/rightlink_rightsize)
+- [Inefficient Instance Utilization using RightLink Add Tags](./cost/rightlink_rightsize)
 
 #### Flexera Optima
 
-  - [Low Account Usage](./cost/low_account_usage)
-  - [Azure Expiring Reserved Instances](./cost/azure/reserved_instances/expiration)
-  - [Monthly Actual v. Budgeted Spend Report](./cost/budget_v_actual)
-  - [New Service Usage](./cost/new_service_usage)
-  - [Cloud Cost Anomaly Alerts](./cost/cloud_cost_anomaly_alerts)
-  - [Superseded Instances](./cost/superseded_instance)
-  - [Budget Alerts by Cloud Account](./cost/budget_alerts_by_account)
-  - [Reserved Instance Report by Billing Center](./cost/aws/reserved_instances/report_by_bc)
-  - [AWS Reserved Instances Utilization](./cost/aws/reserved_instances/utilization)
-  - [AWS Reserved Instances Recommendations with Purchase](./cost/aws/reserved_instances/compute_purchase_recommendation)
-  - [AWS Expiring Reserved Instances](./cost/aws/reserved_instances/expiration)
-  - [AWS Expiring Savings Plans](./cost/aws/savings_plan/expiration)
-  - [Vendor Commitment Forecast](./cost/forecasting/commitment_forecast)
-  - [Cloud Spend Forecast - Straight-Line (Simple Model)](./cost/forecasting/straight_line_forecast/simple)
-  - [Cloud Spend Forecast - Straight-Line (Linear Regression Model)](./cost/forecasting/straight_line_forecast/linear_regression)
-  - [Cloud Spend Forecast - Moving Average](./cost/forecasting/moving_average)
-  - [Cheaper Regions](./cost/cheaper_regions)
-  - [Low Service Usage](./cost/low_service_usage)
-  - [Scheduled Report](./cost/scheduled_reports)
-  - [Budget Alerts](./cost/budget_alerts)
-  - [Master Org Cost Policy with Currency Conversion](./msp/cost/master_org_cost_policy_currency)
-  - [Master Org Cost Policy](./msp/cost/master_org_cost_policy)
+- [Low Account Usage](./cost/low_account_usage)
+- [Azure Expiring Reserved Instances](./cost/azure/reserved_instances/expiration)
+- [Monthly Actual v. Budgeted Spend Report](./cost/budget_v_actual)
+- [Budget Alerts](./cost/budget_report_alerts)
+- [New Service Usage](./cost/new_service_usage)
+- [Cloud Cost Anomaly Alerts](./cost/cloud_cost_anomaly_alerts)
+- [Superseded Instances](./cost/superseded_instance)
+- [Budget Alerts by Cloud Account](./cost/budget_alerts_by_account)
+- [Reserved Instance Report by Billing Center](./cost/aws/reserved_instances/report_by_bc)
+- [AWS Reserved Instances Utilization](./cost/aws/reserved_instances/utilization)
+- [AWS Reserved Instances Recommendations with Purchase](./cost/aws/reserved_instances/compute_purchase_recommendation)
+- [AWS Expiring Reserved Instances](./cost/aws/reserved_instances/expiration)
+- [AWS Expiring Savings Plans](./cost/aws/savings_plan/expiration)
+- [Vendor Commitment Forecast](./cost/forecasting/commitment_forecast)
+- [Cloud Spend Forecast - Straight-Line (Simple Model)](./cost/forecasting/straight_line_forecast/simple)
+- [Cloud Spend Forecast - Straight-Line (Linear Regression Model)](./cost/forecasting/straight_line_forecast/linear_regression)
+- [Cloud Spend Forecast - Moving Average](./cost/forecasting/moving_average)
+- [Cheaper Regions](./cost/cheaper_regions)
+- [Low Service Usage](./cost/low_service_usage)
+- [Scheduled Report](./cost/scheduled_reports)
+- [Budget Alerts (Legacy)](./cost/budget_alerts)
+- [Master Org Cost Policy with Currency Conversion](./msp/cost/master_org_cost_policy_currency)
+- [Master Org Cost Policy](./msp/cost/master_org_cost_policy)
 
 #### GCE
 
-  - [Google Unutilized IP Addresses](./cost/google/unutilized_ip_addresses)
+- [Google Unutilized IP Addresses](./cost/google/unutilized_ip_addresses)
 
 - Compute
 
@@ -400,7 +399,7 @@ These templates can generate savings estimates for your environment.
 
 #### Azure
 
-  - [Azure Sync Tags with Optima](./operational/azure/sync_tags_with_optima)
+- [Azure Sync Tags with Optima](./operational/azure/sync_tags_with_optima)
 
 - AKS
 
@@ -426,20 +425,20 @@ These templates can generate savings estimates for your environment.
 
 #### Flexera Cloud Management
 
-  - [Bill Processing Error Notification](./operational/bill_processing_errors_notification)
-  - [Applied Policy Error Notification](./operational/applied_policy_error_notification)
+- [Bill Processing Error Notification](./operational/bill_processing_errors_notification)
+- [Applied Policy Error Notification](./operational/applied_policy_error_notification)
 
 #### Flexera Optima
 
-  - [AWS Usage Forecast - Number of Instance Hours Used](./operational/aws/total_instance_hours_forecast)
-  - [AWS Usage Report - Number of Instance Hours Used](./operational/aws/total_instance_hours)
-  - [AWS Usage Forecast - Number of Instance vCPUs Used](./operational/aws/total_instance_vcpus_forecast)
-  - [AWS Usage Report - Number of Instance vCPUs Used](./operational/aws/total_instance_vcpus)
+- [AWS Usage Forecast - Number of Instance Hours Used](./operational/aws/total_instance_hours_forecast)
+- [AWS Usage Report - Number of Instance Hours Used](./operational/aws/total_instance_hours)
+- [AWS Usage Forecast - Number of Instance vCPUs Used](./operational/aws/total_instance_vcpus_forecast)
+- [AWS Usage Report - Number of Instance vCPUs Used](./operational/aws/total_instance_vcpus)
 
 #### Flexera RISC
 
-  - [NetFlow Top Talkers](./operational/azure/network_flow)
-  - [Application Migration Recommendations](./operational/compute_instance_migration)
+- [NetFlow Top Talkers](./operational/azure/network_flow)
+- [Application Migration Recommendations](./operational/compute_instance_migration)
 
 ### Policy Templates for SaaS Management
 
@@ -451,15 +450,15 @@ These templates can generate savings estimates for your environment.
 
 #### Flexera SaaS Manager
 
-  - [SaaS Manager - Inactive Users by Department](./saas/fsm/inactive_users_by_dept)
-  - [SaaS Manager - Redundant Apps](./saas/fsm/redundant_apps)
-  - [SaaS Manager - Unsanctioned Applications with Existing Contract](./saas/fsm/unsanctioned_apps_with_contract)
-  - [SaaS Manager - Duplicate User Accounts](./saas/fsm/duplicate_users)
-  - [SaaS Manager - Renewal Reminder](./saas/fsm/renewal_reminder)
-  - [SaaS Manager - Suspicious Users](./saas/fsm/suspicious_users)
-  - [SaaS Manager - SaaS App User Report by Category](./saas/fsm/users_by_category)
-  - [SaaS Manager - Unsanctioned Spend](./saas/fsm/unsanctioned_spend)
-  - [SaaS Manager - User Status Change](./saas/fsm/user_status_change)
+- [SaaS Manager - Inactive Users by Department](./saas/fsm/inactive_users_by_dept)
+- [SaaS Manager - Redundant Apps](./saas/fsm/redundant_apps)
+- [SaaS Manager - Unsanctioned Applications with Existing Contract](./saas/fsm/unsanctioned_apps_with_contract)
+- [SaaS Manager - Duplicate User Accounts](./saas/fsm/duplicate_users)
+- [SaaS Manager - Renewal Reminder](./saas/fsm/renewal_reminder)
+- [SaaS Manager - Suspicious Users](./saas/fsm/suspicious_users)
+- [SaaS Manager - SaaS App User Report by Category](./saas/fsm/users_by_category)
+- [SaaS Manager - Unsanctioned Spend](./saas/fsm/unsanctioned_spend)
+- [SaaS Manager - User Status Change](./saas/fsm/user_status_change)
 
 #### Microsoft
 
@@ -469,11 +468,11 @@ These templates can generate savings estimates for your environment.
 
 #### Okta
 
-  - [Okta Inactive Users](./saas/okta/inactive_users)
+- [Okta Inactive Users](./saas/okta/inactive_users)
 
 #### ServiceNow
 
-  - [ServiceNow Inactive Approvers](./saas/servicenow/inactive_approvers)
+- [ServiceNow Inactive Approvers](./saas/servicenow/inactive_approvers)
 
 ### Policy Templates for Security
 
@@ -619,11 +618,11 @@ These templates can generate savings estimates for your environment.
 <!-- Begin Policy Template Stats -->
 <!--
 ---
-:total_count: 224
-:optimization_count: 22
+:total_count: 225
+:optimization_count: 20
 :categories:
   Security: 70
-  Cost: 86
+  Cost: 87
   Compliance: 33
   Operational: 22
   SaaS Management: 13
@@ -631,7 +630,7 @@ These templates can generate savings estimates for your environment.
   Azure: 68
   GCE: 11
   AWS: 71
-  Flexera Optima: 27
+  Flexera Optima: 28
   Azure China: 1
   Flexera: 5
   Google: 9
@@ -666,7 +665,7 @@ These templates can generate savings estimates for your environment.
   Config: 1
   KMS: 1
   EBS: 3
-  '': 69
+  '': 70
   Compute: 26
   N/A: 1
   All: 3
@@ -684,7 +683,7 @@ These templates can generate savings estimates for your environment.
   Office 365: 1
 :policy_sets:
   CIS: 57
-  '': 88
+  '': 89
   Public Database Access: 2
   Storage Security: 1
   Open Buckets: 2
