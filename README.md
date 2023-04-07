@@ -286,6 +286,7 @@ Reference
 - [Azure Ensure PostgreSQL Servers Infrastructure Encryption](./security/azure/pg_infra_encryption/)
 - [Azure Ensure SQL Database Encryption](./security/azure/sql_db_encryption/)
 - [Azure Ensure SQL Server AD Admin Configured](./security/azure/sql_ad_admin/)
+- [Azure Ensure SQL Server ATP (Advanced Threat Protection) Enabled](./security/azure/sql_server_atp/)
 - [Azure Ensure SQL Server Auditing Enabled](./security/azure/sql_server_auditing/)
 - [Azure Ensure SQL Server VA Email Notifications](./security/azure/sql_server_va_emails/)
 - [Azure Ensure SQL Server VA Notify Admins/Subscription Owners](./security/azure/sql_server_va_admins/)
