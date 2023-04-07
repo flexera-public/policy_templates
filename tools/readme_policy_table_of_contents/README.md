@@ -9,6 +9,7 @@ At this time, the pull request will need to be manually approved and merged but 
 The workflow can also be triggered manually in case there is an unexpected failure and the push trigger is not working.
 
 Here are the manual steps to generate the README Table of Contents which should be the same / very similar to [Generate README Table of Contents](https://github.com/flexera-public/policy_templates/actions/workflows/generate-readme-policy-table-of-contents.yaml):
+
 ```sh
 # Run script from root of repo
 # Ignore warnings for `character class has '-' without escape`

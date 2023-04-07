@@ -5,6 +5,7 @@ This repository contains a library of open source Flexera CMP Policy Templates t
 Please contact sales@flexera.com to learn more.
 
 ## Released Policy Templates
+
 <!-- Begin Policy Template Table of Contents -->
 ### Categories
 
@@ -16,6 +17,7 @@ Please contact sales@flexera.com to learn more.
 - [Security](#policy-templates-for-security)
 
 ### Policy Templates for Optimization
+
 These templates can generate savings estimates for your environment.
 
 #### AWS
@@ -728,10 +730,12 @@ These templates can generate savings estimates for your environment.
 <!-- End Policy Template Table of Contents -->
 
 ## Tools
+
  - [Flexera Automation CloudFormation Template](./tools/cloudformation-template)
  - [`fpt` Command Line Tool](https://github.com/flexera-public/policy_sdk/tree/master/cmd/fpt)
 
 ## Policy Data Sets
+
 Some policies require external data sets to function.  These data sets are stored in the [data](./data) directory.  The following data sets are available:
 
 - [AWS Regions](./data/aws/regions.json)
