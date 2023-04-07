@@ -7,7 +7,7 @@ category "Cost"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "1.6",
+  version: "2.0",
   provider: "Azure",
   service: "Compute",
   policy_set: "Rightsize Compute Instances",
@@ -64,6 +64,14 @@ parameter "param_automatic_action" do
   description "When this value is set, this policy will automatically take the selected action(s)"
   allowed_values ["Terminate Instances"]
   default []
+end
+
+parameter "param_azure_endpoint" do
+  type "string"
+  label "Azure Endpoint"
+  description "The Azure Resource Manager API endpoint to use."
+  allowed_values "management.azure.com", "management.chinacloudapi.cn"
+  default "management.azure.com"
 end
 
 parameter "param_log_to_cm_audit_entries" do
@@ -142,7 +150,7 @@ datasource "ds_subscriptions" do
   request do
     auth $azure_auth
     pagination $azure_pagination
-    host "management.azure.com"
+    host $param_azure_endpoint
     path "/subscriptions/"
     query "api-version","2020-01-01"
     header "User-Agent", "RS Policies"
@@ -164,22 +172,22 @@ end
 
 script "js_filtered_subscriptions", type: "javascript" do
   parameters "ds_subscriptions", "param_subscription_allowed_list"
-  result "results"
+  result "result"
   code <<-EOS
-  var results = []
-  if ( param_subscription_allowed_list.length != 0){
-    results = []
-    _.each(param_subscription_allowed_list, function(sub){
-      var found = _.find(ds_subscriptions, function(item){
-        return item.subscriptionId == sub || item.subscriptionName.toLowerCase() == sub.toLowerCase();
+  result = []
+
+  if (param_subscription_allowed_list.length != 0) {
+    _.each(param_subscription_allowed_list, function(sub) {
+      found = _.find(ds_subscriptions, function(item) {
+        return item['subscriptionId'] == sub || item['subscriptionName'].toLowerCase() == sub.toLowerCase()
       })
+
       results.push(found)
     })
-
   } else {
-    results = ds_subscriptions
+    result = ds_subscriptions
   }
-  EOS
+EOS
 end
 
 #GET AZURE VIRTUAL MACHINE INSTANCES FOR EACH SUBSCRIPTION
@@ -188,12 +196,12 @@ datasource "ds_azure_instances" do
   request do
     auth $azure_auth
     pagination $azure_pagination
-    host "management.azure.com"
+    host $param_azure_endpoint
     path join(["/subscriptions/", val(iter_item, "subscriptionId"), "/providers/Microsoft.Compute/virtualMachines"])
-    query "api-version","2019-03-01"
+    query "api-version", "2019-03-01"
     header "User-Agent", "RS Policies"
     # Ignore status 400, 403, and 404 which can be returned in certain (legacy) types of Azure Subscriptions
-    ignore_status [400,403,404]
+    ignore_status [400, 403, 404]
   end
   result do
     encoding "json"
@@ -221,23 +229,27 @@ script "js_filter_instances", type: "javascript" do
   parameters "ds_azure_virtualmachines", "param_exclusion_tag_key"
   result "results"
   code <<-EOS
-    var results = _.filter(ds_azure_virtualmachines, function(instance){
-      var tags = []
-      if ( _.has(instance.tags, param_exclusion_tag_key) ){
-      } else if (typeof instance.tags === "undefined" || instance.tags === null){
-        instance.tags = tags
+  results = _.filter(ds_azure_virtualmachines, function(instance) {
+    tags = []
+
+    if (!(_.has(instance['tags'], param_exclusion_tag_key))) {
+      if (typeof instance['tags'] === "undefined" || instance['tags'] === null) {
+        instance['tags'] = tags
       } else {
-        Object.keys(instance.tags).forEach(function(key) {
-          tags.push( key + '=' + instance.tags[key] )
-        });
-        instance.tags = tags
+        Object.keys(instance['tags']).forEach(function(key) {
+          tags.push(key + '=' + instance['tags'][key])
+        })
+
+        instance['tags'] = tags
         resourceTypeSplit = instance['resourceType'].split("/")
         service = resourceTypeSplit[0]
         instance['service'] = service
+
         return instance
       }
-    })
-  EOS
+    }
+  })
+EOS
 end
 
 #GET CPU PERFORMANCE STATS
@@ -246,14 +258,14 @@ datasource "ds_azure_instance_utilization" do
   request do
     auth $azure_auth
     pagination $azure_pagination
-    host "management.azure.com"
+    host $param_azure_endpoint
     path join(["/subscriptions/", val(iter_item, "subscriptionId"), "/resourceGroups/", val(iter_item, "resourceGroup"), "/providers/Microsoft.Compute/virtualMachines/", val(iter_item, "name"), "/providers/microsoft.insights/metrics"])
     query "api-version", "2018-01-01"
     query "timespan", "P30D"
     query "interval", "P1D"
     header "User-Agent", "RS Policies"
     # Ignore status 400, 403, and 404 which can be returned in certain (legacy) types of Azure Subscriptions
-    ignore_status [400,403,404]
+    ignore_status [400, 403, 404]
   end
   result do
     encoding "json"
@@ -285,33 +297,34 @@ script "js_filter_instance_utilization", type: "javascript" do
   parameters "param_cpu_underutil_avg_percentage", "ds_azure_instance_utilization"
   result "result"
   code <<-EOS
-    var results = []
+  //Calculate average CPU for each instance
+  _.each(ds_azure_instance_utilization, function(data) {
+    total_of_avgs = 0
+    total_average = 0
 
-    //Calculate average CPU for each instance
-    _.each(ds_azure_instance_utilization, function(data){
-      total_of_avgs = 0, count = 0
-      _.each(data.averages, function(avg){
-        if (avg.average == null) { total_of_avgs += 0 }
-        else { total_of_avgs += avg.average }
-        count ++
-      })
-      total_average = total_of_avgs / count
-      if( total_average < param_cpu_underutil_avg_percentage && total_average != 0 ){
-        data["averageCPU"] = total_average
-      } else {
-        data["averageCPU"] = 0
+    _.each(data['averages'], function(avg) {
+      if (avg['average'] != null) {
+        total_of_avgs += avg['average']
       }
-      data["savings"] = 0.0
-
-      data = _.omit(data, "averages")
     })
 
-    //Filter out instances if the CPU usage is above the Underutilized CPU threshold
-    var filtered_instances = _.reject(ds_azure_instance_utilization, function(util_data){
-      return util_data.averageCPU >= param_cpu_underutil_avg_percentage
-    })
-    result = filtered_instances
-  EOS
+    total_average = total_of_avgs / data['averages'].length
+
+    data["averageCPU"] = 0
+    data["savings"] = 0.0
+
+    if (total_average < param_cpu_underutil_avg_percentage && total_average != 0) {
+      data["averageCPU"] = total_average
+    }
+
+    data = _.omit(data, "averages")
+  })
+
+  //Filter out instances if the CPU usage is above the Underutilized CPU threshold
+  result = _.reject(ds_azure_instance_utilization, function(util_data) {
+    return util_data.averageCPU >= param_cpu_underutil_avg_percentage
+  })
+EOS
 end
 
 #GET AZURE INSTANCE SIZE MAP
@@ -333,22 +346,26 @@ script "js_add_instance_downsize_data", type: "javascript" do
   result "result"
   parameters "data", "instance_size_map", "param_cpu_idle_avg_percentage"
   code <<-EOS
-    _.each(data, function(inst){
-      next_vm_size = ''
-      if( inst.averageCPU > param_cpu_idle_avg_percentage ){
-        if( instance_size_map[inst.vmSize] != undefined && instance_size_map[inst.vmSize] != null ){
-          next_vm_size = instance_size_map[inst.vmSize].down
-          if(next_vm_size == null ){
-            next_vm_size = "N/A"
-          }
+  _.each(data, function(inst) {
+    next_vm_size = ''
+
+    if (inst['averageCPU'] > param_cpu_idle_avg_percentage) {
+      if (instance_size_map[inst['vmSize']] != undefined && instance_size_map[inst['vmSize']] != null) {
+        next_vm_size = instance_size_map[inst['vmSize']]['down']
+
+        if (next_vm_size == null) {
+          next_vm_size = "N/A"
         }
-      } else {
-        next_vm_size = 'Terminate Instance'
       }
-      inst["recommendedVmSize"] = next_vm_size
-    })
-    result = data
-  EOS
+    } else {
+      next_vm_size = "Terminate Instance"
+    }
+
+    inst['recommendedVmSize'] = next_vm_size
+  })
+
+  result = data
+EOS
 end
 
 #GET BILLING CENTERS FOR ORG
@@ -382,9 +399,10 @@ script "js_top_level_bc", type: "javascript" do
   parameters "billing_centers"
   result "filtered_billing_centers"
   code <<-EOS
-    var filtered_billing_centers =
-      _.reject(billing_centers, function(bc){ return bc.parent_id != null });
-  EOS
+  filtered_billing_centers = _.reject(billing_centers, function(bc) {
+    return bc.parent_id != null
+  })
+EOS
 end
 
 #GET INSTANCE COSTS FOR EACH BILLING CENTER
@@ -405,58 +423,61 @@ datasource "ds_instance_costs" do
 end
 
 script "js_get_costs", type: "javascript" do
-  parameters "account_id","billing_centers","org","optima_host"
+  parameters "account_id", "billing_centers", "org", "optima_host"
   result "request"
   code <<-EOS
-    //Get Start and End dates
-    start_date = new Date(), end_date = new Date()
-    start_date.setMonth(start_date.getMonth() - 1)
-    end_date.setMonth(end_date.getMonth() - 0)
+  //Get Start and End dates
+  start_date = new Date()
+  start_date.setMonth(start_date.getMonth() - 1)
+  start_date = start_date.toISOString().split('T')[0]
 
-    var request = {
-      auth: "auth_flexera",
-      host: optima_host,
-      verb: "POST",
-      path: "/bill-analysis/orgs/" + org + "/costs/select",
-      body_fields: {
-        "dimensions": ["resource_id", "resource_type", "adjustment_name"],
-        "granularity": "month",
-        "start_at": start_date.toLocaleDateString("en-US").split("-")[0] + "-" + start_date.toLocaleDateString("en-US").split("-")[1],
-        "end_at": end_date.toLocaleDateString("en-US").split("-")[0] + "-" + end_date.toLocaleDateString("en-US").split("-")[1],
-        "metrics": ["cost_amortized_unblended_adj"],
-        "billing_center_ids": _.compact(_.map(billing_centers, function(value){ return value.id})),
-        "limit": 100000,
-        "filter": {
-          "expressions": [
-            {
-              "dimension": "service",
-              "type": "equal",
-              "value": "Microsoft.Compute"
-            },
-            {
-              "dimension": "vendor_account",
-              "type": "equal",
-              "value": account_id
-            },
-            {
-              "type": "not",
-              "expression": {
-                "dimension": "adjustment_name",
-                "type": "substring",
-                "substring": "Shared"
-              }
+  end_date = new Date()
+  end_date = end_date.toISOString().split('T')[0]
+
+  request = {
+    auth: "auth_flexera",
+    host: optima_host,
+    verb: "POST",
+    path: "/bill-analysis/orgs/" + org + "/costs/select",
+    body_fields: {
+      "dimensions": ["resource_id", "resource_type", "adjustment_name"],
+      "granularity": "month",
+      "start_at": start_date,
+      "end_at": end_date,
+      "metrics": ["cost_amortized_unblended_adj"],
+      "billing_center_ids": _.compact(_.map(billing_centers, function(value) { return value.id})),
+      "limit": 100000,
+      "filter": {
+        "expressions": [
+          {
+            "dimension": "service",
+            "type": "equal",
+            "value": "Microsoft.Compute"
+          },
+          {
+            "dimension": "vendor_account",
+            "type": "equal",
+            "value": account_id
+          },
+          {
+            "type": "not",
+            "expression": {
+              "dimension": "adjustment_name",
+              "type": "substring",
+              "substring": "Shared"
             }
-          ],
-          "type": "and"
-        }
-      },
-      headers: {
-        "User-Agent": "RS Policies",
-        "Api-Version": "1.0"
-      },
-      ignore_status: [400]
-    }
-  EOS
+          }
+        ],
+        "type": "and"
+      }
+    },
+    headers: {
+      "User-Agent": "RS Policies",
+      "Api-Version": "1.0"
+    },
+    ignore_status: [400]
+  }
+EOS
 end
 
 #COMBINE INSTANCE UTILIZATION DATA WITH INSTANCE COST DATA
@@ -468,98 +489,104 @@ script "js_combine_data", type: "javascript" do
   parameters "instance_utilization_data", "instance_cost_data", "ds_currency_code", "ds_currency_reference", "ds_billing_centers", "param_idle_prc", "param_underutil_prc"
   result "result"
   code <<-EOS
-    var result = {}
-    var instance_data = []
-    var message = ''
-    var count = 0
+  function formatNumber(number, separator) {
+    numString = number.toString()
+    values = numString.split(".")
+    formattedNumber = ''
 
-    function formatNumber(number, separator){
-      var numString = number.toString()
-      var values = numString.split(".")
-      var result = ''
-      while( values[0].length > 3 ){
-        var chunk = values[0].substr(-3)
-        values[0] = values[0].substr(0, values[0].length - 3)
-        result = separator + chunk + result
-      }
-      if( values[0].length > 0 ){
-        result = values[0] + result
-      }
-      if( values[1] == undefined ){
-        return result
-      }
-      return result + "." + values[1]
+    while (values[0].length > 3) {
+      chunk = values[0].substr(-3)
+      values[0] = values[0].substr(0, values[0].length - 3)
+      formattedNumber = separator + chunk + formattedNumber
     }
 
-    //Format costs with currency symbol and thousands separator
-    if( ds_currency_code['value'] !== undefined ){
-      if ( ds_currency_reference[ds_currency_code['value']] !== undefined ) {
-        var cur = ds_currency_reference[ds_currency_code['value']]['symbol']
-        if( ds_currency_reference[ds_currency_code['value']]['t_separator'] !== undefined ) {
-          var separator = ds_currency_reference[ds_currency_code['value']]['t_separator']
-        } else {
-          var separator = ""
-        }
+    if (values[0].length > 0) {
+      formattedNumber = values[0] + formattedNumber
+    }
+
+    if (values[1] == undefined) {
+      return formattedNumber
+    }
+
+    return formattedNumber + "." + values[1]
+  }
+
+  //Format costs with currency symbol and thousands separator
+  if (ds_currency_code['value'] !== undefined) {
+    if (ds_currency_reference[ds_currency_code['value']] !== undefined) {
+      cur = ds_currency_reference[ds_currency_code['value']]['symbol']
+
+      if (ds_currency_reference[ds_currency_code['value']]['t_separator'] !== undefined) {
+        separator = ds_currency_reference[ds_currency_code['value']]['t_separator']
       } else {
-        var cur = ""
-        var separator = ""
+        separator = ""
       }
     } else {
-      var cur = "$"
-      var separator = ","
+      cur = ""
+      separator = ""
     }
+  } else {
+    cur = "$"
+    separator = ","
+  }
 
-    //ADD COSTS TO INSTANCE UTILIZATION DATA
-    var underutil_total_savings = 0, idle_total_savings = 0
+  //ADD COSTS TO INSTANCE UTILIZATION DATA
+  underutil_total_savings = 0
+  idle_total_savings = 0
 
-    _.each(instance_cost_data, function(cost_data){ cost_data["resource_id"] = cost_data.resource_id.toLowerCase() })
-    var grouped_cost_data = _.groupBy(instance_cost_data, function(cost_data){ return cost_data.resource_id })
+  _.each(instance_cost_data, function(cost_data) {
+    cost_data['resource_id'] = cost_data['resource_id'].toLowerCase()
+  })
 
-    _.each(instance_utilization_data, function(util_data){
-      var util_resource_id = util_data.resourceId.toLowerCase()
-      var count = 0
-      var total_cost = 0
-      _.each(grouped_cost_data[util_resource_id], function(cost_data){
-        if ( cost_data.cost == 0 ){
-          total_cost += 0
-        } else {
-          total_cost += cost_data.cost
-        }
-        count++
-      })
+  grouped_cost_data = _.groupBy(instance_cost_data, function(cost_data) {
+    return cost_data['resource_id']
+  })
 
-      console.log(count)
+  _.each(instance_utilization_data, function(util_data) {
+    util_resource_id = util_data['resourceId'].toLowerCase()
+    total_cost = 0
 
-      if( util_data.averageCPU < param_idle_prc ){
-        util_data["savings"] = parseFloat(total_cost).toFixed(3)
-        idle_total_savings += total_cost
-      } else if( util_data.averageCPU < param_underutil_prc && util_data.recommendedVmSize != 'N/A' ){
-        util_data["savings"] = parseFloat(total_cost / 2).toFixed(3)
-        underutil_total_savings += total_cost
+    _.each(grouped_cost_data[util_resource_id], function(cost_data) {
+      if (cost_data['cost'] == 0) {
+        total_cost += 0
+      } else {
+        total_cost += cost_data.cost
       }
-      util_data["savingsCurrency"] = cur
-      util_data["averageCPU"] = parseFloat(util_data.averageCPU).toFixed(2)
     })
 
-    result = _.sortBy(instance_utilization_data, "region")
-    result = _.sortBy(result, "subscriptionName")
-
-    underutil_total_savings = cur + ' ' + formatNumber((Math.round(underutil_total_savings * 100) / 100), separator)
-    idle_total_savings = cur + ' ' + formatNumber((Math.round(idle_total_savings * 100) / 100), separator)
-
-    summary_data = {
-      "underutilMessage": "The total estimated monthly savings is " + underutil_total_savings,
-      "idleMessage": "The total estimated monthly savings is " + idle_total_savings,
-      "underutilInstanceCount": _.size( _.filter(result, function(res){
-        return Number(res.averageCPU) >= param_idle_prc }) ),
-      "idleInstanceCount": _.size( _.reject(result, function(res){
-        return Number(res.averageCPU) >= param_idle_prc }) )
+    if( util_data['averageCPU'] < param_idle_prc ){
+      util_data['savings'] = parseFloat(total_cost).toFixed(3)
+      idle_total_savings += total_cost
+    } else if (util_data['averageCPU'] < param_underutil_prc && util_data['recommendedVmSize'] != 'N/A') {
+      util_data['savings'] = parseFloat(total_cost / 2).toFixed(3)
+      underutil_total_savings += total_cost / 2
     }
 
-    _.each(result, function(res){
-      res["summaryData"] = summary_data
-    })
-  EOS
+    util_data['savingsCurrency'] = cur
+    util_data['averageCPU'] = parseFloat(util_data['averageCPU']).toFixed(2)
+  })
+
+  result = _.sortBy(instance_utilization_data, "region")
+  result = _.sortBy(result, "subscriptionName")
+
+  underutil_total_savings = cur + ' ' + formatNumber((Math.round(underutil_total_savings * 100) / 100), separator)
+  idle_total_savings = cur + ' ' + formatNumber((Math.round(idle_total_savings * 100) / 100), separator)
+
+  summary_data = {
+    "underutilMessage": "The total estimated monthly savings is " + underutil_total_savings,
+    "idleMessage": "The total estimated monthly savings is " + idle_total_savings,
+    "underutilInstanceCount": _.size(_.filter(result, function(item) {
+      return Number(item['averageCPU']) >= param_idle_prc
+    })),
+    "idleInstanceCount": _.size(_.reject(result, function(item) {
+      return Number(item['averageCPU']) >= param_idle_prc
+    }))
+  }
+
+  _.each(result, function(item) {
+    item['summaryData'] = summary_data
+  })
+EOS
 end
 
 ###############################################################################
@@ -764,7 +791,7 @@ define downsize_instance($data,$param_log_to_cm_audit_entries) return $all_respo
         $response = http_request(
           auth: $$azure_auth,
           verb: "patch",
-          host: "management.azure.com",
+          host: $param_azure_endpoint,
           https: true,
           href: $item["id"],
           query_strings: {
@@ -799,7 +826,7 @@ define delete_instance($data,$param_log_to_cm_audit_entries) return $all_respons
     sub on_error: skip do
       $response = http_request(
         verb: "delete",
-        host: "management.azure.com",
+        host: $param_azure_endpoint,
         auth: $$azure_auth,
         href: join(["/subscriptions/", $item['subscriptionId'], "/resourceGroups/", $item["resourceGroup"], "/providers/Microsoft.Compute/virtualMachines/",$item["resourceName"]]),
         https: true,
