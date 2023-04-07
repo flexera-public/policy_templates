@@ -674,8 +674,8 @@ These templates can generate savings estimates for your environment.
 
 ## Tools
 
- - [Flexera Automation CloudFormation Template](./tools/cloudformation-template)
- - [`fpt` Command Line Tool](https://github.com/flexera-public/policy_sdk/tree/master/cmd/fpt)
+- [Flexera Automation CloudFormation Template](./tools/cloudformation-template)
+- [`fpt` Command Line Tool](https://github.com/flexera-public/policy_sdk/tree/master/cmd/fpt)
 
 ## Policy Data Sets
 
