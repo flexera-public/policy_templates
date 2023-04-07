@@ -284,6 +284,7 @@ Reference
 - [Azure Ensure MySQL Servers Enforce SSL Connections](./security/azure/mysql_ssl/)
 - [Azure Ensure PostgreSQL Servers Connection Throttling Enabled](./security/azure/pg_conn_throttling/)
 - [Azure Ensure PostgreSQL Servers Infrastructure Encryption](./security/azure/pg_infra_encryption/)
+- [Azure Ensure PostgreSQL Servers Sufficient Log Retention](./security/azure/pg_log_retention/)
 - [Azure Ensure SQL Database Encryption](./security/azure/sql_db_encryption/)
 - [Azure Ensure SQL Server AD Admin Configured](./security/azure/sql_ad_admin/)
 - [Azure Ensure SQL Server ATP (Advanced Threat Protection) Enabled](./security/azure/sql_server_atp/)
