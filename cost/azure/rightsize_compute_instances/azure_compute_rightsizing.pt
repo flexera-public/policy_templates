@@ -290,39 +290,38 @@ end
 
 #FILTER VIRTUAL MACHINE INSTANCES ON CPU UTILIZATION PARAMETER
 datasource "ds_filtered_instance_utilization" do
-  run_script $js_filter_instance_utilization, $param_cpu_underutil_avg_percentage, $ds_azure_instance_utilization
+  run_script $js_filter_instance_utilization, $ds_azure_instance_utilization, $param_cpu_underutil_avg_percentage
 end
 
 script "js_filter_instance_utilization", type: "javascript" do
-  parameters "param_cpu_underutil_avg_percentage", "ds_azure_instance_utilization"
+  parameters "ds_azure_instance_utilization", "param_cpu_underutil_avg_percentage"
   result "result"
   code <<-EOS
   //Calculate average CPU for each instance
   _.each(ds_azure_instance_utilization, function(data) {
     total_of_avgs = 0
-    total_average = 0
+    count = 0
 
     _.each(data['averages'], function(avg) {
       if (avg['average'] != null) {
         total_of_avgs += avg['average']
+        count += 1
       }
     })
 
-    total_average = total_of_avgs / data['averages'].length
-
     data["averageCPU"] = 0
-    data["savings"] = 0.0
 
-    if (total_average < param_cpu_underutil_avg_percentage && total_average != 0) {
-      data["averageCPU"] = total_average
+    if (count > 0) {
+      data["averageCPU"] = total_of_avgs / count
     }
 
+    data["savings"] = 0.0
     data = _.omit(data, "averages")
   })
 
   //Filter out instances if the CPU usage is above the Underutilized CPU threshold
   result = _.reject(ds_azure_instance_utilization, function(util_data) {
-    return util_data.averageCPU >= param_cpu_underutil_avg_percentage
+    return util_data['averageCPU'] >= param_cpu_underutil_avg_percentage
   })
 EOS
 end
@@ -346,25 +345,24 @@ script "js_add_instance_downsize_data", type: "javascript" do
   result "result"
   parameters "data", "instance_size_map", "param_cpu_idle_avg_percentage"
   code <<-EOS
-  _.each(data, function(inst) {
-    next_vm_size = ''
+  result = []
 
-    if (inst['averageCPU'] > param_cpu_idle_avg_percentage) {
-      if (instance_size_map[inst['vmSize']] != undefined && instance_size_map[inst['vmSize']] != null) {
-        next_vm_size = instance_size_map[inst['vmSize']]['down']
+  _.each(data, function(instance) {
+    next_vm_size = null
 
-        if (next_vm_size == null) {
-          next_vm_size = "N/A"
-        }
+    if (instance['averageCPU'] >= param_cpu_idle_avg_percentage) {
+      if (instance_size_map[instance['vmSize']] != undefined && instance_size_map[instance['vmSize']] != null) {
+        next_vm_size = instance_size_map[instance['vmSize']]['down']
       }
     } else {
       next_vm_size = "Terminate Instance"
     }
 
-    inst['recommendedVmSize'] = next_vm_size
+    if (next_vm_size != null) {
+      instance['recommendedVmSize'] = next_vm_size
+      result.push(instance)
+    }
   })
-
-  result = data
 EOS
 end
 
@@ -415,8 +413,6 @@ datasource "ds_instance_costs" do
     encoding "json"
     collect jmes_path(response,"rows[*]") do
       field "resource_id", jmes_path(col_item, "dimensions.resource_id")
-      field "resource_type", jmes_path(col_item, "dimensions.resource_type")
-      field "adjustment_name", jmes_path(col_item, "dimensions.adjustment_name")
       field "cost", jmes_path(col_item, "metrics.cost_amortized_unblended_adj")
     end
   end
@@ -429,10 +425,10 @@ script "js_get_costs", type: "javascript" do
   //Get Start and End dates
   start_date = new Date()
   start_date.setMonth(start_date.getMonth() - 1)
-  start_date = start_date.toISOString().split('T')[0]
+  start_date = start_date.toISOString().split('-')[0] + '-' + start_date.toISOString().split('-')[1]
 
   end_date = new Date()
-  end_date = end_date.toISOString().split('T')[0]
+  end_date = end_date.toISOString().split('-')[0] + '-' + end_date.toISOString().split('-')[1]
 
   request = {
     auth: "auth_flexera",
@@ -440,12 +436,12 @@ script "js_get_costs", type: "javascript" do
     verb: "POST",
     path: "/bill-analysis/orgs/" + org + "/costs/select",
     body_fields: {
-      "dimensions": ["resource_id", "resource_type", "adjustment_name"],
+      "dimensions": ["resource_id"],
       "granularity": "month",
       "start_at": start_date,
       "end_at": end_date,
       "metrics": ["cost_amortized_unblended_adj"],
-      "billing_center_ids": _.compact(_.map(billing_centers, function(value) { return value.id})),
+      "billing_center_ids": _.compact(_.map(billing_centers, function(value) { return value.id })),
       "limit": 100000,
       "filter": {
         "expressions": [
@@ -480,13 +476,35 @@ script "js_get_costs", type: "javascript" do
 EOS
 end
 
+datasource "ds_cost_object" do
+  run_script $js_cost_object, $ds_instance_costs
+end
+
+script "js_cost_object", type: "javascript" do
+  parameters "instance_cost_data"
+  result "result"
+  code <<-EOS
+  result = {}
+
+  _.each(instance_cost_data, function(item) {
+    resource_id = item['resource_id'].toLowerCase()
+
+    if (result[resource_id] == undefined) {
+      result[resource_id] = 0
+    }
+
+    result[resource_id] += item['cost']
+  })
+EOS
+end
+
 #COMBINE INSTANCE UTILIZATION DATA WITH INSTANCE COST DATA
 datasource "ds_combined_data" do
-  run_script $js_combine_data, $ds_rightsizing_and_utilization_data, $ds_instance_costs, $ds_currency_code, $ds_currency_reference, $ds_billing_centers, $param_cpu_idle_avg_percentage, $param_cpu_underutil_avg_percentage
+  run_script $js_combine_data, $ds_rightsizing_and_utilization_data, $ds_cost_object, $ds_currency_code, $ds_currency_reference, $ds_billing_centers, $param_cpu_idle_avg_percentage, $param_cpu_underutil_avg_percentage
 end
 
 script "js_combine_data", type: "javascript" do
-  parameters "instance_utilization_data", "instance_cost_data", "ds_currency_code", "ds_currency_reference", "ds_billing_centers", "param_idle_prc", "param_underutil_prc"
+  parameters "instance_utilization_data", "instance_costs", "ds_currency_code", "ds_currency_reference", "ds_billing_centers", "param_idle_prc", "param_underutil_prc"
   result "result"
   code <<-EOS
   function formatNumber(number, separator) {
@@ -530,43 +548,41 @@ script "js_combine_data", type: "javascript" do
     separator = ","
   }
 
-  //ADD COSTS TO INSTANCE UTILIZATION DATA
+  result = []
   underutil_total_savings = 0
   idle_total_savings = 0
 
-  _.each(instance_cost_data, function(cost_data) {
-    cost_data['resource_id'] = cost_data['resource_id'].toLowerCase()
-  })
-
-  grouped_cost_data = _.groupBy(instance_cost_data, function(cost_data) {
-    return cost_data['resource_id']
-  })
+  underutil_count = 0
+  idle_count = 0
 
   _.each(instance_utilization_data, function(util_data) {
-    util_resource_id = util_data['resourceId'].toLowerCase()
-    total_cost = 0
+    instance_cost = instance_costs[util_data['resourceId'].toLowerCase()]
 
-    _.each(grouped_cost_data[util_resource_id], function(cost_data) {
-      if (cost_data['cost'] == 0) {
-        total_cost += 0
+    if (instance_cost != null && instance_cost != undefined) {
+      if (util_data['recommendedVmSize'] == "Terminate Instance") {
+        util_data['savings'] = parseFloat(instance_cost).toFixed(3)
+        idle_total_savings += instance_cost
       } else {
-        total_cost += cost_data.cost
+        util_data['savings'] = parseFloat(instance_cost / 2).toFixed(3)
+        underutil_total_savings += instance_cost / 2
       }
-    })
-
-    if( util_data['averageCPU'] < param_idle_prc ){
-      util_data['savings'] = parseFloat(total_cost).toFixed(3)
-      idle_total_savings += total_cost
-    } else if (util_data['averageCPU'] < param_underutil_prc && util_data['recommendedVmSize'] != 'N/A') {
-      util_data['savings'] = parseFloat(total_cost / 2).toFixed(3)
-      underutil_total_savings += total_cost / 2
+    } else {
+      util_data['savings'] = parseFloat(0).toFixed(3)
     }
 
     util_data['savingsCurrency'] = cur
     util_data['averageCPU'] = parseFloat(util_data['averageCPU']).toFixed(2)
+
+    if (util_data['recommendedVmSize'] == "Terminate Instance") {
+      idle_count += 1
+    } else {
+      underutil_count += 1
+    }
+
+    result.push(util_data)
   })
 
-  result = _.sortBy(instance_utilization_data, "region")
+  result = _.sortBy(result, "region")
   result = _.sortBy(result, "subscriptionName")
 
   underutil_total_savings = cur + ' ' + formatNumber((Math.round(underutil_total_savings * 100) / 100), separator)
@@ -575,12 +591,8 @@ script "js_combine_data", type: "javascript" do
   summary_data = {
     "underutilMessage": "The total estimated monthly savings is " + underutil_total_savings,
     "idleMessage": "The total estimated monthly savings is " + idle_total_savings,
-    "underutilInstanceCount": _.size(_.filter(result, function(item) {
-      return Number(item['averageCPU']) >= param_idle_prc
-    })),
-    "idleInstanceCount": _.size(_.reject(result, function(item) {
-      return Number(item['averageCPU']) >= param_idle_prc
-    }))
+    "underutilInstanceCount": underutil_count,
+    "idleInstanceCount": idle_count
   }
 
   _.each(result, function(item) {
@@ -601,15 +613,7 @@ policy "policy_azure_rightsizing_data" do
     detail_template <<-EOS
     {{ with index data 0 }}{{ .summaryData.underutilMessage }}{{ end }}
         EOS
-    check logic_not(
-      logic_and(
-        logic_and(
-          lt(to_n(val(item, "averageCPU")), $param_cpu_underutil_avg_percentage),
-          ge(to_n(val(item, "averageCPU")), $param_cpu_idle_avg_percentage)
-        ),
-        ne(val(item, "recommendedVmSize"), "N/A")
-      )
-    )
+    check eq(val(item, "recommendedVmSize"), "Terminate Instance")
     escalate $email
     escalate $esc_downsize_instances
     export do
@@ -681,9 +685,7 @@ EOS
     detail_template <<-EOS
 {{ with index data 0 }}{{ .summaryData.idleMessage }}{{ end }}
 EOS
-    check logic_not(
-      lt(to_n(val(item, "averageCPU")), $param_cpu_idle_avg_percentage)
-    )
+    check ne(val(item, "recommendedVmSize"), "Terminate Instance")
     escalate $email
     escalate $esc_downsize_instances
     escalate $esc_terminate_instances
