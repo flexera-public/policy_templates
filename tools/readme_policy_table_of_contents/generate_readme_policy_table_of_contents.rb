@@ -77,6 +77,7 @@ end
 puts ""
 
 puts "### Policy Templates for Optimization"
+puts ""
 puts "These templates can generate savings estimates for your environment."
 puts ""
 # To make the list easier to format, group the policies by provider
@@ -107,8 +108,10 @@ category_pts.sort.each do |category, c_pts|
   provider_pts = c_pts.group_by { |h| h[:provider] }
   # For each group of policies for each Provider
   provider_pts.sort.each do |provider, p_pts|
-    puts "#### #{provider}"
-    puts ""
+    if provider.length > 0 then
+      puts "#### #{provider}"
+      puts ""
+    end
     service_pts = p_pts.group_by { |h| h[:service] }
     service_pts.sort.each do |service, s_pts|
       if service.length > 0 then

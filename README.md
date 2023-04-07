@@ -92,65 +92,7 @@ These templates can generate savings estimates for your environment.
 
 - Policy
 
-- [Azure Guest Users Audit](./security/azure/guest_users/)
-
-##### Database
-
-- [Azure Publicly Accessible Managed SQL Instance](./security/azure/sql_publicly_accessible_managed_instance/)
-
-###### CIS Policies
-
-- [Azure Ensure Correct PostgreSQL Servers Log Settings](./security/azure/pg_log_settings/)
-- [Azure Ensure MySQL Flexible Servers Use Secure TLS](./security/azure/mysql_tls_version/)
-- [Azure Ensure MySQL Servers Enforce SSL Connections](./security/azure/mysql_ssl/)
-- [Azure Ensure PostgreSQL Servers Connection Throttling Enabled](./security/azure/pg_conn_throttling/)
-- [Azure Ensure PostgreSQL Servers Infrastructure Encryption](./security/azure/pg_infra_encryption/)
-- [Azure Ensure PostgreSQL Servers Sufficient Log Retention](./security/azure/pg_log_retention/)
-- [Azure Ensure SQL Database Encryption](./security/azure/sql_db_encryption/)
-- [Azure Ensure SQL Server AD Admin Configured](./security/azure/sql_ad_admin/)
-- [Azure Ensure SQL Server ATP (Advanced Threat Protection) Enabled](./security/azure/sql_server_atp/)
-- [Azure Ensure SQL Server Auditing Enabled](./security/azure/sql_server_auditing/)
-- [Azure Ensure SQL Server Minimum Auditing Retention Of 90 Days](./security/azure/sql_auditing_retention/)
-- [Azure Ensure SQL Server VA Email Notifications](./security/azure/sql_server_va_emails/)
-- [Azure Ensure SQL Server VA Notify Admins/Subscription Owners](./security/azure/sql_server_va_admins/)
-- [Azure Ensure SQL Server VA Periodic Scans Enabled](./security/azure/sql_server_va_scans/)
-- [Azure Ensure SQL Server Vulnerability Assessment (VA) Enabled](./security/azure/sql_server_va/)
-
-##### Web Apps
-
-- [Azure Web App Minimum TLS Version](./security/azure/webapp_tls_version_support/)
-
-##### Storage
-
-- [Azure Storage Accounts Without HTTPs Enforced](./security/storage/azure/storage_account_https_enabled/)
-
-###### CIS Policies
-
-- [Azure Ensure Storage Account Default Network Access Set To Deny](./security/azure/storage_network_deny/)
-- [Azure Ensure Blob Containers Set To Private](./security/azure/private_blob_containers/)
-- [Azure Ensure Storage Logging Enabled For Blob Service](./security/azure/blob_storage_logging/)
-- [Azure Ensure Storage Logging Enabled For Queue Service](./security/azure/queue_storage_logging/)
-- [Azure Ensure Storage Logging Enabled For Table Service](./security/azure/table_storage_logging/)
-- [Azure Ensure Secure Transfer Required](./security/azure/secure_transfer_required/)
-- [Azure Ensure Soft Delete Enabled For Azure Storage](./security/azure/storage_soft_delete/)
-- [Azure Ensure Storage Accounts Require Secure TLS Version](./security/azure/storage_tls_version/)
-- [Azure Ensure Trusted Microsoft Services Enabled](./security/azure/storage_trusted_services/)
-
-##### Security
-
-###### CIS Policies
-
-- [Azure Ensure Owners Receive Security Alerts](./security/azure/security_alert_owners/)
-- [Azure Ensure High Severity Alerts](./security/azure/high_severity_alerts/)
-- [Azure Ensure Security Contact Email](./security/azure/security_contact_email/)
-- [Azure Network Security Groups With Inbound RDP Open](./security/azure/restrict_rdp_internet/)
-- [Azure Network Security Groups With Inbound SSH Open](./security/azure/restrict_ssh_internet/)
-
-#### Google
-
-- [Google Open Buckets](./security/storage/google/public_buckets/)
-
-### Compliance
+  - [Azure Policy Audit](./compliance/azure/azure_policy_audit)
 
 #### Flexera
 
@@ -198,8 +140,6 @@ These templates can generate savings estimates for your environment.
 - [Google Unlabeled Resources](./compliance/google/unlabeled_resources)
 
 ### Policy Templates for Cost
-
-####
 
 - [Currency Conversion](./cost/currency_conversion)
 
@@ -252,7 +192,6 @@ These templates can generate savings estimates for your environment.
 
 - [Azure Hybrid Use Benefit for Windows Server](./cost/azure/hybrid_use_benefit)
 - [Azure Reserved Instances Recommendations](./cost/azure/reserved_instances/recommendations)
-- [Azure Savings Plan Utilization](./cost/azure/savings_plan/utilization)
 
 - Blob Store
 
@@ -571,6 +510,7 @@ These templates can generate savings estimates for your environment.
 
 - PostgreSQL
 
+  - [Azure Ensure PostgreSQL Servers Sufficient Log Retention](./security/azure/pg_log_retention)
   - [Azure Ensure Correct PostgreSQL Servers Log Settings](./security/azure/pg_log_settings)
   - [Azure Ensure PostgreSQL Servers Connection Throttling Enabled](./security/azure/pg_conn_throttling)
   - [Azure Ensure PostgreSQL Servers Infrastructure Encryption](./security/azure/pg_infra_encryption)
@@ -579,9 +519,12 @@ These templates can generate savings estimates for your environment.
 
   - [Azure Ensure SQL Server VA Periodic Scans Enabled](./security/azure/sql_server_va_scans)
   - [Azure Ensure SQL Server VA Notify Admins/Subscription Owners](./security/azure/sql_server_va_admins)
+  - [Azure Ensure SQL Server ATP (Advanced Threat Protection) Enabled](./security/azure/sql_server_atp)
   - [Azure Ensure SQL Server Auditing Enabled](./security/azure/sql_server_auditing)
   - [Azure Ensure SQL Server VA Email Notifications](./security/azure/sql_server_va_emails)
   - [Azure Ensure SQL Server AD Admin Configured](./security/azure/sql_ad_admin)
+  - [Azure Ensure SQL Database Encryption](./security/azure/sql_db_encryption)
+  - [Azure Ensure SQL Server Minimum Auditing Retention Of 90 Days](./security/azure/sql_auditing_retention)
   - [Azure Publicly Accessible Managed SQL Instance](./security/azure/sql_publicly_accessible_managed_instance)
   - [Azure Ensure SQL Server Vulnerability Assessment (VA) Enabled](./security/azure/sql_server_va)
 
@@ -620,16 +563,16 @@ These templates can generate savings estimates for your environment.
 <!-- Begin Policy Template Stats -->
 <!--
 ---
-:total_count: 225
+:total_count: 228
 :optimization_count: 20
 :categories:
-  Security: 70
-  Cost: 87
+  Security: 74
+  Cost: 86
   Compliance: 33
   Operational: 22
   SaaS Management: 13
 :providers:
-  Azure: 68
+  Azure: 71
   GCE: 11
   AWS: 71
   Flexera Optima: 28
@@ -649,12 +592,12 @@ These templates can generate savings estimates for your environment.
   ServiceNow: 1
 :services:
   MySQL: 2
+  PostgreSQL: 4
   Storage: 18
-  SQL: 13
+  SQL: 16
   App Service: 1
   Network Security Group: 2
   IAM: 19
-  PostgreSQL: 3
   compute: 3
   Security: 3
   Storage Accounts: 2
@@ -667,7 +610,7 @@ These templates can generate savings estimates for your environment.
   Config: 1
   KMS: 1
   EBS: 3
-  '': 70
+  '': 69
   Compute: 26
   N/A: 1
   All: 3
@@ -684,8 +627,8 @@ These templates can generate savings estimates for your environment.
   Lambda: 1
   Office 365: 1
 :policy_sets:
-  CIS: 57
-  '': 89
+  CIS: 61
+  '': 88
   Public Database Access: 2
   Storage Security: 1
   Open Buckets: 2
