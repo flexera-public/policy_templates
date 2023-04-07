@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.6
+
+- Fixed issue causing resources without a rightsizing or termination recommendation to appear in the incident.
+
 ## v1.5
 
 - Fixed issue causing resources to be reported as both underutilized and idle instead of one or the other.

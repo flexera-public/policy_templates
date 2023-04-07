@@ -7,7 +7,7 @@ category "Cost"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "1.5",
+  version: "1.6",
   provider: "Azure",
   service: "Compute",
   policy_set: "Rightsize Compute Instances",
@@ -533,7 +533,7 @@ script "js_combine_data", type: "javascript" do
       if( util_data.averageCPU < param_idle_prc ){
         util_data["savings"] = parseFloat(total_cost).toFixed(3)
         idle_total_savings += total_cost
-      } else if( util_data.averageCPU < param_underutil_prc ){
+      } else if( util_data.averageCPU < param_underutil_prc && util_data.recommendedVmSize != 'N/A' ){
         util_data["savings"] = parseFloat(total_cost / 2).toFixed(3)
         underutil_total_savings += total_cost
       }
@@ -574,7 +574,15 @@ policy "policy_azure_rightsizing_data" do
     detail_template <<-EOS
     {{ with index data 0 }}{{ .summaryData.underutilMessage }}{{ end }}
         EOS
-    check logic_not(logic_and(lt(to_n(val(item,"averageCPU")), $param_cpu_underutil_avg_percentage), ge(to_n(val(item,"averageCPU")), $param_cpu_idle_avg_percentage)))
+    check logic_not(
+      logic_and(
+        logic_and(
+          lt(to_n(val(item, "averageCPU")), $param_cpu_underutil_avg_percentage),
+          ge(to_n(val(item, "averageCPU")), $param_cpu_idle_avg_percentage)
+        ),
+        ne(val(item, "recommendedVmSize"), "N/A")
+      )
+    )
     escalate $email
     escalate $esc_downsize_instances
     export do
@@ -646,7 +654,9 @@ EOS
     detail_template <<-EOS
 {{ with index data 0 }}{{ .summaryData.idleMessage }}{{ end }}
 EOS
-    check logic_not(lt(to_n(val(item,"averageCPU")), $param_cpu_idle_avg_percentage))
+    check logic_not(
+      lt(to_n(val(item, "averageCPU")), $param_cpu_idle_avg_percentage)
+    )
     escalate $email
     escalate $esc_downsize_instances
     escalate $esc_terminate_instances
