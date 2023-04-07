@@ -288,6 +288,7 @@ Reference
 - [Azure Ensure SQL Server AD Admin Configured](./security/azure/sql_ad_admin/)
 - [Azure Ensure SQL Server ATP (Advanced Threat Protection) Enabled](./security/azure/sql_server_atp/)
 - [Azure Ensure SQL Server Auditing Enabled](./security/azure/sql_server_auditing/)
+- [Azure Ensure SQL Server Minimum Auditing Retention Of 90 Days](./security/azure/sql_auditing_retention/)
 - [Azure Ensure SQL Server VA Email Notifications](./security/azure/sql_server_va_emails/)
 - [Azure Ensure SQL Server VA Notify Admins/Subscription Owners](./security/azure/sql_server_va_admins/)
 - [Azure Ensure SQL Server VA Periodic Scans Enabled](./security/azure/sql_server_va_scans/)
