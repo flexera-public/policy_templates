@@ -1,5 +1,10 @@
 # Changelog
 
+## v3.0
+
+- Updated policy to use Flexera One ITAM SOAP APIs. Full details here: [Flexera One ITAM SOAP APIs Transitioning to Flexera One IAM](https://community.flexera.com/t5/Flexera-One-Blog/Flexera-One-ITAM-SOAP-APIs-Transitioning-to-Flexera-One-IAM/ba-p/229399)
+- Removed support for on-premise deployments (with or without wstunnel)
+
 ## v2.5
 
 - Replaced references `github.com/rightscale/policy_templates` and `github.com/flexera/policy_templates` with `github.com/flexera-public/policy_templates`

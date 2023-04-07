@@ -1,0 +1,27 @@
+# Turbonomic Buy Reserved Instances Recommendations Azure
+
+## What it does
+
+The Turbonomic Buy Reserved Instances Recommendations AWS policy utilizes Turbonomic Actions API endpoint (POST `https://turbonomic.com/api/v3/markets/{market_uuid}/actions`) to provide AWS RI purchase recommendations.
+
+## Functional Details
+
+- The policy queries the /api/v3/markets/{market_uuid}/actions endpoint for the Turbonomic api and based on action will return action details and savings for on-boarded cloud instances
+- The policy will error after a day, the authorization cookie parameter will need to be refreshed and re-run manually
+- There is a need to run the login credentials against the (`https://xxxx.turbonomic.com/api/v3/login`) endpoint to manually receive cookie authorization
+
+### Input Parameters
+
+- *Authorization Cookie"* - authorization cookie pulled from Turbonomic login endpoint: (POST `https://xxxx.turbonomic.com/api/v3/login`)
+- no_echo: true
+- *Email addresses* - A list of email addresses to notify.
+- *Turbonomic Endpoint* -Host of the Turbonomic endpoint.
+
+### Required Flexera Roles
+
+- policy_manager
+- billing_center_viewer
+
+### Cost
+
+This Policy Template does not incur any cloud costs.

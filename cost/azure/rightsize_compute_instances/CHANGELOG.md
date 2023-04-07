@@ -1,5 +1,14 @@
 # Changelog
 
+## v1.5
+
+- Fixed issue causing resources to be reported as both underutilized and idle instead of one or the other.
+
+## v1.4
+
+- Fixed check for underutilized compute instances
+- Added default values for parameters that are not required
+
 ## v1.3
 
 - Raised API limit to handle situations where more than 10,000 line items need to be retrieved.

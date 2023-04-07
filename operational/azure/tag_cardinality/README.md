@@ -2,7 +2,7 @@
 
 ## What it does
 
-This Policy Template is used to generate a tag cardinality (how frequently each tag value occurs) report for Azure. The report includes cardinality for all tag values for Azure Subscriptions, Resource Groups, and Resources.
+This Policy Template is used to generate a tag cardinality (how many unique values each tag key has) report for Azure. The report includes cardinality for all tag values for Azure Subscriptions, Resource Groups, and Resources.
 
 ## Functional Details
 
