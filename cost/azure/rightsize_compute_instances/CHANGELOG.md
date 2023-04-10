@@ -5,6 +5,7 @@
 - Added Azure Endpoint parameter to enable use with Azure China.
 - Fixed issue causing resources without a rightsizing or termination recommendation to appear in the incident.
 - Fixed issue affecting calculation of total savings for underutilized resources.
+- Removed non-functional downsize escalation from idle compute instance incident.
 - General code cleanup and modernization.
 
 ## v1.5
