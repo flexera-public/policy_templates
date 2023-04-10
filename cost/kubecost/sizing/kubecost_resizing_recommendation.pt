@@ -1,0 +1,257 @@
+name "Kubecost Request Sizing Recommendations"
+rs_pt_ver 20180301
+type "policy"
+short_description "Pulls the Request Sizing Recommendations from Kubecost and raises and incident. See the [README](https://github.com/rightscale/policy_templates/tree/master/cost/kubecost/cluster-sizing/) and [docs.rightscale.com/policies](http://docs.rightscale.com/policies/) to learn more."
+long_description ""
+severity "low"
+category "Cost"
+default_frequency "daily"
+tenancy "single"
+info(
+  version: "1.0",
+  provider: "Kubecost",
+  service: "Kubernetes",
+  policy_set: ""
+)
+
+###############################################################################
+# User inputs
+###############################################################################
+
+parameter "param_email" do
+  label "Email addresses"
+  description "Email addresses of the recipients you wish to notify"
+  type "list"
+end
+
+parameter "param_kubecost_host" do
+  type "string"
+  label "Kubecost Host"
+  description "IP Address of Kubecost LB"
+  default "demo.kubecost.xyz"
+end
+
+parameter "param_window" do
+  type "string"
+  label "Range to analyze"
+  description "Accepts duration in number of days, hours or minutes e.g., 2d, 30m, 6h"
+  default "2d"
+end
+
+parameter "param_cpu_algo" do
+  type "string"
+  label "The algorithm for CPU"
+  description "The algorithm to be used to calculate CPU recommendations"
+  allowed_values "max", "quantile"
+  default "max"
+end
+
+parameter "param_cpu_q" do
+  type "number"
+  label "CPU quantile"
+  description "The desired quantile to base CPU recommendations on"
+  min_value 0.01
+  max_value 1
+  default 0.75
+end
+
+
+parameter "param_cpu_util" do
+  type "number"
+  label "Target CPU Utilization (%)"
+  description "Target CPU utilization in percent"
+  min_value 1
+  max_value 100
+  default 80
+end
+
+parameter "param_mem_algo" do
+  type "string"
+  label "The algorithm for Memory"
+  description "The algorithm to be used to calculate memory recommendations"
+  allowed_values "max", "quantile"
+  default "max"
+end
+
+parameter "param_mem_q" do
+  type "number"
+  label "Memory quantile"
+  description "The desired quantile to base memory recommendations on"
+  min_value 0.01
+  max_value 1
+  default 0.75
+end
+
+parameter "param_mem_util" do
+  type "number"
+  label "Target Memory Utilization (%)"
+  description "Target memory utilization in percent"
+  min_value 1
+  max_value 100
+  default 90
+end
+
+###############################################################################
+# Datasource
+###############################################################################
+
+datasource "ds_request_sizing" do
+  request do
+    run_script $js_request_sizing, $param_kubecost_host, $param_cpu_algo, $param_cpu_q, $param_mem_algo, $param_mem_q, $param_window, $param_cpu_util, $param_mem_util
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "[*]") do
+      field "clusterID", jmes_path(col_item, "clusterID")
+      field "namespace", jmes_path(col_item, "namespace")
+      field "controllerKind", jmes_path(col_item, "controllerKind")
+      field "controllerName", jmes_path(col_item, "controllerName")
+      field "containerName", jmes_path(col_item, "containerName")
+      field "recommendedRequestCPU", jmes_path(col_item, "recommendedRequest.cpu")
+      field "recommendedRequestMem", jmes_path(col_item, "recommendedRequest.memory")
+      field "latestKnownRequestCPU", jmes_path(col_item, "latestKnownRequest.cpu")
+      field "latestKnownRequestMem", jmes_path(col_item, "latestKnownRequest.memory")
+      field "monthlySavingsCPU", jmes_path(col_item, "monthlySavings.cpu")
+      field "monthlySavingsMem", jmes_path(col_item, "monthlySavings.memory")
+    end
+  end
+end
+
+script "js_request_sizing", type: "javascript" do
+  parameters "kubecost_host", "param_cpu_algo", "param_cpu_q", "param_mem_algo", "param_mem_q", "param_window", "param_cpu_util", "param_mem_util"
+  result "request"
+  code <<-EOS
+    var request = {
+      "verb": "GET",
+      "scheme": "http",
+      "host": kubecost_host,
+      "path": "/model/savings/requestSizingV2",
+      "query_params": {
+        "algorithmCPU": param_cpu_algo,
+        "qCPU": param_cpu_q,
+        "algorithmRAM": param_mem_algo,
+        "qRAM": param_mem_q,
+        "window": param_window,
+        "targetCPUUtilization": param_cpu_util,
+        "targetRAMUtilization": param_mem_util
+      }
+    }
+  EOS
+end
+
+datasource "ds_recommendations" do
+  run_script $js_requests_array, $ds_request_sizing
+end
+
+script "js_requests_array", type: "javascript" do
+  parameters "ds_request_sizing"
+  result "result"
+  code <<-EOS
+
+    var recommendations = []
+
+    var totalSavings = 0
+
+    _.forEach(ds_request_sizing, function(c) {
+      var clusterId = c.clusterID
+      var namespace = c.namespace
+      var controllerKind = c.controllerKind
+      var controllerName = c.controllerName
+      var containerName = c.containerName
+      var recommendedRequestCPU = c.recommendedRequestCPU
+      var recommendedRequestMem = c.recommendedRequestMem
+      var latestKnownRequestCPU = c.latestKnownRequestCPU
+      var latestKnownRequestMem = c.latestKnownRequestMem
+      var monthlySavingsCPU = c.monthlySavingsCPU? c.monthlySavingsCPU: 0
+      var monthlySavingsMem = c.monthlySavingsMem? c.monthlySavingsMem: 0
+      var savings = monthlySavingsCPU > 0? monthlySavingsCPU: 0 + monthlySavingsMem > 0?monthlySavingsMem: 0
+      console.log(savings)
+      totalSavings += savings
+
+      recommendations.push({
+        clusterId: clusterId
+        namespace: namespace
+        controllerKind: controllerKind
+        controllerName: controllerName
+        containerName: containerName
+        recommendedRequestCPU: recommendedRequestCPU
+        recommendedRequestMem: recommendedRequestMem
+        latestKnownRequestCPU: latestKnownRequestCPU
+        latestKnownRequestMem: latestKnownRequestMem
+        monthlySavingsCPU: monthlySavingsCPU
+        monthlySavingsMem: monthlySavingsMem
+        savings: savings
+      })
+
+    })
+
+    result={
+      "savings": totalSavings,
+      "recommendations": recommendations
+    }
+    console.log(result.savings)
+    console.log(result.recommendations)
+  EOS
+end
+###############################################################################
+# Policy
+###############################################################################
+
+policy "policy_kubecost_request_sizing" do
+  validate $ds_recommendations do
+    summary_template "Kubecost Request Sizing Report"
+    detail_template <<-EOS
+The total estimated monthly savings : {{data.savings}}
+EOS
+    escalate $report_requests
+    check eq(size(val(data, "recommendations")), 0)
+    export "recommendations" do
+      field "clusterId" do
+        label "Cluster ID"
+      end
+      field "namespace" do
+        label "Namespace"
+      end
+      field "controllerKind" do
+        label "Controller Kind"
+      end
+      field "controllerName" do
+        label "Controller"
+      end
+      field "containerName" do
+        label "Ccontainer"
+      end
+      field "savings" do
+        label "Savings"
+        format "center"
+      end
+      field "latestKnownRequestCPU" do
+        label "CPU Request"
+        format "center"
+      end
+      field "recommendedRequestCPU" do
+        label "REcommended CPU Request"
+        format "center"
+      end
+      field "latestKnownRequestMem" do
+        label "Memory Request"
+        format "center"
+      end
+      field "recommendedRequestMem" do
+        label "Recommended Memory Request"
+        format "center"
+      end
+    end
+  end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "report_requests" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
+end
