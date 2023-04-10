@@ -17,16 +17,26 @@ Kubecost request sizing recommendations policy template is used to resize instan
   - Default: "2d"
 - *The algorithm for the CPU* - The algorithm to be used to calculate CPU recommendations
   - Default: "max"
+  - Allowed values: "max", "quantile"
 - *CPU quantile* - The desired quantile to base CPU recommendations on
   - Default: 0.75
+  - Minimum value: 0.01
+  - Maximum value: 1
 - *Target CPU Utilization (%)* - Target CPU utilization in percent
-  - DEfault: 80
+  - Default: 80
+  - Minimum value: 1
+  - Maximum value: 100
 - *The algorithm for Memory* - The algorithm to be used to calculate memory recommendations
   - Default: "max"
+  - Allowed values: "max", "quantile"
 - *Memory quantile* - The desired quantile to base memory recommendations on
   - Default: 0.75
+  - Minimum value: 0.01
+  - Maximum value: 1
 - *Target Memory Utilization (%)* - Target memory utilization in percent
   - Default: 90
+  - Minimum value: 1
+  - Maximum value: 100
 
 ## Cost
 
