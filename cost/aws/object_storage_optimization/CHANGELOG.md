@@ -1,6 +1,6 @@
 # Changelog
 
-## v3.0
+## v2.10
 
 - Added logic required for "Meta Policy" use-cases
 
