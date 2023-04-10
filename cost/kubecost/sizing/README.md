@@ -1,17 +1,8 @@
-# Kubecost Request Sizing Recommendations Policy Template
+# Kubecost Request Right Sizing Recommendations Policy Template
 
 ## What it does
 
-The Kubecost Request Sizing Recommendations Policy Template is used to get recommendations for resizing instances controlled with Kubecost
-
-## Prerequisites
-
-This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for authenticating to datasources -- in order to apply this policy you must have a Credential registered in the system that is compatible with this policy. If there are no Credentials listed when you apply the policy, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy. The information below should be consulted when creating the credential(s).
-
-- [**Flexera Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) (*provider=flexera*) which has the following roles:
-  - `billing_center_viewer`
-
-The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) page in the docs has detailed instructions for setting up Credentials for the most common providers.
+Kubecost request sizing recommendations policy template is used to resize instances controlled by Kubecost.
 
 ## Functional Details
 
@@ -21,7 +12,7 @@ The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automati
 ### Input Parameters
 
 - *Email addresses of the recipients you wish to notify* - A list of email addresses to notify
-- *Kubecost host* - The host or IP Address where your Kubecost runs
+- *Kubecost Host or IP address* - The host or IP Address where your Kubecost runs
 - *Window size* - Number of days used in the calculation of the moving average
   - Default: "2d"
 - *The algorithm for the CPU* - The algorithm to be used to calculate CPU recommendations

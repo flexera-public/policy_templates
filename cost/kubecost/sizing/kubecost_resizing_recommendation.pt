@@ -1,4 +1,4 @@
-name "Kubecost Request Sizing Recommendations"
+name "Kubecost Request Right Sizing Recommendations Policy Template"
 rs_pt_ver 20180301
 type "policy"
 short_description "Pulls the Request Sizing Recommendations from Kubecost and raises and incident. See the [README](https://github.com/rightscale/policy_templates/tree/master/cost/kubecost/cluster-sizing/) and [docs.rightscale.com/policies](http://docs.rightscale.com/policies/) to learn more."
@@ -11,7 +11,8 @@ info(
   version: "1.0",
   provider: "Kubecost",
   service: "Kubernetes",
-  policy_set: ""
+  policy_set: "",
+  publish: false
 )
 
 ###############################################################################
@@ -26,9 +27,8 @@ end
 
 parameter "param_kubecost_host" do
   type "string"
-  label "Kubecost Host"
+  label "Kubecost Host or IP address"
   description "IP Address of Kubecost LB"
-  default "demo.kubecost.xyz"
 end
 
 parameter "param_window" do
@@ -54,7 +54,6 @@ parameter "param_cpu_q" do
   max_value 1
   default 0.75
 end
-
 
 parameter "param_cpu_util" do
   type "number"
@@ -147,9 +146,7 @@ script "js_requests_array", type: "javascript" do
   parameters "ds_request_sizing"
   result "result"
   code <<-EOS
-
     var recommendations = []
-
     var totalSavings = 0
 
     _.forEach(ds_request_sizing, function(c) {
@@ -165,7 +162,6 @@ script "js_requests_array", type: "javascript" do
       var monthlySavingsCPU = c.monthlySavingsCPU? c.monthlySavingsCPU: 0
       var monthlySavingsMem = c.monthlySavingsMem? c.monthlySavingsMem: 0
       var savings = monthlySavingsCPU > 0? monthlySavingsCPU: 0 + monthlySavingsMem > 0?monthlySavingsMem: 0
-      console.log(savings)
       totalSavings += savings
 
       recommendations.push({
@@ -182,15 +178,12 @@ script "js_requests_array", type: "javascript" do
         monthlySavingsMem: monthlySavingsMem
         savings: savings
       })
-
     })
 
     result={
       "savings": totalSavings,
       "recommendations": recommendations
     }
-    console.log(result.savings)
-    console.log(result.recommendations)
   EOS
 end
 ###############################################################################
@@ -201,8 +194,8 @@ policy "policy_kubecost_request_sizing" do
   validate $ds_recommendations do
     summary_template "Kubecost Request Sizing Report"
     detail_template <<-EOS
-The total estimated monthly savings : {{data.savings}}
-EOS
+    The total estimated monthly savings : {{data.savings}}
+    EOS
     escalate $report_requests
     check eq(size(val(data, "recommendations")), 0)
     export "recommendations" do
