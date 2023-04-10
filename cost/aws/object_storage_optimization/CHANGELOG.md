@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.0
+
+- Added logic required for "Meta Policy" use-cases
+
 ## v2.9
 
 - Modified `sys_log` definition to disable `rs_cm.audit_entry.create` outside Flexera NAM
