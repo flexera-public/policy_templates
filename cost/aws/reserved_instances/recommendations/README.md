@@ -1,6 +1,5 @@
 # AWS Reserved Instances Recommendation
 
-
 This Policy Template leverages the [AWS Reservation Purchase Recommendation API](https://docs.aws.amazon.com/aws-cost-management/latest/APIReference/API_GetReservationPurchaseRecommendation.html). It will raise incidents if AWS has any RI Purchase Recommendations, whose net savings exceeds the *Net Savings Threshold* parameter in the Policy.
 
 It will email the user specified in `Email addresses of the recipients you wish to notify`
