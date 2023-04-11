@@ -5,7 +5,7 @@ It will email the user specified in `Email addresses of the recipients you wish 
 
 > *NOTE: This Policy Template must be appled to the **AWS Organization Master Payer** account.*
 
-### Input Parameters
+## Input Parameters
 
 This policy has the following input parameters required when launching the policy.
 
@@ -18,15 +18,15 @@ This policy has the following input parameters required when launching the polic
 - *Email addresses to notify* - A list of email addresses to notify
 - *Currency Adjustment* - Number to adjust monthly estimated savings by depending on USD conversion (maximum value 5.0)
 
-### Policy Actions
+## Policy Actions
 
 - Send an email report
 
-### Prerequisites
+## Prerequisites
 
 This policy uses [credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for connecting to the cloud -- in order to apply this policy you must have a credential registered in the system that is compatible with this policy. If there are no credentials listed when you apply the policy, please contact your cloud admin and ask them to register a credential that is compatible with this policy. The information below should be consulted when creating the credential.
 
-### Credential configuration
+## Credential configuration
 
 For administrators [creating and managing credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) to use with this policy, the following information is needed:
 
@@ -51,10 +51,10 @@ Required permissions in the provider:
 }
 ```
 
-### Supported Clouds
+## Supported Clouds
 
 - AWS
 
-### Cost
+## Cost
 
 This Policy Template does not launch any instances, and so does not incur any cloud costs.
