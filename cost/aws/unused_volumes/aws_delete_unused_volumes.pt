@@ -6,7 +6,7 @@ category "Cost"
 severity "low"
 default_frequency "daily"
 info(
-  version: "4.2",
+  version: "5.0",
   provider: "AWS",
   service: "EBS",
   policy_set: "Unused Volumes"
@@ -74,6 +74,14 @@ parameter "param_flexera_org_id_for_optima" do
   allowed_pattern /^(current|[0-9]+)$/
 end
 
+parameter "param_include_status" do
+  type "string"
+  label "Log to CM Audit Entries"
+  description "Whether the policy should only check unattached volumes, attached volumes, or both."
+  default "Unattached Volumes"
+  allowed_values "Unattached Volumes", "Attached Volumes", "All Volumes"
+end
+
 parameter "param_log_to_cm_audit_entries" do
   type "string"
   label "Log to CM Audit Entries"
@@ -115,7 +123,7 @@ end
 # Pagination
 ###############################################################################
 
-pagination "aws_volumes_pagination_xml" do
+pagination "aws_pagination_volumes_xml" do
   get_page_marker do
     body_path "//DescribeVolumesResponse/nextToken"
   end
@@ -124,7 +132,7 @@ pagination "aws_volumes_pagination_xml" do
   end
 end
 
-pagination "aws_getmetricdata_pagination" do
+pagination "aws_pagination_getmetricdata" do
   get_page_marker do
     body_path "NextToken"
   end
@@ -134,8 +142,98 @@ pagination "aws_getmetricdata_pagination" do
 end
 
 ###############################################################################
-# Datasources
+# Datasources & Scripts
 ###############################################################################
+
+datasource "ds_flexera_optima" do
+  run_script $js_flexera_optima, $param_flexera_org_id_for_optima, rs_org_id
+end
+
+script "js_flexera_optima", type: "javascript" do
+  parameters "flexera_org_id_for_optima", "current_flexera_org_id"
+  result "flexera_optima"
+  code <<-EOS
+  var flexera_optima = {
+    org_id: flexera_org_id_for_optima == "current" ? current_flexera_org_id : flexera_org_id_for_optima,
+  };
+EOS
+end
+
+datasource "ds_billing_centers" do
+  request do
+    auth $auth_flexera
+    host rs_optima_host
+    path join(["/analytics/orgs/", val($ds_flexera_optima, "org_id"), "/billing_centers"])
+    header "Api-Version", "1.0"
+    header "User-Agent", "RS Policies"
+    query "view", "allocation_table"
+    ignore_status [403]
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "[*]") do
+      field "href", jmes_path(col_item, "href")
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+      field "parent_id", jmes_path(col_item, "parent_id")
+    end
+  end
+end
+
+datasource "ds_top_level_billing_centers" do
+  run_script $js_top_level_billing_centers, $ds_billing_centers
+end
+
+script "js_top_level_billing_centers", type: "javascript" do
+  parameters "billing_centers"
+  result "result"
+  code <<-EOS
+  result = _.reject(billing_centers, function(bc) { return bc.parent_id != null })
+EOS
+end
+
+datasource "ds_currency_reference" do
+  request do
+    host "raw.githubusercontent.com"
+    path "/flexera-public/policy_templates/master/cost/scheduled_reports/currency_reference.json"
+    header "User-Agent", "RS Policies"
+  end
+end
+
+datasource "ds_currency_code" do
+  request do
+    auth $auth_flexera
+    host rs_optima_host
+    path join(["/bill-analysis/orgs/", val($ds_flexera_optima, "org_id"), "/settings/currency_code"])
+    header "Api-Version", "0.1"
+    header "User-Agent", "RS Policies"
+    ignore_status [403]
+  end
+  result do
+    encoding "json"
+    field "id", jmes_path(response, "id")
+    field "value", jmes_path(response, "value")
+  end
+end
+
+datasource "ds_get_caller_identity" do
+  request do
+    auth $auth_aws
+    verb "GET"
+    host "sts.amazonaws.com"
+    path "/"
+    header "User-Agent", "RS Policies"
+    query "Action", "GetCallerIdentity"
+    query "Version", "2011-06-15"
+  end
+  result do
+    encoding "xml"
+    collect xpath(response, "//GetCallerIdentityResponse/GetCallerIdentityResult") do
+      field "account", xpath(col_item, "Account")
+      field "userID", xpath(col_item, "UserId")
+    end
+  end
+end
 
 # ds_region_list is a list of regions that are opted-in or opt-in-not-required
 datasource "ds_regions_list" do
@@ -162,16 +260,47 @@ datasource "ds_regions_list" do
   end
 end
 
-# Get only SCP enabled regions
 datasource "ds_regions" do
   run_script $js_regions, $param_allowed_regions, $ds_regions_list
 end
 
+script "js_regions", type: "javascript" do
+  parameters "user_entered_regions", "all_regions"
+  result "regions"
+  code <<-EOS
+  if (_.isEmpty(user_entered_regions)) {
+    regions = all_regions;
+  } else {
+    //Filter unique regions
+    var uniqueRegions = _.uniq(user_entered_regions);
+    var all_regions_list = [];
+    all_regions.forEach(function(all_region){
+      all_regions_list.push(all_region.region)
+    })
+
+    //Filter valid regions
+    var valid_regions = [];
+    _.map(uniqueRegions, function(uniqueRegion){
+      if(all_regions_list.indexOf(uniqueRegion) > -1){
+        valid_regions.push({"region": uniqueRegion})
+      }
+    })
+
+    //Throw an error if no valid regions found
+    if (_.isEmpty(valid_regions)) {
+      regions = all_regions;
+    }else{
+      regions = valid_regions
+    }
+  }
+EOS
+end
+
 #To get list of Unattached Volumes.
-datasource "ds_unattached_volumes_list" do
+datasource "ds_volumes_list" do
   iterate $ds_regions
     request do
-      run_script $js_aws_unattached_volumes_list, val(iter_item, "region")
+      run_script $js_volumes_list, val(iter_item, "region"), $param_include_status
     end
   result do
     encoding "xml"
@@ -194,68 +323,144 @@ datasource "ds_unattached_volumes_list" do
       field "region", val(iter_item, "region")
       field "createdTime", xpath(col_item, "createTime")
       field "size", xpath(col_item, "size")
+      field "status", xpath(col_item, "status")
     end
   end
 end
 
-datasource "ds_unattached_volumes_map" do
-  run_script $js_filter_aws_unattached_volumes, $ds_unattached_volumes_list, $param_exclude_tags, $param_unattached_days
+#https://docs.aws.amazon.com/AWSEC2/latest/APIReference/API_DescribeVolumes.html
+script "js_volumes_list", type: "javascript" do
+  parameters "region", "param_include_status"
+  result "results"
+  code <<-EOS
+  query_params = {
+    "Action": "DescribeVolumes",
+    "Version": "2016-11-15"
+  }
+
+  if (param_include_status == "Unattached Volumes") {
+    query_params["Filter.1.Name"] = "status"
+    query_params["Filter.1.Value.1"] = "available"
+  }
+
+  if (param_include_status == "Attached Volumes") {
+    query_params["Filter.1.Name"] = "status"
+    query_params["Filter.1.Value.1"] = "in-use"
+  }
+
+  results = {
+    auth: "auth_aws",
+    host: 'ec2.' + region + '.amazonaws.com',
+    path: '/',
+    pagination: "aws_pagination_volumes_xml",
+    query_params: query_params
+  }
+EOS
+end
+
+datasource "ds_volumes_map" do
+  run_script $js_volumes_map, $ds_volumes_list, $param_exclude_tags, $param_unattached_days
+end
+
+script "js_volumes_map", type: "javascript" do
+  parameters "ds_volumes_list", "param_exclude_tags", "param_unattached_days"
+  result "content"
+  code <<-EOS
+  var content = [];
+  for(var i=0;i<ds_volumes_list.length;i++){
+    vol = ds_volumes_list[i];
+    // Check, if the tag present in entered param_exclude_tags, ignore the volume if the tag matches/present.
+     var isTagMatched = false;
+     var startDate = new Date(vol['createdTime']); // Volume Created Date
+     var endDate = new Date();
+     var timeDifference = endDate.getTime() - startDate.getTime();
+     var daysDifference = (timeDifference / (1000 * 3600 * 24)).toFixed(2);
+
+    var instance_tags = {}
+    var tags = []
+    _.each(vol['tags'], function(instance){
+      tags.push(instance.tagKey+'='+instance.tagValue)
+    })
+    _.each(param_exclude_tags, function(exclude){
+      if ( _.contains(tags, exclude)){
+        isTagMatched = true
+      }
+    })
+
+    if(daysDifference > param_unattached_days){
+      // If the volume tag does not match with entered param_exclude_tags
+      if(!(isTagMatched)){
+        content.push({
+          tagKeyValue: tags,
+          vol_id: vol['volume_id'],
+          availability_zone: vol['availability_zone'],
+          snapshot_id: vol['snapshot_id'],
+          volume_Type: vol['volume_Type']
+          region: vol['region'],
+          status: vol['status'],
+          createdTime: vol['createdTime'],
+          size: vol['size'] + " GB"
+        })
+      }
+    }
+  }
+EOS
 end
 
 datasource "ds_metricdataqueries" do
-  run_script $js_metricdataqueries, $ds_unattached_volumes_map
+  run_script $js_metricdataqueries, $ds_volumes_map
 end
 
 script "js_metricdataqueries", type: "javascript" do
+  parameters "ds_volumes_map"
   result "result"
-  parameters "ds_unattached_volumes_map"
   code <<-EOS
-queries = {}
-// Construct MetricDataQueries for each resource
-_.each(ds_unattached_volumes_map, function(resource) {
-  // Foreach Metric that is used by the Policy Template
-  _.each(["VolumeReadBytes", "VolumeWriteBytes"], function(metric) {
-    // Foreach statistic that is used by the Policy Template
-    _.each(["Average"], function(statistic) {
-      query = {
-        // Replace `-` with `_` in the Id to avoid CloudWatch API error
-        "Id": resource['vol_id'].replace(/\-/g, '_') + "_" + metric + "_" + statistic,
-        "Label": resource['vol_id'] + " " + metric + " " + statistic,
-        "MetricStat": {
-          "Metric": {
-            "Namespace": "AWS/EBS",
-            "MetricName": metric,
-            "Dimensions": [
-              { "Name": "VolumeId", "Value": resource['vol_id'] }
-            ]
+  queries = {}
+  // Construct MetricDataQueries for each resource
+  _.each(ds_volumes_map, function(resource) {
+    // Foreach Metric that is used by the Policy Template
+    _.each(["VolumeReadBytes", "VolumeWriteBytes"], function(metric) {
+      // Foreach statistic that is used by the Policy Template
+      _.each(["Average"], function(statistic) {
+        query = {
+          // Replace `-` with `_` in the Id to avoid CloudWatch API error
+          "Id": resource['vol_id'].replace(/\-/g, '_') + "_" + metric + "_" + statistic,
+          "Label": resource['vol_id'] + " " + metric + " " + statistic,
+          "MetricStat": {
+            "Metric": {
+              "Namespace": "AWS/EBS",
+              "MetricName": metric,
+              "Dimensions": [
+                { "Name": "VolumeId", "Value": resource['vol_id'] }
+              ]
+            },
+            "Period": 2592000,
+            "Stat": statistic
           },
-          "Period": 2592000,
-          "Stat": statistic
-        },
-        "ReturnData": true
-      };
-      if (queries[resource['region']] == undefined || queries[resource['region']] == null) {
-        queries[resource['region']] = [];
-      }
-      queries[resource['region']].push(query);
+          "ReturnData": true
+        };
+        if (queries[resource['region']] == undefined || queries[resource['region']] == null) {
+          queries[resource['region']] = [];
+        }
+        queries[resource['region']].push(query);
+      });
     });
   });
-});
-result = [];
-end_date = parseInt(new Date().getTime() / 1000);
-start_date = parseInt(new Date(new Date().setDate(new Date().getDate() - 30)).getTime() / 1000);
-// MetricDataQueries[] max is 500
-chunk_size=500;
-// Chunk MetricDataQueries to iterate and collect all with multiple requests
-_.each(Object.keys(queries), function(region) {
-  for (i = 0; i < queries[region].length; i += chunk_size) {
-    chunk = queries[region].slice(i, i + chunk_size)
-    result.push({
-      'MetricDataQueries': chunk,
-      'region': region
-    })
-  }
-})
+  result = [];
+  end_date = parseInt(new Date().getTime() / 1000);
+  start_date = parseInt(new Date(new Date().setDate(new Date().getDate() - 30)).getTime() / 1000);
+  // MetricDataQueries[] max is 500
+  chunk_size=500;
+  // Chunk MetricDataQueries to iterate and collect all with multiple requests
+  _.each(Object.keys(queries), function(region) {
+    for (i = 0; i < queries[region].length; i += chunk_size) {
+      chunk = queries[region].slice(i, i + chunk_size)
+      result.push({
+        'MetricDataQueries': chunk,
+        'region': region
+      })
+    }
+  })
 EOS
 end
 
@@ -292,7 +497,7 @@ script "js_cloudwatch_getmetricdata", type: "javascript" do
     "host": 'monitoring.' + region + '.amazonaws.com',
     "verb": "POST",
     "path": "/",
-    "pagination": 'aws_getmetricdata_pagination',
+    "pagination": 'aws_pagination_getmetricdata',
     "headers": {
       "User-Agent": "RS Policies",
       "Content-Type": "application/json",
@@ -309,128 +514,57 @@ script "js_cloudwatch_getmetricdata", type: "javascript" do
 EOS
 end
 
-datasource "ds_unattached_volumes_without_read_or_write_operations" do
-  run_script $js_unattached_volumes_without_read_or_write_operations, $ds_unattached_volumes_map, $ds_cloudwatch_getmetricdata
+datasource "ds_idle_volumes" do
+  run_script $js_idle_volumes, $ds_volumes_map, $ds_cloudwatch_getmetricdata
 end
 
-script "js_unattached_volumes_without_read_or_write_operations", type: "javascript" do
-  parameters "ds_unattached_volumes_map", "ds_cloudwatch_getmetricdata"
-  result "results"
+script "js_idle_volumes", type: "javascript" do
+  parameters "ds_volumes_map", "ds_cloudwatch_getmetricdata"
+  result "result"
   code <<-EOS
-results = [];
-_.each(ds_unattached_volumes_map, function(volume) {
-  var volume_id = volume['vol_id'];
+  result = [];
 
-  // Use _.findWhere() to select the Average MetricDataQuery results for the volume
-  // Select VolumeReadBytes Average from GetMetricData results
-  volume_read_metrics = _.findWhere(ds_cloudwatch_getmetricdata, { 'label': volume_id+' VolumeReadBytes Average' });
-  // If no results found, set volume_read_metrics.values to empty array before proceeding
-  if (volume_read_metrics == undefined || volume_read_metrics.values == undefined) {
-    volume_read_metrics = { 'values': [] };
-  }
-  // Select VolumeWriteBytes Average from GetMetricData results
-  volume_write_metrics = _.findWhere(ds_cloudwatch_getmetricdata, { 'label': volume_id+' VolumeWriteBytes Average' });
-  // If no results found, set volume_read_metrics.values to empty array before proceeding
-  if (volume_write_metrics == undefined || volume_write_metrics.values == undefined) {
-    volume_write_metrics = { 'values': [] };
-  }
+  _.each(ds_volumes_map, function(volume) {
+    var volume_id = volume['vol_id'];
 
-  // Check if volume has no metrics at all which means it has not been used
-  if (volume_read_metrics.values.length + volume_write_metrics.values.length == 0) {
-    // If no metrics, unattached volume can be considered "unused"
-    // Add volume to results
-    volume_result = {
-      volumeId : volume['vol_id'],
-      region : volume['region'],
-      availabilityZone : volume['availability_zone'],
-      volumeType : volume['volume_Type'],
-      tags : volume['tagKeyValue'],
-      createdTime : volume['createdTime'],
-      size : volume['size'],
-      // Savings is 0 until later where we estimate savings
-      savings: 0.0
+    // Use _.findWhere() to select the Average MetricDataQuery results for the volume
+    // Select VolumeReadBytes Average from GetMetricData results
+    volume_read_metrics = _.findWhere(ds_cloudwatch_getmetricdata, { 'label': volume_id+' VolumeReadBytes Average' });
+    // If no results found, set volume_read_metrics.values to empty array before proceeding
+    if (volume_read_metrics == undefined || volume_read_metrics.values == undefined) {
+      volume_read_metrics = { 'values': [] };
     }
-    results.push(volume_result);
-  }
-});
+    // Select VolumeWriteBytes Average from GetMetricData results
+    volume_write_metrics = _.findWhere(ds_cloudwatch_getmetricdata, { 'label': volume_id+' VolumeWriteBytes Average' });
+    // If no results found, set volume_read_metrics.values to empty array before proceeding
+    if (volume_write_metrics == undefined || volume_write_metrics.values == undefined) {
+      volume_write_metrics = { 'values': [] };
+    }
+
+    // Check if volume has no metrics at all which means it has not been used
+    if (volume_read_metrics.values.length + volume_write_metrics.values.length == 0) {
+      // If no metrics, volume can be considered "unused"
+      // Add volume to results
+      result.push({
+        volumeId: volume['vol_id'],
+        region: volume['region'],
+        availabilityZone: volume['availability_zone'],
+        volumeType: volume['volume_Type'],
+        tags: volume['tagKeyValue'],
+        createdTime: volume['createdTime'],
+        size: volume['size'],
+        status: volume['status'],
+        // Savings is 0 until later where we estimate savings
+        savings: 0.0
+      })
+    }
+  });
 EOS
-end
-
-datasource "ds_currency_reference" do
-  request do
-    host "raw.githubusercontent.com"
-    path "/flexera-public/policy_templates/master/cost/scheduled_reports/currency_reference.json"
-    header "User-Agent", "RS Policies"
-  end
-end
-
-datasource "ds_flexera_optima" do
-  run_script $js_flexera_optima, $param_flexera_org_id_for_optima, rs_org_id
-end
-
-datasource "ds_currency_code" do
-  request do
-    auth $auth_flexera
-    host rs_optima_host
-    path join(["/bill-analysis/orgs/", val($ds_flexera_optima, "org_id"), "/settings/currency_code"])
-    header "Api-Version", "0.1"
-    header "User-Agent", "RS Policies"
-    ignore_status [403]
-  end
-  result do
-    encoding "json"
-    field "id", jmes_path(response, "id")
-    field "value", jmes_path(response, "value")
-  end
-end
-
-datasource "ds_billing_centers" do
-  request do
-    auth $auth_flexera
-    host rs_optima_host
-    path join(["/analytics/orgs/", val($ds_flexera_optima, "org_id"), "/billing_centers"])
-    header "Api-Version", "1.0"
-    header "User-Agent", "RS Policies"
-    query "view", "allocation_table"
-    ignore_status [403]
-  end
-  result do
-    encoding "json"
-    collect jmes_path(response, "[*]") do
-      field "href", jmes_path(col_item, "href")
-      field "id", jmes_path(col_item, "id")
-      field "name", jmes_path(col_item, "name")
-      field "parent_id", jmes_path(col_item, "parent_id")
-    end
-  end
-end
-
-datasource "ds_top_level_billing_centers" do
-  run_script $js_top_level_bc, $ds_billing_centers
-end
-
-datasource "ds_get_caller_identity" do
-  request do
-    auth $auth_aws
-    verb "GET"
-    host "sts.amazonaws.com"
-    path "/"
-    header "User-Agent", "RS Policies"
-    query "Action", "GetCallerIdentity"
-    query "Version", "2011-06-15"
-  end
-  result do
-    encoding "xml"
-    collect xpath(response, "//GetCallerIdentityResponse/GetCallerIdentityResult") do
-      field "account", xpath(col_item, "Account")
-      field "userID", xpath(col_item, "UserId")
-    end
-  end
 end
 
 datasource "ds_volume_costs" do
   request do
-    run_script $js_get_costs, $ds_get_caller_identity, $ds_top_level_billing_centers, val($ds_flexera_optima, "org_id"), rs_optima_host
+    run_script $js_volume_costs, $ds_get_caller_identity, $ds_top_level_billing_centers, val($ds_flexera_optima, "org_id"), rs_optima_host
   end
   result do
     encoding "json"
@@ -442,193 +576,74 @@ datasource "ds_volume_costs" do
   end
 end
 
-datasource "ds_volume_cost_mapping" do
-  run_script $js_volume_cost_mapping, $ds_unattached_volumes_without_read_or_write_operations, $ds_volume_costs, $ds_currency_code, $ds_currency_reference, $ds_billing_centers, $ds_get_caller_identity
-end
-
-###############################################################################
-# Script
-###############################################################################
-
-script "js_regions", type: "javascript" do
-  parameters "user_entered_regions", "all_regions"
-  result "regions"
-  code <<-EOS
-    if(_.isEmpty(user_entered_regions)){
-      regions = all_regions;
-    }else{
-      //Filter unique regions
-      var uniqueRegions = _.uniq(user_entered_regions);
-      var all_regions_list = [];
-      all_regions.forEach(function(all_region){
-        all_regions_list.push(all_region.region)
-      })
-
-      //Filter valid regions
-      var valid_regions = [];
-      _.map(uniqueRegions, function(uniqueRegion){
-        if(all_regions_list.indexOf(uniqueRegion) > -1){
-          valid_regions.push({"region": uniqueRegion})
-        }
-      })
-
-      //Throw an error if no valid regions found
-      if (_.isEmpty(valid_regions)) {
-        regions = all_regions;
-      }else{
-        regions = valid_regions
-      }
-    }
-  EOS
-end
-
-#https://docs.aws.amazon.com/AWSEC2/latest/APIReference/API_DescribeVolumes.html
-script "js_aws_unattached_volumes_list", type: "javascript" do
-  parameters "region"
-  result "results"
-  code <<-EOS
-  results = {
-    auth: "auth_aws",
-    host: 'ec2.'+region+'.amazonaws.com',
-    path: '/',
-    pagination: "aws_volumes_pagination_xml",
-    query_params: {
-      "Action": "DescribeVolumes",
-      "Version": "2016-11-15",
-      "Filter.1.Name": "status",
-      "Filter.1.Value.1": "available"
-    }
-  }
-  EOS
-end
-
-script "js_filter_aws_unattached_volumes", type: "javascript" do
-  parameters "ds_unattached_volumes_list", "param_exclude_tags", "param_unattached_days"
-  result "content"
-  code <<-EOS
-  var content = [];
-  for(var i=0;i<ds_unattached_volumes_list.length;i++){
-    vol = ds_unattached_volumes_list[i];
-    // Check, if the tag present in entered param_exclude_tags, ignore the volume if the tag matches/present.
-     var isTagMatched = false;
-     var startDate = new Date(vol['createdTime']); // Volume Created Date
-     var endDate = new Date();
-     var timeDifference = endDate.getTime() - startDate.getTime();
-     var daysDifference = (timeDifference / (1000 * 3600 * 24)).toFixed(2);
-
-    var instance_tags = {}
-    var tags = []
-    _.each(vol['tags'], function(instance){
-      tags.push(instance.tagKey+'='+instance.tagValue)
-    })
-    _.each(param_exclude_tags, function(exclude){
-      if ( _.contains(tags, exclude)){
-        isTagMatched = true
-      }
-    })
-
-    if(daysDifference > param_unattached_days){
-      // If the volume tag does not match with entered param_exclude_tags
-      if(!(isTagMatched)){
-        content.push({
-          tagKeyValue : tags,
-          vol_id : vol['volume_id'],
-          availability_zone : vol['availability_zone'],
-          snapshot_id : vol['snapshot_id'],
-          volume_Type : vol['volume_Type']
-          region : vol['region'],
-          createdTime : vol['createdTime'],
-          size : vol['size']+" GB"
-        })
-      }
-    }
-  }
-  EOS
-end
-
-script "js_flexera_optima", type: "javascript" do
-  parameters "flexera_org_id_for_optima", "current_flexera_org_id"
-  result "flexera_optima"
-  code <<-EOS
-  var flexera_optima = {
-    org_id: flexera_org_id_for_optima == "current" ? current_flexera_org_id : flexera_org_id_for_optima,
-  };
-  EOS
-end
-
-script "js_top_level_bc", type: "javascript" do
-  parameters "billing_centers"
-  result "filtered_billing_centers"
-  code <<-EOS
-  var filtered_billing_centers =
-    _.reject(billing_centers, function(bc){ return bc.parent_id != null });
-  EOS
-end
-
-script "js_get_costs", type: "javascript" do
+script "js_volume_costs", type: "javascript" do
   parameters "account_id", "billing_centers", "org", "rs_optima_host"
   result "request"
   code <<-EOS
-    // returns date formatted as string: YYYY-mm-dd
-    function getFormattedDailyDate(date) {
-      var year = date.getFullYear();
-      var month = (1 + date.getMonth()).toString();
-      month = month.length > 1 ? month : '0' + month;
-      var day = date.getDate().toString();
-      day = day.length > 1 ? day : '0' + day;
-      return year + '-' + month + '-' + day;
-    }
+  // returns date formatted as string: YYYY-mm-dd
+  function getFormattedDailyDate(date) {
+    var year = date.getFullYear();
+    var month = (1 + date.getMonth()).toString();
+    month = month.length > 1 ? month : '0' + month;
+    var day = date.getDate().toString();
+    day = day.length > 1 ? day : '0' + day;
+    return year + '-' + month + '-' + day;
+  }
 
-    // Time between start and end date is 1 day
-    // Use billing period of 3days ago to 2days ago [start date, end date] which typically has more accurate bill data
-    var start_date = getFormattedDailyDate(new Date(new Date().setDate(new Date().getDate() - 3)));
-    var end_date = getFormattedDailyDate(new Date(new Date().setDate(new Date().getDate() - 2)));
+  // Time between start and end date is 1 day
+  // Use billing period of 3days ago to 2days ago [start date, end date] which typically has more accurate bill data
+  var start_date = getFormattedDailyDate(new Date(new Date().setDate(new Date().getDate() - 3)));
+  var end_date = getFormattedDailyDate(new Date(new Date().setDate(new Date().getDate() - 2)));
 
-    var request = {
-      auth: "auth_flexera",
-      host: rs_optima_host,
-      verb: "POST",
-      path: "/bill-analysis/orgs/" + org + "/costs/select",
-      body_fields: {
-        "dimensions": ["resource_id", "vendor_account_name"],
-        "granularity": "day",
-        "start_at": start_date,
-        "end_at": end_date,
-        "metrics": ["cost_nonamortized_unblended_adj"],
-        "billing_center_ids": _.compact(_.map(billing_centers, function(value){ return value.id})),
-        "limit": 100000,
-        "filter": {
-          "expressions": [
-            {
-              "dimension": "service",
-              "type": "equal",
-              "value": "AmazonEC2"
-            },
-            {
-              "dimension": "resource_type",
-              "type": "equal",
-              "value": "Storage"
-            },
-            {
-              "dimension": "vendor_account",
-              "type": "equal",
-              "value": account_id[0]["account"]
-            }
-          ],
-          "type": "and"
-        }
-      },
-      headers: {
-        "User-Agent": "RS Policies",
-        "Api-Version": "1.0"
-      },
-      ignore_status: [400]
-    }
-  EOS
+  var request = {
+    auth: "auth_flexera",
+    host: rs_optima_host,
+    verb: "POST",
+    path: "/bill-analysis/orgs/" + org + "/costs/select",
+    body_fields: {
+      "dimensions": ["resource_id", "vendor_account_name"],
+      "granularity": "day",
+      "start_at": start_date,
+      "end_at": end_date,
+      "metrics": ["cost_nonamortized_unblended_adj"],
+      "billing_center_ids": _.compact(_.map(billing_centers, function(value){ return value.id})),
+      "limit": 100000,
+      "filter": {
+        "expressions": [
+          {
+            "dimension": "service",
+            "type": "equal",
+            "value": "AmazonEC2"
+          },
+          {
+            "dimension": "resource_type",
+            "type": "equal",
+            "value": "Storage"
+          },
+          {
+            "dimension": "vendor_account",
+            "type": "equal",
+            "value": account_id[0]["account"]
+          }
+        ],
+        "type": "and"
+      }
+    },
+    headers: {
+      "User-Agent": "RS Policies",
+      "Api-Version": "1.0"
+    },
+    ignore_status: [400]
+  }
+EOS
+end
+
+datasource "ds_volume_cost_mapping" do
+  run_script $js_volume_cost_mapping, $ds_idle_volumes, $ds_volume_costs, $ds_currency_code, $ds_currency_reference, $ds_billing_centers, $ds_get_caller_identity
 end
 
 script "js_volume_cost_mapping", type:"javascript" do
-  parameters "ds_unattached_volumes_without_read_or_write_operations", "ds_volume_costs", "ds_currency_code", "ds_currency_reference", "ds_billing_centers", "ds_get_caller_identity"
+  parameters "ds_idle_volumes", "ds_volume_costs", "ds_currency_code", "ds_currency_reference", "ds_billing_centers", "ds_get_caller_identity"
   result "result"
   code <<-EOS
   var unused_volumes=[];
@@ -654,7 +669,7 @@ script "js_volume_cost_mapping", type:"javascript" do
   }
   // Check if ds_billing_centers results empty
   if(ds_billing_centers.length==0){
-    unused_volumes=ds_unattached_volumes_without_read_or_write_operations;
+    unused_volumes=ds_idle_volumes;
     message="You do not have the minimum required role of billing_center_viewer to view the savings";
   }
   else{
@@ -687,7 +702,7 @@ script "js_volume_cost_mapping", type:"javascript" do
     // Total potential savings starts at 0
     var total_potential_savings=0;
     // Loop through all unattached volumes
-    _.each(ds_unattached_volumes_without_read_or_write_operations, function(volume) {
+    _.each(ds_idle_volumes, function(volume) {
       // Select volumes cost from ds_volume_costs
       volume_costs = _.where(ds_volume_costs, { resource_id: volume.volumeId });
 
@@ -720,6 +735,7 @@ script "js_volume_cost_mapping", type:"javascript" do
         tags: volume['tags'],
         createdTime: volume['createdTime'],
         size: volume['size'],
+        status: volume['status'],
         savings: (Math.round(volume_monthly_cost * 1000) / 1000),
         savingsCurrency: cur,
         service: "EBS"
@@ -742,23 +758,23 @@ script "js_volume_cost_mapping", type:"javascript" do
     "accountID": ds_get_caller_identity[0]['account']
   };
   result.unused_volumes=_.sortBy(result.unused_volumes,'region');
-  EOS
+EOS
 end
 
-###############################################################################
+##############################################################################
 # Policy
 ###############################################################################
 
-policy "policy_unattached_volumes_list" do
+policy "pol_unused_volumes" do
   validate $ds_volume_cost_mapping do
     summary_template "AWS Account ID: {{ data.accountID }} - {{ len data.unused_volumes }} Unused Volumes Found"
     detail_template <<-EOS
 {{data.message}}
 EOS
-    escalate $report_unused_volumes
-    escalate $delete_volumes
+    escalate $esc_email
+    escalate $esc_delete_volumes
     # Policy check fails and incident is created only if data is not empty and the Parent Policy has not been terminated
-    check logic_or($ds_parent_policy_terminated,    eq(size(val(data, "unused_volumes")), 0)    )
+    check logic_or($ds_parent_policy_terminated, eq(size(val(data, "unused_volumes")), 0))
     # TODO: For internal docs; In the case of a policy with multiple checks, each check must have this logic as each check is evaluated seperately"
     export "unused_volumes" do
       resource_level true
@@ -777,6 +793,9 @@ EOS
       end
       field "resourceType" do
         label "Resource Type"
+      end
+      field "status" do
+        label "Status"
       end
       field "size" do
         label "Size"
@@ -805,14 +824,14 @@ end
 # Escalations
 ###############################################################################
 
-escalation "report_unused_volumes" do
+escalation "esc_email" do
   automatic true
   label "Send Email"
   description "Send incident email"
   email $param_email
 end
 
-escalation "delete_volumes" do
+escalation "esc_delete_volumes" do
   automatic contains($param_automatic_action, "Delete Volumes")
   label "Delete Volumes"
   description "Approval to delete all selected volumes"
@@ -826,16 +845,26 @@ end
 define take_action($data, $param_take_snapshot, $param_log_to_cm_audit_entries, $$rs_optima_host) do
   $$debug = $param_log_to_cm_audit_entries == "Yes"
   $$errors = []
+
   foreach $item in $data do
     $snapshot_status_code = 200
+    $detach_status_code = 200
+
+    if $item["status"] == "in-use"
+      call detach_volume($item, $$errors) retrieve $status_code, $$errors
+      $detach_status_code = $status_code
+    end
+
     if $param_take_snapshot == "Yes"
-      call create_volumes_snapshot($item, $$errors) retrieve $status_code, $$errors
+      call create_snapshot($item, $$errors) retrieve $status_code, $$errors
       $snapshot_status_code = $status_code
     end
-    if $snapshot_status_code == 200
+
+    if $snapshot_status_code == 200 && $detach_status_code == 200
       call delete_volume($item, $$errors) retrieve $status_code, $$errors
     end
   end
+
   if size($$errors) > 0
     $error = join($$errors, "\n")
     call sys_log("Errors", $error)
@@ -843,7 +872,7 @@ define take_action($data, $param_take_snapshot, $param_log_to_cm_audit_entries, 
   end
 end
 
-define create_volumes_snapshot($item, $errors) return $status_code, $errors do
+define create_snapshot($item, $errors) return $status_code, $errors do
   $status_code
   $snapshot_status = "pending"
   $response = http_request(
@@ -858,8 +887,8 @@ define create_volumes_snapshot($item, $errors) return $status_code, $errors do
       "VolumeId": $item["id"]
     }
   )
-  call check_response_and_append_if_error($response, "Create Volumes Snapshot", $errors) retrieve $errors
-  call sys_log("Create Volumes Snapshot Response ", to_s($response))
+  call check_response_and_append_if_error($response, "Create Volume Snapshot", $errors) retrieve $errors
+  call sys_log("Create Volume Snapshot Response ", to_s($response))
   $status_code = $response["code"]
 
   if $status_code == 200
@@ -886,6 +915,88 @@ define create_volumes_snapshot($item, $errors) return $status_code, $errors do
   end
 end
 
+define get_snapshot_status($snapshotId, $errors) return $snapshot_status, $errors do
+  call sys_log("Inside Get Snapshot Details Snapshot Id ", $snapshotId)
+  $snapshot_response = http_request(
+    auth: $$auth_aws,
+    https: true,
+    verb: "get",
+    host: "ec2." + $item["region"] + ".amazonaws.com",
+    href: "/",
+    query_strings: {
+      "Action": "DescribeSnapshots",
+      "Version": "2016-11-15",
+      "SnapshotId": $snapshotId
+    }
+  )
+  call check_response_and_append_if_error($snapshot_response, "Describe Snapshot " + $snapshotId, $errors) retrieve $errors
+  call sys_log("Get Snapshot Details ", to_s($snapshot_response))
+  $snapshot_status = $snapshot_response["body"]["DescribeSnapshotsResponse"]["snapshotSet"]["item"]["status"]
+end
+
+define detach_volume($item, $errors) return $status_code, $errors do
+  $status_code
+  $volume_status = "in-use"
+
+  $response = http_request(
+    auth: $$auth_aws,
+    https: true,
+    verb: "get",
+    host: "ec2." + $item["region"] + ".amazonaws.com",
+    href: "/",
+    query_strings: {
+      "Action": "DetachVolume",
+      "Version": "2016-11-15",
+      "VolumeId": $item["id"]
+    }
+  )
+  call check_response_and_append_if_error($response, "Detach Volume", $errors) retrieve $errors
+  call sys_log("Detach Volume Response ", to_s($response))
+  $status_code = $response["code"]
+
+  if $status_code == 200
+    $volume_status = $response["body"]["DetachVolumeResponse"]["status"]
+    $volumeId = $response["body"]["DetachVolumeResponse"]["volumeId"]
+
+    if $volume_status == "in-use"
+      $condition_check = "available"
+
+      while $condition_check !~ $volume_status do
+        sleep(30)
+        call get_snapshot_status(to_s($volumeId), []) retrieve $status, $volume_errors
+        $volume_status = $status
+
+        if $volume_status == "error" || size($volume_errors) > 0
+          $status_code = 400
+          $volume_status = "available"
+          foreach $error in $volume_errors do
+            $errors << $error
+          end
+        end
+      end
+    end
+  end
+end
+
+define get_detach_status($volumeId, $errors) return $volume_status, $errors do
+  call sys_log("Inside Detach Volume Details Volume Id ", $volumeId)
+  $volume_response = http_request(
+    auth: $$auth_aws,
+    https: true,
+    verb: "get",
+    host: "ec2." + $item["region"] + ".amazonaws.com",
+    href: "/",
+    query_strings: {
+      "Action": "DescribeVolumes",
+      "Version": "2016-11-15",
+      "VolumeId.1": $volumeId
+    }
+  )
+  call check_response_and_append_if_error($volume_response, "Describe Volume " + $volumeId, $errors) retrieve $errors
+  call sys_log("Get Volume Details ", to_s($volume_response))
+  $volume_status = $volume_response["body"]["DescribeVolumesResponse"]["volumeSet"]["item"]["status"]
+end
+
 define delete_volume($item, $errors) return $status_code, $errors do
   $delete_response = http_request(
     auth: $$auth_aws,
@@ -908,25 +1019,6 @@ define delete_volume($item, $errors) return $status_code, $errors do
     $split_final_message = split($split_body[1], "</Message>");
     call create_tag($item["region"], $item["id"], to_s($split_final_message[0]), $errors) retrieve $errors
   end
-end
-
-define get_snapshot_status($snapshotId, $errors) return $snapshot_status, $errors do
-  call sys_log("Inside Get Snapshot Details Snapshot Id ", $snapshotId)
-  $snapshot_response = http_request(
-    auth: $$auth_aws,
-    https: true,
-    verb: "get",
-    host: "ec2." + $item["region"] + ".amazonaws.com",
-    href: "/",
-    query_strings: {
-      "Action": "DescribeSnapshots",
-      "Version": "2016-11-15",
-      "SnapshotId": $snapshotId
-    }
-  )
-  call check_response_and_append_if_error($snapshot_response, "Describe Snapshot " + $snapshotId, $errors) retrieve $errors
-  call sys_log("Get Snapshot Details ", to_s($snapshot_response))
-  $snapshot_status = $snapshot_response["body"]["DescribeSnapshotsResponse"]["snapshotSet"]["item"]["status"]
 end
 
 define create_tag($region, $volumeId, $message, $errors) return $errors do

@@ -1,5 +1,9 @@
 # Changelog
 
+## v5.0
+
+- Added parameter to include attached volumes in resulting incident.
+
 ## v4.2
 
 - Raised API limit to handle situations where more than 10,000 line items need to be retrieved.
