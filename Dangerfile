@@ -127,6 +127,11 @@ md_files.each do |file|
       # MD033 Inline HTML. Required for example snippets.
       # MD034 Bare URL used - Bugged. No bare URLs are actually used in this README.
       mdl = `mdl -r "~MD013","~MD033","~MD034" #{file}`
+  # Exemptions for tools/cloudformation-template/README.md
+  elsif file == '.github/PULL_REQUEST_TEMPLATE.md'
+    # MD002 First header should be a top level header
+    # MD013 Line length
+    mdl = `mdl -r "~MD002","~MD013" #{file}`
   else
     # use .mdlrc rules
     mdl = `mdl #{file}`

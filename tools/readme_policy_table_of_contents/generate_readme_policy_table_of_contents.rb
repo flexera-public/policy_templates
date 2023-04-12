@@ -52,13 +52,14 @@ if (pt_files.length != 0)
 
     if (pt_file.grep(/field \"savings\" do/).length > 0 \
       and p[:provider] != nil and p[:provider].length > 0 \
-      and p[:policy_set] != nil and p[:policy_set].length > 0 \
       and ! file.include? "turbonomic") then
       # As of April 2023, recommendation_type is a required metadata in the docs,
       # but the policies that generate savings recommendations do not have it.
       # Likely end up this is not required and we do not need this check, but
       # saving it in comment for now until we can confirm
       # and p[:recommendation_type] != nil and (p[:recommendation_type] == "Usage Reduction" or p[:recommendation_type] == "Rate Reduction")
+      # Same for this, docs are wrong. Confirmed on 2023-04-12 we have Recommendations with policy_set="" or undefined.
+      # and p[:policy_set] != nil and p[:policy_set].length > 0
 
       # Append the policy hash to the list of policies
       optimization_pts << p
