@@ -149,21 +149,20 @@ datasource "ds_compute_utilization" do
   iterate $ds_google_project
   request do
     auth $auth_google
+    verb "POST"
     host "monitoring.googleapis.com"
-    path join(["/v3/projects/",val(iter_item,"accountID"),"/timeSeries/"])
-    query "filter", 'metric.type="compute.googleapis.com/instance/cpu/utilization"'
-    query "interval.endTime", val(iter_item,"endDate")
-    query "interval.startTime", val(iter_item,"startDate")
-    ignore_status [403,404]
+    path join(["/v3/projects/", val(iter_item,"accountID"), "/timeSeries:query"])
+    body_field "query", "fetch gce_instance | metric 'compute.googleapis.com/instance/cpu/utilization' | within 14d | align | every 1d | group_by [instance_name, instance_id, zone], mean(value)"
+    ignore_status [403, 404]
   end
   result do
     encoding "json"
-    collect jmes_path(response, "timeSeries[*]") do
-      field "resourceName", jmes_path(col_item, "metric.labels.instance_name")
-      field "resourceID", jmes_path(col_item, "resource.labels.instance_id")
-      field "zone", jmes_path(col_item, "resource.labels.zone")
+    collect jmes_path(response, "timeSeriesData[*]") do
+      field "resourceName", jmes_path(col_item, "labelValues[0].stringValue")
+      field "resourceID", jmes_path(col_item, "labelValues[1].stringValue")
+      field "zone", jmes_path(col_item, "labelValues[2].stringValue")
       field "accountID", val(iter_item,"accountID")
-      field "cpuPoints", jmes_path(col_item, "points[*].value.doubleValue")
+      field "cpuPoints", jmes_path(col_item, "pointData[*].values[0].doubleValue")
       field "accountName", val(iter_item,"accountName")
       field "projectNumber", val(iter_item,"projectNumber")
     end
