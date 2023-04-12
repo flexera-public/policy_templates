@@ -17,6 +17,7 @@ The Kubecost Cluster Sizing Recommendations cust policy utilizes a Kubecost Host
 - *Number of days to analyze* - Historical range of time in days to analyze.
 - *Target utilization (%)* - Desirable target utilization in percent.
 - *Recommendation Type* - Type of existing recommendation in the cluster.
+- *Kubecost Credential* - Kubecost Basic Auth credential.
 
 ## Cost
 
