@@ -374,6 +374,10 @@ These templates can generate savings estimates for your environment.
 - [Applied Policy Error Notification](./operational/applied_policy_error_notification)
 - [Bill Processing Error Notification](./operational/bill_processing_errors_notification)
 
+#### Flexera ITAM
+
+- [Schedule ITAM Report](./operational/itam/schedule_itam_report)
+
 #### Flexera Optima
 
 - [AWS Usage Report - Number of Instance vCPUs Used](./operational/aws/total_instance_vcpus)
@@ -568,13 +572,13 @@ These templates can generate savings estimates for your environment.
 <!-- Begin Policy Template Stats -->
 <!--
 ---
-:total_count: 228
+:total_count: 229
 :optimization_count: 20
 :categories:
   Security: 74
   Compliance: 33
   Cost: 86
-  Operational: 22
+  Operational: 23
   SaaS Management: 13
 :providers:
   AWS: 72
@@ -584,7 +588,7 @@ These templates can generate savings estimates for your environment.
   Flexera Optima: 27
   Flexera Cloud Management: 4
   Flexera: 5
-  Flexera ITAM: 4
+  Flexera ITAM: 5
   Flexera FNMS: 1
   GitHub: 7
   '': 1
@@ -618,7 +622,7 @@ These templates can generate savings estimates for your environment.
   EC2: 14
   Org: 1
   ECS: 1
-  '': 68
+  '': 69
   Identity: 1
   Compute: 25
   Policy: 1
@@ -668,6 +672,7 @@ These templates can generate savings estimates for your environment.
   Native Recommendations: 1
   Common Bill Ingestion: 1
   Forecasting: 4
+  Schedule Flexera ITAM Report: 1
   Tag Cardinality: 2
   Long Running Instances: 2
   Database Services: 1
