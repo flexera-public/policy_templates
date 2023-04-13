@@ -1,5 +1,11 @@
 # Changelog
 
+## v2.6
+
+- Changed list API to aggregatedList API to get addresses
+- Modified filters, previously applied in code, now those are applied in request
+- Fix: Wrong number of rows in incident
+
 ## v2.5
 
 - Added policySet as Unused IP Addresses to populate the Total Potential Savings
