@@ -6,10 +6,7 @@ The Kubecost Cluster Sizing Recommendations cust policy utilizes a Kubecost Host
 
 ## Prerequisites
 
-This policy uses [Credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) to access resources in a Kubecost Host API. In order to apply this policy you must have a Kubecost Basic Auth Credential registered in the system with the information below:
-
-- *Username* - Username for Kubecost Host or Ip authentication
-- *Password* - Password for Kubecost Host or Ip authentication
+This policy does not use credentials to access resources in a Kubecost Host API. In order to apply this policy you must enable external access exposing access to port 9090 on your pod following this [example](https://docs.kubecost.com/install-and-configure/install/ingress-examples).
 
 ## Functional Details
 
