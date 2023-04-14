@@ -2,7 +2,7 @@
 
 ## What it does
 
-This Policy finds unused volumes in the given account and deletes them after user approval. The user can optionally create a snapshot before deleting the volume. An unused volume is determined by checking for the state as available and uses CloudWatch to determine its use by checking if there are read or write operations within the number of user-specified days. A Policy Incident will be created with all of volumes that fall into these criteria.
+This Policy finds unused volumes in the given account and deletes them after user approval. The user can optionally create a snapshot before deleting the volume. CloudWatch is used to determine its use by checking if there are read or write operations within the number of user-specified days. The Volume Status parameter will determine whether to include attached volumes in the resulting incident, unattached, or both. Policy Incident will be created with all of volumes that fall into these criteria.
 
 If the issue causing the delete failure is removed, the next run of the policy will delete the volume.
 Note: The unused volumes incident will reflect the updated set of unused volumes on the subsequent run.
@@ -28,6 +28,7 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Auto
   - `cloudwatch:GetMetricStatistics`
   - `ec2:CreateTags`
   - `ec2:CreateSnapshot`
+  - `ec2:DetachVolume`
   - `ec2:DeleteVolume`
 
   Example IAM Permission Policy:
@@ -45,6 +46,7 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Auto
                   "cloudwatch:GetMetricStatistics",
                   "ec2:CreateTags",
                   "ec2:CreateSnapshot",
+                  "ec2:DetachVolume",
                   "ec2:DeleteVolume"
               ],
               "Resource": "*"
@@ -64,6 +66,7 @@ This policy has the following input parameters required when launching the polic
 
 - *Allowed Regions* - A list of allowed regions for an AWS account. Please enter the allowed regions code if SCP is enabled, see [Available Regions](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/using-regions-availability-zones.html#concepts-available-regions) in AWS; otherwise, the policy may fail on regions that are disabled via SCP. Leave blank to consider all the regions.
 - *Unused days* - The number of days a volume has been unused. The days should be greater than zero.
+- *Volume Status* - Whether to include attached volumes, unattached, or both in the results.
 - *Account Number* - The Account number for use with the AWS STS Cross Account Role. Leave blank when using AWS IAM Access key and secret. It only needs to be passed when the desired AWS account is different than the one associated with the Flexera One credential. [more](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_1982464505_1123608)
 - *Email addresses* - A list of email addresses to notify
 - *Exclude Tags.* - A list of tags used to excluded volumes from the incident.
