@@ -2,7 +2,7 @@
 
 ## v5.0
 
-- Added support for detecting and reporting on attached volumes via an optional parameter.
+- Added support for reporting and acting on attached volumes via an optional parameter.
 
 ## v4.2
 
