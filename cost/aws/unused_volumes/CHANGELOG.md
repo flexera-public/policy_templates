@@ -2,7 +2,7 @@
 
 ## v5.0
 
-- Added parameter to include attached volumes in resulting incident.
+- Added support for detecting and reporting on attached volumes via an optional parameter.
 
 ## v4.2
 
