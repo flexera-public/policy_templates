@@ -116,6 +116,19 @@ datasource "ds_request_sizing" do
   end
 end
 
+datasource "ds_get_currency" do
+  request do
+    verb "GET"
+    scheme "http"
+    host $param_kubecost_host
+    path "/model/getConfigs"
+  end
+  result do
+    encoding "json"
+    field "currencyCode", jmes_path(response, "data.currencyCode")
+  end
+end
+
 script "js_request_sizing", type: "javascript" do
   parameters "kubecost_host", "param_cpu_algo", "param_cpu_q", "param_mem_algo", "param_mem_q", "param_window", "param_cpu_util", "param_mem_util"
   result "request"
@@ -139,15 +152,19 @@ script "js_request_sizing", type: "javascript" do
 end
 
 datasource "ds_recommendations" do
-  run_script $js_requests_array, $ds_request_sizing
+  run_script $js_requests_array, $ds_request_sizing, $ds_get_currency
 end
 
 script "js_requests_array", type: "javascript" do
-  parameters "ds_request_sizing"
+  parameters "ds_request_sizing","ds_get_currency"
   result "result"
   code <<-EOS
     var recommendations = []
     var totalSavings = 0
+    var currencyCode = ""
+    function roundNumber(num, dec) {
+      return Math.round(num * Math.pow(10, dec)) / Math.pow(10, dec);
+    }
 
     _.forEach(ds_request_sizing, function(c) {
       var clusterId = c.clusterID
@@ -163,6 +180,7 @@ script "js_requests_array", type: "javascript" do
       var monthlySavingsMem = c.monthlySavingsMem? c.monthlySavingsMem: 0
       var savings = monthlySavingsCPU > 0? monthlySavingsCPU: 0 + monthlySavingsMem > 0?monthlySavingsMem: 0
       totalSavings += savings
+      var formatedsavings = roundNumber(savings,2)
 
       recommendations.push({
         clusterId: clusterId
@@ -176,12 +194,20 @@ script "js_requests_array", type: "javascript" do
         latestKnownRequestMem: latestKnownRequestMem
         monthlySavingsCPU: monthlySavingsCPU
         monthlySavingsMem: monthlySavingsMem
-        savings: savings
+        savings: formatedsavings
       })
     })
 
+    if (ds_get_currency.currencyCode === "") {
+      currencyCode = "USD";
+    }else{
+      currencyCode = ds_get_currency.currencyCode
+    }
+
+    var str = "$ " + roundNumber(totalSavings,2).toString() + " " + currencyCode
+
     result={
-      "savings": totalSavings,
+      "savings": str,
       "recommendations": recommendations
     }
   EOS
