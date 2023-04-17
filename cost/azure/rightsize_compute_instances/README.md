@@ -8,9 +8,9 @@ This policy checks all the instances in Azure Subscriptions for the average CPU 
 
 - The policy leverages the Azure API to check all instances and then checks the instance average CPU utilization over the past 30 days
 - The policy identifies all instances that have CPU utilization below the Idle Instance CPU Threshold defined by the user, to provide a recommendation.
-- The recommendation provided for Idle Instances is a termination action. These instancse can be terminated in an automated manner or after approval.
+- The recommendation provided for Idle Instances is a termination action. These instances can be terminated in an automated manner or after approval.
 - The policy identifies all instances that have CPU utilization below the Inefficient Instance CPU Threshold defined by the user, to provide a recommendation.
-- The recommendation provided for Inefficient/Underutilized Instances is a downsize action. These instancse can be downsized in an automated manner or after approval.
+- The recommendation provided for Inefficient/Underutilized Instances is a downsize action. These instances can be downsized in an automated manner or after approval.
 
 ### Policy savings details
 
@@ -24,6 +24,7 @@ The policy includes the estimated savings. The estimated savings is recognized i
 - *Exclusion Tag Key* - An Azure-native instance tag key to ignore instances that you don't want to consider for downsizing. Example: exclude_utilization.
 - *Automatic Actions* - When this value is set, this policy will automatically take the selected action(s).
 - *Subscription Allowed List* - Allowed Subscriptions, if empty, all subscriptions will be checked.
+- *Azure Endpoint* - The endpoint to send Azure API requests to. Recommended to leave this at default unless using this policy with Azure China.
 - *Log to CM Audit Entries* - Boolean for whether or not to log any debugging information from actions to CM Audit Entries, this should be left set to No on Flexera EU.
 
 Please note that the "Automatic Actions" parameter contains a list of action(s) that can be performed on the resources. When it is selected, the policy will automatically execute the corresponding action on the data that failed the checks, post incident generation. Please leave it blank for *manual* action.
