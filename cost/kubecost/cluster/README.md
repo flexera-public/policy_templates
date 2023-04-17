@@ -1,4 +1,4 @@
-# Kubecost Cluster Sizing Recommendations cust
+# Kubecost Cluster Rightsizing Recommendations
 
 ## What it does
 
@@ -8,6 +8,7 @@ The Kubecost Cluster Sizing Recommendations policy utilizes a Kubecost API to pr
 
 This policy does not use credentials to access resources in a Kubecost API.
 If you setup authentication for Kubecost access, you can use one of the following options:
+
 - Enable external access on your pod following this [example](https://docs.kubecost.com/install-and-configure/install/ingress-examples).
 - Update the policy to support Basic Auth credentials.
 
