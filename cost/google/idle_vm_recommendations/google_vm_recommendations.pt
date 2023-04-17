@@ -183,12 +183,12 @@ datasource "ds_get_vms" do
   end
   result do
     encoding "json"
-    field "vms", jq(response, "[ .items | to_entries | map_values(.value) | map(select(has(\"instances\"))) | .[].instances | .[] | {id,name,selfLink,status,tags}]") 
+    field "vms", jq(response, "[ .items | to_entries | map_values(.value) | map(select(has(\"instances\"))) | .[].instances | .[] | {id,name,selfLink,status,tags,zone}]")
   end
 end
 
 datasource "ds_collected_vms" do
-  run_script $js_collected_vms, $ds_get_vms
+  run_script $js_collected_vms, $ds_get_vms, $param_zones
 end
 
 datasource "ds_vms_with_cpu_utilization" do
@@ -330,12 +330,20 @@ end
 
 script "js_collected_vms", type: "javascript" do
   result "collected_vms"
-  parameters "ds_get_vms"
+  parameters "ds_get_vms", "param_zones"
   code <<-EOS
   var collected_vms = []
   for (var i = 0; i < ds_get_vms.length; i++) {
     for (var j = 0; j < ds_get_vms[i].vms.length; j++) {
-      collected_vms.push(ds_get_vms[i].vms[j])
+      if (param_zones.length === 0) {
+        collected_vms.push(ds_get_vms[i].vms[j])
+      } else {
+        for (var x = 0; x < param_zones.length; x++) {
+          if (ds_get_vms[i].vms[j].zone.indexOf(param_zones[x]) !== -1) {
+            collected_vms.push(ds_get_vms[i].vms[j])
+          }
+        }
+      }
     }
   }
   EOS
@@ -548,7 +556,7 @@ policy "policy_recommendations" do
       field "resourceType" do
         label "Resource Type"
       end
-      field "region" do
+      field "zone" do
         label "Zone"
       end
       field "hostname" do
