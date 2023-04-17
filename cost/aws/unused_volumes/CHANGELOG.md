@@ -1,5 +1,9 @@
 # Changelog
 
+## v5.0
+
+- Added support for reporting and acting on attached volumes via an optional parameter.
+
 ## v4.2
 
 - Raised API limit to handle situations where more than 10,000 line items need to be retrieved.
