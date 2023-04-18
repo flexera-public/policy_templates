@@ -34,7 +34,7 @@ end
 parameter "param_window" do
   type "string"
   label "Range to analyze"
-  description "Accepts duration in number of days, hours or minutes e.g., 2d, 30m, 6h"
+  description "Accepts duration in number of days, hours or minutes e.g., 3d, 30m, 6h"
   default "3d"
 end
 
@@ -59,9 +59,9 @@ parameter "param_cpu_util" do
   type "number"
   label "Target CPU Utilization (%)"
   description "Target CPU utilization in percent"
-  min_value 1
-  max_value 100
-  default 80
+  min_value 0.01
+  max_value 1
+  default 0.8
 end
 
 parameter "param_mem_algo" do
@@ -85,9 +85,9 @@ parameter "param_mem_util" do
   type "number"
   label "Target Memory Utilization (%)"
   description "Target memory utilization in percent"
-  min_value 1
-  max_value 100
-  default 90
+  min_value 0.01
+  max_value 1
+  default 0.9
 end
 
 ###############################################################################
@@ -133,6 +133,12 @@ script "js_request_sizing", type: "javascript" do
   parameters "kubecost_host", "param_cpu_algo", "param_cpu_q", "param_mem_algo", "param_mem_q", "param_window", "param_cpu_util", "param_mem_util"
   result "request"
   code <<-EOS
+
+  param_cpu_q = param_cpu_q.toString()
+  param_mem_q = param_mem_q.toString()
+  param_cpu_util = param_cpu_util.toString()
+  param_mem_util = param_mem_util.toString()
+
   var request = {
       "verb": "GET",
       "scheme": "http",
@@ -162,6 +168,7 @@ script "js_requests_array", type: "javascript" do
     var recommendations = []
     var totalSavings = 0
     var currencyCode = ""
+
     function roundNumber(num, dec) {
       return Math.round(num * Math.pow(10, dec)) / Math.pow(10, dec);
     }
@@ -198,12 +205,7 @@ script "js_requests_array", type: "javascript" do
       })
     })
 
-    if (ds_get_currency.currencyCode === "") {
-      currencyCode = "USD";
-    }else{
-      currencyCode = ds_get_currency.currencyCode
-    }
-
+    currencyCode = ds_get_currency.currencyCode === "" ? "USD" : ds_get_currency.currencyCode;
     var str = "$ " + roundNumber(totalSavings,2).toString() + " " + currencyCode
 
     result={
@@ -218,7 +220,7 @@ end
 
 policy "policy_kubecost_request_sizing" do
   validate $ds_recommendations do
-    summary_template "Kubecost Request Sizing Report"
+    summary_template "Kubecost Request Rightsizing Report"
     detail_template <<-EOS
     The total estimated monthly savings : {{data.savings}}
     EOS
