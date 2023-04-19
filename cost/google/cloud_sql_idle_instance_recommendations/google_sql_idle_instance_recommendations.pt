@@ -144,7 +144,7 @@ end
 datasource "ds_recommendations" do
   iterate $ds_recommenders
   request do
-    run_script $js_recommender_call, val(iter_item,"accountID"), val(iter_item, "region")
+    run_script $js_recommender_call, val(iter_item,"accountID"), val(iter_item, "region"), val(iter_item, "sleep")
   end
   result do
     encoding "json"
@@ -271,6 +271,9 @@ script "js_recommenders", type: "javascript" do
   code <<-EOF
     var recommenders = []
 
+    // It means, when we reach this call counter, we'll use "sleep" function, to avoid quota error.
+    var callsPerMinute = 100
+    
     _.each(ds_sql_instances, function (instance) {
         var objectToFind = { accountID: instance.accountID, region: instance.region }
         var found = _.findWhere(recommenders, objectToFind)
@@ -280,16 +283,27 @@ script "js_recommenders", type: "javascript" do
             recommenders.push(objectToFind)
         }
     })
+    
+    _.each(recommenders, function (r, index) {
+        // If we aren't at position 0 and if remainder of the division of index by
+        // "callsPerMinute" is 0 add "sleep" flag.
+        if (index != 0 && index % callsPerMinute == 0) {
+            r.sleep = true
+        }
+    })
   EOF
 end
 
 script "js_recommender_call", type: "javascript" do
-  parameters "accountID", "region"
+  parameters "accountID", "region", "sleep"
   result "request"
   code <<-EOF
-    var now = new Date().getTime();
-    var sleepDuration = 10000
-    while(new Date().getTime() < now + sleepDuration){ /* Do nothing */ }
+    if (sleep == true) {
+      var now = new Date().getTime();
+      // 1 minute.
+      var sleepDuration = 60000
+      while (new Date().getTime() < now + sleepDuration) { /* Do nothing to prevent quota error */ }
+    }
     var request = {
       auth: "auth_google",
       pagination: "google_pagination",
