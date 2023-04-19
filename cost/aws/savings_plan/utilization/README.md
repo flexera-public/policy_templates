@@ -4,6 +4,8 @@
 
 This Policy Template leverages the [AWS Savings Plans Utilization API](https://docs.aws.amazon.com/aws-cost-management/latest/APIReference/API_GetSavingsPlansUtilization.html). It will raise incidents if the Utilization of the Savings Plan (specified in the *Savings Plan ARN* parameter) is below the *Savings Plan Utilization Threshold* parameter in the policy. It will email the user specified in *Email addresses to notify*.
 
+> *NOTE: This Policy Template must be appled to the **AWS Organization Master Payer** account.*
+
 ## Prerequisites
 
 This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for authenticating to datasources -- in order to apply this policy you must have a Credential registered in the system that is compatible with this policy. If there are no Credentials listed when you apply the policy, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy. The information below should be consulted when creating the credential(s).

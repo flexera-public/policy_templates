@@ -1,5 +1,10 @@
 # Changelog
 
+## v3.0
+
+- Updated policy to use Flexera One ITAM SOAP APIs. Full details here: [Flexera One ITAM SOAP APIs Transitioning to Flexera One IAM](https://community.flexera.com/t5/Flexera-One-Blog/Flexera-One-ITAM-SOAP-APIs-Transitioning-to-Flexera-One-IAM/ba-p/229399)
+- Removed support for on-premise deployments (with or without wstunnel)
+
 ## v2.10
 
 - Case-insensitive matching of computerName from report with Azure VM name

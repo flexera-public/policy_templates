@@ -7,7 +7,7 @@ severity "low"
 category "Operational"
 default_frequency "weekly"
 info(
-  version: "2.0",
+  version: "2.2",
   provider: "AWS",
   service: "Tags",
   policy_set: "Tag Cardinality"
@@ -149,11 +149,11 @@ datasource "ds_aws_resources_sorted" do
 end
 
 datasource "ds_aws_accounts_tag_list" do
-  run_script $js_tag_lister, $ds_aws_accounts, "Account"
+  run_script $js_tag_lister, $ds_aws_accounts_sorted, "Account"
 end
 
 datasource "ds_aws_resources_tag_list" do
-  run_script $js_tag_lister, $ds_aws_resources, "Resource"
+  run_script $js_tag_lister, $ds_aws_resources_sorted, "Resource"
 end
 
 datasource "ds_tag_report" do
@@ -194,32 +194,20 @@ script "js_tag_lister", type: "javascript" do
   _.each(tagged_list, function(item) {
     if (item['tags'] != undefined && item['tags'] != null) {
       _.each(Object.keys(item['tags']), function(key) {
-        value = item['tags'][key]
-        if (value == "" || value == null || value == undefined) {
-          value = "[Empty Value]"
-        }
-
         if (tags[key] == undefined || tags[key] == null) {
-          tags[key] = {}
+          tags[key] = []
         }
 
-        if (tags[key][value] == undefined || tags[key][value] == null) {
-          tags[key][value] = 1
-        } else {
-          tags[key][value] += 1
-        }
+        tags[key].push(item['tags'][key])
       })
     }
   })
 
   _.each(Object.keys(tags), function(key) {
-    _.each(Object.keys(tags[key]), function(value) {
-      result.push({
-        'type': tag_type,
-        'key': key,
-        'value': value,
-        'cardinality': tags[key][value]
-      })
+    result.push({
+      'type': tag_type,
+      'key': key,
+      'cardinality': _.uniq(tags[key]).length
     })
   })
 
@@ -251,9 +239,6 @@ policy "pol_aws_tag_cardinality_report" do
       end
       field "key" do
         label "Key"
-      end
-      field "value" do
-        label "Value"
       end
       field "cardinality" do
         label "Cardinality"

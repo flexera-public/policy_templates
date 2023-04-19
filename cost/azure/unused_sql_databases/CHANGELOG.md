@@ -1,5 +1,9 @@
 # Changelog
 
+## v4.4
+
+- Fixed the comparison made to match the instance's costs with the instance's usage; this caused some instances not to show savings, although they were added to the incident.
+
 ## v4.3
 
 - Raised API limit to handle situations where more than 10,000 line items need to be retrieved.

@@ -4,6 +4,8 @@
 
 This policy audits whether a named policy is applied across all AWS Accounts in the organization
 
+> *NOTE: This Policy Template must be appled to the **AWS Organization Master Payer** account.*
+
 ## Functional Details
 
 - The policy leverages the AWS API to check that all accounts have a named Service Control Policy applied.

@@ -1,9 +1,13 @@
 # Changelog
 
-## v2.5
+## v2.6
 
 - Modified filters, previously applied in code, now those are applied in request
 - Support for empty "param_regions" value
+
+## v2.5
+
+- Changed provider to "Google" from "GCE" to match other Google policies
 
 ## v2.4
 

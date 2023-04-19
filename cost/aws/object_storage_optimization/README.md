@@ -25,38 +25,44 @@ For example if a user selects the "Update S3 Object Class" action while applying
 
 ## Prerequisites
 
-This policy uses [credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for connecting to the cloud -- in order to apply this policy you must have a credential registered in the system that is compatible with this policy. If there are no credentials listed when you apply the policy, please contact your cloud admin and ask them to register a credential that is compatible with this policy. The information below should be consulted when creating the credential.
+This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for authenticating to datasources -- in order to apply this policy you must have a Credential registered in the system that is compatible with this policy. If there are no Credentials listed when you apply the policy, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy. The information below should be consulted when creating the credential(s).
 
-### Credential configuration
+- [**AWS Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_1982464505_1121575) (*provider=aws*) which has the following permissions:
+  - `s3:ListAllMyBuckets`
+  - `s3:GetBucketLocation`
+  - `s3:ListBucket`
+  - `s3:GetObject`
+  - `s3:GetObjectTagging`
+  - `s3:PutObject`
+  - `s3:DeleteObject`
 
-For administrators [creating and managing credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) to use with this policy, the following information is needed:
+  Example IAM Permission Policy:
 
-Provider tag value to match this policy: `aws`
+  ```json
+  {
+    "Version": "2006-03-01",
+    "Statement":[
+      {
+        "Effect":"Allow",
+        "Action":[
+          "s3:ListAllMyBuckets",
+          "s3:GetBucketLocation",
+          "s3:ListBucket",
+          "s3:GetObject",
+          "s3:GetObjectTagging",
+          "s3:PutObject",
+          "s3:DeleteObject"
+        ],
+        "Resource":"*"
+      }
+    ]
+  }
+  ```
 
-Required permissions in the provider:
+- [**Flexera Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_1982464505_1141082) (*provider=flexera*) which has the following roles:
+  - `billing_center_viewer`
 
-```json
-{
-  "Version": "2006-03-01",
-  "Statement":[
-    {
-      "Effect":"Allow",
-      "Action":[
-        "s3:ListAllMyBuckets",
-        "s3:GetBucketLocation",
-        "s3:ListBucket",
-        "s3:GetObject",
-        "s3:GetObjectTagging",
-        "s3:PutObject",
-        "s3:DeleteObject"
-      ],
-      "Resource":"*"
-    }
-  ]
-}
-```
-
-Note: To get the list and modify S3-objects present in the S3 bucket, user must have READ and Write access to the bucket.
+The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) page in the docs has detailed instructions for setting up Credentials for the most common providers.
 
 ## Supported Clouds
 

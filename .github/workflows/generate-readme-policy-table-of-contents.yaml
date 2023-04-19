@@ -1,0 +1,60 @@
+name: Generate README Policy Table of Contents
+
+on:
+  # Trigger this workflow on pushes to master
+  push:
+    branches:
+      - master
+
+  # Workflow dispatch trigger allows manually running workflow
+  workflow_dispatch:
+    branches:
+      - master
+
+jobs:
+  readme-policy-table-of-contents:
+    name: "Generate README Policy Table of Contents"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          fetch-depth: 0 # Speed up checkout by not fetching history
+
+      - uses: ruby/setup-ruby@v1
+
+      - name: Generate TOC.tmp.md
+        run: |
+          ruby tools/readme_policy_table_of_contents/generate_readme_policy_table_of_contents.rb > TOC.tmp.md
+
+      - name: Generate README.tmp.md
+        run: |
+          awk '
+            BEGIN       {p=1}
+            /^<!-- Begin Policy Template Table of Contents -->/   {print;system("cat TOC.tmp.md");p=0}
+            /^<!-- End Policy Template Table of Contents -->/     {p=1}
+            p' README.md > README.tmp.md
+
+      - name: Update README.md
+        run: |
+          cp README.tmp.md README.md
+
+      - name: Cleanup
+        run: |
+          rm README.tmp.md TOC.tmp.md
+
+      - name: Create Pull Request
+        id: cpr
+        uses: peter-evans/create-pull-request@v4
+        with:
+          commit-message: "Update README Policy Table of Contents"
+          title: "Update README Policy Table of Contents"
+          body: "Update README Policy Table of Contents from GitHub Actions Workflow [${{ github.workflow }}](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})"
+          branch: "task/update-readme-policy-table-of-contents"
+          delete-branch: true
+          labels: "automation, documentation"
+
+      - name: Check outputs
+        if: ${{ steps.cpr.outputs.pull-request-number }}
+        run: |
+          echo "Pull Request Number - ${{ steps.cpr.outputs.pull-request-number }}"
+          echo "Pull Request URL - ${{ steps.cpr.outputs.pull-request-url }}"

@@ -6,7 +6,7 @@ category "Cost"
 severity "low"
 default_frequency "daily"
 info(
-  version: "2.4",
+  version: "2.6",
   provider:"Google",
   service: "Storage",
   policy_set: "Unused Volumes"
@@ -22,23 +22,16 @@ parameter "param_email" do
   description "Email addresses of the recipients you wish to notify when new incidents are created"
 end
 
-parameter "param_unattached_days" do
-  type "number"
-  label "Unattached days"
-  description "The number of days a volume has been unattached"
-  default 30
-end
-
 parameter "param_zones" do
   type "list"
   label "Zones"
-  description "Location to check, this is zone names"
+  description "Zones to query. Leave blank to query all available zones."
 end
 
-parameter "param_project" do
+parameter "param_project_ids" do
   type "list"
-  label "Project ID"
-  description "Google Projects to Query. Leave blank to query all projects."
+  label "Project IDs"
+  description "Google Projects to query. Leave blank to query all projects."
 end
 
 parameter "param_create_final_snapshot" do
@@ -50,8 +43,8 @@ end
 
 parameter "param_exclude_tags" do
   category "User Inputs"
-  label "Exclusion Tag Key:Value"
-  description "Cloud native tag (label) to ignore Volumes. Format: Key:Value"
+  label "Tag to exclude (Key:Value)"
+  description "Exclusion Tag."
   type "string"
   allowed_pattern /(^$)|([\w]?)+\:([\w]?)/
 end
@@ -108,13 +101,14 @@ datasource "ds_currency_reference" do
   end
 end
 
-#get all google project
-datasource "ds_google_project" do
+# Gets all projects filtered by "lifecycleState:ACTIVE".
+datasource "ds_all_projects" do
   request do
     auth $auth_google
     pagination $google_pagination
     host "cloudresourcemanager.googleapis.com"
     path "/v1/projects/"
+    query "filter", "lifecycleState:ACTIVE"
   end
   result do
     encoding "json"
@@ -126,8 +120,34 @@ datasource "ds_google_project" do
   end
 end
 
+# Removes projects that aren't in "param_project_ids" (In case it isn't empty).
+datasource "ds_projects" do
+  run_script $js_projects, $ds_all_projects, $param_project_ids
+end
+
+# Gets all disks of Google projects from "ds_projects".
+datasource "ds_all_disks" do
+  iterate $ds_projects
+  request do
+    run_script $js_aggregated_disks_call, val(iter_item, "accountID"), $param_exclude_tags
+  end
+  result do
+    encoding "json"
+    field "accountID", val(iter_item, "accountID")
+    field "projectNumber", val(iter_item, "projectNumber")
+    field "accountName", val(iter_item, "accountName")
+    field "items", jq(response, ".items")
+  end
+end
+
+# Removes disks that aren't in "param_zones" (In case it isn't empty).
+datasource "ds_disks" do
+  run_script $js_disks, $ds_all_disks, $param_zones
+end
+
+# Array of objects with Account ID and region each one to make a call to Recommender API.
 datasource "ds_recommenders" do
-  run_script $js_recommenders, $ds_google_project, $param_project, $param_zones
+  run_script $js_recommenders, $ds_disks
 end
 
 datasource "ds_recommendations" do
@@ -155,298 +175,244 @@ datasource "ds_recommendations" do
   end
 end
 
-#region in this context can be confusing. region is the spend api's definition of region, not GCP's. this is still technically GCP's "Zone"
-datasource "ds_zones" do
-  iterate $ds_google_project
-  request do
-    auth $auth_google
-    host "compute.googleapis.com"
-    verb "GET"
-    path join(["/compute/v1/projects/", val(iter_item, "accountID"), "/zones"])
-    query "project", val(iter_item, "accountID")
-    pagination $google_pagination
-    ignore_status [403,404]
-  end
-  result do
-    encoding "json"
-    collect jmes_path(response,"items[*]") do
-      field "accountID", val(iter_item, "accountID")
-      field "projectNumber", val(iter_item, "projectNumber")
-      field "accountName", val(iter_item, "accountName")
-      field "region", jmes_path(col_item, "name")
-    end
-  end
-end
-
-datasource "ds_volumes" do
-  iterate $ds_zones
-  request do
-    run_script $js_get_disks, val(iter_item, "accountID"), val(iter_item, "region")
-  end
-  result do
-    encoding "json"
-    collect jmes_path(response,"items[*]") do
-      field "accountID", val(iter_item, "accountID")
-      field "projectNumber", val(iter_item, "projectNumber")
-      field "accountName", val(iter_item, "accountName")
-      field "region", val(iter_item, "region")
-      field "selfLink", jmes_path(col_item,"selfLink")
-      field "resourceType", jmes_path(col_item, "kind")
-      field "resourceID", jmes_path(col_item, "id")
-      field "resourceName", jmes_path(col_item, "name")
-      field "diskSizeGb", jmes_path(col_item, "sizeGb")
-      field "status", jmes_path(col_item, "status")
-      field "lastAttachTimestamp", jmes_path(col_item, "lastAttachTimestamp")
-      field "lastDetachTimestamp", jmes_path(col_item, "lastDetachTimestamp")
-      field "creationTimestamp", jmes_path(col_item, "creationTimestamp")
-      field "tags", jmes_path(col_item, "labels")
-    end
-  end
-end
-
-datasource "ds_sanitize_disks" do
-  run_script $js_sanitize_data, $ds_volumes, $param_exclude_tags
-end
-
 datasource "ds_disk_cost_mapping" do
-  run_script $js_instance_cost_mapping, $ds_sanitize_disks, $ds_recommendations, $ds_currency_reference
+  run_script $js_disk_cost_mapping, $ds_disks, $ds_recommendations, $ds_currency_reference
 end
 
 ###############################################################################
 # Scripts
 ###############################################################################
-script "js_recommenders", type: "javascript" do
-  parameters "ds_google_project", "param_project", "param_regions"
-  result "results"
+script "js_projects", type: "javascript" do
+  parameters "ds_all_projects", "param_project_ids"
+  result "projects"
   code <<-EOF
-  var results = []
-
-  _.each(ds_google_project, function(project){
-    if (_.contains(param_project, project.accountID) || param_project.length == 0) {
-      _.each(param_regions, function(region){
-        results.push({
-          projectNumber: project.projectNumber,
-          accountID: project.accountID,
-          region: region
+    var projects = ds_all_projects
+    // Apply filter only if "param_project_ids" was set.
+    if (param_project_ids.length > 0) {
+        projects = _.filter(projects, function (p) {
+            // Returns project only if its "accountID" (projectID) is in "param_project_ids".
+            if (_.contains(param_project_ids, p.accountID)) {
+                return p
+            }
         })
-      })
     }
-  })
-EOF
+  EOF
+end
+
+script "js_aggregated_disks_call", type: "javascript" do
+  parameters "accountID", "param_exclude_tags"
+  result "request"
+  code <<-EOF
+    var filter = ""
+
+    // Apply filter tags(labels) only if "param_exclude_tags" was set.
+    if (param_exclude_tags.length != 0) {
+        var label_key = param_exclude_tags.split(':')[0]
+        var label_value = param_exclude_tags.split(':')[1]
+
+        filter = "(NOT labels." + label_key + ":" + label_value + ")"
+    }
+
+    var request = {
+        auth: "auth_google",
+        pagination: "google_pagination",
+        host: "compute.googleapis.com",
+        ignore_status: [403, 404],
+        path: "/compute/v1/projects/" + accountID + "/aggregated/disks",
+        query_params: {
+            "filter": filter
+        }
+    }
+  EOF
+end
+
+script "js_disks", type: "javascript" do
+  parameters "ds_all_disks", "param_zones"
+  result "disks"
+  code <<-EOF
+    var disks = []
+
+    var now = new Date()
+    var one_day = 1000 * 60 * 60 * 24
+    
+    _.each(ds_all_disks, function (projectLocations) {
+        // Disks of current project.
+        var project_disks = []
+    
+        _.each(projectLocations.items, function (location, locationKey) {
+            // All locations have this pattern: regions/[region_name] so, we separate them
+            // and take value from position 1 that's actual region name.
+            var region = locationKey.split("/")[1]
+    
+            // Adds disks only if current "location" has them and if "region" is in "param_zones" or if
+            // "param_zones" is empty.
+            if (location.disks && (_.contains(param_zones, region) || param_zones.length == 0)) {
+                project_disks = _.union(project_disks, _.map(location.disks, function (disk) {
+                    if (disk.selfLink != null && disk.selfLink !== undefined) {
+                        var creationTime = new Date(disk.creationTimestamp)
+                        var difference = now.getTime() - creationTime.getTime()
+                        var daysOld = (difference / one_day).toFixed(2)
+    
+                        disk.region = region
+                        disk.accountID = projectLocations.accountID
+                        disk.projectNumber = projectLocations.projectNumber
+                        disk.accountName = projectLocations.accountName
+                        disk.resourceID = disk.id
+                        disk.resourceName = disk.name
+                        disk.resourceType = disk.kind
+                        disk.diskSizeGb = disk.sizeGb
+                        disk.tags = disk.labels
+                        disk.daysOld = Math.round(daysOld)
+    
+                        return disk
+                    }
+                }))
+            }
+        })
+    
+        disks = _.union(disks, project_disks)
+    })
+  EOF
+end
+
+script "js_recommenders", type: "javascript" do
+  parameters "ds_disks"
+  result "recommenders"
+  code <<-EOF
+    var recommenders = []
+
+    _.each(ds_disks, function (disk) {
+        var objectToFind = { accountID: disk.accountID, region: disk.region }
+        var found = _.findWhere(recommenders, objectToFind)
+        // If record with same accountID-region was found we don't add it to recommenders,
+        // it help us to prevent duplicates and avoid extra calls to Recommender API.
+        if (!found) {
+            recommenders.push(objectToFind)
+        }
+    })
+  EOF
 end
 
 script "js_recommender_call", type: "javascript" do
   parameters "accountID", "region"
   result "request"
   code <<-EOF
-  var now = new Date().getTime();
-  var sleepDuration = 10000
-  while(new Date().getTime() < now + sleepDuration){ /* Do nothing */ }
-  var request = {
-    auth: "auth_google",
-    pagination: "google_pagination",
-    host: "recommender.googleapis.com",
-    ignore_status: 403,
-    path: "/v1/projects/"+ accountID +"/locations/" + region + "/recommenders/google.compute.disk.IdleResourceRecommender/recommendations",
-    query_strings: { alt: "json" }
-  }
-EOF
+    var now = new Date().getTime();
+    var sleepDuration = 10000
+    while(new Date().getTime() < now + sleepDuration){ /* Do nothing */ }
+    var request = {
+      auth: "auth_google",
+      pagination: "google_pagination",
+      host: "recommender.googleapis.com",
+      ignore_status: 403,
+      path: "/v1/projects/"+ accountID +"/locations/" + region + "/recommenders/google.compute.disk.IdleResourceRecommender/recommendations",
+      query_strings: { alt: "json" }
+    }
+  EOF
 end
 
-script "js_get_disks", type: "javascript" do
-  result "request"
-  parameters "project","region"
-  code <<-EOS
-    request = {
-      "auth": "auth_google",
-      "host": "compute.googleapis.com",
-      "verb": "GET",
-      "path": "/compute/v1/projects/"+project+"/zones/"+region+"/disks",
-      "ignore_status": [403,404]
-      "headers": {
-        "User-Agent": "RS Policies",
-        "Content-Type": "application/json"
-      }
-    }
-  EOS
-end
-
-script "js_sanitize_data", type: "javascript" do
-  parameters "ds_volumes", "param_exclusion_tags"
-  result "filtered_volumes"
-  code <<-EOS
-  var sanitized_volumes = _.filter(ds_volumes, function(volume){
-    if (volume.selfLink != null && volume.selfLink !== undefined){
-      return volume
-    }
-  })
-  var volumes_to_check = _.filter(sanitized_volumes, function(volume){
-    if( (volume.lastDetachTimestamp != null)  && (volume.lastDetachTimestamp > volume.lastAttachTimestamp )){
-      return volume
-    }
-    if( volume.lastDetachTimestamp == null && volume.lastAttachTimestamp == null){
-      return volume
-    }
-  })
-
-  var tag_filter_volumes = _.filter(volumes_to_check, function(volume){
-    var count = 0
-    _.each(param_exclusion_tags, function(tag)
-      {
-        tag_key = tag.split(':')[0]
-        tag_value = tag.split(':')[1]
-        if (volume.tags != null && volume.tags !== undefined ){
-          if ( volume.tags[tag_key] != null && volume.tags[tag_key] !== undefined){
-            if (volume.tags[tag_key] == tag_value){
-              count = 1
-            }
-          }
-        }
-      }
-    )
-    if (count == 0){
-      var tagsList = "";
-      for(var prop in volume.tags){
-        tagsList = tagsList + prop+" : "+volume.tags[prop]+", ";
-      }
-      if(tagsList.length > 0){
-        volume.tags = tagsList.substring(0, tagsList.length - 2);
-      }
-      return volume
-    }
-  }
-  )
-  var now = new Date()
-  var one_day=1000*60*60*24
-  _.each(tag_filter_volumes, function(volume){
-    if (volume.lastDetachTimestamp != null && volume.lastDetachTimestamp !== undefined){
-      var creation_time = new Date(volume.lastDetachTimestamp)
-    } else {
-      var creation_time = new Date(volume.creationTimestamp)
-    }
-    var difference = now.getTime() - creation_time.getTime()
-    var daysOld=(difference/one_day).toFixed(2)
-    if (volume.lastAttachTimestamp == null) {
-      volume.lastAttachTimestamp = "null"
-    }
-    if (volume.lastDetachTimestamp == null) {
-      volume.lastDetachTimestamp = "null"
-    }
-    volume["daysOld"] = Math.round(daysOld)
-  }
-  )
-
-  var filtered_volumes = _(tag_filter_volumes)
-    .chain()
-    .sortBy(function(volume){
-      return volume.name;
-    }).sortBy(function(volume){
-      return volume.region;
-    }).value();
-  EOS
-end
-
-script "js_instance_cost_mapping", type:"javascript" do
+script "js_disk_cost_mapping", type:"javascript" do
   result "result"
   parameters  "disks", "recommendations", "ds_currency_reference"
   code <<-EOS
     var instances = [];
-    var result={};
-    var message=''
-    var count=0;
-
-    function formatNumber(number, separator){
-      var numString =number.toString();
-      var values=numString.split(".");
-      var result = ''
-      while (values[0].length > 3){
-        var chunk = values[0].substr(-3)
-        values[0] = values[0].substr(0, values[0].length - 3)
-        result = separator + chunk + result
-      }
-      if (values[0].length > 0){
-        result = values[0] + result
-      }
-      if(values[1]==undefined){
-        return result;
-      }
-      return result+"."+values[1];
-    }
-    total = 0
-    cur = ""
-    _.each(disks, function(disk) {
-      _.each(recommendations, function(recommendation){
-        if(disk.resourceName == recommendation.resourceName) {
-          count++
-          if(recommendation['currency'] !== undefined ) {
-            if (recommendation['costUnits'] == null) {
-              recommendation['costUnits'] = 0
-            }
-            if (recommendation['costNanos'] == null) {
-              recommendation['costNanos'] = 0
-            }
-            if (ds_currency_reference[recommendation['currency']] !== undefined ) {
-            var cur = ds_currency_reference[recommendation['currency']]['symbol']
-            } else {
-              var cur = "$"
-            }
-            disk['savingsCurrency'] = cur
-          } else {
-            var cur = "$"
-            var separator = ","
-          }
-          if (recommendation.costNanos<0) {
-            recommendation.costNanos = recommendation.costNanos * -1
-          }
-          if (recommendation.costUnits<0) {
-            recommendation.costUnits = recommendation.costUnits * -1
-          }
-          strNano = "."+recommendation.costNanos
-          combine = recommendation.costUnits + parseFloat(strNano)
-          monthsDuration = parseFloat(recommendation.duration.replace("s",""))/2628288
-          monthlySavings = combine / monthsDuration
-          total = total+monthlySavings
-          disk['savings']= (Math.round( monthlySavings * 1000) / 1000)
-          disk['savingsCurrency'] = cur
-          disk['priority'] = recommendation['priority']
-          disk['primaryImpact'] = recommendation['primaryImpact']
-          disk['recommenderSubtype'] = recommendation['recommenderSubtype']
-          disk['state'] = recommendation['state']
-          disk['service'] = "Storage"
-          tags = []
-          if (disk['tags'] != null) {
-            if( typeof disk['tags'] == 'object') {
-              Object.keys(disk.tags).forEach(function(key) {
-                if (disk.tags[key] == null || disk.tags[key]=="") {
-                  disk.tags[key] = "null"
-                }
-                tags.push(String(key)+'='+String(disk.tags[key]))
-              });
-            } else {
-              tags.push(disk["tags"].replace(":","=null"))
-            }
-          }
-          disk['tags'] = tags
-          instances.push(disk)
+    var result = {};
+    var message = ''
+    var count = 0;
+    
+    function formatNumber(number, separator) {
+        var numString = number.toString();
+        var values = numString.split(".");
+        var result = ''
+        while (values[0].length > 3) {
+            var chunk = values[0].substr(-3)
+            values[0] = values[0].substr(0, values[0].length - 3)
+            result = separator + chunk + result
         }
-      })
-    })
-    if (instances.length != 0){
-      if(count){
-        total=cur + ' '+formatNumber((Math.round(total * 100) / 100));
-        message="The total estimated monthly savings are " +total;
-      } else {
-        message="The Flexera Optima system does not have any data to calculate savings for these resources";
-      }
-    }else{
-      message="unable to find resources between recommender and resource api";
+        if (values[0].length > 0) {
+            result = values[0] + result
+        }
+        if (values[1] == undefined) {
+            return result;
+        }
+        return result + "." + values[1];
     }
-    result={
-      "instances": instances,
-      "message": message
+    var total = 0
+    var cur = ""
+    _.each(disks, function (disk) {
+        _.each(recommendations, function (recommendation) {
+            if (disk.resourceName == recommendation.resourceName) {
+                count++
+                if (recommendation['currency'] !== undefined) {
+                    if (recommendation['costUnits'] == null) {
+                        recommendation['costUnits'] = 0
+                    }
+                    if (recommendation['costNanos'] == null) {
+                        recommendation['costNanos'] = 0
+                    }
+                    if (ds_currency_reference[recommendation['currency']] !== undefined) {
+                        var cur = ds_currency_reference[recommendation['currency']]['symbol']
+                    } else {
+                        var cur = "$"
+                    }
+                    disk['savingsCurrency'] = cur
+                } else {
+                    var cur = "$"
+                    var separator = ","
+                }
+                if (recommendation.costNanos < 0) {
+                    recommendation.costNanos = recommendation.costNanos * -1
+                }
+                if (recommendation.costUnits < 0) {
+                    recommendation.costUnits = recommendation.costUnits * -1
+                }
+                var strNano = "." + recommendation.costNanos
+                var combine = recommendation.costUnits + parseFloat(strNano)
+                var monthsDuration = parseFloat(recommendation.duration.replace("s", "")) / 2628288
+                var monthlySavings = combine / monthsDuration
+                total = total + monthlySavings
+                disk['savings'] = (Math.round(monthlySavings * 1000) / 1000)
+                disk['savingsCurrency'] = cur
+                disk['description'] = recommendation['description']
+                disk['priority'] = recommendation['priority']
+                disk['primaryImpact'] = recommendation['primaryImpact']
+                disk['recommenderSubtype'] = recommendation['recommenderSubtype']
+                disk['state'] = recommendation['state']
+                disk['service'] = "Storage"
+                var tags = []
+                if (disk['tags'] != null) {
+                    if (typeof disk['tags'] == 'object') {
+                        Object.keys(disk.tags).forEach(function (key) {
+                            if (disk.tags[key] == null || disk.tags[key] == "") {
+                                disk.tags[key] = "null"
+                            }
+                            tags.push(String(key) + '=' + String(disk.tags[key]))
+                        });
+                    } else {
+                        tags.push(disk["tags"].replace(":", "=null"))
+                    }
+                }
+                disk['tags'] = tags
+                instances.push(disk)
+            }
+        })
+    })
+    if (instances.length != 0) {
+        if (count) {
+            total = cur + ' ' + formatNumber((Math.round(total * 100) / 100));
+            message = "The total estimated monthly savings are " + total;
+        } else {
+            message = "The Flexera Optima system does not have any data to calculate savings for these resources";
+        }
+    } else {
+        message = "unable to find resources between recommender and resource api";
+    }
+    result = {
+        "instances": instances,
+        "message": message
     };
-    result.instances = _.sortBy(result.instances,"region");
-    result.instances = _.sortBy(result.instances,"accountName");
+    result.instances = _.sortBy(result.instances, "region");
+    result.instances = _.sortBy(result.instances, "accountName");
   EOS
 end
 
@@ -456,7 +422,7 @@ end
 
 policy "policy_recommendations" do
   validate $ds_disk_cost_mapping do
-    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} rows found for Idle Persistent Disks(Unattached Volumes)"
+    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data.instances }} rows found for Idle Persistent Disks(Unattached Volumes)"
     check eq(size(val(data, "instances")), 0)
     escalate $esc_email
     escalate $esc_approve_delete_volumes
