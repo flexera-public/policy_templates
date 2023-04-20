@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.1
+
+- Added parameter `param_threshold_statistic` to allow selecting between minimum, maximum and average statistics to base rightsizing and idle recomendations on.
+
 ## v2.0
 
 - Added Azure Endpoint parameter to enable use with Azure China.
