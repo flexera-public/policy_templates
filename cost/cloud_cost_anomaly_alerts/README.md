@@ -25,6 +25,7 @@ Any point outside of the bands is considered as anomalous. If multiple cost anom
   - Default: ["Cloud Vendor Account", "Cloud Vendor", "Service"]
   - The IDs or names of Rule Based Dimensions used to group data for analysis. It is possible to provide multiple RBD IDs or names. As a result, data that was not tagged or difficult to tag in the native cloud platform can be visualized better. The new dimensions in Optima will be populated according to your defined rules, so you can view your costs from new perspectives. A common use case is to create several dimensions, such as 'CCO Environments' and 'Product Lines', which are populated with account values.
   - Filters can now be added to the same dimension values. You can filter 1 to 1 value per dimension e.g. Service=AmazonEC2 , Cloud Vendor=AWS , Cloud Vendor Account Name=Flexera-prod.
+  - Filters can now accept multiple values for narrow down the scope of the budget based on specific dimension values. You can filter Service=AmazonEC2 , Cloud Vendor=AWS , Cloud Vendor Account Name=Flexera-prod,Flexera-east-1,Flexera-testing
 - *Cost Metric* - Cost metric used for the analysis: amortized vs nonamortized and blended vs unblended costs.
 - *Email addresses of the recipients you wish to notify* - A list of email addresses to notify
 - *Window Size* - Number of days used in the calculation of the moving average

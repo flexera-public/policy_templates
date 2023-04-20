@@ -1,5 +1,9 @@
 # Changelog
 
+## v.2.5
+
+- added a filter for multiple values on same dimension, such as "Cloud Vendor Account Name=Account1,Account2,Account3"
+
 ## v2.4
 
 - added a filter for dimensions where the user wishes to filter by key pair values, such as Service=AmazonEC2
