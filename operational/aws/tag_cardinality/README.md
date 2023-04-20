@@ -2,7 +2,7 @@
 
 ## What it does
 
-This Policy Template is used to generate a tag cardinality (how many unique values each tag key has) report for AWS. The report includes cardinality for all tag values for both AWS Accounts and Resources.
+This Policy Template is used to generate a tag cardinality (how many unique values each tag key has) report for AWS, along with a list of those unique values for each tag key. The report includes cardinality for all tag values for both AWS Accounts and Resources.
 
 > *NOTE: This Policy Template must be appled to the **AWS Organization Master Payer** account.*
 
