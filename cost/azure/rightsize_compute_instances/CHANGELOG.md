@@ -2,7 +2,7 @@
 
 ## v2.1
 
-- Added parameter `param_threshold_statistic` to allow selecting between minimum, maximum and average statistics to base rightsizing and idle recomendations on.
+- Added parameter `param_threshold_statistic` to allow selecting between minimum, maximum and average statistics to base rightsizing and idle recommendations on.
 
 ## v2.0
 
