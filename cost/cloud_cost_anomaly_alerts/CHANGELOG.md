@@ -1,6 +1,6 @@
 # Changelog
 
-## v.2.5
+## v2.5
 
 - added a filter for multiple values on same dimension, such as "Cloud Vendor Account Name=Account1,Account2,Account3"
 
