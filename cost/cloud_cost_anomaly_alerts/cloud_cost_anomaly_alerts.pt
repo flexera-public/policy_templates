@@ -192,45 +192,78 @@ script "js_filter_dimensions", type: "javascript" do
   parameters "param_dimensions", "ds_dimensions"
   result "filtered_dimensions"
   code <<-EOS
-    var filtered_dimensions = {
-      ids: [],
-      names: [],
-      invalid_ids: [],
-      filters:[]
-    };
-    var exist = false;
+  var filtered_dimensions = {
+    ids: [],
+    names: [],
+    invalid_ids: [],
+    filters: []
+  };
+  var exist = false;
 
-    _.each(param_dimensions, function(user_input_dimension, index) {
-      exist = false;
-      filter = {
-        "dimensionid":"",
-        "dimensionname":"",
-        "type":"",
-        "value":""
+  _.each(param_dimensions, function (user_input_dimension, index) {
+    exist = false;
+    filter = {
+      "dimensionid": "",
+      "dimensionname": "",
+      "type": "",
+      "value": "",
+      "expressiontype": ""
+    }
+    dimension_filter_map = user_input_dimension.split("=")
+    hasfilter = false;
+    hasmultifilter = false;
+    var multifiltervalues = []
+    if (dimension_filter_map.length > 1) {
+      hasfilter = true
+      multifiltervalues = dimension_filter_map[1].split(",");
+      if (multifiltervalues.length > 1) {
+        hasmultifilter = true;
       }
-      dimension_filter_map = user_input_dimension.split("=")
-      hasfilter = false;
-      if (dimension_filter_map.length > 1){
-        hasfilter=true
-      }
-      _.each(ds_dimensions, function(dimension) {
-        if (dimension_filter_map[0] === dimension.name || dimension_filter_map[0] === dimension.id) {
-          filtered_dimensions.ids.push(dimension.id);
-          filtered_dimensions.names.push(dimension.name);
-          exist = true;
-          if (hasfilter) {
-            filter.dimensionid=dimension.id;
-            filter.dimensionname=dimension.name;
-            filter.type="equal";
-            filter.value=dimension_filter_map[1];
+    }
+    _.each(ds_dimensions, function (dimension) {
+      if (dimension_filter_map[0] === dimension.name || dimension_filter_map[0] === dimension.id) {
+        filtered_dimensions.ids.push(dimension.id);
+        filtered_dimensions.names.push(dimension.name);
+        exist = true;
+        if (hasfilter) {
+          if (hasmultifilter) {
+            filter = {
+              "dimensionid": "",
+              "dimensionname": "",
+              "type": "",
+              "value": "",
+              "expressiontype": ""
+            }
+            for (var i = 0; i < multifiltervalues.length; i++) {
+              filter = {
+                "dimensionid": "",
+                "dimensionname": "",
+                "type": "",
+                "value": "",
+                "expressiontype": ""
+              }
+              filter.value = multifiltervalues[i];
+              filter.dimensionid = dimension.id;
+              filter.dimensionname = dimension.name;
+              filter.type = "equal";
+              filter.expressiontype = "or";
+              filtered_dimensions.filters.push(filter);
+            }
+          } else {
+            filter.dimensionid = dimension.id;
+            filter.dimensionname = dimension.name;
+            filter.type = "equal";
+            filter.value = dimension_filter_map[1];
+            filter.expressiontype = "and"
             filtered_dimensions.filters.push(filter);
           }
         }
-      });
-      if (!exist) {
-        filtered_dimensions.invalid_ids.push(user_input_dimension);
       }
     });
+    if (!exist) {
+      filtered_dimensions.invalid_ids.push(user_input_dimension);
+    }
+  });
   EOS
 end
 
@@ -271,106 +304,136 @@ script "js_get_anomalies", type: "javascript" do
   parameters "rs_optima_host", "org_id","bc_ids","param_cost_metric","param_days", "param_dimensions", "ds_filter_dimensions", "param_window_size", "param_standard_deviations", "param_anomaly_limit"
   result "request"
   code <<-EOS
-    var start_at = "";
-    var end_at = "";
-    var cost_metric = {
-      "Unamortized Unblended":"cost_nonamortized_unblended_adj",
-      "Amortized Unblended":"cost_amortized_unblended_adj",
-      "Unamortized Blended": "cost_nonamortized_blended_adj",
-      "Amortized Blended":"cost_amortized_blended_adj"
+  var start_at = "";
+  var end_at = "";
+  var cost_metric = {
+    "Unamortized Unblended": "cost_nonamortized_unblended_adj",
+    "Amortized Unblended": "cost_amortized_unblended_adj",
+    "Unamortized Blended": "cost_nonamortized_blended_adj",
+    "Amortized Blended": "cost_amortized_blended_adj"
+  }
+
+  // format the date for the `daily` API
+  // returns date formatted as string: YYYY-mm-dd
+  function getFormattedDailyDate(date) {
+    var year = date.getFullYear();
+    var month = (1 + date.getMonth()).toString();
+    month = month.length > 1 ? month : '0' + month;
+    var day = date.getDate().toString();
+    day = day.length > 1 ? day : '0' + day;
+    return year + '-' + month + '-' + day;
+  }
+
+  function getStartDate(date) {
+    var days = 2 + param_days;
+    date.setHours(-24 * days);
+    return date;
+  }
+
+  function getEndDate(date) {
+    date.setHours(-48);
+    return date;
+  }
+
+  billingIDs = []
+  _.each(bc_ids, function (bCenter) {
+    billingSlice = []
+    billingIDs.push(bCenter.id)
+  })
+
+  dimensions = []
+  _.each(ds_filter_dimensions.ids, function (dimension) {
+    dimensions.push(dimension)
+  })
+
+  _.each(ds_filter_dimensions.invalid_ids, function (dimension, index) {
+    dimensions.push(dimension)
+  })
+
+  start_at = getFormattedDailyDate(getStartDate(new Date()))
+  end_at = getFormattedDailyDate(getEndDate(new Date()))
+
+  var request = {
+    auth: "auth_flexera",
+    verb: "POST",
+    host: rs_optima_host,
+    path: "/bill-analysis/orgs/" + org_id + "/anomalies/report",
+    body_fields: {
+      "dimensions": dimensions,
+      "granularity": "day",
+      "windowSize": param_window_size,
+      "standardDeviations": param_standard_deviations,
+      "limit": param_anomaly_limit,
+      "metric": cost_metric[param_cost_metric],
+      "billingCenterIds": billingIDs,
+      "startAt": start_at,
+      "endAt": end_at
+    },
+    headers: {
+      "Api-Version": "1.0",
+      "User-Agent": "RS Policies",
+    }
+  }
+
+  var expressionsor = []
+  var expressionsand = []
+  var multiplefilters = false;
+
+  _.each(ds_filter_dimensions.filters, function (filter) {
+    expression = {
+      "type": "",
+      "dimension": "",
+      "value": ""
     }
 
-    // format the date for the `daily` API
-    // returns date formatted as string: YYYY-mm-dd
-    function getFormattedDailyDate(date) {
-      var year = date.getFullYear();
-      var month = (1 + date.getMonth()).toString();
-      month = month.length > 1 ? month : '0' + month;
-      var day = date.getDate().toString();
-      day = day.length > 1 ? day : '0' + day;
-      return year + '-' + month + '-' + day;
-    }
-
-    function getStartDate( date ) {
-      var days = 2 + param_days ;
-      date.setHours(-24 * days);
-      return date;
-    }
-
-    function getEndDate( date ) {
-      date.setHours(-48);
-      return date;
-    }
-
-    billingIDs = []
-    _.each(bc_ids, function(bCenter){
-      billingSlice = []
-      billingIDs.push(bCenter.id)
-    })
-
-    dimensions = []
-    _.each(ds_filter_dimensions.ids, function(dimension){
-      dimensions.push(dimension)
-    })
-
-    _.each(ds_filter_dimensions.invalid_ids, function(dimension, index){
-      dimensions.push(dimension)
-    })
-
-    start_at = getFormattedDailyDate(getStartDate(new Date()))
-    end_at = getFormattedDailyDate(getEndDate(new Date()))
-
-    var request = {
-      auth: "auth_flexera",
-      verb: "POST",
-      host: rs_optima_host,
-      path: "/bill-analysis/orgs/" + org_id + "/anomalies/report",
-      body_fields: {
-        "dimensions": dimensions,
-        "granularity": "day",
-        "windowSize": param_window_size,
-        "standardDeviations": param_standard_deviations,
-        "limit": param_anomaly_limit,
-        "metric": cost_metric[param_cost_metric],
-        "billingCenterIds": billingIDs,
-        "startAt": start_at,
-        "endAt": end_at
-      },
-      headers: {
-        "Api-Version": "1.0",
-        "User-Agent": "RS Policies",
-      }
-    }
-
-    expressions = [];
-    _.each(ds_filter_dimensions.filters, function (filter) {
-      expression = {
-       "type": "",
-       "dimension": "",
-       "value": ""
-      }
-      expression.type = "equal";
-      expression.dimension = filter.dimensionid;
-      expression.value = filter.value;
-      expressions.push(expression)
-      })
-
-    switch (true) {
-      case ds_filter_dimensions.filters.length === 1 :
-        filter = {
-          "dimension": ds_filter_dimensions.filters[0].dimensionid,
-          "type": ds_filter_dimensions.filters[0].type,
-          "value": ds_filter_dimensions.filters[0].value
-        }
-        request.body_fields.filter = filter
+    switch (filter.expressiontype) {
+      case "or":
+        multiplefilters = true;
+        expression.type = "equal";
+        expression.dimension = filter.dimensionid;
+        expression.value = filter.value;
+        expressionsor.push(expression)
         break;
-      case ds_filter_dimensions.filters.length > 1 :
-         filter = {
-            "type": "and",
-            "expressions": expressions
-          }
-          request.body_fields.filter = filter
-          break;
+      case "and":
+        expression.type = "equal";
+        expression.dimension = filter.dimensionid;
+        expression.value = filter.value;
+        expressionsand.push(expression)
+        break;
+    }
+  })
+
+  switch (true) {
+    case ds_filter_dimensions.filters.length === 1 && multiplefilters === false:
+      var filter = {
+        "dimension": ds_filter_dimensions.filters[0].dimensionid,
+        "type": ds_filter_dimensions.filters[0].type,
+        "value": ds_filter_dimensions.filters[0].value
+      }
+      request.body_fields.filter = filter
+      break;
+    case ds_filter_dimensions.filters.length > 1 && multiplefilters === false:
+      var filter = {
+        "type": "and",
+        "expressions": expressionsand
+      }
+      request.body_fields.filter = filter
+      break;
+    case ds_filter_dimensions.filters.length > 1 && multiplefilters === true:
+      var filter = {
+        "type": "and",
+        "expressions": [
+            { "type": "or",
+              "expressions": []
+            },
+          ]
+      }
+      filter.expressions[0].expressions = expressionsor
+      _.each(expressionsand, function (expressione) {
+        filter.expressions.push(expressione)
+      });
+      request.body_fields.filter = filter
+      break;
   }
   EOS
 end
@@ -379,95 +442,95 @@ script "js_filter_anomalies", type: "javascript" do
   parameters "ds_get_anomalies", "param_min_spend", "org_id", "param_days", "param_dimensions", "ds_filter_dimensions","param_cost_metric", "param_anomaly_limit", "f1_app_host"
   result "result"
   code <<-EOS
-    var start_at = "";
-    var end_at = "";
+  var start_at = "";
+  var end_at = "";
 
-    var cost_metric = {
-      "Unamortized Unblended":"cost_nonamortized_unblended_adj",
-      "Amortized Unblended":"cost_amortized_unblended_adj",
-      "Unamortized Blended": "cost_nonamortized_blended_adj",
-      "Amortized Blended":"cost_amortized_blended_adj"
-    }
+  var cost_metric = {
+    "Unamortized Unblended": "cost_nonamortized_unblended_adj",
+    "Amortized Unblended": "cost_amortized_unblended_adj",
+    "Unamortized Blended": "cost_nonamortized_blended_adj",
+    "Amortized Blended": "cost_amortized_blended_adj"
+  }
 
-    // format the date for the `daily` API
-    // returns date formatted as string: YYYY-mm-dd
-    function getFormattedDailyDate(date) {
-      var year = date.getFullYear();
-      var month = (1 + date.getMonth()).toString();
-      month = month.length > 1 ? month : '0' + month;
-      var day = date.getDate().toString();
-      day = day.length > 1 ? day : '0' + day;
-      return year + '-' + month + '-' + day;
-    }
+  // format the date for the `daily` API
+  // returns date formatted as string: YYYY-mm-dd
+  function getFormattedDailyDate(date) {
+    var year = date.getFullYear();
+    var month = (1 + date.getMonth()).toString();
+    month = month.length > 1 ? month : '0' + month;
+    var day = date.getDate().toString();
+    day = day.length > 1 ? day : '0' + day;
+    return year + '-' + month + '-' + day;
+  }
 
-    function getStartDate( date ) {
-      var days = 2 + param_days ;
-      date.setHours(-24 * days);
-      return date;
-    }
+  function getStartDate(date) {
+    var days = 2 + param_days;
+    date.setHours(-24 * days);
+    return date;
+  }
 
-    function getEndDate( date ) {
-      date.setHours(-48);
-      return date;
-    }
+  function getEndDate(date) {
+    date.setHours(-48);
+    return date;
+  }
 
-    dimensions = []
-    dimensionAPIString = ""
-    dimensionsReadable = ""
-    _.each(ds_filter_dimensions.ids, function(dimension, index){
-      dimensions.push(dimension)
-      dimensionAPIString = dimensionAPIString + "&" + "groupBy=" + dimension
-      dimensionsReadable =  dimensionsReadable + " " + ds_filter_dimensions.names[index] + ","
-    })
+  dimensions = []
+  dimensionAPIString = ""
+  dimensionsReadable = ""
+  _.each(ds_filter_dimensions.ids, function (dimension, index) {
+    dimensions.push(dimension)
+    dimensionAPIString = dimensionAPIString + "&" + "groupBy=" + dimension
+    dimensionsReadable = dimensionsReadable + " " + ds_filter_dimensions.names[index] + ","
+  })
 
-    dimensionsReadable = dimensionsReadable.substring(0, dimensionsReadable.length - 1);
-    start_at = getFormattedDailyDate(getStartDate(new Date()))
-    end_at = getFormattedDailyDate(getEndDate(new Date()))
+  dimensionsReadable = dimensionsReadable.substring(0, dimensionsReadable.length - 1);
+  start_at = getFormattedDailyDate(getStartDate(new Date()))
+  end_at = getFormattedDailyDate(getEndDate(new Date()))
 
-    anomalies = []
-    _.each(ds_get_anomalies, function(timeSeriesEntry){
-        anomalous = []
-        _.each(timeSeriesEntry.timeSeries.data, function(data){
-          if (data.anomalous != null) {
-            if (data.anomalous == true && param_min_spend <= data.value) {
-              anomalous.push(data)
-            }
-          }
-        })
-        if (anomalous.length > 0) {
-          dimensionKey = ""
-          Object.keys(timeSeriesEntry.timeSeries.dimensions).forEach(function(key) {
-            dimensionKey = dimensionKey + timeSeriesEntry.timeSeries.dimensions[key] + "|"
-          });
-          dimensionKey = dimensionKey.substring(0, dimensionKey.length - 1);
-          i = 0
-          _.each(anomalous, function(data){
-            anomalies.push({
-              dimensions: dimensionKey,
-              cost: (Math.round(data.value * 1000) / 1000),
-              date: data.date,
-              movingAverage: (Math.round(data.annotations.movingAverage * 100) / 100),
-              upperLimit: (Math.round(data.annotations.upperLimit * 100) / 100),
-              lowerLimit: (Math.round(data.annotations.lowerLimit * 100) / 100),
-              costMetric: param_cost_metric
-            })
-            i++
-          })
+  anomalies = []
+  _.each(ds_get_anomalies, function (timeSeriesEntry) {
+    anomalous = []
+    _.each(timeSeriesEntry.timeSeries.data, function (data) {
+      if (data.anomalous != null) {
+        if (data.anomalous == true && param_min_spend <= data.value) {
+          anomalous.push(data)
         }
+      }
     })
-
-    message = "https://" + f1_app_host + "/orgs/" + org_id +"/optima/anomalies?granularity=day&startDate=" + start_at + "&endDate=" + end_at + dimensionAPIString + "&costType=" + cost_metric[param_cost_metric]
-
-    result={
-      "anomalies":anomalies,
-      "message":message,
-      "dimensionsReadable":dimensionsReadable,
-      "errors": ds_filter_dimensions.invalid_ids,
-      "used_filters": ds_filter_dimensions.filters,
-      "used_dimensions": ds_filter_dimensions.names,
+    if (anomalous.length > 0) {
+      dimensionKey = ""
+      Object.keys(timeSeriesEntry.timeSeries.dimensions).forEach(function (key) {
+        dimensionKey = dimensionKey + timeSeriesEntry.timeSeries.dimensions[key] + "|"
+      });
+      dimensionKey = dimensionKey.substring(0, dimensionKey.length - 1);
+      i = 0
+      _.each(anomalous, function (data) {
+        anomalies.push({
+          dimensions: dimensionKey,
+          cost: (Math.round(data.value * 1000) / 1000),
+          date: data.date,
+          movingAverage: (Math.round(data.annotations.movingAverage * 100) / 100),
+          upperLimit: (Math.round(data.annotations.upperLimit * 100) / 100),
+          lowerLimit: (Math.round(data.annotations.lowerLimit * 100) / 100),
+          costMetric: param_cost_metric
+        })
+        i++
+      })
     }
-    result.anomalies=_.sortBy(result.anomalies, 'cost');
-    result.anomalies = result.anomalies.reverse().slice(0, param_anomaly_limit);
+  })
+
+  message = "https://" + f1_app_host + "/orgs/" + org_id + "/optima/anomalies?granularity=day&startDate=" + start_at + "&endDate=" + end_at + dimensionAPIString + "&costType=" + cost_metric[param_cost_metric]
+
+  result = {
+    "anomalies": anomalies,
+    "message": message,
+    "dimensionsReadable": dimensionsReadable,
+    "errors": ds_filter_dimensions.invalid_ids,
+    "used_filters": ds_filter_dimensions.filters,
+    "used_dimensions": ds_filter_dimensions.names,
+  }
+  result.anomalies = _.sortBy(result.anomalies, 'cost');
+  result.anomalies = result.anomalies.reverse().slice(0, param_anomaly_limit);
   EOS
 end
 
