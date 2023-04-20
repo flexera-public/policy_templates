@@ -1,5 +1,11 @@
 # Changelog
 
+## v2.6
+
+- Modified filters, previously applied in code, now those are applied in request
+- Support for empty "param_regions" value
+- Adding request per minute to prevent quota error and disable sleep 10 seconds for each recommender call
+
 ## v2.5
 
 - Changed provider to "Google" from "GCE" to match other Google policies

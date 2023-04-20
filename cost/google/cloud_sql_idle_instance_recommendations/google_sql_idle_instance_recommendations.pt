@@ -6,7 +6,7 @@ category "Cost"
 severity "low"
 default_frequency "daily"
 info(
-  version: "2.5",
+  version: "2.6",
   provider:"Google",
   service: "SQL",
   policy_set: "Unused Database Service"
@@ -22,39 +22,24 @@ parameter "param_email" do
   description "Email addresses of the recipients you wish to notify when new incidents are created"
 end
 
-parameter "param_project" do
+parameter "param_project_ids" do
   type "list"
-  label "Project ID"
-  description "Google Projects to Query. Leave blank to query all projects."
+  label "Project IDs"
+  description "Google Projects to query. Leave blank to query all projects."
 end
 
 parameter "param_regions" do
   type "list"
-  label "Region"
-  description "Location to check, this is region names"
+  label "Regions"
+  description "Regions to query. Leave blank to query all available regions."
 end
 
 parameter "param_exclude_tags" do
   category "User Inputs"
-  label "Exclusion Tag Key:Value"
-  description "Cloud native tag (label) to ignore IP addresses. Format: Key:Value"
+  label "Tag to exclude (Key:Value)"
+  description "Exclusion Tag."
   type "string"
   allowed_pattern /(^$)|([\w]?)+\:([\w]?)/
-end
-
-parameter "param_automatic_action" do
-  type "list"
-  label "Automatic Actions"
-  description "When this value is set, this policy will automatically take the selected action(s)"
-  allowed_values ["Delete IP Addresses"]
-end
-
-parameter "param_log_to_cm_audit_entries" do
-  type "string"
-  label "Log to CM Audit Entries"
-  description "Boolean for whether or not to log any debugging information from actions to CM Audit Entries, this should be left set to No on Flexera EU"
-  default "No"
-  allowed_values "Yes", "No"
 end
 
 ###############################################################################
@@ -94,13 +79,14 @@ datasource "ds_currency_reference" do
   end
 end
 
-#get all google project
-datasource "ds_google_project" do
+# Gets all projects filtered by "lifecycleState:ACTIVE".
+datasource "ds_all_projects" do
   request do
     auth $auth_google
     pagination $google_pagination
     host "cloudresourcemanager.googleapis.com"
     path "/v1/projects/"
+    query "filter", "(lifecycleState:ACTIVE)"
   end
   result do
     encoding "json"
@@ -112,38 +98,53 @@ datasource "ds_google_project" do
   end
 end
 
-#https://cloud.google.com/compute/docs/reference/rest/v1/regions/list
-datasource "ds_zones" do
-  iterate $ds_google_project
+# Removes projects that aren't in "param_project_ids" (In case it isn't empty).
+# Sets "sleep" flag every 150 projects to prevent quota error.
+datasource "ds_projects" do
+  run_script $js_projects, $ds_all_projects, $param_project_ids
+end
+
+# Gets all SQL instances of Google projects from "ds_projects".
+datasource "ds_all_sql_instances" do
+  iterate $ds_projects
   request do
-    auth $auth_google
-    host "compute.googleapis.com"
-    verb "GET"
-    path join(["/compute/v1/projects/", val(iter_item, "accountID"), "/zones"])
-    query "project", val(iter_item, "accountID")
-    pagination $google_pagination
-    ignore_status [403,404]
+    run_script $js_sql_instances_call, val(iter_item, "accountID"), val(iter_item, "sleep"), $param_exclude_tags
   end
   result do
     encoding "json"
     collect jmes_path(response,"items[*]") do
       field "accountID", val(iter_item, "accountID")
-      field "projectNumber", val(iter_item, "projectNumber")
       field "accountName", val(iter_item, "accountName")
-      field "region", jmes_path(col_item, "name")
+      field "projectNumber", val(iter_item, "projectNumber")
+      field "resourceID", jmes_path(col_item, "name")
+      field "state", jmes_path(col_item,"state")
+      field "selfLink", jmes_path(col_item, "selfLink")
+      field "tier", jmes_path(col_item, "settings.tier")
+      field "region", jmes_path(col_item, "region")
+      field "tags", jmes_path(col_item,"settings.userLabels")
+      field "resourceType", val(col_item, "instanceType")
+      field "resourceName", jmes_path(col_item, "name")
+      field "resourceType", jmes_path(col_item, "instanceType")
+      field "status", jmes_path(col_item, "state")
     end
   end
 end
 
-
-datasource "ds_recommenders" do
-  run_script $js_recommenders, $ds_google_project, $param_project, $param_regions
+# Removes instances that aren't in "param_regions" (In case it isn't empty).
+datasource "ds_sql_instances" do
+  run_script $js_sql_instances, $ds_all_sql_instances, $param_regions
 end
 
+# Array of objects with Account ID and region each one to make a call to Recommender API.
+datasource "ds_recommenders" do
+  run_script $js_recommenders, $ds_sql_instances
+end
+
+# SQL idle instances recommendations got from Recommender API.
 datasource "ds_recommendations" do
   iterate $ds_recommenders
   request do
-    run_script $js_recommender_call, val(iter_item,"accountID"), val(iter_item, "region")
+    run_script $js_recommender_call, val(iter_item,"accountID"), val(iter_item, "region"), val(iter_item, "sleep")
   end
   result do
     encoding "json"
@@ -166,210 +167,243 @@ datasource "ds_recommendations" do
   end
 end
 
-datasource "ds_get_sql_instances" do
-  iterate $ds_google_project
-  request do
-    run_script $js_get_sql_instances, val(iter_item, "accountID")
-  end
-  result do
-    encoding "json"
-    collect jmes_path(response,"items[*]") do
-      field "resourceID", jmes_path(col_item, "name")
-      field "state", jmes_path(col_item,"state")
-      field "selfLink", jmes_path(col_item, "selfLink")
-      field "tier", jmes_path(col_item, "settings.tier")
-      field "region", jmes_path(col_item, "region")
-      field "tags", jmes_path(col_item,"settings.userLabels")
-      field "accountID", val(iter_item, "accountID")
-      field "resourceType", val(col_item, "instanceType")
-    end
-  end
-end
-
-datasource "ds_sanitize_sql_instances" do
-  run_script $js_sanitize_data, $ds_get_sql_instances, $param_exclude_tags
-end
-
+# Total estimated monthly savings based on SQL instances/recommendations.
 datasource "ds_sql_cost_mapping" do
-  run_script $js_instance_cost_mapping, $ds_sanitize_sql_instances, $ds_recommendations, $ds_currency_reference
+  run_script $js_sql_instances_cost_mapping, $ds_sql_instances, $ds_recommendations, $ds_currency_reference
 end
 
 ###############################################################################
 # Scripts
 ###############################################################################
-script "js_recommenders", type: "javascript" do
-  parameters "ds_google_project", "param_project", "param_regions"
-  result "results"
-  code <<-EOF
-  var results = []
 
-  _.each(ds_google_project, function(project){
-    if (_.contains(param_project, project.accountID) || param_project.length == 0) {
-      _.each(param_regions, function(region){
-        results.push({
-          projectNumber: project.projectNumber,
-          accountID: project.accountID,
-          accountName: project.accountName
-          region: region
+script "js_projects", type: "javascript" do
+  parameters "ds_all_projects", "param_project_ids"
+  result "projects"
+  code <<-EOF
+    var projects = ds_all_projects
+
+    // Apply filter only if "param_project_ids" was set.
+    if (param_project_ids.length > 0) {
+        projects = _.filter(projects, function (p) {
+            // Returns project only if its "accountID" (projectID) is in "param_project_ids".
+            if (_.contains(param_project_ids, p.accountID)) {
+                return p
+            }
         })
-      })
     }
-  })
-EOF
+
+    // It means, when we reach this call counter, we'll use "sleep" function, to avoid quota error.
+    var callsPerMinute = 150
+
+    _.each(projects, function (p, index) {
+        // If we aren't at position 0 and if remainder of the division of index by
+        // "callsPerMinute" is 0 add "sleep" flag.
+        if (index != 0 && index % callsPerMinute == 0) {
+            p.sleep = true
+        }
+    })
+  EOF
+end
+
+script "js_sql_instances_call", type: "javascript" do
+  parameters "accountID", "sleep", "param_exclude_tags"
+  result "request"
+  code <<-EOS
+    if (sleep == true) {
+      var now = new Date().getTime();
+      // 1 minute and 30 seconds.
+      var sleepDuration = 90000
+      while (new Date().getTime() < now + sleepDuration) { /* Do nothing to prevent quota error */ }
+    }
+
+    var filter = ""
+
+    // Apply filter only if "param_exclude_tags" was set.
+    if (param_exclude_tags.length != 0) {
+        // Key of tag to exclude.
+        var label_key = param_exclude_tags.split(':')[0]
+
+        // Value of tag to exclude.
+        var label_value = param_exclude_tags.split(':')[1]
+
+        // Apply logic operator "NOT" to get all SQL instances that don't have that tag.
+        filter = "(NOT settings.userLabels." + label_key + ":" + label_value + ")"
+    }
+
+    request = {
+        "auth": "auth_google",
+        "host": "sqladmin.googleapis.com",
+        "verb": "GET",
+        "path": "/v1/projects/" + accountID + "/instances",
+        "headers": {
+            "User-Agent": "RS Policies",
+            "Content-Type": "application/json"
+        },
+        "ignore_status": [403, 404],
+        "query_params": {
+            "filter": filter
+        },
+    }
+  EOS
+end
+
+script "js_sql_instances", type: "javascript" do
+  parameters "ds_all_sql_instances", "param_regions"
+  result "sql_instances"
+  code <<-EOF
+    var sql_instances = ds_all_sql_instances
+
+    // Apply filter only if "param_regions" was set.
+    if (param_regions.length > 0) {
+        sql_instances = _.filter(sql_instances, function (i) {
+            // Returns instance only if its "region" is in "param_regions".
+            if (_.contains(param_regions, i.region)) {
+                return i
+            }
+        })
+    }
+  EOF
+end
+
+script "js_recommenders", type: "javascript" do
+  parameters "ds_sql_instances"
+  result "recommenders"
+  code <<-EOF
+    var recommenders = []
+
+    // It means, when we reach this call counter, we'll use "sleep" function, to avoid quota error.
+    var callsPerMinute = 100
+    
+    _.each(ds_sql_instances, function (instance) {
+        var objectToFind = { accountID: instance.accountID, region: instance.region }
+        var found = _.findWhere(recommenders, objectToFind)
+        // If record with same accountID-region was found we don't add it to recommenders,
+        // it help us to prevent duplicates and avoid extra calls to Recommender API.
+        if (!found) {
+            recommenders.push(objectToFind)
+        }
+    })
+    
+    _.each(recommenders, function (r, index) {
+        // If we aren't at position 0 and if remainder of the division of index by
+        // "callsPerMinute" is 0 add "sleep" flag.
+        if (index != 0 && index % callsPerMinute == 0) {
+            r.sleep = true
+        }
+    })
+  EOF
 end
 
 script "js_recommender_call", type: "javascript" do
-  parameters "accountID", "region"
+  parameters "accountID", "region", "sleep"
   result "request"
   code <<-EOF
-  var now = new Date().getTime();
-  var sleepDuration = 10000
-  while(new Date().getTime() < now + sleepDuration){ /* Do nothing */ }
-  var request = {
-    auth: "auth_google",
-    pagination: "google_pagination",
-    host: "recommender.googleapis.com",
-    ignore_status: 403,
-    path: "/v1/projects/"+ accountID +"/locations/" + region + "/recommenders/google.cloudsql.instance.IdleRecommender/recommendations",
-    query_strings: { alt: "json" }
-  }
-EOF
-end
-
-script "js_get_sql_instances", type: "javascript" do
-  result "request"
-  parameters "accountID"
-  code <<-EOS
-    request = {
-      "auth": "auth_google",
-      "host": "www.googleapis.com",
-      "verb": "GET",
-      "path": "/sql/v1beta4/projects/"+accountID+"/instances",
-      "headers": {
-        "User-Agent": "RS Policies",
-        "Content-Type": "application/json"
-      }
-      "ignore_status": [403,404]
+    if (sleep == true) {
+      var now = new Date().getTime();
+      // 1 minute.
+      var sleepDuration = 60000
+      while (new Date().getTime() < now + sleepDuration) { /* Do nothing to prevent quota error */ }
     }
-  EOS
+    var request = {
+      auth: "auth_google",
+      pagination: "google_pagination",
+      host: "recommender.googleapis.com",
+      ignore_status: 403,
+      path: "/v1/projects/"+ accountID +"/locations/" + region + "/recommenders/google.cloudsql.instance.IdleRecommender/recommendations",
+      query_strings: { alt: "json" }
+    }
+  EOF
 end
 
-script "js_sanitize_data", type: "javascript" do
-  result "results"
-  parameters "databases", "param_exclude_tags"
-  code <<-EOS
-    label_key = param_exclude_tags.split(':')[0]
-    label_value = param_exclude_tags.split(':')[1]
-    results = _.filter(databases, function(data){
-      if ( data.resourceID != null ){
-        if ( data.tags != null && data.tags !== undefined ){
-          if ( data.tags[label_key] != null && data.tags[label_key] !== undefined ){
-            if ( data.tags[label_key] != label_value ){
-              return data
-            }
-          } else {
-            return data
-          }
-        }else{
-          return data
-        }
-      }
-    })
-    results= _.sortBy(results, 'accountID');
-  EOS
-end
-
-script "js_instance_cost_mapping", type:"javascript" do
+script "js_sql_instances_cost_mapping", type:"javascript" do
   result "result"
   parameters  "databases", "recommendations", "ds_currency_reference"
   code <<-EOS
     var instances = [];
-    var result={};
-    var message=''
-    var count=0;
-
-    function formatNumber(number, separator){
-      var numString =number.toString();
-      var values=numString.split(".");
-      var result = ''
-      while (values[0].length > 3){
-        var chunk = values[0].substr(-3)
-        values[0] = values[0].substr(0, values[0].length - 3)
-        result = separator + chunk + result
-      }
-      if (values[0].length > 0){
-        result = values[0] + result
-      }
-      if(values[1]==undefined){
-        return result;
-      }
-      return result+"."+values[1];
-    }
-    total = 0
-    cur = ""
-    _.each(databases, function(database) {
-      _.each(recommendations, function(recommendation){
-        if(database.resourceName == recommendation.resourceName) {
-          count++
-          if(recommendation['currency'] !== undefined ) {
-            if (ds_currency_reference[recommendation['currency']] !== undefined ) {
-            var cur = ds_currency_reference[recommendation['currency']]['symbol']
-            } else {
-              var cur = "$"
-            }
-            database['savingsCurrency'] = cur
-          } else {
-            var cur = "$"
-            var separator = ","
-          }
-          if (recommendation.costNanos<0) {
-            recommendation.costNanos = recommendation.costNanos * -1
-          }
-          if (recommendation.costUnits<0) {
-            recommendation.costUnits = recommendation.costUnits * -1
-          }
-          strNano = "."+recommendation.costNanos
-          combine = recommendation.costUnits + parseFloat(strNano)
-          monthsDuration = parseFloat(recommendation.duration.replace("s",""))/2628288
-          monthlySavings = combine / monthsDuration
-          total = total+monthlySavings
-          database['savings']= (Math.round( monthlySavings * 1000) / 1000)
-          database['savingsCurrency'] = cur
-          database['projectNumber'] = recommendation['projectNumber']
-          database['accountName'] = recommendation['accountName']
-          database['priority'] = recommendation['priority']
-          database['primaryImpact'] = recommendation['primaryImpact']
-          database['recommenderSubtype'] = recommendation['recommenderSubtype']
-          database['state'] = recommendation['state']
-          database['region'] = recommendation['region']
-          database['service'] = "SQL"
-          tags = []
-          if (database['tags'] != null) {
-            Object.keys(database.tags).forEach(function(key) {
-              tags.push(key+'='+database.tags[key])
-            });
-          }
-          database['tags'] = tags
-          instances.push(database)
+    var result = {};
+    var message = ''
+    var count = 0;
+    
+    function formatNumber(number, separator) {
+        var numString = number.toString();
+        var values = numString.split(".");
+        var result = ''
+        while (values[0].length > 3) {
+            var chunk = values[0].substr(-3)
+            values[0] = values[0].substr(0, values[0].length - 3)
+            result = separator + chunk + result
         }
-      })
-    })
-    if (instances.length != 0){
-      if(count){
-        total=cur + ' '+formatNumber((Math.round(total * 100) / 100));
-        message="The total estimated monthly savings are " +total;
-      } else {
-        message="The Flexera Optima system does not have any data to calculate savings for these resources";
-      }
-    }else{
-      message="unable to find resources between recommender and resource api";
+        if (values[0].length > 0) {
+            result = values[0] + result
+        }
+        if (values[1] == undefined) {
+            return result;
+        }
+        return result + "." + values[1];
     }
-    result={
-      "instances": instances,
-      "message": message
+    var total = 0
+    var cur = ""
+    _.each(databases, function (database) {
+        _.each(recommendations, function (recommendation) {
+            if (database.resourceName == recommendation.resourceName) {
+                count++
+                if (recommendation['currency'] !== undefined) {
+                    if (ds_currency_reference[recommendation['currency']] !== undefined) {
+                        var cur = ds_currency_reference[recommendation['currency']]['symbol']
+                    } else {
+                        var cur = "$"
+                    }
+                    database['savingsCurrency'] = cur
+                } else {
+                    var cur = "$"
+                    var separator = ","
+                }
+                if (recommendation.costNanos < 0) {
+                    recommendation.costNanos = recommendation.costNanos * -1
+                }
+                if (recommendation.costUnits < 0) {
+                    recommendation.costUnits = recommendation.costUnits * -1
+                }
+                var strNano = "." + recommendation.costNanos
+                var combine = recommendation.costUnits + parseFloat(strNano)
+                var monthsDuration = parseFloat(recommendation.duration.replace("s", "")) / 2628288
+                var monthlySavings = combine / monthsDuration
+                total = total + monthlySavings
+                database['savings'] = (Math.round(monthlySavings * 1000) / 1000)
+                database['savingsCurrency'] = cur
+                database['priority'] = recommendation['priority']
+                database['primaryImpact'] = recommendation['primaryImpact']
+                database['recommenderSubtype'] = recommendation['recommenderSubtype']
+                database['state'] = recommendation['state']
+                database['region'] = recommendation['region']
+                database['service'] = "SQL"
+                var tags = []
+                if (database['tags'] != null) {
+                    Object.keys(database.tags).forEach(function (key) {
+                        tags.push(key + '=' + database.tags[key])
+                    });
+                }
+                database['tags'] = tags
+                instances.push(database)
+            }
+        })
+    })
+    if (instances.length != 0) {
+        if (count) {
+            total = cur + ' ' + formatNumber((Math.round(total * 100) / 100));
+            message = "The total estimated monthly savings are " + total;
+        } else {
+            message = "The Flexera Optima system does not have any data to calculate savings for these resources";
+        }
+    } else {
+        message = "unable to find resources between recommender and resource api";
+    }
+    result = {
+        "instances": instances,
+        "message": message
     };
-    result.instances = _.sortBy(result.instances,"region");
-    result.instances = _.sortBy(result.instances,"accountName");
+    result.instances = _.sortBy(result.instances, "region");
+    result.instances = _.sortBy(result.instances, "accountName");
   EOS
 end
 
@@ -379,7 +413,7 @@ end
 
 policy "policy_recommendations" do
   validate $ds_sql_cost_mapping do
-    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} rows found for Idle Cloud SQL Instances"
+    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data.instances }} rows found for Idle Cloud SQL Instances"
     check eq(size(val(data, "instances")), 0)
     escalate $esc_email
     export "instances" do
