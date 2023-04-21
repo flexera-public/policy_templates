@@ -7,7 +7,7 @@ category "Cost"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "2.0",
+  version: "2.1",
   provider: "Azure",
   service: "Compute",
   policy_set: "Rightsize Compute Instances",
@@ -311,11 +311,10 @@ script "js_filter_instance_utilization", type: "javascript" do
   var result = [];
   //Calculate average CPU for each instance
   _.each(ds_azure_instance_utilization, function(data) {
-    new_data = data;
     total_of_avgs = 0, count = 0
     total_of_min = 0, count1 = 0
     total_of_max = 0, count2 = 0
-    _.each(new_data.statistics, function(stat){
+    _.each(data.statistics, function(stat){
       if (stat.average != null) {
         total_of_avgs += stat.average;
         count++;
@@ -329,12 +328,12 @@ script "js_filter_instance_utilization", type: "javascript" do
         count2++;
       }
     });
-    new_data.averageCPU = count > 0 ? total_of_avgs / count : null;
-    new_data.minCPU = count1 > 0 ? total_of_min / count1 : null;
-    new_data.maxCPU = count2 > 0 ? total_of_max / count2 : null;
-    new_data["savings"] = 0.0
-    new_data = _.omit(new_data, "averages")
-    result.push(new_data);
+    data.averageCPU = count > 0 ? total_of_avgs / count : null;
+    data.minCPU = count1 > 0 ? total_of_min / count1 : null;
+    data.maxCPU = count2 > 0 ? total_of_max / count2 : null;
+    data["savings"] = 0.0
+    data = _.omit(data, "averages")
+    result.push(data);
   })
 
   //Filter out instances if the CPU usage is above the Underutilized CPU threshold
@@ -372,7 +371,6 @@ script "js_add_instance_downsize_data", type: "javascript" do
   parameters "data", "instance_size_map", "param_cpu_idle_avg_percentage", "param_threshold_statistic"
   code <<-EOS
   result = []
-
   _.each(data, function(instance) {
     next_vm_size = null
     cpuValue = null;
@@ -606,7 +604,18 @@ script "js_combine_data", type: "javascript" do
 
     util_data['savingsCurrency'] = cur
     util_data['averageCPU'] = parseFloat(util_data['averageCPU']).toFixed(2)
+    util_data['minCPU'] = parseFloat(util_data['minCPU']).toFixed(2)
+    util_data['maxCPU'] = parseFloat(util_data['maxCPU']).toFixed(2)
 
+    if (util_data['averageCPU'] === "NaN") {
+      util_data['averageCPU'] = 0
+    }
+    if (util_data['minCPU'] === "NaN" ){
+      util_data['minCPU'] = 0
+    }
+    if (util_data['maxCPU'] === "NaN") {
+      util_data['maxCPU'] = 0
+    }
     if (util_data['recommendedVmSize'] == "Terminate Instance") {
       idle_count += 1
     } else {
