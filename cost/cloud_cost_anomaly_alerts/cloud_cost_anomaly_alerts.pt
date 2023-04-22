@@ -196,72 +196,52 @@ script "js_filter_dimensions", type: "javascript" do
       ids: [],
       names: [],
       invalid_ids: [],
-      filters: []
+      filters: [],
+      expressionsand: [],
+      expressionsor: []
     };
-    var exist = false;
+    ids = _.map(ds_dimensions, function(value){ return value.id});
+    names = _.map(ds_dimensions, function(value){ return value.name});
 
-    _.each(param_dimensions, function (user_input_dimension, index) {
-      exist = false;
-      filter = {
-        "dimensionid": "",
-        "dimensionname": "",
-        "type": "",
-        "value": "",
-        "expressiontype": ""
-      }
-      dimension_filter_map = user_input_dimension.split("=")
-      hasfilter = false;
-      hasmultifilter = false;
-      var multifiltervalues = []
-      if (dimension_filter_map.length > 1) {
-        hasfilter = true
-        multifiltervalues = dimension_filter_map[1].split(",");
-        if (multifiltervalues.length > 1) {
-          hasmultifilter = true;
+    _.each(param_dimensions, function (user_input_dimension) {
+      input_map = user_input_dimension.split("=")
+      if (!(exists = _.contains(ids, input_map[0]) != false ? true : _.contains(names, input_map[0]) != false ? true : false)){
+        filtered_dimensions.invalid_ids.push(input_map[0])
+      }else{
+        var dimensionid = ""
+        var dimensionname = ""
+        if (ids.indexOf(input_map[0]) > -1){
+          element = ids.indexOf(input_map[0])
+          dimensionname = names[element]
+          dimensionid = ids[element]
+          filtered_dimensions.ids.push(dimensionid)
+          filtered_dimensions.names.push(dimensionname)
+        }else {
+          element = names.indexOf(input_map[0])
+          dimensionname = names[element]
+          dimensionid = ids[element]
+          filtered_dimensions.ids.push(dimensionid)
+          filtered_dimensions.names.push(dimensionname)
         }
-      }
-      _.each(ds_dimensions, function (dimension) {
-        if (dimension_filter_map[0] === dimension.name || dimension_filter_map[0] === dimension.id) {
-          filtered_dimensions.ids.push(dimension.id);
-          filtered_dimensions.names.push(dimension.name);
-          exist = true;
-          if (hasfilter) {
-            if (hasmultifilter) {
-              filter = {
-                "dimensionid": "",
-                "dimensionname": "",
-                "type": "",
-                "value": "",
-                "expressiontype": ""
-              }
-              for (var i = 0; i < multifiltervalues.length; i++) {
-                filter = {
-                  "dimensionid": "",
-                  "dimensionname": "",
-                  "type": "",
-                  "value": "",
-                  "expressiontype": ""
-                }
-                filter.value = multifiltervalues[i];
-                filter.dimensionid = dimension.id;
-                filter.dimensionname = dimension.name;
-                filter.type = "equal";
-                filter.expressiontype = "or";
-                filtered_dimensions.filters.push(filter);
-              }
-            } else {
-              filter.dimensionid = dimension.id;
-              filter.dimensionname = dimension.name;
-              filter.type = "equal";
-              filter.value = dimension_filter_map[1];
-              filter.expressiontype = "and"
-              filtered_dimensions.filters.push(filter);
-            }
+        if (input_map.length > 1) {
+          multifiltervalues = input_map[1].split(",");
+          switch (true) {
+            case multifiltervalues.length === 1 :
+              filter = { "dimensionid":dimensionid, "dimensionname":dimensionname, "value": multifiltervalues[0], "expressiontype": "and"}
+              expression = {"type": "equal", "dimension": dimensionid, "value": multifiltervalues[0]}
+              filtered_dimensions.filters.push(filter)
+              filtered_dimensions.expressionsand.push(expression)
+              break;
+            case multifiltervalues.length > 1 :
+              _.each(multifiltervalues, function (value) {
+                filter = { "dimensionid":dimensionid, "dimensionname":dimensionname, "value": value, "expressiontype": "or"}
+                expression = {"type": "equal", "dimension": dimensionid, "value": value}
+                filtered_dimensions.filters.push(filter)
+                filtered_dimensions.expressionsor.push(expression)
+              });
+              break;
           }
         }
-      });
-      if (!exist) {
-        filtered_dimensions.invalid_ids.push(user_input_dimension);
       }
     });
   EOS
@@ -375,33 +355,7 @@ script "js_get_anomalies", type: "javascript" do
       }
     }
 
-    var expressionsor = []
-    var expressionsand = []
-    var multiplefilters = false;
-
-    _.each(ds_filter_dimensions.filters, function (filter) {
-      expression = {
-        "type": "",
-        "dimension": "",
-        "value": ""
-      }
-
-      switch (filter.expressiontype) {
-        case "or":
-          multiplefilters = true;
-          expression.type = "equal";
-          expression.dimension = filter.dimensionid;
-          expression.value = filter.value;
-          expressionsor.push(expression)
-          break;
-        case "and":
-          expression.type = "equal";
-          expression.dimension = filter.dimensionid;
-          expression.value = filter.value;
-          expressionsand.push(expression)
-          break;
-      }
-    })
+    var multiplefilters = ds_filter_dimensions.expressionsor.length > 0 ? true : false;
 
     switch (true) {
       case ds_filter_dimensions.filters.length === 1 && multiplefilters === false:
@@ -413,23 +367,13 @@ script "js_get_anomalies", type: "javascript" do
         request.body_fields.filter = filter
         break;
       case ds_filter_dimensions.filters.length > 1 && multiplefilters === false:
-        var filter = {
-          "type": "and",
-          "expressions": expressionsand
-        }
+        var filter = { "type": "and", "expressions": ds_filter_dimensions.expressionsand }
         request.body_fields.filter = filter
         break;
       case ds_filter_dimensions.filters.length > 1 && multiplefilters === true:
-        var filter = {
-          "type": "and",
-          "expressions": [
-              { "type": "or",
-                "expressions": []
-              },
-            ]
-        }
-        filter.expressions[0].expressions = expressionsor
-        _.each(expressionsand, function (expressione) {
+        var filter = { "type": "and", "expressions": [{ "type": "or", "expressions": []}]}
+        filter.expressions[0].expressions = ds_filter_dimensions.expressionsor
+        _.each(ds_filter_dimensions.expressionsand, function (expressione) {
           filter.expressions.push(expressione)
         });
         request.body_fields.filter = filter
