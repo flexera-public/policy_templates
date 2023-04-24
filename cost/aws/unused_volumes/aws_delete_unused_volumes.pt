@@ -6,7 +6,7 @@ category "Cost"
 severity "low"
 default_frequency "daily"
 info(
-  version: "5.0",
+  version: "6.0",
   provider: "AWS",
   service: "EBS",
   policy_set: "Unused Volumes",
@@ -17,12 +17,19 @@ info(
 # Parameters
 ###############################################################################
 
+parameter "param_allowed_regions_allow_or_deny" do
+  type "string"
+  label "Allow/Deny Regions"
+  description "Allow or Deny entered regions. See the README for more details"
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
 parameter "param_allowed_regions" do
   type "list"
-  label "Allowed Regions"
+  label "Regions"
   allowed_pattern /^([a-zA-Z-_]+-[a-zA-Z0-9-_]+-[0-9-_]+,*|)+$/
-  description "A list of allowed regions. See the README for more details"
-  default []
+  description "A list of allowed or denied regions. See the README for more details"
 end
 
 parameter "param_email" do
@@ -266,11 +273,11 @@ datasource "ds_regions_list" do
 end
 
 datasource "ds_regions" do
-  run_script $js_regions, $param_allowed_regions, $ds_regions_list
+  run_script $js_regions, $param_allowed_regions, $ds_regions_list, $param_allowed_regions_allow_or_deny
 end
 
 script "js_regions", type: "javascript" do
-  parameters "user_entered_regions", "all_regions"
+  parameters "user_entered_regions", "all_regions", "regions_allow_or_deny"
   result "result"
   code <<-EOS
   if (_.isEmpty(user_entered_regions)) {
@@ -278,22 +285,23 @@ script "js_regions", type: "javascript" do
   } else {
     //Filter unique regions
     var uniqueRegions = _.uniq(user_entered_regions)
-
     var all_regions_list = []
-
+    //Filter and remove denied regions from all_regions
+    if (regions_allow_or_deny == "Deny"){
+      var all_regions = all_regions.filter(function(obj){
+        return user_entered_regions.indexOf(obj.region) === -1;
+      });
+    }
     all_regions.forEach(function(all_region) {
       all_regions_list.push(all_region['region'])
     })
-
     //Filter valid regions
     var valid_regions = []
-
     _.map(uniqueRegions, function(uniqueRegion) {
       if (all_regions_list.indexOf(uniqueRegion) > -1) {
         valid_regions.push({ "region": uniqueRegion })
       }
     })
-
     if (_.isEmpty(valid_regions)) {
       result = all_regions
     } else {

@@ -1,5 +1,9 @@
 # Changelog
 
+## v6.0
+
+- Added parameter to enable Allow or Deny filtering by user entered regions
+
 ## v5.0
 
 - Added support for reporting and acting on attached volumes via an optional parameter.
