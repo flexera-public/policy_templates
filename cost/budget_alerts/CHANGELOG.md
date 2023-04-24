@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.3
+
+- Added Deprecated description in the short description
+
 ## v2.2
 
 - Deprecating this policy as it's replaced by [the new version](../budget_report_alerts)
