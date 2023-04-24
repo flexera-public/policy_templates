@@ -19,9 +19,10 @@ The policy includes the estimated savings. The estimated savings is recognized i
 ## Input Parameters
 
 - *Email addresses* - Email addresses of the recipients you wish to notify when new incidents are created.
-- *Idle Instance CPU Threshold (%)* - Average CPU threshold at which to trigger instance termination.
-- *Inefficient Instance CPU Threshold (%)* - Average CPU threshold at which to trigger instance downsize.
+- *Idle Instance CPU Threshold (%)* - CPU threshold at which to trigger instance termination.
+- *Inefficient Instance CPU Threshold (%)* - CPU threshold at which to trigger instance downsize.
 - *Exclusion Tag Key* - An Azure-native instance tag key to ignore instances that you don't want to consider for downsizing. Example: exclude_utilization.
+- *Threshold Statistics* - Determines whether to use minimum CPU usage, maximum CPU usage, or average CPU usage when determining recommendations.
 - *Automatic Actions* - When this value is set, this policy will automatically take the selected action(s).
 - *Subscription Allowed List* - Allowed Subscriptions, if empty, all subscriptions will be checked.
 - *Azure Endpoint* - The endpoint to send Azure API requests to. Recommended to leave this at default unless using this policy with Azure China.
