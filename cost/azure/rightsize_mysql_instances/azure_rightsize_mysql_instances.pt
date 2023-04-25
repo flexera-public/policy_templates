@@ -18,22 +18,30 @@ info(
 # Parameters
 ###############################################################################
 
-parameter "param_avg_cpu_upsize" do
+parameter "param_cpu_upsize" do
   type "number"
-  label "Average used CPU % - Upsize threshold"
+  label "CPU % - Upsize threshold"
   description "Set to -1 to ignore CPU utilization"
   default 80
   min_value -1
   max_value 100
 end
 
-parameter "param_avg_cpu_downsize" do
+parameter "param_cpu_downsize" do
   type "number"
-  label "Average used CPU % - Downsize Threshold"
+  label "CPU % - Downsize Threshold"
   description "Set to -1 to ignore CPU utilization"
   default 60
   min_value -1
   max_value 100
+end
+
+parameter "param_threshold_statistic" do
+  type "string"
+  label "Threshold Statistic"
+  description "Statistic to use for the metric threshold"
+  default "Average"
+  allowed_values "Average", "Minimum", "Maximum"
 end
 
 parameter "param_exclusion_tag_key" do
@@ -408,7 +416,7 @@ script "js_azure_mysql_metrics", type: "javascript" do
         "api-version": "2018-01-01",
         "timespan": timespan,
         "metricnames": "cpu_percent"
-        "aggregation": "Maximum,count",
+        "aggregation": "Maximum,Minimum,Average,count",
         "interval": "P1D" // Daily
       },
       // Ignore status 400, 403, and 404 which can be returned in certain (legacy) types of Azure Subscriptions
@@ -443,15 +451,15 @@ datasource "ds_flexible_resize_map" do
 end
 
 datasource "ds_merged_single_metrics" do
-  run_script $js_merged_metrics, $ds_azure_mysql_single_metrics, $ds_single_resize_map, $param_exclusion_tag_key, $param_avg_cpu_downsize, $param_avg_cpu_upsize, "single"
+  run_script $js_merged_metrics, $ds_azure_mysql_single_metrics, $ds_single_resize_map, $param_exclusion_tag_key, $param_cpu_downsize, $param_cpu_upsize, $param_threshold_statistic, "single"
 end
 
 datasource "ds_merged_flexible_metrics" do
-  run_script $js_merged_metrics, $ds_azure_mysql_flexible_metrics, $ds_flexible_resize_map, $param_exclusion_tag_key, $param_avg_cpu_downsize, $param_avg_cpu_upsize, "flexible"
+  run_script $js_merged_metrics, $ds_azure_mysql_flexible_metrics, $ds_flexible_resize_map, $param_exclusion_tag_key, $param_cpu_downsize, $param_cpu_upsize, $param_threshold_statistic, "flexible"
 end
 
 script "js_merged_metrics", type: "javascript" do
-  parameters "database_metrics", "resize_map", "exclusion_tag", "down_threshold", "up_threshold", "db_type"
+  parameters "database_metrics", "resize_map", "exclusion_tag", "down_threshold", "up_threshold", "threshold_statistic", "db_type"
   result "result"
   code <<-EOS
   var result = []
@@ -469,37 +477,52 @@ script "js_merged_metrics", type: "javascript" do
         sku_capacity = item['sku']['capacity']
 
         if (typeof item['timeseries'][0]['data'] == "object") {
-          total = 0
-          count = 0
+          max_cpu = null, max_total = 0, max_count = 0
+          min_cpu = null, min_total = 0, min_count = 0
+          avg_cpu = null, avg_total = 0, avg_count = 0
 
           _.each(item['timeseries'][0]['data'], function(data) {
-            total += data['maximum']
-            count += 1
+            if (isNaN(data['maximum']) == false) {
+              max_total += data['maximum']
+              max_count += 1
+            }
+
+            if (isNaN(data['minimum']) == false) {
+              min_total += data['minimum']
+              min_count += 1
+            }
+
+            if (isNaN(data['average']) == false) {
+              avg_total += data['average']
+              avg_count += 1
+            }
           })
 
-          average_cpu = (total / count).toFixed(2)
+          if (max_count > 0) { max_cpu = (max_total / max_count).toFixed(2) }
+          if (min_count > 0) { min_cpu = (min_total / min_count).toFixed(2) }
+          if (avg_count > 0) { avg_cpu = (avg_total / avg_count).toFixed(2) }
         }
 
-        if (average_cpu != null) {
-          if (Number(average_cpu) > Number(up_threshold)) {
+        if (threshold_statistic == "Maximum") { test_cpu = max_cpu }
+        if (threshold_statistic == "Minimum") { test_cpu = min_cpu }
+        if (threshold_statistic == "Average") { test_cpu = avg_cpu }
+
+        if (test_cpu != null) {
+          if (Number(test_cpu) > Number(up_threshold) && Number(up_threshold) != -1) {
             recommendation = "Upsize"
             sku_level = "up"
           }
 
-          if (Number(average_cpu) < Number(down_threshold)) {
+          if (Number(test_cpu) < Number(down_threshold) && Number(down_threshold) != -1) {
             recommendation = "Downsize"
             sku_level = "down"
           }
 
           if (sku_level != null) {
-            if (item['sku'] != undefined && item['sku'] != null && resize_map[sku_tier] !== undefined && resize_map[sku_tier] != null) {
-              json_tier = resize_map[sku_tier]
-
-              if (json_tier[sku_name] != undefined && json_tier[sku_name] != null) {
-                json_name = json_tier[sku_name]
-
-                if (json_name[sku_level] != undefined && json_name[sku_level] != null) {
-                  capacity = json_name[sku_level]
+            if (resize_map[sku_tier] != undefined && resize_map[sku_tier] != null) {
+              if (resize_map[sku_tier][sku_name] != undefined && resize_map[sku_tier][sku_name] != null) {
+                if (resize_map[sku_tier][sku_name][sku_level] != undefined && resize_map[sku_tier][sku_name][sku_level] != null) {
+                  capacity = resize_map[sku_tier][sku_name][sku_level]
                 }
               }
             }
@@ -519,7 +542,7 @@ script "js_merged_metrics", type: "javascript" do
           recommendation = "Change tier"
         }
 
-        if (isNaN(average_cpu) == false) {
+        if (isNaN(test_cpu) == false && recommendation != "-" && recommendation != null) {
           if (db_type == "single") {
             category = "Single"
             capacity = sku_capacity
@@ -533,7 +556,9 @@ script "js_merged_metrics", type: "javascript" do
           result.push({
             id: item['id'],
             location: item['location'],
-            average_cpu: average_cpu,
+            average_cpu: avg_cpu,
+            maximum_cpu: max_cpu,
+            minimum_cpu: min_cpu,
             name: item['name'],
             resource_group: item['id'].split('/')[4],
             type: item['type'],
@@ -551,10 +576,6 @@ script "js_merged_metrics", type: "javascript" do
       }
     }
   })
-
-  result = _.sortBy(result, 'subscriptionName')
-  result = _.sortBy(result, 'location')
-  result = _.sortBy(result, 'name')
 EOS
 end
 
@@ -589,8 +610,8 @@ script "js_combined_data", type: "javascript" do
 
   _.each(ds_merged_single_metrics.concat(ds_merged_flexible_metrics), function(instance) {
     if (instance['recommendation'] != "-" && instance['recommendation'] != null) {
-      cost = "Unknown"
-      savings = "Unknown"
+      cost = ""
+      savings = ""
 
       instance_cost = instance_costs[instance['id'].toLowerCase()]
 
@@ -603,6 +624,8 @@ script "js_combined_data", type: "javascript" do
         id: instance['id'],
         location: instance['location'],
         average_cpu: instance['average_cpu'],
+        maximum_cpu: instance['maximum_cpu'],
+        minimum_cpu: instance['minimum_cpu'],
         name: instance['name'],
         resource_group: instance['resource_group'],
         type: instance['type'],
@@ -621,7 +644,195 @@ script "js_combined_data", type: "javascript" do
       })
     }
   })
+
+  result = _.sortBy(result, 'name')
+  result = _.sortBy(result, 'subscriptionName')
+  result = _.sortBy(result, 'category')
 EOS
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "poly_azure_db_utilization" do
+  validate $ds_combined_data do
+    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} Azure Rightsize MySQL Database Recommendations"
+    detail_template <<-EOS
+      ### Thresholds for Consideration
+      - CPU Statistic Used      : {{ parameters.param_threshold_statistic }} CPU Usage
+      - Upsize CPU% threshold   : {{ parameters.param_cpu_upsize }}
+      - Downsize CPU% threshold : {{ parameters.param_cpu_downsize }}
+    EOS
+    escalate $esc_email
+    escalate $esc_rightsize_db
+    check eq(size(data), 0)
+    export do
+      resource_level true
+      field "subscriptionId" do
+        label "Subscription ID"
+      end
+      field "subscriptionName" do
+        label "Subscription Name"
+      end
+      field "resource_group" do
+        label "Resource Group"
+      end
+      field "resourceID" do
+        label "Resource ID"
+        path "id"
+      end
+      field "location" do
+        label "Location"
+      end
+      field "name" do
+        label "Name"
+      end
+      field "type" do
+        label "Type"
+      end
+      field "category" do
+        label "Category"
+      end
+      field "skuCapacity" do
+        label "Current Capacity"
+        path "capacity"
+      end
+      field "recommended_capacity" do
+        label "Recommended Capacity"
+      end
+      field "cost" do
+        label "Estimated Monthly Cost"
+      end
+      field "savings" do
+        label "Estimated Monthly Savings"
+      end
+      field "savingsCurrency" do
+        label "Savings Currency"
+      end
+      field "skuName" do
+        label "SKU - Name"
+        path "sku.name"
+      end
+      field "skuTier" do
+        label "SKU - Tier"
+        path "sku.tier"
+      end
+      field "minimum_cpu" do
+        label "CPU Minimum (%)"
+      end
+      field "average_cpu" do
+        label "CPU Average (%)"
+      end
+      field "maximum_cpu" do
+        label "CPU Maximum (%)"
+      end
+      field "recommendation" do
+        label "Recommendation"
+      end
+      field "id" do
+        label "ID"
+      end
+      field "accountName" do
+        label "Account Name"
+        path "subscriptionName"
+      end
+      field "accountID" do
+        label "Account ID"
+        path "subscriptionId"
+      end
+    end
+  end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_email" do
+  automatic true
+  label "Send Email"
+  description "Sends incident email"
+  email $param_email
+end
+
+escalation "esc_rightsize_db" do
+  automatic contains($param_automatic_action, "Resize Instances")
+  label "Resize Database"
+  description "Resized selected MySQL database"
+  run "rightsize_db", data, $param_log_to_cm_audit_entries, $param_azure_endpoint, rs_optima_host
+end
+
+###############################################################################
+# Cloud Workflow
+###############################################################################
+
+define rightsize_db($data, $param_log_to_cm_audit_entries, $param_azure_endpoint, $$rs_optima_host) return $all_responses do
+  $$debug = $param_log_to_cm_audit_entries == "Yes"
+  $all_responses = []
+  foreach $item in $data do
+    if $item["recommended_capacity"] != "n/a"
+      sub on_error: skip do
+        $response = http_request(
+          auth: $$azure_auth,
+          verb: "patch",
+          host: $param_azure_endpoint,
+          https: true,
+          href: $item["id"],
+          query_strings: {
+            "api-version": "2017-10-01-preview"
+          },
+          headers: {
+            "cache-control": "no-cache",
+            "content-type": "application/json"
+          },
+          body: {
+            "sku": {
+              "name": $item["skuName"],
+              "tier": $item["skuTier"],
+              "capacity": $item["recommended_capacity"]
+            }
+          }
+        )
+        call sys_log('Update RightSize Azure MySQL Databases: ',to_s($response))
+        $all_responses << $response
+      end
+    end
+  end
+end
+
+define sys_log($subject, $detail) do
+  # Create empty errors array if doesn't already exist
+  if !$$errors
+    $$errors = []
+  end
+  # Check if debug is enabled
+  if $$debug
+    # Append to global $$errors
+    # This is the suggested way to capture errors
+    $$errors << "Unexpected error for " + $subject + "\n  " + to_s($detail)
+    # If Flexera NAM Zone, create audit_entries [to be deprecated]
+    # This is the legacy method for capturing errors and only supported on Flexera NAM
+    if $$rs_optima_host == "api.optima.flexeraeng.com"
+      # skip_error_and_append is used to catch error if rs_cm.audit_entries.create fails unexpectedly
+      $task_label = "Creating audit entry for " + $subject
+      sub task_label: $task, on_error: skip_error_and_append($task) do
+        rs_cm.audit_entries.create(
+          notify: "None",
+          audit_entry: {
+            auditee_href: @@account,
+            summary: $subject,
+            detail: $detail
+          }
+        )
+      end # End sub on_error
+    end # End if rs_optima_host
+  end # End if debug is enabled
+end
+
+define skip_error_and_append($subject) do
+  $$errors << "Unexpected error for " + $subject + "\n  " + to_s($_error)
+  $_error_behavior = "skip"
 end
 
 ###############################################################################
@@ -824,166 +1035,4 @@ script "js_flexible_resize_map", type: "javascript" do
     }
   }
 EOS
-end
-
-###############################################################################
-# Policy
-###############################################################################
-
-policy "poly_azure_db_utilization" do
-  validate $ds_combined_data do
-    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): Found {{ len data }} Azure Rightsize MySQL Database"
-    detail_template <<-EOS
-      ### Thresholds for Consideration
-      - Upsize Average CPU% threshold   : {{ parameters.param_avg_cpu_upsize }}
-      - Downsize Average CPU% threshold : {{ parameters.param_avg_cpu_downsize }}
-    EOS
-    escalate $esc_email
-    escalate $esc_rightsize_db
-    check eq(size(data), 0)
-    export do
-      resource_level true
-      field "subscriptionName" do
-        label "Subscription Name"
-      end
-      field "location" do
-        label "Location"
-      end
-      field "name" do
-        label "Name"
-      end
-      field "resource_group" do
-        label "Resource Group"
-      end
-      field "type" do
-        label "Type"
-      end
-      field "category" do
-        label "Category"
-      end
-      field "skuCapacity" do
-        label "Current Capacity"
-        path "capacity"
-      end
-      field "recommended_capacity" do
-        label "Recommended Capacity"
-      end
-      field "cost" do
-        label "Estimated Monthly Cost"
-      end
-      field "savings" do
-        label "Estimated Monthly Savings"
-      end
-      field "savingsCurrency" do
-        label "Savings Currency"
-      end
-      field "skuName" do
-        label "SKU - Name"
-        path "sku.name"
-      end
-      field "skuTier" do
-        label "SKU - Tier"
-        path "sku.tier"
-      end
-      field "average_cpu" do
-        label "CPU Max %"
-      end
-      field "recommendation" do
-        label "Recommendation"
-      end
-      field "id" do
-        label "Id"
-      end
-    end
-  end
-end
-
-###############################################################################
-# Escalations
-###############################################################################
-
-escalation "esc_email" do
-  automatic true
-  label "Send Email"
-  description "Sends incident email"
-  email $param_email
-end
-
-escalation "esc_rightsize_db" do
-  automatic contains($param_automatic_action, "Resize Instances")
-  label "Resize Database"
-  description "Resized selected MySQL database"
-  run "rightsize_db", data, $param_log_to_cm_audit_entries, $param_azure_endpoint, rs_optima_host
-end
-
-###############################################################################
-# Cloud Workflow
-###############################################################################
-
-define rightsize_db($data, $param_log_to_cm_audit_entries, $param_azure_endpoint, $$rs_optima_host) return $all_responses do
-  $$debug = $param_log_to_cm_audit_entries == "Yes"
-  $all_responses = []
-  foreach $item in $data do
-    if $item["recommended_capacity"] != "n/a"
-      sub on_error: skip do
-        $response = http_request(
-          auth: $$azure_auth,
-          verb: "patch",
-          host: $param_azure_endpoint,
-          https: true,
-          href: $item["id"],
-          query_strings: {
-            "api-version": "2017-10-01-preview"
-          },
-          headers: {
-            "cache-control": "no-cache",
-            "content-type": "application/json"
-          },
-          body: {
-            "sku": {
-              "name": $item["skuName"],
-              "tier": $item["skuTier"],
-              "capacity": $item["recommended_capacity"]
-            }
-          }
-        )
-        call sys_log('Update RightSize Azure SQL Databases: ',to_s($response))
-        $all_responses << $response
-      end
-    end
-  end
-end
-
-define sys_log($subject, $detail) do
-  # Create empty errors array if doesn't already exist
-  if !$$errors
-    $$errors = []
-  end
-  # Check if debug is enabled
-  if $$debug
-    # Append to global $$errors
-    # This is the suggested way to capture errors
-    $$errors << "Unexpected error for " + $subject + "\n  " + to_s($detail)
-    # If Flexera NAM Zone, create audit_entries [to be deprecated]
-    # This is the legacy method for capturing errors and only supported on Flexera NAM
-    if $$rs_optima_host == "api.optima.flexeraeng.com"
-      # skip_error_and_append is used to catch error if rs_cm.audit_entries.create fails unexpectedly
-      $task_label = "Creating audit entry for " + $subject
-      sub task_label: $task, on_error: skip_error_and_append($task) do
-        rs_cm.audit_entries.create(
-          notify: "None",
-          audit_entry: {
-            auditee_href: @@account,
-            summary: $subject,
-            detail: $detail
-          }
-        )
-      end # End sub on_error
-    end # End if rs_optima_host
-  end # End if debug is enabled
-end
-
-define skip_error_and_append($subject) do
-  $$errors << "Unexpected error for " + $subject + "\n  " + to_s($_error)
-  $_error_behavior = "skip"
 end
