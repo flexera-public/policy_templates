@@ -1,7 +1,7 @@
 name "Azure Rightsize MySQL Databases"
 rs_pt_ver 20180301
 type "policy"
-short_description "Check for Inefficient Azure MySQL database services that are inside or outside the CPU threshold for the last 30 days and resizes them after approval. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/rightsize_sql_instances/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+short_description "Check for Inefficient Azure MySQL database services that are inside or outside the CPU threshold for the last 30 days and resizes them after approval. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/rightsize_mysql_instances/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 long_description ""
 severity "low"
 category "Cost"
@@ -10,7 +10,8 @@ info(
   version: "1.0",
   provider: "Azure",
   service: "DBforMySQL",
-  policy_set: "RightSize Database Services"
+  policy_set: "RightSize Database Services",
+  recommendation_type: "Usage Reduction"
 )
 
 ###############################################################################
@@ -40,12 +41,14 @@ parameter "param_exclusion_tag_key" do
   label "Exclusion Tag Key"
   description "Cloud native tag key to ignore instances. Example: exclude_utilization"
   type "string"
+  default ""
 end
 
 parameter "param_email" do
   type "list"
   label "Email addresses"
   description "Email addresses of the recipients you wish to notify"
+  default []
 end
 
 parameter "param_azure_endpoint" do
@@ -59,6 +62,7 @@ parameter "param_subscription_allowed_list" do
   label "Subscription Allowed List"
   type "list"
   description "Allowed Subscriptions, if empty, all subscriptions will be checked"
+  default []
 end
 
 parameter "param_automatic_action" do
@@ -66,6 +70,7 @@ parameter "param_automatic_action" do
   label "Automatic Actions"
   description "When this value is set, this policy will automatically take the selected action(s)"
   allowed_values ["Resize Instances"]
+  default []
 end
 
 parameter "param_log_to_cm_audit_entries" do
@@ -81,16 +86,19 @@ end
 ###############################################################################
 
 #authenticate with Azure
-credentials "azure_auth" do
+credentials "auth_azure" do
   schemes "oauth2"
   label "Azure"
   description "Select the Azure Resource Manager Credential from the list."
   tags "provider=azure_rm"
 end
 
+auth "auth_flexera", type: "rightscale"
+
 ###############################################################################
 # Pagination
 ###############################################################################
+
 pagination "azure_pagination" do
   get_page_marker do
     body_path "nextLink"
@@ -101,12 +109,67 @@ pagination "azure_pagination" do
 end
 
 ###############################################################################
-# Datasources
+# Datasources & Scripts
 ###############################################################################
+
+datasource "ds_currency_reference" do
+  request do
+    host "raw.githubusercontent.com"
+    path "/rightscale/policy_templates/master/cost/scheduled_reports/currency_reference.json"
+    header "User-Agent", "RS Policies"
+  end
+end
+
+datasource "ds_currency_code" do
+  request do
+    auth $auth_flexera
+    host rs_optima_host
+    path join(["/bill-analysis/orgs/",rs_org_id,"/settings/currency_code"])
+    header "Api-Version", "0.1"
+    header "User-Agent", "RS Policies"
+    ignore_status [403]
+  end
+  result do
+    encoding "json"
+    field "id", jmes_path(response,"id")
+    field "value", jmes_path(response,"value")
+  end
+end
+
+datasource "ds_billing_centers" do
+  request do
+    auth $auth_flexera
+    host rs_optima_host
+    path join(["/analytics/orgs/", rs_org_id, "/billing_centers"])
+    header "Api-Version", "1.0"
+    header "User-Agent", "RS Policies"
+    query "view", "allocation_table"
+    ignore_status [403]
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "[*]") do
+      field "href", jmes_path(col_item, "href")
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+      field "parent_id", jmes_path(col_item, "parent_id")
+    end
+  end
+end
+
+datasource "ds_top_level_billing_centers" do
+  run_script $js_top_level_billing_centers, $ds_billing_centers
+end
+
+script "js_top_level_billing_centers", type: "javascript" do
+  parameters "ds_billing_centers"
+  result "result"
+  code "result = _.reject(ds_billing_centers, function(bc) { return bc.parent_id != null })"
+end
 
 datasource "ds_subscriptions" do
   request do
-    auth $azure_auth
+    auth $auth_azure
     pagination $azure_pagination
     host $param_azure_endpoint
     path "/subscriptions/"
@@ -116,9 +179,9 @@ datasource "ds_subscriptions" do
   result do
     encoding "json"
     collect jmes_path(response, "value[*]") do
-      field "subscriptionId", jmes_path(col_item,"subscriptionId")
-      field "displayName", jmes_path(col_item,"displayName")
-      field "state", jmes_path(col_item,"state")
+      field "subscriptionId", jmes_path(col_item, "subscriptionId")
+      field "subscriptionName", jmes_path(col_item, "displayName")
+      field "state", jmes_path(col_item, "state")
     end
   end
 end
@@ -127,13 +190,100 @@ datasource "ds_filtered_subscriptions" do
   run_script $js_filtered_subscriptions, $ds_subscriptions, $param_subscription_allowed_list
 end
 
+script "js_filtered_subscriptions", type: "javascript" do
+  parameters "ds_subscriptions", "param_subscription_allowed_list"
+  result "result"
+  code <<-EOS
+  result = []
+
+  if (param_subscription_allowed_list.length != 0) {
+    _.each(param_subscription_allowed_list, function(sub) {
+      var found = _.find(ds_subscriptions, function(item) {
+        return item['subscriptionId'] == sub || item['subscriptionName'].toLowerCase() == sub.toLowerCase()
+      })
+
+      result.push(found)
+    })
+  } else {
+    result = ds_subscriptions
+  }
+EOS
+end
+
+datasource "ds_instance_costs" do
+  iterate $ds_filtered_subscriptions
+  request do
+    run_script $js_instance_costs, val(iter_item, "subscriptionId"), $ds_top_level_billing_centers, rs_org_id, rs_optima_host
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response,"rows[*]") do
+      field "resource_id", jmes_path(col_item, "dimensions.resource_id")
+      field "resource_type", jmes_path(col_item, "dimensions.resource_type")
+      field "adjustment_name", jmes_path(col_item, "dimensions.adjustment_name")
+      field "cost", jmes_path(col_item, "metrics.cost_amortized_unblended_adj")
+    end
+  end
+end
+
+script "js_instance_costs", type: "javascript" do
+  parameters "subscriptionId", "ds_top_level_billing_centers", "rs_org_id", "rs_optima_host"
+  result "request"
+  code <<-EOS
+  start_date = new Date()
+  start_date.setMonth(start_date.getMonth() - 1)
+  start_date = start_date.toISOString().split('-')[0] + '-' + start_date.toISOString().split('-')[1]
+
+  end_date = new Date()
+  end_date = end_date.toISOString().split('-')[0] + '-' + end_date.toISOString().split('-')[1]
+
+  billing_center_ids = _.compact(_.map(ds_top_level_billing_centers, function(value) { return value.id }))
+
+  var request = {
+    auth: "auth_flexera",
+    host: rs_optima_host,
+    verb: "POST",
+    path: "/bill-analysis/orgs/" + rs_org_id + "/costs/select",
+    body_fields: {
+      "dimensions": ["resource_id", "resource_type", "adjustment_name"],
+      "granularity": "month",
+      "start_at": start_date,
+      "end_at": end_date,
+      "metrics": ["cost_amortized_unblended_adj"],
+      "billing_center_ids": billing_center_ids,
+      "limit": 100000,
+      "filter": {
+        "type": "and",
+        "expressions": [
+          {
+            "dimension": "service",
+            "type": "equal",
+            "value": "Microsoft.DBforMySQL"
+          },
+          {
+            "dimension": "vendor_account",
+            "type": "equal",
+            "value": subscriptionId
+          }
+        ]
+      }
+    },
+    headers: {
+      "User-Agent": "RS Policies",
+      "Api-Version": "1.0"
+    },
+    ignore_status: [400]
+  }
+EOS
+end
+
 datasource "ds_azure_mysql_single" do
   iterate $ds_filtered_subscriptions
   request do
-    auth $azure_auth
+    auth $auth_azure
     pagination $azure_pagination
     host $param_azure_endpoint
-    path join(["/subscriptions/", val(iter_item,"subscriptionId"), "/providers/Microsoft.DBforMySQL/servers"])
+    path join(["/subscriptions/", val(iter_item, "subscriptionId"), "/providers/Microsoft.DBforMySQL/servers"])
     query "api-version", "2017-12-01"
     header "User-Agent", "RS Policies"
     # Ignore status 400, 403, and 404 which can be returned in certain (legacy) types of Azure Subscriptions
@@ -149,8 +299,8 @@ datasource "ds_azure_mysql_single" do
       field "tags", jmes_path(col_item, "tags")
       field "sku", jmes_path(col_item, "sku")
       field "properties", jmes_path(col_item, "properties")
-      field "subscriptionId",val(iter_item, "subscriptionId")
-      field "subscriptionName",val(iter_item, "displayName")
+      field "subscriptionId", val(iter_item, "subscriptionId")
+      field "subscriptionName", val(iter_item, "subscriptionName")
     end
   end
 end
@@ -158,10 +308,10 @@ end
 datasource "ds_azure_mysql_flexible" do
   iterate $ds_filtered_subscriptions
   request do
-    auth $azure_auth
+    auth $auth_azure
     pagination $azure_pagination
     host $param_azure_endpoint
-    path join(["/subscriptions/", val(iter_item,"subscriptionId"), "/providers/Microsoft.DBforMySQL/flexibleServers"])
+    path join(["/subscriptions/", val(iter_item, "subscriptionId"), "/providers/Microsoft.DBforMySQL/flexibleServers"])
     query "api-version", "2021-05-01"
     header "User-Agent", "RS Policies"
     # Ignore status 400, 403, and 404 which can be returned in certain (legacy) types of Azure Subscriptions
@@ -178,7 +328,7 @@ datasource "ds_azure_mysql_flexible" do
       field "sku", jmes_path(col_item, "sku")
       field "properties", jmes_path(col_item, "properties")
       field "subscriptionId", val(iter_item, "subscriptionId")
-      field "subscriptionName", val(iter_item, "displayName")
+      field "subscriptionName", val(iter_item, "subscriptionName")
     end
   end
 end
@@ -186,7 +336,7 @@ end
 datasource "ds_azure_mysql_single_metrics" do
   iterate $ds_azure_mysql_single
   request do
-    run_script $js_utilization_request, val(iter_item,"id"), $param_azure_endpoint
+    run_script $js_azure_mysql_metrics, val(iter_item, "id"), $param_azure_endpoint
   end
   result do
     encoding "json"
@@ -210,7 +360,7 @@ end
 datasource "ds_azure_mysql_flexible_metrics" do
   iterate $ds_azure_mysql_flexible
   request do
-    run_script $js_utilization_request, val(iter_item,"id"), $param_azure_endpoint
+    run_script $js_azure_mysql_metrics, val(iter_item, "id"), $param_azure_endpoint
   end
   result do
     encoding "json"
@@ -230,8 +380,47 @@ datasource "ds_azure_mysql_flexible_metrics" do
   end
 end
 
-#Generates list of service tiers.
-datasource "ds_azure_sql_resize_map" do
+script "js_azure_mysql_metrics", type: "javascript" do
+  parameters "resource_id", "param_azure_endpoint"
+  result "request"
+  code <<-EOS
+    end_date_tmp = new Date()
+    end_date_tmp.setMilliseconds(999)
+    end_date_tmp.setSeconds(59)
+    end_date_tmp.setMinutes(59)
+    end_date_tmp.setHours(23)
+    end_date = new Date(end_date_tmp).toISOString()
+
+    start_date_tmp = new Date(new Date().setDate(new Date().getDate() - 30))
+    start_date_tmp.setMilliseconds(0)
+    start_date_tmp.setSeconds(0)
+    start_date_tmp.setMinutes(0)
+    start_date = new Date(start_date_tmp).toISOString()
+
+    timespan = start_date  + "/" + end_date
+
+    var request = {
+      auth: "auth_azure",
+      verb: "GET",
+      host: param_azure_endpoint,
+      path: resource_id + "/providers/microsoft.insights/metrics",
+      query_params: {
+        "api-version": "2018-01-01",
+        "timespan": timespan,
+        "metricnames": "cpu_percent"
+        "aggregation": "Maximum,count",
+        "interval": "P1D" // Daily
+      },
+      // Ignore status 400, 403, and 404 which can be returned in certain (legacy) types of Azure Subscriptions
+      ignore_status: [400, 403, 404],
+      headers: {
+        "User-Agent" : "RS Policies"
+      }
+    }
+  EOS
+end
+
+datasource "ds_single_resize_map" do
   request do
     verb "GET"
     host "raw.githubusercontent.com"
@@ -254,312 +443,190 @@ datasource "ds_flexible_resize_map" do
 end
 
 datasource "ds_merged_single_metrics" do
-  run_script $js_merged_single_metrics, $ds_azure_mysql_single_metrics, $ds_azure_sql_resize_map, $param_exclusion_tag_key, $param_avg_cpu_downsize, $param_avg_cpu_upsize
+  run_script $js_merged_metrics, $ds_azure_mysql_single_metrics, $ds_single_resize_map, $param_exclusion_tag_key, $param_avg_cpu_downsize, $param_avg_cpu_upsize, "single"
 end
 
 datasource "ds_merged_flexible_metrics" do
-  run_script $js_merged_flexible_metrics, $ds_azure_mysql_flexible_metrics, $ds_flexible_resize_map, $param_exclusion_tag_key, $param_avg_cpu_downsize, $param_avg_cpu_upsize
+  run_script $js_merged_metrics, $ds_azure_mysql_flexible_metrics, $ds_flexible_resize_map, $param_exclusion_tag_key, $param_avg_cpu_downsize, $param_avg_cpu_upsize, "flexible"
 end
 
-datasource "ds_merged_metrics" do
-  run_script $js_merged_metrics, $ds_merged_single_metrics, $ds_merged_flexible_metrics
-end
-
-###############################################################################
-# Scripts
-###############################################################################
-
-script "js_filtered_subscriptions", type: "javascript" do
-  parameters "ds_subscriptions", "param_subscription_allowed_list"
-  result "results"
-  code <<-EOS
-  var results = []
-  if ( param_subscription_allowed_list.length != 0){
-    results = []
-    _.each(param_subscription_allowed_list, function(sub){
-      var found = _.find(ds_subscriptions, function(item){
-        return item.subscriptionId == sub || item.displayName.toLowerCase() == sub.toLowerCase();
-      })
-      results.push(found)
-    })
-  } else {
-    results = ds_subscriptions
-  }
-EOS
-end
-
-# Build the API request object dynamically
-script "js_utilization_request", type: "javascript" do
-  parameters "resource_id", "param_azure_endpoint"
-  result "request"
-  code <<-EOS
-    var end_date_tmp = new Date()
-    end_date_tmp.setMilliseconds(999)
-    end_date_tmp.setSeconds(59)
-    end_date_tmp.setMinutes(59)
-    end_date_tmp.setHours(23)
-    var end_date = new Date(end_date_tmp).toISOString()
-    var start_date_tmp = new Date(new Date().setDate(new Date().getDate() - 30))
-    start_date_tmp.setMilliseconds(0)
-    start_date_tmp.setSeconds(0)
-    start_date_tmp.setMinutes(0)
-    var start_date = new Date(start_date_tmp).toISOString()
-    var sTimespan = start_date  + "/" + end_date;
-    var request = {
-      auth: "azure_auth",
-      verb : "GET",
-      scheme : "https",
-      host : param_azure_endpoint,
-      path : "" + resource_id + "/providers/microsoft.insights/metrics",
-      query_params: {
-        "api-version" : "2018-01-01",
-        "timespan" : sTimespan,
-        "metricnames" : "cpu_percent"
-        "aggregation" : "Average,count",
-        "interval" :  "P1D"                    //Dailey
-      },
-      // Ignore status 400, 403, and 404 which can be returned in certain (legacy) types of Azure Subscriptions
-      ignore_status: [400,403,404],
-      headers: {
-        "User-Agent" : "RS Policies"
-      }
-    }
-  EOS
-end
-
-script "js_merged_single_metrics", type: "javascript" do
-  parameters "databases_metrics", "ds_azure_sql_resize_map", "exclusion_tag" , "down_threshold", "up_threshold"
+script "js_merged_metrics", type: "javascript" do
+  parameters "database_metrics", "resize_map", "exclusion_tag", "down_threshold", "up_threshold", "db_type"
   result "result"
   code <<-EOS
-    var result = [];
+  var result = []
 
-    //exclude the database with the exclution tags, and the system databases
-    for(i=0; i< databases_metrics.length; i++){
-      if (databases_metrics[i].sku !== undefined && databases_metrics[i].sku != null){
-        if (!(_.has(databases_metrics[i].tags, exclusion_tag))) {
-          //Find the Resource group
-          var capacity = "";
-          var recommended_capacity = "";
-          var recommendation = "";
-          var aTemp = databases_metrics[i].id.split("/resourceGroups/")
-          var resource_group="";
-          if(aTemp.length > 1){
-            aTemp = aTemp[1].split("/");
-            resource_group = aTemp[0];
-          }else{
-            resource_group = "";
-          }
+  _.each(database_metrics, function(item) {
+    if (item['sku'] != undefined && item['sku'] != null) {
+      if (_.has(item['tags'], exclusion_tag) == false) {
+        capacity = null
+        recommended_capacity = null
+        recommendation = null
+        average_cpu = null
+        sku_level = null
+        sku_name = item['sku']['name']
+        sku_tier = item['sku']['tier']
+        sku_capacity = item['sku']['capacity']
 
-          //now find the metrics for the devices
-          var objMetric = databases_metrics[i];
-          var total = 0.0;
-          var average_cpu = "";
-          if (typeof objMetric == "object" && typeof objMetric.timeseries[0].data == "object"){
-            var ts_data =  objMetric.timeseries[0].data;
-            for (x=0; x < ts_data.length; x++) {
-              total += ts_data[x].average;
-            }
-            average_cpu = total / ts_data.length;
-            average_cpu = average_cpu.toFixed(2);
-          }else{
-            average_cpu = "n/a";
-          }
-          var sku = databases_metrics[i].sku;
-          //Now check for recommendation
-          if(average_cpu !== "n/a"){
-            if(Number(average_cpu) >= Number(up_threshold)){
-              //Upsize
-              recommendation = "Upsize";
-              if (databases_metrics[i].sku !== undefined && databases_metrics[i].sku != null && ds_azure_sql_resize_map[sku.tier] !== undefined && ds_azure_sql_resize_map[sku.tier] != null){
-                var json_tier = ds_azure_sql_resize_map[sku.tier];
-                if (json_tier[sku.name] !== undefined && json_tier[sku.name] != null){
-                  var json_name = json_tier[sku.name];
-                  if (json_name["up"] !== undefined && json_name["up"] != null){
-                    capacity = json_name["up"];
-                  }
-                }
-              }
-              if(capacity != null && capacity.length > 0){
-                recommended_capacity = capacity;
-              }else{
-                recommended_capacity = "n/a";
-              }
-            }else if(Number(average_cpu) <= Number(down_threshold)){
-              //Downsize
-              recommendation = "Downsize";
-              if (databases_metrics[i].sku !== undefined && databases_metrics[i].sku != null && ds_azure_sql_resize_map[sku.tier] !== undefined && ds_azure_sql_resize_map[sku.tier] != null){
-                if (sku.tier === "Basic"){
-                  recommendation = "-";
-                }
-                var json_tier = ds_azure_sql_resize_map[sku["tier"]];
-                if (json_tier[sku.name] !== undefined && json_tier[sku.name] != null){
-                  var json_name = json_tier[sku.name];
-                  if (json_name["down"] !== undefined && json_name["down"] != null){
-                    capacity = json_name["down"];
-                  }
-                }
-              }
-              if(capacity != null && capacity.length > 0){
-                recommended_capacity = capacity;
-              }else{
-                recommended_capacity = "n/a";
-              }
-            }
-          }else{
-            recommendation = "-";
-            recommended_capacity = "n/a";
-          }
-          if (recommended_capacity === "n/a" && recommendation !== "-"){
-            recommendation = "Change tier"
-          }
-          if (isNaN(average_cpu) == false && sku.name !== "ElasticPool"){
-            result.push({
-              id: databases_metrics[i].id,
-              location: databases_metrics[i].location,
-              average_cpu: average_cpu,
-              name: databases_metrics[i].name,
-              resource_group: resource_group,
-              type: databases_metrics[i].type,
-              sku: databases_metrics[i].sku,
-              capacity: databases_metrics[i].sku.capacity,
-              unit: databases_metrics[i].unit,
-              tags: databases_metrics[i].tags,
-              recommendation: recommendation,
-              recommended_capacity: recommended_capacity,
-              subscriptionId: databases_metrics[i].subscriptionId,
-              subscriptionName: databases_metrics[i].subscriptionName,
-              category: "Single"
-            })
-          }
-        }
-      }
-    }
-    result=_.sortBy(result, 'subscriptionName');
-    result=_.sortBy(result, 'location');
-    result=_.sortBy(result, 'name');
-  EOS
-end
+        if (typeof item['timeseries'][0]['data'] == "object") {
+          total = 0
+          count = 0
 
-script "js_merged_flexible_metrics", type: "javascript" do
-  parameters "databases_metrics", "ds_azure_sql_resize_map", "exclusion_tag" , "down_threshold", "up_threshold"
-  result "result"
-  code <<-EOS
-  var result = [];
+          _.each(item['timeseries'][0]['data'], function(data) {
+            total += data['maximum']
+            count += 1
+          })
 
-  //exclude the database with the exclution tags, and the system databases
-  for(i=0; i< databases_metrics.length; i++){
-    if (databases_metrics[i].sku !== undefined && databases_metrics[i].sku != null){
-      if (!(_.has(databases_metrics[i].tags, exclusion_tag))) {
-        //Find the Resource group
-        var capacity = "";
-        var recommended_capacity = "";
-        var recommendation = "";
-        var aTemp = databases_metrics[i].id.split("/resourceGroups/")
-        var resource_group="";
-        if(aTemp.length > 1){
-          aTemp = aTemp[1].split("/");
-          resource_group = aTemp[0];
-        }else{
-          resource_group = "";
+          average_cpu = (total / count).toFixed(2)
         }
 
-        //now find the metrics for the devices
-        var objMetric = databases_metrics[i];
-        var total = 0.0;
-        var average_cpu = "";
-        if (typeof objMetric == "object" && typeof objMetric.timeseries[0].data == "object"){
-          var ts_data =  objMetric.timeseries[0].data;
-          for (x=0; x < ts_data.length; x++) {
-            total += ts_data[x].average;
+        if (average_cpu != null) {
+          if (Number(average_cpu) > Number(up_threshold)) {
+            recommendation = "Upsize"
+            sku_level = "up"
           }
-          average_cpu = total / ts_data.length;
-          average_cpu = average_cpu.toFixed(2);
-        }else{
-          average_cpu = "n/a";
-        }
-        var sku = databases_metrics[i].sku;
-        //Now check for recommendation
-        if(average_cpu !== "n/a"){
-          if(Number(average_cpu) >= Number(up_threshold)){
-            //Upsize
-            recommendation = "Upsize";
-            if (databases_metrics[i].sku !== undefined && databases_metrics[i].sku != null && ds_azure_sql_resize_map[sku.tier] !== undefined && ds_azure_sql_resize_map[sku.tier] != null){
-              var json_tier = ds_azure_sql_resize_map[sku.tier];
-              if (json_tier[sku.name] !== undefined && json_tier[sku.name] != null){
-                var json_name = json_tier[sku.name];
-                if (json_name["up"] !== undefined && json_name["up"] != null){
-                  capacity = json_name["up"];
+
+          if (Number(average_cpu) < Number(down_threshold)) {
+            recommendation = "Downsize"
+            sku_level = "down"
+          }
+
+          if (sku_level != null) {
+            if (item['sku'] != undefined && item['sku'] != null && resize_map[sku_tier] !== undefined && resize_map[sku_tier] != null) {
+              json_tier = resize_map[sku_tier]
+
+              if (json_tier[sku_name] != undefined && json_tier[sku_name] != null) {
+                json_name = json_tier[sku_name]
+
+                if (json_name[sku_level] != undefined && json_name[sku_level] != null) {
+                  capacity = json_name[sku_level]
                 }
               }
             }
-            if(capacity != null && capacity.length > 0){
-              recommended_capacity = capacity;
-            }else{
-              recommended_capacity = "n/a";
-            }
-          }else if(Number(average_cpu) <= Number(down_threshold)){
-            //Downsize
-            recommendation = "Downsize";
-            if (databases_metrics[i].sku !== undefined && databases_metrics[i].sku != null && ds_azure_sql_resize_map[sku.tier] !== undefined && ds_azure_sql_resize_map[sku.tier] != null){
-              if (sku.tier === "Basic"){
-                recommendation = "-";
-              }
-              var json_tier = ds_azure_sql_resize_map[sku["tier"]];
-              if (json_tier[sku.name] !== undefined && json_tier[sku.name] != null){
-                var json_name = json_tier[sku.name];
-                if (json_name["down"] !== undefined && json_name["down"] != null){
-                  capacity = json_name["down"];
-                }
-              }
-            }
-            if(capacity != null && capacity.length > 0){
-              recommended_capacity = capacity;
-            }else{
-              recommended_capacity = "n/a";
-            }
           }
-        }else{
-          recommendation = "-";
-          recommended_capacity = "n/a";
+
+          recommended_capacity = "N/A"
+
+          if (capacity != null && capacity.length > 0) {
+            recommended_capacity = capacity
+          }
+        } else {
+          recommendation = "-"
+          recommended_capacity = "N/A"
         }
-        if (recommended_capacity === "n/a" && recommendation !== "-"){
+
+        if (recommended_capacity == "N/A" && recommendation != "-") {
           recommendation = "Change tier"
         }
-        if(isNaN(average_cpu) == false && sku.name !== "ElasticPool"){
+
+        if (isNaN(average_cpu) == false) {
+          if (db_type == "single") {
+            category = "Single"
+            capacity = sku_capacity
+          }
+
+          if (db_type == "flexible") {
+            category = "Flexible"
+            capacity = sku_name.split('_')[1].replace(/[^0-9]/g, "")
+          }
+
           result.push({
-            id: databases_metrics[i].id,
-            location: databases_metrics[i].location,
+            id: item['id'],
+            location: item['location'],
             average_cpu: average_cpu,
-            name: databases_metrics[i].name,
-            resource_group: resource_group,
-            type: databases_metrics[i].type,
-            sku: databases_metrics[i].sku,
-            capacity: databases_metrics[i].sku.name.split('_')[1].replace(/[^0-9]/g, ""),
-            unit: databases_metrics[i].unit,
-            tags: databases_metrics[i].tags,
+            name: item['name'],
+            resource_group: item['id'].split('/')[4],
+            type: item['type'],
+            sku: item['sku'],
+            capacity: capacity,
+            unit: item['unit'],
+            tags: item['tags'],
             recommendation: recommendation,
             recommended_capacity: recommended_capacity,
-            subscriptionId: databases_metrics[i].subscriptionId,
-            subscriptionName: databases_metrics[i].subscriptionName,
-            category: "Flexible"
+            subscriptionId: item['subscriptionId'],
+            subscriptionName: item['subscriptionName'],
+            category: category
           })
         }
       }
     }
-  }
-  result=_.sortBy(result, 'subscriptionName');
-  result=_.sortBy(result, 'location');
-  result=_.sortBy(result, 'name');
+  })
+
+  result = _.sortBy(result, 'subscriptionName')
+  result = _.sortBy(result, 'location')
+  result = _.sortBy(result, 'name')
 EOS
 end
 
-script "js_merged_metrics", type: "javascript" do
-  parameters "single_metrics", "flexible_metrics"
+datasource "ds_combined_data" do
+  run_script $js_combined_data, $ds_merged_single_metrics, $ds_merged_flexible_metrics, $ds_instance_costs, $ds_currency_reference, $ds_currency_code
+end
+
+script "js_combined_data", type: "javascript" do
+  parameters "ds_merged_single_metrics", "ds_merged_flexible_metrics", "ds_instance_costs", "ds_currency_reference", "ds_currency_code"
   result "result"
   code <<-EOS
-  result = single_metrics.concat(flexible_metrics)
+  result = []
+  currency = "$"
+
+  if (ds_currency_code['value'] !== undefined) {
+    if (ds_currency_reference[ds_currency_code['value']] != undefined) {
+      currency = ds_currency_reference[ds_currency_code['value']]['symbol']
+    }
+  }
+
+  instance_costs = {}
+
+  _.each(ds_instance_costs, function(item) {
+    resource_id = item['resource_id'].toLowerCase()
+
+    if (instance_costs[resource_id] == undefined) {
+      instance_costs[resource_id] = 0
+    }
+
+    instance_costs[resource_id] += item['cost']
+  })
+
+  _.each(ds_merged_single_metrics.concat(ds_merged_flexible_metrics), function(instance) {
+    if (instance['recommendation'] != "-" && instance['recommendation'] != null) {
+      cost = "Unknown"
+      savings = "Unknown"
+
+      instance_cost = instance_costs[instance['id'].toLowerCase()]
+
+      if (instance_cost != null && instance_cost != undefined) {
+        cost = parseFloat(instance_cost).toFixed(3)
+        savings = parseFloat(instance_cost / 2).toFixed(3)
+      }
+
+      result.push({
+        id: instance['id'],
+        location: instance['location'],
+        average_cpu: instance['average_cpu'],
+        name: instance['name'],
+        resource_group: instance['resource_group'],
+        type: instance['type'],
+        sku: instance['sku'],
+        capacity: instance['capacity'],
+        unit: instance['unit'],
+        tags: instance['tags'],
+        recommendation: instance['recommendation'],
+        recommended_capacity: instance['recommended_capacity'],
+        subscriptionId: instance['subscriptionId'],
+        subscriptionName: instance['subscriptionName'],
+        category: instance['category'],
+        savingsCurrency: currency,
+        cost: cost,
+        savings: savings
+      })
+    }
+  })
 EOS
 end
+
+###############################################################################
+# Temporary Scripts
+###############################################################################
 
 script "js_flexible_resize_map", type: "javascript" do
   result "result"
@@ -763,16 +830,17 @@ end
 # Policy
 ###############################################################################
 
-policy 'policy_azure_db_utilization' do
-  validate $ds_merged_metrics do
+policy "poly_azure_db_utilization" do
+  validate $ds_combined_data do
     summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): Found {{ len data }} Azure Rightsize MySQL Database"
     detail_template <<-EOS
       ### Thresholds for Consideration
       - Upsize Average CPU% threshold   : {{ parameters.param_avg_cpu_upsize }}
       - Downsize Average CPU% threshold : {{ parameters.param_avg_cpu_downsize }}
     EOS
-    escalate $email_report
-    check eq(size(data),0)
+    escalate $esc_email
+    escalate $esc_rightsize_db
+    check eq(size(data), 0)
     export do
       resource_level true
       field "subscriptionName" do
@@ -800,6 +868,15 @@ policy 'policy_azure_db_utilization' do
       field "recommended_capacity" do
         label "Recommended Capacity"
       end
+      field "cost" do
+        label "Estimated Monthly Cost"
+      end
+      field "savings" do
+        label "Estimated Monthly Savings"
+      end
+      field "savingsCurrency" do
+        label "Savings Currency"
+      end
       field "skuName" do
         label "SKU - Name"
         path "sku.name"
@@ -809,7 +886,7 @@ policy 'policy_azure_db_utilization' do
         path "sku.tier"
       end
       field "average_cpu" do
-        label "CPU Average %"
+        label "CPU Max %"
       end
       field "recommendation" do
         label "Recommendation"
@@ -825,13 +902,88 @@ end
 # Escalations
 ###############################################################################
 
-escalation "email_report" do
+escalation "esc_email" do
   automatic true
   label "Send Email"
   description "Sends incident email"
   email $param_email
 end
 
+escalation "esc_rightsize_db" do
+  automatic contains($param_automatic_action, "Resize Instances")
+  label "Resize Database"
+  description "Resized selected MySQL database"
+  run "rightsize_db", data, $param_log_to_cm_audit_entries, $param_azure_endpoint, rs_optima_host
+end
+
 ###############################################################################
 # Cloud Workflow
 ###############################################################################
+
+define rightsize_db($data, $param_log_to_cm_audit_entries, $param_azure_endpoint, $$rs_optima_host) return $all_responses do
+  $$debug = $param_log_to_cm_audit_entries == "Yes"
+  $all_responses = []
+  foreach $item in $data do
+    if $item["recommended_capacity"] != "n/a"
+      sub on_error: skip do
+        $response = http_request(
+          auth: $$azure_auth,
+          verb: "patch",
+          host: $param_azure_endpoint,
+          https: true,
+          href: $item["id"],
+          query_strings: {
+            "api-version": "2017-10-01-preview"
+          },
+          headers: {
+            "cache-control": "no-cache",
+            "content-type": "application/json"
+          },
+          body: {
+            "sku": {
+              "name": $item["skuName"],
+              "tier": $item["skuTier"],
+              "capacity": $item["recommended_capacity"]
+            }
+          }
+        )
+        call sys_log('Update RightSize Azure SQL Databases: ',to_s($response))
+        $all_responses << $response
+      end
+    end
+  end
+end
+
+define sys_log($subject, $detail) do
+  # Create empty errors array if doesn't already exist
+  if !$$errors
+    $$errors = []
+  end
+  # Check if debug is enabled
+  if $$debug
+    # Append to global $$errors
+    # This is the suggested way to capture errors
+    $$errors << "Unexpected error for " + $subject + "\n  " + to_s($detail)
+    # If Flexera NAM Zone, create audit_entries [to be deprecated]
+    # This is the legacy method for capturing errors and only supported on Flexera NAM
+    if $$rs_optima_host == "api.optima.flexeraeng.com"
+      # skip_error_and_append is used to catch error if rs_cm.audit_entries.create fails unexpectedly
+      $task_label = "Creating audit entry for " + $subject
+      sub task_label: $task, on_error: skip_error_and_append($task) do
+        rs_cm.audit_entries.create(
+          notify: "None",
+          audit_entry: {
+            auditee_href: @@account,
+            summary: $subject,
+            detail: $detail
+          }
+        )
+      end # End sub on_error
+    end # End if rs_optima_host
+  end # End if debug is enabled
+end
+
+define skip_error_and_append($subject) do
+  $$errors << "Unexpected error for " + $subject + "\n  " + to_s($_error)
+  $_error_behavior = "skip"
+end

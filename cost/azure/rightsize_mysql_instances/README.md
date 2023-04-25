@@ -2,11 +2,11 @@
 
 ## What it does
 
-This policy will look at Utilization of Azure SQL single database and recommend up or down sizing after user approval.
+This policy will look at Utilization of Azure MySQL single and flexible databases and recommend up or down sizing after user approval.
 
 ## Functional Details
 
-This policy checks all the Azure SQL databases for a Azure Subscription. It does a Average CPU usage over the last 30 days. It then checks if the Utilization is Lower than the Downsize Threshold or higher that Upsize Threshold. Finally it displays the found data, recommendations and provides option to Downsize or Upsize the SQL database after the user approval.
+This policy checks all the Azure MySQL databases for a Azure Subscription. It does a Average CPU usage over the last 30 days. It then checks if the Utilization is Lower than the Downsize Threshold or higher that Upsize Threshold. Finally it displays the found data, recommendations and provides option to Downsize or Upsize the SQL database after the user approval.
 
 - This policy does not support databases which are in Elastic pool
 - This policy applies only for Upsize or Downsize of DTUs/vCores within tiers.
