@@ -4,6 +4,10 @@
 
 - Added parameter to enable Allow or Deny filtering by user entered regions
 
+## v5.1
+
+- Changed "Id" field in incident output to "ID" to match other policies and ensure proper reporting.
+
 ## v5.0
 
 - Added support for reporting and acting on attached volumes via an optional parameter.
