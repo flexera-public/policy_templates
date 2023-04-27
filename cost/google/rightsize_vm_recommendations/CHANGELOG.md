@@ -1,6 +1,6 @@
 # Google Rightsize VM Recommender
 
-# v1.0
+## v1.0
 
 - Initial release.
 
