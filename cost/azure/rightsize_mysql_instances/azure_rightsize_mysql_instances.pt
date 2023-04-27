@@ -295,7 +295,7 @@ datasource "ds_azure_mysql_single" do
     query "api-version", "2017-12-01"
     header "User-Agent", "RS Policies"
     # Ignore status 400, 403, and 404 which can be returned in certain (legacy) types of Azure Subscriptions
-    ignore_status [400,403,404]
+    ignore_status [400, 403, 404]
   end
   result do
     encoding "json"
@@ -323,7 +323,7 @@ datasource "ds_azure_mysql_flexible" do
     query "api-version", "2021-05-01"
     header "User-Agent", "RS Policies"
     # Ignore status 400, 403, and 404 which can be returned in certain (legacy) types of Azure Subscriptions
-    ignore_status [400,403,404]
+    ignore_status [400, 403, 404]
   end
   result do
     encoding "json"
@@ -470,6 +470,7 @@ script "js_merged_metrics", type: "javascript" do
         capacity = null
         recommended_capacity = null
         recommendation = null
+        recommended_sku = null
         average_cpu = null
         sku_level = null
         sku_name = item['sku']['name']
@@ -546,11 +547,30 @@ script "js_merged_metrics", type: "javascript" do
           if (db_type == "single") {
             category = "Single"
             capacity = sku_capacity
+
+            if (isNaN(recommended_capacity) == false) {
+              if (sku_name.split('_')[0] == "Standard" || sku_name.split('_')[0] == "Premium") {
+                recommended_sku = sku_name.split('_')[0] + '_' + recommended_capacity
+              } else {
+                recommended_sku = sku_name.split('_')[0] + '_' + sku_name.split('_')[1] + '_' + recommended_capacity
+              }
+            }
           }
 
           if (db_type == "flexible") {
             category = "Flexible"
             capacity = sku_name.split('_')[1].replace(/[^0-9]/g, "")
+
+            if (isNaN(recommended_capacity) == false) {
+              base_sku = sku_name.split('_')[0] + '_' + sku_name.split('_')[1]
+              sku_version = ''
+
+              if (sku_name.split('_')[2] != undefined) {
+                sku_version = '_' + sku_name.split('_')[2]
+              }
+
+              recommended_sku = base_sku.split(capacity)[0] + recommended_capacity + base_sku.split(capacity)[1] + sku_version
+            }
           }
 
           result.push({
@@ -568,6 +588,7 @@ script "js_merged_metrics", type: "javascript" do
             tags: item['tags'],
             recommendation: recommendation,
             recommended_capacity: recommended_capacity,
+            recommended_sku: recommended_sku,
             subscriptionId: item['subscriptionId'],
             subscriptionName: item['subscriptionName'],
             category: category
@@ -634,6 +655,7 @@ script "js_combined_data", type: "javascript" do
         unit: instance['unit'],
         tags: instance['tags'],
         recommendation: instance['recommendation'],
+        recommended_sku: instance['recommended_sku'],
         recommended_capacity: instance['recommended_capacity'],
         subscriptionId: instance['subscriptionId'],
         subscriptionName: instance['subscriptionName'],
@@ -700,6 +722,9 @@ policy "poly_azure_db_utilization" do
       end
       field "recommended_capacity" do
         label "Recommended Capacity"
+      end
+      field "recommended_sku" do
+        label "Recommended SKU Name"
       end
       field "cost" do
         label "Estimated Monthly Cost"
@@ -771,30 +796,44 @@ define rightsize_db($data, $param_log_to_cm_audit_entries, $param_azure_endpoint
   $$debug = $param_log_to_cm_audit_entries == "Yes"
   $all_responses = []
   foreach $item in $data do
-    if $item["recommended_capacity"] != "n/a"
+    if $item["recommended_capacity"] != "N/A"
       sub on_error: skip do
-        $response = http_request(
-          auth: $$azure_auth,
-          verb: "patch",
-          host: $param_azure_endpoint,
-          https: true,
-          href: $item["id"],
-          query_strings: {
-            "api-version": "2017-10-01-preview"
-          },
-          headers: {
-            "cache-control": "no-cache",
-            "content-type": "application/json"
-          },
-          body: {
+        if $item["category"] == "Single"
+          $body = {
             "sku": {
               "name": $item["skuName"],
               "tier": $item["skuTier"],
               "capacity": $item["recommended_capacity"]
             }
           }
+
+          $apiversion = "2017-12-01"
+        end
+
+        if $item["category"] == "Flexible"
+          $body = {
+            "sku": {
+              "name": $item["recommended_sku"],
+              "tier": $item["skuTier"]
+            }
+          }
+
+          $apiversion = "2021-05-01"
+        end
+
+        $response = http_request(
+          auth: $$azure_auth,
+          verb: "PATCH",
+          host: $param_azure_endpoint,
+          https: true,
+          href: $item["id"],
+          query_strings: {
+            "api-version": $apiversion
+          },
+          body: $body
         )
-        call sys_log('Update RightSize Azure MySQL Databases: ',to_s($response))
+
+        call sys_log('Update RightSize Azure MySQL Databases: ', to_s($response))
         $all_responses << $response
       end
     end
