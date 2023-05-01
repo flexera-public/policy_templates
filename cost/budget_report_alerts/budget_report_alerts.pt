@@ -8,7 +8,7 @@ tenancy "single"
 default_frequency "daily"
 
 info(
-  version: "2.0",
+  version: "2.1",
   provider: "Flexera Optima",
   service: "",
   policy_set: ""
@@ -45,6 +45,12 @@ parameter "param_use_groups" do
   allowed_values "Summarized","By dimensions"
   default "Summarized"
   description "Use this parameter to specify how to group the data"
+end
+
+parameter "param_dimensions" do
+  type "list"
+  label "Group Filter by Dimension"
+  description "Filter by dimension=value like 'Cloud Vendor=AWS' 'Cloud Vendor Account=Account1,Account2' ; multiple filters with multiple values can be provided"
 end
 
 parameter "param_unbudgeted" do
@@ -221,12 +227,12 @@ end
 
 
 datasource "ds_aggregated" do
-  run_script $js_aggregated, $ds_reports, $ds_currency_code, $ds_currency_reference, $param_threshold_percentage, $param_type, f1_app_host, $param_budget_name_id, $ds_dimensions
+  run_script $js_aggregated, $ds_reports, $ds_currency_code, $ds_currency_reference, $param_threshold_percentage, $param_type, f1_app_host, $param_budget_name_id, $ds_dimensions, $param_dimensions
 end
 
 
 script "js_aggregated", type: "javascript" do
-  parameters "reports", "currency_code", "currency_reference", "threshold_percent", "param_type", "f1_app_host", "budget_name_id", "ds_dimensions"
+  parameters "reports", "currency_code", "currency_reference", "threshold_percent", "param_type", "f1_app_host", "budget_name_id", "ds_dimensions", "param_dimensions"
   result "results"
   code <<-EOS
   var results = {
@@ -234,6 +240,51 @@ script "js_aggregated", type: "javascript" do
     exceeded: [],
     forecasted: [],
   }
+
+  var filtered_dimensions = {
+    ids: [],
+    names: [],
+    invalid_ids: [],
+    filters: [],
+    expressionsand: [],
+    expressionsor: []
+  };
+  var ds_dimensions_inverted = {}
+  _.map(ds_dimensions, function(value,key){ ds_dimensions_inverted[value]=key});
+
+  _.each(param_dimensions, function (user_input_dimension) {
+  input_map = user_input_dimension.split("=")
+  if ( ds_dimensions[input_map[0]] === undefined && ds_dimensions_inverted[input_map[0]] === undefined ) {
+    filtered_dimensions.invalid_ids.push(input_map[0])
+  } else {
+    var dimensionid = ""
+    var dimensionname = ""
+    dimensionname = get_dim_name(input_map[0])
+    dimensionid = get_dim_id(input_map[0])
+    filtered_dimensions.ids.push(dimensionid)
+    filtered_dimensions.names.push(dimensionname)
+    if (input_map.length > 1) {
+      multifiltervalues = input_map[1].split(",");
+      var expressiontype = ""
+      console.log(multifiltervalues)
+      if (multifiltervalues.length === 1) {
+        expressiontype = "or"
+      } else if ( multifiltervalues.length > 1 ) {
+        expressiontype = "and"
+      }
+      _.each(multifiltervalues, function (value) {
+        filter = { "dimensionid":dimensionid, "dimensionname":dimensionname, "value": value, "expressiontype": expressiontype }
+        expression = {"type": "equal", "dimension": dimensionid, "value": value}
+        filtered_dimensions.filters.push(filter)
+      if (expressiontype === "and") {
+        filtered_dimensions.expressionsand.push(expression)
+      } else if(expressiontype === "or")
+      filtered_dimensions.expressionsor.push(expression)
+      });
+    }
+  }
+  });
+  console.log(filtered_dimensions)
 
   if (!reports || !reports.length) {
     results.invalid.push(budget_name_id);
@@ -273,6 +324,14 @@ script "js_aggregated", type: "javascript" do
       vals.push(ds_dimensions[k]||k);
     })
     return vals.join(", ");
+  }
+
+  function get_dim_name(name_or_id) {
+    return ds_dimensions[name_or_id] || name_or_id;
+  }
+
+  function get_dim_id(name_or_id) {
+    return ds_dimensions_inverted[name_or_id] || name_or_id;
   }
 
   var current = new Date();
