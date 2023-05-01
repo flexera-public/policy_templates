@@ -1,3 +1,5 @@
+const { iteratee } = require("underscore")
+
 name "Superseded Instances"
 rs_pt_ver 20180301
 type "policy"
@@ -82,9 +84,60 @@ datasource "ds_billing_centers" do
   end
 end
 
-datasource "ds_new_bc_costs" do
+datasource "ds_costs_time_periods" do
   request do
-    run_script $js_new_costs_request, rs_org_id, $ds_billing_centers, $param_billing_centers, rs_optima_host
+    run_script $js_costs_time_periods
+  end
+end
+
+script "js_costs_time_periods", type: "javascript" do
+  #parameters "rs_org_id","rs_optima_host"
+  result "results"
+  code <<-EOS
+    // Get todays date
+    var date = new Date();
+    var results = [];
+
+    // Setup time periods for collecting costs
+    var thirtyDaysAgo = Date().setMonth(date.getMonth()-1);
+    var sevenDaysAgo = Date().setDate(date.getDate()-7);
+    var timePeriods = [thirtyDaysAgo, sevenDaysAgo];
+
+    // For each time period, push the items
+    _.each(timePeriods, function(date) {
+      // Make sure we get at least a month worth of costs
+      var year = date.getUTCFullYear();
+      var month =  (date.getUTCMonth()==11)?1:2 + date.getUTCMonth();
+
+      if (month == 1){
+        var lmonth = 12;
+        var lyear = year ;
+        year=year+1;
+      } else {
+        var lmonth = month-1;
+        var lyear = year ;
+      }
+
+      mo = month.toString().length > 1 ? month : '0' + month;
+      lmo = lmonth.toString().length > 1 ? lmonth : '0' + lmonth;
+      var next_month = year + "-" + mo
+      var current_month = lyear + "-" + lmo
+
+      results.push({
+        "next_month": next_month,
+        "current_month": current_month
+      })
+    }
+
+
+
+  EOS
+end
+
+datasource "ds_new_bc_costs" do
+  iterate $ds_costs_time_periods
+  request do
+    run_script $js_new_costs_request, rs_org_id, $ds_billing_centers, $param_billing_centers, rs_optima_host, iter_item
   end
   result do
     encoding "json"
@@ -99,6 +152,86 @@ datasource "ds_new_bc_costs" do
       field "resource_id", jmes_path(col_item, "dimensions.resource_id")
     end
   end
+end
+
+script "js_new_costs_request", type: "javascript" do
+  parameters "org_id","ds_billing_centers", "param_billing_centers", "optima_host", "iter_item"
+  result "request"
+  code <<-EOS
+    var next_month = iter_item.next_month
+    var current_month = iter_item.current_month
+    var billing_center_ids = []
+    if (param_billing_centers.length === 0){
+      var top_billing_centers = _.reject(ds_billing_centers, function(bc){ return bc.parent_id != null });
+      billing_center_ids = _.map(top_billing_centers, function(value, key){ return value.id });
+    } else {
+      // get array of billing center id's that match the names in param_billing_centers.
+      billing_center_names = _.map(param_billing_centers, function(name){ return name.toLowerCase(); });
+      billing_center_ids = _.compact(_.map(ds_billing_centers, function(value){ if(_.contains(billing_center_names, value.name.toLowerCase())){return value.id} }));
+    }
+
+    var dimensions = ["billing_center_id","vendor","vendor_account","vendor_account_name", "category","instance_type","region","resource_type","service","usage_type","usage_unit","resource_id"]
+    var expression = [
+      {"type" : "and", "expressions" : [
+        {"dimension":"category","type":"equal","value":"Compute"},
+        {"dimension":"vendor","type":"equal","value":"Azure"},
+        {"dimension":"service", "type":"equal", value:"Microsoft.Compute"},
+        {"dimension":"resource_type","type":"substring","substring":"Virtual Machines"}
+      ]},
+      {"type" : "and", "expressions" : [
+        {"dimension":"category","type":"equal","value":"Compute"},
+        {"dimension":"vendor","type":"equal","value":"AzureCSP"},
+        {"dimension":"service", "type":"equal", value:"Microsoft.Compute"},
+        {"dimension":"resource_type","type":"substring","substring":"Virtual Machines"}
+      ]},
+      {"type" : "and", "expressions" : [
+        {"dimension":"category","type":"equal","value":"Compute"},
+        {"dimension":"resource_type","type":"equal","value":"Compute Instance"},
+        {"dimension":"vendor","type":"equal","value":"AWS"}
+      ]},
+      {"type" : "and", "expressions" : [
+        {"dimension":"category","type":"equal","value":"Compute"},
+        {"dimension":"vendor","type":"equal","value":"AzureMCA-Enterprise"},
+        {"dimension":"service", "type":"equal", value:"Microsoft.Compute"},
+        {"dimension":"resource_type","type":"substring","substring":"Virtual Machines"}
+      ]},
+        {"type" : "and", "expressions" : [
+        {"dimension":"category","type":"equal","value":"Compute"},
+        {"dimension":"vendor","type":"equal","value":"AzureMCA-CSP"},
+        {"dimension":"service", "type":"equal", value:"Microsoft.Compute"},
+        {"dimension":"resource_type","type":"substring","substring":"Virtual Machines"}
+      ]},
+      {"type" : "and", "expressions" : [
+        {"dimension":"vendor","type":"equal","value":"GCP"},
+        {"dimension":"service", "type":"equal", value:"Compute Engine"},
+        {"dimension":"resource_type","type":"substring","substring":"*running*"}
+      ]},
+    ]
+
+    var request = {
+      auth: "auth_flexera",
+      host: optima_host,
+      verb: "POST",
+      path: "/bill-analysis/orgs/" + org_id + "/costs/select",
+      body_fields: {
+        "billing_center_ids": billing_center_ids,
+        "dimensions": dimensions,
+        "metrics": ["usage_amount", "cost_amortized_unblended_adj"],
+        "granularity": "month",
+        "start_at": current_month,
+        "end_at": next_month,
+        "limit": 100000,
+        "filter": {
+          "type":"or",
+          "expressions": expression
+        }
+      },
+      headers: {
+        "Api-Version": "1.0",
+        "User-Agent": "RS Policies",
+      }
+    }
+EOS
 end
 
 datasource "ds_currency_reference" do
@@ -178,102 +311,6 @@ script "js_get_billing_centers", type: "javascript" do
   EOS
 end
 
-script "js_new_costs_request", type: "javascript" do
-  parameters "org_id","ds_billing_centers", "param_billing_centers", "optima_host"
-  result "request"
-  code <<-EOS
-    var date = new Date();
-    // Make sure we get at least a month worth of costs
-    date.setMonth(date.getMonth()-1);
-    var year = date.getUTCFullYear();
-    var month =  (date.getUTCMonth()==11)?1:2 + date.getUTCMonth();
-
-    if (month == 1){
-      var lmonth = 12;
-      var lyear = year ;
-      year=year+1;
-    } else {
-      var lmonth = month-1;
-      var lyear = year ;
-    }
-
-    mo = month.toString().length > 1 ? month : '0' + month;
-    lmo = lmonth.toString().length > 1 ? lmonth : '0' + lmonth;
-    var next_month = year + "-" + mo
-    var current_month = lyear + "-" + lmo
-    var billing_center_ids = []
-    if (param_billing_centers.length === 0){
-      var top_billing_centers = _.reject(ds_billing_centers, function(bc){ return bc.parent_id != null });
-      billing_center_ids = _.map(top_billing_centers, function(value, key){ return value.id });
-    } else {
-      // get array of billing center id's that match the names in param_billing_centers.
-      billing_center_names = _.map(param_billing_centers, function(name){ return name.toLowerCase(); });
-      billing_center_ids = _.compact(_.map(ds_billing_centers, function(value){ if(_.contains(billing_center_names, value.name.toLowerCase())){return value.id} }));
-    }
-
-    var dimensions = ["billing_center_id","vendor","vendor_account","vendor_account_name", "category","instance_type","region","resource_type","service","usage_type","usage_unit","resource_id"]
-    var expression = [
-      {"type" : "and", "expressions" : [
-        {"dimension":"category","type":"equal","value":"Compute"},
-        {"dimension":"vendor","type":"equal","value":"Azure"},
-        {"dimension":"service", "type":"equal", value:"Microsoft.Compute"},
-        {"dimension":"resource_type","type":"substring","substring":"Virtual Machines"}
-      ]},
-      {"type" : "and", "expressions" : [
-        {"dimension":"category","type":"equal","value":"Compute"},
-        {"dimension":"vendor","type":"equal","value":"AzureCSP"},
-        {"dimension":"service", "type":"equal", value:"Microsoft.Compute"},
-        {"dimension":"resource_type","type":"substring","substring":"Virtual Machines"}
-      ]},
-      {"type" : "and", "expressions" : [
-        {"dimension":"category","type":"equal","value":"Compute"},
-        {"dimension":"resource_type","type":"equal","value":"Compute Instance"},
-        {"dimension":"vendor","type":"equal","value":"AWS"}
-      ]},
-      {"type" : "and", "expressions" : [
-        {"dimension":"category","type":"equal","value":"Compute"},
-        {"dimension":"vendor","type":"equal","value":"AzureMCA-Enterprise"},
-        {"dimension":"service", "type":"equal", value:"Microsoft.Compute"},
-        {"dimension":"resource_type","type":"substring","substring":"Virtual Machines"}
-      ]},
-        {"type" : "and", "expressions" : [
-        {"dimension":"category","type":"equal","value":"Compute"},
-        {"dimension":"vendor","type":"equal","value":"AzureMCA-CSP"},
-        {"dimension":"service", "type":"equal", value:"Microsoft.Compute"},
-        {"dimension":"resource_type","type":"substring","substring":"Virtual Machines"}
-      ]},
-      {"type" : "and", "expressions" : [
-        {"dimension":"vendor","type":"equal","value":"GCP"},
-        {"dimension":"service", "type":"equal", value:"Compute Engine"},
-        {"dimension":"resource_type","type":"substring","substring":"*running*"}
-      ]},
-    ]
-
-    var request = {
-      auth: "auth_flexera",
-      host: optima_host,
-      verb: "POST",
-      path: "/bill-analysis/orgs/" + org_id + "/costs/select",
-      body_fields: {
-        "billing_center_ids": billing_center_ids,
-        "dimensions": dimensions,
-        "metrics": ["usage_amount", "cost_amortized_unblended_adj"],
-        "granularity": "month",
-        "start_at": current_month,
-        "end_at": next_month,
-        "limit": 100000,
-        "filter": {
-          "type":"or",
-          "expressions": expression
-        }
-      },
-      headers: {
-        "Api-Version": "1.0",
-        "User-Agent": "RS Policies",
-      }
-    }
-EOS
-end
 
 script "js_format_costs", type: "javascript" do
   parameters "new_bc_costs", "ds_billing_centers"
