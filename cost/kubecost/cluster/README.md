@@ -6,7 +6,7 @@ The Kubecost Cluster Sizing Recommendations policy utilizes a Kubecost API to pr
 
 ## Prerequisites
 
-Minimum Kubecost version to apply this policy: 1.102.2.\
+Minimum Kubecost version to apply this policy: 1.100.2.\
 This policy does not use credentials to access resources in a Kubecost API.\
 If you setup authentication for Kubecost access, you can use one of the following options:
 
