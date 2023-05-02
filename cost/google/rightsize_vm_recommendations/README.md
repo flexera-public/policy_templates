@@ -2,7 +2,7 @@
 
 ## What it does
 
-This Policy finds Rightsize Virtual Machine Recommendations and reports when it finds them. These recommendations are based on the optimal machine type to more efficiently use the instance's resources. 
+This Policy finds Rightsize Virtual Machine Recommendations and reports when it finds them. These recommendations are based on the optimal machine type to more efficiently use the instance's resources.
 
 ## Input parameters
 
