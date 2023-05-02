@@ -53,6 +53,7 @@ These templates can generate savings estimates for your environment.
 - [Google Cloud SQL Idle Instance Recommender](./cost/google/cloud_sql_idle_instance_recommendations)
 - [Google Idle IP Address Recommender](./cost/google/idle_ip_address_recommendations)
 - [Google Idle VM Recommender](./cost/google/idle_vm_recommendations)
+- [Google Rightsize VM Recommender](./cost/google/rightsize_vm_recommendations)
 - [Google Idle Persistent Disk Recommender](./cost/google/idle_persistent_disk_recommendations)
 
 ### Policy Templates for Compliance
