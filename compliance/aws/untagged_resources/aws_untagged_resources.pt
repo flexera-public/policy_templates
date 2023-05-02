@@ -7,7 +7,7 @@ severity "low"
 category "Compliance"
 default_frequency "weekly"
 info(
-  version: "2.9",
+  version: "3.0",
   provider: "AWS",
   service: "",
   policy_set:"Untagged resources"
@@ -17,11 +17,19 @@ info(
 # User inputs
 ###############################################################################
 
+parameter "param_allowed_regions_allow_or_deny" do
+  type "string"
+  label "Allow/Deny Regions"
+  description "Allow or Deny entered regions. See the README for more details"
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
 parameter "param_allowed_regions" do
   type "list"
-  label "Allowed Regions"
+  label "Regions"
   allowed_pattern /^([a-zA-Z-_]+-[a-zA-Z0-9-_]+-[0-9-_]+,*|)+$/
-  description "A list of allowed regions. See the README for more details"
+  description "A list of allowed or denied regions. See the README for more details"
 end
 
 parameter "param_email" do
@@ -101,11 +109,11 @@ end
 
 #FILTER REGIONS LIST ON 'ALLOWED REGIONS' PARAMETER
 datasource "ds_regions" do
-  run_script $js_get_regions, $param_allowed_regions, $ds_regions_list
+  run_script $js_get_regions, $param_allowed_regions, $ds_regions_list, $param_allowed_regions_allow_or_deny
 end
 
 script "js_get_regions", type:"javascript" do
-  parameters "user_entered_regions", "all_regions"
+  parameters "user_entered_regions", "all_regions", "regions_allow_or_deny"
   result "regions"
   code <<-EOS
     if (_.isEmpty(user_entered_regions)) {
@@ -114,10 +122,15 @@ script "js_get_regions", type:"javascript" do
       //Filter unique regions
       var uniqueRegions = _.uniq(user_entered_regions);
       var all_regions_list = []
+      //Filter and remove denied regions from all_regions
+      if (regions_allow_or_deny == "Deny"){
+        var all_regions = all_regions.filter(function(obj){
+          return user_entered_regions.indexOf(obj.region) === -1;
+        });
+      }
       all_regions.forEach(function(all_region){
         all_regions_list.push(all_region.region)
       })
-
       //Filter valid regions
       var valid_regions = []
       _.map(uniqueRegions, function(uniqueRegion){
@@ -176,7 +189,7 @@ script "js_filter_resources", type: "javascript" do
   code <<-EOS
   //For each Resource in Resource List
   _.each(ds_resources, function(resource){
-    
+
     //Create a field for Missing tags
     resource["missingTagKeys"] = []
     resource["missingTagValues"] = []
@@ -187,7 +200,7 @@ script "js_filter_resources", type: "javascript" do
       current_tag = _.find(resource.tags, function(tag){ return tag.tagKey == param })
       // If Tag Key does not exist for Resource, create Missing Tag field and set to True
       if ( current_tag == undefined || current_tag == null) {
-        resource["isMissingTagKey"] = true 
+        resource["isMissingTagKey"] = true
         resource.missingTagKeys.push(param)
       }
       // Otherwise, if Tag Key does exist...
@@ -223,7 +236,7 @@ script "js_filter_resources", type: "javascript" do
     //Create string for existing Tags
     var existing_tags = ""
     _.each(resource.tags, function(tag){
-      if ( existing_tags == "" ) { existing_tags += tag.tagKey + "=" + tag.tagValue } 
+      if ( existing_tags == "" ) { existing_tags += tag.tagKey + "=" + tag.tagValue }
       else { existing_tags += ", " + tag.tagKey + "=" + tag.tagValue }
     })
     resource["existingTags"] = existing_tags
@@ -321,7 +334,7 @@ define cwf_add_tags($data, $param_tags_to_add) return $all_responses, $list_of_t
     foreach $tag in $param_tags_to_add do
       $tag_key_to_add = first(split( $tag, "=" ))
       $tag_value_to_add = ""
-      if $tag_key_to_add != last(split( $tag, "=")) 
+      if $tag_key_to_add != last(split( $tag, "="))
         $tag_value_to_add = last(split( $tag, "="))
       end
       $filtered_tags_to_add_obj[$tag_key_to_add] = $tag_value_to_add

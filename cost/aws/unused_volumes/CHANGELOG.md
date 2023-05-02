@@ -1,5 +1,9 @@
 # Changelog
 
+## v6.0
+
+- Added parameter to enable Allow or Deny filtering by user entered regions
+
 ## v5.1
 
 - Changed "Id" field in incident output to "ID" to match other policies and ensure proper reporting.

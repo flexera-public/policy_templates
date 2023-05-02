@@ -7,7 +7,7 @@ severity "low"
 category "Cost"
 default_frequency "weekly"
 info(
-  version: "2.0",
+  version: "3.0",
   provider: "AWS",
   service: "Compute",
   policy_set: "Rightsize Compute Instances",
@@ -25,12 +25,19 @@ parameter "param_aws_account_number" do
   default ""
 end
 
+parameter "param_021_allowed_regions_allow_or_deny" do
+  type "string"
+  label "Allow/Deny Regions"
+  description "Allow or Deny entered regions. See the README for more details"
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
 parameter "param_02_allowed_regions" do
   type "list"
-  label "Allowed Regions"
+  label "Regions"
   allowed_pattern /^([a-zA-Z-_]+-[a-zA-Z0-9-_]+-[0-9-_]+,*|)+$/
-  description "A list of allowed regions. See the README for more details"
-  default []
+  description "A list of allowed or denied regions. See the README for more details"
 end
 
 #IDLE INSTANCE THRESHOLD PARAMETERS##########
@@ -268,11 +275,11 @@ end
 
 #FILTER REGIONS LIST ON 'ALLOWED REGIONS' PARAMETER
 datasource "ds_regions" do
-  run_script $js_get_regions, $param_02_allowed_regions, $ds_regions_list
+  run_script $js_get_regions, $param_02_allowed_regions, $ds_regions_list, $param_021_allowed_regions_allow_or_deny
 end
 
 script "js_get_regions", type:"javascript" do
-  parameters "user_entered_regions", "all_regions"
+  parameters "user_entered_regions", "all_regions", "regions_allow_or_deny"
   result "regions"
   code <<-EOS
     if (_.isEmpty(user_entered_regions)) {
@@ -281,6 +288,12 @@ script "js_get_regions", type:"javascript" do
       //Filter unique regions
       var uniqueRegions = _.uniq(user_entered_regions)
       var all_regions_list = []
+      //Filter and remove denied regions from all_regions
+      if (regions_allow_or_deny == "Deny"){
+        var all_regions = all_regions.filter(function(obj){
+          return user_entered_regions.indexOf(obj.region) === -1;
+        });
+      }
       all_regions.forEach(function(all_region){
         all_regions_list.push(all_region.region)
       })
@@ -394,7 +407,7 @@ script "js_build_instances_queries", type: "javascript" do
 
     //console.log("CPU threshold for CloudWatch: ", param_avg_cpu)
     //console.log("Mem threshold for CloudWatch: ", param_avg_mem)
-  
+
     // Create the various queries we're going to send to CloudWatch for each instance
     queries = {}
     _.each(ds_instances, function(instance) {
@@ -752,7 +765,7 @@ end
 #COMBINE INSTANCE DATA WITH INSTANCE COST DATA FROM FLEXERA OPTIMA
 datasource "ds_idle_and_underutil_instances" do
   run_script $js_get_idle_and_underutil_instances, $ds_merged_metrics, $ds_instance_costs, $ds_aws_instance_size_map,
-  $param_03_idle_threshold_cpu_value, $param_04_idle_threshold_mem_value, $param_05_underutil_threshold_cpu_value, $param_06_underutil_threshold_mem_value, 
+  $param_03_idle_threshold_cpu_value, $param_04_idle_threshold_mem_value, $param_05_underutil_threshold_cpu_value, $param_06_underutil_threshold_mem_value,
   $ds_currency, $param_07_check_both, $param_08_threshold_statistic
 end
 
@@ -790,10 +803,10 @@ script "js_get_idle_and_underutil_instances", type:"javascript" do
   var idle_instances = []
   var total_savings = 0.00
   var cost_data_found = false
-  
+
   // The key name is lowercase, param value needs to be lowercase. We use this to keep backwards compatibility for the exported data.
   param_08_threshold_statistic = param_08_threshold_statistic.toLowerCase()
-  
+
   // Set CPU threshold (if Underutilized threshold is ignored, then check for Idle threshold)
   var param_avg_cpu = -1
   if (param_05_underutil_threshold_cpu_value != -1) {
@@ -840,7 +853,7 @@ script "js_get_idle_and_underutil_instances", type:"javascript" do
         }
       })
       //var include_instance = false
-      
+
       //CONDITIONS - checking if instance is idle or underutilized based on user params
       // If checking ONLY cpu utilization -
       if (param_avg_mem == -1) {
@@ -849,14 +862,14 @@ script "js_get_idle_and_underutil_instances", type:"javascript" do
           instance["savings"] = parseFloat(total_cost).toFixed(3)
           instance["recommendationType"] = "Terminate"
           idle_total_savings += total_cost
-        } 
+        }
         // If an Underutilized instance
         else if ( instance['cpu' + "_" + param_08_threshold_statistic] < param_05_underutil_threshold_cpu_value ) {
           instance["savings"] = parseFloat(total_cost / 2).toFixed(3)
           instance["recommendationType"] = "Downsize"
           underutil_total_savings += total_cost
         }
-      } 
+      }
       // If checking ONLY memory utilization -
       if (param_avg_cpu == -1) {
         // If an Idle instance
@@ -874,17 +887,17 @@ script "js_get_idle_and_underutil_instances", type:"javascript" do
       }
       // If checking both cpu AND memory utilization
       if ( param_avg_cpu != -1 && param_avg_mem != -1 ) {
-        // If checking instance is below threshold for both cpu AND memory 
+        // If checking instance is below threshold for both cpu AND memory
         if ( param_07_check_both == "Both CPU and Memory" ) {
           // If an Idle instance
-          if ( instance['cpu' + "_" + param_08_threshold_statistic] < param_03_idle_threshold_cpu_value 
+          if ( instance['cpu' + "_" + param_08_threshold_statistic] < param_03_idle_threshold_cpu_value
             && instance['mem' + "_" + param_08_threshold_statistic] < param_04_idle_threshold_mem_value ) {
             instance["savings"] = parseFloat(total_cost).toFixed(3)
             instance["recommendationType"] = "Terminate"
             idle_total_savings += total_cost
           }
           // If an Underutilized instance
-          else if ( instance['cpu' + "_" + param_08_threshold_statistic] < param_05_underutil_threshold_cpu_value 
+          else if ( instance['cpu' + "_" + param_08_threshold_statistic] < param_05_underutil_threshold_cpu_value
             && instance['mem' + "_" + param_08_threshold_statistic] < param_06_underutil_threshold_mem_value ) {
             instance["savings"] = parseFloat(total_cost).toFixed(3)
             instance["recommendationType"] = "Downsize"
@@ -894,14 +907,14 @@ script "js_get_idle_and_underutil_instances", type:"javascript" do
         // If checking instance is below threshold for both cpu OR memory
         else {
           // If an Idle instance
-          if ( instance['cpu' + "_" + param_08_threshold_statistic] < param_03_idle_threshold_cpu_value 
+          if ( instance['cpu' + "_" + param_08_threshold_statistic] < param_03_idle_threshold_cpu_value
             || instance['mem' + "_" + param_08_threshold_statistic] < param_04_idle_threshold_mem_value ) {
             instance["savings"] = parseFloat(total_cost).toFixed(3)
             instance["recommendationType"] = "Terminate"
             idle_total_savings += total_cost
           }
           // If an Underutilized instance
-          else if ( instance['cpu' + "_" + param_08_threshold_statistic] < param_05_underutil_threshold_cpu_value 
+          else if ( instance['cpu' + "_" + param_08_threshold_statistic] < param_05_underutil_threshold_cpu_value
             || instance['mem' + "_" + param_08_threshold_statistic] < param_06_underutil_threshold_mem_value ) {
             instance["savings"] = parseFloat(total_cost).toFixed(3)
             instance["recommendationType"] = "Downsize"
@@ -918,14 +931,14 @@ script "js_get_idle_and_underutil_instances", type:"javascript" do
         if ( ds_aws_instance_size_map[instance.resourceType] ) {
           vm_size_down = ds_aws_instance_size_map[instance.resourceType].down
           if ( vm_size_down == null ) { vm_size_down = "N/A" }
-        } 
+        }
       } else {
         vm_size_down = "Terminate Instance"
       }
       instance["recommendedVmSize"] = vm_size_down
-      
+
     })
-    
+
     //Sort By Region and then by Account Name
     result = _.sortBy(ds_merged_metrics, "region")
     result = _.sortBy(result, "accountName")
@@ -937,7 +950,7 @@ script "js_get_idle_and_underutil_instances", type:"javascript" do
   summary_data = {
     "underutilMessage": "The total estimated monthly savings is " + underutil_total_savings,
     "idleMessage": "The total estimated monthly savings is " + idle_total_savings,
-    "underutilInstanceCount": _.size( _.filter(result, function(res){ 
+    "underutilInstanceCount": _.size( _.filter(result, function(res){
       return res.recommendationType == "Downsize" }) ),
     "idleInstanceCount": _.size( _.filter(result, function(res){
       return res.recommendationType == "Terminate" }) )
