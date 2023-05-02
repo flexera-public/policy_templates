@@ -2,7 +2,7 @@
 
 ## v4.5
 
-- Improved policy efficiency when gathering Azure log data
+- General code optimization to improve execution time.
 
 ## v4.4
 

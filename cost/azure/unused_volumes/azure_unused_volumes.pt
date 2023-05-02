@@ -285,10 +285,13 @@ script "js_filter_disks", type: "javascript" do
 EOS
 end
 
-datasource "ds_azure_log_activity_disks" do
-  iterate $ds_filtered_subscriptions
+# Pull log activity per disk instead of per subscription.
+# This is because pulling data via subscription actually takes longer due to pagination
+# and the large number of irrelevant log entries due to Azure's limited filtering options.
+datasource "ds_azure_log_activity" do
+  iterate $ds_filter_disks
   request do
-    run_script $js_get_logactivity, val(iter_item, "subscriptionID"), $param_unattached_days, $param_azure_endpoint, "Microsoft.Compute/disks"
+    run_script $js_azure_log_activity, val(iter_item,"subscriptionID"), val(iter_item, "disk_id"), $param_unattached_days, $param_azure_endpoint
   end
   result do
     encoding "json"
@@ -299,22 +302,8 @@ datasource "ds_azure_log_activity_disks" do
   end
 end
 
-datasource "ds_azure_log_activity_deployments" do
-  iterate $ds_filtered_subscriptions
-  request do
-    run_script $js_get_logactivity, val(iter_item, "subscriptionID"), $param_unattached_days, $param_azure_endpoint, "Microsoft.Resources/deployments"
-  end
-  result do
-    encoding "json"
-    collect jmes_path(response, "value[*]") do
-      field "operationName", jmes_path(col_item, "operationName.localizedValue")
-      field "resourceID", jmes_path(col_item, "resourceId")
-    end
-  end
-end
-
-script "js_get_logactivity", type: "javascript" do
-  parameters "subscriptionID", "param_unattached_days", "param_azure_endpoint", "resource_type"
+script "js_azure_log_activity", type: "javascript" do
+  parameters "subscriptionID", "disk_id", "param_unattached_days", "param_azure_endpoint"
   result "request"
   code <<-EOS
   end_date = new Date()
@@ -328,7 +317,7 @@ script "js_get_logactivity", type: "javascript" do
     "eventTimestamp ge '", start_date, "' and ",
     "eventTimestamp le '", end_date, "' and ",
     "eventChannels eq 'Admin, Operation' and ",
-    "resourceType eq '", resource_type, "'"
+    "resourceId eq '", disk_id, "'"
   ].join('')
 
   var request = {
@@ -413,26 +402,33 @@ EOS
 end
 
 datasource "ds_filter_activities" do
-  run_script $js_filter_activities, $ds_azure_log_activity_disks, $ds_azure_log_activity_deployments, $ds_filter_disks, $param_unattached_days
+  run_script $js_filter_activities, $ds_filter_disks, $ds_azure_log_activity, $param_unattached_days
 end
 
 script "js_filter_activities", type: "javascript" do
-  parameters "ds_azure_log_activity_disks", "ds_azure_log_activity_deployments", "ds_filter_disks", "param_unattached_days"
+  parameters "ds_filter_disks", "ds_azure_log_activity", "param_unattached_days"
   result "result"
   code <<-EOS
   result = []
+
   azure_log_activity = {}
 
-  _.each(ds_azure_log_activity_disks.concat(ds_azure_log_activity_deployments), function(item) {
-    azure_log_activity[item['resourceID']] = true
+  _.each(ds_azure_log_activity, function(item) {
+    azure_log_activity[item['resourceID'].toLowerCase()] = false
   })
 
   _.each(ds_filter_disks, function(disk) {
-    var expectedDate = new Date()
-    var createdTime = new Date(disk['timeCreated'])
+    inactive_disk = azure_log_activity[disk['disk_id'].toLowerCase()]
+
+    if (inactive_disk == null || inactive_disk == undefined) {
+      inactive_disk = true
+    }
+
+    expectedDate = new Date()
+    createdTime = new Date(disk['timeCreated'])
     expectedDate.setDate(expectedDate.getDate() - parseInt(param_unattached_days))
 
-    if (azure_log_activity[disk['disk_id']] != true && expectedDate.getTime() >= createdTime.getTime()) {
+    if (inactive_disk && expectedDate.getTime() >= createdTime.getTime()) {
       result.push({
         disk_id: disk['disk_id'],
         resourceName: disk['resourceName'],
