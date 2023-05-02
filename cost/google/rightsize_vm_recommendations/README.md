@@ -27,7 +27,7 @@ This policy uses [credentials](https://docs.flexera.com/flexera/EN/Automation/Ma
 
 The recommender API also needs to be [enabled.](https://cloud.google.com/recommender/docs/enabling#gcloud).
 
-Here you can also check what are the permissions required depending on the recommender: https://cloud.google.com/recommender/docs/recommenders
+Here you can also check what are the permissions required depending on the recommender: [https://cloud.google.com/recommender/docs/recommenders](https://cloud.google.com/recommender/docs/recommenders)
 
 ## Credential configuration
 
