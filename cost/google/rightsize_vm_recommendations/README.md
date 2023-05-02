@@ -39,6 +39,10 @@ Required permissions in the provider:
 
 - The `resourcemanager.projects.get` permission
 - The `roles/recommender.computeAdmin` role
+- The GCP permission `monitoring.timeSeries.list`
+- The GCP permission `compute.instances.list`
+
+This policy also requires the GCP Resource Manager API, GCP Compute Engine API, and GCP Recommender API to be enabled.
 
 ## Supported clouds
 
