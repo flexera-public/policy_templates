@@ -31,6 +31,15 @@ parameter "param_kubecost_host" do
   description "IP Address of Kubecost LB"
 end
 
+parameter "param_minimum_savings_threshold" do
+  category "Savings Plan"
+  label "Monthly Savings Threshold"
+  description "Specify the minimum estimated monthly savings that should result in a recommendation"
+  min_value 1
+  default 5
+  type "number"
+end
+
 parameter "param_window" do
   type "string"
   label "Range to analyze"
@@ -101,7 +110,7 @@ datasource "ds_request_sizing" do
   result do
     encoding "json"
     collect jmes_path(response, "Recommendations||[*]") do
-      field "clusterID", jmes_path(col_item, "clusterID")
+      field "accountID", jmes_path(col_item, "clusterID")
       field "namespace", jmes_path(col_item, "namespace")
       field "controllerKind", jmes_path(col_item, "controllerKind")
       field "controllerName", jmes_path(col_item, "controllerName")
@@ -158,11 +167,11 @@ script "js_request_sizing", type: "javascript" do
 end
 
 datasource "ds_recommendations" do
-  run_script $js_requests_array, $ds_request_sizing, $ds_get_currency
+  run_script $js_requests_array, $ds_request_sizing, $ds_get_currency, $param_minimum_savings_threshold
 end
 
 script "js_requests_array", type: "javascript" do
-  parameters "ds_request_sizing","ds_get_currency"
+  parameters "ds_request_sizing","ds_get_currency", "param_minimum_savings_threshold"
   result "result"
   code <<-EOS
     var recommendations = []
@@ -174,7 +183,8 @@ script "js_requests_array", type: "javascript" do
     }
 
     _.forEach(ds_request_sizing, function(c) {
-      var clusterId = c.clusterID
+      var accountID = c.accountID
+      var accountName = c.accountID
       var namespace = c.namespace
       var controllerKind = c.controllerKind
       var controllerName = c.controllerName
@@ -185,28 +195,32 @@ script "js_requests_array", type: "javascript" do
       var latestKnownRequestMem = c.latestKnownRequestMem
       var monthlySavingsCPU = c.monthlySavingsCPU? c.monthlySavingsCPU: 0
       var monthlySavingsMem = c.monthlySavingsMem? c.monthlySavingsMem: 0
-      var savings = monthlySavingsCPU > 0? monthlySavingsCPU: 0 + monthlySavingsMem > 0?monthlySavingsMem: 0
-      totalSavings += savings
-      var formatedsavings = roundNumber(savings,2)
+      var monthlyRecommendationSavings = monthlySavingsCPU + monthlySavingsMem
+      if ( monthlyRecommendationSavings >= param_minimum_savings_threshold ) {
+        var savings = monthlySavingsCPU > 0? monthlySavingsCPU: 0 + monthlySavingsMem > 0?monthlySavingsMem: 0
+        totalSavings += savings
+        var formatedsavings = roundNumber(savings,3)
 
-      recommendations.push({
-        clusterId: clusterId
-        namespace: namespace
-        controllerKind: controllerKind
-        controllerName: controllerName
-        containerName: containerName
-        recommendedRequestCPU: recommendedRequestCPU
-        recommendedRequestMem: recommendedRequestMem
-        latestKnownRequestCPU: latestKnownRequestCPU
-        latestKnownRequestMem: latestKnownRequestMem
-        monthlySavingsCPU: monthlySavingsCPU
-        monthlySavingsMem: monthlySavingsMem
-        savings: formatedsavings
-      })
+        recommendations.push({
+          accountID: accountID
+          accountName: accountID
+          namespace: namespace
+          controllerKind: controllerKind
+          controllerName: controllerName
+          containerName: containerName
+          recommendedRequestCPU: recommendedRequestCPU
+          recommendedRequestMem: recommendedRequestMem
+          latestKnownRequestCPU: latestKnownRequestCPU
+          latestKnownRequestMem: latestKnownRequestMem
+          monthlySavingsCPU: monthlySavingsCPU
+          monthlySavingsMem: monthlySavingsMem
+          savings: formatedsavings
+        })
+      }
     })
 
     currencyCode = ds_get_currency.currencyCode === "" ? "USD" : ds_get_currency.currencyCode;
-    var str = "$ " + roundNumber(totalSavings,2).toString() + " " + currencyCode
+    var str = "$ " + roundNumber(totalSavings,3).toString() + " " + currencyCode
 
     result={
       "savings": str,
@@ -227,8 +241,11 @@ policy "policy_kubecost_request_sizing" do
     escalate $report_requests
     check eq(size(val(data, "recommendations")), 0)
     export "recommendations" do
-      field "clusterId" do
-        label "Cluster ID"
+      field "accountID" do
+        label "Account ID"
+      end
+      field "accountName" do
+        label "Account Name"
       end
       field "namespace" do
         label "Namespace"

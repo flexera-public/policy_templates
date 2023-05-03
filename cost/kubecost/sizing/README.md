@@ -13,6 +13,9 @@ Kubecost request sizing recommendations policy provides Kubecost recommendations
 
 - *Email addresses of the recipients you wish to notify* - A list of email addresses to notify
 - *Kubecost Host or IP address* - The host or IP Address where your Kubecost runs
+- *Monthly Savings Threshold* - Specify the minimum estimated monthly savings that should result in a recommendation
+  - Default: 5
+  - Minimum value: 1
 - *Window size* - Time range to analyze. Supports hours or days before the current time in the following format: 2h or 3d
   - Default: "3d"
 - *The algorithm for the CPU* - Defines whether max or a certain quantile should be used for CPU utilization metric to compute CPU request recommendation
