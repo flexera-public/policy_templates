@@ -292,7 +292,10 @@ datasource "ds_recommendations" do
       field "region", val(iter_item, "region")
       field "id", jmes_path(col_item, "name")
       field "description", jmes_path(col_item, "description")
+      field "resourceLink", jmes_path(col_item, "content.overview.resource")
       field "resourceName", jmes_path(col_item, "content.overview.resourceName")
+      field "recommendedMachineType", jmes_path(col_item, "content.overview.recommendedMachineType")
+      field "currentMachineType", jmes_path(col_item, "content.overview.currentMachineType")
       field "primaryImpact", jmes_path(col_item, "primaryImpact")
       field "costUnits", jmes_path(col_item, "primaryImpact.costProjection.cost.units")
       field "costNanos", jmes_path(col_item, "primaryImpact.costProjection.cost.nanos")
@@ -401,78 +404,96 @@ script "js_instance_cost_mapping", type:"javascript" do
     }
     total = 0
     cur = ""
+
     _.each(vms, function(vm) {
-      _.each(recommendations, function(recommendation){
-        if(vm.resourceName == recommendation.resourceName) {
-          count++
-          if ( recommendation['currency'] !== undefined ) {
-            if (ds_currency_reference[recommendation['currency']] !== undefined ) {
-              cur = ds_currency_reference[recommendation['currency']]['symbol']
-            } else {
-              cur = "$"
-            }
-            recommendation['savingsCurrency'] = cur
+      var resource_link = vm.selfLink.replace("https://www.googleapis.com/compute/v1/", "")
+      vm["resourceLink"] = resource_link
+    })
+
+    //Remove Performance Recommendations
+    recommendations = _.filter(recommendations, function(rec) { return rec.primaryImpact.category == "COST" })
+
+    _.each(recommendations, function(recommendation) {
+      count ++
+      var rec_resource_link = recommendation.resourceLink.replace("//compute.googleapis.com/", "")
+      var instance = _.find(vms, function(vm) { return vm.resourceLink == rec_resource_link })
+      if (!( instance == undefined || instance == null )) {
+        if (recommendation["currency"] !== undefined ) {
+          if (ds_currency_reference[recommendation['currency']] !== undefined ) {
+            cur = ds_currency_reference[recommendation['currency']]['symbol']
           } else {
             cur = "$"
-            separator = ","
           }
-    
-          if (!(recommendation.costNanos == null || recommendation.costNanos == undefined)) {
-            if (recommendation.costNanos < 0) {
-              recommendation.costNanos = recommendation.costNanos * -1
-            }
-          } else {
-            recommendation.costNanos = 0
-          }
-    
-          if (!(recommendation.costUnits == null || recommendation.costUnits == undefined)) {
-            if (recommendation.costUnits < 0) {
-              recommendation.costUnits = recommendation.costUnits * -1
-            }
-          } else {
-            recommendation.costUnits = 0
-          }
-
-          var strNano = "." + recommendation.costNanos
-          var combine = recommendation.costUnits + parseFloat(strNano)
-          
-          var monthsDuration = 0
-          if (!(recommendation.duration == null || recommendation.duration == undefined)) {
-            monthsDuration = parseFloat(recommendation.duration.replace("s",""))/2628288
-          }
-
-          var monthlySavings = 0
-          if ( monthsDuration != 0 ) {
-            monthlySavings = combine / monthsDuration
-          }
-          total += monthlySavings
-
-          vm['savings'] = (Math.round( monthlySavings * 1000) / 1000)
-          vm['savingsCurrency'] = cur
-          vm['priority'] = recommendation['priority']
-          vm['region'] = recommendations['region']
-          vm['primaryImpact'] = recommendation['primaryImpact']
-          vm['recommenderSubtype'] = recommendation['recommenderSubtype']
-          vm['state'] = recommendation['state']
-          vm['service'] = "Compute"
-          tags = []
-          if (vm['tags'] != null) {
-            if( typeof vm['tags'] == 'object') {
-              Object.keys(vm.tags).forEach(function(key) {
-                if (vm.tags[key] == null || vm.tags[key]=="") {
-                  vm.tags[key] = "null"
-                }
-                tags.push(String(key)+'='+String(vm.tags[key]))
-              });
-            } else {
-              tags.push(vm["tags"].replace(":","=null"))
-            }
-          }
-          vm['tags'] = tags
-          instances.push(vm)
+          recommendation['savingsCurrency'] = cur
+        } else {
+          cur = "$"
+          separator = ","
         }
-      })
+
+        //Convert Costs from Negative to Positive and add Units and Nanos
+        if (!(recommendation.costNanos == null || recommendation.costNanos == undefined)) {
+          if (recommendation.costNanos != 0) {
+            recommendation.costNanos = recommendation.costNanos * -1
+          }
+        } else {
+          recommendation.costNanos = 0
+        }
+
+        if (!(recommendation.costUnits == null || recommendation.costUnits == undefined)) {
+          if (recommendation.costUnits != 0) {
+            recommendation.costUnits = recommendation.costUnits * -1
+          }
+        } else {
+          recommendation.costUnits = 0
+        }
+
+        var strNano = "." + recommendation.costNanos
+        var combine = recommendation.costUnits + parseFloat(strNano)
+
+        var monthsDuration = 0
+        if (!(recommendation.duration == null || recommendation.duration == undefined)) {
+          monthsDuration = parseFloat(recommendation.duration.replace("s",""))/2628288
+        }
+
+        var monthlySavings = 0
+        if ( monthsDuration != 0 ) {
+          monthlySavings = combine / monthsDuration
+        }
+        total += monthlySavings
+
+        //Get current Instance Type and Recommended Instance Type
+        //var current_instance_type = recommendation.description.replace( "Save cost by changing machine type from ", "" ).split(" to ")[0]
+        //var recommd_instance_type = recommendation.description.replace( "Save cost by changing machine type from ", "" ).split(" to ")[1]
+
+        instance['savingsCurrency'] = cur
+        instance['savings'] = (Math.round( monthlySavings * 1000) / 1000)
+        instance['description'] = recommendation['description']
+        instance['priority'] = recommendation['priority']
+        instance['region'] = recommendations['region']
+        instance['primaryImpact'] = recommendation['primaryImpact']
+        instance['currentInstanceType'] = recommendation['currentMachineType']
+        instance['recommendedInstanceType'] = recommendation['recommendedMachineType']
+        instance['recommenderSubtype'] = recommendation['recommenderSubtype']
+        instance['state'] = recommendation['state']
+        instance['service'] = "Compute"
+        tags = []
+        if (instance['tags'] != null) {
+          if( typeof instance['tags'] == 'object') {
+            Object.keys(instance.tags).forEach(function(key) {
+              if (instance.tags[key] == null || instance.tags[key]=="") {
+                instance.tags[key] = "null"
+              }
+              tags.push(String(key)+'='+String(instance.tags[key]))
+            });
+          } else {
+            tags.push(instance["tags"].replace(":","=null"))
+          }
+        }
+        instance['tags'] = tags
+        instances.push(instance)
+      }
     })
+
     if (instances.length != 0){
       if(count){
         total=cur + ' '+formatNumber((Math.round(total * 100) / 100));
@@ -538,6 +559,18 @@ policy "policy_recommendations" do
       end
       field "tags" do
         label "Tags"
+      end
+      field "primaryImpactCategory" do
+        label "Recommendation Primary Impact Category"
+        path "primaryImpact.category"
+      end
+      field "curInstanceType" do
+        label "Current Instance Type"
+        path "currentInstanceType.name"
+      end
+      field "recInstanceType" do
+        label "Recommended Instance Type"
+        path "recommendedInstanceType.name"
       end
       field "description" do
         label "Description"
