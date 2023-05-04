@@ -1,5 +1,9 @@
 # Changelog
 
+## v4.5
+
+- General code optimization to improve execution time.
+
 ## v4.4
 
 - Raised API limit to handle situations where more than 10,000 line items need to be retrieved.
