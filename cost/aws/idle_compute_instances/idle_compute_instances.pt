@@ -7,7 +7,7 @@ severity "low"
 category "Cost"
 default_frequency "daily"
 info(
-  version: "4.3",
+  version: "5.0",
   provider: "AWS",
   service: "EC2",
   policy_set: "Idle Compute Instances"
@@ -67,12 +67,19 @@ parameter "param_threshold_statistic" do
   allowed_values "Average", "p99", "p95", "p90"
 end
 
+parameter "param_allowed_regions_allow_or_deny" do
+  type "string"
+  label "Allow/Deny Regions"
+  description "Allow or Deny entered regions. See the README for more details"
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
 parameter "param_allowed_regions" do
   type "list"
-  label "Allowed Regions"
+  label "Regions"
   allowed_pattern /^([a-zA-Z-_]+-[a-zA-Z0-9-_]+-[0-9-_]+,*|)+$/
-  description "A list of allowed regions. See the README for more details"
-  default []
+  description "A list of allowed or denied regions. See the README for more details"
 end
 
 parameter "param_exclusion_tag_key" do
@@ -212,7 +219,7 @@ end
 
 # Filter the regions list by just the regions allowed by the parameter
 datasource "ds_regions" do
-  run_script $js_regions, $param_allowed_regions, $ds_regions_list
+  run_script $js_regions, $param_allowed_regions, $ds_regions_list, $param_allowed_regions_allow_or_deny
 end
 
 datasource "ds_instances_set" do
@@ -395,7 +402,7 @@ EOS
 end
 
 script "js_regions", type:"javascript" do
-  parameters "user_entered_regions", "all_regions"
+  parameters "user_entered_regions", "all_regions", "regions_allow_or_deny"
   result "regions"
   code <<-EOS
   if (_.isEmpty(user_entered_regions)) {
@@ -404,6 +411,12 @@ script "js_regions", type:"javascript" do
     //Filter unique regions
     var uniqueRegions = _.uniq(user_entered_regions)
     var all_regions_list = []
+    //Filter and remove denied regions from all_regions
+    if (regions_allow_or_deny == "Deny"){
+      var all_regions = all_regions.filter(function(obj){
+        return user_entered_regions.indexOf(obj.region) === -1;
+      });
+    }
     all_regions.forEach(function(all_region){
       all_regions_list.push(all_region.region)
     })

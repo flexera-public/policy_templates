@@ -1,5 +1,9 @@
 # Changelog
 
+## v5.0
+
+- Added parameter to enable Allow or Deny filtering by user entered regions
+
 ## v4.2
 
 - Raised API limit to handle situations where more than 10,000 line items need to be retrieved.
