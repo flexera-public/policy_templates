@@ -1,0 +1,621 @@
+name "Google Rightsize VM Recommender"
+rs_pt_ver 20180301
+type "policy"
+short_description "This Policy finds Google Machine Type (Rightsize) Recommendations and reports when it finds them. See the [README](https://github.com/flexera-public/policy_templates/tree/FOPTS-711_fix_google_rightsize_recommendation_policy/cost/google/rightsize_vm_recommendations) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+category "Cost"
+severity "low"
+default_frequency "daily"
+info(
+  version: "1.0",
+  provider:"GCP",
+  service: "Compute",
+  policy_set: "Rightsize Compute Instances",
+  recommendation_type: "Usage Reduction"
+)
+
+###############################################################################
+# Parameters
+###############################################################################
+
+parameter "param_email" do
+  type "list"
+  label "Email addresses to notify"
+  description "Email addresses of the recipients you wish to notify when new incidents are created"
+end
+
+parameter "param_zones" do
+  type "list"
+  label "Zones"
+  description "Location to check, this is zone names"
+end
+
+parameter "param_project" do
+  type "list"
+  label "Project ID"
+  description "Google Projects to Query. Leave blank to query all projects."
+end
+
+parameter "param_exclude_tags" do
+  category "User Inputs"
+  label "Exclusion Tag Key:Value"
+  description "Cloud native tag (label) to ignore IP addresses. Format: Key:Value"
+  type "string"
+  allowed_pattern /(^$)|([\w]?)+\:([\w]?)/
+end
+
+parameter "param_log_to_cm_audit_entries" do
+  type "string"
+  label "Log to CM Audit Entries"
+  description "Boolean for whether or not to log any debugging information from actions to CM Audit Entries, this should be left set to No on Flexera EU"
+  default "No"
+  allowed_values "Yes", "No"
+end
+
+###############################################################################
+# Authentication
+###############################################################################
+
+# authenticate with Google
+credentials "auth_google" do
+  schemes "oauth2"
+  label "Google"
+  description "Select the Google Cloud Credential from the list."
+  tags "provider=gce"
+end
+
+###############################################################################
+# Pagination
+###############################################################################
+
+pagination "google_pagination" do
+  get_page_marker do
+    body_path "nextPageToken"
+  end
+  set_page_marker do
+    query "pageToken"
+  end
+end
+
+###############################################################################
+# Datasources & Scripts
+###############################################################################
+
+datasource "ds_currency_reference" do
+  request do
+    host "raw.githubusercontent.com"
+    path "/rightscale/policy_templates/master/cost/scheduled_reports/currency_reference.json"
+    header "User-Agent", "RS Policies"
+  end
+end
+
+#GET LIST OF GCP PROJECTS (filtered by "lifecycleState:ACTIVE" and "param_project".)
+datasource "ds_google_project" do
+  request do
+    run_script $js_google_project, $param_project
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "projects[*]") do
+      field "projectNumber", jmes_path(col_item, "projectNumber")
+      field "accountID", jmes_path(col_item, "projectId")
+      field "accountName", jmes_path(col_item, "name")
+    end
+  end
+end
+
+script "js_google_project", type: "javascript" do
+  parameters "param_project"
+  result "request"
+  code <<-EOS
+    var filter = "(lifecycleState:ACTIVE)"
+
+    // Apply filter by project only if "param_project" was set.
+    if (param_project.length != 0) {
+      // Since we already have a filter applied this AND is required to apply new filter.
+      filter += " AND ("
+      _.each(param_project, function (id, index) {
+        filter += '(projectId = "' + id + '")'
+
+        // Adds OR in case it isn't last item, means there are more items to be added.
+        if ((index + 1) != param_project.length) {
+          filter += " OR "
+        }
+      })
+      filter += ")"
+    }
+
+    var request = {
+      auth: "auth_google",
+      pagination: "google_pagination",
+      host: "cloudresourcemanager.googleapis.com",
+      path: "/v1/projects/",
+      query_params: {
+        "filter": filter
+      }
+    }
+  EOS
+end
+
+#GET LIST OF CPU UTILIZATION FOR EACH PROJECT AND CALCULATE MIN/MAX/AVG CPU UTILIZATION FROM CPU UTILIZATION DATA
+datasource "ds_calculated_utilization" do
+  iterate $ds_google_project
+  request do
+    auth $auth_google
+    verb "POST"
+    host "monitoring.googleapis.com"
+    path join(["/v3/projects/", val(iter_item,"accountID"), "/timeSeries:query"])
+    body_field "query", "fetch gce_instance | metric compute.googleapis.com/instance/cpu/utilization | within 8d | { group_by sliding(8d), .mean ; group_by sliding(8d), .max ; group_by sliding(8d), . min } | join"
+    ignore_status [403, 404]
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "timeSeriesData[*]") do
+      field "resourceName", jmes_path(col_item, "labelValues[3].stringValue")
+      field "resourceID", jmes_path(col_item, "labelValues[2].stringValue")
+      field "zone", jmes_path(col_item, "labelValues[1].stringValue")
+      field "accountID", val(iter_item, "accountID")
+      field "accountName", val(iter_item, "accountName")
+      field "projectNumber", val(iter_item, "projectNumber")
+      field "cpuAverage", prod(jmes_path(col_item, "pointData[0].values[0].doubleValue"), 100)
+      field "cpuMaximum", prod(jmes_path(col_item, "pointData[0].values[1].doubleValue"), 100)
+      field "cpuMinimum", prod(jmes_path(col_item, "pointData[0].values[2].doubleValue"), 100)
+    end
+  end
+end
+
+#CREATE LIST OF GROUPED ACCOUNT/PROJECT IDS WHERE CPU UTILIZATION EXISTS FOR A VM
+datasource "ds_grouped_account_ids" do
+  run_script $js_grouped_account_ids, $ds_calculated_utilization
+end
+
+script "js_grouped_account_ids", type: "javascript" do
+  result "grouped_account_ids"
+  parameters "ds_calculated_utilization"
+  code <<-EOS
+    grouped_account_ids = _.keys(_.groupBy(ds_calculated_utilization, "accountID"))
+  EOS
+end
+
+#GET LIST OF VMS FOR EACH GROUPED ACCOUNT/PROJECT ID
+datasource "ds_get_vms" do
+  iterate $ds_grouped_account_ids
+  request do
+    auth $auth_google
+    host "compute.googleapis.com"
+    verb "GET"
+    path join(["/compute/v1/projects/", iter_item, "/aggregated/instances"])
+    ignore_status [403, 404]
+    header "User-Agent", "RS Policies"
+    header "Content-Type", "application/json"
+  end
+  result do
+    encoding "json"
+    field "vms", jq(response, "[ .items | to_entries | map_values(.value) | map(select(has(\"instances\"))) | .[].instances | .[] | {id,name,selfLink,status,tags,zone,kind}]")
+  end
+end
+
+#FILTER LIST OF VMS BY COMPUTE ZONES PARAMETER (IF APPLICABLE)
+datasource "ds_collected_vms" do
+  run_script $js_collected_vms, $ds_get_vms, $param_zones
+end
+
+script "js_collected_vms", type: "javascript" do
+  result "collected_vms"
+  parameters "ds_get_vms", "param_zones"
+  code <<-EOS
+    var collected_vms = []
+    for (var i = 0; i < ds_get_vms.length; i++) {
+      for (var j = 0; j < ds_get_vms[i].vms.length; j++) {
+        if (param_zones.length === 0) {
+          collected_vms.push(ds_get_vms[i].vms[j])
+        } else {
+          for (var x = 0; x < param_zones.length; x++) {
+            if (ds_get_vms[i].vms[j].zone.indexOf(param_zones[x]) !== -1) {
+              collected_vms.push(ds_get_vms[i].vms[j])
+            }
+          }
+        }
+      }
+    }
+  EOS
+end
+
+#COMBINE VM DATA WITH VM CPU UTILIZATION DATA
+datasource "ds_vms_with_cpu_utilization" do
+  run_script $js_vms_with_cpu_utilization, $ds_collected_vms, $ds_calculated_utilization
+end
+
+script "js_vms_with_cpu_utilization", type: "javascript" do
+  result "vms_with_cpu_utilization"
+  parameters "ds_collected_vms", "ds_calculated_utilization"
+  code <<-EOS 
+    var vms_with_cpu_utilization = []
+    for (var i = 0; i < ds_calculated_utilization.length; i++) {
+      matching_vm = _.find(ds_collected_vms, function(v) { return v.id === ds_calculated_utilization[i].resourceID })
+      if (matching_vm !== undefined) {
+        // Rename some fields
+        matching_vm.resourceID = matching_vm.id
+        matching_vm.hostname = matching_vm.name || matching_vm.id
+        matching_vm.resourceType = matching_vm.kind
+
+        // Add CPU utilization data
+        matching_vm.resourceName = ds_calculated_utilization[i].resourceName
+        matching_vm.zone = ds_calculated_utilization[i].zone
+        matching_vm.cpuAverage = ds_calculated_utilization[i].cpuAverage
+        matching_vm.cpuMaximum = ds_calculated_utilization[i].cpuMaximum
+        matching_vm.cpuMinimum = ds_calculated_utilization[i].cpuMinimum
+        matching_vm.accountID = ds_calculated_utilization[i].accountID
+        matching_vm.accountName = ds_calculated_utilization[i].accountName
+        matching_vm.projectNumber = ds_calculated_utilization[i].projectNumber
+
+        vms_with_cpu_utilization.push(matching_vm)
+      }
+    }
+  EOS
+end
+
+#CREATE LIST OF RECOMMENDER DETAILS FOR RECOMMENDER API CALL USING COMBINED VM & CPU UTILIZATION DATA
+datasource "ds_recommenders" do
+  run_script $js_recommenders, $ds_vms_with_cpu_utilization
+end
+
+script "js_recommenders", type: "javascript" do
+  parameters "ds_vms_with_cpu_utilization"
+  result "results"
+  code <<-EOF
+    var results = []
+    for (var i = 0; i < ds_vms_with_cpu_utilization.length; i++) {
+      var result = {
+        projectNumber: ds_vms_with_cpu_utilization[i].projectNumber,
+        accountID: ds_vms_with_cpu_utilization[i].accountID,
+        region: ds_vms_with_cpu_utilization[i].zone,
+        requestNumber: results.length + 1,
+      }
+      var resultAtArray = _.find(results, function(r) { return r.projectNumber === result.projectNumber && r.accountID === result.accountID && r.region === result.region })
+      if (resultAtArray === undefined) {
+        results.push(result)
+      }
+    }
+  EOF
+end
+
+#GET LIST OF RECOMMENDATIONS
+datasource "ds_recommendations" do
+  iterate $ds_recommenders
+  request do
+    run_script $js_recommender_call, val(iter_item,"accountID"), val(iter_item, "region"), val(iter_item, "requestNumber")
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "recommendations[*]") do
+      field "accountID", val(iter_item, "accountID")
+      field "region", val(iter_item, "region")
+      field "id", jmes_path(col_item, "name")
+      field "description", jmes_path(col_item, "description")
+      field "resourceLink", jmes_path(col_item, "content.overview.resource")
+      field "resourceName", jmes_path(col_item, "content.overview.resourceName")
+      field "recommendedMachineType", jmes_path(col_item, "content.overview.recommendedMachineType")
+      field "currentMachineType", jmes_path(col_item, "content.overview.currentMachineType")
+      field "primaryImpact", jmes_path(col_item, "primaryImpact")
+      field "costUnits", jmes_path(col_item, "primaryImpact.costProjection.cost.units")
+      field "costNanos", jmes_path(col_item, "primaryImpact.costProjection.cost.nanos")
+      field "duration", jmes_path(col_item, "primaryImpact.costProjection.duration")
+      field "currency", jmes_path(col_item, "primaryImpact.costProjection.cost.currencyCode")
+      field "priority", jmes_path(col_item, "priority")
+      field "recommenderSubtype", jmes_path(col_item, "recommenderSubtype")
+      field "state", jmes_path(col_item, "stateInfo.state")
+    end
+  end
+end
+
+script "js_recommender_call", type: "javascript" do
+  parameters "accountID", "region", "requestNumber"
+  result "request"
+  code <<-EOF
+    // If 150 requests have been made, wait
+    if (requestNumber % 150 === 0) {
+      var now = new Date().getTime();
+      // 1 minute and 30 seconds
+      var sleepDuration = 90000
+      while (new Date().getTime() < now + sleepDuration) { /* Do nothing to prevent quota error */ }
+    }
+    var request = {
+      auth: "auth_google",
+      pagination: "google_pagination",
+      host: "recommender.googleapis.com",
+      ignore_status: 403,
+      path: "/v1/projects/"+ accountID +"/locations/" + region + "/recommenders/google.compute.instance.MachineTypeRecommender/recommendations",
+      query_strings: { alt: "json" }
+    }
+  EOF
+end
+
+#SANITIZE VM WITH CPU UTILIZATION DATA - FILTER BY TAG EXCLUSION PARAMETER
+datasource "ds_sanitize_vms" do
+  run_script $js_sanitize_data, $ds_vms_with_cpu_utilization, $param_exclude_tags
+end
+
+script "js_sanitize_data", type: "javascript" do
+  result "results"
+  parameters "ds_get_vms", "param_exclusion_tag_key"
+  code <<-EOS
+    tag_key = param_exclusion_tag_key.split(':')[0]
+    tag_value = param_exclusion_tag_key.split(':')[1]
+  
+    results = _.filter(ds_get_vms, function (vm) {
+      if (vm.status == "RUNNING") {
+        if (vm.tags != null && vm.tags !== undefined) {
+          if (vm.tags[tag_key] != null && vm.tags[tag_key] !== undefined) {
+            if (vm.tags[tag_key] != tag_value) {
+              if (vm.hostname == undefined) {
+                vm.hostname = vm.resourceID;
+              }
+              return vm
+            }
+          } else {
+            if (vm.hostname == undefined) {
+              vm.hostname = vm.resourceID;
+            }
+            return vm
+          }
+        } else {
+          if (vm.hostname == undefined) {
+            vm.hostname = vm.resourceID;
+          }
+          return vm
+        }
+      }
+    })
+    results = _.sortBy(results, 'zone');
+    results = _.sortBy(results, 'accountID');
+  EOS
+end
+
+#GET VM COST MAPPING
+datasource "ds_vm_cost_mapping" do
+  run_script $js_instance_cost_mapping, $ds_sanitize_vms, $ds_recommendations, $ds_currency_reference
+end
+
+script "js_instance_cost_mapping", type:"javascript" do
+  result "result"
+  parameters  "vms", "recommendations", "ds_currency_reference"
+  code <<-EOS
+    var instances = [];
+    var result={};
+    var message=''
+    var count=0;
+
+    function formatNumber(number, separator){
+      var numString =number.toString();
+      var values=numString.split(".");
+      var result = ''
+      while (values[0].length > 3){
+        var chunk = values[0].substr(-3)
+        values[0] = values[0].substr(0, values[0].length - 3)
+        result = separator + chunk + result
+      }
+      if (values[0].length > 0){
+        result = values[0] + result
+      }
+      if(values[1]==undefined){
+        return result;
+      }
+      return result+"."+values[1];
+    }
+    total = 0
+    cur = ""
+
+    _.each(vms, function(vm) {
+      var resource_link = vm.selfLink.replace("https://www.googleapis.com/compute/v1/", "")
+      vm["resourceLink"] = resource_link
+    })
+
+    //Remove Performance Recommendations
+    recommendations = _.filter(recommendations, function(rec) { return rec.primaryImpact.category == "COST" })
+
+    _.each(recommendations, function(recommendation) {
+      count ++
+      var rec_resource_link = recommendation.resourceLink.replace("//compute.googleapis.com/", "")
+      var instance = _.find(vms, function(vm) { return vm.resourceLink == rec_resource_link })
+      if (!( instance == undefined || instance == null )) {
+        if (recommendation["currency"] !== undefined ) {
+          if (ds_currency_reference[recommendation['currency']] !== undefined ) {
+            cur = ds_currency_reference[recommendation['currency']]['symbol']
+          } else {
+            cur = "$"
+          }
+          recommendation['savingsCurrency'] = cur
+        } else {
+          cur = "$"
+          separator = ","
+        }
+
+        //Convert Costs from Negative to Positive and add Units and Nanos
+        if (!(recommendation.costNanos == null || recommendation.costNanos == undefined)) {
+          if (recommendation.costNanos != 0) {
+            recommendation.costNanos = recommendation.costNanos * -1
+          }
+        } else {
+          recommendation.costNanos = 0
+        }
+
+        if (!(recommendation.costUnits == null || recommendation.costUnits == undefined)) {
+          if (recommendation.costUnits != 0) {
+            recommendation.costUnits = recommendation.costUnits * -1
+          }
+        } else {
+          recommendation.costUnits = 0
+        }
+
+        var strNano = "." + recommendation.costNanos
+        var combine = recommendation.costUnits + parseFloat(strNano)
+
+        var monthsDuration = 0
+        if (!(recommendation.duration == null || recommendation.duration == undefined)) {
+          monthsDuration = parseFloat(recommendation.duration.replace("s",""))/2628288
+        }
+
+        var monthlySavings = 0
+        if ( monthsDuration != 0 ) {
+          monthlySavings = combine / monthsDuration
+        }
+        total += monthlySavings
+
+        //Get current Instance Type and Recommended Instance Type
+        //var current_instance_type = recommendation.description.replace( "Save cost by changing machine type from ", "" ).split(" to ")[0]
+        //var recommd_instance_type = recommendation.description.replace( "Save cost by changing machine type from ", "" ).split(" to ")[1]
+
+        instance['savingsCurrency'] = cur
+        instance['savings'] = (Math.round( monthlySavings * 1000) / 1000)
+        instance['description'] = recommendation['description']
+        instance['priority'] = recommendation['priority']
+        instance['region'] = recommendations['region']
+        instance['primaryImpact'] = recommendation['primaryImpact']
+        instance['currentInstanceType'] = recommendation['currentMachineType']
+        instance['recommendedInstanceType'] = recommendation['recommendedMachineType']
+        instance['recommenderSubtype'] = recommendation['recommenderSubtype']
+        instance['state'] = recommendation['state']
+        instance['service'] = "Compute"
+        tags = []
+        if (instance['tags'] != null) {
+          if( typeof instance['tags'] == 'object') {
+            Object.keys(instance.tags).forEach(function(key) {
+              if (instance.tags[key] == null || instance.tags[key]=="") {
+                instance.tags[key] = "null"
+              }
+              tags.push(String(key)+'='+String(instance.tags[key]))
+            });
+          } else {
+            tags.push(instance["tags"].replace(":","=null"))
+          }
+        }
+        instance['tags'] = tags
+        instances.push(instance)
+      }
+    })
+
+    if (instances.length != 0){
+      if(count){
+        total=cur + ' '+formatNumber((Math.round(total * 100) / 100));
+        message="The total estimated monthly savings are " +total;
+      } else {
+        message="The Flexera Optima system does not have any data to calculate savings for these resources";
+      }
+    }else{
+      message="unable to find resources between recommender and resource api";
+    }
+    result={
+      "instances": instances,
+      "message": message
+    };
+    result.instances = _.sortBy(result.instances,"region");
+    result.instances = _.sortBy(result.instances,"accountName");
+  EOS
+end
+
+###############################################################################
+# Policy
+###############################################################################
+
+policy "policy_recommendations" do
+  validate $ds_vm_cost_mapping do
+    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data.instances }} rows found for Rightsizing VM (Compute Instance) Recommendations"
+    check eq(size(val(data, "instances")), 0)
+    escalate $esc_email
+    export "instances" do
+      resource_level true
+      field "accountID" do
+        label "Project ID"
+      end
+      field "accountName" do
+        label "Project Name"
+      end
+      field "projectNumber" do
+        label "Project Number"
+      end
+      field "resourceID" do
+        label "Resource ID"
+      end
+      field "resourceName" do
+        label "Resource Name"
+      end
+      field "resourceType" do
+        label "Resource Type"
+      end
+      field "zone" do
+        label "Zone"
+      end
+      field "hostname" do
+        label "Hostname"
+      end
+      field "cpuMaximum" do
+        label "CPU Maximum %"
+      end
+      field "cpuMinimum" do
+        label "CPU Minimum %"
+      end
+      field "cpuAverage" do
+        label "CPU Average %"
+      end
+      field "tags" do
+        label "Tags"
+      end
+      field "primaryImpactCategory" do
+        label "Recommendation Primary Impact Category"
+        path "primaryImpact.category"
+      end
+      field "curInstanceType" do
+        label "Current Instance Type"
+        path "currentInstanceType.name"
+      end
+      field "recInstanceType" do
+        label "Recommended Instance Type"
+        path "recommendedInstanceType.name"
+      end
+      field "description" do
+        label "Description"
+      end
+      field "savings" do
+        label "Estimated Monthly Savings"
+      end
+      field "savingsCurrency" do
+        label "Currency"
+      end
+      field "priority" do
+        label "Priority"
+      end
+      field "recommenderSubtype" do
+        label "Sub Type"
+      end
+      field "state" do
+        label "State"
+      end
+      field "status" do
+        label "Status"
+      end
+      field "id" do
+        label "ID"
+        path "resourceID"
+      end
+      field "service" do
+        label "Service"
+      end
+    end
+  end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_email" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
+end
+
+###############################################################################
+# Cloud Workflow
+###############################################################################
+
