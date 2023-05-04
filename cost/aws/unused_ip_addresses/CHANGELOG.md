@@ -1,5 +1,9 @@
 # Changelog
 
+## v5.0
+
+- Added parameter to enable Allow or Deny filtering by user entered regions
+
 ## v4.1
 
 - Added logic required for "Meta Policy" use-cases

@@ -265,7 +265,6 @@ These templates can generate savings estimates for your environment.
 - [Monthly Actual v. Budgeted Spend Report](./cost/budget_v_actual)
 - [Budget Alerts](./cost/budget_report_alerts)
 - [Cloud Cost Anomaly Alerts](./cost/cloud_cost_anomaly_alerts)
-- [Budget Alerts (Legacy)](./cost/budget_alerts)
 - [Low Account Usage](./cost/low_account_usage)
 - [Budget Alerts by Cloud Account](./cost/budget_alerts_by_account)
 - [New Service Usage](./cost/new_service_usage)
@@ -572,12 +571,12 @@ These templates can generate savings estimates for your environment.
 <!-- Begin Policy Template Stats -->
 <!--
 ---
-:total_count: 228
+:total_count: 227
 :optimization_count: 21
 :categories:
   Security: 74
   Compliance: 33
-  Cost: 85
+  Cost: 84
   Operational: 23
   SaaS Management: 13
 :providers:
@@ -585,7 +584,7 @@ These templates can generate savings estimates for your environment.
   Azure: 71
   GCE: 11
   Google: 9
-  Flexera Optima: 27
+  Flexera Optima: 26
   Flexera Cloud Management: 4
   Flexera: 5
   Flexera ITAM: 5
@@ -622,7 +621,7 @@ These templates can generate savings estimates for your environment.
   EC2: 13
   Org: 1
   ECS: 1
-  '': 69
+  '': 68
   Identity: 1
   Compute: 25
   Policy: 1
@@ -638,7 +637,7 @@ These templates can generate savings estimates for your environment.
 :policy_sets:
   CIS: 61
   Public Database Access: 2
-  '': 88
+  '': 87
   AWS Config: 1
   Open Buckets: 2
   Storage Security: 1

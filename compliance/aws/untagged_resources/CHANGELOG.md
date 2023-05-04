@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.0
+
+- Added parameter to enable Allow or Deny filtering by user entered regions
+
 ## v2.9
 
 - Updated `param_tags_to_check` parameter to take a list of tag keys, as opposed to a list of tag key-value pairs

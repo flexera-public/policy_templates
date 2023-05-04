@@ -7,7 +7,7 @@ category "Compliance"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "2.8",
+  version: "3.0",
   provider: "AWS",
   service: "EC2",
   policy_set: "Disallowed Regions"
@@ -38,11 +38,19 @@ parameter "param_exclude_tags" do
   default []
 end
 
+parameter "param_allowed_regions_allow_or_deny" do
+  type "string"
+  label "Allow/Deny Regions"
+  description "Allow or Deny entered regions. See the README for more details"
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
 parameter "param_allowed_regions" do
   type "list"
-  label "Allowed Regions(s)"
-  allowed_pattern /([a-z])+\-([a-z])+\-([\d]?)+/
-  description "List of regions to allow."
+  label "Regions"
+  allowed_pattern /^([a-zA-Z-_]+-[a-zA-Z0-9-_]+-[0-9-_]+,*|)+$/
+  description "A list of allowed or denied regions. See the README for more details"
 end
 
 parameter "param_automatic_action" do
@@ -50,6 +58,7 @@ parameter "param_automatic_action" do
   label "Automatic Actions"
   description "When this value is set, this policy will automatically take the selected action(s)"
   allowed_values ["Terminate Instances"]
+  default []
 end
 
 ###############################################################################
@@ -106,7 +115,7 @@ end
 
 # Get only SCP enabled regions
 datasource "ds_regions" do
-  run_script $js_regions, $param_allowed_regions, $ds_regions_list
+  run_script $js_regions, $param_allowed_regions, $ds_regions_list, $param_allowed_regions_allow_or_deny
 end
 # Get the list of all EC2 Instances across all regions.
 # https://docs.aws.amazon.com/AWSEC2/latest/APIReference/API_DescribeInstances.html
@@ -116,7 +125,7 @@ datasource "ds_disallowed_instances_list" do
     auth $auth_aws
     pagination $aws_pagination_xml
     verb "GET"
-    host val(iter_item, "regionEndpoint")
+    host join(["ec2.",val(iter_item,"region"),".amazonaws.com"])
     path "/"
     query "Action", "DescribeInstances"
     query "Version", "2016-11-15"
@@ -147,7 +156,7 @@ end
 ###############################################################################
 
 script "js_regions", type:"javascript" do
-  parameters "user_entered_regions", "all_regions"
+  parameters "user_entered_regions", "all_regions", "regions_allow_or_deny"
   result "regions"
   code <<-EOS
     if(_.isEmpty(user_entered_regions)){
@@ -156,10 +165,15 @@ script "js_regions", type:"javascript" do
       //Filter unique regions
       var uniqueRegions = _.uniq(user_entered_regions);
       var all_regions_list = [];
+      //Filter and remove denied regions from all_regions
+      if (regions_allow_or_deny == "Deny"){
+        var all_regions = all_regions.filter(function(obj){
+          return user_entered_regions.indexOf(obj.region) === -1;
+        });
+      }
       all_regions.forEach(function(all_region){
         all_regions_list.push(all_region.region)
       })
-
       //Filter valid regions
       var valid_regions = [];
       _.map(uniqueRegions, function(uniqueRegion){

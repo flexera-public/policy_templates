@@ -46,7 +46,7 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Auto
 This policy has the following input parameters required when launching the policy.
 
 - *Look Back Period* - Specify the number of days of past usage to analyze.
-- *Savings Plan ARN* - The unique Amazon Resource Name (ARN) for a particular Savings Plan
+- *Savings Plan ARN* - Optional; The unique Amazon Resource Name (ARN) for a particular Savings Plan.  If no ARN is specified, all Savings Plans will have utilization reported.
 - *Savings Plan Utilization Threshold* - Specify the minimum Savings Plan Utilization threshold as a percentage that should result in an alert
 - *Email addresses to notify* - A list of email addresses to notify
 

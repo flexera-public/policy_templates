@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.0
+
+- Added parameter to enable Allow or Deny filtering by user entered regions
+
 ## v2.3
 
 - Replaced references `github.com/rightscale/policy_templates` and `github.com/flexera/policy_templates` with `github.com/flexera-public/policy_templates`
