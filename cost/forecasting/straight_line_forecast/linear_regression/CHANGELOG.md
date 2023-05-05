@@ -4,7 +4,7 @@
 
 - Updated policy to take only top-level billing center costs
 - Fixed 'Vendor Account Name' option for `param_dimension`
-- Added 'Billing Center' as an option for `param_dimension`
+- Added 'Billing Center' as an option for `param_dimension` (remove this text)
 
 ## v3.2
 
