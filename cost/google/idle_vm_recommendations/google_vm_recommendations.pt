@@ -125,6 +125,7 @@ datasource "ds_recommendations" do
       field "region", val(iter_item, "region")
       field "id", jmes_path(col_item, "name")
       field "description", jmes_path(col_item, "description")
+      field "resourceLink", jmes_path(col_item, "content.overview.resource")
       field "resourceName", jmes_path(col_item, "content.overview.resourceName")
       field "primaryImpact", jmes_path(col_item, "primaryImpact")
       field "costUnits", jmes_path(col_item, "primaryImpact.costProjection.cost.units")
@@ -400,65 +401,74 @@ script "js_instance_cost_mapping", type:"javascript" do
       }
       return result+"."+values[1];
     }
+
     total = 0
     cur = ""
+
     _.each(vms, function(vm) {
-      _.each(recommendations, function(recommendation){
-        if(vm.resourceName == recommendation.resourceName) {
-          count++
-          if(recommendation['currency'] !== undefined ) {
-            if (recommendation['costUnits'] == null) {
-              recommendation['costUnits'] = 0
-            }
-            if (recommendation['costNanos'] == null) {
-              recommendation['costNanos'] = 0
-            }
-            if (ds_currency_reference[recommendation['currency']] !== undefined ) {
-            var cur = ds_currency_reference[recommendation['currency']]['symbol']
-            } else {
-              var cur = "$"
-            }
-            vm['savingsCurrency'] = cur
+        var resource_link = vm.selfLink.replace("https://www.googleapis.com/compute/v1/", "")
+        vm["resourceLink"] = resource_link
+    })
+
+    _.each(recommendations, function(recommendation){
+      count ++
+      var rec_resource_link = recommendation.resourceLink.replace("//compute.googleapis.com/", "")
+      var vm = _.find(vms, function(v) {
+        return v.resourceLink == rec_resource_link
+      })
+      if (!(vm == undefined || vm == null)) {
+        if(recommendation['currency'] !== undefined ) {
+          if (recommendation['costUnits'] == null) {
+            recommendation['costUnits'] = 0
+          }
+          if (recommendation['costNanos'] == null) {
+            recommendation['costNanos'] = 0
+          }
+          if (ds_currency_reference[recommendation['currency']] !== undefined ) {
+          var cur = ds_currency_reference[recommendation['currency']]['symbol']
           } else {
             var cur = "$"
-            var separator = ","
           }
-          if (recommendation.costNanos<0) {
-            recommendation.costNanos = recommendation.costNanos * -1
-          }
-          if (recommendation.costUnits<0) {
-            recommendation.costUnits = recommendation.costUnits * -1
-          }
-          strNano = "."+recommendation.costNanos
-          combine = recommendation.costUnits + parseFloat(strNano)
-          monthsDuration = parseFloat(recommendation.duration.replace("s",""))/2628288
-          monthlySavings = combine / monthsDuration
-          total = total+monthlySavings
-          vm['savings']= (Math.round( monthlySavings * 1000) / 1000)
           vm['savingsCurrency'] = cur
-          vm['priority'] = recommendation['priority']
-          vm['region'] = recommendations['region']
-          vm['primaryImpact'] = recommendation['primaryImpact']
-          vm['recommenderSubtype'] = recommendation['recommenderSubtype']
-          vm['state'] = recommendation['state']
-          vm['service'] = "Compute"
-          tags = []
-          if (vm['tags'] != null) {
-            if( typeof vm['tags'] == 'object') {
-              Object.keys(vm.tags).forEach(function(key) {
-                if (vm.tags[key] == null || vm.tags[key]=="") {
-                  vm.tags[key] = "null"
-                }
-                tags.push(String(key)+'='+String(vm.tags[key]))
-              });
-            } else {
-              tags.push(vm["tags"].replace(":","=null"))
-            }
-          }
-          vm['tags'] = tags
-          instances.push(vm)
+        } else {
+          var cur = "$"
+          var separator = ","
         }
-      })
+        if (recommendation.costNanos<0) {
+          recommendation.costNanos = recommendation.costNanos * -1
+        }
+        if (recommendation.costUnits<0) {
+          recommendation.costUnits = recommendation.costUnits * -1
+        }
+        strNano = "."+recommendation.costNanos
+        combine = recommendation.costUnits + parseFloat(strNano)
+        monthsDuration = parseFloat(recommendation.duration.replace("s",""))/2628288
+        monthlySavings = combine / monthsDuration
+        total = total+monthlySavings
+        vm['savings']= (Math.round( monthlySavings * 1000) / 1000)
+        vm['savingsCurrency'] = cur
+        vm['priority'] = recommendation['priority']
+        vm['region'] = recommendations['region']
+        vm['primaryImpact'] = recommendation['primaryImpact']
+        vm['recommenderSubtype'] = recommendation['recommenderSubtype']
+        vm['state'] = recommendation['state']
+        vm['service'] = "Compute"
+        tags = []
+        if (vm['tags'] != null) {
+          if( typeof vm['tags'] == 'object') {
+            Object.keys(vm.tags).forEach(function(key) {
+              if (vm.tags[key] == null || vm.tags[key]=="") {
+                vm.tags[key] = "null"
+              }
+              tags.push(String(key)+'='+String(vm.tags[key]))
+            });
+          } else {
+            tags.push(vm["tags"].replace(":","=null"))
+          }
+        }
+        vm['tags'] = tags
+        instances.push(vm)
+      }
     })
     if (instances.length != 0){
       if(count){
