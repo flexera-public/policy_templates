@@ -160,6 +160,8 @@ These templates can generate savings estimates for your environment.
 - Compute
 
   - [AWS Rightsize Compute Instances](./cost/aws/rightsize_compute_instances)
+  - [Turbonomic Allocate Virtual Machine Recommendations AWS](./cost/turbonomics/allocate_virtual_machines_recommendations/aws)
+  - [Turbonomic Rightsize Virtual Machines Recommendations AWS](./cost/turbonomics/scale_virtual_machines_recommendations/aws)
 
 - Cost Explorer
 
@@ -200,6 +202,13 @@ These templates can generate savings estimates for your environment.
 - Storage
 
   - [AWS Old Snapshots](./cost/aws/old_snapshots)
+  - [Turbonomic Delete Unattached Volumes Recommendations AWS](./cost/turbonomics/delete_unattached_volumes/aws)
+
+- Usage Discount
+
+  - [Turbonomic Rightsize Virtual Volumes Recommendations AWS](./cost/turbonomics/rightsize_virtual_volumes_recommendations/aws)
+  - [Turbonomic Buy Reserved Instances Recommendations AWS](./cost/turbonomics/buy_reserved_instances_recommendations/aws)
+  - [Turbonomic Rightsize Databases Recommendations AWS](./cost/turbonomics/rightsize_databases_recommendations/aws)
 
 #### Azure
 
@@ -220,6 +229,8 @@ These templates can generate savings estimates for your environment.
   - [Azure Reserved Instances Recommendations](./cost/azure/reserved_instances/mca_recommendations)
   - [Azure Reserved Instances Utilization](./cost/azure/reserved_instances/utilization)
   - [Azure Rightsize Compute Instances](./cost/azure/rightsize_compute_instances)
+  - [Turbonomic Allocate Virtual Machine Recommendations Azure](./cost/turbonomics/allocate_virtual_machines_recommendations/azure)
+  - [Turbonomic Rightsize Virtual Machines Recommendations Azure](./cost/turbonomics/scale_virtual_machines_recommendations/azure)
 
 - SQL
 
@@ -231,10 +242,17 @@ These templates can generate savings estimates for your environment.
 
   - [Azure Unused Volumes](./cost/azure/unused_volumes)
   - [Azure Old Snapshots](./cost/azure/old_snapshots)
+  - [Turbonomic Delete Unattached Volumes Recommendations Azure](./cost/turbonomics/delete_unattached_volumes/azure)
 
 - Storage Accounts
 
   - [Azure Storage Accounts without Lifecycle Management Policies](./cost/azure/storage_account_lifecycle_management)
+
+- Usage Discount
+
+  - [Turbonomic Rightsize Virtual Volumes Recommendations Azure](./cost/turbonomics/rightsize_virtual_volumes_recommendations/azure)
+  - [Turbonomic Buy Reserved Instances Recommendations Azure](./cost/turbonomics/buy_reserved_instances_recommendations/azure)
+  - [Turbonomic Rightsize Databases Recommendations Azure](./cost/turbonomics/rightsize_databases_recommendations/azure)
 
 - compute
 
@@ -308,6 +326,17 @@ These templates can generate savings estimates for your environment.
 - Compute
 
   - [Google Rightsize VM Recommender](./cost/google/rightsize_vm_recommendations)
+  - [Turbonomic Allocate Virtual Machine Recommendations GCP](./cost/turbonomics/allocate_virtual_machines_recommendations/gcp)
+  - [Turbonomic Rightsize Virtual Machines Recommendations GCP](./cost/turbonomics/scale_virtual_machines_recommendations/gcp)
+
+- Storage
+
+  - [Turbonomic Delete Unattached Volumes Recommendations GCP](./cost/turbonomics/delete_unattached_volumes/gcp)
+
+- Usage Discount
+
+  - [Turbonomic Rightsize Virtual Volumes Recommendations GCP](./cost/turbonomics/rightsize_virtual_volumes_recommendations/gcp)
+  - [Turbonomic Rightsize Databases Recommendations GCP](./cost/turbonomics/rightsize_databases_recommendations/gcp)
 
 #### Google
 
@@ -584,18 +613,18 @@ These templates can generate savings estimates for your environment.
 <!-- Begin Policy Template Stats -->
 <!--
 ---
-:total_count: 228
+:total_count: 245
 :optimization_count: 22
 :categories:
-  Cost: 85
+  Cost: 102
   Compliance: 33
   Operational: 23
   SaaS Management: 13
   Security: 74
 :providers:
   Flexera Optima: 26
-  Azure: 70
-  AWS: 71
+  Azure: 76
+  AWS: 77
   Google: 9
   GCE: 11
   GitHub: 7
@@ -605,7 +634,7 @@ These templates can generate savings estimates for your environment.
   Flexera: 5
   Azure China: 1
   Oracle: 1
-  GCP: 1
+  GCP: 6
   '': 1
   Flexera RISC: 2
   Flexera SaaS Manager: 9
@@ -614,14 +643,14 @@ These templates can generate savings estimates for your environment.
   Okta: 1
 :services:
   '': 68
-  Compute: 26
+  Compute: 32
   Identity: 1
   Policy: 1
   ECS: 1
   EC2: 13
   IAM: 19
   Org: 1
-  Storage: 18
+  Storage: 21
   N/A: 1
   Storage Accounts: 2
   Blob Store: 1
@@ -634,6 +663,7 @@ These templates can generate savings estimates for your environment.
   RDS: 6
   ELB: 4
   Common Bill Ingestion: 1
+  Usage Discount: 8
   AKS: 2
   Tags: 2
   Lambda: 1
@@ -658,7 +688,7 @@ These templates can generate savings estimates for your environment.
   Untagged resources: 1
   Unlabeled Resources: 1
   ITAM: 4
-  Unused Volumes: 4
+  Unused Volumes: 7
   Common Bill Ingest: 1
   Lifecycle Management: 1
   Savings Plan: 2
@@ -670,9 +700,9 @@ These templates can generate savings estimates for your environment.
   Schedule Instance: 3
   Unused Database Services: 3
   RightSize Database Services: 2
-  Reserved Instance: 3
+  Reserved Instance: 5
   N/A: 3
-  Rightsize Compute Instances: 3
+  Rightsize Compute Instances: 6
   Savings Plan Utilization: 1
   Inefficient Disk Usage: 1
   GP3 Volumes: 1
@@ -682,6 +712,9 @@ These templates can generate savings estimates for your environment.
   Native Recommendations: 1
   Unused Database Service: 1
   Committed Use Discount: 1
+  Rightsize Volumes: 3
+  Allocate VMs: 3
+  Rightsize Database Instances: 3
   Long Running Instances: 2
   Database Services: 1
   Tag Cardinality: 2
