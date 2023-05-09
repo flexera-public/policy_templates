@@ -1,8 +1,8 @@
 # Changelog
 
-## v2.2
+## v3.0
 
-- Added a input user filter to group filter item request report object, dimension=value
+- Added a parameter to define target groups to track by providing specific dimension values 'Cloud Vendor=AWS', 'Service=AmazonEC2'
 
 ## v2.1
 
