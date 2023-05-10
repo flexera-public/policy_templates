@@ -69,10 +69,6 @@ credentials "auth_flexera" do
 end
 
 ###############################################################################
-# Resources
-###############################################################################
-
-###############################################################################
 # Datasources & Scripts
 ###############################################################################
 
@@ -98,13 +94,11 @@ script "js_get_billing_centers", type: "javascript" do
 end
 
 datasource "ds_costs_time_periods" do
-  request do
-    run_script $js_costs_time_periods, rs_org_id, rs_optima_host
-  end
+    run_script $js_costs_time_periods, rs_org_id, rs_optima_host, $ds_billing_centers
 end
 
 script "js_costs_time_periods", type: "javascript" do
-  parameters "rs_org_id", "rs_optima_host"
+  parameters "rs_org_id", "rs_optima_host", "ds_billing_centers"
   result "results"
   code <<-EOS
     // Get todays date
@@ -142,14 +136,13 @@ script "js_costs_time_periods", type: "javascript" do
         "current_month": current_month
       })
     })
-    //console.log(results)
   EOS
 end
 
 datasource "ds_new_bc_costs" do
   iterate $ds_costs_time_periods
   request do
-    run_script $js_new_costs_request, rs_org_id, $ds_billing_centers, $param_billing_centers, rs_optima_host, iter_item
+    run_script $js_new_costs_request, iter_item, rs_org_id, $ds_billing_centers, $param_billing_centers, rs_optima_host, $ds_costs_time_periods
   end
   result do
     encoding "json"
@@ -167,7 +160,7 @@ datasource "ds_new_bc_costs" do
 end
 
 script "js_new_costs_request", type: "javascript" do
-  parameters "org_id","ds_billing_centers", "param_billing_centers", "optima_host", "iter_item"
+  parameters "iter_item", "org_id", "ds_billing_centers", "param_billing_centers", "rs_optima_host", "ds_costs_time_periods"
   result "request"
   code <<-EOS
     var next_month = iter_item.next_month
@@ -222,7 +215,7 @@ script "js_new_costs_request", type: "javascript" do
 
     var request = {
       auth: "auth_flexera",
-      host: optima_host,
+      host: rs_optima_host,
       verb: "POST",
       path: "/bill-analysis/orgs/" + org_id + "/costs/select",
       body_fields: {
@@ -243,7 +236,7 @@ script "js_new_costs_request", type: "javascript" do
         "User-Agent": "RS Policies",
       }
     }
-    console.log(request)
+
 EOS
 end
 
@@ -356,7 +349,7 @@ script "js_merge_instance_data", type: "javascript" do
   result "results"
   code <<-EOS
     var results = []
-    var superseded_instance_map = _.extend(ds_aws_instance_size_map,ds_azure_instance_size_map, ds_google_instance_size_map)
+    var superseded_instance_map = _.extend(ds_aws_instance_size_map, ds_azure_instance_size_map, ds_google_instance_size_map)
     var ds_instances = ds_format_costs
 
     function formatNumber(number, separator){
