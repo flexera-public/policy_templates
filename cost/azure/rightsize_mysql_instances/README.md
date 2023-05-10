@@ -17,13 +17,15 @@ This policy checks all the Azure MySQL databases for a Azure Subscription. It do
 
 This policy has the following input parameters required when launching the policy.
 
-- *Average used CPU % - Upsize threshold* - Percentage of CPU utilization to identify an Upsize is recommended
-- *Average used CPU % - Downsize Threshold* - Percentage of CPU utilization to identify an Downsize is recommended
+- *CPU % - Upsize threshold* - Percentage of CPU utilization to identify an Upsize is recommended
+- *CPU % - Downsize Threshold* - Percentage of CPU utilization to identify an Downsize is recommended
+- *Threshold Statistic* - Determines whether to use minimum CPU usage, maximum CPU usage, or average CPU usage when determining recommendations.
 - *Exclusion Tag Key* - Cloud native tag key to ignore instances. Example: exclude_utilization
 - *Email addresses* - Email addresses of the recipients you wish to notify
 - *Azure Endpoint* - Azure Endpoint to access resources
 - *Subscription Allowed List* - Allowed Subscriptions, if empty, all subscriptions will be checked
 - *Automatic Actions* - When this value is set, this policy will automatically take the selected action(s).
+- *Log to CM Audit Entries* - Boolean for whether or not to log any debugging information from actions to CM Audit Entries, this should be left set to No on Flexera EU.
 
 Please note that the "Automatic Actions" parameter contains a list of action(s) that can be performed on the resources. When it is selected, the policy will automatically execute the corresponding action on the data that failed the checks, post incident generation. Please leave it blank for *manual* action.
 For example if a user selects the "Resize Instances" action while applying the policy, all the identified resources will be resized as per the recommendation.
