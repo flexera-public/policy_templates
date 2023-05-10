@@ -101,7 +101,12 @@ credentials "auth_azure" do
   tags "provider=azure_rm"
 end
 
-auth "auth_flexera", type: "rightscale"
+credentials "auth_flexera" do
+  schemes "oauth2"
+  label "Flexera_Automation"
+  description "Select FlexeraOne OAuth2 credentials"
+  tags "provider=flexera"
+end
 
 ###############################################################################
 # Pagination
@@ -139,8 +144,8 @@ datasource "ds_currency_code" do
   end
   result do
     encoding "json"
-    field "id", jmes_path(response,"id")
-    field "value", jmes_path(response,"value")
+    field "id", jmes_path(response, "id")
+    field "value", jmes_path(response, "value")
   end
 end
 
@@ -437,17 +442,13 @@ datasource "ds_single_resize_map" do
   end
 end
 
-# datasource "ds_flexible_resize_map" do
-#   request do
-#     verb "GET"
-#     host "raw.githubusercontent.com"
-#     path "/flexera/policy_templates/master/data/azure/mysql_flexible_tier_types.json"
-#     header "User-Agent", "RS Policies"
-#   end
-# end
-
 datasource "ds_flexible_resize_map" do
-  run_script $js_flexible_resize_map
+  request do
+    verb "GET"
+    host "raw.githubusercontent.com"
+    path "/flexera/policy_templates/master/data/azure/mysql_flexible_tier_types.json"
+    header "User-Agent", "RS Policies"
+  end
 end
 
 datasource "ds_merged_single_metrics" do
@@ -549,28 +550,22 @@ script "js_merged_metrics", type: "javascript" do
             capacity = sku_capacity
 
             if (isNaN(recommended_capacity) == false) {
-              if (sku_name.split('_')[0] == "Standard" || sku_name.split('_')[0] == "Premium") {
-                recommended_sku = sku_name.split('_')[0] + '_' + recommended_capacity
-              } else {
-                recommended_sku = sku_name.split('_')[0] + '_' + sku_name.split('_')[1] + '_' + recommended_capacity
+              // Replace final number in SKU name with recommended capacity
+              recommended_sku = []
+
+              for (var i = 0; i < sku_name.split('_').length - 1; i++) {
+                recommended_sku.push(sku_name.split('_')[i])
               }
+
+              recommended_sku.push(recommended_capacity)
+              recommended_sku = recommended_sku.join('_')
             }
           }
 
           if (db_type == "flexible") {
             category = "Flexible"
             capacity = sku_name.split('_')[1].replace(/[^0-9]/g, "")
-
-            if (isNaN(recommended_capacity) == false) {
-              base_sku = sku_name.split('_')[0] + '_' + sku_name.split('_')[1]
-              sku_version = ''
-
-              if (sku_name.split('_')[2] != undefined) {
-                sku_version = '_' + sku_name.split('_')[2]
-              }
-
-              recommended_sku = base_sku.split(capacity)[0] + recommended_capacity + base_sku.split(capacity)[1] + sku_version
-            }
+            recommended_sku = resize_map[sku_tier][sku_name][sku_level + '_sku']
           }
 
           result.push({
@@ -872,206 +867,4 @@ end
 define skip_error_and_append($subject) do
   $$errors << "Unexpected error for " + $subject + "\n  " + to_s($_error)
   $_error_behavior = "skip"
-end
-
-###############################################################################
-# Temporary Scripts
-###############################################################################
-
-script "js_flexible_resize_map", type: "javascript" do
-  result "result"
-  code <<-EOS
-  result = {
-    "Burstable": {
-      "Standard_B1s": {
-        "up": "2",
-        "down": null
-      },
-      "Standard_B1ms": {
-        "up": "2",
-        "down": null
-      },
-      "Standard_B2s": {
-        "up": "4",
-        "down": "1"
-      },
-      "Standard_B2ms": {
-        "up": "4",
-        "down": "1"
-      },
-      "Standard_B4ms": {
-        "up": "8",
-        "down": "2"
-      },
-      "Standard_B8ms": {
-        "up": "12",
-        "down": "4"
-      },
-      "Standard_B12ms": {
-        "up": "16",
-        "down": "8"
-      },
-      "Standard_B16ms": {
-        "up": "20",
-        "down": "12"
-      },
-      "Standard_B20ms": {
-        "up": null,
-        "down": "16"
-      }
-    },
-    "GeneralPurpose": {
-      "Standard_D2ads_v5": {
-        "up": "4",
-        "down": null
-      },
-      "Standard_D2ds_v4": {
-        "up": "4",
-        "down": null
-      },
-      "Standard_D4ads_v5": {
-        "up": "8",
-        "down": "2"
-      },
-      "Standard_D4ds_v4": {
-        "up": "8",
-        "down": "2"
-      },
-      "Standard_D8ads_v5": {
-        "up": "16",
-        "down": "4"
-      },
-      "Standard_D8ds_v4": {
-        "up": "16",
-        "down": "4"
-      },
-      "Standard_D16ads_v5": {
-        "up": "32",
-        "down": "8"
-      },
-      "Standard_D16ds_v4": {
-        "up": "32",
-        "down": "8"
-      },
-      "Standard_D32ads_v5": {
-        "up": "48",
-        "down": "16"
-      },
-      "Standard_D32ds_v4": {
-        "up": "48",
-        "down": "16"
-      },
-      "Standard_D48ads_v5": {
-        "up": "64",
-        "down": "32"
-      },
-      "Standard_D48ds_v4": {
-        "up": "64",
-        "down": "32"
-      },
-      "Standard_D64ads_v5": {
-        "up": null,
-        "down": "48"
-      },
-      "Standard_D64ds_v4": {
-        "up": null,
-        "down": "48"
-      }
-    },
-    "MemoryOptimized": {
-      "Standard_E2ds_v4": {
-        "up": "4",
-        "down": null
-      },
-      "Standard_E2ads_v5": {
-        "up": "4",
-        "down": null
-      },
-      "Standard_E4ds_v4": {
-        "up": "8",
-        "down": "2"
-      },
-      "Standard_E4ads_v5": {
-        "up": "8",
-        "down": "2"
-      },
-      "Standard_E8ds_v4": {
-        "up": "16",
-        "down": "4"
-      },
-      "Standard_E8ads_v5": {
-        "up": "16",
-        "down": "4"
-      },
-      "Standard_E16ds_v4": {
-        "up": "32",
-        "down": "8"
-      },
-      "Standard_E16ads_v5": {
-        "up": "32",
-        "down": "8"
-      },
-      "Standard_E32ds_v4": {
-        "up": "48",
-        "down": "16"
-      },
-      "Standard_E32ads_v5": {
-        "up": "48",
-        "down": "16"
-      },
-      "Standard_E48ds_v4": {
-        "up": "64",
-        "down": "32"
-      },
-      "Standard_E48ads_v5": {
-        "up": "64",
-        "down": "32"
-      },
-      "Standard_E64ds_v4": {
-        "up": "80",
-        "down": "48"
-      },
-      "Standard_E64ads_v5": {
-        "up": "80",
-        "down": "48"
-      },
-      "Standard_E80ids_v4": {
-        "up": null,
-        "down": "64"
-      },
-      "Standard_E2ds_v5": {
-        "up": "4",
-        "down": null
-      },
-      "Standard_E4ds_v5": {
-        "up": "8",
-        "down": "2"
-      },
-      "Standard_E8ds_v5": {
-        "up": "16",
-        "down": "4"
-      },
-      "Standard_E16ds_v5": {
-        "up": "32",
-        "down": "8"
-      },
-      "Standard_E32ds_v5": {
-        "up": "48",
-        "down": "16"
-      },
-      "Standard_E48ds_v5": {
-        "up": "64",
-        "down": "32"
-      },
-      "Standard_E64ds_v5": {
-        "up": "96",
-        "down": "48"
-      },
-      "Standard_E96ds_v5": {
-        "up": null,
-        "down": "64"
-      }
-    }
-  }
-EOS
 end
