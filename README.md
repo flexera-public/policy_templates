@@ -59,6 +59,11 @@ These templates can generate savings estimates for your environment.
 - [Google Cloud SQL Idle Instance Recommender](./cost/google/cloud_sql_idle_instance_recommendations)
 - [Google Idle VM Recommender](./cost/google/idle_vm_recommendations)
 
+#### Kubecost
+
+- [Kubecost Request Rightsizing Recommendations](./cost/kubecost/sizing)
+- [Kubecost Cluster Rightsizing Recommendations](./cost/kubecost/cluster)
+
 ### Policy Templates for Compliance
 
 #### AWS
