@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.2
+
+- Fixed bug with parameter_subscription_allowlist script
+
 ## v2.1
 
 - Added parameter `threshold statistic` to allow selecting between minimum, maximum and average statistics to base rightsizing and idle recommendations on.
