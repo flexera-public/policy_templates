@@ -11,8 +11,7 @@ This policy checks all the Azure MySQL databases for a Azure Subscription. It do
 - This policy does not support databases which are in Elastic pool
 - This policy applies only for Upsize or Downsize of DTUs/vCores within tiers.
 - This policy will not be applicable to resize between service tiers.
-- If the SQL database can not downsize because it's already at it's min size or can not upsize because it's already at it's max. then in the 'Recommended Capacity' column shows as 'n/a' and 'Recommendation' column shows as 'Change tier' for resize within tiers.
-- Pls refer the following links: <https://docs.microsoft.com/en-us/azure/sql-database/sql-database-dtu-resource-limits-single-databases> and <https://docs.microsoft.com/en-us/azure/sql-database/sql-database-vcore-resource-limits-single-databases> for detailed resource limits of Azure SQL Database using the DTU purchasing model and using the vCore purchasing model.
+- If the MySQL server can not downsize because it's already at its minimum size or can not upsize because it's already at its max. then in the 'Recommended Capacity' column shows as 'N/A' and 'Recommendation' column shows as 'Change tier' for resize within tiers.
 
 ## Input Parameters
 
@@ -32,7 +31,7 @@ For example if a user selects the "Resize Instances" action while applying the p
 ## Actions
 
 - Sends an email notification
-- Rightsize SQL Databases after approval
+- Rightsize MySQL Databases after approval
 
 ## Prerequisites
 
@@ -46,9 +45,12 @@ Provider tag value to match this policy: `azure_rm`
 
 Required permissions in the provider:
 
-- Microsoft.Sql/servers/databases/read
-- Microsoft.Sql/servers/databases/update
-- Microsoft.Sql/servers/databases/metrics/read
+- Microsoft.DBforMySQL/servers/databases/read
+- Microsoft.DBforMySQL/servers/databases/update
+- Microsoft.DBforMySQL/servers/databases/metrics/read
+- Microsoft.DBforMySQL/flexibleServers/databases/read
+- Microsoft.DBforMySQL/flexibleServers/databases/update
+- Microsoft.DBforMySQL/flexibleServers/databases/metrics/read
 
 ## Supported Clouds
 
