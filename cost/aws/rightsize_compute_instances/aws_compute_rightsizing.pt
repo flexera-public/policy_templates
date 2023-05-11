@@ -266,15 +266,13 @@ script "js_regions", type:"javascript" do
   parameters "param_regions_list", "ds_regions_list", "param_allow_or_deny"
   result "result"
   code <<-EOS
-  result = []
+  result = ds_regions_list
   allow_deny_test = { "Allow": true, "Deny": false }
 
   if (param_regions_list.length > 0) {
     result = _.filter(ds_regions_list, function(item) {
       return _.contains(param_regions_list, item['region']) == allow_deny_test[param_allow_or_deny]
     })
-  } else {
-    result = ds_regions_list
   }
 EOS
 end
@@ -780,19 +778,14 @@ script "js_idle_and_underutil_instances", type:"javascript" do
       formatted_number = separator + chunk + formatted_number
     }
 
-    if (values[0].length > 0) {
-      formatted_number = values[0] + formatted_number
-    }
-
-    if (values[1] == undefined) {
-      return formatted_number
-    }
+    if (values[0].length > 0) { formatted_number = values[0] + formatted_number }
+    if (values[1] == undefined) { return formatted_number }
 
     return formatted_number + "." + values[1]
   }
 
   var accountName = ""
-  if (_.size(ds_instance_costs) > 0) { accountName = ds_instance_costs[0]['vendorAccountName'] }
+  if (ds_instance_costs.length > 0) { accountName = ds_instance_costs[0]['vendorAccountName'] }
 
   // The key name is lowercase, param value needs to be lowercase. We use this to keep backwards compatibility for the exported data.
   threshold_statistic = param_threshold_statistic.toLowerCase()
@@ -880,11 +873,8 @@ script "js_idle_and_underutil_instances", type:"javascript" do
       instance["accountName"] = accountName
       instance["savingsCurrency"] = ds_currency['symbol']
 
-      if (instance['recommendationType'] == "Downsize") {
-        underutil_list.push(instance)
-      } else {
-        idle_list.push(instance)
-      }
+      if (instance['recommendationType'] == "Downsize") { underutil_list.push(instance) }
+      if (instance['recommendationType'] == "Terminate") { idle_list.push(instance) }
     })
 
     //Sort By Region and then by Account Name
@@ -892,8 +882,8 @@ script "js_idle_and_underutil_instances", type:"javascript" do
     instance_list = _.sortBy(instance_list, "accountName")
   }
 
-  underutil_total_savings = currency['symbol'] + ' ' + formatNumber((Math.round(underutil_total_savings * 100) / 100), currency['separator'])
-  idle_total_savings = currency['symbol'] + ' ' + formatNumber((Math.round(idle_total_savings * 100) / 100), currency['separator'])
+  underutil_total_savings = currency['symbol'] + ' ' + formatNumber(parseFloat(underutil_total_savings).toFixed(2), currency['separator'])
+  idle_total_savings = currency['symbol'] + ' ' + formatNumber(parseFloat(idle_total_savings).toFixed(2), currency['separator'])
 
   result = {
     underutil_message: "The total estimated monthly savings is " + underutil_total_savings,
@@ -911,11 +901,11 @@ end
 policy "pol_utilization" do
   validate $ds_idle_and_underutil_instances do
     summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data.underutil_list }} AWS Underutilized Compute Instances Found"
-    detail_template "{{ data.underutilMessage }}"
-    check logic_or($ds_parent_policy_terminated, eq(size(data.underutil_list), 0))
+    detail_template "{{ data.underutil_message }}"
+    check logic_or($ds_parent_policy_terminated, eq(size(val(data, "underutil_list")), 0))
     escalate $esc_email
     #escalate $esc_downsize_instances
-    export do
+    export "underutil_list" do
       resource_level true
       field "accountID" do
         label "Account ID"
@@ -927,12 +917,8 @@ policy "pol_utilization" do
         label "Resource ID"
       end
       field "resourceType" do
-        # label "Resource Type"
         label "Instance Size"
       end
-      # field "vmSize" do
-      #   label "Instance Size"
-      # end
       field "recommendedVmSize" do
         label "Recommended Instance Size"
       end
@@ -1005,17 +991,13 @@ policy "pol_utilization" do
       end
     end
   end
-  validate_each $ds_idle_and_underutil_instances do
-    summary_template <<-EOS
-    {{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ with index data 0 }}{{ .summaryData.idleInstanceCount }}{{end}} AWS idle compute instances found
-    EOS
-    detail_template <<-EOS
-    {{ with index data 0 }}{{ .summaryData.idleMessage }}{{ end }}
-    EOS
-    check logic_or($ds_parent_policy_terminated, ne((val(item, "recommendationType")), "Terminate" ))
+  validateh $ds_idle_and_underutil_instances do
+    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data.idle_list }} AWS Idle Compute Instances Found"
+    detail_template "{{ data.idle_message }}"
+    check logic_or($ds_parent_policy_terminated, eq(size(val(data, "idle_list")), 0))
     escalate $esc_email
     #escalate $esc_terminate_instances
-    export do
+    export "idle_list" do
       resource_level true
       field "accountID" do
         label "Account ID"
@@ -1027,7 +1009,7 @@ policy "pol_utilization" do
         label "Resource ID"
       end
       field "resourceType" do
-        label "Resource Type"
+        label "Instance Size"
       end
       field "vmSize" do
         label "Instance Size"
