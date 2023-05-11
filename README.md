@@ -357,6 +357,12 @@ These templates can generate savings estimates for your environment.
   - [Google Idle Persistent Disk Recommender](./cost/google/idle_persistent_disk_recommendations)
   - [Google Unused Volumes](./cost/google/unattached_volumes)
 
+#### Kubecost
+
+- Kubernetes
+
+  - [Kubecost Cluster Rightsizing Recommendations](./cost/kubecost/cluster)
+
 #### Oracle
 
 - Common Bill Ingestion
@@ -616,10 +622,10 @@ These templates can generate savings estimates for your environment.
 <!-- Begin Policy Template Stats -->
 <!--
 ---
-:total_count: 245
+:total_count: 246
 :optimization_count: 22
 :categories:
-  Cost: 102
+  Cost: 103
   Security: 74
   Compliance: 33
   SaaS Management: 13
@@ -636,6 +642,7 @@ These templates can generate savings estimates for your environment.
   GCP: 6
   AWS: 77
   '': 1
+  Kubecost: 1
   GitHub: 7
   Flexera ITAM: 5
   Flexera FNMS: 1
@@ -662,6 +669,7 @@ These templates can generate savings estimates for your environment.
   EC2: 13
   ELB: 4
   Cost Explorer: 1
+  Kubernetes: 1
   Network Security Group: 2
   MySQL: 2
   App Service: 1
@@ -711,6 +719,7 @@ These templates can generate savings estimates for your environment.
   Inefficient Disk Usage: 1
   GP3 Volumes: 1
   Savings Plan Utilization: 1
+  Rightsize Clusters: 1
   CIS: 61
   Public Database Access: 2
   AWS Config: 1
