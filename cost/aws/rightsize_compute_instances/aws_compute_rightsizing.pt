@@ -7,7 +7,7 @@ severity "low"
 category "Cost"
 default_frequency "weekly"
 info(
-  version: "3.0",
+  version: "4.0",
   provider: "AWS",
   service: "Compute",
   policy_set: "Rightsize Compute Instances",
@@ -25,7 +25,7 @@ parameter "param_aws_account_number" do
   default ""
 end
 
-parameter "param_021_allowed_regions_allow_or_deny" do
+parameter "param_allow_or_deny" do
   type "string"
   label "Allow/Deny Regions"
   description "Allow or Deny entered regions. See the README for more details"
@@ -33,15 +33,14 @@ parameter "param_021_allowed_regions_allow_or_deny" do
   default "Allow"
 end
 
-parameter "param_02_allowed_regions" do
+parameter "param_regions_list" do
   type "list"
   label "Regions"
   allowed_pattern /^([a-zA-Z-_]+-[a-zA-Z0-9-_]+-[0-9-_]+,*|)+$/
   description "A list of allowed or denied regions. See the README for more details"
 end
 
-#IDLE INSTANCE THRESHOLD PARAMETERS##########
-parameter "param_03_idle_threshold_cpu_value" do
+parameter "param_idle_threshold_cpu_value" do
   type "number"
   label "Idle Instance CPU Threshold (%)"
   description "The CPU threshold at which to consider an instance to be 'idle' and therefore be flagged for termination. Set to -1 to ignore CPU utilization"
@@ -50,7 +49,7 @@ parameter "param_03_idle_threshold_cpu_value" do
   max_value 100
 end
 
-parameter "param_04_idle_threshold_mem_value" do
+parameter "param_idle_threshold_mem_value" do
   type "number"
   label "Idle Instance Memory Threshold (%)"
   description "The Memory threshold at which to consider an instance to be 'idle' and therefore be flagged for termination. Set to -1 to ignore memory utilization"
@@ -58,19 +57,17 @@ parameter "param_04_idle_threshold_mem_value" do
   min_value -1
   max_value 100
 end
-#############################################
 
-#UNDERUTILIZED INSTANCE THRESHOLD PARAMETERS#
-parameter "param_05_underutil_threshold_cpu_value" do
+parameter "param_underutil_threshold_cpu_value" do
   type "number"
-  label "Underutilized Instance CPU Threshold (%)" # 'Inefficient' or 'Underutilized' as correct terminology?
+  label "Underutilized Instance CPU Threshold (%)"
   description "The CPU threshold at which to consider an instance to be 'underutilized' and therefore be flagged for downsizing. Set to -1 to ignore CPU utilization"
   default 40
   min_value -1
   max_value 100
 end
 
-parameter "param_06_underutil_threshold_mem_value" do
+parameter "param_underutil_threshold_mem_value" do
   type "number"
   label "Underutilized Instance Memory Threshold (%)"
   description "The Memory threshold at which to consider an instance to be 'underutilized' and therefore be flagged for downsizing. Set to -1 to ignore memory utilization"
@@ -78,10 +75,8 @@ parameter "param_06_underutil_threshold_mem_value" do
   min_value -1
   max_value 100
 end
-#############################################
 
-#GLOBAL THRESHOLD PARAMETERS - CHECK MEM AND/OR CPU, SET THRESHOLD STAT
-parameter "param_07_check_both" do
+parameter "param_check_both" do
   type "string"
   label "Idle/Utilized for both CPU/Memory or either"
   description "Set whether an instance should be considered idle and/or underutilized only if both CPU and memory are under the thresholds or if either CPU or memory are under. Note: this parameter is only valid when at least one Memory Utilization threshold and one CPU Utilization threshold is NOT set to -1"
@@ -89,16 +84,15 @@ parameter "param_07_check_both" do
   allowed_values "Both CPU and Memory", "Either CPU or Memory"
 end
 
-parameter "param_08_threshold_statistic" do
+parameter "param_threshold_statistic" do
   type "string"
   label "Threshold Statistic"
   description "Statistic to use for the metric threshold"
   default "Average"
   allowed_values "Average", "p99", "p95", "p90"
 end
-#############################################
 
-parameter "param_09_exclusion_tag_key" do
+parameter "param_exclusion_tag_key" do
   category "User Inputs"
   label "Exclusion Tag Key:Value"
   description "Cloud native tag to ignore instances that you don't want to consider for downsizing or termination. Format: Key:Value"
@@ -107,7 +101,7 @@ parameter "param_09_exclusion_tag_key" do
   default ""
 end
 
-parameter "param_10_api_wait" do
+parameter "param_api_wait" do
   type "number"
   label "CloudWatch API Wait Time"
   description "Amount of time to wait between CloudWatch API requests to avoid throttling (seconds)"
@@ -116,7 +110,7 @@ parameter "param_10_api_wait" do
   max_value 60
 end
 
-parameter "param_11_automatic_action" do
+parameter "param_automatic_action" do
   type "list"
   label "Automatic Actions"
   description "When this value is set, this policy will automatically take the selected action(s)"
@@ -124,7 +118,7 @@ parameter "param_11_automatic_action" do
   default []
 end
 
-parameter "param_12_log_to_cm_audit_entries" do
+parameter "param_log_to_cm_audit_entries" do
   type "string"
   label "Log to CM Audit Entries"
   description "Boolean for whether or not to log any debugging information from actions to CM Audit Entries, this should be left set to No on Flexera EU"
@@ -142,7 +136,6 @@ end
 # Authentication
 ###############################################################################
 
-#AUTHENTICATE WITH AWS
 credentials "auth_aws" do
   schemes "aws","aws_sts"
   label "AWS"
@@ -151,7 +144,6 @@ credentials "auth_aws" do
   aws_account_number $param_aws_account_number
 end
 
-#AUTHENTICATE WITH FLEXERA/OPTIMA
 credentials "auth_flexera" do
   schemes "oauth2"
   label "flexera"
@@ -163,7 +155,6 @@ end
 # Datasources & Scripts
 ###############################################################################
 
-#GET CURRENCY REFERENCE AND CURRENCY CODE FOR ORG
 datasource "ds_currency_reference" do
   request do
     host "raw.githubusercontent.com"
@@ -176,19 +167,18 @@ datasource "ds_currency_code" do
   request do
     auth $auth_flexera
     host rs_optima_host
-    path join(["/bill-analysis/orgs/",rs_org_id,"/settings/currency_code"])
+    path join(["/bill-analysis/orgs/", rs_org_id, "/settings/currency_code"])
     header "Api-Version", "0.1"
     header "User-Agent", "RS Policies"
     ignore_status [403]
   end
   result do
     encoding "json"
-    field "id", jmes_path(response,"id")
-    field "value", jmes_path(response,"value")
+    field "id", jmes_path(response, "id")
+    field "value", jmes_path(response, "value")
   end
 end
 
-#CREATE SIMPLE OBJECT CONTAINING CURRENCY CODE AND NUMBER SEPARATOR
 datasource "ds_currency" do
   run_script $js_create_currency, $ds_currency_reference, $ds_currency_code
 end
@@ -197,27 +187,26 @@ script "js_create_currency", type:"javascript" do
   parameters "ds_currency_reference", "ds_currency_code"
   result "result"
   code <<-EOS
-    var symbol = ""
-    var separator = ""
-    if( ds_currency_code['value'] !== undefined ) {
-      if (ds_currency_reference[ds_currency_code['value']] !== undefined ) {
-        symbol = ds_currency_reference[ds_currency_code['value']]['symbol']
-        if( ds_currency_reference[ds_currency_code['value']]['t_separator'] !== undefined ) {
-          separator = ds_currency_reference[ds_currency_code['value']]['t_separator']
-        }
+  symbol = "$"
+  separator = ","
+
+  if (ds_currency_code['value'] !== undefined) {
+    if (ds_currency_reference[ds_currency_code['value']] !== undefined) {
+      symbol = ds_currency_reference[ds_currency_code['value']]['symbol']
+
+      if (ds_currency_reference[ds_currency_code['value']]['t_separator'] !== undefined) {
+        separator = ds_currency_reference[ds_currency_code['value']]['t_separator']
       }
-    } else {
-      symbol = "$"
-      separator = ","
     }
-    result = {
-      'symbol': symbol,
-      'separator': separator
-    }
-  EOS
+  }
+
+  result = {
+    symbol: symbol,
+    separator: separator
+  }
+EOS
 end
 
-#GET AWS ACCOUNT NUMBER TO FILTER REQUESTS TO JUST THE ACCOUNT BEING CHECKED
 datasource "ds_get_caller_identity" do
   request do
     auth $auth_aws
@@ -237,20 +226,16 @@ datasource "ds_get_caller_identity" do
 end
 
 datasource "ds_aws_account" do
-  run_script $js_get_aws_account, $ds_get_caller_identity
+  run_script $js_aws_account, $ds_get_caller_identity
 end
 
-script "js_get_aws_account", type:"javascript" do
+script "js_aws_account", type:"javascript" do
   parameters "ds_get_caller_identity"
   result "result"
-  code <<-EOS
-    result = ds_get_caller_identity[0]['account']
-  EOS
+  code "result = ds_get_caller_identity[0]['account']"
 end
 
-# GET LIST OF OPTED-IN OR OPTED-IN-NOT-REQUIRED REGIONS
 datasource "ds_regions_list" do
-  # https://docs.aws.amazon.com/AWSEC2/latest/APIReference/API_DescribeRegions.html
   request do
     auth $auth_aws
     verb "GET"
@@ -273,49 +258,28 @@ datasource "ds_regions_list" do
   end
 end
 
-#FILTER REGIONS LIST ON 'ALLOWED REGIONS' PARAMETER
 datasource "ds_regions" do
-  run_script $js_get_regions, $param_02_allowed_regions, $ds_regions_list, $param_021_allowed_regions_allow_or_deny
+  run_script $js_regions, $param_regions_list, $ds_regions_list, $param_allow_or_deny
 end
 
-script "js_get_regions", type:"javascript" do
-  parameters "user_entered_regions", "all_regions", "regions_allow_or_deny"
-  result "regions"
+script "js_regions", type:"javascript" do
+  parameters "param_regions_list", "ds_regions_list", "param_allow_or_deny"
+  result "result"
   code <<-EOS
-    if (_.isEmpty(user_entered_regions)) {
-      regions = all_regions
-    } else {
-      //Filter unique regions
-      var uniqueRegions = _.uniq(user_entered_regions)
-      var all_regions_list = []
-      //Filter and remove denied regions from all_regions
-      if (regions_allow_or_deny == "Deny"){
-        var all_regions = all_regions.filter(function(obj){
-          return user_entered_regions.indexOf(obj.region) === -1;
-        });
-      }
-      all_regions.forEach(function(all_region){
-        all_regions_list.push(all_region.region)
-      })
-      //Filter valid regions
-      var valid_regions = []
-      _.map(uniqueRegions, function(uniqueRegion){
-        if(all_regions_list.indexOf(uniqueRegion) > -1){
-          valid_regions.push({"region": uniqueRegion})
-        }
-      })
-      //Throw an error if no valid regions found
-      if (_.isEmpty(valid_regions)) {
-        regions = all_regions
-      }else{
-        regions = valid_regions
-      }
-    }
-  EOS
+  result = []
+  allow_deny_test = { "Allow": true, "Deny": false }
+
+  if (param_regions_list.length > 0) {
+    result = _.filter(ds_regions_list, function(item) {
+      return _.contains(param_regions_list, item['region']) == allow_deny_test[param_allow_or_deny]
+    })
+  } else {
+    result = ds_regions_list
+  }
+EOS
 end
 
-#GET LIST OF INSTANCES FROM AWS
-datasource "ds_instances_set" do
+datasource "ds_instance_sets" do
   iterate $ds_regions
   request do
     auth $auth_aws
@@ -334,14 +298,14 @@ datasource "ds_instances_set" do
       field "instances_set" do
         collect xpath(col_item,"instancesSet/item","array") do
           field "region",val(iter_item, "region")
-          field "instanceId", xpath(col_item,"instanceId")
-          field "imageId", xpath(col_item,"imageId")
+          field "instanceId", xpath(col_item, "instanceId")
+          field "imageId", xpath(col_item, "imageId")
           field "resourceType", xpath(col_item, "instanceType")
           field "platform", xpath(col_item, "platformDetails")
           field "privateDnsName", xpath(col_item, "privateDnsName")
           field "launchTime", xpath(col_item, "launchTime")
           field "tags" do
-            collect xpath(col_item,"tagSet/item","array") do
+            collect xpath(col_item,"tagSet/item", "array") do
               field "key", xpath(col_item, "key")
               field "value", xpath(col_item, "value")
             end
@@ -352,136 +316,141 @@ datasource "ds_instances_set" do
   end
 end
 
-#FILTER INSTANCES BY 'TAG KEY EXCLUSION' PARAMETER
 datasource "ds_instances" do
-  run_script $js_filter_instances, $ds_instances_set, $param_09_exclusion_tag_key
+  run_script $js_instances, $ds_instance_sets, $param_exclusion_tag_key
 end
 
-script "js_filter_instances", type: "javascript" do
+script "js_instances", type: "javascript" do
   result "result"
-  parameters "ds_instance_set", "param_09_exclusion_tag_key"
+  parameters "ds_instance_sets", "param_exclusion_tag_key"
   code <<-EOS
-    var tag_key = param_09_exclusion_tag_key.split(':')[0]
-    var tag_value = param_09_exclusion_tag_key.split(':')[1]
-    var result = []
-    _.each(ds_instance_set, function(ds_item) {
-      _.each(ds_item['instances_set'], function(instance) {
-        var tags = instance.tags
-        if (!(_.contains(_.pluck(tags,'key'), tag_key) && _.contains(_.pluck(tags,'value'), tag_value))) {
-          result.push(instance)
-        }
-      })
+  result = []
+
+  _.each(ds_instance_sets, function(item) {
+    filtered_instances = _.reject(item['instances_set'], function(instance) {
+      tags = []
+
+      if (instance['tags'] != null && instance['tags'] != undefined) {
+        _.each(instance['tags'], function(tag) {
+          tags.push(tag['key'] + ':' + tag['value'])
+        })
+      }
+
+      return _.contains(tags, param_exclusion_tag_key)
     })
-  EOS
+
+    result.concat(filtered_instances)
+  })
+EOS
 end
 
-#BUILD CLOUDWATCH QUERIES FOR LIST OF FILTERED INSTANCES
-datasource "ds_instances_queries" do
-  run_script $js_build_instances_queries, $ds_instances, $param_03_idle_threshold_cpu_value, $param_04_idle_threshold_mem_value, $param_05_underutil_threshold_cpu_value, $param_06_underutil_threshold_mem_value
+datasource "ds_cloudwatch_queries" do
+  run_script $js_cloudwatch_queries, $ds_instances, $param_idle_threshold_cpu_value, $param_idle_threshold_mem_value, $param_underutil_threshold_cpu_value, $param_underutil_threshold_mem_value
 end
 
-script "js_build_instances_queries", type: "javascript" do
+script "js_cloudwatch_queries", type: "javascript" do
   result "queries"
-  parameters "ds_instances", "param_03_idle_threshold_cpu_value", "param_04_idle_threshold_mem_value", "param_05_underutil_threshold_cpu_value", "param_06_underutil_threshold_mem_value"
+  parameters "ds_instances", "param_idle_threshold_cpu_value", "param_idle_threshold_mem_value", "param_underutil_threshold_cpu_value", "param_underutil_threshold_mem_value"
   code <<-EOS
-
-    // Set CPU threshold for CloudWatch call (if Underutilized threshold is ignored, then check for Idle threshold)
-    var param_avg_cpu = -1
-    if (param_05_underutil_threshold_cpu_value != -1) {
-      param_avg_cpu = param_05_underutil_threshold_cpu_value
-    } else {
-      if (param_03_idle_threshold_cpu_value != -1){
-        param_avg_cpu = param_03_idle_threshold_cpu_value
-      }
+  // Set CPU threshold for CloudWatch call
+  // If Underutilized threshold is ignored, then check for Idle threshold
+  var param_avg_cpu = -1
+  if (param_underutil_threshold_cpu_value != -1) {
+    param_avg_cpu = param_underutil_threshold_cpu_value
+  } else {
+    if (param_idle_threshold_cpu_value != -1) {
+      param_avg_cpu = param_idle_threshold_cpu_value
     }
+  }
 
-    // Set Memory threshold for CloudWatch call (if Underutilized threshold is ignored, then check for Idle threshold)
-    var param_avg_mem = -1
-    if (param_06_underutil_threshold_mem_value != -1) {
-      param_avg_mem = param_06_underutil_threshold_mem_value
-    } else {
-      if (param_04_idle_threshold_mem_value != -1){
-        param_avg_mem = param_04_idle_threshold_mem_value
-      }
+  // Set Memory threshold for CloudWatch call
+  // If Underutilized threshold is ignored, then check for Idle threshold
+  var param_avg_mem = -1
+  if (param_underutil_threshold_mem_value != -1) {
+    param_avg_mem = param_underutil_threshold_mem_value
+  } else {
+    if (param_idle_threshold_mem_value != -1) {
+      param_avg_mem = param_idle_threshold_mem_value
     }
+  }
 
-    //console.log("CPU threshold for CloudWatch: ", param_avg_cpu)
-    //console.log("Mem threshold for CloudWatch: ", param_avg_mem)
+  // Create the various queries we're going to send to CloudWatch for each instance
+  queries = {}
 
-    // Create the various queries we're going to send to CloudWatch for each instance
-    queries = {}
-    _.each(ds_instances, function(instance) {
-      // Make sure the queries object has an array for the region to push items to
-      if (queries[instance['region']] == undefined || queries[instance['region']] == null) {
-        queries[instance['region']] = []
-      }
-      //We want to collect each of these list of statistics we care about
-      stats = ["Average", "Minimum", "Maximum", "p99", "p95", "p90"]
-      // Only query for CPU usage if we're actually checking it
-      if (param_avg_cpu != -1) {
-        _.each(stats, function(stat) {
-          query = {
-            "Id": instance['instanceId'].replace('-', '_') + "_cpu" + stat,
-            "MetricStat": {
-              "Metric": {
-                "Namespace": "AWS/EC2",
-                "MetricName": "CPUUtilization",
-                "Dimensions": [
-                  { "Name": "InstanceId", "Value": instance['instanceId'] }
-                ]
-              },
-              "Period": 2592000,
-              "Stat": stat
+  _.each(ds_instances, function(instance) {
+    // Make sure the queries object has an array for the region to push items to
+    if (queries[instance['region']] == undefined || queries[instance['region']] == null) {
+      queries[instance['region']] = []
+    }
+    //We want to collect each of these list of statistics we care about
+    stats = ["Average", "Minimum", "Maximum", "p99", "p95", "p90"]
+    // Only query for CPU usage if we're actually checking it
+    if (param_avg_cpu != -1) {
+      _.each(stats, function(stat) {
+        query = {
+          "Id": instance['instanceId'].replace('-', '_') + "_cpu" + stat,
+          "MetricStat": {
+            "Metric": {
+              "Namespace": "AWS/EC2",
+              "MetricName": "CPUUtilization",
+              "Dimensions": [
+                { "Name": "InstanceId", "Value": instance['instanceId'] }
+              ]
             },
-            "ReturnData": true
-          }
-          queries[instance['region']].push(query)
-        })
-      }
-      // Only query for MEM usage if we're actually checking it
-      if (param_avg_mem != -1) {
-        if (instance['platform'] == "Windows") {
-          // If platform is Windows, we need to use the Windows custom metric
-          mem_metricname = "Memory % Committed Bytes In Use"
-          dimensions = [
-            { "Name": "ImageId", "Value": instance['imageId'] },
-            { "Name": "InstanceId", "Value": instance['instanceId'] },
-            { "Name": "InstanceType", "Value": instance['resourceType'] },
-            { "Name": "objectname", "Value": "Memory" }
-          ]
-        } else {
-          // Else assume Platform is Linux, and use the Linux custom metric
-          mem_metricname = "mem_used_percent"
-          dimensions = [
-            { "Name": "ImageId", "Value": instance['imageId'] },
-            { "Name": "InstanceId", "Value": instance['instanceId'] },
-            { "Name": "InstanceType", "Value": instance['resourceType'] }
-          ]
+            "Period": 2592000,
+            "Stat": stat
+          },
+          "ReturnData": true
         }
-        _.each(stats, function(stat) {
-          query = {
-            "Id": instance['instanceId'].replace('-', '_') + "_mem" + stat,
-            "MetricStat": {
-              "Metric": {
-                "Namespace": "CWAgent",
-                "MetricName": mem_metricname,
-                "Dimensions": dimensions
-              },
-              "Period": 2592000,
-              "Stat": stat
-            },
-            "ReturnData": true
-          }
-          queries[instance['region']].push(query)
-        })
+        queries[instance['region']].push(query)
+      })
+    }
+
+    // Only query for MEM usage if we're actually checking it
+    if (param_avg_mem != -1) {
+      if (instance['platform'] == "Windows") {
+        // If platform is Windows, we need to use the Windows custom metric
+        mem_metricname = "Memory % Committed Bytes In Use"
+        dimensions = [
+          { "Name": "ImageId", "Value": instance['imageId'] },
+          { "Name": "InstanceId", "Value": instance['instanceId'] },
+          { "Name": "InstanceType", "Value": instance['resourceType'] },
+          { "Name": "objectname", "Value": "Memory" }
+        ]
+      } else {
+        // Else assume Platform is Linux, and use the Linux custom metric
+        mem_metricname = "mem_used_percent"
+        dimensions = [
+          { "Name": "ImageId", "Value": instance['imageId'] },
+          { "Name": "InstanceId", "Value": instance['instanceId'] },
+          { "Name": "InstanceType", "Value": instance['resourceType'] }
+        ]
       }
-    })
-  EOS
+
+      _.each(stats, function(stat) {
+        query = {
+          "Id": instance['instanceId'].replace('-', '_') + "_mem" + stat,
+          "MetricStat": {
+            "Metric": {
+              "Namespace": "CWAgent",
+              "MetricName": mem_metricname,
+              "Dimensions": dimensions
+            },
+            "Period": 2592000,
+            "Stat": stat
+          },
+          "ReturnData": true
+        }
+        queries[instance['region']].push(query)
+      })
+    }
+  })
+EOS
 end
 
 #COMBINE THE ABOVE QUERIES INTO DISCRETE REQUESTS OF 500 OR FEWER QUERIES TO SEND INTO CLOUDWATCH API
 datasource "ds_instances_requests" do
-  run_script $js_get_instances_requests, $ds_instances_queries
+  run_script $js_get_instances_requests, $ds_cloudwatch_queries
 end
 
 script "js_get_instances_requests", type: "javascript" do
@@ -510,7 +479,7 @@ end
 datasource "ds_cloudwatch_data" do
   iterate $ds_instances_requests
   request do
-    run_script $js_get_cloudwatch_data, val(iter_item, "region"), val(iter_item, "body"), $param_10_api_wait
+    run_script $js_get_cloudwatch_data, val(iter_item, "region"), val(iter_item, "body"), $param_api_wait
   end
   result do
     encoding "json"
@@ -765,12 +734,12 @@ end
 #COMBINE INSTANCE DATA WITH INSTANCE COST DATA FROM FLEXERA OPTIMA
 datasource "ds_idle_and_underutil_instances" do
   run_script $js_get_idle_and_underutil_instances, $ds_merged_metrics, $ds_instance_costs, $ds_aws_instance_size_map,
-  $param_03_idle_threshold_cpu_value, $param_04_idle_threshold_mem_value, $param_05_underutil_threshold_cpu_value, $param_06_underutil_threshold_mem_value,
-  $ds_currency, $param_07_check_both, $param_08_threshold_statistic
+  $param_idle_threshold_cpu_value, $param_idle_threshold_mem_value, $param_underutil_threshold_cpu_value, $param_underutil_threshold_mem_value,
+  $ds_currency, $param_check_both, $param_threshold_statistic
 end
 
 script "js_get_idle_and_underutil_instances", type:"javascript" do
-  parameters "ds_merged_metrics", "ds_instance_costs", "ds_aws_instance_size_map", "param_03_idle_threshold_cpu_value", "param_04_idle_threshold_mem_value", "param_05_underutil_threshold_cpu_value", "param_06_underutil_threshold_mem_value", "currency", "param_07_check_both", "param_08_threshold_statistic"
+  parameters "ds_merged_metrics", "ds_instance_costs", "ds_aws_instance_size_map", "param_idle_threshold_cpu_value", "param_idle_threshold_mem_value", "param_underutil_threshold_cpu_value", "param_underutil_threshold_mem_value", "currency", "param_check_both", "param_threshold_statistic"
   result "result"
   code <<-EOS
   var result = []
@@ -805,25 +774,25 @@ script "js_get_idle_and_underutil_instances", type:"javascript" do
   var cost_data_found = false
 
   // The key name is lowercase, param value needs to be lowercase. We use this to keep backwards compatibility for the exported data.
-  param_08_threshold_statistic = param_08_threshold_statistic.toLowerCase()
+  param_threshold_statistic = param_threshold_statistic.toLowerCase()
 
   // Set CPU threshold (if Underutilized threshold is ignored, then check for Idle threshold)
   var param_avg_cpu = -1
-  if (param_05_underutil_threshold_cpu_value != -1) {
-    param_avg_cpu = param_05_underutil_threshold_cpu_value
+  if (param_underutil_threshold_cpu_value != -1) {
+    param_avg_cpu = param_underutil_threshold_cpu_value
   } else {
-    if (param_03_idle_threshold_cpu_value != -1) {
-      param_avg_cpu = param_03_idle_threshold_cpu_value
+    if (param_idle_threshold_cpu_value != -1) {
+      param_avg_cpu = param_idle_threshold_cpu_value
     }
   }
 
   // Set Memory threshold (if Underutilized threshold is ignored, then check for Idle threshold)
   var param_avg_mem = -1
-  if (param_06_underutil_threshold_mem_value != -1) {
-    param_avg_mem = param_06_underutil_threshold_mem_value
+  if (param_underutil_threshold_mem_value != -1) {
+    param_avg_mem = param_underutil_threshold_mem_value
   } else {
-    if (param_04_idle_threshold_mem_value != -1){
-      param_avg_mem = param_04_idle_threshold_mem_value
+    if (param_idle_threshold_mem_value != -1){
+      param_avg_mem = param_idle_threshold_mem_value
     }
   }
 
@@ -858,13 +827,13 @@ script "js_get_idle_and_underutil_instances", type:"javascript" do
       // If checking ONLY cpu utilization -
       if (param_avg_mem == -1) {
         // If an Idle instance
-        if ( instance['cpu' + "_" + param_08_threshold_statistic] < param_03_idle_threshold_cpu_value ) {
+        if ( instance['cpu' + "_" + param_threshold_statistic] < param_idle_threshold_cpu_value ) {
           instance["savings"] = parseFloat(total_cost).toFixed(3)
           instance["recommendationType"] = "Terminate"
           idle_total_savings += total_cost
         }
         // If an Underutilized instance
-        else if ( instance['cpu' + "_" + param_08_threshold_statistic] < param_05_underutil_threshold_cpu_value ) {
+        else if ( instance['cpu' + "_" + param_threshold_statistic] < param_underutil_threshold_cpu_value ) {
           instance["savings"] = parseFloat(total_cost / 2).toFixed(3)
           instance["recommendationType"] = "Downsize"
           underutil_total_savings += total_cost
@@ -873,13 +842,13 @@ script "js_get_idle_and_underutil_instances", type:"javascript" do
       // If checking ONLY memory utilization -
       if (param_avg_cpu == -1) {
         // If an Idle instance
-        if ( instance['mem' + "_" + param_08_threshold_statistic] < param_04_idle_threshold_mem_value ) {
+        if ( instance['mem' + "_" + param_threshold_statistic] < param_idle_threshold_mem_value ) {
           instance["savings"] = parseFloat(total_cost).toFixed(3)
           instance["recommendationType"] = "Terminate"
           idle_total_savings += total_cost
         }
         // If an Underutilized instance
-        else if ( instance['mem' + "_" + param_08_threshold_statistic] < param_06_underutil_threshold_mem_value ) {
+        else if ( instance['mem' + "_" + param_threshold_statistic] < param_underutil_threshold_mem_value ) {
           instance["savings"] = parseFloat(total_cost / 2).toFixed(3)
           instance["recommendationType"] = "Downsize"
           underutil_total_savings += total_cost
@@ -888,17 +857,17 @@ script "js_get_idle_and_underutil_instances", type:"javascript" do
       // If checking both cpu AND memory utilization
       if ( param_avg_cpu != -1 && param_avg_mem != -1 ) {
         // If checking instance is below threshold for both cpu AND memory
-        if ( param_07_check_both == "Both CPU and Memory" ) {
+        if ( param_check_both == "Both CPU and Memory" ) {
           // If an Idle instance
-          if ( instance['cpu' + "_" + param_08_threshold_statistic] < param_03_idle_threshold_cpu_value
-            && instance['mem' + "_" + param_08_threshold_statistic] < param_04_idle_threshold_mem_value ) {
+          if ( instance['cpu' + "_" + param_threshold_statistic] < param_idle_threshold_cpu_value
+            && instance['mem' + "_" + param_threshold_statistic] < param_idle_threshold_mem_value ) {
             instance["savings"] = parseFloat(total_cost).toFixed(3)
             instance["recommendationType"] = "Terminate"
             idle_total_savings += total_cost
           }
           // If an Underutilized instance
-          else if ( instance['cpu' + "_" + param_08_threshold_statistic] < param_05_underutil_threshold_cpu_value
-            && instance['mem' + "_" + param_08_threshold_statistic] < param_06_underutil_threshold_mem_value ) {
+          else if ( instance['cpu' + "_" + param_threshold_statistic] < param_underutil_threshold_cpu_value
+            && instance['mem' + "_" + param_threshold_statistic] < param_underutil_threshold_mem_value ) {
             instance["savings"] = parseFloat(total_cost).toFixed(3)
             instance["recommendationType"] = "Downsize"
             underutil_total_savings += total_cost
@@ -907,15 +876,15 @@ script "js_get_idle_and_underutil_instances", type:"javascript" do
         // If checking instance is below threshold for both cpu OR memory
         else {
           // If an Idle instance
-          if ( instance['cpu' + "_" + param_08_threshold_statistic] < param_03_idle_threshold_cpu_value
-            || instance['mem' + "_" + param_08_threshold_statistic] < param_04_idle_threshold_mem_value ) {
+          if ( instance['cpu' + "_" + param_threshold_statistic] < param_idle_threshold_cpu_value
+            || instance['mem' + "_" + param_threshold_statistic] < param_idle_threshold_mem_value ) {
             instance["savings"] = parseFloat(total_cost).toFixed(3)
             instance["recommendationType"] = "Terminate"
             idle_total_savings += total_cost
           }
           // If an Underutilized instance
-          else if ( instance['cpu' + "_" + param_08_threshold_statistic] < param_05_underutil_threshold_cpu_value
-            || instance['mem' + "_" + param_08_threshold_statistic] < param_06_underutil_threshold_mem_value ) {
+          else if ( instance['cpu' + "_" + param_threshold_statistic] < param_underutil_threshold_cpu_value
+            || instance['mem' + "_" + param_threshold_statistic] < param_underutil_threshold_mem_value ) {
             instance["savings"] = parseFloat(total_cost).toFixed(3)
             instance["recommendationType"] = "Downsize"
             underutil_total_savings += total_cost
