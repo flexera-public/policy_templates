@@ -6,8 +6,6 @@
 
 At version 2.5 we changed the way we calculated the CPU utilization, we retrieved the average of utilization of each day and then we selected the maximum average as the maximum and the minimum average as the minimum, now we show the actual maximum and minimum of the CPU utilization thanks to a change in our GCP MQL query.
 
-- Fixed the method to match the data of the resources and the cost data (this removes duplicated recommendations at the incident report).
-
 ## v2.5
 
 - Modified to make this policy run faster by using aggregated GCP API endpoints.
