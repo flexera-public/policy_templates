@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.7
+
+- Fix: Duplicated entries from incident report were removed.
+
 ## v2.6
 
 - Fixed the values shown at `cpuMaximum`, `cpuMinimum` and `cpuAverage`:
