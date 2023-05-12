@@ -21,7 +21,7 @@ Kubecost request sizing recommendations policy provides Kubecost recommendations
 - *The algorithm for the CPU* - Defines whether max or a certain quantile should be used for CPU utilization metric to compute CPU request recommendation
   - Default: "max"
   - Allowed values: "max", "quantile"
-- *CPU quantile* - The desired quantile to base CPU request recommendations on
+- *CPU percentile* - The desired percentile to base CPU request recommendations on
   - Default: 0.75
   - Minimum value: 0.01
   - Maximum value: 1
@@ -32,7 +32,7 @@ Kubecost request sizing recommendations policy provides Kubecost recommendations
 - *The algorithm for Memory* - Defines whether max or a certain quantile should be used for Memory utilization metric to compute Memory request recommendation
   - Default: "max"
   - Allowed values: "max", "quantile"
-- *Memory quantile* - The desired quantile to base Memory request recommendations on
+- *Memory percentile* - The desired percentile to base Memory request recommendations on
   - Default: 0.75
   - Minimum value: 0.01
   - Maximum value: 1
