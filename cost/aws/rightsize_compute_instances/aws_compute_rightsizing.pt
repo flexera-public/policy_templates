@@ -326,19 +326,23 @@ script "js_instances", type: "javascript" do
   result = []
 
   _.each(ds_instance_sets, function(item) {
-    filtered_instances = _.reject(item['instances_set'], function(instance) {
-      tags = []
+    if (param_exclusion_tag_key != '' && param_exclusion_tag_key != null) {
+      filtered_instances = _.reject(item['instances_set'], function(instance) {
+        tags = []
 
-      if (instance['tags'] != null && instance['tags'] != undefined) {
-        _.each(instance['tags'], function(tag) {
-          tags.push([tag['key'], tag['value']].join(':'))
-        })
-      }
+        if (instance['tags'] != null && instance['tags'] != undefined) {
+          _.each(instance['tags'], function(tag) {
+            tags.push([tag['key'], tag['value']].join(':'))
+          })
+        }
 
-      return _.contains(tags, param_exclusion_tag_key)
-    })
+        return _.contains(tags, param_exclusion_tag_key)
+      })
 
-    result.concat(filtered_instances)
+      result = result.concat(filtered_instances)
+    } else {
+      result = result.concat(item['instances_set'])
+    }
   })
 EOS
 end
@@ -712,6 +716,18 @@ script "js_merged_metrics", type: "javascript" do
     // Otherwise, we have no usage data on the instance and thus dont include it in the results.
     if (ds_cloudwatch_data_sorted[region] != undefined) {
       if (ds_cloudwatch_data_sorted[region][id] != undefined) {
+        // Tidy up tags so they display nicely in the incident
+        tags = []
+
+        if (instance['tags'] != undefined && instance['tags'] != null) {
+          _.each(instance['tags'], function(tag) {
+            tags.push([tag['key'], tag['value']].join('='))
+          })
+        }
+
+        tags = tags.join(', ')
+
+        // Create object we're going to return
         merged_instance = {
           "region": region,
           "id": id,
@@ -721,7 +737,7 @@ script "js_merged_metrics", type: "javascript" do
           "privateDnsName": instance['privateDnsName'],
           "launchTime": instance['launchTime'],
           "hostname": instance['privateDnsName'].split('.')[0],
-          "tags": instance['tags'],
+          "tags": tags,
           "resourceType": instance['resourceType'],
           "savings": null,
           "accountID": ds_aws_account,
@@ -740,7 +756,7 @@ script "js_merged_metrics", type: "javascript" do
             merged_instance[legacyStatName] = null
 
             if (ds_cloudwatch_data_sorted[region][id][statname] != undefined && ds_cloudwatch_data_sorted[region][id][statname] != null) {
-              merged_instance[legacyStatName] = ds_cloudwatch_data_sorted[region][id][statname]
+              merged_instance[legacyStatName] = parseFloat(ds_cloudwatch_data_sorted[region][id][statname]).toFixed(2)
             }
           })
         })
@@ -866,12 +882,11 @@ script "js_idle_and_underutil_instances", type:"javascript" do
       }
 
       //Get Instance Size of Downsized instance
-      vm_size_down = "Terminate Instance"
+      vm_size_down = null
 
       if (instance['recommendationType'] == "Downsize") {
         if (ds_aws_instance_size_map[instance['resourceType']]) {
           vm_size_down = ds_aws_instance_size_map[instance['resourceType']]['down']
-          if (vm_size_down == null) { vm_size_down = "N/A" }
         }
       }
 
@@ -880,8 +895,13 @@ script "js_idle_and_underutil_instances", type:"javascript" do
       instance["savingsCurrency"] = ds_currency['symbol']
 
       // Send instance to appropriate list depending on whether it is underutilized or idle
-      if (instance['recommendationType'] == "Downsize") { underutil_list.push(instance) }
-      if (instance['recommendationType'] == "Terminate") { idle_list.push(instance) }
+      if (instance['recommendationType'] == "Downsize" && vm_size_down != null && vm_size_down != undefined) {
+        underutil_list.push(instance)
+      }
+
+      if (instance['recommendationType'] == "Terminate") {
+        idle_list.push(instance)
+      }
     })
 
     //Sort By Region and then by Account Name
@@ -891,8 +911,8 @@ script "js_idle_and_underutil_instances", type:"javascript" do
     idle_list = _.sortBy(idle_list, "accountName")
   }
 
-  underutil_total_savings = currency['symbol'] + ' ' + formatNumber(parseFloat(underutil_total_savings).toFixed(2), currency['separator'])
-  idle_total_savings = currency['symbol'] + ' ' + formatNumber(parseFloat(idle_total_savings).toFixed(2), currency['separator'])
+  underutil_total_savings = ds_currency['symbol'] + ' ' + formatNumber(parseFloat(underutil_total_savings).toFixed(2), ds_currency['separator'])
+  idle_total_savings = ds_currency['symbol'] + ' ' + formatNumber(parseFloat(idle_total_savings).toFixed(2), ds_currency['separator'])
 
   result = {
     underutil_message: "The total estimated monthly savings is " + underutil_total_savings,
@@ -1019,9 +1039,6 @@ policy "pol_utilization" do
       end
       field "resourceType" do
         label "Instance Size"
-      end
-      field "recommendedVmSize" do
-        label "Recommended Instance Size"
       end
       field "region" do
         label "Region"
