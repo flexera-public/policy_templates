@@ -44,52 +44,52 @@ parameter "param_idle_threshold_cpu_value" do
   type "number"
   label "Idle Instance CPU Threshold (%)"
   description "The CPU threshold at which to consider an instance to be 'idle' and therefore be flagged for termination. Set to -1 to ignore CPU utilization"
-  default 5
   min_value -1
   max_value 100
+  default 5
 end
 
 parameter "param_idle_threshold_mem_value" do
   type "number"
   label "Idle Instance Memory Threshold (%)"
   description "The Memory threshold at which to consider an instance to be 'idle' and therefore be flagged for termination. Set to -1 to ignore memory utilization"
-  default 5
   min_value -1
   max_value 100
+  default 5
 end
 
 parameter "param_underutil_threshold_cpu_value" do
   type "number"
   label "Underutilized Instance CPU Threshold (%)"
   description "The CPU threshold at which to consider an instance to be 'underutilized' and therefore be flagged for downsizing. Set to -1 to ignore CPU utilization"
-  default 40
   min_value -1
   max_value 100
+  default 40
 end
 
 parameter "param_underutil_threshold_mem_value" do
   type "number"
   label "Underutilized Instance Memory Threshold (%)"
   description "The Memory threshold at which to consider an instance to be 'underutilized' and therefore be flagged for downsizing. Set to -1 to ignore memory utilization"
-  default 40
   min_value -1
   max_value 100
+  default 40
 end
 
 parameter "param_check_both" do
   type "string"
   label "Idle/Utilized for both CPU/Memory or either"
   description "Set whether an instance should be considered idle and/or underutilized only if both CPU and memory are under the thresholds or if either CPU or memory are under. Note: this parameter is only valid when at least one Memory Utilization threshold and one CPU Utilization threshold is NOT set to -1"
-  default "Either CPU or Memory"
   allowed_values "Both CPU and Memory", "Either CPU or Memory"
+  default "Either CPU or Memory"
 end
 
 parameter "param_threshold_statistic" do
   type "string"
   label "Threshold Statistic"
   description "Statistic to use for the metric threshold"
-  default "Average"
   allowed_values "Average", "p99", "p95", "p90"
+  default "Average"
 end
 
 parameter "param_exclusion_tag_key" do
@@ -105,31 +105,32 @@ parameter "param_api_wait" do
   type "number"
   label "CloudWatch API Wait Time"
   description "Amount of time to wait between CloudWatch API requests to avoid throttling (seconds)"
-  default 5
   min_value 1
   max_value 60
-end
-
-parameter "param_automatic_action" do
-  type "list"
-  label "Automatic Actions"
-  description "When this value is set, this policy will automatically take the selected action(s)"
-  allowed_values ["Terminate Instances"]
-  default []
+  default 5
 end
 
 parameter "param_log_to_cm_audit_entries" do
   type "string"
   label "Log to CM Audit Entries"
   description "Boolean for whether or not to log any debugging information from actions to CM Audit Entries, this should be left set to No on Flexera EU"
-  default "No"
   allowed_values "Yes", "No"
+  default "No"
+end
+
+parameter "param_automatic_action" do
+  type "list"
+  label "Automatic Actions"
+  description "When this value is set, this policy will automatically take the selected action(s)"
+  allowed_values ["Downsize Instances", "Terminate Instances"]
+  default []
 end
 
 parameter "param_email" do
   type "list"
   label "Email addresses to notify"
   description "Email addresses of the recipients you wish to notify when new incidents are created"
+  default []
 end
 
 ###############################################################################
@@ -674,8 +675,8 @@ script "js_instance_costs", type: "javascript" do
       }
     },
     headers: {
-      User-Agent: "RS Policies",
-      Api-Version: "1.0"
+      'User-Agent': "RS Policies",
+      'Api-Version': "1.0"
     },
     ignore_status: [400]
   }
@@ -753,11 +754,8 @@ script "js_merged_metrics", type: "javascript" do
 EOS
 end
 
-#COMBINE INSTANCE DATA WITH INSTANCE COST DATA FROM FLEXERA OPTIMA
 datasource "ds_idle_and_underutil_instances" do
-  run_script $js_idle_and_underutil_instances, $ds_merged_metrics, $ds_instance_costs, $ds_aws_instance_size_map,
-  $param_idle_threshold_cpu_value, $param_idle_threshold_mem_value, $param_underutil_threshold_cpu_value, $param_underutil_threshold_mem_value,
-  $ds_currency, $param_check_both, $param_threshold_statistic
+  run_script $js_idle_and_underutil_instances, $ds_merged_metrics, $ds_instance_costs, $ds_aws_instance_size_map, $param_idle_threshold_cpu_value, $param_idle_threshold_mem_value, $param_underutil_threshold_cpu_value, $param_underutil_threshold_mem_value, $ds_currency, $param_check_both, $param_threshold_statistic
 end
 
 script "js_idle_and_underutil_instances", type:"javascript" do
@@ -784,17 +782,18 @@ script "js_idle_and_underutil_instances", type:"javascript" do
     return formatted_number + "." + values[1]
   }
 
+  // Gather the accountName for later use in the results
   var accountName = ""
   if (ds_instance_costs.length > 0) { accountName = ds_instance_costs[0]['vendorAccountName'] }
 
-  // The key name is lowercase, param value needs to be lowercase. We use this to keep backwards compatibility for the exported data.
+  // The key name is lowercase, param value needs to be lowercase.
   threshold_statistic = param_threshold_statistic.toLowerCase()
 
   // Determine whether we're checking for CPU, memory, or both
   checking_cpu = param_underutil_threshold_cpu_value != -1 || param_idle_threshold_cpu_value != -1
   checking_mem = param_underutil_threshold_mem_value != -1 || param_idle_threshold_mem_value != -1
 
-  // Group cost data by resourceId
+  // Group cost data by resourceId for later use
   grouped_cost_data = {}
 
   _.each(ds_instance_costs, function(item) {
@@ -804,7 +803,6 @@ script "js_idle_and_underutil_instances", type:"javascript" do
     grouped_cost_data[id] += item['cost']
   })
 
-  // ADD COSTS TO INSTANCE UTILIZATION DATA
   underutil_total_savings = 0
   idle_total_savings = 0
 
@@ -815,45 +813,53 @@ script "js_idle_and_underutil_instances", type:"javascript" do
   if (checking_cpu || checking_mem) {
     // Loop through metrics data, appending cost data
     _.each(ds_merged_metrics, function(instance) {
+      id = instance['id'].toLowerCase()
+
+      // Assume cost is 0 unless we have cost data for the instance
       total_cost = 0
+      if (grouped_cost_data[id] != undefined) { total_cost = grouped_cost_data[id] }
 
-      if (grouped_cost_data[instance['id'].toLowerCase()] != undefined) {
-        total_cost = grouped_cost_data[instance['id'].toLowerCase()]
-      }
-
-      // Test for whether to consider the instance idle or underutilized
+      // Store relevant CPU and memory stats into these variables for later use
       cpu_value = instance['cpu' + "_" + threshold_statistic]
       mem_value = instance['mem' + "_" + threshold_statistic]
 
+      // Test for whether to consider the instance idle or underutilized.
+      // Assume instance is not idle or underutilized by default.
       is_idle = false
-      is_underutilized = false
+      is_underutil = false
 
+      // Determine if the instance is idle or underutilized for each category.
+      // Store boolean result for later use.
       is_idle_cpu = cpu_value < param_idle_threshold_cpu_value
-      is_underutilized_cpu = cpu_value < param_underutil_threshold_cpu_value
+      is_underutil_cpu = cpu_value < param_underutil_threshold_cpu_value
       is_idle_mem = mem_value < param_idle_threshold_mem_value
-      is_underutilized_mem = mem_value < param_underutil_threshold_mem_value
+      is_underutil_mem = mem_value < param_underutil_threshold_mem_value
 
+      // If we're only checking CPU, simply set is_idle/is_underutil to their CPU equivalents
       if (!checking_mem) { is_idle = is_idle_cpu }
-      if (!checking_mem) { is_underutilized = is_underutilized_cpu }
+      if (!checking_mem) { is_underutil = is_underutil_cpu }
 
+      // If we're only checking memory, simply set is_idle/is_underutil to their memory equivalents
       if (!checking_cpu) { is_idle = is_idle_mem }
-      if (!checking_cpu) { is_underutilized = is_underutilized_mem }
+      if (!checking_cpu) { is_underutil = is_underutil_mem }
 
+      // If we're checking both, do an 'and' or an 'or' depending on the value of param_check_both
       if (checking_cpu && checking_mem) {
         if (param_check_both == "Both CPU and Memory") {
           is_idle = is_idle_cpu && is_idle_mem
-          is_underutilized = is_underutilized_cpu && is_underutilized_mem
+          is_underutil = is_underutil_cpu && is_underutil_mem
         } else {
           is_idle = is_idle_cpu || is_idle_mem
-          is_underutilized = is_underutilized_cpu || is_underutilized_mem
+          is_underutil = is_underutil_cpu || is_underutil_mem
         }
       }
 
+      // Set appropriate values based on whether instance is idle or underutilized
       if (is_idle) {
         instance["savings"] = parseFloat(total_cost).toFixed(3)
         instance["recommendationType"] = "Terminate"
         idle_total_savings += total_cost
-      } else if (is_underutilized) {
+      } else if (is_underutil) {
         instance["savings"] = parseFloat(total_cost / 2).toFixed(3)
         instance["recommendationType"] = "Downsize"
         underutil_total_savings += total_cost
@@ -873,13 +879,16 @@ script "js_idle_and_underutil_instances", type:"javascript" do
       instance["accountName"] = accountName
       instance["savingsCurrency"] = ds_currency['symbol']
 
+      // Send instance to appropriate list depending on whether it is underutilized or idle
       if (instance['recommendationType'] == "Downsize") { underutil_list.push(instance) }
       if (instance['recommendationType'] == "Terminate") { idle_list.push(instance) }
     })
 
     //Sort By Region and then by Account Name
-    instance_list = _.sortBy(instance_list, "region")
-    instance_list = _.sortBy(instance_list, "accountName")
+    underutil_list = _.sortBy(underutil_list, "region")
+    underutil_list = _.sortBy(underutil_list, "accountName")
+    idle_list = _.sortBy(idle_list, "region")
+    idle_list = _.sortBy(idle_list, "accountName")
   }
 
   underutil_total_savings = currency['symbol'] + ' ' + formatNumber(parseFloat(underutil_total_savings).toFixed(2), currency['separator'])
@@ -904,7 +913,7 @@ policy "pol_utilization" do
     detail_template "{{ data.underutil_message }}"
     check logic_or($ds_parent_policy_terminated, eq(size(val(data, "underutil_list")), 0))
     escalate $esc_email
-    #escalate $esc_downsize_instances
+    escalate $esc_downsize_instances
     export "underutil_list" do
       resource_level true
       field "accountID" do
@@ -991,12 +1000,12 @@ policy "pol_utilization" do
       end
     end
   end
-  validateh $ds_idle_and_underutil_instances do
+  validate $ds_idle_and_underutil_instances do
     summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data.idle_list }} AWS Idle Compute Instances Found"
     detail_template "{{ data.idle_message }}"
     check logic_or($ds_parent_policy_terminated, eq(size(val(data, "idle_list")), 0))
     escalate $esc_email
-    #escalate $esc_terminate_instances
+    escalate $esc_terminate_instances
     export "idle_list" do
       resource_level true
       field "accountID" do
@@ -1009,9 +1018,6 @@ policy "pol_utilization" do
         label "Resource ID"
       end
       field "resourceType" do
-        label "Instance Size"
-      end
-      field "vmSize" do
         label "Instance Size"
       end
       field "recommendedVmSize" do
@@ -1097,6 +1103,228 @@ escalation "esc_email" do
   label "Send Email"
   description "Send incident email"
   email $param_email
+end
+
+escalation "esc_downsize_instances" do
+  automatic contains($param_automatic_action, "Downsize Instances")
+  label "Downsize Instances"
+  description "Approval to downsize all selected instances"
+  run "downsize_instances", data, $param_log_to_cm_audit_entries
+end
+
+escalation "esc_terminate_instances" do
+  automatic contains($param_automatic_action, "Terminate Instances")
+  label "Terminate Instances"
+  description "Approval to terminate all selected instances"
+  run "terminate_instances", data, $param_log_to_cm_audit_entries
+end
+
+###############################################################################
+# Cloud Workflow
+###############################################################################
+
+define downsize_instances($data, $param_log_to_cm_audit_entries) return $all_responses do
+  $$debug = $param_log_to_cm_audit_entries == "Yes"
+  $$log = []
+  $all_responses = []
+  $syslog_subject = "AWS Rightsizing Compute [Downsize]: "
+
+  call sys_log(join([$syslog_subject, "Identified Instances"]), to_s($data))
+
+  foreach $instance in $data do
+    call get_instance_state($instance) retrieve $state_response, $initial_state
+    $all_responses << $state_response
+
+    if $initial_state != "terminated" && $initial_state != "pending"
+      if $initial_state != "stopped"
+        call stop_instance($instance) retrieve $stop_response
+        $all_responses << $stop_response
+      end
+
+      call resize_instance($instance) retrieve $resize_response
+      $all_responses << $resize_response
+
+      if $initial_state == "running"
+        call start_instance($instance) retrieve $start_response
+        $all_responses << $start_response
+      end
+    end
+  end
+end
+
+define terminate_instances($data, $param_log_to_cm_audit_entries) return $all_responses do
+  $$debug = $param_log_to_cm_audit_entries == "Yes"
+  $$log = []
+  $all_responses = []
+  $syslog_subject = "AWS Rightsizing Compute [Terminate]: "
+
+  call sys_log(join([$syslog_subject, "Identified Instances"]), to_s($data))
+
+  foreach $instance in $data do
+    call get_instance_state($instance) retrieve $state_response, $initial_state
+    $all_responses << $state_response
+
+    if $initial_state != "terminated" && $initial_state != "pending"
+      call terminate_instance($instance) retrieve $terminate_response
+      $all_responses << $terminate_response
+    end
+  end
+end
+
+define start_instance($instance) return $response do
+  $syslog_subject = "AWS Starting Instance: "
+
+  call sys_log(join([$syslog_subject, "Instance"]), to_s($instance["id"]))
+
+  $response = http_request(
+    auth: $$auth_aws,
+    https: true,
+    verb: "post",
+    href: "/",
+    host: "ec2." + $instance['region'] + ".amazonaws.com",
+    query_strings: {
+      "Action": "StartInstances",
+      "Version": "2016-11-15",
+      "InstanceId.1": $instance["id"]
+    }
+  )
+
+  call sys_log(join([$syslog_subject, "Responses"]), to_s($response))
+end
+
+define stop_instance($instance) return $response do
+  $syslog_subject = "AWS Stopping Instance: "
+
+  call sys_log(join([$syslog_subject, "Instance"]), to_s($instance["id"]))
+
+  $response = http_request(
+    auth: $$auth_aws,
+    https: true,
+    verb: "post",
+    href: "/",
+    host: "ec2." + $instance['region'] + ".amazonaws.com",
+    query_strings: {
+      "Action": "StopInstances",
+      "Version": "2016-11-15",
+      "InstanceId.1": $instance["id"]
+    }
+  )
+
+  $current_state = "dummy_value"
+
+  while $current_state != "stopped" do
+    sleep(30)
+    call get_instance_state($instance) retrieve $state_response, $current_state
+  end
+
+  call sys_log(join([$syslog_subject, "Responses"]), to_s($response))
+end
+
+define resize_instance($instance) return $response do
+  $syslog_subject = "AWS Resizing Instance: "
+
+  call sys_log(join([$syslog_subject, "Instance"]), to_s($instance["id"]))
+
+  $response = http_request(
+    auth: $$auth_aws,
+    https: true,
+    verb: "post",
+    href: "/",
+    host: "ec2." + $instance["region"] + ".amazonaws.com",
+    query_strings: {
+      "Action": "ModifyInstanceAttribute",
+      "Version": "2016-11-15",
+      "InstanceId": $instance["id"],
+      "InstanceType.Value": $instance["recommendedVmSize"]
+    }
+  )
+
+  $current_state = "dummy_value"
+
+  while $current_state != "stopped" do
+    sleep(30)
+    call get_instance_state($instance) retrieve $state_response, $current_state
+  end
+
+  call sys_log(join([$syslog_subject, "Responses"]), to_s($response))
+end
+
+define terminate_instance($instance) return $response do
+  $syslog_subject = "AWS Terminating Instance: "
+
+  call sys_log(join([$syslog_subject, "Instance"]), to_s($instance["id"]))
+
+  $response = http_request(
+    auth: $$auth_aws,
+    https: true,
+    verb: "post",
+    href: "/",
+    host: "ec2." + $instance["region"] + ".amazonaws.com",
+    query_strings: {
+      "Action": "TerminateInstances",
+      "Version": "2016-11-15",
+      "InstanceId.1": $instance["id"]
+    }
+  )
+
+  call sys_log(join([$syslog_subject, "Responses"]), to_s($response))
+end
+
+define get_instance_state($instance) return $response, $instance_state do
+  $syslog_subject = "AWS Describing Instance: "
+
+  call sys_log(join([$syslog_subject, "Instance"]), to_s($instance["id"]))
+
+  $response = http_request(
+    auth: $$auth_aws,
+    https: true,
+    verb: "post",
+    href: "/",
+    host: "ec2." + $instance["region"] + ".amazonaws.com",
+    query_strings: {
+      "Action": "DescribeInstanceStatus",
+      "Version": "2016-11-15",
+      "InstanceId.1": $instance["id"]
+    }
+  )
+
+  call sys_log(join([$syslog_subject, "Responses"]), to_s($response))
+
+  $instance_state = $response["body"]["DescribeInstanceStatusResponse"]["instanceStatusSet"]["item"]["instanceState"]["name"]
+end
+
+define sys_log($subject, $detail) do
+  # Create empty errors array if doesn't already exist
+  if !$$errors
+    $$errors = []
+  end
+  # Check if debug is enabled
+  if $$debug
+    # Append to global $$errors
+    # This is the suggested way to capture errors
+    $$errors << "Unexpected error for " + $subject + "\n  " + to_s($detail)
+    # If Flexera NAM Zone, create audit_entries [to be deprecated]
+    # This is the legacy method for capturing errors and only supported on Flexera NAM
+    if $$rs_optima_host == "api.optima.flexeraeng.com"
+      # skip_error_and_append is used to catch error if rs_cm.audit_entries.create fails unexpectedly
+      $task_label = "Creating audit entry for " + $subject
+      sub task_label: $task, on_error: skip_error_and_append($task) do
+        rs_cm.audit_entries.create(
+          notify: "None",
+          audit_entry: {
+            auditee_href: @@account,
+            summary: $subject,
+            detail: $detail
+          }
+        )
+      end # End sub on_error
+    end # End if rs_optima_host
+  end # End if debug is enabled
+end
+
+define skip_error_and_append($subject) do
+  $$errors << "Unexpected error for " + $subject + "\n  " + to_s($_error)
+  $_error_behavior = "skip"
 end
 
 ###############################################################################
