@@ -10,7 +10,8 @@ info(
   version: "2.15",
   provider: "AWS",
   service: "",
-  policy_set: "Savings Plan"
+  policy_set: "Savings plans",
+  recommendation_type: "Rate Reduction"
 )
 
 ##############################################################################
@@ -211,7 +212,7 @@ datasource "ds_sp_recommendations" do
 end
 
 datasource "ds_sp_normalization" do
-  run_script $js_sp_cleanup, $ds_sp_recommendations, $param_currency_adjustment, $ds_account_name
+  run_script $js_sp_cleanup, $ds_sp_recommendations, $param_currency_adjustment, $ds_account_name, $param_term, $param_payment_option
 end
 
 ###############################################################################
@@ -269,7 +270,7 @@ script "js_top_level_bc", type: "javascript" do
 end
 
 script "js_sp_cleanup", type: "javascript" do
-  parameters "sp_recos", "currency_adjustment", "ds_account_name"
+  parameters "sp_recos", "currency_adjustment", "ds_account_name", "param_term", "param_payment_option"
   result "result"
   code <<-EOS
     var result = [];
@@ -303,7 +304,9 @@ script "js_sp_cleanup", type: "javascript" do
           upfrontCostWithCurrencyCode : (Math.round(reco["upfrontCost"] * 100) / 100).toString(10)+" "+reco["currencyCode"],
           currentAverageHourlyOnDemandSpendWithCurrencyCode : (Math.round(reco["currentAverageHourlyOnDemandSpend"] * 100) / 100).toString(10)+" "+reco["currencyCode"],
           currentMaximumHourlyOnDemandSpendWithCurrencyCode : (Math.round(reco["currentMaximumHourlyOnDemandSpend"] * 100) / 100).toString(10)+" "+reco["currencyCode"],
-          currentMinimumHourlyOnDemandSpendWithCurrencyCode : (Math.round(reco["currentMinimumHourlyOnDemandSpend"] * 100) / 100).toString(10)+" "+reco["currencyCode"]
+          currentMinimumHourlyOnDemandSpendWithCurrencyCode : (Math.round(reco["currentMinimumHourlyOnDemandSpend"] * 100) / 100).toString(10)+" "+reco["currencyCode"],
+          term: param_term,
+          paymentOption: param_payment_option
       })
     })
 EOS
@@ -377,7 +380,8 @@ policy "aws_sp_recommendations" do
     summary_template "AWS Savings Plan Purchase Recommendations"
     hash_include 'estimatedMonthlySavingsAmount'
     escalate $email
-    check lt(to_n(val(item,"estimatedMonthlySavingsAmount")),$param_savings_threshold)
+    #check lt(to_n(val(item,"estimatedMonthlySavingsAmount")),$param_savings_threshold)
+    check eq(0,1)
     # AWS Savings Plan Purchase Recommendations
 
     ### Savings Plan Term: {{parameters.param_term}}
@@ -392,11 +396,18 @@ policy "aws_sp_recommendations" do
       field "accountName" do
         label "Account Name"
       end
+      field "term" do
+        label "Term"
+      end
+      field "paymentOption" do
+        label "Payment Option"
+      end
       field "region" do
         label "Region"
       end
-      field "estimatedMonthlySavingsAmountWithCurrencyCode" do
+      field "savings" do
         label "Estimated Monthly Savings"
+        path "estimatedMonthlySavingsAmountWithCurrencyCode"
       end
       field "estimatedSavingsPercentage" do
         label "Estimated Savings Percentage"
@@ -404,14 +415,16 @@ policy "aws_sp_recommendations" do
       field "estimatedSavingsPlanCostWithCurrencyCode" do
         label "Estimated Savings Plan Cost"
       end
-      field "hourlyCommitmentToPurchaseWithCurrencyCode" do
+      field "recommendedQuantity" do
         label "Hourly Commitment To Purchase"
+        path "hourlyCommitmentToPurchaseWithCurrencyCode"
       end
       field "upfrontCostWithCurrencyCode" do
         label "Upfront Cost"
       end
-      field "instanceFamily" do
+      field "resourceType" do
         label "Instance Family"
+        path "instanceFamily"
       end
       field "currentAverageHourlyOnDemandSpendWithCurrencyCode" do
         label "Current Avg Hourly OnDemand Spend"
