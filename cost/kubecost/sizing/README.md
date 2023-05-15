@@ -22,9 +22,9 @@ Kubecost request sizing recommendations policy provides Kubecost recommendations
   - Default: "max"
   - Allowed values: "max", "quantile"
 - *CPU percentile* - The desired percentile to base CPU request recommendations on
-  - Default: 0.75
-  - Minimum value: 0.01
-  - Maximum value: 1
+  - Default: 75
+  - Minimum value: 1
+  - Maximum value: 100
 - *Target CPU Utilization (%)* - Target CPU utilization in percent
   - Default: 80
   - Minimum value: 1
@@ -33,9 +33,9 @@ Kubecost request sizing recommendations policy provides Kubecost recommendations
   - Default: "max"
   - Allowed values: "max", "quantile"
 - *Memory percentile* - The desired percentile to base Memory request recommendations on
-  - Default: 0.75
-  - Minimum value: 0.01
-  - Maximum value: 1
+  - Default: 75
+  - Minimum value: 1
+  - Maximum value: 100
 - *Target Memory Utilization (%)* - Target memory utilization in percent
   - Default: 90
   - Minimum value: 1
