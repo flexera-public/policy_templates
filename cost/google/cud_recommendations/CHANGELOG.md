@@ -1,5 +1,12 @@
 # Changelog
 
+## v2.8
+
+- Updated service to "Compute".
+- Updated info block.
+- Mapped plan to term.
+- Mapped sub type to RI scope.
+
 ## v2.7
 
 - Removed param_automatic_action parameter, no applicable CWF
