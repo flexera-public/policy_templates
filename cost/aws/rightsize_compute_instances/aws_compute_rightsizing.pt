@@ -92,6 +92,14 @@ parameter "param_threshold_statistic" do
   default "Average"
 end
 
+parameter "param_min_savings" do
+  type "number"
+  label "Minimum Savings"
+  description "Minimum potential savings required to generate a recommendation"
+  min_value 0
+  default 0
+end
+
 parameter "param_exclusion_tag_key" do
   category "User Inputs"
   label "Exclusion Tag Key:Value"
@@ -181,10 +189,10 @@ datasource "ds_currency_code" do
 end
 
 datasource "ds_currency" do
-  run_script $js_create_currency, $ds_currency_reference, $ds_currency_code
+  run_script $js_currency, $ds_currency_reference, $ds_currency_code
 end
 
-script "js_create_currency", type:"javascript" do
+script "js_currency", type:"javascript" do
   parameters "ds_currency_reference", "ds_currency_code"
   result "result"
   code <<-EOS
@@ -771,11 +779,11 @@ EOS
 end
 
 datasource "ds_idle_and_underutil_instances" do
-  run_script $js_idle_and_underutil_instances, $ds_merged_metrics, $ds_instance_costs, $ds_aws_instance_size_map, $param_idle_threshold_cpu_value, $param_idle_threshold_mem_value, $param_underutil_threshold_cpu_value, $param_underutil_threshold_mem_value, $ds_currency, $param_check_both, $param_threshold_statistic
+  run_script $js_idle_and_underutil_instances, $ds_merged_metrics, $ds_instance_costs, $ds_aws_instance_size_map, $param_idle_threshold_cpu_value, $param_idle_threshold_mem_value, $param_underutil_threshold_cpu_value, $param_underutil_threshold_mem_value, $ds_currency, $param_check_both, $param_threshold_statistic, $param_min_savings
 end
 
 script "js_idle_and_underutil_instances", type:"javascript" do
-  parameters "ds_merged_metrics", "ds_instance_costs", "ds_aws_instance_size_map", "param_idle_threshold_cpu_value", "param_idle_threshold_mem_value", "param_underutil_threshold_cpu_value", "param_underutil_threshold_mem_value", "ds_currency", "param_check_both", "param_threshold_statistic"
+  parameters "ds_merged_metrics", "ds_instance_costs", "ds_aws_instance_size_map", "param_idle_threshold_cpu_value", "param_idle_threshold_mem_value", "param_underutil_threshold_cpu_value", "param_underutil_threshold_mem_value", "ds_currency", "param_check_both", "param_threshold_statistic", "param_min_savings"
   result "result"
   code <<-EOS
   result = []
@@ -815,12 +823,12 @@ script "js_idle_and_underutil_instances", type:"javascript" do
   _.each(ds_instance_costs, function(item) {
     id = item['resourceId'].toLowerCase()
 
-    if (grouped_cost_data[id] == undefined) { grouped_cost_data[id] = 0 }
+    if (grouped_cost_data[id] == undefined) { grouped_cost_data[id] = 0.0 }
     grouped_cost_data[id] += item['cost']
   })
 
-  underutil_total_savings = 0
-  idle_total_savings = 0
+  underutil_total_savings = 0.0
+  idle_total_savings = 0.0
 
   underutil_list = []
   idle_list = []
@@ -832,7 +840,7 @@ script "js_idle_and_underutil_instances", type:"javascript" do
       id = instance['id'].toLowerCase()
 
       // Assume cost is 0 unless we have cost data for the instance
-      total_cost = 0
+      total_cost = 0.0
       if (grouped_cost_data[id] != undefined) { total_cost = grouped_cost_data[id] }
 
       // Store relevant CPU and memory stats into these variables for later use
@@ -895,12 +903,14 @@ script "js_idle_and_underutil_instances", type:"javascript" do
       instance["savingsCurrency"] = ds_currency['symbol']
 
       // Send instance to appropriate list depending on whether it is underutilized or idle
-      if (instance['recommendationType'] == "Downsize" && vm_size_down != null && vm_size_down != undefined) {
-        underutil_list.push(instance)
-      }
+      if (instance['savings'] >= param_min_savings) {
+        if (instance['recommendationType'] == "Downsize" && vm_size_down != null && vm_size_down != undefined) {
+          underutil_list.push(instance)
+        }
 
-      if (instance['recommendationType'] == "Terminate") {
-        idle_list.push(instance)
+        if (instance['recommendationType'] == "Terminate") {
+          idle_list.push(instance)
+        }
       }
     })
 
@@ -1308,6 +1318,7 @@ define get_instance_state($instance) return $response, $instance_state do
     query_strings: {
       "Action": "DescribeInstanceStatus",
       "Version": "2016-11-15",
+      "IncludeAllInstances": "true",
       "InstanceId.1": $instance["id"]
     }
   )
