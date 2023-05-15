@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.3
+
+- Mapped commitment amount to recommended purchase.
+
 ## v1.2
 
 - Replaced the term **whitelist** with **allowed list**.
