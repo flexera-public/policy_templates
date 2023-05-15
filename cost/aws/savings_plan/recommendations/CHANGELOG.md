@@ -1,5 +1,13 @@
 # Changelog
 
+## v2.16
+
+- Added term and purchasing option to output fields.
+- Mapped instance family to resource type.
+- Mapped estimated monthly savings to savings.
+- Mapped "hourly commitment to purchase" to recommended quantity.
+- Updated info block.
+
 ## v2.15
 
 - change the `auth_rs` Credential to `auth_flexera` name and label to `flexera` for consistency with other policy templates
