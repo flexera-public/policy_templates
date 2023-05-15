@@ -1,5 +1,12 @@
 # Changelog
 
+## v2.17
+
+- Mapped instance type, instance size and node type to resource type.
+- Added RI term to output fields.
+- Mapped Database Engine to Platform.
+- Updated info block.
+
 ## v2.16
 
 - Added new selection "All Except EC2" for the service input list, Updated new option as default value, And Updated the datasources.
