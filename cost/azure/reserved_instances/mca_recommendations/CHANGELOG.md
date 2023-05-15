@@ -1,5 +1,12 @@
 # Changelog
 
+## v2.15
+
+- Mapped net savings to savings.
+- Mapped SKU name to resource type.
+- Added RI scope to output fields.
+- Updated info block.
+
 ## v2.14
 
 - Fixed subscriptionName empty in the Incident
