@@ -9,7 +9,8 @@ info(
   version: "6.0",
   provider: "AWS",
   service: "Storage",
-  policy_set: "Old Snapshots"
+  policy_set: "Old Snapshots",
+  recommendation_type: "Usage Reduction"
 )
 
 ###############################################################################
@@ -672,27 +673,27 @@ script "js_filter_old_snapshots", type: "javascript" do
   result "result"
   parameters "ds_describe_snapshots", "ds_describe_db_snapshots", "ds_describe_db_cluster_snapshots", "param_snapshot_age", "param_exclusion_tag_key"
   code <<-EOS
-  var result = []
+  result = []
   snapshots_combined = ds_describe_snapshots.concat(ds_describe_db_snapshots, ds_describe_db_cluster_snapshots)
 
   _.each(snapshots_combined, function(snapshot) {
+    tags = []
+
+    if (snapshot['tags'] != null && snapshot['tags'] != undefined) {
+      _.each(instance['tags'], function(tag) {
+        tags.push([tag['Key'], tag['Value']].join(':'))
+      })
+    }
+
     exclude_snapshot = false
 
     if (param_exclusion_tag_key != '' && param_exclusion_tag_key != null) {
-      tags = []
-
-      if (snapshot['tags'] != null && snapshot['tags'] != undefined) {
-        _.each(instance['tags'], function(tag) {
-          tags.push([tag['Key'], tag['Value']].join(':'))
-        })
-      }
-
       exclude_snapshot = _.contains(tags, param_exclusion_tag_key)
     }
 
     if (!exclude_snapshot) {
-      var snapshotTime = Date.parse(snapshot['startTime'])
-      var daysOld = Math.round((new Date().getTime() - new Date(snapshotTime).getTime()) / (1000 * 3600 * 24))
+      snapshotTime = Date.parse(snapshot['startTime'])
+      daysOld = Math.round((new Date().getTime() - new Date(snapshotTime).getTime()) / (1000 * 3600 * 24))
 
       if (daysOld > param_snapshot_age) {
         result.push({
@@ -708,9 +709,6 @@ script "js_filter_old_snapshots", type: "javascript" do
       }
     }
   })
-
-  result = _.sortBy(result, 'region')
-  result = _.sortBy(result, 'daysOld')
 EOS
 end
 
@@ -725,7 +723,7 @@ datasource "ds_get_snapshot_ami" do
       field "region", val(iter_item, "region")
       field "imageId", xpath(col_item, "imageId")
       field "ownerId", xpath(col_item, "ownerId")
-      field "snapshotIds",  xpath(col_item, "blockDeviceMapping/item/*//snapshotId", "array") # An AMI can have mappings to more than one snapshot. Grab all the snapshot IDs associated with this AMI.
+      field "snapshotIds",  xpath(col_item, "blockDeviceMapping/item/*//snapshotId", "array")
     end
   end
 end
@@ -896,6 +894,9 @@ script "js_snapshots_cost_mapping", type: "javascript" do
     }
   })
 
+  snapshot_list = _.sortBy(snapshot_list, "imageId")
+  snapshot_list = _.sortBy(snapshot_list, "region")
+
   message = "You do not have the minimum required role of billing_center_viewer to view the savings"
 
   if (ds_billing_centers.length != 0) {
@@ -903,6 +904,7 @@ script "js_snapshots_cost_mapping", type: "javascript" do
   }
 
   result = {
+    account_id: ds_aws_account,
     snapshot_list: snapshot_list,
     message: message
   }
@@ -915,13 +917,13 @@ end
 
 policy "pol_utilization" do
   validate $ds_snapshots_cost_mapping do
-    summary_template "AWS Account ID: {{with index data.snapshot_list 0}}{{ .accountID }}{{end}} - {{ len data.snapshot_list }} rows containing AWS old snapshot data"
+    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data.snapshot_list }} AWS Old Snapshots Found"
     detail_template <<-EOS
-The following {{ len data.snapshot_list }} old snapshots, for AWS Account: {{with index data.snapshot_list 0}}{{ .accountID }}{{end}}, have exceeded the specified age of: {{ parameters.param_snapshot_age }} days old.
+The following {{ len data.snapshot_list }} old snapshots, for AWS Account: {{ data.account_id }}, have exceeded the specified age of: {{ parameters.param_snapshot_age }} days old.
 
-{{data.message}}
+{{ data.message }}
 EOS
-    escalate $ese_email
+    escalate $esc_email
     escalate $esc_delete_snapshot
     # Policy check fails and incident is created only if data is not empty and the Parent Policy has not been terminated
     check logic_or($ds_parent_policy_terminated, eq(size(val(data, "snapshot_list")), 0))
@@ -979,7 +981,7 @@ end
 # Escalations
 ###############################################################################
 
-escalation "ese_email" do
+escalation "esc_email" do
   automatic true
   label "Send Email"
   description "Send incident email"
@@ -990,14 +992,14 @@ escalation "esc_delete_snapshot" do
   automatic contains($param_automatic_action, "Delete Snapshots")
   label "Delete Snapshots"
   description "Approval to delete all selected snapshots"
-  run "take_action", data, $param_deregister_image, $param_log_to_cm_audit_entries, rs_optima_host
+  run "delete_snapshots", data, $param_deregister_image, $param_log_to_cm_audit_entries
 end
 
 ###############################################################################
 # Cloud Workflow
 ###############################################################################
 
-define take_action($data, $param_deregister_image, $param_log_to_cm_audit_entries, $$rs_optima_host) do
+define delete_snapshots($data, $param_deregister_image, $param_log_to_cm_audit_entries) do
   $$debug = $param_log_to_cm_audit_entries == "Yes"
   # $$errors global to append error messages from subtasks
   $$errors = []
