@@ -71,6 +71,14 @@ parameter "param_exclusion_tag_key" do
   default ""
 end
 
+parameter "param_min_savings" do
+  type "number"
+  label "Minimum Savings"
+  description "Minimum potential savings required to generate a recommendation"
+  min_value 0
+  default 0
+end
+
 parameter "param_automatic_action" do
   type "list"
   label "Automatic Actions"
@@ -756,7 +764,7 @@ script "js_filter_ami_snapshots", type: "javascript" do
   code <<-EOS
   var result = []
 
-  _.each(ds_filter_old_snapshots, function (old_snapshot) {
+  _.each(ds_filter_old_snapshots, function(old_snapshot) {
     old_snapshot_dbClusterId = ""
     old_snapshot_dbInstanceId = ""
     old_snapshot_imageId = ""
@@ -806,15 +814,14 @@ EOS
 end
 
 datasource "ds_snapshots_cost_mapping" do
-  run_script $js_snapshots_cost_mapping, $ds_filter_ami_snapshots, $ds_snapshot_costs, $ds_currency, $ds_billing_centers, $ds_aws_account
+  run_script $js_snapshots_cost_mapping, $ds_filter_ami_snapshots, $ds_snapshot_costs, $ds_currency, $ds_billing_centers, $ds_aws_account, $param_min_savings
 end
 
 script "js_snapshots_cost_mapping", type: "javascript" do
-  parameters "ds_filter_ami_snapshots", "ds_snapshot_costs", "ds_currency", "ds_billing_centers", "ds_aws_account"
+  parameters "ds_filter_ami_snapshots", "ds_snapshot_costs", "ds_currency", "ds_billing_centers", "ds_aws_account", "param_min_savings"
   result "result"
   code <<-EOS
-  var snapshot_list = []
-
+  // Function for formatting currency numbers later
   function formatNumber(number, separator) {
     var numString = number.toString()
     var values = numString.split(".")
@@ -833,34 +840,44 @@ script "js_snapshots_cost_mapping", type: "javascript" do
     return formatted_number + "." + values[1]
   }
 
+  // Store total costs by resource id for later usage
+  var costs_by_resource_id = {}
+
   if (ds_billing_centers.length != 0) {
-    // Put costs into a map by resource ID and only include them for resource IDs we actually need
-    var costs_by_resource_id = {}
-
-    _.each(ds_filter_ami_snapshots, function(snapshot) {
-      costs_by_resource_id[snapshot['formatSnapId']] = 0.0
-    })
-
     _.each(ds_snapshot_costs, function(item) {
-      if (costs_by_resource_id[item['resource_id'] != undefined) {
-        costs_by_resource_id[item['resource_id'] += item['cost']
+      id = item['resource_id']
+
+      if (costs_by_resource_id[id] != undefined) {
+        costs_by_resource_id[id] += item['cost']
+      } else {
+        costs_by_resource_id[id] = item['cost']
       }
     })
   }
 
+  // Store account name for later usage
   var accountName = ""
+
   if (ds_snapshot_costs.length > 0) {
-    accountName = ds_snapshot_costs[0].vendorAccountName
+    accountName = ds_snapshot_costs[0]['vendorAccountName']
   }
 
-  var total = 0;
+  // Iterate through the list of snapshots and create a list for the incident
+  snapshot_list = []
+  total_savings = 0.0
 
-  _.each(ds_filter_ami_snapshots, function (snapshot) {
-    var cost_objects = costs_by_resource_id[snapshot.formatSnapId];
-    if (ds_billing_centers.length != 0 && _.size(cost_objects) > 0) {
-      var sum = _.reduce(_.compact(_.map(cost_objects, function (value) { return value.cost_nonamortized_unblended_adj })), function (memo, num) { return memo + num; }, 0);
-      var monthly_savings = sum * 30;
-      total = total + monthly_savings;
+  _.each(ds_filter_ami_snapshots, function(snapshot) {
+    snapshot_cost = costs_by_resource_id[snapshot['formatSnapId']]
+
+    if (snapshot_cost == null || snapshot_cost == undefined) {
+      snapshot_cost = 0.0
+    }
+
+    monthly_savings = snapshot_cost * 30
+
+    if (monthly_savings >= param_min_savings) {
+      total_savings += monthly_savings
+
       snapshot_list.push({
         accountID: ds_aws_account,
         accountName: accountName,
@@ -871,35 +888,18 @@ script "js_snapshots_cost_mapping", type: "javascript" do
         imageId: snapshot['imageId'],
         dbInstanceId: snapshot['dbInstanceId'],
         dbClusterId: snapshot['dbClusterId'],
-        savings: (Math.round(monthly_savings * 1000) / 1000),
-        savingsCurrency: cur,
-        volumeSize: snapshot['volumeSize'],
-        service: snapshot['service']
-      })
-    } else {
-      snapshot_list.push({
-        accountID: ds_aws_account,
-        accountName: accountName,
-        snapshotId: snapshot['snapshotId'],
-        region: snapshot['region'],
-        tags: snapshot['tags'],
-        daysOld: snapshot['daysOld'],
-        dbInstanceId: snapshot['dbInstanceId'],
-        dbClusterId: snapshot['dbClusterId'],
-        imageId: snapshot['imageId'],
-        savings: 0.0,
-        savingsCurrency: cur,
+        savings: monthly_savings.toFixed(3),
+        savingsCurrency: ds_currency['symbol'],
         volumeSize: snapshot['volumeSize'],
         service: snapshot['service']
       })
     }
   })
 
+  message = "You do not have the minimum required role of billing_center_viewer to view the savings"
+
   if (ds_billing_centers.length != 0) {
-    var total_savings = cur + ' ' + formatNumber(total.toFixed(2), separator);
-    var message = "The total estimated monthly savings are " + total_savings;
-  } else {
-    var message = "You do not have the minimum required role of billing_center_viewer to view the savings";
+    message = "The total estimated monthly savings are " + ds_currency['symbol'] + ' ' + formatNumber(total_savings.toFixed(2), ds_currency['separator'])
   }
 
   result = {
