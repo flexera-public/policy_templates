@@ -108,15 +108,6 @@ parameter "param_exclusion_tags" do
   default []
 end
 
-parameter "param_api_wait" do
-  type "number"
-  label "CloudWatch API Wait Time"
-  description "Amount of time to wait between CloudWatch API requests to avoid throttling (seconds)"
-  min_value 1
-  max_value 60
-  default 5
-end
-
 parameter "param_log_to_cm_audit_entries" do
   type "string"
   label "Log to CM Audit Entries"
@@ -163,6 +154,43 @@ end
 # Datasources & Scripts
 ###############################################################################
 
+datasource "ds_billing_centers" do
+  request do
+    auth $auth_flexera
+    host rs_optima_host
+    path join(["/analytics/orgs/", rs_org_id, "/billing_centers"])
+    header "Api-Version", "1.0"
+    header "User-Agent", "RS Policies"
+    query "view", "allocation_table"
+    ignore_status [403]
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "[*]") do
+      field "href", jmes_path(col_item, "href")
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+      field "parent_id", jmes_path(col_item, "parent_id")
+    end
+  end
+end
+
+datasource "ds_top_level_bcs" do
+  run_script $js_top_level_bcs, $ds_billing_centers
+end
+
+script "js_top_level_bcs", type: "javascript" do
+  parameters "ds_billing_centers"
+  result "result"
+  code <<-EOS
+  filtered_bcs = _.filter(ds_billing_centers, function(bc) {
+    return bc['parent_id'] == null || bc['parent_id'] == undefined
+  })
+
+  result = _.compact(_.pluck(filtered_bcs, 'id'))
+EOS
+end
+
 datasource "ds_currency_reference" do
   request do
     host "raw.githubusercontent.com"
@@ -198,11 +226,11 @@ script "js_currency", type:"javascript" do
   symbol = "$"
   separator = ","
 
-  if (ds_currency_code['value'] !== undefined) {
-    if (ds_currency_reference[ds_currency_code['value']] !== undefined) {
+  if (ds_currency_code['value'] != undefined) {
+    if (ds_currency_reference[ds_currency_code['value']] != undefined) {
       symbol = ds_currency_reference[ds_currency_code['value']]['symbol']
 
-      if (ds_currency_reference[ds_currency_code['value']]['t_separator'] !== undefined) {
+      if (ds_currency_reference[ds_currency_code['value']]['t_separator'] != undefined) {
         separator = ds_currency_reference[ds_currency_code['value']]['t_separator']
       } else {
         separator = ""
@@ -245,7 +273,7 @@ script "js_aws_account", type:"javascript" do
   code "result = ds_get_caller_identity[0]['account']"
 end
 
-datasource "ds_regions_list" do
+datasource "ds_describe_regions" do
   request do
     auth $auth_aws
     verb "GET"
@@ -269,20 +297,21 @@ datasource "ds_regions_list" do
 end
 
 datasource "ds_regions" do
-  run_script $js_regions, $param_regions_list, $ds_regions_list, $param_allow_or_deny
+  run_script $js_regions, $ds_describe_regions, $param_regions_list, $param_allow_or_deny
 end
 
 script "js_regions", type:"javascript" do
-  parameters "param_regions_list", "ds_regions_list", "param_allow_or_deny"
+  parameters "ds_describe_regions", "param_regions_list", "param_allow_or_deny"
   result "result"
   code <<-EOS
-  result = ds_regions_list
   allow_deny_test = { "Allow": true, "Deny": false }
 
   if (param_regions_list.length > 0) {
-    result = _.filter(ds_regions_list, function(item) {
+    result = _.filter(ds_describe_regions, function(item) {
       return _.contains(param_regions_list, item['region']) == allow_deny_test[param_allow_or_deny]
     })
+  } else {
+    result = ds_describe_regions
   }
 EOS
 end
@@ -514,7 +543,7 @@ end
 datasource "ds_cloudwatch_data" do
   iterate $ds_instances_requests
   request do
-    run_script $js_cloudwatch_data, val(iter_item, "region"), val(iter_item, "body"), $param_api_wait
+    run_script $js_cloudwatch_data, val(iter_item, "region"), val(iter_item, "body")
   end
   result do
     encoding "json"
@@ -529,25 +558,26 @@ end
 
 script "js_cloudwatch_data", type: "javascript" do
   result "request"
-  parameters "region", "body", "param_api_wait"
+  parameters "region", "body"
   code <<-EOS
-  // Slow down rate of requests to prevent throttling
+  // Slow down rate of requests to prevent
+  api_wait = 5
   var now = new Date().getTime()
-  while(new Date().getTime() < now + (param_api_wait * 1000)) { /* Do nothing */ }
+  while(new Date().getTime() < now + (api_wait * 1000)) { /* Do nothing */ }
 
-  request = {
-    "auth": "auth_aws",
-    "host": 'monitoring.' + region + '.amazonaws.com',
-    "verb": "POST",
-    "path": "/",
-    "headers": {
+  var request = {
+    auth: "auth_aws",
+    host: 'monitoring.' + region + '.amazonaws.com',
+    verb: "POST",
+    path: "/",
+    headers: {
       "User-Agent": "RS Policies",
       "Content-Type": "application/json",
       "x-amz-target": "GraniteServiceVersion20100801.GetMetricData",
       "Accept": "application/json",
       "Content-Encoding": "amz-1.0"
     }
-    "query_params": {
+    query_params: {
       'Action': 'GetMetricData',
       'Version': '2010-08-01'
     },
@@ -588,43 +618,6 @@ script "js_cloudwatch_data_sorted", type: "javascript" do
 EOS
 end
 
-datasource "ds_billing_centers" do
-  request do
-    auth $auth_flexera
-    host rs_optima_host
-    path join(["/analytics/orgs/", rs_org_id, "/billing_centers"])
-    header "Api-Version", "1.0"
-    header "User-Agent", "RS Policies"
-    query "view", "allocation_table"
-    ignore_status [403]
-  end
-  result do
-    encoding "json"
-    collect jmes_path(response, "[*]") do
-      field "href", jmes_path(col_item, "href")
-      field "id", jmes_path(col_item, "id")
-      field "name", jmes_path(col_item, "name")
-      field "parent_id", jmes_path(col_item, "parent_id")
-    end
-  end
-end
-
-datasource "ds_top_level_bcs" do
-  run_script $js_top_level_bcs, $ds_billing_centers
-end
-
-script "js_top_level_bcs", type: "javascript" do
-  parameters "ds_billing_centers"
-  result "result"
-  code <<-EOS
-  filtered_bcs = _.reject(ds_billing_centers, function(bc) {
-    return bc['parent_id'] != null && bc['parent_id'] != undefined
-  })
-
-  result = _.compact(_.pluck(filtered_bcs, 'id'))
-EOS
-end
-
 datasource "ds_instance_costs" do
   request do
     run_script $js_instance_costs, $ds_aws_account, $ds_top_level_bcs, rs_org_id, rs_optima_host
@@ -646,10 +639,11 @@ script "js_instance_costs", type: "javascript" do
   result "request"
   code <<-EOS
   //Get Start and End dates
-  start_date = new Date(), end_date = new Date()
+  start_date = new Date()
   start_date.setMonth(start_date.getMonth() - 1)
   start_date = start_date.toLocaleDateString("en-US").split("-")[0] + "-" + start_date.toLocaleDateString("en-US").split("-")[1]
 
+  end_date = new Date()
   end_date.setMonth(end_date.getMonth() - 0)
   end_date = end_date.toLocaleDateString("en-US").split("-")[0] + "-" + end_date.toLocaleDateString("en-US").split("-")[1]
 
@@ -795,8 +789,6 @@ script "js_idle_and_underutil_instances", type:"javascript" do
   parameters "ds_merged_metrics", "ds_instance_costs", "ds_aws_instance_size_map", "param_idle_threshold_cpu_value", "param_idle_threshold_mem_value", "param_underutil_threshold_cpu_value", "param_underutil_threshold_mem_value", "ds_currency", "param_check_both", "param_threshold_statistic", "param_min_savings"
   result "result"
   code <<-EOS
-  result = []
-
   // Used for formatting numbers to look pretty
   function formatNumber(number, separator){
     numString = number.toString()
@@ -887,38 +879,33 @@ script "js_idle_and_underutil_instances", type:"javascript" do
         }
       }
 
+      instance["accountName"] = accountName
+      instance["savingsCurrency"] = ds_currency['symbol']
+      instance["recommendedVmSize"] = null
+
       // Set appropriate values based on whether instance is idle or underutilized
+      // and then add it to the appropriate list
       if (is_idle) {
         instance["savings"] = parseFloat(total_cost).toFixed(3)
         instance["recommendationType"] = "Terminate"
-        idle_total_savings += total_cost
+
+        if (instance['savings'] >= param_min_savings) {
+          idle_total_savings += total_cost
+          idle_list.push(instance)
+        }
       } else if (is_underutil) {
         instance["savings"] = parseFloat(total_cost / 2).toFixed(3)
         instance["recommendationType"] = "Downsize"
-        underutil_total_savings += total_cost
-      }
 
-      //Get Instance Size of Downsized instance
-      vm_size_down = null
-
-      if (instance['recommendationType'] == "Downsize") {
         if (ds_aws_instance_size_map[instance['resourceType']]) {
-          vm_size_down = ds_aws_instance_size_map[instance['resourceType']]['down']
-        }
-      }
-
-      instance["recommendedVmSize"] = vm_size_down
-      instance["accountName"] = accountName
-      instance["savingsCurrency"] = ds_currency['symbol']
-
-      // Send instance to appropriate list depending on whether it is underutilized or idle
-      if (instance['savings'] >= param_min_savings) {
-        if (instance['recommendationType'] == "Downsize" && vm_size_down != null && vm_size_down != undefined) {
-          underutil_list.push(instance)
+          instance["recommendedVmSize"] = ds_aws_instance_size_map[instance['resourceType']]['down']
         }
 
-        if (instance['recommendationType'] == "Terminate") {
-          idle_list.push(instance)
+        if (instance["recommendedVmSize"] != null && instance["recommendedVmSize"] != undefined) {
+          if (instance['savings'] >= param_min_savings) {
+            underutil_total_savings += total_cost / 2
+            underutil_list.push(instance)
+          }
         }
       }
     })
@@ -934,8 +921,8 @@ script "js_idle_and_underutil_instances", type:"javascript" do
   idle_total_savings = ds_currency['symbol'] + ' ' + formatNumber(parseFloat(idle_total_savings).toFixed(2), ds_currency['separator'])
 
   result = {
-    underutil_message: "The total estimated monthly savings is " + underutil_total_savings,
-    idle_message: "The total estimated monthly savings is " + idle_total_savings,
+    underutil_message: "Total Estimated Monthly Savings: " + underutil_total_savings,
+    idle_message: "Total Estimated Monthly Savings: " + idle_total_savings,
     underutil_list: underutil_list,
     idle_list: idle_list
   }
