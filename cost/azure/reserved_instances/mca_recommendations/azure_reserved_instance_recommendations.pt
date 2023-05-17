@@ -11,7 +11,7 @@ info(
   provider: "Azure",
   service: "Compute",
   policy_set: "Reserved Instance",
-  recommendation_type: "Rate Reduction"
+  recommendation_type: "Rate Reductions"
 )
 
 ###############################################################################
@@ -162,12 +162,13 @@ datasource "ds_ri_recommendations" do
       field "instanceFlexibilityRatio", jmes_path(col_item,"properties.instanceFlexibilityRatio")
       field "normalizedSize", jmes_path(col_item,"properties.normalizedSize")
       field "recommendedQuantityNormalized", jmes_path(col_item,"properties.recommendedQuantityNormalized")
+      field "lookBackPeriod", jmes_path(col_item,"properties.lookBackPeriod")
     end
   end
 end
 
 datasource "ds_ri_normalization" do
-  run_script $js_ri_normalization, $ds_ri_recommendations, $param_term
+  run_script $js_ri_normalization, $ds_ri_recommendations, $param_term, $param_savings_threshold
 end
 
 ###############################################################################
@@ -252,7 +253,7 @@ script "js_ri_request", type: "javascript" do
 end
 
 script "js_ri_normalization", type: "javascript" do
-  parameters "ri_recos", "param_term"
+  parameters "ri_recos", "param_term", "param_savings_threshold"
   result "result"
   code <<-EOS
     var result = [];
@@ -285,7 +286,9 @@ script "js_ri_normalization", type: "javascript" do
         instanceFlexibilityGroup: reco["instanceFlexibilityGroup"],
         instanceFlexibilityRatio: reco["instanceFlexibilityRatio"],
         normalizedSize: reco["normalizedSize"],
-        recommendedQuantityNormalized: reco["recommendedQuantityNormalized"]
+        recommendedQuantityNormalized: reco["recommendedQuantityNormalized"],
+        lookBackPeriod: reco["lookBackPeriod"],
+        threshold: param_savings_threshold
       })
     })
 
@@ -307,9 +310,9 @@ end
 policy "azure_ri_recommendations" do
   validate_each $ds_ri_normalization do
     summary_template "{{ len data }} Azure Reservation Purchase Recommendations"
-    hash_include 'savings'
+    hash_include 'netSavings'
     escalate $email
-    check lt(to_n(val(item,"savings")),$param_savings_threshold)
+    check lt(to_n(val(item,"netSavings")),$param_savings_threshold)
     export do
       resource_level false
       field "accountID" do
@@ -335,6 +338,12 @@ policy "azure_ri_recommendations" do
       end
       field "term" do
         label "Term"
+      end
+      field "threshold" do
+        label "Net Savings Threshold"
+      end
+      field "lookBackPeriod" do
+        label "Lookback Period"
       end
       field "savings" do
         label "Net Savings"
