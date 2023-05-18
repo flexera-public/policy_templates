@@ -62,6 +62,7 @@ These templates can generate savings estimates for your environment.
 #### Kubecost
 
 - [Kubecost Request Rightsizing Recommendations](./cost/kubecost/sizing)
+- [Kubecost Cluster Rightsizing Recommendations](./cost/kubecost/cluster)
 
 ### Policy Templates for Compliance
 
@@ -628,7 +629,7 @@ These templates can generate savings estimates for your environment.
 <!--
 ---
 :total_count: 247
-:optimization_count: 23
+:optimization_count: 24
 :categories:
   Cost: 104
   Security: 74
