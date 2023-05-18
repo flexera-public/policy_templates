@@ -6,7 +6,7 @@ category "Cost"
 severity "low"
 default_frequency "daily"
 info(
-  version: "2.6",
+  version: "2.7",
   provider:"Google",
   service: "Storage",
   policy_set: "Unused Volumes"
@@ -90,7 +90,7 @@ pagination "google_pagination" do
 end
 
 ###############################################################################
-# Datasources
+# Datasources & Scripts
 ###############################################################################
 
 datasource "ds_currency_reference" do
@@ -101,7 +101,7 @@ datasource "ds_currency_reference" do
   end
 end
 
-# Gets all projects filtered by "lifecycleState:ACTIVE".
+#GET LIST OF GCP PROJECTS (filtered by "lifecycleState:ACTIVE" and "param_project".)
 datasource "ds_all_projects" do
   request do
     auth $auth_google
@@ -120,68 +120,11 @@ datasource "ds_all_projects" do
   end
 end
 
-# Removes projects that aren't in "param_project_ids" (In case it isn't empty).
+#FILTER PROJECTS USING PARAM_PROJECT_IDS PARAMETER (IF APPLICABLE)
 datasource "ds_projects" do
   run_script $js_projects, $ds_all_projects, $param_project_ids
 end
 
-# Gets all disks of Google projects from "ds_projects".
-datasource "ds_all_disks" do
-  iterate $ds_projects
-  request do
-    run_script $js_aggregated_disks_call, val(iter_item, "accountID"), $param_exclude_tags
-  end
-  result do
-    encoding "json"
-    field "accountID", val(iter_item, "accountID")
-    field "projectNumber", val(iter_item, "projectNumber")
-    field "accountName", val(iter_item, "accountName")
-    field "items", jq(response, ".items")
-  end
-end
-
-# Removes disks that aren't in "param_zones" (In case it isn't empty).
-datasource "ds_disks" do
-  run_script $js_disks, $ds_all_disks, $param_zones
-end
-
-# Array of objects with Account ID and region each one to make a call to Recommender API.
-datasource "ds_recommenders" do
-  run_script $js_recommenders, $ds_disks
-end
-
-datasource "ds_recommendations" do
-  iterate $ds_recommenders
-  request do
-    run_script $js_recommender_call, val(iter_item,"accountID"), val(iter_item, "region")
-  end
-  result do
-    encoding "json"
-    collect jmes_path(response, "recommendations[*]") do
-      field "accountID", val(iter_item, "accountID")
-      field "region", val(iter_item, "region")
-      field "id", jmes_path(col_item, "name")
-      field "description", jmes_path(col_item, "description")
-      field "resourceName", jmes_path(col_item, "content.overview.resourceName")
-      field "primaryImpact", jmes_path(col_item, "primaryImpact")
-      field "costUnits", jmes_path(col_item, "primaryImpact.costProjection.cost.units")
-      field "costNanos", jmes_path(col_item, "primaryImpact.costProjection.cost.nanos")
-      field "duration", jmes_path(col_item, "primaryImpact.costProjection.duration")
-      field "currency", jmes_path(col_item, "primaryImpact.costProjection.cost.currencyCode")
-      field "priority", jmes_path(col_item, "priority")
-      field "recommenderSubtype", jmes_path(col_item, "recommenderSubtype")
-      field "state", jmes_path(col_item, "stateInfo.state")
-    end
-  end
-end
-
-datasource "ds_disk_cost_mapping" do
-  run_script $js_disk_cost_mapping, $ds_disks, $ds_recommendations, $ds_currency_reference
-end
-
-###############################################################################
-# Scripts
-###############################################################################
 script "js_projects", type: "javascript" do
   parameters "ds_all_projects", "param_project_ids"
   result "projects"
@@ -197,6 +140,21 @@ script "js_projects", type: "javascript" do
         })
     }
   EOF
+end
+
+#GET LIST OF DISKS FOR EACH PROJECT ID
+datasource "ds_all_disks" do
+  iterate $ds_projects
+  request do
+    run_script $js_aggregated_disks_call, val(iter_item, "accountID"), $param_exclude_tags
+  end
+  result do
+    encoding "json"
+    field "accountID", val(iter_item, "accountID")
+    field "projectNumber", val(iter_item, "projectNumber")
+    field "accountName", val(iter_item, "accountName")
+    field "items", jq(response, ".items")
+  end
 end
 
 script "js_aggregated_disks_call", type: "javascript" do
@@ -224,6 +182,11 @@ script "js_aggregated_disks_call", type: "javascript" do
         }
     }
   EOF
+end
+
+#FILTER LIST OF VMS BY COMPUTE ZONES PARAMETER (IF APPLICABLE)
+datasource "ds_disks" do
+  run_script $js_disks, $ds_all_disks, $param_zones
 end
 
 script "js_disks", type: "javascript" do
@@ -275,6 +238,11 @@ script "js_disks", type: "javascript" do
   EOF
 end
 
+#CREATE LIST OF RECOMMENDER DETAILS FOR RECOMMENDER API CALL USING COMPUTE DISK DATA
+datasource "ds_recommenders" do
+  run_script $js_recommenders, $ds_disks
+end
+
 script "js_recommenders", type: "javascript" do
   parameters "ds_disks"
   result "recommenders"
@@ -293,6 +261,33 @@ script "js_recommenders", type: "javascript" do
   EOF
 end
 
+#GET LIST OF RECOMMENDATIONS
+datasource "ds_recommendations" do
+  iterate $ds_recommenders
+  request do
+    run_script $js_recommender_call, val(iter_item,"accountID"), val(iter_item, "region")
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "recommendations[*]") do
+      field "accountID", val(iter_item, "accountID")
+      field "region", val(iter_item, "region")
+      field "id", jmes_path(col_item, "name")
+      field "description", jmes_path(col_item, "description")
+      field "resourceLink", jmes_path(col_item, "content.overview.resource")
+      field "resourceName", jmes_path(col_item, "content.overview.resourceName")
+      field "primaryImpact", jmes_path(col_item, "primaryImpact")
+      field "costUnits", jmes_path(col_item, "primaryImpact.costProjection.cost.units")
+      field "costNanos", jmes_path(col_item, "primaryImpact.costProjection.cost.nanos")
+      field "duration", jmes_path(col_item, "primaryImpact.costProjection.duration")
+      field "currency", jmes_path(col_item, "primaryImpact.costProjection.cost.currencyCode")
+      field "priority", jmes_path(col_item, "priority")
+      field "recommenderSubtype", jmes_path(col_item, "recommenderSubtype")
+      field "state", jmes_path(col_item, "stateInfo.state")
+    end
+  end
+end
+
 script "js_recommender_call", type: "javascript" do
   parameters "accountID", "region"
   result "request"
@@ -309,6 +304,11 @@ script "js_recommender_call", type: "javascript" do
       query_strings: { alt: "json" }
     }
   EOF
+end
+
+#GET VM DISK COST MAPPING
+datasource "ds_disk_cost_mapping" do
+  run_script $js_disk_cost_mapping, $ds_disks, $ds_recommendations, $ds_currency_reference
 end
 
 script "js_disk_cost_mapping", type:"javascript" do
@@ -339,77 +339,107 @@ script "js_disk_cost_mapping", type:"javascript" do
     }
     var total = 0
     var cur = ""
-    _.each(disks, function (disk) {
-        _.each(recommendations, function (recommendation) {
-            if (disk.resourceName == recommendation.resourceName) {
-                count++
-                if (recommendation['currency'] !== undefined) {
-                    if (recommendation['costUnits'] == null) {
-                        recommendation['costUnits'] = 0
-                    }
-                    if (recommendation['costNanos'] == null) {
-                        recommendation['costNanos'] = 0
-                    }
-                    if (ds_currency_reference[recommendation['currency']] !== undefined) {
-                        var cur = ds_currency_reference[recommendation['currency']]['symbol']
-                    } else {
-                        var cur = "$"
-                    }
-                    disk['savingsCurrency'] = cur
-                } else {
-                    var cur = "$"
-                    var separator = ","
-                }
-                if (recommendation.costNanos < 0) {
-                    recommendation.costNanos = recommendation.costNanos * -1
-                }
-                if (recommendation.costUnits < 0) {
-                    recommendation.costUnits = recommendation.costUnits * -1
-                }
-                var strNano = "." + recommendation.costNanos
-                var combine = recommendation.costUnits + parseFloat(strNano)
-                var monthsDuration = parseFloat(recommendation.duration.replace("s", "")) / 2628288
-                var monthlySavings = combine / monthsDuration
-                total = total + monthlySavings
-                disk['savings'] = (Math.round(monthlySavings * 1000) / 1000)
-                disk['savingsCurrency'] = cur
-                disk['description'] = recommendation['description']
-                disk['priority'] = recommendation['priority']
-                disk['primaryImpact'] = recommendation['primaryImpact']
-                disk['recommenderSubtype'] = recommendation['recommenderSubtype']
-                disk['state'] = recommendation['state']
-                disk['service'] = "Storage"
-                var tags = []
-                if (disk['tags'] != null) {
-                    if (typeof disk['tags'] == 'object') {
-                        Object.keys(disk.tags).forEach(function (key) {
-                            if (disk.tags[key] == null || disk.tags[key] == "") {
-                                disk.tags[key] = "null"
-                            }
-                            tags.push(String(key) + '=' + String(disk.tags[key]))
-                        });
-                    } else {
-                        tags.push(disk["tags"].replace(":", "=null"))
-                    }
-                }
-                disk['tags'] = tags
-                instances.push(disk)
-            }
-        })
+
+    _.each(disks, function(disk) {
+      var resource_link = disk.selfLink.replace("https://www.googleapis.com/compute/v1/", "")
+      disk["resourceLink"] = resource_link
     })
-    if (instances.length != 0) {
-        if (count) {
-            total = cur + ' ' + formatNumber((Math.round(total * 100) / 100));
-            message = "The total estimated monthly savings are " + total;
+
+    _.each(recommendations, function (recommendation) {
+      count++
+      var rec_resource_link = recommendation.resourceLink.replace("//compute.googleapis.com/", "")
+      var disk = _.find(disks, function(d) {
+          return d.resourceLink == rec_resource_link
+      })
+      if (!(disk == undefined || disk == null)) {
+        if (recommendation['currency'] !== undefined) {
+          if (recommendation['costUnits'] == null) {
+              recommendation['costUnits'] = 0
+          }
+          if (recommendation['costNanos'] == null) {
+              recommendation['costNanos'] = 0
+          }
+          if (ds_currency_reference[recommendation['currency']] !== undefined) {
+              cur = ds_currency_reference[recommendation['currency']]['symbol']
+          } else {
+              cur = "$"
+          }
+          disk['savingsCurrency'] = cur
         } else {
-            message = "The Flexera Optima system does not have any data to calculate savings for these resources";
+          cur = "$"
+          var separator = ","
         }
+
+        //Convert Costs from Negative to Positive and add Units and Nanos
+        if (!(recommendation.costNanos == null || recommendation.costNanos == undefined)) {
+          if (recommendation.costNanos != 0) {
+            recommendation.costNanos = recommendation.costNanos * -1
+          }
+        } else {
+          recommendation.costNanos = 0
+        }
+
+        if (!(recommendation.costUnits == null || recommendation.costUnits == undefined)) {
+          if (recommendation.costUnits != 0) {
+            recommendation.costUnits = recommendation.costUnits * -1
+          }
+        } else {
+          recommendation.costUnits = 0
+        }
+
+        var cost_nano = recommendation.costNanos * Math.pow(10, -9)
+        var combine = Number(recommendation.costUnits) + Number(parseFloat(cost_nano))
+
+        var monthsDuration = 0
+        if (!(recommendation.duration == null || recommendation.duration == undefined)) {
+          monthsDuration = parseFloat(recommendation.duration.replace("s",""))/2628288
+        }
+
+        var monthlySavings = 0
+        if ( monthsDuration != 0 ) {
+          monthlySavings = combine / monthsDuration
+        }
+        total += monthlySavings
+
+        disk['savings'] = (Math.round(monthlySavings * 1000) / 1000)
+        disk['savingsCurrency'] = cur
+        disk['description'] = recommendation['description']
+        disk['priority'] = recommendation['priority']
+        disk['primaryImpact'] = recommendation['primaryImpact']
+        disk['recommenderSubtype'] = recommendation['recommenderSubtype']
+        disk['state'] = recommendation['state']
+        disk['service'] = "Storage"
+        var tags = []
+        if (disk['tags'] != null) {
+          if (typeof disk['tags'] == 'object') {
+            Object.keys(disk.tags).forEach(function (key) {
+              if (disk.tags[key] == null || disk.tags[key] == "") {
+                  disk.tags[key] = "null"
+              }
+              tags.push(String(key) + '=' + String(disk.tags[key]))
+            });
+          } else {
+            tags.push(disk["tags"].replace(":", "=null"))
+          }
+        }
+        disk['tags'] = tags
+        instances.push(disk)
+      }
+    })
+
+    if (instances.length != 0) {
+      if (count) {
+        total = cur + ' ' + formatNumber((Math.round(total * 100) / 100));
+        message = "The total estimated monthly savings are " + total;
+      } else {
+          message = "The Flexera Optima system does not have any data to calculate savings for these resources";
+      }
     } else {
-        message = "unable to find resources between recommender and resource api";
+      message = "unable to find resources between recommender and resource api";
     }
     result = {
-        "instances": instances,
-        "message": message
+      "instances": instances,
+      "message": message
     };
     result.instances = _.sortBy(result.instances, "region");
     result.instances = _.sortBy(result.instances, "accountName");
@@ -457,6 +487,10 @@ policy "policy_recommendations" do
       end
       field "tags" do
         label "Tags"
+      end
+      field "primaryImpactCategory" do
+        label "Recommendation Primary Impact Category"
+        path "primaryImpact.category"
       end
       field "description" do
         label "Description"
