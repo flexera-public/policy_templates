@@ -68,7 +68,7 @@ pagination "google_pagination" do
 end
 
 ###############################################################################
-# Datasources
+# Datasources & Scripts
 ###############################################################################
 
 datasource "ds_currency_reference" do
@@ -104,79 +104,6 @@ datasource "ds_projects" do
   run_script $js_projects, $ds_all_projects, $param_project_ids
 end
 
-# Gets all SQL instances of Google projects from "ds_projects".
-datasource "ds_all_sql_instances" do
-  iterate $ds_projects
-  request do
-    run_script $js_sql_instances_call, val(iter_item, "accountID"), val(iter_item, "sleep"), $param_exclude_tags
-  end
-  result do
-    encoding "json"
-    collect jmes_path(response,"items[*]") do
-      field "accountID", val(iter_item, "accountID")
-      field "accountName", val(iter_item, "accountName")
-      field "projectNumber", val(iter_item, "projectNumber")
-      field "resourceID", jmes_path(col_item, "name")
-      field "state", jmes_path(col_item,"state")
-      field "selfLink", jmes_path(col_item, "selfLink")
-      field "tier", jmes_path(col_item, "settings.tier")
-      field "region", jmes_path(col_item, "region")
-      field "tags", jmes_path(col_item,"settings.userLabels")
-      field "resourceType", val(col_item, "instanceType")
-      field "resourceName", jmes_path(col_item, "name")
-      field "resourceType", jmes_path(col_item, "instanceType")
-      field "status", jmes_path(col_item, "state")
-    end
-  end
-end
-
-# Removes instances that aren't in "param_regions" (In case it isn't empty).
-datasource "ds_sql_instances" do
-  run_script $js_sql_instances, $ds_all_sql_instances, $param_regions
-end
-
-# Array of objects with Account ID and region each one to make a call to Recommender API.
-datasource "ds_recommenders" do
-  run_script $js_recommenders, $ds_sql_instances
-end
-
-# SQL idle instances recommendations got from Recommender API.
-datasource "ds_recommendations" do
-  iterate $ds_recommenders
-  request do
-    run_script $js_recommender_call, val(iter_item,"accountID"), val(iter_item, "region"), val(iter_item, "sleep")
-  end
-  result do
-    encoding "json"
-    collect jmes_path(response, "recommendations[*]") do
-      field "accountID", val(iter_item, "accountID")
-      field "projectNumber", val(iter_item, "projectNumber")
-      field "region", val(iter_item, "region")
-      field "id", jmes_path(col_item, "name")
-      field "description", jmes_path(col_item, "description")
-      field "resourceLink", jmes_path(col_item, "content.overview.resource")
-      field "resourceName", jmes_path(col_item, "content.overview.resourceName")
-      field "primaryImpact", jmes_path(col_item, "primaryImpact")
-      field "costUnits", jmes_path(col_item, "primaryImpact.costProjection.cost.units")
-      field "costNanos", jmes_path(col_item, "primaryImpact.costProjection.cost.nanos")
-      field "duration", jmes_path(col_item, "primaryImpact.costProjection.duration")
-      field "currency", jmes_path(col_item, "primaryImpact.costProjection.cost.currencyCode")
-      field "priority", jmes_path(col_item, "priority")
-      field "recommenderSubtype", jmes_path(col_item, "recommenderSubtype")
-      field "state", jmes_path(col_item, "stateInfo.state")
-    end
-  end
-end
-
-# Total estimated monthly savings based on SQL instances/recommendations.
-datasource "ds_sql_cost_mapping" do
-  run_script $js_sql_instances_cost_mapping, $ds_sql_instances, $ds_recommendations, $ds_currency_reference
-end
-
-###############################################################################
-# Scripts
-###############################################################################
-
 script "js_projects", type: "javascript" do
   parameters "ds_all_projects", "param_project_ids"
   result "projects"
@@ -204,6 +131,32 @@ script "js_projects", type: "javascript" do
         }
     })
   EOF
+end
+
+# Gets all SQL instances of Google projects from "ds_projects".
+datasource "ds_all_sql_instances" do
+  iterate $ds_projects
+  request do
+    run_script $js_sql_instances_call, val(iter_item, "accountID"), val(iter_item, "sleep"), $param_exclude_tags
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response,"items[*]") do
+      field "accountID", val(iter_item, "accountID")
+      field "accountName", val(iter_item, "accountName")
+      field "projectNumber", val(iter_item, "projectNumber")
+      field "resourceID", jmes_path(col_item, "name")
+      field "state", jmes_path(col_item,"state")
+      field "selfLink", jmes_path(col_item, "selfLink")
+      field "tier", jmes_path(col_item, "settings.tier")
+      field "region", jmes_path(col_item, "region")
+      field "tags", jmes_path(col_item,"settings.userLabels")
+      field "resourceType", val(col_item, "instanceType")
+      field "resourceName", jmes_path(col_item, "name")
+      field "resourceType", jmes_path(col_item, "instanceType")
+      field "status", jmes_path(col_item, "state")
+    end
+  end
 end
 
 script "js_sql_instances_call", type: "javascript" do
@@ -248,6 +201,11 @@ script "js_sql_instances_call", type: "javascript" do
   EOS
 end
 
+# Removes instances that aren't in "param_regions" (In case it isn't empty).
+datasource "ds_sql_instances" do
+  run_script $js_sql_instances, $ds_all_sql_instances, $param_regions
+end
+
 script "js_sql_instances", type: "javascript" do
   parameters "ds_all_sql_instances", "param_regions"
   result "sql_instances"
@@ -264,6 +222,11 @@ script "js_sql_instances", type: "javascript" do
         })
     }
   EOF
+end
+
+# Array of objects with Account ID and region each one to make a call to Recommender API.
+datasource "ds_recommenders" do
+  run_script $js_recommenders, $ds_sql_instances
 end
 
 script "js_recommenders", type: "javascript" do
@@ -295,6 +258,34 @@ script "js_recommenders", type: "javascript" do
   EOF
 end
 
+# SQL idle instances recommendations got from Recommender API.
+datasource "ds_recommendations" do
+  iterate $ds_recommenders
+  request do
+    run_script $js_recommender_call, val(iter_item,"accountID"), val(iter_item, "region"), val(iter_item, "sleep")
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "recommendations[*]") do
+      field "accountID", val(iter_item, "accountID")
+      field "projectNumber", val(iter_item, "projectNumber")
+      field "region", val(iter_item, "region")
+      field "id", jmes_path(col_item, "name")
+      field "description", jmes_path(col_item, "description")
+      field "resourceLink", jmes_path(col_item, "content.overview.resource")
+      field "resourceName", jmes_path(col_item, "content.overview.resourceName")
+      field "primaryImpact", jmes_path(col_item, "primaryImpact")
+      field "costUnits", jmes_path(col_item, "primaryImpact.costProjection.cost.units")
+      field "costNanos", jmes_path(col_item, "primaryImpact.costProjection.cost.nanos")
+      field "duration", jmes_path(col_item, "primaryImpact.costProjection.duration")
+      field "currency", jmes_path(col_item, "primaryImpact.costProjection.cost.currencyCode")
+      field "priority", jmes_path(col_item, "priority")
+      field "recommenderSubtype", jmes_path(col_item, "recommenderSubtype")
+      field "state", jmes_path(col_item, "stateInfo.state")
+    end
+  end
+end
+
 script "js_recommender_call", type: "javascript" do
   parameters "accountID", "region", "sleep"
   result "request"
@@ -314,6 +305,11 @@ script "js_recommender_call", type: "javascript" do
       query_strings: { alt: "json" }
     }
   EOF
+end
+
+# Total estimated monthly savings based on SQL instances/recommendations.
+datasource "ds_sql_cost_mapping" do
+  run_script $js_sql_instances_cost_mapping, $ds_sql_instances, $ds_recommendations, $ds_currency_reference
 end
 
 script "js_sql_instances_cost_mapping", type:"javascript" do
@@ -370,9 +366,16 @@ script "js_sql_instances_cost_mapping", type:"javascript" do
                 cur = "$"
                 var separator = ","
             }
-            if (recommendation.costNanos < 0) {
+
+            //Convert Costs from Negative to Positive and add Units and Nanos
+            if (!(recommendation.costNanos == null || recommendation.costNanos == undefined)) {
+              if (recommendation.costNanos != 0) {
                 recommendation.costNanos = recommendation.costNanos * -1
+              }
+            } else {
+              recommendation.costNanos = 0
             }
+
             if (recommendation.costUnits < 0) {
                 recommendation.costUnits = recommendation.costUnits * -1
             }
