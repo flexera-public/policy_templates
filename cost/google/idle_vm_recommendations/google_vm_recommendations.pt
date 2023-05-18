@@ -142,6 +142,32 @@ script "js_google_project", type: "javascript" do
   EOS
 end
 
+# GET A LIST OF UNIQUE PARAMETERS TO MAKE CALLS TO THE RECOMMENDER API (UNIQUE ACCOUNT ID, REGION AND PROJECT NUMBER)
+datasource "ds_recommenders" do
+  run_script $js_recommenders, $ds_vms_with_cpu_utilization
+end
+
+script "js_recommenders", type: "javascript" do
+  parameters "ds_vms_with_cpu_utilization"
+  result "results"
+  code <<-EOF
+  var results = []
+  for (var i = 0; i < ds_vms_with_cpu_utilization.length; i++) {
+    var result = {
+      projectNumber: ds_vms_with_cpu_utilization[i].projectNumber,
+      accountID: ds_vms_with_cpu_utilization[i].accountID,
+      region: ds_vms_with_cpu_utilization[i].zone,
+      requestNumber: results.length + 1,
+    }
+    var resultAtArray = _.find(results, function(r) { return r.projectNumber === result.projectNumber && r.accountID === result.accountID && r.region === result.region })
+    if (resultAtArray === undefined) {
+      results.push(result)
+    }
+  }
+  EOF
+end
+
+# GET A LIST OF GCP RECOMMENDATIONS FOR IDLE VMS IN EACH ACCOUNT AND REGION
 datasource "ds_recommendations" do
   iterate $ds_recommenders
   request do
@@ -190,6 +216,7 @@ script "js_recommender_call", type: "javascript" do
 EOF
 end
 
+# GET THE MAXIMUM, MINIMUM AND AVERAGE CPU UTILIZATION OF EVERY VM INSTANCE OF EACH ACCOUNT AND REGION
 datasource "ds_calculated_utilization" do
   iterate $ds_google_project
   request do
@@ -216,6 +243,7 @@ datasource "ds_calculated_utilization" do
   end
 end
 
+# GET A LIST OF UNIQUE ACCOUNT IDS TO REDUCE THE NUMBER OF CALLS WE NEED TO DO TO API TO GET VM DATA
 datasource "ds_grouped_account_ids" do
   run_script $js_grouped_account_ids, $ds_calculated_utilization
 end
@@ -228,6 +256,7 @@ script "js_grouped_account_ids", type: "javascript" do
   EOS
 end
 
+# GET A LIST OF THE VMS OF EVERY ACCOUNT ID IN EVERY ZONE
 datasource "ds_get_vms" do
   iterate $ds_grouped_account_ids
   request do
@@ -245,6 +274,7 @@ datasource "ds_get_vms" do
   end
 end
 
+# THIS IS A HELPER FOR ds_get_vms, IT HELPS PROCESSING THE API RESPONSE AND DELIVERS A LIST OF VMS
 datasource "ds_collected_vms" do
   run_script $js_collected_vms, $ds_get_vms, $param_zones
 end
@@ -270,6 +300,7 @@ script "js_collected_vms", type: "javascript" do
   EOS
 end
 
+# MAP THE LIST OF VMS WITH ITS CPU UTILIZATION (MIN, MAX & AVG)
 datasource "ds_vms_with_cpu_utilization" do
   run_script $js_vms_with_cpu_utilization, $ds_collected_vms, $ds_calculated_utilization
 end
@@ -303,52 +334,23 @@ script "js_vms_with_cpu_utilization", type: "javascript" do
   EOS
 end
 
-datasource "ds_recommenders" do
-  run_script $js_recommenders, $ds_vms_with_cpu_utilization
-end
-
-script "js_recommenders", type: "javascript" do
-  parameters "ds_vms_with_cpu_utilization"
-  result "results"
-  code <<-EOF
-  var results = []
-  for (var i = 0; i < ds_vms_with_cpu_utilization.length; i++) {
-    var result = {
-      projectNumber: ds_vms_with_cpu_utilization[i].projectNumber,
-      accountID: ds_vms_with_cpu_utilization[i].accountID,
-      region: ds_vms_with_cpu_utilization[i].zone,
-      requestNumber: results.length + 1,
-    }
-    var resultAtArray = _.find(results, function(r) { return r.projectNumber === result.projectNumber && r.accountID === result.accountID && r.region === result.region })
-    if (resultAtArray === undefined) {
-      results.push(result)
-    }
-  }
-  EOF
-end
-
+# GET A FILTERED LIST OF THE VMS BASED ON THE PARAMETERS THE USER PROVIDED
 datasource "ds_sanitize_vms" do
   run_script $js_sanitize_data, $ds_vms_with_cpu_utilization, $param_exclude_tags
 end
 
 script "js_sanitize_data", type: "javascript" do
   result "results"
-    parameters "ds_get_vms", "param_exclusion_tag_key"
-    code <<-EOS
-    tag_key = param_exclusion_tag_key.split(':')[0]
-    tag_value = param_exclusion_tag_key.split(':')[1]
+  parameters "ds_get_vms", "param_exclusion_tag_key"
+  code <<-EOS
+  tag_key = param_exclusion_tag_key.split(':')[0]
+  tag_value = param_exclusion_tag_key.split(':')[1]
   
-    results = _.filter(ds_get_vms, function (vm) {
-      if (vm.status == "RUNNING") {
-        if (vm.tags != null && vm.tags !== undefined) {
-          if (vm.tags[tag_key] != null && vm.tags[tag_key] !== undefined) {
-            if (vm.tags[tag_key] != tag_value) {
-              if (vm.hostname == undefined) {
-                vm.hostname = vm.resourceID;
-              }
-              return vm
-            }
-          } else {
+  results = _.filter(ds_get_vms, function (vm) {
+    if (vm.status == "RUNNING") {
+      if (vm.tags != null && vm.tags !== undefined) {
+        if (vm.tags[tag_key] != null && vm.tags[tag_key] !== undefined) {
+          if (vm.tags[tag_key] != tag_value) {
             if (vm.hostname == undefined) {
               vm.hostname = vm.resourceID;
             }
@@ -360,13 +362,20 @@ script "js_sanitize_data", type: "javascript" do
           }
           return vm
         }
+      } else {
+        if (vm.hostname == undefined) {
+          vm.hostname = vm.resourceID;
+        }
+        return vm
       }
-    })
-    results = _.sortBy(results, 'zone');
-    results = _.sortBy(results, 'accountID');
-    EOS
-  end
+    }
+  })
+  results = _.sortBy(results, 'zone');
+  results = _.sortBy(results, 'accountID');
+  EOS
+end
 
+# CREATE A LIST OF THE DATA OF THE VMS GROUPED WITH ITS UTILIZATION DATA (CPU MAXIMUM, CPU MINIMUM, CPU AVERAGE) AND ITS RECOMMENDATION DATA
 datasource "ds_vm_cost_mapping" do
   run_script $js_instance_cost_mapping, $ds_sanitize_vms, $ds_recommendations, $ds_currency_reference
 end
