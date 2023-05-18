@@ -10,7 +10,7 @@ info(
   version: "2.16",
   provider: "AWS",
   service: "",
-  policy_set: "Savings plans",
+  policy_set: "Savings Plans",
   recommendation_type: "Rate Reduction"
 )
 
@@ -212,7 +212,7 @@ datasource "ds_sp_recommendations" do
 end
 
 datasource "ds_sp_normalization" do
-  run_script $js_sp_cleanup, $ds_sp_recommendations, $param_currency_adjustment, $ds_account_name, $param_term, $param_payment_option
+  run_script $js_sp_cleanup, $ds_sp_recommendations, $param_currency_adjustment, $ds_account_name, $param_term, $param_payment_option, $param_days, $param_savings_threshold, $param_savings_plan_type
 end
 
 ###############################################################################
@@ -270,7 +270,7 @@ script "js_top_level_bc", type: "javascript" do
 end
 
 script "js_sp_cleanup", type: "javascript" do
-  parameters "sp_recos", "currency_adjustment", "ds_account_name", "param_term", "param_payment_option"
+  parameters "sp_recos", "currency_adjustment", "ds_account_name", "param_term", "param_payment_option", "param_days", "param_savings_threshold", "param_savings_plan_type"
   result "result"
   code <<-EOS
     var result = [];
@@ -279,6 +279,10 @@ script "js_sp_cleanup", type: "javascript" do
       accountName = ds_account_name[0]['vendorAccountName']
     }
     _.each(sp_recos, function(reco){
+      var resourceType = param_savings_plan_type
+      if (reco["instanceFamily"] != "" && reco["instanceFamily"] != null) {
+        resourceType += ", " + reco["instanceFamily"]
+      }
         result.push({
           accountID: reco["accountID"],
           accountName: accountName,
@@ -306,7 +310,10 @@ script "js_sp_cleanup", type: "javascript" do
           currentMaximumHourlyOnDemandSpendWithCurrencyCode : (Math.round(reco["currentMaximumHourlyOnDemandSpend"] * 100) / 100).toString(10)+" "+reco["currencyCode"],
           currentMinimumHourlyOnDemandSpendWithCurrencyCode : (Math.round(reco["currentMinimumHourlyOnDemandSpend"] * 100) / 100).toString(10)+" "+reco["currencyCode"],
           term: param_term,
-          paymentOption: param_payment_option
+          paymentOption: param_payment_option,
+          lookBackPeriod: param_days,
+          threshold: param_savings_threshold,
+          resourceType: resourceType
       })
     })
 EOS
@@ -396,11 +403,20 @@ policy "aws_sp_recommendations" do
       field "accountName" do
         label "Account Name"
       end
+      field "resourceType" do
+        label "Resource Type"
+      end
       field "term" do
         label "Term"
       end
       field "paymentOption" do
         label "Payment Option"
+      end
+      field "lookBackPeriod" do
+        label "Lookback Period"
+      end
+      field "threshold" do
+        label "Monthly Savings Threshold"
       end
       field "region" do
         label "Region"
@@ -422,9 +438,8 @@ policy "aws_sp_recommendations" do
       field "upfrontCostWithCurrencyCode" do
         label "Upfront Cost"
       end
-      field "resourceType" do
+      field "instanceFamily" do
         label "Instance Family"
-        path "instanceFamily"
       end
       field "currentAverageHourlyOnDemandSpendWithCurrencyCode" do
         label "Current Avg Hourly OnDemand Spend"
