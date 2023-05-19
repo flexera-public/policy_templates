@@ -19,7 +19,7 @@ The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automati
 - Forecasted Spend budget alerts will raise an incident when the target's run-rate is on track to exceed the budget threshold
 - Data can be grouped by Dimensions.
 - The policy allows the customer to include or exclude unbudgeted spend
-- The policy allows multiple filter group values to scope specific dimension value like Service=AmazonEC2
+- Added a parameter to enable budget tracking for specific dimensions and values.
 
 ## Input Parameters
 

@@ -2,7 +2,7 @@
 
 ## v3.0
 
-- Added a parameter to define target groups to track by providing specific dimension values 'Cloud Vendor=AWS', 'Service=AmazonEC2'
+- Added a parameter to enable budget tracking for specific dimensions and values
 
 ## v2.1
 
