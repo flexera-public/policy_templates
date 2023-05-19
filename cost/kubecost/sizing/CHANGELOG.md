@@ -2,7 +2,7 @@
 
 ## v0.2
 
-- CPU and RAM parameters now based on percentiles.
+- The CPU quantile and Memory quantile parameters are now percentiles.
 
 ## v0.1
 
