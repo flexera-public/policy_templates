@@ -45,6 +45,7 @@ parameter "param_regions_list" do
   label "Regions"
   allowed_pattern /^([a-zA-Z-_]+-[a-zA-Z0-9-_]+-[0-9-_]+,*|)+$/
   description "A list of allowed or denied regions. See the README for more details"
+  default []
 end
 
 parameter "param_idle_threshold_cpu_value" do
@@ -105,6 +106,14 @@ parameter "param_min_savings" do
   description "Minimum potential savings required to generate a recommendation"
   min_value 0
   default 0
+end
+
+parameter "param_cost_calculation" do
+  type "string"
+  label "Cost Calculation Algorithm"
+  description "How to calculate the monthly cost of an instance for assessing savings. See the README for more details"
+  allowed_values "Last 30 Days", "Extrapolated From Single Day"
+  default "Last 30 Days"
 end
 
 parameter "param_exclusion_tags" do
@@ -620,7 +629,7 @@ end
 
 datasource "ds_instance_costs" do
   request do
-    run_script $js_instance_costs, $ds_aws_account, $ds_top_level_bcs, rs_org_id, rs_optima_host
+    run_script $js_instance_costs, $ds_aws_account, $ds_top_level_bcs, $param_cost_calculation, rs_org_id, rs_optima_host
   end
   result do
     encoding "json"
@@ -635,17 +644,19 @@ datasource "ds_instance_costs" do
 end
 
 script "js_instance_costs", type: "javascript" do
-  parameters "ds_aws_account", "ds_top_level_bcs", "rs_org_id", "rs_optima_host"
+  parameters "ds_aws_account", "ds_top_level_bcs", "param_cost_calculation", "rs_org_id", "rs_optima_host"
   result "request"
   code <<-EOS
-  //Get Start and End dates
-  start_date = new Date()
-  start_date.setMonth(start_date.getMonth() - 1)
-  start_date = start_date.toLocaleDateString("en-US").split("-")[0] + "-" + start_date.toLocaleDateString("en-US").split("-")[1]
+  if (param_cost_calculation == "Last 30 Days") { days_back = 32 }
+  if (param_cost_calculation == "Extrapolated From Single Day") { days_back = 3 }
 
   end_date = new Date()
-  end_date.setMonth(end_date.getMonth() - 0)
-  end_date = end_date.toLocaleDateString("en-US").split("-")[0] + "-" + end_date.toLocaleDateString("en-US").split("-")[1]
+  end_date.setDate(end_date.getDate() - 2)
+  end_date = end_date.toISOString().split('T')[0]
+
+  start_date = new Date()
+  start_date.setDate(start_date.getDate() - days_back)
+  start_date = start_date.toISOString().split('T')[0]
 
   var request = {
     auth: "auth_flexera",
@@ -654,7 +665,7 @@ script "js_instance_costs", type: "javascript" do
     path: "/bill-analysis/orgs/" + rs_org_id + "/costs/select",
     body_fields: {
       dimensions: ["resource_id", "vendor_account_name", "resource_type", "adjustment_name"],
-      granularity: "month",
+      granularity: "day",
       start_at: start_date,
       end_at: end_date,
       metrics: ["cost_amortized_unblended_adj"],
@@ -698,6 +709,51 @@ script "js_instance_costs", type: "javascript" do
 EOS
 end
 
+datasource "ds_instance_costs_grouped" do
+  run_script $js_instance_costs_grouped, $ds_instance_costs, $param_cost_calculation
+end
+
+script "js_instance_costs_grouped", type: "javascript" do
+  parameters "ds_instance_costs", "param_cost_calculation"
+  result "result"
+  code <<-EOS
+  // Set cost multiplier depending on how cost data was gathered
+  cost_multiplier = 1
+
+  if (param_cost_calculation == "Extrapolated From Single Day") {
+    // Calculation to get as close to the average month as possible.
+    // .25 is to account for leap years.
+    cost_multiplier = 365.25 / 12
+  }
+
+  // Group cost data by resourceId for later use
+  result = {}
+
+  _.each(ds_instance_costs, function(item) {
+    id = item['resourceId'].toLowerCase()
+
+    if (result[id] == undefined) { result[id] = 0.0 }
+    result[id] += item['cost'] * cost_multiplier
+  })
+EOS
+end
+
+datasource "ds_aws_account_name" do
+  run_script $js_aws_account_name, $ds_instance_costs
+end
+
+script "js_aws_account_name", type:"javascript" do
+  parameters "ds_instance_costs"
+  result "result"
+  code <<-EOS
+  result = ""
+
+  if (ds_instance_costs.length > 0) {
+    result = ds_instance_costs[0]['vendorAccountName']
+  }
+EOS
+end
+
 datasource "ds_aws_instance_size_map" do
   request do
     verb "GET"
@@ -708,16 +764,14 @@ datasource "ds_aws_instance_size_map" do
 end
 
 datasource "ds_merged_metrics" do
-  run_script $js_merged_metrics, $ds_cloudwatch_data_sorted, $ds_instances, $ds_aws_account, $ds_currency
+  run_script $js_merged_metrics, $ds_cloudwatch_data_sorted, $ds_instances, $ds_aws_account, $ds_aws_account_name, $ds_currency
 end
 
 script "js_merged_metrics", type: "javascript" do
   result "result"
-  parameters "ds_cloudwatch_data_sorted", "ds_instances", "ds_aws_account", "ds_currency"
+  parameters "ds_cloudwatch_data_sorted", "ds_instances", "ds_aws_account", "ds_aws_account_name", "ds_currency"
   code <<-EOS
   result = []
-  //We want to collect each of these list of statistics we care about
-  stats = ["Average", "Minimum", "Maximum", "p99", "p95", "p90"]
 
   _.each(ds_instances, function(instance) {
     region = instance['region']
@@ -736,8 +790,6 @@ script "js_merged_metrics", type: "javascript" do
           })
         }
 
-        tags = tags.join(', ')
-
         // Create object we're going to return
         merged_instance = {
           "region": region,
@@ -748,26 +800,31 @@ script "js_merged_metrics", type: "javascript" do
           "privateDnsName": instance['privateDnsName'],
           "launchTime": instance['launchTime'],
           "hostname": instance['privateDnsName'].split('.')[0],
-          "tags": tags,
+          "tags": tags.join(', '),
           "resourceType": instance['resourceType'],
           "savings": null,
           "accountID": ds_aws_account,
-          "accountName": "",
+          "accountName": ds_aws_account_name,
           "savingsCurrency": ds_currency['symbol']
         }
 
-        // Grab usage data for the instance if it is present
-        _.each(stats, function(stat) {
-          _.each(["cpu", "mem"], function(metric) {
-            statname = metric + stat
+        // Grab usage data for the instance if it is present.
+        // Note: We don't simply name them the same as Cloudwatch does because
+        // prior versions of this policy also didn't, and we want to ensure
+        // that exported incident data looks the same as it used to.
 
-            //legacyStatName is the name of the attribute that was used in all versions up to version 4.X
-            //We use this instead of statname to keep backwards compatability for the exported data
-            legacyStatName = metric + "_" + stat.toLowerCase()
-            merged_instance[legacyStatName] = null
+        stats_list = ["Average", "Minimum", "Maximum", "p99", "p95", "p90"]
+        metrics_list = ["cpu", "mem"]
 
-            if (ds_cloudwatch_data_sorted[region][id][statname] != undefined && ds_cloudwatch_data_sorted[region][id][statname] != null) {
-              merged_instance[legacyStatName] = parseFloat(ds_cloudwatch_data_sorted[region][id][statname]).toFixed(2)
+        _.each(stats_list, function(stat) {
+          _.each(metrics_list, function(metric) {
+            data_statname = metric + stat
+            incident_statname = metric + "_" + stat.toLowerCase()
+
+            merged_instance[incident_statname] = null
+
+            if (ds_cloudwatch_data_sorted[region][id][data_statname] != undefined && ds_cloudwatch_data_sorted[region][id][data_statname] != null) {
+              merged_instance[incident_statname] = parseFloat(ds_cloudwatch_data_sorted[region][id][data_statname]).toFixed(2)
             }
           })
         })
@@ -782,11 +839,11 @@ EOS
 end
 
 datasource "ds_idle_and_underutil_instances" do
-  run_script $js_idle_and_underutil_instances, $ds_merged_metrics, $ds_instance_costs, $ds_aws_instance_size_map, $param_idle_threshold_cpu_value, $param_idle_threshold_mem_value, $param_underutil_threshold_cpu_value, $param_underutil_threshold_mem_value, $ds_currency, $param_check_both, $param_threshold_statistic, $param_min_savings
+  run_script $js_idle_and_underutil_instances, $ds_merged_metrics, $ds_instance_costs_grouped, $ds_aws_instance_size_map, $param_idle_threshold_cpu_value, $param_idle_threshold_mem_value, $param_underutil_threshold_cpu_value, $param_underutil_threshold_mem_value, $ds_currency, $param_check_both, $param_threshold_statistic, $param_min_savings
 end
 
 script "js_idle_and_underutil_instances", type:"javascript" do
-  parameters "ds_merged_metrics", "ds_instance_costs", "ds_aws_instance_size_map", "param_idle_threshold_cpu_value", "param_idle_threshold_mem_value", "param_underutil_threshold_cpu_value", "param_underutil_threshold_mem_value", "ds_currency", "param_check_both", "param_threshold_statistic", "param_min_savings"
+  parameters "ds_merged_metrics", "ds_instance_costs_grouped", "ds_aws_instance_size_map", "param_idle_threshold_cpu_value", "param_idle_threshold_mem_value", "param_underutil_threshold_cpu_value", "param_underutil_threshold_mem_value", "ds_currency", "param_check_both", "param_threshold_statistic", "param_min_savings"
   result "result"
   code <<-EOS
   // Used for formatting numbers to look pretty
@@ -807,26 +864,12 @@ script "js_idle_and_underutil_instances", type:"javascript" do
     return formatted_number + "." + values[1]
   }
 
-  // Gather the accountName for later use in the results
-  var accountName = ""
-  if (ds_instance_costs.length > 0) { accountName = ds_instance_costs[0]['vendorAccountName'] }
-
   // The key name is lowercase, param value needs to be lowercase.
   threshold_statistic = param_threshold_statistic.toLowerCase()
 
   // Determine whether we're checking for CPU, memory, or both
   checking_cpu = param_underutil_threshold_cpu_value != -1 || param_idle_threshold_cpu_value != -1
   checking_mem = param_underutil_threshold_mem_value != -1 || param_idle_threshold_mem_value != -1
-
-  // Group cost data by resourceId for later use
-  grouped_cost_data = {}
-
-  _.each(ds_instance_costs, function(item) {
-    id = item['resourceId'].toLowerCase()
-
-    if (grouped_cost_data[id] == undefined) { grouped_cost_data[id] = 0.0 }
-    grouped_cost_data[id] += item['cost']
-  })
 
   underutil_total_savings = 0.0
   idle_total_savings = 0.0
@@ -842,7 +885,7 @@ script "js_idle_and_underutil_instances", type:"javascript" do
 
       // Assume cost is 0 unless we have cost data for the instance
       total_cost = 0.0
-      if (grouped_cost_data[id] != undefined) { total_cost = grouped_cost_data[id] }
+      if (ds_instance_costs_grouped[id] != undefined) { total_cost = ds_instance_costs_grouped[id] }
 
       // Store relevant CPU and memory stats into these variables for later use
       cpu_value = instance['cpu' + "_" + threshold_statistic]
@@ -879,8 +922,6 @@ script "js_idle_and_underutil_instances", type:"javascript" do
         }
       }
 
-      instance["accountName"] = accountName
-      instance["savingsCurrency"] = ds_currency['symbol']
       instance["recommendedVmSize"] = null
 
       // Set appropriate values based on whether instance is idle or underutilized
@@ -912,9 +953,7 @@ script "js_idle_and_underutil_instances", type:"javascript" do
 
     //Sort By Region and then by Account Name
     underutil_list = _.sortBy(underutil_list, "region")
-    underutil_list = _.sortBy(underutil_list, "accountName")
     idle_list = _.sortBy(idle_list, "region")
-    idle_list = _.sortBy(idle_list, "accountName")
   }
 
   underutil_total_savings = ds_currency['symbol'] + ' ' + formatNumber(parseFloat(underutil_total_savings).toFixed(2), ds_currency['separator'])
