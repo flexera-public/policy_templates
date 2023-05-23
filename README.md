@@ -27,25 +27,25 @@ These templates can generate savings estimates for your environment.
 
 #### AWS
 
-- [AWS Unused Volumes](./cost/aws/unused_volumes)
-- [AWS Unused RDS Instance](./cost/aws/unused_rds)
-- [AWS Idle Compute Instances](./cost/aws/idle_compute_instances)
-- [AWS Old Snapshots](./cost/aws/old_snapshots)
-- [AWS Rightsize EBS Volumes](./cost/aws/rightsize_ebs_volumes)
 - [AWS Delete Unused Classic Load Balancers](./cost/aws/elb/clb_unused)
 - [AWS GP3 Upgradeable Volumes](./cost/aws/gp3_volume_upgrade)
+- [AWS Idle Compute Instances](./cost/aws/idle_compute_instances)
+- [AWS Old Snapshots](./cost/aws/old_snapshots)
 - [AWS Rightsize Compute Instances](./cost/aws/rightsize_compute_instances)
+- [AWS Rightsize EBS Volumes](./cost/aws/rightsize_ebs_volumes)
 - [AWS Unused IP Addresses](./cost/aws/unused_ip_addresses)
+- [AWS Unused RDS Instance](./cost/aws/unused_rds)
+- [AWS Unused Volumes](./cost/aws/unused_volumes)
 
 #### Azure
 
-- [Azure Unused Volumes](./cost/azure/unused_volumes)
 - [Azure Idle Compute Instances](./cost/azure/idle_compute_instances)
 - [Azure Old Snapshots](./cost/azure/old_snapshots)
-- [Azure Unused SQL Databases](./cost/azure/unused_sql_databases)
 - [Azure Rightsize Compute Instances](./cost/azure/rightsize_compute_instances)
 - [Azure Savings Plan Recommendations](./cost/azure/savings_plan/recommendations)
 - [Azure Unused IP Addresses](./cost/azure/unused_ip_addresses)
+- [Azure Unused SQL Databases](./cost/azure/unused_sql_databases)
+- [Azure Unused Volumes](./cost/azure/unused_volumes)
 
 #### GCP
 
@@ -53,16 +53,16 @@ These templates can generate savings estimates for your environment.
 
 #### Google
 
-- [Google Idle IP Address Recommender](./cost/google/idle_ip_address_recommendations)
-- [Google Committed Use Discount Recommender](./cost/google/cud_recommendations)
-- [Google Idle VM Recommender](./cost/google/idle_vm_recommendations)
-- [Google Idle Persistent Disk Recommender](./cost/google/idle_persistent_disk_recommendations)
 - [Google Cloud SQL Idle Instance Recommender](./cost/google/cloud_sql_idle_instance_recommendations)
+- [Google Committed Use Discount Recommender](./cost/google/cud_recommendations)
+- [Google Idle IP Address Recommender](./cost/google/idle_ip_address_recommendations)
+- [Google Idle Persistent Disk Recommender](./cost/google/idle_persistent_disk_recommendations)
+- [Google Idle VM Recommender](./cost/google/idle_vm_recommendations)
 
 #### Kubecost
 
-- [Kubecost Request Rightsizing Recommendations](./cost/kubecost/sizing)
 - [Kubecost Cluster Rightsizing Recommendations](./cost/kubecost/cluster)
+- [Kubecost Request Rightsizing Recommendations](./cost/kubecost/sizing)
 
 ### Policy Templates for Compliance
 
@@ -72,9 +72,9 @@ These templates can generate savings estimates for your environment.
 
 - EC2
 
-  - [AWS Long-stopped Instances](./compliance/aws/long_stopped_instances)
-  - [AWS EC2 Instances not running FlexNet Inventory Agent](./compliance/aws/instances_without_fnm_agent)
   - [AWS Disallowed Regions](./compliance/aws/disallowed_regions)
+  - [AWS EC2 Instances not running FlexNet Inventory Agent](./compliance/aws/instances_without_fnm_agent)
+  - [AWS Long-stopped Instances](./compliance/aws/long_stopped_instances)
 
 - ECS
 
@@ -90,15 +90,15 @@ These templates can generate savings estimates for your environment.
 
 #### Azure
 
-- [Azure Untagged Resources](./compliance/azure/azure_untagged_resources)
 - [Azure Regulatory Compliance](./compliance/azure/compliance_score)
 - [Azure Tag Resources with Resource Group Name](./compliance/tags/azure_rg_tags)
+- [Azure Untagged Resources](./compliance/azure/azure_untagged_resources)
 
 - Compute
 
   - [Azure AHUB Utilization with Manual Entry](./compliance/azure/ahub_manual)
-  - [Azure Instances not running FlexNet Inventory Agent](./compliance/azure/instances_without_fnm_agent)
   - [Azure Disallowed Regions](./compliance/azure/azure_disallowed_regions)
+  - [Azure Instances not running FlexNet Inventory Agent](./compliance/azure/instances_without_fnm_agent)
   - [Azure Long Stopped Instances](./compliance/azure/azure_long_stopped_instances)
 
 - Identity
@@ -125,10 +125,10 @@ These templates can generate savings estimates for your environment.
 
 #### Flexera ITAM
 
-- [ITAM Ignored Recent Inventory Dates](./compliance/fnms/ignored_recent_inventory_dates)
-- [ITAM VMs Missing Host ID](./compliance/fnms/vms_missing_hostid)
 - [ITAM Expiring Licenses](./compliance/fnms/fnms_licenses_expiring)
+- [ITAM Ignored Recent Inventory Dates](./compliance/fnms/ignored_recent_inventory_dates)
 - [ITAM Missing Active Machines](./compliance/fnms/missing_active_machines)
+- [ITAM VMs Missing Host ID](./compliance/fnms/vms_missing_hostid)
 
 #### Flexera Optima
 
@@ -142,13 +142,13 @@ These templates can generate savings estimates for your environment.
 
 #### GitHub
 
-- [GitHub.com Unpermitted Top-Level Teams](./compliance/github/toplevel_teams)
 - [GitHub.com Available Seats Report](./compliance/github/available_seats)
-- [GitHub.com Unpermitted Sized Repositories](./compliance/github/repository_size)
 - [GitHub.com Repositories without Admin Team](./compliance/github/repository_admin_team)
-- [GitHub.com Unpermitted Repository Names](./compliance/github/repository_naming)
-- [GitHub.com Unpermitted Outside Collaborators](./compliance/github/outside_collaborators)
 - [GitHub.com Repository Branches without Protection](./compliance/github/repository_branch_protection)
+- [GitHub.com Unpermitted Outside Collaborators](./compliance/github/outside_collaborators)
+- [GitHub.com Unpermitted Repository Names](./compliance/github/repository_naming)
+- [GitHub.com Unpermitted Sized Repositories](./compliance/github/repository_size)
+- [GitHub.com Unpermitted Top-Level Teams](./compliance/github/toplevel_teams)
 
 #### Google
 
@@ -164,9 +164,9 @@ These templates can generate savings estimates for your environment.
 
 - Compute
 
-  - [Turbonomic Rightsize Virtual Machines Recommendations AWS](./cost/turbonomics/scale_virtual_machines_recommendations/aws)
-  - [Turbonomic Allocate Virtual Machine Recommendations AWS](./cost/turbonomics/allocate_virtual_machines_recommendations/aws)
   - [AWS Rightsize Compute Instances](./cost/aws/rightsize_compute_instances)
+  - [Turbonomic Allocate Virtual Machine Recommendations AWS](./cost/turbonomics/allocate_virtual_machines_recommendations/aws)
+  - [Turbonomic Rightsize Virtual Machines Recommendations AWS](./cost/turbonomics/scale_virtual_machines_recommendations/aws)
 
 - Cost Explorer
 
@@ -174,19 +174,19 @@ These templates can generate savings estimates for your environment.
 
 - EBS
 
-  - [AWS Unused Volumes](./cost/aws/unused_volumes)
   - [AWS GP3 Upgradeable Volumes](./cost/aws/gp3_volume_upgrade)
+  - [AWS Unused Volumes](./cost/aws/unused_volumes)
 
 - EC2
 
-  - [AWS Idle Compute Instances](./cost/aws/idle_compute_instances)
   - [AWS Burstable Instance CloudWatch Utilization](./cost/aws/burstable_instance_cloudwatch_credit_utilization)
+  - [AWS Idle Compute Instances](./cost/aws/idle_compute_instances)
   - [AWS Inefficient Instance Utilization using CloudWatch](./cost/aws/instance_cloudwatch_utilization)
+  - [AWS Reserved Instances Recommendations](./cost/aws/reserved_instances/recommendations)
   - [AWS Rightsize EBS Volumes](./cost/aws/rightsize_ebs_volumes)
   - [AWS Schedule Instance](./cost/aws/schedule_instance)
-  - [AWS Reserved Instances Recommendations](./cost/aws/reserved_instances/recommendations)
-  - [Reserved Instances Coverage](./cost/aws/reserved_instances/coverage)
   - [AWS Unused IP Addresses](./cost/aws/unused_ip_addresses)
+  - [Reserved Instances Coverage](./cost/aws/reserved_instances/coverage)
 
 - ELB
 
@@ -194,31 +194,31 @@ These templates can generate savings estimates for your environment.
 
 - RDS
 
+  - [AWS RDS Instances](./cost/aws/rds_instance_license_info)
   - [AWS Rightsize RDS Instances](./cost/aws/rds_instance_cloudwatch_utilization)
   - [AWS Unused RDS Instance](./cost/aws/unused_rds)
-  - [AWS RDS Instances](./cost/aws/rds_instance_license_info)
 
 - S3
 
   - [AWS Bucket Size Check](./cost/aws/s3_bucket_size)
-  - [AWS S3 Bucket Intelligent Tiering Check](./cost/aws/s3_storage_policy)
   - [AWS Object Storage Optimization](./cost/aws/object_storage_optimization)
+  - [AWS S3 Bucket Intelligent Tiering Check](./cost/aws/s3_storage_policy)
 
 - Storage
 
-  - [Turbonomic Delete Unattached Volumes Recommendations AWS](./cost/turbonomics/delete_unattached_volumes/aws)
   - [AWS Old Snapshots](./cost/aws/old_snapshots)
+  - [Turbonomic Delete Unattached Volumes Recommendations AWS](./cost/turbonomics/delete_unattached_volumes/aws)
 
 - Usage Discount
 
   - [Turbonomic Buy Reserved Instances Recommendations AWS](./cost/turbonomics/buy_reserved_instances_recommendations/aws)
-  - [Turbonomic Rightsize Virtual Volumes Recommendations AWS](./cost/turbonomics/rightsize_virtual_volumes_recommendations/aws)
   - [Turbonomic Rightsize Databases Recommendations AWS](./cost/turbonomics/rightsize_databases_recommendations/aws)
+  - [Turbonomic Rightsize Virtual Volumes Recommendations AWS](./cost/turbonomics/rightsize_virtual_volumes_recommendations/aws)
 
 #### Azure
 
-- [Azure Reserved Instances Recommendations](./cost/azure/reserved_instances/recommendations)
 - [Azure Hybrid Use Benefit for Windows Server](./cost/azure/hybrid_use_benefit)
+- [Azure Reserved Instances Recommendations](./cost/azure/reserved_instances/recommendations)
 
 - Blob Store
 
@@ -228,25 +228,25 @@ These templates can generate savings estimates for your environment.
 
   - [Azure Idle Compute Instances](./cost/azure/idle_compute_instances)
   - [Azure Inefficient Instance Utilization using Log Analytics](./cost/azure/instances_log_analytics_utilization)
-  - [Azure Schedule Instance](./cost/azure/schedule_instance)
-  - [Azure Rightsize Compute Instances](./cost/azure/rightsize_compute_instances)
   - [Azure Reserved Instances Recommendations](./cost/azure/reserved_instances/mca_recommendations)
   - [Azure Reserved Instances Utilization](./cost/azure/reserved_instances/utilization)
+  - [Azure Rightsize Compute Instances](./cost/azure/rightsize_compute_instances)
   - [Azure Savings Plan Recommendations](./cost/azure/savings_plan/recommendations)
+  - [Azure Schedule Instance](./cost/azure/schedule_instance)
   - [Azure Unused IP Addresses](./cost/azure/unused_ip_addresses)
-  - [Turbonomic Rightsize Virtual Machines Recommendations Azure](./cost/turbonomics/scale_virtual_machines_recommendations/azure)
   - [Turbonomic Allocate Virtual Machine Recommendations Azure](./cost/turbonomics/allocate_virtual_machines_recommendations/azure)
+  - [Turbonomic Rightsize Virtual Machines Recommendations Azure](./cost/turbonomics/scale_virtual_machines_recommendations/azure)
 
 - SQL
 
   - [Azure Rightsize SQL Databases](./cost/azure/rightsize_sql_instances)
-  - [Azure Unused SQL Databases](./cost/azure/unused_sql_databases)
   - [Azure SQL Databases without Elastic Pools](./operational/azure/azure_sql_using_elastic_pool)
+  - [Azure Unused SQL Databases](./cost/azure/unused_sql_databases)
 
 - Storage
 
-  - [Azure Unused Volumes](./cost/azure/unused_volumes)
   - [Azure Old Snapshots](./cost/azure/old_snapshots)
+  - [Azure Unused Volumes](./cost/azure/unused_volumes)
   - [Turbonomic Delete Unattached Volumes Recommendations Azure](./cost/turbonomics/delete_unattached_volumes/azure)
 
 - Storage Accounts
@@ -256,8 +256,8 @@ These templates can generate savings estimates for your environment.
 - Usage Discount
 
   - [Turbonomic Buy Reserved Instances Recommendations Azure](./cost/turbonomics/buy_reserved_instances_recommendations/azure)
-  - [Turbonomic Rightsize Virtual Volumes Recommendations Azure](./cost/turbonomics/rightsize_virtual_volumes_recommendations/azure)
   - [Turbonomic Rightsize Databases Recommendations Azure](./cost/turbonomics/rightsize_databases_recommendations/azure)
+  - [Turbonomic Rightsize Virtual Volumes Recommendations Azure](./cost/turbonomics/rightsize_virtual_volumes_recommendations/azure)
 
 - compute
 
@@ -274,8 +274,8 @@ These templates can generate savings estimates for your environment.
 
 - All
 
-  - [Azure Savings Realized from Reservations](./cost/azure/savings_realized)
   - [AWS Savings Realized from Reservations](./cost/aws/savings_realized)
+  - [Azure Savings Realized from Reservations](./cost/azure/savings_realized)
 
 #### Flexera Cloud Management
 
@@ -283,27 +283,27 @@ These templates can generate savings estimates for your environment.
 
 #### Flexera Optima
 
-- [Budget Alerts](./cost/budget_report_alerts)
-- [New Service Usage](./cost/new_service_usage)
-- [Cloud Cost Anomaly Alerts](./cost/cloud_cost_anomaly_alerts)
-- [Cloud Spend Forecast - Straight-Line (Simple Model)](./cost/forecasting/straight_line_forecast/simple)
-- [Cloud Spend Forecast - Straight-Line (Linear Regression Model)](./cost/forecasting/straight_line_forecast/linear_regression)
-- [Cloud Spend Forecast - Moving Average](./cost/forecasting/moving_average)
-- [Vendor Commitment Forecast](./cost/forecasting/commitment_forecast)
-- [Cheaper Regions](./cost/cheaper_regions)
-- [Azure Expiring Reserved Instances](./cost/azure/reserved_instances/expiration)
-- [Low Service Usage](./cost/low_service_usage)
-- [Scheduled Report](./cost/scheduled_reports)
 - [AWS Expiring Reserved Instances](./cost/aws/reserved_instances/expiration)
-- [AWS Reserved Instances Utilization](./cost/aws/reserved_instances/utilization)
-- [Reserved Instance Report by Billing Center](./cost/aws/reserved_instances/report_by_bc)
 - [AWS Expiring Savings Plans](./cost/aws/savings_plan/expiration)
-- [Monthly Actual v. Budgeted Spend Report](./cost/budget_v_actual)
-- [Superseded Instances](./cost/superseded_instance)
+- [AWS Reserved Instances Utilization](./cost/aws/reserved_instances/utilization)
+- [Azure Expiring Reserved Instances](./cost/azure/reserved_instances/expiration)
+- [Budget Alerts](./cost/budget_report_alerts)
 - [Budget Alerts by Cloud Account](./cost/budget_alerts_by_account)
+- [Cheaper Regions](./cost/cheaper_regions)
+- [Cloud Cost Anomaly Alerts](./cost/cloud_cost_anomaly_alerts)
+- [Cloud Spend Forecast - Moving Average](./cost/forecasting/moving_average)
+- [Cloud Spend Forecast - Straight-Line (Linear Regression Model)](./cost/forecasting/straight_line_forecast/linear_regression)
+- [Cloud Spend Forecast - Straight-Line (Simple Model)](./cost/forecasting/straight_line_forecast/simple)
 - [Low Account Usage](./cost/low_account_usage)
+- [Low Service Usage](./cost/low_service_usage)
 - [Master Org Cost Policy](./msp/cost/master_org_cost_policy)
 - [Master Org Cost Policy with Currency Conversion](./msp/cost/master_org_cost_policy_currency)
+- [Monthly Actual v. Budgeted Spend Report](./cost/budget_v_actual)
+- [New Service Usage](./cost/new_service_usage)
+- [Reserved Instance Report by Billing Center](./cost/aws/reserved_instances/report_by_bc)
+- [Scheduled Report](./cost/scheduled_reports)
+- [Superseded Instances](./cost/superseded_instance)
+- [Vendor Commitment Forecast](./cost/forecasting/commitment_forecast)
 
 #### GCE
 
@@ -311,11 +311,11 @@ These templates can generate savings estimates for your environment.
 
 - Compute
 
+  - [Google Committed Use Discount (CUD)](./cost/google/cud_report)
   - [Google Expiring Committed Use Discount (CUD)](./cost/google/cud_expiration)
   - [Google Idle Compute Instances](./cost/google/idle_compute_instances)
-  - [Google Schedule Instance](./cost/google/schedule_instance)
   - [Google Inefficient Instance Utilization using StackDriver](./cost/google/instances_stackdriver_utilization)
-  - [Google Committed Use Discount (CUD)](./cost/google/cud_report)
+  - [Google Schedule Instance](./cost/google/schedule_instance)
 
 - SQL
 
@@ -331,8 +331,8 @@ These templates can generate savings estimates for your environment.
 - Compute
 
   - [Google Rightsize VM Recommender](./cost/google/rightsize_vm_recommendations)
-  - [Turbonomic Rightsize Virtual Machines Recommendations GCP](./cost/turbonomics/scale_virtual_machines_recommendations/gcp)
   - [Turbonomic Allocate Virtual Machine Recommendations GCP](./cost/turbonomics/allocate_virtual_machines_recommendations/gcp)
+  - [Turbonomic Rightsize Virtual Machines Recommendations GCP](./cost/turbonomics/scale_virtual_machines_recommendations/gcp)
 
 - Storage
 
@@ -340,15 +340,15 @@ These templates can generate savings estimates for your environment.
 
 - Usage Discount
 
-  - [Turbonomic Rightsize Virtual Volumes Recommendations GCP](./cost/turbonomics/rightsize_virtual_volumes_recommendations/gcp)
   - [Turbonomic Rightsize Databases Recommendations GCP](./cost/turbonomics/rightsize_databases_recommendations/gcp)
+  - [Turbonomic Rightsize Virtual Volumes Recommendations GCP](./cost/turbonomics/rightsize_virtual_volumes_recommendations/gcp)
 
 #### Google
 
 - Compute
 
-  - [Google Idle IP Address Recommender](./cost/google/idle_ip_address_recommendations)
   - [Google Committed Use Discount Recommender](./cost/google/cud_recommendations)
+  - [Google Idle IP Address Recommender](./cost/google/idle_ip_address_recommendations)
   - [Google Idle VM Recommender](./cost/google/idle_vm_recommendations)
 
 - SQL
@@ -357,17 +357,17 @@ These templates can generate savings estimates for your environment.
 
 - Storage
 
+  - [Google Idle Persistent Disk Recommender](./cost/google/idle_persistent_disk_recommendations)
   - [Google Old Snapshots](./cost/google/old_snapshots)
   - [Google Recommender Policy](./cost/google/recommender)
-  - [Google Idle Persistent Disk Recommender](./cost/google/idle_persistent_disk_recommendations)
   - [Google Unused Volumes](./cost/google/unattached_volumes)
 
 #### Kubecost
 
 - Kubernetes
 
-  - [Kubecost Request Rightsizing Recommendations](./cost/kubecost/sizing)
   - [Kubecost Cluster Rightsizing Recommendations](./cost/kubecost/cluster)
+  - [Kubecost Request Rightsizing Recommendations](./cost/kubecost/sizing)
 
 #### Oracle
 
@@ -407,13 +407,10 @@ These templates can generate savings estimates for your environment.
 
 - Compute
 
-  - [Azure VMs Not Using Managed Disks](./operational/azure/vms_without_managed_disks)
   - [Azure Long Running Instances](./operational/azure/azure_long_running_instances)
-  - [Expiring Azure Certificates](./operational/azure/azure_certificates)
-
-- SQL
-
   - [Azure Migrate Integration](./operational/azure/azure_migrate)
+  - [Azure VMs Not Using Managed Disks](./operational/azure/vms_without_managed_disks)
+  - [Expiring Azure Certificates](./operational/azure/azure_certificates)
 
 - Tags
 
@@ -436,10 +433,10 @@ These templates can generate savings estimates for your environment.
 
 #### Flexera Optima
 
-- [AWS Usage Report - Number of Instance vCPUs Used](./operational/aws/total_instance_vcpus)
-- [AWS Usage Report - Number of Instance Hours Used](./operational/aws/total_instance_hours)
 - [AWS Usage Forecast - Number of Instance Hours Used](./operational/aws/total_instance_hours_forecast)
 - [AWS Usage Forecast - Number of Instance vCPUs Used](./operational/aws/total_instance_vcpus_forecast)
+- [AWS Usage Report - Number of Instance Hours Used](./operational/aws/total_instance_hours)
+- [AWS Usage Report - Number of Instance vCPUs Used](./operational/aws/total_instance_vcpus)
 
 #### Flexera RISC
 
@@ -456,15 +453,15 @@ These templates can generate savings estimates for your environment.
 
 #### Flexera SaaS Manager
 
-- [SaaS Manager - Redundant Apps](./saas/fsm/redundant_apps)
-- [SaaS Manager - User Status Change](./saas/fsm/user_status_change)
-- [SaaS Manager - Renewal Reminder](./saas/fsm/renewal_reminder)
-- [SaaS Manager - Unsanctioned Spend](./saas/fsm/unsanctioned_spend)
-- [SaaS Manager - Unsanctioned Applications with Existing Contract](./saas/fsm/unsanctioned_apps_with_contract)
-- [SaaS Manager - Inactive Users by Department](./saas/fsm/inactive_users_by_dept)
-- [SaaS Manager - Suspicious Users](./saas/fsm/suspicious_users)
-- [SaaS Manager - SaaS App User Report by Category](./saas/fsm/users_by_category)
 - [SaaS Manager - Duplicate User Accounts](./saas/fsm/duplicate_users)
+- [SaaS Manager - Inactive Users by Department](./saas/fsm/inactive_users_by_dept)
+- [SaaS Manager - Redundant Apps](./saas/fsm/redundant_apps)
+- [SaaS Manager - Renewal Reminder](./saas/fsm/renewal_reminder)
+- [SaaS Manager - SaaS App User Report by Category](./saas/fsm/users_by_category)
+- [SaaS Manager - Suspicious Users](./saas/fsm/suspicious_users)
+- [SaaS Manager - Unsanctioned Applications with Existing Contract](./saas/fsm/unsanctioned_apps_with_contract)
+- [SaaS Manager - Unsanctioned Spend](./saas/fsm/unsanctioned_spend)
+- [SaaS Manager - User Status Change](./saas/fsm/user_status_change)
 
 #### Microsoft
 
@@ -486,13 +483,13 @@ These templates can generate savings estimates for your environment.
 
 - CloudTrail
 
-  - [AWS Ensure Log File Validation Enabled For All CloudTrails](./security/aws/log_file_validation_enabled)
+  - [AWS Ensure CloudTrail Enabled In All Regions](./security/aws/log_ensure_cloudtrail_multiregion)
+  - [AWS Ensure CloudTrail Integrated With Cloudwatch](./security/aws/log_cloudtrail_cloudwatch_integrated)
+  - [AWS Ensure CloudTrail Logs Encrypted At Rest](./security/aws/log_ensure_cloudtrail_encrypted)
   - [AWS Ensure CloudTrail S3 Buckets Have Access Logging](./security/aws/log_ensure_cloudtrail_bucket_access_logging)
   - [AWS Ensure CloudTrail S3 Buckets Non-Public](./security/aws/log_ensure_cloudtrail_bucket_not_public)
-  - [AWS Ensure CloudTrail Integrated With Cloudwatch](./security/aws/log_cloudtrail_cloudwatch_integrated)
-  - [AWS Ensure CloudTrail Enabled In All Regions](./security/aws/log_ensure_cloudtrail_multiregion)
+  - [AWS Ensure Log File Validation Enabled For All CloudTrails](./security/aws/log_file_validation_enabled)
   - [AWS Ensure Object-level Events Logging Enabled For CloudTrails](./security/aws/log_ensure_cloudtrail_bucket_object_logging)
-  - [AWS Ensure CloudTrail Logs Encrypted At Rest](./security/aws/log_ensure_cloudtrail_encrypted)
 
 - Config
 
@@ -508,27 +505,27 @@ These templates can generate savings estimates for your environment.
 
 - ELB
 
+  - [AWS Internet-facing ELBs & ALBs](./security/aws/loadbalancer_internet_facing)
   - [AWS Unencrypted ELB Listeners (ALB/NLB)](./security/aws/elb_unencrypted)
   - [AWS Unencrypted ELB Listeners (CLB)](./security/aws/clb_unencrypted)
-  - [AWS Internet-facing ELBs & ALBs](./security/aws/loadbalancer_internet_facing)
 
 - IAM
 
-  - [AWS IAM Ensure One Active Key Per IAM User](./security/aws/iam_users_perms_via_groups_only)
-  - [AWS IAM Report Root Accounts Without Hardware MFA](./security/aws/iam_hwmfa_enabled_for_root)
   - [AWS IAM Ensure Access Keys Are Rotated](./security/aws/iam_rotate_access_keys)
+  - [AWS IAM Ensure Credentials Unused For >45 days Are Disabled](./security/aws/iam_disable_45_day_creds)
+  - [AWS IAM Ensure MFA Enabled For IAM Users](./security/aws/iam_mfa_enabled_for_iam_users)
+  - [AWS IAM Ensure One Active Key Per IAM User](./security/aws/iam_users_perms_via_groups_only)
+  - [AWS IAM Ensure One Active Key Per IAM User](./security/aws/iam_one_active_key_per_user)
   - [AWS IAM Report Attached Admin IAM Policies](./security/aws/iam_no_admin_iam_policies_attached)
   - [AWS IAM Report Expired SSL/TLS Certificates](./security/aws/iam_expired_ssl_certs)
+  - [AWS IAM Report Insufficient Password Policy](./security/aws/iam_min_password_length)
+  - [AWS IAM Report Password Policy No Restrict Password Reuse](./security/aws/iam_prevent_password_reuse)
+  - [AWS IAM Report Regions Without Access Analyzer](./security/aws/iam_access_analyzer_enabled)
+  - [AWS IAM Report Root Account Access Keys](./security/aws/iam_no_root_access_keys)
+  - [AWS IAM Report Root Accounts Without Hardware MFA](./security/aws/iam_hwmfa_enabled_for_root)
   - [AWS IAM Report Root Accounts Without MFA](./security/aws/iam_mfa_enabled_for_root)
   - [AWS IAM Report Root User Doing Everyday Tasks](./security/aws/iam_no_root_for_tasks)
-  - [AWS IAM Report Root Account Access Keys](./security/aws/iam_no_root_access_keys)
-  - [AWS IAM Ensure MFA Enabled For IAM Users](./security/aws/iam_mfa_enabled_for_iam_users)
-  - [AWS IAM Report Password Policy No Restrict Password Reuse](./security/aws/iam_prevent_password_reuse)
   - [AWS IAM Support Role Created](./security/aws/iam_support_role_created)
-  - [AWS IAM Report Insufficient Password Policy](./security/aws/iam_min_password_length)
-  - [AWS IAM Report Regions Without Access Analyzer](./security/aws/iam_access_analyzer_enabled)
-  - [AWS IAM Ensure Credentials Unused For >45 days Are Disabled](./security/aws/iam_disable_45_day_creds)
-  - [AWS IAM Ensure One Active Key Per IAM User](./security/aws/iam_one_active_key_per_user)
 
 - KMS
 
@@ -536,17 +533,17 @@ These templates can generate savings estimates for your environment.
 
 - RDS
 
-  - [AWS Unencrypted RDS Instances](./security/aws/rds_unencrypted)
   - [AWS Publicly Accessible RDS Instances](./security/aws/rds_publicly_accessible)
+  - [AWS Unencrypted RDS Instances](./security/aws/rds_unencrypted)
 
 - S3
 
-  - [AWS S3 Ensure MFA Delete Enabled For All Buckets](./security/aws/s3_ensure_mfa_delete_enabled)
-  - [AWS Unencrypted S3 Buckets](./security/aws/unencrypted_s3_buckets)
-  - [AWS S3 Ensure Bucket Policies Deny HTTP Requests](./security/aws/s3_buckets_deny_http)
-  - [AWS S3 Ensure 'Block Public Access' Configured For All Buckets](./security/aws/s3_ensure_buckets_block_public_access)
   - [AWS Open Buckets](./security/storage/aws/public_buckets)
   - [AWS S3 Buckets without Server Access Logging](./security/storage/aws/s3_buckets_without_server_access_logging)
+  - [AWS S3 Ensure 'Block Public Access' Configured For All Buckets](./security/aws/s3_ensure_buckets_block_public_access)
+  - [AWS S3 Ensure Bucket Policies Deny HTTP Requests](./security/aws/s3_buckets_deny_http)
+  - [AWS S3 Ensure MFA Delete Enabled For All Buckets](./security/aws/s3_ensure_mfa_delete_enabled)
+  - [AWS Unencrypted S3 Buckets](./security/aws/unencrypted_s3_buckets)
 
 - VPC
 
@@ -560,8 +557,8 @@ These templates can generate savings estimates for your environment.
 
 - IAM
 
-  - [Azure Guest Users Audit](./security/azure/guest_users)
   - [Azure Ensure Log Analytics Auto-Provisioning](./security/azure/log_analytics_autoprovision)
+  - [Azure Guest Users Audit](./security/azure/guest_users)
 
 - MySQL
 
@@ -570,46 +567,46 @@ These templates can generate savings estimates for your environment.
 
 - Network Security Group
 
-  - [Azure Network Security Groups With Inbound SSH Open](./security/azure/restrict_ssh_internet)
   - [Azure Network Security Groups With Inbound RDP Open](./security/azure/restrict_rdp_internet)
+  - [Azure Network Security Groups With Inbound SSH Open](./security/azure/restrict_ssh_internet)
 
 - PostgreSQL
 
   - [Azure Ensure Correct PostgreSQL Servers Log Settings](./security/azure/pg_log_settings)
   - [Azure Ensure PostgreSQL Servers Connection Throttling Enabled](./security/azure/pg_conn_throttling)
-  - [Azure Ensure PostgreSQL Servers Sufficient Log Retention](./security/azure/pg_log_retention)
   - [Azure Ensure PostgreSQL Servers Infrastructure Encryption](./security/azure/pg_infra_encryption)
+  - [Azure Ensure PostgreSQL Servers Sufficient Log Retention](./security/azure/pg_log_retention)
 
 - SQL
 
-  - [Azure Ensure SQL Server VA Periodic Scans Enabled](./security/azure/sql_server_va_scans)
-  - [Azure Ensure SQL Server VA Notify Admins/Subscription Owners](./security/azure/sql_server_va_admins)
-  - [Azure Ensure SQL Server Vulnerability Assessment (VA) Enabled](./security/azure/sql_server_va)
-  - [Azure Ensure SQL Server ATP (Advanced Threat Protection) Enabled](./security/azure/sql_server_atp)
-  - [Azure Ensure SQL Server VA Email Notifications](./security/azure/sql_server_va_emails)
-  - [Azure Ensure SQL Server Minimum Auditing Retention Of 90 Days](./security/azure/sql_auditing_retention)
-  - [Azure Ensure SQL Server Auditing Enabled](./security/azure/sql_server_auditing)
-  - [Azure Publicly Accessible Managed SQL Instance](./security/azure/sql_publicly_accessible_managed_instance)
-  - [Azure Ensure SQL Server AD Admin Configured](./security/azure/sql_ad_admin)
   - [Azure Ensure SQL Database Encryption](./security/azure/sql_db_encryption)
+  - [Azure Ensure SQL Server AD Admin Configured](./security/azure/sql_ad_admin)
+  - [Azure Ensure SQL Server ATP (Advanced Threat Protection) Enabled](./security/azure/sql_server_atp)
+  - [Azure Ensure SQL Server Auditing Enabled](./security/azure/sql_server_auditing)
+  - [Azure Ensure SQL Server Minimum Auditing Retention Of 90 Days](./security/azure/sql_auditing_retention)
+  - [Azure Ensure SQL Server VA Email Notifications](./security/azure/sql_server_va_emails)
+  - [Azure Ensure SQL Server VA Notify Admins/Subscription Owners](./security/azure/sql_server_va_admins)
+  - [Azure Ensure SQL Server VA Periodic Scans Enabled](./security/azure/sql_server_va_scans)
+  - [Azure Ensure SQL Server Vulnerability Assessment (VA) Enabled](./security/azure/sql_server_va)
+  - [Azure Publicly Accessible Managed SQL Instance](./security/azure/sql_publicly_accessible_managed_instance)
 
 - Security
 
   - [Azure Ensure High Severity Alerts](./security/azure/high_severity_alerts)
-  - [Azure Ensure Security Contact Email](./security/azure/security_contact_email)
   - [Azure Ensure Owners Receive Security Alerts](./security/azure/security_alert_owners)
+  - [Azure Ensure Security Contact Email](./security/azure/security_contact_email)
 
 - Storage
 
-  - [Azure Ensure Storage Logging Enabled For Queue Service](./security/azure/queue_storage_logging)
-  - [Azure Ensure Trusted Microsoft Services Enabled](./security/azure/storage_trusted_services)
-  - [Azure Ensure Storage Accounts Require Secure TLS Version](./security/azure/storage_tls_version)
-  - [Azure Ensure Storage Logging Enabled For Table Service](./security/azure/table_storage_logging)
-  - [Azure Ensure Secure Transfer Required](./security/azure/secure_transfer_required)
   - [Azure Ensure Blob Containers Set To Private](./security/azure/private_blob_containers)
+  - [Azure Ensure Secure Transfer Required](./security/azure/secure_transfer_required)
   - [Azure Ensure Soft Delete Enabled For Azure Storage](./security/azure/storage_soft_delete)
   - [Azure Ensure Storage Account Default Network Access Set To Deny](./security/azure/storage_network_deny)
+  - [Azure Ensure Storage Accounts Require Secure TLS Version](./security/azure/storage_tls_version)
   - [Azure Ensure Storage Logging Enabled For Blob Service](./security/azure/blob_storage_logging)
+  - [Azure Ensure Storage Logging Enabled For Queue Service](./security/azure/queue_storage_logging)
+  - [Azure Ensure Storage Logging Enabled For Table Service](./security/azure/table_storage_logging)
+  - [Azure Ensure Trusted Microsoft Services Enabled](./security/azure/storage_trusted_services)
 
 - Storage Accounts
 
@@ -631,116 +628,116 @@ These templates can generate savings estimates for your environment.
 :total_count: 247
 :optimization_count: 24
 :categories:
-  Cost: 104
   Security: 74
+  Cost: 104
   Compliance: 33
-  SaaS Management: 13
   Operational: 23
+  SaaS Management: 13
 :providers:
-  Flexera Optima: 26
-  Flexera Cloud Management: 4
   Azure: 77
-  Flexera: 5
-  Azure China: 1
-  Oracle: 1
-  Google: 9
   GCE: 11
-  GCP: 6
   AWS: 77
+  Flexera Optima: 26
+  GCP: 6
+  Azure China: 1
+  Flexera: 5
+  Google: 9
   '': 1
+  Oracle: 1
+  Flexera Cloud Management: 4
   Kubecost: 2
-  GitHub: 7
   Flexera ITAM: 5
   Flexera FNMS: 1
-  Okta: 1
-  Flexera SaaS Manager: 9
-  ServiceNow: 1
-  Microsoft: 1
+  GitHub: 7
   Flexera RISC: 2
+  Microsoft: 1
+  Flexera SaaS Manager: 9
+  Okta: 1
+  ServiceNow: 1
 :services:
-  '': 67
-  Storage: 21
-  Compute: 32
-  SQL: 17
-  Storage Accounts: 2
-  All: 3
-  compute: 3
-  Blob Store: 1
-  N/A: 1
-  Common Bill Ingestion: 1
-  Usage Discount: 8
-  EBS: 3
-  RDS: 6
-  S3: 9
-  EC2: 13
-  ELB: 4
-  Cost Explorer: 1
-  Kubernetes: 2
-  Network Security Group: 2
   MySQL: 2
-  App Service: 1
-  IAM: 19
   PostgreSQL: 4
+  Storage: 21
+  SQL: 16
+  App Service: 1
+  Network Security Group: 2
+  IAM: 19
+  compute: 3
   Security: 3
-  Config: 1
+  Storage Accounts: 2
+  S3: 9
+  RDS: 6
   CloudTrail: 7
   VPC: 1
-  KMS: 1
+  ELB: 4
   DBS: 1
+  Config: 1
+  KMS: 1
+  EBS: 3
+  '': 67
+  Compute: 33
+  Usage Discount: 8
+  N/A: 1
+  All: 3
+  Blob Store: 1
+  Common Bill Ingestion: 1
+  Kubernetes: 2
+  EC2: 13
+  Cost Explorer: 1
   Identity: 1
   Policy: 1
   Org: 1
   ECS: 1
-  Office 365: 1
   FNMS: 1
   AKS: 2
   Tags: 2
   Lambda: 1
+  Office 365: 1
 :policy_sets:
-  '': 85
-  Forecasting: 4
-  Unused Volumes: 7
-  Idle Compute Instances: 4
-  RightSize Database Services: 2
-  Old Snapshots: 3
-  Inefficient Instance Usage: 3
-  Lifecycle Management: 1
-  Schedule Instance: 3
-  N/A: 3
-  Unused Database Services: 3
-  Rightsize Compute Instances: 6
-  Object Store Optimization: 3
-  Reserved Instance: 5
-  Savings Plan: 2
-  Common Bill Ingest: 1
-  Unused IP Addresses: 4
-  Common Bill Ingestion: 1
-  Rightsize Database Services: 1
-  Native Recommendations: 1
-  Unused Database Service: 1
-  Committed Use Discount: 1
-  Rightsize Volumes: 3
-  Rightsize Database Instances: 3
-  Allocate VMs: 3
-  Inefficient Disk Usage: 1
-  GP3 Volumes: 1
-  Savings Plan Utilization: 1
-  Rightsize Clusters: 2
   CIS: 61
+  '': 85
   Public Database Access: 2
-  AWS Config: 1
   Storage Security: 1
   Open Buckets: 2
+  AWS Config: 1
+  Rightsize Compute Instances: 6
+  Unused Volumes: 7
+  Reserved Instance: 5
+  Allocate VMs: 3
+  Rightsize Database Instances: 3
+  Rightsize Volumes: 3
+  Old Snapshots: 3
+  RightSize Database Services: 2
+  Inefficient Instance Usage: 3
+  Schedule Instance: 3
+  Unused Database Services: 3
+  Unused IP Addresses: 4
+  Common Bill Ingest: 1
+  Idle Compute Instances: 4
+  N/A: 3
+  Savings Plan: 2
+  Object Store Optimization: 3
+  Lifecycle Management: 1
+  Unused Database Service: 1
+  Native Recommendations: 1
+  Rightsize Database Services: 1
+  Committed Use Discount: 1
+  Common Bill Ingestion: 1
+  Rightsize Clusters: 2
+  GP3 Volumes: 1
+  Savings Plan Utilization: 1
+  Inefficient Disk Usage: 1
+  Forecasting: 4
   ITAM: 4
+  Disallowed Regions: 2
   Untagged Resources: 1
   Instances not running FlexNet Inventory Agent: 2
-  Disallowed Regions: 2
   Long Stopped Instances: 3
   Unlabeled Resources: 1
   Untagged resources: 1
   Schedule Report: 1
-  Database Services: 2
-  Long Running Instances: 2
+  Long Running Instances: 3
+  Database Services: 1
   Tag Cardinality: 2
   Schedule Flexera ITAM Report: 1
 -->
