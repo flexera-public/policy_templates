@@ -1,5 +1,11 @@
 # Changelog
 
+## v4.6
+
+- Fixed issue with subscription filtering not working correctly.
+- Fixed issue causing savings values to not be properly shown in incident.
+- Formatted tags in incident output to improve readability.
+
 ## v4.5
 
 - General code optimization to improve execution time.
