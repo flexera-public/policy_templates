@@ -408,9 +408,12 @@ These templates can generate savings estimates for your environment.
 - Compute
 
   - [Azure Long Running Instances](./operational/azure/azure_long_running_instances)
-  - [Azure Migrate Integration](./operational/azure/azure_migrate)
   - [Azure VMs Not Using Managed Disks](./operational/azure/vms_without_managed_disks)
   - [Expiring Azure Certificates](./operational/azure/azure_certificates)
+
+- SQL
+
+  - [Azure Migrate Integration](./operational/azure/azure_migrate)
 
 - Tags
 
@@ -628,116 +631,116 @@ These templates can generate savings estimates for your environment.
 :total_count: 247
 :optimization_count: 24
 :categories:
-  Security: 74
   Cost: 104
+  Security: 74
   Compliance: 33
-  Operational: 23
   SaaS Management: 13
+  Operational: 23
 :providers:
-  Azure: 77
-  GCE: 11
-  AWS: 77
   Flexera Optima: 26
-  GCP: 6
-  Azure China: 1
-  Flexera: 5
-  Google: 9
-  '': 1
-  Oracle: 1
   Flexera Cloud Management: 4
+  Azure: 77
+  Flexera: 5
+  Azure China: 1
+  Oracle: 1
+  Google: 9
+  GCE: 11
+  GCP: 6
+  AWS: 77
+  '': 1
   Kubecost: 2
+  GitHub: 7
   Flexera ITAM: 5
   Flexera FNMS: 1
-  GitHub: 7
-  Flexera RISC: 2
-  Microsoft: 1
-  Flexera SaaS Manager: 9
   Okta: 1
+  Flexera SaaS Manager: 9
   ServiceNow: 1
+  Microsoft: 1
+  Flexera RISC: 2
 :services:
-  MySQL: 2
-  PostgreSQL: 4
+  '': 67
   Storage: 21
-  SQL: 16
-  App Service: 1
-  Network Security Group: 2
-  IAM: 19
-  compute: 3
-  Security: 3
+  Compute: 32
+  SQL: 17
   Storage Accounts: 2
-  S3: 9
+  All: 3
+  compute: 3
+  Blob Store: 1
+  N/A: 1
+  Common Bill Ingestion: 1
+  Usage Discount: 8
+  EBS: 3
   RDS: 6
+  S3: 9
+  EC2: 13
+  ELB: 4
+  Cost Explorer: 1
+  Kubernetes: 2
+  Network Security Group: 2
+  MySQL: 2
+  App Service: 1
+  IAM: 19
+  PostgreSQL: 4
+  Security: 3
+  Config: 1
   CloudTrail: 7
   VPC: 1
-  ELB: 4
-  DBS: 1
-  Config: 1
   KMS: 1
-  EBS: 3
-  '': 67
-  Compute: 33
-  Usage Discount: 8
-  N/A: 1
-  All: 3
-  Blob Store: 1
-  Common Bill Ingestion: 1
-  Kubernetes: 2
-  EC2: 13
-  Cost Explorer: 1
+  DBS: 1
   Identity: 1
   Policy: 1
   Org: 1
   ECS: 1
+  Office 365: 1
   FNMS: 1
   AKS: 2
   Tags: 2
   Lambda: 1
-  Office 365: 1
 :policy_sets:
-  CIS: 61
   '': 85
-  Public Database Access: 2
-  Storage Security: 1
-  Open Buckets: 2
-  AWS Config: 1
-  Rightsize Compute Instances: 6
+  Forecasting: 4
   Unused Volumes: 7
-  Reserved Instance: 5
-  Allocate VMs: 3
-  Rightsize Database Instances: 3
-  Rightsize Volumes: 3
-  Old Snapshots: 3
-  RightSize Database Services: 2
-  Inefficient Instance Usage: 3
-  Schedule Instance: 3
-  Unused Database Services: 3
-  Unused IP Addresses: 4
-  Common Bill Ingest: 1
   Idle Compute Instances: 4
-  N/A: 3
-  Savings Plan: 2
-  Object Store Optimization: 3
+  RightSize Database Services: 2
+  Old Snapshots: 3
+  Inefficient Instance Usage: 3
   Lifecycle Management: 1
-  Unused Database Service: 1
-  Native Recommendations: 1
-  Rightsize Database Services: 1
-  Committed Use Discount: 1
+  Schedule Instance: 3
+  N/A: 3
+  Unused Database Services: 3
+  Rightsize Compute Instances: 6
+  Object Store Optimization: 3
+  Reserved Instance: 5
+  Savings Plan: 2
+  Common Bill Ingest: 1
+  Unused IP Addresses: 4
   Common Bill Ingestion: 1
-  Rightsize Clusters: 2
+  Rightsize Database Services: 1
+  Native Recommendations: 1
+  Unused Database Service: 1
+  Committed Use Discount: 1
+  Rightsize Volumes: 3
+  Rightsize Database Instances: 3
+  Allocate VMs: 3
+  Inefficient Disk Usage: 1
   GP3 Volumes: 1
   Savings Plan Utilization: 1
-  Inefficient Disk Usage: 1
-  Forecasting: 4
+  Rightsize Clusters: 2
+  CIS: 61
+  Public Database Access: 2
+  AWS Config: 1
+  Storage Security: 1
+  Open Buckets: 2
   ITAM: 4
-  Disallowed Regions: 2
   Untagged Resources: 1
   Instances not running FlexNet Inventory Agent: 2
+  Disallowed Regions: 2
   Long Stopped Instances: 3
   Unlabeled Resources: 1
   Untagged resources: 1
   Schedule Report: 1
-  Long Running Instances: 3
-  Database Services: 1
+  Database Services: 2
+  Long Running Instances: 2
   Tag Cardinality: 2
   Schedule Flexera ITAM Report: 1
 -->
