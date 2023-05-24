@@ -31,8 +31,10 @@ These templates can generate savings estimates for your environment.
 - [AWS GP3 Upgradeable Volumes](./cost/aws/gp3_volume_upgrade)
 - [AWS Idle Compute Instances](./cost/aws/idle_compute_instances)
 - [AWS Old Snapshots](./cost/aws/old_snapshots)
+- [AWS Reserved Instances Recommendations](./cost/aws/reserved_instances/recommendations)
 - [AWS Rightsize Compute Instances](./cost/aws/rightsize_compute_instances)
 - [AWS Rightsize EBS Volumes](./cost/aws/rightsize_ebs_volumes)
+- [AWS Savings Plan Recommendations](./cost/aws/savings_plan/recommendations)
 - [AWS Unused IP Addresses](./cost/aws/unused_ip_addresses)
 - [AWS Unused RDS Instance](./cost/aws/unused_rds)
 - [AWS Unused Volumes](./cost/aws/unused_volumes)
@@ -41,6 +43,7 @@ These templates can generate savings estimates for your environment.
 
 - [Azure Idle Compute Instances](./cost/azure/idle_compute_instances)
 - [Azure Old Snapshots](./cost/azure/old_snapshots)
+- [Azure Reserved Instances Recommendations](./cost/azure/reserved_instances/mca_recommendations)
 - [Azure Rightsize Compute Instances](./cost/azure/rightsize_compute_instances)
 - [Azure Savings Plan Recommendations](./cost/azure/savings_plan/recommendations)
 - [Azure Unused IP Addresses](./cost/azure/unused_ip_addresses)
@@ -629,7 +632,7 @@ These templates can generate savings estimates for your environment.
 <!--
 ---
 :total_count: 247
-:optimization_count: 24
+:optimization_count: 27
 :categories:
   Cost: 104
   Security: 74
@@ -707,7 +710,7 @@ These templates can generate savings estimates for your environment.
   Lifecycle Management: 1
   Schedule Instance: 3
   N/A: 3
-  Unused Database Services: 3
+  Unused Database Services: 4
   Rightsize Compute Instances: 6
   Object Store Optimization: 3
   Reserved Instance: 5
@@ -717,7 +720,6 @@ These templates can generate savings estimates for your environment.
   Common Bill Ingestion: 1
   Rightsize Database Services: 1
   Native Recommendations: 1
-  Unused Database Service: 1
   Committed Use Discount: 1
   Rightsize Volumes: 3
   Rightsize Database Instances: 3
