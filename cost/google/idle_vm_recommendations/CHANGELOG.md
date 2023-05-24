@@ -1,5 +1,10 @@
 # Changelog
 
+## v2.8
+
+- Updated policy metadata to facilitate scraping of incidents for Recommendations dashboard
+- Updated incident export to facilitate scraping of incidents for Recommendations dashboard
+
 ## v2.7
 
 - Fix: Duplicated entries from incident report were removed.
