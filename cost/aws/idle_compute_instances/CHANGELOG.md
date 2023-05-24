@@ -1,5 +1,9 @@
 # Changelog
 
+## v5.1
+
+- Updated policy metadata to facilitate scraping of incidents for Recommendations dashboard
+
 ## v5.0
 
 - Added parameter to enable Allow or Deny filtering by user entered regions

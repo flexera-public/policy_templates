@@ -1,5 +1,10 @@
 # Changelog
 
+## v2.15
+
+- Updated policy metadata to facilitate scraping of incidents for Recommendations dashboard
+- Modified incident output to facilitate scraping of incidents for Recommendations dashboard
+
 ## v2.14
 
 - Fixed subscriptionName empty in the Incident

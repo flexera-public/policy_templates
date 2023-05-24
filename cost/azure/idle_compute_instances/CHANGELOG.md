@@ -1,5 +1,9 @@
 # Changelog
 
+## v4.5
+
+- Updated policy metadata to facilitate scraping of incidents for Recommendations dashboard
+
 ## v4.4
 
 - Fixed error that prevented Cloud Workflow actions from completing as expected.

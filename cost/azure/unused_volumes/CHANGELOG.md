@@ -1,5 +1,9 @@
 # Changelog
 
+## v4.7
+
+- Updated policy metadata to facilitate scraping of incidents for Recommendations dashboard
+
 ## v4.6
 
 - Fixed issue with subscription filtering not working correctly.

@@ -1,5 +1,10 @@
 # Changelog
 
+## v2.17
+
+- Updated policy metadata to facilitate scraping of incidents for Recommendations dashboard
+- Modified incident output to facilitate scraping of incidents for Recommendations dashboard
+
 ## v2.16
 
 - Added new selection "All Except EC2" for the service input list, Updated new option as default value, And Updated the datasources.
