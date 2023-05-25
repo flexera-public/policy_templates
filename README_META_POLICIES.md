@@ -240,6 +240,13 @@ info(
 
 ## Meta Parent Parameters
 ## These are params specific to the meta parent policy.
+parameter "param_combined_incident_email" do
+  type "list"
+  label "Email addresses for combined incident"
+  description "A list of email addresses to notify with the consolidated child policy incident."
+  default []
+end
+
 parameter "param_dimension_filter_includes" do
   type "list"
   label "Dimension Include Filters"
@@ -864,12 +871,50 @@ script "js_only_delete", type: "javascript" do
   EOS
 end
 
+# The following datasources consolidate the child incident output into a single incident.
+# This is because it is more convenient for many users to have a single incident with all of the data.
+datasource "ds_child_incident_details" do
+  iterate $ds_get_existing_policies_incidents
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    path join(["/api/governance/projects/", rs_project_id, "/incidents/", val(iter_item, 'incident_id')])
+    verb "GET"
+    header "User-Agent", "RS Policies"
+    header "Api-Version", "1.0"
+    query "view", "extended"
+  end
+end
+
+datasource "ds_child_incidents_combined" do
+  run_script $js_child_incidents_combined, $ds_child_incident_details
+end
+
+script "js_child_incidents_combined", type: "javascript" do
+  parameters "ds_child_incident_details"
+  result "result"
+  code <<-EOS
+  result = _.flatten(_.pluck(ds_child_incident_details, 'violation_data'))
+EOS
+end
 
 # Summary and a conditional incident which will show up if any policy is being applied, updated or deleted.
 # Minimum of 1 incident, max of four
 # Could swap the summary to only showing running
 # Could also just have one incident and use meta_status to determine which esclation happens
 policy "policy_scheduled_report" do
+  # Combined incident with all of the data from the child incidents.
+  # Replace RESOURCE_NAMES in the summary_template with the resources the specific child policy
+  # would be reporting on. For example, AWS Old Snapshots.
+  validate $ds_child_incidents_combined do
+    summary_template "Consolidated Incident: {{ len data }} RESOURCE_NAMES Found"
+    escalate $esc_email
+    check eq(size(data), 0)
+    export do
+      resource_level true
+      # Put fields from child policy export here but with any path statements removed.
+    end
+  end
   validate $ds_take_in_parameters do
     summary_template "{{ data.parent_policy.name }}: Status of Child Policies"
     detail_template <<-EOS
@@ -963,6 +1008,14 @@ EOS
     escalate $delete_policies
     check eq(size(data),0)
   end
+end
+
+# Used only for emailing the combined child incident if so desired
+escalation "esc_email" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_combined_incident_email
 end
 
 escalation "create_policies" do
