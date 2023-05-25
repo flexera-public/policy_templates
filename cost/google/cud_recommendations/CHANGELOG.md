@@ -1,5 +1,10 @@
 # Changelog
 
+# 2.8
+
+- Added **Term** parameter, now filtering the recommendations by 1 year or 3 year term is possible.
+- Added **Recommendation Algorithm** parameter, now users can choose between *Stable use* or *Optimal use* to generate the recommendations, more information [here.](https://cloud.google.com/docs/cuds-recommender#understanding-recommendations)
+
 ## v2.7
 
 - Removed param_automatic_action parameter, no applicable CWF
