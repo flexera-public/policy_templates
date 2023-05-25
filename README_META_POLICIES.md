@@ -890,6 +890,10 @@ datasource "ds_child_incidents_combined" do
   run_script $js_child_incidents_combined, $ds_child_incident_details
 end
 
+# Note: Below datasource might need to be modified to include multiple results
+# if child policy raises multiple incidents.
+# The "summary" of each incident can be used to find out which one
+# individual incidents belong to.
 script "js_child_incidents_combined", type: "javascript" do
   parameters "ds_child_incident_details"
   result "result"
@@ -906,6 +910,12 @@ policy "policy_scheduled_report" do
   # Combined incident with all of the data from the child incidents.
   # Replace RESOURCE_NAMES in the summary_template with the resources the specific child policy
   # would be reporting on. For example, AWS Old Snapshots.
+
+  # Note: If child policy raises multiple incidents, be sure to put multiple incidents here too.
+  # In those cases, modify js_child_incidents_combined to return an object instead of a list
+  # with each key containing the list specific to that particular incident type.
+  # {{ len data }} in the summary_template, the check statement, and the export do statement
+  # should also be modified accordingly.
   validate $ds_child_incidents_combined do
     summary_template "Consolidated Incident: {{ len data }} RESOURCE_NAMES Found"
     escalate $esc_email
