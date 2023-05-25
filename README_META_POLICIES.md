@@ -981,7 +981,7 @@ EOS
     detail_template <<-EOS
     Policies Being Created:
 
-    | Appplied Policy |
+    | Applied Policy |
     | --------------- |
     {{ range data -}}
     | {{ .name }} |
@@ -995,7 +995,7 @@ EOS
     detail_template <<-EOS
     Policies Being Updated:
 
-    | Appplied Policy |
+    | Applied Policy |
     | --------------- |
     {{ range data -}}
     | {{ .name }} |
@@ -1009,7 +1009,7 @@ EOS
     detail_template <<-EOS
     Policies being Deleted:
 
-    | Appplied Policy |
+    | Applied Policy |
     | --------------- |
     {{ range data -}}
     | {{ .name }} |
