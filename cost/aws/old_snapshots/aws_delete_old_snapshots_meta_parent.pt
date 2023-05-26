@@ -171,8 +171,8 @@ script "js_child_policy_options", type: "javascript" do
   code <<-EOS
   // Filter Options that are not appropriate for Child Policy
   var options = _.map(ds_self_policy_information.options, function(option){
-    // param_dimension_filter_includes, param_dimension_filter_excludes, param_policy_schedule are exclusion to Meta Parent Policy Parameters
-    if (!_.contains(["param_dimension_filter_includes", "param_dimension_filter_excludes", "param_policy_schedule"], option.name)) {
+    // param_combined_incident_email, param_dimension_filter_includes, param_dimension_filter_excludes, param_policy_schedule are exclusion to Meta Parent Policy Parameters
+    if (!_.contains(["param_combined_incident_email", "param_dimension_filter_includes", "param_dimension_filter_excludes", "param_policy_schedule"], option.name)) {
       return { "name": option.name, "value": option.value };
     }
   });
@@ -716,33 +716,12 @@ end
 
 # The following datasources consolidate the child incident output into a single incident.
 # This is because it is more convenient for many users to have a single incident with all of the data.
-# Technically ds_child_incidents is redundant but it impacts execution order of other functionality
-# of the policy if we use the existing datasource, so we have a dedicated one here for
-# the combined incident.
-datasource "ds_child_incidents" do
-  request do
-    auth $auth_flexera
-    host rs_governance_host
-    path join(["/api/governance/projects/", rs_project_id, "/incidents"])
-    verb "GET"
-    header "User-Agent", "RS Policies"
-    header "Api-Version", "1.0"
-    query "meta_parent_policy_id", policy_id
-  end
-  result do
-    encoding "json"
-    collect jmes_path(response, "items") do
-      field "id", jmes_path(col_item, "id")
-    end
-  end
-end
-
 datasource "ds_child_incident_details" do
-  iterate $ds_child_incidents
+  iterate $ds_get_existing_policies_incidents
   request do
     auth $auth_flexera
     host rs_governance_host
-    path join(["/api/governance/projects/", rs_project_id, "/incidents/", val(iter_item, 'id')])
+    path join(["/api/governance/projects/", rs_project_id, "/incidents/", val(iter_item, 'incident_id')])
     verb "GET"
     header "User-Agent", "RS Policies"
     header "Api-Version", "1.0"
