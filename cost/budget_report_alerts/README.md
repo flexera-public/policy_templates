@@ -26,7 +26,7 @@ The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automati
 This policy has the following input parameters required when launching the policy.
 
 - _Budget Name or ID_ - The name or Id of the target Budget.
-- _Filter Group By Dimensions_ - Filter by dimension=value like 'Cloud Vendor=AWS' 'Cloud Vendor Account=Account1,Account2' ; multiple filters with multiple values can be provided
+- _Filter Group By Dimensions_ - Filter by dimension=value pairs. Dimensions are the visible dimensions in the Flexera One platform, such as Cloud Vendor, Resource Type, Service, etc. Values can be comma separated to filter by multiple values for the same dimension. Examples: 'Cloud Vendor=AWS' 'Cloud Vendor Account=001234567890,004321876509' 'Category=Compute'
 - _Budget Alert Type_ - can be "Actual" or "Forecasted". Actual Spend alerts are based off incurred costs. Forecasted Spend alerts are based off monthly runrates.
 - _Degree of Summarization_ - Determines if budget should be tracked as a whole or per dimension groups, with possible values of Summarized or By dimensions.
 - _Unbudgeted spend_ - parameter that allows including or excluding unbudgeted funds in the calculation

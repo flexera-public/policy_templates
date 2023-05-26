@@ -6,13 +6,16 @@ severity "medium"
 category "Cost"
 tenancy "single"
 default_frequency "daily"
-
 info(
-  version: "3.0",
-  provider: "Flexera Optima",
-  service: "",
-  policy_set: ""
-)
+      version: "3.0",
+      provider: "Flexera Optima",
+      service: "",
+      policy_set: ""
+    )
+
+###############################################################################
+# Parameters
+###############################################################################
 
 parameter "param_budget_name_id" do
   label "Budget Name or ID"
@@ -65,12 +68,20 @@ parameter "param_email" do
   description "A list of email addresses to notify"
 end
 
+###############################################################################
+# Authentication
+###############################################################################
+
 credentials "auth_flexera" do
   schemes "oauth2"
   label "flexera"
   description "Select Flexera One OAuth2 credentials"
   tags "provider=flexera"
 end
+
+###############################################################################
+# Datasources
+###############################################################################
 
 datasource "ds_currency_reference" do
   request do
@@ -152,6 +163,42 @@ datasource "ds_filtered_budgets" do
   run_script $js_filter_budgets, $ds_budgets, $param_budget_name_id
 end
 
+datasource "ds_reports" do
+  iterate $ds_filtered_budgets
+  request do
+    run_script $js_report_request, rs_optima_host, rs_org_id, $param_use_groups, $param_unbudgeted, iter_item
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response,"[*]") do
+      field "b_id", val(iter_item, "id")
+      field "name", val(iter_item, "name")
+      field "dimensionsIDs", val(iter_item, "dimensions")
+      field "metric", val(iter_item, "metric")
+      field "timestamp", jmes_path(col_item,"timestamp")
+      field "dimensions", jmes_path(col_item,"dimensions")
+      field "budgetAmount", jmes_path(col_item,"metrics.budgetAmount")
+      field "spendAmount", jmes_path(col_item,"metrics.spendAmount")
+    end
+  end
+end
+
+datasource "ds_aggregated" do
+  run_script $js_aggregated, $ds_reports, $ds_currency_code, $ds_currency_reference, $param_threshold_percentage, $param_type, f1_app_host, $param_budget_name_id, $ds_dimensions, $param_filter
+end
+
+datasource "ds_only_forecasted" do
+  run_script $js_only_forecasted, $ds_aggregated
+end
+
+datasource "ds_only_exceeded" do
+  run_script $js_only_exceeded, $ds_aggregated
+end
+
+###############################################################################
+# Scripts
+###############################################################################
+
 script "js_filter_budgets", type: "javascript" do
   parameters "budgets", "budget_name_id"
   result "results"
@@ -176,27 +223,7 @@ script "js_filter_budgets", type: "javascript" do
 EOS
 end
 
-datasource "ds_reports" do
-  iterate $ds_filtered_budgets
-  request do
-    run_script $report_request, rs_optima_host, rs_org_id, $param_use_groups, $param_unbudgeted, iter_item
-  end
-  result do
-    encoding "json"
-    collect jmes_path(response,"[*]") do
-      field "b_id", val(iter_item, "id")
-      field "name", val(iter_item, "name")
-      field "dimensionsIDs", val(iter_item, "dimensions")
-      field "metric", val(iter_item, "metric")
-      field "timestamp", jmes_path(col_item,"timestamp")
-      field "dimensions", jmes_path(col_item,"dimensions")
-      field "budgetAmount", jmes_path(col_item,"metrics.budgetAmount")
-      field "spendAmount", jmes_path(col_item,"metrics.spendAmount")
-    end
-  end
-end
-
-script "report_request", type: "javascript" do
+script "js_report_request", type: "javascript" do
   parameters "rs_optima_host", "org", "use_groups", "unbudgeted", "budget"
   result "request"
   code <<-EOS
@@ -223,12 +250,6 @@ script "report_request", type: "javascript" do
   }
   EOS
 end
-
-
-datasource "ds_aggregated" do
-  run_script $js_aggregated, $ds_reports, $ds_currency_code, $ds_currency_reference, $param_threshold_percentage, $param_type, f1_app_host, $param_budget_name_id, $ds_dimensions, $param_filter
-end
-
 
 script "js_aggregated", type: "javascript" do
   parameters "reports", "currency_code", "currency_reference", "threshold_percent", "param_type", "f1_app_host", "budget_name_id", "ds_dimensions", "param_filter"
@@ -402,20 +423,12 @@ script "js_aggregated", type: "javascript" do
 EOS
 end
 
-datasource "ds_only_forecasted" do
-  run_script $js_only_forecasted, $ds_aggregated
-end
-
 script "js_only_forecasted", type: "javascript" do
   parameters "arg"
   result "results"
   code <<-EOS
     results = arg.forecasted
   EOS
-end
-
-datasource "ds_only_exceeded" do
-  run_script $js_only_exceeded, $ds_aggregated
 end
 
 script "js_only_exceeded", type: "javascript" do
@@ -426,12 +439,9 @@ script "js_only_exceeded", type: "javascript" do
   EOS
 end
 
-escalation "esc_budget_alert" do
-  automatic true
-  label "Send Email"
-  description "Send incident email"
-  email $param_email
-end
+###############################################################################
+# Policy
+###############################################################################
 
 policy "budget_alert" do
   validate $ds_aggregated do
@@ -545,4 +555,15 @@ EOS
       end
     end
   end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_budget_alert" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
 end
