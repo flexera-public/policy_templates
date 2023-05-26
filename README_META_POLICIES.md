@@ -905,7 +905,7 @@ end
 # Summary and a conditional incident which will show up if any policy is being applied, updated or deleted.
 # Minimum of 1 incident, max of four
 # Could swap the summary to only showing running
-# Could also just have one incident and use meta_status to determine which esclation happens
+# Could also just have one incident and use meta_status to determine which escalation happens
 policy "policy_scheduled_report" do
   # Combined incident with all of the data from the child incidents.
   # Replace RESOURCE_NAMES in the summary_template with the resources the specific child policy
@@ -923,6 +923,8 @@ policy "policy_scheduled_report" do
     export do
       resource_level true
       # Put fields from child policy export here but with any path statements removed.
+      # This is because we're actually pulling the incidents directly, where the path
+      # has already been changed.
     end
   end
   validate $ds_take_in_parameters do
