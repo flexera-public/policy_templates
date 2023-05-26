@@ -11,6 +11,8 @@ This policy has the following input parameters required when launching the polic
 - *Email addresses* - A list of email addresses to notify
 - *Region* - Region to check, it is GCP Region locations
 - *Project ID* - Google Projects to Query. Leave blank to query all projects.
+- *Term* - The committed use discount term.
+- *Recommendation Algorithm* - The algorithm that will be used to generate the CUD recommendations.
 
 ## Policy Actions
 
