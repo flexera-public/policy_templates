@@ -716,12 +716,33 @@ end
 
 # The following datasources consolidate the child incident output into a single incident.
 # This is because it is more convenient for many users to have a single incident with all of the data.
-datasource "ds_child_incident_details" do
-  iterate $ds_get_existing_policies_incidents
+# Technically ds_child_incidents is redundant but it impacts execution order of other functionality
+# of the policy if we use the existing datasource, so we have a dedicated one here for
+# the combined incident.
+datasource "ds_child_incidents" do
   request do
     auth $auth_flexera
     host rs_governance_host
-    path join(["/api/governance/projects/", rs_project_id, "/incidents/", val(iter_item, 'incident_id')])
+    path join(["/api/governance/projects/", rs_project_id, "/incidents"])
+    verb "GET"
+    header "User-Agent", "RS Policies"
+    header "Api-Version", "1.0"
+    query "meta_parent_policy_id", policy_id
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "items") do
+      field "id", jmes_path(col_item, "id")
+    end
+  end
+end
+
+datasource "ds_child_incident_details" do
+  iterate $ds_child_incidents
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    path join(["/api/governance/projects/", rs_project_id, "/incidents/", val(iter_item, 'id')])
     verb "GET"
     header "User-Agent", "RS Policies"
     header "Api-Version", "1.0"
