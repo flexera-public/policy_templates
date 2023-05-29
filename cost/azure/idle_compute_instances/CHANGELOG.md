@@ -1,5 +1,9 @@
 # Changelog
 
+## v4.5
+
+- Added hash_exclude at policy definition segment
+
 ## v4.4
 
 - Fixed error that prevented Cloud Workflow actions from completing as expected.
