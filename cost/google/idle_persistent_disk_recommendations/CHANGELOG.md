@@ -1,5 +1,13 @@
 # Changelog
 
+## v2.8
+
+- Updated policy metadata to facilitate scraping of incidents for Recommendations dashboard
+
+## v2.7
+
+- Fix: Duplicated entries from incident report were removed.
+
 ## v2.6
 
 - Fixed error getting zone name as region

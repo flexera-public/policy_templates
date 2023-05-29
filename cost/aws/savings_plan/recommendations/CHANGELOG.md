@@ -1,5 +1,10 @@
 # Changelog
 
+## v2.16
+
+- Updated policy metadata to facilitate scraping of incidents for Recommendations dashboard
+- Modified incident output to facilitate scraping of incidents for Recommendations dashboard
+
 ## v2.15
 
 - change the `auth_rs` Credential to `auth_flexera` name and label to `flexera` for consistency with other policy templates

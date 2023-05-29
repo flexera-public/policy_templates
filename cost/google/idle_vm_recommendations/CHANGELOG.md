@@ -1,8 +1,17 @@
 # Changelog
 
+## v2.8
+
+- Updated policy metadata to facilitate scraping of incidents for Recommendations dashboard
+- Updated incident export to facilitate scraping of incidents for Recommendations dashboard
+
+## v2.7
+
+- Fix: Duplicated entries from incident report were removed.
+
 ## v2.6
 
-- Fixed the values shown at `cpuMaximum` and `cpuMinimum`:
+- Fixed the values shown at `cpuMaximum`, `cpuMinimum` and `cpuAverage`:
 
 At version 2.5 we changed the way we calculated the CPU utilization, we retrieved the average of utilization of each day and then we selected the maximum average as the maximum and the minimum average as the minimum, now we show the actual maximum and minimum of the CPU utilization thanks to a change in our GCP MQL query.
 

@@ -1,8 +1,12 @@
 # Changelog
 
-## v4.5
+## v4.6
 
 - Added hash_exclude at policy definition segment
+
+## v4.5
+
+- Updated policy metadata to facilitate scraping of incidents for Recommendations dashboard
 
 ## v4.4
 

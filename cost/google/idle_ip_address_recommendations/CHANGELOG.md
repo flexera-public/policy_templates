@@ -1,5 +1,14 @@
 # Changelog
 
+## v2.8
+
+- Updated policy metadata to facilitate scraping of incidents for Recommendations dashboard
+- Added "Tags" to incident output
+
+## v2.7
+
+- Fix: Duplicated entries from incident report were removed.
+
 ## v2.6
 
 - Changed list API to aggregatedList API to get addresses
