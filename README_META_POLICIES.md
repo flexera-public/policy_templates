@@ -240,6 +240,13 @@ info(
 
 ## Meta Parent Parameters
 ## These are params specific to the meta parent policy.
+parameter "param_combined_incident_email" do
+  type "list"
+  label "Email addresses for combined incident"
+  description "A list of email addresses to notify with the consolidated child policy incident."
+  default []
+end
+
 parameter "param_dimension_filter_includes" do
   type "list"
   label "Dimension Include Filters"
@@ -324,8 +331,8 @@ script "js_child_policy_options", type: "javascript" do
   code <<-EOS
   // Filter Options that are not appropriate for Child Policy
   var options = _.map(ds_self_policy_information.options, function(option){
-    // param_dimension_filter_includes, param_dimension_filter_excludes, param_policy_schedule are exclusion to Meta Parent Policy Parameters
-    if (!_.contains(["param_dimension_filter_includes", "param_dimension_filter_excludes", "param_policy_schedule"], option.name)) {
+    // param_combined_incident_email, param_dimension_filter_includes, param_dimension_filter_excludes, param_policy_schedule are exclusion to Meta Parent Policy Parameters
+    if (!_.contains(["param_combined_incident_email", "param_dimension_filter_includes", "param_dimension_filter_excludes", "param_policy_schedule"], option.name)) {
       return { "name": option.name, "value": option.value };
     }
   });
@@ -864,12 +871,62 @@ script "js_only_delete", type: "javascript" do
   EOS
 end
 
+# The following datasources consolidate the child incident output into a single incident.
+# This is because it is more convenient for many users to have a single incident with all of the data.
+datasource "ds_child_incident_details" do
+  iterate $ds_get_existing_policies_incidents
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    path join(["/api/governance/projects/", rs_project_id, "/incidents/", val(iter_item, 'incident_id')])
+    verb "GET"
+    header "User-Agent", "RS Policies"
+    header "Api-Version", "1.0"
+    query "view", "extended"
+  end
+end
+
+datasource "ds_child_incidents_combined" do
+  run_script $js_child_incidents_combined, $ds_child_incident_details
+end
+
+# Note: Below datasource might need to be modified to include multiple results
+# if child policy raises multiple incidents.
+# The "summary" of each incident can be used to find out which one
+# individual incidents belong to.
+script "js_child_incidents_combined", type: "javascript" do
+  parameters "ds_child_incident_details"
+  result "result"
+  code <<-EOS
+  result = _.flatten(_.pluck(ds_child_incident_details, 'violation_data')).slice(0, 100000)
+EOS
+end
 
 # Summary and a conditional incident which will show up if any policy is being applied, updated or deleted.
 # Minimum of 1 incident, max of four
 # Could swap the summary to only showing running
-# Could also just have one incident and use meta_status to determine which esclation happens
+# Could also just have one incident and use meta_status to determine which escalation happens
 policy "policy_scheduled_report" do
+  # Combined incident with all of the data from the child incidents.
+  # Replace RESOURCE_NAMES in the summary_template with the resources the specific child policy
+  # would be reporting on. For example, AWS Old Snapshots.
+
+  # Note: If child policy raises multiple incidents, be sure to put multiple incidents here too.
+  # In those cases, modify js_child_incidents_combined to return an object instead of a list
+  # with each key containing the list specific to that particular incident type.
+  # {{ len data }} in the summary_template, the check statement, and the export do statement
+  # should also be modified accordingly.
+  validate $ds_child_incidents_combined do
+    summary_template "Consolidated Incident: {{ len data }} RESOURCE_NAMES Found"
+    escalate $esc_email
+    check eq(size(data), 0)
+    export do
+      resource_level true
+      # Put fields from child policy export here but with any path statements removed.
+      # This is because we're actually pulling the incidents directly, where the path
+      # has already been changed.
+    end
+  end
   validate $ds_take_in_parameters do
     summary_template "{{ data.parent_policy.name }}: Status of Child Policies"
     detail_template <<-EOS
@@ -926,7 +983,7 @@ EOS
     detail_template <<-EOS
     Policies Being Created:
 
-    | Appplied Policy |
+    | Applied Policy |
     | --------------- |
     {{ range data -}}
     | {{ .name }} |
@@ -940,7 +997,7 @@ EOS
     detail_template <<-EOS
     Policies Being Updated:
 
-    | Appplied Policy |
+    | Applied Policy |
     | --------------- |
     {{ range data -}}
     | {{ .name }} |
@@ -954,7 +1011,7 @@ EOS
     detail_template <<-EOS
     Policies being Deleted:
 
-    | Appplied Policy |
+    | Applied Policy |
     | --------------- |
     {{ range data -}}
     | {{ .name }} |
@@ -963,6 +1020,14 @@ EOS
     escalate $delete_policies
     check eq(size(data),0)
   end
+end
+
+# Used only for emailing the combined child incident if so desired
+escalation "esc_email" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_combined_incident_email
 end
 
 escalation "create_policies" do
