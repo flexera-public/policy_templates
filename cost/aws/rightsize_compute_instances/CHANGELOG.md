@@ -5,7 +5,8 @@
 - Policy name changed to reference EC2 service directly
 - Several parameters altered to be more descriptive and human-readable
 - Removed deprecated "Log to CM Audit Entries" parameter
-- Added minimum savings parameter
+- Added ability to only report recommendations that meet a minimum savings threshold
+- Added ability to configure how many days to consider CPU/memory statistics for
 - Added ability to filter resources by multiple tag key:value pairs
 - Added ability to take automated actions to resize or delete resources
 - Added additional context to incident description

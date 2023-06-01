@@ -48,7 +48,7 @@ parameter "param_regions_list" do
   default []
 end
 
-parameter "param_idle_threshold_cpu_value" do
+parameter "param_stats_idle_threshold_cpu_value" do
   type "number"
   label "Idle Instance CPU Threshold (%)"
   description "The CPU threshold at which to consider an instance to be 'idle' and therefore be flagged for termination. Set to -1 to ignore CPU utilization"
@@ -57,7 +57,7 @@ parameter "param_idle_threshold_cpu_value" do
   default 5
 end
 
-parameter "param_idle_threshold_mem_value" do
+parameter "param_stats_idle_threshold_mem_value" do
   type "number"
   label "Idle Instance Memory Threshold (%)"
   description "The Memory threshold at which to consider an instance to be 'idle' and therefore be flagged for termination. Set to -1 to ignore memory utilization"
@@ -66,7 +66,7 @@ parameter "param_idle_threshold_mem_value" do
   default 5
 end
 
-parameter "param_underutil_threshold_cpu_value" do
+parameter "param_stats_underutil_threshold_cpu_value" do
   type "number"
   label "Underutilized Instance CPU Threshold (%)"
   description "The CPU threshold at which to consider an instance to be 'underutilized' and therefore be flagged for downsizing. Set to -1 to ignore CPU utilization"
@@ -75,7 +75,7 @@ parameter "param_underutil_threshold_cpu_value" do
   default 40
 end
 
-parameter "param_underutil_threshold_mem_value" do
+parameter "param_stats_underutil_threshold_mem_value" do
   type "number"
   label "Underutilized Instance Memory Threshold (%)"
   description "The Memory threshold at which to consider an instance to be 'underutilized' and therefore be flagged for downsizing. Set to -1 to ignore memory utilization"
@@ -84,7 +84,7 @@ parameter "param_underutil_threshold_mem_value" do
   default 40
 end
 
-parameter "param_check_both" do
+parameter "param_stats_check_both" do
   type "string"
   label "Idle/Utilized for both CPU/Memory or either"
   description "Set whether an instance should be considered idle and/or underutilized only if both CPU and memory are under the thresholds or if either CPU or memory are under. Note: this parameter is only valid when at least one Memory Utilization threshold and one CPU Utilization threshold is NOT set to -1"
@@ -92,12 +92,21 @@ parameter "param_check_both" do
   default "Either CPU or Memory"
 end
 
-parameter "param_threshold_statistic" do
+parameter "param_stats_threshold" do
   type "string"
   label "Threshold Statistic"
   description "Statistic to use for the metric threshold"
   allowed_values "Average", "p99", "p95", "p90"
   default "Average"
+end
+
+parameter "param_stats_lookback" do
+  type "number"
+  label "Statistic Lookback Period"
+  description "How many days back to look at CPU and/or memory data for instances"
+  default 30
+  min_value 1
+  max_value 90
 end
 
 parameter "param_min_savings" do
@@ -160,6 +169,7 @@ end
 # Datasources & Scripts
 ###############################################################################
 
+# Get applied policy metadata for use later
 datasource "ds_applied_policy" do
   request do
     auth $auth_flexera
@@ -167,16 +177,6 @@ datasource "ds_applied_policy" do
     path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
     header "Api-Version", "1.0"
   end
-end
-
-datasource "ds_policy_name" do
-  run_script $js_policy_name, $ds_applied_policy
-end
-
-script "js_policy_name", type:"javascript" do
-  parameters "ds_applied_policy"
-  result "result"
-  code "result = ds_applied_policy['name']"
 end
 
 datasource "ds_billing_centers" do
@@ -462,22 +462,22 @@ EOS
 end
 
 datasource "ds_cloudwatch_queries" do
-  run_script $js_cloudwatch_queries, $ds_instances, $param_idle_threshold_cpu_value, $param_idle_threshold_mem_value, $param_underutil_threshold_cpu_value, $param_underutil_threshold_mem_value
+  run_script $js_cloudwatch_queries, $ds_instances, $param_stats_idle_threshold_cpu_value, $param_stats_idle_threshold_mem_value, $param_stats_underutil_threshold_cpu_value, $param_stats_underutil_threshold_mem_value, $param_stats_lookback
 end
 
 script "js_cloudwatch_queries", type: "javascript" do
-  parameters "ds_instances", "param_idle_threshold_cpu_value", "param_idle_threshold_mem_value", "param_underutil_threshold_cpu_value", "param_underutil_threshold_mem_value"
+  parameters "ds_instances", "param_stats_idle_threshold_cpu_value", "param_stats_idle_threshold_mem_value", "param_stats_underutil_threshold_cpu_value", "param_stats_underutil_threshold_mem_value", "param_stats_lookback"
   result "result"
   code <<-EOS
   // Set CPU threshold for CloudWatch call
   // If Underutilized threshold is ignored, then check for Idle threshold
   var param_avg_cpu = -1
 
-  if (param_underutil_threshold_cpu_value != -1) {
-    param_avg_cpu = param_underutil_threshold_cpu_value
+  if (param_stats_underutil_threshold_cpu_value != -1) {
+    param_avg_cpu = param_stats_underutil_threshold_cpu_value
   } else {
-    if (param_idle_threshold_cpu_value != -1) {
-      param_avg_cpu = param_idle_threshold_cpu_value
+    if (param_stats_idle_threshold_cpu_value != -1) {
+      param_avg_cpu = param_stats_idle_threshold_cpu_value
     }
   }
 
@@ -485,11 +485,11 @@ script "js_cloudwatch_queries", type: "javascript" do
   // If Underutilized threshold is ignored, then check for Idle threshold
   var param_avg_mem = -1
 
-  if (param_underutil_threshold_mem_value != -1) {
-    param_avg_mem = param_underutil_threshold_mem_value
+  if (param_stats_underutil_threshold_mem_value != -1) {
+    param_avg_mem = param_stats_underutil_threshold_mem_value
   } else {
-    if (param_idle_threshold_mem_value != -1) {
-      param_avg_mem = param_idle_threshold_mem_value
+    if (param_stats_idle_threshold_mem_value != -1) {
+      param_avg_mem = param_stats_idle_threshold_mem_value
     }
   }
 
@@ -504,6 +504,7 @@ script "js_cloudwatch_queries", type: "javascript" do
 
     //We want to collect each of these list of statistics we care about
     stats = ["Average", "Minimum", "Maximum", "p99", "p95", "p90"]
+    lookback = param_stats_lookback * 86400
 
     // Only query for CPU usage if we're actually checking it
     if (param_avg_cpu != -1) {
@@ -518,7 +519,7 @@ script "js_cloudwatch_queries", type: "javascript" do
                 { "Name": "InstanceId", "Value": instance['instanceId'] }
               ]
             },
-            "Period": 2592000,
+            "Period": lookback,
             "Stat": stat
           },
           "ReturnData": true
@@ -573,7 +574,7 @@ script "js_cloudwatch_queries", type: "javascript" do
 EOS
 end
 
-#COMBINE THE ABOVE QUERIES INTO DISCRETE REQUESTS OF 500 OR FEWER QUERIES TO SEND INTO CLOUDWATCH API
+# Combine queries into 500 item blocks so we can make bulk requests to Cloudwatch
 datasource "ds_instances_requests" do
   run_script $js_instances_requests, $ds_cloudwatch_queries
 end
@@ -607,7 +608,6 @@ script "js_instances_requests", type: "javascript" do
 EOS
 end
 
-#GET CPU AND MEMORY UTILIZATION DATA FROM CLOUDWATCH USING BUILT INSTANCE QUERIES
 datasource "ds_cloudwatch_data" do
   iterate $ds_instances_requests
   request do
@@ -768,6 +768,8 @@ script "js_instance_costs_grouped", type: "javascript" do
   parameters "ds_instance_costs"
   result "result"
   code <<-EOS
+  // Multiple a single day's cost by the average number of days in a month.
+  // The 0.25 is to account for leap years for extra precision.
   cost_multiplier = 365.25 / 12
 
   // Group cost data by resourceId for later use
@@ -884,11 +886,11 @@ EOS
 end
 
 datasource "ds_idle_and_underutil_instances" do
-  run_script $js_idle_and_underutil_instances, $ds_instances, $ds_merged_metrics, $ds_instance_costs_grouped, $ds_aws_instance_size_map, $ds_currency, $ds_policy_name, $param_idle_threshold_cpu_value, $param_idle_threshold_mem_value, $param_underutil_threshold_cpu_value, $param_underutil_threshold_mem_value, $param_check_both, $param_threshold_statistic, $param_min_savings
+  run_script $js_idle_and_underutil_instances, $ds_instances, $ds_merged_metrics, $ds_instance_costs_grouped, $ds_aws_instance_size_map, $ds_currency, $ds_applied_policy, $param_stats_idle_threshold_cpu_value, $param_stats_idle_threshold_mem_value, $param_stats_underutil_threshold_cpu_value, $param_stats_underutil_threshold_mem_value, $param_stats_check_both, $param_stats_threshold, $param_min_savings, $param_stats_lookback
 end
 
 script "js_idle_and_underutil_instances", type:"javascript" do
-  parameters "ds_instances", "ds_merged_metrics", "ds_instance_costs_grouped", "ds_aws_instance_size_map", "ds_currency", "ds_policy_name", "param_idle_threshold_cpu_value", "param_idle_threshold_mem_value", "param_underutil_threshold_cpu_value", "param_underutil_threshold_mem_value", "param_check_both", "param_threshold_statistic", "param_min_savings"
+  parameters "ds_instances", "ds_merged_metrics", "ds_instance_costs_grouped", "ds_aws_instance_size_map", "ds_currency", "ds_applied_policy", "param_stats_idle_threshold_cpu_value", "param_stats_idle_threshold_mem_value", "param_stats_underutil_threshold_cpu_value", "param_stats_underutil_threshold_mem_value", "param_stats_check_both", "param_stats_threshold", "param_min_savings", "param_stats_lookback"
   result "result"
   code <<-'EOS'
   // Used for formatting numbers to look pretty
@@ -910,11 +912,11 @@ script "js_idle_and_underutil_instances", type:"javascript" do
   }
 
   // The key name is lowercase, param value needs to be lowercase.
-  threshold_statistic = param_threshold_statistic.toLowerCase()
+  threshold_statistic = param_stats_threshold.toLowerCase()
 
   // Determine whether we're checking for CPU, memory, or both
-  checking_cpu = param_underutil_threshold_cpu_value != -1 || param_idle_threshold_cpu_value != -1
-  checking_mem = param_underutil_threshold_mem_value != -1 || param_idle_threshold_mem_value != -1
+  checking_cpu = param_stats_underutil_threshold_cpu_value != -1 || param_stats_idle_threshold_cpu_value != -1
+  checking_mem = param_stats_underutil_threshold_mem_value != -1 || param_stats_idle_threshold_mem_value != -1
 
   underutil_total_savings = 0.0
   idle_total_savings = 0.0
@@ -943,10 +945,10 @@ script "js_idle_and_underutil_instances", type:"javascript" do
 
       // Determine if the instance is idle or underutilized for each category.
       // Store boolean result for later use.
-      is_idle_cpu = cpu_value < param_idle_threshold_cpu_value
-      is_underutil_cpu = cpu_value < param_underutil_threshold_cpu_value
-      is_idle_mem = mem_value < param_idle_threshold_mem_value
-      is_underutil_mem = mem_value < param_underutil_threshold_mem_value
+      is_idle_cpu = cpu_value < param_stats_idle_threshold_cpu_value
+      is_underutil_cpu = cpu_value < param_stats_underutil_threshold_cpu_value
+      is_idle_mem = mem_value < param_stats_idle_threshold_mem_value
+      is_underutil_mem = mem_value < param_stats_underutil_threshold_mem_value
 
       // If we're only checking CPU, simply set is_idle/is_underutil to their CPU equivalents
       if (!checking_mem) { is_idle = is_idle_cpu }
@@ -956,9 +958,9 @@ script "js_idle_and_underutil_instances", type:"javascript" do
       if (!checking_cpu) { is_idle = is_idle_mem }
       if (!checking_cpu) { is_underutil = is_underutil_mem }
 
-      // If we're checking both, do an 'and' or an 'or' depending on the value of param_check_both
+      // If we're checking both, do an 'and' or an 'or' depending on the value of param_stats_check_both
       if (checking_cpu && checking_mem) {
-        if (param_check_both == "Both CPU and Memory") {
+        if (param_stats_check_both == "Both CPU and Memory") {
           is_idle = is_idle_cpu && is_idle_mem
           is_underutil = is_underutil_cpu && is_underutil_mem
         } else {
@@ -1019,6 +1021,7 @@ script "js_idle_and_underutil_instances", type:"javascript" do
     idle_list = _.sortBy(idle_list, "region")
   }
 
+  // Build out the detail_template for the incidents
   if (checking_cpu || checking_mem) {
     instances_total = ds_instances.length.toString()
     underutil_instances_total = underutil_list.length.toString()
@@ -1044,67 +1047,82 @@ script "js_idle_and_underutil_instances", type:"javascript" do
     if (checking_cpu && checking_mem) {
       message_boolean = "or"
 
-      if (param_check_both == "Both CPU and Memory") {
+      if (param_stats_check_both == "Both CPU and Memory") {
         message_boolean = "and"
       }
 
       underutil_analysis_message = [
         "An EC2 instance is considered underutilized if its CPU usage (",
-        param_threshold_statistic.toLowerCase(), ") is below ",
-        param_underutil_threshold_cpu_value, "% ", message_boolean,
-        " its memory usage (", param_threshold_statistic.toLowerCase(),
-        ") is below ", param_underutil_threshold_mem_value,
-        "% but its CPU usage is still above or equal to ",
-        param_idle_threshold_cpu_value, "% ", message_boolean,
+        param_stats_threshold.toLowerCase(), ") is below ",
+        param_stats_underutil_threshold_cpu_value, "% ", message_boolean,
+        " its memory usage (", param_stats_threshold.toLowerCase(),
+        ") is below ", param_stats_underutil_threshold_mem_value,
+        "%" but its CPU usage is still above or equal to ",
+        param_stats_idle_threshold_cpu_value, "% ", message_boolean,
         " its memory usage is still above or equal to ",
-        param_idle_threshold_mem_value, "%.\n\n"
+        param_stats_idle_threshold_mem_value, "%. "
       ].join('')
 
       idle_analysis_message = [
         "An EC2 instance is considered idle if its CPU usage (",
-        param_threshold_statistic.toLowerCase(), ") is below ",
-        param_idle_threshold_cpu_value, "% ", message_boolean,
-        " its memory usage (", param_threshold_statistic.toLowerCase(),
-        ") is below ", param_idle_threshold_mem_value, "%.\n\n"
+        param_stats_threshold.toLowerCase(), ") is below ",
+        param_stats_idle_threshold_cpu_value, "% ", message_boolean,
+        " its memory usage (", param_stats_threshold.toLowerCase(),
+        ") is below ", param_stats_idle_threshold_mem_value, "%. "
+      ].join('')
+
+      lookback_message = [
+        "CPU and memory usage was analyzed over the last ",
+        param_stats_lookback.toString(), " days.\n\n"
       ].join('')
     }
 
     if (checking_cpu && !checking_mem) {
       underutil_analysis_message = [
         "An EC2 instance is considered underutilized if its CPU usage (",
-        param_threshold_statistic.toLowerCase(), ") is below ",
-        param_underutil_threshold_cpu_value,
+        param_stats_threshold.toLowerCase(), ") is below ",
+        param_stats_underutil_threshold_cpu_value,
         "% but its CPU usage is still above or equal to ",
-        param_idle_threshold_cpu_value, "%.\n\n"
+        param_stats_idle_threshold_cpu_value, "%. "
       ].join('')
 
       idle_analysis_message = [
         "An EC2 instance is considered idle if its CPU usage (",
-        param_threshold_statistic.toLowerCase(), ") is below ",
-        param_idle_threshold_cpu_value, "%.\n\n"
+        param_stats_threshold.toLowerCase(), ") is below ",
+        param_stats_idle_threshold_cpu_value, "%. "
+      ].join('')
+
+      lookback_message = [
+        "CPU usage was analyzed over the last ",
+        param_stats_lookback.toString() + " days.\n\n"
       ].join('')
     }
 
     if (!checking_cpu && checking_mem) {
       underutil_analysis_message = [
         "An EC2 instance is considered underutilized if its memory usage (",
-        param_threshold_statistic.toLowerCase(), ") is below ",
-        param_underutil_threshold_mem_value,
+        param_stats_threshold.toLowerCase(), ") is below ",
+        param_stats_underutil_threshold_mem_value,
         "% but its memory usage is still above or equal to ",
-        param_idle_threshold_mem_value, "%.\n\n"
+        param_stats_idle_threshold_mem_value, "%. "
       ].join('')
 
       idle_analysis_message = [
         "An EC2 instance is considered idle if its memory usage (",
-        param_threshold_statistic.toLowerCase(), ") is below ",
-        param_idle_threshold_mem_value, "%.\n\n"
+        param_stats_threshold.toLowerCase(), ") is below ",
+        param_stats_idle_threshold_mem_value, "%. "
+      ].join('')
+
+      lookback_message = [
+        "Memory usage was analyzed over the last ",
+        param_stats_lookback.toString() + " days.\n\n"
       ].join('')
     }
 
     theshold_disclaimer = "These thresholds and settings were configured by the user when applying this policy and can be changed by terminating and reapplying this policy with new settings.\n\n"
 
-    underutil_message = underutil_findings + underutil_analysis_message + theshold_disclaimer + "Potential Monthly Savings: " + underutil_total_savings
-    idle_message = idle_findings + idle_analysis_message + theshold_disclaimer + "Potential Monthly Savings: " + idle_total_savings
+    underutil_message = underutil_findings + underutil_analysis_message + lookback_message + theshold_disclaimer + "Potential Monthly Savings: " + underutil_total_savings
+    idle_message = idle_findings + idle_analysis_message + lookback_message + theshold_disclaimer + "Potential Monthly Savings: " + idle_total_savings
   } else {
     underutil_message = "No results were found because all CPU and memory parameters were set to -1 when this policy was applied. Please terminate and reapply this policy with one of these settings enabled."
     idle_message = underutil_message
@@ -1115,7 +1133,7 @@ script "js_idle_and_underutil_instances", type:"javascript" do
     idle_message: idle_message,
     underutil_list: underutil_list,
     idle_list: idle_list,
-    policy_name: ds_policy_name
+    policy_name: ds_applied_policy['name']
   }
 EOS
 end
