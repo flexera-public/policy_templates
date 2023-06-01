@@ -713,11 +713,12 @@ These templates can generate savings estimates for your environment.
   Unused Database Services: 4
   Rightsize Compute Instances: 6
   Object Store Optimization: 3
-  Reserved Instance: 5
+  Reserved Instance: 4
   Savings Plan: 2
   Common Bill Ingest: 1
   Unused IP Addresses: 4
   Common Bill Ingestion: 1
+  Reserved Instances: 1
   Rightsize Database Services: 1
   Native Recommendations: 1
   Committed Use Discount: 1
@@ -727,7 +728,8 @@ These templates can generate savings estimates for your environment.
   Inefficient Disk Usage: 1
   GP3 Volumes: 1
   Savings Plan Utilization: 1
-  Rightsize Clusters: 2
+  Rightsize Containers: 1
+  Rightsize Clusters: 1
   CIS: 61
   Public Database Access: 2
   AWS Config: 1
