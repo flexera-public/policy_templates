@@ -1,4 +1,4 @@
-# AWS Rightsize Compute Instances
+# AWS Rightsize EC2 Instances
 
 ## What it does
 

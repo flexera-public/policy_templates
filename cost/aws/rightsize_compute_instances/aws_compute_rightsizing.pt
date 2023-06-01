@@ -1,7 +1,7 @@
-name "AWS Rightsize Compute Instances"
+name "AWS Rightsize EC2 Instances"
 rs_pt_ver 20180301
 type "policy"
-short_description "Check for instances that have inefficient utilization for the last 30 days and rightsizes or terminates them after approval. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/rightsize_compute_instances/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+short_description "Check for EC2 instances that have inefficient utilization for the last 30 days and rightsizes or terminates them after approval. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/rightsize_compute_instances/) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
 long_description ""
 severity "low"
 category "Cost"
@@ -152,8 +152,40 @@ credentials "auth_flexera" do
 end
 
 ###############################################################################
+# Pagination
+###############################################################################
+
+pagination "pagination_aws" do
+  get_page_marker do
+    body_path jmes_path(response, "NextToken")
+  end
+  set_page_marker do
+    body_field "NextToken"
+  end
+end
+
+###############################################################################
 # Datasources & Scripts
 ###############################################################################
+
+datasource "ds_applied_policy" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
+    header "Api-Version", "1.0"
+  end
+end
+
+datasource "ds_policy_name" do
+  run_script $js_policy_name, $ds_applied_policy
+end
+
+script "js_policy_name", type:"javascript" do
+  parameters "ds_applied_policy"
+  result "result"
+  code "result = ds_applied_policy['name']"
+end
 
 datasource "ds_billing_centers" do
   request do
@@ -273,6 +305,48 @@ script "js_aws_account", type:"javascript" do
   parameters "ds_get_caller_identity"
   result "result"
   code "result = ds_get_caller_identity[0]['account']"
+end
+
+datasource "ds_get_aws_account_tags" do
+  iterate $ds_get_caller_identity
+  request do
+    auth $auth_aws
+    pagination $pagination_aws
+    host "organizations.us-east-1.amazonaws.com"
+    path '/'
+    verb "POST"
+    header "User-Agent", "RS Policies"
+    header "X-Amz-Target", "AWSOrganizationsV20161128.ListTagsForResource"
+    header "Content-Type", "application/x-amz-json-1.1"
+    body_field "ResourceId", val(iter_item, "account")
+    ignore_status [400]
+  end
+  result do
+    encoding "json"
+    field "tags", jmes_path(response, "Tags")
+  end
+end
+
+datasource "ds_aws_account_tags" do
+  run_script $js_aws_account_tags, $ds_get_aws_account_tags
+end
+
+script "js_aws_account_tags", type:"javascript" do
+  parameters "ds_get_aws_account_tags"
+  result "result"
+  code <<-EOS
+  result = ''
+
+  if (ds_get_aws_account_tags.length > 0) {
+    tags = []
+
+    _.each(ds_get_aws_account_tags[0]['tags'], function(tag) {
+      tags.push(tag['Key'] + '=' + tag['Value'])
+    })
+
+    result = tags.join(', ')
+  }
+EOS
 end
 
 datasource "ds_describe_regions" do
@@ -752,12 +826,12 @@ datasource "ds_aws_instance_size_map" do
 end
 
 datasource "ds_merged_metrics" do
-  run_script $js_merged_metrics, $ds_cloudwatch_data_sorted, $ds_instances, $ds_aws_account, $ds_aws_account_name, $ds_currency
+  run_script $js_merged_metrics, $ds_cloudwatch_data_sorted, $ds_instances, $ds_aws_account, $ds_aws_account_name, $ds_aws_account_tags, $ds_currency
 end
 
 script "js_merged_metrics", type: "javascript" do
   result "result"
-  parameters "ds_cloudwatch_data_sorted", "ds_instances", "ds_aws_account", "ds_aws_account_name", "ds_currency"
+  parameters "ds_cloudwatch_data_sorted", "ds_instances", "ds_aws_account", "ds_aws_account_name", "ds_aws_account_tags", "ds_currency"
   code <<-EOS
   result = []
 
@@ -793,6 +867,7 @@ script "js_merged_metrics", type: "javascript" do
           "savings": null,
           "accountID": ds_aws_account,
           "accountName": ds_aws_account_name,
+          "accountTags": ds_aws_account_tags,
           "savingsCurrency": ds_currency['symbol']
         }
 
@@ -827,13 +902,13 @@ EOS
 end
 
 datasource "ds_idle_and_underutil_instances" do
-  run_script $js_idle_and_underutil_instances, $ds_merged_metrics, $ds_instance_costs_grouped, $ds_aws_instance_size_map, $ds_currency, $param_idle_threshold_cpu_value, $param_idle_threshold_mem_value, $param_underutil_threshold_cpu_value, $param_underutil_threshold_mem_value, $param_check_both, $param_threshold_statistic, $param_min_savings
+  run_script $js_idle_and_underutil_instances, $ds_instances, $ds_merged_metrics, $ds_instance_costs_grouped, $ds_aws_instance_size_map, $ds_currency, $ds_policy_name, $param_idle_threshold_cpu_value, $param_idle_threshold_mem_value, $param_underutil_threshold_cpu_value, $param_underutil_threshold_mem_value, $param_check_both, $param_threshold_statistic, $param_min_savings
 end
 
 script "js_idle_and_underutil_instances", type:"javascript" do
-  parameters "ds_merged_metrics", "ds_instance_costs_grouped", "ds_aws_instance_size_map", "ds_currency", "param_idle_threshold_cpu_value", "param_idle_threshold_mem_value", "param_underutil_threshold_cpu_value", "param_underutil_threshold_mem_value", "param_check_both", "param_threshold_statistic", "param_min_savings"
+  parameters "ds_instances", "ds_merged_metrics", "ds_instance_costs_grouped", "ds_aws_instance_size_map", "ds_currency", "ds_policy_name", "param_idle_threshold_cpu_value", "param_idle_threshold_mem_value", "param_underutil_threshold_cpu_value", "param_underutil_threshold_mem_value", "param_check_both", "param_threshold_statistic", "param_min_savings"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   // Used for formatting numbers to look pretty
   function formatNumber(number, separator){
     numString = number.toString()
@@ -918,6 +993,14 @@ script "js_idle_and_underutil_instances", type:"javascript" do
         instance["savings"] = parseFloat(total_cost).toFixed(3)
         instance["recommendationType"] = "Terminate"
 
+        recommendationDetails = [
+          "Terminate EC2 instance ", instance["resourceID"], " ",
+          "in AWS Account ", instance["accountName"], " ",
+          "(", instance["accountID"], ")"
+        ]
+
+        instance["recommendationDetails"] = recommendationDetails.join('')
+
         if (instance['savings'] >= param_min_savings) {
           idle_total_savings += total_cost
           idle_list.push(instance)
@@ -925,6 +1008,16 @@ script "js_idle_and_underutil_instances", type:"javascript" do
       } else if (is_underutil) {
         instance["savings"] = parseFloat(total_cost / 2).toFixed(3)
         instance["recommendationType"] = "Downsize"
+
+        recommendationDetails = [
+          "Change instance type of EC2 instance ", instance["resourceID"], " ",
+          "in AWS Account ", instance["accountName"], " ",
+          "(", instance["accountID"], ") ",
+          "from ", instance["resourceType"], " ",
+          "to ", instance["recommendedVmSize"]
+        ]
+
+        instance["recommendationDetails"] = recommendationDetails.join('')
 
         if (ds_aws_instance_size_map[instance['resourceType']]) {
           instance["recommendedVmSize"] = ds_aws_instance_size_map[instance['resourceType']]['down']
@@ -944,14 +1037,103 @@ script "js_idle_and_underutil_instances", type:"javascript" do
     idle_list = _.sortBy(idle_list, "region")
   }
 
-  underutil_total_savings = ds_currency['symbol'] + ' ' + formatNumber(parseFloat(underutil_total_savings).toFixed(2), ds_currency['separator'])
-  idle_total_savings = ds_currency['symbol'] + ' ' + formatNumber(parseFloat(idle_total_savings).toFixed(2), ds_currency['separator'])
+  if (checking_cpu || checking_mem) {
+    instances_total = ds_instances.length.toString()
+    underutil_instances_total = underutil_list.length.toString()
+    underutil_instances_percentage = (underutil_instances_total / instances_total * 100).toFixed(2).toString() + '%'
+    idle_instances_total = idle_list.length.toString()
+    idle_instances_percentage = (idle_instances_total / instances_total * 100).toFixed(2).toString() + '%'
+
+    underutil_total_savings = ds_currency['symbol'] + ' ' + formatNumber(parseFloat(underutil_total_savings).toFixed(2), ds_currency['separator'])
+    idle_total_savings = ds_currency['symbol'] + ' ' + formatNumber(parseFloat(idle_total_savings).toFixed(2), ds_currency['separator'])
+
+    underutil_findings = [
+      "Out of ", instances_total, " EC2 instances analyzed, ",
+      underutil_instances_total, " (", underutil_instances_percentage,
+      ") are underutilized. "
+    ].join('')
+
+    idle_findings = [
+      "Out of ", instances_total, " EC2 instances analyzed, ",
+      idle_instances_total, " (", idle_instances_percentage,
+      ") are idle. "
+    ].join('')
+
+    if (checking_cpu && checking_mem) {
+      message_boolean = "or"
+
+      if (param_check_both == "Both CPU and Memory") {
+        message_boolean = "and"
+      }
+
+      underutil_analysis_message = [
+        "An EC2 instance is considered underutilized if its CPU usage (",
+        param_threshold_statistic.toLowerCase(), ") is below ",
+        param_underutil_threshold_cpu_value, "% ", message_boolean,
+        " its memory usage (", param_threshold_statistic.toLowerCase(),
+        ") is below ", param_underutil_threshold_mem_value,
+        "% but its CPU usage is still above or equal to ",
+        param_idle_threshold_cpu_value, "% ", message_boolean,
+        " its memory usage is still above or equal to ",
+        param_idle_threshold_mem_value, "%.\n\n"
+      ].join('')
+
+      idle_analysis_message = [
+        "An EC2 instance is considered idle if its CPU usage (",
+        param_threshold_statistic.toLowerCase(), ") is below ",
+        param_idle_threshold_cpu_value, "% ", message_boolean,
+        " its memory usage (", param_threshold_statistic.toLowerCase(),
+        ") is below ", param_idle_threshold_mem_value, "%.\n\n"
+      ].join('')
+    }
+
+    if (checking_cpu && !checking_mem) {
+      underutil_analysis_message = [
+        "An EC2 instance is considered underutilized if its CPU usage (",
+        param_threshold_statistic.toLowerCase(), ") is below ",
+        param_underutil_threshold_cpu_value,
+        "% but its CPU usage is still above or equal to ",
+        param_idle_threshold_cpu_value, "%.\n\n"
+      ].join('')
+
+      idle_analysis_message = [
+        "An EC2 instance is considered idle if its CPU usage (",
+        param_threshold_statistic.toLowerCase(), ") is below ",
+        param_idle_threshold_cpu_value, "%.\n\n"
+      ].join('')
+    }
+
+    if (!checking_cpu && checking_mem) {
+      underutil_analysis_message = [
+        "An EC2 instance is considered underutilized if its memory usage (",
+        param_threshold_statistic.toLowerCase(), ") is below ",
+        param_underutil_threshold_mem_value,
+        "% but its memory usage is still above or equal to ",
+        param_idle_threshold_mem_value, "%.\n\n"
+      ].join('')
+
+      idle_analysis_message = [
+        "An EC2 instance is considered idle if its memory usage (",
+        param_threshold_statistic.toLowerCase(), ") is below ",
+        param_idle_threshold_mem_value, "%.\n\n"
+      ].join('')
+    }
+
+    theshold_disclaimer = "These thresholds and settings were configured by the user when applying this policy and can be changed by terminating and reapplying this policy with new settings.\n\n"
+
+    underutil_message = underutil_findings + underutil_analysis_message + theshold_disclaimer + "Potential Monthly Savings: " + underutil_total_savings
+    idle_message = idle_findings + idle_analysis_message + theshold_disclaimer + "Potential Monthly Savings: " + idle_total_savings
+  } else {
+    underutil_message = "No results were found because all CPU and memory parameters were set to -1 when this policy was applied. Please terminate and reapply this policy with one of these settings enabled."
+    idle_message = underutil_message
+  }
 
   result = {
-    underutil_message: "Total Estimated Monthly Savings: " + underutil_total_savings,
-    idle_message: "Total Estimated Monthly Savings: " + idle_total_savings,
+    underutil_message: underutil_message,
+    idle_message: idle_message,
     underutil_list: underutil_list,
-    idle_list: idle_list
+    idle_list: idle_list,
+    policy_name: ds_policy_name
   }
 EOS
 end
@@ -962,7 +1144,7 @@ end
 
 policy "pol_utilization" do
   validate $ds_idle_and_underutil_instances do
-    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data.underutil_list }} AWS Underutilized Compute Instances Found"
+    summary_template "{{ data.policy_name }}: {{ len data.underutil_list }} AWS Underutilized EC2 Instances Found"
     detail_template "{{ data.underutil_message }}"
     check logic_or($ds_parent_policy_terminated, eq(size(val(data, "underutil_list")), 0))
     escalate $esc_email
@@ -975,8 +1157,17 @@ policy "pol_utilization" do
       field "accountName" do
         label "Account Name"
       end
+      field "accountTags" do
+        label "Account Tags"
+      end
       field "resourceID" do
         label "Resource ID"
+      end
+      field "tags" do
+        label "Resource Tags"
+      end
+      field "recommendationDetails" do
+        label "Recommendation"
       end
       field "resourceType" do
         label "Instance Size"
@@ -999,9 +1190,6 @@ policy "pol_utilization" do
       field "savingsCurrency" do
         label "Savings Currency"
       end
-      field "privateDnsName" do
-        label "Private DNS Name"
-      end
       field "launchTime" do
         label "Launch Time"
       end
@@ -1041,9 +1229,6 @@ policy "pol_utilization" do
       field "mem_p90" do
         label "Memory p90"
       end
-      field "tags" do
-        label "Tags"
-      end
       field "service" do
         label "Service"
       end
@@ -1054,7 +1239,7 @@ policy "pol_utilization" do
     end
   end
   validate $ds_idle_and_underutil_instances do
-    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data.idle_list }} AWS Idle Compute Instances Found"
+    summary_template "{{ data.policy_name }}: {{ len data.idle_list }} AWS Idle EC2 Instances Found"
     detail_template "{{ data.idle_message }}"
     check logic_or($ds_parent_policy_terminated, eq(size(val(data, "idle_list")), 0))
     escalate $esc_email
@@ -1067,8 +1252,17 @@ policy "pol_utilization" do
       field "accountName" do
         label "Account Name"
       end
+      field "accountTags" do
+        label "Account Tags"
+      end
       field "resourceID" do
         label "Resource ID"
+      end
+      field "tags" do
+        label "Resource Tags"
+      end
+      field "recommendationDetails" do
+        label "Recommendation"
       end
       field "resourceType" do
         label "Instance Size"
@@ -1088,9 +1282,6 @@ policy "pol_utilization" do
       field "savingsCurrency" do
         label "Savings Currency"
       end
-      field "privateDnsName" do
-        label "Private DNS Name"
-      end
       field "launchTime" do
         label "Launch Time"
       end
@@ -1129,9 +1320,6 @@ policy "pol_utilization" do
       end
       field "mem_p90" do
         label "Memory p90"
-      end
-      field "tags" do
-        label "Tags"
       end
       field "service" do
         label "Service"

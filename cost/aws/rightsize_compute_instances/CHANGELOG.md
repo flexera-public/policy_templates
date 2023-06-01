@@ -2,10 +2,21 @@
 
 ## v4.0
 
-- Fixed bug with filtering resources by tag
+- Policy name changed to reference EC2 service directly
+- Several parameters altered to be more descriptive and human-readable
+- Removed deprecated "Log to CM Audit Entries" parameter
+- Added minimum savings parameter
+- Added ability to filter resources by multiple tag key:value pairs
 - Added ability to take automated actions to resize or delete resources
-- Normalized incident output to be consistent with other policies
+- Added additional context to incident description
+- Normalized incident export to be consistent with other policies
+- Added account tags to incident export
+- Added human-readable recommendation to incident export
 - Streamlined code for better readability and faster execution
+
+## v3.1
+
+- Fixed issue where savings would always be 0 if policy were executed at the end of the month.
 
 ## v3.0
 
