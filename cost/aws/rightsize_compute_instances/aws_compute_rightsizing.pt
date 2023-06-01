@@ -108,14 +108,6 @@ parameter "param_min_savings" do
   default 0
 end
 
-parameter "param_cost_calculation" do
-  type "string"
-  label "Cost Calculation Algorithm"
-  description "How to calculate the monthly cost of an instance for assessing savings. See the README for more details"
-  allowed_values "Last 30 Days", "Extrapolated From Single Day"
-  default "Last 30 Days"
-end
-
 parameter "param_exclusion_tags" do
   type "list"
   label "Exclusion Tags (Key:Value)"
@@ -691,7 +683,7 @@ end
 
 datasource "ds_instance_costs" do
   request do
-    run_script $js_instance_costs, $ds_aws_account, $ds_top_level_bcs, $param_cost_calculation, rs_org_id, rs_optima_host
+    run_script $js_instance_costs, $ds_aws_account, $ds_top_level_bcs, rs_org_id, rs_optima_host
   end
   result do
     encoding "json"
@@ -706,18 +698,15 @@ datasource "ds_instance_costs" do
 end
 
 script "js_instance_costs", type: "javascript" do
-  parameters "ds_aws_account", "ds_top_level_bcs", "param_cost_calculation", "rs_org_id", "rs_optima_host"
+  parameters "ds_aws_account", "ds_top_level_bcs", "rs_org_id", "rs_optima_host"
   result "request"
   code <<-EOS
-  if (param_cost_calculation == "Last 30 Days") { days_back = 32 }
-  if (param_cost_calculation == "Extrapolated From Single Day") { days_back = 3 }
-
   end_date = new Date()
   end_date.setDate(end_date.getDate() - 2)
   end_date = end_date.toISOString().split('T')[0]
 
   start_date = new Date()
-  start_date.setDate(start_date.getDate() - days_back)
+  start_date.setDate(start_date.getDate() - 3)
   start_date = start_date.toISOString().split('T')[0]
 
   var request = {
@@ -772,21 +761,14 @@ EOS
 end
 
 datasource "ds_instance_costs_grouped" do
-  run_script $js_instance_costs_grouped, $ds_instance_costs, $param_cost_calculation
+  run_script $js_instance_costs_grouped, $ds_instance_costs
 end
 
 script "js_instance_costs_grouped", type: "javascript" do
-  parameters "ds_instance_costs", "param_cost_calculation"
+  parameters "ds_instance_costs"
   result "result"
   code <<-EOS
-  // Set cost multiplier depending on how cost data was gathered
-  cost_multiplier = 1
-
-  if (param_cost_calculation == "Extrapolated From Single Day") {
-    // Calculation to get as close to the average month as possible.
-    // .25 is to account for leap years.
-    cost_multiplier = 365.25 / 12
-  }
+  cost_multiplier = 365.25 / 12
 
   // Group cost data by resourceId for later use
   result = {}
