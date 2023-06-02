@@ -56,6 +56,14 @@ parameter "param_snapshot_age" do
   min_value 1
 end
 
+parameter "param_snapshot_include_ami" do
+  type "string"
+  label "Include Snapshots with AMI"
+  description "Whether or not to produce recommendations for snapshots with an associated AMI (Amazon Machine Image)"
+  allowed_values "Yes", "No"
+  default "No"
+end
+
 parameter "param_min_savings" do
   type "number"
   label "Minimum Savings Threshold"
@@ -78,14 +86,6 @@ parameter "param_automatic_action" do
   description "When this value is set, this policy will automatically take the selected action(s)"
   allowed_values ["Delete Snapshots"]
   default []
-end
-
-parameter "param_automatic_deregister_image" do
-  type "string"
-  label "Deregister Image"
-  description "If Yes, the snapshot will be deleted along with the images, and if No the snapshot will not be considered for deletion."
-  allowed_values "Yes", "No"
-  default "No"
 end
 
 ###############################################################################
@@ -740,12 +740,12 @@ EOS
 end
 
 datasource "ds_filter_ami_snapshots" do
-  run_script $js_filter_ami_snapshots, $ds_get_snapshot_ami, $ds_filter_old_snapshots, $ds_aws_account
+  run_script $js_filter_ami_snapshots, $ds_get_snapshot_ami, $ds_filter_old_snapshots, $ds_aws_account, $param_snapshot_include_ami
 end
 
 script "js_filter_ami_snapshots", type: "javascript" do
   result "result"
-  parameters "ds_get_snapshot_ami", "ds_filter_old_snapshots", "ds_aws_account"
+  parameters "ds_get_snapshot_ami", "ds_filter_old_snapshots", "ds_aws_account", "param_snapshot_include_ami"
   code <<-EOS
   var result = []
 
@@ -780,20 +780,21 @@ script "js_filter_ami_snapshots", type: "javascript" do
       }
     }
 
-    // Add the old snapshot to the results
-    result.push({
-      snapshotId: old_snapshot['snapshotId'],
-      formatSnapId: formatSnapId,
-      region: old_snapshot['region'],
-      tags: old_snapshot['tags'],
-      daysOld: old_snapshot['daysOld'],
-      service: old_snapshot['service'],
-      accountID: ds_aws_account,
-      imageId: old_snapshot_imageId,
-      dbInstanceId: old_snapshot_dbInstanceId,
-      dbClusterId: old_snapshot_dbClusterId,
-      volumeSize: old_snapshot['volumeSize']
-    })
+    if (old_snapshot_imageId == "" || param_snapshot_include_ami == "Yes") {
+      result.push({
+        snapshotId: old_snapshot['snapshotId'],
+        formatSnapId: formatSnapId,
+        region: old_snapshot['region'],
+        tags: old_snapshot['tags'],
+        daysOld: old_snapshot['daysOld'],
+        service: old_snapshot['service'],
+        accountID: ds_aws_account,
+        imageId: old_snapshot_imageId,
+        dbInstanceId: old_snapshot_dbInstanceId,
+        dbClusterId: old_snapshot_dbClusterId,
+        volumeSize: old_snapshot['volumeSize']
+      })
+    }
   })
 EOS
 end
@@ -919,11 +920,11 @@ EOS
 end
 
 datasource "ds_snapshots_cost_mapping" do
-  run_script $js_snapshots_cost_mapping, $ds_filter_ami_snapshots, $ds_snapshot_costs_grouped, $ds_snapshots_combined, $ds_currency, $ds_applied_policy, $ds_aws_account, $ds_aws_account_name, $ds_aws_account_tags, $param_min_savings, $param_snapshot_age
+  run_script $js_snapshots_cost_mapping, $ds_filter_ami_snapshots, $ds_snapshot_costs_grouped, $ds_snapshots_combined, $ds_currency, $ds_applied_policy, $ds_aws_account, $ds_aws_account_name, $ds_aws_account_tags, $param_min_savings, $param_snapshot_age, $param_snapshot_include_ami
 end
 
 script "js_snapshots_cost_mapping", type: "javascript" do
-  parameters "ds_filter_ami_snapshots", "ds_snapshot_costs_grouped", "ds_snapshots_combined", "ds_currency", "ds_applied_policy", "ds_aws_account", "ds_aws_account_name", "ds_aws_account_tags", "param_min_savings", "param_snapshot_age"
+  parameters "ds_filter_ami_snapshots", "ds_snapshot_costs_grouped", "ds_snapshots_combined", "ds_currency", "ds_applied_policy", "ds_aws_account", "ds_aws_account_name", "ds_aws_account_tags", "param_min_savings", "param_snapshot_age", "param_snapshot_include_ami"
   result "result"
   code <<-'EOS'
   // Function for formatting currency numbers later
@@ -996,10 +997,16 @@ script "js_snapshots_cost_mapping", type: "javascript" do
     "Out of ", total_snapshots, " snapshots analyzed, ",
     total_old_snapshots, " (", old_snapshots_percentage,
     ") are older than ", param_snapshot_age, " days and ",
-    "are recommended for deletion.\n\n"
+    "are recommended for deletion. "
   ].join('')
 
-  theshold_disclaimer = "The snapshot age threshold was configured by the user when applying this policy and can be changed by terminating and reapplying this policy with new settings.\n\n"
+  if (param_snapshot_include_ami = "Yes") {
+    ami_message = "Snapshots with an associated registered AMI were included in the results.\n\n"
+  } else {
+    ami_message = "Snapshots with an associated registered AMI were not included in the results.\n\n"
+  }
+
+  theshold_disclaimer = "The above settings were configured by the user when applying this policy and can be changed by terminating and reapplying this policy with new settings.\n\n"
 
   savings_message = [
     "Potential Monthly Savings: ", ds_currency['symbol'], ' ',
@@ -1008,7 +1015,7 @@ script "js_snapshots_cost_mapping", type: "javascript" do
 
   result = {
     snapshot_list: snapshot_list,
-    message: findings + theshold_disclaimer + savings_message,
+    message: findings + ami_message + theshold_disclaimer + savings_message,
     policy_name: ds_applied_policy['name']
   }
 EOS
@@ -1097,14 +1104,14 @@ escalation "esc_delete_snapshot" do
   automatic contains($param_automatic_action, "Delete Snapshots")
   label "Delete Snapshots"
   description "Approval to delete all selected snapshots"
-  run "delete_snapshots", data, $param_automatic_deregister_image
+  run "delete_snapshots", data, $param_snapshot_include_ami
 end
 
 ###############################################################################
 # Cloud Workflow
 ###############################################################################
 
-define delete_snapshots($data, $param_automatic_deregister_image) do
+define delete_snapshots($data, $param_snapshot_include_ami) do
   # Change "No" to "Yes" to enable CWF debug logging
   $log_to_cm_audit_entries = "No"
 
@@ -1114,7 +1121,7 @@ define delete_snapshots($data, $param_automatic_deregister_image) do
 
   # Images need to be deregistered before snapshots can be deleted
   # Check if Deregister Image parameter is enabled
-  if $param_automatic_deregister_image == "Yes"
+  if $param_snapshot_include_ami == "Yes"
     # Loop through all the old snapshots and deregister the image
     foreach $item in $data do
       if $item['service'] == "EBS"
