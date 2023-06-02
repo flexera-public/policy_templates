@@ -2,9 +2,10 @@ name "AWS Old Snapshots"
 rs_pt_ver 20180301
 type "policy"
 short_description "Checks for snapshots older than a specified number of days and, optionally, deletes them. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/old_snapshots) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more."
+long_description ""
 category "Cost"
 severity "low"
-default_frequency "daily"
+default_frequency "weekly"
 info(
   version: "6.0",
   provider: "AWS",
@@ -17,35 +18,11 @@ info(
 # User inputs
 ###############################################################################
 
-parameter "param_allow_or_deny" do
-  type "string"
-  label "Allow/Deny Regions"
-  description "Allow or Deny entered regions. See the README for more details"
-  allowed_values "Allow", "Deny"
-  default "Allow"
-end
-
-parameter "param_regions_list" do
-  type "list"
-  label "Regions"
-  allowed_pattern /^([a-zA-Z-_]+-[a-zA-Z0-9-_]+-[0-9-_]+,*|)+$/
-  description "A list of allowed or denied regions. See the README for more details"
-  default []
-end
-
 parameter "param_email" do
   type "list"
   label "Email addresses"
   description "A list of email addresses to notify."
   default []
-end
-
-parameter "param_snapshot_age" do
-  type "number"
-  label "Snapshot age"
-  default 30
-  description "The number of days since the snapshot was created."
-  min_value 1
 end
 
 parameter "param_aws_account_number" do
@@ -55,29 +32,44 @@ parameter "param_aws_account_number" do
   default ""
 end
 
-parameter "param_deregister_image" do
+parameter "param_regions_allow_or_deny" do
   type "string"
-  label "Deregister Image"
-  description "If Yes, the snapshot will be deleted along with the images, and if No the snapshot will not be considered for deletion."
-  allowed_values "Yes", "No"
-  default "No"
+  label "Allow/Deny Regions"
+  description "Allow or Deny entered regions. See the README for more details"
+  allowed_values "Allow", "Deny"
+  default "Allow"
 end
 
-parameter "param_exclusion_tag_key" do
-  category "User Inputs"
-  label "Exclusion Tag Key:Value"
-  description "Cloud native tag to ignore instances that you don't want to consider for downsizing or termination. Format: Key:Value"
-  type "string"
-  allowed_pattern /(^$)|([\w]?)+\:([\w]?)+/
-  default ""
+parameter "param_regions_list" do
+  type "list"
+  label "Allow/Deny Regions List"
+  allowed_pattern /^([a-zA-Z-_]+-[a-zA-Z0-9-_]+-[0-9-_]+,*|)+$/
+  description "A list of allowed or denied regions. See the README for more details"
+  default []
+end
+
+parameter "param_snapshot_age" do
+  type "number"
+  label "Snapshot Age"
+  default 30
+  description "The number of days since the snapshot was created to consider a snapshot old."
+  min_value 1
 end
 
 parameter "param_min_savings" do
   type "number"
-  label "Minimum Savings"
+  label "Minimum Savings Threshold"
   description "Minimum potential savings required to generate a recommendation"
   min_value 0
   default 0
+end
+
+parameter "param_exclusion_tags" do
+  type "list"
+  label "Exclusion Tags (Key:Value)"
+  description "Cloud native tags to ignore instances that you don't want to consider for downsizing or termination. Format: Key:Value"
+  allowed_pattern /(^$)|([\w]?)+\:([\w]?)+/
+  default []
 end
 
 parameter "param_automatic_action" do
@@ -88,20 +80,12 @@ parameter "param_automatic_action" do
   default []
 end
 
-parameter "param_flexera_org_id_for_optima" do
+parameter "param_automatic_deregister_image" do
   type "string"
-  label "Flexera One Org ID for Optima"
-  description "The Flexera One org ID for Optima queries used to determine estimated costs, by default the current org is used"
-  default "current"
-  allowed_pattern /^(current|[0-9]+)$/
-end
-
-parameter "param_log_to_cm_audit_entries" do
-  type "string"
-  label "Log to CM Audit Entries"
-  description "Boolean for whether or not to log any debugging information from actions to CM Audit Entries, this should be left set to No on Flexera EU"
-  default "No"
+  label "Deregister Image"
+  description "If Yes, the snapshot will be deleted along with the images, and if No the snapshot will not be considered for deletion."
   allowed_values "Yes", "No"
+  default "No"
 end
 
 ###############################################################################
@@ -118,7 +102,7 @@ end
 
 credentials "auth_flexera" do
   schemes "oauth2"
-  label "flexera"
+  label "Flexera"
   description "Select Flexera One OAuth2 credentials"
   tags "provider=flexera"
 end
@@ -126,6 +110,15 @@ end
 ###############################################################################
 # Pagination
 ###############################################################################
+
+pagination "pagination_aws" do
+  get_page_marker do
+    body_path jmes_path(response, "NextToken")
+  end
+  set_page_marker do
+    body_field "NextToken"
+  end
+end
 
 pagination "pagination_aws_describesnapshots_xml" do
   get_page_marker do
@@ -187,8 +180,110 @@ pagination "pagination_aws_describe_db_cluster_snapshots_xml" do
 end
 
 ###############################################################################
-# Datasources
+# Datasources & Scripts
 ###############################################################################
+
+# Get applied policy metadata for use later
+datasource "ds_applied_policy" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
+    header "Api-Version", "1.0"
+  end
+end
+
+datasource "ds_billing_centers" do
+  request do
+    auth $auth_flexera
+    host rs_optima_host
+    path join(["/analytics/orgs/", rs_org_id, "/billing_centers"])
+    header "Api-Version", "1.0"
+    header "User-Agent", "RS Policies"
+    query "view", "allocation_table"
+    ignore_status [403]
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "[*]") do
+      field "href", jmes_path(col_item, "href")
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+      field "parent_id", jmes_path(col_item, "parent_id")
+    end
+  end
+end
+
+# Gather top level billing center IDs for when we pull cost data
+datasource "ds_top_level_bcs" do
+  run_script $js_top_level_bcs, $ds_billing_centers
+end
+
+script "js_top_level_bcs", type: "javascript" do
+  parameters "ds_billing_centers"
+  result "result"
+  code <<-EOS
+  filtered_bcs = _.filter(ds_billing_centers, function(bc) {
+    return bc['parent_id'] == null || bc['parent_id'] == undefined
+  })
+
+  result = _.compact(_.pluck(filtered_bcs, 'id'))
+EOS
+end
+
+datasource "ds_currency_reference" do
+  request do
+    host "raw.githubusercontent.com"
+    path "/rightscale/policy_templates/master/cost/scheduled_reports/currency_reference.json"
+    header "User-Agent", "RS Policies"
+  end
+end
+
+datasource "ds_currency_code" do
+  request do
+    auth $auth_flexera
+    host rs_optima_host
+    path join(["/bill-analysis/orgs/", rs_org_id, "/settings/currency_code"])
+    header "Api-Version", "0.1"
+    header "User-Agent", "RS Policies"
+    ignore_status [403]
+  end
+  result do
+    encoding "json"
+    field "id", jmes_path(response, "id")
+    field "value", jmes_path(response, "value")
+  end
+end
+
+datasource "ds_currency" do
+  run_script $js_currency, $ds_currency_reference, $ds_currency_code
+end
+
+script "js_currency", type:"javascript" do
+  parameters "ds_currency_reference", "ds_currency_code"
+  result "result"
+  code <<-EOS
+  symbol = "$"
+  separator = ","
+
+  if (ds_currency_code['value'] != undefined) {
+    if (ds_currency_reference[ds_currency_code['value']] != undefined) {
+      symbol = ds_currency_reference[ds_currency_code['value']]['symbol']
+
+      if (ds_currency_reference[ds_currency_code['value']]['t_separator'] != undefined) {
+        separator = ds_currency_reference[ds_currency_code['value']]['t_separator']
+      } else {
+        separator = ""
+      }
+    }
+  }
+
+  result = {
+    symbol: symbol,
+    separator: separator
+  }
+EOS
+end
 
 datasource "ds_get_caller_identity" do
   request do
@@ -218,184 +313,49 @@ script "js_aws_account", type:"javascript" do
   code "result = ds_get_caller_identity[0]['account']"
 end
 
-datasource "ds_flexera_optima" do
-  run_script $js_flexera_optima, $param_flexera_org_id_for_optima, rs_org_id
-end
-
-script "js_flexera_optima", type: "javascript" do
-  parameters "param_flexera_org_id_for_optima", "rs_org_id"
-  result "result"
-  code <<-EOS
-  org_id = rs_org_id
-
-  if (param_flexera_org_id_for_optima != "current") { org_id = param_flexera_org_id_for_optima }
-
-  result = { org_id: org_id }
-EOS
-end
-
-datasource "ds_currency_reference" do
+datasource "ds_get_aws_account_tags" do
+  iterate $ds_get_caller_identity
   request do
-    host "raw.githubusercontent.com"
-    path "/rightscale/policy_templates/master/cost/scheduled_reports/currency_reference.json"
+    auth $auth_aws
+    pagination $pagination_aws
+    host "organizations.us-east-1.amazonaws.com"
+    path '/'
+    verb "POST"
     header "User-Agent", "RS Policies"
-  end
-end
-
-datasource "ds_currency_code" do
-  request do
-    auth $auth_flexera
-    host rs_optima_host
-    path join(["/bill-analysis/orgs/", val($ds_flexera_optima, "org_id"), "/settings/currency_code"])
-    header "Api-Version", "0.1"
-    header "User-Agent", "RS Policies"
-    ignore_status [403]
+    header "X-Amz-Target", "AWSOrganizationsV20161128.ListTagsForResource"
+    header "Content-Type", "application/x-amz-json-1.1"
+    body_field "ResourceId", val(iter_item, "account")
+    ignore_status [400]
   end
   result do
     encoding "json"
-    field "id", jmes_path(response, "id")
-    field "value", jmes_path(response, "value")
+    field "tags", jmes_path(response, "Tags")
   end
 end
 
-datasource "ds_currency" do
-  run_script $js_currency, $ds_currency_reference, $ds_currency_code
+datasource "ds_aws_account_tags" do
+  run_script $js_aws_account_tags, $ds_get_aws_account_tags
 end
 
-script "js_currency", type:"javascript" do
-  parameters "ds_currency_reference", "ds_currency_code"
+script "js_aws_account_tags", type:"javascript" do
+  parameters "ds_get_aws_account_tags"
   result "result"
   code <<-EOS
-  symbol = "$"
-  separator = ","
+  result = ''
 
-  if (ds_currency_code['value'] !== undefined) {
-    if (ds_currency_reference[ds_currency_code['value']] !== undefined) {
-      symbol = ds_currency_reference[ds_currency_code['value']]['symbol']
+  if (ds_get_aws_account_tags.length > 0) {
+    tags = []
 
-      if (ds_currency_reference[ds_currency_code['value']]['t_separator'] !== undefined) {
-        separator = ds_currency_reference[ds_currency_code['value']]['t_separator']
-      }
-    }
-  }
+    _.each(ds_get_aws_account_tags[0]['tags'], function(tag) {
+      tags.push(tag['Key'] + '=' + tag['Value'])
+    })
 
-  result = {
-    symbol: symbol,
-    separator: separator
+    result = tags.join(', ')
   }
 EOS
 end
 
-datasource "ds_billing_centers" do
-  request do
-    auth $auth_flexera
-    host rs_optima_host
-    path join(["/analytics/orgs/", val($ds_flexera_optima, "org_id"), "/billing_centers"])
-    header "Api-Version", "1.0"
-    header "User-Agent", "RS Policies"
-    query "view", "allocation_table"
-    ignore_status [403]
-  end
-  result do
-    encoding "json"
-    collect jmes_path(response, "[*]") do
-      field "href", jmes_path(col_item, "href")
-      field "id", jmes_path(col_item, "id")
-      field "name", jmes_path(col_item, "name")
-      field "parent_id", jmes_path(col_item, "parent_id")
-    end
-  end
-end
-
-datasource "ds_top_level_bcs" do
-  run_script $js_top_level_bcs, $ds_billing_centers
-end
-
-script "js_top_level_bcs", type: "javascript" do
-  parameters "ds_billing_centers"
-  result "result"
-  code <<-EOS
-  filtered_bcs = _.reject(ds_billing_centers, function(bc) {
-    return bc['parent_id'] != null && bc['parent_id'] != undefined
-  })
-
-  result = _.compact(_.pluck(filtered_bcs, 'id'))
-EOS
-end
-
-datasource "ds_snapshot_costs" do
-  request do
-    run_script $js_snapshot_costs, $ds_aws_account, $ds_top_level_bcs, val($ds_flexera_optima, "org_id"), rs_optima_host
-  end
-  result do
-    encoding "json"
-    collect jmes_path(response, "rows[*]") do
-      field "resource_id", jmes_path(col_item, "dimensions.resource_id")
-      field "vendorAccountName", jmes_path(col_item, "dimensions.vendor_account_name")
-      field "cost", jmes_path(col_item, "metrics.cost_nonamortized_unblended_adj")
-    end
-  end
-end
-
-script "js_snapshot_costs", type: "javascript" do
-  parameters "ds_aws_account", "ds_top_level_bcs", "org_id", "rs_optima_host"
-  result "request"
-  code <<-EOS
-  //Get Start and End dates
-  start_date = new Date()
-  start_date.setDate(start_date.getDate() - 3)
-  start_date = start_date.toISOString().split("T")[0]
-
-  end_date = new Date()
-  end_date.setDate(end_date.getDate() - 2)
-  end_date = end_date.toISOString().split("T")[0]
-
-  var request = {
-    auth: "auth_flexera",
-    host: rs_optima_host,
-    verb: "POST",
-    path: "/bill-analysis/orgs/" + org_id + "/costs/select",
-    body_fields: {
-      "dimensions": ["resource_id", "vendor_account_name"],
-      "granularity": "day",
-      "start_at": start_date,
-      "end_at": end_date,
-      "metrics": ["cost_nonamortized_unblended_adj"],
-      "billing_center_ids": ds_top_level_bcs,
-      "limit": 100000,
-      "filter": {
-        "type": "and",
-        "expressions": [
-          {
-            "type": "or",
-            "expressions": [
-              { "type": "equal", "dimension": "service", "value": "AmazonRDS" },
-              { "type": "equal", "dimension": "service", "value": "AmazonEC2" }
-            ]
-          },
-          {
-            "dimension": "resource_type",
-            "type": "equal",
-            "value": "Storage Snapshot"
-          },
-          {
-            "dimension": "vendor_account",
-            "type": "equal",
-            "value": ds_aws_account
-          }
-        ]
-      }
-    },
-    headers: {
-      "User-Agent": "RS Policies",
-      "Api-Version": "1.0"
-    },
-    ignore_status: [400]
-  }
-EOS
-end
-
-datasource "ds_regions_list" do
+datasource "ds_describe_regions" do
   request do
     auth $auth_aws
     verb "GET"
@@ -419,20 +379,21 @@ datasource "ds_regions_list" do
 end
 
 datasource "ds_regions" do
-  run_script $js_regions, $param_regions_list, $ds_regions_list, $param_allow_or_deny
+  run_script $js_regions, $ds_describe_regions, $param_regions_list, $param_regions_allow_or_deny
 end
 
 script "js_regions", type:"javascript" do
-  parameters "param_regions_list", "ds_regions_list", "param_allow_or_deny"
+  parameters "ds_describe_regions", "param_regions_list", "param_regions_allow_or_deny"
   result "result"
   code <<-EOS
-  result = ds_regions_list
   allow_deny_test = { "Allow": true, "Deny": false }
 
   if (param_regions_list.length > 0) {
-    result = _.filter(ds_regions_list, function(item) {
-      return _.contains(param_regions_list, item['region']) == allow_deny_test[param_allow_or_deny]
+    result = _.filter(ds_describe_regions, function(item) {
+      return _.contains(param_regions_list, item['region']) == allow_deny_test[param_regions_allow_or_deny]
     })
+  } else {
+    result = ds_describe_regions
   }
 EOS
 end
@@ -668,18 +629,49 @@ script "js_describe_db_cluster_snapshots", type: "javascript" do
 EOS
 end
 
+datasource "ds_snapshots_combined" do
+  run_script $js_snapshots_combined, $ds_describe_snapshots, $ds_describe_db_snapshots, $ds_describe_db_cluster_snapshots, $param_exclusion_tags
+end
+
+script "js_snapshots_combined", type: "javascript" do
+  result "result"
+  parameters "ds_describe_snapshots", "ds_describe_db_snapshots", "ds_describe_db_cluster_snapshots", "param_exclusion_tags"
+  code <<-EOS
+  combined = ds_describe_snapshots.concat(ds_describe_db_snapshots, ds_describe_db_cluster_snapshots)
+
+  result = _.reject(combined, function(snapshot) {
+    snapshot_tags = []
+
+    if (snapshot['tags'] != null && snapshot['tags'] != undefined) {
+      _.each(snapshot['tags'], function(tag) {
+        snapshot_tags.push([tag['key'], tag['value']].join(':'))
+      })
+    }
+
+    exclude_snapshot = false
+
+    _.each(param_exclusion_tags, function(exclusion_tag) {
+      if (_.contains(snapshot_tags, exclusion_tag)) {
+        exclude_snapshot = true
+      }
+    })
+
+    return exclude_snapshot
+  })
+EOS
+end
+
 datasource "ds_filter_old_snapshots" do
-  run_script $js_filter_old_snapshots, $ds_describe_snapshots, $ds_describe_db_snapshots, $ds_describe_db_cluster_snapshots, $param_snapshot_age, $param_exclusion_tag_key
+  run_script $js_filter_old_snapshots, $ds_snapshots_combined, $param_snapshot_age
 end
 
 script "js_filter_old_snapshots", type: "javascript" do
   result "result"
-  parameters "ds_describe_snapshots", "ds_describe_db_snapshots", "ds_describe_db_cluster_snapshots", "param_snapshot_age", "param_exclusion_tag_key"
+  parameters "ds_snapshots_combined", "param_snapshot_age"
   code <<-EOS
   result = []
-  snapshots_combined = ds_describe_snapshots.concat(ds_describe_db_snapshots, ds_describe_db_cluster_snapshots)
 
-  _.each(snapshots_combined, function(snapshot) {
+  _.each(ds_snapshots_combined, function(snapshot) {
     tags = []
 
     if (snapshot['tags'] != null && snapshot['tags'] != undefined) {
@@ -688,28 +680,20 @@ script "js_filter_old_snapshots", type: "javascript" do
       })
     }
 
-    exclude_snapshot = false
+    snapshotTime = Date.parse(snapshot['startTime'])
+    daysOld = Math.round((new Date().getTime() - new Date(snapshotTime).getTime()) / (1000 * 3600 * 24))
 
-    if (param_exclusion_tag_key != '' && param_exclusion_tag_key != null) {
-      exclude_snapshot = _.contains(tags, param_exclusion_tag_key.replace(':', '='))
-    }
-
-    if (!exclude_snapshot) {
-      snapshotTime = Date.parse(snapshot['startTime'])
-      daysOld = Math.round((new Date().getTime() - new Date(snapshotTime).getTime()) / (1000 * 3600 * 24))
-
-      if (daysOld > param_snapshot_age) {
-        result.push({
-          snapshotId: snapshot['snapshotId'],
-          dbClusterId: snapshot['dbClusterId'],
-          dbInstanceId: snapshot['dbInstanceId'],
-          region: snapshot['region'],
-          tags: tags.join(', '),
-          daysOld: daysOld,
-          service: snapshot['service'],
-          volumeSize: snapshot['volumeSize']
-        })
-      }
+    if (daysOld > param_snapshot_age) {
+      result.push({
+        snapshotId: snapshot['snapshotId'],
+        dbClusterId: snapshot['dbClusterId'],
+        dbInstanceId: snapshot['dbInstanceId'],
+        region: snapshot['region'],
+        tags: tags.join(', '),
+        daysOld: daysOld,
+        service: snapshot['service'],
+        volumeSize: snapshot['volumeSize']
+      })
     }
   })
 EOS
@@ -814,14 +798,134 @@ script "js_filter_ami_snapshots", type: "javascript" do
 EOS
 end
 
+datasource "ds_snapshot_costs" do
+  request do
+    run_script $js_snapshot_costs, $ds_aws_account, $ds_top_level_bcs, rs_org_id, rs_optima_host
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "rows[*]") do
+      field "resource_id", jmes_path(col_item, "dimensions.resource_id")
+      field "vendorAccountName", jmes_path(col_item, "dimensions.vendor_account_name")
+      field "cost", jmes_path(col_item, "metrics.cost_amortized_unblended_adj")
+    end
+  end
+end
+
+script "js_snapshot_costs", type: "javascript" do
+  parameters "ds_aws_account", "ds_top_level_bcs", "rs_org_id", "rs_optima_host"
+  result "request"
+  code <<-EOS
+  //Get Start and End dates
+  start_date = new Date()
+  start_date.setDate(start_date.getDate() - 3)
+  start_date = start_date.toISOString().split("T")[0]
+
+  end_date = new Date()
+  end_date.setDate(end_date.getDate() - 2)
+  end_date = end_date.toISOString().split("T")[0]
+
+  var request = {
+    auth: "auth_flexera",
+    host: rs_optima_host,
+    verb: "POST",
+    path: "/bill-analysis/orgs/" + rs_org_id + "/costs/select",
+    body_fields: {
+      "dimensions": ["resource_id", "vendor_account_name"],
+      "granularity": "day",
+      "start_at": start_date,
+      "end_at": end_date,
+      "metrics": ["cost_amortized_unblended_adj"],
+      "billing_center_ids": ds_top_level_bcs,
+      "limit": 100000,
+      "filter": {
+        "type": "and",
+        "expressions": [
+          {
+            "type": "or",
+            "expressions": [
+              { "type": "equal", "dimension": "service", "value": "AmazonRDS" },
+              { "type": "equal", "dimension": "service", "value": "AmazonEC2" }
+            ]
+          },
+          {
+            "dimension": "resource_type",
+            "type": "equal",
+            "value": "Storage Snapshot"
+          },
+          {
+            "dimension": "vendor_account",
+            "type": "equal",
+            "value": ds_aws_account
+          },
+          {
+            type: "not",
+            expression: {
+              dimension: "adjustment_name",
+              type: "substring",
+              substring: "Shared"
+            }
+          }
+        ]
+      }
+    },
+    headers: {
+      "User-Agent": "RS Policies",
+      "Api-Version": "1.0"
+    },
+    ignore_status: [400]
+  }
+EOS
+end
+
+datasource "ds_snapshot_costs_grouped" do
+  run_script $js_snapshot_costs_grouped, $ds_snapshot_costs
+end
+
+script "js_snapshot_costs_grouped", type: "javascript" do
+  parameters "ds_snapshot_costs"
+  result "result"
+  code <<-EOS
+  // Multiple a single day's cost by the average number of days in a month.
+  // The 0.25 is to account for leap years for extra precision.
+  cost_multiplier = 365.25 / 12
+
+  // Group cost data by resourceId for later use
+  result = {}
+
+  _.each(ds_snapshot_costs, function(item) {
+    id = item['formatSnapId'].toLowerCase()
+
+    if (result[id] == undefined) { result[id] = 0.0 }
+    result[id] += item['cost'] * cost_multiplier
+  })
+EOS
+end
+
+datasource "ds_aws_account_name" do
+  run_script $js_aws_account_name, $ds_snapshot_costs
+end
+
+script "js_aws_account_name", type:"javascript" do
+  parameters "ds_snapshot_costs"
+  result "result"
+  code <<-EOS
+  result = ""
+
+  if (ds_snapshot_costs.length > 0) {
+    result = ds_snapshot_costs[0]['vendorAccountName']
+  }
+EOS
+end
+
 datasource "ds_snapshots_cost_mapping" do
-  run_script $js_snapshots_cost_mapping, $ds_filter_ami_snapshots, $ds_snapshot_costs, $ds_currency, $ds_billing_centers, $ds_aws_account, $param_min_savings
+  run_script $js_snapshots_cost_mapping, $ds_filter_ami_snapshots, $ds_snapshot_costs_grouped, $ds_snapshots_combined, $ds_currency, $ds_applied_policy, $ds_aws_account, $ds_aws_account_name, $ds_aws_account_tags, $param_min_savings, $param_snapshot_age
 end
 
 script "js_snapshots_cost_mapping", type: "javascript" do
-  parameters "ds_filter_ami_snapshots", "ds_snapshot_costs", "ds_currency", "ds_billing_centers", "ds_aws_account", "param_min_savings"
+  parameters "ds_filter_ami_snapshots", "ds_snapshot_costs_grouped", "ds_snapshots_combined", "ds_currency", "ds_applied_policy", "ds_aws_account", "ds_aws_account_name", "ds_aws_account_tags", "param_min_savings", "param_snapshot_age"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   // Function for formatting currency numbers later
   function formatNumber(number, separator) {
     var numString = number.toString()
@@ -841,47 +945,29 @@ script "js_snapshots_cost_mapping", type: "javascript" do
     return formatted_number + "." + values[1]
   }
 
-  // Store total costs by resource id for later usage
-  var costs_by_resource_id = {}
-
-  if (ds_billing_centers.length != 0) {
-    _.each(ds_snapshot_costs, function(item) {
-      id = item['resource_id']
-
-      if (costs_by_resource_id[id] != undefined) {
-        costs_by_resource_id[id] += item['cost']
-      } else {
-        costs_by_resource_id[id] = item['cost']
-      }
-    })
-  }
-
-  // Store account name for later usage
-  var accountName = ""
-
-  if (ds_snapshot_costs.length > 0) {
-    accountName = ds_snapshot_costs[0]['vendorAccountName']
-  }
-
   // Iterate through the list of snapshots and create a list for the incident
   snapshot_list = []
   total_savings = 0.0
 
   _.each(ds_filter_ami_snapshots, function(snapshot) {
-    snapshot_cost = costs_by_resource_id[snapshot['formatSnapId']]
+    snapshot_cost = ds_snapshot_costs_grouped[snapshot['formatSnapId'].toLowerCase()]
 
     if (snapshot_cost == null || snapshot_cost == undefined) {
       snapshot_cost = 0.0
     }
 
-    monthly_savings = snapshot_cost * 30
+    if (snapshot_cost >= param_min_savings) {
+      total_savings += snapshot_cost
 
-    if (monthly_savings >= param_min_savings) {
-      total_savings += monthly_savings
+      recommendationDetails = [
+        "Delete ", snapshot['service'] ," snapshot ", instance["snapshotId"], " ",
+        "in AWS Account ", instance["accountName"], " (", instance["accountID"], ")"
+      ].join('')
 
       snapshot_list.push({
         accountID: ds_aws_account,
-        accountName: accountName,
+        accountName: ds_aws_account_name,
+        accountTags: ds_aws_account_tags,
         snapshotId: snapshot['snapshotId'],
         region: snapshot['region'],
         tags: snapshot['tags'],
@@ -889,10 +975,11 @@ script "js_snapshots_cost_mapping", type: "javascript" do
         imageId: snapshot['imageId'],
         dbInstanceId: snapshot['dbInstanceId'],
         dbClusterId: snapshot['dbClusterId'],
-        savings: monthly_savings.toFixed(3),
+        savings: snapshot_cost.toFixed(3),
         savingsCurrency: ds_currency['symbol'],
         volumeSize: snapshot['volumeSize'],
-        service: snapshot['service']
+        service: snapshot['service'],
+        recommendationDetails: recommendationDetails
       })
     }
   })
@@ -900,16 +987,29 @@ script "js_snapshots_cost_mapping", type: "javascript" do
   snapshot_list = _.sortBy(snapshot_list, "imageId")
   snapshot_list = _.sortBy(snapshot_list, "region")
 
-  message = "You do not have the minimum required role of billing_center_viewer to view the savings"
+  // Message for incident output
+  total_snapshots = ds_snapshots_combined.length.toString()
+  total_old_snapshots = snapshot_list.length.toString()
+  old_snapshots_percentage = (total_old_snapshots / total_snapshots * 100).toFixed(2).toString() + '%'
 
-  if (ds_billing_centers.length != 0) {
-    message = "The total estimated monthly savings are " + ds_currency['symbol'] + ' ' + formatNumber(total_savings.toFixed(2), ds_currency['separator'])
-  }
+  findings = [
+    "Out of ", total_snapshots, " snapshots analyzed, ",
+    total_old_snapshots, " (", old_snapshots_percentage,
+    ") are older than ", param_snapshot_age, " days and ",
+    "are recommended for deletion.\n\n"
+  ].join('')
+
+  theshold_disclaimer = "The snapshot age threshold was configured by the user when applying this policy and can be changed by terminating and reapplying this policy with new settings.\n\n"
+
+  savings_message = [
+    "Potential Monthly Savings: ", ds_currency['symbol'], ' ',
+    formatNumber(parseFloat(total_savings).toFixed(2), ds_currency['separator'])
+  ].join('')
 
   result = {
-    account_id: ds_aws_account,
     snapshot_list: snapshot_list,
-    message: message
+    message: findings + theshold_disclaimer + savings_message,
+    policy_name: ds_applied_policy['name']
   }
 EOS
 end
@@ -920,12 +1020,8 @@ end
 
 policy "pol_utilization" do
   validate $ds_snapshots_cost_mapping do
-    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data.snapshot_list }} AWS Old Snapshots Found"
-    detail_template <<-EOS
-The following {{ len data.snapshot_list }} old snapshots, for AWS Account: {{ data.account_id }}, have exceeded the specified age of: {{ parameters.param_snapshot_age }} days old.
-
-{{ data.message }}
-EOS
+    summary_template "{{ data.policy_name }}: {{ len data.snapshot_list }} AWS Old Snapshots Found"
+    detail_template "{{ data.message }}"
     escalate $esc_email
     escalate $esc_delete_snapshot
     # Policy check fails and incident is created only if data is not empty and the Parent Policy has not been terminated
@@ -938,8 +1034,8 @@ EOS
       field "accountName" do
         label "Account Name"
       end
-      field "region" do
-        label "Region"
+      field "accountTags" do
+        label "Account Tags"
       end
       field "daysOld" do
         label "Days Old"
@@ -951,6 +1047,15 @@ EOS
         label "Resource ID"
         path "snapshotId"
       end
+      field "tags" do
+        label "Resource Tags"
+      end
+      field "service" do
+        label "Service"
+      end
+      field "recommendationDetails" do
+        label "Recommendation"
+      end
       field "imageId" do
         label "AMI"
       end
@@ -960,21 +1065,18 @@ EOS
       field "dbInstanceId" do
         label "RDS DB Instance ID"
       end
+      field "region" do
+        label "Region"
+      end
       field "savings" do
         label "Estimated Monthly Savings"
       end
       field "savingsCurrency" do
         label "Savings Currency"
       end
-      field "tags" do
-        label "Tags"
-      end
       field "id" do
         label "ID"
         path "snapshotId"
-      end
-      field "service" do
-        label "Service"
       end
     end
   end
@@ -995,21 +1097,24 @@ escalation "esc_delete_snapshot" do
   automatic contains($param_automatic_action, "Delete Snapshots")
   label "Delete Snapshots"
   description "Approval to delete all selected snapshots"
-  run "delete_snapshots", data, $param_deregister_image, $param_log_to_cm_audit_entries
+  run "delete_snapshots", data, $param_automatic_deregister_image
 end
 
 ###############################################################################
 # Cloud Workflow
 ###############################################################################
 
-define delete_snapshots($data, $param_deregister_image, $param_log_to_cm_audit_entries) do
-  $$debug = $param_log_to_cm_audit_entries == "Yes"
+define delete_snapshots($data, $param_automatic_deregister_image) do
+  # Change "No" to "Yes" to enable CWF debug logging
+  $log_to_cm_audit_entries = "No"
+
+  $$debug = $log_to_cm_audit_entries == "Yes"
   # $$errors global to append error messages from subtasks
   $$errors = []
 
   # Images need to be deregistered before snapshots can be deleted
   # Check if Deregister Image parameter is enabled
-  if $param_deregister_image == "Yes"
+  if $param_automatic_deregister_image == "Yes"
     # Loop through all the old snapshots and deregister the image
     foreach $item in $data do
       if $item['service'] == "EBS"
