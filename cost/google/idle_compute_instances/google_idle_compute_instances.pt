@@ -137,7 +137,6 @@ datasource "ds_compute_utilization" do
   end
 end
 
-
 datasource "ds_calculated_utilization" do
   run_script $js_calculated_utilization, $ds_compute_utilization, $ds_memory_utilization
 end
@@ -165,30 +164,35 @@ datasource "ds_memory_utilization" do
   end
 end
 
-datasource "ds_add_instance_data" do
-  iterate $ds_calculated_utilization
+# GET A LIST OF UNIQUE PROJECT IDS TO REDUCE THE NUMBER OF CALLS WE NEED TO DO TO API TO GET VM DATA
+datasource "ds_grouped_project_ids" do
+  run_script $js_grouped_project_ids, $ds_calculated_utilization
+end
+
+# GET A LIST OF THE INSTANCES OF EVERY ACCOUNT ID IN EVERY ZONE
+datasource "ds_instances" do
+  iterate $ds_grouped_project_ids
   request do
-    run_script $js_add_instance_data,  val(iter_item,"projectId"), val(iter_item,"zone"), val(iter_item,"instance_id")
+    auth $auth_google
+    host "compute.googleapis.com"
+    verb "GET"
+    path join(["/compute/v1/projects/", iter_item, "/aggregated/instances"])
+    ignore_status [403, 404]
+    header "User-Agent", "RS Policies"
+    header "Content-Type", "application/json"
   end
   result do
     encoding "json"
-    collect jmes_path(response,"items[*]") do
-      field "id", val(iter_item, "instance_id")
-      field "hostname", jmes_path(col_item,"name || instance_id")
-      field "selfLink", jmes_path(col_item, "selfLink")
-      field "label_instance_name",val(iter_item, "label_instance_name")
-      field "status", jmes_path(col_item, "status")
-      field "zone", val(iter_item, "zone")
-      field "labels", jmes_path(col_item,"labels")
-      field "cpu_average", val(iter_item, "cpu_average")
-      field "cpu_maximum", val(iter_item, "cpu_maximum")
-      field "cpu_minimum", val(iter_item, "cpu_minimum")
-      field "mem_average", val(iter_item, "mem_average")
-      field "mem_maximum", val(iter_item, "mem_maximum")
-      field "mem_minimum", val(iter_item, "mem_minimum")
-      field "projectId", val(iter_item,"projectId")
-    end
+    field "instances", jq(response, "[ .items | to_entries | map_values(.value) | map(select(has(\"instances\"))) | .[].instances | .[] | {id,name,hostname,selfLink,status,labels,zone,kind}]")
   end
+end
+
+datasource "ds_collected_instances" do
+  run_script $js_collected_instances, $ds_instances
+end
+
+datasource "ds_add_instance_data" do
+  run_script $js_add_instance_data, $ds_collected_instances, $ds_calculated_utilization
 end
 
 datasource "ds_clean_instance_data" do
@@ -242,25 +246,72 @@ script "js_calculated_utilization", type: "javascript" do
 EOS
 end
 
-script "js_add_instance_data", type: "javascript" do
-  result "request"
-  parameters "project","zone", "instance_id"
+script "js_grouped_project_ids", type: "javascript" do
+  result "grouped_project_ids"
+  parameters "ds_calculated_utilization"
   code <<-EOS
-  request = {
-    "auth": "auth_google",
-    "host": "www.googleapis.com",
-    "verb": "GET",
-    "path": "/compute/v1/projects/"+project+"/zones/"+zone+"/instances",
-    "headers": {
-      "User-Agent": "RS Policies",
-      "Content-Type": "application/json"
-    },
-    "query_params": {
-      "filter": "(id="+instance_id+") AND (status=RUNNING)"
+  var grouped_project_ids = _.keys(_.groupBy(ds_calculated_utilization, "projectId"))
+  EOS
+end
+
+script "js_collected_instances", type: "javascript" do
+  result "collected_instances"
+  parameters "ds_instances"
+  code <<-EOS
+  var collected_instances = []
+  for (var i = 0; i < ds_instances.length; i++) {
+    for (var j = 0; j < ds_instances[i].instances.length; j++) {
+      collected_instances.push(ds_instances[i].instances[j])
     }
-    "ignore_status": [403,404]
   }
-EOS
+  EOS
+end
+
+script "js_add_instance_data", type: "javascript" do
+  result "instances_with_data"
+  parameters "ds_collected_instances", "ds_calculated_utilization"
+  code <<-EOS
+  var instances_with_data = []
+  for (var i = 0; i < ds_calculated_utilization.length; i++) {
+    var instance_id = ds_calculated_utilization[i].instance_id
+    var data_record = _.find(ds_collected_instances, function(record) { return record.id === instance_id })
+    if (data_record === null || data_record === undefined) {
+      instances_with_data.push({
+        id: instance_id,
+        hostname: "",
+        selfLink: "",
+        label_instance_name: ds_calculated_utilization[i].label_instance_name,
+        status: "",
+        zone: ds_calculated_utilization[i].zone,
+        labels: {},
+        cpu_average: parseFloat(ds_calculated_utilization[i].cpu_average).toFixed(2),
+        cpu_maximum: parseFloat(ds_calculated_utilization[i].cpu_maximum).toFixed(2),
+        cpu_minimum: parseFloat(ds_calculated_utilization[i].cpu_minimum).toFixed(2),
+        mem_average: parseFloat(ds_calculated_utilization[i].mem_average).toFixed(2),
+        mem_maximum: parseFloat(ds_calculated_utilization[i].mem_maximum).toFixed(2),
+        mem_minimum: parseFloat(ds_calculated_utilization[i].mem_minimum).toFixed(2),
+        projectId: ds_calculated_utilization[i].projectId
+      })
+    } else {
+      instances_with_data.push({
+        id: instance_id,
+        hostname: data_record.name || data_record.id,
+        selfLink: data_record.selfLink,
+        label_instance_name: ds_calculated_utilization[i].label_instance_name,
+        status: data_record.status,
+        zone: ds_calculated_utilization[i].zone,
+        labels: data_record.labels,
+        cpu_average: parseFloat(ds_calculated_utilization[i].cpu_average).toFixed(2),
+        cpu_maximum: parseFloat(ds_calculated_utilization[i].cpu_maximum).toFixed(2),
+        cpu_minimum: parseFloat(ds_calculated_utilization[i].cpu_minimum).toFixed(2),
+        mem_average: parseFloat(ds_calculated_utilization[i].mem_average).toFixed(2),
+        mem_maximum: parseFloat(ds_calculated_utilization[i].mem_maximum).toFixed(2),
+        mem_minimum: parseFloat(ds_calculated_utilization[i].mem_minimum).toFixed(2),
+        projectId: ds_calculated_utilization[i].projectId
+      })
+    }
+  }
+  EOS
 end
 
 script "js_clean_instance_data", type: "javascript" do
