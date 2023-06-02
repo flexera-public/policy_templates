@@ -1,5 +1,14 @@
 # Changelog
 
+## v7.0
+
+-
+
+## v6.1
+
+- Updated policy metadata to facilitate scraping of incidents for Recommendations dashboard
+- Added "Resource Type" to incident output
+
 ## v6.0
 
 - Added parameter to enable Allow or Deny filtering by user entered regions
