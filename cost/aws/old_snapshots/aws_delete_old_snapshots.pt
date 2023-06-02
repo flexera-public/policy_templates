@@ -35,7 +35,7 @@ end
 parameter "param_regions_allow_or_deny" do
   type "string"
   label "Allow/Deny Regions"
-  description "Allow or Deny entered regions. See the README for more details"
+  description "Allow or Deny entered regions. See the README for more details."
   allowed_values "Allow", "Deny"
   default "Allow"
 end
@@ -44,7 +44,7 @@ parameter "param_regions_list" do
   type "list"
   label "Allow/Deny Regions List"
   allowed_pattern /^([a-zA-Z-_]+-[a-zA-Z0-9-_]+-[0-9-_]+,*|)+$/
-  description "A list of allowed or denied regions. See the README for more details"
+  description "A list of allowed or denied regions. See the README for more details."
   default []
 end
 
@@ -59,7 +59,7 @@ end
 parameter "param_snapshot_include_ami" do
   type "string"
   label "Include Snapshots with AMI"
-  description "Whether or not to produce recommendations for snapshots with an associated AMI (Amazon Machine Image)"
+  description "Whether or not to produce recommendations for snapshots with an associated registered AMI (Amazon Machine Image)."
   allowed_values "Yes", "No"
   default "No"
 end
@@ -67,7 +67,7 @@ end
 parameter "param_min_savings" do
   type "number"
   label "Minimum Savings Threshold"
-  description "Minimum potential savings required to generate a recommendation"
+  description "Minimum potential savings required to generate a recommendation."
   min_value 0
   default 0
 end
@@ -75,7 +75,7 @@ end
 parameter "param_exclusion_tags" do
   type "list"
   label "Exclusion Tags (Key:Value)"
-  description "Cloud native tags to ignore instances that you don't want to consider for downsizing or termination. Format: Key:Value"
+  description "Cloud native tags to ignore instances that you don't want to produce recommendations for. Format: Key:Value"
   allowed_pattern /(^$)|([\w]?)+\:([\w]?)+/
   default []
 end
@@ -83,7 +83,7 @@ end
 parameter "param_automatic_action" do
   type "list"
   label "Automatic Actions"
-  description "When this value is set, this policy will automatically take the selected action(s)"
+  description "When this value is set, this policy will automatically take the selected action."
   allowed_values ["Delete Snapshots"]
   default []
 end
@@ -136,16 +136,6 @@ pagination "pagination_aws_describeimages_xml" do
   end
   set_page_marker do
     query "NextToken"
-  end
-end
-
-# https://docs.aws.amazon.com/AmazonRDS/latest/APIReference/API_DescribeDBInstances.html
-pagination "pagination_aws_describe_db_instances_xml" do
-  get_page_marker do
-    body_path "//DescribeDBInstancesResponse/DescribeDBInstancesResult/Marker"
-  end
-  set_page_marker do
-    query "Marker"
   end
 end
 
@@ -401,7 +391,19 @@ end
 datasource "ds_describe_snapshots" do
   iterate $ds_regions
   request do
-    run_script $js_describe_snapshots, val(iter_item, "region"), $ds_aws_account
+    auth $auth_aws
+    pagination $pagination_aws_describesnapshots_xml
+    host join(["ec2.", val(iter_item, "region"), ".amazonaws.com"])
+    path "/"
+    header "User-Agent", "RS Policies"
+    header "Content-Type", "text/xml"
+    query "Action", "DescribeSnapshots"
+    query "Version", "2016-11-15"
+    query "Filter.1.Name", "status"
+    query "Filter.1.Value.1", "completed"
+    query "Filter.2.Name", "owner-id"
+    query "Filter.2.Value.1", $ds_aws_account
+    ignore_status [403, 404]
   end
   result do
     encoding "xml"
@@ -422,37 +424,20 @@ datasource "ds_describe_snapshots" do
   end
 end
 
-script "js_describe_snapshots", type: "javascript" do
-  result "request"
-  parameters "region", "ds_aws_account"
-  code <<-EOS
-  var request = {
-    auth: "auth_aws",
-    host: "ec2." + region + ".amazonaws.com",
-    verb: "GET",
-    path: "/",
-    pagination: "pagination_aws_describesnapshots_xml",
-    headers: {
-      "User-Agent": "RS Policies",
-      "Content-Type": "text/xml"
-    },
-    query_params: {
-      "Action": "DescribeSnapshots",
-      "Version": "2016-11-15",
-      "Filter.1.Name": "status",
-      "Filter.1.Value.1": "completed",
-      "Filter.2.Name": "owner-id",
-      "Filter.2.Value.1": ds_aws_account
-    },
-    ignore_status: [403, 404]
-  }
-EOS
-end
-
 datasource "ds_describe_db_clusters" do
   iterate $ds_regions
   request do
-    run_script $js_describe_db_clusters, val(iter_item, "region")
+    auth $auth_aws
+    pagination $pagination_aws_describe_db_clusters_xml
+    host join(["rds.", val(iter_item, "region"), ".amazonaws.com"])
+    path "/"
+    header "User-Agent", "RS Policies"
+    header "Content-Type", "text/xml"
+    query "Action", "DescribeDBClusters"
+    query "Version", "2014-10-31"
+    query "Filter.1.Name", "owner-id"
+    query "Filter.1.Value.1", $ds_aws_account
+    ignore_status [403, 404]
   end
   result do
     encoding "xml"
@@ -470,77 +455,20 @@ datasource "ds_describe_db_clusters" do
   end
 end
 
-script "js_describe_db_clusters", type: "javascript" do
-  result "request"
-  parameters "region"
-  code <<-EOS
-  var request = {
-    auth: "auth_aws",
-    host: "rds." + region + ".amazonaws.com",
-    verb: "GET",
-    path: "/",
-    pagination: "pagination_aws_describe_db_clusters_xml",
-    headers: {
-      "User-Agent": "RS Policies",
-      "Content-Type": "text/xml"
-    },
-    query_params: {
-      "Action": "DescribeDBClusters",
-      "Version": "2014-10-31"
-    },
-    ignore_status: [403, 404]
-  }
-EOS
-end
-
-datasource "ds_describe_db_instances" do
-  iterate $ds_regions
-  request do
-    run_script $js_describe_db_instances, val(iter_item, "region")
-  end
-  result do
-    encoding "xml"
-    collect xpath(response, "//DescribeDBInstancesResponse/DescribeDBInstancesResult/DBInstances/DBInstance", "array") do
-      field "tags" do
-        collect xpath(col_item, "TagList/Tag", "array") do
-          field "key", xpath(col_item, "Key")
-          field "value", xpath(col_item, "Value")
-        end
-      end
-      field "region", val(iter_item, "region")
-      field "dbInstanceIdentifier", xpath(col_item, "DBInstanceIdentifier")
-      field "dbInstanceResourceId", xpath(col_item, "DbiResourceId")
-    end
-  end
-end
-
-script "js_describe_db_instances", type: "javascript" do
-  result "request"
-  parameters "region"
-  code <<-EOS
-  var request = {
-    auth: "auth_aws",
-    host: "rds." + region + ".amazonaws.com",
-    verb: "GET",
-    path: "/",
-    pagination: "pagination_aws_describe_db_instances_xml",
-    headers: {
-      "User-Agent": "RS Policies",
-      "Content-Type": "text/xml"
-    },
-    query_params: {
-      "Action": "DescribeDBInstances",
-      "Version": "2014-10-31"
-    },
-    ignore_status: [403, 404]
-  }
-EOS
-end
-
 datasource "ds_describe_db_snapshots" do
   iterate $ds_regions
   request do
-    run_script $js_describe_db_snapshots, val(iter_item, "region")
+    auth $auth_aws
+    pagination $pagination_aws_describe_db_snapshots_xml
+    host join(["rds.", val(iter_item, "region"), ".amazonaws.com"])
+    path "/"
+    header "User-Agent", "RS Policies"
+    header "Content-Type", "text/xml"
+    query "Action", "DescribeDBSnapshots"
+    query "Version", "2014-10-31"
+    query "Filter.1.Name", "owner-id"
+    query "Filter.1.Value.1", $ds_aws_account
+    ignore_status [403, 404]
   end
   result do
     encoding "xml"
@@ -561,32 +489,20 @@ datasource "ds_describe_db_snapshots" do
   end
 end
 
-script "js_describe_db_snapshots", type: "javascript" do
-  result "request"
-  parameters "region"
-  code <<-EOS
-  var request = {
-    auth: "auth_aws",
-    host: "rds." + region + ".amazonaws.com",
-    verb: "GET",
-    path: "/",
-    pagination: "pagination_aws_describe_db_snapshots_xml",
-    headers: {
-      "User-Agent": "RS Policies",
-      "Content-Type": "text/xml"
-    },
-    query_params: {
-      "Action": "DescribeDBSnapshots",
-      "Version": "2014-10-31"
-    }
-  }
-EOS
-end
-
 datasource "ds_describe_db_cluster_snapshots" do
   iterate $ds_regions
   request do
-    run_script $js_describe_db_cluster_snapshots, val(iter_item, "region")
+    auth $auth_aws
+    pagination $pagination_aws_describe_db_cluster_snapshots_xml
+    host join(["rds.", val(iter_item, "region"), ".amazonaws.com"])
+    path "/"
+    header "User-Agent", "RS Policies"
+    header "Content-Type", "text/xml"
+    query "Action", "DescribeDBClusterSnapshots"
+    query "Version", "2014-10-31"
+    query "Filter.1.Name", "owner-id"
+    query "Filter.1.Value.1", $ds_aws_account
+    ignore_status [403, 404]
   end
   result do
     encoding "xml"
@@ -607,35 +523,13 @@ datasource "ds_describe_db_cluster_snapshots" do
   end
 end
 
-script "js_describe_db_cluster_snapshots", type: "javascript" do
-  result "request"
-  parameters "region"
-  code <<-EOS
-  var request = {
-    auth: "auth_aws",
-    host: "rds." + region + ".amazonaws.com",
-    verb: "GET",
-    path: "/",
-    pagination: "pagination_aws_describe_db_cluster_snapshots_xml",
-    headers: {
-      "User-Agent": "RS Policies",
-      "Content-Type": "text/xml"
-    },
-    query_params: {
-      "Action": "DescribeDBClusterSnapshots",
-      "Version": "2014-10-31"
-    }
-  }
-EOS
-end
-
 datasource "ds_snapshots_combined" do
   run_script $js_snapshots_combined, $ds_describe_snapshots, $ds_describe_db_snapshots, $ds_describe_db_cluster_snapshots, $param_exclusion_tags
 end
 
 script "js_snapshots_combined", type: "javascript" do
-  result "result"
   parameters "ds_describe_snapshots", "ds_describe_db_snapshots", "ds_describe_db_cluster_snapshots", "param_exclusion_tags"
+  result "result"
   code <<-EOS
   combined = ds_describe_snapshots.concat(ds_describe_db_snapshots, ds_describe_db_cluster_snapshots)
 
@@ -666,8 +560,8 @@ datasource "ds_filter_old_snapshots" do
 end
 
 script "js_filter_old_snapshots", type: "javascript" do
-  result "result"
   parameters "ds_snapshots_combined", "param_snapshot_age"
+  result "result"
   code <<-EOS
   result = []
 
@@ -702,7 +596,17 @@ end
 datasource "ds_get_snapshot_ami" do
   iterate $ds_regions
   request do
-    run_script $js_get_snapshot_ami, val(iter_item, "region"), $ds_aws_account
+    auth $auth_aws
+    pagination $pagination_aws_describeimages_xml
+    host join(["ec2.", val(iter_item, "region"), ".amazonaws.com"])
+    path "/"
+    header "User-Agent", "RS Policies"
+    header "Content-Type", "text/xml"
+    query "Action", "DescribeImages"
+    query "Version", "2016-11-15"
+    query "Filter.1.Name", "owner-id"
+    query "Filter.1.Value.1", $ds_aws_account
+    ignore_status [403, 404]
   end
   result do
     encoding "xml"
@@ -715,37 +619,13 @@ datasource "ds_get_snapshot_ami" do
   end
 end
 
-script "js_get_snapshot_ami", type: "javascript" do
-  result "request"
-  parameters "region", "ds_aws_account"
-  code <<-EOS
-  var request = {
-    auth: "auth_aws",
-    host: "ec2." + region + ".amazonaws.com",
-    verb: "GET",
-    path: "/",
-    pagination: "pagination_aws_describeimages_xml",
-    headers: {
-      "User-Agent": "RS Policies",
-      "Content-Type": "text/xml"
-    },
-    query_params: {
-      "Action": "DescribeImages",
-      "Version": "2016-11-15",
-      "Filter.1.Name": "owner-id",
-      "Filter.1.Value.1": ds_aws_account
-    }
-  }
-EOS
-end
-
 datasource "ds_filter_ami_snapshots" do
   run_script $js_filter_ami_snapshots, $ds_get_snapshot_ami, $ds_filter_old_snapshots, $ds_aws_account, $param_snapshot_include_ami
 end
 
 script "js_filter_ami_snapshots", type: "javascript" do
-  result "result"
   parameters "ds_get_snapshot_ami", "ds_filter_old_snapshots", "ds_aws_account", "param_snapshot_include_ami"
+  result "result"
   code <<-EOS
   var result = []
 
@@ -1001,9 +881,9 @@ script "js_snapshots_cost_mapping", type: "javascript" do
   ].join('')
 
   if (param_snapshot_include_ami = "Yes") {
-    ami_message = "Snapshots with an associated registered AMI were included in the results.\n\n"
+    ami_message = "Snapshots with an associated registered AMI (Amazon Machine Image) were included in the results.\n\n"
   } else {
-    ami_message = "Snapshots with an associated registered AMI were not included in the results.\n\n"
+    ami_message = "Snapshots with an associated registered AMI (Amazon Machine Image) were not included in the results.\n\n"
   }
 
   theshold_disclaimer = "The above settings were configured by the user when applying this policy and can be changed by terminating and reapplying this policy with new settings.\n\n"
