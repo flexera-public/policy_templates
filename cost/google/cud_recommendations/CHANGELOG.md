@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.1
+
+- Fixed issue preventing policy from updating in the public catalog
+
 ## v3.0
 
 - Added **Term** parameter, now filtering the recommendations by 1 year or 3 year term is possible.
