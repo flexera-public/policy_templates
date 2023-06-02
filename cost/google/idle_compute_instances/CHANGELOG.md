@@ -1,5 +1,13 @@
 # Changelog
 
+## v2.11
+
+Optimized the execution time of the policy by using the following approaches:
+
+- CPU utilization data is now retrieved using GCP Monitoring Query Language; before, the Flexera platform did the calculations, but now those are done faster on GCP resources.
+- Memory utilization data is now retrieved using GCP Monitoring Query Language; before, the Flexera platform did the calculations, but now those are done faster on GCP resources.
+- Instance data is now retrieved using a much faster API endpoint that retrieves the data of all the instances in every zone.
+
 ## v2.10
 
 - Modified `sys_log` definition to disable `rs_cm.audit_entry.create` outside Flexera NAM
