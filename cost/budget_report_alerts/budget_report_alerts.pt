@@ -80,7 +80,7 @@ credentials "auth_flexera" do
 end
 
 ###############################################################################
-# Datasources
+# Datasources & Scripts
 ###############################################################################
 
 datasource "ds_currency_reference" do
@@ -163,42 +163,6 @@ datasource "ds_filtered_budgets" do
   run_script $js_filter_budgets, $ds_budgets, $param_budget_name_id
 end
 
-datasource "ds_reports" do
-  iterate $ds_filtered_budgets
-  request do
-    run_script $js_report_request, rs_optima_host, rs_org_id, $param_use_groups, $param_unbudgeted, iter_item
-  end
-  result do
-    encoding "json"
-    collect jmes_path(response,"[*]") do
-      field "b_id", val(iter_item, "id")
-      field "name", val(iter_item, "name")
-      field "dimensionsIDs", val(iter_item, "dimensions")
-      field "metric", val(iter_item, "metric")
-      field "timestamp", jmes_path(col_item,"timestamp")
-      field "dimensions", jmes_path(col_item,"dimensions")
-      field "budgetAmount", jmes_path(col_item,"metrics.budgetAmount")
-      field "spendAmount", jmes_path(col_item,"metrics.spendAmount")
-    end
-  end
-end
-
-datasource "ds_aggregated" do
-  run_script $js_aggregated, $ds_reports, $ds_currency_code, $ds_currency_reference, $param_threshold_percentage, $param_type, f1_app_host, $param_budget_name_id, $ds_dimensions, $param_filter
-end
-
-datasource "ds_only_forecasted" do
-  run_script $js_only_forecasted, $ds_aggregated
-end
-
-datasource "ds_only_exceeded" do
-  run_script $js_only_exceeded, $ds_aggregated
-end
-
-###############################################################################
-# Scripts
-###############################################################################
-
 script "js_filter_budgets", type: "javascript" do
   parameters "budgets", "budget_name_id"
   result "results"
@@ -221,6 +185,26 @@ script "js_filter_budgets", type: "javascript" do
       return (b.name == budget_name_id || b.id == budget_name_id) && has_curr_month;
     });
 EOS
+end
+
+datasource "ds_reports" do
+  iterate $ds_filtered_budgets
+  request do
+    run_script $js_report_request, rs_optima_host, rs_org_id, $param_use_groups, $param_unbudgeted, iter_item
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response,"[*]") do
+      field "b_id", val(iter_item, "id")
+      field "name", val(iter_item, "name")
+      field "dimensionsIDs", val(iter_item, "dimensions")
+      field "metric", val(iter_item, "metric")
+      field "timestamp", jmes_path(col_item,"timestamp")
+      field "dimensions", jmes_path(col_item,"dimensions")
+      field "budgetAmount", jmes_path(col_item,"metrics.budgetAmount")
+      field "spendAmount", jmes_path(col_item,"metrics.spendAmount")
+    end
+  end
 end
 
 script "js_report_request", type: "javascript" do
@@ -249,6 +233,10 @@ script "js_report_request", type: "javascript" do
     }
   }
   EOS
+end
+
+datasource "ds_aggregated" do
+  run_script $js_aggregated, $ds_reports, $ds_currency_code, $ds_currency_reference, $param_threshold_percentage, $param_type, f1_app_host, $param_budget_name_id, $ds_dimensions, $param_filter
 end
 
 script "js_aggregated", type: "javascript" do
@@ -423,12 +411,20 @@ script "js_aggregated", type: "javascript" do
 EOS
 end
 
+datasource "ds_only_forecasted" do
+  run_script $js_only_forecasted, $ds_aggregated
+end
+
 script "js_only_forecasted", type: "javascript" do
   parameters "arg"
   result "results"
   code <<-EOS
     results = arg.forecasted
   EOS
+end
+
+datasource "ds_only_exceeded" do
+  run_script $js_only_exceeded, $ds_aggregated
 end
 
 script "js_only_exceeded", type: "javascript" do
