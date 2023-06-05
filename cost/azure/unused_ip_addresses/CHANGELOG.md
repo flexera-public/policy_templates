@@ -2,7 +2,7 @@
 
 ## v4.6
 
-- Added hash_exclude at policy definition segment
+- Added hash_exclude to ignore changes to the savingsCurrency and savings, since those will change constantly
 
 ## v4.5
 
