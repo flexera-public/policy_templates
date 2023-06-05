@@ -310,20 +310,15 @@ These templates can generate savings estimates for your environment.
 
 #### GCE
 
-- [Google Unutilized IP Addresses](./cost/google/unutilized_ip_addresses)
-
 - Compute
 
   - [Google Committed Use Discount (CUD)](./cost/google/cud_report)
   - [Google Expiring Committed Use Discount (CUD)](./cost/google/cud_expiration)
-  - [Google Idle Compute Instances](./cost/google/idle_compute_instances)
-  - [Google Inefficient Instance Utilization using StackDriver](./cost/google/instances_stackdriver_utilization)
   - [Google Schedule Instance](./cost/google/schedule_instance)
 
 - SQL
 
   - [Google Rightsize CloudSQL Instances](./cost/google/cloudsql_rightsizing)
-  - [Google Unused CloudSQL Instances](./cost/google/unused_cloudsql_instances)
 
 - Storage
 
@@ -363,7 +358,6 @@ These templates can generate savings estimates for your environment.
   - [Google Idle Persistent Disk Recommender](./cost/google/idle_persistent_disk_recommendations)
   - [Google Old Snapshots](./cost/google/old_snapshots)
   - [Google Recommender Policy](./cost/google/recommender)
-  - [Google Unused Volumes](./cost/google/unattached_volumes)
 
 #### Kubecost
 
@@ -628,12 +622,12 @@ These templates can generate savings estimates for your environment.
 <!-- Begin Policy Template Stats -->
 <!--
 ---
-:total_count: 247
+:total_count: 242
 :optimization_count: 27
 :categories:
   Compliance: 33
   Operational: 23
-  Cost: 104
+  Cost: 99
   SaaS Management: 13
   Security: 74
 :providers:
@@ -642,8 +636,8 @@ These templates can generate savings estimates for your environment.
   Flexera Cloud Management: 4
   AWS: 77
   Flexera Optima: 26
-  GCE: 11
-  Google: 9
+  GCE: 7
+  Google: 8
   Azure: 76
   GitHub: 7
   Flexera: 5
@@ -658,12 +652,12 @@ These templates can generate savings estimates for your environment.
   Okta: 1
   Flexera SaaS Manager: 9
 :services:
-  '': 68
+  '': 67
   Org: 1
   IAM: 19
   EC2: 13
   ECS: 1
-  Compute: 32
+  Compute: 30
   Policy: 1
   Identity: 1
   FNMS: 1
@@ -671,10 +665,10 @@ These templates can generate savings estimates for your environment.
   Tags: 2
   RDS: 6
   AKS: 2
-  SQL: 16
+  SQL: 15
   S3: 9
   EBS: 3
-  Storage: 21
+  Storage: 20
   All: 3
   Cost Explorer: 1
   ELB: 4
@@ -712,21 +706,21 @@ These templates can generate savings estimates for your environment.
   Database Services: 1
   Forecasting: 4
   Inefficient Disk Usage: 1
-  Unused Database Services: 4
+  Unused Database Services: 3
   GP3 Volumes: 1
   RightSize Database Services: 2
   Old Snapshots: 3
   Rightsize Compute Instances: 6
   Reserved Instance: 4
-  Unused Volumes: 7
+  Unused Volumes: 6
   N/A: 3
   Schedule Instance: 3
   Savings Plan Utilization: 1
   Savings Plan: 2
-  Unused IP Addresses: 4
-  Idle Compute Instances: 4
+  Unused IP Addresses: 3
+  Idle Compute Instances: 3
   Object Store Optimization: 3
-  Inefficient Instance Usage: 3
+  Inefficient Instance Usage: 2
   Rightsize Containers: 1
   Rightsize Clusters: 1
   Reserved Instances: 1
