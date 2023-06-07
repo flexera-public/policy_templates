@@ -339,19 +339,7 @@ end
 datasource "ds_describe_snapshots" do
   iterate $ds_regions
   request do
-    auth $auth_aws
-    pagination $pagination_aws_describesnapshots_xml
-    host join(["ec2.", val(iter_item, "region"), ".amazonaws.com"])
-    path "/"
-    header "User-Agent", "RS Policies"
-    header "Content-Type", "text/xml"
-    query "Action", "DescribeSnapshots"
-    query "Version", "2016-11-15"
-    query "Filter.1.Name", "status"
-    query "Filter.1.Value.1", "completed"
-    query "Filter.2.Name", "owner-id"
-    query "Filter.2.Value.1", $ds_aws_account
-    ignore_status [403, 404]
+    run_script $js_describe_snapshots, val(iter_item,"region"), $ds_aws_account
   end
   result do
     encoding "xml"
@@ -371,6 +359,31 @@ datasource "ds_describe_snapshots" do
       field "api_call", "DescribeSnapshots"
     end
   end
+end
+
+script "js_describe_snapshots", type: "javascript" do
+  parameters "region", "ds_aws_account"
+  result "result"
+  code <<-EOS
+  result = {
+    auth: "auth_aws",
+    host: "ec2." + region + ".amazonaws.com",
+    path: "/",
+    pagination: "aws_pagination_describesnapshots_xml",
+    headers: {
+      "User-Agent": "RS Policies",
+      "Content-Type": "text/xml"
+    },
+    query_params: {
+      'Action': 'DescribeSnapshots',
+      'Version': '2016-11-15',
+      'Filter.1.Name': 'status',
+      'Filter.1.Value.1': 'completed',
+      'Filter.2.Name': 'owner-id',
+      'Filter.2.Value.1': ds_aws_account
+    }
+  }
+EOS
 end
 
 datasource "ds_describe_db_snapshots" do
