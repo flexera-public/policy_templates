@@ -293,48 +293,6 @@ script "js_aws_account", type:"javascript" do
   code "result = ds_get_caller_identity[0]['account']"
 end
 
-datasource "ds_get_aws_account_tags" do
-  iterate $ds_get_caller_identity
-  request do
-    auth $auth_aws
-    pagination $pagination_aws
-    host "organizations.us-east-1.amazonaws.com"
-    path '/'
-    verb "POST"
-    header "User-Agent", "RS Policies"
-    header "X-Amz-Target", "AWSOrganizationsV20161128.ListTagsForResource"
-    header "Content-Type", "application/x-amz-json-1.1"
-    body_field "ResourceId", val(iter_item, "account")
-    ignore_status [400]
-  end
-  result do
-    encoding "json"
-    field "tags", jmes_path(response, "Tags")
-  end
-end
-
-datasource "ds_aws_account_tags" do
-  run_script $js_aws_account_tags, $ds_get_aws_account_tags
-end
-
-script "js_aws_account_tags", type:"javascript" do
-  parameters "ds_get_aws_account_tags"
-  result "result"
-  code <<-EOS
-  result = ''
-
-  if (ds_get_aws_account_tags.length > 0) {
-    tags = []
-
-    _.each(ds_get_aws_account_tags[0]['tags'], function(tag) {
-      tags.push(tag['Key'] + '=' + tag['Value'])
-    })
-
-    result = tags.join(', ')
-  }
-EOS
-end
-
 datasource "ds_describe_regions" do
   request do
     auth $auth_aws
@@ -400,8 +358,8 @@ datasource "ds_describe_snapshots" do
     collect xpath(response, "//DescribeSnapshotsResponse/snapshotSet/item", "array") do
       field "tags" do
         collect xpath(col_item, "tagSet/item") do
-          field "key", xpath(col_item, "key")
-          field "value", xpath(col_item, "value")
+          field "key", xpath(col_item, "Key")
+          field "value", xpath(col_item, "Value")
         end
       end
       field "region", val(iter_item, "region")
@@ -760,11 +718,11 @@ EOS
 end
 
 datasource "ds_snapshots_cost_mapping" do
-  run_script $js_snapshots_cost_mapping, $ds_filter_ami_snapshots, $ds_snapshot_costs_grouped, $ds_snapshots_combined, $ds_currency, $ds_applied_policy, $ds_aws_account, $ds_aws_account_name, $ds_aws_account_tags, $param_min_savings, $param_snapshot_age, $param_snapshot_include_ami
+  run_script $js_snapshots_cost_mapping, $ds_filter_ami_snapshots, $ds_snapshot_costs_grouped, $ds_snapshots_combined, $ds_currency, $ds_applied_policy, $ds_aws_account, $ds_aws_account_name, $param_min_savings, $param_snapshot_age, $param_snapshot_include_ami
 end
 
 script "js_snapshots_cost_mapping", type: "javascript" do
-  parameters "ds_filter_ami_snapshots", "ds_snapshot_costs_grouped", "ds_snapshots_combined", "ds_currency", "ds_applied_policy", "ds_aws_account", "ds_aws_account_name", "ds_aws_account_tags", "param_min_savings", "param_snapshot_age", "param_snapshot_include_ami"
+  parameters "ds_filter_ami_snapshots", "ds_snapshot_costs_grouped", "ds_snapshots_combined", "ds_currency", "ds_applied_policy", "ds_aws_account", "ds_aws_account_name", "param_min_savings", "param_snapshot_age", "param_snapshot_include_ami"
   result "result"
   code <<-'EOS'
   // Function for formatting currency numbers later
@@ -808,7 +766,6 @@ script "js_snapshots_cost_mapping", type: "javascript" do
       snapshot_list.push({
         accountID: ds_aws_account,
         accountName: ds_aws_account_name,
-        accountTags: ds_aws_account_tags,
         snapshotId: snapshot['snapshotId'],
         region: snapshot['region'],
         tags: snapshot['tags'],
@@ -816,7 +773,7 @@ script "js_snapshots_cost_mapping", type: "javascript" do
         imageId: snapshot['imageId'],
         dbInstanceId: snapshot['dbInstanceId'],
         dbClusterId: snapshot['dbClusterId'],
-        savings: snapshot_cost.toFixed(3),
+        savings: parseFloat(snapshot_cost.toFixed(3)),
         savingsCurrency: ds_currency['symbol'],
         volumeSize: snapshot['volumeSize'],
         service: snapshot['service'],
@@ -826,8 +783,7 @@ script "js_snapshots_cost_mapping", type: "javascript" do
     }
   })
 
-  snapshot_list = _.sortBy(snapshot_list, "imageId")
-  snapshot_list = _.sortBy(snapshot_list, "region")
+  snapshot_list = _.sortBy(snapshot_list, "savings")
 
   // Message for incident output
   total_snapshots = ds_snapshots_combined.length.toString()
@@ -847,16 +803,17 @@ script "js_snapshots_cost_mapping", type: "javascript" do
     ami_message = "Snapshots with an associated registered AMI (Amazon Machine Image) were not included in the results.\n\n"
   }
 
-  theshold_disclaimer = "The above settings were configured by the user when applying this policy and can be changed by terminating and reapplying this policy with new settings.\n\n"
+  disclaimer = "The above settings can be modified by editing the applied policy and changing the appropriate parameters."
 
   savings_message = [
-    "Potential Monthly Savings: ", ds_currency['symbol'], ' ',
+    ds_currency['symbol'], ' ',
     formatNumber(parseFloat(total_savings).toFixed(2), ds_currency['separator'])
   ].join('')
 
   result = {
     snapshot_list: snapshot_list,
-    message: findings + ami_message + theshold_disclaimer + savings_message,
+    savings: savings_message,
+    message: findings + ami_message + disclaimer,
     policy_name: ds_applied_policy['name']
   }
 EOS
@@ -869,7 +826,11 @@ end
 policy "pol_utilization" do
   validate $ds_snapshots_cost_mapping do
     summary_template "{{ data.policy_name }}: {{ len data.snapshot_list }} AWS Old Snapshots Found"
-    detail_template "{{ data.message }}"
+    detail_template <<-'EOS'
+    **Potential Monthly Savings:** {{ data.savings }}
+
+    {{ data.message }}
+    EOS
     escalate $esc_email
     escalate $esc_delete_snapshot
     # Policy check fails and incident is created only if data is not empty and the Parent Policy has not been terminated
