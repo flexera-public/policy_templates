@@ -299,48 +299,6 @@ script "js_aws_account", type:"javascript" do
   code "result = ds_get_caller_identity[0]['account']"
 end
 
-datasource "ds_get_aws_account_tags" do
-  iterate $ds_get_caller_identity
-  request do
-    auth $auth_aws
-    pagination $pagination_aws
-    host "organizations.us-east-1.amazonaws.com"
-    path '/'
-    verb "POST"
-    header "User-Agent", "RS Policies"
-    header "X-Amz-Target", "AWSOrganizationsV20161128.ListTagsForResource"
-    header "Content-Type", "application/x-amz-json-1.1"
-    body_field "ResourceId", val(iter_item, "account")
-    ignore_status [400]
-  end
-  result do
-    encoding "json"
-    field "tags", jmes_path(response, "Tags")
-  end
-end
-
-datasource "ds_aws_account_tags" do
-  run_script $js_aws_account_tags, $ds_get_aws_account_tags
-end
-
-script "js_aws_account_tags", type:"javascript" do
-  parameters "ds_get_aws_account_tags"
-  result "result"
-  code <<-EOS
-  result = ''
-
-  if (ds_get_aws_account_tags.length > 0) {
-    tags = []
-
-    _.each(ds_get_aws_account_tags[0]['tags'], function(tag) {
-      tags.push(tag['Key'] + '=' + tag['Value'])
-    })
-
-    result = tags.join(', ')
-  }
-EOS
-end
-
 datasource "ds_describe_regions" do
   request do
     auth $auth_aws
@@ -810,12 +768,12 @@ datasource "ds_aws_instance_size_map" do
 end
 
 datasource "ds_merged_metrics" do
-  run_script $js_merged_metrics, $ds_cloudwatch_data_sorted, $ds_instances, $ds_aws_account, $ds_aws_account_name, $ds_aws_account_tags, $ds_currency
+  run_script $js_merged_metrics, $ds_cloudwatch_data_sorted, $ds_instances, $ds_aws_account, $ds_aws_account_name, $ds_currency, $param_stats_threshold, $param_stats_lookback
 end
 
 script "js_merged_metrics", type: "javascript" do
   result "result"
-  parameters "ds_cloudwatch_data_sorted", "ds_instances", "ds_aws_account", "ds_aws_account_name", "ds_aws_account_tags", "ds_currency"
+  parameters "ds_cloudwatch_data_sorted", "ds_instances", "ds_aws_account", "ds_aws_account_name", "ds_currency", "param_stats_threshold", "param_stats_lookback"
   code <<-EOS
   result = []
 
@@ -851,8 +809,9 @@ script "js_merged_metrics", type: "javascript" do
           "savings": null,
           "accountID": ds_aws_account,
           "accountName": ds_aws_account_name,
-          "accountTags": ds_aws_account_tags,
-          "savingsCurrency": ds_currency['symbol']
+          "savingsCurrency": ds_currency['symbol'],
+          "threshold": param_stats_threshold,
+          "lookback": param_stats_lookback
         }
 
         // Grab usage data for the instance if it is present.
@@ -871,7 +830,7 @@ script "js_merged_metrics", type: "javascript" do
             merged_instance[incident_statname] = null
 
             if (ds_cloudwatch_data_sorted[region][id][data_statname] != undefined && ds_cloudwatch_data_sorted[region][id][data_statname] != null) {
-              merged_instance[incident_statname] = parseFloat(ds_cloudwatch_data_sorted[region][id][data_statname]).toFixed(2)
+              merged_instance[incident_statname] = parseFloat(parseFloat(ds_cloudwatch_data_sorted[region][id][data_statname]).toFixed(2))
             }
           })
         })
@@ -974,7 +933,7 @@ script "js_idle_and_underutil_instances", type:"javascript" do
       // Set appropriate values based on whether instance is idle or underutilized
       // and then add it to the appropriate list
       if (is_idle) {
-        instance["savings"] = parseFloat(total_cost).toFixed(3)
+        instance["savings"] = parseFloat(parseFloat(total_cost).toFixed(3))
         instance["recommendationType"] = "Terminate"
 
         recommendationDetails = [
@@ -990,7 +949,7 @@ script "js_idle_and_underutil_instances", type:"javascript" do
           idle_list.push(instance)
         }
       } else if (is_underutil) {
-        instance["savings"] = parseFloat(total_cost / 2).toFixed(3)
+        instance["savings"] = parseFloat(parseFloat(total_cost / 2).toFixed(3))
         instance["recommendationType"] = "Downsize"
 
         if (ds_aws_instance_size_map[instance['resourceType']]) {
@@ -1017,8 +976,8 @@ script "js_idle_and_underutil_instances", type:"javascript" do
     })
 
     //Sort By Region and then by Account Name
-    underutil_list = _.sortBy(underutil_list, "region")
-    idle_list = _.sortBy(idle_list, "region")
+    underutil_list = _.sortBy(underutil_list, "savings")
+    idle_list = _.sortBy(idle_list, "savings")
   }
 
   // Build out the detail_template for the incidents
@@ -1035,13 +994,13 @@ script "js_idle_and_underutil_instances", type:"javascript" do
     underutil_findings = [
       "Out of ", instances_total, " EC2 instances analyzed, ",
       underutil_instances_total, " (", underutil_instances_percentage,
-      ") are underutilized. "
+      ") are underutilized and recommended for downsizing. "
     ].join('')
 
     idle_findings = [
       "Out of ", instances_total, " EC2 instances analyzed, ",
       idle_instances_total, " (", idle_instances_percentage,
-      ") are idle. "
+      ") are idle and recommended for termination. "
     ].join('')
 
     if (checking_cpu && checking_mem) {
@@ -1119,10 +1078,10 @@ script "js_idle_and_underutil_instances", type:"javascript" do
       ].join('')
     }
 
-    theshold_disclaimer = "The above settings were configured by the user when applying this policy and can be changed by terminating and reapplying this policy with new settings.\n\n"
+    disclaimer = "The above settings can be modified by editing the applied policy and changing the appropriate parameters."
 
-    underutil_message = underutil_findings + underutil_analysis_message + lookback_message + theshold_disclaimer + "Potential Monthly Savings: " + underutil_total_savings
-    idle_message = idle_findings + idle_analysis_message + lookback_message + theshold_disclaimer + "Potential Monthly Savings: " + idle_total_savings
+    underutil_message = underutil_findings + underutil_analysis_message + lookback_message + disclaimer
+    idle_message = idle_findings + idle_analysis_message + lookback_message + disclaimer
   } else {
     underutil_message = "No results were found because all CPU and memory parameters were set to -1 when this policy was applied. Please terminate and reapply this policy with one of these settings enabled."
     idle_message = underutil_message
@@ -1131,6 +1090,8 @@ script "js_idle_and_underutil_instances", type:"javascript" do
   result = {
     underutil_message: underutil_message,
     idle_message: idle_message,
+    underutil_total_savings: underutil_total_savings,
+    idle_total_savings: idle_total_savings,
     underutil_list: underutil_list,
     idle_list: idle_list,
     policy_name: ds_applied_policy['name']
@@ -1145,7 +1106,11 @@ end
 policy "pol_utilization" do
   validate $ds_idle_and_underutil_instances do
     summary_template "{{ data.policy_name }}: {{ len data.underutil_list }} AWS Underutilized EC2 Instances Found"
-    detail_template "{{ data.underutil_message }}"
+    detail_template <<-'EOS'
+    **Potential Monthly Savings:** {{ data.underutil_total_savings }}
+
+    {{ data.underutil_message }}
+    EOS
     check logic_or($ds_parent_policy_terminated, eq(size(val(data, "underutil_list")), 0))
     escalate $esc_email
     escalate $esc_downsize_instances
@@ -1156,9 +1121,6 @@ policy "pol_utilization" do
       end
       field "accountName" do
         label "Account Name"
-      end
-      field "accountTags" do
-        label "Account Tags"
       end
       field "resourceID" do
         label "Resource ID"
@@ -1229,6 +1191,12 @@ policy "pol_utilization" do
       field "mem_p90" do
         label "Memory p90"
       end
+      field "threshold" do
+        label "Threshold Statistic"
+      end
+      field "lookback" do
+        label "Statistic Lookback Period (Days)"
+      end
       field "service" do
         label "Service"
       end
@@ -1240,7 +1208,11 @@ policy "pol_utilization" do
   end
   validate $ds_idle_and_underutil_instances do
     summary_template "{{ data.policy_name }}: {{ len data.idle_list }} AWS Idle EC2 Instances Found"
-    detail_template "{{ data.idle_message }}"
+    detail_template <<-'EOS'
+    **Potential Monthly Savings:** {{ data.idle_total_savings }}
+
+    {{ data.idle_message }}
+    EOS
     check logic_or($ds_parent_policy_terminated, eq(size(val(data, "idle_list")), 0))
     escalate $esc_email
     escalate $esc_terminate_instances
@@ -1251,9 +1223,6 @@ policy "pol_utilization" do
       end
       field "accountName" do
         label "Account Name"
-      end
-      field "accountTags" do
-        label "Account Tags"
       end
       field "resourceID" do
         label "Resource ID"
@@ -1320,6 +1289,12 @@ policy "pol_utilization" do
       end
       field "mem_p90" do
         label "Memory p90"
+      end
+      field "threshold" do
+        label "Threshold Statistic"
+      end
+      field "lookback" do
+        label "Statistic Lookback Period (Days)"
       end
       field "service" do
         label "Service"
