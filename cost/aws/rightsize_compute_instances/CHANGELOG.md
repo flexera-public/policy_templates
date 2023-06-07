@@ -9,9 +9,9 @@
 - Added ability to configure how many days to consider CPU/memory statistics for
 - Added ability to filter resources by multiple tag key:value pairs
 - Added ability to take automated actions to resize or delete resources
+- Added ability to make recommendations based on maximum CPU/memory usage
 - Added additional context to incident description
 - Normalized incident export to be consistent with other policies
-- Added account tags to incident export
 - Added human-readable recommendation to incident export
 - Streamlined code for better readability and faster execution
 

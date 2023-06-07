@@ -61,11 +61,8 @@ For administrators [creating and managing credentials](https://docs.flexera.com/
   - `cloudwatch:GetMetricStatistics`
   - `cloudwatch:GetMetricData`
   - `cloudwatch:ListMetrics`
-  - `organizations:ListTagsForResource`**
 
 \* Only required for taking action (terminating or downsizing); the policy will still function in a read-only capacity without these permissions.
-
-\** Only required for showing account-level tags in the incident. This field will be left blank in the incident table if this permission is not granted.
 
   Example IAM Permission Policy:
 
@@ -86,8 +83,7 @@ For administrators [creating and managing credentials](https://docs.flexera.com/
                   "ec2:TerminateInstances",
                   "cloudwatch:GetMetricStatistics",
                   "cloudwatch:GetMetricData",
-                  "cloudwatch:ListMetrics",
-                  "organizations:ListTagsForResource"
+                  "cloudwatch:ListMetrics"
               ],
               "Resource": "*"
           }
