@@ -9,7 +9,6 @@
 - Added ability to filter resources by multiple tag key:value pairs
 - Added additional context to incident description
 - Normalized incident export to be consistent with other policies
-- Added account tags to incident export
 - Added human-readable recommendation to incident export
 - Streamlined code for better readability and faster execution
 
