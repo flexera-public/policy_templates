@@ -137,7 +137,7 @@ datasource "ds_compute_utilization" do
 end
 
 datasource "ds_calculated_utilization" do
-  run_script $js_calculated_utilization, $ds_compute_utilization, $ds_memory_utilization
+  run_script $js_calculated_utilization, $ds_compute_utilization, $ds_memory_utilization, $param_avg_cpu, $param_avg_used_memory
 end
 
 datasource "ds_memory_utilization" do
@@ -207,7 +207,7 @@ end
 
 script "js_calculated_utilization", type: "javascript" do
   result "results"
-  parameters "ds_compute_utilization", "ds_memory_utilization"
+  parameters "ds_compute_utilization", "ds_memory_utilization", "param_avg_cpu", "param_avg_used_memory"
   code <<-EOS
   results = []
   for ( i =0; i < ds_compute_utilization.length; i++ ){
@@ -242,7 +242,16 @@ script "js_calculated_utilization", type: "javascript" do
           var memory_minimum = parseFloat( memory_record.mem_points.reduce( function (x, y) { return Math.min(x, y) } )).toFixed(2)
         }
       }
-
+      var testedThreshold = ""
+      if (param_avg_cpu != -1) {
+        testedThreshold += "CPU"
+      }
+      if (param_avg_used_memory != -1) {
+        if (testedThreshold != "") {
+          testedThreshold += ", "
+        }
+        testedThreshold += "Memory"
+      }
       results.push(
         {
           zone: ds_compute_utilization[i].zone,
@@ -253,7 +262,8 @@ script "js_calculated_utilization", type: "javascript" do
           cpu_minimum: cpu_minimum,
           mem_average: memory_average,
           mem_maximum: memory_maximum,
-          mem_minimum: memory_minimum
+          mem_minimum: memory_minimum,
+          testedThreshold: testedThreshold
         }
       )
     }
@@ -362,6 +372,9 @@ policy "pol_utilization" do
       end
       field "zone" do
         label "Region"
+      end
+      field "testedThreshold" do
+        label "Tested Threshold"
       end
       field "id" do
         label "Instance ID"

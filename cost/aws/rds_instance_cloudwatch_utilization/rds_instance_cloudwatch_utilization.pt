@@ -115,6 +115,7 @@ datasource "ds_get_caller_identity" do
     encoding "xml"
     collect xpath(response, "//GetCallerIdentityResponse/GetCallerIdentityResult") do
       field "account",xpath(col_item, "Account")
+      field "userId",xpath(col_item, "userId")
     end
   end
 end
@@ -431,7 +432,8 @@ script "js_merged_metrics", type: "javascript" do
         "engine": instance["engine"],
         "percent_cpu_avg": cpu_average,
         "upsize": instance["upsize"],
-        "downsize": instance["downsize"]
+        "downsize": instance["downsize"],
+        "lookBackPeriod": "30 days"
       }
     )
   }
@@ -445,6 +447,20 @@ script "js_filtered_results", type: "javascript" do
   code <<-EOS
   var results = []
   _.each(ds_merged_metrics, function (instance) {
+    var thresholdType = ""
+        var testedThreshold = ""
+        if (param_avg_cpu_upsize != -1) {
+          thresholdType = "Upsize"
+          testedThreshold = param_avg_cpu_upsize
+        }
+        if (param_avg_cpu_downsize != -1) {
+          if (thresholdType != "") {
+            thresholdType += ", "
+            testedThreshold += ", "
+          }
+          thresholdType = "Downsize"
+          testedThreshold = param_avg_cpu_upsize
+        }
     if (instance["percent_cpu_avg"] > param_avg_cpu_upsize) {
       if (instance["upsize"] == null) {
         // skip
@@ -452,6 +468,7 @@ script "js_filtered_results", type: "javascript" do
         results.push(
           {
             "accountId": ds_get_caller_identity[0]['account'],
+            "accountName": ds_get_caller_identity[0]['userId'],
             "region": instance["region"],
             "availabilityZone": instance["availabilityZone"],
             "dbInstanceArn": instance["dbInstanceArn"],
@@ -459,7 +476,10 @@ script "js_filtered_results", type: "javascript" do
             "dbInstanceClass": instance["dbInstanceClass"],
             "engine": instance["engine"],
             "percent_cpu_avg": instance["percent_cpu_avg"],
-            "recommended_size": instance["upsize"]
+            "recommended_size": instance["upsize"],
+            "lookBackPeriod": "30 days",
+            "thresholdType": thresholdType,
+            "testedThreshold": testedThreshold
           }
         )
       }
@@ -471,6 +491,7 @@ script "js_filtered_results", type: "javascript" do
         results.push(
           {
             "accountId": ds_get_caller_identity[0]['account'],
+            "accountName": ds_get_caller_identity[0]['userId'],
             "region": instance["region"],
             "availabilityZone": instance["availabilityZone"],
             "dbInstanceArn": instance["dbInstanceArn"],
@@ -478,7 +499,10 @@ script "js_filtered_results", type: "javascript" do
             "dbInstanceClass": instance["dbInstanceClass"],
             "engine": instance["engine"],
             "percent_cpu_avg": instance["percent_cpu_avg"],
-            "recommended_size": instance["downsize"]
+            "recommended_size": instance["downsize"],
+            "lookBackPeriod": "30 days",
+            "thresholdType": thresholdType,
+            "testedThreshold": testedThreshold
           }
         )
       }
@@ -503,8 +527,20 @@ policy "pol_utilization" do
       field "accountId" do
         label "Account Id"
       end
+      field "accountName" do
+        label "Account Name"
+      end
       field "region" do
         label "Region"
+      end
+      field "thresholdType" do
+        label "Threshold Type"
+      end
+      field "testedThreshold" do
+        label "Tested Threshold"
+      end
+      field "lookBackPeriod" do
+        label "Look Back Period"
       end
       field "resourceName" do
         label "Resource Name"
