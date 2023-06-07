@@ -7,7 +7,7 @@ This policy checks all the instances in an AWS Account for CPU and Memory usage 
 ## Functional Details
 
 - The policy leverages the AWS API to retrieve all instances and then uses the AWS CloudWatch API to check the instance average CPU and Memory utilization over a specified number of days.
-- The utilization data is provided for the following statistics: Average, 99th percentile, 95th percentile, 90th percentile.
+- The utilization data is provided for the following statistics: Average, Maximum, Minimum, 99th percentile, 95th percentile, 90th percentile.
 - The policy identifies all instances that have CPU utilization and/or Memory utilization below the Idle Instance CPU/Memory Threshold(s) defined by the user. The recommendation provided for Idle Instances is a termination action; termination can be performed in an automated manner or after approval.
 - The policy identifies all instances that have CPU utilization and/or Memory utilization below the Underutilized Instance CPU/Memory Threshold(s) defined by the user. The recommendation provided for Inefficient/Underutilized Instances is a downsize action; downsizing can be performed in an automated manner or after approval.
 
@@ -39,7 +39,7 @@ For example if a user selects the "Terminate Instances" action while applying th
 
 - Sends an email notification
 - Terminate virtual machines (if idle) after approval
-- Downsize virtual machines (if underutilized) after approval
+- Downsize virtual machines (if underutilized but not idle) after approval
 
 ## Prerequisites
 
