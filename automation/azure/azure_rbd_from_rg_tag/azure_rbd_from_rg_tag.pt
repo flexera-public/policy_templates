@@ -30,6 +30,14 @@ parameter "param_effective_date" do
   default "2010-01"
 end
 
+parameter "param_subscription_fallback" do
+  type "string"
+  label "Subscription Fallback Rules"
+  description "Whether or not to create rules for Subscription tags as a fallback for untagged Resource Groups."
+  allowed_values "Yes", "No"
+  default "No"
+end
+
 ###############################################################################
 # Authentication
 ###############################################################################
@@ -102,6 +110,53 @@ datasource "ds_azure_subscriptions" do
   end
 end
 
+datasource "ds_azure_subscriptions_with_tags" do
+  iterate $ds_azure_subscriptions
+  request do
+    auth $auth_azure
+    pagination $pagination_azure
+    host "management.azure.com"
+    path join(["/subscriptions/", val(iter_item, "id"), "/providers/Microsoft.Resources/tags/default"])
+    query "api-version","2021-04-01"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+    field "id", val(iter_item, "id")
+    field "name", val(iter_item, "name")
+    field "tags", jmes_path(response, "properties.tags")
+  end
+end
+
+datasource "ds_azure_subscriptions_normalized" do
+  run_script $js_azure_subscriptions_normalized, $ds_azure_subscriptions_with_tags
+end
+
+script "js_azure_subscriptions_normalized", type: "javascript" do
+  parameters "accounts"
+  result "result"
+  code <<-'EOS'
+  result = []
+
+  _.each(accounts, function(account) {
+    tags = {}
+
+    if (account['tags'] != null && account['tags'] != undefined) {
+      _.each(Object.keys(account['tags']), function(key) {
+        normalized_key = key.toLowerCase().trim()
+        tags[normalized_key] = account['tags'][key]
+      })
+    }
+
+    result.push({
+      id: account['id'],
+      name: account['name'],
+      tags: tags
+    })
+  })
+EOS
+end
+
 datasource "ds_azure_resource_groups" do
   iterate $ds_azure_subscriptions
   request do
@@ -129,26 +184,26 @@ datasource "ds_azure_resource_groups_normalized" do
 end
 
 script "js_azure_resource_groups_normalized", type: "javascript" do
-  parameters "accounts"
+  parameters "rgs"
   result "result"
   code <<-'EOS'
   result = []
 
-  _.each(accounts, function(account) {
+  _.each(rgs, function(rg) {
     tags = {}
 
-    if (account['tags'] != null && account['tags'] != undefined) {
-      _.each(Object.keys(account['tags']), function(key) {
+    if (rg['tags'] != null && rg['tags'] != undefined) {
+      _.each(Object.keys(rg['tags']), function(key) {
         normalized_key = key.toLowerCase().trim()
-        tags[normalized_key] = account['tags'][key]
+        tags[normalized_key] = rg['tags'][key]
       })
     }
 
     result.push({
-      subscriptionId: account['subscriptionId'],
-      subscriptionName: account['subscriptionName'],
-      id: account['id'],
-      name: account['name'],
+      subscriptionId: rg['subscriptionId'],
+      subscriptionName: rg['subscriptionName'],
+      id: rg['id'],
+      name: rg['name'],
       tags: tags
     })
   })
@@ -156,11 +211,11 @@ EOS
 end
 
 datasource "ds_rbds" do
-  run_script $js_rbds, $ds_azure_resource_groups_normalized, $ds_existing_rbds, $param_tag_list, $param_effective_date
+  run_script $js_rbds, $ds_azure_resource_groups_normalized, $ds_azure_subscriptions_normalized, $ds_existing_rbds, $param_tag_list, $param_effective_date, $param_subscription_fallback
 end
 
 script "js_rbds", type: "javascript" do
-  parameters "accounts", "existing_rbds", "param_tag_list", "param_effective_date"
+  parameters "rgs", "accounts", "existing_rbds", "param_tag_list", "param_effective_date", "param_subscription_fallback"
   result "result"
   code <<-'EOS'
   result = []
@@ -180,9 +235,9 @@ script "js_rbds", type: "javascript" do
 
     rules = []
 
-    _.each(accounts, function(account) {
-      if (account['tags'][tag_key] != undefined && account['tags'][tag_key] != null) {
-        if (account['tags'][tag_key].trim() != '') {
+    _.each(rgs, function(rg) {
+      if (rg['tags'][tag_key] != undefined && rg['tags'][tag_key] != null) {
+        if (rg['tags'][tag_key].trim() != '') {
           rules.push({
             "condition": {
               "type": "and",
@@ -190,21 +245,21 @@ script "js_rbds", type: "javascript" do
                 {
                   "type": "dimension_equals",
                   "dimension": "resource_group",
-                  "value": account['name'].trim()
+                  "value": rg['name'].trim()
                 },
                 {
                   "type": "dimension_equals",
                   "dimension": "vendor_account",
-                  "value": account['subscriptionId'].trim().toLowerCase()
+                  "value": rg['subscriptionId'].trim().toLowerCase()
                 }
               ]
             },
             "value": {
-              "text": account['tags'][tag_key].toLowerCase().trim()
+              "text": rg['tags'][tag_key].toLowerCase().trim()
             }
           })
 
-          if (account['name'].trim() != account['name'].trim().toLowerCase()) {
+          if (rg['name'].trim() != rg['name'].trim().toLowerCase()) {
             rules.push({
               "condition": {
                 "type": "and",
@@ -212,14 +267,33 @@ script "js_rbds", type: "javascript" do
                   {
                     "type": "dimension_equals",
                     "dimension": "resource_group",
-                    "value": account['name'].trim().toLowerCase()
+                    "value": rg['name'].trim().toLowerCase()
                   },
                   {
                     "type": "dimension_equals",
                     "dimension": "vendor_account",
-                    "value": account['subscriptionId'].trim().toLowerCase()
+                    "value": rg['subscriptionId'].trim().toLowerCase()
                   }
                 ]
+              },
+              "value": {
+                "text": rg['tags'][tag_key].toLowerCase().trim()
+              }
+            })
+          }
+        }
+      }
+    })
+
+    if (param_subscription_fallback == "Yes") {
+      _.each(accounts, function(account) {
+        if (account['tags'][tag_key] != undefined && account['tags'][tag_key] != null) {
+          if (account['tags'][tag_key].trim() != '') {
+            rules.push({
+              "condition": {
+                "type": "dimension_equals",
+                "dimension": "vendor_account",
+                "value": account['id']
               },
               "value": {
                 "text": account['tags'][tag_key].toLowerCase().trim()
@@ -227,8 +301,8 @@ script "js_rbds", type: "javascript" do
             })
           }
         }
-      }
-    })
+      })
+    }
 
     if (rules.length > 0) {
       result.push({
