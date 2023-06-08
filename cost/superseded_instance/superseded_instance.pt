@@ -8,7 +8,7 @@ severity "low"
 default_frequency "daily"
 tenancy "single"
 info(
-  version: "3.0",
+  version: "3.1",
   provider: "Flexera Optima",
   service: "",
   policy_set: ""
@@ -69,11 +69,7 @@ credentials "auth_flexera" do
 end
 
 ###############################################################################
-# Resources
-###############################################################################
-
-###############################################################################
-# Datasources
+# Datasources & Scripts
 ###############################################################################
 
 datasource "ds_billing_centers" do
@@ -81,87 +77,6 @@ datasource "ds_billing_centers" do
     run_script $js_get_billing_centers, rs_org_id, rs_optima_host
   end
 end
-
-datasource "ds_new_bc_costs" do
-  request do
-    run_script $js_new_costs_request, rs_org_id, $ds_billing_centers, $param_billing_centers, rs_optima_host
-  end
-  result do
-    encoding "json"
-    collect jmes_path(response,"rows[*]") do
-      field "vendor", jmes_path(col_item, "dimensions.vendor")
-      field "vendor_account", jmes_path(col_item,"dimensions.vendor_account")
-      field "vendor_account_name", jmes_path(col_item,"dimensions.vendor_account_name")
-      field "cost_amortized_unblended_adj", jmes_path(col_item,"metrics.cost_amortized_unblended_adj")
-      field "region", jmes_path(col_item, "dimensions.region")
-      field "instance_type", jmes_path(col_item, "dimensions.instance_type")
-      field "id", jmes_path(col_item,"dimensions.billing_center_id")
-      field "resource_id", jmes_path(col_item, "dimensions.resource_id")
-    end
-  end
-end
-
-datasource "ds_currency_reference" do
-  request do
-    host "raw.githubusercontent.com"
-    path "/rightscale/policy_templates/master/cost/scheduled_reports/currency_reference.json"
-    header "User-Agent", "RS Policies"
-  end
-end
-
-datasource "ds_currency_code" do
-  request do
-    auth $auth_flexera
-    host rs_optima_host
-    path join(["/bill-analysis/orgs/",rs_org_id,"/settings/currency_code"])
-    header "Api-Version", "0.1"
-    header "User-Agent", "RS Policies"
-    ignore_status [403]
-  end
-  result do
-    encoding "json"
-    field "id", jmes_path(response,"id")
-    field "value", jmes_path(response,"value")
-  end
-end
-
-datasource "ds_format_costs" do
-  run_script $js_format_costs, $ds_new_bc_costs, $ds_billing_centers
-end
-
-datasource "ds_aws_instance_size_map" do
-  request do
-    verb "GET"
-    host "raw.githubusercontent.com"
-    path "/rightscale/policy_templates/master/data/aws/instance_types.json"
-    header "User-Agent", "RS Policies"
-  end
-end
-
-datasource "ds_google_instance_size_map" do
-  request do
-    verb "GET"
-    host "raw.githubusercontent.com"
-    path "/rightscale/policy_templates/master/data/google/instance_types.json"
-  end
-end
-
-datasource "ds_azure_instance_size_map" do
-  request do
-    verb "GET"
-    host "raw.githubusercontent.com"
-    path "/rightscale/policy_templates/master/data/azure/instance_types.json"
-    header "User-Agent", "RS Policies"
-  end
-end
-
-datasource "ds_combined_instance_data" do
-  run_script $js_merge_instance_data, $ds_format_costs, $ds_aws_instance_size_map, $ds_azure_instance_size_map, $ds_google_instance_size_map, $param_new_instancetype_category, $ds_currency_code, $ds_currency_reference
-end
-
-###############################################################################
-# Scripts
-###############################################################################
 
 script "js_get_billing_centers", type: "javascript" do
   parameters "rs_org_id","rs_optima_host"
@@ -178,29 +93,78 @@ script "js_get_billing_centers", type: "javascript" do
   EOS
 end
 
+datasource "ds_costs_time_periods" do
+    run_script $js_costs_time_periods, rs_org_id, rs_optima_host, $ds_billing_centers
+end
+
+script "js_costs_time_periods", type: "javascript" do
+  parameters "rs_org_id", "rs_optima_host", "ds_billing_centers"
+  result "results"
+  code <<-EOS
+    // Get todays date
+    var date = new Date();
+    var results = [];
+
+    // Setup time periods for collecting costs
+    var date = new Date();
+    var thirtyDaysAgo = new Date(date.getFullYear(), date.getMonth() - 1, date.getDate());
+    var sevenDaysAgo = new Date(date.getFullYear(), date.getMonth(), date.getDate() - 7);
+    var timePeriods = [thirtyDaysAgo, sevenDaysAgo];
+
+    // For each time period, push the items
+    _.each(timePeriods, function(date) {
+      // Make sure we get at least a month worth of costs
+      var year = date.getUTCFullYear();
+      var month =  (date.getUTCMonth()==11)?1:2 + date.getUTCMonth();
+
+      if (month == 1){
+        var lmonth = 12;
+        var lyear = year ;
+        year=year+1;
+      } else {
+        var lmonth = month-1;
+        var lyear = year ;
+      }
+
+      mo = month.toString().length > 1 ? month : '0' + month;
+      lmo = lmonth.toString().length > 1 ? lmonth : '0' + lmonth;
+      var next_month = year + "-" + mo
+      var current_month = lyear + "-" + lmo
+
+      results.push({
+        "next_month": next_month,
+        "current_month": current_month
+      })
+    })
+  EOS
+end
+
+datasource "ds_new_bc_costs" do
+  iterate $ds_costs_time_periods
+  request do
+    run_script $js_new_costs_request, iter_item, rs_org_id, $ds_billing_centers, $param_billing_centers, rs_optima_host, $ds_costs_time_periods
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response,"rows[*]") do
+      field "vendor", jmes_path(col_item, "dimensions.vendor")
+      field "vendor_account", jmes_path(col_item,"dimensions.vendor_account")
+      field "vendor_account_name", jmes_path(col_item,"dimensions.vendor_account_name")
+      field "cost_amortized_unblended_adj", jmes_path(col_item,"metrics.cost_amortized_unblended_adj")
+      field "region", jmes_path(col_item, "dimensions.region")
+      field "instance_type", jmes_path(col_item, "dimensions.instance_type")
+      field "id", jmes_path(col_item,"dimensions.billing_center_id")
+      field "resource_id", jmes_path(col_item, "dimensions.resource_id")
+    end
+  end
+end
+
 script "js_new_costs_request", type: "javascript" do
-  parameters "org_id","ds_billing_centers", "param_billing_centers", "optima_host"
+  parameters "iter_item", "org_id", "ds_billing_centers", "param_billing_centers", "rs_optima_host", "ds_costs_time_periods"
   result "request"
   code <<-EOS
-    var date = new Date();
-    // Make sure we get at least a month worth of costs
-    date.setMonth(date.getMonth()-1);
-    var year = date.getUTCFullYear();
-    var month =  (date.getUTCMonth()==11)?1:2 + date.getUTCMonth();
-
-    if (month == 1){
-      var lmonth = 12;
-      var lyear = year ;
-      year=year+1;
-    } else {
-      var lmonth = month-1;
-      var lyear = year ;
-    }
-
-    mo = month.toString().length > 1 ? month : '0' + month;
-    lmo = lmonth.toString().length > 1 ? lmonth : '0' + lmonth;
-    var next_month = year + "-" + mo
-    var current_month = lyear + "-" + lmo
+    var next_month = iter_item.next_month
+    var current_month = iter_item.current_month
     var billing_center_ids = []
     if (param_billing_centers.length === 0){
       var top_billing_centers = _.reject(ds_billing_centers, function(bc){ return bc.parent_id != null });
@@ -251,7 +215,7 @@ script "js_new_costs_request", type: "javascript" do
 
     var request = {
       auth: "auth_flexera",
-      host: optima_host,
+      host: rs_optima_host,
       verb: "POST",
       path: "/bill-analysis/orgs/" + org_id + "/costs/select",
       body_fields: {
@@ -272,7 +236,36 @@ script "js_new_costs_request", type: "javascript" do
         "User-Agent": "RS Policies",
       }
     }
+
 EOS
+end
+
+datasource "ds_currency_reference" do
+  request do
+    host "raw.githubusercontent.com"
+    path "/rightscale/policy_templates/master/cost/scheduled_reports/currency_reference.json"
+    header "User-Agent", "RS Policies"
+  end
+end
+
+datasource "ds_currency_code" do
+  request do
+    auth $auth_flexera
+    host rs_optima_host
+    path join(["/bill-analysis/orgs/",rs_org_id,"/settings/currency_code"])
+    header "Api-Version", "0.1"
+    header "User-Agent", "RS Policies"
+    ignore_status [403]
+  end
+  result do
+    encoding "json"
+    field "id", jmes_path(response,"id")
+    field "value", jmes_path(response,"value")
+  end
+end
+
+datasource "ds_format_costs" do
+  run_script $js_format_costs, $ds_new_bc_costs, $ds_billing_centers
 end
 
 script "js_format_costs", type: "javascript" do
@@ -321,12 +314,42 @@ script "js_format_costs", type: "javascript" do
 EOS
 end
 
+datasource "ds_aws_instance_size_map" do
+  request do
+    verb "GET"
+    host "raw.githubusercontent.com"
+    path "/rightscale/policy_templates/master/data/aws/instance_types.json"
+    header "User-Agent", "RS Policies"
+  end
+end
+
+datasource "ds_google_instance_size_map" do
+  request do
+    verb "GET"
+    host "raw.githubusercontent.com"
+    path "/rightscale/policy_templates/master/data/google/instance_types.json"
+  end
+end
+
+datasource "ds_azure_instance_size_map" do
+  request do
+    verb "GET"
+    host "raw.githubusercontent.com"
+    path "/rightscale/policy_templates/master/data/azure/instance_types.json"
+    header "User-Agent", "RS Policies"
+  end
+end
+
+datasource "ds_combined_instance_data" do
+  run_script $js_merge_instance_data, $ds_format_costs, $ds_aws_instance_size_map, $ds_azure_instance_size_map, $ds_google_instance_size_map, $param_new_instancetype_category, $ds_currency_code, $ds_currency_reference
+end
+
 script "js_merge_instance_data", type: "javascript" do
   parameters "ds_format_costs", "ds_aws_instance_size_map", "ds_azure_instance_size_map", "ds_google_instance_size_map", "param_new_instancetype_category","ds_currency_code","ds_currency_reference"
   result "results"
   code <<-EOS
     var results = []
-    var superseded_instance_map = _.extend(ds_aws_instance_size_map,ds_azure_instance_size_map, ds_google_instance_size_map)
+    var superseded_instance_map = _.extend(ds_aws_instance_size_map, ds_azure_instance_size_map, ds_google_instance_size_map)
     var ds_instances = ds_format_costs
 
     function formatNumber(number, separator){
@@ -398,6 +421,7 @@ script "js_merge_instance_data", type: "javascript" do
           } else {
             var vpc_incompatible_move = "false"
           }
+          var hasInstanceSizeChanged = instance_type === new_instance_type;
 
           results.push(
             {
@@ -412,6 +436,7 @@ script "js_merge_instance_data", type: "javascript" do
               table_cost: cur + ' '+formatNumber(instance.run_rate, separator)
               vpc_incompatible_move: vpc_incompatible_move,
               ena_incompatible: ena_incompatible,
+              has_instance_size_changed: hasInstanceSizeChanged,
             }
           )
         }
@@ -466,6 +491,9 @@ policy "pol_aws_superseded_instance" do
       end
       field "new_instance_type" do
         label "New Instance Type"
+      end
+      field "has_instance_size_changed" do
+        label "Instance Has Been Adjusted"
       end
       field "vpc_incompatible_move" do
         label "VPC Required"

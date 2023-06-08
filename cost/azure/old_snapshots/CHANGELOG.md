@@ -1,5 +1,9 @@
 # Changelog
 
+## v4.4
+
+- Updated policy metadata to facilitate scraping of incidents for Recommendations dashboard
+
 ## v4.3
 
 - Raised API limit to handle situations where more than 10,000 line items need to be retrieved.

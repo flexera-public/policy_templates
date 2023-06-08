@@ -6,11 +6,11 @@ category "Cost"
 severity "low"
 default_frequency "daily"
 info(
-  version: "2.7",
+  version: "3.1",
   provider: "Google",
   service: "Compute",
   recommendation_type: "Rate Reduction",
-  policy_set: "Reserved Instance"
+  policy_set: "Reserved Instances"
 )
 
 ###############################################################################
@@ -21,6 +21,23 @@ parameter "param_email" do
   type "list"
   label "Email addresses to notify"
   description "Email addresses of the recipients you wish to notify when new incidents are created"
+end
+
+parameter "param_term" do
+  category "RI"
+  label "Term"
+  default "1 Year"
+  description "The committed use discount term"
+  allowed_values "1 Year", "3 Year"
+  type "string"
+end
+
+parameter "param_algorithm" do
+  label "Recommendation Algorithm"
+  default "Optimal"
+  description "Recommendations for CUDs are generated using either one of two algorithms. Stable Usage covers minimum stable usage over time. Optimal are based on overall usage and might cover resources that are not active all the time. See https://cloud.google.com/docs/cuds-recommender#understanding-recommendations"
+  allowed_values "Stable Usage", "Optimal"
+  type "string"
 end
 
 parameter "param_project" do
@@ -47,7 +64,7 @@ end
 # Authentication
 ###############################################################################
 
-# authenticate with Google
+# Authenticate with Google
 credentials "auth_google" do
   schemes "oauth2"
   label "Google"
@@ -69,7 +86,7 @@ pagination "google_pagination" do
 end
 
 ###############################################################################
-# Datasources
+# Datasources & Scripts
 ###############################################################################
 
 datasource "ds_currency_reference" do
@@ -80,7 +97,7 @@ datasource "ds_currency_reference" do
   end
 end
 
-#get all google project
+# Get list of GCP projects.
 datasource "ds_google_project" do
   request do
     auth $auth_google
@@ -98,7 +115,7 @@ datasource "ds_google_project" do
   end
 end
 
-#https://cloud.google.com/compute/docs/reference/rest/v1/regions/list
+# Get list of regions.
 datasource "ds_regions_list" do
   iterate $ds_google_project
   request do
@@ -117,10 +134,34 @@ datasource "ds_regions_list" do
   end
 end
 
+# Get a list of CUD.
 datasource "ds_recommenders" do
   run_script $js_recommenders, $ds_google_project, $param_project, $param_regions
 end
 
+# Get a list of items to make calls to GCP recommender API.
+script "js_recommenders", type: "javascript" do
+  parameters "ds_google_project", "param_project", "param_regions"
+  result "results"
+  code <<-EOF
+  var results = []
+
+  _.each(ds_google_project, function(project){
+    if (_.contains(param_project, project.accountID) || param_project.length == 0) {
+      _.each(param_regions, function(region){
+        results.push({
+          projectNumber: project.projectNumber,
+          accountID: project.accountID,
+          accountName: project.accountName
+          region: region
+        })
+      })
+    }
+  })
+EOF
+end
+
+# Get a list of recommendations obtained from making calls to GCP recommender API.
 datasource "ds_recommendations" do
   iterate $ds_recommenders
   request do
@@ -148,34 +189,6 @@ datasource "ds_recommendations" do
   end
 end
 
-datasource "ds_cud_cost_mapping" do
-  run_script $js_instance_cost_mapping, $ds_recommendations, $ds_currency_reference
-end
-
-###############################################################################
-# Scripts
-###############################################################################
-script "js_recommenders", type: "javascript" do
-  parameters "ds_google_project", "param_project", "param_regions"
-  result "results"
-  code <<-EOF
-  var results = []
-
-  _.each(ds_google_project, function(project){
-    if (_.contains(param_project, project.accountID) || param_project.length == 0) {
-      _.each(param_regions, function(region){
-        results.push({
-          projectNumber: project.projectNumber,
-          accountID: project.accountID,
-          accountName: project.accountName
-          region: region
-        })
-      })
-    }
-  })
-EOF
-end
-
 script "js_recommender_call", type: "javascript" do
   parameters "accountID", "region"
   result "request"
@@ -194,14 +207,20 @@ script "js_recommender_call", type: "javascript" do
 EOF
 end
 
+# Get a list of recommendations filtered by the parameters of term, algorithm and with a specific currency.
+datasource "ds_cud_cost_mapping" do
+  run_script $js_instance_cost_mapping, $ds_recommendations, $ds_currency_reference, $param_term, $param_algorithm
+end
+
 script "js_instance_cost_mapping", type:"javascript" do
   result "result"
-  parameters  "recommendations", "ds_currency_reference"
+  parameters  "recommendations", "ds_currency_reference", "param_term", "param_algorithm"
   code <<-EOS
     var instances = [];
     var result={};
     var message=''
     var count=0;
+    var secondsInAMonth = 2628288
     function formatNumber(number, separator){
       var numString =number.toString();
       var values=numString.split(".");
@@ -220,60 +239,121 @@ script "js_instance_cost_mapping", type:"javascript" do
       return result+"."+values[1];
     }
     total = 0
-    cur = ""
-    _.each(recommendations, function(recommendation){
+    var cur = ""
+    var separator = ","
+
+    //Create algorithm mapping (Parameter name mapped to API name & user-friendly name)
+    algorithm_mapping = {
+      "Stable Usage": {
+        "value": "LOW_WATERMARK",
+        "name": "Stable Usage (Low Watermark)"
+      },
+      "Optimal": {
+        "value": "BREAK_EVEN_POINT",
+        "name": "Optimal (Break-Even Point)"
+      }
+    }
+
+    //Filter recommendations on Algorithm parameter
+    recommendations = _.filter(recommendations, function(recommendation) {
+      return recommendation.content.overview.algorithm == algorithm_mapping[param_algorithm].value
+    })
+
+    //For each recommendation calculate savings / give algorithm user-friendly name
+    _.each(recommendations, function(recommendation) {
       count++
-      if(recommendation['currency'] !== undefined ) {
+      if (recommendation['currency'] !== undefined) {
         if (ds_currency_reference[recommendation['currency']] !== undefined ) {
-        var cur = ds_currency_reference[recommendation['currency']]['symbol']
+          cur = ds_currency_reference[recommendation['currency']]['symbol']
         } else {
-          var cur = "$"
+          cur = "$"
         }
         recommendation['savingsCurrency'] = cur
       } else {
-        var cur = "$"
-        var separator = ","
+        cur = "$"
+        separator = ","
       }
-      if (recommendation.costNanos<0) {
+
+      //Convert Costs from Negative to Positive and add Units and Nanos
+      if (!(recommendation.costNanos == null || recommendation.costNanos == undefined) && recommendation.costNanos != 0) {
         recommendation.costNanos = recommendation.costNanos * -1
+      } else {
+        recommendation.costNanos = 0
       }
-      if (recommendation.costUnits<0) {
+
+      if (!(recommendation.costUnits == null || recommendation.costUnits == undefined) && (recommendation.costUnits != 0)) {
         recommendation.costUnits = recommendation.costUnits * -1
+      } else {
+        recommendation.costUnits = 0
       }
-      strNano = "."+recommendation.costNanos
-      combine = recommendation.costUnits + parseFloat(strNano)
-      monthsDuration = parseFloat(recommendation.duration.replace("s",""))/2628288
-      monthlySavings = combine / monthsDuration
-      total = total+monthlySavings
+
+      var cost_nano = recommendation.costNanos * Math.pow(10, -9)
+      var combine = Number(recommendation.costUnits) + Number(parseFloat(cost_nano))
+
+      var months_duration = 0
+      if (!(recommendation.duration == null || recommendation.duration == undefined)) {
+        months_duration = parseFloat(recommendation.duration.replace("s","")) / secondsInAMonth
+      }
+
+      var monthly_savings = 0
+      if (months_duration != 0) {
+        monthly_savings = combine / months_duration
+      }
+      total += monthly_savings
+
+      var algorithm = ""
+      if (algorithm_mapping[param_algorithm]) {
+        algorithm = algorithm_mapping[param_algorithm].name
+      }
+
       _.each(recommendation.content.operationGroups, function(oGroup) {
         if(oGroup.operations != null) {
           _.each(oGroup.operations, function(operation) {
             if (operation.action == "add") {
+              var plan = ""
+              if (operation.value.plan == "TWELVE_MONTH"){
+                plan = "1 Year"
+              } else if (operation.value.plan == "THIRTY_SIX_MONTH") {
+                plan = "3 Year"
+              }
+              var resourcesToPurchaseArray = _.map(operation.value.resources, function(r) {
+                return r.amount + " " + r.type
+              })
+              var resourcesToPurchase = resourcesToPurchaseArray.join(", ")
+
               recommendation["resourceName"] = operation.value.name
-              recommendation["plan"] = operation.value.plan
+              recommendation["plan"] = plan
               recommendation["resourceType"] = operation.value.type
+              recommendation["resourcesToPurchase"] = resourcesToPurchase
             }
           })
         }
       })
-      recommendation['savings']= (Math.round( monthlySavings * 1000) / 1000)
+
+      recommendation['savings'] = (Math.round( monthly_savings * 1000) / 1000)
       recommendation['savingsCurrency'] = cur
       recommendation['service'] = "Storage"
+      recommendation['algorithm'] = algorithm
       tags = []
       recommendation['tags'] = tags
       instances.push(recommendation)
     })
-    if (instances.length != 0){
-      if(count){
-        total=cur + ' '+formatNumber((Math.round(total * 100) / 100));
-        message="The total estimated monthly savings are " +total;
+
+    var instances = _.filter(instances, function(inst) {
+      return inst.plan == param_term
+    })
+
+    if (instances.length != 0) {
+      if (count) {
+        total=cur + ' ' + formatNumber((Math.round(total * 100) / 100));
+        message = "The total estimated monthly savings are " + total;
       } else {
-        message="The Flexera Optima system does not have any data to calculate savings for these resources";
+        message = "The Flexera Optima system does not have any data to calculate savings for these resources";
       }
-    }else{
-      message="unable to find resources between recommender and resource api";
+    } else {
+      message = "unable to find resources between recommender and resource api";
     }
-    result={
+    result = {
       "instances": instances,
       "message": message
     };
@@ -288,7 +368,7 @@ end
 
 policy "policy_recommendations" do
   validate $ds_cud_cost_mapping do
-    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} rows found for Committed Use Discount Recommendations to Purchase"
+    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data.instances }} rows found for Committed Use Discount Recommendations to Purchase"
     check eq(size(val(data, "instances")), 0)
     escalate $esc_email
     export "instances" do
@@ -311,11 +391,17 @@ policy "policy_recommendations" do
       field "resourceType" do
         label "Resource Type"
       end
+      field "resourcesToPurchase" do
+        label "Resources To Purchase"
+      end
       field "region" do
         label "Region"
       end
       field "plan" do
-        label "Plan"
+        label "Term"
+      end
+      field "algorithm" do
+        label "Algorithm"
       end
       field "tags" do
         label "Tags"
@@ -341,9 +427,6 @@ policy "policy_recommendations" do
       field "id" do
         label "ID"
         path "resourceID"
-      end
-      field "service" do
-        label "Service"
       end
     end
   end
