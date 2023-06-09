@@ -126,7 +126,7 @@ end
 # Datasources & Scripts
 ###############################################################################
 
-# Get applied policy metadata for use later
+# Gather applied policy metadata for use later
 datasource "ds_applied_policy" do
   request do
     auth $auth_flexera
@@ -136,6 +136,7 @@ datasource "ds_applied_policy" do
   end
 end
 
+# Gather top level billing center IDs for when we pull cost data
 datasource "ds_billing_centers" do
   request do
     auth $auth_flexera
@@ -157,7 +158,6 @@ datasource "ds_billing_centers" do
   end
 end
 
-# Gather top level billing center IDs for when we pull cost data
 datasource "ds_top_level_bcs" do
   run_script $js_top_level_bcs, $ds_billing_centers
 end
@@ -174,6 +174,7 @@ script "js_top_level_bcs", type: "javascript" do
 EOS
 end
 
+# Gather local currency info
 datasource "ds_currency_reference" do
   request do
     host "raw.githubusercontent.com"
@@ -228,6 +229,7 @@ script "js_currency", type:"javascript" do
 EOS
 end
 
+# Gather name and ID of AWS Account
 datasource "ds_get_caller_identity" do
   request do
     auth $auth_aws
@@ -246,20 +248,9 @@ datasource "ds_get_caller_identity" do
   end
 end
 
-datasource "ds_aws_account" do
-  run_script $js_aws_account, $ds_get_caller_identity
-end
-
-script "js_aws_account", type:"javascript" do
-  parameters "ds_get_caller_identity"
-  result "result"
-  code "result = ds_get_caller_identity[0]['account']"
-end
-
-
 datasource "ds_get_account_name" do
   request do
-    run_script $js_get_account_name, $ds_aws_account, $ds_top_level_bcs, rs_org_id, rs_optima_host
+    run_script $js_get_account_name, $ds_get_caller_identity, $ds_top_level_bcs, rs_org_id, rs_optima_host
   end
   result do
     encoding "json"
@@ -270,7 +261,7 @@ datasource "ds_get_account_name" do
 end
 
 script "js_get_account_name", type: "javascript" do
-  parameters "ds_aws_account", "ds_top_level_bcs", "rs_org_id", "rs_optima_host"
+  parameters "ds_get_caller_identity", "ds_top_level_bcs", "rs_org_id", "rs_optima_host"
   result "request"
   code <<-EOS
   //Get Start and End dates
@@ -293,40 +284,43 @@ script "js_get_account_name", type: "javascript" do
       "start_at": start_date,
       "end_at": end_date,
       "metrics": ["cost_nonamortized_unblended_adj"],
-      "billing_center_ids": ds_top_level_bcs
+      "billing_center_ids": ds_top_level_bcs,
       "limit": 1,
       "filter": {
         "dimension": "vendor_account",
         "type": "equal",
-        "value": ds_aws_account
+        "value": account_id[0]["account"]
       }
     },
     headers: {
       "User-Agent": "RS Policies",
       "Api-Version": "1.0"
-      },
-      ignore_status: [400]
-    }
+    },
+    ignore_status: [400]
   }
 EOS
 end
 
-datasource "ds_aws_account_name" do
-  run_script $js_aws_account_name, $ds_get_account_name
+datasource "ds_aws_account" do
+  run_script $js_aws_account, $ds_get_account_name, $ds_get_caller_identity
 end
 
-script "js_aws_account_name", type:"javascript" do
-  parameters "ds_get_account_name"
+script "js_aws_account", type:"javascript" do
+  parameters "ds_get_account_name", "ds_get_caller_identity"
   result "result"
   code <<-EOS
-  result = ""
+  result = {
+    id: ds_get_caller_identity[0]['account'],
+    name: ""
+  }
 
   if (ds_get_account_name.length > 0) {
-    result = ds_get_account_name[0]['vendorAccountName']
+    result["name"] = ds_get_account_name[0]['vendorAccountName']
   }
 EOS
 end
 
+# Gather and filter regions
 datasource "ds_describe_regions" do
   request do
     auth $auth_aws
@@ -370,6 +364,7 @@ script "js_regions", type:"javascript" do
 EOS
 end
 
+# Gather IP addresses and filter them for excluded tags
 datasource "ds_ip_addresses" do
   iterate $ds_regions
   request do
@@ -398,7 +393,6 @@ datasource "ds_ip_addresses" do
     end
   end
 end
-
 
 datasource "ds_ip_addresses_filtered" do
   run_script $js_ip_addresses_filtered, $ds_ip_addresses, $param_exclusion_tags
@@ -430,6 +424,7 @@ script "js_ip_addresses_filtered", type: "javascript" do
 EOS
 end
 
+# Gather IP address logs to see when the last activity was
 datasource "ds_ip_address_logs" do
   iterate $ds_ip_addresses_filtered
   request do
@@ -504,6 +499,7 @@ script "js_ip_address_logs_sorted", type: "javascript" do
 EOS
 end
 
+# Filter IPs to produce a list of unused IPs
 datasource "ds_unused_ips" do
   run_script $js_unused_ips, $ds_ip_addresses_filtered, $ds_ip_address_logs_sorted, $param_idletime
 end
@@ -545,6 +541,7 @@ script "js_unused_ips", type: "javascript" do
 EOS
 end
 
+# Gather list prices for unassigned IPs for each region
 datasource "ds_ip_address_prices" do
   request do
     auth $auth_aws
@@ -582,6 +579,7 @@ script "js_ip_address_prices_grouped", type: "javascript" do
 EOS
 end
 
+# # Gather Optima cost data for IP addresses
 # datasource "ds_ip_address_costs" do
 #   request do
 #     run_script $js_ip_address_costs, $ds_aws_account, $ds_top_level_bcs, rs_org_id, rs_optima_host
@@ -684,14 +682,15 @@ end
 # EOS
 # end
 
+# Combine IP information with cost data and prepare final datasource for incident
 datasource "ds_ip_cost_mapping" do
-  run_script $js_ip_cost_mapping, $ds_unused_ips, $ds_ip_addresses_filtered, $ds_ip_address_prices_grouped, $ds_aws_account, $ds_aws_account_name, $ds_currency, $ds_applied_policy, $param_min_savings, $param_idletime
+  run_script $js_ip_cost_mapping, $ds_unused_ips, $ds_ip_addresses_filtered, $ds_ip_address_prices_grouped, $ds_aws_account, $ds_currency, $ds_applied_policy, $param_min_savings, $param_idletime
 end
 
 script "js_ip_cost_mapping", type:"javascript" do
-  parameters "ds_unused_ips", "ds_ip_addresses_filtered", "ds_ip_address_prices_grouped", "ds_aws_account", "ds_aws_account_name", "ds_currency", "ds_applied_policy", "param_min_savings", "param_idletime"
+  parameters "ds_unused_ips", "ds_ip_addresses_filtered", "ds_ip_address_prices_grouped", "ds_aws_account", "ds_currency", "ds_applied_policy", "param_min_savings", "param_idletime"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
   // Function for formatting currency numbers later
   function formatNumber(number, separator) {
     var numString = number.toString()
@@ -726,7 +725,7 @@ script "js_ip_cost_mapping", type:"javascript" do
 
       recommendationDetails = [
         "Release IP address ", ip["publicIp"], " ",
-        "in AWS Account ", ds_aws_account_name, " (", ds_aws_account, ")"
+        "in AWS Account ", ds_aws_account['name'], " (", ds_aws_account['id'], ")"
       ].join('')
 
       tags = []
@@ -741,8 +740,8 @@ script "js_ip_cost_mapping", type:"javascript" do
         region: ip['region'],
         associationID: ip['associationID'],
         allocationID: ip['allocationID'],
-        accountID: ds_aws_account,
-        accountName: ds_aws_account_name,
+        accountID: ds_aws_account['id'],
+        accountName: ds_aws_account['name'],
         recommendationDetails: recommendationDetails,
         savings: parseFloat(ip_cost.toFixed(3)),
         savingsCurrency: ds_currency['symbol'],
@@ -790,7 +789,7 @@ end
 
 ###############################################################################
 # Policy
-##############################################################################
+###############################################################################
 
 policy "policy_unused_ip_addresses" do
   validate $ds_ip_cost_mapping do
