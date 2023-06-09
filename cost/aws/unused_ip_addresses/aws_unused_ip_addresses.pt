@@ -48,6 +48,15 @@ parameter "param_regions_list" do
   default []
 end
 
+parameter "param_idletime" do
+  type "number"
+  label "Idle Time (Days)"
+  description "The number of days an IP address needs to be detached to be considered idle."
+  default 30
+  min_value 0
+  max_value 90
+end
+
 parameter "param_min_savings" do
   type "number"
   label "Minimum Savings Threshold"
@@ -294,10 +303,10 @@ datasource "ds_ip_addresses" do
   result do
     encoding "xml"
     collect xpath(response, "//DescribeAddressesResponse/addressesSet/item") do
+      field "region", val(iter_item, "region")
       field "publicIp", xpath(col_item, "publicIp")
       field "domain" , xpath(col_item, "domain")
       field "instanceID", xpath(col_item, "instanceId")
-      field "region", val(iter_item, "region")
       field "associationID", xpath(col_item, "associationId")
       field "allocationID", xpath(col_item, "allocationId")
       field "tags" do
@@ -341,17 +350,118 @@ script "js_ip_addresses_filtered", type: "javascript" do
 EOS
 end
 
+datasource "ds_ip_address_logs" do
+  iterate $ds_ip_addresses_filtered
+  request do
+    run_script $js_ip_address_logs, val(iter_item, "region"), val(iter_item, "publicIp"), $param_idletime
+  end
+  result do
+    encoding "xml"
+    collect xpath(response, "//LookupEventsResult/Events/member") do
+      field "eventId", xpath(col_item, "EventId")
+      field "eventTime", xpath(col_item, "EventTime")
+      field "eventName", xpath(col_item, "EventName")
+      field "publicIp", val(iter_item, "publicIp")
+    end
+  end
+end
+
+script "js_ip_address_logs", type: "javascript" do
+  parameters "region", "publicIp", "param_idletime"
+  result "request"
+  code <<-EOS
+  end_date = new Date()
+  end_date = end_date.toISOString()
+
+  start_date = new Date()
+  start_date.setDate(start_date.getDate() - param_idletime)
+  start_date = start_date.toISOString()
+
+  var request = {
+    auth: "auth_aws",
+    pagination: "pagination_aws",
+    host: "cloudtrail." + region + ".amazonaws.com",
+    verb: "GET",
+    path: "/",
+    headers: {
+      "User-Agent": "RS Policies"
+    },
+    "query_params": {
+      "Action": "LookupEvents",
+      "Version": "2013-11-01",
+      "LookupAttributes.member.1.AttributeKey": "ResourceName",
+      "LookupAttributes.member.1.AttributeValue": publicIp,
+      "StartTime": start_date,
+      "EndTime": end_date
+    }
+  }
+EOS
+end
+
+datasource "ds_ip_address_logs_sorted" do
+  run_script $js_ip_address_logs_sorted, $ds_ip_address_logs
+end
+
+script "js_ip_address_logs_sorted", type: "javascript" do
+  parameters "ds_ip_address_logs"
+  result "result"
+  code <<-EOS
+  // Store log entries in an object whose keys are the IP addresses themselves
+  result = {}
+
+  _.each(ds_ip_address_logs, function(entry) {
+    eventName = entry['eventName']
+    publicIp = entry['publicIp']
+
+    if (eventName == 'AllocateAddress' || eventName == 'DisassociateAddress') {
+      if (log_object[publicIp] == undefined) {
+        result[publicIp] = []
+      }
+
+      result[publicIp].push(entry)
+    }
+  })
+EOS
+end
+
 datasource "ds_unused_ips" do
-  run_script $js_unused_ips, $ds_ip_addresses_filtered
+  run_script $js_unused_ips, $ds_ip_addresses_filtered, $ds_ip_address_logs_sorted, $param_idletime
 end
 
 script "js_unused_ips", type: "javascript" do
-  parameters "ds_ip_addresses_filtered"
+  parameters "ds_ip_addresses_filtered", "ds_ip_address_logs_sorted", "param_idletime"
   result "result"
   code <<-EOS
-  result = _.filter(ds_ip_addresses_filtered, function(ip) {
-    return ip["instanceID"] == ""
-  })
+  if (param_idletime != 0) {
+    // Check if unattached IP has been idle for the specified number of days or not
+    result = _.filter(ds_ip_addresses_filtered, function(ip) {
+      most_recent_event = null
+      publicIp = ip['publicIp']
+
+      if (ds_ip_address_logs_sorted[publicIp] != undefined) {
+        _.each(ds_ip_address_logs_sorted[publicIp], function(event) {
+          event_time = new Date(event['eventTime'])
+
+          if (event_time > most_recent_event) {
+            most_recent_event = event_time
+          }
+        })
+      }
+
+      idledate = new Date()
+      idledate.setDate(idledate.getDate() - param_idletime)
+
+      // Include IP in results if it's had no events for the specified number of days
+      // and if it is not attached to an instance
+      return (most_recent_event == null || most_recent_event < idledate) && ip["instanceID"] == ""
+    })
+  } else {
+    // If idle time is set to 0, forego all of the additional processing above
+    // and just check if the IP is attached
+    result = _.filter(ds_ip_addresses_filtered, function(ip) {
+      return ip["instanceID"] == ""
+    })
+  }
 EOS
 end
 
@@ -475,11 +585,11 @@ EOS
 end
 
 datasource "ds_ip_cost_mapping" do
-  run_script $js_ip_cost_mapping, $ds_unused_ips, $ds_ip_addresses_filtered, $ds_ip_address_costs_grouped, $ds_aws_account, $ds_aws_account_name, $ds_currency, $ds_applied_policy, $param_min_savings
+  run_script $js_ip_cost_mapping, $ds_unused_ips, $ds_ip_addresses_filtered, $ds_ip_address_costs_grouped, $ds_aws_account, $ds_aws_account_name, $ds_currency, $ds_applied_policy, $param_min_savings, $param_idletime
 end
 
 script "js_ip_cost_mapping", type:"javascript" do
-  parameters "ds_unused_ips", "ds_ip_addresses_filtered", "ds_ip_address_costs_grouped", "ds_aws_account", "ds_aws_account_name", "ds_currency", "ds_applied_policy", "param_min_savings"
+  parameters "ds_unused_ips", "ds_ip_addresses_filtered", "ds_ip_address_costs_grouped", "ds_aws_account", "ds_aws_account_name", "ds_currency", "ds_applied_policy", "param_min_savings", "param_idletime"
   result "result"
   code <<-EOS
   // Function for formatting currency numbers later
@@ -550,10 +660,19 @@ script "js_ip_cost_mapping", type:"javascript" do
   findings = [
     "Out of ", total_ips, " IP addresses analyzed, ",
     total_unused_ips, " (", unused_ips_percentage,
-    ") are unattached to an instance and recommended for release. "
+    ") are unused and recommended for release. "
   ].join('')
 
-  //disclaimer = "The above settings can be modified by editing the applied policy and changing the appropriate parameters."
+  if (param_idletime != 0) {
+    idle_message = [
+      "An IP address is considered unused if it has not been attached to an instance ",
+      " for at least ", param_idletime, " days.\n\n"
+    ].join('')
+  } else {
+    idle_message = "An IP address is considered unused if it is not attached to an instance.\n\n"
+  }
+
+  disclaimer = "The above settings can be modified by editing the applied policy and changing the appropriate parameters."
 
   savings_message = [
     ds_currency['symbol'], ' ',
@@ -563,7 +682,7 @@ script "js_ip_cost_mapping", type:"javascript" do
   result = {
     ip_list: ip_list,
     savings: savings_message,
-    message: findings,
+    message: findings + idle_message + disclaimer,
     policy_name: ds_applied_policy['name']
   }
 EOS
@@ -651,6 +770,7 @@ escalation "esc_release_ip_address" do
   run "release_unused_ip_addresses", data, rs_optima_host
 end
 
+
 ###############################################################################
 # Cloud Workflow
 ###############################################################################
@@ -659,13 +779,12 @@ define release_unused_ip_addresses($data, $$rs_optima_host) do
   # Change "No" to "Yes" to enable CWF debug logging
   $log_to_cm_audit_entries = "No"
 
-  $$debug = $log_to_cm_audit_entries == "Yes"
-
+  $$debug = $param_log_to_cm_audit_entries == "Yes"
   $$errors = []
   $all_responses = []
   foreach $item in $data do
     sub on_error: skip_error_and_append($item["id"]) do
-      if $item["domain"]=="standard"
+      if $item["domain"] == "standard"
         $response = http_request(
           verb: "get",
           host: join(["ec2.", $item["region"], ".amazonaws.com"]),
@@ -678,7 +797,7 @@ define release_unused_ip_addresses($data, $$rs_optima_host) do
           },
           https: true
         )
-      elsif $item["domain"]=="vpc"
+      elsif $item["domain"] == "vpc"
         $response = http_request(
           verb: "get",
           host: join(["ec2.", $item["region"], ".amazonaws.com"]),
