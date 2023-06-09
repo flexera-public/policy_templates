@@ -1,5 +1,16 @@
 # Changelog
 
+## v6.0
+
+- Several parameters altered to be more descriptive and human-readable
+- Removed deprecated "Log to CM Audit Entries" parameter
+- Added ability to only report recommendations that meet a minimum savings threshold
+- Added ability to filter resources by multiple tag key:value pairs
+- Added additional context to incident description
+- Normalized incident export to be consistent with other policies
+- Added human-readable recommendation to incident export
+- Streamlined code for better readability and faster execution
+
 ## v5.1
 
 - Updated policy metadata to facilitate scraping of incidents for Recommendations dashboard
