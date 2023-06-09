@@ -231,7 +231,8 @@ category "Cost"
 tenancy "single"
 default_frequency "15 minutes"
 info(
-  version: "0.1"
+  version: "0.1",
+  pubish: "false"
 )
 
 ##############################################################################
