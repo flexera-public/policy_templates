@@ -231,6 +231,7 @@ category "Cost"
 tenancy "single"
 default_frequency "15 minutes"
 info(
+  provider: "Flexera",
   version: "0.1",
   pubish: "false"
 )
