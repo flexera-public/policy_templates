@@ -1,12 +1,12 @@
 # Turbonomic Credential Refresh Policy
 
-The Turbonomic Credential Refresh policy is designed to refresh the cookie used to authenticate with Turbonomic APIs. This policy ensures that the authentication token remains up to date for accessing Turbonomic services.
+The Turbonomic Credential Refresh policy is designed to refresh the cookie used to authenticate with Turbonomic APIs. It ensures that the authentication token remains up to date for accessing Turbonomic services.
 
-This policy is designed to refresh the authentication cookie used to authenticate with Turbonomic APIs. It addresses the challenge of using a cookie-based authentication method in Turbonomic, which is not supported by Flexera due to its outdated nature and the industry trend of switching to newer and more secure authentication methods. As Turbonomic plans to implement bearer token authentication in the future, this policy serves as a temporary workaround for the integration to connect to Turbonomic APIs.
+The purpose of this policy is to refresh the authentication cookie used to authenticate with Turbonomic APIs. It addresses the challenge of using a cookie-based authentication method in Turbonomic, which is not supported by Flexera due to its outdated nature and the industry trend of switching to newer and more secure authentication methods. As Turbonomic plans to implement bearer token authentication in the future, this policy serves as a temporary workaround for the integration to connect to Turbonomic APIs.
 
 ## What it does
 
-The policy periodically checks for applied policies in the project that are related to Turbonomic. If any Turbonomic policies are found, the policy triggers an escalation process to update the authentication cookie used for Turbonomic APIs. The policy retrieves the necessary credentials and makes API calls to Turbonomic to obtain a fresh cookie. It then updates the applied Turbonomic policies with the new authentication cookie, ensuring seamless authentication for Turbonomic API calls.
+The policy periodically checks for applied policies in the project that are related to Turbonomic. If any Turbonomic policies are found, the policy initiates an escalation process to update the authentication cookie used for Turbonomic APIs. The policy retrieves the necessary credentials and makes API calls to Turbonomic to obtain a fresh cookie. It then updates the applied Turbonomic policies with the new authentication cookie, ensuring seamless authentication for Turbonomic API calls.
 
 ## Prerequisites
 
