@@ -10,6 +10,7 @@
 - Added additional context to incident description
 - Normalized incident export to be consistent with other policies
 - Added human-readable recommendation to incident export
+- Policy no longer raises new escalations if savings data changed but nothing else has
 - Streamlined code for better readability and faster execution
 
 ## v5.1
