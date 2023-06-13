@@ -2,7 +2,7 @@
 
 ## v4.6
 
-- Added hash_exclude to ignore changes to the averageCPU, averages and savings, since those will change constantly
+- New escalations are no longer created if Estimated Monthly Savings or CPU Average have changed, but nothing else has.
 
 ## v4.5
 
