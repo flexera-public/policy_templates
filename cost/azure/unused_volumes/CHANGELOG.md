@@ -1,5 +1,10 @@
 # Changelog
 
+## v4.8
+
+- Added `lookBackPeriod` incident field grabbing value from `param_unattached_days` parameter.
+- Renamed `diskSize` incident field to `size`.
+
 ## v4.7
 
 - Updated policy metadata to facilitate scraping of incidents for Recommendations dashboard
