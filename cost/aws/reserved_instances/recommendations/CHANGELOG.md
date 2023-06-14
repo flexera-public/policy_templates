@@ -1,5 +1,15 @@
 # Changelog
 
+## v2.18
+
+- Renamed `Reserved Instance` policy_set from info block to `Reserved Instances`.
+- Added `resourceType` incident field.
+- Added `term` incident field.
+- Updated `platform` incident field to avoid empty values.
+- Renamed `accountScope` incident field to `scope`.
+- Renamed `lookbackPeriodInDays` incident field to `lookBackPeriod`.
+- Renamed `recommendedNumberOfInstancesToPurchase` incident field to `recommendedQuantity`.
+
 ## v2.17
 
 - Updated policy metadata to facilitate scraping of incidents for Recommendations dashboard
