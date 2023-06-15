@@ -2,10 +2,10 @@
 
 ## v1.3
 
-- Renamed `Savings Plan` policy_set from info block to `Savings Plans`.
-- Renamed `commitmentAmount` incident field to `recommendedQuantity`.
-- Rounded `costWithoutBenefit` incident field to three decimals.
-- Removed 'N/A' value from `subscriptionId` incident field when `scope` incident field is set to 'Shared'.
+- Changed policy set from `Savings Plan` to `Savings Plans` to match other similar policies.
+- Rounded numeric value in `Cost Without Benefit (Over Lookback Period)` incident field to three decimals.
+- Removed 'N/A' value from `Subscription ID` incident field when `Scope` incident field is set to 'Shared'.
+- Changed internal names of several incident fields to ensure that they are properly scraped for dashboards.
 
 ## v1.2
 

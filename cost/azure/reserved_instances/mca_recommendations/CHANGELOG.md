@@ -2,10 +2,10 @@
 
 ## v2.16
 
-- Renamed `Reserved Instance` policy_set from info block to `Reserved Instances`.
-- Renamed `skuName` incident field to `resourceType`.
-- Added `scope` incident field.
-- Added `lookBackPeriod` incident field.
+- Changed policy set from `Reserved Instance` to `Reserved Instances` to match other similar policies.
+- Added `Scope` incident field.
+- Added `Lookback Period` incident field.
+- Changed internal names of several incident fields to ensure that they are properly scraped for dashboards.
 
 ## v2.15
 
