@@ -7,7 +7,7 @@ category "Cost"
 severity "low"
 default_frequency "daily"
 info(
-  version: "4.5",
+  version: "4.6",
   provider: "Azure",
   service: "Compute",
   policy_set: "Idle Compute Instances",
@@ -260,6 +260,10 @@ datasource "ds_instance_cost_mapping" do
   run_script $js_instance_cost_mapping, $ds_combineddata, $ds_instance_costs, $ds_currency_code, $ds_currency_reference, $ds_billing_centers
 end
 
+datasource "ds_only_instances" do
+  run_script $js_only_instances, $ds_instance_cost_mapping
+end
+
 ###############################################################################
 # Scripts
 ###############################################################################
@@ -387,7 +391,7 @@ code <<-EOS
       },
     0)
 
-    var final_average = parseFloat(sum/averages.length)
+    var final_average = parseFloat((sum / averages.length).toFixed(2))
 
     if (final_average < param_cpu_average_percentage && final_average != 0) {
       result["averageCPU"] = final_average
@@ -488,20 +492,32 @@ script "js_instance_cost_mapping", type:"javascript" do
   EOS
 end
 
+script "js_only_instances", type: "javascript" do
+  parameters "arg"
+  result "results"
+  code <<-EOS
+    results = arg.instance_list
+    if (results && results.length) {
+      results[0].message = arg.message
+    }
+  EOS
+end
+
 ###############################################################################
 # Policy
 ###############################################################################
 
 policy "azure_resource_policy" do
-  validate $ds_instance_cost_mapping do
+  validate $ds_only_instances do
     summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): Azure idle compute instances found"
+    hash_exclude "averageCPU", "averages", "savings"
     detail_template <<-EOS
-{{data.message}}
+{{with index data 0}}{{ .message }}{{end}}
 EOS
-    check eq(size(val(data, "instance_list")), 0)
+    check eq(size(data),0)
     escalate $email
     escalate $delete_resources
-    export "instance_list" do
+    export do
       resource_level true
       field "accountName" do
         label "Subscription Name"
