@@ -384,6 +384,7 @@ datasource "ds_ip_addresses" do
       field "instanceID", xpath(col_item, "instanceId")
       field "associationID", xpath(col_item, "associationId")
       field "allocationID", xpath(col_item, "allocationId")
+      field "privateIpAddress", xpath(col_item,"privateIpAddress")
       field "tags" do
         collect xpath(col_item, "tagSet/item") do
           field "key", xpath(col_item, "Key")
@@ -507,10 +508,12 @@ end
 script "js_unused_ips", type: "javascript" do
   parameters "ds_ip_addresses_filtered", "ds_ip_address_logs_sorted", "param_idletime"
   result "result"
-  code <<-EOS
-  if (param_idletime != 0) {
-    // Check if unattached IP has been idle for the specified number of days or not
-    result = _.filter(ds_ip_addresses_filtered, function(ip) {
+  code <<-'EOS'
+  result = []
+
+  // Check if unattached IP has been idle for the specified number of days or not
+  _.each(ds_ip_addresses_filtered, function(ip) {
+    if (ip["instanceID"] == "" || ip["instanceID"] == null || ip["instanceID"] == undefined) {
       most_recent_event = null
       publicIp = ip['publicIp']
 
@@ -524,20 +527,20 @@ script "js_unused_ips", type: "javascript" do
         })
       }
 
-      idledate = new Date()
-      idledate.setDate(idledate.getDate() - param_idletime)
+      if (most_recent_event == null) {
+        days_idle == ''
+      } else {
+        now = new Date()
+        days_idle = (now - most_recent_event) / 1000 / 60 / 60 / 24
+      }
 
-      // Include IP in results if it's had no events for the specified number of days
-      // and if it is not attached to an instance
-      return (most_recent_event == null || most_recent_event < idledate) && ip["instanceID"] == ""
-    })
-  } else {
-    // If idle time is set to 0, forego all of the additional processing above
-    // and just check if the IP is attached
-    result = _.filter(ds_ip_addresses_filtered, function(ip) {
-      return ip["instanceID"] == ""
-    })
-  }
+      ip['days_idle'] = parseFloat(days_idle.toFixed(1))
+
+      if (param_idletime == 0 || days_idle == '' || days_idle > param_idletime) {
+        result.push(ip)
+      }
+    }
+  })
 EOS
 end
 
@@ -577,114 +580,7 @@ script "js_ip_address_prices_grouped", type: "javascript" do
     result[item['region'].toLowerCase()] = item['price']
   })
 EOS
-
-
-# Commented out because currently, this policy relies on list price.
-# This is because Optima does not store the resource IDs for IP addresses.
-# Left here for if and when that changes so that we can use real prices instead.
-
-# # Gather Optima cost data for IP addresses
-# datasource "ds_ip_address_costs" do
-#   request do
-#     run_script $js_ip_address_costs, $ds_aws_account, $ds_top_level_bcs, rs_org_id, rs_optima_host
-#   end
-#   result do
-#     encoding "json"
-#     collect jmes_path(response, "rows[*]") do
-#       field "resource_id", jmes_path(col_item, "dimensions.resource_id")
-#       field "vendorAccountName", jmes_path(col_item, "dimensions.vendor_account_name")
-#       field "cost", jmes_path(col_item, "metrics.cost_amortized_unblended_adj")
-#     end
-#   end
-# end
-
-# script "js_ip_address_costs", type: "javascript" do
-#   parameters "ds_aws_account", "ds_top_level_bcs", "rs_org_id", "rs_optima_host"
-#   result "request"
-#   code <<-EOS
-#   //Get Start and End dates
-#   start_date = new Date()
-#   start_date.setDate(start_date.getDate() - 3)
-#   start_date = start_date.toISOString().split("T")[0]
-
-#   end_date = new Date()
-#   end_date.setDate(end_date.getDate() - 2)
-#   end_date = end_date.toISOString().split("T")[0]
-
-#   var request = {
-#     auth: "auth_flexera",
-#     host: rs_optima_host,
-#     verb: "POST",
-#     path: "/bill-analysis/orgs/" + rs_org_id + "/costs/select",
-#     body_fields: {
-#       "dimensions": ["resource_id", "vendor_account_name"],
-#       "granularity": "day",
-#       "start_at": start_date,
-#       "end_at": end_date,
-#       "metrics": ["cost_amortized_unblended_adj"],
-#       "billing_center_ids": ds_top_level_bcs,
-#       "limit": 100000,
-#       "filter": {
-#         "type": "and",
-#         "expressions": [
-#           {
-#             "dimension": "service",
-#             "type": "equal",
-#             "value": "AmazonEC2"
-#           },
-#           {
-#             "dimension": "resource_type",
-#             "type": "equal",
-#             "value": "IP Address"
-#           },
-#           {
-#             "dimension": "vendor_account",
-#             "type": "equal",
-#             "value": ds_aws_account
-#           },
-#           {
-#             type: "not",
-#             expression: {
-#               dimension: "adjustment_name",
-#               type: "substring",
-#               substring: "Shared"
-#             }
-#           }
-#         ]
-#       }
-#     },
-#     headers: {
-#       "User-Agent": "RS Policies",
-#       "Api-Version": "1.0"
-#     },
-#     ignore_status: [400]
-#   }
-# EOS
-# end
-
-# datasource "ds_ip_address_costs_grouped" do
-#   run_script $js_ip_address_costs_grouped, $ds_ip_address_costs
-# end
-
-# script "js_ip_address_costs_grouped", type: "javascript" do
-#   parameters "ds_ip_address_costs"
-#   result "result"
-#   code <<-EOS
-#   // Multiple a single day's cost by the average number of days in a month.
-#   // The 0.25 is to account for leap years for extra precision.
-#   cost_multiplier = 365.25 / 12
-
-#   // Group cost data by resourceId for later use
-#   result = {}
-
-#   _.each(ds_ip_address_costs, function(item) {
-#     id = item['resource_id'].toLowerCase()
-
-#     if (result[id] == undefined) { result[id] = 0.0 }
-#     result[id] += item['cost'] * cost_multiplier
-#   })
-# EOS
-# end
+end
 
 # Combine IP information with cost data and prepare final datasource for incident
 datasource "ds_ip_cost_mapping" do
@@ -733,9 +629,14 @@ script "js_ip_cost_mapping", type:"javascript" do
       ].join('')
 
       tags = []
+      resourceName = ""
 
       _.each(ip['tags'], function(tag) {
         ip_tags.push([tag['key'], tag['value']].join('='))
+
+        if (tag['key'].toLowerCase() == 'name') {
+          resourceName = tag['value']
+        }
       })
 
       ip_list.push({
@@ -747,8 +648,11 @@ script "js_ip_cost_mapping", type:"javascript" do
         accountID: ds_aws_account['id'],
         accountName: ds_aws_account['name'],
         recommendationDetails: recommendationDetails,
+        resourceName: resourceName,
+        days_idle: ip['days_idle'],
         savings: parseFloat(ip_cost.toFixed(3)),
         savingsCurrency: ds_currency['symbol'],
+        privateIpAddress: ip['privateIpAddress'],
         service: "EC2",
         tags: tags.join(', ')
       })
@@ -818,8 +722,16 @@ policy "policy_unused_ip_addresses" do
         label "Account Name"
       end
       field "resourceID" do
-        label "Resource ID"
+        label "IP Address"
         path "publicIp"
+      end
+      field "ipAddress" do
+        label "Private Address"
+        path "privateIpAddress"
+      end
+      field "resourceName" do
+        label "Resource Name"
+        path "resourceName"
       end
       field "resourceType" do
         label "Resource Type"
@@ -830,6 +742,9 @@ policy "policy_unused_ip_addresses" do
       end
       field "recommendationDetails" do
         label "Recommendation"
+      end
+      field "days_idle" do
+        label "Days Unused"
       end
       field "domain" do
         label "Domain"
@@ -989,7 +904,6 @@ datasource "ds_get_policy" do
   end
 end
 
-
 datasource "ds_parent_policy_terminated" do
   run_script $js_decide_if_self_terminate, $ds_get_policy, policy_id, meta_parent_policy_id
 end
@@ -1055,6 +969,6 @@ script "js_check_deleted", type: "javascript" do
   parameters "response"
   result "result"
   code <<-EOS
-  result = {"path":"/"}
-  EOS
+  result = { "path": "/" }
+EOS
 end
