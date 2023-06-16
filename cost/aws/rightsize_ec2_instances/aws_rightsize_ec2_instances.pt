@@ -817,7 +817,13 @@ script "js_merged_metrics", type: "javascript" do
           "savingsCurrency": ds_currency['symbol'],
           "threshold": param_stats_threshold,
           "lookback": param_stats_lookback,
-          "resourceName": resourceName
+          "resourceName": resourceName,
+          // These are to avoid errors when we hash_exclude these fields
+          "underutil_message": "",
+          "idle_message": "",
+          "underutil_total_savings": "",
+          "idle_total_savings": "",
+          "policy_name": ""
         }
 
         // Grab usage data for the instance if it is present.
@@ -1093,15 +1099,17 @@ script "js_idle_and_underutil_instances", type:"javascript" do
     idle_message = underutil_message
   }
 
-  result = {
-    underutil_message: underutil_message,
-    idle_message: idle_message,
-    underutil_total_savings: underutil_total_savings,
-    idle_total_savings: idle_total_savings,
-    underutil_list: underutil_list,
-    idle_list: idle_list,
-    policy_name: ds_applied_policy['name']
-  }
+  // Add these to both lists to ensure the first item that fails validation for each
+  // contains the necessary data for the summary and detail templates
+  idle_list[0]['idle_message'] = idle_message
+  idle_list[0]['idle_total_savings'] = idle_total_savings
+  idle_list[0]['policy_name'] = ds_applied_policy['name']
+
+  underutil_list[0]['underutil_message'] = underutil_message
+  underutil_list[0]['underutil_total_savings'] = underutil_total_savings
+  underutil_list[0]['policy_name'] = ds_applied_policy['name']
+
+  result = idle_list.concat(underutil_list)
 EOS
 end
 
@@ -1110,19 +1118,18 @@ end
 ###############################################################################
 
 policy "pol_utilization" do
-  validate $ds_idle_and_underutil_instances do
-    summary_template "{{ data.policy_name }}: {{ len data.underutil_list }} AWS Underutilized EC2 Instances Found"
+  validate_each $ds_idle_and_underutil_instances do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} AWS Underutilized EC2 Instances Found"
     detail_template <<-'EOS'
-    **Potential Monthly Savings:** {{ data.underutil_total_savings }}
+    **Potential Monthly Savings:** {{ with index data 0 }}{{ .underutil_total_savings }}{{ end }}
 
-    {{ data.underutil_message }}
+    {{ with index data 0 }}{{ .underutil_message }}{{ end }}
     EOS
-    check logic_or($ds_parent_policy_terminated, eq(size(val(data, "underutil_list")), 0))
+    check logic_or($ds_parent_policy_terminated, ne(val(item, "recommendationType"), "Downsize"))
     escalate $esc_email
     escalate $esc_downsize_instances
-    hash_exclude "cpuMaximum"
-    #hash_exclude "cpuMaximum", "cpuMinimum", "cpuAverage", "cpuP99", "cpuP95", "cpuP90", "memMaximum", "memMinimum", "memAverage", "memP99", "memP95", "memP90", "savings", "savingsCurrency"
-    export "underutil_list" do
+    hash_exclude "underutil_message", "idle_message", "underutil_total_savings", "idle_total_savings", "tags", "savings", "savingsCurrency", "cpu_maximum", "cpu_minimum", "cpu_average", "cpu_p99", "cpu_p95", "cpu_p90", "mem_maximum", "mem_minimum", "mem_average", "mem_p99", "mem_p95", "mem_p90"
+    export do
       resource_level true
       field "accountID" do
         label "Account ID"
@@ -1219,7 +1226,7 @@ policy "pol_utilization" do
         path "threshold"
       end
       field "lookBackPeriod" do
-        label "Statistic Lookback Period (Days)"
+        label "Lookback Period (Days)"
         path "lookback"
       end
       field "service" do
@@ -1231,18 +1238,18 @@ policy "pol_utilization" do
       end
     end
   end
-  validate $ds_idle_and_underutil_instances do
-    summary_template "{{ data.policy_name }}: {{ len data.idle_list }} AWS Idle EC2 Instances Found"
+  validate_each $ds_idle_and_underutil_instances do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} AWS Idle EC2 Instances Found"
     detail_template <<-'EOS'
-    **Potential Monthly Savings:** {{ data.idle_total_savings }}
+    **Potential Monthly Savings:** {{ with index data 0 }}{{ .idle_total_savings }}{{ end }}
 
-    {{ data.idle_message }}
+    {{ with index data 0 }}{{ .idle_message }}{{ end }}
     EOS
-    check logic_or($ds_parent_policy_terminated, eq(size(val(data, "idle_list")), 0))
+    check logic_or($ds_parent_policy_terminated, ne(val(item, "recommendationType"), "Terminate"))
     escalate $esc_email
     escalate $esc_terminate_instances
-    #hash_exclude "cpuMaximum", "cpuMinimum", "cpuAverage", "cpuP99", "cpuP95", "cpuP90", "memMaximum", "memMinimum", "memAverage", "memP99", "memP95", "memP90", "savings", "savingsCurrency"
-    export "idle_list" do
+    hash_exclude "underutil_message", "idle_message", "underutil_total_savings", "idle_total_savings", "tags", "savings", "savingsCurrency", "cpu_maximum", "cpu_minimum", "cpu_average", "cpu_p99", "cpu_p95", "cpu_p90", "mem_maximum", "mem_minimum", "mem_average", "mem_p99", "mem_p95", "mem_p90"
+    export do
       resource_level true
       field "accountID" do
         label "Account ID"
@@ -1336,7 +1343,7 @@ policy "pol_utilization" do
         path "threshold"
       end
       field "lookBackPeriod" do
-        label "Statistic Lookback Period (Days)"
+        label "Lookback Period (Days)"
         path "lookback"
       end
       field "service" do
