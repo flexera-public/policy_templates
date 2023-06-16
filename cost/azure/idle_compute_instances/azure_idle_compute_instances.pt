@@ -144,6 +144,8 @@ datasource "ds_azure_virtualmachines" do
       field "name", jmes_path(col_item,"name")
       field "region", jmes_path(col_item, "location")
       field "tags", jmes_path(col_item,"tags")
+      field "platform", jmes_path(col_item,"properties.storageProfile.osDisk.osType")
+      field "vmSize", jmes_path(col_item, "properties.hardwareProfile.vmSize")
       field "subscriptionID",val(iter_item,"subscriptionID")
       field "subscriptionName",val(iter_item,"displayName")
     end
@@ -178,6 +180,8 @@ datasource "ds_azure_instance_performance" do
     field "region", val(iter_item, "region")
     field "tags", val(iter_item, "tags")
     field "service", val(iter_item, "service")
+    field "platform", val(iter_item, "platform")
+    field "vmSize", jmes_path(iter_item, "vmSize")
     field "subscriptionID",val(iter_item,"subscriptionID")
     field "subscriptionName",val(iter_item,"subscriptionName")
     field "averages" do
@@ -257,7 +261,7 @@ datasource "ds_combineddata" do
 end
 
 datasource "ds_instance_cost_mapping" do
-  run_script $js_instance_cost_mapping, $ds_combineddata, $ds_instance_costs, $ds_currency_code, $ds_currency_reference, $ds_billing_centers
+  run_script $js_instance_cost_mapping, $ds_combineddata, $ds_instance_costs, $ds_currency_code, $ds_currency_reference, $ds_billing_centers, $param_cpu_average_percentage
 end
 
 datasource "ds_only_instances" do
@@ -403,7 +407,7 @@ EOS
 end
 
 script "js_instance_cost_mapping", type:"javascript" do
-  parameters  "instance_list","instance_costs","ds_currency_code","ds_currency_reference", "ds_billing_centers"
+  parameters  "instance_list","instance_costs","ds_currency_code","ds_currency_reference", "ds_billing_centers", "param_cpu_average_percentage"
   result "result"
   code <<-EOS
     var result = {};
@@ -459,6 +463,8 @@ script "js_instance_cost_mapping", type:"javascript" do
       var total_savings=0;
       _.each(instance_list, function(instance){
         var cost_objects = costs_by_resource_id[instance.resourceID];
+        instance['lookBackPeriod'] = "30 days"
+        instance['threshold'] = param_cpu_average_percentage
         if (_.size(cost_objects) > 0){
           count++;
           var sum = _.reduce(_.compact(_.map(cost_objects, function(value){return value.cost_nonamortized_unblended_adj})), function(memo, num){ return memo + num; }, 0);
@@ -533,8 +539,9 @@ EOS
       field "resourceName" do
         label "Resource Name"
       end
-      field "resourceType" do
-        label "Resource Type"
+      field "resourceKind" do
+        label "Resource Kind"
+        path "resourceType"
       end
       field "region" do
         label "Region"
@@ -545,8 +552,9 @@ EOS
       field "savingsCurrency" do
         label "Savings Currency"
       end
-      field "averageCPU" do
+      field "cpuAverage" do
         label "CPU Average"
+        path "averageCPU"
       end
       field "resourceGroup" do
         label "Resource Group"
@@ -560,6 +568,19 @@ EOS
       field "id" do
         label "ID"
         path "resourceID"
+      end
+      field "lookBackPeriod" do
+        label "Lookback Period"
+      end
+      field "threshold" do
+        label "Threshold"
+      end
+      field "platform" do
+        label "Platform"
+      end
+      field "resourceType" do
+        label "Resource Type"
+        path "vmSize"
       end
     end
   end
