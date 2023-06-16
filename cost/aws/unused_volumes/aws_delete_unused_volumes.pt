@@ -407,18 +407,23 @@ script "js_volumes_map", type: "javascript" do
   parameters "ds_volumes_list", "param_unused_days"
   result "result"
   code <<-EOS
-  var result = []
+  result = []
 
   _.each(ds_volumes_list, function(volume) {
-    var startDate = new Date(vol['created_time']) // Volume Created Date
-    var endDate = new Date()
-    var timeDifference = endDate.getTime() - startDate.getTime()
-    var daysDifference = (timeDifference / (1000 * 3600 * 24)).toFixed(2)
+    startDate = new Date(vol['created_time']) // Volume Created Date
+    endDate = new Date()
+    timeDifference = endDate.getTime() - startDate.getTime()
+    daysDifference = (timeDifference / (1000 * 3600 * 24)).toFixed(2)
 
-    var tags = []
+    tags = []
+    name = ""
 
     _.each(volume['tags'], function(tag) {
       tags.push(tag['key'] + '=' + tag['value'])
+
+      if (tag['key'].toLowerCase() == 'name') {
+        name = tag['value']
+      }
     })
 
     if (daysDifference > param_unused_days) {
@@ -431,7 +436,8 @@ script "js_volumes_map", type: "javascript" do
         status: vol['status'],
         created_time: vol['created_time'],
         size: vol['size'],
-        tags: tags.join(', ')
+        tags: tags.join(', '),
+        name: name
       })
     }
   })
@@ -589,6 +595,7 @@ script "js_idle_volumes", type: "javascript" do
         availability_zone: volume['availability_zone'],
         volume_type: volume['volume_type'],
         tags: volume['tags'],
+        name: volume['name'],
         created_time: volume['created_time'],
         size: volume['size'],
         status: volume['status'],
@@ -755,20 +762,32 @@ script "js_volume_cost_mapping", type:"javascript" do
 
     total_savings += savings
 
+    recommendationDetails = [
+      "Delete volume ", volume['volume_id'], " ",
+      "in AWS Account ", ds_aws_account_name, " ",
+      "(", ds_aws_account, ")
+    ].join('')
+
     result.push({
       accountID: ds_aws_account,
       accountName: ds_aws_account_name,
       resourceID: volume['volume_id'],
+      resourceName: volume['name'],
       region: volume['region'],
       availability_zone: volume['availability_zone'],
       resourceType: volume['volume_type'],
       tags: volume['tags'],
       created_time: volume['created_time'],
-      size: volume['size'],
+      size: parseFloat(volume['size']),
       status: volume['status'],
       savings: parseFloat(savings.toFixed(3)),
       savingsCurrency: ds_currency['symbol'],
-      service: "EBS"
+      service: "EBS",
+      recommendationDetails: recommendationDetails,
+      // These are to avoid errors when we hash_exclude these fields
+      message: "",
+      total_savings: "",
+      policy_name: ""
     })
   })
 
@@ -835,32 +854,38 @@ policy "pol_unused_volumes" do
     check logic_or($ds_parent_policy_terminated, eq(val(item, "resourceID"), ""))
     escalate $esc_email
     escalate $esc_delete_volumes
-    hash_exclude "tags", "savings", "savingsCurrency"
+    hash_exclude "message", "total_savings", "tags", "savings", "savingsCurrency"
     export do
       resource_level true
       field "accountID" do
-        label "Account Id"
+        label "Account ID"
       end
       field "accountName" do
         label "Account Name"
       end
-      field "region" do
-        label "Region"
-      end
       field "resourceID" do
-        label "Resource Id"
+        label "Resource ID"
+      end
+      field "resourceName" do
+        label "Resource Name"
+      end
+      field "tags" do
+        label "Resource Tags"
+      end
+      field "recommendationDetails" do
+        label "Recommendation"
       end
       field "resourceType" do
         label "Resource Type"
       end
-      field "status" do
-        label "Status"
+      field "region" do
+        label "Region"
       end
       field "size" do
-        label "Size"
+        label "Size (GB)"
       end
-      field "tags" do
-        label "Tags"
+      field "status" do
+        label "Status"
       end
       field "savings" do
         label "Estimated Monthly Savings"
@@ -868,12 +893,12 @@ policy "pol_unused_volumes" do
       field "savingsCurrency" do
         label "Savings Currency"
       end
+      field "service" do
+        label "Service"
+      end
       field "id" do
         label "ID"
         path "resourceID"
-      end
-      field "service" do
-        label "Service"
       end
     end
   end
