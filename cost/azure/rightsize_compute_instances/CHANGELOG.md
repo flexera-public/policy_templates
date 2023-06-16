@@ -1,5 +1,11 @@
 # Changelog
 
+## v2.3
+
+- Added `Lookback Period` incident field.
+- Added `Threshold` incident field.
+- Changed internal names of several incident fields to ensure that they are properly scraped for dashboards.
+
 ## v2.2
 
 - Fixed bug with parameter_subscription_allowlist script
