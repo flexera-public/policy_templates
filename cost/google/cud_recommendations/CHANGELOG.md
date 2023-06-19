@@ -1,5 +1,10 @@
 # Changelog
 
+## v3.2
+
+- Updated recommendation service from 'Storage' to 'Compute'
+- Changed internal names of several incident fields to ensure that they are properly scraped for dashboards.
+
 ## v3.1
 
 - Fixed issue preventing policy from updating in the public catalog
