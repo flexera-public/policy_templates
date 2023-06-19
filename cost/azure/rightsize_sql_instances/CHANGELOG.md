@@ -1,5 +1,12 @@
 # Changelog
 
+## v2.13
+
+- Added `Lookback Period` incident field.
+- Added `Subscription ID` incident field.
+- Added `Resource Type` incident field.
+- Changed internal names of several incident fields to ensure that they are properly scraped for dashboards.
+
 ## v2.12
 
 - Replaced the term **whitelist** with **allowed list**.
