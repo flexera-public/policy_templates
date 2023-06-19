@@ -1,5 +1,10 @@
 # Changelog
 
+## v2.9
+
+- Added `Lookback Period In Days` incident field.
+- Added `Platform` incident field.
+
 ## v2.8
 
 - Updated policy metadata to facilitate scraping of incidents for Recommendations dashboard
