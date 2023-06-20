@@ -8,7 +8,7 @@ category "Cost"
 tenancy "single"
 default_frequency "daily"
 info(
-  version: "2.4",
+  version: "2.5",
   provider: "Flexera Optima",
   service: "",
   policy_set:""
@@ -134,8 +134,27 @@ datasource "ds_dimensions" do
   end
 end
 
+datasource "ds_dimensions_plus" do
+  run_script $js_add_dimensions, $ds_dimensions
+end
+
+script "js_add_dimensions", type: "javascript" do
+  parameters "arg"
+  result "results"
+  code <<-EOS
+
+  var results = []
+
+  results.push({"id": "billing_center_id", "name": "Billing Center", "type": "Tags"})
+
+  _.each(arg, function(dimension) {
+    results.push(dimension)
+  })
+  EOS
+end
+
 datasource "ds_filter_dimensions" do
-  run_script $js_filter_dimensions, $param_dimensions, $ds_dimensions
+  run_script $js_filter_dimensions, $param_dimensions, $ds_dimensions, $ds_dimensions_plus
 end
 
 datasource "billing_centers" do
@@ -189,7 +208,7 @@ end
 ###############################################################################
 
 script "js_filter_dimensions", type: "javascript" do
-  parameters "param_dimensions", "ds_dimensions"
+  parameters "param_dimensions", "ds_dimensions", "ds_dimensions_plus"
   result "filtered_dimensions"
   code <<-EOS
     var filtered_dimensions = {
@@ -199,7 +218,7 @@ script "js_filter_dimensions", type: "javascript" do
       filters:[]
     };
     var exist = false;
-
+    console.log(ds_dimensions_plus)
     _.each(param_dimensions, function(user_input_dimension, index) {
       exist = false;
       filter = {
@@ -213,7 +232,7 @@ script "js_filter_dimensions", type: "javascript" do
       if (dimension_filter_map.length > 1){
         hasfilter=true
       }
-      _.each(ds_dimensions, function(dimension) {
+      _.each(ds_dimensions_plus, function(dimension) {
         if (dimension_filter_map[0] === dimension.name || dimension_filter_map[0] === dimension.id) {
           filtered_dimensions.ids.push(dimension.id);
           filtered_dimensions.names.push(dimension.name);
