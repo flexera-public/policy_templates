@@ -7,7 +7,7 @@ category "Cost"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "2.2",
+  version: "2.3",
   provider: "Azure",
   service: "Compute",
   policy_set: "Rightsize Compute Instances",
@@ -216,11 +216,11 @@ datasource "ds_azure_instances" do
     collect jmes_path(response, "value[*]") do
       field "resourceId", jmes_path(col_item, "id")
       field "resourceGroup", get(4, split(jmes_path(col_item, "id"), '/'))
-      field "resourceType", jmes_path(col_item, "type")
+      field "resourceKind", jmes_path(col_item, "type")
       field "name", jmes_path(col_item, "name")
       field "region", jmes_path(col_item, "location")
       field "osType", jmes_path(col_item, "properties.storageProfile.osDisk.osType")
-      field "vmSize", jmes_path(col_item, "properties.hardwareProfile.vmSize")
+      field "resourceType", jmes_path(col_item, "properties.hardwareProfile.vmSize")
       field "tags", jmes_path(col_item, "tags")
       field "subscriptionId",val(iter_item, "subscriptionId")
       field "subscriptionName",val(iter_item, "subscriptionName")
@@ -249,8 +249,8 @@ script "js_filter_instances", type: "javascript" do
         })
 
         instance['tags'] = tags
-        resourceTypeSplit = instance['resourceType'].split("/")
-        service = resourceTypeSplit[0]
+        resourceKindSplit = instance['resourceKind'].split("/")
+        service = resourceKindSplit[0]
         instance['service'] = service
 
         return instance
@@ -281,11 +281,11 @@ datasource "ds_azure_instance_utilization" do
     field "resourceName", val(iter_item, "name")
     field "resourceGroup", val(iter_item, "resourceGroup")
     field "resourceId", val(iter_item, "resourceId")
-    field "resourceType", val(iter_item, "resourceType")
+    field "resourceKind", val(iter_item, "resourceKind")
     field "region", val(iter_item, "region")
     field "tags", val(iter_item, "tags")
     field "osType", val(iter_item, "osType")
-    field "vmSize", val(iter_item, "vmSize")
+    field "resourceType", val(iter_item, "resourceType")
     field "service", val(iter_item, "service")
     field "subscriptionId",val(iter_item, "subscriptionId")
     field "subscriptionName",val(iter_item, "subscriptionName")
@@ -383,8 +383,8 @@ script "js_add_instance_downsize_data", type: "javascript" do
     }
 
     if (cpuValue >= param_cpu_idle_avg_percentage) {
-      if (instance_size_map[instance['vmSize']] != undefined && instance_size_map[instance['vmSize']] != null) {
-        next_vm_size = instance_size_map[instance['vmSize']]['down']
+      if (instance_size_map[instance['resourceType']] != undefined && instance_size_map[instance['resourceType']] != null) {
+        next_vm_size = instance_size_map[instance['resourceType']]['down']
       }
     } else {
       next_vm_size = "Terminate Instance"
@@ -640,6 +640,9 @@ script "js_combine_data", type: "javascript" do
 
   _.each(result, function(item) {
     item['summaryData'] = summary_data
+    item['underutilThreshold'] = param_underutil_prc
+    item['idleThreshold'] = param_idle_prc
+    item['lookBackPeriod'] = "30 days"
   })
 EOS
 end
@@ -674,17 +677,19 @@ policy "policy_azure_rightsizing_data" do
       field "resourceName" do
         label "Resource Name"
       end
+      field "resourceKind" do
+        label "Resource Kind"
+      end
       field "resourceType" do
         label "Resource Type"
       end
-      field "vmSize" do
-        label "Instance Size"
+      field "recommendedResourceType" do
+        label "Recommended Resource Type"
+        path "recommendedVmSize"
       end
-      field "recommendedVmSize" do
-        label "Recommended Instance Size"
-      end
-      field "osType" do
+      field "platform" do
         label "OS Type"
+        path "osType"
       end
       field "region" do
         label "Region"
@@ -698,8 +703,9 @@ policy "policy_azure_rightsizing_data" do
       field "minCPU" do
         label "CPU Minimum (%)"
       end
-      field "averageCPU" do
+      field "cpuAverage" do
         label "CPU Average (%)"
+        path "averageCPU"
       end
       field "maxCPU" do
         label "CPU Maximum (%)"
@@ -724,6 +730,13 @@ policy "policy_azure_rightsizing_data" do
       field "accountID" do
         label "Account ID"
         path "subscriptionId"
+      end
+      field "lookBackPeriod" do
+        label "Lookback Period"
+      end
+      field "threshold" do
+        label "Underutilized Threshold"
+        path "underutilThreshold"
       end
     end
   end
@@ -752,17 +765,19 @@ EOS
       field "resourceName" do
         label "Resource Name"
       end
+      field "resourceKind" do
+        label "Resource Kind"
+      end
       field "resourceType" do
         label "Resource Type"
       end
-      field "vmSize" do
-        label "Instance Size"
+      field "recommendedResourceType" do
+        label "Recommended Resource Type"
+        path "recommendedVmSize"
       end
-      field "recommendedVmSize" do
-        label "Recommended Instance Size"
-      end
-      field "osType" do
+      field "platform" do
         label "OS Type"
+        path "osType"
       end
       field "region" do
         label "Region"
@@ -776,8 +791,9 @@ EOS
       field "minCPU" do
         label "CPU Minimum (%)"
       end
-      field "averageCPU" do
+      field "cpuAverage" do
         label "CPU Average (%)"
+        path "averageCPU"
       end
       field "maxCPU" do
         label "CPU Maximum (%)"
@@ -802,6 +818,13 @@ EOS
       field "accountID" do
         label "Account ID"
         path "subscriptionId"
+      end
+      field "lookBackPeriod" do
+        label "Lookback Period"
+      end
+      field "threshold" do
+        label "Idle Threshold"
+        path "idleThreshold"
       end
     end
   end
