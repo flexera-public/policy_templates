@@ -32,6 +32,15 @@ parameter "param_aws_account_number" do
   default ""
 end
 
+parameter "param_unusedtime" do
+  type "number"
+  label "Unused Time (Days)"
+  description "The number of days an RDS instance needs to have had no connections to consider it unused."
+  default 30
+  min_value 1
+  max_value 30
+end
+
 parameter "param_regions_allow_or_deny" do
   type "string"
   label "Allow/Deny Regions"
@@ -427,11 +436,11 @@ EOS
 end
 
 datasource "ds_cloudwatch_queries" do
-  run_script $js_cloudwatch_queries, $ds_rds_instances
+  run_script $js_cloudwatch_queries, $ds_rds_instances, $param_unusedtime
 end
 
 script "js_cloudwatch_queries", type: "javascript" do
-  parameters "ds_rds_instances"
+  parameters "ds_rds_instances", "param_unusedtime"
   result "result"
   code <<-EOS
   queries = {}
@@ -468,8 +477,12 @@ script "js_cloudwatch_queries", type: "javascript" do
 
   result = []
 
-  end_date = parseInt(new Date().getTime() / 1000)
-  start_date = parseInt(new Date(new Date().setDate(new Date().getDate() - 30)).getTime() / 1000)
+  end_date = new Date()
+  end_date = parseInt(end_date.getTime() / 1000)
+
+  start_date = new Date()
+  start_date.setDate(start_date.getDate() - param_unusedtime)
+  start_date = parseInt(start_date.getTime() / 1000)
 
   chunk_size = 500
 
@@ -646,11 +659,11 @@ EOS
 end
 
 datasource "ds_instance_cost_mapping" do
-  run_script $js_instance_cost_mapping, $ds_rds_instances, $ds_instance_costs_grouped, $ds_cloudwatch_data, $ds_currency, $ds_aws_account, $ds_aws_account_name
+  run_script $js_instance_cost_mapping, $ds_rds_instances, $ds_instance_costs_grouped, $ds_cloudwatch_data, $ds_currency, $ds_aws_account, $ds_aws_account_name, $ds_applied_policy
 end
 
 script "js_instance_cost_mapping", type: "javascript" do
-  parameters "ds_rds_instances", "ds_instance_costs_grouped", "ds_cloudwatch_data", "ds_currency", "ds_aws_account", "ds_aws_account_name"
+  parameters "ds_rds_instances", "ds_instance_costs_grouped", "ds_cloudwatch_data", "ds_currency", "ds_aws_account", "ds_aws_account_name", "ds_applied_policy"
   result "result"
   code <<-EOS
   // Used for formatting numbers to look pretty
@@ -705,7 +718,11 @@ script "js_instance_cost_mapping", type: "javascript" do
           privateDnsName: instance['privateDnsName'],
           status: instance['status'],
           savings: parseFloat(savings.toFixed(3)),
-          savingsCurrency: ds_currency['symbol']
+          savingsCurrency: ds_currency['symbol'],
+          // Dummy values to ensure hash_exclude works properly
+          total_savings: "",
+          message: "",
+          policy_name: ""
         })
       }
     }
@@ -720,17 +737,13 @@ script "js_instance_cost_mapping", type: "javascript" do
   findings = [
     "Out of ", total_instances, " AWS RDS instances analyzed, ",
     total_unused_instances, " (", unused_percentage,
-    ") are unused and recommended for decommissioning. "
+    ") are unused and recommended for deletion. "
   ].join('')
 
-  if (param_idletime != 0) {
-    idle_message = [
-      "An IP address is considered unused if it has not been attached to an instance ",
-      "for at least ", param_idletime, " days.\n\n"
-    ].join('')
-  } else {
-    idle_message = "An IP address is considered unused if it is not attached to an instance.\n\n"
-  }
+  idle_message = [
+    "An RDS instance is considered unused if it has not had any connections ",
+    "for at least ", param_unusedtime, " days.\n\n"
+  ].join('')
 
   disclaimer = "The above settings can be modified by editing the applied policy and changing the appropriate parameters."
 
@@ -740,7 +753,7 @@ script "js_instance_cost_mapping", type: "javascript" do
   ].join('')
 
   // Sort by descending order of savings value
-  result = _.sortBy(ip_list, function(item) { return item['savings'] * -1 })
+  result = _.sortBy(result, function(item) { return item['savings'] * -1 })
 
   result[0]['total_savings'] = savings_message
   result[0]['message'] = findings + idle_message + disclaimer
@@ -748,21 +761,18 @@ script "js_instance_cost_mapping", type: "javascript" do
 
   // Dummy entry to ensure the check statement in validate_each always runs at least once
   result.push({
-    publicIp: "",
-    domain: "",
-    region: "",
-    associationID: "",
-    allocationID: "",
     accountID: "",
     accountName: "",
-    recommendationDetails: "",
+    resourceID: "",
     resourceName: "",
-    age: "",
+    tags: "",
+    resourceType: "",
+    region: "",
+    arn: "",
+    privateDnsName: "",
+    status: "",
     savings: "",
     savingsCurrency: "",
-    privateIpAddress: "",
-    service: "",
-    tags: "",
     total_savings: "",
     message: "",
     policy_name: ""
@@ -786,6 +796,7 @@ policy "pol_unused_rds" do
     check logic_or($ds_parent_policy_terminated, eq(val(item, "resourceID"), ""))
     escalate $esc_email
     escalate $esc_decommission_rds
+    hash_exclude "tags", "total_savings", "message", "savings", "savingsCurrency"
     export do
       resource_level true
       field "accountID" do
@@ -850,14 +861,14 @@ escalation "esc_decommission_rds" do
   automatic contains($param_automatic_action, "Delete Instances")
   label "Delete RDS Instances"
   description "Delete selected RDS Instances"
-  run "decommission_rds", data, rs_optima_host
+  run "delete_rds", data, rs_optima_host
 end
 
 ###############################################################################
 # Cloud Workflow
 ###############################################################################
 
-define decommission_rds($data, $$rs_optima_host) return $all_responses do
+define delete_rds($data, $$rs_optima_host) return $all_responses do
   $$debug=true
   $$log = []
   $all_responses = []
@@ -869,12 +880,12 @@ define decommission_rds($data, $$rs_optima_host) return $all_responses do
       auth: $$auth_aws,
       https: true,
       verb: "get",
-      host: "rds."+$item["region"]+".amazonaws.com",
+      host: "rds." + $item["region"] + ".amazonaws.com",
       href: "/",
       query_strings: {
         "Action": "DeleteDBInstance",
         "Version": "2014-09-01",
-        "DBInstanceIdentifier": $item["name"],
+        "DBInstanceIdentifier": $item["resourceName"],
         "SkipFinalSnapshot":"true"
       }
     )
