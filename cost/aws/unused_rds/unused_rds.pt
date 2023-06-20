@@ -674,7 +674,7 @@ script "js_instance_cost_mapping", type: "javascript" do
   result = []
   total_savings = 0.0
 
-  _.each(ds_rds_instance_set, function(instance) {
+  _.each(ds_rds_instance, function(instance) {
     // Use _.findWhere() to find any Average MetricDataQuery results for the instance
     // Select DatabaseConnections Average from GetMetricData results
     var metrics = _.findWhere(ds_cloudwatch_getmetricdata, { label: instance.name + ' DatabaseConnections Average' })
@@ -712,6 +712,61 @@ script "js_instance_cost_mapping", type: "javascript" do
   })
 
   // Add message stuff here
+  // Message for incident output
+  total_instances = ds_rds_instances.length.toString()
+  total_unused_instances = result.length.toString()
+  unused_percentage = (total_unused_instances / total_instances * 100).toFixed(2).toString() + '%'
+
+  findings = [
+    "Out of ", total_instances, " AWS RDS instances analyzed, ",
+    total_unused_instances, " (", unused_percentage,
+    ") are unused and recommended for decommissioning. "
+  ].join('')
+
+  if (param_idletime != 0) {
+    idle_message = [
+      "An IP address is considered unused if it has not been attached to an instance ",
+      "for at least ", param_idletime, " days.\n\n"
+    ].join('')
+  } else {
+    idle_message = "An IP address is considered unused if it is not attached to an instance.\n\n"
+  }
+
+  disclaimer = "The above settings can be modified by editing the applied policy and changing the appropriate parameters."
+
+  savings_message = [
+    ds_currency['symbol'], ' ',
+    formatNumber(parseFloat(total_savings).toFixed(2), ds_currency['separator'])
+  ].join('')
+
+  // Sort by descending order of savings value
+  result = _.sortBy(ip_list, function(item) { return item['savings'] * -1 })
+
+  result[0]['total_savings'] = savings_message
+  result[0]['message'] = findings + idle_message + disclaimer
+  result[0]['policy_name'] = ds_applied_policy['name']
+
+  // Dummy entry to ensure the check statement in validate_each always runs at least once
+  result.push({
+    publicIp: "",
+    domain: "",
+    region: "",
+    associationID: "",
+    allocationID: "",
+    accountID: "",
+    accountName: "",
+    recommendationDetails: "",
+    resourceName: "",
+    age: "",
+    savings: "",
+    savingsCurrency: "",
+    privateIpAddress: "",
+    service: "",
+    tags: "",
+    total_savings: "",
+    message: "",
+    policy_name: ""
+  })
 EOS
 end
 
