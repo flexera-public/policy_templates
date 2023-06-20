@@ -2,7 +2,7 @@
 
 ## v2.5
 
-- The Billing Center dimension was added to show the corresponding results
+- added billing center dimension to show the corresponding results
 
 ## v2.4
 
