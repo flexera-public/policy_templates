@@ -7,7 +7,7 @@ severity "low"
 category "Cost"
 default_frequency "daily"
 info(
-  version: "5.1",
+  version: "5.2",
   provider: "AWS",
   service: "RDS",
   policy_set: "Unused Database Services",
@@ -152,6 +152,8 @@ datasource "ds_rds_instances_set" do
           field "region",val(iter_item,"region")
           field "instanceId", xpath(col_item,"DbiResourceId")
           field "instanceArn", xpath(col_item, "DBInstanceArn")
+          field "databaseEngine", xpath(col_item, "Engine")
+          field "engineVersion", xpath(col_item, "EngineVersion")
           field "resourceType", xpath(col_item, "DBInstanceClass")
           field "name", xpath(col_item,"DBInstanceIdentifier")
           field "status", xpath(col_item,"DBInstanceStatus")
@@ -506,13 +508,10 @@ script "js_rds_instances_without_connections", type: "javascript" do
   _.each(ds_rds_instance_set, function(instance){
     // get tags for instance
     var instances_w_tags = _.where(ds_list_tags_for_resource, {instanceId: instance.instanceId})
-    var instance_tags = {}
     var tags = []
     _.each(instances_w_tags, function(instance){
       tags.push(instance.key+':'+instance.value)
     })
-    instance_tags[instance.instanceId] = tags;
-    console.log(instance_tags);
 
     // Use _.findWhere() to find any Average MetricDataQuery results for the instance
     // Select DatabaseConnections Average from GetMetricData results
@@ -524,7 +523,7 @@ script "js_rds_instances_without_connections", type: "javascript" do
       // https://underscorejs.org/#reduce
       connections_total = _.reduce(metrics.values, function(memo, num){ return memo + num; }, 0);
       // There have been recent database connections for this instance if DatabaseConnections Average > 0
-      if ( !_.contains(instance_tags[instance.instanceId], param_exclusion_tag_key) && connections_total == 0){
+      if ( !_.contains(tags, param_exclusion_tag_key) && connections_total == 0){
         // Add instance to results if it does not have the exclusion tag and has not been recently used
         results.push({
           accountID: ds_get_caller_identity[0]['account'],
@@ -532,12 +531,15 @@ script "js_rds_instances_without_connections", type: "javascript" do
           region: instance.region,
           name: instance.name,
           arn: instance.instanceArn,
+          databaseEngine: instance.databaseEngine,
+          engineVersion: instance.engineVersion,
           id: instance.instanceId,
           resourceType: instance.resourceType,
           resourceID: instance.instanceId,
           privateDnsName: instance.privateDnsName,
           status: instance.status,
-          tags: instance_tags[instance.instanceId],
+          tags: tags,
+          lookbackPeriod: '30 days',
           // Savings is 0.0 [float] until later where we estimate savings
           savings: 0.0,
           savingsCurrency: cur
@@ -763,11 +765,13 @@ EOS
       field "region" do
         label "Region"
       end
-      field "name" do
-        label "Name"
+      field "resourceName" do
+        label "Resource Name"
+        path "name"
       end
-      field "status" do
+      field "state" do
         label "Status"
+        path "status"
       end
       field "savings" do
         label "Estimated Monthly Savings"
@@ -784,11 +788,24 @@ EOS
       field "resourceType" do
         label "Resource Type"
       end
+      field "databaseEngine" do
+        label "Database Engine"
+      end
+      field "engineVersion" do
+        label "Engine Version"
+      end
       field "arn" do
         label "ARN"
       end
+      field "platform" do
+        label "Platform"
+        path "databaseEngine"
+      end
       field "tags" do
         label "Tags"
+      end
+      field "lookbackPeriod" do
+        label "Look Back Period"
       end
       field "id" do
         label "id"
