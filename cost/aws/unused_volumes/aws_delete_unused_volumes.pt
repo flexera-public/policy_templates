@@ -437,6 +437,7 @@ script "js_volumes_map", type: "javascript" do
         created_time: vol['created_time'],
         size: vol['size'],
         tags: tags.join(', '),
+        age: parseFloat(daysDifference),
         name: name
       })
     }
@@ -598,6 +599,7 @@ script "js_idle_volumes", type: "javascript" do
         name: volume['name'],
         created_time: volume['created_time'],
         size: volume['size'],
+        age: volume['age'],
         status: volume['status'],
         savings: 0.0
       })
@@ -766,7 +768,7 @@ script "js_volume_cost_mapping", type:"javascript" do
     recommendationDetails = [
       "Delete volume ", volume['volume_id'], " ",
       "in AWS Account ", ds_aws_account_name, " ",
-      "(", ds_aws_account, ")
+      "(", ds_aws_account, ")"
     ].join('')
 
     result.push({
@@ -781,6 +783,7 @@ script "js_volume_cost_mapping", type:"javascript" do
       created_time: volume['created_time'],
       size: parseFloat(volume['size']),
       status: volume['status'],
+      age: volume['age'],
       savings: parseFloat(savings.toFixed(3)),
       savingsCurrency: ds_currency['symbol'],
       service: "EBS",
@@ -841,25 +844,13 @@ script "js_volume_cost_mapping", type:"javascript" do
 
   // Dummy item to ensure the policy's check statement always executes at least once
   result.push({
-    accountID: "",
-    accountName: "",
     resourceID: "",
-    resourceName: "",
-    region: "",
-    availability_zone: "",
-    resourceType: "",
-    tags: "",
-    created_time: "",
-    size: "",
-    status: "",
-    savings: "",
-    savingsCurrency: "",
-    service: "",
-    recommendationDetails: "",
-    lookBackPeriod: "",
+    age: "",
     message: "",
     total_savings: "",
-    policy_name: ""
+    tags: "",
+    savings: "",
+    savingsCurrency: ""
   })
 EOS
 end
@@ -879,7 +870,7 @@ policy "pol_unused_volumes" do
     check logic_or($ds_parent_policy_terminated, eq(val(item, "resourceID"), ""))
     escalate $esc_email
     escalate $esc_delete_volumes
-    hash_exclude "message", "total_savings", "tags", "savings", "savingsCurrency"
+    hash_exclude "age", "message", "total_savings", "tags", "savings", "savingsCurrency"
     export do
       resource_level true
       field "accountID" do
@@ -897,6 +888,9 @@ policy "pol_unused_volumes" do
       field "tags" do
         label "Resource Tags"
       end
+      field "age" do
+        label "Age (Days)"
+      end
       field "recommendationDetails" do
         label "Recommendation"
       end
@@ -909,8 +903,9 @@ policy "pol_unused_volumes" do
       field "size" do
         label "Size (GB)"
       end
-      field "status" do
+      field "state" do
         label "Status"
+        path "status"
       end
       field "savings" do
         label "Estimated Monthly Savings"
