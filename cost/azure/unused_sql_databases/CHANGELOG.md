@@ -3,6 +3,7 @@
 ## v4.6
 
 - Added `Lookback Period` incident field.
+- Added `Platform` incident field.
 - Updated value ouput from `Resource Type` incident field.
 
 ## v4.5
