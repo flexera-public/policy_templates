@@ -61,6 +61,7 @@ For administrators [creating and managing credentials](https://docs.flexera.com/
   - `cloudwatch:GetMetricStatistics`
   - `cloudwatch:GetMetricData`
   - `cloudwatch:ListMetrics`
+  - `sts:GetCallerIdentity`
 
 \* Only required for taking action (terminating or downsizing); the policy will still function in a read-only capacity without these permissions.
 
@@ -83,7 +84,8 @@ For administrators [creating and managing credentials](https://docs.flexera.com/
                   "ec2:TerminateInstances",
                   "cloudwatch:GetMetricStatistics",
                   "cloudwatch:GetMetricData",
-                  "cloudwatch:ListMetrics"
+                  "cloudwatch:ListMetrics",
+                  "sts:GetCallerIdentity"
               ],
               "Resource": "*"
           }
