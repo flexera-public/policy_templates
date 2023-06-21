@@ -2,8 +2,10 @@
 
 ## v6.1
 
-- Added `resourceName`, `age` and `lookBackPeriod` incident fields
-- Renamed `status` field to `state`
+- Added `Resource Name` incident field
+- Added `Age` incident field
+- Added `Lookback Period` incident fields
+- Changed the internal name of the `Status` incident field to ensure proper scraping for the recommendation dashboard
 
 ## v6.0
 

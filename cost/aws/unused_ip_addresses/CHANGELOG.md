@@ -2,7 +2,7 @@
 
 ## 5.2
 
-- Added `resourceName` incident field
+- Added `Resource Name` incident field
 
 ## v5.1
 

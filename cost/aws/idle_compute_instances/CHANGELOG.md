@@ -2,9 +2,13 @@
 
 ## v5.2
 
-- Fixed `tags` incident field output
-- Added `resourceName`, `lookbackPeriod`, `threshold`, `memoryThreshold` and `thresholdType` incident fields
-- Renamed all the `cpu_*` and `mem_*` fields to their corresponding names in camelCase (`cpu_maximum` to `cpuMaximum`, `cpu_p90` to `cpuP90`, etc.)
+- Fixed output of `Tags` incident field
+- Added `Resource Name` incident field
+- Added `CPU Threshold` incident field
+- Added `Memory Threshold` incident field
+- Added `Threshold Type` incident fields
+- Added `Lookback Period` incident fields
+- Changed the internal names of several incident fields to ensure proper scraping for recommendations dashboard
 
 ## v5.1
 

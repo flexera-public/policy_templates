@@ -2,9 +2,11 @@
 
 ## 5.2
 
-- Added `databaseEngine`, `engineVersion`, `platform` and `lookbackPeriod` incident fields
-- Renamed `name` to `resourceName`
-- Renamed `status` field to `state`
+- Added `Database Engine` incident field
+- Added `Engine Version` incident field
+- Added `Platform` incident field
+- Added `Lookback Period` incident fields
+- Changed the internal names of several incident fields to ensure proper scraping for recommendations dashboard
 
 ## v5.1
 
