@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.4
+
+- Changed internal names of several incident fields to ensure that they are properly scraped for dashboards.
+
 ## v1.3
 
 - Changed policy set from `Savings Plan` to `Savings Plans` to match other similar policies.
