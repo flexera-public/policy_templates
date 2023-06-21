@@ -354,7 +354,7 @@ datasource "ds_describe_snapshots" do
       field "snapshotId", xpath(col_item, "snapshotId")
       field "startTime", xpath(col_item, "startTime")
       field "ownerId", xpath(col_item, "ownerId")
-      field "volumeSize", xpath(col_item, "volumeSize")
+      field "size", xpath(col_item, "volumeSize")
       field "service", "EBS"
       field "api_call", "DescribeSnapshots"
     end
@@ -412,7 +412,7 @@ datasource "ds_describe_db_snapshots" do
       field "snapshotId", xpath(col_item, "DBSnapshotIdentifier")
       field "startTime", xpath(col_item, "SnapshotCreateTime")
       field "dbInstanceId", xpath(col_item, "DBInstanceIdentifier")
-      field "volumeSize", xpath(col_item, "AllocatedStorage")
+      field "size", xpath(col_item, "AllocatedStorage")
       field "service", "RDS"
       field "api_call", "DescribeDBSnapshots"
     end
@@ -445,7 +445,7 @@ datasource "ds_describe_db_cluster_snapshots" do
       field "snapshotId", xpath(col_item, "DBClusterSnapshotIdentifier")
       field "startTime", xpath(col_item, "SnapshotCreateTime")
       field "dbClusterId", xpath(col_item, "DBClusterIdentifier")
-      field "volumeSize", xpath(col_item, "AllocatedStorage")
+      field "size", xpath(col_item, "AllocatedStorage")
       field "service", "RDS"
       field "api_call", "DescribeDBClusterSnapshots"
     end
@@ -509,19 +509,19 @@ script "js_filter_old_snapshots", type: "javascript" do
     }
 
     snapshotTime = Date.parse(snapshot['startTime'])
-    daysOld = Math.round((new Date().getTime() - new Date(snapshotTime).getTime()) / (1000 * 3600 * 24))
+    age = Math.round((new Date().getTime() - new Date(snapshotTime).getTime()) / (1000 * 3600 * 24))
 
-    if (daysOld > param_snapshot_age) {
+    if (age > param_snapshot_age) {
       result.push({
         snapshotId: snapshot['snapshotId'],
         dbClusterId: snapshot['dbClusterId'],
         dbInstanceId: snapshot['dbInstanceId'],
         region: snapshot['region'],
         tags: tags.join(', '),
-        daysOld: daysOld,
+        age: age,
         service: snapshot['service'],
         api_call: snapshot['api_call'],
-        volumeSize: snapshot['volumeSize'],
+        size: snapshot['size'],
         name: name
       })
     }
@@ -565,52 +565,54 @@ script "js_filter_ami_snapshots", type: "javascript" do
   code <<-EOS
   var result = []
 
-  _.each(ds_filter_old_snapshots, function(old_snapshot) {
-    old_snapshot_dbClusterId = ""
-    old_snapshot_dbInstanceId = ""
-    old_snapshot_imageId = ""
+  _.each(ds_filter_old_snapshots, function(snapshot) {
+    snapshotId = snapshot['snapshotId']
+    dbClusterId = ""
+    dbInstanceId = ""
+    imageId = ""
 
-    if (old_snapshot['service'] == "RDS" && old_snapshot['dbClusterId'] != null) {
-      old_snapshot_dbClusterId = old_snapshot['dbClusterId']
+    if (snapshot['service'] == "RDS" && snapshot['dbClusterId'] != null) {
+      dbClusterId = snapshot['dbClusterId']
     }
 
-    if (old_snapshot['service'] == "RDS" && old_snapshot['dbInstanceId'] != null) {
-      old_snapshot_dbInstanceId = old_snapshot['dbInstanceId']
+    if (snapshot['service'] == "RDS" && snapshot['dbInstanceId'] != null) {
+      dbInstanceId = snapshot['dbInstanceId']
     }
 
-    _.each(ds_get_snapshot_ami, function(ami) {
-      if (_.contains(ami['snapshotIds'], old_snapshot['snapshotId'])) {
-        old_snapshot_imageId = ami['imageId']
-      }
+    // Find the associated AMI if it exists and store its ID in imageId
+    ami = _.find(ds_get_snapshot_ami, function(ami) {
+      return _.contains(ami['snapshotIds'], snapshotId)
     })
 
+    if (ami != undefined) { imageId = ami['imageId'] }
+
     // formatSnapId is used to map this resource to the resource ID returned by Flexera cost API
-    if (old_snapshot['api_call'] == "DescribeSnapshots") {
-      formatSnapId = "snapshot/" + old_snapshot['snapshotId']
+    if (snapshot['api_call'] == "DescribeSnapshots") {
+      formatSnapId = "snapshot/" + snapshot['snapshotId']
     }
 
-    if (old_snapshot['api_call'] == "DescribeDBSnapshots") {
-      formatSnapId = "db:" + old_snapshot['dbInstanceId']
+    if (snapshot['api_call'] == "DescribeDBSnapshots") {
+      formatSnapId = "db:" + snapshot['dbInstanceId']
     }
 
-    if (old_snapshot['api_call'] == "DescribeDBClusterSnapshots") {
-      formatSnapId = "cluster-snapshot:" + old_snapshot['snapshotId']
+    if (snapshot['api_call'] == "DescribeDBClusterSnapshots") {
+      formatSnapId = "cluster-snapshot:" + snapshot['snapshotId']
     }
 
-    if (old_snapshot_imageId == "" || param_snapshot_include_ami == "Yes") {
+    if (imageId == "" || param_snapshot_include_ami == "Yes") {
       result.push({
-        snapshotId: old_snapshot['snapshotId'],
+        snapshotId: snapshotId,
         formatSnapId: formatSnapId,
-        region: old_snapshot['region'],
-        tags: old_snapshot['tags'],
-        daysOld: old_snapshot['daysOld'],
-        service: old_snapshot['service'],
+        region: snapshot['region'],
+        tags: snapshot['tags'],
+        age: snapshot['age'],
+        service: snapshot['service'],
         accountID: ds_aws_account,
-        imageId: old_snapshot_imageId,
-        dbInstanceId: old_snapshot_dbInstanceId,
-        dbClusterId: old_snapshot_dbClusterId,
-        volumeSize: old_snapshot['volumeSize'],
-        name: old_snapshot['name']
+        imageId: imageId,
+        dbInstanceId: dbInstanceId,
+        dbClusterId: dbClusterId,
+        size: snapshot['size'],
+        name: snapshot['name']
       })
     }
   })
@@ -790,15 +792,16 @@ script "js_snapshots_cost_mapping", type: "javascript" do
         region: snapshot['region'],
         tags: snapshot['tags'],
         resourceName: snapshot['name'],
-        age: snapshot['daysOld'],
+        age: snapshot['age'],
         imageId: snapshot['imageId'],
         dbInstanceId: snapshot['dbInstanceId'],
         dbClusterId: snapshot['dbClusterId'],
         savings: parseFloat(savings.toFixed(3)),
         savingsCurrency: ds_currency['symbol'],
-        size: snapshot['volumeSize'],
+        size: snapshot['size'],
         service: snapshot['service'],
         recommendationDetails: recommendationDetails,
+        lookBackPeriod: param_snapshot_age,
         resourceType: "Storage Snapshot",
         // These are to avoid errors when we hash_exclude these fields
         total_savings: '',
@@ -842,25 +845,13 @@ script "js_snapshots_cost_mapping", type: "javascript" do
 
   // Dummy item to ensure that the check statement in the policy executes at least once
   result.push({
-    accountID: "",
-    accountName: "",
     resourceID: "",
-    region: "",
-    tags: "",
-    resourceName: "",
-    age: "",
-    imageId: "",
-    dbInstanceId: "",
-    dbClusterId: "",
-    savings: "",
-    savingsCurrency: "",
-    size: "",
-    service: "",
-    recommendationDetails: "",
-    resourceType: "",
     total_savings: "",
     message: "",
-    policy_name: ""
+    tags: "",
+    age: "",
+    savings: "",
+    savingsCurrency: ""
   })
 EOS
 end
@@ -931,6 +922,9 @@ policy "pol_utilization" do
       end
       field "savingsCurrency" do
         label "Savings Currency"
+      end
+      field "lookBackPeriod" do
+        label "Look Back Period (Days)"
       end
       field "id" do
         label "ID"
