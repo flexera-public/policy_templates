@@ -3,8 +3,6 @@
 ## v2.9
 
 - Added `Lookback Period In Days` incident field.
-- Added `Platform` incident field.
-- Added `Threshold` incident field.
 
 ## v2.8
 
