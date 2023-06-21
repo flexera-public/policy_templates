@@ -534,7 +534,7 @@ script "js_unused_ips", type: "javascript" do
         days_idle = (now - most_recent_event) / 1000 / 60 / 60 / 24
       }
 
-      ip['days_idle'] = parseFloat(days_idle.toFixed(1))
+      ip['age'] = parseFloat(days_idle.toFixed(1))
 
       if (param_idletime == 0 || days_idle == '' || days_idle > param_idletime) {
         result.push(ip)
@@ -610,7 +610,7 @@ script "js_ip_cost_mapping", type:"javascript" do
     return formatted_number + "." + values[1]
   }
 
-  ip_list = []
+  result = []
 
   total_savings = 0.0
 
@@ -640,8 +640,8 @@ script "js_ip_cost_mapping", type:"javascript" do
         }
       })
 
-      ip_list.push({
-        publicIp: ip['publicIp'],
+      result.push({
+        resourceID: ip['publicIp'],
         domain: ip['domain'],
         region: ip['region'],
         associationID: ip['associationID'],
@@ -650,16 +650,17 @@ script "js_ip_cost_mapping", type:"javascript" do
         accountName: ds_aws_account['name'],
         recommendationDetails: recommendationDetails,
         resourceName: resourceName,
-        age: ip['days_idle'],
+        age: ip['age'],
         savings: parseFloat(ip_cost.toFixed(3)),
         savingsCurrency: ds_currency['symbol'],
-        privateIpAddress: ip['privateIpAddress'],
+        ipAddress: ip['privateIpAddress'],
         service: "EC2",
+        lookBackPeriod: param_idletime,
         tags: tags.join(', '),
         // These are to avoid errors when we hash_exclude these fields
-        "total_savings": "",
-        "message": "",
-        "policy_name": ""
+        total_savings: "",
+        message: "",
+        policy_name: ""
       })
     }
   })
@@ -692,7 +693,7 @@ script "js_ip_cost_mapping", type:"javascript" do
   ].join('')
 
   // Sort by descending order of savings value
-  result = _.sortBy(ip_list, function(item) { return item['savings'] * -1 })
+  result = _.sortBy(result, function(item) { return item['savings'] * -1 })
 
   result[0]['total_savings'] = savings_message
   result[0]['message'] = findings + idle_message + disclaimer
@@ -701,23 +702,12 @@ script "js_ip_cost_mapping", type:"javascript" do
   // Dummy entry to ensure the check statement in validate_each always runs at least once
   result.push({
     publicIp: "",
-    domain: "",
-    region: "",
-    associationID: "",
-    allocationID: "",
-    accountID: "",
-    accountName: "",
-    recommendationDetails: "",
-    resourceName: "",
     age: "",
+    tags: "",
     savings: "",
     savingsCurrency: "",
-    privateIpAddress: "",
-    service: "",
-    tags: "",
     total_savings: "",
-    message: "",
-    policy_name: ""
+    message: ""
   })
 EOS
 end
@@ -739,7 +729,7 @@ policy "policy_unused_ip_addresses" do
     check logic_or($ds_parent_policy_terminated, eq(val(item, "publicIp"), ""))
     escalate $esc_email
     escalate $esc_release_ip_address
-    hash_exclude "age", "tags", "savings", "savingsCurrency"
+    hash_exclude "age", "tags", "savings", "savingsCurrency", "total_savings", "message"
     export do
       resource_level true
       field "accountID" do
@@ -750,31 +740,22 @@ policy "policy_unused_ip_addresses" do
       end
       field "resourceID" do
         label "IP Address"
-        path "publicIp"
       end
       field "ipAddress" do
         label "Private Address"
-        path "privateIpAddress"
       end
       field "resourceName" do
         label "Resource Name"
-        path "resourceName"
       end
       field "resourceType" do
-        label "Resource Type"
+        label "Domain"
         path "domain"
-      end
-      field "service" do
-        label "Service"
       end
       field "recommendationDetails" do
         label "Recommendation"
       end
       field "age" do
-        label "Days Unused"
-      end
-      field "domain" do
-        label "Domain"
+        label "Days Unattached"
       end
       field "region" do
         label "Region"
@@ -790,6 +771,12 @@ policy "policy_unused_ip_addresses" do
       end
       field "savingsCurrency" do
         label "Savings Currency"
+      end
+      field "service" do
+        label "Service"
+      end
+      field "lookBackPeriod" do
+        label "Look Back Period (Days)"
       end
       field "id" do
         label "ID"
