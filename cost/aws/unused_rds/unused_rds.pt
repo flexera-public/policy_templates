@@ -293,6 +293,8 @@ datasource "ds_rds_instances_set" do
       field "name", xpath(col_item, "DBInstanceIdentifier")
       field "status", xpath(col_item, "DBInstanceStatus")
       field "privateDnsName", xpath(col_item, "Endpoint/Address")
+      field "databaseEngine", xpath(col_item, "Engine")
+      field "engineVersion", xpath(col_item, "EngineVersion")
       field "region",val(iter_item, "region")
     end
   end
@@ -426,6 +428,8 @@ script "js_rds_instances", type: "javascript" do
         resourceType: instance['resourceType'],
         name: instance['name'],
         status: instance['status'],
+        databaseEngine: instance['databaseEngine'],
+        engineVersion: instance['engineVersion'],
         privateDnsName: instance['privateDnsName'],
         region: instance['region'],
         tags: tag_string
@@ -659,11 +663,11 @@ EOS
 end
 
 datasource "ds_instance_cost_mapping" do
-  run_script $js_instance_cost_mapping, $ds_rds_instances, $ds_instance_costs_grouped, $ds_cloudwatch_data, $ds_currency, $ds_aws_account, $ds_aws_account_name, $ds_applied_policy
+  run_script $js_instance_cost_mapping, $ds_rds_instances, $ds_instance_costs_grouped, $ds_cloudwatch_data, $ds_currency, $ds_aws_account, $ds_aws_account_name, $ds_applied_policy, $param_unusedtime
 end
 
 script "js_instance_cost_mapping", type: "javascript" do
-  parameters "ds_rds_instances", "ds_instance_costs_grouped", "ds_cloudwatch_data", "ds_currency", "ds_aws_account", "ds_aws_account_name", "ds_applied_policy"
+  parameters "ds_rds_instances", "ds_instance_costs_grouped", "ds_cloudwatch_data", "ds_currency", "ds_aws_account", "ds_aws_account_name", "ds_applied_policy", "param_unusedtime"
   result "result"
   code <<-'EOS'
   // Used for formatting numbers to look pretty
@@ -722,9 +726,12 @@ script "js_instance_cost_mapping", type: "javascript" do
           region: instance['region'],
           arn: instance['instanceArn'],
           privateDnsName: instance['privateDnsName'],
-          status: instance['status'],
+          state: instance['status'],
+          databaseEngine: instance['databaseEngine'],
+          engineVersion: instance['engineVersion'],
           savings: parseFloat(savings.toFixed(3)),
           savingsCurrency: ds_currency['symbol'],
+          lookBackPeriod: param_unusedtime,
           // Dummy values to ensure hash_exclude works properly
           total_savings: "",
           message: "",
@@ -767,22 +774,12 @@ script "js_instance_cost_mapping", type: "javascript" do
 
   // Dummy entry to ensure the check statement in validate_each always runs at least once
   result.push({
-    accountID: "",
-    accountName: "",
     resourceID: "",
-    resourceName: "",
-    recommendationDetails: "",
     tags: "",
-    resourceType: "",
-    region: "",
-    arn: "",
-    privateDnsName: "",
-    status: "",
-    savings: "",
-    savingsCurrency: "",
     total_savings: "",
     message: "",
-    policy_name: ""
+    savings: "",
+    savingsCurrency: ""
   })
 EOS
 end
@@ -824,8 +821,14 @@ policy "pol_unused_rds" do
       field "region" do
         label "Region"
       end
-      field "status" do
-        label "Status"
+      field "databaseEngine" do
+        label "Database Engine"
+      end
+      field "engineVersion" do
+        label "Engine Version"
+      end
+      field "state" do
+        label "State"
       end
       field "savings" do
         label "Estimated Monthly Savings"
@@ -845,6 +848,13 @@ policy "pol_unused_rds" do
       field "id" do
         label "id"
         path "resourceID"
+      end
+      field "lookBackPeriod" do
+        label "Look Back Period (Days)"
+      end
+      field "platform" do
+        label "Platform"
+        path "databaseEngine"
       end
       field "service" do
         label "Service"
