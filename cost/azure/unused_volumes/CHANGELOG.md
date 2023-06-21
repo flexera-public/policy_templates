@@ -1,9 +1,5 @@
 # Changelog
 
-## v4.10
-
-- Changed internal names of several incident fields to ensure that they are properly scraped for dashboards.
-
 ## v4.9
 
 - Added logic required for "Meta Policy" use-cases

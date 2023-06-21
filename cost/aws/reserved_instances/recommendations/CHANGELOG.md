@@ -1,9 +1,5 @@
 # Changelog
 
-## v2.19
-
-- Changed internal names of several incident fields to ensure that they are properly scraped for dashboards.
-
 ## v2.18
 
 - Changed policy set from `Reserved Instance` to `Reserved Instances` to match other similar policies.
