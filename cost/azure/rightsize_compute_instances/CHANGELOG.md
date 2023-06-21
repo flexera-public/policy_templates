@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.4
+
+- Changed internal names of several incident fields to ensure that they are properly scraped for dashboards.
+
 ## v2.3
 
 - Added `Lookback Period` incident field.
