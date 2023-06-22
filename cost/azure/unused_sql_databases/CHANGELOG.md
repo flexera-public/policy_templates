@@ -1,5 +1,11 @@
 # Changelog
 
+## v4.6
+
+- Added `Lookback Period` incident field.
+- Added `Platform` incident field.
+- Updated value ouput from `Resource Type` incident field.
+
 ## v4.5
 
 - Updated policy metadata to facilitate scraping of incidents for Recommendations dashboard

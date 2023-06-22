@@ -1,5 +1,9 @@
 # Changelog
 
+## v4.5
+
+- Added `Size` incident field.
+
 ## v4.4
 
 - Updated policy metadata to facilitate scraping of incidents for Recommendations dashboard
