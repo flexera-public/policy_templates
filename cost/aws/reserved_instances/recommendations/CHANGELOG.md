@@ -1,6 +1,6 @@
 # Changelog
 
-## v2.18
+## v2.19
 
 - Changed internal names of several incident fields to ensure that they are properly scraped for dashboards.
 
