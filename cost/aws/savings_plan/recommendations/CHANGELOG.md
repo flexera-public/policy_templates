@@ -1,5 +1,14 @@
 # Changelog
 
+## v2.17
+
+- Added `Term` incident field.
+- Added `Purchasing Option` incident field.
+- Added `Resource Type` incident field.
+- Added `Lookback Period` incident field.
+- Changed policy set from `Savings Plan` to `Savings Plans` to match other similar policies.
+- Changed internal names of several incident fields to ensure that they are properly scraped for dashboards.
+
 ## v2.16
 
 - Updated policy metadata to facilitate scraping of incidents for Recommendations dashboard
