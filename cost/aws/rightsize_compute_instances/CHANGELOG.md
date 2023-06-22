@@ -1,5 +1,10 @@
 # Changelog
 
+## v3.2
+
+- Fixed issue with Tags output
+- Added default values for parameters that are not required
+
 ## v3.1
 
 - Fixed issue where savings would always be 0 if policy were executed at the end of the month.
