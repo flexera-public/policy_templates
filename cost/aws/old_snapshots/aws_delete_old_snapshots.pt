@@ -50,7 +50,7 @@ end
 
 parameter "param_snapshot_age" do
   type "number"
-  label "Snapshot Age"
+  label "Snapshot Age Threshold"
   default 30
   description "The number of days since the snapshot was created to consider a snapshot old."
   min_value 1
@@ -70,6 +70,29 @@ parameter "param_min_savings" do
   description "Minimum potential savings required to generate a recommendation."
   min_value 0
   default 0
+end
+
+parameter "param_exclusion_services" do
+  type "list"
+  label "Exclusion Service Types"
+  description "Exclude the selected services. If left blank, all services will be analyzed."
+  allowed_values ["EC2", "RDS"]
+  default []
+end
+
+parameter "param_exclusion_description" do
+  type "list"
+  label "Exclusion EC2 Snapshot Description"
+  description "Exclude EC2 snapshots with the provided descriptions. If left blank, all EC2 snapshots will be analyzed. This setting has no effect on RDS snapshots."
+  default []
+end
+
+parameter "param_exclusion_types" do
+  type "list"
+  label "Exclusion RDS Snapshot Types"
+  description "Exclude the selected RDS snapshot types. If left blank, all types will be analyzed. This setting has no effect on EC2 snapshots."
+  allowed_values ["Manual", "Automated", "Shared", "Public", "AWS Backup"]
+  default []
 end
 
 parameter "param_exclusion_tags" do
@@ -352,11 +375,14 @@ datasource "ds_describe_snapshots" do
       end
       field "region", val(iter_item, "region")
       field "snapshotId", xpath(col_item, "snapshotId")
+      field "parentId", xpath(col_item, "volumeId")
       field "startTime", xpath(col_item, "startTime")
       field "ownerId", xpath(col_item, "ownerId")
       field "size", xpath(col_item, "volumeSize")
-      field "service", "EBS"
-      field "api_call", "DescribeSnapshots"
+      field "description", xpath(col_item, "description")
+      field "snapshotType", ""
+      field "service", "EC2"
+      field "parentType", "EBS Volume"
     end
   end
 end
@@ -411,10 +437,14 @@ datasource "ds_describe_db_snapshots" do
       field "region", val(iter_item, "region")
       field "snapshotId", xpath(col_item, "DBSnapshotIdentifier")
       field "startTime", xpath(col_item, "SnapshotCreateTime")
-      field "dbInstanceId", xpath(col_item, "DBInstanceIdentifier")
+      field "parentId", xpath(col_item, "DBInstanceIdentifier")
       field "size", xpath(col_item, "AllocatedStorage")
+      field "engine", val(iter_item, "Engine")
+      field "engineVersion", val(iter_item, "EngineVersion")
+      field "snapshotType", val(iter_item, "SnapshotType")
+      field "description", ""
       field "service", "RDS"
-      field "api_call", "DescribeDBSnapshots"
+      field "parentType", "DB Instance"
     end
   end
 end
@@ -444,20 +474,23 @@ datasource "ds_describe_db_cluster_snapshots" do
       field "region", val(iter_item, "region")
       field "snapshotId", xpath(col_item, "DBClusterSnapshotIdentifier")
       field "startTime", xpath(col_item, "SnapshotCreateTime")
-      field "dbClusterId", xpath(col_item, "DBClusterIdentifier")
+      field "parentId", xpath(col_item, "DBClusterIdentifier")
       field "size", xpath(col_item, "AllocatedStorage")
+      field "engine", val(iter_item, "Engine")
+      field "snapshotType", val(iter_item, "SnapshotType")
+      field "description", ""
       field "service", "RDS"
-      field "api_call", "DescribeDBClusterSnapshots"
+      field "parentType", "DB Cluster"
     end
   end
 end
 
 datasource "ds_snapshots_combined" do
-  run_script $js_snapshots_combined, $ds_describe_snapshots, $ds_describe_db_snapshots, $ds_describe_db_cluster_snapshots, $param_exclusion_tags
+  run_script $js_snapshots_combined, $ds_describe_snapshots, $ds_describe_db_snapshots, $ds_describe_db_cluster_snapshots, $param_exclusion_tags, $param_exclusion_types, $param_exclusion_description, $param_exclusion_services
 end
 
 script "js_snapshots_combined", type: "javascript" do
-  parameters "ds_describe_snapshots", "ds_describe_db_snapshots", "ds_describe_db_cluster_snapshots", "param_exclusion_tags"
+  parameters "ds_describe_snapshots", "ds_describe_db_snapshots", "ds_describe_db_cluster_snapshots", "param_exclusion_tags", "param_exclusion_types", "param_exclusion_description", "param_exclusion_services"
   result "result"
   code <<-EOS
   combined = ds_describe_snapshots.concat(ds_describe_db_snapshots, ds_describe_db_cluster_snapshots)
@@ -475,6 +508,24 @@ script "js_snapshots_combined", type: "javascript" do
 
     _.each(param_exclusion_tags, function(exclusion_tag) {
       if (_.contains(snapshot_tags, exclusion_tag)) {
+        exclude_snapshot = true
+      }
+    })
+
+    _.each(param_exclusion_types, function(exclusion_type) {
+      if (snapshot['snapshotType'] == exclusion_type.toLowerCase().replace(' ', '') && snapshot['service'] == "RDS") {
+        exclude_snapshot = true
+      }
+    })
+
+    _.each(param_exclusion_description, function(exclusion_desc) {
+      if (snapshot['description'] == exclusion_desc && snapshot['service'] == "EC2") {
+        exclude_snapshot = true
+      }
+    })
+
+    _.each(param_exclusion_services, function(service) {
+      if (snapshot['service'] == service) {
         exclude_snapshot = true
       }
     })
@@ -514,13 +565,14 @@ script "js_filter_old_snapshots", type: "javascript" do
     if (age > param_snapshot_age) {
       result.push({
         snapshotId: snapshot['snapshotId'],
-        dbClusterId: snapshot['dbClusterId'],
-        dbInstanceId: snapshot['dbInstanceId'],
         region: snapshot['region'],
+        description: snapshot['description'],
+        snapshotType: snapshot['snapshotType'],
         tags: tags.join(', '),
         age: age,
         service: snapshot['service'],
-        api_call: snapshot['api_call'],
+        parentId: snapshot['parentId'],
+        parentType: snapshot['parentType'],
         size: snapshot['size'],
         name: name
       })
@@ -567,17 +619,7 @@ script "js_filter_ami_snapshots", type: "javascript" do
 
   _.each(ds_filter_old_snapshots, function(snapshot) {
     snapshotId = snapshot['snapshotId']
-    dbClusterId = ""
-    dbInstanceId = ""
     imageId = ""
-
-    if (snapshot['service'] == "RDS" && snapshot['dbClusterId'] != null) {
-      dbClusterId = snapshot['dbClusterId']
-    }
-
-    if (snapshot['service'] == "RDS" && snapshot['dbInstanceId'] != null) {
-      dbInstanceId = snapshot['dbInstanceId']
-    }
 
     // Find the associated AMI if it exists and store its ID in imageId
     ami = _.find(ds_get_snapshot_ami, function(ami) {
@@ -587,15 +629,15 @@ script "js_filter_ami_snapshots", type: "javascript" do
     if (ami != undefined) { imageId = ami['imageId'] }
 
     // formatSnapId is used to map this resource to the resource ID returned by Flexera cost API
-    if (snapshot['api_call'] == "DescribeSnapshots") {
+    if (snapshot['parentType'] == "EBS Volume") {
       formatSnapId = "snapshot/" + snapshot['snapshotId']
     }
 
-    if (snapshot['api_call'] == "DescribeDBSnapshots") {
-      formatSnapId = "db:" + snapshot['dbInstanceId']
+    if (snapshot['parentType'] == "DB Instance") {
+      formatSnapId = "db:" + snapshot['parentId']
     }
 
-    if (snapshot['api_call'] == "DescribeDBClusterSnapshots") {
+    if (snapshot['parentType'] == "DB Cluster") {
       formatSnapId = "cluster-snapshot:" + snapshot['snapshotId']
     }
 
@@ -603,14 +645,16 @@ script "js_filter_ami_snapshots", type: "javascript" do
       result.push({
         snapshotId: snapshotId,
         formatSnapId: formatSnapId,
+        description: snapshot['description'],
+        snapshotType: snapshot['snapshotType'],
         region: snapshot['region'],
         tags: snapshot['tags'],
         age: snapshot['age'],
         service: snapshot['service'],
         accountID: ds_aws_account,
         imageId: imageId,
-        dbInstanceId: dbInstanceId,
-        dbClusterId: dbClusterId,
+        parentId: snapshot['parentId'],
+        parentType: snapshot['parentType'],
         size: snapshot['size'],
         name: snapshot['name']
       })
@@ -781,21 +825,23 @@ script "js_snapshots_cost_mapping", type: "javascript" do
       total_savings += savings
 
       recommendationDetails = [
-        "Delete ", snapshot['service'] ," snapshot ", snapshot["snapshotId"], " ",
-        "in AWS Account ", snapshot["accountName"], " (", snapshot["accountID"], ")"
+        "Delete ", snapshot['service'], " snapshot ", snapshot["snapshotId"], " ",
+        "in AWS Account ", ds_aws_account_name, " (", ds_aws_account, ")"
       ].join('')
 
       result.push({
         accountID: ds_aws_account,
         accountName: ds_aws_account_name,
         resourceID: snapshot['snapshotId'],
+        snapshotType: snapshot['snapshotType'],
+        description: snapshot['description'],
         region: snapshot['region'],
         tags: snapshot['tags'],
         resourceName: snapshot['name'],
         age: snapshot['age'],
         imageId: snapshot['imageId'],
-        dbInstanceId: snapshot['dbInstanceId'],
-        dbClusterId: snapshot['dbClusterId'],
+        parentId: snapshot['parentId'],
+        parentType: snapshot['parentType'],
         savings: parseFloat(savings.toFixed(3)),
         savingsCurrency: ds_currency['symbol'],
         size: snapshot['size'],
@@ -816,11 +862,17 @@ script "js_snapshots_cost_mapping", type: "javascript" do
   total_old_snapshots = result.length.toString()
   old_snapshots_percentage = (total_old_snapshots / total_snapshots * 100).toFixed(2).toString() + '%'
 
+  days_noun = "days"
+
+  if (param_snapshot_age == 1) {
+    days_noun = "day"
+  }
+
   findings = [
     "Out of ", total_snapshots, " snapshots analyzed, ",
     total_old_snapshots, " (", old_snapshots_percentage,
-    ") are older than ", param_snapshot_age, " days and ",
-    "are recommended for deletion. "
+    ") are older than ", param_snapshot_age, " ", days_noun, " ",
+    "and are recommended for deletion. "
   ].join('')
 
   if (param_snapshot_include_ami == "Yes") {
@@ -829,7 +881,9 @@ script "js_snapshots_cost_mapping", type: "javascript" do
     ami_message = "Snapshots with an associated registered AMI (Amazon Machine Image) were not included in the results.\n\n"
   }
 
-  disclaimer = "The above settings can be modified by editing the applied policy and changing the appropriate parameters."
+  disclaimer = "The above settings can be modified by editing the applied policy and changing the appropriate parameters.\n\n"
+
+  empty_message = "Empty values either indicate that data was unavailable or that particular field is not applicable to that specific resource."
 
   savings_message = [
     ds_currency['symbol'], ' ',
@@ -840,7 +894,7 @@ script "js_snapshots_cost_mapping", type: "javascript" do
   result = _.sortBy(result, function(item) { return item['savings'] * -1 })
 
   result[0]['total_savings'] = savings_message
-  result[0]['message'] = findings + ami_message + disclaimer
+  result[0]['message'] = findings + ami_message + disclaimer + empty_message
   result[0]['policy_name'] = ds_applied_policy['name']
 
   // Dummy item to ensure that the check statement in the policy executes at least once
@@ -890,9 +944,6 @@ policy "pol_utilization" do
       field "tags" do
         label "Resource Tags"
       end
-      field "resourceType" do
-        label "Resource Type"
-      end
       field "age" do
         label "Age (Days)"
       end
@@ -905,14 +956,20 @@ policy "pol_utilization" do
       field "recommendationDetails" do
         label "Recommendation"
       end
+      field "parentType" do
+        label "Parent Resource Type"
+      end
+      field "parentId" do
+        label "Parent Resource ID"
+      end
+      field "snapshotType" do
+        label "Snapshot Type"
+      end
+      field "description" do
+        label "Description"
+      end
       field "imageId" do
         label "AMI"
-      end
-      field "dbClusterId" do
-        label "RDS DB Cluster ID"
-      end
-      field "dbInstanceId" do
-        label "RDS DB Instance ID"
       end
       field "region" do
         label "Region"
@@ -923,8 +980,11 @@ policy "pol_utilization" do
       field "savingsCurrency" do
         label "Savings Currency"
       end
+      field "resourceType" do
+        label "Resource Type"
+      end
       field "lookbackPeriod" do
-        label "Look Back Period (Days)"
+        label "Snapshot Age Threshold (Days)"
       end
       field "id" do
         label "ID"
