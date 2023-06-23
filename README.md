@@ -416,6 +416,7 @@ These templates can generate savings estimates for your environment.
 
   - [AKS Node Pools Without Autoscaling](./operational/azure/aks_nodepools_without_autoscaling)
   - [AKS Node Pools Without Zero Autoscaling](./operational/azure/aks_nodepools_without_zero_autoscaling)
+  - [Azure Migrate Integration](./operational/azure/azure_migrate)
 
 - Compute
 
@@ -452,7 +453,6 @@ These templates can generate savings estimates for your environment.
 #### Flexera RISC
 
 - [Application Migration Recommendations](./operational/compute_instance_migration)
-- [Azure Migrate Integration](./operational/azure/azure_migrate)
 - [NetFlow Top Talkers](./operational/azure/network_flow)
 
 ### Policy Templates for SaaS Management
@@ -641,118 +641,118 @@ These templates can generate savings estimates for your environment.
 :optimization_count: 44
 :categories:
   Compliance: 33
+  Security: 74
   Operational: 23
   Cost: 100
   SaaS Management: 13
-  Security: 74
 :providers:
+  GitHub: 7
+  Flexera Cloud Management: 4
+  Azure: 77
+  Flexera: 5
+  Flexera Optima: 26
   Flexera ITAM: 5
   Flexera FNMS: 1
-  Flexera Cloud Management: 4
-  AWS: 77
-  Flexera Optima: 26
   GCE: 8
   Google: 13
-  Azure: 76
-  GitHub: 7
-  Flexera: 5
-  Flexera RISC: 3
-  Kubecost: 2
-  GCP: 1
-  '': 1
-  Oracle: 1
-  Azure China: 1
+  AWS: 77
+  Flexera RISC: 2
   ServiceNow: 1
-  Microsoft: 1
   Okta: 1
   Flexera SaaS Manager: 9
+  Microsoft: 1
+  '': 1
+  Oracle: 1
+  GCP: 1
+  Azure China: 1
+  Kubecost: 2
 :services:
-  '': 67
-  Org: 1
+  '': 66
   IAM: 19
-  EC2: 13
-  ECS: 1
   Compute: 31
-  Policy: 1
+  EC2: 13
+  Org: 1
+  ECS: 1
   Identity: 1
-  FNMS: 1
-  Lambda: 1
-  Tags: 2
-  RDS: 6
-  AKS: 2
-  SQL: 15
+  Policy: 1
   S3: 9
-  EBS: 3
-  Storage: 20
-  All: 3
-  Cost Explorer: 1
-  ELB: 4
-  Kubernetes: 2
-  Common Bill Ingestion: 1
-  Usage Discount: 8
-  Storage Accounts: 2
-  compute: 3
-  N/A: 1
-  Blob Store: 1
-  Office 365: 1
   CloudTrail: 7
+  RDS: 6
+  ELB: 4
   VPC: 1
+  DBS: 1
   Config: 1
   KMS: 1
-  DBS: 1
-  PostgreSQL: 4
-  MySQL: 2
+  EBS: 3
+  Storage: 20
   Security: 3
-  App Service: 1
+  PostgreSQL: 4
   Network Security Group: 2
+  SQL: 15
+  MySQL: 2
+  App Service: 1
+  compute: 3
+  Storage Accounts: 2
+  FNMS: 1
+  Tags: 2
+  Lambda: 1
+  AKS: 3
+  All: 3
+  Office 365: 1
+  Common Bill Ingestion: 1
+  Usage Discount: 8
+  Cost Explorer: 1
+  Blob Store: 1
+  N/A: 1
+  Kubernetes: 2
 :policy_sets:
-  ITAM: 4
   '': 86
-  Untagged resources: 1
-  Instances not running FlexNet Inventory Agent: 2
-  Disallowed Regions: 2
+  ITAM: 4
   Long Stopped Instances: 3
   Unlabeled Resources: 1
+  Untagged resources: 1
+  Disallowed Regions: 2
+  Instances not running FlexNet Inventory Agent: 2
   Untagged Resources: 1
-  Schedule Report: 1
-  Schedule Flexera ITAM Report: 1
-  Long Running Instances: 2
-  Tag Cardinality: 2
-  Database Services: 1
-  Forecasting: 4
-  Inefficient Disk Usage: 1
-  Unused Database Services: 3
-  GP3 Volumes: 1
-  RightSize Database Services: 2
-  Old Snapshots: 3
-  Rightsize Compute Instances: 6
-  Reserved Instance: 4
-  Unused Volumes: 6
-  N/A: 3
-  Schedule Instance: 3
-  Savings Plan Utilization: 1
-  Savings Plan: 2
-  Unused IP Addresses: 3
-  Idle Compute Instances: 4
-  Object Store Optimization: 3
-  Inefficient Instance Usage: 2
-  Rightsize Containers: 1
-  Rightsize Clusters: 1
-  Reserved Instances: 1
-  Rightsize Database Services: 1
-  Native Recommendations: 1
-  Committed Use Discount: 1
-  Common Bill Ingestion: 1
-  Rightsize Volumes: 3
-  Rightsize Database Instances: 3
-  Allocate VMs: 3
-  Lifecycle Management: 1
-  Common Bill Ingest: 1
   CIS: 61
-  AWS Config: 1
   Public Database Access: 2
+  AWS Config: 1
   Open Buckets: 2
   Storage Security: 1
+  Schedule Flexera ITAM Report: 1
+  Schedule Report: 1
+  Tag Cardinality: 2
+  Long Running Instances: 2
+  Database Services: 1
+  N/A: 3
+  Common Bill Ingestion: 1
+  Allocate VMs: 3
+  Rightsize Database Instances: 3
+  Unused Volumes: 6
+  Rightsize Volumes: 3
+  Reserved Instance: 2
+  Rightsize Compute Instances: 6
+  Forecasting: 4
+  Idle Compute Instances: 4
+  Object Store Optimization: 3
+  Native Recommendations: 1
+  Old Snapshots: 3
+  Reserved Instances: 3
+  Committed Use Discount: 1
+  Unused IP Addresses: 3
+  Unused Database Services: 3
+  Rightsize Database Services: 1
+  Schedule Instance: 3
+  Savings Plan Utilization: 1
+  Savings Plans: 2
+  GP3 Volumes: 1
+  RightSize Database Services: 2
+  Inefficient Instance Usage: 2
+  Inefficient Disk Usage: 1
+  Lifecycle Management: 1
+  Common Bill Ingest: 1
+  Rightsize Clusters: 1
+  Rightsize Containers: 1
 -->
 <!-- End Policy Template Stats -->
 
