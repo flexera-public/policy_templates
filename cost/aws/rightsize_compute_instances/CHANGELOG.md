@@ -1,5 +1,14 @@
 # Changelog
 
+## v3.3
+
+- Added `Resource Name` incident field
+- Added `Lookback Period` incident fields
+- Added `CPU Threshold` incident field
+- Added `Memory Threshold` incident field
+- Added `Threshold Type` incident fields
+- Changed the internal names of several incident fields to ensure proper scraping for recommendations dashboard
+
 ## v3.2
 
 - Fixed issue with Tags output
