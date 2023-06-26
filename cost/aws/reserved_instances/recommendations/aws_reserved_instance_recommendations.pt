@@ -7,7 +7,7 @@ severity "medium"
 category "Cost"
 default_frequency "daily"
 info(
-  version: "2.19",
+  version: "3.0",
   provider: "AWS",
   service: "EC2",
   policy_set: "Reserved Instances",
@@ -18,49 +18,11 @@ info(
 # User Inputs
 ###############################################################################
 
-parameter "param_days" do
-  category "RI"
-  label "Look Back Period"
-  default "Last 7 Days"
-  description "Number of days of prior usage to analyze"
-  allowed_values "Last 7 Days","Last 30 Days","Last 60 Days"
-  type "string"
-end
-
-parameter "param_service" do
-  category "RI"
-  label "Service"
-  default "All Except EC2"
-  description "AWS Service for which to scan for RI Recommendations"
-  allowed_values "All Except EC2","All","ElastiCache","Elastic Compute Cloud (EC2)","Elasticsearch Service (ES)","Redshift","Relational Database Service (RDS)"
-  type "string"
-end
-
-parameter "param_service_spec" do
-  category "RI"
-  label "EC2 Specification"
-  allowed_values "Standard","Convertible"
-  default "Standard"
-  description "EC2 RI type. Note: this parameter will be ignored if the Service parameter is not \"Elastic Compute Cloud (EC2)\""
-  type "string"
-end
-
-parameter "param_scope" do
-  category "RI"
-  label "Account Scope"
-  description "The account scope that you want your recommendations for"
-  allowed_values "Payer","Linked"
-  default "Payer"
-  type "string"
-end
-
-parameter "param_term" do
-  category "RI"
-  label "RI Term"
-  description "Length of RI term"
-  allowed_values "Any","1 Year","3 Year"
-  default "Any"
-  type "string"
+parameter "param_email" do
+  type "list"
+  label "Email addresses to notify"
+  description "Email addresses of the recipients you wish to notify when new incidents are created."
+  default []
 end
 
 parameter "param_aws_account_number" do
@@ -70,42 +32,81 @@ parameter "param_aws_account_number" do
   default ""
 end
 
-parameter "param_payment_option" do
-  category "RI"
-  label "(Optional) Payment Option"
-  default ""
-  allowed_values "","No Upfront","Partial Upfront","All Upfront","Light Utilization","Medium Utilization","Heavy Utilization"
+parameter "param_days" do
   type "string"
-  description "RI purchase option.  Leave blank to include all RI purchase options"
+  label "Look Back Period"
+  category "RI"
+  description "Number of days of prior usage to analyze."
+  default "Last 7 Days"
+  allowed_values "Last 7 Days", "Last 30 Days", "Last 60 Days"
 end
 
-parameter "param_savings_threshold" do
+parameter "param_service" do
+  type "list"
+  label "Service"
   category "RI"
+  description "AWS Services for which to scan for RI Recommendations. Leave blank to scan all services."
+  default []
+  allowed_values ["ElastiCache", "Elastic Compute Cloud (EC2)", "Elasticsearch Service (ES)", "Redshift", "Relational Database Service (RDS)"]
+end
+
+parameter "param_service_spec" do
+  type "string"
+  label "EC2 Specification"
+  category "RI"
+  description "EC2 RI type. This parameter only matters for EC2 recommendations."
+  default "Standard"
+  allowed_values "Standard", "Convertible"
+end
+
+parameter "param_scope" do
+  type "string"
+  label "Account Scope"
+  category "RI"
+  description "The account scope that you want your recommendations for."
+  default "Payer"
+  allowed_values "Payer", "Linked"
+end
+
+parameter "param_term" do
+  type "string"
+  label "RI Term"
+  category "RI"
+  description "Length of RI term"
+  default "Any"
+  allowed_values "Any", "1 Year", "3 Year"
+end
+
+parameter "param_payment_option" do
+  type "string"
+  label "(Optional) Payment Option"
+  category "RI"
+  description "RI purchase option. Default setting of All includes all RI purchase options."
+  default "All"
+  allowed_values "All", "No Upfront", "Partial Upfront", "All Upfront", "Light Utilization", "Medium Utilization", "Heavy Utilization"
+end
+
+parameter "param_min_savings" do
+  type "number"
   label "Net Savings Threshold"
+  category "RI"
   description "Specify the minimum estimated monthly savings that should result in a recommendation"
   default 100
-  type "number"
-end
-
-parameter "param_email" do
-  type "list"
-  label "Email addresses to notify"
-  description "Email addresses of the recipients you wish to notify"
+  min_value 0
 end
 
 parameter "param_currency_adjustment" do
-  label "Currency Adjustment"
-  description "adjusts recommendation savings based on USD conversion rate where USD is 100% - Maximum 5.0"
-  default 1.00
-  max_value 5.00
   type "number"
+  label "Currency Adjustment"
+  description "Adjusts monetary values by the given percentage to assist with currency conversion. Default value of 100 will leave the values unmodified."
+  default 100
+  min_value 0
 end
 
 ###############################################################################
 # Authentication
 ###############################################################################
 
-#authenticate with AWS
 credentials "auth_aws" do
   schemes "aws","aws_sts"
   label "AWS"
@@ -116,7 +117,7 @@ end
 
 credentials "auth_flexera" do
   schemes "oauth2"
-  label "flexera"
+  label "Flexera"
   description "Select FlexeraOne OAuth2 credentials"
   tags "provider=flexera"
 end
@@ -125,7 +126,7 @@ end
 # Pagination
 ###############################################################################
 
-pagination "aws_pagination" do
+pagination "pagination_aws" do
   get_page_marker do
     body_path "NextPageToken"
   end
@@ -135,24 +136,16 @@ pagination "aws_pagination" do
 end
 
 ###############################################################################
-# Datasources
+# Datasources & Scripts
 ###############################################################################
 
-datasource "ds_get_caller_identity" do
+# Get applied policy metadata for use later
+datasource "ds_applied_policy" do
   request do
-    auth $auth_aws
-    verb "GET"
-    host "sts.amazonaws.com"
-    path "/"
-    header "User-Agent", "RS Policies"
-    query "Action", "GetCallerIdentity"
-    query "Version", "2011-06-15"
-  end
-  result do
-    encoding "xml"
-    collect xpath(response, "//GetCallerIdentityResponse/GetCallerIdentityResult") do
-      field "account",xpath(col_item, "Account")
-    end
+    auth $auth_flexera
+    host rs_governance_host
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
+    header "Api-Version", "1.0"
   end
 end
 
@@ -177,20 +170,112 @@ datasource "ds_billing_centers" do
   end
 end
 
-datasource "ds_top_level_billing_centers" do
-  run_script $js_top_level_bc, $ds_billing_centers
+# Gather top level billing center IDs for when we pull cost data
+datasource "ds_top_level_bcs" do
+  run_script $js_top_level_bcs, $ds_billing_centers
 end
 
-datasource "ds_account_name" do
+script "js_top_level_bcs", type: "javascript" do
+  parameters "ds_billing_centers"
+  result "result"
+  code <<-EOS
+  filtered_bcs = _.filter(ds_billing_centers, function(bc) {
+    return bc['parent_id'] == null || bc['parent_id'] == undefined
+  })
+
+  result = _.compact(_.pluck(filtered_bcs, 'id'))
+EOS
+end
+
+datasource "ds_get_caller_identity" do
   request do
-    run_script $js_get_account_name, $ds_get_caller_identity, $ds_top_level_billing_centers, rs_org_id, rs_optima_host
+    auth $auth_aws
+    verb "GET"
+    host "sts.amazonaws.com"
+    path "/"
+    header "User-Agent", "RS Policies"
+    query "Action", "GetCallerIdentity"
+    query "Version", "2011-06-15"
+  end
+  result do
+    encoding "xml"
+    collect xpath(response, "//GetCallerIdentityResponse/GetCallerIdentityResult") do
+      field "account", xpath(col_item, "Account")
+    end
+  end
+end
+
+datasource "ds_aws_account_name"
+  iterate $ds_get_caller_identity
+  request do
+    run_script $js_aws_account_name, val(iter_item, "account"), $ds_top_level_bcs, rs_org_id, rs_optima_host
   end
   result do
     encoding "json"
     collect jmes_path(response, "rows[*]") do
-      field "vendor_account_name", jmes_path(col_item, "dimensions.vendor_account_name")
+      field "id", val(iter_item, "account")
+      field "name", jmes_path(col_item, "dimensions.vendor_account_name")
     end
   end
+end
+
+script "js_aws_account_name", type: "javascript" do
+  parameters "account_id", "ds_top_level_bcs", "rs_org_id", "rs_optima_host"
+  result "request"
+  code <<-EOS
+  end_date = new Date()
+  end_date.setDate(end_date.getDate() - 2)
+  end_date = end_date.toISOString().split('T')[0]
+
+  start_date = new Date()
+  start_date.setDate(start_date.getDate() - 3)
+  start_date = start_date.toISOString().split('T')[0]
+
+  var request = {
+    auth: "auth_flexera",
+    host: rs_optima_host,
+    verb: "POST",
+    path: "/bill-analysis/orgs/" + rs_org_id + "/costs/select",
+    body_fields: {
+      "dimensions": ["vendor_account_name"],
+      "granularity": "day",
+      "start_at": start_date,
+      "end_at": end_date,
+      "metrics": ["cost_nonamortized_unblended_adj"],
+      "billing_center_ids": ds_top_level_bcs,
+      "limit": 1,
+      "filter": {
+        "dimension": "vendor_account",
+        "type": "equal",
+        "value": account_id
+      }
+    },
+    headers: {
+      "User-Agent": "RS Policies",
+      "Api-Version": "1.0"
+    },
+    ignore_status: [400]
+  }
+EOS
+end
+
+datasource "ds_aws_account" do
+  run_script $js_aws_account, $ds_aws_account_name
+end
+
+script "js_aws_account", type:"javascript" do
+  parameters "ds_aws_account_name"
+  result "result"
+  code <<-EOS
+  result = {
+    name: ds_aws_account_name[0]['name'],
+    id: ds_aws_account_name[0]['id']
+  }
+
+  if (result['name'] == null || result['name'] == undefined) {
+    result['name'] = ""
+  }
+EOS
 end
 
 datasource "ds_ri_types" do
@@ -201,300 +286,223 @@ script "js_ri_types", type: "javascript" do
   parameters "param_service"
   result "result"
   code <<-EOS
-    var result = []
-    var services = ["ElastiCache","Elastic Compute Cloud (EC2)","Elasticsearch Service (ES)","Redshift","Relational Database Service (RDS)"]
-    if (param_service === "All"){
-      _.each(services, function(service){
-        result.push({"service":service})
-      })
-    } else if (param_service === "All Except EC2"){
-      services.forEach(function(service) {
-        if (service !== "Elastic Compute Cloud (EC2)") {
-          result.push({"service":service})
-        }
-    });
-    } else {
-      result.push({"service":param_service})
-    }
-  EOS
+  if (param_service.length == 0) {
+    services = [
+      "ElastiCache",
+      "Elastic Compute Cloud (EC2)",
+      "Elasticsearch Service (ES)",
+      "Redshift",
+      "Relational Database Service (RDS)"
+    ]
+  } else {
+    services = param_service
+  }
+
+  result = _.map(services, function(service) {
+    return { service: service }
+  })
+EOS
 end
 
 datasource "ds_ri_recommendations" do
   iterate $ds_ri_types
   request do
-    run_script $js_ri_request, $param_days, $param_payment_option, val(iter_item,'service'), $param_service_spec, $param_term, $param_scope
+    run_script $js_ri_recommendations, val(iter_item, 'service'), $param_days, $param_payment_option, $param_service_spec, $param_term, $param_scope
   end
   result do
     encoding "json"
     collect jmes_path(response, "Recommendations[*]") do
-      field "accountScope", jmes_path(col_item,"AccountScope")
-      field "lookbackPeriodInDays", jmes_path(col_item,"LookbackPeriodInDays")
-      field "paymentOption", jmes_path(col_item,"PaymentOption")
-      field "termInYears", jmes_path(col_item,"TermInYears")
-      field "service", val(iter_item,"service")
+      field "accountScope", jmes_path(col_item, "AccountScope")
+      field "lookbackPeriodInDays", jmes_path(col_item, "LookbackPeriodInDays")
+      field "paymentOption", jmes_path(col_item, "PaymentOption")
+      field "termInYears", jmes_path(col_item, "TermInYears")
+      field "service", val(iter_item, "service")
       field "recommendationDetails" do
         collect jmes_path(col_item, "RecommendationDetails[*]") do
-          field "accountID", jmes_path(col_item,"AccountId")
-          field "averageNormalizedUnitsUsedPerHour", jmes_path(col_item,"AverageNormalizedUnitsUsedPerHour")
-          field "averageNumberOfInstancesUsedPerHour", jmes_path(col_item,"AverageNumberOfInstancesUsedPerHour")
-          field "averageUtilization", jmes_path(col_item,"AverageUtilization")
-          field "estimatedBreakEvenInMonths", jmes_path(col_item,"EstimatedBreakEvenInMonths")
-          field "estimatedMonthlyOnDemandCost", jmes_path(col_item,"EstimatedMonthlyOnDemandCost")
-          field "estimatedMonthlySavingsAmount", jmes_path(col_item,"EstimatedMonthlySavingsAmount")
-          field "estimatedMonthlySavingsPercentage", jmes_path(col_item,"EstimatedMonthlySavingsPercentage")
-          field "estimatedReservationCostForLookbackPeriod", jmes_path(col_item,"EstimatedReservationCostForLookbackPeriod")
-          field "availabilityZone", jmes_path(col_item,"InstanceDetails.*.AvailabilityZone")
-          field "currentGeneration", jmes_path(col_item,"InstanceDetails.*.CurrentGeneration")
-          field "family", jmes_path(col_item,"InstanceDetails.*.Family")
-          field "instanceType", jmes_path(col_item,"InstanceDetails.*.InstanceType")
-          field "platform", jmes_path(col_item,"InstanceDetails.*.Platform")
-          field "region", jmes_path(col_item,"InstanceDetails.*.Region")
-          field "sizeFlexEligible", jmes_path(col_item,"InstanceDetails.*.SizeFlexEligible")
-          field "tenancy", jmes_path(col_item,"InstanceDetails.*.Tenancy")
-          field "nodeType", jmes_path(col_item,"InstanceDetails.*.NodeType")
-          field "productDescription", jmes_path(col_item,"InstanceDetails.*.ProductDescription")
-          field "instanceClass", jmes_path(col_item,"InstanceDetails.*.InstanceClass")
-          field "instanceSize", jmes_path(col_item,"InstanceDetails.*.InstanceSize")
-          field "databaseEngine", jmes_path(col_item,"InstanceDetails.*.DatabaseEngine")
-          field "databaseEdition", jmes_path(col_item,"InstanceDetails.*.DatabaseEdition")
-          field "deploymentOption", jmes_path(col_item,"InstanceDetails.*.DeploymentOption")
-          field "licenseModel", jmes_path(col_item,"InstanceDetails.*.LicenseModel")
-          field "maximumNormalizedUnitsUsedPerHour", jmes_path(col_item,"MaximumNormalizedUnitsUsedPerHour")
-          field "maximumNumberOfInstancesUsedPerHour", jmes_path(col_item,"MaximumNumberOfInstancesUsedPerHour")
-          field "minimumNormalizedUnitsUsedPerHour", jmes_path(col_item,"MinimumNormalizedUnitsUsedPerHour")
-          field "minimumNumberOfInstancesUsedPerHour", jmes_path(col_item,"MinimumNumberOfInstancesUsedPerHour")
-          field "recommendedNormalizedUnitsToPurchase", jmes_path(col_item,"RecommendedNormalizedUnitsToPurchase")
-          field "recommendedNumberOfInstancesToPurchase", jmes_path(col_item,"RecommendedNumberOfInstancesToPurchase")
-          field "recurringStandardMonthlyCost", jmes_path(col_item,"RecurringStandardMonthlyCost")
-          field "upfrontCost", jmes_path(col_item,"UpfrontCost")
+          field "accountID", jmes_path(col_item, "AccountId")
+          field "averageNormalizedUnitsUsedPerHour", jmes_path(col_item, "AverageNormalizedUnitsUsedPerHour")
+          field "averageNumberOfInstancesUsedPerHour", jmes_path(col_item, "AverageNumberOfInstancesUsedPerHour")
+          field "averageUtilization", jmes_path(col_item, "AverageUtilization")
+          field "estimatedBreakEvenInMonths", jmes_path(col_item, "EstimatedBreakEvenInMonths")
+          field "estimatedMonthlyOnDemandCost", jmes_path(col_item, "EstimatedMonthlyOnDemandCost")
+          field "estimatedMonthlySavingsAmount", jmes_path(col_item, "EstimatedMonthlySavingsAmount")
+          field "estimatedMonthlySavingsPercentage", jmes_path(col_item, "EstimatedMonthlySavingsPercentage")
+          field "estimatedReservationCostForLookbackPeriod", jmes_path(col_item, "EstimatedReservationCostForLookbackPeriod")
+          field "availabilityZone", jmes_path(col_item, "InstanceDetails.*.AvailabilityZone")
+          field "currentGeneration", jmes_path(col_item, "InstanceDetails.*.CurrentGeneration")
+          field "family", jmes_path(col_item, "InstanceDetails.*.Family")
+          field "instanceType", jmes_path(col_item, "InstanceDetails.*.InstanceType")
+          field "platform", jmes_path(col_item, "InstanceDetails.*.Platform")
+          field "region", jmes_path(col_item, "InstanceDetails.*.Region")
+          field "sizeFlexEligible", jmes_path(col_item, "InstanceDetails.*.SizeFlexEligible")
+          field "tenancy", jmes_path(col_item, "InstanceDetails.*.Tenancy")
+          field "nodeType", jmes_path(col_item, "InstanceDetails.*.NodeType")
+          field "productDescription", jmes_path(col_item, "InstanceDetails.*.ProductDescription")
+          field "instanceClass", jmes_path(col_item, "InstanceDetails.*.InstanceClass")
+          field "instanceSize", jmes_path(col_item, "InstanceDetails.*.InstanceSize")
+          field "databaseEngine", jmes_path(col_item, "InstanceDetails.*.DatabaseEngine")
+          field "databaseEdition", jmes_path(col_item, "InstanceDetails.*.DatabaseEdition")
+          field "deploymentOption", jmes_path(col_item, "InstanceDetails.*.DeploymentOption")
+          field "licenseModel", jmes_path(col_item, "InstanceDetails.*.LicenseModel")
+          field "maximumNormalizedUnitsUsedPerHour", jmes_path(col_item, "MaximumNormalizedUnitsUsedPerHour")
+          field "maximumNumberOfInstancesUsedPerHour", jmes_path(col_item, "MaximumNumberOfInstancesUsedPerHour")
+          field "minimumNormalizedUnitsUsedPerHour", jmes_path(col_item, "MinimumNormalizedUnitsUsedPerHour")
+          field "minimumNumberOfInstancesUsedPerHour", jmes_path(col_item, "MinimumNumberOfInstancesUsedPerHour")
+          field "recommendedNormalizedUnitsToPurchase", jmes_path(col_item, "RecommendedNormalizedUnitsToPurchase")
+          field "recommendedNumberOfInstancesToPurchase", jmes_path(col_item, "RecommendedNumberOfInstancesToPurchase")
+          field "recurringStandardMonthlyCost", jmes_path(col_item, "RecurringStandardMonthlyCost")
+          field "upfrontCost", jmes_path(col_item, "UpfrontCost")
         end
       end
     end
   end
 end
 
-datasource "ds_ri_normalization" do
-  run_script $js_ri_cleanup, $ds_ri_recommendations, $param_currency_adjustment, $ds_account_name
-end
-
-###############################################################################
-# Scripts
-###############################################################################
-
-script "js_get_account_name", type: "javascript" do
-  parameters "account_id", "billing_centers", "org", "optima_host"
+script "js_ri_recommendations", type: "javascript" do
+  parameters "service", "param_days", "param_payment_option", "param_service_spec", "param_term", "param_scope"
   result "request"
   code <<-EOS
-    // returns date formatted as string: YYYY-mm-dd
-    function getFormattedDailyDate(date) {
-      var year = date.getFullYear();
-      var month = (1 + date.getMonth()).toString();
-      month = month.length > 1 ? month : '0' + month;
-      var day = date.getDate().toString();
-      day = day.length > 1 ? day : '0' + day;
-      return year + '-' + month + '-' + day;
+  // Tables to convert human-readable parameter values to their API equivalents
+  period_table = {
+    "Last 7 Days": "SEVEN_DAYS",
+    "Last 30 Days": "THIRTY_DAYS",
+    "Last 60 Days": "SIXTY_DAYS"
+  }
+
+  service_table = {
+    "Elastic Compute Cloud (EC2)": "Amazon Elastic Compute Cloud - Compute",
+    "Relational Database Service (RDS)": "Amazon Relational Database Service",
+    "ElastiCache": "Amazon ElastiCache",
+    "Redshift": "Amazon Redshift",
+    "Elasticsearch Service (ES)": "Amazon Elasticsearch Service"
+  }
+
+  term_table = {
+    "1 Year": "ONE_YEAR",
+    "3 Year": "THREE_YEARS"
+  }
+
+  // Build out the body of the request based on parameters
+  body_fields = {
+    LookbackPeriodInDays: period_table[param_days],
+    AccountScope: param_scope.toUpperCase(),
+    Service: service_table[service]
+  }
+
+  if (param_payment_option != "All") {
+    body_fields['PaymentOption'] = param_payment_option.replace(' ', '_').toUpperCase()
+  }
+
+  if (service == "Elastic Compute Cloud (EC2)") {
+    body_fields['ServiceSpecification'] = {
+      EC2Specification: { OfferingClass: param_service_spec.toUpperCase() }
     }
-    var start_date = getFormattedDailyDate(new Date(new Date().setDate(new Date().getDate() - 3)));
-    var end_date = getFormattedDailyDate(new Date(new Date().setDate(new Date().getDate() - 2)));
-    var request = {
-      auth: "auth_flexera",
-      host: optima_host,
-      verb: "POST",
-      path: "/bill-analysis/orgs/" + org + "/costs/select",
-      body_fields: {
-        "dimensions": ["vendor_account_name"],
-        "granularity": "day",
-        "start_at": start_date,
-        "end_at": end_date,
-        "metrics": ["cost_nonamortized_unblended_adj"],
-        "billing_center_ids": _.compact(_.map(billing_centers, function(value){ return value.id})),
-        "limit": 1,
-        "filter": {
-          "dimension": "vendor_account",
-          "type": "equal",
-          "value": account_id[0]["account"]
-        }
-      },
-      headers: {
-        "User-Agent": "RS Policies",
-        "Api-Version": "1.0"
-      },
-      ignore_status: [400]
+  }
+
+  if (param_term != "Any") {
+    body_fields['TermInYears'] = term_table[param_term]
+  }
+
+  var request = {
+    auth: "auth_aws",
+    pagination: "pagination_aws",
+    host: "ce.us-east-1.amazonaws.com",
+    path: "/",
+    verb: "POST",
+    body_fields: body_fields,
+    headers: {
+      "User-Agent": "RS Policies",
+      "X-Amz-Target": "AWSInsightsIndexService.GetReservationPurchaseRecommendation",
+      "Content-Type": "application/x-amz-json-1.1",
     }
-  EOS
+  }
+EOS
 end
 
-script "js_top_level_bc", type: "javascript" do
-  parameters "billing_centers"
-  result "filtered_billing_centers"
-  code <<-EOS
-    var filtered_billing_centers =_.reject(billing_centers, function(bc){ return bc.parent_id != null });
-  EOS
+datasource "ds_ri_normalization" do
+  run_script $js_ri_cleanup, $ds_ri_recommendations, $param_currency_adjustment, $ds_aws_account
 end
 
-script "js_ri_cleanup", type: "javascript" do
-  parameters "ri_recos", "currency_adjustment", "ds_account_name"
+script "js_ri_normalization", type: "javascript" do
+  parameters "ds_ri_recommendations", "param_currency_adjustment", "ds_aws_account"
   result "result"
   code <<-EOS
-    var result = [];
-    accountName = ""
-    if (ds_account_name[0] != null) {
-      accountName = ds_account_name[0]['vendor_account_name']
-    }
-    _.each(ri_recos, function(recos){
-      var reco_details = recos["recommendationDetails"];
-      _.each(reco_details, function(reco){
-        var term = recos["termInYears"].toString() + " year"
-        if (recos["termInYears"] != 1) {
-          term += "s"
-        }
-        result.push({
-          accountID: reco["accountID"],
-          accountName: accountName,
-          service: recos["service"],
-          accountScope: recos["accountScope"],
-          lookbackPeriodInDays: recos["lookbackPeriodInDays"],
-          paymentOption: recos["paymentOption"],
-          availabilityZone: reco["availabilityZone"].toString(),
-          averageNormalizedUnitsUsedPerHour: (Math.round(reco["averageNormalizedUnitsUsedPerHour"] * 100) / 100).toString(10),
-          averageNumberOfInstancesUsedPerHour: (Math.round(reco["averageNumberOfInstancesUsedPerHour"] * 100) / 100).toString(10),
-          averageUtilization: (Math.round(reco["averageUtilization"] * 100) / 100).toString(10),
-          databaseEdition: reco["databaseEdition"].toString(),
-          databaseEngine: reco["databaseEngine"].toString(),
-          deploymentOption: reco["deploymentOption"].toString(),
-          estimatedBreakEvenInMonths: (Math.round(reco["estimatedBreakEvenInMonths"] * 100) / 100).toString(10),
-          estimatedMonthlyOnDemandCost: (Math.round(reco["estimatedMonthlyOnDemandCost"] * 100) / 100).toString(10),
-          estimatedMonthlySavingsAmount: (Math.round(reco["estimatedMonthlySavingsAmount"] * 100) / 100 * currency_adjustment).toString(10),
-          estimatedMonthlySavingsPercentage: (Math.round(reco["estimatedMonthlySavingsPercentage"] * 100) / 100).toString(10),
-          estimatedReservationCostForLookbackPeriod: (Math.round(reco["estimatedReservationCostForLookbackPeriod"] * 100) / 100).toString(10),
-          family: reco["family"].toString(),
-          instanceClass: reco["instanceClass"].toString(),
-          instanceSize: reco["instanceSize"].toString(),
-          instanceType: reco["instanceType"].toString(),
-          licenseModel: reco["licenseModel"].toString(),
-          maximumNormalizedUnitsUsedPerHour: (Math.round(reco["maximumNormalizedUnitsUsedPerHour"] * 100) / 100).toString(10),
-          maximumNumberOfInstancesUsedPerHour: (Math.round(reco["maximumNumberOfInstancesUsedPerHour"] * 100) / 100).toString(10),
-          minimumNormalizedUnitsUsedPerHour: (Math.round(reco["minimumNormalizedUnitsUsedPerHour"] * 100) / 100).toString(10),
-          minimumNumberOfInstancesUsedPerHour: (Math.round(reco["minimumNumberOfInstancesUsedPerHour"] * 100) / 100).toString(10),
-          nodeType: reco["nodeType"].toString(),
-          platform: reco["platform"].toString() || reco["databaseEngine"].toString(),
-          productDescription: reco["productDescription"].toString(),
-          recommendedNormalizedUnitsToPurchase: reco["recommendedNormalizedUnitsToPurchase"].toString(),
-          recommendedNumberOfInstancesToPurchase: reco["recommendedNumberOfInstancesToPurchase"].toString(),
-          recurringStandardMonthlyCost: (Math.round(reco["recurringStandardMonthlyCost"] * 100) / 100).toString(10),
-          region: reco["region"].toString(),
-          sizeFlexEligible: reco["sizeFlexEligible"].toString(),
-          tenancy: reco["tenancy"].toString(),
-          upfrontCost: (Math.round(reco["upfrontCost"] * 100) / 100).toString(10),
-          resourceType: reco["instanceType"].toString() || reco["instanceSize"].toString() || reco["nodeType"].toString(),
-          term: term
-        })
+  result = []
+
+  _.each(ds_ri_recommendations, function(item) {
+    term = item["termInYears"].toString() + " year"
+    if (item["termInYears"] > 1) { term += "s" }
+
+    _.each(item["recommendationDetails"], function(recommendation) {
+      result.push({
+        accountID: item["accountID"],
+        accountName: ds_aws_account['name'],
+        service: item["service"],
+        accountScope: item["accountScope"],
+        lookbackPeriodInDays: item["lookbackPeriodInDays"],
+        paymentOption: item["paymentOption"],
+        availabilityZone: recommendation["availabilityZone"].toString(),
+        averageNormalizedUnitsUsedPerHour: (Math.round(recommendation["averageNormalizedUnitsUsedPerHour"] * 100) / 100).toString(10),
+        averageNumberOfInstancesUsedPerHour: (Math.round(recommendation["averageNumberOfInstancesUsedPerHour"] * 100) / 100).toString(10),
+        averageUtilization: (Math.round(recommendation["averageUtilization"] * 100) / 100).toString(10),
+        databaseEdition: recommendation["databaseEdition"].toString(),
+        databaseEngine: recommendation["databaseEngine"].toString(),
+        deploymentOption: recommendation["deploymentOption"].toString(),
+        estimatedBreakEvenInMonths: (Math.round(recommendation["estimatedBreakEvenInMonths"] * 100) / 100).toString(10),
+        estimatedMonthlyOnDemandCost: (Math.round(recommendation["estimatedMonthlyOnDemandCost"] * 100) / 100).toString(10),
+        estimatedMonthlySavingsAmount: (Math.round(recommendation["estimatedMonthlySavingsAmount"] * 100) / 100 * currency_adjustment).toString(10),
+        estimatedMonthlySavingsPercentage: (Math.round(recommendation["estimatedMonthlySavingsPercentage"] * 100) / 100).toString(10),
+        estimatedReservationCostForLookbackPeriod: (Math.round(recommendation["estimatedReservationCostForLookbackPeriod"] * 100) / 100).toString(10),
+        family: recommendation["family"].toString(),
+        instanceClass: recommendation["instanceClass"].toString(),
+        instanceSize: recommendation["instanceSize"].toString(),
+        instanceType: recommendation["instanceType"].toString(),
+        licenseModel: recommendation["licenseModel"].toString(),
+        maximumNormalizedUnitsUsedPerHour: (Math.round(recommendation["maximumNormalizedUnitsUsedPerHour"] * 100) / 100).toString(10),
+        maximumNumberOfInstancesUsedPerHour: (Math.round(recommendation["maximumNumberOfInstancesUsedPerHour"] * 100) / 100).toString(10),
+        minimumNormalizedUnitsUsedPerHour: (Math.round(recommendation["minimumNormalizedUnitsUsedPerHour"] * 100) / 100).toString(10),
+        minimumNumberOfInstancesUsedPerHour: (Math.round(recommendation["minimumNumberOfInstancesUsedPerHour"] * 100) / 100).toString(10),
+        nodeType: recommendation["nodeType"].toString(),
+        platform: recommendation["platform"].toString() || recommendation["databaseEngine"].toString(),
+        productDescription: recommendation["productDescription"].toString(),
+        recommendedNormalizedUnitsToPurchase: recommendation["recommendedNormalizedUnitsToPurchase"].toString(),
+        recommendedNumberOfInstancesToPurchase: recommendation["recommendedNumberOfInstancesToPurchase"].toString(),
+        recurringStandardMonthlyCost: (Math.round(recommendation["recurringStandardMonthlyCost"] * 100) / 100).toString(10),
+        region: recommendation["region"].toString(),
+        sizeFlexEligible: recommendation["sizeFlexEligible"].toString(),
+        tenancy: recommendation["tenancy"].toString(),
+        upfrontCost: (Math.round(recommendation["upfrontCost"] * 100) / 100).toString(10),
+        resourceType: recommendation["instanceType"].toString() || recommendation["instanceSize"].toString() || recommendation["nodeType"].toString(),
+        term: term
       })
     })
-  EOS
-end
-
-script "js_ri_request", type: "javascript" do
-  parameters "param_days","param_payment_option","param_service","param_service_spec","param_term","param_scope"
-  result "request"
-  code <<-EOS
-
-    var period = {
-      "Last 7 Days":"SEVEN_DAYS",
-      "Last 30 Days":"THIRTY_DAYS",
-      "Last 60 Days":"SIXTY_DAYS"
-    }
-
-    var service = {
-      "Elastic Compute Cloud (EC2)":"Amazon Elastic Compute Cloud - Compute",
-      "Relational Database Service (RDS)":"Amazon Relational Database Service",
-      "ElastiCache":"Amazon ElastiCache",
-      "Redshift":"Amazon Redshift",
-      "Elasticsearch Service (ES)":"Amazon Elasticsearch Service"
-    }
-
-    var service_spec = {
-      "Standard":"STANDARD",
-      "Convertible":"CONVERTIBLE"
-    }
-
-    var term = {
-      "1 Year":"ONE_YEAR",
-      "3 Year":"THREE_YEARS"
-    }
-
-    var scope = {
-      "Payer":"PAYER",
-      "Linked":"LINKED"
-    }
-
-    var option = {
-      "No Upfront":"NO_UPFRONT",
-      "Partial Upfront":"PARTIAL_UPFRONT",
-      "All Upfront":"ALL_UPFRONT",
-      "Light Utilization":"LIGHT_UTILIZATION",
-      "Medium Utilization":"MEDIUM_UTILIZATION",
-      "Heavy Utilization":"HEAVY_UTILIZATION"
-    }
-
-    var payload = {}
-    payload['LookbackPeriodInDays'] = period[param_days]
-    payload['AccountScope'] = scope[param_scope]
-    payload['Service'] = service[param_service]
-
-    if(param_payment_option !== ""){
-      payload['PaymentOption'] = option[param_payment_option]
-    }
-
-    if(param_service === "Elastic Compute Cloud (EC2)"){
-      payload['ServiceSpecification'] = {}
-      payload['ServiceSpecification']['EC2Specification'] = {}
-      payload['ServiceSpecification']['EC2Specification']['OfferingClass'] = service_spec[param_service_spec]
-    }
-
-    if(param_term !== "Any"){
-      payload['TermInYears'] = term[param_term]
-    }
-
-    var request = {
-      auth: "auth_aws",
-      pagination: "aws_pagination",
-      host: "ce.us-east-1.amazonaws.com",
-      path: '/',
-      verb: 'POST',
-      body_fields: payload,
-      headers: {
-        "User-Agent": "RS Policies",
-        "X-Amz-Target": "AWSInsightsIndexService.GetReservationPurchaseRecommendation",
-        "Content-Type": "application/x-amz-json-1.1",
-      }
-    }
-  EOS
+  })
+EOS
 end
 
 ###############################################################################
 # Policy
 ###############################################################################
 
-policy "aws_ri_recommendations" do
+policy "pol_aws_ri_recommendations" do
   validate_each $ds_ri_normalization do
     summary_template "{{ len data }} AWS Reserved Instances Purchase Recommendations"
-    hash_include 'estimatedMonthlySavingsAmount'
-    escalate $email
-    check lt(to_n(val(item,"estimatedMonthlySavingsAmount")),$param_savings_threshold)
+    check lt(to_n(val(item,"estimatedMonthlySavingsAmount")), $param_min_savings)
+    escalate $esc_email
+    hash_include "estimatedMonthlySavingsAmount"
     export do
       resource_level false
-      field "region" do
-        label "Region"
-      end
-      field "service" do
-        label "Service"
-      end
       field "accountID" do
         label "Account ID"
       end
       field "accountName" do
         label "Account Name"
+      end
+      field "region" do
+        label "Region"
+      end
+      field "service" do
+        label "Service"
       end
       field "savings" do
         label "Estimated Monthly Savings Amount"
@@ -610,7 +618,7 @@ end
 # Escalations
 ###############################################################################
 
-escalation "email" do
+escalation "esc_email" do
   automatic true
   label "Send Email"
   description "Send incident email"
