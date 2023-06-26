@@ -79,7 +79,7 @@ end
 
 parameter "param_payment_option" do
   type "string"
-  label "(Optional) Payment Option"
+  label "Payment Option"
   category "RI"
   description "RI purchase option. Default setting of All includes all RI purchase options."
   default "All"
@@ -88,7 +88,7 @@ end
 
 parameter "param_min_savings" do
   type "number"
-  label "Net Savings Threshold"
+  label "Minimum Savings Threshold"
   category "RI"
   description "Specify the minimum estimated monthly savings that should result in a recommendation"
   default 100
@@ -98,7 +98,7 @@ end
 parameter "param_currency_adjustment" do
   type "number"
   label "Currency Adjustment"
-  description "Adjusts monetary values by the given percentage to assist with currency conversion. Default value of 100 will leave the values unmodified."
+  description "Percentage to multiple monetary values by for currency conversion. Default value of 100 will leave the values unmodified."
   default 100
   min_value 0
 end
@@ -187,6 +187,60 @@ script "js_top_level_bcs", type: "javascript" do
 EOS
 end
 
+datasource "ds_currency_reference" do
+  request do
+    host "raw.githubusercontent.com"
+    path "/rightscale/policy_templates/master/cost/scheduled_reports/currency_reference.json"
+    header "User-Agent", "RS Policies"
+  end
+end
+
+datasource "ds_currency_code" do
+  request do
+    auth $auth_flexera
+    host rs_optima_host
+    path join(["/bill-analysis/orgs/", rs_org_id, "/settings/currency_code"])
+    header "Api-Version", "0.1"
+    header "User-Agent", "RS Policies"
+    ignore_status [403]
+  end
+  result do
+    encoding "json"
+    field "id", jmes_path(response, "id")
+    field "value", jmes_path(response, "value")
+  end
+end
+
+datasource "ds_currency" do
+  run_script $js_currency, $ds_currency_reference, $ds_currency_code
+end
+
+script "js_currency", type:"javascript" do
+  parameters "ds_currency_reference", "ds_currency_code"
+  result "result"
+  code <<-EOS
+  symbol = "$"
+  separator = ","
+
+  if (ds_currency_code['value'] != undefined) {
+    if (ds_currency_reference[ds_currency_code['value']] != undefined) {
+      symbol = ds_currency_reference[ds_currency_code['value']]['symbol']
+
+      if (ds_currency_reference[ds_currency_code['value']]['t_separator'] != undefined) {
+        separator = ds_currency_reference[ds_currency_code['value']]['t_separator']
+      } else {
+        separator = ""
+      }
+    }
+  }
+
+  result = {
+    symbol: symbol,
+    separator: separator
+  }
+EOS
+end
+
 datasource "ds_get_caller_identity" do
   request do
     auth $auth_aws
@@ -205,7 +259,7 @@ datasource "ds_get_caller_identity" do
   end
 end
 
-datasource "ds_aws_account_name"
+datasource "ds_aws_account_name" do
   iterate $ds_get_caller_identity
   request do
     run_script $js_aws_account_name, val(iter_item, "account"), $ds_top_level_bcs, rs_org_id, rs_optima_host
@@ -420,63 +474,153 @@ EOS
 end
 
 datasource "ds_ri_normalization" do
-  run_script $js_ri_cleanup, $ds_ri_recommendations, $param_currency_adjustment, $ds_aws_account
+  run_script $js_ri_normalization, $ds_ri_recommendations, $ds_applied_policy, $ds_aws_account, $ds_currency, $param_currency_adjustment, $param_days, $param_service, $param_service_spec, $param_scope, $param_term, $param_payment_option, $param_min_savings
 end
 
 script "js_ri_normalization", type: "javascript" do
-  parameters "ds_ri_recommendations", "param_currency_adjustment", "ds_aws_account"
+  parameters "ds_ri_recommendations", "ds_applied_policy", "ds_aws_account", "ds_currency", "param_currency_adjustment", "param_days", "param_service", "param_service_spec", "param_scope", "param_term", "param_payment_option", "param_min_savings"
   result "result"
-  code <<-EOS
+  code <<-'EOS'
+  // Used for formatting numbers to look pretty
+  function formatNumber(number, separator){
+    numString = number.toString()
+    values = numString.split(".")
+    formatted_number = ''
+
+    while (values[0].length > 3) {
+      var chunk = values[0].substr(-3)
+      values[0] = values[0].substr(0, values[0].length - 3)
+      formatted_number = separator + chunk + formatted_number
+    }
+
+    if (values[0].length > 0) { formatted_number = values[0] + formatted_number }
+    if (values[1] == undefined) { return formatted_number }
+
+    return formatted_number + "." + values[1]
+  }
+
   result = []
+  total_savings = 0.0
 
   _.each(ds_ri_recommendations, function(item) {
     term = item["termInYears"].toString() + " year"
     if (item["termInYears"] > 1) { term += "s" }
 
     _.each(item["recommendationDetails"], function(recommendation) {
+      total_savings += recommendation["estimatedMonthlySavingsAmount"]
+
+      // Set blank values for fields where the value is N/A for the recommendation in question
+      averageNumberOfInstancesUsedPerHour = Math.round(recommendation["averageNumberOfInstancesUsedPerHour"] * 100) / 100
+      maximumNumberOfInstancesUsedPerHour = Math.round(recommendation["maximumNumberOfInstancesUsedPerHour"] * 100) / 100
+      minimumNumberOfInstancesUsedPerHour = Math.round(recommendation["minimumNumberOfInstancesUsedPerHour"] * 100) / 100
+      averageNormalizedUnitsUsedPerHour = Math.round(recommendation["averageNormalizedUnitsUsedPerHour"] * 100) / 100
+      maximumNormalizedUnitsUsedPerHour = Math.round(recommendation["maximumNormalizedUnitsUsedPerHour"] * 100) / 100
+      minimumNormalizedUnitsUsedPerHour = Math.round(recommendation["minimumNormalizedUnitsUsedPerHour"] * 100) / 100
+      recommendedNormalizedUnitsToPurchase = parseFloat(recommendation["recommendedNormalizedUnitsToPurchase"])
+      recommendedNumberOfInstancesToPurchase = parseFloat(recommendation["recommendedNumberOfInstancesToPurchase"])
+
+      if (isNaN(averageNumberOfInstancesUsedPerHour)) { averageNumberOfInstancesUsedPerHour = "" }
+      if (isNaN(maximumNumberOfInstancesUsedPerHour)) { maximumNumberOfInstancesUsedPerHour = "" }
+      if (isNaN(minimumNumberOfInstancesUsedPerHour)) { minimumNumberOfInstancesUsedPerHour = "" }
+      if (isNaN(averageNormalizedUnitsUsedPerHour)) { averageNormalizedUnitsUsedPerHour = "" }
+      if (isNaN(maximumNormalizedUnitsUsedPerHour)) { maximumNormalizedUnitsUsedPerHour = "" }
+      if (isNaN(minimumNormalizedUnitsUsedPerHour)) { minimumNormalizedUnitsUsedPerHour = "" }
+      if (isNaN(recommendedNormalizedUnitsToPurchase)) { recommendedNormalizedUnitsToPurchase = "" }
+      if (isNaN(recommendedNumberOfInstancesToPurchase)) { recommendedNumberOfInstancesToPurchase = "" }
+
+      // Calculate values while including currency calculation when needed
+      averageUtilization = Math.round(recommendation["averageUtilization"] * 100) / 100
+      estimatedBreakEvenInMonths = Math.round(recommendation["estimatedBreakEvenInMonths"] * 100) / 100
+      estimatedMonthlyOnDemandCost = Math.round(recommendation["estimatedMonthlyOnDemandCost"] * param_currency_adjustment) / 100
+      estimatedMonthlySavingsAmount = Math.round(recommendation["estimatedMonthlySavingsAmount"] * param_currency_adjustment) / 100
+      estimatedMonthlySavingsPercentage = Math.round(recommendation["estimatedMonthlySavingsPercentage"] * 100) / 100
+      estimatedReservationCostForLookbackPeriod = Math.round(recommendation["estimatedReservationCostForLookbackPeriod"] * param_currency_adjustment) / 100
+      recurringStandardMonthlyCost = Math.round(recommendation["recurringStandardMonthlyCost"] * param_currency_adjustment) / 100
+      upfrontCost = Math.round(recommendation["upfrontCost"] * 100) / 100
+
+      // Set misc values
+      platform = recommendation["platform"].toString() || recommendation["databaseEngine"].toString()
+      resourceType = recommendation["instanceType"].toString() || recommendation["instanceSize"].toString() || recommendation["nodeType"].toString()
+      paymentOption = item["paymentOption"].replace('_', ' ')
+
       result.push({
-        accountID: item["accountID"],
+        accountID: ds_aws_account['id'],
         accountName: ds_aws_account['name'],
         service: item["service"],
         accountScope: item["accountScope"],
         lookbackPeriodInDays: item["lookbackPeriodInDays"],
-        paymentOption: item["paymentOption"],
+        paymentOption: paymentOption,
         availabilityZone: recommendation["availabilityZone"].toString(),
-        averageNormalizedUnitsUsedPerHour: (Math.round(recommendation["averageNormalizedUnitsUsedPerHour"] * 100) / 100).toString(10),
-        averageNumberOfInstancesUsedPerHour: (Math.round(recommendation["averageNumberOfInstancesUsedPerHour"] * 100) / 100).toString(10),
-        averageUtilization: (Math.round(recommendation["averageUtilization"] * 100) / 100).toString(10),
+        averageNormalizedUnitsUsedPerHour: averageNormalizedUnitsUsedPerHour,
+        averageNumberOfInstancesUsedPerHo: averageNumberOfInstancesUsedPerHour,
+        averageUtilization: averageUtilization,
         databaseEdition: recommendation["databaseEdition"].toString(),
         databaseEngine: recommendation["databaseEngine"].toString(),
         deploymentOption: recommendation["deploymentOption"].toString(),
-        estimatedBreakEvenInMonths: (Math.round(recommendation["estimatedBreakEvenInMonths"] * 100) / 100).toString(10),
-        estimatedMonthlyOnDemandCost: (Math.round(recommendation["estimatedMonthlyOnDemandCost"] * 100) / 100).toString(10),
-        estimatedMonthlySavingsAmount: (Math.round(recommendation["estimatedMonthlySavingsAmount"] * 100) / 100 * currency_adjustment).toString(10),
-        estimatedMonthlySavingsPercentage: (Math.round(recommendation["estimatedMonthlySavingsPercentage"] * 100) / 100).toString(10),
-        estimatedReservationCostForLookbackPeriod: (Math.round(recommendation["estimatedReservationCostForLookbackPeriod"] * 100) / 100).toString(10),
+        estimatedBreakEvenInMonths: estimatedBreakEvenInMonths,
+        estimatedMonthlyOnDemandCost: estimatedMonthlyOnDemandCost,
+        estimatedMonthlySavingsAmount: estimatedMonthlySavingsAmount,
+        estimatedMonthlySavingsPercentage: estimatedMonthlySavingsPercentage,
+        estimatedReservationCostForLookbackPeriod: estimatedReservationCostForLookbackPeriod,
         family: recommendation["family"].toString(),
         instanceClass: recommendation["instanceClass"].toString(),
         instanceSize: recommendation["instanceSize"].toString(),
         instanceType: recommendation["instanceType"].toString(),
         licenseModel: recommendation["licenseModel"].toString(),
-        maximumNormalizedUnitsUsedPerHour: (Math.round(recommendation["maximumNormalizedUnitsUsedPerHour"] * 100) / 100).toString(10),
-        maximumNumberOfInstancesUsedPerHour: (Math.round(recommendation["maximumNumberOfInstancesUsedPerHour"] * 100) / 100).toString(10),
-        minimumNormalizedUnitsUsedPerHour: (Math.round(recommendation["minimumNormalizedUnitsUsedPerHour"] * 100) / 100).toString(10),
-        minimumNumberOfInstancesUsedPerHour: (Math.round(recommendation["minimumNumberOfInstancesUsedPerHour"] * 100) / 100).toString(10),
+        maximumNormalizedUnitsUsedPerHour: maximumNormalizedUnitsUsedPerHour,
+        maximumNumberOfInstancesUsedPerHour: maximumNumberOfInstancesUsedPerHour,
+        minimumNormalizedUnitsUsedPerHour: minimumNormalizedUnitsUsedPerHour,
+        minimumNumberOfInstancesUsedPerHour: minimumNumberOfInstancesUsedPerHour,
         nodeType: recommendation["nodeType"].toString(),
-        platform: recommendation["platform"].toString() || recommendation["databaseEngine"].toString(),
+        platform: platform,
         productDescription: recommendation["productDescription"].toString(),
-        recommendedNormalizedUnitsToPurchase: recommendation["recommendedNormalizedUnitsToPurchase"].toString(),
-        recommendedNumberOfInstancesToPurchase: recommendation["recommendedNumberOfInstancesToPurchase"].toString(),
-        recurringStandardMonthlyCost: (Math.round(recommendation["recurringStandardMonthlyCost"] * 100) / 100).toString(10),
+        recommendedNormalizedUnitsToPurchase: recommendedNormalizedUnitsToPurchase,
+        recommendedNumberOfInstancesToPurchase: recommendedNumberOfInstancesToPurchase,
+        recurringStandardMonthlyCost: recurringStandardMonthlyCost,
         region: recommendation["region"].toString(),
         sizeFlexEligible: recommendation["sizeFlexEligible"].toString(),
         tenancy: recommendation["tenancy"].toString(),
-        upfrontCost: (Math.round(recommendation["upfrontCost"] * 100) / 100).toString(10),
-        resourceType: recommendation["instanceType"].toString() || recommendation["instanceSize"].toString() || recommendation["nodeType"].toString(),
-        term: term
+        upfrontCost: upfrontCost,
+        resourceType: resourceType,
+        term: term,
+        savingsCurrency: ds_currency['symbol'],
+        policy_name: "",
+        total_savings: "",
+        message: ""
       })
     })
   })
+
+  services = "All Services"
+  if (param_service.length > 0) { services = param_service.join(', ') }
+
+  // Only show EC2 Specification setting if it is applicable
+  ec2_spec = ""
+  if (param_service.length == 0 || _.contains(param_service, "Elastic Compute Cloud (EC2)")) {
+    ec2_spec = "- EC2 Specification: " + param_service_spec + "\n"
+  }
+
+  message = [
+    "The following settings were used when generating recommendations:\n",
+    "- AWS Services: ", services, "\n",
+    ec2_spec,
+    "- Account Scope: ", param_scope, "\n",
+    "- Term: ", param_term, "\n",
+    "- Look Back Period: ", param_days, "\n",
+    "- Payment Option: ", param_payment_option, "\n",
+    "- Minimum Savings Threshold: ", param_min_savings, "\n",
+    "- Currency Adjustment Percentage: ", param_currency_adjustment, "%\n\n"
+  ].join('')
+
+  disclaimer = "The above settings can be modified by editing the applied policy and changing the appropriate parameters.\n\n"
+  empty_fields = "Empty fields indicate information that is not applicable to that particular recommendation."
+
+  // Sort by highest savings first
+  result = _.sortBy(result, function(item) { return item['estimatedMonthlySavingsAmount'] * -1 })
+
+  result[0]['policy_name'] = ds_applied_policy['name']
+  result[0]['total_savings'] = ds_currency['symbol'] + ' ' + formatNumber(parseFloat(total_savings).toFixed(2), ds_currency['separator'])
+  result[0]['message'] = message + disclaimer + empty_fields
 EOS
 end
 
@@ -486,7 +630,12 @@ end
 
 policy "pol_aws_ri_recommendations" do
   validate_each $ds_ri_normalization do
-    summary_template "{{ len data }} AWS Reserved Instances Purchase Recommendations"
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} AWS Reserved Instances Purchase Recommendations"
+    detail_template <<-'EOS'
+    **Potential Monthly Savings:** {{ with index data 0 }}{{ .total_savings }}{{ end }}
+
+    {{ with index data 0 }}{{ .message }}{{ end }}
+    EOS
     check lt(to_n(val(item,"estimatedMonthlySavingsAmount")), $param_min_savings)
     escalate $esc_email
     hash_include "estimatedMonthlySavingsAmount"
