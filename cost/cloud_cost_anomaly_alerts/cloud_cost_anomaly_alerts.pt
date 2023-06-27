@@ -8,7 +8,7 @@ category "Cost"
 tenancy "single"
 default_frequency "daily"
 info(
-  version: "2.4",
+  version: "2.5",
   provider: "Flexera Optima",
   service: "",
   policy_set:""
@@ -116,7 +116,7 @@ datasource "ds_currency_code" do
   end
 end
 
-datasource "ds_dimensions" do
+datasource "ds_dimensions_incomplete" do
   request do
     auth $auth_flexera
     host rs_optima_host
@@ -132,6 +132,21 @@ datasource "ds_dimensions" do
       field "type", jmes_path(col_item, "type")
     end
   end
+end
+
+datasource "ds_dimensions" do
+  run_script $js_add_billing_center_dimension, $ds_dimensions_incomplete
+end
+
+script "js_add_billing_center_dimension", type: "javascript" do
+  parameters "ds_dimensions_incomplete"
+  result "ds_dimensions"
+  code <<-EOS
+  var ds_dimensions = [{id: "billing_center_id", name: "Billing Centers", type: "Tags"}]
+  _.each(ds_dimensions_incomplete, function(dimension) {
+    ds_dimensions.push(dimension)
+  })
+  EOS
 end
 
 datasource "ds_filter_dimensions" do
@@ -344,19 +359,23 @@ script "js_get_anomalies", type: "javascript" do
 
     expressions = [];
     _.each(ds_filter_dimensions.filters, function (filter) {
-      expression = {
-       "type": "",
-       "dimension": "",
-       "value": ""
+      if (filter.dimensionid == "billing_center_id") {
+        request.body_fields.billingCenterIds = [filter.value]
+      } else {
+        expression = {
+         "type": "",
+         "dimension": "",
+         "value": ""
+        }
+        expression.type = "equal";
+        expression.dimension = filter.dimensionid;
+        expression.value = filter.value;
+        expressions.push(expression)
       }
-      expression.type = "equal";
-      expression.dimension = filter.dimensionid;
-      expression.value = filter.value;
-      expressions.push(expression)
-      })
+    })
 
     switch (true) {
-      case ds_filter_dimensions.filters.length === 1 :
+      case ds_filter_dimensions.filters.length === 1 && ds_filter_dimensions.filters[0].dimensionid !== "billing_center_id" :
         filter = {
           "dimension": ds_filter_dimensions.filters[0].dimensionid,
           "type": ds_filter_dimensions.filters[0].type,
