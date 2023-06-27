@@ -90,7 +90,7 @@ credentials "auth_flexera" do
 end
 
 ###############################################################################
-# Datasources
+# Datasources & Scripts
 ###############################################################################
 
 datasource "ds_currency_reference" do
@@ -153,56 +153,6 @@ datasource "ds_filter_dimensions" do
   run_script $js_filter_dimensions, $param_dimensions, $ds_dimensions
 end
 
-datasource "billing_centers" do
-  request do
-    auth $auth_flexera
-    host rs_optima_host
-    path join(["/analytics/orgs/",rs_org_id,"/billing_centers"])
-    header "Api-Version", "1.0"
-    header "User-Agent", "RS Policies"
-    query "view", "allocation_table"
-  end
-  result do
-    encoding "json"
-    collect jmes_path(response,"[*]") do
-      field "href", jmes_path(col_item,"href")
-      field "id", jmes_path(col_item,"id")
-      field "name", jmes_path(col_item,"name")
-      field "parent_id", jmes_path(col_item,"parent_id")
-      field "ancestor_ids", jmes_path(col_item,"ancestor_ids")
-      field "allocation_table", jmes_path(col_item,"allocation_table")
-    end
-  end
-end
-
-datasource "ds_top_level_billing_centers" do
-  run_script $js_top_level_bc, $ds_listed_billing_centers
-end
-
-datasource "ds_listed_billing_centers" do
-  run_script $js_listed_billing_centers, $billing_centers
-end
-
-datasource "ds_get_anomalies" do
-  request do
-    run_script $js_get_anomalies, rs_optima_host, rs_org_id, $ds_top_level_billing_centers, $param_cost_metric, $param_days, $param_dimensions,$ds_filter_dimensions, $param_window_size, $param_standard_deviations, $param_anomaly_limit
-  end
-  result do
-    encoding "json"
-    collect jmes_path(response,"values[*]") do
-      field "timeSeries", jmes_path(col_item, "timeSeries")
-    end
-  end
-end
-
-datasource "ds_filter_anomalies" do
-  run_script $js_filter_anomalies, $ds_get_anomalies, $param_min_spend, rs_org_id, $param_days, $param_dimensions,$ds_filter_dimensions, $param_cost_metric, $param_anomaly_limit, f1_app_host
-end
-
-###############################################################################
-# Scripts
-###############################################################################
-
 script "js_filter_dimensions", type: "javascript" do
   parameters "param_dimensions", "ds_dimensions"
   result "filtered_dimensions"
@@ -249,6 +199,44 @@ script "js_filter_dimensions", type: "javascript" do
   EOS
 end
 
+datasource "billing_centers" do
+  request do
+    auth $auth_flexera
+    host rs_optima_host
+    path join(["/analytics/orgs/",rs_org_id,"/billing_centers"])
+    header "Api-Version", "1.0"
+    header "User-Agent", "RS Policies"
+    query "view", "allocation_table"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response,"[*]") do
+      field "href", jmes_path(col_item,"href")
+      field "id", jmes_path(col_item,"id")
+      field "name", jmes_path(col_item,"name")
+      field "parent_id", jmes_path(col_item,"parent_id")
+      field "ancestor_ids", jmes_path(col_item,"ancestor_ids")
+      field "allocation_table", jmes_path(col_item,"allocation_table")
+    end
+  end
+end
+
+datasource "ds_top_level_billing_centers" do
+  run_script $js_top_level_bc, $ds_listed_billing_centers
+end
+
+script "js_top_level_bc", type: "javascript" do
+  parameters "billing_centers"
+  result "filtered_billing_centers"
+  code <<-EOS
+    var filtered_billing_centers =_.reject(billing_centers, function(bc){ return bc.parent_id != null });
+  EOS
+end
+
+datasource "ds_listed_billing_centers" do
+  run_script $js_listed_billing_centers, $billing_centers
+end
+
 script "js_listed_billing_centers", type: "javascript" do
   parameters "billing_centers"
   result "billing_center_list"
@@ -274,12 +262,16 @@ script "js_listed_billing_centers", type: "javascript" do
   EOS
 end
 
-script "js_top_level_bc", type: "javascript" do
-  parameters "billing_centers"
-  result "filtered_billing_centers"
-  code <<-EOS
-    var filtered_billing_centers =_.reject(billing_centers, function(bc){ return bc.parent_id != null });
-  EOS
+datasource "ds_get_anomalies" do
+  request do
+    run_script $js_get_anomalies, rs_optima_host, rs_org_id, $ds_top_level_billing_centers, $param_cost_metric, $param_days, $param_dimensions,$ds_filter_dimensions, $param_window_size, $param_standard_deviations, $param_anomaly_limit
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response,"values[*]") do
+      field "timeSeries", jmes_path(col_item, "timeSeries")
+    end
+  end
 end
 
 script "js_get_anomalies", type: "javascript" do
@@ -392,6 +384,10 @@ script "js_get_anomalies", type: "javascript" do
           break;
   }
   EOS
+end
+
+datasource "ds_filter_anomalies" do
+  run_script $js_filter_anomalies, $ds_get_anomalies, $param_min_spend, rs_org_id, $param_days, $param_dimensions,$ds_filter_dimensions, $param_cost_metric, $param_anomaly_limit, f1_app_host
 end
 
 script "js_filter_anomalies", type: "javascript" do
