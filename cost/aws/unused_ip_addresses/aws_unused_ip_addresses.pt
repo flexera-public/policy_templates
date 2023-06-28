@@ -34,10 +34,10 @@ parameter "param_aws_account_number" do
   default ""
 end
 
-parameter "param_idletime" do
+parameter "param_daysunattached" do
   type "number"
   category "Policy Settings"
-  label "Idle Time (Days)"
+  label "Days Unattached"
   description "The number of days an IP address needs to be detached to be considered idle."
   default 30
   min_value 0
@@ -297,7 +297,7 @@ script "js_get_account_name", type: "javascript" do
       "filter": {
         "dimension": "vendor_account",
         "type": "equal",
-        "value": account_id[0]["account"]
+        "value": ds_get_caller_identity[0]["account"]
       }
     },
     headers: {
@@ -395,8 +395,8 @@ datasource "ds_ip_addresses" do
       field "privateIpAddress", xpath(col_item,"privateIpAddress")
       field "tags" do
         collect xpath(col_item, "tagSet/item") do
-          field "key", xpath(col_item, "Key")
-          field "value", xpath(col_item, "Value")
+          field "key", xpath(col_item, "key")
+          field "value", xpath(col_item, "value")
         end
       end
     end
@@ -433,11 +433,25 @@ script "js_ip_addresses_filtered", type: "javascript" do
 EOS
 end
 
+datasource "ds_unattached_ips" do
+  run_script $js_unattached_ips, $ds_ip_addresses_filtered
+end
+
+script "js_unattached_ips", type: "javascript" do
+  parameters "ds_ip_addresses_filtered"
+  result "result"
+  code <<-EOS
+  result = _.filter(ds_ip_addresses_filtered, function(ip) {
+    return ip["instanceID"] == "" || ip["instanceID"] == null || ip["instanceID"] == undefined
+  })
+EOS
+end
+
 # Gather IP address logs to see when the last activity was
 datasource "ds_ip_address_logs" do
-  iterate $ds_ip_addresses_filtered
+  iterate $ds_unattached_ips
   request do
-    run_script $js_ip_address_logs, val(iter_item, "region"), val(iter_item, "publicIp"), $param_idletime
+    run_script $js_ip_address_logs, val(iter_item, "region"), val(iter_item, "publicIp")
   end
   result do
     encoding "xml"
@@ -451,14 +465,20 @@ datasource "ds_ip_address_logs" do
 end
 
 script "js_ip_address_logs", type: "javascript" do
-  parameters "region", "publicIp", "param_idletime"
+  parameters "region", "publicIp"
   result "request"
   code <<-EOS
+  // Slow down rate of requests to prevent throttling
+  api_wait = 5
+  now = new Date().getTime()
+  while (new Date().getTime() < now + (api_wait * 1000)) { /* Do nothing */ }
+
   end_date = new Date()
   end_date = end_date.toISOString()
 
+  // Look back 90 days, which is the furthest back Cloudtrail stores this data
   start_date = new Date()
-  start_date.setDate(start_date.getDate() - param_idletime)
+  start_date.setDate(start_date.getDate() - 90)
   start_date = start_date.toISOString()
 
   var request = {
@@ -498,7 +518,7 @@ script "js_ip_address_logs_sorted", type: "javascript" do
     publicIp = entry['publicIp']
 
     if (eventName == 'AllocateAddress' || eventName == 'DisassociateAddress') {
-      if (log_object[publicIp] == undefined) {
+      if (result[publicIp] == undefined) {
         result[publicIp] = []
       }
 
@@ -510,43 +530,41 @@ end
 
 # Filter IPs to produce a list of unused IPs
 datasource "ds_unused_ips" do
-  run_script $js_unused_ips, $ds_ip_addresses_filtered, $ds_ip_address_logs_sorted, $param_idletime
+  run_script $js_unused_ips, $ds_unattached_ips, $ds_ip_address_logs_sorted, $param_daysunattached
 end
 
 script "js_unused_ips", type: "javascript" do
-  parameters "ds_ip_addresses_filtered", "ds_ip_address_logs_sorted", "param_idletime"
+  parameters "ds_unattached_ips", "ds_ip_address_logs_sorted", "param_daysunattached"
   result "result"
   code <<-'EOS'
   result = []
 
   // Check if unattached IP has been idle for the specified number of days or not
-  _.each(ds_ip_addresses_filtered, function(ip) {
-    if (ip["instanceID"] == "" || ip["instanceID"] == null || ip["instanceID"] == undefined) {
-      most_recent_event = null
-      publicIp = ip['publicIp']
+  _.each(ds_unattached_ips, function(ip) {
+    most_recent_event = null
+    publicIp = ip['publicIp']
 
-      if (ds_ip_address_logs_sorted[publicIp] != undefined) {
-        _.each(ds_ip_address_logs_sorted[publicIp], function(event) {
-          event_time = new Date(event['eventTime'])
+    if (ds_ip_address_logs_sorted[publicIp] != undefined) {
+      _.each(ds_ip_address_logs_sorted[publicIp], function(event) {
+        event_time = new Date(event['eventTime'])
 
-          if (event_time > most_recent_event) {
-            most_recent_event = event_time
-          }
-        })
-      }
+        if (event_time > most_recent_event) {
+          most_recent_event = event_time
+        }
+      })
+    }
 
-      if (most_recent_event == null) {
-        days_idle == ''
-      } else {
-        now = new Date()
-        days_idle = (now - most_recent_event) / 1000 / 60 / 60 / 24
-      }
+    days_idle = ''
+    ip['age'] = ''
 
-      ip['age'] = parseFloat(days_idle.toFixed(1))
+    if (most_recent_event != null) {
+      now = new Date()
+      days_idle = (now - most_recent_event) / 1000 / 60 / 60 / 24
+      ip['age'] = parseInt(days_idle)
+    }
 
-      if (param_idletime == 0 || days_idle == '' || days_idle > param_idletime) {
-        result.push(ip)
-      }
+    if (param_daysunattached == 0 || days_idle == '' || days_idle > param_daysunattached) {
+      result.push(ip)
     }
   })
 EOS
@@ -592,11 +610,11 @@ end
 
 # Combine IP information with cost data and prepare final datasource for incident
 datasource "ds_ip_cost_mapping" do
-  run_script $js_ip_cost_mapping, $ds_unused_ips, $ds_ip_addresses_filtered, $ds_ip_address_prices_grouped, $ds_aws_account, $ds_currency, $ds_applied_policy, $param_min_savings, $param_idletime
+  run_script $js_ip_cost_mapping, $ds_unused_ips, $ds_ip_addresses_filtered, $ds_ip_address_prices_grouped, $ds_aws_account, $ds_currency, $ds_applied_policy, $param_min_savings, $param_daysunattached
 end
 
 script "js_ip_cost_mapping", type:"javascript" do
-  parameters "ds_unused_ips", "ds_ip_addresses_filtered", "ds_ip_address_prices_grouped", "ds_aws_account", "ds_currency", "ds_applied_policy", "param_min_savings", "param_idletime"
+  parameters "ds_unused_ips", "ds_ip_addresses_filtered", "ds_ip_address_prices_grouped", "ds_aws_account", "ds_currency", "ds_applied_policy", "param_min_savings", "param_daysunattached"
   result "result"
   code <<-'EOS'
   // Function for formatting currency numbers later
@@ -625,7 +643,7 @@ script "js_ip_cost_mapping", type:"javascript" do
   _.each(ds_unused_ips, function(ip) {
     ip_cost = ds_ip_address_prices_grouped[ip['region'].toLowerCase()]
 
-    if (ip_cost == null || ip_cost == undefined) {
+    if (typeof(ip_cost) != 'number') {
       ip_cost = 0.0
     }
 
@@ -641,7 +659,7 @@ script "js_ip_cost_mapping", type:"javascript" do
       resourceName = ""
 
       _.each(ip['tags'], function(tag) {
-        ip_tags.push([tag['key'], tag['value']].join('='))
+        tags.push([tag['key'], tag['value']].join('='))
 
         if (tag['key'].toLowerCase() == 'name') {
           resourceName = tag['value']
@@ -663,7 +681,7 @@ script "js_ip_cost_mapping", type:"javascript" do
         savingsCurrency: ds_currency['symbol'],
         ipAddress: ip['privateIpAddress'],
         service: "EC2",
-        lookbackPeriod: param_idletime,
+        lookbackPeriod: param_daysunattached,
         tags: tags.join(', '),
         // These are to avoid errors when we hash_exclude these fields
         total_savings: "",
@@ -674,26 +692,41 @@ script "js_ip_cost_mapping", type:"javascript" do
   })
 
   // Message for incident output
+  savings_disclaimer = "Savings are estimated based on list price and may not reflect credits or discounts. "
+  age_disclaimer = "The Days Unattached field will be empty for any IP addresses that have been unattached for over 90 days due to CloudTrail only retaining 90 days of log data."
+
   total_ips = ds_ip_addresses_filtered.length.toString()
   total_unused_ips = ds_unused_ips.length.toString()
-  unused_ips_percentage = (total_unused_ips / total_ips * 100).toFixed(2).toString() + '%'
+  unused_ips_percentage = (total_unused_ips / total_ips * 100).toFixed(2)
 
-  findings = [
-    "Out of ", total_ips, " IP addresses analyzed, ",
-    total_unused_ips, " (", unused_ips_percentage,
-    ") are unused and recommended for release. "
-  ].join('')
-
-  if (param_idletime != 0) {
-    idle_message = [
-      "An IP address is considered unused if it has not been attached to an instance ",
-      "for at least ", param_idletime, " days.\n\n"
-    ].join('')
+  if (typeof(unused_ips_percentage) != 'number') {
+    unused_ips_percentage = ""
   } else {
-    idle_message = "An IP address is considered unused if it is not attached to an instance.\n\n"
+    unused_ips_percentage = " (" + unused_ips_percentage.toFixed(2).toString() + "%)"
   }
 
-  disclaimer = "The above settings can be modified by editing the applied policy and changing the appropriate parameters."
+  ip_message = "IP address"
+  if (total_ips.length > 1) { ip_message += "es" }
+
+  findings = [
+    "Out of ", total_ips, " ", ip_message, " analyzed, ",
+    total_unused_ips, unused_ips_percentage,
+    " are unused and recommended for release. "
+  ].join('')
+
+  if (param_daysunattached != 0) {
+    day_message = "day"
+    if (total_unused_ips.length > 1) { day_message += "s" }
+
+    idle_message = [
+      "An IP address is considered unused if it has not been attached to an instance ",
+      "for at least ", param_daysunattached, " ", day_message, ". \n\n"
+    ].join('')
+  } else {
+    idle_message = "An IP address is considered unused if it is not attached to an instance regardless of how long it's been unattached for.\n\n"
+  }
+
+  disclaimer = "The above settings can be modified by editing the applied policy and changing the appropriate parameters.\n\n"
 
   savings_message = [
     ds_currency['symbol'], ' ',
@@ -704,7 +737,7 @@ script "js_ip_cost_mapping", type:"javascript" do
   result = _.sortBy(result, function(item) { return item['savings'] * -1 })
 
   result[0]['total_savings'] = savings_message
-  result[0]['message'] = findings + idle_message + disclaimer
+  result[0]['message'] = findings + idle_message + disclaimer + savings_disclaimer + age_disclaimer
   result[0]['policy_name'] = ds_applied_policy['name']
 
   // Dummy entry to ensure the check statement in validate_each always runs at least once
@@ -729,7 +762,6 @@ policy "policy_unused_ip_addresses" do
     summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} AWS Unused IP Addresses Found"
     detail_template <<-'EOS'
     **Potential Monthly Savings:** {{ with index data 0 }}{{ .total_savings }}{{ end }}
-    Savings are estimated based on list price and may not reflect credits or discounts.
 
     {{ with index data 0 }}{{ .message }}{{ end }}
     EOS
@@ -788,7 +820,7 @@ policy "policy_unused_ip_addresses" do
       end
       field "id" do
         label "ID"
-        path "publicIp"
+        path "resourceID"
       end
     end
   end
