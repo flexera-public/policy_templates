@@ -150,11 +150,11 @@ script "js_add_billing_center_dimension", type: "javascript" do
 end
 
 datasource "ds_filter_dimensions" do
-  run_script $js_filter_dimensions, $param_dimensions, $ds_dimensions
+  run_script $js_filter_dimensions, $param_dimensions, $ds_dimensions, $billing_centers
 end
 
 script "js_filter_dimensions", type: "javascript" do
-  parameters "param_dimensions", "ds_dimensions"
+  parameters "param_dimensions", "ds_dimensions", "billing_centers"
   result "filtered_dimensions"
   code <<-EOS
     var filtered_dimensions = {
@@ -187,7 +187,17 @@ script "js_filter_dimensions", type: "javascript" do
             filter.dimensionid=dimension.id;
             filter.dimensionname=dimension.name;
             filter.type="equal";
-            filter.value=dimension_filter_map[1];
+            dimension_filter_value = dimension_filter_map[1];
+            if (dimension.id === "billing_center_id") {
+              var billing_center = _.find(billing_centers, function(bc) { return bc.id === dimension_filter_value })
+              if (billing_center !== undefined && billing_center !== null) {
+                dimension_filter_value = billing_center.id
+              } else {
+                billing_center = _.find(billing_centers, function(bc) { return bc.name === dimension_filter_value  })
+                dimension_filter_value = billing_center.id
+              }
+            }
+            filter.value=dimension_filter_value
             filtered_dimensions.filters.push(filter);
           }
         }
@@ -387,11 +397,11 @@ script "js_get_anomalies", type: "javascript" do
 end
 
 datasource "ds_filter_anomalies" do
-  run_script $js_filter_anomalies, $ds_get_anomalies, $param_min_spend, rs_org_id, $param_days, $param_dimensions,$ds_filter_dimensions, $param_cost_metric, $param_anomaly_limit, f1_app_host
+  run_script $js_filter_anomalies, $ds_get_anomalies, $param_min_spend, rs_org_id, $param_days, $param_dimensions,$ds_filter_dimensions, $param_cost_metric, $param_anomaly_limit, f1_app_host, $billing_centers
 end
 
 script "js_filter_anomalies", type: "javascript" do
-  parameters "ds_get_anomalies", "param_min_spend", "org_id", "param_days", "param_dimensions", "ds_filter_dimensions","param_cost_metric", "param_anomaly_limit", "f1_app_host"
+  parameters "ds_get_anomalies", "param_min_spend", "org_id", "param_days", "param_dimensions", "ds_filter_dimensions","param_cost_metric", "param_anomaly_limit", "f1_app_host", "billing_centers"
   result "result"
   code <<-EOS
     var start_at = "";
@@ -452,7 +462,12 @@ script "js_filter_anomalies", type: "javascript" do
         if (anomalous.length > 0) {
           dimensionKey = ""
           Object.keys(timeSeriesEntry.timeSeries.dimensions).forEach(function(key) {
-            dimensionKey = dimensionKey + timeSeriesEntry.timeSeries.dimensions[key] + "|"
+            chunk = timeSeriesEntry.timeSeries.dimensions[key]
+            if (key === "billing_center_id") {
+              var bc_id = timeSeriesEntry.timeSeries.dimensions[key]
+              chunk = _.find(billing_centers, function(bc) { return bc.id === bc_id }).name
+            }
+            dimensionKey = dimensionKey + chunk + "|"
           });
           dimensionKey = dimensionKey.substring(0, dimensionKey.length - 1);
           i = 0
@@ -473,12 +488,20 @@ script "js_filter_anomalies", type: "javascript" do
 
     message = "https://" + f1_app_host + "/orgs/" + org_id +"/optima/anomalies?granularity=day&startDate=" + start_at + "&endDate=" + end_at + dimensionAPIString + "&costType=" + cost_metric[param_cost_metric]
 
+    var used_filters = []
+    _.each(ds_filter_dimensions.filters, function(f) {
+      if (f.dimensionid === "billing_center_id") {
+        f.value = _.find(billing_centers, function(bc) { return bc.id === f.value }).name + " (" + f.value + ")"
+      }
+      used_filters.push(f)
+    })
+
     result={
       "anomalies":anomalies,
       "message":message,
       "dimensionsReadable":dimensionsReadable,
       "errors": ds_filter_dimensions.invalid_ids,
-      "used_filters": ds_filter_dimensions.filters,
+      "used_filters": used_filters,
       "used_dimensions": ds_filter_dimensions.names,
     }
     result.anomalies=_.sortBy(result.anomalies, 'cost');
