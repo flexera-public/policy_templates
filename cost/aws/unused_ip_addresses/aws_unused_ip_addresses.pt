@@ -34,23 +34,14 @@ parameter "param_aws_account_number" do
   default ""
 end
 
-parameter "param_daysunattached" do
+parameter "param_days_unattached" do
   type "number"
   category "Policy Settings"
   label "Days Unattached"
-  description "The number of days an IP address needs to be detached to be considered idle."
+  description "The number of days an IP address needs to be detached to be considered unused. This value cannot be set above 90 due to CloudTrail only storing 90 days of log data. If this value is set to 0, all unattached IP addresses will be considered unused."
   default 30
   min_value 0
   max_value 90
-end
-
-parameter "param_min_savings" do
-  type "number"
-  category "Policy Settings"
-  label "Minimum Savings Threshold"
-  description "Minimum potential savings required to generate a recommendation."
-  default 0
-  min_value 0
 end
 
 parameter "param_regions_allow_or_deny" do
@@ -517,11 +508,11 @@ end
 
 # Filter IPs to produce a list of unused IPs
 datasource "ds_unused_ips" do
-  run_script $js_unused_ips, $ds_unattached_ips, $ds_ip_address_logs_sorted, $param_daysunattached
+  run_script $js_unused_ips, $ds_unattached_ips, $ds_ip_address_logs_sorted, $param_days_unattached
 end
 
 script "js_unused_ips", type: "javascript" do
-  parameters "ds_unattached_ips", "ds_ip_address_logs_sorted", "param_daysunattached"
+  parameters "ds_unattached_ips", "ds_ip_address_logs_sorted", "param_days_unattached"
   result "result"
   code <<-'EOS'
   result = []
@@ -550,7 +541,7 @@ script "js_unused_ips", type: "javascript" do
       ip['age'] = parseInt(days_idle)
     }
 
-    if (param_daysunattached == 0 || days_idle == '' || days_idle > param_daysunattached) {
+    if (param_days_unattached == 0 || days_idle == '' || days_idle > param_days_unattached) {
       result.push(ip)
     }
   })
@@ -597,11 +588,11 @@ end
 
 # Combine IP information with cost data and prepare final datasource for incident
 datasource "ds_ip_cost_mapping" do
-  run_script $js_ip_cost_mapping, $ds_unused_ips, $ds_ip_addresses_filtered, $ds_ip_address_prices_grouped, $ds_aws_account, $ds_currency, $ds_applied_policy, $param_min_savings, $param_daysunattached
+  run_script $js_ip_cost_mapping, $ds_unused_ips, $ds_ip_addresses_filtered, $ds_ip_address_prices_grouped, $ds_aws_account, $ds_currency, $ds_applied_policy, $param_days_unattached
 end
 
 script "js_ip_cost_mapping", type:"javascript" do
-  parameters "ds_unused_ips", "ds_ip_addresses_filtered", "ds_ip_address_prices_grouped", "ds_aws_account", "ds_currency", "ds_applied_policy", "param_min_savings", "param_daysunattached"
+  parameters "ds_unused_ips", "ds_ip_addresses_filtered", "ds_ip_address_prices_grouped", "ds_aws_account", "ds_currency", "ds_applied_policy", "param_days_unattached"
   result "result"
   code <<-'EOS'
   // Function for formatting currency numbers later
@@ -633,48 +624,47 @@ script "js_ip_cost_mapping", type:"javascript" do
       ip_cost = 0.0
     }
 
-    if (ip_cost >= param_min_savings) {
-      total_savings += ip_cost
+    total_savings += ip_cost
 
-      recommendationDetails = [
-        "Release IP address ", ip["publicIp"], " ",
-        "in AWS Account ", ds_aws_account['name'], " (", ds_aws_account['id'], ")"
-      ].join('')
+    recommendationDetails = [
+      "Release IP address ", ip["publicIp"], " ",
+      "in AWS Account ", ds_aws_account['name'], " (", ds_aws_account['id'], ")"
+    ].join('')
 
-      tags = []
-      resourceName = ""
+    tags = []
+    resourceName = ""
 
-      _.each(ip['tags'], function(tag) {
-        tags.push([tag['key'], tag['value']].join('='))
+    _.each(ip['tags'], function(tag) {
+      tags.push([tag['key'], tag['value']].join('='))
 
-        if (tag['key'].toLowerCase() == 'name') {
-          resourceName = tag['value']
-        }
-      })
+      if (tag['key'].toLowerCase() == 'name') {
+        resourceName = tag['value']
+      }
+    })
 
-      result.push({
-        resourceID: ip['publicIp'],
-        domain: ip['domain'],
-        region: ip['region'],
-        associationID: ip['associationID'],
-        allocationID: ip['allocationID'],
-        accountID: ds_aws_account['id'],
-        accountName: ds_aws_account['name'],
-        recommendationDetails: recommendationDetails,
-        resourceName: resourceName,
-        age: ip['age'],
-        savings: parseFloat(ip_cost.toFixed(3)),
-        savingsCurrency: ds_currency['symbol'],
-        ipAddress: ip['privateIpAddress'],
-        service: "EC2",
-        lookbackPeriod: param_daysunattached,
-        tags: tags.join(', '),
-        // These are to avoid errors when we hash_exclude these fields
-        total_savings: "",
-        message: "",
-        policy_name: ""
-      })
-    }
+    result.push({
+      resourceID: ip['publicIp'],
+      domain: ip['domain'],
+      region: ip['region'],
+      associationID: ip['associationID'],
+      allocationID: ip['allocationID'],
+      accountID: ds_aws_account['id'],
+      accountName: ds_aws_account['name'],
+      recommendationDetails: recommendationDetails,
+      resourceName: resourceName,
+      age: ip['age'],
+      savings: parseFloat(ip_cost.toFixed(3)),
+      savingsCurrency: ds_currency['symbol'],
+      ipAddress: ip['privateIpAddress'],
+      service: "EC2",
+      resourceType: "IP Address",
+      lookbackPeriod: param_days_unattached,
+      tags: tags.join(', '),
+      // These are to avoid errors when we hash_exclude these fields
+      total_savings: "",
+      message: "",
+      policy_name: ""
+    })
   })
 
   // Message for incident output
@@ -700,13 +690,13 @@ script "js_ip_cost_mapping", type:"javascript" do
     " are unused and recommended for release. "
   ].join('')
 
-  if (param_daysunattached != 0) {
+  if (param_days_unattached != 0) {
     day_message = "day"
     if (total_unused_ips.length > 1) { day_message += "s" }
 
     idle_message = [
-      "An IP address is considered unused if it has not been attached to an instance ",
-      "for at least ", param_daysunattached, " ", day_message, ". \n\n"
+      "An unattached IP address is considered unused if it has not been attached to an instance ",
+      "for at least ", param_days_unattached, " ", day_message, ".\n\n"
     ].join('')
   } else {
     idle_message = "An IP address is considered unused if it is not attached to an instance regardless of how long it's been unattached for.\n\n"
@@ -759,7 +749,7 @@ policy "policy_unused_ip_addresses" do
     export do
       resource_level true
       field "accountID" do
-        label "Account Id"
+        label "Account ID"
       end
       field "accountName" do
         label "Account Name"
@@ -774,8 +764,7 @@ policy "policy_unused_ip_addresses" do
         label "Resource Name"
       end
       field "resourceType" do
-        label "Domain"
-        path "domain"
+        label "Resource Type"
       end
       field "recommendationDetails" do
         label "Recommendation"
@@ -790,7 +779,7 @@ policy "policy_unused_ip_addresses" do
         label "Resource Tags"
       end
       field "allocationID" do
-        label "Allocation Id"
+        label "Allocation ID"
       end
       field "savings" do
         label "Estimated Monthly Savings"
