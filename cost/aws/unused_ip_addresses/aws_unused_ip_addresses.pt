@@ -125,6 +125,16 @@ end
 # Datasources & Scripts
 ###############################################################################
 
+# Gather applied policy metadata for use later
+datasource "ds_applied_policy" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
+    header "Api-Version", "1.0"
+  end
+end
+
 # Get region-specific Flexera API endpoints
 datasource "ds_flexera_api_hosts" do
   run_script $js_flexera_api_hosts, rs_optima_host
@@ -209,54 +219,6 @@ script "js_aws_account", type:"javascript" do
       tags: {}
     }
   }
-EOS
-end
-
-# Gather applied policy metadata for use later
-datasource "ds_applied_policy" do
-  request do
-    auth $auth_flexera
-    host rs_governance_host
-    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
-    header "Api-Version", "1.0"
-  end
-end
-
-# Gather top level billing center IDs for when we pull cost data
-datasource "ds_billing_centers" do
-  request do
-    auth $auth_flexera
-    host rs_optima_host
-    path join(["/analytics/orgs/", rs_org_id, "/billing_centers"])
-    header "Api-Version", "1.0"
-    header "User-Agent", "RS Policies"
-    query "view", "allocation_table"
-    ignore_status [403]
-  end
-  result do
-    encoding "json"
-    collect jmes_path(response, "[*]") do
-      field "href", jmes_path(col_item, "href")
-      field "id", jmes_path(col_item, "id")
-      field "name", jmes_path(col_item, "name")
-      field "parent_id", jmes_path(col_item, "parent_id")
-    end
-  end
-end
-
-datasource "ds_top_level_bcs" do
-  run_script $js_top_level_bcs, $ds_billing_centers
-end
-
-script "js_top_level_bcs", type: "javascript" do
-  parameters "ds_billing_centers"
-  result "result"
-  code <<-EOS
-  filtered_bcs = _.filter(ds_billing_centers, function(bc) {
-    return bc['parent_id'] == null || bc['parent_id'] == undefined
-  })
-
-  result = _.compact(_.pluck(filtered_bcs, 'id'))
 EOS
 end
 
@@ -785,6 +747,9 @@ policy "policy_unused_ip_addresses" do
       end
       field "service" do
         label "Service"
+      end
+      field "domain" do
+        label "Domain"
       end
       field "lookbackPeriod" do
         label "Look Back Period (Days)"
