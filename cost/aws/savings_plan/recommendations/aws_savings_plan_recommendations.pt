@@ -7,7 +7,7 @@ severity "medium"
 category "Cost"
 default_frequency "daily"
 info(
-  version: "2.17",
+  version: "3.0",
   provider: "AWS",
   service: "",
   policy_set: "Savings Plans",
@@ -18,31 +18,11 @@ info(
 # Parameters
 ##############################################################################
 
-parameter "param_days" do
-  category "Savings Plan"
-  label "Look Back Period"
-  default "Last 7 Days"
-  description "Number of days of prior usage to analyze"
-  allowed_values "Last 7 Days","Last 30 Days","Last 60 Days"
-  type "string"
-end
-
-parameter "param_term" do
-  category "Savings Plan"
-  label "Savings Plan Term"
-  description "Length of Savings Plan term"
-  allowed_values "1 Year","3 Year"
-  default "1 Year"
-  type "string"
-end
-
-parameter "param_payment_option" do
-  category "Savings Plan"
-  label "Payment Option"
-  default "No Upfront"
-  allowed_values "No Upfront","Partial Upfront","All Upfront","Light Utilization","Medium Utilization","Heavy Utilization"
-  type "string"
-  description "Savings Plan purchase option."
+parameter "param_email" do
+  type "list"
+  label "Email addresses to notify"
+  description "Email addresses of the recipients you wish to notify when new incidents are created."
+  default []
 end
 
 parameter "param_aws_account_number" do
@@ -52,50 +32,71 @@ parameter "param_aws_account_number" do
   default ""
 end
 
-parameter "param_scope" do
-  category "Savings Plan"
-  label "Account Scope"
-  description "The account scope that you want your recommendations for"
-  allowed_values "Payer","Linked"
-  default "Payer"
+parameter "param_days" do
   type "string"
+  label "Look Back Period"
+  category "RI"
+  description "Number of days of prior usage to analyze."
+  default "Last 7 Days"
+  allowed_values "Last 7 Days", "Last 30 Days", "Last 60 Days"
+end
+
+parameter "param_term" do
+  type "string"
+  label "Savings Plan Term"
+  category "RI"
+  description "Length of RI term"
+  default "1 Year"
+  allowed_values "1 Year", "3 Year"
+end
+
+parameter "param_payment_option" do
+  type "string"
+  label "Payment Option"
+  category "RI"
+  description "RI purchase option. Default setting of All includes all RI purchase options."
+  default "No Upfront"
+  allowed_values "No Upfront", "Partial Upfront", "All Upfront", "Light Utilization", "Medium Utilization", "Heavy Utilization"
+end
+
+parameter "param_scope" do
+  type "string"
+  label "Account Scope"
+  category "RI"
+  description "The account scope that you want your recommendations for."
+  default "Payer"
+  allowed_values "Payer", "Linked"
 end
 
 parameter "param_savings_plan_type" do
-  category "Savings Plan"
-  label "Savings Plan Type"
-  default "Compute Savings Plan"
-  allowed_values "Compute Savings Plan","EC2 Instance Savings Plan","SageMaker Savings Plans"
   type "string"
+  label "Savings Plan Type"
+  category "Savings Plan"
+  default "Compute Savings Plan"
+  allowed_values "Compute Savings Plan", "EC2 Instance Savings Plan", "SageMaker Savings Plans"
 end
 
-parameter "param_savings_threshold" do
-  category "Savings Plan"
-  label "Monthly Savings Threshold"
+parameter "param_min_savings" do
+  type "number"
+  label "Minimum Savings Threshold"
+  category "RI"
   description "Specify the minimum estimated monthly savings that should result in a recommendation"
   default 100
-  type "number"
-end
-
-parameter "param_email" do
-  type "list"
-  label "Email addresses to notify"
-  description "Email addresses of the recipients you wish to notify"
+  min_value 0
 end
 
 parameter "param_currency_adjustment" do
-  label "Currency Adjustment"
-  description "adjusts recommendation savings based on USD conversion rate where USD is 100%"
-  default 1.00
-  max_value 5.00
   type "number"
+  label "Currency Adjustment"
+  description "Percentage to multiple monetary values by for currency conversion. Default value of 100 will leave the values unmodified."
+  default 100
+  min_value 0
 end
 
 ###############################################################################
 # Authentication
 ###############################################################################
 
-#Authenticate with AWS
 credentials "auth_aws" do
   schemes "aws","aws_sts"
   label "AWS"
@@ -106,7 +107,7 @@ end
 
 credentials "auth_flexera" do
   schemes "oauth2"
-  label "flexera"
+  label "Flexera"
   description "Select FlexeraOne OAuth2 credentials"
   tags "provider=flexera"
 end
@@ -115,7 +116,7 @@ end
 # Pagination
 ###############################################################################
 
-pagination "aws_pagination" do
+pagination "pagination_aws" do
   get_page_marker do
     body_path "NextPageToken"
   end
@@ -125,8 +126,64 @@ pagination "aws_pagination" do
 end
 
 ###############################################################################
-# Datasources
+# Datasources & Scripts
 ###############################################################################
+
+# Get applied policy metadata for use later
+datasource "ds_applied_policy" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
+    header "Api-Version", "1.0"
+  end
+end
+
+# Get region-specific Flexera API endpoints
+datasource "ds_flexera_api_hosts" do
+  run_script $js_flexera_api_hosts, rs_optima_host
+end
+
+script "js_flexera_api_hosts", type: "javascript" do
+  parameters "rs_optima_host"
+  result "result"
+  code <<-EOS
+  host_table = {
+    "api.optima.flexeraeng.com": {
+      flexera: "api.flexera.com",
+      fsm: "api.fsm.flexeraeng.com"
+    },
+    "api.optima-eu.flexeraeng.com": {
+      flexera: "api.flexera.eu",
+      fsm: "api.fsm-eu.flexeraeng.com"
+    },
+    "api.optima-au.flexeraeng.com": {
+      flexera: "api.flexera.au",
+      fsm: "api.fsm-au.flexeraeng.com"
+    }
+  }
+
+  result = host_table[rs_optima_host]
+EOS
+end
+
+# Get AWS account info
+datasource "ds_cloud_vendor_accounts" do
+  request do
+    auth $auth_flexera
+    host val($ds_flexera_api_hosts, 'flexera')
+    path join(["/finops-analytics/v1/orgs/", rs_org_id, "/cloud-vendor-accounts"])
+    header "Api-Version", "1.0"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "values[*]") do
+      field "id", jmes_path(col_item, "aws.accountId")
+      field "name", jmes_path(col_item, "name")
+      field "tags", jmes_path(col_item, "tags")
+    end
+  end
+end
 
 datasource "ds_get_caller_identity" do
   request do
@@ -141,240 +198,210 @@ datasource "ds_get_caller_identity" do
   result do
     encoding "xml"
     collect xpath(response, "//GetCallerIdentityResponse/GetCallerIdentityResult") do
-      field "account",xpath(col_item, "Account")
+      field "account", xpath(col_item, "Account")
     end
   end
 end
 
-datasource "ds_billing_centers" do
+datasource "ds_aws_account" do
+  run_script $js_aws_account, $ds_cloud_vendor_accounts, $ds_get_caller_identity
+end
+
+script "js_aws_account", type:"javascript" do
+  parameters "ds_cloud_vendor_accounts", "ds_get_caller_identity"
+  result "result"
+  code <<-EOS
+  result = _.find(ds_cloud_vendor_accounts, function(account) {
+    return account['id'] == ds_get_caller_identity[0]['account']
+  })
+
+  // This is in case the API does not return the relevant account info
+  if (result == undefined) {
+    result = {
+      id: ds_get_caller_identity[0]['account'],
+      name: "",
+      tags: {}
+    }
+  }
+EOS
+end
+
+datasource "ds_currency_reference" do
   request do
-    auth $auth_flexera
-    host rs_optima_host
-    path join(["/analytics/orgs/", rs_org_id, "/billing_centers"])
-    header "Api-Version", "1.0"
+    host "raw.githubusercontent.com"
+    path "/rightscale/policy_templates/master/cost/scheduled_reports/currency_reference.json"
     header "User-Agent", "RS Policies"
-    query "view", "allocation_table"
-  ignore_status [403]
-  end
-  result do
-    encoding "json"
-    collect jmes_path(response, "[*]") do
-      field "href", jmes_path(col_item, "href")
-      field "id", jmes_path(col_item, "id")
-      field "name", jmes_path(col_item, "name")
-      field "parent_id", jmes_path(col_item, "parent_id")
-    end
-  end
-end
-
-datasource "ds_top_level_billing_centers" do
-  run_script $js_top_level_bc, $ds_billing_centers
-end
-
-datasource "ds_account_name" do
-  request do
-    run_script $js_get_account_name, $ds_get_caller_identity, $ds_top_level_billing_centers, rs_org_id, rs_optima_host
-  end
-  result do
-    encoding "json"
-    collect jmes_path(response, "rows[*]") do
-      field "vendorAccountName", jmes_path(col_item, "dimensions.vendor_account_name")
-    end
   end
 end
 
 datasource "ds_sp_recommendations" do
   request do
-    run_script $js_sp_request, $param_days, $param_payment_option, $param_term, $param_savings_plan_type, $param_scope
+    run_script $js_sp_recommendations, $param_days, $param_payment_option, $param_term, $param_savings_plan_type, $param_scope
   end
   result do
     encoding "json"
     collect jmes_path(response, "SavingsPlansPurchaseRecommendation.SavingsPlansPurchaseRecommendationDetails[*]") do
-      field "accountID", jmes_path(col_item,"AccountId")
-      field "currencyCode", jmes_path(col_item,"CurrencyCode")
-      field "currentAverageHourlyOnDemandSpend", jmes_path(col_item,"CurrentAverageHourlyOnDemandSpend")
-      field "currentMaximumHourlyOnDemandSpend", jmes_path(col_item,"CurrentMaximumHourlyOnDemandSpend")
-      field "currentMinimumHourlyOnDemandSpend", jmes_path(col_item,"CurrentMinimumHourlyOnDemandSpend")
-      field "estimatedAverageUtilization", jmes_path(col_item,"EstimatedAverageUtilization")
-      field "estimatedMonthlySavingsAmount", jmes_path(col_item,"EstimatedMonthlySavingsAmount")
-      field "estimatedOnDemandCost", jmes_path(col_item,"EstimatedOnDemandCost")
-      field "estimatedROI", jmes_path(col_item,"EstimatedROI")
-      field "estimatedSavingsAmount", jmes_path(col_item,"EstimatedSavingsAmount")
-      field "estimatedSavingsPercentage", jmes_path(col_item,"EstimatedSavingsPercentage")
-      field "estimatedSavingsPlanCost", jmes_path(col_item,"EstimatedSPCost")
-      field "hourlyCommitmentToPurchase", jmes_path(col_item,"HourlyCommitmentToPurchase")
-      field "instanceFamily", jmes_path(col_item,"SavingsPlansDetails.InstanceFamily")
-      field "offeringId", jmes_path(col_item,"SavingsPlansDetails.OfferingId")
-      field "region", jmes_path(col_item,"SavingsPlansDetails.Region")
-      field "upfrontCost", jmes_path(col_item,"UpfrontCost")
+      field "accountID", jmes_path(col_item, "AccountId")
+      field "currencyCode", jmes_path(col_item, "CurrencyCode")
+      field "currentAverageHourlyOnDemandSpend", jmes_path(col_item, "CurrentAverageHourlyOnDemandSpend")
+      field "currentMaximumHourlyOnDemandSpend", jmes_path(col_item, "CurrentMaximumHourlyOnDemandSpend")
+      field "currentMinimumHourlyOnDemandSpend", jmes_path(col_item, "CurrentMinimumHourlyOnDemandSpend")
+      field "estimatedAverageUtilization", jmes_path(col_item, "EstimatedAverageUtilization")
+      field "estimatedMonthlySavingsAmount", jmes_path(col_item, "EstimatedMonthlySavingsAmount")
+      field "estimatedOnDemandCost", jmes_path(col_item, "EstimatedOnDemandCost")
+      field "estimatedROI", jmes_path(col_item, "EstimatedROI")
+      field "estimatedSavingsAmount", jmes_path(col_item, "EstimatedSavingsAmount")
+      field "estimatedSavingsPercentage", jmes_path(col_item, "EstimatedSavingsPercentage")
+      field "estimatedSavingsPlanCost", jmes_path(col_item, "EstimatedSPCost")
+      field "hourlyCommitmentToPurchase", jmes_path(col_item, "HourlyCommitmentToPurchase")
+      field "instanceFamily", jmes_path(col_item, "SavingsPlansDetails.InstanceFamily")
+      field "offeringId", jmes_path(col_item, "SavingsPlansDetails.OfferingId")
+      field "region", jmes_path(col_item, "SavingsPlansDetails.Region")
+      field "upfrontCost", jmes_path(col_item, "UpfrontCost")
     end
   end
 end
 
-datasource "ds_sp_normalization" do
-  run_script $js_sp_cleanup, $ds_sp_recommendations, $param_currency_adjustment, $ds_account_name, $param_term, $param_payment_option, $param_savings_plan_type, $param_days
-end
-
-###############################################################################
-# Scripts
-###############################################################################
-script "js_get_account_name", type: "javascript" do
-  parameters "account_id", "billing_centers", "org", "optima_host"
+script "js_sp_recommendations", type: "javascript" do
+  parameters "param_days", "param_payment_option", "param_term", "param_savings_plan_type", "param_scope"
   result "request"
   code <<-EOS
-    // returns date formatted as string: YYYY-mm-dd
-    function getFormattedDailyDate(date) {
-      var year = date.getFullYear();
-      var month = (1 + date.getMonth()).toString();
-      month = month.length > 1 ? month : '0' + month;
-      var day = date.getDate().toString();
-      day = day.length > 1 ? day : '0' + day;
-      return year + '-' + month + '-' + day;
-    }
-    var start_date = getFormattedDailyDate(new Date(new Date().setDate(new Date().getDate() - 3)));
-    var end_date = getFormattedDailyDate(new Date(new Date().setDate(new Date().getDate() - 2)));
-    var request = {
-      auth: "auth_flexera",
-      host: optima_host,
-      verb: "POST",
-      path: "/bill-analysis/orgs/" + org + "/costs/select",
-      body_fields: {
-        "dimensions": ["vendor_account_name"],
-        "granularity": "day",
-        "start_at": start_date,
-        "end_at": end_date,
-        "metrics": ["cost_nonamortized_unblended_adj"],
-        "billing_center_ids": _.compact(_.map(billing_centers, function(value){ return value.id})),
-        "limit": 1,
-        "filter": {
-          "dimension": "vendor_account",
-          "type": "equal",
-          "value": account_id[0]["account"]
-        }
-      },
-      headers: {
-        "User-Agent": "RS Policies",
-        "Api-Version": "1.0"
-      },
-      ignore_status: [400]
-    }
-  EOS
-end
+  // Tables to convert human-readable parameter values to their API equivalents
+  period_table = {
+    "Last 7 Days": "SEVEN_DAYS",
+    "Last 30 Days": "THIRTY_DAYS",
+    "Last 60 Days": "SIXTY_DAYS"
+  }
 
-script "js_top_level_bc", type: "javascript" do
-  parameters "billing_centers"
-  result "filtered_billing_centers"
-  code <<-EOS
-    var filtered_billing_centers =_.reject(billing_centers, function(bc){ return bc.parent_id != null });
-  EOS
-end
+  term_table = {
+    "1 Year": "ONE_YEAR",
+    "3 Year": "THREE_YEARS"
+  }
 
-script "js_sp_cleanup", type: "javascript" do
-  parameters "sp_recos", "currency_adjustment", "ds_account_name", "param_term", "param_payment_option", "param_savings_plan_type", "param_days"
-  result "result"
-  code <<-EOS
-    var result = [];
-    accountName = ""
-    if (ds_account_name[0] != null) {
-      accountName = ds_account_name[0]['vendorAccountName']
+  plan_table = {
+    "Compute Savings Plan": "COMPUTE_SP",
+    "EC2 Instance Savings Plan": "EC2_INSTANCE_SP",
+    "SageMaker Savings Plans": "SAGEMAKER_SP"
+  }
+
+  // Build out the body of the request based on parameters
+  body_fields = {
+    AccountScope: param_scope.toUpperCase(),
+    LookbackPeriodInDays: period_table[param_days],
+    PaymentOption: param_payment_option.replace(' ', '_').toUpperCase()
+    SavingsPlansType: plan[param_savings_plan_type],
+    TermInYears: term_table[param_term]
+  }
+
+  var request = {
+    auth: "auth_aws",
+    pagination: "pagination_aws",
+    host: "ce.us-east-1.amazonaws.com",
+    path: "/",
+    verb: "POST",
+    body_fields: body_fields,
+    headers: {
+      "User-Agent": "RS Policies",
+      "X-Amz-Target": "AWSInsightsIndexService.GetSavingsPlansPurchaseRecommendation",
+      "Content-Type": "application/x-amz-json-1.1",
     }
-    _.each(sp_recos, function(reco){
-      var resourceType = reco["instanceFamily"]
-      if (resourceType == "" || resourceType == null) {
-        resourceType = param_savings_plan_type
-      }
-      result.push({
-        accountID: reco["accountID"],
-        accountName: accountName,
-        currencyCode: reco["currencyCode"],
-        currentAverageHourlyOnDemandSpend: (Math.round(reco["currentAverageHourlyOnDemandSpend"] * 100) / 100).toString(10),
-        currentMaximumHourlyOnDemandSpend: (Math.round(reco["currentMaximumHourlyOnDemandSpend"] * 100) / 100).toString(10),
-        currentMinimumHourlyOnDemandSpend: (Math.round(reco["currentMinimumHourlyOnDemandSpend"] * 100) / 100).toString(10),
-        estimatedAverageUtilization: (Math.round(reco["estimatedAverageUtilization"] * 100) / 100).toString(10),
-        estimatedMonthlySavingsAmount: (Math.round(reco["estimatedMonthlySavingsAmount"] * 100) / 100 * currency_adjustment).toString(10),
-        estimatedOnDemandCost: (Math.round(reco["estimatedOnDemandCost"] * 100) / 100).toString(10),
-        estimatedROI: (Math.round(reco["estimatedROI"] * 100) / 100).toString(10),
-        estimatedSavingsAmount: (Math.round(reco["estimatedSavingsAmount"] * 100) / 100).toString(10),
-        estimatedSavingsPercentage: (Math.round(reco["estimatedSavingsPercentage"] * 100) / 100).toString(10),
-        estimatedSavingsPlanCost: (Math.round(reco["estimatedSavingsPlanCost"] * 100) / 100).toString(10),
-        hourlyCommitmentToPurchase: (Math.round(reco["hourlyCommitmentToPurchase"] * 100) / 100).toString(10),
-        instanceFamily: reco["instanceFamily"],
-        offeringId: reco["offeringId"],
-        region: reco["region"],
-        upfrontCost: (Math.round(reco["upfrontCost"] * 100) / 100).toString(10),
-        estimatedMonthlySavingsAmountWithCurrencyCode : (Math.round(reco["estimatedMonthlySavingsAmount"] * 100) / 100).toString(10) + " " + reco["currencyCode"],
-        estimatedSavingsPlanCostWithCurrencyCode : (Math.round(reco["estimatedSavingsPlanCost"] * 100) / 100).toString(10) + " " + reco["currencyCode"],
-        hourlyCommitmentToPurchaseWithCurrencyCode : (Math.round(reco["hourlyCommitmentToPurchase"] * 100) / 100).toString(10) + " " + reco["currencyCode"],
-        upfrontCostWithCurrencyCode : (Math.round(reco["upfrontCost"] * 100) / 100).toString(10) + " " + reco["currencyCode"],
-        currentAverageHourlyOnDemandSpendWithCurrencyCode : (Math.round(reco["currentAverageHourlyOnDemandSpend"] * 100) / 100).toString(10) + " " + reco["currencyCode"],
-        currentMaximumHourlyOnDemandSpendWithCurrencyCode : (Math.round(reco["currentMaximumHourlyOnDemandSpend"] * 100) / 100).toString(10) + " " + reco["currencyCode"],
-        currentMinimumHourlyOnDemandSpendWithCurrencyCode : (Math.round(reco["currentMinimumHourlyOnDemandSpend"] * 100) / 100).toString(10) + " " + reco["currencyCode"],
-        term: param_term,
-        paymentOption: param_payment_option,
-        resourceType: resourceType,
-        lookbackPeriod: param_days
-      })
-    })
+  }
 EOS
 end
 
+datasource "ds_sp_normalization" do
+  run_script $js_sp_normalization, $ds_sp_recommendations, $param_currency_adjustment, $ds_aws_account, $ds_currency_reference, $param_term, $param_payment_option, $param_savings_plan_type, $param_days
+end
 
-script "js_sp_request", type: "javascript" do
-  parameters "param_days","param_payment_option","param_term","param_savings_plan_type", "param_scope"
-  result "request"
+script "js_sp_normalization", type: "javascript" do
+  parameters "ds_sp_recommendations", "param_currency_adjustment", "ds_aws_account", "ds_currency_reference", "param_term", "param_payment_option", "param_savings_plan_type", "param_days"
+  result "result"
   code <<-EOS
+  // Used for formatting numbers to look pretty
+  function formatNumber(number, separator){
+    numString = number.toString()
+    values = numString.split(".")
+    formatted_number = ''
 
-    var period = {
-      "Last 7 Days":"SEVEN_DAYS",
-      "Last 30 Days":"THIRTY_DAYS",
-      "Last 60 Days":"SIXTY_DAYS"
+    while (values[0].length > 3) {
+      var chunk = values[0].substr(-3)
+      values[0] = values[0].substr(0, values[0].length - 3)
+      formatted_number = separator + chunk + formatted_number
     }
 
-    var term = {
-      "1 Year":"ONE_YEAR",
-      "3 Year":"THREE_YEARS"
+    if (values[0].length > 0) { formatted_number = values[0] + formatted_number }
+    if (values[1] == undefined) { return formatted_number }
+
+    return formatted_number + "." + values[1]
+  }
+
+  result = []
+  total_savings = 0.0
+
+  _.each(ds_sp_recommendations, function(reco) {
+    var resourceType = reco["instanceFamily"]
+
+    if (resourceType == "" || resourceType == null) {
+      resourceType = param_savings_plan_type
     }
 
-    var scope = {
-      "Payer":"PAYER",
-      "Linked":"LINKED"
-    }
+    currentAverageHourlyOnDemandSpend = Math.round(reco["currentAverageHourlyOnDemandSpend"] * 100) / 100
+    currentMaximumHourlyOnDemandSpend = Math.round(reco["currentMaximumHourlyOnDemandSpend"] * 100) / 100
+    currentMinimumHourlyOnDemandSpend = Math.round(reco["currentMinimumHourlyOnDemandSpend"] * 100) / 100
+    estimatedAverageUtilization = Math.round(reco["estimatedAverageUtilization"] * 100) / 100
+    estimatedMonthlySavingsAmount = Math.round(reco["estimatedMonthlySavingsAmount"] * 100) / 100 * currency_adjustment
+    estimatedOnDemandCost = Math.round(reco["estimatedOnDemandCost"] * 100) / 100
+    estimatedROI = Math.round(reco["estimatedROI"] * 100) / 100
+    estimatedSavingsAmount = Math.round(reco["estimatedSavingsAmount"] * 100) / 100
+    estimatedSavingsPercentage = Math.round(reco["estimatedSavingsPercentage"] * 100) / 100
+    estimatedSavingsPlanCost = Math.round(reco["estimatedSavingsPlanCost"] * 100) / 100
+    hourlyCommitmentToPurchase = Math.round(reco["hourlyCommitmentToPurchase"] * 100) / 100
+    upfrontCost = Math.round(reco["upfrontCost"] * 100) / 100
+    estimatedMonthlySavingsAmountWithCurrencyCode = Math.round(reco["estimatedMonthlySavingsAmount"] * 100) / 100
+    estimatedSavingsPlanCostWithCurrencyCode = Math.round(reco["estimatedSavingsPlanCost"] * 100) / 100
+    hourlyCommitmentToPurchaseWithCurrencyCode = Math.round(reco["hourlyCommitmentToPurchase"] * 100) / 100
+    upfrontCostWithCurrencyCode = Math.round(reco["upfrontCost"] * 100) / 100
+    currentAverageHourlyOnDemandSpendWithCurrencyCode = Math.round(reco["currentAverageHourlyOnDemandSpend"] * 100) / 100
+    currentMaximumHourlyOnDemandSpendWithCurrencyCode = Math.round(reco["currentMaximumHourlyOnDemandSpend"] * 100) / 100
+    currentMinimumHourlyOnDemandSpendWithCurrencyCode = Math.round(reco["currentMinimumHourlyOnDemandSpend"] * 100) / 100
 
-    var option = {
-      "No Upfront":"NO_UPFRONT",
-      "Partial Upfront":"PARTIAL_UPFRONT",
-      "All Upfront":"ALL_UPFRONT",
-      "Light Utilization":"LIGHT_UTILIZATION",
-      "Medium Utilization":"MEDIUM_UTILIZATION",
-      "Heavy Utilization":"HEAVY_UTILIZATION"
-    }
+    currencyCode = reco["currencyCode"]
+    savingsCurrency = ds_currency_reference[currencyCode]['symbol']
 
-    var plan = {
-      "Compute Savings Plan":"COMPUTE_SP",
-      "EC2 Instance Savings Plan":"EC2_INSTANCE_SP",
-      "SageMaker Savings Plans":"SAGEMAKER_SP"
-    }
-
-    var payload = {}
-    payload['LookbackPeriodInDays'] = period[param_days]
-    payload['AccountScope'] = scope[param_scope]
-    payload['PaymentOption'] = option[param_payment_option]
-    payload['TermInYears'] = term[param_term]
-    payload['SavingsPlansType'] = plan[param_savings_plan_type]
-    var request = {
-      auth: "auth_aws",
-      pagination: "aws_pagination",
-      host: "ce.us-east-1.amazonaws.com",
-      path: '/',
-      verb: 'POST',
-      body_fields: payload,
-      headers: {
-        "User-Agent": "RS Policies",
-        "X-Amz-Target": "AWSInsightsIndexService.GetSavingsPlansPurchaseRecommendation",
-        "Content-Type": "application/x-amz-json-1.1",
-      }
-    }
-  EOS
+    result.push({
+      accountID: reco["accountID"],
+      accountName: ds_aws_account['name'],
+      currencyCode: currencyCode,
+      savingsCurrency: savingsCurrency,
+      currentAverageHourlyOnDemandSpend: currentAverageHourlyOnDemandSpend,
+      currentMaximumHourlyOnDemandSpend: currentMaximumHourlyOnDemandSpend,
+      currentMinimumHourlyOnDemandSpend: currentMinimumHourlyOnDemandSpend,
+      estimatedAverageUtilization: estimatedAverageUtilization,
+      estimatedMonthlySavingsAmount: estimatedMonthlySavingsAmount,
+      estimatedOnDemandCost: estimatedOnDemandCost,
+      estimatedROI: estimatedROI,
+      estimatedSavingsAmount: estimatedSavingsAmount,
+      estimatedSavingsPercentage: estimatedSavingsPercentage,
+      estimatedSavingsPlanCost: estimatedSavingsPlanCost,
+      hourlyCommitmentToPurchase: hourlyCommitmentToPurchase,
+      instanceFamily: reco["instanceFamily"],
+      offeringId: reco["offeringId"],
+      region: reco["region"],
+      upfrontCost: upfrontCost,
+      estimatedMonthlySavingsAmountWithCurrencyCode: estimatedMonthlySavingsAmountWithCurrencyCode,
+      estimatedSavingsPlanCostWithCurrencyCode: estimatedSavingsPlanCostWithCurrencyCode,
+      hourlyCommitmentToPurchaseWithCurrencyCode: hourlyCommitmentToPurchaseWithCurrencyCode,
+      upfrontCostWithCurrencyCode: upfrontCostWithCurrencyCode,
+      currentAverageHourlyOnDemandSpendWithCurrencyCode: currentAverageHourlyOnDemandSpendWithCurrencyCode,
+      currentMaximumHourlyOnDemandSpendWithCurrencyCode: currentMaximumHourlyOnDemandSpendWithCurrencyCode,
+      currentMinimumHourlyOnDemandSpendWithCurrencyCode: currentMinimumHourlyOnDemandSpendWithCurrencyCode,
+      term: param_term,
+      paymentOption: param_payment_option,
+      resourceType: resourceType,
+      lookbackPeriod: param_days
+    })
+  })
+EOS
 end
 
 ###############################################################################
@@ -386,7 +413,7 @@ policy "aws_sp_recommendations" do
     summary_template "AWS Savings Plan Purchase Recommendations"
     hash_include 'estimatedMonthlySavingsAmount'
     escalate $email
-    check lt(to_n(val(item,"estimatedMonthlySavingsAmount")),$param_savings_threshold)
+    check lt(to_n(val(item,"estimatedMonthlySavingsAmount")),$param_min_savings)
     # AWS Savings Plan Purchase Recommendations
 
     ### Savings Plan Term: {{parameters.param_term}}
