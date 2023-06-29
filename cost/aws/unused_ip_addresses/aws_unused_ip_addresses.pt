@@ -215,24 +215,11 @@ script "js_currency", type:"javascript" do
   parameters "ds_currency_reference", "ds_currency_code"
   result "result"
   code <<-EOS
-  symbol = "$"
-  separator = ","
+  // Default to USD if currency is not found
+  result = ds_currency_reference['USD']
 
-  if (ds_currency_code['value'] != undefined) {
-    if (ds_currency_reference[ds_currency_code['value']] != undefined) {
-      symbol = ds_currency_reference[ds_currency_code['value']]['symbol']
-
-      if (ds_currency_reference[ds_currency_code['value']]['t_separator'] != undefined) {
-        separator = ds_currency_reference[ds_currency_code['value']]['t_separator']
-      } else {
-        separator = ""
-      }
-    }
-  }
-
-  result = {
-    symbol: symbol,
-    separator: separator
+  if (ds_currency_code['value'] != undefined && ds_currency_reference[ds_currency_code['value']] != undefined) {
+    result = ds_currency_reference[ds_currency_code['value']]
   }
 EOS
 end
@@ -637,11 +624,10 @@ script "js_ip_cost_mapping", type:"javascript" do
   }
 
   result = []
-
   total_savings = 0.0
 
   _.each(ds_unused_ips, function(ip) {
-    ip_cost = ds_ip_address_prices_grouped[ip['region'].toLowerCase()]
+    ip_cost = ds_ip_address_prices_grouped[ip['region'].toLowerCase()] * 24 * 365.25 / 12
 
     if (typeof(ip_cost) != 'number') {
       ip_cost = 0.0
@@ -692,7 +678,7 @@ script "js_ip_cost_mapping", type:"javascript" do
   })
 
   // Message for incident output
-  savings_disclaimer = "Savings are estimated based on list price and may not reflect credits or discounts. "
+  savings_disclaimer = "Savings are estimated based on USD list price and may not reflect credits or discounts. "
   age_disclaimer = "The Days Unattached field will be empty for any IP addresses that have been unattached for over 90 days due to CloudTrail only retaining 90 days of log data."
 
   total_ips = ds_ip_addresses_filtered.length.toString()
@@ -730,7 +716,7 @@ script "js_ip_cost_mapping", type:"javascript" do
 
   savings_message = [
     ds_currency['symbol'], ' ',
-    formatNumber(parseFloat(total_savings).toFixed(2), ds_currency['separator'])
+    formatNumber(parseFloat(total_savings).toFixed(2), ds_currency['t_separator'])
   ].join('')
 
   // Sort by descending order of savings value
