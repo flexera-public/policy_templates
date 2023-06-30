@@ -21,6 +21,7 @@ info(
 parameter "param_email" do
   type "list"
   label "Email addresses to notify"
+  category "Policy Settings"
   description "Email addresses of the recipients you wish to notify when new incidents are created."
   default []
 end
@@ -28,6 +29,7 @@ end
 parameter "param_aws_account_number" do
   type "string"
   label "Account Number"
+  category "Policy Settings"
   description "The account number for AWS STS Cross Account Roles."
   default ""
 end
@@ -35,7 +37,7 @@ end
 parameter "param_days" do
   type "string"
   label "Look Back Period"
-  category "RI"
+  category "Filters"
   description "Number of days of prior usage to analyze."
   default "Last 7 Days"
   allowed_values "Last 7 Days", "Last 30 Days", "Last 60 Days"
@@ -44,7 +46,7 @@ end
 parameter "param_term" do
   type "string"
   label "Savings Plan Term"
-  category "RI"
+  category "Filters"
   description "Length of RI term"
   default "1 Year"
   allowed_values "1 Year", "3 Year"
@@ -53,8 +55,8 @@ end
 parameter "param_payment_option" do
   type "string"
   label "Payment Option"
-  category "RI"
-  description "RI purchase option. Default setting of All includes all RI purchase options."
+  category "Filters"
+  description "RI purchase option."
   default "No Upfront"
   allowed_values "No Upfront", "Partial Upfront", "All Upfront", "Light Utilization", "Medium Utilization", "Heavy Utilization"
 end
@@ -62,7 +64,7 @@ end
 parameter "param_scope" do
   type "string"
   label "Account Scope"
-  category "RI"
+  category "Filters"
   description "The account scope that you want your recommendations for."
   default "Payer"
   allowed_values "Payer", "Linked"
@@ -71,7 +73,7 @@ end
 parameter "param_savings_plan_type" do
   type "string"
   label "Savings Plan Type"
-  category "Savings Plan"
+  category "Filters"
   default "Compute Savings Plan"
   allowed_values "Compute Savings Plan", "EC2 Instance Savings Plan", "SageMaker Savings Plans"
 end
@@ -79,7 +81,7 @@ end
 parameter "param_min_savings" do
   type "number"
   label "Minimum Savings Threshold"
-  category "RI"
+  category "Filters"
   description "Specify the minimum estimated monthly savings that should result in a recommendation"
   default 100
   min_value 0
@@ -88,9 +90,19 @@ end
 parameter "param_currency_adjustment" do
   type "number"
   label "Currency Adjustment"
+  category "Currency"
   description "Percentage to multiple monetary values by for currency conversion. Default value of 100 will leave the values unmodified."
   default 100
   min_value 0
+end
+
+parameter "param_currency_code" do
+  type "string"
+  label "Currency Code"
+  category "Filters"
+  description "Currency code for currency you are converting to. Leave blank if not doing any conversion. Example: USD"
+  default ""
+  allowed_pattern /^([A-Z]{3})?$/
 end
 
 ###############################################################################
@@ -310,11 +322,11 @@ EOS
 end
 
 datasource "ds_sp_normalization" do
-  run_script $js_sp_normalization, $ds_sp_recommendations, $param_currency_adjustment, $ds_aws_account, $ds_currency_reference, $param_term, $param_payment_option, $param_savings_plan_type, $param_days
+  run_script $js_sp_normalization, $ds_sp_recommendations, $ds_aws_account, $ds_currency_reference, $param_currency_adjustment, $param_currency_code, $param_term, $param_payment_option, $param_savings_plan_type, $param_days
 end
 
 script "js_sp_normalization", type: "javascript" do
-  parameters "ds_sp_recommendations", "param_currency_adjustment", "ds_aws_account", "ds_currency_reference", "param_term", "param_payment_option", "param_savings_plan_type", "param_days"
+  parameters "ds_sp_recommendations", "ds_aws_account", "ds_currency_reference", "param_currency_adjustment", "param_currency_code", "param_term", "param_payment_option", "param_savings_plan_type", "param_days"
   result "result"
   code <<-EOS
   // Used for formatting numbers to look pretty
@@ -345,27 +357,22 @@ script "js_sp_normalization", type: "javascript" do
       resourceType = param_savings_plan_type
     }
 
-    currentAverageHourlyOnDemandSpend = Math.round(reco["currentAverageHourlyOnDemandSpend"] * 100) / 100
-    currentMaximumHourlyOnDemandSpend = Math.round(reco["currentMaximumHourlyOnDemandSpend"] * 100) / 100
-    currentMinimumHourlyOnDemandSpend = Math.round(reco["currentMinimumHourlyOnDemandSpend"] * 100) / 100
+    currentAverageHourlyOnDemandSpend = Math.round(reco["currentAverageHourlyOnDemandSpend"] * param_currency_adjustment) / 100
+    currentMaximumHourlyOnDemandSpend = Math.round(reco["currentMaximumHourlyOnDemandSpend"] * param_currency_adjustment) / 100
+    currentMinimumHourlyOnDemandSpend = Math.round(reco["currentMinimumHourlyOnDemandSpend"] * param_currency_adjustment) / 100
     estimatedAverageUtilization = Math.round(reco["estimatedAverageUtilization"] * 100) / 100
-    estimatedMonthlySavingsAmount = Math.round(reco["estimatedMonthlySavingsAmount"] * 100) / 100 * currency_adjustment
-    estimatedOnDemandCost = Math.round(reco["estimatedOnDemandCost"] * 100) / 100
+    estimatedMonthlySavingsAmount = Math.round(reco["estimatedMonthlySavingsAmount"] * param_currency_adjustment) / 100
+    estimatedOnDemandCost = Math.round(reco["estimatedOnDemandCost"] * param_currency_adjustment) / 100
     estimatedROI = Math.round(reco["estimatedROI"] * 100) / 100
-    estimatedSavingsAmount = Math.round(reco["estimatedSavingsAmount"] * 100) / 100
+    estimatedSavingsAmount = Math.round(reco["estimatedSavingsAmount"] * param_currency_adjustment) / 100
     estimatedSavingsPercentage = Math.round(reco["estimatedSavingsPercentage"] * 100) / 100
-    estimatedSavingsPlanCost = Math.round(reco["estimatedSavingsPlanCost"] * 100) / 100
+    estimatedSavingsPlanCost = Math.round(reco["estimatedSavingsPlanCost"] * param_currency_adjustment) / 100
     hourlyCommitmentToPurchase = Math.round(reco["hourlyCommitmentToPurchase"] * 100) / 100
     upfrontCost = Math.round(reco["upfrontCost"] * 100) / 100
-    estimatedMonthlySavingsAmountWithCurrencyCode = Math.round(reco["estimatedMonthlySavingsAmount"] * 100) / 100
-    estimatedSavingsPlanCostWithCurrencyCode = Math.round(reco["estimatedSavingsPlanCost"] * 100) / 100
-    hourlyCommitmentToPurchaseWithCurrencyCode = Math.round(reco["hourlyCommitmentToPurchase"] * 100) / 100
-    upfrontCostWithCurrencyCode = Math.round(reco["upfrontCost"] * 100) / 100
-    currentAverageHourlyOnDemandSpendWithCurrencyCode = Math.round(reco["currentAverageHourlyOnDemandSpend"] * 100) / 100
-    currentMaximumHourlyOnDemandSpendWithCurrencyCode = Math.round(reco["currentMaximumHourlyOnDemandSpend"] * 100) / 100
-    currentMinimumHourlyOnDemandSpendWithCurrencyCode = Math.round(reco["currentMinimumHourlyOnDemandSpend"] * 100) / 100
 
     currencyCode = reco["currencyCode"]
+    if (param_currency_code != "") { currencyCode = param_currency_code }
+
     savingsCurrency = ds_currency_reference[currencyCode]['symbol']
 
     result.push({
@@ -388,13 +395,6 @@ script "js_sp_normalization", type: "javascript" do
       offeringId: reco["offeringId"],
       region: reco["region"],
       upfrontCost: upfrontCost,
-      estimatedMonthlySavingsAmountWithCurrencyCode: estimatedMonthlySavingsAmountWithCurrencyCode,
-      estimatedSavingsPlanCostWithCurrencyCode: estimatedSavingsPlanCostWithCurrencyCode,
-      hourlyCommitmentToPurchaseWithCurrencyCode: hourlyCommitmentToPurchaseWithCurrencyCode,
-      upfrontCostWithCurrencyCode: upfrontCostWithCurrencyCode,
-      currentAverageHourlyOnDemandSpendWithCurrencyCode: currentAverageHourlyOnDemandSpendWithCurrencyCode,
-      currentMaximumHourlyOnDemandSpendWithCurrencyCode: currentMaximumHourlyOnDemandSpendWithCurrencyCode,
-      currentMinimumHourlyOnDemandSpendWithCurrencyCode: currentMinimumHourlyOnDemandSpendWithCurrencyCode,
       term: param_term,
       paymentOption: param_payment_option,
       resourceType: resourceType,
@@ -411,15 +411,9 @@ end
 policy "aws_sp_recommendations" do
   validate_each $ds_sp_normalization do
     summary_template "AWS Savings Plan Purchase Recommendations"
+    escalate $esc_email
+    check lt(to_n(val(item,"estimatedMonthlySavingsAmount")), $param_min_savings)
     hash_include 'estimatedMonthlySavingsAmount'
-    escalate $email
-    check lt(to_n(val(item,"estimatedMonthlySavingsAmount")),$param_min_savings)
-    # AWS Savings Plan Purchase Recommendations
-
-    ### Savings Plan Term: {{parameters.param_term}}
-    ### Savings Plan Type: {{parameters.param_savings_plan_type}}
-    ### Savings Plan Purchase Option: {{parameters.param_payment_option}}
-    ### Lookback Period: {{parameters.param_days}}
     export do
       resource_level true
       field "accountID" do
@@ -431,32 +425,32 @@ policy "aws_sp_recommendations" do
       field "region" do
         label "Region"
       end
-      field "estimatedMonthlySavingsAmountWithCurrencyCode" do
+      field "estimatedMonthlySavingsAmount" do
         label "Estimated Monthly Savings"
       end
       field "estimatedSavingsPercentage" do
         label "Estimated Savings Percentage"
       end
-      field "estimatedSavingsPlanCostWithCurrencyCode" do
+      field "estimatedSavingsPlanCost" do
         label "Estimated Savings Plan Cost"
       end
       field "recommendedQuantity" do
         label "Quantity to Purchase"
-        path "hourlyCommitmentToPurchaseWithCurrencyCode"
+        path "hourlyCommitmentToPurchase"
       end
-      field "upfrontCostWithCurrencyCode" do
+      field "upfrontCost" do
         label "Upfront Cost"
       end
       field "instanceFamily" do
         label "Instance Family"
       end
-      field "currentAverageHourlyOnDemandSpendWithCurrencyCode" do
+      field "currentAverageHourlyOnDemandSpend" do
         label "Current Avg Hourly OnDemand Spend"
       end
-      field "currentMaximumHourlyOnDemandSpendWithCurrencyCode" do
+      field "currentMaximumHourlyOnDemandSpend" do
         label "Current Max Hourly OnDemand Spend"
       end
-      field "currentMinimumHourlyOnDemandSpendWithCurrencyCode" do
+      field "currentMinimumHourlyOnDemandSpend" do
         label "Current Min Hourly OnDemand Spend"
       end
       field "offeringId" do
@@ -490,7 +484,7 @@ end
 # Escalations
 ###############################################################################
 
-escalation "email" do
+escalation "esc_email" do
   automatic true
   label "Send Email"
   description "Send incident email"
