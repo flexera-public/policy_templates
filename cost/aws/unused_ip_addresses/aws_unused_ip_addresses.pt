@@ -168,7 +168,8 @@ datasource "ds_cloud_vendor_accounts" do
   request do
     auth $auth_flexera
     host val($ds_flexera_api_hosts, 'flexera')
-    path join(["/finops-analytics/v1/orgs/", rs_org_id, "/cloud-vendor-accounts"])
+    # path join(["/finops-analytics/v1/orgs/", rs_org_id, "/cloud-vendor-accounts"])
+    path join(["/optima-analytics/v1/orgs/", rs_org_id, "/cloud-vendor-accounts"])
     header "Api-Version", "1.0"
   end
   result do
@@ -247,11 +248,11 @@ datasource "ds_currency_code" do
   end
 end
 
-datasource "ds_currency" do
-  run_script $js_currency, $ds_currency_reference, $ds_currency_code
+datasource "ds_currency_target" do
+  run_script $js_currency_target, $ds_currency_reference, $ds_currency_code
 end
 
-script "js_currency", type:"javascript" do
+script "js_currency_target", type:"javascript" do
   parameters "ds_currency_reference", "ds_currency_code"
   result "result"
   code <<-EOS
@@ -260,6 +261,47 @@ script "js_currency", type:"javascript" do
 
   if (ds_currency_code['value'] != undefined && ds_currency_reference[ds_currency_code['value']] != undefined) {
     result = ds_currency_reference[ds_currency_code['value']]
+  }
+EOS
+end
+
+datasource "ds_currency_conversion" do
+  request do
+    host "mxqin6gh2j.execute-api.us-west-2.amazonaws.com"
+    path "/test/{proxy+}"
+    query "from", "USD"
+    query "to", val($ds_currency_target, 'code')
+    query "amount", "1"
+  end
+  result do
+    encoding "json"
+    field "from", jmes_path(response, "from")
+    field "to", jmes_path(response, "to")
+    field "amount", jmes_path(response, "amount")
+    field "year", jmes_path(response, "year")
+  end
+end
+
+datasource "ds_currency" do
+  run_script $js_currency, $ds_currency_target, $ds_currency_conversion
+end
+
+script "js_currency", type:"javascript" do
+  parameters "ds_currency_target", "ds_currency_conversion"
+  result "result"
+  code <<-EOS
+  result = ds_currency_target
+  result['exchange_rate'] = 1
+
+  currency_code = ds_currency_target['code']
+  current_month = parseInt(new Date().toISOString().split('-')[1])
+
+  conversion_block = _.find(ds_currency_conversion['to'][currency_code], function(item) {
+    return item['month'] == current_month
+  })
+
+  if (conversion_block != undefined) {
+    result['exchange_rate'] = conversion_block['monthlyAverage']
   }
 EOS
 end
@@ -576,7 +618,7 @@ script "js_ip_cost_mapping", type:"javascript" do
   total_savings = 0.0
 
   _.each(ds_unused_ips, function(ip) {
-    ip_cost = ds_ip_address_prices_grouped[ip['region'].toLowerCase()] * 24 * 365.25 / 12
+    ip_cost = ds_ip_address_prices_grouped[ip['region'].toLowerCase()] * 24 * 365.25 / 12 * ds_currency['exchange_rate']
 
     if (typeof(ip_cost) != 'number') {
       ip_cost = 0.0
@@ -626,7 +668,12 @@ script "js_ip_cost_mapping", type:"javascript" do
   })
 
   // Message for incident output
-  savings_disclaimer = "Savings are estimated based on USD list price and may not reflect credits or discounts. "
+  savings_disclaimer = "Savings are estimated based on list price and may not reflect credits or discounts. "
+
+  if (ds_currency['code'] != "USD") {
+    savings_disclaimer += "List prices were converted from USD using current exchange rates. "
+  }
+
   age_disclaimer = "The Days Unattached field will be empty for any IP addresses that have been unattached for over 90 days due to CloudTrail only retaining 90 days of log data."
 
   total_ips = ds_ip_addresses_filtered.length.toString()
