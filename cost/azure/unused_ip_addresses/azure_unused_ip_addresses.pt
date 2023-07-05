@@ -1,12 +1,12 @@
 name "Azure Unused IP Addresses"
 rs_pt_ver 20180301
 type "policy"
-short_description "Checks for unused IP addresses in the given account and, optionally deletes them. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/unused_ip_addresses) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more"
+short_description "Checks for unused IP addresses in the given account and, optionally, deletes them. See the [README](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/unused_ip_addresses) and [docs.flexera.com/flexera/EN/Automation](https://docs.flexera.com/flexera/EN/Automation/AutomationGS.htm) to learn more"
 severity "low"
 category "Cost"
 default_frequency "weekly"
 info(
-  version: "4.6",
+  version: "5.0",
   provider: "Azure",
   service: "Compute",
   policy_set: "Unused IP Addresses",
@@ -19,36 +19,79 @@ info(
 
 parameter "param_email" do
   type "list"
-  label "Email Addresses"
-  description "Email addresses of the recipients you wish to notify"
-end
-
-parameter "param_exclude_tags" do
-  type "list"
-  category "User Inputs"
-  label "Exclude Tags"
-  description "A list of tags used to exclude IP addresses from the incident."
+  category "Policy Settings"
+  label "Email addresses"
+  description "A list of email addresses to notify."
+  default []
 end
 
 parameter "param_azure_endpoint" do
   type "string"
+  category "Policy Settings"
   label "Azure Endpoint"
-  description "Azure Endpoint to access resources"
+  description "Select the API endpoint to use for Azure. Use default value of management.azure.com unless using Azure China."
   allowed_values "management.azure.com", "management.chinacloudapi.cn"
   default "management.azure.com"
 end
 
-parameter "param_subscription_allowed_list" do
-  label "Subscription Allowed List"
+parameter "param_min_savings" do
+  type "number"
+  category "Policy Settings"
+  label "Minimum Savings Threshold"
+  description "Minimum potential savings required to generate a recommendation."
+  min_value 0
+  default 0
+end
+
+parameter "param_subscriptions_allow_or_deny" do
+  type "string"
+  category "Filters"
+  label "Allow/Deny Subscriptions"
+  description "Allow or Deny entered Subscriptions. See the README for more details."
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
+parameter "param_subscriptions_list" do
   type "list"
-  description "Allowed Subscriptions, if empty, all subscriptions will be checked"
+  category "Filters"
+  label "Allow/Deny Subscriptions List"
+  description "A list of allowed or denied Subscription IDs/names. See the README for more details."
+  default []
+end
+
+parameter "param_regions_allow_or_deny" do
+  type "string"
+  category "Filters"
+  label "Allow/Deny Regions"
+  description "Allow or Deny entered regions. See the README for more details."
+  allowed_values "Allow", "Deny"
+  default "Allow"
+end
+
+parameter "param_regions_list" do
+  type "list"
+  category "Filters"
+  label "Allow/Deny Regions List"
+  description "A list of allowed or denied regions. See the README for more details."
+  default []
+end
+
+parameter "param_exclusion_tags" do
+  type "list"
+  category "Filters"
+  label "Exclusion Tags (Key:Value)"
+  description "Cloud native tags to ignore instances that you don't want to produce recommendations for. Format: Key:Value"
+  allowed_pattern /(^$)|([\w]?)+\:([\w]?)+/
+  default []
 end
 
 parameter "param_automatic_action" do
   type "list"
+  category "Actions"
   label "Automatic Actions"
-  description "When this value is set, this policy will automatically take the selected action(s)"
-  allowed_values ["Delete Unused IP Addresses"]
+  description "When this value is set, this policy will automatically take the selected action."
+  allowed_values ["Delete IP Addresses"]
 end
 
 ###############################################################################
@@ -56,7 +99,7 @@ end
 ###############################################################################
 
 #AUTHENTICATE WITH AZURE
-credentials "azure_auth" do
+credentials "auth_azure" do
   schemes "oauth2"
   label "Azure"
   description "Select the Azure Resource Manager Credential from the list."
@@ -65,7 +108,7 @@ end
 
 credentials "auth_flexera" do
   schemes "oauth2"
-  label "flexera"
+  label "Flexera"
   description "Select Flexera One OAuth2 credentials"
   tags "provider=flexera"
 end
@@ -74,7 +117,7 @@ end
 # Pagination
 ###############################################################################
 
-pagination "azure_pagination" do
+pagination "pagination_azure" do
   get_page_marker do
     body_path "nextLink"
   end
@@ -87,77 +130,54 @@ end
 # Datasources & Scripts
 ###############################################################################
 
-#GET ALL SUBSCRIPTIONS FOR ORG
-datasource "ds_subscriptions" do
+# Get applied policy metadata for use later
+datasource "ds_applied_policy" do
   request do
-    auth $azure_auth
-    pagination $azure_pagination
-    host $param_azure_endpoint
-    path "/subscriptions/"
-    query "api-version", "2020-01-01"
+    auth $auth_flexera
+    host rs_governance_host
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", policy_id])
+    header "Api-Version", "1.0"
+  end
+end
+
+datasource "ds_billing_centers" do
+  request do
+    auth $auth_flexera
+    host rs_optima_host
+    path join(["/analytics/orgs/", rs_org_id, "/billing_centers"])
+    header "Api-Version", "1.0"
     header "User-Agent", "RS Policies"
+    query "view", "allocation_table"
+    ignore_status [403]
   end
   result do
     encoding "json"
-    collect jmes_path(response, "value[*]") do
-      field "subscriptionId", jmes_path(col_item,"subscriptionId")
-      field "subscriptionName", jmes_path(col_item,"displayName")
+    collect jmes_path(response, "[*]") do
+      field "href", jmes_path(col_item, "href")
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+      field "parent_id", jmes_path(col_item, "parent_id")
     end
   end
 end
 
-#FILTER SUBSCRIPTIONS BASED ON ALLOWED LIST PARAMETER
-datasource "ds_filtered_subscriptions" do
-  run_script $js_filter_subscriptions, $ds_subscriptions, $param_subscription_allowed_list
+# Gather top level billing center IDs for when we pull cost data
+datasource "ds_top_level_bcs" do
+  run_script $js_top_level_bcs, $ds_billing_centers
 end
 
-script "js_filter_subscriptions", type: "javascript" do
-  parameters "ds_subscriptions", "param_subscription_allowed_list"
-  result "results"
+script "js_top_level_bcs", type: "javascript" do
+  parameters "ds_billing_centers"
+  result "result"
   code <<-EOS
-    var results = []
-    if( param_subscription_allowed_list.length != 0 ){
-      results = []
-      _.each(param_subscription_allowed_list, function(sub){
-        var found = _.find(ds_subscriptions, function(item){
-          return item.subscriptionId == sub || item.subscriptionName.toLowerCase() == sub.toLowerCase();
-        })
-        results.push(found)
-      })
-    } else {
-      results = ds_subscriptions
-    }
-  EOS
+  filtered_bcs = _.filter(ds_billing_centers, function(bc) {
+    return bc['parent_id'] == null || bc['parent_id'] == undefined
+  })
+
+  result = _.compact(_.pluck(filtered_bcs, 'id'))
+EOS
 end
 
-#GET ALL PUBLIC IP ADDRESSES FOR EACH SUBSCRIPTION
-datasource "ds_public_ip_addresses" do
-  iterate $ds_filtered_subscriptions
-  request do
-    auth $azure_auth
-    host $param_azure_endpoint
-    path join(["/subscriptions/", val(iter_item,"subscriptionId"), "/providers/Microsoft.Network/publicIPAddresses"])
-    query "api-version", "2021-08-01"
-    # Ignore status 400, 403, and 404 which can be returned in certain (legacy) types of Azure Subscriptions
-    ignore_status [400,403,404]
-  end
-  result do
-    encoding "json"
-    collect jmes_path(response,"value[*]") do
-      field "subscriptionId", val(iter_item,"subscriptionId")
-      field "subscriptionName", val(iter_item,"subscriptionName")
-      field "resourceGroup", get(4, split(jmes_path(col_item,"id"), "/"))
-      field "resourceName", jmes_path(col_item,"name")
-      field "resourceType", jmes_path(col_item,"type")
-      field "region", jmes_path(col_item,"location")
-      field "resourceId", jmes_path(col_item,"id")
-      field "properties", jmes_path(col_item,"properties")
-      field "tags", jmes_path(col_item,"tags")
-    end
-  end
-end
-
-#GET CURRENCY REFERENCE AND CODE FOR ORG
 datasource "ds_currency_reference" do
   request do
     host "raw.githubusercontent.com"
@@ -177,331 +197,388 @@ datasource "ds_currency_code" do
   end
   result do
     encoding "json"
-    field "id", jmes_path(response,"id")
-    field "value", jmes_path(response,"value")
+    field "id", jmes_path(response, "id")
+    field "value", jmes_path(response, "value")
   end
 end
 
-#GET BILLING CENTERS FOR ORG
-datasource "ds_billing_centers" do
+datasource "ds_currency" do
+  run_script $js_currency, $ds_currency_reference, $ds_currency_code
+end
+
+script "js_currency", type:"javascript" do
+  parameters "ds_currency_reference", "ds_currency_code"
+  result "result"
+  code <<-EOS
+  symbol = "$"
+  separator = ","
+
+  if (ds_currency_code['value'] != undefined) {
+    if (ds_currency_reference[ds_currency_code['value']] != undefined) {
+      symbol = ds_currency_reference[ds_currency_code['value']]['symbol']
+
+      if (ds_currency_reference[ds_currency_code['value']]['t_separator'] != undefined) {
+        separator = ds_currency_reference[ds_currency_code['value']]['t_separator']
+      } else {
+        separator = ""
+      }
+    }
+  }
+
+  result = {
+    symbol: symbol,
+    separator: separator
+  }
+EOS
+end
+
+datasource "ds_azure_subscriptions" do
   request do
-    auth $auth_flexera
-    host rs_optima_host
-    path join(["/analytics/orgs/",rs_org_id,"/billing_centers"])
-    header "Api-Version", "1.0"
+    auth $auth_azure
+    pagination $pagination_azure
+    host $param_azure_endpoint
+    path "/subscriptions/"
+    query "api-version","2020-01-01"
     header "User-Agent", "RS Policies"
-    query "view", "allocation_table"
-    ignore_status [403]
   end
   result do
     encoding "json"
-    collect jmes_path(response,"[*]") do
-      field "href", jmes_path(col_item,"href")
-      field "id", jmes_path(col_item,"id")
-      field "name", jmes_path(col_item,"name")
-      field "parent_id", jmes_path(col_item,"parent_id")
+    collect jmes_path(response, "value[*]") do
+      field "id", jmes_path(col_item, "subscriptionId")
+      field "name", jmes_path(col_item, "displayName")
+      field "state", jmes_path(col_item, "state")
     end
   end
 end
 
-#FILTER FOR TOP-LEVEL BILLING CENTERS
-datasource "ds_top_level_billing_centers" do
-  run_script $js_top_level_bc, $ds_billing_centers
+datasource "ds_azure_subscriptions_filtered" do
+  run_script $js_azure_subscriptions_filtered, $ds_azure_subscriptions, $param_subscriptions_allow_or_deny, $param_subscriptions_list
 end
 
-script "js_top_level_bc", type: "javascript" do
-  parameters "billing_centers"
-  result "filtered_billing_centers"
+script "js_azure_subscriptions_filtered", type: "javascript" do
+  parameters "ds_azure_subscriptions", "param_subscriptions_allow_or_deny", "param_subscriptions_list"
+  result "result"
   code <<-EOS
-    var filtered_billing_centers =
-      _.reject(billing_centers, function(bc){ return bc.parent_id != null });
-  EOS
+  if (param_subscriptions_list.length > 0) {
+    result = _.filter(ds_azure_subscriptions, function(subscription) {
+      include_subscription = _.contains(param_subscriptions_list, subscription['id']) || _.contains(param_subscriptions_list, subscription['name'])
+
+      if (param_subscriptions_allow_or_deny == "Deny") {
+        include_subscription = !include_subscription
+      }
+
+      return include_subscription
+    })
+  } else {
+    result = ds_azure_subscriptions
+  }
+EOS
 end
 
-#GET RESOURCE COSTS FOR SUBSCRIPTIONS
-datasource "ds_ip_costs" do
-  iterate $ds_filtered_subscriptions
+datasource "ds_ip_addresses" do
+  iterate $ds_azure_subscriptions_filtered
   request do
-    run_script $js_get_costs, val(iter_item,"subscriptionId"), $ds_top_level_billing_centers, rs_org_id, rs_optima_host
+    auth $auth_azure
+    host $param_azure_endpoint
+    path join(["/subscriptions/", val(iter_item, "id"), "/providers/Microsoft.Network/publicIPAddresses"])
+    query "api-version", "2021-08-01"
+    # Ignore status 400, 403, and 404 which can be returned in certain (legacy) types of Azure Subscriptions
+    ignore_status [400, 403, 404]
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "value[*]") do
+      field "resourceGroup", get(4, split(jmes_path(col_item,"id"), "/"))
+      field "resourceName", jmes_path(col_item, "name")
+      field "resourceType", jmes_path(col_item, "type")
+      field "region", jmes_path(col_item, "location")
+      field "resourceID", jmes_path(col_item, "id")
+      field "properties", jmes_path(col_item, "properties")
+      field "tags", jmes_path(col_item, "tags")
+      field "subscriptionID", val(iter_item, "id")
+      field "subscriptionName", val(iter_item, "name")
+    end
+  end
+end
+
+datasource "ds_ip_addresses_tag_filtered" do
+  run_script $js_ip_addresses_tag_filtered, $ds_ip_addresses, $param_exclusion_tags
+end
+
+script "js_ip_addresses_tag_filtered", type: "javascript" do
+  parameters "ds_ip_addresses", "param_exclusion_tags"
+  result "result"
+  code <<-EOS
+  if (param_exclusion_tags.length > 0) {
+    result = _.reject(ds_ip_addresses, function(ip) {
+      ip_tags = []
+
+      if (typeof(ip['tags']) == 'object') {
+        _.each(Object.keys(ip['tags']), function(key) {
+          ip_tags.push([key, ":", ip['tags'][key]].join(''))
+        })
+      }
+
+      exclude_ip = false
+
+      _.each(param_exclusion_tags, function(exclusion_tag) {
+        if (_.contains(ip_tags, exclusion_tag)) {
+          exclude_ip = true
+        }
+      })
+
+      return exclude_ip
+    })
+  } else {
+    result = ds_ip_addresses
+  }
+EOS
+end
+
+datasource "ds_ip_addresses_region_filtered" do
+  run_script $js_ip_addresses_region_filtered, $ds_ip_addresses_tag_filtered, $param_regions_allow_or_deny, $param_regions_list
+end
+
+script "js_ip_addresses_region_filtered", type: "javascript" do
+  parameters "ds_ip_addresses_tag_filtered", "param_regions_allow_or_deny", "param_regions_list"
+  result "result"
+  code <<-EOS
+  if (param_regions_list.length > 0) {
+    result = _.filter(ds_ip_addresses_tag_filtered, function(ip) {
+      include_ip = _.contains(param_regions_list, ip['region'])
+
+      if (param_regions_allow_or_deny == "Deny") {
+        include_ip = !include_ip
+      }
+
+      return include_ip
+    })
+  } else {
+    result = ds_ip_addresses_tag_filtered
+  }
+EOS
+end
+
+datasource "ds_unused_ip_addresses" do
+  run_script $js_unused_ip_addresses, $ds_ip_addresses_region_filtered
+end
+
+script "js_unused_ip_addresses", type: "javascript" do
+  parameters "ds_ip_addresses_region_filtered"
+  result "result"
+  code <<-EOS
+  result = _.filter(ds_ip_addresses_region_filtered, function(ip) {
+    return typeof(ip['properties']['ipConfiguration']) != 'object' && typeof(ip['properties']['natGateway']) != 'object'
+  })
+EOS
+end
+
+datasource "ds_ip_costs" do
+  iterate $ds_azure_subscriptions_filtered
+  request do
+    run_script $js_ip_costs, val(iter_item, "id"), $ds_top_level_bcs, rs_org_id, rs_optima_host
   end
   result do
     encoding "json"
     collect jmes_path(response,"rows[*]") do
-      field "resource_id", jmes_path(col_item,"dimensions.resource_id")
-      field "cost_nonamortized_unblended_adj", jmes_path(col_item,"metrics.cost_nonamortized_unblended_adj")
+      field "resourceID", jmes_path(col_item, "dimensions.resource_id")
+      field "cost", jmes_path(col_item, "metrics.cost_amortized_unblended_adj")
     end
   end
 end
 
-script "js_get_costs", type:"javascript" do
-  parameters "account_id", "billing_centers", "org", "rs_optima_host"
+script "js_ip_costs", type:"javascript" do
+  parameters "subscription_id", "ds_top_level_bcs", "rs_org_id", "rs_optima_host"
   result "request"
   code <<-EOS
-    // returns date formatted as string: YYYY-mm-dd
-    function getFormattedDailyDate(date) {
-      var year = date.getFullYear();
-      var month = (1 + date.getMonth()).toString();
-      month = month.length > 1 ? month : '0' + month;
-      var day = date.getDate().toString();
-      day = day.length > 1 ? day : '0' + day;
-      return year + '-' + month + '-' + day;
-    }
-    var start_date = getFormattedDailyDate(new Date(new Date().setDate(new Date().getDate() - 3)));
-    var end_date = getFormattedDailyDate(new Date(new Date().setDate(new Date().getDate() - 2)));
-    var request = {
-      auth: "auth_flexera",
-      host: rs_optima_host,
-      verb: "POST",
-      path: "/bill-analysis/orgs/" + org + "/costs/select",
-      body_fields: {
-        "dimensions": ["resource_id"],
-        "granularity": "day",
-        "start_at": start_date,
-        "end_at": end_date,
-        "metrics": ["cost_nonamortized_unblended_adj"],
-        "billing_center_ids": _.compact(_.map(billing_centers, function(value){ return value.id })),
-        "limit": 100000,
-        "filter": {
-          "expressions": [
-            {
-              "dimension": "service",
-              "type": "equal",
-              "value": "Microsoft.Network"
-            },
-            {
-              "dimension": "vendor_account",
-              "type": "equal",
-              "value": account_id
-            },
-            {
-              "dimension": "resource_type",
-              "type": "equal",
-              "value": "Virtual Network-IP Addresses"
-            }
-          ],
-          "type": "and"
-        }
-      },
-      headers: {
-        "User-Agent": "RS Policies",
-        "Api-Version": "1.0"
-      },
-      ignore_status: [400, 404]
-    }
-  EOS
+  //Get Start and End dates
+  start_date = new Date()
+  start_date.setDate(start_date.getDate() - 3)
+  start_date = start_date.toISOString().split("T")[0]
+
+  end_date = new Date()
+  end_date.setDate(end_date.getDate() - 2)
+  end_date = end_date.toISOString().split("T")[0]
+
+  var request = {
+    auth: "auth_flexera",
+    host: rs_optima_host,
+    verb: "POST",
+    path: "/bill-analysis/orgs/" + rs_org_id + "/costs/select",
+    body_fields: {
+      "dimensions": ["resource_id"],
+      "granularity": "day",
+      "start_at": start_date,
+      "end_at": end_date,
+      "metrics": ["cost_amortized_unblended_adj"],
+      "billing_center_ids": ds_top_level_bcs,
+      "limit": 100000,
+      "filter": {
+        "type": "and",
+        "expressions": [
+          {
+            "dimension": "service",
+            "type": "equal",
+            "value": "Microsoft.Network"
+          },
+          {
+            "dimension": "resource_type",
+            "type": "equal",
+            "value": "Virtual Network-IP Addresses"
+          },
+          {
+            "dimension": "vendor_account",
+            "type": "equal",
+            "value": subscription_id
+          }
+        ]
+      }
+    },
+    headers: {
+      "User-Agent": "RS Policies",
+      "Api-Version": "1.0"
+    },
+    ignore_status: [400]
+  }
+EOS
 end
 
-#LOGIN TO EXCLUDE TAGS AND FILTER ONLY UNUSED IP ADDRESSES
-datasource "ds_unused_ip_addresses" do
-  run_script $js_exclude_tags, $ds_public_ip_addresses, $param_exclude_tags
+datasource "ds_ip_costs_grouped" do
+  run_script $js_ip_costs_grouped, $ds_ip_costs
 end
 
-script "js_exclude_tags", type: "javascript" do
-  parameters "publicIPAddressesList","param_exclude_tags"
-  result "results"
+script "js_ip_costs_grouped", type: "javascript" do
+  parameters "ds_ip_costs"
+  result "result"
   code <<-EOS
-    var results = [];
-    _.each(publicIPAddressesList, function(ipAddress){
-      tags = []
-      var isTagMatched = false
-      var properties = ipAddress.properties
-      //Exclude tags
-      if (typeof ipAddress.tags === "undefined" || ipAddress.tags === null) {
-        ipAddress.tags = tags
-      }
-      for( var i = 0; i < param_exclude_tags.length; i++ ){
-        if( _.has(ipAddress.tags, param_exclude_tags[i]) ){
-          isTagMatched = true
-        }
-      }
+  // Multiple a single day's cost by the average number of days in a month.
+  // The 0.25 is to account for leap years for extra precision.
+  cost_multiplier = 365.25 / 12
 
-      if( !isTagMatched ){
-        Object.keys(ipAddress.tags).forEach(function(key) {
-          tags.push(key+'='+ipAddress.tags[key])
-        });
+  // Group cost data by resourceId for later use
+  result = {}
 
-        var service = ""
-        if (ipAddress.resourceType != null){
-          resourceTypeSplit = ipAddress.resourceType.split("/")
-          service = resourceTypeSplit[0]
-        }
+  _.each(ds_ip_costs, function(item) {
+    id = item['resourceID'].toLowerCase()
 
-        if( properties.ipConfiguration == null && properties.natGateway == null ){
-          results.push({
-            "subscriptionId": ipAddress["subscriptionId"],
-            "subscriptionName": ipAddress["subscriptionName"],
-            "resourceGroup": ipAddress["resourceGroup"],
-            "resourceName": ipAddress["resourceName"],
-            "resourceType": ipAddress["resourceType"]
-            "region": ipAddress["region"],
-            "tags": tags,
-            "service": service,
-            "resourceId": ipAddress["resourceId"],
-            "savings": 0.0,
-            "properties": properties
-          })
-        }
-      }
-    })
-  EOS
+    if (result[id] == undefined) { result[id] = 0.0 }
+    result[id] += item['cost'] * cost_multiplier
+  })
+EOS
 end
-
-#COMBINE IP ADDRESS DATA WITH COST DATA
 datasource "ds_ip_cost_mapping" do
-  run_script $js_ip_cost_mapping, $ds_unused_ip_addresses, $ds_ip_costs, $ds_currency_code, $ds_currency_reference, $ds_billing_centers
+  run_script $js_ip_cost_mapping, $ds_unused_ip_addresses, $ds_ip_addresses_region_filtered, $ds_ip_costs_grouped, $ds_applied_policy, $ds_currency, $param_min_savings
 end
 
 script "js_ip_cost_mapping", type:"javascript" do
-  parameters  "ip_list", "ip_costs", "ds_currency_code", "ds_currency_reference", "ds_billing_centers"
+  parameters "ds_unused_ip_addresses", "ds_ip_addresses_region_filtered", "ds_ip_costs_grouped", "ds_applied_policy", "ds_currency", "param_min_savings"
   result "result"
-  code <<-EOS
-    var result = {}
-    var unused_ip_list = []
-    var message = ''
-    var count = 0
+  code <<-'EOS'
+  // Function for formatting currency numbers later
+  function formatNumber(number, separator) {
+    var numString = number.toString()
+    var values = numString.split(".")
+    var formatted_number = ''
 
-    function formatNumber(number, separator){
-      var numString = number.toString()
-      var values = numString.split(".")
-      var result = ''
-      while (values[0].length > 3){
-        var chunk = values[0].substr(-3)
-        values[0] = values[0].substr(0, values[0].length - 3)
-        result = separator + chunk + result
-      }
-      if (values[0].length > 0){
-        result = values[0] + result
-      }
-      if(values[1]==undefined){
-        return result;
-      }
-      return result+"."+values[1];
+    while (values[0].length > 3) {
+      var chunk = values[0].substr(-3)
+      values[0] = values[0].substr(0, values[0].length - 3)
+      formatted_number = separator + chunk + formatted_number
     }
 
-    if(ds_billing_centers.length!=0){
-      // Format costs with currency symbol and thousands separator
-      if( ds_currency_code['value'] !== undefined ) {
-        // Put costs into a map by resource ID and only include them for resource IDs we actually need
-        var costs_by_resource_id = {}
+    if (values[0].length > 0) { formatted_number = values[0] + formatted_number }
 
-        _.each(ip_list, function(ip){
-          costs_by_resource_id[ip.resourceId] = []
+    if (values[1] == undefined) { return formatted_number }
+
+    return formatted_number + "." + values[1]
+  }
+
+  result = []
+
+  total_savings = 0.0
+
+  _.each(ds_unused_ip_addresses, function(ip) {
+    savings = ds_ip_costs_grouped[ip['resourceID'].toLowerCase()]
+
+    if (savings == null || savings == undefined) {
+      savings = 0.0
+    }
+
+    if (savings >= param_min_savings) {
+      total_savings += savings
+
+      recommendationDetails = [
+        "Delete IP address ", ip["resourceID"], " ",
+        "in Azure Subscription ", ip["subscriptionName"],
+        " (", ip["subscriptionID"], ")"
+      ].join('')
+
+      tags = []
+
+      if (typeof(ip['tags']) == 'object') {
+        _.each(Object.keys(ip['tags']), function(key) {
+          tags.push([key, "=", ip['tags'][key]].join(''))
         })
-
-        _.each(ip_costs, function(cost) {
-          var costs = costs_by_resource_id[cost.resource_id];
-          if (costs != null) {
-            costs.push(cost);
-          }
-        })
-
-        if( ds_currency_reference[ds_currency_code['value']] !== undefined ){
-          var cur = ds_currency_reference[ds_currency_code['value']]['symbol']
-          if( ds_currency_reference[ds_currency_code['value']]['t_separator'] !== undefined ) {
-            var separator = ds_currency_reference[ds_currency_code['value']]['t_separator']
-          } else {
-            var separator = ""
-          }
-        } else {
-          var cur = ""
-          var separator = ""
-        }
-      } else {
-        var cur = "$"
-        var separator = ","
       }
 
-      var total_savings = 0
-      _.each(ip_list, function(ip){
-        var cost_objects = costs_by_resource_id[ip.resourceId]
-        if (_.size(cost_objects) > 0){
-          count++
-          var sum = _.reduce(_.compact(_.map(cost_objects, function(value){ return value.cost_nonamortized_unblended_adj})), function(memo, num){ return memo + num; }, 0);
-          var monthly_savings = sum * 30
-          total_savings = total_savings + monthly_savings
-          unused_ip_list.push({
-            "subscriptionId": ip["subscriptionId"],
-            "subscriptionName": ip["subscriptionName"],
-            "resourceGroup": ip["resourceGroup"],
-            "resourceName": ip["resourceName"],
-            "resourceType": ip["resourceType"],
-            "region": ip["region"],
-            "tags": ip["tags"],
-            "service": ip["service"],
-            "resourceId": ip["resourceId"],
-            "savings": (Math.round(monthly_savings * 1000) / 1000),
-            "savingsCurrency": cur,
-            "properties": ip["properties"]
-          })
-        } else {
-          unused_ip_list.push({
-            "subscriptionId": ip["subscriptionId"],
-            "subscriptionName": ip["subscriptionName"],
-            "resourceGroup": ip["resourceGroup"],
-            "resourceName": ip["resourceName"],
-            "resourceType": ip["resourceType"],
-            "region": ip["region"],
-            "tags": ip["tags"],
-            "service": ip["service"],
-            "resourceId": ip["resourceId"],
-            "savings": 0.0,
-            "savingsCurrency": cur,
-            "properties": ip["properties"]
-          })
-        }
+      result.push({
+        accountID: ip["subscriptionID"],
+        accountName: ip["subscriptionName"],
+        resourceID: ip['resourceID'],
+        resourceName: ip['resourceName'],
+        resourceGroup: ip['resourceGroup'],
+        resourceType: ip['resourceType'],
+        ipAddress: ip['properties']['ipAddress'],
+        region: ip['region'],
+        service: ip['service'],
+        tags: tags.join(', '),
+        savings: parseFloat(savings.toFixed(3)),
+        savingsCurrency: ds_currency['symbol'],
+        recommendationDetails: recommendationDetails,
+        service: "Microsoft.Network",
+        // These are to avoid errors when we hash_exclude these fields
+        total_savings: '',
+        message: '',
+        policy_name: ''
       })
-      if( count ){
-        total_savings = cur + ' ' + formatNumber((Math.round(total_savings * 100) / 100), separator)
-        message = "The total estimated monthly savings are " + total_savings
-      }
-      else {
-        message = "The Flexera Optima system does not have any data to calculate savings for these resources"
-      }
     }
-    else {
-      unused_ip_list = ip_list;
-      message = "You do not have the minimum required role of billing_center_viewer to view the savings"
-    }
-    result = {
-      "ip_list": unused_ip_list,
-      "message": message
-    }
-    result.ip_list = _.sortBy(result.ip_list, "region")
-    result.ip_list = _.sortBy(result.ip_list, "subscriptionName")
-  EOS
-end
+  })
 
-datasource "ds_only_instances" do
-  run_script $js_only_instances, $ds_ip_cost_mapping
-end
+  // Message for incident output
+  total_ips = ds_ip_addresses_region_filtered.length.toString()
+  total_unused_ips = result.length.toString()
+  unused_ips_percentage = (total_unused_ips / total_ips * 100).toFixed(2).toString() + '%'
 
-script "js_only_instances", type: "javascript" do
-  parameters "arg"
-  result "results"
-  code <<-EOS
-    results = arg.ip_list
-    if (results && results.length) {
-      results[0].message = arg.message
-    }
-  EOS
-end
+  findings = [
+    "Out of ", total_ips , " IP addresses analyzed, ",
+    total_unused_ips, " (", unused_ips_percentage,
+    ") are not attached to an instance and are recommended for deletion.\n\n"
+  ].join('')
 
-###############################################################################
-# Escalations
-###############################################################################
+  disclaimer = ""
 
-escalation "send_email_report" do
-  automatic true
-  label "Send Email"
-  description "Send incident email"
-  email $param_email
-end
+  savings_message = [
+    ds_currency['symbol'], ' ',
+    formatNumber(parseFloat(total_savings).toFixed(2), ds_currency['separator'])
+  ].join('')
 
-escalation "delete_unused_ip_addresses" do
-  automatic contains($param_automatic_action, "Delete Unused IP Addresses")
-  label "Delete Resources"
-  description "Delete selected unused IP addresses"
-  run "delete_ip_addresses", data, $param_azure_endpoint, rs_optima_host
+  // Sort by descending order of savings value
+  result = _.sortBy(result, function(item) { return item['savings'] * -1 })
+
+  result[0]['total_savings'] = savings_message
+  result[0]['message'] = findings + disclaimer
+  result[0]['policy_name'] = ds_applied_policy['name']
+
+  // Dummy item to ensure that the check statement in the policy executes at least once
+  result.push({
+    resourceID: "",
+    total_savings: "",
+    message: "",
+    tags: "",
+    savings: "",
+    savingsCurrency: ""
+  })
+EOS
 end
 
 ###############################################################################
@@ -509,24 +586,24 @@ end
 ###############################################################################
 
 policy "pol_unused_ip_addresses" do
-  validate $ds_ip_cost_mapping do
-    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data.ip_list }} Unused IP Addresses Found"
-    hash_exclude "savingsCurrency", "savings"
-    detail_template <<-EOS
-    {{with index data 0}}{{ .message }}{{end}}
-EOS
-    check eq(size(val(data, "ip_list")), 0)
-    escalate $send_email_report
-    escalate $delete_unused_ip_addresses
-    export "ip_list" do
+  validate_each $ds_ip_cost_mapping do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Azure Unused IP Addresses Found"
+    detail_template <<-'EOS'
+    **Potential Monthly Savings:** {{ with index data 0 }}{{ .total_savings }}{{ end }}
+
+    {{ with index data 0 }}{{ .message }}{{ end }}
+    EOS
+    check eq(val(item, "resourceID"), "")
+    escalate $esc_email
+    escalate $esc_delete_ip_address
+    hash_exclude "total_savings", "message", "tags", "savings", "savingsCurrency"
+    export do
       resource_level true
       field "accountID" do
         label "Subscription ID"
-        path "subscriptionId"
       end
       field "accountName" do
         label "Subscription Name"
-        path "subscriptionName"
       end
       field "resourceGroup" do
         label "Resource Group"
@@ -539,7 +616,6 @@ EOS
       end
       field "ipAddress"do
         label "IP Address"
-        path "properties.ipAddress"
       end
       field "region" do
         label "Region"
@@ -549,7 +625,6 @@ EOS
       end
       field "resourceID" do
         label "Resource ID"
-        path "resourceId"
       end
       field "resourceType" do
         label "Resource Type"
@@ -561,42 +636,65 @@ EOS
         label "Savings Currency"
       end
       field "id" do
-        label "Resource ID"
-        path "resourceId"
+        label "ID"
+        path "resourceID"
       end
     end
-    hash_exclude "ip_list"
   end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_email" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
+end
+
+escalation "esc_delete_ip_address" do
+  automatic contains($param_automatic_action, "Delete IP Addresses")
+  label "Delete IP Addresses"
+  description "Approval to delete all selected IP addresses"
+  run "delete_ip_addresses", data, $param_azure_endpoint, rs_optima_host
 end
 
 ###############################################################################
 # Cloud Workflow
 ###############################################################################
 
-define delete_ip_addresses($data, $param_azure_endpoint, $$rs_optima_host) return $all_responses do
-  $$debug = false
+define delete_ip_addresses($data, $$param_azure_endpoint, $$rs_optima_host) return $all_responses do
+  # Change "No" to "Yes" to enable CWF debug logging
+  $log_to_cm_audit_entries = "No"
+
+  $$debug = $log_to_cm_audit_entries == "Yes"
   $all_responses = []
+
   foreach $item in $data do
     sub on_error: skip do
-      call azure_delete_ip_addresses(to_s($item['id']), $param_azure_endpoint)
+      call delete_ip_address($item['resourceID'])
     end
   end
 end
 
-define azure_delete_ip_addresses($resourceId, $param_azure_endpoint) do
+define delete_ip_address($resourceID) do
   $response={}
-  $syslog_subject = "Azure unused IP addresses : "
+  $syslog_subject = "Azure unused IP addresses: "
+
   $response = http_request(
-          auth: $$azure_auth,
-          verb: "delete",
-          host: $param_azure_endpoint,
-          https: true,
-          href: $resourceId,
-          query_strings: {
-            "api-version": "2020-03-01"
-          }
-        )
-    call sys_log($syslog_subject,to_s($response))
+    auth: $$auth_azure,
+    verb: "DELETE",
+    host: $$param_azure_endpoint,
+    https: true,
+    href: $resourceID,
+    query_strings: {
+      "api-version": "2020-03-01"
+    }
+  )
+
+  call sys_log($syslog_subject, to_s($response))
 end
 
 define sys_log($subject, $detail) do
