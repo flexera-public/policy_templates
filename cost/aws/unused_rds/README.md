@@ -30,7 +30,7 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Auto
                   "cloudwatch:GetMetricData",
                   "cloudwatch:ListMetrics",
                   "rds:DescribeDBInstances",
-                  "rds:ListTagsForResource",
+                  "rds:ListTagsForResource"
               ],
               "Resource": "*"
           }
