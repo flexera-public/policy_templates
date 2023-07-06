@@ -7,7 +7,7 @@ category "Cost"
 tenancy "single"
 default_frequency "15 minutes"
 info(
-  provider: "Flexera",
+  provider: "Azure",
   version: "__PLACEHOLDER_FOR_CHILD_POLICY_VERSION__", # This version of the Meta Parent Policy Template should match the version of the Child Policy Template as it appears in the Catalog for best reliability
   publish: "false"
 )
@@ -25,28 +25,6 @@ parameter "param_combined_incident_email" do
   default []
 end
 
-parameter "param_dimension_filter_includes" do
-  type "list"
-  label "Dimension Include Filters"
-  description <<-EOS
-  Filters [`dimension_name=dimension_value` pairs] to determine which AWS Accounts returned by the Flexera Bill Analysis API to **INCLUDE** and be applied to.
-  During each run this policy will select AWS Accounts who match **all** the filters defined and apply a child policy for each.
-  If no include filters are provided, then all AWS Accounts are included by default.
-  Most of the dimensions in Flexera can be used [default dimensions, custom tag dimensions, rule-based dimensions].  Full list of available dimensions documented in the [Bill Analysis API Docs](https://reference.rightscale.com/bill_analysis/).
-  EOS
-end
-
-parameter "param_dimension_filter_excludes" do
-  type "list"
-  label "Dimension Exclude Filters"
-  description <<-EOS
-  Filters [`dimension_name=dimension_value` pairs] to determine which AWS Accounts returned by  the Flexera Bill Analysis API to **EXCLUDE** and *not* have policy applied to.
-  During each run this policy will select AWS Accounts who match **all** the filters defined here and excludes them from results.
-  Can be used to exclude specific AWS Accounts [`vendor_account=123456789012`]
-  Most of the dimensions in Flexera can be used [default dimensions, custom tag dimensions, rule-based dimensions].  Full list of available dimensions documented in the [Bill Analysis API Docs](https://reference.rightscale.com/bill_analysis/).
-  EOS
-end
-
 parameter "param_policy_schedule" do
   type "string"
   label "Child Policy Schedule"
@@ -55,8 +33,14 @@ parameter "param_policy_schedule" do
   allowed_values "daily", "weekly", "monthly"
 end
 
+parameter "param_subscription_list" do
+  label "Subscription List"
+  type "list"
+  description "Subscription List to create the child policy, if empty, all subscriptions will be used"
+  default []
+end
+
 ## Child Policy Parameters
-## These are params from the child policy, excluding param_email and param_aws_account_number [disabled by commenting out]
 __PLACEHOLDER_FOR_CHILD_POLICY_PARAMETERS_BLOCKS__
 
 ###############################################################################
@@ -65,7 +49,20 @@ __PLACEHOLDER_FOR_CHILD_POLICY_PARAMETERS_BLOCKS__
 __PLACEHOLDER_FOR_CHILD_POLICY_CREDENTIALS_BLOCKS__
 
 ###############################################################################
-# Datasources
+# Pagination
+###############################################################################
+
+pagination "pagination_azure" do
+  get_page_marker do
+    body_path "nextLink"
+  end
+  set_page_marker do
+    uri true
+  end
+end
+
+###############################################################################
+# Datasources & Scripts
 ###############################################################################
 
 # Get Applied Parent Policy Details
@@ -95,8 +92,8 @@ script "js_child_policy_options", type: "javascript" do
   code <<-EOS
   // Filter Options that are not appropriate for Child Policy
   var options = _.map(ds_self_policy_information.options, function(option){
-    // param_combined_incident_email, param_dimension_filter_includes, param_dimension_filter_excludes, param_policy_schedule are exclusion to Meta Parent Policy Parameters
-    if (!_.contains(["param_combined_incident_email", "param_dimension_filter_includes", "param_dimension_filter_excludes", "param_policy_schedule"], option.name)) {
+    // param_combined_incident_email, param_policy_schedule, param_subscription_list are exclusion to Meta Parent Policy Parameters
+    if (!_.contains(["param_combined_incident_email", "param_policy_schedule", "param_subscription_list"], option.name)) {
       return { "name": option.name, "value": option.value };
     }
   });
@@ -106,6 +103,43 @@ script "js_child_policy_options", type: "javascript" do
     "value": []
   });
   EOS
+end
+
+datasource "ds_subscriptions" do
+  request do
+    auth $auth_azure
+    pagination $pagination_azure
+    host $param_azure_endpoint
+    path "/subscriptions/"
+    query "api-version","2020-01-01"
+    header "User-Agent", "RS Policies"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "value[*]") do
+      field "subscriptionID", jmes_path(col_item, "subscriptionId")
+      field "subscriptionName", jmes_path(col_item, "displayName")
+      field "state", jmes_path(col_item, "state")
+    end
+  end
+end
+
+datasource "ds_filtered_subscriptions" do
+  run_script $js_filtered_subscriptions, $ds_subscriptions, $param_subscription_list
+end
+
+script "js_filtered_subscriptions", type: "javascript" do
+  parameters "ds_subscriptions", "param_subscription_list"
+  result "result"
+  code <<-EOS
+  if (param_subscription_list.length > 0) {
+    result = _.filter(ds_subscriptions, function(sub) {
+      return _.contains(param_subscription_list, sub['subscriptionID']) || _.contains(param_subscription_list, sub['subscriptionName'])
+    })
+  } else {
+    result = ds_subscriptions
+  }
+EOS
 end
 
 datasource "ds_child_policy_options_map" do
@@ -159,119 +193,6 @@ datasource "ds_child_policy_information" do
       field "name", jmes_path(col_item, "name")
       field "href", jmes_path(col_item, "href")
       field "short_description", jmes_path(col_item, "short_description")
-    end
-  end
-end
-
-datasource "ds_get_billing_centers" do
-  request do
-    auth $auth_flexera
-    host rs_optima_host
-    path join(["/analytics/orgs/",rs_org_id,"/billing_centers"])
-    header "Api-Version", "1.0"
-    header "User-Agent", "RS Policies"
-    query "view", "allocation_table"
-    ignore_status [403]
-  end
-  result do
-    encoding "json"
-    # Select the Billing Centers that have "parent_id" undefined or "" (i.e. top-level Billing Centers)
-    collect jq(response, '.[] | select(.parent_id == null)' ) do
-      field "href", jq(col_item,".href")
-      field "id", jq(col_item,".id")
-      field "name", jq(col_item,".name")
-      field "parent_id", jq(col_item,".parent_id")
-    end
-  end
-end
-
-script "js_make_billing_center_request", type: "javascript" do
-  parameters "rs_org_id", "rs_optima_host", "billing_centers_unformatted", "param_dimension_filter_includes", "param_dimension_filter_excludes"
-  result "request"
-  code <<-EOS
-
-  billing_centers_formatted = []
-
-  for (x=0; x< billing_centers_unformatted.length; x++) {
-    billing_centers_formatted.push(billing_centers_unformatted[x]["id"])
-  }
-
-  finish = new Date()
-  finishFormatted = finish.toJSON().split("T")[0]
-  start = new Date()
-  start.setDate(start.getDate() - 30)
-  startFormatted = start.toJSON().split("T")[0]
-
-  // Default dimensions and filter expressions required for meta parent policy
-  var dimensions = ["vendor_account", "vendor_account_name"];
-  var filter_expressions = [
-    { dimension: "vendor", type: "equal", value: "AWS" }
-  ]
-
-  // Append to default dimensions and filter expressions using parent policy params
-  _.each(param_dimension_filter_includes, function (v) {
-    // split key=value string
-    var split = v.split("=");
-    var k = split[0];
-    var v = split[1];
-    // append to lists
-    dimensions.push(k);
-    filter_expressions.push({ dimension: k, type: "equal", value: v });
-  });
-
-  // Append to filter expressions using exclude policy params
-  _.each(param_dimension_filter_excludes, function (v) {
-    // split key=value string
-    var split = v.split("=");
-    var k = split[0];
-    var v = split[1];
-    // append to lists
-    dimensions.push(k);
-    filter_expressions.push({ "type": "not", "expression": { "dimension": k, "type": "equal", "value": v } });
-  });
-
-  // Produces a duplicate-free version of the array
-  dimensions = _.uniq(dimensions);
-
-  var body = {
-    "dimensions": dimensions,
-    "granularity":"day",
-    "start_at": startFormatted,
-    "end_at": finishFormatted,
-    "metrics":["cost_amortized_unblended_adj"],
-    "billing_center_ids": billing_centers_formatted,
-    "filter":
-    {
-      "type": "and",
-      "expressions": filter_expressions
-    },
-    "summarized": true
-  }
-  var request = {
-    auth:  'auth_flexera',
-    host:  rs_optima_host,
-    scheme: 'https',
-    verb: 'POST',
-    path:  "/bill-analysis/orgs/"+ rs_org_id + "/costs/aggregated",
-    headers: {
-      "API-Version": "1.0",
-      "Content-Type":"application/json"
-    },
-    body: JSON.stringify(body)
-  }
-  EOS
-end
-
-# Get the AWS acounts
-datasource "ds_get_aws_accounts" do
-  request do
-    run_script $js_make_billing_center_request, rs_org_id, rs_optima_host, $ds_get_billing_centers, $param_dimension_filter_includes, $param_dimension_filter_excludes
-  end
-  result do
-    encoding "json"
-    collect jmes_path(response,"rows[*]") do
-      field "aws_account_id", jmes_path(col_item,"dimensions.vendor_account")
-      field "aws_account_name", jmes_path(col_item,"dimensions.vendor_account_name")
     end
   end
 end
@@ -356,15 +277,15 @@ script "js_format_existing_policies", type: "javascript" do
   result = {}
   formatted = {}
   duplicates = []
-  // tracking holds all existing policies and later can be used to determine if existing policies should be deleted [i.e. if cloud account was removed]
+  // tracking holds all existing policies and later can be used to determine if existing policies should be deleted [i.e. if cloud subscription was removed]
   tracking = {}
 
   for (x=0; x<ds_get_existing_policies.length; x++) {
     options = format_options_keyvalue(ds_get_existing_policies[x].options);
 
-    aws_account_id=options["param_aws_account_number"]
-    if (formatted[aws_account_id] == undefined) {
-      formatted[aws_account_id] = {
+    subscriptionID=options["param_subscription_allowed_list"][0]
+    if (formatted[subscriptionID] == undefined) {
+      formatted[subscriptionID] = {
         "applied_policy_id":ds_get_existing_policies[x]["applied_policy_id"],
         "applied_policy_name":ds_get_existing_policies[x]["name"],
         "status":ds_get_existing_policies[x]["status"],
@@ -372,9 +293,9 @@ script "js_format_existing_policies", type: "javascript" do
         "incident": ds_format_incidents[ds_get_existing_policies[x]["applied_policy_id"]],
         "options": options
       }
-      tracking[aws_account_id] = false
+      tracking[subscriptionID] = false
     } else {
-      current = formatted[aws_account_id]
+      current = formatted[subscriptionID]
 
       currDate = new Date(current.updated_at)
       newDate = new Date(ds_get_existing_policies[x].updated_at)
@@ -395,7 +316,7 @@ script "js_format_existing_policies", type: "javascript" do
           "updated_at":current["updated_at"],
           "incident": current["incident"]
         })
-        formatted[aws_account_id] = {
+        formatted[subscriptionID] = {
           "applied_policy_id":ds_get_existing_policies[x]["applied_policy_id"],
           "applied_policy_name":ds_get_existing_policies[x]["name"],
           "status":ds_get_existing_policies[x]["status"],
@@ -415,20 +336,20 @@ script "js_format_existing_policies", type: "javascript" do
 end
 
 datasource "ds_take_in_parameters" do
-  run_script $js_take_in_parameters, $ds_get_aws_accounts, $ds_format_self, first($ds_child_policy_information),  $ds_format_existing_policies, $ds_child_policy_options, $ds_child_policy_options_map, $param_policy_schedule, policy_id, f1_app_host, rs_org_id, rs_project_id
+  run_script $js_take_in_parameters, $ds_filtered_subscriptions, $ds_format_self, first($ds_child_policy_information), $ds_format_existing_policies, $ds_child_policy_options, $ds_child_policy_options_map, $param_policy_schedule, policy_id, f1_app_host, rs_org_id, rs_project_id
 end
 
 # hardcode template href with id from catalog
 # catalog policies show in customer's published templates with their org id
 # "template_href": "/api/governance/orgs/" + rs_org_id + "/published_templates/62618616e3dff80001572bf0"
 # update logic: the only reason we're going to update the child policies for is changes to options
-# and only some options, email is always blank and aws_account_id is tied to the idenity of each policy, so: new account creation, removal of account: termination
+# and only some options, email is always blank and subscriptionID is tied to the idenity of each policy, so: new subscription creation, removal of subscription: termination
 # param_automatic_action is a list with only one action, unless the person is applying using an API and putting the same value multiple times this should either be a length of 0 or 1
 # param_log_to_cm_audit_entries is a String of Yes or No
 # param_exclude_tags and param_allowed_regions are arrays. I'm doing an update on the order changing but the values remaining the same.
 # If we only want to do an update on the values changing we could sort before doing the equality check.
 script "js_take_in_parameters", type: "javascript" do
-  parameters "ds_get_aws_accounts", "ds_format_self", "ds_child_policy_information", "ds_format_existing_policies", "ds_child_policy_options", "ds_child_policy_options_map", "param_policy_schedule", "meta_parent_policy_id", "f1_app_host", "rs_org_id", "rs_project_id"
+  parameters "ds_filtered_subscriptions", "ds_format_self", "ds_child_policy_information", "ds_format_existing_policies", "ds_child_policy_options", "ds_child_policy_options_map", "param_policy_schedule", "meta_parent_policy_id", "f1_app_host", "rs_org_id", "rs_project_id"
   result "grid_and_cwf"
   code <<-EOS
 
@@ -469,28 +390,26 @@ script "js_take_in_parameters", type: "javascript" do
     }
   }
 
-  for (x=0; x<ds_get_aws_accounts.length; x++) {
-    cur = ds_get_aws_accounts[x];
-    cur_aws_account_id = cur.aws_account_id.replace(/['"]+/g, '');
+  for (x=0; x<ds_filtered_subscriptions.length; x++) {
+    cur = ds_filtered_subscriptions[x];
+    cur_subscriptionID = cur.subscriptionID;
 
     // Name and description do not vary between create or updates so defining them here
-    name = ds_child_policy_information.name + ": " + cur.aws_account_name + " (" + cur_aws_account_id + ") (child policy)";
-    description = ds_child_policy_information.name + " policy applied by [" + ds_format_self.name + "](" + applied_policy_url_prefix + meta_parent_policy_id + ") to AWS Account **" + cur.aws_account_name +"** (`" + cur_aws_account_id + "`).  " + ds_child_policy_information.short_description;
+    name = ds_child_policy_information.name + ": " + cur.subscriptionName + " (" + cur_subscriptionID + ") (child policy)";
+    description = ds_child_policy_information.name + " policy applied by [" + ds_format_self.name + "](" + applied_policy_url_prefix + meta_parent_policy_id + ") to Azure Subscription **" + cur.subscriptionName +"** (`" + cur_subscriptionID + "`).  " + ds_child_policy_information.short_description;
 
-    // Check if child policy exists for current account id
-    if ( ! _.contains(_.keys(ds_format_existing_policies.formatted), cur_aws_account_id) ) {
-      console.log("Child Policy for "+cur_aws_account_id+" does not exist and should be created");
-
-      // Child Policy does not exist for current account ID and should be created
-
+    // Check if child policy exists for current subscription id
+    if ( ! _.contains(_.keys(ds_format_existing_policies.formatted), cur_subscriptionID) ) {
+      // Child Policy does not exist and should be created
+      console.log("Child Policy for Subscription ID: "+cur_subscriptionID+" does not exist and should be created");
 
       // Use the options from the parent policy in "name value" list format
       options = _.toArray(ds_child_policy_options);
 
-      // Set param_aws_account_id values for this child policy
+      // Set param_subscription_allowed_list values for this child policy
       options.push({
-        "name": "param_aws_account_number",
-        "value": cur_aws_account_id
+        "name": "param_subscription_allowed_list",
+        "value": [cur_subscriptionID],
       });
 
       if (grid_and_cwf.to_create.length < max_actions) {
@@ -520,26 +439,26 @@ script "js_take_in_parameters", type: "javascript" do
         grid_and_cwf.grid.push(policy_status)
       }
     } else {
-      console.log("Child Policy for "+cur_aws_account_id+" does exist for current account ID and may need to be updated or deleted");
-      // Child Policy does exist for current account ID and may need to be updated or deleted
+      console.log("Child Policy for "+cur_subscriptionID+" does exist for current subscription ID and may need to be updated or deleted");
+      // Child Policy does exist for current subscription ID and may need to be updated or deleted
       // Assume by default we should keep it and not update it
-      should_keep[cur_aws_account_id] = true;
+      should_keep[cur_subscriptionID] = true;
       should_update = false;
 
       // Use the options from the parent policy in "name value" list format
       options = _.toArray(ds_child_policy_options);
 
-      // Set param_aws_account_id values for this child policy
+      // Set param_subscription_allowed_list values for this child policy
       options.push({
-        "name": "param_aws_account_number",
-        "value": cur_aws_account_id
+        "name": "param_subscription_allowed_list",
+        "value": [cur_subscriptionID],
       });
 
       // Check if child policy params match parent policy params
       _.each(ds_format_self.options, function(value, key) {
         // If any child and parent param values do not match, mark the child policy as should_update
-        if ( !_.isEqual(value, ds_format_existing_policies["formatted"][cur_aws_account_id]["options"][key]) ) {
-          console.log("Child Policy Param does not match Parent Policy and should be updated. "+key+" does not match "+value+"!="+ds_format_existing_policies["formatted"][cur_aws_account_id]["options"][key]);
+        if ( !_.isEqual(value, ds_format_existing_policies["formatted"][cur_subscriptionID]["options"][key]) ) {
+          console.log("Child Policy Param does not match Parent Policy and should be updated. "+key+" does not match "+value+"!="+ds_format_existing_policies["formatted"][cur_subscriptionID]["options"][key]);
           should_update = true;
         }
       });
@@ -549,12 +468,12 @@ script "js_take_in_parameters", type: "javascript" do
         // Child policy needs to be updated
         if (grid_and_cwf.to_update.length < max_actions) {
           // Child policy needs to be updated and is within the max_actions limit
-          console.log("Child Policy needs to be updated. ds_format_existing_policies.formatted[cur_aws_account_id]="+JSON.stringify(ds_format_existing_policies.formatted[cur_aws_account_id]));
-          add_to_grid(ds_format_existing_policies.formatted[cur_aws_account_id], "updating")
-          name = ds_format_existing_policies.formatted[cur_aws_account_id].applied_policy_name
+          console.log("Child Policy needs to be updated. ds_format_existing_policies.formatted[cur_subscriptionID]="+JSON.stringify(ds_format_existing_policies.formatted[cur_subscriptionID]));
+          add_to_grid(ds_format_existing_policies.formatted[cur_subscriptionID], "updating")
+          name = ds_format_existing_policies.formatted[cur_subscriptionID].applied_policy_name
           // Add to_update
           grid_and_cwf.to_update.push({
-            "applied_policy_id": ds_format_existing_policies.formatted[cur_aws_account_id].applied_policy_id,
+            "applied_policy_id": ds_format_existing_policies.formatted[cur_subscriptionID].applied_policy_id,
             "name" : name,
             "description" : description,
             "credentials" : ds_format_self.credentials,
@@ -564,12 +483,12 @@ script "js_take_in_parameters", type: "javascript" do
         } else {
           // Child policy needs to be updated but is outside the max_actions limit
           // Add to grid but do not add to to_update
-          console.log("Child Policy needs to be updated. ds_format_existing_policies.formatted[cur_aws_account_id]="+JSON.stringify(ds_format_existing_policies.formatted[cur_aws_account_id]));
-          add_to_grid(ds_format_existing_policies.formatted[cur_aws_account_id], "to be updated");
+          console.log("Child Policy needs to be updated. ds_format_existing_policies.formatted[cur_subscriptionID]="+JSON.stringify(ds_format_existing_policies.formatted[cur_subscriptionID]));
+          add_to_grid(ds_format_existing_policies.formatted[cur_subscriptionID], "to be updated");
         }
       } else {
         // Child policy does not need to be updated
-        add_to_grid(ds_format_existing_policies.formatted[cur_aws_account_id], "running");
+        add_to_grid(ds_format_existing_policies.formatted[cur_subscriptionID], "running");
       }
     }
   }
@@ -677,7 +596,7 @@ Total Child Applied Policies: {{ len data.grid }}
 {{ end -}}
 
 EOS
-    check false # always trigger this status incident
+    check false
     # Export Table disabled for now until UI can support URL / linking
     # Without linking the `policy_link`, `incident_link` values are not usable directly from UI
     # export "grid" do
@@ -844,7 +763,6 @@ define update_applied_policies($data, $governance_host, $rs_project_id) return $
     })
   end
 end
-
 
 escalation "delete_policies" do
   run "delete_applied_policies", data, rs_governance_host, rs_project_id
