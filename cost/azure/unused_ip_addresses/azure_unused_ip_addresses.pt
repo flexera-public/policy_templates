@@ -37,13 +37,14 @@ parameter "param_azure_endpoint" do
   default "management.azure.com"
 end
 
-parameter "param_min_savings" do
+parameter "param_days_unattached" do
   type "number"
   category "Policy Settings"
-  label "Minimum Savings Threshold"
-  description "Minimum potential savings required to generate a recommendation."
+  label "Days Unattached"
+  description "The number of days an IP address needs to be detached to be considered unused. This value cannot be set above 90 due to Azure only storing 90 days of log data. If this value is set to 0, all unattached IP addresses will be considered unused."
+  default 30
   min_value 0
-  default 0
+  max_value 90
 end
 
 parameter "param_subscriptions_allow_or_deny" do
@@ -95,6 +96,7 @@ parameter "param_automatic_action" do
   label "Automatic Actions"
   description "When this value is set, this policy will automatically take the selected action."
   allowed_values ["Delete IP Addresses"]
+  default []
 end
 
 ###############################################################################
@@ -362,16 +364,126 @@ script "js_ip_addresses_region_filtered", type: "javascript" do
 EOS
 end
 
-datasource "ds_unused_ip_addresses" do
-  run_script $js_unused_ip_addresses, $ds_ip_addresses_region_filtered
+datasource "ds_unattached_ip_addresses" do
+  run_script $js_unattached_ip_addresses, $ds_ip_addresses_region_filtered
 end
 
-script "js_unused_ip_addresses", type: "javascript" do
+script "js_unattached_ip_addresses", type: "javascript" do
   parameters "ds_ip_addresses_region_filtered"
   result "result"
   code <<-EOS
   result = _.filter(ds_ip_addresses_region_filtered, function(ip) {
     return typeof(ip['properties']['ipConfiguration']) != 'object' && typeof(ip['properties']['natGateway']) != 'object'
+  })
+EOS
+end
+
+datasource "ds_event_logs" do
+  iterate $ds_azure_subscriptions_filtered
+  request do
+    run_script $js_event_logs, val(iter_item, "id"), $param_azure_endpoint
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "value[*]") do
+      field "eventName", jmes_path(col_item, "eventName.value")
+      field "eventNamePretty", jmes_path(col_item, "eventName.localizedValue")
+      field "eventTimestamp", jmes_path(col_item, "eventTimestamp")
+      field "id", jmes_path(col_item, "id")
+      field "operationName", jmes_path(col_item, "operationName.value")
+      field "operationNamePretty", jmes_path(col_item, "operationName.localizedValue")
+      field "resourceID", jmes_path(col_item, "resourceId")
+      field "status", jmes_path(col_item, "status.value")
+    end
+  end
+end
+
+script "js_event_logs", type:"javascript" do
+  parameters "subscription_id", "param_azure_endpoint"
+  result "request"
+  code <<-EOS
+  // Go back 90 days, which is the maximum supported by Azure Activity Logs
+  start_time = new Date()
+  start_time.setDate(start_time.getDate() - 90)
+  start_time = start_time.toISOString()
+
+  end_time = new Date().toISOString()
+
+  var request = {
+    auth: "auth_azure",
+    host: param_azure_endpoint,
+    path: "/subscriptions/" + subscription_id + "/providers/Microsoft.Insights/eventtypes/management/values",
+    headers: {
+      "User-Agent": "RS Policies"
+    },
+    query_params: {
+      "api-version": "2015-04-01",
+      "$filter": "eventTimestamp ge '" + start_time + "' and eventTimestamp le '" + end_time + "' and resourceType eq 'Microsoft.Network/publicIPAddresses'",
+    },
+    ignore_status: [400, 403, 404]
+  }
+EOS
+end
+
+datasource "ds_unused_ip_addresses" do
+  run_script $js_unused_ip_addresses, $ds_unattached_ip_addresses, $ds_event_logs, $param_days_unattached
+end
+
+script "js_unused_ip_addresses", type: "javascript" do
+  parameters "ds_unattached_ip_addresses", "ds_event_logs", "param_days_unattached"
+  result "result"
+  code <<-EOS
+  result = []
+
+  // Create object containing the most recent event for each resource
+  // 'Microsoft.Network/publicIPAddresses/write' corresponds to IP address creation/association events
+  // 'Microsoft.Network/publicIPAddresses/delete' corresponds to IP address disassociation/deletion events
+  relevant_operations = [
+    'Microsoft.Network/publicIPAddresses/write',
+    'Microsoft.Network/publicIPAddresses/delete'
+  ]
+
+  log_object = {}
+
+  _.each(ds_event_logs, function(entry) {
+    if (_.contains(relevant_operations, entry['operationName'])) {
+      resourceID = entry['resourceID'].toLowerCase()
+
+      if (log_object[resourceID] == undefined) {
+        log_object[resourceID] = new Date(entry['eventTimestamp'])
+      } else {
+        if (new Date(entry['eventTimestamp']) > new Date(log_object[resourceID])) {
+          log_object[resourceID] = new Date(entry['eventTimestamp'])
+        }
+      }
+    }
+  })
+
+  _.each(ds_unattached_ip_addresses, function(ip) {
+    resourceID = ip['resourceID'].toLowerCase()
+    age = null
+
+    if (log_object[resourceID] != undefined && log_object[resourceID] != null) {
+      today = new Date()
+      recent_event = log_object[resourceID]
+
+      age = Math.round((today - recent_event) / 1000 / 60 / 60 / 24)
+    }
+
+    if (param_days_unattached == 0 || age >= param_days_unattached || age == null) {
+      result.push({
+        resourceGroup: ip['resourceGroup'],
+        resourceName: ip['resourceName'],
+        resourceType: ip['resourceType'],
+        region: ip['region'],
+        resourceID: ip['resourceID'],
+        properties: ip['properties'],
+        tags: ip['tags'],
+        subscriptionID: ip['subscriptionID'],
+        subscriptionName: ip['subscriptionName'],
+        age: age
+      })
+    }
   })
 EOS
 end
@@ -471,11 +583,11 @@ EOS
 end
 
 datasource "ds_ip_cost_mapping" do
-  run_script $js_ip_cost_mapping, $ds_unused_ip_addresses, $ds_ip_addresses_region_filtered, $ds_ip_costs_grouped, $ds_applied_policy, $ds_currency, $param_min_savings
+  run_script $js_ip_cost_mapping, $ds_unused_ip_addresses, $ds_ip_addresses_region_filtered, $ds_ip_costs_grouped, $ds_applied_policy, $ds_currency, $param_days_unattached
 end
 
 script "js_ip_cost_mapping", type:"javascript" do
-  parameters "ds_unused_ip_addresses", "ds_ip_addresses_region_filtered", "ds_ip_costs_grouped", "ds_applied_policy", "ds_currency", "param_min_savings"
+  parameters "ds_unused_ip_addresses", "ds_ip_addresses_region_filtered", "ds_ip_costs_grouped", "ds_applied_policy", "ds_currency", "param_days_unattached"
   result "result"
   code <<-'EOS'
   // Function for formatting currency numbers later
@@ -508,44 +620,50 @@ script "js_ip_cost_mapping", type:"javascript" do
       savings = 0.0
     }
 
-    if (savings >= param_min_savings) {
-      total_savings += savings
+    total_savings += savings
 
-      recommendationDetails = [
-        "Delete IP address ", ip["resourceID"], " ",
-        "in Azure Subscription ", ip["subscriptionName"],
-        " (", ip["subscriptionID"], ")"
-      ].join('')
+    ip_message = ''
 
-      tags = []
+    if (typeof(ip['properties']['ipAddress']) == 'string') {
+      ip_message = "(" + ip['properties']['ipAddress'] + ") "
+    }
 
-      if (typeof(ip['tags']) == 'object') {
-        _.each(Object.keys(ip['tags']), function(key) {
-          tags.push([key, "=", ip['tags'][key]].join(''))
-        })
-      }
+    recommendationDetails = [
+      "Delete IP address ", ip["resourceName"], " ", ip_message,
+      "in Azure Subscription ", ip["subscriptionName"],
+      " (", ip["subscriptionID"], ")"
+    ].join('')
 
-      result.push({
-        accountID: ip["subscriptionID"],
-        accountName: ip["subscriptionName"],
-        resourceID: ip['resourceID'],
-        resourceName: ip['resourceName'],
-        resourceGroup: ip['resourceGroup'],
-        resourceType: ip['resourceType'],
-        ipAddress: ip['properties']['ipAddress'],
-        region: ip['region'],
-        service: ip['service'],
-        tags: tags.join(', '),
-        savings: parseFloat(savings.toFixed(3)),
-        savingsCurrency: ds_currency['symbol'],
-        recommendationDetails: recommendationDetails,
-        service: "Microsoft.Network",
-        // These are to avoid errors when we hash_exclude these fields
-        total_savings: '',
-        message: '',
-        policy_name: ''
+    tags = []
+
+    if (typeof(ip['tags']) == 'object') {
+      _.each(Object.keys(ip['tags']), function(key) {
+        tags.push([key, "=", ip['tags'][key]].join(''))
       })
     }
+
+    result.push({
+      accountID: ip["subscriptionID"],
+      accountName: ip["subscriptionName"],
+      resourceID: ip['resourceID'],
+      resourceName: ip['resourceName'],
+      resourceGroup: ip['resourceGroup'],
+      resourceType: ip['resourceType'],
+      ipAddress: ip['properties']['ipAddress'],
+      region: ip['region'],
+      service: ip['service'],
+      age: ip['age'],
+      tags: tags.join(', '),
+      savings: parseFloat(savings.toFixed(3)),
+      savingsCurrency: ds_currency['symbol'],
+      recommendationDetails: recommendationDetails,
+      lookbackPeriod: param_days_unattached,
+      service: "Microsoft.Network",
+      // These are to avoid errors when we hash_exclude these fields
+      total_savings: '',
+      message: '',
+      policy_name: ''
+    })
   })
 
   // Message for incident output
@@ -556,21 +674,35 @@ script "js_ip_cost_mapping", type:"javascript" do
   findings = [
     "Out of ", total_ips , " IP addresses analyzed, ",
     total_unused_ips, " (", unused_ips_percentage,
-    ") are not attached to an instance and are recommended for deletion.\n\n"
+    ") are not attached to an instance and are recommended for deletion. "
   ].join('')
 
-  disclaimer = ""
+  if (param_days_unattached != 0) {
+    day_message = "day"
+    if (total_unused_ips.length > 1) { day_message += "s" }
+
+    idle_message = [
+      "An unattached IP address is considered unused if it has not been attached to an instance ",
+      "for at least ", param_days_unattached, " ", day_message, ".\n\n"
+    ].join('')
+  } else {
+    idle_message = "An IP address is considered unused if it is not attached to an instance regardless of how long it's been unattached for.\n\n"
+  }
+
+  disclaimer = "The above settings can be modified by editing the applied policy and changing the appropriate parameters.\n\n"
 
   savings_message = [
     ds_currency['symbol'], ' ',
     formatNumber(parseFloat(total_savings).toFixed(2), ds_currency['separator'])
   ].join('')
 
+  age_disclaimer = "The Days Unattached field will be empty for any IP addresses that have been unattached for over 90 days due to Azure only retaining 90 days of log data."
+
   // Sort by descending order of savings value
   result = _.sortBy(result, function(item) { return item['savings'] * -1 })
 
   result[0]['total_savings'] = savings_message
-  result[0]['message'] = findings + disclaimer
+  result[0]['message'] = findings + idle_message + disclaimer + age_disclaimer
   result[0]['policy_name'] = ds_applied_policy['name']
 
   // Dummy item to ensure that the check statement in the policy executes at least once
@@ -612,14 +744,20 @@ policy "pol_unused_ip_addresses" do
       field "resourceGroup" do
         label "Resource Group"
       end
+      field "ipAddress"do
+        label "IP Address"
+      end
       field "resourceName" do
         label "Resource Name"
       end
-      field "savings" do
-        label "Estimated Monthly Savings"
+      field "resourceType" do
+        label "Resource Type"
       end
-      field "ipAddress"do
-        label "IP Address"
+      field "recommendationDetails" do
+        label "Recommendation"
+      end
+      field "age" do
+        label "Days Unattached"
       end
       field "region" do
         label "Region"
@@ -627,17 +765,20 @@ policy "pol_unused_ip_addresses" do
       field "tags" do
         label "Tags"
       end
+      field "savings" do
+        label "Estimated Monthly Savings"
+      end
+      field "savingsCurrency" do
+        label "Savings Currency"
+      end
       field "resourceID" do
         label "Resource ID"
-      end
-      field "resourceType" do
-        label "Resource Type"
       end
       field "service" do
         label "Service"
       end
-      field "savingsCurrency" do
-        label "Savings Currency"
+      field "lookbackPeriod" do
+        label "Look Back Period (Days)"
       end
       field "id" do
         label "ID"
