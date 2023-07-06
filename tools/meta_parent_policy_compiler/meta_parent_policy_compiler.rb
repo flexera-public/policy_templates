@@ -5,6 +5,7 @@ if ARGV.length != 1
   puts "Usage: ruby meta_parent_policy_compiler.rb <path_to_child_policy_template>"
   exit
 end
+print('Processing child policy template: ' + ARGV[0] + '\n')
 file_path = ARGV[0]
 file = File.open(file_path, "rb")
 
