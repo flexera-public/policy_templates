@@ -151,7 +151,16 @@ end
 # print(credentials.join("\n---------\n"))
 
 # Replace Placeholders from Meta Parent Policy Template with values from Child Policy Template
-parent_pt = File.open("aws_meta_parent_template.pt", "rb").read
+parent_pt_path = "aws_meta_parent.pt.template"
+if file_path.include?("aws")
+  parent_pt_path = "aws_meta_parent.pt.template"
+elsif file_path.include?("azure")
+  parent_pt_path = "azure_meta_parent.pt.template"
+else
+  print("Could not determine parent policy template to use for #{file_path}\n")
+  exit(1)
+end
+parent_pt = File.open(parent_pt_path, "rb").read
 # Copy the parent_pt to output_pt
 output_pt = parent_pt
 output_pt_path = File.basename(file_path).split(".")[0] + "_meta_parent.pt"
@@ -172,8 +181,8 @@ output_pt = output_pt.gsub("__PLACEHOLDER_FOR_CHILD_POLICY_GITHUB_URL__", github
 # We need to do this because we need to exclude the param_email and param_aws_account_number params from meta parent pt
 output_pt_params = []
 parameters.each do |param|
-  # Check if the param string container either param_email or param_aws_account_number
-  param.include?("param_email") || param.include?("param_aws_account_number") ? nil : output_pt_params.push(param)
+  # Check if the param string container either param_email, param_aws_account_number, or param_subscription_allowed_list
+  param.include?("param_email") || param.include?("param_aws_account_number") || param.include?("param_subscription_allowed_list") ? nil : output_pt_params.push(param)
 end
 # Replace __PLACEHOLDER_FOR_CHILD_POLICY_PARAMETERS_BLOCKS__ with the identified output parameter blocks
 output_pt = output_pt.gsub("__PLACEHOLDER_FOR_CHILD_POLICY_PARAMETERS_BLOCKS__", output_pt_params.join("\n\n"))
