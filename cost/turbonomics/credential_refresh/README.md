@@ -6,7 +6,7 @@ The purpose of this policy is to refresh the authentication cookie used to authe
 
 ## What it does
 
-The policy periodically checks for applied policies in the project that are related to Turbonomic. If any Turbonomic policies are found, the policy initiates an escalation process to update the authentication cookie used for Turbonomic APIs. The policy retrieves the necessary credentials and makes API calls to Turbonomic to obtain a fresh cookie. It then updates the applied Turbonomic policies with the new authentication cookie, ensuring seamless authentication for Turbonomic API calls.
+The policy periodically checks for applied policies in the project that are related to Turbonomic. If any Turbonomic policies are found, the policy checks the scheduled run times of these policies and determines if an update is necessary. If the next scheduled run of a Turbonomic policy is before the next refresh by the credential updater, it initiates an escalation process to update the authentication cookie used for Turbonomic APIs. The policy retrieves the necessary credentials and makes API calls to Turbonomic to obtain a fresh cookie. It then updates the applied Turbonomic policies with the new authentication cookie, ensuring seamless authentication for Turbonomic API calls.
 
 ## Prerequisites
 
@@ -28,7 +28,8 @@ The policy performs the following actions:
 
 - Retrieves all applied policies in the project where this policy is applied.
 - Filters the applied policies to find policies associated with Turbonomic.
-- Updates the authentication cookie parameter for Turbonomic policies with a refreshed cookie.
+- Evaluates the refresh frequency of the credential's updater and the next scheduled run time of each Turbonomic policy.
+- If the next scheduled run of a Turbonomic policy is before the next refresh by the credential updater, the policy updates the authentication cookie parameter with a refreshed cookie.
 
 ### Required Flexera Roles
 
