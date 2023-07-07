@@ -24,12 +24,9 @@ This policy requires the following input parameters:
 
 ## Policy Actions
 
-The policy performs the following actions:
+The policy performs the following action:
 
-- Retrieves all applied policies in the project where this policy is applied.
-- Filters the applied policies to find policies associated with Turbonomic.
-- Evaluates the refresh frequency of the credential's updater and the next scheduled run time of each Turbonomic policy.
-- If the next scheduled run of a Turbonomic policy is before the next refresh by the credential updater, the policy updates the authentication cookie parameter with a refreshed cookie.
+- Updates the authentication cookie parameter for Turbonomic policies with a refreshed cookie.
 
 ### Required Flexera Roles
 

@@ -2,7 +2,7 @@
 
 ## v0.2
 
-- The refresh policy will decide if update is needed based on its frequency and next scheduled run of the policy to update
+- The refresh policy updates the applied policies only when necessary, taking into account their next scheduled execution
 
 ## v0.1
 
