@@ -6,7 +6,7 @@ category "Cost"
 severity "low"
 default_frequency "daily"
 info(
-  version: "2.8",
+  version: "2.9",
   provider:"Google",
   service: "Storage",
   policy_set: "Unused Volumes",
@@ -256,6 +256,7 @@ script "js_recommenders", type: "javascript" do
         // If record with same accountID-region was found we don't add it to recommenders,
         // it help us to prevent duplicates and avoid extra calls to Recommender API.
         if (!found) {
+            objectToFind["requestNumber"] = recommenders.length + 1
             recommenders.push(objectToFind)
         }
     })
@@ -266,7 +267,7 @@ end
 datasource "ds_recommendations" do
   iterate $ds_recommenders
   request do
-    run_script $js_recommender_call, val(iter_item,"accountID"), val(iter_item, "region")
+    run_script $js_recommender_call, val(iter_item,"accountID"), val(iter_item, "region"), val(iter_item, "requestNumber")
   end
   result do
     encoding "json"
@@ -290,12 +291,15 @@ datasource "ds_recommendations" do
 end
 
 script "js_recommender_call", type: "javascript" do
-  parameters "accountID", "region"
+  parameters "accountID", "region", "requestNumber"
   result "request"
   code <<-EOF
-    var now = new Date().getTime();
-    var sleepDuration = 10000
-    while(new Date().getTime() < now + sleepDuration){ /* Do nothing */ }
+    // If 100 requests have been made, wait 1 minute
+    if (requestNumber % 100 === 0) {
+      var now = new Date().getTime();
+      var sleepDuration = 60000
+      while(new Date().getTime() < now + sleepDuration){ /* Do nothing to prevent quota error */ }
+    }
     var request = {
       auth: "auth_google",
       pagination: "google_pagination",

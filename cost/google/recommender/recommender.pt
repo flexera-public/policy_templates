@@ -6,7 +6,7 @@ category "Cost"
 severity "low"
 default_frequency "daily"
 info(
-  version: "2.4",
+  version: "2.5",
   provider:"Google",
   service: "Storage",
   policy_set: "Native Recommendations"
@@ -82,7 +82,7 @@ pagination "google_pagination" do
 end
 
 ###############################################################################
-# Datasources
+# Datasources & Scripts
 ###############################################################################
 
 #get all google project
@@ -102,39 +102,10 @@ datasource "ds_google_project" do
   end
 end
 
-
 datasource "ds_recommenders" do
   run_script $js_recommenders, $param_location_whitelist, $param_recommenders, $ds_google_project, $param_project
 end
 
-datasource "ds_recommendations" do
-  iterate $ds_recommenders
-  request do
-    run_script $js_recommender_call, val(iter_item,"projectId"), val(iter_item, "location"), val(iter_item, "recommender")
-  end
-  result do
-    encoding "json"
-    collect jmes_path(response, "recommendations[*]") do
-      field "projectId", val(iter_item, "projectId")
-      field "projectNumber", val(iter_item, "projectNumber")
-      field "location", val(iter_item, "location")
-      field "id", jmes_path(col_item, "name")
-      field "resource", jmes_path(col_item, "content.overview.resource")
-      field "resourceName", jmes_path(col_item, "content.overview.resourceName")
-      field "description", jmes_path(col_item, "description")
-      field "primaryImpact", jmes_path(col_item, "primaryImpact")
-      field "costUnits", jmes_path(col_item, "primaryImpact.costProjection.cost.units")
-      field "currency", jmes_path(col_item, "primaryImpact.costProjection.cost.currencyCode")
-      field "priority", jmes_path(col_item, "priority")
-      field "recommenderSubtype", jmes_path(col_item, "recommenderSubtype")
-      field "state", jmes_path(col_item, "stateInfo.state")
-    end
-  end
-end
-
-###############################################################################
-# Scripts
-###############################################################################
 script "js_recommenders", type: "javascript" do
   parameters "param_location_whitelist", "param_recommenders", "ds_google_project", "param_project"
   result "results"
@@ -165,7 +136,8 @@ script "js_recommenders", type: "javascript" do
           projectNumber: project.projectNumber,
           projectId: project.projectId,
           location: location,
-          recommender: recommenders
+          recommender: recommenders,
+          requestNumber: results.length + 1
         })
       })
     }
@@ -173,13 +145,41 @@ script "js_recommenders", type: "javascript" do
 EOF
 end
 
+datasource "ds_recommendations" do
+  iterate $ds_recommenders
+  request do
+    run_script $js_recommender_call, val(iter_item,"projectId"), val(iter_item, "location"), val(iter_item, "recommender"), val(iter_item, "requestNumber")
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "recommendations[*]") do
+      field "projectId", val(iter_item, "projectId")
+      field "projectNumber", val(iter_item, "projectNumber")
+      field "location", val(iter_item, "location")
+      field "id", jmes_path(col_item, "name")
+      field "resource", jmes_path(col_item, "content.overview.resource")
+      field "resourceName", jmes_path(col_item, "content.overview.resourceName")
+      field "description", jmes_path(col_item, "description")
+      field "primaryImpact", jmes_path(col_item, "primaryImpact")
+      field "costUnits", jmes_path(col_item, "primaryImpact.costProjection.cost.units")
+      field "currency", jmes_path(col_item, "primaryImpact.costProjection.cost.currencyCode")
+      field "priority", jmes_path(col_item, "priority")
+      field "recommenderSubtype", jmes_path(col_item, "recommenderSubtype")
+      field "state", jmes_path(col_item, "stateInfo.state")
+    end
+  end
+end
+
 script "js_recommender_call", type: "javascript" do
-  parameters "projectId", "location", "recommender"
+  parameters "projectId", "location", "recommender", "requestNumber"
   result "request"
   code <<-EOF
-  var now = new Date().getTime();
-  var sleepDuration = 10000
-  while(new Date().getTime() < now + sleepDuration){ /* Do nothing */ }
+  // If 100 requests have been made, wait
+  if (requestNumber % 100 === 0) {
+    var now = new Date().getTime();
+    var sleepDuration = 60000
+    while(new Date().getTime() < now + sleepDuration){ /* Do nothing */ }
+  }
   var request = {
     auth: "auth_google",
     pagination: "google_pagination",
