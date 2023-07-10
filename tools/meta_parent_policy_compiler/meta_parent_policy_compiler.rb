@@ -172,11 +172,8 @@ def compile_meta_parent_policy(file_path)
   # This would only work if the pt file is located under the `policy_templates` repo directory
   # If it is not, then the URL will be incorrect
   pt_path_expanded = File.expand_path(file_path) # Get full path to the pt file provided
-  print("pt_path_expanded: #{pt_path_expanded}\n")
   pt_path_repo_file = pt_path_expanded.gsub(/^.*policy_templates\//, "") # Get the path to the pt file relative to the policy_templates directory
-  print("pt_path_repo_file: #{pt_path_repo_file}\n")
   pt_path_repo_dir = pt_path_repo_file.split("/")[0..-2].join("/") # Get the path to the directory containing the child pt file
-  print("pt_path_repo_dir: #{pt_path_repo_dir}\n")
   github_url = "https://github.com/flexera-public/policy_templates/tree/master/#{pt_path_repo_dir}" # Build the github URL
   output_pt = output_pt.gsub("__PLACEHOLDER_FOR_CHILD_POLICY_GITHUB_URL__", github_url) # Replace the placeholder with the github URL
   # Build a list of parameter block strings for the output pt
