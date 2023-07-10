@@ -172,9 +172,9 @@ def compile_meta_parent_policy(file_path)
   # This would only work if the pt file is located under the `policy_templates` repo directory
   # If it is not, then the URL will be incorrect
   pt_path_expanded = File.expand_path(file_path) # Get full path to the pt file provided
-  pt_path_repo_file = pt_path_expanded.split("policy_templates/")[1] # Get the path to the pt file relative to the policy_templates directory
+  pt_path_repo_file = pt_path_expanded.split("policy_templates")[1] # Get the path to the pt file relative to the policy_templates directory
   pt_path_repo_dir = pt_path_repo_file.split("/")[0..-2].join("/") # Get the path to the directory containing the child pt file
-  github_url = "https://github.com/flexera-public/policy_templates/tree/master/#{pt_path_repo_dir}" # Build the github URL
+  github_url = "https://github.com/flexera-public/policy_templates/tree/master#{pt_path_repo_dir}" # Build the github URL
   output_pt = output_pt.gsub("__PLACEHOLDER_FOR_CHILD_POLICY_GITHUB_URL__", github_url) # Replace the placeholder with the github URL
   # Build a list of parameter block strings for the output pt
   # We need to do this because we need to exclude the param_email and param_aws_account_number params from meta parent pt
