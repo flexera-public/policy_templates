@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.10
+
+- Updated policy README file with a deeper explanation of how the GCP recommender works and the roles required to use it.
+
 ## v2.9
 
 - Added `Lookback Period In Days` incident field.

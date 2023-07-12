@@ -4,6 +4,21 @@
 
 This Policy finds Idle Persistent Disk Recommendations and reports when it finds them. You can then delete the idle volumes
 
+### How it works
+
+This policy uses the GCP recommender `google.compute.disk.IdleResourceRecommender`, which 
+
+It is important that the policy GCP credentials have at least one of the following roles:
+
+-
+-
+
+You also need to [enable the Recommender API](https://console.cloud.google.com/flows/enableapi?apiid=recommender.googleapis.com)
+
+Check the following official GCP docs for more:
+
+- 
+
 ## Input Parameters
 
 This policy has the following input parameters required when launching the policy.
