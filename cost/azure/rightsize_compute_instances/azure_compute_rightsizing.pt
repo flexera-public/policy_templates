@@ -7,7 +7,7 @@ category "Cost"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "2.4",
+  version: "3.0",
   provider: "Azure",
   service: "Compute",
   policy_set: "Rightsize Compute Instances",
@@ -20,8 +20,9 @@ info(
 
 parameter "param_email" do
   type "list"
+  category "Policy Settings"
   label "Email addresses"
-  description "Email addresses of the recipients you wish to notify when new incidents are created"
+  description "A list of email addresses to notify."
   default []
 end
 
@@ -80,14 +81,6 @@ parameter "param_azure_endpoint" do
   description "The Azure Resource Manager API endpoint to use."
   allowed_values "management.azure.com", "management.chinacloudapi.cn"
   default "management.azure.com"
-end
-
-parameter "param_log_to_cm_audit_entries" do
-  type "string"
-  label "Log to CM Audit Entries"
-  description "Boolean for whether or not to log any debugging information from actions to CM Audit Entries, this should be left set to No on Flexera EU"
-  default "No"
-  allowed_values "Yes", "No"
 end
 
 ###############################################################################
@@ -845,14 +838,14 @@ escalation "esc_downsize_instances" do
   automatic contains($param_automatic_action, "Downsize Instances")
   label "Downsize Instances"
   description "Approval to downsize all selected instances"
-  run "downsize_instance", data, $param_log_to_cm_audit_entries, $param_azure_endpoint
+  run "downsize_instance", data, $param_azure_endpoint
 end
 
 escalation "esc_terminate_instances" do
   automatic contains($param_automatic_action, "Terminate Instances")
   label "Terminate Instances"
   description "Approval to terminate all selected instances"
-  run "delete_instance", data, $param_log_to_cm_audit_entries, $param_azure_endpoint
+  run "delete_instance", data, $param_azure_endpoint
 end
 
 ###############################################################################
@@ -860,9 +853,14 @@ end
 ###############################################################################
 
 #DOWNSIZE AZURE VM INSTANCE DEFINITION
-define downsize_instance($data, $param_log_to_cm_audit_entries, $param_azure_endpoint) return $all_responses do
+define downsize_instance($data, $param_azure_endpoint) return $all_responses do
+  # Change "No" to "Yes" to enable CWF debug logging
+  $log_to_cm_audit_entries = "No"
+
+  $$debug = $log_to_cm_audit_entries == "Yes"
+
   $response={}
-  $$debug = $param_log_to_cm_audit_entries == "Yes"
+
   $syslog_subject = "Azure Instance Utilization with Log Analytics Policy: "
   foreach $item in $data do
     if $item["recommendedVmSize"] != "N/A"
@@ -894,8 +892,12 @@ define downsize_instance($data, $param_log_to_cm_audit_entries, $param_azure_end
 end
 
 #TERMINATE AZURE VM INSTANCE DEFINITION
-define delete_instance($data, $param_log_to_cm_audit_entries, $param_azure_endpoint) return $all_responses do
-  $$debug = $param_log_to_cm_audit_entries == "Yes"
+define delete_instance($data, $param_azure_endpoint) return $all_responses do
+  # Change "No" to "Yes" to enable CWF debug logging
+  $log_to_cm_audit_entries = "No"
+
+  $$debug = $log_to_cm_audit_entries == "Yes"
+
   $$log = []
   $all_responses = []
   $syslog_subject = "Azure Terminate Instance: "
