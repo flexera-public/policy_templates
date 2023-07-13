@@ -1,5 +1,21 @@
 # Changelog
 
+## v3.0
+
+- Several parameters altered to be more descriptive and human-readable
+- Removed deprecated "Log to CM Audit Entries" parameter
+- Added ability to only report recommendations that meet a minimum savings threshold
+- Added support for memory metrics
+- Added ability to configure how many days to consider CPU/memory statistics for
+- Added ability to filter resources by multiple tag key:value pairs
+- Added ability to make recommendations based on maximum CPU/memory usage
+- Added additional context to incident description
+- Normalized incident export to be consistent with other policies
+- Added human-readable recommendation to incident export
+- Added additional fields to incident export to facilitate scraping for dashboards
+- Policy no longer raises new escalations if statistics or savings data changed but nothing else has
+- Streamlined code for better readability and faster execution
+
 ## v2.4
 
 - Changed internal names of several incident fields to ensure that they are properly scraped for dashboards.
