@@ -1,5 +1,9 @@
 # Changelog
 
+## v4.7
+
+- Renamed Subscription List parameter for consistency and accuracy
+
 ## v4.6
 
 - Added `Lookback Period` incident field.
