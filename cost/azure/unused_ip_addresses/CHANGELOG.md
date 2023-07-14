@@ -4,6 +4,7 @@
 
 - Renamed Subscription List parameter for consistency and accuracy
 - Added logic required for "Meta Policy" use-cases
+- Fixed issue with incident not properly including messaging
 
 ## v4.6
 

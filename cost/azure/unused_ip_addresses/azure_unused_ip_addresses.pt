@@ -340,8 +340,10 @@ script "js_exclude_tags", type: "javascript" do
             "tags": tags,
             "service": service,
             "resourceId": ipAddress["resourceId"],
+            "savingsCurrency": "",
             "savings": 0.0,
-            "properties": properties
+            "properties": properties,
+            "message": ""
           })
         }
       }
@@ -434,7 +436,8 @@ script "js_ip_cost_mapping", type:"javascript" do
             "resourceId": ip["resourceId"],
             "savings": (Math.round(monthly_savings * 1000) / 1000),
             "savingsCurrency": cur,
-            "properties": ip["properties"]
+            "properties": ip["properties"],
+            "message": ""
           })
         } else {
           unused_ip_list.push({
@@ -449,7 +452,8 @@ script "js_ip_cost_mapping", type:"javascript" do
             "resourceId": ip["resourceId"],
             "savings": 0.0,
             "savingsCurrency": cur,
-            "properties": ip["properties"]
+            "properties": ip["properties"],
+            "message": ""
           })
         }
       })
@@ -465,27 +469,12 @@ script "js_ip_cost_mapping", type:"javascript" do
       unused_ip_list = ip_list;
       message = "You do not have the minimum required role of billing_center_viewer to view the savings"
     }
-    result = {
-      "ip_list": unused_ip_list,
-      "message": message
-    }
-    result.ip_list = _.sortBy(result.ip_list, "region")
-    result.ip_list = _.sortBy(result.ip_list, "subscriptionName")
-  EOS
-end
 
-datasource "ds_only_instances" do
-  run_script $js_only_instances, $ds_ip_cost_mapping
-end
+    unused_ip_list = _.sortBy(unused_ip_list, "region")
+    unused_ip_list = _.sortBy(unused_ip_list, "subscriptionName")
 
-script "js_only_instances", type: "javascript" do
-  parameters "arg"
-  result "results"
-  code <<-EOS
-    results = arg.ip_list
-    if (results && results.length) {
-      results[0].message = arg.message
-    }
+    result = unused_ip_list
+    result[0]['message'] = message
   EOS
 end
 
@@ -513,16 +502,16 @@ end
 
 policy "pol_unused_ip_addresses" do
   validate $ds_ip_cost_mapping do
-    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data.ip_list }} Unused IP Addresses Found"
-    hash_exclude "savingsCurrency", "savings"
+    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} Unused IP Addresses Found"
+    hash_exclude "savingsCurrency", "savings", "message"
     detail_template <<-EOS
-    {{with index data 0}}{{ .message }}{{end}}
+    {{ with index data 0 }}{{ .message }}{{ end }}
 EOS
     # Policy check fails and incident is created only if data is not empty and the Parent Policy has not been terminated
-    check logic_or($ds_parent_policy_terminated, eq(size(val(data, "ip_list")), 0))
+    check logic_or($ds_parent_policy_terminated, eq(size(data), 0))
     escalate $send_email_report
     escalate $delete_unused_ip_addresses
-    export "ip_list" do
+    export do
       resource_level true
       field "accountID" do
         label "Subscription ID"
