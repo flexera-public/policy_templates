@@ -2,19 +2,19 @@
 
 ## What it does
 
-This policy checks all the instances in Azure Subscriptions for the average CPU usage over the last 30 days. If the usage is less than the user provided Idle Instance CPU percentage threshold then the Virtual Machine is recommended for termination. If the usage is less than the user provided Inefficient Instance CPU percentage threshold then the Virtual Machine is recommended for downsizing. Both sets of Virtual Machines returned from this policy are emailed to the user.
+This policy checks all the instances in Azure Subscriptions for the average CPU and/or memory usage over a user-specified number of days. If the usage is less than the user provided Idle Instance CPU and/or memory percentage threshold then the Virtual Machine is recommended for deletion. If the usage is less than the user provided Underutilized Instance CPU and/or Memory percentage threshold then the Virtual Machine is recommended for downsizing. Both sets of Virtual Machines returned from this policy are emailed to the user.
 
 ## Functional Details
 
-- The policy leverages the Azure API to check all instances and then checks the instance average CPU utilization over the past 30 days
-- The policy identifies all instances that have CPU utilization below the Idle Instance CPU Threshold defined by the user, to provide a recommendation.
-- The recommendation provided for Idle Instances is a termination action. These instances can be terminated in an automated manner or after approval.
-- The policy identifies all instances that have CPU utilization below the Inefficient Instance CPU Threshold defined by the user, to provide a recommendation.
-- The recommendation provided for Inefficient/Underutilized Instances is a downsize action. These instances can be downsized in an automated manner or after approval.
+- The policy leverages the Azure API to check all instances and then checks the instance average CPU and memory utilization over a user-specified number of days.
+- The policy identifies all instances that have CPU and/or memory utilization below the user-specified idle thresholds and provides the relevant recommendation.
+- The recommendation provided for Idle Instances is a deletion action. These instances can be deleted in an automated manner or after approval.
+- The policy identifies all instances that have CPU and/or memory utilization below the user-specified underutilized thresholds and provides the relevant recommendation.
+- The recommendation provided for Underutilized Instances is a downsize action. These instances can be downsized in an automated manner or after approval.
 
 ### Policy savings details
 
-The policy includes the estimated savings. The estimated savings is recognized if the resource is terminated, or downsized. Optima is used to receive the estimated savings which is the cost of the resource for the last full month. The savings is displayed in the Estimated Monthly Savings column. If the resource can not be found in Optima the value is 0.0. The incident message detail includes the sum of each resource Estimated Monthly Savings as Total Estimated Monthly Savings.
+The policy includes the estimated savings. The estimated savings is recognized if the resource is deleted or downsized. Optima is used to receive the estimated savings which is the cost of the resource for the last full month. The savings is displayed in the Estimated Monthly Savings column. If the resource can not be found in Optima the value is 0.0. The incident message detail includes the sum of each resource Estimated Monthly Savings as Total Estimated Monthly Savings.
 
 ## Input Parameters
 
