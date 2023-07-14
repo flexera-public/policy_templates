@@ -3,6 +3,7 @@
 ## v4.6
 
 - Renamed Subscription List parameter for consistency and accuracy
+- Added logic required for "Meta Policy" use-cases
 
 ## v4.5
 
