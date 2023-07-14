@@ -8,6 +8,8 @@ This Policy finds Idle Virtual Machine Recommendations and reports when it finds
 
 This policy uses the GCP recommender `google.compute.instance.IdleResourceRecommender`, which identifies instances (VM) that have not been used over the previous 1 to 14 days, or, for new VMs, starting one day after VM creation: the algorithm considers the CPU and network usage in the last observation period. If CPU and network usage are below predefined thresholds, the Recommender classifies the VM as idle.
 
+After a VM is created and running for at least one day during the observation period, Compute Engine begins generating idle VM recommendations for it. New recommendations are generated once per day.
+
 It is important that the policy GCP credentials have at least one of the following permissions:
 
 - `recommender.computeInstanceIdleResourceRecommendations.list`
