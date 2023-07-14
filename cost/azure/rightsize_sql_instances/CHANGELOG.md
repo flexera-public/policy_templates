@@ -4,6 +4,7 @@
 
 - Renamed Subscription List parameter for consistency and accuracy
 - Added logic required for "Meta Policy" use-cases
+- Added Flexera credential for "Meta Policy" use-cases
 
 ## v2.13
 
