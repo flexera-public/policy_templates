@@ -3,6 +3,7 @@
 ## v3.1
 
 - Added support for meta policies
+- Fixed typo in incident name for idle instances
 
 ## v3.0
 
