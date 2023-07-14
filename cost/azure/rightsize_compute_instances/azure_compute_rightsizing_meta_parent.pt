@@ -148,7 +148,6 @@ end
 ###############################################################################
 # Authentication
 ###############################################################################
-
 credentials "auth_azure" do
   schemes "oauth2"
   label "Azure"
@@ -687,19 +686,19 @@ datasource "ds_child_incident_details" do
   end
 end
 
-datasource "ds_underutilized_incidents" do
-  run_script $js_underutilized_incidents, $ds_child_incident_details
+datasource "ds_idle_and_underutil_instances_combined_incidents" do
+  run_script $js_ds_idle_and_underutil_instances_combined_incidents, $ds_child_incident_details
 end
 
-script "js_underutilized_incidents", type: "javascript" do
+script "js_ds_idle_and_underutil_instances_combined_incidents", type: "javascript" do
   parameters "ds_child_incident_details"
   result "result"
   code <<-EOS
   result = []
   _.each(ds_child_incident_details, function(incident) {
     s = incident["summary"];
-    // If the incident summary contains "Azure Underutilized Virtual Machines" then include it in the filter result
-    if (s.indexOf("Azure Underutilized Virtual Machines") > -1) {
+    // If the incident summary contains "Azure Underutilized Virtual Machines Found" then include it in the filter result
+    if (s.indexOf("Azure Underutilized Virtual Machines Found") > -1) {
       _.each(incident["violation_data"], function(violation) {
         result.push(violation);
       });
@@ -708,11 +707,11 @@ script "js_underutilized_incidents", type: "javascript" do
 EOS
 end
 
-datasource "ds_idle_incidents" do
-  run_script $js_idle_incidents, $ds_child_incident_details
+datasource "ds_idle_and_underutil_instances_combined_incidents" do
+  run_script $js_ds_idle_and_underutil_instances_combined_incidents, $ds_child_incident_details
 end
 
-script "js_idle_incidents", type: "javascript" do
+script "js_ds_idle_and_underutil_instances_combined_incidents", type: "javascript" do
   parameters "ds_child_incident_details"
   result "result"
   code <<-EOS
@@ -729,14 +728,15 @@ script "js_idle_incidents", type: "javascript" do
 EOS
 end
 
+
 # Summary and a conditional incident which will show up if any policy is being applied, updated or deleted.
 # Minimum of 1 incident, max of four
 # Could swap the summary to only showing running
 # Could also just have one incident and use meta_status to determine which escalation happens
 policy "policy_scheduled_report" do
   # Consolidated Incident Check(s)
-  # Consolidated incident for Azure Underutilized Virtual Machines Found
-  validate $ds_underutilized_incidents do
+    # Consolidated incident for Azure Underutilized Virtual Machines Found
+  validate $ds_idle_and_underutil_instances_combined_incidents do
     summary_template "Consolidated Incident: {{ len data }} Azure Underutilized Virtual Machines Found"
     escalate $esc_email
     check eq(size(data), 0)
@@ -823,9 +823,8 @@ policy "policy_scheduled_report" do
     end
   end
 
-  # Consolidated Incident Check(s)
   # Consolidated incident for Azure Idle Virtual Machines Found
-  validate $ds_idle_incidents do
+  validate $ds_idle_and_underutil_instances_combined_incidents do
     summary_template "Consolidated Incident: {{ len data }} Azure Idle Virtual Machines Found"
     escalate $esc_email
     check eq(size(data), 0)
