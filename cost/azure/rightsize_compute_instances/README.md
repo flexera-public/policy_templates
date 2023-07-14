@@ -2,11 +2,11 @@
 
 ## What it does
 
-This policy checks all the instances in Azure Subscriptions for the average CPU and/or memory usage over a user-specified number of days. If the usage is less than the user provided Idle Instance CPU and/or memory percentage threshold then the Virtual Machine is recommended for deletion. If the usage is less than the user provided Underutilized Instance CPU and/or Memory percentage threshold then the Virtual Machine is recommended for downsizing. Both sets of Virtual Machines returned from this policy are emailed to the user.
+This policy checks all the instances in Azure Subscriptions for the average or maximum CPU and/or memory usage over a user-specified number of days. If the usage is less than the user provided Idle Instance CPU and/or memory percentage threshold then the Virtual Machine is recommended for deletion. If the usage is less than the user provided Underutilized Instance CPU and/or Memory percentage threshold then the Virtual Machine is recommended for downsizing. Both sets of Virtual Machines returned from this policy are emailed to the user.
 
 ## Functional Details
 
-- The policy leverages the Azure API to check all instances and then checks the instance average CPU and memory utilization over a user-specified number of days.
+- The policy leverages the Azure API to check all instances and then checks the instance average or maximum CPU and memory utilization over a user-specified number of days.
 - The policy identifies all instances that have CPU and/or memory utilization below the user-specified idle thresholds and provides the relevant recommendation.
 - The recommendation provided for Idle Instances is a deletion action. These instances can be deleted in an automated manner or after approval.
 - The policy identifies all instances that have CPU and/or memory utilization below the user-specified underutilized thresholds and provides the relevant recommendation.
