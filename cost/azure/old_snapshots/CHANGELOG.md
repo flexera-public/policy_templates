@@ -1,5 +1,9 @@
 # Changelog
 
+## v4.6
+
+- Renamed Subscription List parameter for consistency and accuracy
+
 ## v4.5
 
 - Added `Size` incident field.

@@ -1,5 +1,9 @@
 # Changelog
 
+## v4.7
+
+- Renamed Subscription List parameter for consistency and accuracy
+
 ## v4.6
 
 - New escalations are no longer created if Estimated Monthly Savings or Savings Currency have changed, but nothing else has
