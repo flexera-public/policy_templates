@@ -54,7 +54,7 @@ For administrators [creating and managing credentials](https://docs.flexera.com/
   - `Microsoft.Compute/virtualMachines/read`
   - `Microsoft.Compute/virtualMachines/write`*
   - `Microsoft.Compute/skus/read`
-  - `Microsoft.Insights/Metrics/Read`
+  - `Microsoft.Insights/metrics/Read`
 
 \* Only required for taking action (deleting or downsizing); the policy will still function in a read-only capacity without these permissions.
 
