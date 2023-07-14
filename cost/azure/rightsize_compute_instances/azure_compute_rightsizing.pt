@@ -1002,7 +1002,22 @@ script "js_idle_and_underutil_instances", type:"javascript" do
     underutil_list[0]['policy_name'] = ds_applied_policy['name']
   }
 
-  result = idle_list.concat(underutil_list)
+  result = {
+    idle_list: idle_list,
+    underutil_list: underutil_list
+  }
+EOS
+end
+
+datasource "ds_underutilized_instances" do
+  run_script $js_underutilized_instances, $ds_idle_and_underutil_instances
+end
+
+script "js_underutilized_instances", type: "javascript" do
+  parameters "ds_idle_and_underutil_instances"
+  result "result"
+  code <<-EOS
+  result = ds_idle_and_underutil_instances["underutil_list"]
 
   // Add a dummy entry to ensure that the policy's check statement executes at least once
   result.push({
@@ -1024,12 +1039,43 @@ script "js_idle_and_underutil_instances", type:"javascript" do
 EOS
 end
 
+datasource "ds_idle_instances" do
+  run_script $js_idle_instances, $ds_idle_and_underutil_instances
+end
+
+script "js_idle_instances", type: "javascript" do
+  parameters "ds_idle_and_underutil_instances"
+  result "result"
+  code <<-EOS
+  result = ds_idle_and_underutil_instances["idle_list"]
+
+  // Add a dummy entry to ensure that the policy's check statement executes at least once
+  result.push({
+    "recommendationType": "",
+    "underutil_message": "",
+    "idle_message": "",
+    "underutil_total_savings": "",
+    "idle_total_savings": "",
+    "tags": "",
+    "savings": "",
+    "savingsCurrency": "",
+    "cpu_maximum": "",
+    "cpu_minimum": "",
+    "cpu_average": "",
+    "mem_maximum": "",
+    "mem_minimum": "",
+    "mem_average": ""
+  })
+EOS
+end
+
+
 ###############################################################################
 # Policy
 ###############################################################################
 
 policy "pol_utilization" do
-  validate_each $ds_idle_and_underutil_instances do
+  validate_each $ds_underutilized_instances do
     summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Azure Underutilized Virtual Machines Found"
     detail_template <<-'EOS'
     **Potential Monthly Savings:** {{ with index data 0 }}{{ .underutil_total_savings }}{{ end }}
@@ -1133,7 +1179,7 @@ policy "pol_utilization" do
       end
     end
   end
-  validate_each $ds_idle_and_underutil_instances do
+  validate_each $ds_idle_instances do
     summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Azure Idle Virtual Machines Found"
     detail_template <<-'EOS'
     **Potential Monthly Savings:** {{ with index data 0 }}{{ .idle_total_savings }}{{ end }}
