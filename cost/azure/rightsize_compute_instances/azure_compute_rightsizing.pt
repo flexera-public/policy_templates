@@ -110,20 +110,11 @@ parameter "param_stats_check_both" do
   default "Either CPU or Memory"
 end
 
-parameter "param_stats_threshold_cpu" do
+parameter "param_stats_threshold" do
   type "string"
   category "Statistics"
-  label "Threshold Statistic (CPU)"
-  description "CPU statistic to use when determining if an instance is idle/underutilized."
-  allowed_values "Average", "Maximum"
-  default "Average"
-end
-
-parameter "param_stats_threshold_mem" do
-  type "string"
-  category "Statistics"
-  label "Threshold Statistic (Memory)"
-  description "Memory statistic to use when determining if an instance is idle/underutilized. Maximum is not recommended because most VMs will have a value of 100% for maximum memory."
+  label "Threshold Statistic"
+  description "Statistic to use when determining if an instance is idle/underutilized."
   allowed_values "Average", "Maximum"
   default "Average"
 end
@@ -533,61 +524,73 @@ script "js_azure_instances_metrics_organized", type: "javascript" do
       }
     })
 
+    // Default to 0 in case there are no stats because instance is not powered on
     cpu_min = 0
     cpu_max = 0
     cpu_avg = 0
-    cpu_count = 0
+    cpu_min_count = 0
+    cpu_max_count = 0
+    cpu_avg_count = 0
 
     if (cpu_stats != null && cpu_stats != undefined) {
       _.each(cpu_stats, function(item) {
         if (item["average"] != undefined && item["average"] != null) {
-          cpu_min += item["minimum"]
-          cpu_max += item["maximum"]
           cpu_avg += item["average"]
-          cpu_count += 1
+          cpu_avg_count += 1
+        }
+
+        if (item["minimum"] != undefined && item["minimum"] != null) {
+          cpu_min += item["minimum"]
+          cpu_min_count += 1
+        }
+
+        if (item["maximum"] != undefined && item["maximum"] != null) {
+          cpu_max += item["maximum"]
+          cpu_max_count += 1
         }
       })
     }
 
-    if (cpu_count == 0) {
-      cpu_min = 0
-      cpu_max = 0
-      cpu_avg = 0
-    } else {
-      cpu_min = cpu_min / cpu_count
-      cpu_max = cpu_max / cpu_count
-      cpu_avg = cpu_avg / cpu_count
-    }
+    if (cpu_min_count != 0) { cpu_min = cpu_min / cpu_min_count }
+    if (cpu_max_count != 0) { cpu_max = cpu_max / cpu_max_count }
+    if (cpu_avg_count != 0) { cpu_avg = cpu_avg / cpu_avg_count }
 
+    // Default to 0 in case there are no stats because instance is not powered on
     mem_min = 0
     mem_max = 0
     mem_avg = 0
-    mem_count = 0
+    mem_min_count = 0
+    mem_max_count = 0
+    mem_avg_count = 0
+
+    total_memory = ds_azure_sku_memory[vm['resourceType'].toLowerCase()]
 
     if (mem_stats != null && mem_stats != undefined) {
       _.each(mem_stats, function(item) {
+        // Convert available memory in bytes to used memory in percentage
+        // Note: The switch between min and max is intentional because
+        // the maximum available memory is equivalent to the minumum
+        // memory used.
         if (item["average"] != undefined && item["average"] != null) {
-          mem_min += item["minimum"]
-          mem_max += item["maximum"]
-          mem_avg += item["average"]
-          mem_count += 1
+          mem_avg += (total_memory - item["average"]) / total_memory
+          mem_avg_count += 1
+        }
+
+        if (item["minimum"] != undefined && item["minimum"] != null) {
+          mem_max += (total_memory - item["minimum"]) / total_memory
+          mem_max_count += 1
+        }
+
+        if (item["maximum"] != undefined && item["maximum"] != null) {
+          mem_min += (total_memory - item["maximum"]) / total_memory
+          mem_min_count += 1
         }
       })
     }
 
-    total_memory = ds_azure_sku_memory[vm['resourceType'].toLowerCase()]
-
-    if (mem_count == 0) {
-      mem_min = 0
-      mem_max = 0
-      mem_avg = 0
-    } else {
-      // Convert available memory in bytes to used memory in percentage
-      // Note: The switch between min and max is intentional
-      mem_min = (total_memory - (mem_max / mem_count)) / total_memory * 100
-      mem_max = (total_memory - (mem_min / mem_count)) / total_memory * 100
-      mem_avg = (total_memory - (mem_avg / mem_count)) / total_memory * 100
-    }
+    if (mem_min_count != 0) { mem_min = mem_min / mem_min_count * 100 }
+    if (mem_max_count != 0) { mem_max = mem_max / mem_max_count * 100 }
+    if (mem_avg_count != 0) { mem_avg = mem_avg / mem_avg_count * 100 }
 
     vm_tags = []
 
@@ -625,7 +628,6 @@ script "js_azure_instances_metrics_organized", type: "javascript" do
 EOS
 end
 
-
 datasource "ds_instance_costs" do
   iterate $ds_azure_subscriptions_filtered
   request do
@@ -633,7 +635,7 @@ datasource "ds_instance_costs" do
   end
   result do
     encoding "json"
-    collect jmes_path(response,"rows[*]") do
+    collect jmes_path(response, "rows[*]") do
       field "resourceId", jmes_path(col_item, "dimensions.resource_id")
       field "cost", jmes_path(col_item, "metrics.cost_amortized_unblended_adj")
     end
@@ -732,11 +734,11 @@ datasource "ds_azure_instance_size_map" do
 end
 
 datasource "ds_idle_and_underutil_instances" do
-  run_script $js_idle_and_underutil_instances, $ds_azure_instances_filtered, $ds_azure_instances_metrics_organized, $ds_instance_costs_grouped, $ds_azure_instance_size_map, $ds_currency, $ds_applied_policy, $param_stats_idle_threshold_cpu_value, $param_stats_idle_threshold_mem_value, $param_stats_underutil_threshold_cpu_value, $param_stats_underutil_threshold_mem_value, $param_stats_check_both, $param_stats_threshold_cpu, $param_stats_threshold_mem, $param_min_savings, $param_stats_lookback
+  run_script $js_idle_and_underutil_instances, $ds_azure_instances_filtered, $ds_azure_instances_metrics_organized, $ds_instance_costs_grouped, $ds_azure_instance_size_map, $ds_currency, $ds_applied_policy, $param_stats_idle_threshold_cpu_value, $param_stats_idle_threshold_mem_value, $param_stats_underutil_threshold_cpu_value, $param_stats_underutil_threshold_mem_value, $param_stats_check_both, $param_stats_threshold, $param_min_savings, $param_stats_lookback
 end
 
 script "js_idle_and_underutil_instances", type:"javascript" do
-  parameters "ds_azure_instances_filtered", "ds_azure_instances_metrics_organized", "ds_instance_costs_grouped", "ds_azure_instance_size_map", "ds_currency", "ds_applied_policy", "param_stats_idle_threshold_cpu_value", "param_stats_idle_threshold_mem_value", "param_stats_underutil_threshold_cpu_value", "param_stats_underutil_threshold_mem_value", "param_stats_check_both", "param_stats_threshold_cpu", "param_stats_threshold_mem", "param_min_savings", "param_stats_lookback"
+  parameters "ds_azure_instances_filtered", "ds_azure_instances_metrics_organized", "ds_instance_costs_grouped", "ds_azure_instance_size_map", "ds_currency", "ds_applied_policy", "param_stats_idle_threshold_cpu_value", "param_stats_idle_threshold_mem_value", "param_stats_underutil_threshold_cpu_value", "param_stats_underutil_threshold_mem_value", "param_stats_check_both", "param_stats_threshold", "param_min_savings", "param_stats_lookback"
   result "result"
   code <<-'EOS'
   // Used for formatting numbers to look pretty
@@ -758,8 +760,7 @@ script "js_idle_and_underutil_instances", type:"javascript" do
   }
 
   // The key name is lowercase, param value needs to be lowercase.
-  threshold_statistic_cpu = param_stats_threshold_cpu.toLowerCase()
-  threshold_statistic_mem = param_stats_threshold_mem.toLowerCase()
+  threshold_statistic = param_stats_threshold.toLowerCase()
 
   // Determine whether we're checking for CPU, memory, or both
   checking_cpu = param_stats_underutil_threshold_cpu_value != -1 || param_stats_idle_threshold_cpu_value != -1
@@ -784,12 +785,11 @@ script "js_idle_and_underutil_instances", type:"javascript" do
       // Add baked-in values
       instance['savingsCurrency'] = ds_currency['symbol']
       instance['lookbackPeriod'] = param_stats_lookback
-      instance['thresholdTypeCPU'] = param_stats_threshold_cpu
-      instance['thresholdTypeMemory'] = param_stats_threshold_mem
+      instance['thresholdType'] = param_stats_threshold
 
       // Store relevant CPU and memory stats into these variables for later use
-      cpu_value = instance['cpu_' + threshold_statistic_cpu]
-      mem_value = instance['mem_' + threshold_statistic_mem]
+      cpu_value = instance['cpu_' + threshold_statistic]
+      mem_value = instance['mem_' + threshold_statistic]
 
       // Test for whether to consider the instance idle or underutilized.
       // Assume instance is not idle or underutilized by default.
@@ -906,9 +906,9 @@ script "js_idle_and_underutil_instances", type:"javascript" do
 
       underutil_analysis_message = [
         "A virtual machine is considered underutilized if its CPU usage (",
-        param_stats_threshold_cpu.toLowerCase(), ") is below ",
+        param_stats_threshold.toLowerCase(), ") is below ",
         param_stats_underutil_threshold_cpu_value, "% ", message_boolean,
-        " its memory usage (", param_stats_threshold_cpu.toLowerCase(),
+        " its memory usage (", param_stats_threshold.toLowerCase(),
         ") is below ", param_stats_underutil_threshold_mem_value,
         "% but its CPU usage is still above or equal to ",
         param_stats_idle_threshold_cpu_value, "% ", message_boolean,
@@ -918,9 +918,9 @@ script "js_idle_and_underutil_instances", type:"javascript" do
 
       idle_analysis_message = [
         "A virtual machine is considered idle if its CPU usage (",
-        param_stats_threshold_cpu.toLowerCase(), ") is below ",
+        param_stats_threshold.toLowerCase(), ") is below ",
         param_stats_idle_threshold_cpu_value, "% ", message_boolean,
-        " its memory usage (", param_stats_threshold_cpu.toLowerCase(),
+        " its memory usage (", param_stats_threshold.toLowerCase(),
         ") is below ", param_stats_idle_threshold_mem_value, "%. "
       ].join('')
 
@@ -933,7 +933,7 @@ script "js_idle_and_underutil_instances", type:"javascript" do
     if (checking_cpu && !checking_mem) {
       underutil_analysis_message = [
         "A virtual machine is considered underutilized if its CPU usage (",
-        param_stats_threshold_cpu.toLowerCase(), ") is below ",
+        param_stats_threshold.toLowerCase(), ") is below ",
         param_stats_underutil_threshold_cpu_value,
         "% but its CPU usage is still above or equal to ",
         param_stats_idle_threshold_cpu_value, "%. "
@@ -941,7 +941,7 @@ script "js_idle_and_underutil_instances", type:"javascript" do
 
       idle_analysis_message = [
         "A virtual machine is considered idle if its CPU usage (",
-        param_stats_threshold_cpu.toLowerCase(), ") is below ",
+        param_stats_threshold.toLowerCase(), ") is below ",
         param_stats_idle_threshold_cpu_value, "%. "
       ].join('')
 
@@ -954,7 +954,7 @@ script "js_idle_and_underutil_instances", type:"javascript" do
     if (!checking_cpu && checking_mem) {
       underutil_analysis_message = [
         "A virtual machine is considered underutilized if its memory usage (",
-        param_stats_threshold_cpu.toLowerCase(), ") is below ",
+        param_stats_threshold.toLowerCase(), ") is below ",
         param_stats_underutil_threshold_mem_value,
         "% but its memory usage is still above or equal to ",
         param_stats_idle_threshold_mem_value, "%. "
@@ -962,7 +962,7 @@ script "js_idle_and_underutil_instances", type:"javascript" do
 
       idle_analysis_message = [
         "A virtual machine is considered idle if its memory usage (",
-        param_stats_threshold_cpu.toLowerCase(), ") is below ",
+        param_stats_threshold.toLowerCase(), ") is below ",
         param_stats_idle_threshold_mem_value, "%. "
       ].join('')
 
@@ -1109,11 +1109,7 @@ policy "pol_utilization" do
         path "mem_average"
       end
       field "thresholdType" do
-        label "Threshold Statistic (CPU)"
-        path "thresholdTypeCPU"
-      end
-      field "thresholdTypeMemory" do
-        label "Threshold Statistic (Memory)"
+        label "Threshold Statistic"
       end
       field "threshold" do
         label "CPU Threshold"
@@ -1213,11 +1209,7 @@ policy "pol_utilization" do
         path "mem_average"
       end
       field "thresholdType" do
-        label "Threshold Statistic (CPU)"
-        path "thresholdTypeCPU"
-      end
-      field "thresholdTypeMemory" do
-        label "Threshold Statistic (Memory)"
+        label "Threshold Statistic"
       end
       field "threshold" do
         label "CPU Threshold"
@@ -1301,7 +1293,7 @@ define downsize_instances($data, $param_azure_endpoint) return $all_responses do
             }
           }
         )
-      call sys_log(join([$syslog_subject, "Response"]),to_s($response))
+      call sys_log(join([$syslog_subject, "Response"]), to_s($response))
       end
   end
   end
@@ -1325,7 +1317,7 @@ define delete_instances($data, $param_azure_endpoint) return $all_responses do
         verb: "delete",
         host: $param_azure_endpoint,
         auth: $$auth_azure,
-        href: join(["/subscriptions/", $item['subscriptionId'], "/resourceGroups/", $item["resourceGroup"], "/providers/Microsoft.Compute/virtualMachines/",$item["resourceName"]]),
+        href: $item["id"],
         https: true,
         query_strings: {
           "api-version": "2018-06-01"
@@ -1338,7 +1330,7 @@ define delete_instances($data, $param_azure_endpoint) return $all_responses do
       $all_responses << $response
     end
   end
-  call sys_log(join([$syslog_subject, "Responses"]),to_s($all_responses))
+  call sys_log(join([$syslog_subject, "Responses"]), to_s($all_responses))
 end
 
 #function to log
