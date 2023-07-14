@@ -16,6 +16,7 @@ default_child_policy_template_files = [
   "../../cost/aws/unused_volumes/aws_delete_unused_volumes.pt",
   # Azure Policy Templates
   "../../cost/azure/unused_volumes/azure_unused_volumes.pt",
+  "../../cost/azure/rightsize_compute_instances/azure_compute_rightsizing.pt",
 ]
 
 # Compile Meta Parent Policy Definition
@@ -40,14 +41,14 @@ def compile_meta_parent_policy(file_path)
   # print("\n###########################\n")
 
   # Get the parameters
-  parameters = pt.scan(/parameter ".*?" do.*?end/m)
+  parameters = pt.scan(/parameter ".*?" do.*?^end/m)
 
   # print("Parameters:\n")
   # print(parameters.join("\n---------\n"))
   # print("\n###########################\n")
 
   # Get the credentials
-  credentials = pt.scan(/credentials ".*?" do.*?end/m)
+  credentials = pt.scan(/credentials ".*?" do.*?^end/m)
 
 
 
@@ -181,7 +182,7 @@ def compile_meta_parent_policy(file_path)
   output_pt_params = []
   parameters.each do |param|
     # Check if the param string container either param_email, param_aws_account_number, or param_subscription_allowed_list
-    param.include?("param_email") || param.include?("param_aws_account_number") || param.include?("param_subscription_allowed_list") ? nil : output_pt_params.push(param)
+    param.include?("param_email") || param.include?("param_aws_account_number") || param.include?("param_subscriptions_list") || param.include?("param_subscriptions_allow_or_deny") ? nil : output_pt_params.push(param)
   end
   # Replace placeholder with the identified output parameter blocks
   output_pt = output_pt.gsub("__PLACEHOLDER_FOR_CHILD_POLICY_PARAMETERS_BLOCKS__", output_pt_params.join("\n\n"))
