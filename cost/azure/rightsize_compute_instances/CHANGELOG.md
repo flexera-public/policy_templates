@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.1
+
+- Added support for meta policies
+
 ## v3.0
 
 - Several parameters altered to be more descriptive and human-readable
