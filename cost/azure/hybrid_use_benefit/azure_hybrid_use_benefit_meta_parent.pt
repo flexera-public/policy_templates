@@ -604,128 +604,11 @@ datasource "ds_child_incident_details" do
   end
 end
 
-datasource "always executes at least once
-  var result = [{ ahub: "Yes" }];
-  _.each(azure_instances, function(instance){
-    if (_.has(instance.tags, exclusion_tag) == false) {
-      if (instance.osType === "Windows" ){
-        var resourceGroup = instance.id.split('/')[4]
-        var tags = JSON.stringify(instance["tags"]);
-        var ahub = "N/A"
-        if (instance.licenseType === "Windows_Server" || instance.licenseType === "Windows_Client") {
-          ahub = "Yes"
-        } else {
-          ahub = "No"
-        }
-        result.push({
-          subscriptionName: instance["subscriptionName"],
-          id: instance["id"],
-          name: instance["name"],
-          resourceGroup: resourceGroup,
-          location: instance["location"],
-          ahub: ahub,
-          vmSize: instance["vmSize"],
-          imagePublisher: instance["imagePublisher"],
-          imageOffer: instance["imageOffer"],
-          imageSku: instance["imageSku"],
-          imageVersion: instance["imageVersion"],
-          tags: tags
-        })
-      }
-    }
-  })
-  result = _.sortBy(result, 'subscriptionName');
-  result = _.sortBy(result, 'location');
-EOS
+datasource "ds_filtered_resources_combined_incidents" do
+  run_script $js_ds_filtered_resources_combined_incidents, $ds_child_incident_details
 end
 
-###############################################################################
-# Policy
-###############################################################################
-
-policy "pol_azure_license_policy"_combined_incidents" do
-  run_script $js_always executes at least once
-  var result = [{ ahub: "Yes" }];
-  _.each(azure_instances, function(instance){
-    if (_.has(instance.tags, exclusion_tag) == false) {
-      if (instance.osType === "Windows" ){
-        var resourceGroup = instance.id.split('/')[4]
-        var tags = JSON.stringify(instance["tags"]);
-        var ahub = "N/A"
-        if (instance.licenseType === "Windows_Server" || instance.licenseType === "Windows_Client") {
-          ahub = "Yes"
-        } else {
-          ahub = "No"
-        }
-        result.push({
-          subscriptionName: instance["subscriptionName"],
-          id: instance["id"],
-          name: instance["name"],
-          resourceGroup: resourceGroup,
-          location: instance["location"],
-          ahub: ahub,
-          vmSize: instance["vmSize"],
-          imagePublisher: instance["imagePublisher"],
-          imageOffer: instance["imageOffer"],
-          imageSku: instance["imageSku"],
-          imageVersion: instance["imageVersion"],
-          tags: tags
-        })
-      }
-    }
-  })
-  result = _.sortBy(result, 'subscriptionName');
-  result = _.sortBy(result, 'location');
-EOS
-end
-
-###############################################################################
-# Policy
-###############################################################################
-
-policy "pol_azure_license_policy"_combined_incidents, $ds_child_incident_details
-end
-
-script "js_always executes at least once
-  var result = [{ ahub: "Yes" }];
-  _.each(azure_instances, function(instance){
-    if (_.has(instance.tags, exclusion_tag) == false) {
-      if (instance.osType === "Windows" ){
-        var resourceGroup = instance.id.split('/')[4]
-        var tags = JSON.stringify(instance["tags"]);
-        var ahub = "N/A"
-        if (instance.licenseType === "Windows_Server" || instance.licenseType === "Windows_Client") {
-          ahub = "Yes"
-        } else {
-          ahub = "No"
-        }
-        result.push({
-          subscriptionName: instance["subscriptionName"],
-          id: instance["id"],
-          name: instance["name"],
-          resourceGroup: resourceGroup,
-          location: instance["location"],
-          ahub: ahub,
-          vmSize: instance["vmSize"],
-          imagePublisher: instance["imagePublisher"],
-          imageOffer: instance["imageOffer"],
-          imageSku: instance["imageSku"],
-          imageVersion: instance["imageVersion"],
-          tags: tags
-        })
-      }
-    }
-  })
-  result = _.sortBy(result, 'subscriptionName');
-  result = _.sortBy(result, 'location');
-EOS
-end
-
-###############################################################################
-# Policy
-###############################################################################
-
-policy "pol_azure_license_policy"_combined_incidents", type: "javascript" do
+script "js_ds_filtered_resources_combined_incidents", type: "javascript" do
   parameters "ds_child_incident_details"
   result "result"
   code <<-EOS
@@ -750,46 +633,7 @@ end
 policy "policy_scheduled_report" do
   # Consolidated Incident Check(s)
     # Consolidated incident for Instances Not Using Azure Hybrid Use Benefit for Windows Server
-  validate $always executes at least once
-  var result = [{ ahub: "Yes" }];
-  _.each(azure_instances, function(instance){
-    if (_.has(instance.tags, exclusion_tag) == false) {
-      if (instance.osType === "Windows" ){
-        var resourceGroup = instance.id.split('/')[4]
-        var tags = JSON.stringify(instance["tags"]);
-        var ahub = "N/A"
-        if (instance.licenseType === "Windows_Server" || instance.licenseType === "Windows_Client") {
-          ahub = "Yes"
-        } else {
-          ahub = "No"
-        }
-        result.push({
-          subscriptionName: instance["subscriptionName"],
-          id: instance["id"],
-          name: instance["name"],
-          resourceGroup: resourceGroup,
-          location: instance["location"],
-          ahub: ahub,
-          vmSize: instance["vmSize"],
-          imagePublisher: instance["imagePublisher"],
-          imageOffer: instance["imageOffer"],
-          imageSku: instance["imageSku"],
-          imageVersion: instance["imageVersion"],
-          tags: tags
-        })
-      }
-    }
-  })
-  result = _.sortBy(result, 'subscriptionName');
-  result = _.sortBy(result, 'location');
-EOS
-end
-
-###############################################################################
-# Policy
-###############################################################################
-
-policy "pol_azure_license_policy"_combined_incidents do
+  validate $ds_filtered_resources_combined_incidents do
     summary_template "Consolidated Incident: {{ len data }} Instances Not Using Azure Hybrid Use Benefit for Windows Server"
     escalate $esc_email
     check eq(size(data), 0)
