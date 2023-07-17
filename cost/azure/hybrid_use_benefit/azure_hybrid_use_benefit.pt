@@ -13,9 +13,9 @@ info(
   policy_set: ""
 )
 
-#############
+###############################################################################
 # Parameters
-#############
+###############################################################################
 
 parameter "param_exclusion_tag_key" do
   category "User Inputs"
@@ -51,9 +51,9 @@ parameter "param_automatic_action" do
   allowed_values ["Hybrid use benefit"]
 end
 
-#################
+###############################################################################
 # Authentication
-#################
+###############################################################################
 
 credentials "auth_azure" do
   schemes "oauth2"
@@ -69,11 +69,11 @@ credentials "auth_flexera" do
   tags "provider=flexera"
 end
 
-#############
+###############################################################################
 # Pagination
-#############
+###############################################################################
 
-pagination "azure_pagination" do
+pagination "pagination_azure" do
   get_page_marker do
     body_path "nextLink"
   end
@@ -82,14 +82,14 @@ pagination "azure_pagination" do
   end
 end
 
-##############
-# Datasources
-##############
+###############################################################################
+# Datasources & Scripts
+###############################################################################
 
 datasource "ds_subscriptions" do
   request do
     auth $auth_azure
-    pagination $azure_pagination
+    pagination $pagination_azure
     host $param_azure_endpoint
     path "/subscriptions/"
     query "api-version","2019-06-01"
@@ -101,8 +101,8 @@ datasource "ds_subscriptions" do
   result do
     encoding "json"
     collect jmes_path(response, "value[*]") do
-      field "subscriptionId", jmes_path(col_item,"subscriptionId")
-      field "subscriptionName", jmes_path(col_item,"displayName")
+      field "subscriptionId", jmes_path(col_item, "subscriptionId")
+      field "subscriptionName", jmes_path(col_item, "displayName")
     end
   end
 end
@@ -110,45 +110,6 @@ end
 datasource "ds_filtered_subscriptions" do
   run_script $js_filtered_subscriptions, $ds_subscriptions, $param_subscriptions_list
 end
-
-datasource "azure_instances" do
-  iterate $ds_filtered_subscriptions
-    request do
-      auth $auth_azure
-      pagination $azure_pagination
-      host $param_azure_endpoint
-      path join(["/subscriptions/", val(iter_item,"subscriptionId"), "/providers/Microsoft.Compute/virtualMachines"])
-      query "api-version","2017-12-01"
-      header "User-Agent", "RS Policies"
-      # Ignore status 400, 403, and 404 which can be returned in certain (legacy) types of Azure Subscriptions
-      ignore_status [400,403,404]
-    end
-    result do
-      encoding "json"
-      collect jmes_path(response, "value") do
-        field "subscriptionName", val(iter_item,"subscriptionName")
-        field "id", jmes_path(col_item,"id")
-        field "name", jmes_path(col_item,"name")
-        field "location", jmes_path(col_item,"location")
-        field "licenseType", jmes_path(col_item,"properties.licenseType")
-        field "vmSize", jmes_path(col_item,"properties.hardwareProfile.vmSize")
-        field "osType", jmes_path(col_item,"properties.storageProfile.osDisk.osType")
-        field "imagePublisher", jmes_path(col_item,"properties.storageProfile.imageReference.publisher")
-        field "imageOffer", jmes_path(col_item,"properties.storageProfile.imageReference.offer")
-        field "imageSku", jmes_path(col_item,"properties.storageProfile.imageReference.sku")
-        field "imageVersion", jmes_path(col_item,"properties.storageProfile.imageReference.version")
-        field "tags", jmes_path(col_item,"tags")
-      end
-    end
-end
-
-datasource "filtered_resources" do
-  run_script $js_filter_resources, $azure_instances, $param_exclusion_tag_key
-end
-
-##########
-# Scripts
-##########
 
 script "js_filtered_subscriptions", type: "javascript" do
   parameters "ds_subscriptions", "param_subscriptions_list"
@@ -169,58 +130,89 @@ script "js_filtered_subscriptions", type: "javascript" do
 EOS
 end
 
+datasource "ds_azure_instances" do
+  iterate $ds_filtered_subscriptions
+    request do
+      auth $auth_azure
+      pagination $pagination_azure
+      host $param_azure_endpoint
+      path join(["/subscriptions/", val(iter_item,"subscriptionId"), "/providers/Microsoft.Compute/virtualMachines"])
+      query "api-version","2017-12-01"
+      header "User-Agent", "RS Policies"
+      # Ignore status 400, 403, and 404 which can be returned in certain (legacy) types of Azure Subscriptions
+      ignore_status [400,403,404]
+    end
+    result do
+      encoding "json"
+      collect jmes_path(response, "value") do
+        field "subscriptionName", val(iter_item, "subscriptionName")
+        field "id", jmes_path(col_item, "id")
+        field "name", jmes_path(col_item, "name")
+        field "location", jmes_path(col_item, "location")
+        field "licenseType", jmes_path(col_item, "properties.licenseType")
+        field "vmSize", jmes_path(col_item, "properties.hardwareProfile.vmSize")
+        field "osType", jmes_path(col_item, "properties.storageProfile.osDisk.osType")
+        field "imagePublisher", jmes_path(col_item, "properties.storageProfile.imageReference.publisher")
+        field "imageOffer", jmes_path(col_item, "properties.storageProfile.imageReference.offer")
+        field "imageSku", jmes_path(col_item, "properties.storageProfile.imageReference.sku")
+        field "imageVersion", jmes_path(col_item, "properties.storageProfile.imageReference.version")
+        field "tags", jmes_path(col_item, "tags")
+      end
+    end
+end
+
+datasource "ds_filtered_resources" do
+  run_script $js_filter_resources, $ds_azure_instances, $param_exclusion_tag_key
+end
+
 script "js_filter_resources", type: "javascript" do
   parameters "azure_instances","exclusion_tag"
   result "result"
   code <<-EOS
-    var result = [];
-    _.each(azure_instances, function(instance){
-      if (_.has(instance.tags, exclusion_tag)) {
-        console.log(instance["name"], "SKIP")
-      } else {
-        if (instance.osType === "Windows" ){
-          var resourceGroup = instance.id.split('/')[4]
-          var tags = JSON.stringify(instance["tags"]);
-          var ahub = "N/A"
-          if (instance.licenseType === "Windows_Server" || instance.licenseType === "Windows_Client") {
-            ahub = "Yes"
-          } else {
-            ahub = "No"
-          }
-          result.push({
-            subscriptionName: instance["subscriptionName"],
-            id: instance["id"],
-            name: instance["name"],
-            resourceGroup: resourceGroup,
-            location: instance["location"],
-            ahub: ahub,
-            vmSize: instance["vmSize"],
-            imagePublisher: instance["imagePublisher"],
-            imageOffer: instance["imageOffer"],
-            imageSku: instance["imageSku"],
-            imageVersion: instance["imageVersion"],
-            tags: tags
-          })
+  // Dummy entry to ensure validate_each always executes at least once
+  var result = [{ ahub: "Yes" }];
+  _.each(azure_instances, function(instance){
+    if (_.has(instance.tags, exclusion_tag) == false) {
+      if (instance.osType === "Windows" ){
+        var resourceGroup = instance.id.split('/')[4]
+        var tags = JSON.stringify(instance["tags"]);
+        var ahub = "N/A"
+        if (instance.licenseType === "Windows_Server" || instance.licenseType === "Windows_Client") {
+          ahub = "Yes"
+        } else {
+          ahub = "No"
         }
+        result.push({
+          subscriptionName: instance["subscriptionName"],
+          id: instance["id"],
+          name: instance["name"],
+          resourceGroup: resourceGroup,
+          location: instance["location"],
+          ahub: ahub,
+          vmSize: instance["vmSize"],
+          imagePublisher: instance["imagePublisher"],
+          imageOffer: instance["imageOffer"],
+          imageSku: instance["imageSku"],
+          imageVersion: instance["imageVersion"],
+          tags: tags
+        })
       }
-    })
-    result = _.sortBy(result, 'subscriptionName');
-    result = _.sortBy(result, 'location');
-
-    // Dummy entry to ensure validate_each always executes at least once
-    result.push({ ahub: "Yes" })
-  EOS
+    }
+  })
+  result = _.sortBy(result, 'subscriptionName');
+  result = _.sortBy(result, 'location');
+EOS
 end
 
-##########
+###############################################################################
 # Policy
-##########
+###############################################################################
 
-policy 'azure_license_policy' do
-  validate_each $filtered_resources do
+policy "pol_azure_license_policy" do
+  validate_each $ds_filtered_resources do
     summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} Instances Not Using Azure Hybrid Use Benefit for Windows Server"
-    escalate $email
-    escalate $license_instances
+    escalate $esc_email
+    escalate $esc_license_instances
     check logic_or($ds_parent_policy_terminated, eq(val(item,"ahub"), "Yes"))
     export do
       resource_level true
@@ -264,27 +256,27 @@ policy 'azure_license_policy' do
   end
 end
 
-##############
+###############################################################################
 # Escalations
-##############
+###############################################################################
 
-escalation "email" do
+escalation "esc_email" do
   automatic true
   label "Send Email"
   description "Send incident email"
   email $param_email
 end
 
-escalation "license_instances" do
+escalation "esc_license_instances" do
   automatic contains($param_automatic_action, "Hybrid use benefit")
   label "Add Hybrid Use Benefit"
   description "Apply hybrid use benefit to the selected intance"
   run "license_instances", data
 end
 
-##################
+###############################################################################
 # Cloud Workflow
-##################
+###############################################################################
 
 define license_instances($data) return $all_responses do
   $all_responses = []
@@ -311,7 +303,6 @@ define license_instances($data) return $all_responses do
       )
 
       $all_responses << $update_inst_response
-
     end
   end
 end

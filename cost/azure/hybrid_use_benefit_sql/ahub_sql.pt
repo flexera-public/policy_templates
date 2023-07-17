@@ -13,9 +13,9 @@ info(
   policy_set: ""
 )
 
-#############
+###############################################################################
 # Parameters
-#############
+###############################################################################
 
 parameter "param_exclusion_tag_key" do
   category "User Inputs"
@@ -50,9 +50,9 @@ parameter "param_automatic_action" do
   allowed_values "Hybrid use benefit for SQL"
 end
 
-#################
+###############################################################################
 # Authentication
-#################
+###############################################################################
 
 credentials "auth_azure" do
   schemes "oauth2"
@@ -68,11 +68,11 @@ credentials "auth_flexera" do
   tags "provider=flexera"
 end
 
-#############
+###############################################################################
 # Pagination
-#############
+###############################################################################
 
-pagination "azure_pagination" do
+pagination "pagination_azure" do
   get_page_marker do
     body_path "nextLink"
   end
@@ -81,14 +81,14 @@ pagination "azure_pagination" do
   end
 end
 
-##############
-# Datasources
-##############
+###############################################################################
+# Datasources & Scripts
+###############################################################################
 
 datasource "ds_subscriptions" do
   request do
     auth $auth_azure
-    pagination $azure_pagination
+    pagination $pagination_azure
     host $param_azure_endpoint
     path "/subscriptions/"
     query "api-version","2019-06-01"
@@ -110,11 +110,30 @@ datasource "ds_filtered_subscriptions" do
   run_script $js_filtered_subscriptions, $ds_subscriptions, $param_subscriptions_list
 end
 
-datasource "sql_virtualmachines" do
+script "js_filtered_subscriptions", type: "javascript" do
+  parameters "ds_subscriptions", "param_subscriptions_list"
+  result "results"
+  code <<-EOS
+  var results = []
+  if ( param_subscriptions_list.length != 0){
+    results = []
+    _.each(param_subscriptions_list, function(sub){
+      var found = _.find(ds_subscriptions, function(item){
+        return item.subscriptionId == sub || item.subscriptionName.toLowerCase() == sub.toLowerCase();
+      })
+      results.push(found)
+    })
+  } else {
+    results = ds_subscriptions
+  }
+EOS
+end
+
+datasource "ds_sql_virtualmachines" do
   iterate $ds_filtered_subscriptions
     request do
       auth $auth_azure
-      pagination $azure_pagination
+      pagination $pagination_azure
       host $param_azure_endpoint
       path join(["/subscriptions/", val(iter_item,"subscriptionId"), "/providers/Microsoft.SqlVirtualMachine/sqlVirtualMachines"])
       query "api-version","2017-03-01-preview"
@@ -139,11 +158,11 @@ datasource "sql_virtualmachines" do
 end
 
 # For SQL databases running provisioned database applicable, serverless SQL databases are not eligible to AHUB
-datasource "sql_dbserver" do
+datasource "ds_sql_dbserver" do
   iterate $ds_filtered_subscriptions
     request do
       auth $auth_azure
-      pagination $azure_pagination
+      pagination $pagination_azure
       host $param_azure_endpoint
       path join(["/subscriptions/", val(iter_item,"subscriptionId"), "/providers/Microsoft.Sql/servers"])
       query "api-version","2019-06-01-preview"
@@ -163,11 +182,11 @@ datasource "sql_dbserver" do
     end
 end
 
-datasource "sql_databases" do
-  iterate $sql_dbserver
+datasource "ds_sql_databases" do
+  iterate $ds_sql_dbserver
     request do
       auth $auth_azure
-      pagination $azure_pagination
+      pagination $pagination_azure
       host $param_azure_endpoint
       path join([val(iter_item,"dbserverId"),"/databases"])
       query "api-version", "2020-08-01-preview"
@@ -191,11 +210,11 @@ datasource "sql_databases" do
     end
 end
 
-datasource "sql_managed_instances" do
+datasource "ds_sql_managed_instances" do
   iterate $ds_filtered_subscriptions
     request do
       auth $auth_azure
-      pagination $azure_pagination
+      pagination $pagination_azure
       host $param_azure_endpoint
       path join(["/subscriptions/", val(iter_item,"subscriptionId"), "/providers/Microsoft.Sql/managedInstances"])
       query "api-version","2020-11-01-preview"
@@ -219,152 +238,126 @@ datasource "sql_managed_instances" do
 end
 
 
-datasource "filtered_instances" do
-  run_script $js_filtered_instances, $sql_virtualmachines, $sql_databases, $sql_managed_instances, $param_exclusion_tag_key
-end
-
-##########
-# Scripts
-##########
-
-script "js_filtered_subscriptions", type: "javascript" do
-  parameters "ds_subscriptions", "param_subscriptions_list"
-  result "results"
-  code <<-EOS
-  var results = []
-  if ( param_subscriptions_list.length != 0){
-    results = []
-    _.each(param_subscriptions_list, function(sub){
-      var found = _.find(ds_subscriptions, function(item){
-        return item.subscriptionId == sub || item.subscriptionName.toLowerCase() == sub.toLowerCase();
-      })
-      results.push(found)
-    })
-  } else {
-    results = ds_subscriptions
-  }
-EOS
+datasource "ds_filtered_instances" do
+  run_script $js_filtered_instances, $ds_sql_virtualmachines, $ds_sql_databases, $ds_sql_managed_instances, $param_exclusion_tag_key
 end
 
 script "js_filtered_instances", type: "javascript" do
   parameters "sql_virtualmachines", "sql_databases", "sql_managed_instances", "exclusion_tag"
   result "result"
   code <<-EOS
-  var result = [];
+  // Dummy entry to ensure validate_each always executes at least once
+  var result = [{ ahub: "Yes" }];
   // Filter to exclude SQL Server 2017 Developer and Express versions instances that Microsoft provides as free
   sql_virtualmachines = _.filter(sql_virtualmachines, function(vm){ return vm.imageSku != "Developer" && vm.imageSku != "Express" });
 
-    //SQL Virtualmachines
-      _.each(sql_virtualmachines, function(virtualmachine){
-        if (_.has(virtualmachine.tags, exclusion_tag)) {
+  //SQL Virtualmachines
+    _.each(sql_virtualmachines, function(virtualmachine) {
+      if (_.has(virtualmachine.tags, exclusion_tag) == false) {
+        var resourceGroup = virtualmachine.id.split('/')[4];
+        var tags = JSON.stringify(virtualmachine["tags"]);
+        var ahub = "N/A"
+
+        if (virtualmachine.licenseType === "AHUB") {
+          ahub = "Yes"
         } else {
-            var resourceGroup = virtualmachine.id.split('/')[4];
-            var tags = JSON.stringify(virtualmachine["tags"]);
-            var ahub = "N/A"
-            if (virtualmachine.licenseType === "AHUB") {
-                ahub = "Yes"
-              } else {
-                ahub = "No"
-              }
+          ahub = "No"
+        }
 
-            result.push({
-              subscriptionName: virtualmachine["subscriptionName"],
-              id: virtualmachine["id"],
-              vmid: virtualmachine["vmid"],
-              name: virtualmachine["name"],
-              resourceGroup: resourceGroup,
-              location: virtualmachine["location"],
-              ahub: ahub,
-              type: virtualmachine["type"],
-              imageOffer: virtualmachine["imageOffer"],
-              imageSku: virtualmachine["imageSku"]
-              licenseType: virtualmachine["licenseType"],
-              tags: tags
-            })
+        result.push({
+          subscriptionName: virtualmachine["subscriptionName"],
+          id: virtualmachine["id"],
+          vmid: virtualmachine["vmid"],
+          name: virtualmachine["name"],
+          resourceGroup: resourceGroup,
+          location: virtualmachine["location"],
+          ahub: ahub,
+          type: virtualmachine["type"],
+          imageOffer: virtualmachine["imageOffer"],
+          imageSku: virtualmachine["imageSku"]
+          licenseType: virtualmachine["licenseType"],
+          tags: tags
+        })
+      }
+    })
+
+  //SQL databases
+  _.each(sql_databases, function(database){
+    var version = database.kind.split(',')[3]
+    if ((_.isNull(database.tags) || _.has(database.tags, exclusion_tag)) == false) {
+      if ((database.licenseType === "None" || _.isUndefined(database.licenseType)) == false) {
+        if (version !== "serverless" && database.skuName !== "System") {
+          var resourceGroup = database.id.split('/')[4];
+          var tags = JSON.stringify(database["tags"]);
+          var ahub = "N/A";
+
+          if (database.licenseType === "BasePrice") {
+            ahub = "Yes"
+          } else {
+            ahub = "No"
           }
-      })
 
-    //SQL databases
-    _.each(sql_databases, function(database){
-      var version = database.kind.split(',')[3]
-      if (_.isNull(database.tags) || _.has(database.tags, exclusion_tag)) {
-      } else {
-          if (database.licenseType === "None" || _.isUndefined(database.licenseType)) {
-          } else {
-              if (version !== "serverless" && database.skuName !== "System") {
-                var resourceGroup = database.id.split('/')[4];
-                var tags = JSON.stringify(database["tags"]);
-                var ahub = "N/A";
-                if (database.licenseType === "BasePrice") {
-                  ahub = "Yes"
-                } else {
-                  ahub = "No"
-                  }
-                console.log(database["name"], "AHUB: ", ahub)
-                result.push({
-                  subscriptionName: database["subscriptionName"],
-                  id: database["id"],
-                  name: database["name"],
-                  resourceGroup: database["resourceGroup"],
-                  location: database["location"],
-                  ahub: ahub,
-                  licenseType: database["licenseType"],
-                  vCores: database["vCores"]
-                  type: database["type"],
-                  tags: tags
-                })
-              }
-            }
+          result.push({
+            subscriptionName: database["subscriptionName"],
+            id: database["id"],
+            name: database["name"],
+            resourceGroup: database["resourceGroup"],
+            location: database["location"],
+            ahub: ahub,
+            licenseType: database["licenseType"],
+            vCores: database["vCores"]
+            type: database["type"],
+            tags: tags
+          })
         }
-    })
+      }
+    }
+  })
 
-    //SQL Managed Instances
-    _.each(sql_managed_instances, function(instance){
-      if (_.has(instance.tags, exclusion_tag)) {
-      } else {
-          if (instance.licenseType === "None" || _.isUndefined(instance.licenseType)) {
-          } else {
-              var tags = JSON.stringify(instance["tags"]);
-              var ahub = "N/A"
-              if (instance.licenseType === "BasePrice") {
-                ahub = "Yes"
-              } else {
-                ahub = "No"
-              }
-              result.push({
-                subscriptionName: instance["subscriptionName"],
-                id: instance["id"],
-                name: instance["name"],
-                resourceGroup: instance["resourceGroup"],
-                location: instance["location"],
-                ahub: ahub,
-                licenseType: instance["licenseType"],
-                vCores: instance["vCores"]
-                type: instance["type"],
-                tags: tags
-              })
-            }
+  //SQL Managed Instances
+  _.each(sql_managed_instances, function(instance){
+    if (_.has(instance.tags, exclusion_tag) == false) {
+      if ((instance.licenseType == "None" || _.isUndefined(instance.licenseType)) == false) {
+        var tags = JSON.stringify(instance["tags"]);
+        var ahub = "N/A"
+
+        if (instance.licenseType === "BasePrice") {
+          ahub = "Yes"
+        } else {
+          ahub = "No"
         }
-    })
 
-    result = _.sortBy(result, 'subscriptionName');
-    result = _.sortBy(result, 'location');
-    result = _.sortBy(result, 'type');
+        result.push({
+          subscriptionName: instance["subscriptionName"],
+          id: instance["id"],
+          name: instance["name"],
+          resourceGroup: instance["resourceGroup"],
+          location: instance["location"],
+          ahub: ahub,
+          licenseType: instance["licenseType"],
+          vCores: instance["vCores"]
+          type: instance["type"],
+          tags: tags
+        })
+      }
+    }
+  })
 
-    // Dummy entry to ensure validate_each always executes at least once
-    result.push({ ahub: "Yes" })
-  EOS
+  result = _.sortBy(result, 'subscriptionName');
+  result = _.sortBy(result, 'location');
+  result = _.sortBy(result, 'type');
+EOS
 end
 
-##########
+###############################################################################
 # Policy
-##########
+###############################################################################
 
-policy 'azure_sql_ahub' do
-  validate_each $filtered_instances do
+policy "pol_azure_license_policy" do
+  validate_each $ds_filtered_instances do
     summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} Instances Not Using Azure Hybrid Use Benefit for SQL"
-    escalate $email
-    escalate $license_sqlahub
+    escalate $esc_email
+    escalate $esc_license_sqlahub
     check logic_or($ds_parent_policy_terminated, eq(val(item,"ahub"), "Yes"))
     export do
       resource_level true
@@ -411,27 +404,27 @@ policy 'azure_sql_ahub' do
   end
 end
 
-##############
+###############################################################################
 # Escalations
-##############
+###############################################################################
 
-escalation "email" do
+escalation "esc_email" do
   automatic true
   label "Send Email"
   description "Send Incident email"
   email $param_email
 end
 
-escalation "license_sqlahub" do
+escalation "esc_license_sqlahub" do
   automatic contains($param_automatic_action, "Hybrid Use Benefit for SQL")
   label "Approve AHUB for SQL"
   description "Approve escalation to apply Hybrid Use Benefit for SQL"
   run "license_sqlahub", data
 end
 
-##################
+###############################################################################
 # Cloud Workflow
-##################
+###############################################################################
 
 define license_sqlahub($data) return $all_responses do
   $all_responses = []
