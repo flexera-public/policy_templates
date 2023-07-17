@@ -3,6 +3,7 @@
 ## v4.0
 
 - Added logic required for "Meta Policy" use-cases
+- Updated template and readme to reflect addition of `auth_flexera`
 
 ## v3.0
 
