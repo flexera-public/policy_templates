@@ -1,6 +1,6 @@
 # Changelog
 
-## v2.14
+## v3.0
 
 - Renamed Subscription List parameter for consistency and accuracy
 - Added logic required for "Meta Policy" use-cases

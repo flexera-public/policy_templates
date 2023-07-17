@@ -1,6 +1,6 @@
 # Changelog
 
-## v4.11
+## v5.0
 
 - Renamed Subscription List parameter for consistency and accuracy
 
