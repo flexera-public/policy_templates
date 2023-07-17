@@ -15,12 +15,16 @@ default_child_policy_template_files = [
   "../../cost/aws/unused_rds/unused_rds.pt",
   "../../cost/aws/unused_volumes/aws_delete_unused_volumes.pt",
   # Azure Policy Templates
+  "../../cost/azure/idle_compute_instances/azure_idle_compute_instances.pt",
   "../../cost/azure/old_snapshots/azure_delete_old_snapshots.pt",
   "../../cost/azure/rightsize_compute_instances/azure_compute_rightsizing.pt",
   "../../cost/azure/rightsize_sql_instances/azure_rightsize_sql_instances.pt",
   "../../cost/azure/unused_ip_addresses/azure_unused_ip_addresses.pt",
   "../../cost/azure/unused_sql_databases/azure_unused_sql_databases.pt",
   "../../cost/azure/unused_volumes/azure_unused_volumes.pt",
+  "../../cost/azure/hybrid_use_benefit/azure_hybrid_use_benefit.pt",
+  "../../cost/azure/hybrid_use_benefit_linux/ahub_linux.pt",
+  "../../cost/azure/hybrid_use_benefit_sql/ahub_sql.pt",
 ]
 
 # Compile Meta Parent Policy Definition
