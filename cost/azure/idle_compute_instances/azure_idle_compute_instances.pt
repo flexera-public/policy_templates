@@ -25,6 +25,15 @@ parameter "param_email" do
   description "Email addresses of the recipients you wish to notify when new incidents are created"
 end
 
+parameter "param_azure_endpoint" do
+  type "string"
+  category "Policy Settings"
+  label "Azure Endpoint"
+  description "Select the API endpoint to use for Azure. Use default value of management.azure.com unless using Azure China."
+  allowed_values "management.azure.com", "management.chinacloudapi.cn"
+  default "management.azure.com"
+end
+
 #pass in the CPU in percentage
 parameter "param_cpu_average_percentage" do
   type "string"
@@ -103,7 +112,7 @@ datasource "ds_subscriptions" do
   request do
     auth $auth_azure
     pagination $azure_pagination
-    host "management.azure.com"
+    host $param_azure_endpoint
     path "/subscriptions/"
     query "api-version","2020-01-01"
     header "User-Agent", "RS Policies"
@@ -131,7 +140,7 @@ datasource "ds_azure_virtualmachines" do
   request do
     auth $auth_azure
     pagination $azure_pagination
-    host "management.azure.com"
+    host $param_azure_endpoint
     path join(["/subscriptions/", val(iter_item,"subscriptionID"), "/providers/Microsoft.Compute/virtualMachines"])
     query "api-version","2019-03-01"
     header "User-Agent", "RS Policies"
@@ -165,7 +174,7 @@ datasource "ds_azure_instance_performance" do
   request do
     auth $auth_azure
     pagination $azure_pagination
-    host "management.azure.com"
+    host $param_azure_endpoint
     path join(["/subscriptions/", val(iter_item,"subscriptionID"), "/resourceGroups/", val(iter_item,"resourceGroup"), "/providers/Microsoft.Compute/virtualMachines/",val(iter_item,"name"),"/providers/microsoft.insights/metrics"])
     query "api-version","2018-01-01"
     query "timespan","P30D"
@@ -516,7 +525,7 @@ end
 # Policy
 ###############################################################################
 
-policy "azure_resource_policy" do
+policy "pol_azure_resource_policy" do
   validate $ds_only_instances do
     summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): Azure idle compute instances found"
     hash_exclude "averageCPU", "averages", "savings"
@@ -524,8 +533,8 @@ policy "azure_resource_policy" do
 {{with index data 0}}{{ .message }}{{end}}
 EOS
     check logic_or($ds_parent_policy_terminated, eq(size(data), 0))
-    escalate $email
-    escalate $delete_resources
+    escalate $esc_email
+    escalate $esc_delete_resources
     export do
       resource_level true
       field "accountName" do
@@ -591,25 +600,25 @@ end
 # Escalations
 ###############################################################################
 
-escalation "email" do
+escalation "esc_email" do
   automatic true
   label "Send Email"
   description "Send incident email"
   email $param_email
 end
 
-escalation "delete_resources" do
+escalation "esc_delete_resources" do
   automatic contains($param_automatic_action, "Terminate Instances")
   label "Terminate Instances"
   description "Approval to terminate all selected instances"
-  run "delete_resources", data, $param_log_to_cm_audit_entries, rs_optima_host
+  run "delete_resources", data, $param_log_to_cm_audit_entries, $param_azure_endpoint, rs_optima_host
 end
 
 ###############################################################################
 # Cloud Workflow
 ###############################################################################
 
-define delete_resources($data,$param_log_to_cm_audit_entries, $$rs_optima_host) return $all_responses do
+define delete_resources($data, $param_log_to_cm_audit_entries, $param_azure_endpoint, $$rs_optima_host) return $all_responses do
   $$debug = $param_log_to_cm_audit_entries == "Yes"
   $$log = []
   $all_responses = []
@@ -620,7 +629,7 @@ define delete_resources($data,$param_log_to_cm_audit_entries, $$rs_optima_host) 
     sub on_error: skip do
       $response = http_request(
         verb: "delete",
-        host: "management.azure.com",
+        host: $param_azure_endpoint,
         auth: $$auth_azure,
         href: join(["/subscriptions/", $item['accountID'], "/resourceGroups/", $item["resourceGroup"], "/providers/Microsoft.Compute/virtualMachines/",$item["resourceName"]]),
         https: true,
