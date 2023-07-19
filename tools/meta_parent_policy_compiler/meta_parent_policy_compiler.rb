@@ -28,6 +28,7 @@ default_child_policy_template_files = [
   "../../cost/azure/storage_account_lifecycle_management/storage_account_lifecycle_management.pt",
   "../../operational/azure/azure_certificates/azure_certificates.pt",
   "../../operational/azure/azure_long_running_instances/azure_long_running_instances.pt",
+  "../../operational/azure/tag_cardinality/azure_tag_cardinality.pt",
   "../../operational/azure/vms_without_managed_disks/azure_vms_without_managed_disks.pt",
 ]
 
@@ -62,7 +63,8 @@ def compile_meta_parent_policy(file_path)
   # Get the credentials
   credentials = pt.scan(/credentials ".*?" do.*?^end/m)
 
-
+  # Get resource level
+  resource_level = pt.scan(/^\s*resource_level (true|false)$/)
 
   consolidated_incident_datasource_template = <<~EOL
   datasource "__PLACEHOLDER_FOR_CHILD_POLICY_CONSOLIDATED_INCIDENT_DATASOURCE___combined_incidents" do
@@ -93,7 +95,7 @@ def compile_meta_parent_policy(file_path)
     escalate $esc_email
     check eq(size(data), 0)
     export do
-      resource_level true
+      resource_level __PLACEHOLDER_FOR_RESOURCE_LEVEL__
       __PLACEHOLDER_FOR_CHILD_POLICY_CONSOLIDATED_INCIDENT_FIELDS__
     end
   end
@@ -119,9 +121,10 @@ def compile_meta_parent_policy(file_path)
     fields.each do |field|
       # Remove path from the field output in the meta parent
       field.gsub!(/\n.*?path.*?\n/, "\n")
-      # Lazy way to remove the export do // resource_level true blocks that are not needed.
+      # Lazy way to remove the export do // resource_level true and false blocks that are not needed.
       # A better solution would be a better regex above to capture only the field statements
       field.gsub!(/ *?export.*?do\n *resource_level true\n *field/, "field")
+      field.gsub!(/ *?export.*?do\n *resource_level false\n *field/, "field")
       # Add 6 spaces to the beginning of each field to make it align with the policy.validate.export.<field> in the meta parent
       field = "      " + field
       # print("Field: \n")
@@ -153,6 +156,8 @@ def compile_meta_parent_policy(file_path)
     output_ds = output_ds.gsub("__PLACEHOLDER_FOR_CHILD_POLICY_CONSOLIDATED_INCIDENT_FIELDS__", fields.join("\n"))
     # Replace the placeholder with the Child Policy Consolidated Incident Datasource Block
     output_ds = output_ds.gsub("__PLACEHOLDER_FOR_CHILD_POLICY_CONSOLIDATED_INCIDENT_DATASOURCE__", datasource_name)
+    # Replace the placeholder with the Resource Level
+    output_incident = output_incident.gsub("__PLACEHOLDER_FOR_RESOURCE_LEVEL__", resource_level.join(""))
     output_incident = output_incident.gsub("__PLACEHOLDER_FOR_CHILD_POLICY_CONSOLIDATED_INCIDENT_DATASOURCE__", datasource_name)
     # Replace the placeholder with the Child Policy Consolidated Incident Fields Blocks
     output_incident = output_incident.gsub("__PLACEHOLDER_FOR_CHILD_POLICY_CONSOLIDATED_INCIDENT_FIELDS__", fields.join("\n      "))
@@ -175,7 +180,7 @@ def compile_meta_parent_policy(file_path)
     exit(1)
   end
   parent_pt = File.open(parent_pt_path, "rb").read
-  # Copy the parent_pt to output_pt so we can manipulate it safely
+  # Copy the parent_pt to output_pt so we canate it safely
   output_pt = parent_pt
   output_pt_path = File.basename(file_path).split(".")[0] + "_meta_parent.pt"
   # Replace __PLACEHOLDER_FOR_CHILD_POLICY_NAME__ with the name of the child policy
@@ -184,7 +189,7 @@ def compile_meta_parent_policy(file_path)
   # Attempt to identify the URL to the child policy template file on github using the file_path provided
   # This would only work if the pt file is located under the `policy_templates` repo directory
   # If it is not, then the URL will be incorrect
-  pt_path_expanded = File.expand_path(file_path) # Get full path to the pt file provided
+  pt_path_expanded = File.expand_path(file_path) # Get full pat manipulh to the pt file provided
   pt_path_repo_file = pt_path_expanded.gsub(/^.*policy_templates\//, "") # Get the path to the pt file relative to the policy_templates directory
   pt_path_repo_dir = pt_path_repo_file.split("/")[0..-2].join("/") # Get the path to the directory containing the child pt file
   github_url = "https://github.com/flexera-public/policy_templates/tree/master/#{pt_path_repo_dir}" # Build the github URL
