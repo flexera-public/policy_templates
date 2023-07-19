@@ -37,7 +37,6 @@ For administrators [creating and managing credentials](https://docs.flexera.com/
 - [**Flexera Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) (*provider=flexera*) which has the following roles:
   - `billing_center_viewer`
 
-
 ## Supported Clouds
 
 - Azure
