@@ -26,6 +26,7 @@ default_child_policy_template_files = [
   "../../cost/azure/hybrid_use_benefit_linux/ahub_linux.pt",
   "../../cost/azure/hybrid_use_benefit_sql/ahub_sql.pt",
   "../../cost/azure/storage_account_lifecycle_management/storage_account_lifecycle_management.pt",
+  "../../operational/azure/azure_certificates/azure_certificates.pt",
   "../../operational/azure/vms_without_managed_disks/azure_vms_without_managed_disks.pt",
 ]
 
