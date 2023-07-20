@@ -1,5 +1,16 @@
 # Changelog
 
+## v0.4
+
+- Added `Storage Access` incident field.
+- Added `Last Attached VM` incident field.
+- Added `Action State` incident field.
+- Added `Disruptiveness` incident field.
+- Added `Reversibility` incident field.
+- Added `System Details URL` incident field.
+- Renamed `Size` incident field to `Storage Amount`.
+- Changed internal names of several incident fields to ensure that they are properly scraped for dashboards.
+
 ## v0.3
 
 - Fixed readme Link in the policy.

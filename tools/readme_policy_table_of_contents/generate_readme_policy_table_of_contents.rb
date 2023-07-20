@@ -47,12 +47,10 @@ if (pt_files.length != 0)
     # Optimization Policies will be listed separately with intent to highlight them
     # Requirements for Optimization Policies:
     # - Must have all required fields and metadata (https://docs.flexera.com/flexera/EN/Automation/CreateRecomendationFromPolicyTemp.htm)
-    # - Exclude Turbonomic policies
     pt_file = open(file)
 
     if (pt_file.grep(/field \"savings\" do/).length > 0 \
-      and p[:provider] != nil and p[:provider].length > 0 \
-      and ! file.include? "turbonomic") then
+      and p[:provider] != nil and p[:provider].length > 0) then
       # As of April 2023, recommendation_type is a required metadata in the docs,
       # but the policies that generate savings recommendations do not have it.
       # Likely end up this is not required and we do not need this check, but

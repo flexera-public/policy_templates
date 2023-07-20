@@ -1,8 +1,8 @@
-# Turbonomic Allocate Virtual Machine Recommendations GCP
+# Turbonomic Allocate Virtual Machine Recommendations Google
 
 ## What it does
 
-The Turbonomic Allocate Virtual Machines Recommendations GCP policy utilizes Turbonomic (POST `https://turbonomic.com/api/v3/markets/{market_uuid}/actions`) endpoint to provide GCP VM allocation recommendations for Reserved Instance coverage. From these recommendations we provide monthly savings estimates based on Turbonomic per hour costs
+The Turbonomic Allocate Virtual Machines Recommendations Google policy utilizes Turbonomic (POST `https://turbonomic.com/api/v3/markets/{market_uuid}/actions`) endpoint to provide GCP VM allocation recommendations for Reserved Instance coverage. From these recommendations we provide monthly savings estimates based on Turbonomic per hour costs
 
 ## Functional Details
 

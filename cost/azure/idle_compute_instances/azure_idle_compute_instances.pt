@@ -7,7 +7,7 @@ category "Cost"
 severity "low"
 default_frequency "daily"
 info(
-  version: "4.5",
+  version: "4.8",
   provider: "Azure",
   service: "Compute",
   policy_set: "Idle Compute Instances",
@@ -140,10 +140,12 @@ datasource "ds_azure_virtualmachines" do
     collect jmes_path(response, "value[*]") do
       field "resourceID", jmes_path(col_item,"id")
       field "resourceGroup", get(4,split(jmes_path(col_item,"id"),'/'))
-      field "resourceType", jmes_path(col_item,"type")
+      field "resourceKind", jmes_path(col_item,"type")
       field "name", jmes_path(col_item,"name")
       field "region", jmes_path(col_item, "location")
       field "tags", jmes_path(col_item,"tags")
+      field "platform", jmes_path(col_item,"properties.storageProfile.osDisk.osType")
+      field "resourceType", jmes_path(col_item, "properties.hardwareProfile.vmSize")
       field "subscriptionID",val(iter_item,"subscriptionID")
       field "subscriptionName",val(iter_item,"displayName")
     end
@@ -174,10 +176,12 @@ datasource "ds_azure_instance_performance" do
     field "resourceName", val(iter_item,"name")
     field "resourceGroup", val(iter_item, "resourceGroup")
     field "resourceID", val(iter_item, "resourceID")
-    field "resourceType", val(iter_item, "resourceType")
+    field "resourceKind", val(iter_item, "resourceKind")
     field "region", val(iter_item, "region")
     field "tags", val(iter_item, "tags")
     field "service", val(iter_item, "service")
+    field "platform", val(iter_item, "platform")
+    field "resourceType", val(iter_item, "resourceType")
     field "subscriptionID",val(iter_item,"subscriptionID")
     field "subscriptionName",val(iter_item,"subscriptionName")
     field "averages" do
@@ -257,7 +261,11 @@ datasource "ds_combineddata" do
 end
 
 datasource "ds_instance_cost_mapping" do
-  run_script $js_instance_cost_mapping, $ds_combineddata, $ds_instance_costs, $ds_currency_code, $ds_currency_reference, $ds_billing_centers
+  run_script $js_instance_cost_mapping, $ds_combineddata, $ds_instance_costs, $ds_currency_code, $ds_currency_reference, $ds_billing_centers, $param_cpu_average_percentage
+end
+
+datasource "ds_only_instances" do
+  run_script $js_only_instances, $ds_instance_cost_mapping
 end
 
 ###############################################################################
@@ -387,7 +395,7 @@ code <<-EOS
       },
     0)
 
-    var final_average = parseFloat(sum/averages.length)
+    var final_average = parseFloat((sum / averages.length).toFixed(2))
 
     if (final_average < param_cpu_average_percentage && final_average != 0) {
       result["averageCPU"] = final_average
@@ -399,7 +407,7 @@ EOS
 end
 
 script "js_instance_cost_mapping", type:"javascript" do
-  parameters  "instance_list","instance_costs","ds_currency_code","ds_currency_reference", "ds_billing_centers"
+  parameters  "instance_list","instance_costs","ds_currency_code","ds_currency_reference", "ds_billing_centers", "param_cpu_average_percentage"
   result "result"
   code <<-EOS
     var result = {};
@@ -455,6 +463,8 @@ script "js_instance_cost_mapping", type:"javascript" do
       var total_savings=0;
       _.each(instance_list, function(instance){
         var cost_objects = costs_by_resource_id[instance.resourceID];
+        instance['lookbackPeriod'] = "30 days"
+        instance['threshold'] = param_cpu_average_percentage
         if (_.size(cost_objects) > 0){
           count++;
           var sum = _.reduce(_.compact(_.map(cost_objects, function(value){return value.cost_nonamortized_unblended_adj})), function(memo, num){ return memo + num; }, 0);
@@ -488,20 +498,32 @@ script "js_instance_cost_mapping", type:"javascript" do
   EOS
 end
 
+script "js_only_instances", type: "javascript" do
+  parameters "arg"
+  result "results"
+  code <<-EOS
+    results = arg.instance_list
+    if (results && results.length) {
+      results[0].message = arg.message
+    }
+  EOS
+end
+
 ###############################################################################
 # Policy
 ###############################################################################
 
 policy "azure_resource_policy" do
-  validate $ds_instance_cost_mapping do
+  validate $ds_only_instances do
     summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): Azure idle compute instances found"
+    hash_exclude "averageCPU", "averages", "savings"
     detail_template <<-EOS
-{{data.message}}
+{{with index data 0}}{{ .message }}{{end}}
 EOS
-    check eq(size(val(data, "instance_list")), 0)
+    check eq(size(data),0)
     escalate $email
     escalate $delete_resources
-    export "instance_list" do
+    export do
       resource_level true
       field "accountName" do
         label "Subscription Name"
@@ -517,8 +539,8 @@ EOS
       field "resourceName" do
         label "Resource Name"
       end
-      field "resourceType" do
-        label "Resource Type"
+      field "resourceKind" do
+        label "Resource Kind"
       end
       field "region" do
         label "Region"
@@ -529,8 +551,9 @@ EOS
       field "savingsCurrency" do
         label "Savings Currency"
       end
-      field "averageCPU" do
+      field "cpuAverage" do
         label "CPU Average"
+        path "averageCPU"
       end
       field "resourceGroup" do
         label "Resource Group"
@@ -544,6 +567,18 @@ EOS
       field "id" do
         label "ID"
         path "resourceID"
+      end
+      field "lookbackPeriod" do
+        label "Lookback Period"
+      end
+      field "threshold" do
+        label "Threshold"
+      end
+      field "platform" do
+        label "Platform"
+      end
+      field "resourceType" do
+        label "Resource Type"
       end
     end
   end

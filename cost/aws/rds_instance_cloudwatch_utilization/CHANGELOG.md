@@ -1,5 +1,14 @@
 # Changelog
 
+## v3.1
+
+- Added `Account Name` incident field
+- Added `Database Engine` incident field
+- Added `Engine Version` incident field
+- Added `CPU Threshold` incident fields
+- Added `Lookback Period` incident fields
+- Changed the internal names of several incident fields to ensure proper scraping for recommendations dashboard
+
 ## v3.0
 
 - Added parameter to enable Allow or Deny filtering by user entered regions

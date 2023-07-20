@@ -6,7 +6,7 @@ category "Cost"
 severity "low"
 default_frequency "daily"
 info(
-  version: "6.1",
+  version: "6.2",
   provider: "AWS",
   service: "Storage",
   policy_set: "Old Snapshots",
@@ -663,8 +663,12 @@ script "js_filter_old_snapshots", type: "javascript" do
       var isTagMatched = false;
       var instance_tags = {}
       var tags = []
+      var resourceName = ""
       _.each(snapshot['tags'], function (instance) {
         tags.push(instance.tagKey + '=' + instance.tagValue)
+        if (instance.tagKey == "Name") {
+          resourceName = instance.tagValue
+        }
       })
       _.each(param_exclude_tags, function (exclude) {
         if (_.contains(tags, exclude)) {
@@ -684,7 +688,8 @@ script "js_filter_old_snapshots", type: "javascript" do
             tagKeyValue: tags,
             daysOld: daysOld,
             service: snapshot['service'],
-            volumeSize: snapshot['volumeSize']
+            volumeSize: snapshot['volumeSize'],
+            resourceName: resourceName
           })
         }
       }
@@ -795,7 +800,8 @@ script "js_filter_ami_snapshots", type: "javascript" do
         imageId: old_snapshot_imageId,
         dbInstanceId: old_snapshot_dbInstanceId,
         dbClusterId: old_snapshot_dbClusterId,
-        volumeSize: old_snapshot['volumeSize']
+        volumeSize: old_snapshot['volumeSize'],
+        resourceName: old_snapshot['resourceName']
       });
     });
   EOS
@@ -865,44 +871,34 @@ script "js_snapshots_cost_mapping", type: "javascript" do
     var total = 0;
     _.each(ds_filter_ami_snapshots, function (snapshot) {
       var cost_objects = costs_by_resource_id[snapshot.formatSnapId];
+      var resourceName = snapshot['resourceName']
+      if (resourceName == "") {
+        resourceName = snapshot['snapshotId']
+      }
+      var savings = 0.0
       if (ds_billing_centers.length != 0 && _.size(cost_objects) > 0) {
         var sum = _.reduce(_.compact(_.map(cost_objects, function (value) { return value.cost_nonamortized_unblended_adj })), function (memo, num) { return memo + num; }, 0);
         var monthly_savings = sum * 30;
         total = total + monthly_savings;
-        result.push({
-          accountID: ds_get_caller_identity[0]['account'],
-          accountName: accountName,
-          snapshotId: snapshot['snapshotId'],
-          region: snapshot['region'],
-          tags: snapshot['tagKeyValue'],
-          daysOld: snapshot['daysOld'],
-          imageId: snapshot['imageId'],
-          dbInstanceId: snapshot['dbInstanceId'],
-          dbClusterId: snapshot['dbClusterId'],
-          savings: (Math.round(monthly_savings * 1000) / 1000),
-          savingsCurrency: cur,
-          volumeSize: snapshot['volumeSize'],
-          service: snapshot['service'],
-          resourceType: "Storage Snapshot"
-        })
-      } else {
-        result.push({
-          accountID: ds_get_caller_identity[0]['account'],
-          accountName: accountName,
-          snapshotId: snapshot['snapshotId'],
-          region: snapshot['region'],
-          tags: snapshot['tagKeyValue'],
-          daysOld: snapshot['daysOld'],
-          dbInstanceId: snapshot['dbInstanceId'],
-          dbClusterId: snapshot['dbClusterId'],
-          imageId: snapshot['imageId'],
-          savings: 0.0,
-          savingsCurrency: cur,
-          volumeSize: snapshot['volumeSize'],
-          service: snapshot['service'],
-          resourceType: "Storage Snapshot"
-        })
+        savings = (Math.round(monthly_savings * 1000) / 1000);
       }
+      result.push({
+        accountID: ds_get_caller_identity[0]['account'],
+        accountName: accountName,
+        snapshotId: snapshot['snapshotId'],
+        region: snapshot['region'],
+        tags: snapshot['tagKeyValue'],
+        daysOld: snapshot['daysOld'],
+        imageId: snapshot['imageId'],
+        dbInstanceId: snapshot['dbInstanceId'],
+        dbClusterId: snapshot['dbClusterId'],
+        savings: savings,
+        savingsCurrency: cur,
+        volumeSize: snapshot['volumeSize'],
+        service: snapshot['service'],
+        resourceType: "Storage Snapshot",
+        resourceName: resourceName,
+      })
     })
     if (ds_billing_centers.length != 0) {
       var total_savings = cur + ' ' + formatNumber(total.toFixed(2), separator);
@@ -944,15 +940,20 @@ EOS
       field "region" do
         label "Region"
       end
-      field "daysOld" do
+      field "age" do
         label "Days Old"
+        path "daysOld"
       end
-      field "volumeSize" do
+      field "size" do
         label "Size"
+        path "volumeSize"
       end
       field "resourceID" do
         label "Resource ID"
         path "snapshotId"
+      end
+      field "resourceName" do
+        label "Resource Name"
       end
       field "resourceType" do
         label "Resource Type"
