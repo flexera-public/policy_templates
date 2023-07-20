@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.5
+
+- Renamed `Storage Access` incident field to `IOps`.
+- Renamed `Storage Amount` incident field to `Size`.
+- Renamed `Attachment State` incident field to `State`.
+- Renamed `Days Unattached` incident field to `Lookback Period`.
+- Removed hardcoded host on business units path.
+
 ## v0.4
 
 - Added `Storage Access` incident field.
