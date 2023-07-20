@@ -6,7 +6,6 @@
 - Several parameters altered to be more descriptive and human-readable
 - Removed deprecated "Log to CM Audit Entries" parameter
 - Added ability to specify how long an IP address should be unattached to consider it unused
-- Added ability to only report recommendations that meet a minimum savings threshold
 - Added ability to filter resources by multiple tag key:value pairs
 - Added additional context to incident description
 - Normalized incident export to be consistent with other policies
