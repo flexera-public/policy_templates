@@ -12,18 +12,20 @@ If EIP is not needed, charges can be stopped by releasing the unused EIP.
 
 ### Policy savings details
 
-The policy includes the estimated savings. The estimated savings is recognized if the resource is terminated. The savings isÂ calculated using the per hour cost of unused IPs for a period of 30 days and is displayed in the Estimated Monthly SavingsÂ column and the total estimated sum of all the unused IPs is displayed in the incident detail message.
-Please note that the estimated savings is calculated and displayed in USD($), excluding any discounts.
+The policy includes the estimated savings. The estimated savings is recognized if the resource is terminated. The savings is calculated using the per hour cost of unused IPs for a period of 30 days and is displayed in the Estimated Monthly Savings column and the total estimated sum of all the unused IPs is displayed in the incident detail message.
+
+If the Flexera organization is configured to use a currency other than USD, the savings values will be converted from USD using the exchange rate at the time that the policy executes.
 
 ## Input Parameters
 
 This policy has the following input parameters required when launching the policy.
 
-- *Allowed/Denied Regions* - Whether to treat regions parameter as allow or deny list.
-- *Regions* - A list of regions to allow or deny for an AWS account. Please enter the regions code if SCP is enabled, see [Available Regions](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/using-regions-availability-zones.html#concepts-available-regions) in AWS; otherwise, the policy may fail on regions that are disabled via SCP. Leave blank to consider all the regions.
+- *Email addresses* - Email addresses of the recipients you wish to notify when new incidents are created.
 - *Account Number* - The Account number for use with the AWS STS Cross Account Role. Leave blank when using AWS IAM Access key and secret. It only needs to be passed when the desired AWS account is different than the one associated with the Flexera One credential. [more](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_1982464505_1123608)
-- *Email addresses* - Email addresses of the recipients you wish to notify when new incidents are created
-- *Exclusion Tags* - A list of AWS tags to ignore Elastic IPs. Format: Key=Value.
+- *Days Unattached* - The number of days an IP address needs to be detached to be considered unused. This value cannot be set above 90 due to CloudTrail only storing 90 days of log data. If this value is set to 0, all unattached IP addresses will be considered unused.
+- *Allowed/Denied Regions* - Whether to treat regions parameter as allow or deny list.
+- *Allow/Deny Regions List* - A list of regions to allow or deny for an AWS account. Please enter the regions code if SCP is enabled, see [Available Regions](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/using-regions-availability-zones.html#concepts-available-regions) in AWS; otherwise, the policy may fail on regions that are disabled via SCP. Leave blank to consider all the regions.
+- *Exclusion Tags (Key:Value)* - Cloud native tags to ignore instances that you don't want to produce recommendations for. Format: Key:Value
 - *Automatic Actions* - When this value is set, this policy will automatically take the selected action(s).
 
 Please note that the "*Automatic Actions*" parameter contains a list of action(s) that can be performed on the resources. When it is selected, the policy will automatically execute the corresponding action on the data that failed the checks, post incident generation. Please leave it blank for *manual* action.
