@@ -1,8 +1,8 @@
-# Turbonomic Delete Unattached Volumes Recommendations GCP
+# Turbonomic Delete Unattached Volumes Recommendations Google
 
 ## What it does
 
-The Turbonomic Delete Unattached Volumes Recommendations GCP policy uses Turbonomic Actions API endpoint (POST xxxx.turbonomic.com/api/v3/markets/Market/actions) and Business Units endpoint (GET xxxx.turbonomic.com/api/v3/businessunits) to provide delete unattached volumes recommendations. From these recommendations we provide monthly savings estimates based on Turbonomic per hour costs.
+The Turbonomic Delete Unattached Volumes Recommendations Google policy uses Turbonomic Actions API endpoint (POST xxxx.turbonomic.com/api/v3/markets/Market/actions) and Business Units endpoint (GET xxxx.turbonomic.com/api/v3/businessunits) to provide delete unattached volumes recommendations. From these recommendations we provide monthly savings estimates based on Turbonomic per hour costs.
 
 ## Functional Details
 

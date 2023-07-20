@@ -15,6 +15,13 @@
 - Policy no longer raises new escalations if snapshot age or savings data changed but nothing else has
 - Streamlined code for better readability and faster execution
 
+## v6.2
+
+- Renamed `volumeSize` incident field to `size`.
+- Renamed `daysOld` incident field to `age`.
+- Added `resourceName` incident field.
+- Removed repeated code on script `js_snapshots_cost_mapping`.
+
 ## v6.1
 
 - Updated policy metadata to facilitate scraping of incidents for Recommendations dashboard

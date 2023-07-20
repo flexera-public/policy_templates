@@ -7,10 +7,11 @@ severity "low"
 category "Cost"
 default_frequency "daily"
 info(
-  version: "5.0",
+  version: "5.1",
   provider: "AWS",
   service: "EC2",
-  policy_set: "Idle Compute Instances"
+  policy_set: "Idle Compute Instances",
+  recommendation_type: "Usage Reduction"
 )
 
 ###############################################################################
@@ -675,6 +676,15 @@ script "js_merged_metrics", type: "javascript" do
   _.each(ds_instances, function(instance) {
     region = instance['region']
     id = instance['instanceId']
+    var resourceName = ""
+    var tags = []
+    _.each(instance['tags'], function(inst){
+      if (inst.key == "Name") {
+        resourceName = inst.value
+      }
+      tags.push(inst.key+'='+inst.value)
+    })
+
     // Only proceed of the CloudWatch data actually has the region and instance id.
     // Otherwise, we have no usage data on the instance and thus dont include it in the results.
     if (cloudwatch_data[region] != undefined) {
@@ -688,12 +698,14 @@ script "js_merged_metrics", type: "javascript" do
           "privateDnsName": instance['privateDnsName'],
           "launchTime": instance['launchTime'],
           "hostname": instance['privateDnsName'].split('.')[0],
-          "tags": instance['tags'],
+          "tags": tags,
+          "resourceName": resourceName,
           "resourceType": instance['resourceType'],
           "savings": null,
           "accountID": aws_account,
           "accountName": "",
-          "savingsCurrency": currency['symbol']
+          "savingsCurrency": currency['symbol'],
+          "lookbackPeriod": '30 days',
         }
         // Grab usage data for the instance if it is present
         _.each(stats, function(stat) {
@@ -704,7 +716,7 @@ script "js_merged_metrics", type: "javascript" do
             legacyStatName = metric + "_" + stat.toLowerCase()
             r[legacyStatName] = null
             if (cloudwatch_data[region][id][statname] != undefined && cloudwatch_data[region][id][statname] != null) {
-              r[legacyStatName] = cloudwatch_data[region][id][statname]
+              r[legacyStatName] = Math.round(cloudwatch_data[region][id][statname]*1000)/1000
             }
           })
         })
@@ -794,6 +806,9 @@ script "js_idle_instances", type:"javascript" do
         if (isNaN(instance['savings']) == false) {
           total_savings += parseFloat(instance['savings'])
         }
+        instance['threshold'] = param_avg_cpu
+        instance['memoryThreshold'] = param_avg_used_memory
+        instance['thresholdType'] = param_threshold_statistic
         idle_instances.push(instance)
       }
     })
@@ -847,6 +862,9 @@ EOS
       field "resourceID" do
         label "Resource ID"
       end
+      field "resourceName" do
+        label "Resource Name"
+      end
       field "region" do
         label "Region"
       end
@@ -871,41 +889,53 @@ EOS
       field "launchTime" do
         label "Launch Time"
       end
-      field "cpu_maximum" do
+      field "cpuMaximum" do
         label "CPU Maximum %"
+        path "cpu_maximum"
       end
-      field "cpu_minimum" do
+      field "cpuMinimum" do
         label "CPU Minimum %"
+        path "cpu_minimum"
       end
-      field "cpu_average" do
+      field "cpuAverage" do
         label "CPU Average %"
+        path "cpu_average"
       end
-      field "cpu_p99" do
+      field "cpuP99" do
         label "CPU p99"
+        path "cpu_p99"
       end
-      field "cpu_p95" do
+      field "cpuP95" do
         label "CPU p95"
+        path "cpu_p95"
       end
-      field "cpu_p90" do
+      field "cpuP90" do
         label "CPU p90"
+        path "cpu_p90"
       end
-      field "mem_maximum" do
+      field "memMaximum" do
         label "Memory Maximum %"
+        path "mem_maximum"
       end
-      field "mem_minimum" do
+      field "memMinimum" do
         label "Memory Minimum %"
+        path "mem_minimum"
       end
-      field "mem_average" do
+      field "memAverage" do
         label "Memory Average %"
+        path "mem_average"
       end
-      field "mem_p99" do
+      field "memP99" do
         label "Memory p99"
+        path "mem_p99"
       end
-      field "mem_p95" do
+      field "memP95" do
         label "Memory p95"
+        path "mem_p95"
       end
-      field "mem_p90" do
+      field "memP90" do
         label "Memory p90"
+        path "mem_p90"
       end
       field "tags" do
         label "Tags"
@@ -916,6 +946,18 @@ EOS
       end
       field "service" do
         label "Service"
+      end
+      field "lookbackPeriod" do
+        label "Lookback Period"
+      end
+      field "threshold" do
+        label "CPU Threshold"
+      end
+      field "memoryThreshold" do
+        label "Memory Threshold"
+      end
+      field "thresholdType" do
+        label "Threshold Type"
       end
     end
   end

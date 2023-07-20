@@ -7,10 +7,11 @@ severity "medium"
 category "Cost"
 default_frequency "daily"
 info(
-  version: "2.16",
+  version: "2.19",
   provider: "AWS",
   service: "EC2",
-  policy_set: "Reserved Instance"
+  policy_set: "Reserved Instances",
+  recommendation_type: "Rate Reduction"
 )
 
 ###############################################################################
@@ -343,6 +344,10 @@ script "js_ri_cleanup", type: "javascript" do
     _.each(ri_recos, function(recos){
       var reco_details = recos["recommendationDetails"];
       _.each(reco_details, function(reco){
+        var term = recos["termInYears"].toString() + " year"
+        if (recos["termInYears"] != 1) {
+          term += "s"
+        }
         result.push({
           accountID: reco["accountID"],
           accountName: accountName,
@@ -372,7 +377,7 @@ script "js_ri_cleanup", type: "javascript" do
           minimumNormalizedUnitsUsedPerHour: (Math.round(reco["minimumNormalizedUnitsUsedPerHour"] * 100) / 100).toString(10),
           minimumNumberOfInstancesUsedPerHour: (Math.round(reco["minimumNumberOfInstancesUsedPerHour"] * 100) / 100).toString(10),
           nodeType: reco["nodeType"].toString(),
-          platform: reco["platform"].toString(),
+          platform: reco["platform"].toString() || reco["databaseEngine"].toString(),
           productDescription: reco["productDescription"].toString(),
           recommendedNormalizedUnitsToPurchase: reco["recommendedNormalizedUnitsToPurchase"].toString(),
           recommendedNumberOfInstancesToPurchase: reco["recommendedNumberOfInstancesToPurchase"].toString(),
@@ -380,7 +385,9 @@ script "js_ri_cleanup", type: "javascript" do
           region: reco["region"].toString(),
           sizeFlexEligible: reco["sizeFlexEligible"].toString(),
           tenancy: reco["tenancy"].toString(),
-          upfrontCost: (Math.round(reco["upfrontCost"] * 100) / 100).toString(10)
+          upfrontCost: (Math.round(reco["upfrontCost"] * 100) / 100).toString(10),
+          resourceType: reco["instanceType"].toString() || reco["instanceSize"].toString() || reco["nodeType"].toString(),
+          term: term
         })
       })
     })
@@ -489,11 +496,13 @@ policy "aws_ri_recommendations" do
       field "accountName" do
         label "Account Name"
       end
-      field "estimatedMonthlySavingsAmount" do
+      field "savings" do
         label "Estimated Monthly Savings Amount"
+        path "estimatedMonthlySavingsAmount"
       end
-      field "accountScope" do
+      field "scope" do
         label "Account Scope"
+        path "accountScope"
       end
       field "averageNormalizedUnitsUsedPerHour" do
         label "Average Normalized Units Used Per Hour"
@@ -540,8 +549,9 @@ policy "aws_ri_recommendations" do
       field "licenseModel" do
         label "License Model"
       end
-      field "lookbackPeriodInDays" do
+      field "lookbackPeriod" do
         label "Look Back Period In Days"
+        path "lookbackPeriodInDays"
       end
       field "maximumNormalizedUnitsUsedPerHour" do
         label "Maximum Normalized Units Used Per Hour"
@@ -570,8 +580,9 @@ policy "aws_ri_recommendations" do
       field "recommendedNormalizedUnitsToPurchase" do
         label "Recommended Normalized Units To Purchase"
       end
-      field "recommendedNumberOfInstancesToPurchase" do
+      field "recommendedQuantity" do
         label "Recommended Number Of Instances To Purchase"
+        path "recommendedNumberOfInstancesToPurchase"
       end
       field "recurringStandardMonthlyCost" do
         label "Recurring Standard Monthly Cost"
@@ -584,6 +595,12 @@ policy "aws_ri_recommendations" do
       end
       field "upfrontCost" do
         label "Upfront Cost"
+      end
+      field "resourceType" do
+        label "Resource Type"
+      end
+      field "term" do
+        label "Term"
       end
     end
   end

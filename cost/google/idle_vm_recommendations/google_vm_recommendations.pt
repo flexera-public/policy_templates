@@ -6,10 +6,11 @@ category "Cost"
 severity "low"
 default_frequency "daily"
 info(
-  version: "2.6",
+  version: "2.11",
   provider:"Google",
   service: "Compute",
-  policy_set: "Idle Compute Instances"
+  policy_set: "Idle Compute Instances",
+  recommendation_type: "Usage Reduction"
 )
 
 ###############################################################################
@@ -109,102 +110,6 @@ datasource "ds_google_project" do
   end
 end
 
-datasource "ds_recommenders" do
-  run_script $js_recommenders, $ds_vms_with_cpu_utilization
-end
-
-datasource "ds_recommendations" do
-  iterate $ds_recommenders
-  request do
-    run_script $js_recommender_call, val(iter_item,"accountID"), val(iter_item, "region"), val(iter_item, "requestNumber")
-  end
-  result do
-    encoding "json"
-    collect jmes_path(response, "recommendations[*]") do
-      field "accountID", val(iter_item, "accountID")
-      field "region", val(iter_item, "region")
-      field "id", jmes_path(col_item, "name")
-      field "description", jmes_path(col_item, "description")
-      field "resourceName", jmes_path(col_item, "content.overview.resourceName")
-      field "primaryImpact", jmes_path(col_item, "primaryImpact")
-      field "costUnits", jmes_path(col_item, "primaryImpact.costProjection.cost.units")
-      field "costNanos", jmes_path(col_item, "primaryImpact.costProjection.cost.nanos")
-      field "duration", jmes_path(col_item, "primaryImpact.costProjection.duration")
-      field "currency", jmes_path(col_item, "primaryImpact.costProjection.cost.currencyCode")
-      field "priority", jmes_path(col_item, "priority")
-      field "recommenderSubtype", jmes_path(col_item, "recommenderSubtype")
-      field "state", jmes_path(col_item, "stateInfo.state")
-    end
-  end
-end
-
-datasource "ds_calculated_utilization" do
-  iterate $ds_google_project
-  request do
-    auth $auth_google
-    verb "POST"
-    host "monitoring.googleapis.com"
-    path join(["/v3/projects/", val(iter_item,"accountID"), "/timeSeries:query"])
-    body_field "query", "fetch gce_instance | metric compute.googleapis.com/instance/cpu/utilization | within 14d | { group_by sliding(14d), .mean ; group_by sliding(14d), .max  ; group_by sliding(14d), . min } | join"
-    ignore_status [403, 404]
-  end
-  result do
-    encoding "json"
-    collect jmes_path(response, "timeSeriesData[*]") do
-      field "resourceName", jmes_path(col_item, "labelValues[3].stringValue")
-      field "resourceID", jmes_path(col_item, "labelValues[2].stringValue")
-      field "zone", jmes_path(col_item, "labelValues[1].stringValue")
-      field "accountID", val(iter_item, "accountID")
-      field "accountName", val(iter_item, "accountName")
-      field "projectNumber", val(iter_item, "projectNumber")
-      field "cpuAverage", prod(jmes_path(col_item, "pointData[0].values[0].doubleValue"), 100)
-      field "cpuMaximum", prod(jmes_path(col_item, "pointData[0].values[1].doubleValue"), 100)
-      field "cpuMinimum", prod(jmes_path(col_item, "pointData[0].values[2].doubleValue"), 100)
-    end
-  end
-end
-
-datasource "ds_grouped_account_ids" do
-  run_script $js_grouped_account_ids, $ds_calculated_utilization
-end
-
-datasource "ds_get_vms" do
-  iterate $ds_grouped_account_ids
-  request do
-    auth $auth_google
-    host "compute.googleapis.com"
-    verb "GET"
-    path join(["/compute/v1/projects/", iter_item, "/aggregated/instances"])
-    ignore_status [403, 404]
-    header "User-Agent", "RS Policies"
-    header "Content-Type", "application/json"
-  end
-  result do
-    encoding "json"
-    field "vms", jq(response, "[ .items | to_entries | map_values(.value) | map(select(has(\"instances\"))) | .[].instances | .[] | {id,name,selfLink,status,tags,zone,kind}]")
-  end
-end
-
-datasource "ds_collected_vms" do
-  run_script $js_collected_vms, $ds_get_vms, $param_zones
-end
-
-datasource "ds_vms_with_cpu_utilization" do
-  run_script $js_vms_with_cpu_utilization, $ds_collected_vms, $ds_calculated_utilization
-end
-
-datasource "ds_sanitize_vms" do
-  run_script $js_sanitize_data, $ds_vms_with_cpu_utilization, $param_exclude_tags
-end
-
-datasource "ds_vm_cost_mapping" do
-  run_script $js_instance_cost_mapping, $ds_sanitize_vms, $ds_recommendations, $ds_currency_reference
-end
-
-###############################################################################
-# Scripts
-###############################################################################
-
 script "js_google_project", type: "javascript" do
   parameters "param_project"
   result "request"
@@ -238,6 +143,11 @@ script "js_google_project", type: "javascript" do
   EOS
 end
 
+# GET A LIST OF UNIQUE PARAMETERS TO MAKE CALLS TO THE RECOMMENDER API (UNIQUE ACCOUNT ID, REGION AND PROJECT NUMBER)
+datasource "ds_recommenders" do
+  run_script $js_recommenders, $ds_vms_with_cpu_utilization
+end
+
 script "js_recommenders", type: "javascript" do
   parameters "ds_vms_with_cpu_utilization"
   result "results"
@@ -258,15 +168,41 @@ script "js_recommenders", type: "javascript" do
   EOF
 end
 
+# GET A LIST OF GCP RECOMMENDATIONS FOR IDLE VMS IN EACH ACCOUNT AND REGION
+datasource "ds_recommendations" do
+  iterate $ds_recommenders
+  request do
+    run_script $js_recommender_call, val(iter_item,"accountID"), val(iter_item, "region"), val(iter_item, "requestNumber")
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "recommendations[*]") do
+      field "accountID", val(iter_item, "accountID")
+      field "region", val(iter_item, "region")
+      field "id", jmes_path(col_item, "name")
+      field "description", jmes_path(col_item, "description")
+      field "resourceLink", jmes_path(col_item, "content.overview.resource")
+      field "resourceName", jmes_path(col_item, "content.overview.resourceName")
+      field "primaryImpact", jmes_path(col_item, "primaryImpact")
+      field "costUnits", jmes_path(col_item, "primaryImpact.costProjection.cost.units")
+      field "costNanos", jmes_path(col_item, "primaryImpact.costProjection.cost.nanos")
+      field "duration", jmes_path(col_item, "primaryImpact.costProjection.duration")
+      field "currency", jmes_path(col_item, "primaryImpact.costProjection.cost.currencyCode")
+      field "priority", jmes_path(col_item, "priority")
+      field "recommenderSubtype", jmes_path(col_item, "recommenderSubtype")
+      field "state", jmes_path(col_item, "stateInfo.state")
+    end
+  end
+end
+
 script "js_recommender_call", type: "javascript" do
   parameters "accountID", "region", "requestNumber"
   result "request"
   code <<-EOF
-  // If 150 requests have been made, wait
-  if (requestNumber % 150 === 0) {
+  // If 100 requests have been made, wait
+  if (requestNumber % 100 === 0) {
     var now = new Date().getTime();
-    // 1 minute and 30 seconds
-    var sleepDuration = 90000
+    var sleepDuration = 60000
     while (new Date().getTime() < now + sleepDuration) { /* Do nothing to prevent quota error */ }
   }
   var request = {
@@ -278,6 +214,69 @@ script "js_recommender_call", type: "javascript" do
     query_strings: { alt: "json" }
   }
 EOF
+end
+
+# GET THE MAXIMUM, MINIMUM AND AVERAGE CPU UTILIZATION OF EVERY VM INSTANCE OF EACH ACCOUNT AND REGION
+datasource "ds_calculated_utilization" do
+  iterate $ds_google_project
+  request do
+    auth $auth_google
+    verb "POST"
+    host "monitoring.googleapis.com"
+    path join(["/v3/projects/", val(iter_item,"accountID"), "/timeSeries:query"])
+    body_field "query", "fetch gce_instance | metric compute.googleapis.com/instance/cpu/utilization | within 14d | { group_by sliding(14d), .mean ; group_by sliding(14d), .max  ; group_by sliding(14d), . min } | join"
+    ignore_status [403, 404]
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "timeSeriesData[*]") do
+      field "resourceName", jmes_path(col_item, "labelValues[3].stringValue")
+      field "resourceID", jmes_path(col_item, "labelValues[2].stringValue")
+      field "zone", jmes_path(col_item, "labelValues[1].stringValue")
+      field "accountID", val(iter_item, "accountID")
+      field "accountName", val(iter_item, "accountName")
+      field "projectNumber", val(iter_item, "projectNumber")
+      field "cpuAverage", prod(jmes_path(col_item, "pointData[0].values[0].doubleValue"), 100)
+      field "cpuMaximum", prod(jmes_path(col_item, "pointData[0].values[1].doubleValue"), 100)
+      field "cpuMinimum", prod(jmes_path(col_item, "pointData[0].values[2].doubleValue"), 100)
+    end
+  end
+end
+
+# GET A LIST OF UNIQUE ACCOUNT IDS TO REDUCE THE NUMBER OF CALLS WE NEED TO DO TO API TO GET VM DATA
+datasource "ds_grouped_account_ids" do
+  run_script $js_grouped_account_ids, $ds_calculated_utilization
+end
+
+script "js_grouped_account_ids", type: "javascript" do
+  result "grouped_account_ids"
+  parameters "ds_calculated_utilization"
+  code <<-EOS
+  grouped_account_ids = _.keys(_.groupBy(ds_calculated_utilization, "accountID"))
+  EOS
+end
+
+# GET A LIST OF THE VMS OF EVERY ACCOUNT ID IN EVERY ZONE
+datasource "ds_get_vms" do
+  iterate $ds_grouped_account_ids
+  request do
+    auth $auth_google
+    host "compute.googleapis.com"
+    verb "GET"
+    path join(["/compute/v1/projects/", iter_item, "/aggregated/instances"])
+    ignore_status [403, 404]
+    header "User-Agent", "RS Policies"
+    header "Content-Type", "application/json"
+  end
+  result do
+    encoding "json"
+    field "vms", jq(response, "[ .items | to_entries | map_values(.value) | map(select(has(\"instances\"))) | .[].instances | .[] | {id,name,selfLink,status,tags,zone,kind}]")
+  end
+end
+
+# THIS IS A HELPER FOR ds_get_vms, IT HELPS PROCESSING THE API RESPONSE AND DELIVERS A LIST OF VMS
+datasource "ds_collected_vms" do
+  run_script $js_collected_vms, $ds_get_vms, $param_zones
 end
 
 script "js_collected_vms", type: "javascript" do
@@ -301,10 +300,15 @@ script "js_collected_vms", type: "javascript" do
   EOS
 end
 
+# MAP THE LIST OF VMS WITH ITS CPU UTILIZATION (MIN, MAX & AVG)
+datasource "ds_vms_with_cpu_utilization" do
+  run_script $js_vms_with_cpu_utilization, $ds_collected_vms, $ds_calculated_utilization
+end
+
 script "js_vms_with_cpu_utilization", type: "javascript" do
   result "vms_with_cpu_utilization"
   parameters "ds_collected_vms", "ds_calculated_utilization"
-  code <<-EOS 
+  code <<-EOS
   var vms_with_cpu_utilization = []
   for (var i = 0; i < ds_calculated_utilization.length; i++) {
     matching_vm = _.find(ds_collected_vms, function(v) { return v.id === ds_calculated_utilization[i].resourceID })
@@ -330,16 +334,13 @@ script "js_vms_with_cpu_utilization", type: "javascript" do
   EOS
 end
 
-script "js_grouped_account_ids", type: "javascript" do
-  result "grouped_account_ids"
-  parameters "ds_calculated_utilization"
-  code <<-EOS
-  grouped_account_ids = _.keys(_.groupBy(ds_calculated_utilization, "accountID"))
-  EOS
+# GET A FILTERED LIST OF THE VMS BASED ON THE PARAMETERS THE USER PROVIDED
+datasource "ds_sanitize_vms" do
+  run_script $js_sanitize_data, $ds_vms_with_cpu_utilization, $param_exclude_tags
 end
 
 script "js_sanitize_data", type: "javascript" do
-result "results"
+  result "results"
   parameters "ds_get_vms", "param_exclusion_tag_key"
   code <<-EOS
   tag_key = param_exclusion_tag_key.split(':')[0]
@@ -374,6 +375,11 @@ result "results"
   EOS
 end
 
+# CREATE A LIST OF THE DATA OF THE VMS GROUPED WITH ITS UTILIZATION DATA (CPU MAXIMUM, CPU MINIMUM, CPU AVERAGE) AND ITS RECOMMENDATION DATA
+datasource "ds_vm_cost_mapping" do
+  run_script $js_instance_cost_mapping, $ds_sanitize_vms, $ds_recommendations, $ds_currency_reference
+end
+
 script "js_instance_cost_mapping", type:"javascript" do
   result "result"
   parameters  "vms", "recommendations", "ds_currency_reference"
@@ -400,65 +406,88 @@ script "js_instance_cost_mapping", type:"javascript" do
       }
       return result+"."+values[1];
     }
-    total = 0
-    cur = ""
+
+    var total = 0
+    var cur = ""
+
     _.each(vms, function(vm) {
-      _.each(recommendations, function(recommendation){
-        if(vm.resourceName == recommendation.resourceName) {
-          count++
-          if(recommendation['currency'] !== undefined ) {
-            if (recommendation['costUnits'] == null) {
-              recommendation['costUnits'] = 0
-            }
-            if (recommendation['costNanos'] == null) {
-              recommendation['costNanos'] = 0
-            }
-            if (ds_currency_reference[recommendation['currency']] !== undefined ) {
-            var cur = ds_currency_reference[recommendation['currency']]['symbol']
-            } else {
-              var cur = "$"
-            }
-            vm['savingsCurrency'] = cur
-          } else {
-            var cur = "$"
-            var separator = ","
+        var resource_link = vm.selfLink.replace("https://www.googleapis.com/compute/v1/", "")
+        vm["resourceLink"] = resource_link
+    })
+
+    _.each(recommendations, function(recommendation){
+      count ++
+      var rec_resource_link = recommendation.resourceLink.replace("//compute.googleapis.com/", "")
+      var vm = _.find(vms, function(v) {
+        return v.resourceLink == rec_resource_link
+      })
+      if (!(vm == undefined || vm == null)) {
+        if(recommendation['currency'] !== undefined ) {
+          if (recommendation['costUnits'] == null) {
+            recommendation['costUnits'] = 0
           }
-          if (recommendation.costNanos<0) {
+          if (recommendation['costNanos'] == null) {
+            recommendation['costNanos'] = 0
+          }
+          if (ds_currency_reference[recommendation['currency']] !== undefined ) {
+          cur = ds_currency_reference[recommendation['currency']]['symbol']
+          } else {
+            cur = "$"
+          }
+          vm['savingsCurrency'] = cur
+        } else {
+          cur = "$"
+          var separator = ","
+        }
+
+        //Convert Costs from Negative to Positive and add Units and Nanos
+        if (!(recommendation.costNanos == null || recommendation.costNanos == undefined)) {
+          if (recommendation.costNanos != 0) {
             recommendation.costNanos = recommendation.costNanos * -1
           }
-          if (recommendation.costUnits<0) {
+        } else {
+          recommendation.costNanos = 0
+        }
+
+        if (!(recommendation.costUnits == null || recommendation.costUnits == undefined)) {
+          if (recommendation.costUnits != 0) {
             recommendation.costUnits = recommendation.costUnits * -1
           }
-          strNano = "."+recommendation.costNanos
-          combine = recommendation.costUnits + parseFloat(strNano)
-          monthsDuration = parseFloat(recommendation.duration.replace("s",""))/2628288
-          monthlySavings = combine / monthsDuration
-          total = total+monthlySavings
-          vm['savings']= (Math.round( monthlySavings * 1000) / 1000)
-          vm['savingsCurrency'] = cur
-          vm['priority'] = recommendation['priority']
-          vm['region'] = recommendations['region']
-          vm['primaryImpact'] = recommendation['primaryImpact']
-          vm['recommenderSubtype'] = recommendation['recommenderSubtype']
-          vm['state'] = recommendation['state']
-          vm['service'] = "Compute"
-          tags = []
-          if (vm['tags'] != null) {
-            if( typeof vm['tags'] == 'object') {
-              Object.keys(vm.tags).forEach(function(key) {
-                if (vm.tags[key] == null || vm.tags[key]=="") {
-                  vm.tags[key] = "null"
-                }
-                tags.push(String(key)+'='+String(vm.tags[key]))
-              });
-            } else {
-              tags.push(vm["tags"].replace(":","=null"))
-            }
-          }
-          vm['tags'] = tags
-          instances.push(vm)
+        } else {
+          recommendation.costUnits = 0
         }
-      })
+
+        var cost_nano = recommendation.costNanos * Math.pow(10, -9)
+        var combine = Number(recommendation.costUnits) + Number(parseFloat(cost_nano))
+        monthsDuration = parseFloat(recommendation.duration.replace("s",""))/2628288
+        monthlySavings = combine / monthsDuration
+        total = total + monthlySavings
+        vm['savings'] = (Math.round( monthlySavings * 1000) / 1000)
+        vm['savingsCurrency'] = cur
+        vm['description'] = recommendation['description']
+        vm['priority'] = recommendation['priority']
+        vm['region'] = recommendations['region']
+        vm['primaryImpact'] = recommendation['primaryImpact']
+        vm['recommenderSubtype'] = recommendation['recommenderSubtype']
+        vm['state'] = recommendation['state']
+        vm['service'] = "Compute"
+        tags = []
+        if (vm['tags'] != null) {
+          if( typeof vm['tags'] == 'object') {
+            Object.keys(vm.tags).forEach(function(key) {
+              if (vm.tags[key] == null || vm.tags[key]=="") {
+                vm.tags[key] = "null"
+              }
+              tags.push(String(key)+'='+String(vm.tags[key]))
+            });
+          } else {
+            tags.push(vm["tags"].replace(":","=null"))
+          }
+        }
+        vm['tags'] = tags
+        vm['lookBackPeriodInDays'] = '14'
+        instances.push(vm)
+      }
     })
     if (instances.length != 0){
       if(count){
@@ -509,8 +538,17 @@ policy "policy_recommendations" do
       field "resourceType" do
         label "Resource Type"
       end
-      field "zone" do
+      field "lookBackPeriod" do
+        label "Lookback Period In Days"
+        path "lookBackPeriodInDays"
+      end 
+      field "region" do
         label "Zone"
+        path "zone"
+      end
+      field "primaryImpactCategory" do
+        label "Recommendation Primary Impact Category"
+        path "primaryImpact.category"
       end
       field "hostname" do
         label "Hostname"

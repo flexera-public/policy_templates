@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.3
+
+- Updates provider from GCP to Google
+
 ## v2.2
 
 - Shows the actual name of the compute instance at field **Current Compute Tier**.

@@ -6,7 +6,7 @@ category "Cost"
 severity "low"
 default_frequency "daily"
 info(
-  version: "6.0",
+  version: "6.1",
   provider: "AWS",
   service: "EBS",
   policy_set: "Unused Volumes",
@@ -391,11 +391,13 @@ script "js_volumes_map", type: "javascript" do
     var endDate = new Date()
     var timeDifference = endDate.getTime() - startDate.getTime()
     var daysDifference = (timeDifference / (1000 * 3600 * 24)).toFixed(2)
-
-    var instance_tags = {}
+    var resourceName = "";
     var tags = []
 
     _.each(vol['tags'], function(instance) {
+      if (instance.tagKey == "Name") {
+        resourceName = instance.tagValue
+      }
       tags.push(instance.tagKey + '=' + instance.tagValue)
     })
 
@@ -410,6 +412,7 @@ script "js_volumes_map", type: "javascript" do
       if (!(isTagMatched)) {
         result.push({
           tagKeyValue: tags,
+          resourceName: resourceName,
           vol_id: vol['volume_id'],
           availability_zone: vol['availability_zone'],
           snapshot_id: vol['snapshot_id'],
@@ -417,6 +420,7 @@ script "js_volumes_map", type: "javascript" do
           region: vol['region'],
           status: vol['status'],
           createdTime: vol['createdTime'],
+          age: Math.round(daysDifference) + (daysDifference > 1 ? " days" : " day"),
           size: vol['size'] + " GB"
         })
       }
@@ -587,6 +591,8 @@ script "js_idle_volumes", type: "javascript" do
         availabilityZone: volume['availability_zone'],
         volumeType: volume['volume_Type'],
         tags: volume['tagKeyValue'],
+        resourceName: volume['resourceName'],
+        age: volume['age'],
         createdTime: volume['createdTime'],
         size: volume['size'],
         status: volume['status'],
@@ -778,12 +784,15 @@ script "js_volume_cost_mapping", type:"javascript" do
         region: volume['region'],
         availabilityZone: volume['availabilityZone'],
         resourceType: volume['volumeType'],
+        resourceName: volume['resourceName'],
         tags: volume['tags'],
         createdTime: volume['createdTime'],
         size: volume['size'],
         status: volume['status'],
         savings: Math.round(volume_monthly_cost * 1000) / 1000,
         savingsCurrency: cur,
+        lookbackPeriod: '30 days',
+        age: volume['age'],
         service: "EBS"
       })
     })
@@ -839,8 +848,12 @@ policy "pol_unused_volumes" do
       field "resourceType" do
         label "Resource Type"
       end
-      field "status" do
+      field "resourceName" do
+        label "Resource Name"
+      end
+      field "state" do
         label "Status"
+        path "status"
       end
       field "size" do
         label "Size"
@@ -853,6 +866,12 @@ policy "pol_unused_volumes" do
       end
       field "savingsCurrency" do
         label "Savings Currency"
+      end
+      field "lookbackPeriod" do
+        label "Lookback Period"
+      end
+      field "age" do
+        label "Age"
       end
       field "id" do
         label "ID"

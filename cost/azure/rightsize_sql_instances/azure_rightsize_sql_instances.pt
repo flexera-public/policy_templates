@@ -7,7 +7,7 @@ severity "low"
 category "Cost"
 default_frequency "daily"
 info(
-  version: "2.12",
+  version: "2.13",
   provider: "Azure",
   service: "SQL",
   policy_set: "RightSize Database Services"
@@ -294,10 +294,12 @@ script "js_merged_metrics", type: "javascript" do
             average_cpu = "n/a";
           }
           var sku = databases_metrics[i].sku;
+          var threshold = "";
           //Now check for recommendation
           if(average_cpu !== "n/a"){
             if(Number(average_cpu) >= Number(up_threshold)){
               //Upsize
+              threshold = up_threshold;
               recommendation = "Upsize";
               if (databases_metrics[i].sku !== undefined && databases_metrics[i].sku != null && ds_azure_sql_resize_map[sku.tier] !== undefined && ds_azure_sql_resize_map[sku.tier] != null){
                 var json_tier = ds_azure_sql_resize_map[sku.tier];
@@ -315,6 +317,7 @@ script "js_merged_metrics", type: "javascript" do
               }
             }else if(Number(average_cpu) <= Number(down_threshold)){
               //Downsize
+              threshold = down_threshold;
               recommendation = "Downsize";
               if (databases_metrics[i].sku !== undefined && databases_metrics[i].sku != null && ds_azure_sql_resize_map[sku.tier] !== undefined && ds_azure_sql_resize_map[sku.tier] != null){
                 if (sku.tier === "Basic"){
@@ -356,7 +359,10 @@ script "js_merged_metrics", type: "javascript" do
               recommendation: recommendation,
               recommended_capacity:recommended_capacity,
               subscriptionId: databases_metrics[i].subscriptionId,
-              subscriptionName: databases_metrics[i].subscriptionName
+              subscriptionName: databases_metrics[i].subscriptionName,
+              lookbackPeriod: "30 days",
+              resourceType: databases_metrics[i].sku.name + "_" + databases_metrics[i].sku.tier,
+              threshold: threshold
             })
           }
         }
@@ -385,17 +391,25 @@ policy 'policy_azure_db_utilization' do
     check eq(size(data),0)
     export do
       resource_level true
-      field "subscriptionName" do
+      field "accountID" do
+        label "Subscription ID"
+        path "subscriptionId"
+      end
+      field "accountName" do
         label "Subscription Name"
+        path "subscriptionName"
       end
-      field "location" do
+      field "region" do
         label "Location"
+        path "location"
       end
-      field "name" do
+      field "resourceName" do
         label "Name"
+        path "name"
       end
-      field "resource_group" do
+      field "resourceGroup" do
         label "Resource Group"
+        path "resource_group"
       end
       field "kind" do
         label "Kind"
@@ -407,8 +421,9 @@ policy 'policy_azure_db_utilization' do
         label "Current Capacity"
         path "sku.capacity"
       end
-      field "recommended_capacity" do
-        label "Recommended Capacity"
+      field "newResourceType" do
+        label "Recommended Resource Type"
+        path "recommended_capacity"
       end
       field "skuName" do
         label "SKU - Name"
@@ -418,14 +433,24 @@ policy 'policy_azure_db_utilization' do
         label "SKU - Tier"
         path "sku.tier"
       end
-      field "average_cpu" do
+      field "cpuAverage" do
         label "CPU Average %"
+        path "average_cpu"
       end
       field "recommendation" do
         label "Recommendation"
       end
       field "id" do
         label "Id"
+      end
+      field "resourceType" do
+        label "Resource Type"
+      end
+      field "lookbackPeriod" do
+        label "Lookback Period"
+      end
+      field "threshold" do
+        label "Threshold"
       end
     end
   end
