@@ -7,10 +7,10 @@ severity "medium"
 category "Cost"
 default_frequency "daily"
 info(
-  version: "1.2",
+  version: "1.4",
   provider: "Azure",
   service: "Compute",
-  policy_set: "Savings Plan",
+  policy_set: "Savings Plans",
   recommendation_type: "Rate Reduction"
 )
 
@@ -186,7 +186,7 @@ datasource "ds_sp_recommendations" do
       field "subscriptionName", val(iter_item, "subscriptionName")
       field "kind", jmes_path(col_item, "kind")
       field "totalHours", jmes_path(col_item, "properties.totalHours")
-      field "lookBackPeriod", jmes_path(col_item, "properties.lookBackPeriod")
+      field "lookbackPeriod", jmes_path(col_item, "properties.lookBackPeriod")
       field "term", jmes_path(col_item, "properties.term")
       field "scope", jmes_path(col_item, "properties.scope")
       field "commitmentGranularity", jmes_path(col_item, "properties.commitmentGranularity")
@@ -213,12 +213,14 @@ script "js_eval_sp_recommendations", type: "javascript" do
   parameters "ds_sp_recommendations", "param_scope"
   result "result"
   code <<-EOS
+    _.each(ds_sp_recommendations, function(rec){
+      rec["costWithoutBenefit"] = Math.round(rec["costWithoutBenefit"]*1000)/1000
+    })
     if( param_scope == "Shared"){
       var shared_sp_recs = []           //array of SP Recommendations excluding Subscription data
       _.each(ds_sp_recommendations, function(rec){
-        var sp_rec = _.omit(rec, ["id", "subscriptionId", "subscriptionName"])
+        var sp_rec = _.omit(rec, ["id", "subscriptionName"])
         sp_rec["id"] = sp_rec.name
-        sp_rec["subscriptionId"] = "N/A"
         sp_rec["subscriptionName"] = "All"
         shared_sp_recs.push( sp_rec )
       })
@@ -286,13 +288,14 @@ policy "azure_sp_recommendations" do
       field "coveragePercentage" do
         label "Coverage Percentage"
       end
-      field "commitmentAmount" do
+      field "recommendedQuantity" do
         label "Commitment Amount"
+        path "commitmentAmount"
       end
       field "commitmentGranularity" do
         label "Commitment Granularity"
       end
-      field "lookBackPeriod" do
+      field "lookbackPeriod" do
         label "Lookback Period"
       end
       field "id" do

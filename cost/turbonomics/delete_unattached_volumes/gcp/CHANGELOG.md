@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.4
+
+- Updates provider from GCP to Google
+
 ## v0.3
 
 - Fixed readme Link in the policy.

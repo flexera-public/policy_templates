@@ -6,13 +6,16 @@ severity "medium"
 category "Cost"
 tenancy "single"
 default_frequency "daily"
-
 info(
-  version: "2.1",
-  provider: "Flexera Optima",
-  service: "",
-  policy_set: ""
-)
+      version: "3.0",
+      provider: "Flexera Optima",
+      service: "",
+      policy_set: ""
+    )
+
+###############################################################################
+# Parameters
+###############################################################################
 
 parameter "param_budget_name_id" do
   label "Budget Name or ID"
@@ -46,6 +49,12 @@ parameter "param_use_groups" do
   description "Use this parameter to specify how to group the data"
 end
 
+parameter "param_filter" do
+  type "list"
+  label "Filter Group By Dimension(s)"
+  description "Enable budget tracking for specific dimensions and values. Only supports dimensions provided in the group previously defined in the budget"
+end
+
 parameter "param_unbudgeted" do
   label "Unbudgeted spend"
   type "string"
@@ -59,12 +68,20 @@ parameter "param_email" do
   description "A list of email addresses to notify"
 end
 
+###############################################################################
+# Authentication
+###############################################################################
+
 credentials "auth_flexera" do
   schemes "oauth2"
   label "flexera"
   description "Select Flexera One OAuth2 credentials"
   tags "provider=flexera"
 end
+
+###############################################################################
+# Datasources & Scripts
+###############################################################################
 
 datasource "ds_currency_reference" do
   request do
@@ -173,7 +190,7 @@ end
 datasource "ds_reports" do
   iterate $ds_filtered_budgets
   request do
-    run_script $report_request, rs_optima_host, rs_org_id, $param_use_groups, $param_unbudgeted, iter_item
+    run_script $js_report_request, rs_optima_host, rs_org_id, $param_use_groups, $param_unbudgeted, iter_item
   end
   result do
     encoding "json"
@@ -190,7 +207,7 @@ datasource "ds_reports" do
   end
 end
 
-script "report_request", type: "javascript" do
+script "js_report_request", type: "javascript" do
   parameters "rs_optima_host", "org", "use_groups", "unbudgeted", "budget"
   result "request"
   code <<-EOS
@@ -218,14 +235,12 @@ script "report_request", type: "javascript" do
   EOS
 end
 
-
 datasource "ds_aggregated" do
-  run_script $js_aggregated, $ds_reports, $ds_currency_code, $ds_currency_reference, $param_threshold_percentage, $param_type, f1_app_host, $param_budget_name_id, $ds_dimensions
+  run_script $js_aggregated, $ds_reports, $ds_currency_code, $ds_currency_reference, $param_threshold_percentage, $param_type, f1_app_host, $param_budget_name_id, $ds_dimensions, $param_filter
 end
 
-
 script "js_aggregated", type: "javascript" do
-  parameters "reports", "currency_code", "currency_reference", "threshold_percent", "param_type", "f1_app_host", "budget_name_id", "ds_dimensions"
+  parameters "reports", "currency_code", "currency_reference", "threshold_percent", "param_type", "f1_app_host", "budget_name_id", "ds_dimensions", "param_filter"
   result "results"
   code <<-EOS
   var results = {
@@ -233,6 +248,16 @@ script "js_aggregated", type: "javascript" do
     exceeded: [],
     forecasted: [],
   }
+  var ds_dimensions_inverted = _.invert(ds_dimensions);
+  var filters = {};
+  _.each(param_filter, function (filter_item) {
+    filter_item = filter_item.split("=");
+    if (filter_item.length > 1) {
+      filter_item[0] = filter_item[0].trim();
+      filters[ds_dimensions_inverted[filter_item[0]]||filter_item[0]] =
+        _.map(filter_item[1].split(","), function(val){ return val.trim() });
+    }
+  });
 
   if (!reports || !reports.length) {
     results.invalid.push(budget_name_id);
@@ -316,6 +341,13 @@ script "js_aggregated", type: "javascript" do
       item.group = "";
       item.is_budgeted = true;
       if (item.dimensions) {
+        // filter
+        if (_.some(_.keys(item.dimensions), function (dimId) {
+          return filters[dimId] && !_.contains(filters[dimId], item.dimensions[dimId]);
+        })){
+          return;
+        }
+
         item.group = get_group(item.dimensions, item.dimensionsIDs);
         item.is_budgeted = !item.dimensions.is_budgeted || item.dimensions.is_budgeted === "Budgeted";
       }
@@ -403,14 +435,11 @@ script "js_only_exceeded", type: "javascript" do
   EOS
 end
 
-escalation "esc_budget_alert" do
-  automatic true
-  label "Send Email"
-  description "Send incident email"
-  email $param_email
-end
+###############################################################################
+# Policy
+###############################################################################
 
-policy "budget_alert" do
+policy "pol_budget_alert" do
   validate $ds_aggregated do
     summary_template "Budget Alerts: Invalid Budget Name or ID: {{parameters.param_budget_name_id}}"
     detail_template <<-EOS
@@ -437,6 +466,13 @@ Cost Metric: **{{with index data 0}}{{ .metric }}{{end}}**
 
 Dimensions: **{{with index data 0}}{{ .dimm }}{{end}}**
 
+{{ if parameters.param_filter }}
+Target Groups: \n
+{{ range parameters.param_filter }}
+  * **{{ . }}**
+{{ end }}
+{{end}}
+
 [Link to budget report in Flexera One](https://{{with index data 0}}{{ .host }}{{end}}/orgs/{{ rs_org_id }}/optima/budgets/{{with index data 0}}{{ .b_id }}{{end}})
 EOS
     escalate $esc_budget_alert
@@ -455,10 +491,10 @@ EOS
         label "Projected (prorated) Spend"
       end
       field "remaining" do
-        label "Remaining amount"
+        label "Remaining Amount"
       end
       field "spentPercent" do
-        label "% of budget spent"
+        label "% of Budget Spent"
       end
       field "details" do
         label "Details"
@@ -480,6 +516,13 @@ Cost Metric: **{{with index data 0}}{{ .metric }}{{end}}**
 
 Dimensions: **{{with index data 0}}{{ .dimm }}{{end}}**
 
+{{ if parameters.param_filter }}
+Target Groups: \n
+{{ range parameters.param_filter }}
+  * **{{ . }}**
+{{ end }}
+{{end}}
+
 [Link to budget report in Flexera One](https://{{with index data 0}}{{ .host }}{{end}}/orgs/{{ rs_org_id }}/optima/budgets/{{with index data 0}}{{ .b_id }}{{end}})
 EOS
     escalate $esc_budget_alert
@@ -498,14 +541,25 @@ EOS
         label "Projected (prorated) Spend"
       end
       field "remaining" do
-        label "Remaining amount"
+        label "Remaining Amount"
       end
       field "spentPercent" do
-        label "% of budget spent"
+        label "% of Budget Spent"
       end
       field "details" do
         label "Details"
       end
     end
   end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_budget_alert" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
 end

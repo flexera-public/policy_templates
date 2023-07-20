@@ -1,5 +1,18 @@
 # Changelog
 
+## v4.10
+
+- Changed internal names of several incident fields to ensure that they are properly scraped for dashboards.
+
+## v4.9
+
+- Added logic required for "Meta Policy" use-cases
+
+## v4.8
+
+- Added `lookBackPeriod` incident field grabbing value from `param_unattached_days` parameter.
+- Renamed `diskSize` incident field to `size`.
+
 ## v4.7
 
 - Updated policy metadata to facilitate scraping of incidents for Recommendations dashboard
@@ -35,7 +48,7 @@
 
 ## v4.0
 
-- Deprecated `auth_rs` authentication (type: `rightscale`) and replaced with `auth_flexera` (type: `oauth2`).  This is a breaking change which requires a Credential for `auth_flexera` [`provider=flexera`] before the policy can be applied.  Please see docs for setting up [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm)
+- Deprecated `auth_rs` authentication (type: `rightscale`) and replaced with `auth_flexera` (type: `oauth2`). This is a breaking change which requires a Credential for `auth_flexera` [`provider=flexera`] before the policy can be applied. Please see docs for setting up [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm)
 - Modified `sys_log` definition to disable `rs_cm.audit_entry.create` outside Flexera NAM
 - Replaced references `github.com/rightscale/policy_templates` and `github.com/flexera/policy_templates` with `github.com/flexera-public/policy_templates`
 

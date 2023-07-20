@@ -1,5 +1,17 @@
 # Changelog
 
+## v2.19
+
+- Changed internal names of several incident fields to ensure that they are properly scraped for dashboards.
+
+## v2.18
+
+- Changed policy set from `Reserved Instance` to `Reserved Instances` to match other similar policies.
+- Added `Resource Type` incident field.
+- Added `Term` incident field.
+- Updated `Platform` incident field to avoid empty values.
+- Changed internal names of several incident fields to ensure that they are properly scraped for dashboards.
+
 ## v2.17
 
 - Updated policy metadata to facilitate scraping of incidents for Recommendations dashboard
