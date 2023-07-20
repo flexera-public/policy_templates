@@ -478,7 +478,7 @@ script "js_volumes_map", type: "javascript" do
   result = []
 
   _.each(ds_volumes_list, function(volume) {
-    startDate = new Date(vol['created_time']) // Volume Created Date
+    startDate = new Date(volume['created_time']) // Volume Created Date
     endDate = new Date()
     timeDifference = endDate.getTime() - startDate.getTime()
     daysDifference = (timeDifference / (1000 * 3600 * 24)).toFixed(2)
@@ -496,14 +496,14 @@ script "js_volumes_map", type: "javascript" do
 
     if (daysDifference > param_unused_days) {
       result.push({
-        volume_id: vol['volume_id'],
-        availability_zone: vol['availability_zone'],
-        snapshot_id: vol['snapshot_id'],
-        volume_type: vol['volume_type']
-        region: vol['region'],
-        status: vol['status'],
-        created_time: vol['created_time'],
-        size: vol['size'],
+        volume_id: volume['volume_id'],
+        availability_zone: volume['availability_zone'],
+        snapshot_id: volume['snapshot_id'],
+        volume_type: volume['volume_type']
+        region: volume['region'],
+        status: volume['status'],
+        created_time: volume['created_time'],
+        size: volume['size'],
         tags: tags.join(', '),
         age: parseFloat(daysDifference),
         name: name
@@ -528,14 +528,14 @@ script "js_metricdataqueries", type: "javascript" do
       _.each(["Average"], function(statistic) {
         query = {
           // Replace `-` with `_` in the Id to avoid CloudWatch API error
-          "Id": resource['vol_id'].replace(/\-/g, '_') + "_" + metric + "_" + statistic,
-          "Label": resource['vol_id'] + " " + metric + " " + statistic,
+          "Id": resource['volume_id'].replace(/\-/g, '_') + "_" + metric + "_" + statistic,
+          "Label": resource['volume_id'] + " " + metric + " " + statistic,
           "MetricStat": {
             "Metric": {
               "Namespace": "AWS/EBS",
               "MetricName": metric,
               "Dimensions": [
-                { "Name": "VolumeId", "Value": resource['vol_id'] }
+                { "Name": "VolumeId", "Value": resource['volume_id'] }
               ]
             },
             "Period": 2592000,
@@ -639,27 +639,26 @@ script "js_idle_volumes", type: "javascript" do
   result = []
 
   _.each(ds_volumes_map, function(volume) {
-    volume_id = volume['vol_id']
+    read_label = volume['volume_id'] + ' VolumeReadBytes Average'
+    write_label = volume['volume_id'] + ' VolumeWriteBytes Average'
 
-    volume_read_metrics = _.findWhere(ds_cloudwatch_getmetricdata, {
-      'label': volume_id + ' VolumeReadBytes Average'
+    volume_metrics = _.filter(ds_cloudwatch_getmetricdata, function(item) {
+      values_exist = true
+
+      if (item['values'].length == 0) {
+        values_exist = false
+      } else {
+        if (item['values'].length == 1 && item['values'][0] == 0) {
+          values_exist = false
+        }
+      }
+
+      return values_exist && (item['label'] == read_label || item['label'] == write_label)
     })
 
-    volume_write_metrics = _.findWhere(ds_cloudwatch_getmetricdata, {
-      'label': volume_id + ' VolumeWriteBytes Average'
-    })
-
-    if (volume_read_metrics == undefined || volume_read_metrics['values'] == undefined) {
-      volume_read_metrics = { 'values': [] }
-    }
-
-    if (volume_write_metrics == undefined || volume_write_metrics.values == undefined) {
-      volume_write_metrics = { 'values': [] }
-    }
-
-    if (volume_read_metrics.values.length + volume_write_metrics.values.length == 0) {
+    if (volume_metrics.length == 0) {
       result.push({
-        volume_id: volume['vol_id'],
+        volume_id: volume['volume_id'],
         region: volume['region'],
         availability_zone: volume['availability_zone'],
         volume_type: volume['volume_type'],
@@ -803,7 +802,16 @@ script "js_volume_cost_mapping", type:"javascript" do
     return formatted_number + "." + values[1]
   }
 
-  result = []
+  // Dummy item to ensure the policy's check statement always executes at least once
+  result = [{
+    resourceID: "",
+    age: "",
+    message: "",
+    total_savings: "",
+    tags: "",
+    savings: "",
+    savingsCurrency: ""
+  }]
 
   total_savings = 0.0
 
@@ -853,7 +861,7 @@ script "js_volume_cost_mapping", type:"javascript" do
 
   // Message for incident output
   total_volumes = ds_volumes_tag_filtered.length.toString()
-  total_unused_volumes = result.length.toString()
+  total_unused_volumes = (result.length - 1).toString()
   unused_volumes_percentage = (total_unused_volumes / total_volumes * 100).toFixed(2).toString() + '%'
 
   findings = [
@@ -862,11 +870,14 @@ script "js_volume_cost_mapping", type:"javascript" do
     ") are unused and recommended for deletion. "
   ].join('')
 
+  days_noun = "day"
+  if (param_unused_days != 1) { days_noun += 's' }
+
   if (param_include_status == 'Unattached Volumes') {
     settings = [
       "Volumes are considered unused if they are unattached ",
       "and have had no read/write activity for at least ",
-      param_unused_days, " days.\n\n"
+      param_unused_days, " ", days_noun, ".\n\n"
     ].join('')
   }
 
@@ -874,7 +885,7 @@ script "js_volume_cost_mapping", type:"javascript" do
     settings = [
       "Volumes are considered unused if they are attached ",
       "and have had no read/write activity for at least ",
-      param_unused_days, " days.\n\n"
+      param_unused_days, " ", days_noun, ".\n\n"
     ].join('')
   }
 
@@ -882,7 +893,7 @@ script "js_volume_cost_mapping", type:"javascript" do
     settings = [
       "Volumes are considered unused if they ",
       "have had no read/write activity for at least ",
-      param_unused_days, " days.\n\n"
+      param_unused_days, " ", days_noun, ".\n\n"
     ].join('')
   }
 
@@ -893,17 +904,6 @@ script "js_volume_cost_mapping", type:"javascript" do
   result[0]['message'] = findings + settings + disclaimer
   result[0]['total_savings'] = total_savings
   result[0]['policy_name'] = ds_applied_policy['name']
-
-  // Dummy item to ensure the policy's check statement always executes at least once
-  result.push({
-    resourceID: "",
-    age: "",
-    message: "",
-    total_savings: "",
-    tags: "",
-    savings: "",
-    savingsCurrency: ""
-  })
 EOS
 end
 
