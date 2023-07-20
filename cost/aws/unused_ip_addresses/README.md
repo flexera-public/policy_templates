@@ -6,9 +6,7 @@ This Policy Template scans all IP addresses in the given account and identifies 
 
 ## Functional Details
 
-An Elastic IP (EIP) is an IP address that can be reserved from AWS for an account. Once Elastic IP is created, it can be assigned to any instance available in an account.
-The reserved IP in an account which is not associated with a running EC2 instance or an Elastic Network Interface (ENI) is known as Unused Elastic IP and it incur charges.
-If EIP is not needed, charges can be stopped by releasing the unused EIP.
+The policy utilizes the AWS EC2 API to get a list of unattached IP addresses and the AWS CloudTrail API to determine when the IP address was detached from an instance. An incident is raised with any unattached IP addresses that have been detached for longer than the user-specified threshold.
 
 ### Policy savings details
 
@@ -23,7 +21,7 @@ This policy has the following input parameters required when launching the polic
 - *Email addresses* - Email addresses of the recipients you wish to notify when new incidents are created.
 - *Account Number* - The Account number for use with the AWS STS Cross Account Role. Leave blank when using AWS IAM Access key and secret. It only needs to be passed when the desired AWS account is different than the one associated with the Flexera One credential. [more](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_1982464505_1123608)
 - *Days Unattached* - The number of days an IP address needs to be detached to be considered unused. This value cannot be set above 90 due to CloudTrail only storing 90 days of log data. If this value is set to 0, all unattached IP addresses will be considered unused.
-- *Allowed/Denied Regions* - Whether to treat regions parameter as allow or deny list.
+- *Allow/Deny Regions* - Whether to treat regions parameter as allow or deny list.
 - *Allow/Deny Regions List* - A list of regions to allow or deny for an AWS account. Please enter the regions code if SCP is enabled, see [Available Regions](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/using-regions-availability-zones.html#concepts-available-regions) in AWS; otherwise, the policy may fail on regions that are disabled via SCP. Leave blank to consider all the regions.
 - *Exclusion Tags (Key:Value)* - Cloud native tags to ignore instances that you don't want to produce recommendations for. Format: Key:Value
 - *Automatic Actions* - When this value is set, this policy will automatically take the selected action(s).
