@@ -2,6 +2,7 @@
 
 ## v6.0
 
+- Policy now converts savings from USD to local currency when appropriate
 - Several parameters altered to be more descriptive and human-readable
 - Removed deprecated "Log to CM Audit Entries" parameter
 - Added ability to specify how long an IP address should be unattached to consider it unused
