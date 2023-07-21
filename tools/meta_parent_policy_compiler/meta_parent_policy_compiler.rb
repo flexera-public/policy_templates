@@ -168,7 +168,7 @@ def compile_meta_parent_policy(file_path)
     exit(1)
   end
   parent_pt = File.open(parent_pt_path, "rb").read
-  # Copy the parent_pt to output_pt so we canate it safely
+  # Copy the parent_pt to output_pt so we can manipulate it safely
   output_pt = parent_pt
   output_pt_path = File.basename(file_path).split(".")[0] + "_meta_parent.pt"
   # Replace __PLACEHOLDER_FOR_CHILD_POLICY_NAME__ with the name of the child policy
