@@ -1,5 +1,14 @@
 # Changelog
 
+## v3.0
+
+- Modified title to match updated functionality
+- Added pricing support from azure_vm_pricing.json Git repo
+- Added region table to normalize subscription locations to those in the pricing file
+- Modified script block that checked to see if license type windows_server
+- Added block that checks what the price should be based on location >> osSize >> vmType
+- Added monthly savings based on pricing files unitprice and ahubprice
+
 ## v2.12
 
 - Replaced the term **whitelist** with **allowed list**.
