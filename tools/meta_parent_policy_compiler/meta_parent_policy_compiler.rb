@@ -9,7 +9,7 @@ default_child_policy_template_files = [
   "../../cost/aws/idle_compute_instances/idle_compute_instances.pt",
   "../../cost/aws/object_storage_optimization/aws_object_storage_optimization.pt",
   "../../cost/aws/old_snapshots/aws_delete_old_snapshots.pt",
-  "../../cost/aws/rightsize_compute_instances/aws_compute_rightsizing.pt",
+  "../../cost/aws/rightsize_ec2_instances/aws_rightsize_ec2_instances.pt",
   "../../cost/aws/rightsize_ebs_volumes/aws_volumes_rightsizing.pt",
   "../../cost/aws/unused_ip_addresses/aws_unused_ip_addresses.pt",
   "../../cost/aws/unused_rds/unused_rds.pt",
@@ -41,14 +41,14 @@ def compile_meta_parent_policy(file_path)
   # print("\n###########################\n")
 
   # Get the parameters
-  parameters = pt.scan(/parameter ".*?" do.*?end/m)
+  parameters = pt.scan(/parameter ".*?" do.*?^end/m)
 
   # print("Parameters:\n")
   # print(parameters.join("\n---------\n"))
   # print("\n###########################\n")
 
   # Get the credentials
-  credentials = pt.scan(/credentials ".*?" do.*?end/m)
+  credentials = pt.scan(/credentials ".*?" do.*?^end/m)
 
 
 

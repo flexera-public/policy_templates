@@ -1197,8 +1197,31 @@ script "js_idle_and_underutil_instances", type:"javascript" do
   underutil_list[0]['underutil_total_savings'] = underutil_total_savings
   underutil_list[0]['policy_name'] = ds_applied_policy['name']
 
-  result = idle_list.concat(underutil_list)
+  result =  {
+    idle_list: idle_list,
+    underutil_list: underutil_list
+  }
 EOS
+end
+
+datasource "ds_underutil_instances" do
+  run_script $js_underutil_instances, $ds_idle_and_underutil_instances
+end
+
+script "js_underutil_instances", type:"javascript" do
+  parameters "ds_idle_and_underutil_instances"
+  result "result"
+  code "result = ds_idle_and_underutil_instances['underutil_list']"
+end
+
+datasource "ds_idle_instances" do
+  run_script $js_idle_instances, $ds_idle_and_underutil_instances
+end
+
+script "js_idle_instances", type:"javascript" do
+  parameters "ds_idle_and_underutil_instances"
+  result "result"
+  code "result = ds_idle_and_underutil_instances['idle_list']"
 end
 
 ###############################################################################
@@ -1206,7 +1229,7 @@ end
 ###############################################################################
 
 policy "pol_utilization" do
-  validate_each $ds_idle_and_underutil_instances do
+  validate_each $ds_underutil_instances do
     summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} AWS Underutilized EC2 Instances Found"
     detail_template <<-'EOS'
     **Potential Monthly Savings:** {{ with index data 0 }}{{ .underutil_total_savings }}{{ end }}
@@ -1330,7 +1353,7 @@ policy "pol_utilization" do
       end
     end
   end
-  validate_each $ds_idle_and_underutil_instances do
+  validate_each $ds_idle_instances do
     summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} AWS Idle EC2 Instances Found"
     detail_template <<-'EOS'
     **Potential Monthly Savings:** {{ with index data 0 }}{{ .idle_total_savings }}{{ end }}
