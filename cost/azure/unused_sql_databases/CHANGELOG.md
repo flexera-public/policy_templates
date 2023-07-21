@@ -1,5 +1,15 @@
 # Changelog
 
+## v4.6
+
+- Added `Lookback Period` incident field.
+- Added `Platform` incident field.
+- Updated value ouput from `Resource Type` incident field.
+
+## v4.5
+
+- Updated policy metadata to facilitate scraping of incidents for Recommendations dashboard
+
 ## v4.4
 
 - Fixed the comparison made to match the instance's costs with the instance's usage; this caused some instances not to show savings, although they were added to the incident.

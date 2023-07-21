@@ -1,5 +1,17 @@
 # Changelog
 
+## v4.7
+
+- Fixed an issue causing some incidents to raise an error instead of populating correctly
+
+## v4.6
+
+- New escalations are no longer created if Estimated Monthly Savings or Savings Currency have changed, but nothing else has
+
+## v4.5
+
+- Updated policy metadata to facilitate scraping of incidents for Recommendations dashboard
+
 ## v4.4
 
 - Raised API limit to handle situations where more than 10,000 line items need to be retrieved.

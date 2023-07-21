@@ -1,8 +1,8 @@
-# Turbonomic Rightsize Virtual Volumes Recommendations GCP
+# Turbonomic Rightsize Virtual Volumes Recommendations Google
 
 ## What it does
 
-The Turbonomic Rightsize Virtual Volumes Recommendations GCP policy uses Turbonomic Actions endpoint (POST xxxx.turbonomic.com/api/v3/markets/Market/actions) and Business Units endpoint (GET xxxx.turbonomic.com/api/v3/businessunits) to provide Rightsize Virtual Volumes recommendations. From these recommendations we provide monthly savings estimates based on Turbonomic per hour costs.
+The Turbonomic Rightsize Virtual Volumes Recommendations Google policy uses Turbonomic Actions endpoint (POST xxxx.turbonomic.com/api/v3/markets/Market/actions) and Business Units endpoint (GET xxxx.turbonomic.com/api/v3/businessunits) to provide Rightsize Virtual Volumes recommendations. From these recommendations we provide monthly savings estimates based on Turbonomic per hour costs.
 
 ## Input Parameters
 

@@ -6,10 +6,11 @@ severity "low"
 category "Cost"
 default_frequency "weekly"
 info(
-  version: "4.4",
+  version: "4.7",
   provider: "Azure",
   service: "Compute",
-  policy_set: "Unused IP Addresses"
+  policy_set: "Unused IP Addresses",
+  recommendation_type: "Usage Reduction"
 )
 
 ###############################################################################
@@ -470,6 +471,21 @@ script "js_ip_cost_mapping", type:"javascript" do
   EOS
 end
 
+datasource "ds_only_instances" do
+  run_script $js_only_instances, $ds_ip_cost_mapping
+end
+
+script "js_only_instances", type: "javascript" do
+  parameters "arg"
+  result "results"
+  code <<-EOS
+    results = arg.ip_list
+    if (results && results.length) {
+      results[0].message = arg.message
+    }
+  EOS
+end
+
 ###############################################################################
 # Escalations
 ###############################################################################
@@ -493,12 +509,13 @@ end
 ###############################################################################
 
 policy "pol_unused_ip_addresses" do
-  validate $ds_ip_cost_mapping do
-    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data.ip_list }} Unused IP Addresses Found"
+  validate $ds_only_instances do
+    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} Unused IP Addresses Found"
+    hash_exclude "savingsCurrency", "savings"
     detail_template <<-EOS
-{{data.message}}
+    {{with index data 0}}{{ .message }}{{end}}
 EOS
-    check eq(size(val(data, "ip_list")), 0)
+    check eq(size(data), 0)
     escalate $send_email_report
     escalate $delete_unused_ip_addresses
     export "ip_list" do

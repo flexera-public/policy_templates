@@ -11,6 +11,8 @@ This policy has the following input parameters required when launching the polic
 - *Email addresses* - A list of email addresses to notify
 - *Region* - Region to check, it is GCP Region locations
 - *Project ID* - Google Projects to Query. Leave blank to query all projects.
+- *Term* - The committed use discount term.
+- *Recommendation Algorithm* - The algorithm that will be used to generate the CUD recommendations. Recommendations are generated using either one of two algorithms. Stable Usage covers minimum stable usage over time. Optimal is based on overall usage and might cover resources that are not active all the time. See [understanding recommendations](https://cloud.google.com/docs/cuds-recommender).
 
 ## Policy Actions
 

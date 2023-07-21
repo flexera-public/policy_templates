@@ -1,5 +1,22 @@
 # Changelog
 
+## v2.10
+
+- Updated policy README file with a deeper explanation of how the GCP recommender works and the roles required to use it.
+
+## v2.9
+
+- Added `Lookback Period In Days` incident field.
+- Added `Platform` incident field.
+
+## v2.8
+
+- Updated policy metadata to facilitate scraping of incidents for Recommendations dashboard
+
+## v2.7
+
+- Fix: Duplicated entries from incident report were removed.
+
 ## v2.6
 
 - Modified filters, previously applied in code, now those are applied in request

@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.5
+
+- now users can use `Billing Centers` or `billing_center_id` value for parameter `Cost Anomaly Dimensions`
+
 ## v2.4
 
 - added a filter for dimensions where the user wishes to filter by key pair values, such as Service=AmazonEC2

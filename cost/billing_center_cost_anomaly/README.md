@@ -1,6 +1,6 @@
 # Billing Center Cost Anomaly Policy
 
-**NOTE:** This policy is be deprecated and replaced by this [new version](../cloud_cost_anomalies)
+**NOTE:** This policy is be deprecated and replaced by this [new version](../cloud_cost_anomaly_alerts)
 
 ## What it does
 

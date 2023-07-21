@@ -7,7 +7,7 @@ severity "low"
 category "Cost"
 default_frequency "daily"
 info(
-  version: "3.0",
+  version: "3.1",
   provider: "AWS",
   service: "RDS",
   policy_set: "RightSize Database Services"
@@ -97,6 +97,13 @@ credentials "auth_aws" do
   aws_account_number $param_aws_account_number
 end
 
+credentials "auth_flexera" do
+  schemes "oauth2"
+  label "flexera"
+  description "Select Flexera One OAuth2 credentials."
+  tags "provider=flexera"
+end
+
 ###############################################################################
 # Datasources
 ###############################################################################
@@ -115,6 +122,43 @@ datasource "ds_get_caller_identity" do
     encoding "xml"
     collect xpath(response, "//GetCallerIdentityResponse/GetCallerIdentityResult") do
       field "account",xpath(col_item, "Account")
+    end
+  end
+end
+
+datasource "ds_billing_centers" do
+  request do
+    auth $auth_flexera
+    host rs_optima_host
+    path join(["/analytics/orgs/", rs_org_id, "/billing_centers"])
+    header "Api-Version", "1.0"
+    header "User-Agent", "RS Policies"
+    query "view", "allocation_table"
+    ignore_status [403]
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "[*]") do
+      field "href", jmes_path(col_item, "href")
+      field "id", jmes_path(col_item, "id")
+      field "name", jmes_path(col_item, "name")
+      field "parent_id", jmes_path(col_item, "parent_id")
+    end
+  end
+end
+
+datasource "ds_top_level_billing_centers" do
+  run_script $js_top_level_bc, $ds_billing_centers
+end
+
+datasource "ds_account_name" do
+  request do
+    run_script $js_get_account_name, $ds_get_caller_identity, $ds_top_level_billing_centers, rs_org_id, rs_optima_host
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "rows[*]") do
+      field "vendor_account_name", jmes_path(col_item, "dimensions.vendor_account_name")
     end
   end
 end
@@ -160,6 +204,7 @@ datasource "ds_instances_set" do
       field "dbInstanceIdentifier", xpath(col_item, "DBInstanceIdentifier")
       field "dbInstanceClass", xpath(col_item, "DBInstanceClass")
       field "engine", xpath(col_item, "Engine")
+      field "engineVersion", xpath(col_item, "EngineVersion")
       field "region", val(iter_item, "region")
     end
   end
@@ -219,7 +264,7 @@ datasource "ds_merged_metrics" do
 end
 
 datasource "ds_filtered_results" do
-  run_script $js_filtered_results, $ds_merged_metrics, $param_avg_cpu_downsize, $param_avg_cpu_upsize, $ds_get_caller_identity
+  run_script $js_filtered_results, $ds_merged_metrics, $param_avg_cpu_downsize, $param_avg_cpu_upsize, $ds_get_caller_identity, $ds_account_name
 end
 
 ###############################################################################
@@ -301,6 +346,7 @@ script "js_instances", type: "javascript" do
           "dbInstanceIdentifier": instance.dbInstanceIdentifier,
           "dbInstanceClass": instance.dbInstanceClass,
           "engine": instance.engine,
+          "engineVersion": instance["engineVersion"],
           "upsize": size_up,
           "downsize": size_down
         })
@@ -429,6 +475,7 @@ script "js_merged_metrics", type: "javascript" do
         "dbInstanceIdentifier": instance["dbInstanceIdentifier"],
         "dbInstanceClass": instance["dbInstanceClass"],
         "engine": instance["engine"],
+        "engineVersion": instance["engineVersion"],
         "percent_cpu_avg": cpu_average,
         "upsize": instance["upsize"],
         "downsize": instance["downsize"]
@@ -438,50 +485,91 @@ script "js_merged_metrics", type: "javascript" do
 EOS
 end
 
+script "js_top_level_bc", type: "javascript" do
+  parameters "billing_centers"
+  result "filtered_billing_centers"
+  code <<-EOS
+  var filtered_billing_centers =
+    _.reject(billing_centers, function(bc){ return bc.parent_id != null });
+EOS
+end
+
+script "js_get_account_name", type: "javascript" do
+  parameters "account_id", "billing_centers", "org", "optima_host"
+  result "request"
+  code <<-EOS
+    // returns date formatted as string: YYYY-mm-dd
+    function getFormattedDailyDate(date) {
+      var year = date.getFullYear();
+      var month = (1 + date.getMonth()).toString();
+      month = month.length > 1 ? month : '0' + month;
+      var day = date.getDate().toString();
+      day = day.length > 1 ? day : '0' + day;
+      return year + '-' + month + '-' + day;
+    }
+    var start_date = getFormattedDailyDate(new Date(new Date().setDate(new Date().getDate() - 3)));
+    var end_date = getFormattedDailyDate(new Date(new Date().setDate(new Date().getDate() - 2)));
+    var request = {
+      auth: "auth_flexera",
+      host: optima_host,
+      verb: "POST",
+      path: "/bill-analysis/orgs/" + org + "/costs/select",
+      body_fields: {
+        "dimensions": ["vendor_account_name"],
+        "granularity": "day",
+        "start_at": start_date,
+        "end_at": end_date,
+        "metrics": ["cost_nonamortized_unblended_adj"],
+        "billing_center_ids": _.compact(_.map(billing_centers, function(value){ return value.id})),
+        "limit": 1,
+        "filter": {
+          "dimension": "vendor_account",
+          "type": "equal",
+          "value": account_id[0]["account"]
+        }
+      },
+      headers: {
+        "User-Agent": "RS Policies",
+        "Api-Version": "1.0"
+      },
+      ignore_status: [400]
+    }
+  EOS
+end
 
 script "js_filtered_results", type: "javascript" do
-  parameters "ds_merged_metrics", "param_avg_cpu_downsize", "param_avg_cpu_upsize", "ds_get_caller_identity"
+  parameters "ds_merged_metrics", "param_avg_cpu_downsize", "param_avg_cpu_upsize", "ds_get_caller_identity", "ds_account_name"
   result "results"
   code <<-EOS
   var results = []
+  accountName = ""
+  if (ds_account_name[0] != null) {
+    accountName = ds_account_name[0]['vendor_account_name']
+  }
   _.each(ds_merged_metrics, function (instance) {
-    if (instance["percent_cpu_avg"] > param_avg_cpu_upsize) {
-      if (instance["upsize"] == null) {
-        // skip
-      } else {
-        results.push(
-          {
-            "accountId": ds_get_caller_identity[0]['account'],
-            "region": instance["region"],
-            "availabilityZone": instance["availabilityZone"],
-            "dbInstanceArn": instance["dbInstanceArn"],
-            "dbInstanceIdentifier": instance["dbInstanceIdentifier"],
-            "dbInstanceClass": instance["dbInstanceClass"],
-            "engine": instance["engine"],
-            "percent_cpu_avg": instance["percent_cpu_avg"],
-            "recommended_size": instance["upsize"]
-          }
-        )
-      }
+    var res = {
+      "accountId": ds_get_caller_identity[0]['account'],
+      "accountName": accountName,
+      "region": instance["region"],
+      "availabilityZone": instance["availabilityZone"],
+      "dbInstanceArn": instance["dbInstanceArn"],
+      "dbInstanceIdentifier": instance["dbInstanceIdentifier"],
+      "dbInstanceClass": instance["dbInstanceClass"],
+      "databaseEngine": instance["engine"],
+      "engineVersion": instance["engineVersion"],
+      "percent_cpu_avg": instance["percent_cpu_avg"],
+      "lookbackPeriod": '30 days',
+    };
+
+    if (instance["percent_cpu_avg"] > param_avg_cpu_upsize && instance["upsize"] != null) {
+      res["recommended_size"] = instance["upsize"]
+      res["threshold"] = "> " + param_avg_cpu_upsize
+      results.push(res)
     }
-    if (instance["percent_cpu_avg"] < param_avg_cpu_downsize) {
-      if (instance["downsize"] == null) {
-        // skip
-      } else {
-        results.push(
-          {
-            "accountId": ds_get_caller_identity[0]['account'],
-            "region": instance["region"],
-            "availabilityZone": instance["availabilityZone"],
-            "dbInstanceArn": instance["dbInstanceArn"],
-            "dbInstanceIdentifier": instance["dbInstanceIdentifier"],
-            "dbInstanceClass": instance["dbInstanceClass"],
-            "engine": instance["engine"],
-            "percent_cpu_avg": instance["percent_cpu_avg"],
-            "recommended_size": instance["downsize"]
-          }
-        )
-      }
+    if (instance["percent_cpu_avg"] < param_avg_cpu_downsize && instance["downsize"] != null) {
+      res["recommended_size"] = instance["downsize"]
+      res["threshold"] = "< " + param_avg_cpu_downsize
+      results.push(res)
     }
   })
   results = _.sortBy(results, 'region');
@@ -500,8 +588,12 @@ policy "pol_utilization" do
     escalate $resize_instances
     export do
       resource_level true
-      field "accountId" do
+      field "accountID" do
         label "Account Id"
+        path "accountId"
+      end
+      field "accountName" do
+        label "Account Name"
       end
       field "region" do
         label "Region"
@@ -510,20 +602,36 @@ policy "pol_utilization" do
         label "Instance Id"
         path "dbInstanceIdentifier"
       end
-      field "engine" do
-        label "Engine"
+      field "platform" do
+        label "Platform"
+        path "databaseEngine"
       end
-      field "dbInstanceClass" do
+      field "resourceType" do
         label "Current Instance Class"
+        path "dbInstanceClass"
       end
-      field "recommended_size" do
+      field "newResourceType" do
         label "Recommended Instance Class"
+        path "recommended_size"
       end
       field "availabilityZone" do
         label "Availability Zone"
       end
-      field "percent_cpu_avg" do
+      field "cpuAverage" do
         label "CPU Average %"
+        path "percent_cpu_avg"
+      end
+      field "lookbackPeriod" do
+        label "Lookback Period"
+      end
+      field "databaseEngine" do
+        label "Database Engine"
+      end
+      field "engineVersion" do
+        label "Engine Version"
+      end
+      field "threshold" do
+        label "CPU Threshold"
       end
     end
   end

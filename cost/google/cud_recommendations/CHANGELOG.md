@@ -1,5 +1,23 @@
 # Changelog
 
+## v3.3
+
+- Modified the number of GCP recommender API calls that can be done before waiting to prevent a quota limit error: 100 request per minute.
+
+## v3.2
+
+- Updated recommendation service from 'Storage' to 'Compute'.
+- Changed internal names of several incident fields to ensure that they are properly scraped for dashboards.
+
+## v3.1
+
+- Fixed issue preventing policy from updating in the public catalog
+
+## v3.0
+
+- Added **Term** parameter, now filtering the recommendations by 1 year or 3 year term is possible.
+- Added **Recommendation Algorithm** parameter, now users can choose between *Stable use* or *Optimal use*
+
 ## v2.7
 
 - Removed param_automatic_action parameter, no applicable CWF
