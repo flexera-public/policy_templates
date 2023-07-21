@@ -13,6 +13,31 @@ Optionally, the user can specify one or more tags that if found on a volume will
 
 The policy includes the estimated monthly savings. The estimated monthly savings is recognized if the resource is terminated or downsized. Optima is used to retrieve and calculate the estimated savings which is the cost of the resource for a full day (3 days ago) multiplied by 30.44 (the average number of days in a month), or 0 if no cost information for the resource was found in Optima. The savings is displayed in the Estimated Monthly Savings column. The incident message detail includes the sum of each resource *Estimated Monthly Savings* as *Potential Monthly Savings*.
 
+## Input Parameters
+
+This policy has the following input parameters required when launching the policy.
+
+- *Email addresses to notify* - Email addresses of the recipients you wish to notify when new incidents are created.
+- *Account Number* - The Account number for use with the AWS STS Cross Account Role. Leave blank when using AWS IAM Access key and secret. It only needs to be passed when the desired AWS account is different than the one associated with the Flexera One credential. [More information is available in our documentation.](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_1982464505_1123608)
+- *Allow/Deny Regions* - Whether to treat Allow/Deny Regions List parameter as allow or deny list. Has no effect if Allow/Deny Regions List is left empty.
+- *Allow/Deny Regions List* - A list of regions to allow or deny for an AWS account. Please enter the regions code if SCP is enabled. See [Available Regions](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/using-regions-availability-zones.html#concepts-available-regions) in AWS; otherwise, the policy may fail on regions that are disabled via SCP. Leave blank to consider all the regions.
+- *Unused Days* - The number of days a volume has been unused. The days should be greater than zero.
+- *Minimum Savings Threshold* - Minimum potential savings required to generate a recommendation.
+- *Volume Status* - Whether to include attached volumes, unattached, or both in the results.
+- *Exclusion Tags (Key:Value)* - Cloud native tags to ignore instances that you don't want to consider for downsizing or termination. Format: Key:Value
+- *Create Final Snapshot* - Boolean for whether or not to take a final snapshot before deleting
+- *Automatic Actions* - When this value is set, this policy will automatically take the selected action(s).
+
+Please note that the "Automatic Actions" parameter contains a list of action(s) that can be performed on the resources. When it is selected, the policy will automatically execute the corresponding action on the data that failed the checks, post incident generation. Please leave it blank for *manual* action.
+For example if a user selects the "Delete Volumes" action while applying the policy, all the volumes that didn't satisfy the policy condition will be deleted.
+
+## Policy Actions
+
+The following policy actions are taken on any resources found to be out of compliance.
+
+- Delete Unused volumes after approval
+- Send an email report
+
 ## Prerequisites
 
 This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for authenticating to datasources -- in order to apply this policy you must have a Credential registered in the system that is compatible with this policy. If there are no Credentials listed when you apply the policy, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy. The information below should be consulted when creating the credential(s).
@@ -57,30 +82,6 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Auto
   - `billing_center_viewer`
 
 The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) page in the docs has detailed instructions for setting up Credentials for the most common providers.
-
-## Input Parameters
-
-This policy has the following input parameters required when launching the policy.
-
-- *Email addresses to notify* - Email addresses of the recipients you wish to notify when new incidents are created.
-- *Account Number* - The Account number for use with the AWS STS Cross Account Role. Leave blank when using AWS IAM Access key and secret. It only needs to be passed when the desired AWS account is different than the one associated with the Flexera One credential. [More information is available in our documentation.](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_1982464505_1123608)
-- *Allow/Deny Regions* - Whether to treat Allow/Deny Regions List parameter as allow or deny list. Has no effect if Allow/Deny Regions List is left empty.
-- *Allow/Deny Regions List* - A list of regions to allow or deny for an AWS account. Please enter the regions code if SCP is enabled. See [Available Regions](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/using-regions-availability-zones.html#concepts-available-regions) in AWS; otherwise, the policy may fail on regions that are disabled via SCP. Leave blank to consider all the regions.
-- *Unused Days* - The number of days a volume has been unused. The days should be greater than zero.
-- *Volume Status* - Whether to include attached volumes, unattached, or both in the results.
-- *Exclusion Tags (Key:Value)* - Cloud native tags to ignore instances that you don't want to consider for downsizing or termination. Format: Key:Value
-- *Create Final Snapshot* - Boolean for whether or not to take a final snapshot before deleting
-- *Automatic Actions* - When this value is set, this policy will automatically take the selected action(s).
-
-Please note that the "Automatic Actions" parameter contains a list of action(s) that can be performed on the resources. When it is selected, the policy will automatically execute the corresponding action on the data that failed the checks, post incident generation. Please leave it blank for *manual* action.
-For example if a user selects the "Delete Volumes" action while applying the policy, all the volumes that didn't satisfy the policy condition will be deleted.
-
-## Policy Actions
-
-The following policy actions are taken on any resources found to be out of compliance.
-
-- Delete Unused volumes after approval
-- Send an email report
 
 ## Supported Clouds
 

@@ -42,6 +42,15 @@ parameter "param_unused_days" do
   min_value 1
 end
 
+parameter "param_min_savings" do
+  type "number"
+  category "Policy Settings"
+  label "Minimum Savings Threshold"
+  description "Minimum potential savings required to generate a recommendation."
+  min_value 0
+  default 0
+end
+
 parameter "param_regions_allow_or_deny" do
   type "string"
   category "Filters"
@@ -577,7 +586,7 @@ end
 datasource "ds_cloudwatch_getmetricdata" do
   iterate $ds_metricdataqueries
   request do
-    run_script $js_cloudwatch_getmetricdata, val(iter_item, "region"), val(iter_item, "MetricDataQueries")
+    run_script $js_cloudwatch_getmetricdata, val(iter_item, "region"), val(iter_item, "MetricDataQueries"), $param_unused_days
   end
   result do
     encoding "json"
@@ -591,7 +600,7 @@ datasource "ds_cloudwatch_getmetricdata" do
 end
 
 script "js_cloudwatch_getmetricdata", type: "javascript" do
-  parameters "region", "MetricDataQueries"
+  parameters "region", "MetricDataQueries", "param_unused_days"
   result "request"
   code <<-EOS
   // Slow down rate of requests to prevent throttling
@@ -600,7 +609,7 @@ script "js_cloudwatch_getmetricdata", type: "javascript" do
   while(new Date().getTime() < now + (api_wait * 1000)) { /* Do nothing */ }
 
   end_date = parseInt(new Date().getTime() / 1000)
-  start_date = parseInt(new Date(new Date().setDate(new Date().getDate() - 30)).getTime() / 1000)
+  start_date = parseInt(new Date(new Date().setDate(new Date().getDate() - param_unused_days)).getTime() / 1000)
 
   var request = {
     auth: "auth_aws",
@@ -777,11 +786,11 @@ EOS
 end
 
 datasource "ds_volume_cost_mapping" do
-  run_script $js_volume_cost_mapping, $ds_idle_volumes, $ds_volumes_tag_filtered, $ds_volume_costs_grouped, $ds_currency, $ds_aws_account, $ds_applied_policy, $param_unused_days, $param_include_status
+  run_script $js_volume_cost_mapping, $ds_idle_volumes, $ds_volumes_tag_filtered, $ds_volume_costs_grouped, $ds_currency, $ds_aws_account, $ds_applied_policy, $param_unused_days, $param_include_status, $param_min_savings
 end
 
 script "js_volume_cost_mapping", type:"javascript" do
-  parameters "ds_idle_volumes", "ds_volumes_tag_filtered", "ds_volume_costs_grouped", "ds_currency", "ds_aws_account", "ds_applied_policy", "param_unused_days", "param_include_status"
+  parameters "ds_idle_volumes", "ds_volumes_tag_filtered", "ds_volume_costs_grouped", "ds_currency", "ds_aws_account", "ds_applied_policy", "param_unused_days", "param_include_status", "param_min_savings"
   result "result"
   code <<-'EOS'
   // Used for formatting numbers to look pretty
@@ -802,16 +811,7 @@ script "js_volume_cost_mapping", type:"javascript" do
     return formatted_number + "." + values[1]
   }
 
-  // Dummy item to ensure the policy's check statement always executes at least once
-  result = [{
-    resourceID: "",
-    age: "",
-    message: "",
-    total_savings: "",
-    tags: "",
-    savings: "",
-    savingsCurrency: ""
-  }]
+  result = []
 
   total_savings = 0.0
 
@@ -823,87 +823,102 @@ script "js_volume_cost_mapping", type:"javascript" do
       savings = ds_volume_costs_grouped[volume_id]
     }
 
-    total_savings += savings
+    if (savings >= param_min_savings) {
+      total_savings += savings
 
-    recommendationDetails = [
-      "Delete volume ", volume['volume_id'], " ",
-      "in AWS Account ", ds_aws_account['name'], " ",
-      "(", ds_aws_account['id'], ")"
-    ].join('')
+      recommendationDetails = [
+        "Delete volume ", volume['volume_id'], " ",
+        "in AWS Account ", ds_aws_account['name'], " ",
+        "(", ds_aws_account['id'], ")"
+      ].join('')
 
-    result.push({
-      accountID: ds_aws_account['id'],
-      accountName: ds_aws_account['name'],
-      resourceID: volume['volume_id'],
-      resourceName: volume['name'],
-      region: volume['region'],
-      availability_zone: volume['availability_zone'],
-      resourceType: volume['volume_type'],
-      tags: volume['tags'],
-      created_time: volume['created_time'],
-      size: parseFloat(volume['size']),
-      status: volume['status'],
-      age: volume['age'],
-      savings: parseFloat(savings.toFixed(3)),
-      savingsCurrency: ds_currency['symbol'],
-      service: "EBS",
-      recommendationDetails: recommendationDetails,
-      lookbackPeriod: param_unused_days,
-      // These are to avoid errors when we hash_exclude these fields
-      message: "",
-      total_savings: "",
-      policy_name: ""
-    })
+      result.push({
+        accountID: ds_aws_account['id'],
+        accountName: ds_aws_account['name'],
+        resourceID: volume['volume_id'],
+        resourceName: volume['name'],
+        region: volume['region'],
+        availability_zone: volume['availability_zone'],
+        resourceType: volume['volume_type'],
+        tags: volume['tags'],
+        created_time: volume['created_time'],
+        size: parseFloat(volume['size']),
+        status: volume['status'],
+        age: Math.round(volume['age']),
+        savings: parseFloat(savings.toFixed(3)),
+        savingsCurrency: ds_currency['symbol'],
+        service: "EBS",
+        recommendationDetails: recommendationDetails,
+        lookbackPeriod: param_unused_days,
+        // These are to avoid errors when we hash_exclude these fields
+        message: "",
+        total_savings: "",
+        policy_name: ""
+      })
+    }
   })
 
-  // Sort by descending order of savings value
-  result = _.sortBy(result, function(item) { return item['savings'] * -1 })
+  if (result.length > 0) {
+    // Sort by descending order of savings value
+    result = _.sortBy(result, function(item) { return item['savings'] * -1 })
 
-  // Message for incident output
-  total_volumes = ds_volumes_tag_filtered.length.toString()
-  total_unused_volumes = (result.length - 1).toString()
-  unused_volumes_percentage = (total_unused_volumes / total_volumes * 100).toFixed(2).toString() + '%'
+    // Message for incident output
+    total_volumes = ds_volumes_tag_filtered.length.toString()
+    total_unused_volumes = result.length.toString()
+    unused_volumes_percentage = (total_unused_volumes / total_volumes * 100).toFixed(2).toString() + '%'
 
-  findings = [
-    "Out of ", total_volumes, " volumes analyzed, ",
-    total_unused_volumes, " (", unused_volumes_percentage,
-    ") are unused and recommended for deletion. "
-  ].join('')
-
-  days_noun = "day"
-  if (param_unused_days != 1) { days_noun += 's' }
-
-  if (param_include_status == 'Unattached Volumes') {
-    settings = [
-      "Volumes are considered unused if they are unattached ",
-      "and have had no read/write activity for at least ",
-      param_unused_days, " ", days_noun, ".\n\n"
+    findings = [
+      "Out of ", total_volumes, " volumes analyzed, ",
+      total_unused_volumes, " (", unused_volumes_percentage,
+      ") are unused and recommended for deletion. "
     ].join('')
+
+    days_noun = "day"
+    if (param_unused_days != 1) { days_noun += 's' }
+
+    if (param_include_status == 'Unattached Volumes') {
+      settings = [
+        "Volumes are considered unused if they are unattached ",
+        "and have had no read/write activity for at least ",
+        param_unused_days, " ", days_noun, ".\n\n"
+      ].join('')
+    }
+
+    if (param_include_status == 'Attached Volumes') {
+      settings = [
+        "Volumes are considered unused if they are attached ",
+        "and have had no read/write activity for at least ",
+        param_unused_days, " ", days_noun, ".\n\n"
+      ].join('')
+    }
+
+    if (param_include_status == 'All Volumes') {
+      settings = [
+        "Volumes are considered unused if they ",
+        "have had no read/write activity for at least ",
+        param_unused_days, " ", days_noun, ".\n\n"
+      ].join('')
+    }
+
+    disclaimer = "The above settings can be modified by editing the applied policy and changing the appropriate parameters."
+
+    total_savings = ds_currency['symbol'] + ' ' + formatNumber(parseFloat(total_savings).toFixed(2), ds_currency['separator'])
+
+    result[0]['message'] = findings + settings + disclaimer
+    result[0]['total_savings'] = total_savings
+    result[0]['policy_name'] = ds_applied_policy['name']
   }
 
-  if (param_include_status == 'Attached Volumes') {
-    settings = [
-      "Volumes are considered unused if they are attached ",
-      "and have had no read/write activity for at least ",
-      param_unused_days, " ", days_noun, ".\n\n"
-    ].join('')
-  }
-
-  if (param_include_status == 'All Volumes') {
-    settings = [
-      "Volumes are considered unused if they ",
-      "have had no read/write activity for at least ",
-      param_unused_days, " ", days_noun, ".\n\n"
-    ].join('')
-  }
-
-  disclaimer = "The above settings can be modified by editing the applied policy and changing the appropriate parameters."
-
-  total_savings = ds_currency['symbol'] + ' ' + formatNumber(parseFloat(total_savings).toFixed(2), ds_currency['separator'])
-
-  result[0]['message'] = findings + settings + disclaimer
-  result[0]['total_savings'] = total_savings
-  result[0]['policy_name'] = ds_applied_policy['name']
+  // Dummy item to ensure the policy's check statement always executes at least once
+  result.push({
+    resourceID: "",
+    age: "",
+    message: "",
+    total_savings: "",
+    tags: "",
+    savings: "",
+    savingsCurrency: ""
+  })
 EOS
 end
 

@@ -4,6 +4,7 @@
 
 - Several parameters altered to be more descriptive and human-readable
 - Removed deprecated "Log to CM Audit Entries" parameter
+- Added ability to only report recommendations that meet a minimum savings threshold
 - Added ability to include attached volumes in the incident and to action on them
 - Added ability to filter resources by multiple tag key:value pairs
 - Added additional context to incident description
