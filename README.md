@@ -49,7 +49,7 @@ These templates can generate savings estimates for your environment.
 
 - [Azure Idle Compute Instances](./cost/azure/idle_compute_instances)
 - [Azure Old Snapshots](./cost/azure/old_snapshots)
-- [Azure Reserved Instances Recommendations](./cost/azure/reserved_instances/mca_recommendations)
+- [Azure Reserved Instances Recommendations](./cost/azure/reserved_instances/recommendations)
 - [Azure Rightsize Compute Instances](./cost/azure/rightsize_compute_instances)
 - [Azure Savings Plan Recommendations](./cost/azure/savings_plan/recommendations)
 - [Azure Unused IP Addresses](./cost/azure/unused_ip_addresses)
@@ -238,7 +238,6 @@ These templates can generate savings estimates for your environment.
 #### Azure
 
 - [Azure Hybrid Use Benefit for Windows Server](./cost/azure/hybrid_use_benefit)
-- [Azure Reserved Instances Recommendations](./cost/azure/reserved_instances/recommendations)
 
 - Blob Store
 
@@ -248,7 +247,7 @@ These templates can generate savings estimates for your environment.
 
   - [Azure Idle Compute Instances](./cost/azure/idle_compute_instances)
   - [Azure Inefficient Instance Utilization using Log Analytics](./cost/azure/instances_log_analytics_utilization)
-  - [Azure Reserved Instances Recommendations](./cost/azure/reserved_instances/mca_recommendations)
+  - [Azure Reserved Instances Recommendations](./cost/azure/reserved_instances/recommendations)
   - [Azure Reserved Instances Utilization](./cost/azure/reserved_instances/utilization)
   - [Azure Rightsize Compute Instances](./cost/azure/rightsize_compute_instances)
   - [Azure Savings Plan Recommendations](./cost/azure/savings_plan/recommendations)
@@ -637,10 +636,10 @@ These templates can generate savings estimates for your environment.
 <!-- Begin Policy Template Stats -->
 <!--
 ---
-:total_count: 243
+:total_count: 242
 :optimization_count: 44
 :categories:
-  Cost: 100
+  Cost: 99
   SaaS Management: 13
   Operational: 23
   Compliance: 33
@@ -653,7 +652,7 @@ These templates can generate savings estimates for your environment.
   '': 1
   Kubecost: 2
   Oracle: 1
-  Azure: 77
+  Azure: 76
   Azure China: 1
   Flexera: 5
   AWS: 77
@@ -670,7 +669,7 @@ These templates can generate savings estimates for your environment.
   Storage: 20
   Compute: 31
   SQL: 15
-  '': 66
+  '': 65
   Kubernetes: 2
   Common Bill Ingestion: 1
   compute: 3
@@ -716,7 +715,7 @@ These templates can generate savings estimates for your environment.
   Schedule Instance: 3
   Unused Database Services: 3
   Committed Use Discount: 1
-  '': 86
+  '': 85
   Object Store Optimization: 3
   Unused Volumes: 6
   Forecasting: 4

@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.11
+
+- Updated policy README file with a deeper explanation of how the GCP recommender works and the roles required to use it.
+
 ## v2.10
 
 - Modified the number of GCP recommender API calls that can be done before waiting to prevent a quota limit error: 100 request per minute.
