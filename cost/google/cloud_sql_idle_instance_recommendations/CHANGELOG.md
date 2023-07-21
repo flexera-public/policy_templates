@@ -1,5 +1,9 @@
 # Changelog
 
+## v2.11
+
+- Fixed the method used to match recommendations with the SQL instances introduced at v2.6
+
 ## v2.10
 
 - Updated policy README file with a deeper explanation of how the GCP recommender works and the roles required to use it.
