@@ -1,14 +1,14 @@
 name "AWS Unused IP Addresses Meta Parent"
 rs_pt_ver 20180301
 type "policy"
-short_description "Applies and manages \"child\" [AWS Unused IP Addresses](https://github.com/flexera/policy_templates/tree/master/cost/aws/unused_ip_addresses/) Policies."
+short_description "Applies and manages \"child\" [AWS Unused IP Addresses](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/unused_ip_addresses) Policies."
 severity "low"
 category "Cost"
 tenancy "single"
 default_frequency "15 minutes"
 info(
-  provider: "Flexera",
-  version: "0.2",
+  provider: "AWS",
+  version: "5.2", # This version of the Meta Parent Policy Template should match the version of the Child Policy Template as it appears in the Catalog for best reliability
   publish: "false"
 )
 
@@ -56,7 +56,6 @@ parameter "param_policy_schedule" do
 end
 
 ## Child Policy Parameters
-## These are params from the child policy, excluding param_email and param_aws_account_number [disabled by commenting out]
 parameter "param_allowed_regions_allow_or_deny" do
   type "string"
   label "Allow/Deny Regions"
@@ -78,19 +77,6 @@ parameter "param_exclude_tags" do
   description "A list of AWS tags to ignore Elastic IPs. Format: Key=Value"
 end
 
-# parameter "param_email" do
-#   type "list"
-#   label "Email addresses"
-#   description "Email addresses of the recipients you wish to notify when new incidents are created"
-# end
-
-# parameter "param_aws_account_number" do
-#   type "string"
-#   label "Account Number"
-#   description "The account number for AWS STS Cross Account Roles."
-#   default ""
-# end
-
 parameter "param_automatic_action" do
   type "list"
   label "Automatic Actions"
@@ -109,7 +95,6 @@ end
 ###############################################################################
 # Authentication
 ###############################################################################
-
 credentials "auth_aws" do
   schemes "aws","aws_sts"
   label "AWS"
@@ -476,7 +461,7 @@ script "js_format_existing_policies", type: "javascript" do
 end
 
 datasource "ds_take_in_parameters" do
-  run_script $js_take_in_parameters, $ds_get_aws_accounts, $ds_format_self, first($ds_child_policy_information),  $ds_format_existing_policies, $ds_child_policy_options, $ds_child_policy_options_map, $param_policy_schedule, policy_id, f1_app_host, rs_org_id, rs_project_id
+  run_script $js_take_in_parameters, $ds_get_aws_accounts, $ds_format_self, first($ds_child_policy_information), $ds_format_existing_policies, $ds_child_policy_options, $ds_child_policy_options_map, $param_policy_schedule, policy_id, f1_app_host, rs_org_id, rs_project_id
 end
 
 # hardcode template href with id from catalog
@@ -714,26 +699,37 @@ datasource "ds_child_incident_details" do
   end
 end
 
-datasource "ds_child_incidents_combined" do
-  run_script $js_child_incidents_combined, $ds_child_incident_details
+datasource "ds_ip_cost_mapping_combined_incidents" do
+  run_script $js_ds_ip_cost_mapping_combined_incidents, $ds_child_incident_details
 end
 
-script "js_child_incidents_combined", type: "javascript" do
+script "js_ds_ip_cost_mapping_combined_incidents", type: "javascript" do
   parameters "ds_child_incident_details"
   result "result"
   code <<-EOS
-  result = _.flatten(_.pluck(ds_child_incident_details, 'violation_data')).slice(0, 100000)
+  result = []
+  _.each(ds_child_incident_details, function(incident) {
+    s = incident["summary"];
+    // If the incident summary contains "Unused IP Addresses Found" then include it in the filter result
+    if (s.indexOf("Unused IP Addresses Found") > -1) {
+      _.each(incident["violation_data"], function(violation) {
+        result.push(violation);
+      });
+    }
+  });
 EOS
 end
+
 
 # Summary and a conditional incident which will show up if any policy is being applied, updated or deleted.
 # Minimum of 1 incident, max of four
 # Could swap the summary to only showing running
-# Could also just have one incident and use meta_status to determine which esclation happens
+# Could also just have one incident and use meta_status to determine which escalation happens
 policy "policy_scheduled_report" do
-  # Combined incident with all of the data from the child incidents
-  validate $ds_child_incidents_combined do
-    summary_template "Consolidated Incident: {{ len data }} AWS Unused IP Addresses Found"
+  # Consolidated Incident Check(s)
+    # Consolidated incident for Unused IP Addresses Found
+  validate $ds_ip_cost_mapping_combined_incidents do
+    summary_template "Consolidated Incident: {{ len data }} Unused IP Addresses Found"
     escalate $esc_email
     check eq(size(data), 0)
     export do
@@ -749,6 +745,9 @@ policy "policy_scheduled_report" do
       end
       field "resourceType" do
         label "Resource Type"
+      end
+      field "resourceName" do
+        label "Resource Name"
       end
       field "domain" do
         label "Domain"
@@ -776,6 +775,8 @@ policy "policy_scheduled_report" do
       end
     end
   end
+
+  # Status Incident Check
   validate $ds_take_in_parameters do
     summary_template "{{ data.parent_policy.name }}: Status of Child Policies"
     detail_template <<-EOS
@@ -790,7 +791,7 @@ Total Child Applied Policies: {{ len data.grid }}
 {{ end -}}
 
 EOS
-    check false
+    check false # always trigger this status incident
     # Export Table disabled for now until UI can support URL / linking
     # Without linking the `policy_link`, `incident_link` values are not usable directly from UI
     # export "grid" do
@@ -827,6 +828,8 @@ EOS
     #   end
     # end
   end
+
+  # Create Child Policies Incident Check
   validate $ds_to_create do
     summary_template "Policies being created"
     detail_template <<-EOS
@@ -841,6 +844,8 @@ EOS
     escalate $create_policies
     check eq(size(data),0)
   end
+
+  # Update Child Policies Incident Check
   validate $ds_to_update do
     summary_template "Policies being updated"
     detail_template <<-EOS
@@ -855,6 +860,8 @@ EOS
     escalate $update_policies
     check eq(size(data),0)
   end
+
+  # Delete Child Policies Incident Check
   validate $ds_to_delete do
     summary_template "Policies being deleted"
     detail_template <<-EOS
@@ -951,7 +958,6 @@ define update_applied_policies($data, $governance_host, $rs_project_id) return $
     })
   end
 end
-
 
 escalation "delete_policies" do
   run "delete_applied_policies", data, rs_governance_host, rs_project_id

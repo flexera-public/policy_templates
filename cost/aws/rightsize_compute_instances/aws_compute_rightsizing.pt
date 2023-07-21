@@ -7,7 +7,7 @@ severity "low"
 category "Cost"
 default_frequency "weekly"
 info(
-  version: "3.1",
+  version: "3.4",
   provider: "AWS",
   service: "Compute",
   policy_set: "Rightsize Compute Instances",
@@ -38,6 +38,7 @@ parameter "param_02_allowed_regions" do
   label "Regions"
   allowed_pattern /^([a-zA-Z-_]+-[a-zA-Z0-9-_]+-[0-9-_]+,*|)+$/
   description "A list of allowed or denied regions. See the README for more details"
+  default []
 end
 
 #IDLE INSTANCE THRESHOLD PARAMETERS##########
@@ -136,6 +137,7 @@ parameter "param_email" do
   type "list"
   label "Email addresses to notify"
   description "Email addresses of the recipients you wish to notify when new incidents are created"
+  default []
 end
 
 ###############################################################################
@@ -736,7 +738,8 @@ script "js_combine_metrics", type: "javascript" do
             "savings": null,
             "accountID": aws_account_id,
             "accountName": "",
-            "savingsCurrency": currency.symbol
+            "savingsCurrency": currency.symbol,
+            "lookbackPeriod": '30 days',
           }
 
           // Grab usage data for the instance if it is present
@@ -936,6 +939,32 @@ script "js_get_idle_and_underutil_instances", type:"javascript" do
       }
       instance["recommendedVmSize"] = vm_size_down
 
+      // Check if tags is already a string
+      // It shouldn't be, but have seen cases where this is a string already
+      if (typeof instance["tags"] != "string") {
+        // If not, then lets convert the object or list into a TagKey=TagValue string
+        tags_string = []
+        // Loop through each tag
+        for (var i = 0; i < instance["tags"].length; i++) {
+          // Get tag key and tag value
+          t_key = instance["tags"][i]["key"]
+          t_val = instance["tags"][i]["value"]
+          if (t_key == "Name") {
+            instance['resourceName'] = t_val
+          }
+          // Add to list of TagKey=TagValue strings
+          tags_string.push(t_key + "=" + t_val)
+        }
+        // Return tags as a string
+        // Join the list of TagKey=TagValue strings separated by a space
+        instance["tags"] = tags_string.join(" ")
+      }
+
+      instance['idleThreshold'] = param_03_idle_threshold_cpu_value
+      instance['idleMemoryThreshold'] = param_04_idle_threshold_mem_value
+      instance['underutilThreshold'] = param_05_underutil_threshold_cpu_value
+      instance['underutilMemoryThreshold'] = param_06_underutil_threshold_mem_value
+      instance['thresholdType'] = param_08_threshold_statistic
     })
 
     //Sort By Region and then by Account Name
@@ -962,12 +991,44 @@ script "js_get_idle_and_underutil_instances", type:"javascript" do
   EOS
 end
 
+# Put the different incident types into different datasources
+# This makes it easier to check each and compile meta parent policies vs 1 combined datasource with all incidents
+datasource "ds_underutilized_instances" do
+  run_script $js_underutilized_instances, $ds_idle_and_underutil_instances
+end
+
+script "js_underutilized_instances", type: "javascript" do
+  parameters "ds_idle_and_underutil_instances"
+  result "result"
+  code <<-EOS
+  result = _.filter(ds_idle_and_underutil_instances, function(incident) {
+    s = incident["recommendationType"];
+    return _.contains([s],"Downsize")
+  })
+EOS
+end
+
+datasource "ds_idle_instances" do
+  run_script $js_idle_instances, $ds_idle_and_underutil_instances
+end
+
+script "js_idle_instances", type: "javascript" do
+  parameters "ds_idle_and_underutil_instances"
+  result "result"
+  code <<-EOS
+  result = _.filter(ds_idle_and_underutil_instances, function(incident) {
+    s = incident["recommendationType"];
+    return _.contains([s],"Terminate")
+  })
+EOS
+end
+
 ###############################################################################
 # Policy
 ###############################################################################
 
 policy "pol_utilization" do
-  validate_each $ds_idle_and_underutil_instances do
+  validate_each $ds_underutilized_instances do
     summary_template <<-EOS
     {{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ with index data 0 }}{{ .summaryData.underutilInstanceCount }}{{ end }} AWS underutilized compute instances found
         EOS
@@ -992,11 +1053,15 @@ policy "pol_utilization" do
         # label "Resource Type"
         label "Instance Size"
       end
+      field "resourceName" do
+        label "Resource Name"
+      end
       # field "vmSize" do
       #   label "Instance Size"
       # end
-      field "recommendedVmSize" do
+      field "newResourceType" do
         label "Recommended Instance Size"
+        path "recommendedVmSize"
       end
       field "region" do
         label "Region"
@@ -1019,44 +1084,59 @@ policy "pol_utilization" do
       field "launchTime" do
         label "Launch Time"
       end
-      field "cpu_maximum" do
+      field "cpuMaximum" do
         label "CPU Maximum %"
+        path "cpu_maximum"
       end
-      field "cpu_minimum" do
+      field "cpuMinimum" do
         label "CPU Minimum %"
+        path "cpu_minimum"
       end
-      field "cpu_average" do
+      field "cpuAverage" do
         label "CPU Average %"
+        path "cpu_average"
       end
-      field "cpu_p99" do
+      field "cpuP99" do
         label "CPU p99"
+        path "cpu_p99"
       end
-      field "cpu_p95" do
+      field "cpuP95" do
         label "CPU p95"
+        path "cpu_p95"
       end
-      field "cpu_p90" do
+      field "cpuP90" do
         label "CPU p90"
+        path "cpu_p90"
       end
-      field "mem_maximum" do
+      field "memMaximum" do
         label "Memory Maximum %"
+        path "mem_maximum"
       end
-      field "mem_minimum" do
+      field "memMinimum" do
         label "Memory Minimum %"
+        path "mem_minimum"
       end
-      field "mem_average" do
+      field "memAverage" do
         label "Memory Average %"
+        path "mem_average"
       end
-      field "mem_p99" do
+      field "memP99" do
         label "Memory p99"
+        path "mem_p99"
       end
-      field "mem_p95" do
+      field "memP95" do
         label "Memory p95"
+        path "mem_p95"
       end
-      field "mem_p90" do
+      field "memP90" do
         label "Memory p90"
+        path "mem_p90"
       end
       field "tags" do
         label "Tags"
+      end
+      field "lookbackPeriod" do
+        label "Lookback Period"
       end
       field "service" do
         label "Service"
@@ -1065,9 +1145,20 @@ policy "pol_utilization" do
         label "ID"
         path "resourceID"
       end
+      field "threshold" do
+        label "CPU Threshold"
+        path "underutilThreshold"
+      end
+      field "memoryThreshold" do
+        label "Memory Threshold"
+        path "underutilMemoryThreshold"
+      end
+      field "thresholdType" do
+        label "Threshold Type"
+      end
     end
   end
-  validate_each $ds_idle_and_underutil_instances do
+  validate_each $ds_idle_instances do
     summary_template <<-EOS
     {{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ with index data 0 }}{{ .summaryData.idleInstanceCount }}{{end}} AWS idle compute instances found
     EOS
@@ -1091,11 +1182,15 @@ policy "pol_utilization" do
       field "resourceType" do
         label "Resource Type"
       end
+      field "resourceName" do
+        label "Resource Name"
+      end
       field "vmSize" do
         label "Instance Size"
       end
-      field "recommendedVmSize" do
+      field "newResourceType" do
         label "Recommended Instance Size"
+        path "recommendedVmSize"
       end
       field "region" do
         label "Region"
@@ -1118,44 +1213,59 @@ policy "pol_utilization" do
       field "launchTime" do
         label "Launch Time"
       end
-      field "cpu_maximum" do
+      field "cpuMaximum" do
         label "CPU Maximum %"
+        path "cpu_maximum"
       end
-      field "cpu_minimum" do
+      field "cpuMinimum" do
         label "CPU Minimum %"
+        path "cpu_minimum"
       end
-      field "cpu_average" do
+      field "cpuAverage" do
         label "CPU Average %"
+        path "cpu_average"
       end
-      field "cpu_p99" do
+      field "cpuP99" do
         label "CPU p99"
+        path "cpu_p99"
       end
-      field "cpu_p95" do
+      field "cpuP95" do
         label "CPU p95"
+        path "cpu_p95"
       end
-      field "cpu_p90" do
+      field "cpuP90" do
         label "CPU p90"
+        path "cpu_p90"
       end
-      field "mem_maximum" do
+      field "memMaximum" do
         label "Memory Maximum %"
+        path "mem_maximum"
       end
-      field "mem_minimum" do
+      field "memMinimum" do
         label "Memory Minimum %"
+        path "mem_minimum"
       end
-      field "mem_average" do
+      field "memAverage" do
         label "Memory Average %"
+        path "mem_average"
       end
-      field "mem_p99" do
+      field "memP99" do
         label "Memory p99"
+        path "mem_p99"
       end
-      field "mem_p95" do
+      field "memP95" do
         label "Memory p95"
+        path "mem_p95"
       end
-      field "mem_p90" do
+      field "memP90" do
         label "Memory p90"
+        path "mem_p90"
       end
       field "tags" do
         label "Tags"
+      end
+      field "lookbackPeriod" do
+        label "Lookback Period"
       end
       field "service" do
         label "Service"
@@ -1163,6 +1273,17 @@ policy "pol_utilization" do
       field "id" do
         label "ID"
         path "resourceID"
+      end
+      field "threshold" do
+        label "CPU Threshold"
+        path "idleThreshold"
+      end
+      field "memoryThreshold" do
+        label "Memory Threshold"
+        path "idleMemoryThreshold"
+      end
+      field "thresholdType" do
+        label "Threshold Type"
       end
     end
   end

@@ -1,5 +1,16 @@
 # Changelog
 
+## v4.8
+
+- Changed internal names of several incident fields to ensure that they are properly scraped for dashboards.
+
+## v4.7
+
+- Added `Lookback Period` incident field.
+- Added `Threshold` incident field.
+- Added `Platform` incident field.
+- Changed internal names of several incident fields to ensure that they are properly scraped for dashboards.
+
 ## v4.6
 
 - New escalations are no longer created if Estimated Monthly Savings or CPU Average have changed, but nothing else has.
