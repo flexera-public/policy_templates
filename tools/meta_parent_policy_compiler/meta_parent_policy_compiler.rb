@@ -19,6 +19,7 @@ default_child_policy_template_files = [
   "../../cost/azure/unused_volumes/azure_unused_volumes.pt",
 ]
 
+
 # Compile Meta Parent Policy Definition
 # This function takes a child policy template file path
 # as input and outputs a meta parent policy definition
@@ -41,16 +42,17 @@ def compile_meta_parent_policy(file_path)
   # print("\n###########################\n")
 
   # Get the parameters
-  parameters = pt.scan(/parameter ".*?" do.*?end/m)
+  parameters = pt.scan(/parameter ".*?" do.*?^end/m)
 
   # print("Parameters:\n")
   # print(parameters.join("\n---------\n"))
   # print("\n###########################\n")
 
   # Get the credentials
-  credentials = pt.scan(/credentials ".*?" do.*?end/m)
+  credentials = pt.scan(/credentials ".*?" do.*?^end/m)
 
-
+  # Get resource level
+  resource_level = pt.scan(/^\s*resource_level (true|false)$/)
 
   consolidated_incident_datasource_template = <<~EOL
   datasource "__PLACEHOLDER_FOR_CHILD_POLICY_CONSOLIDATED_INCIDENT_DATASOURCE___combined_incidents" do
@@ -81,7 +83,7 @@ def compile_meta_parent_policy(file_path)
     escalate $esc_email
     check eq(size(data), 0)
     export do
-      resource_level true
+      resource_level __PLACEHOLDER_FOR_CHILD_POLICY_CONSOLIDATED_INCIDENT_RESOURCE_LEVEL__
       __PLACEHOLDER_FOR_CHILD_POLICY_CONSOLIDATED_INCIDENT_FIELDS__
     end
   end
@@ -107,9 +109,10 @@ def compile_meta_parent_policy(file_path)
     fields.each do |field|
       # Remove path from the field output in the meta parent
       field.gsub!(/\n.*?path.*?\n/, "\n")
-      # Lazy way to remove the export do // resource_level true blocks that are not needed.
+      # Lazy way to remove the export do // resource_level true and false blocks that are not needed.
       # A better solution would be a better regex above to capture only the field statements
       field.gsub!(/ *?export.*?do\n *resource_level true\n *field/, "field")
+      field.gsub!(/ *?export.*?do\n *resource_level false\n *field/, "field")
       # Add 6 spaces to the beginning of each field to make it align with the policy.validate.export.<field> in the meta parent
       field = "      " + field
       # print("Field: \n")
@@ -142,6 +145,8 @@ def compile_meta_parent_policy(file_path)
     # Replace the placeholder with the Child Policy Consolidated Incident Datasource Block
     output_ds = output_ds.gsub("__PLACEHOLDER_FOR_CHILD_POLICY_CONSOLIDATED_INCIDENT_DATASOURCE__", datasource_name)
     output_incident = output_incident.gsub("__PLACEHOLDER_FOR_CHILD_POLICY_CONSOLIDATED_INCIDENT_DATASOURCE__", datasource_name)
+    # Replace the placeholder with the Child Policy Consolidated Incident Resource Level
+    output_incident = output_incident.gsub("__PLACEHOLDER_FOR_CHILD_POLICY_CONSOLIDATED_INCIDENT_RESOURCE_LEVEL__", resource_level.join(""))
     # Replace the placeholder with the Child Policy Consolidated Incident Fields Blocks
     output_incident = output_incident.gsub("__PLACEHOLDER_FOR_CHILD_POLICY_CONSOLIDATED_INCIDENT_FIELDS__", fields.join("\n      "))
     # Add the consolidated incident datasource and check blocks to the consolidated incident arrays
@@ -182,7 +187,7 @@ def compile_meta_parent_policy(file_path)
   output_pt_params = []
   parameters.each do |param|
     # Check if the param string container either param_email, param_aws_account_number, or param_subscription_allowed_list
-    param.include?("param_email") || param.include?("param_aws_account_number") || param.include?("param_subscription_allowed_list") ? nil : output_pt_params.push(param)
+    param.include?("param_email") || param.include?("param_aws_account_number") || param.include?("param_subscription_allowed_list") || param.include?("param_subscriptions_list") || param.include?("param_subscriptions_allow_or_deny") ? nil : output_pt_params.push(param)
   end
   # Replace placeholder with the identified output parameter blocks
   output_pt = output_pt.gsub("__PLACEHOLDER_FOR_CHILD_POLICY_PARAMETERS_BLOCKS__", output_pt_params.join("\n\n"))
