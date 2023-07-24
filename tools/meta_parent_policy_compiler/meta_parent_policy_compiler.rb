@@ -160,7 +160,7 @@ def compile_meta_parent_policy(file_path)
     output_ds = output_ds.gsub("__PLACEHOLDER_FOR_CHILD_POLICY_CONSOLIDATED_INCIDENT_DATASOURCE__", datasource_name)
     output_incident = output_incident.gsub("__PLACEHOLDER_FOR_CHILD_POLICY_CONSOLIDATED_INCIDENT_DATASOURCE__", datasource_name)
     # Replace the placeholder with the Child Policy Consolidated Incident Resource Level
-    output_incident = output_incident.gsub("__PLACEHOLDER_FOR_CHILD_POLICY_CONSOLIDATED_INCIDENT_RESOURCE_LEVEL__", resource_level.join(""))
+    output_incident = output_incident.gsub("__PLACEHOLDER_FOR_CHILD_POLICY_CONSOLIDATED_INCIDENT_RESOURCE_LEVEL__", resource_level[0][0])
     # Replace the placeholder with the Child Policy Consolidated Incident Fields Blocks
     output_incident = output_incident.gsub("__PLACEHOLDER_FOR_CHILD_POLICY_CONSOLIDATED_INCIDENT_FIELDS__", fields.join("\n      "))
     # Add the consolidated incident datasource and check blocks to the consolidated incident arrays
