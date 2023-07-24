@@ -1,5 +1,11 @@
 # Changelog
 
+## v3.0
+
+- Renamed Subscription List parameter for consistency and accuracy
+- Added logic required for "Meta Policy" use-cases
+- Policy now requires a valid Flexera credential to facilitate "Meta Policy" use-cases
+
 ## v2.8
 
 - Added a filter to exclude SQL Server 2017 Developer and Express versions instances that Microsoft provides as free
