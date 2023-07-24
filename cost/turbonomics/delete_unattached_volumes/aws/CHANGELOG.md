@@ -2,10 +2,12 @@
 
 ## v0.5
 
-- Renamed `Storage Access` incident field to `IOps`.
+- Renamed `Storage Access` incident field to `Provisioned IOPs`.
 - Renamed `Storage Amount` incident field to `Size`.
 - Renamed `Attachment State` incident field to `State`.
-- Renamed `Days Unattached` incident field to `Lookback Period`.
+- Renamed `Created Time` incident field to `Action Created Time`.
+- Renamed `Last Attached VM` incident field to `Last VM`.
+- Renamed `Unused Days` parameter to `Days Unattached`.
 - Removed hardcoded host on business units path.
 
 ## v0.4
