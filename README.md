@@ -237,14 +237,15 @@ These templates can generate savings estimates for your environment.
 
 #### Azure
 
-- [Azure Hybrid Use Benefit for Windows Server](./cost/azure/hybrid_use_benefit)
-
 - Blob Store
 
   - [Azure Blob Storage Optimization](./cost/azure/object_storage_optimization)
 
 - Compute
 
+  - [Azure Hybrid Use Benefit for Linux Server](./cost/azure/hybrid_use_benefit_linux)
+  - [Azure Hybrid Use Benefit for SQL](./cost/azure/hybrid_use_benefit_sql)
+  - [Azure Hybrid Use Benefit for Windows Server](./cost/azure/hybrid_use_benefit)
   - [Azure Idle Compute Instances](./cost/azure/idle_compute_instances)
   - [Azure Inefficient Instance Utilization using Log Analytics](./cost/azure/instances_log_analytics_utilization)
   - [Azure Reserved Instances Recommendations](./cost/azure/reserved_instances/recommendations)
@@ -277,11 +278,6 @@ These templates can generate savings estimates for your environment.
   - [Turbonomic Buy Reserved Instances Recommendations Azure](./cost/turbonomics/buy_reserved_instances_recommendations/azure)
   - [Turbonomic Rightsize Databases Recommendations Azure](./cost/turbonomics/rightsize_databases_recommendations/azure)
   - [Turbonomic Rightsize Virtual Volumes Recommendations Azure](./cost/turbonomics/rightsize_virtual_volumes_recommendations/azure)
-
-- compute
-
-  - [Azure Hybrid Use Benefit for Linux Server](./cost/azure/hybrid_use_benefit_linux)
-  - [Azure Hybrid Use Benefit for SQL](./cost/azure/hybrid_use_benefit_sql)
 
 #### Azure China
 
@@ -667,12 +663,11 @@ These templates can generate savings estimates for your environment.
   Flexera FNMS: 1
 :services:
   Storage: 20
-  Compute: 31
+  Compute: 34
   SQL: 15
-  '': 65
+  '': 64
   Kubernetes: 2
   Common Bill Ingestion: 1
-  compute: 3
   N/A: 1
   All: 3
   Blob Store: 1
@@ -698,6 +693,7 @@ These templates can generate savings estimates for your environment.
   Network Security Group: 2
   MySQL: 2
   Security: 3
+  compute: 1
   App Service: 1
   Config: 1
   DBS: 1
