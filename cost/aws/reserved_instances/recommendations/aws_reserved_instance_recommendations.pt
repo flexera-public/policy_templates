@@ -95,14 +95,6 @@ parameter "param_min_savings" do
   min_value 0
 end
 
-parameter "param_currency_adjustment" do
-  type "number"
-  label "Currency Adjustment"
-  description "Percentage to multiple monetary values by for currency conversion. Default value of 100 will leave the values unmodified."
-  default 100
-  min_value 0
-end
-
 ###############################################################################
 # Authentication
 ###############################################################################
@@ -149,6 +141,7 @@ datasource "ds_applied_policy" do
   end
 end
 
+# Gather local currency info
 datasource "ds_currency_reference" do
   request do
     host "raw.githubusercontent.com"
@@ -173,32 +166,60 @@ datasource "ds_currency_code" do
   end
 end
 
-datasource "ds_currency" do
-  run_script $js_currency, $ds_currency_reference, $ds_currency_code
+datasource "ds_currency_target" do
+  run_script $js_currency_target, $ds_currency_reference, $ds_currency_code
 end
 
-script "js_currency", type:"javascript" do
+script "js_currency_target", type:"javascript" do
   parameters "ds_currency_reference", "ds_currency_code"
   result "result"
   code <<-EOS
-  symbol = "$"
-  separator = ","
+  // Default to USD if currency is not found
+  result = ds_currency_reference['USD']
 
-  if (ds_currency_code['value'] != undefined) {
-    if (ds_currency_reference[ds_currency_code['value']] != undefined) {
-      symbol = ds_currency_reference[ds_currency_code['value']]['symbol']
-
-      if (ds_currency_reference[ds_currency_code['value']]['t_separator'] != undefined) {
-        separator = ds_currency_reference[ds_currency_code['value']]['t_separator']
-      } else {
-        separator = ""
-      }
-    }
+  if (ds_currency_code['value'] != undefined && ds_currency_reference[ds_currency_code['value']] != undefined) {
+    result = ds_currency_reference[ds_currency_code['value']]
   }
+EOS
+end
 
-  result = {
-    symbol: symbol,
-    separator: separator
+datasource "ds_currency_conversion" do
+  request do
+    host "api.xe-auth.flexeraeng.com"
+    path "/prod/{proxy+}"
+    query "from", "USD"
+    query "to", val($ds_currency_target, 'code')
+    query "amount", "1"
+  end
+  result do
+    encoding "json"
+    field "from", jmes_path(response, "from")
+    field "to", jmes_path(response, "to")
+    field "amount", jmes_path(response, "amount")
+    field "year", jmes_path(response, "year")
+  end
+end
+
+datasource "ds_currency" do
+  run_script $js_currency, $ds_currency_target, $ds_currency_conversion
+end
+
+script "js_currency", type:"javascript" do
+  parameters "ds_currency_target", "ds_currency_conversion"
+  result "result"
+  code <<-EOS
+  result = ds_currency_target
+  result['exchange_rate'] = 1
+
+  currency_code = ds_currency_target['code']
+  current_month = parseInt(new Date().toISOString().split('-')[1])
+
+  conversion_block = _.find(ds_currency_conversion['to'][currency_code], function(item) {
+    return item['month'] == current_month
+  })
+
+  if (conversion_block != undefined) {
+    result['exchange_rate'] = conversion_block['monthlyAverage']
   }
 EOS
 end
@@ -432,11 +453,11 @@ EOS
 end
 
 datasource "ds_ri_normalization" do
-  run_script $js_ri_normalization, $ds_ri_recommendations, $ds_applied_policy, $ds_aws_account, $ds_currency, $param_currency_adjustment, $param_days, $param_service, $param_service_spec, $param_scope, $param_term, $param_payment_option, $param_min_savings
+  run_script $js_ri_normalization, $ds_ri_recommendations, $ds_applied_policy, $ds_aws_account, $ds_currency, $param_days, $param_service, $param_service_spec, $param_scope, $param_term, $param_payment_option, $param_min_savings
 end
 
 script "js_ri_normalization", type: "javascript" do
-  parameters "ds_ri_recommendations", "ds_applied_policy", "ds_aws_account", "ds_currency", "param_currency_adjustment", "param_days", "param_service", "param_service_spec", "param_scope", "param_term", "param_payment_option", "param_min_savings"
+  parameters "ds_ri_recommendations", "ds_applied_policy", "ds_aws_account", "ds_currency", "param_days", "param_service", "param_service_spec", "param_scope", "param_term", "param_payment_option", "param_min_savings"
   result "result"
   code <<-'EOS'
   // Used for formatting numbers to look pretty
@@ -489,11 +510,11 @@ script "js_ri_normalization", type: "javascript" do
       // Calculate values while including currency calculation when needed
       averageUtilization = Math.round(recommendation["averageUtilization"] * 100) / 100
       estimatedBreakEvenInMonths = Math.round(recommendation["estimatedBreakEvenInMonths"] * 100) / 100
-      estimatedMonthlyOnDemandCost = Math.round(recommendation["estimatedMonthlyOnDemandCost"] * param_currency_adjustment) / 100
-      estimatedMonthlySavingsAmount = Math.round(recommendation["estimatedMonthlySavingsAmount"] * param_currency_adjustment) / 100
+      estimatedMonthlyOnDemandCost = Math.round(recommendation["estimatedMonthlyOnDemandCost"] * ds_currency['exchange_rate'] * 100) / 100
+      estimatedMonthlySavingsAmount = Math.round(recommendation["estimatedMonthlySavingsAmount"] * ds_currency['exchange_rate'] * 100) / 100
       estimatedMonthlySavingsPercentage = Math.round(recommendation["estimatedMonthlySavingsPercentage"] * 100) / 100
-      estimatedReservationCostForLookbackPeriod = Math.round(recommendation["estimatedReservationCostForLookbackPeriod"] * param_currency_adjustment) / 100
-      recurringStandardMonthlyCost = Math.round(recommendation["recurringStandardMonthlyCost"] * param_currency_adjustment) / 100
+      estimatedReservationCostForLookbackPeriod = Math.round(recommendation["estimatedReservationCostForLookbackPeriod"] * ds_currency['exchange_rate']) / 100
+      recurringStandardMonthlyCost = Math.round(recommendation["recurringStandardMonthlyCost"] * ds_currency['exchange_rate'] * 100) / 100
       upfrontCost = Math.round(recommendation["upfrontCost"] * 100) / 100
 
       // Set misc values
@@ -566,8 +587,7 @@ script "js_ri_normalization", type: "javascript" do
     "- Term: ", param_term, "\n",
     "- Look Back Period: ", param_days, "\n",
     "- Payment Option: ", param_payment_option, "\n",
-    "- Minimum Savings Threshold: ", param_min_savings, "\n",
-    "- Currency Adjustment Percentage: ", param_currency_adjustment, "%\n\n"
+    "- Minimum Savings Threshold: ", param_min_savings, "\n\n",
   ].join('')
 
   disclaimer = "The above settings can be modified by editing the applied policy and changing the appropriate parameters.\n\n"
