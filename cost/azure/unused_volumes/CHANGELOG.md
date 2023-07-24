@@ -1,5 +1,9 @@
 # Changelog
 
+## v5.0
+
+- Renamed Subscription List parameter for consistency and accuracy
+
 ## v4.10
 
 - Changed internal names of several incident fields to ensure that they are properly scraped for dashboards.

@@ -1,7 +1,7 @@
-name "Azure Unused Volumes Meta Parent"
+name "Azure Unused SQL Databases Meta Parent"
 rs_pt_ver 20180301
 type "policy"
-short_description "Applies and manages \"child\" [Azure Unused Volumes](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/unused_volumes) Policies."
+short_description "Applies and manages \"child\" [Azure Unused SQL Databases](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/unused_sql_databases) Policies."
 severity "low"
 category "Cost"
 tenancy "single"
@@ -41,29 +41,11 @@ parameter "param_subscription_list" do
 end
 
 ## Child Policy Parameters
-parameter "param_unattached_days" do
-  type "number"
-  label "Unused Age"
-  description "Number of days the volume is unused"
-  default 30
-  min_value 1
-  max_value 90
-end
-
-parameter "param_create_snapshot" do
-  type "string"
-  label "Create Final Snapshot"
-  description "Boolean for whether or not to take a final snapshot before deleting"
-  allowed_values "true", "false"
-  default "true"
-end
-
 parameter "param_exclusion_tag_key" do
+  type "string"
   category "User Inputs"
   label "Exclusion Tag Key"
-  description "A list of tags used to excluded volumes from the incident."
-  type "list"
-  default []
+  description "Azure-native SQL Database tag key to ignore databases. Only supply the tag key. The policy assumes that the tag value is irrelevant."
 end
 
 parameter "param_azure_endpoint" do
@@ -76,18 +58,17 @@ end
 
 parameter "param_automatic_action" do
   type "list"
-  label "Automatic Action(s)"
+  label "Automatic Actions"
   description "When this value is set, this policy will automatically take the selected action(s)"
-  allowed_values ["Delete Unused Volumes"]
-  default []
+  allowed_values ["Terminate Instances"]
 end
 
 parameter "param_log_to_cm_audit_entries" do
   type "string"
   label "Log to CM Audit Entries"
   description "Boolean for whether or not to log any debugging information from actions to CM Audit Entries, this should be left set to No on Flexera EU"
-  allowed_values "Yes", "No"
   default "No"
+  allowed_values "Yes", "No"
 end
 
 ###############################################################################
@@ -248,7 +229,7 @@ datasource "ds_child_policy_information" do
   result do
     encoding "json"
     # Select the published policy that is published by "support@flexera.com" and matches the name of the child policy template
-    collect jq(response, '.items[] | select(.name == "Azure Unused Volumes" and .created_by.email == "support@flexera.com")' ) do
+    collect jq(response, '.items[] | select(.name == "Azure Unused SQL Databases" and .created_by.email == "support@flexera.com")' ) do
       field "name", jmes_path(col_item, "name")
       field "href", jmes_path(col_item, "href")
       field "short_description", jmes_path(col_item, "short_description")
@@ -631,19 +612,19 @@ datasource "ds_child_incident_details" do
   end
 end
 
-datasource "ds_volume_cost_mapping_combined_incidents" do
-  run_script $js_ds_volume_cost_mapping_combined_incidents, $ds_child_incident_details
+datasource "ds_instance_cost_mapping_combined_incidents" do
+  run_script $js_ds_instance_cost_mapping_combined_incidents, $ds_child_incident_details
 end
 
-script "js_ds_volume_cost_mapping_combined_incidents", type: "javascript" do
+script "js_ds_instance_cost_mapping_combined_incidents", type: "javascript" do
   parameters "ds_child_incident_details"
   result "result"
   code <<-EOS
   result = []
   _.each(ds_child_incident_details, function(incident) {
     s = incident["summary"];
-    // If the incident summary contains "Unused Volumes Found" then include it in the filter result
-    if (s.indexOf("Unused Volumes Found") > -1) {
+    // If the incident summary contains "Unused Azure Databases Found" then include it in the filter result
+    if (s.indexOf("Unused Azure Databases Found") > -1) {
       _.each(incident["violation_data"], function(violation) {
         result.push(violation);
       });
@@ -659,9 +640,9 @@ end
 # Could also just have one incident and use meta_status to determine which escalation happens
 policy "policy_scheduled_report" do
   # Consolidated Incident Check(s)
-    # Consolidated incident for Unused Volumes Found
-  validate $ds_volume_cost_mapping_combined_incidents do
-    summary_template "Consolidated Incident: {{ len data }} Unused Volumes Found"
+    # Consolidated incident for Unused Azure Databases Found
+  validate $ds_instance_cost_mapping_combined_incidents do
+    summary_template "Consolidated Incident: {{ len data }} Unused Azure Databases Found"
     escalate $esc_email
     check eq(size(data), 0)
     export do
@@ -678,23 +659,17 @@ policy "policy_scheduled_report" do
       field "resourceName" do
         label "Resource Name"
       end
-      field "resourceType" do
-        label "Resource Type"
-      end
-      field "lookbackPeriod" do
-        label "Lookback Period"
+      field "resourceGroup" do
+        label "Resource Group"
       end
       field "region" do
         label "Region"
       end
-      field "resourceGroup" do
-        label "Resource Group"
+      field "resourceKind" do
+        label "Resource Kind"
       end
-      field "size" do
-        label "Disk Size in GB"
-      end
-      field "tags" do
-        label "Tags"
+      field "resourceType" do
+        label "Resource Type"
       end
       field "savings" do
         label "Estimated Monthly Savings"
@@ -702,11 +677,29 @@ policy "policy_scheduled_report" do
       field "savingsCurrency" do
         label "Savings Currency"
       end
-      field "id" do
-        label "Disk Id"
+      field "tags" do
+        label "Tags"
       end
       field "service" do
         label "Service"
+      end
+      field "skuName" do
+        label "SKU - Name"
+      end
+      field "skuTier" do
+        label "SKU - Tier"
+      end
+      field "skuCapacity" do
+        label "SKU - Capacity"
+      end
+      field "id" do
+        label "ID"
+      end
+      field "lookbackPeriod" do
+        label "Lookback Period"
+      end
+      field "platform" do
+        label "Platform"
       end
     end
   end

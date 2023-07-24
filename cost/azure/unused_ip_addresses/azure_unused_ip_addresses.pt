@@ -6,7 +6,7 @@ severity "low"
 category "Cost"
 default_frequency "weekly"
 info(
-  version: "4.7",
+  version: "5.0",
   provider: "Azure",
   service: "Compute",
   policy_set: "Unused IP Addresses",
@@ -38,7 +38,7 @@ parameter "param_azure_endpoint" do
   default "management.azure.com"
 end
 
-parameter "param_subscription_allowed_list" do
+parameter "param_subscriptions_list" do
   label "Subscription Allowed List"
   type "list"
   description "Allowed Subscriptions, if empty, all subscriptions will be checked"
@@ -56,7 +56,7 @@ end
 ###############################################################################
 
 #AUTHENTICATE WITH AZURE
-credentials "azure_auth" do
+credentials "auth_azure" do
   schemes "oauth2"
   label "Azure"
   description "Select the Azure Resource Manager Credential from the list."
@@ -90,12 +90,15 @@ end
 #GET ALL SUBSCRIPTIONS FOR ORG
 datasource "ds_subscriptions" do
   request do
-    auth $azure_auth
+    auth $auth_azure
     pagination $azure_pagination
     host $param_azure_endpoint
     path "/subscriptions/"
     query "api-version", "2020-01-01"
     header "User-Agent", "RS Policies"
+    # Header X-Meta-Flexera has no affect on datasource query, but is required for Meta Policies
+    # Forces `ds_is_deleted` datasource to run first during policy execution
+    header "Meta-Flexera", val($ds_is_deleted, "path")
   end
   result do
     encoding "json"
@@ -108,17 +111,17 @@ end
 
 #FILTER SUBSCRIPTIONS BASED ON ALLOWED LIST PARAMETER
 datasource "ds_filtered_subscriptions" do
-  run_script $js_filter_subscriptions, $ds_subscriptions, $param_subscription_allowed_list
+  run_script $js_filter_subscriptions, $ds_subscriptions, $param_subscriptions_list
 end
 
 script "js_filter_subscriptions", type: "javascript" do
-  parameters "ds_subscriptions", "param_subscription_allowed_list"
+  parameters "ds_subscriptions", "param_subscriptions_list"
   result "results"
   code <<-EOS
     var results = []
-    if( param_subscription_allowed_list.length != 0 ){
+    if( param_subscriptions_list.length != 0 ){
       results = []
-      _.each(param_subscription_allowed_list, function(sub){
+      _.each(param_subscriptions_list, function(sub){
         var found = _.find(ds_subscriptions, function(item){
           return item.subscriptionId == sub || item.subscriptionName.toLowerCase() == sub.toLowerCase();
         })
@@ -134,7 +137,7 @@ end
 datasource "ds_public_ip_addresses" do
   iterate $ds_filtered_subscriptions
   request do
-    auth $azure_auth
+    auth $auth_azure
     host $param_azure_endpoint
     path join(["/subscriptions/", val(iter_item,"subscriptionId"), "/providers/Microsoft.Network/publicIPAddresses"])
     query "api-version", "2021-08-01"
@@ -337,8 +340,10 @@ script "js_exclude_tags", type: "javascript" do
             "tags": tags,
             "service": service,
             "resourceId": ipAddress["resourceId"],
+            "savingsCurrency": "",
             "savings": 0.0,
-            "properties": properties
+            "properties": properties,
+            "message": ""
           })
         }
       }
@@ -355,153 +360,125 @@ script "js_ip_cost_mapping", type:"javascript" do
   parameters  "ip_list", "ip_costs", "ds_currency_code", "ds_currency_reference", "ds_billing_centers"
   result "result"
   code <<-EOS
-    var result = {}
-    var unused_ip_list = []
-    var message = ''
-    var count = 0
+  var result = {}
+  var unused_ip_list = []
+  var message = ''
+  var count = 0
 
-    function formatNumber(number, separator){
-      var numString = number.toString()
-      var values = numString.split(".")
-      var result = ''
-      while (values[0].length > 3){
-        var chunk = values[0].substr(-3)
-        values[0] = values[0].substr(0, values[0].length - 3)
-        result = separator + chunk + result
-      }
-      if (values[0].length > 0){
-        result = values[0] + result
-      }
-      if(values[1]==undefined){
-        return result;
-      }
-      return result+"."+values[1];
+  function formatNumber(number, separator){
+    var numString = number.toString()
+    var values = numString.split(".")
+    var result = ''
+    while (values[0].length > 3){
+      var chunk = values[0].substr(-3)
+      values[0] = values[0].substr(0, values[0].length - 3)
+      result = separator + chunk + result
     }
+    if (values[0].length > 0){
+      result = values[0] + result
+    }
+    if(values[1]==undefined){
+      return result;
+    }
+    return result+"."+values[1];
+  }
 
-    if(ds_billing_centers.length!=0){
-      // Format costs with currency symbol and thousands separator
-      if( ds_currency_code['value'] !== undefined ) {
-        // Put costs into a map by resource ID and only include them for resource IDs we actually need
-        var costs_by_resource_id = {}
+  if(ds_billing_centers.length!=0){
+    // Format costs with currency symbol and thousands separator
+    if( ds_currency_code['value'] !== undefined ) {
+      // Put costs into a map by resource ID and only include them for resource IDs we actually need
+      var costs_by_resource_id = {}
 
-        _.each(ip_list, function(ip){
-          costs_by_resource_id[ip.resourceId] = []
-        })
+      _.each(ip_list, function(ip){
+        costs_by_resource_id[ip.resourceId] = []
+      })
 
-        _.each(ip_costs, function(cost) {
-          var costs = costs_by_resource_id[cost.resource_id];
-          if (costs != null) {
-            costs.push(cost);
-          }
-        })
+      _.each(ip_costs, function(cost) {
+        var costs = costs_by_resource_id[cost.resource_id];
+        if (costs != null) {
+          costs.push(cost);
+        }
+      })
 
-        if( ds_currency_reference[ds_currency_code['value']] !== undefined ){
-          var cur = ds_currency_reference[ds_currency_code['value']]['symbol']
-          if( ds_currency_reference[ds_currency_code['value']]['t_separator'] !== undefined ) {
-            var separator = ds_currency_reference[ds_currency_code['value']]['t_separator']
-          } else {
-            var separator = ""
-          }
+      if( ds_currency_reference[ds_currency_code['value']] !== undefined ){
+        var cur = ds_currency_reference[ds_currency_code['value']]['symbol']
+        if( ds_currency_reference[ds_currency_code['value']]['t_separator'] !== undefined ) {
+          var separator = ds_currency_reference[ds_currency_code['value']]['t_separator']
         } else {
-          var cur = ""
           var separator = ""
         }
       } else {
-        var cur = "$"
-        var separator = ","
+        var cur = ""
+        var separator = ""
       }
+    } else {
+      var cur = "$"
+      var separator = ","
+    }
 
-      var total_savings = 0
-      _.each(ip_list, function(ip){
-        var cost_objects = costs_by_resource_id[ip.resourceId]
-        if (_.size(cost_objects) > 0){
-          count++
-          var sum = _.reduce(_.compact(_.map(cost_objects, function(value){ return value.cost_nonamortized_unblended_adj})), function(memo, num){ return memo + num; }, 0);
-          var monthly_savings = sum * 30
-          total_savings = total_savings + monthly_savings
-          unused_ip_list.push({
-            "subscriptionId": ip["subscriptionId"],
-            "subscriptionName": ip["subscriptionName"],
-            "resourceGroup": ip["resourceGroup"],
-            "resourceName": ip["resourceName"],
-            "resourceType": ip["resourceType"],
-            "region": ip["region"],
-            "tags": ip["tags"],
-            "service": ip["service"],
-            "resourceId": ip["resourceId"],
-            "savings": (Math.round(monthly_savings * 1000) / 1000),
-            "savingsCurrency": cur,
-            "properties": ip["properties"]
-          })
-        } else {
-          unused_ip_list.push({
-            "subscriptionId": ip["subscriptionId"],
-            "subscriptionName": ip["subscriptionName"],
-            "resourceGroup": ip["resourceGroup"],
-            "resourceName": ip["resourceName"],
-            "resourceType": ip["resourceType"],
-            "region": ip["region"],
-            "tags": ip["tags"],
-            "service": ip["service"],
-            "resourceId": ip["resourceId"],
-            "savings": 0.0,
-            "savingsCurrency": cur,
-            "properties": ip["properties"]
-          })
-        }
-      })
-      if( count ){
-        total_savings = cur + ' ' + formatNumber((Math.round(total_savings * 100) / 100), separator)
-        message = "The total estimated monthly savings are " + total_savings
+    var total_savings = 0
+    _.each(ip_list, function(ip){
+      var cost_objects = costs_by_resource_id[ip.resourceId]
+      if (_.size(cost_objects) > 0){
+        count++
+        var sum = _.reduce(_.compact(_.map(cost_objects, function(value){ return value.cost_nonamortized_unblended_adj})), function(memo, num){ return memo + num; }, 0);
+        var monthly_savings = sum * 30
+        total_savings = total_savings + monthly_savings
+        unused_ip_list.push({
+          "subscriptionId": ip["subscriptionId"],
+          "subscriptionName": ip["subscriptionName"],
+          "resourceGroup": ip["resourceGroup"],
+          "resourceName": ip["resourceName"],
+          "resourceType": ip["resourceType"],
+          "region": ip["region"],
+          "tags": ip["tags"],
+          "service": ip["service"],
+          "resourceId": ip["resourceId"],
+          "savings": (Math.round(monthly_savings * 1000) / 1000),
+          "savingsCurrency": cur,
+          "properties": ip["properties"],
+          "message": ""
+        })
+      } else {
+        unused_ip_list.push({
+          "subscriptionId": ip["subscriptionId"],
+          "subscriptionName": ip["subscriptionName"],
+          "resourceGroup": ip["resourceGroup"],
+          "resourceName": ip["resourceName"],
+          "resourceType": ip["resourceType"],
+          "region": ip["region"],
+          "tags": ip["tags"],
+          "service": ip["service"],
+          "resourceId": ip["resourceId"],
+          "savings": 0.0,
+          "savingsCurrency": cur,
+          "properties": ip["properties"],
+          "message": ""
+        })
       }
-      else {
-        message = "The Flexera Optima system does not have any data to calculate savings for these resources"
-      }
+    })
+    if( count ){
+      total_savings = cur + ' ' + formatNumber((Math.round(total_savings * 100) / 100), separator)
+      message = "The total estimated monthly savings are " + total_savings
     }
     else {
-      unused_ip_list = ip_list;
-      message = "You do not have the minimum required role of billing_center_viewer to view the savings"
+      message = "The Flexera Optima system does not have any data to calculate savings for these resources"
     }
-    result = {
-      "ip_list": unused_ip_list,
-      "message": message
-    }
-    result.ip_list = _.sortBy(result.ip_list, "region")
-    result.ip_list = _.sortBy(result.ip_list, "subscriptionName")
-  EOS
-end
+  }
+  else {
+    unused_ip_list = ip_list;
+    message = "You do not have the minimum required role of billing_center_viewer to view the savings"
+  }
 
-datasource "ds_only_instances" do
-  run_script $js_only_instances, $ds_ip_cost_mapping
-end
+  unused_ip_list = _.sortBy(unused_ip_list, "region")
+  unused_ip_list = _.sortBy(unused_ip_list, "subscriptionName")
 
-script "js_only_instances", type: "javascript" do
-  parameters "arg"
-  result "results"
-  code <<-EOS
-    results = arg.ip_list
-    if (results && results.length) {
-      results[0].message = arg.message
-    }
-  EOS
-end
+  result = unused_ip_list
 
-###############################################################################
-# Escalations
-###############################################################################
-
-escalation "send_email_report" do
-  automatic true
-  label "Send Email"
-  description "Send incident email"
-  email $param_email
-end
-
-escalation "delete_unused_ip_addresses" do
-  automatic contains($param_automatic_action, "Delete Unused IP Addresses")
-  label "Delete Resources"
-  description "Delete selected unused IP addresses"
-  run "delete_ip_addresses", data, $param_azure_endpoint, rs_optima_host
+  if (result.length > 0) {
+    result[0]['message'] = message
+  }
+EOS
 end
 
 ###############################################################################
@@ -509,16 +486,17 @@ end
 ###############################################################################
 
 policy "pol_unused_ip_addresses" do
-  validate $ds_only_instances do
+  validate $ds_ip_cost_mapping do
     summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data }} Unused IP Addresses Found"
     hash_exclude "savingsCurrency", "savings"
     detail_template <<-EOS
-    {{with index data 0}}{{ .message }}{{end}}
+    {{ with index data 0 }}{{ .message }}{{ end }}
 EOS
-    check eq(size(data), 0)
-    escalate $send_email_report
-    escalate $delete_unused_ip_addresses
-    export "ip_list" do
+    # Policy check fails and incident is created only if data is not empty and the Parent Policy has not been terminated
+    check logic_or($ds_parent_policy_terminated, eq(size(data), 0))
+    escalate $esc_email
+    escalate $esc_delete_unused_ip_addresses
+    export do
       resource_level true
       field "accountID" do
         label "Subscription ID"
@@ -569,6 +547,24 @@ EOS
 end
 
 ###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_email" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
+end
+
+escalation "esc_delete_unused_ip_addresses" do
+  automatic contains($param_automatic_action, "Delete Unused IP Addresses")
+  label "Delete Resources"
+  description "Delete selected unused IP addresses"
+  run "delete_ip_addresses", data, $param_azure_endpoint, rs_optima_host
+end
+
+###############################################################################
 # Cloud Workflow
 ###############################################################################
 
@@ -586,7 +582,7 @@ define azure_delete_ip_addresses($resourceId, $param_azure_endpoint) do
   $response={}
   $syslog_subject = "Azure unused IP addresses : "
   $response = http_request(
-          auth: $$azure_auth,
+          auth: $$auth_azure,
           verb: "delete",
           host: $param_azure_endpoint,
           https: true,
@@ -631,3 +627,95 @@ define skip_error_and_append($subject) do
   $$errors << "Unexpected error for " + $subject + "\n  " + to_s($_error)
   $_error_behavior = "skip"
 end
+
+###############################################################################
+# Meta Policy [alpha]
+# Not intended to be modified or used by policy developers
+###############################################################################
+
+# If the meta_parent_policy_id is not set it will evaluate to an empty string and we will look for the policy itself,
+# if it is set we will look for the parent policy.
+datasource "ds_get_policy" do
+  request do
+    auth $auth_flexera
+    host rs_governance_host
+    ignore_status [404]
+    path join(["/api/governance/projects/", rs_project_id, "/applied_policies/", switch(ne(meta_parent_policy_id,""), meta_parent_policy_id, policy_id) ])
+    header "Api-Version", "1.0"
+  end
+  result do
+    encoding "json"
+    field "id", jmes_path(response, "id")
+  end
+end
+
+
+datasource "ds_parent_policy_terminated" do
+  run_script $js_decide_if_self_terminate, $ds_get_policy, policy_id, meta_parent_policy_id
+end
+
+# If the policy was applied by a meta_parent_policy we confirm it exists if it doesn't we confirm we are deleting
+# This information is used in two places:
+# - determining whether or not we make a delete call
+# - determining if we should create an incident (we don't want to create an incident on the run where we terminate)
+script "js_decide_if_self_terminate", type: "javascript" do
+  parameters "found", "self_policy_id", "meta_parent_policy_id"
+  result "result"
+  code <<-EOS
+  var result
+  if (meta_parent_policy_id != "" && found.id == undefined) {
+    result = true
+  } else {
+    result = false
+  }
+  EOS
+end
+
+# Two potentials ways to set this up:
+# - this way and make a unneeded 'get' request when not deleting
+# - make the delete request an interate and have it iterate over an empty array when not deleting and an array with one item when deleting
+script "js_make_terminate_request", type: "javascript" do
+  parameters "should_delete", "policy_id", "rs_project_id", "rs_governance_host"
+  result "request"
+  code <<-EOS
+
+  var request = {
+    auth:  'auth_flexera',
+    host: rs_governance_host,
+    path: "/api/governance/projects/" + rs_project_id + "/applied_policies/" + policy_id,
+    headers: {
+      "API-Version": "1.0",
+      "Content-Type":"application/json"
+    },
+  }
+
+  if (should_delete) {
+    request.verb = 'DELETE'
+  }
+  EOS
+end
+
+datasource "ds_terminate_self" do
+  request do
+    run_script $js_make_terminate_request, $ds_parent_policy_terminated, policy_id, rs_project_id, rs_governance_host
+  end
+end
+
+datasource "ds_is_deleted" do
+  run_script $js_check_deleted, $ds_terminate_self
+end
+
+# This is just a way to have the check delete request connect to the farthest leaf from policy.
+# We want the delete check to the first thing the policy does to avoid the policy erroring before it can decide whether or not it needs to self terminate
+# Example a customer deletes a credential and then terminates the parent policy. We still want the children to self terminate
+# The only way I could see this not happening is if the user who applied the parent_meta_policy was offboarded or lost policy access, the policies who are impersonating the user
+# would not have access to self-terminate
+# It may be useful for the backend to enable a mass terminate at some point for all meta_child_policies associated with an id.
+script "js_check_deleted", type: "javascript" do
+  parameters "response"
+  result "result"
+  code <<-EOS
+  result = {"path":"/"}
+  EOS
+end
+

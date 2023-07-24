@@ -1,14 +1,14 @@
-name "Azure Unused Volumes Meta Parent"
+name "Azure Rightsize Compute Instances Meta Parent"
 rs_pt_ver 20180301
 type "policy"
-short_description "Applies and manages \"child\" [Azure Unused Volumes](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/unused_volumes) Policies."
+short_description "Applies and manages \"child\" [Azure Rightsize Compute Instances](https://github.com/flexera-public/policy_templates/tree/master/cost/azure/rightsize_compute_instances) Policies."
 severity "low"
 category "Cost"
 tenancy "single"
 default_frequency "15 minutes"
 info(
   provider: "Azure",
-  version: "5.0", # This version of the Meta Parent Policy Template should match the version of the Child Policy Template as it appears in the Catalog for best reliability
+  version: "3.1", # This version of the Meta Parent Policy Template should match the version of the Child Policy Template as it appears in the Catalog for best reliability
   publish: "false"
 )
 
@@ -41,53 +41,108 @@ parameter "param_subscription_list" do
 end
 
 ## Child Policy Parameters
-parameter "param_unattached_days" do
+parameter "param_azure_endpoint" do
+  type "string"
+  category "Policy Settings"
+  label "Azure Endpoint"
+  description "Select the API endpoint to use for Azure. Use default value of management.azure.com unless using Azure China."
+  allowed_values "management.azure.com", "management.chinacloudapi.cn"
+  default "management.azure.com"
+end
+
+parameter "param_min_savings" do
   type "number"
-  label "Unused Age"
-  description "Number of days the volume is unused"
+  category "Policy Settings"
+  label "Minimum Savings Threshold"
+  description "Minimum potential savings required to generate a recommendation"
+  min_value 0
+  default 0
+end
+
+parameter "param_exclusion_tags" do
+  type "list"
+  category "Filters"
+  label "Exclusion Tags (Key:Value)"
+  description "Cloud native tags to ignore instances that you don't want to consider for downsizing or deletion. Format: Key:Value"
+  allowed_pattern /(^$)|([\w]?)+\:([\w]?)+/
+  default []
+end
+
+parameter "param_stats_idle_threshold_cpu_value" do
+  type "number"
+  category "Statistics"
+  label "Idle Instance CPU Threshold (%)"
+  description "The CPU threshold at which to consider an instance to be 'idle' and therefore be flagged for termination. Set to -1 to ignore CPU utilization"
+  min_value -1
+  max_value 100
+  default 5
+end
+
+parameter "param_stats_idle_threshold_mem_value" do
+  type "number"
+  category "Statistics"
+  label "Idle Instance Memory Threshold (%)"
+  description "The Memory threshold at which to consider an instance to be 'idle' and therefore be flagged for termination. Set to -1 to ignore memory utilization"
+  min_value -1
+  max_value 100
+  default 5
+end
+
+parameter "param_stats_underutil_threshold_cpu_value" do
+  type "number"
+  category "Statistics"
+  label "Underutilized Instance CPU Threshold (%)"
+  description "The CPU threshold at which to consider an instance to be 'underutilized' and therefore be flagged for downsizing. Set to -1 to ignore CPU utilization"
+  min_value -1
+  max_value 100
+  default 40
+end
+
+parameter "param_stats_underutil_threshold_mem_value" do
+  type "number"
+  category "Statistics"
+  label "Underutilized Instance Memory Threshold (%)"
+  description "The Memory threshold at which to consider an instance to be 'underutilized' and therefore be flagged for downsizing. Set to -1 to ignore memory utilization"
+  min_value -1
+  max_value 100
+  default 40
+end
+
+parameter "param_stats_check_both" do
+  type "string"
+  category "Statistics"
+  label "Idle/Utilized for both CPU/Memory or either"
+  description "Set whether an instance should be considered idle and/or underutilized only if both CPU and memory are under the thresholds or if either CPU or memory are under. Note: this parameter is only valid when at least one Memory Utilization threshold and one CPU Utilization threshold is NOT set to -1"
+  allowed_values "Both CPU and Memory", "Either CPU or Memory"
+  default "Either CPU or Memory"
+end
+
+parameter "param_stats_threshold" do
+  type "string"
+  category "Statistics"
+  label "Threshold Statistic"
+  description "Statistic to use when determining if an instance is idle/underutilized."
+  allowed_values "Average", "Maximum"
+  default "Average"
+end
+
+parameter "param_stats_lookback" do
+  type "number"
+  category "Statistics"
+  label "Statistic Lookback Period"
+  description "How many days back to look at CPU and/or memory data for instances. This value cannot be set higher than 90 because Azure does not retain metrics for longer than 90 days."
   default 30
   min_value 1
   max_value 90
 end
 
-parameter "param_create_snapshot" do
-  type "string"
-  label "Create Final Snapshot"
-  description "Boolean for whether or not to take a final snapshot before deleting"
-  allowed_values "true", "false"
-  default "true"
-end
-
-parameter "param_exclusion_tag_key" do
-  category "User Inputs"
-  label "Exclusion Tag Key"
-  description "A list of tags used to excluded volumes from the incident."
-  type "list"
-  default []
-end
-
-parameter "param_azure_endpoint" do
-  type "string"
-  label "Azure Endpoint"
-  description "Azure Endpoint to access resources"
-  allowed_values "management.azure.com", "management.chinacloudapi.cn"
-  default "management.azure.com"
-end
-
 parameter "param_automatic_action" do
   type "list"
-  label "Automatic Action(s)"
-  description "When this value is set, this policy will automatically take the selected action(s)"
-  allowed_values ["Delete Unused Volumes"]
+  category "Actions"
+  label "Automatic Actions"
+  description "When this value is set, this policy will automatically take the selected action."
+  allowed_values ["Downsize Instances", "Delete Instances"]
   default []
-end
-
-parameter "param_log_to_cm_audit_entries" do
-  type "string"
-  label "Log to CM Audit Entries"
-  description "Boolean for whether or not to log any debugging information from actions to CM Audit Entries, this should be left set to No on Flexera EU"
-  allowed_values "Yes", "No"
-  default "No"
 end
 
 ###############################################################################
@@ -102,7 +157,7 @@ end
 
 credentials "auth_flexera" do
   schemes "oauth2"
-  label "flexera"
+  label "Flexera"
   description "Select Flexera One OAuth2 credentials"
   tags "provider=flexera"
 end
@@ -248,7 +303,7 @@ datasource "ds_child_policy_information" do
   result do
     encoding "json"
     # Select the published policy that is published by "support@flexera.com" and matches the name of the child policy template
-    collect jq(response, '.items[] | select(.name == "Azure Unused Volumes" and .created_by.email == "support@flexera.com")' ) do
+    collect jq(response, '.items[] | select(.name == "Azure Rightsize Compute Instances" and .created_by.email == "support@flexera.com")' ) do
       field "name", jmes_path(col_item, "name")
       field "href", jmes_path(col_item, "href")
       field "short_description", jmes_path(col_item, "short_description")
@@ -631,19 +686,40 @@ datasource "ds_child_incident_details" do
   end
 end
 
-datasource "ds_volume_cost_mapping_combined_incidents" do
-  run_script $js_ds_volume_cost_mapping_combined_incidents, $ds_child_incident_details
+datasource "ds_underutilized_instances_combined_incidents" do
+  run_script $js_ds_underutilized_instances_combined_incidents, $ds_child_incident_details
 end
 
-script "js_ds_volume_cost_mapping_combined_incidents", type: "javascript" do
+script "js_ds_underutilized_instances_combined_incidents", type: "javascript" do
   parameters "ds_child_incident_details"
   result "result"
   code <<-EOS
   result = []
   _.each(ds_child_incident_details, function(incident) {
     s = incident["summary"];
-    // If the incident summary contains "Unused Volumes Found" then include it in the filter result
-    if (s.indexOf("Unused Volumes Found") > -1) {
+    // If the incident summary contains "Azure Underutilized Virtual Machines Found" then include it in the filter result
+    if (s.indexOf("Azure Underutilized Virtual Machines Found") > -1) {
+      _.each(incident["violation_data"], function(violation) {
+        result.push(violation);
+      });
+    }
+  });
+EOS
+end
+
+datasource "ds_idle_instances_combined_incidents" do
+  run_script $js_ds_idle_instances_combined_incidents, $ds_child_incident_details
+end
+
+script "js_ds_idle_instances_combined_incidents", type: "javascript" do
+  parameters "ds_child_incident_details"
+  result "result"
+  code <<-EOS
+  result = []
+  _.each(ds_child_incident_details, function(incident) {
+    s = incident["summary"];
+    // If the incident summary contains "Azure Idle Virtual Machines Found" then include it in the filter result
+    if (s.indexOf("Azure Idle Virtual Machines Found") > -1) {
       _.each(incident["violation_data"], function(violation) {
         result.push(violation);
       });
@@ -659,9 +735,9 @@ end
 # Could also just have one incident and use meta_status to determine which escalation happens
 policy "policy_scheduled_report" do
   # Consolidated Incident Check(s)
-    # Consolidated incident for Unused Volumes Found
-  validate $ds_volume_cost_mapping_combined_incidents do
-    summary_template "Consolidated Incident: {{ len data }} Unused Volumes Found"
+    # Consolidated incident for Azure Underutilized Virtual Machines Found
+  validate $ds_underutilized_instances_combined_incidents do
+    summary_template "Consolidated Incident: {{ len data }} Azure Underutilized Virtual Machines Found"
     escalate $esc_email
     check eq(size(data), 0)
     export do
@@ -672,29 +748,35 @@ policy "policy_scheduled_report" do
       field "accountName" do
         label "Subscription Name"
       end
-      field "resourceID" do
-        label "Resource ID"
+      field "resourceGroup" do
+        label "Resource Group"
       end
       field "resourceName" do
         label "Resource Name"
       end
-      field "resourceType" do
-        label "Resource Type"
+      field "resourceID" do
+        label "Resource ID"
       end
-      field "lookbackPeriod" do
-        label "Lookback Period"
+      field "tags" do
+        label "Resource Tags"
+      end
+      field "recommendationDetails" do
+        label "Recommendation"
+      end
+      field "resourceType" do
+        label "Instance Size"
+      end
+      field "newResourceType" do
+        label "Recommended Instance Size"
+      end
+      field "resourceKind" do
+        label "Resource Kind"
       end
       field "region" do
         label "Region"
       end
-      field "resourceGroup" do
-        label "Resource Group"
-      end
-      field "size" do
-        label "Disk Size in GB"
-      end
-      field "tags" do
-        label "Tags"
+      field "osType" do
+        label "Operating System"
       end
       field "savings" do
         label "Estimated Monthly Savings"
@@ -702,11 +784,126 @@ policy "policy_scheduled_report" do
       field "savingsCurrency" do
         label "Savings Currency"
       end
-      field "id" do
-        label "Disk Id"
+      field "cpuMaximum" do
+        label "CPU Maximum %"
+      end
+      field "cpuMinimum" do
+        label "CPU Minimum %"
+      end
+      field "cpuAverage" do
+        label "CPU Average %"
+      end
+      field "memMaximum" do
+        label "Memory Maximum %"
+      end
+      field "memMinimum" do
+        label "Memory Minimum %"
+      end
+      field "memAverage" do
+        label "Memory Average %"
+      end
+      field "thresholdType" do
+        label "Threshold Statistic"
+      end
+      field "threshold" do
+        label "CPU Threshold"
+      end
+      field "memoryThreshold" do
+        label "Memory Threshold"
+      end
+      field "lookbackPeriod" do
+        label "Look Back Period (Days)"
       end
       field "service" do
         label "Service"
+      end
+      field "id" do
+        label "ID"
+      end
+    end
+  end
+
+  # Consolidated incident for Azure Idle Virtual Machines Found
+  validate $ds_idle_instances_combined_incidents do
+    summary_template "Consolidated Incident: {{ len data }} Azure Idle Virtual Machines Found"
+    escalate $esc_email
+    check eq(size(data), 0)
+    export do
+      resource_level true
+      field "accountID" do
+        label "Subscription ID"
+      end
+      field "accountName" do
+        label "Subscription Name"
+      end
+      field "resourceGroup" do
+        label "Resource Group"
+      end
+      field "resourceName" do
+        label "Resource Name"
+      end
+      field "resourceID" do
+        label "Resource ID"
+      end
+      field "tags" do
+        label "Resource Tags"
+      end
+      field "recommendationDetails" do
+        label "Recommendation"
+      end
+      field "resourceType" do
+        label "Instance Size"
+      end
+      field "resourceKind" do
+        label "Resource Kind"
+      end
+      field "region" do
+        label "Region"
+      end
+      field "osType" do
+        label "Operating System"
+      end
+      field "savings" do
+        label "Estimated Monthly Savings"
+      end
+      field "savingsCurrency" do
+        label "Savings Currency"
+      end
+      field "cpuMaximum" do
+        label "CPU Maximum %"
+      end
+      field "cpuMinimum" do
+        label "CPU Minimum %"
+      end
+      field "cpuAverage" do
+        label "CPU Average %"
+      end
+      field "memMaximum" do
+        label "Memory Maximum %"
+      end
+      field "memMinimum" do
+        label "Memory Minimum %"
+      end
+      field "memAverage" do
+        label "Memory Average %"
+      end
+      field "thresholdType" do
+        label "Threshold Statistic"
+      end
+      field "threshold" do
+        label "CPU Threshold"
+      end
+      field "memoryThreshold" do
+        label "Memory Threshold"
+      end
+      field "lookbackPeriod" do
+        label "Look Back Period (Days)"
+      end
+      field "service" do
+        label "Service"
+      end
+      field "id" do
+        label "ID"
       end
     end
   end

@@ -1,5 +1,11 @@
 # Changelog
 
+## v5.0
+
+- Renamed Subscription List parameter for consistency and accuracy
+- Added logic required for "Meta Policy" use-cases
+- Fixed issue with incident not properly including messaging
+
 ## v4.7
 
 - Fixed an issue causing some incidents to raise an error instead of populating correctly
