@@ -182,7 +182,7 @@ def compile_meta_parent_policy(file_path)
     exit(1)
   end
   parent_pt = File.open(parent_pt_path, "rb").read
-  # Copy the parent_pt to output_pt so we canate it safely
+  # Copy the parent_pt to output_pt so we can manipulate it safely
   output_pt = parent_pt
   output_pt_path = File.basename(file_path).split(".")[0] + "_meta_parent.pt"
   # Replace __PLACEHOLDER_FOR_CHILD_POLICY_NAME__ with the name of the child policy
@@ -191,7 +191,7 @@ def compile_meta_parent_policy(file_path)
   # Attempt to identify the URL to the child policy template file on github using the file_path provided
   # This would only work if the pt file is located under the `policy_templates` repo directory
   # If it is not, then the URL will be incorrect
-  pt_path_expanded = File.expand_path(file_path) # Get full pat manipulh to the pt file provided
+  pt_path_expanded = File.expand_path(file_path) # Get full path to the pt file provided
   pt_path_repo_file = pt_path_expanded.gsub(/^.*policy_templates\//, "") # Get the path to the pt file relative to the policy_templates directory
   pt_path_repo_dir = pt_path_repo_file.split("/")[0..-2].join("/") # Get the path to the directory containing the child pt file
   github_url = "https://github.com/flexera-public/policy_templates/tree/master/#{pt_path_repo_dir}" # Build the github URL
