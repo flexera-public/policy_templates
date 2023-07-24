@@ -478,22 +478,20 @@ script "js_ip_cost_mapping", type:"javascript" do
   EOS
 end
 
-###############################################################################
-# Escalations
-###############################################################################
 
-escalation "send_email_report" do
-  automatic true
-  label "Send Email"
-  description "Send incident email"
-  email $param_email
+datasource "ds_only_instances" do
+  run_script $js_only_instances, $ds_ip_cost_mapping
 end
 
-escalation "delete_unused_ip_addresses" do
-  automatic contains($param_automatic_action, "Delete Unused IP Addresses")
-  label "Delete Resources"
-  description "Delete selected unused IP addresses"
-  run "delete_ip_addresses", data, $param_azure_endpoint, rs_optima_host
+script "js_only_instances", type: "javascript" do
+  parameters "arg"
+  result "results"
+  code <<-EOS
+    results = arg.ip_list
+    if (results && results.length) {
+      results[0].message = arg.message
+    }
+  EOS
 end
 
 ###############################################################################
@@ -509,8 +507,8 @@ policy "pol_unused_ip_addresses" do
 EOS
     # Policy check fails and incident is created only if data is not empty and the Parent Policy has not been terminated
     check logic_or($ds_parent_policy_terminated, eq(size(data), 0))
-    escalate $send_email_report
-    escalate $delete_unused_ip_addresses
+    escalate $esc_email
+    escalate $esc_delete_unused_ip_addresses
     export do
       resource_level true
       field "accountID" do
@@ -559,6 +557,24 @@ EOS
       end
     end
   end
+end
+
+###############################################################################
+# Escalations
+###############################################################################
+
+escalation "esc_email" do
+  automatic true
+  label "Send Email"
+  description "Send incident email"
+  email $param_email
+end
+
+escalation "esc_delete_unused_ip_addresses" do
+  automatic contains($param_automatic_action, "Delete Unused IP Addresses")
+  label "Delete Resources"
+  description "Delete selected unused IP addresses"
+  run "delete_ip_addresses", data, $param_azure_endpoint, rs_optima_host
 end
 
 ###############################################################################
