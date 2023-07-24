@@ -15,6 +15,7 @@ default_child_policy_template_files = [
   "../../cost/aws/unused_rds/unused_rds.pt",
   "../../cost/aws/unused_volumes/aws_delete_unused_volumes.pt",
   "../../compliance/aws/long_stopped_instances/aws_long_stopped_instances.pt",
+  "../../compliance/aws/untagged_resources/aws_untagged_resources.pt",
   # Azure Policy Templates
   "../../cost/azure/unused_volumes/azure_unused_volumes.pt",
 ]
