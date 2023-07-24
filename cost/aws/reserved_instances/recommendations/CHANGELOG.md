@@ -1,5 +1,13 @@
 # Changelog
 
+## v3.0
+
+- Policy now automatically converts savings from USD to local currency when appropriate
+- Several parameters altered to be more descriptive and intuitive to use
+- Added additional context to incident description
+- Normalized incident export to be consistent with other policies
+- Streamlined code for better readability and faster execution
+
 ## v2.19
 
 - Changed internal names of several incident fields to ensure that they are properly scraped for dashboards.
