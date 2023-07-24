@@ -5,7 +5,7 @@ short_description "A policy that sends email notifications when AWS RI Recommend
 long_description ""
 severity "medium"
 category "Cost"
-default_frequency "daily"
+default_frequency "weekly"
 info(
   version: "3.0",
   provider: "AWS",
@@ -20,6 +20,7 @@ info(
 
 parameter "param_email" do
   type "list"
+  category "Policy Settings"
   label "Email addresses to notify"
   description "Email addresses of the recipients you wish to notify when new incidents are created."
   default []
@@ -27,15 +28,42 @@ end
 
 parameter "param_aws_account_number" do
   type "string"
+  category "Policy Settings"
   label "Account Number"
   description "The account number for AWS STS Cross Account Roles."
   default ""
 end
 
+parameter "param_min_savings" do
+  type "number"
+  category "Policy Settings"
+  label "Minimum Savings Threshold"
+  description "Specify the minimum estimated monthly savings that should result in a recommendation"
+  default 100
+  min_value 0
+end
+
+parameter "param_currency_conversion" do
+  type "string"
+  category "Currency"
+  label "Currency Conversion"
+  description "Specify whether to convert monetary values to local currency or to leave them as USD with the option to set the exchange rate manually or have it obtained automatically. Has no effect if the local currency is USD."
+  default "Convert to Local Currency Automatically"
+  allowed_values "Convert to Local Currency Automatically", "Specify an Exchange Rate", "Leave as USD"
+end
+
+parameter "param_currency_exchange_rate" do
+  type "number"
+  category "Currency"
+  label "Exchange Rate"
+  description "The exchange rate to use for currency conversion from USD to local currency. Only applicable if 'Specify an Exchange Rate' is selected."
+  default 1
+end
+
 parameter "param_days" do
   type "string"
+  category "Reservation Settings"
   label "Look Back Period"
-  category "RI"
   description "Number of days of prior usage to analyze."
   default "Last 7 Days"
   allowed_values "Last 7 Days", "Last 30 Days", "Last 60 Days"
@@ -43,8 +71,8 @@ end
 
 parameter "param_service" do
   type "list"
+  category "Reservation Settings"
   label "Service"
-  category "RI"
   description "AWS Services for which to scan for RI Recommendations. Leave blank to scan all services."
   default []
   allowed_values ["ElastiCache", "Elastic Compute Cloud (EC2)", "Elasticsearch Service (ES)", "Redshift", "Relational Database Service (RDS)"]
@@ -52,8 +80,8 @@ end
 
 parameter "param_service_spec" do
   type "string"
+  category "Reservation Settings"
   label "EC2 Specification"
-  category "RI"
   description "EC2 RI type. This parameter only matters for EC2 recommendations."
   default "Standard"
   allowed_values "Standard", "Convertible"
@@ -61,8 +89,8 @@ end
 
 parameter "param_scope" do
   type "string"
+  category "Reservation Settings"
   label "Account Scope"
-  category "RI"
   description "The account scope that you want your recommendations for."
   default "Payer"
   allowed_values "Payer", "Linked"
@@ -70,8 +98,8 @@ end
 
 parameter "param_term" do
   type "string"
+  category "Reservation Settings"
   label "RI Term"
-  category "RI"
   description "Length of RI term"
   default "Any"
   allowed_values "Any", "1 Year", "3 Year"
@@ -79,20 +107,11 @@ end
 
 parameter "param_payment_option" do
   type "string"
+  category "Reservation Settings"
   label "Payment Option"
-  category "RI"
   description "RI purchase option. Leave blank to include all RI purchase options."
   default ""
-  allowed_values "No Upfront", "Partial Upfront", "All Upfront", "Light Utilization", "Medium Utilization", "Heavy Utilization"
-end
-
-parameter "param_min_savings" do
-  type "number"
-  label "Minimum Savings Threshold"
-  category "RI"
-  description "Specify the minimum estimated monthly savings that should result in a recommendation"
-  default 100
-  min_value 0
+  allowed_values "", "No Upfront", "Partial Upfront", "All Upfront", "Light Utilization", "Medium Utilization", "Heavy Utilization"
 end
 
 ###############################################################################
@@ -167,18 +186,20 @@ datasource "ds_currency_code" do
 end
 
 datasource "ds_currency_target" do
-  run_script $js_currency_target, $ds_currency_reference, $ds_currency_code
+  run_script $js_currency_target, $ds_currency_reference, $ds_currency_code, $param_currency_conversion
 end
 
 script "js_currency_target", type:"javascript" do
-  parameters "ds_currency_reference", "ds_currency_code"
+  parameters "ds_currency_reference", "ds_currency_code", "param_currency_conversion"
   result "result"
   code <<-EOS
   // Default to USD if currency is not found
   result = ds_currency_reference['USD']
 
-  if (ds_currency_code['value'] != undefined && ds_currency_reference[ds_currency_code['value']] != undefined) {
-    result = ds_currency_reference[ds_currency_code['value']]
+  if (param_currency_conversion != "Leave as USD") {
+    if (ds_currency_code['value'] != undefined && ds_currency_reference[ds_currency_code['value']] != undefined) {
+      result = ds_currency_reference[ds_currency_code['value']]
+    }
   }
 EOS
 end
@@ -453,11 +474,11 @@ EOS
 end
 
 datasource "ds_ri_normalization" do
-  run_script $js_ri_normalization, $ds_ri_recommendations, $ds_applied_policy, $ds_aws_account, $ds_currency, $param_days, $param_service, $param_service_spec, $param_scope, $param_term, $param_payment_option, $param_min_savings
+  run_script $js_ri_normalization, $ds_ri_recommendations, $ds_applied_policy, $ds_aws_account, $ds_currency, $param_days, $param_service, $param_service_spec, $param_scope, $param_term, $param_payment_option, $param_min_savings, $param_currency_conversion, $param_currency_exchange_rate
 end
 
 script "js_ri_normalization", type: "javascript" do
-  parameters "ds_ri_recommendations", "ds_applied_policy", "ds_aws_account", "ds_currency", "param_days", "param_service", "param_service_spec", "param_scope", "param_term", "param_payment_option", "param_min_savings"
+  parameters "ds_ri_recommendations", "ds_applied_policy", "ds_aws_account", "ds_currency", "param_days", "param_service", "param_service_spec", "param_scope", "param_term", "param_payment_option", "param_min_savings", "param_currency_conversion", "param_currency_exchange_rate"
   result "result"
   code <<-'EOS'
   // Used for formatting numbers to look pretty
@@ -481,12 +502,18 @@ script "js_ri_normalization", type: "javascript" do
   result = []
   total_savings = 0.0
 
+  exchange_rate = ds_currency['exchange_rate']
+
+  if (param_currency_conversion == "Specify an Exchange Rate") {
+    exchange_rate = param_currency_exchange_rate
+  }
+
   _.each(ds_ri_recommendations, function(item) {
     term = item["termInYears"].toString() + " year"
     if (item["termInYears"] > 1) { term += "s" }
 
     _.each(item["recommendationDetails"], function(recommendation) {
-      total_savings += recommendation["estimatedMonthlySavingsAmount"]
+      total_savings += recommendation["estimatedMonthlySavingsAmount"] * exchange_rate
 
       // Set blank values for fields where the value is N/A for the recommendation in question
       averageNumberOfInstancesUsedPerHour = Math.round(recommendation["averageNumberOfInstancesUsedPerHour"] * 100) / 100
@@ -510,11 +537,11 @@ script "js_ri_normalization", type: "javascript" do
       // Calculate values while including currency calculation when needed
       averageUtilization = Math.round(recommendation["averageUtilization"] * 100) / 100
       estimatedBreakEvenInMonths = Math.round(recommendation["estimatedBreakEvenInMonths"] * 100) / 100
-      estimatedMonthlyOnDemandCost = Math.round(recommendation["estimatedMonthlyOnDemandCost"] * ds_currency['exchange_rate'] * 100) / 100
-      estimatedMonthlySavingsAmount = Math.round(recommendation["estimatedMonthlySavingsAmount"] * ds_currency['exchange_rate'] * 100) / 100
+      estimatedMonthlyOnDemandCost = Math.round(recommendation["estimatedMonthlyOnDemandCost"] * exchange_rate * 100) / 100
+      estimatedMonthlySavingsAmount = Math.round(recommendation["estimatedMonthlySavingsAmount"] * exchange_rate * 100) / 100
       estimatedMonthlySavingsPercentage = Math.round(recommendation["estimatedMonthlySavingsPercentage"] * 100) / 100
-      estimatedReservationCostForLookbackPeriod = Math.round(recommendation["estimatedReservationCostForLookbackPeriod"] * ds_currency['exchange_rate']) / 100
-      recurringStandardMonthlyCost = Math.round(recommendation["recurringStandardMonthlyCost"] * ds_currency['exchange_rate'] * 100) / 100
+      estimatedReservationCostForLookbackPeriod = Math.round(recommendation["estimatedReservationCostForLookbackPeriod"] * exchange_rate) / 100
+      recurringStandardMonthlyCost = Math.round(recommendation["recurringStandardMonthlyCost"] * exchange_rate * 100) / 100
       upfrontCost = Math.round(recommendation["upfrontCost"] * 100) / 100
 
       // Set misc values
@@ -570,6 +597,22 @@ script "js_ri_normalization", type: "javascript" do
     })
   })
 
+  // Messaging for currency conversion
+  conversion_message = ""
+
+  if (ds_currency['code'] != 'USD') {
+    exchange_message = "the most recent monthly exchange rate"
+
+    if (param_currency_conversion == "Specify an Exchange Rate") {
+      exchange_message = "the user-provided exchange rate"
+    }
+
+    conversion_message = [
+      "Savings values were converted from USD to ", ds_currency['code'],
+      " using ", exchange_message, " of ", exchange_rate, ".\n\n"
+    ].join('')
+  }
+
   services = "All Services"
   if (param_service.length > 0) { services = param_service.join(', ') }
 
@@ -579,6 +622,9 @@ script "js_ri_normalization", type: "javascript" do
     ec2_spec = "- EC2 Specification: " + param_service_spec + "\n"
   }
 
+  payment_option_message = "All"
+  if (param_payment_option != "") { payment_option_message = param_payment_option }
+
   message = [
     "The following settings were used when generating recommendations:\n",
     "- AWS Services: ", services, "\n",
@@ -586,7 +632,7 @@ script "js_ri_normalization", type: "javascript" do
     "- Account Scope: ", param_scope, "\n",
     "- Term: ", param_term, "\n",
     "- Look Back Period: ", param_days, "\n",
-    "- Payment Option: ", param_payment_option, "\n",
+    "- Payment Option: ", payment_option_message, "\n",
     "- Minimum Savings Threshold: ", param_min_savings, "\n\n",
   ].join('')
 
@@ -598,7 +644,7 @@ script "js_ri_normalization", type: "javascript" do
 
   result[0]['policy_name'] = ds_applied_policy['name']
   result[0]['total_savings'] = ds_currency['symbol'] + ' ' + formatNumber(parseFloat(total_savings).toFixed(2), ds_currency['separator'])
-  result[0]['message'] = message + disclaimer + empty_fields
+  result[0]['message'] = conversion_message + message + disclaimer + empty_fields
 EOS
 end
 
