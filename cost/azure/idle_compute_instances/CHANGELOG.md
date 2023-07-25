@@ -1,5 +1,10 @@
 # Changelog
 
+## v5.0
+
+- Renamed Subscription List parameter for consistency and accuracy
+- Added logic required for "Meta Policy" use-cases
+
 ## v4.8
 
 - Changed internal names of several incident fields to ensure that they are properly scraped for dashboards.

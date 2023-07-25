@@ -13,6 +13,9 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Auto
   - `cloudwatch:GetMetricStatistics`
   - `cloudwatch:GetMetricData`
   - `cloudwatch:ListMetrics`
+  - `rds:DescribeDBInstances`
+  - `rds:ListTagsForResource`
+  - `sts:GetCallerIdentity`
 
   Example IAM Permission Policy:
 
@@ -27,6 +30,9 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Auto
                   "cloudwatch:GetMetricStatistics",
                   "cloudwatch:GetMetricData",
                   "cloudwatch:ListMetrics",
+                  "rds:DescribeDBInstances",
+                  "rds:ListTagsForResource",
+                  "sts:GetCallerIdentity"
               ],
               "Resource": "*"
           }

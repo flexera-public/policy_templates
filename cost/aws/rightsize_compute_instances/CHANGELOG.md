@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.4
+
+- Incident results are grouped into separate datasources to improve meta parent policy consolidated incidents
+
 ## v3.3
 
 - Added `Resource Name` incident field

@@ -7,7 +7,7 @@ severity "low"
 category "Cost"
 default_frequency "weekly"
 info(
-  version: "3.3",
+  version: "3.4",
   provider: "AWS",
   service: "Compute",
   policy_set: "Rightsize Compute Instances",
@@ -991,12 +991,44 @@ script "js_get_idle_and_underutil_instances", type:"javascript" do
   EOS
 end
 
+# Put the different incident types into different datasources
+# This makes it easier to check each and compile meta parent policies vs 1 combined datasource with all incidents
+datasource "ds_underutilized_instances" do
+  run_script $js_underutilized_instances, $ds_idle_and_underutil_instances
+end
+
+script "js_underutilized_instances", type: "javascript" do
+  parameters "ds_idle_and_underutil_instances"
+  result "result"
+  code <<-EOS
+  result = _.filter(ds_idle_and_underutil_instances, function(incident) {
+    s = incident["recommendationType"];
+    return _.contains([s],"Downsize")
+  })
+EOS
+end
+
+datasource "ds_idle_instances" do
+  run_script $js_idle_instances, $ds_idle_and_underutil_instances
+end
+
+script "js_idle_instances", type: "javascript" do
+  parameters "ds_idle_and_underutil_instances"
+  result "result"
+  code <<-EOS
+  result = _.filter(ds_idle_and_underutil_instances, function(incident) {
+    s = incident["recommendationType"];
+    return _.contains([s],"Terminate")
+  })
+EOS
+end
+
 ###############################################################################
 # Policy
 ###############################################################################
 
 policy "pol_utilization" do
-  validate_each $ds_idle_and_underutil_instances do
+  validate_each $ds_underutilized_instances do
     summary_template <<-EOS
     {{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ with index data 0 }}{{ .summaryData.underutilInstanceCount }}{{ end }} AWS underutilized compute instances found
         EOS
@@ -1126,7 +1158,7 @@ policy "pol_utilization" do
       end
     end
   end
-  validate_each $ds_idle_and_underutil_instances do
+  validate_each $ds_idle_instances do
     summary_template <<-EOS
     {{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ with index data 0 }}{{ .summaryData.idleInstanceCount }}{{end}} AWS idle compute instances found
     EOS

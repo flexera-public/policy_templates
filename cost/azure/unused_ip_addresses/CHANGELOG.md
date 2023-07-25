@@ -1,6 +1,6 @@
 # Changelog
 
-## v5.0
+## v6.0
 
 - Several parameters altered to be more descriptive and human-readable
 - Removed deprecated "Log to CM Audit Entries" parameter
@@ -12,6 +12,16 @@
 - Added additional fields to incident export to facilitate scraping for dashboards
 - Policy no longer raises new escalations if savings data changed but nothing else has
 - Streamlined code for better readability and faster execution
+
+## v5.0
+
+- Renamed Subscription List parameter for consistency and accuracy
+- Added logic required for "Meta Policy" use-cases
+- Fixed issue with incident not properly including messaging
+
+## v4.7
+
+- Fixed an issue causing some incidents to raise an error instead of populating correctly
 
 ## v4.6
 
