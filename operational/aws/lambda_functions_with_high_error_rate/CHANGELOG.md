@@ -3,7 +3,7 @@
 ## v4.0
 
 - Added logic required for "Meta Policy" use-cases
-- Updated template and readme to reflect addition of `auth_flexera`
+- Flexera credential now required to facilitate meta policy use cases.
 
 ## v3.0
 
