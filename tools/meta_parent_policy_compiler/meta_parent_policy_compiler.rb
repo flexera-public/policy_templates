@@ -15,6 +15,7 @@ default_child_policy_template_files = [
   "../../cost/aws/unused_rds/unused_rds.pt",
   "../../cost/aws/unused_volumes/aws_delete_unused_volumes.pt",
   "../../compliance/aws/long_stopped_instances/aws_long_stopped_instances.pt",
+  "../../operational/aws/lambda_functions_with_high_error_rate/lambda_functions_with_high_error_rate.pt",
   # Azure Policy Templates
   "../../cost/azure/idle_compute_instances/azure_idle_compute_instances.pt",
   "../../cost/azure/old_snapshots/azure_delete_old_snapshots.pt",
