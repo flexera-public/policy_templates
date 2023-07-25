@@ -2,7 +2,7 @@
 
 ## 6.0
 
-- Added parameter to specify far back to check instances for activity
+- Added parameter to specify how far back to check instances for activity
 - Several parameters altered to be more descriptive and human-readable
 - Removed unnecessary "CloudWatch API Wait Time" parameter
 - Added ability to only report recommendations that meet a minimum savings threshold
