@@ -6,6 +6,7 @@ require "json"
 # More info at https://github.com/flexera-public/policy_templates/blob/master/README_META_POLICIES.md
 default_child_policy_template_files = [
   # AWS Policy Templates
+  "../../compliance/aws/instances_without_fnm_agent/aws_instances_not_running_flexnet_inventory_agent.pt"
   "../../cost/aws/idle_compute_instances/idle_compute_instances.pt",
   "../../cost/aws/object_storage_optimization/aws_object_storage_optimization.pt",
   "../../cost/aws/old_snapshots/aws_delete_old_snapshots.pt",
@@ -17,6 +18,7 @@ default_child_policy_template_files = [
   "../../compliance/aws/long_stopped_instances/aws_long_stopped_instances.pt",
   "../../operational/aws/lambda_functions_with_high_error_rate/lambda_functions_with_high_error_rate.pt",
   # Azure Policy Templates
+  "../../compliance/azure/instances_without_fnm_agent/azure_instances_not_running_flexnet_inventory_agent.pt"
   "../../cost/azure/idle_compute_instances/azure_idle_compute_instances.pt",
   "../../cost/azure/old_snapshots/azure_delete_old_snapshots.pt",
   "../../cost/azure/rightsize_compute_instances/azure_compute_rightsizing.pt",
