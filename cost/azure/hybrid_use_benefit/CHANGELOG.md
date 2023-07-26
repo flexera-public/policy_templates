@@ -3,9 +3,8 @@
 ## v3.0
 
 - Added pricing support from azure retail API
-- Added region table to normalize subscription locations to those in the pricing file
-- Modified script block that checked to see if license type windows_server
-- Added monthly savings based on pricing files unitprice and ahubprice
+- Updated readme.md file to reflect new functionality
+- Added monthly savings based on pricing files values unitprice and ahubprice
 - Added currency support for savings estimates
 
 ## v2.12
