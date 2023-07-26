@@ -7,7 +7,7 @@ severity "low"
 category "Cost"
 default_frequency "daily"
 info(
-  version: "5.0",
+  version: "6.0",
   provider: "Azure",
   service: "Storage",
   policy_set: "Unused Volumes",
@@ -20,12 +20,13 @@ info(
 
 parameter "param_email" do
   type "list"
+  category "Policy Settings"
   label "Email addresses"
-  description "A list of email addresses to notify"
+  description "A list of email addresses to notify."
   default []
 end
 
-parameter "param_unattached_days" do
+parameter "param_unused_days" do
   type "number"
   label "Unused Age"
   description "Number of days the volume is unused"
@@ -293,7 +294,7 @@ end
 datasource "ds_azure_log_activity" do
   iterate $ds_filter_disks
   request do
-    run_script $js_azure_log_activity, val(iter_item,"subscriptionID"), val(iter_item, "disk_id"), $param_unattached_days, $param_azure_endpoint
+    run_script $js_azure_log_activity, val(iter_item,"subscriptionID"), val(iter_item, "disk_id"), $param_unused_days, $param_azure_endpoint
   end
   result do
     encoding "json"
@@ -305,14 +306,14 @@ datasource "ds_azure_log_activity" do
 end
 
 script "js_azure_log_activity", type: "javascript" do
-  parameters "subscriptionID", "disk_id", "param_unattached_days", "param_azure_endpoint"
+  parameters "subscriptionID", "disk_id", "param_unused_days", "param_azure_endpoint"
   result "request"
   code <<-EOS
   end_date = new Date()
   end_date = end_date.toISOString().split('T')[0] + 'T23:59:59Z'
 
   start_date = new Date()
-  start_date.setDate(start_date.getDate() - parseInt(param_unattached_days))
+  start_date.setDate(start_date.getDate() - parseInt(param_unused_days))
   start_date = start_date.toISOString().split('T')[0] + 'T00:00:00Z'
 
   filter = [
@@ -404,11 +405,11 @@ EOS
 end
 
 datasource "ds_filter_activities" do
-  run_script $js_filter_activities, $ds_filter_disks, $ds_azure_log_activity, $param_unattached_days
+  run_script $js_filter_activities, $ds_filter_disks, $ds_azure_log_activity, $param_unused_days
 end
 
 script "js_filter_activities", type: "javascript" do
-  parameters "ds_filter_disks", "ds_azure_log_activity", "param_unattached_days"
+  parameters "ds_filter_disks", "ds_azure_log_activity", "param_unused_days"
   result "result"
   code <<-EOS
   result = []
@@ -428,7 +429,7 @@ script "js_filter_activities", type: "javascript" do
 
     expectedDate = new Date()
     createdTime = new Date(disk['timeCreated'])
-    expectedDate.setDate(expectedDate.getDate() - parseInt(param_unattached_days))
+    expectedDate.setDate(expectedDate.getDate() - parseInt(param_unused_days))
 
     if (inactive_disk && expectedDate.getTime() >= createdTime.getTime()) {
       result.push({
@@ -451,11 +452,11 @@ EOS
 end
 
 datasource "ds_volume_cost_mapping" do
-  run_script $js_volume_cost_mapping, $ds_filter_activities, $ds_volume_costs, $ds_currency_code, $ds_currency_reference, $ds_billing_centers, $param_unattached_days
+  run_script $js_volume_cost_mapping, $ds_filter_activities, $ds_volume_costs, $ds_currency_code, $ds_currency_reference, $ds_billing_centers, $param_unused_days
 end
 
 script "js_volume_cost_mapping", type:"javascript" do
-  parameters "ds_filter_activities", "ds_volume_costs", "ds_currency_code", "ds_currency_reference", "ds_billing_centers", "param_unattached_days"
+  parameters "ds_filter_activities", "ds_volume_costs", "ds_currency_code", "ds_currency_reference", "ds_billing_centers", "param_unused_days"
   result "result"
   code <<-EOS
   // Output will contain both a list of instances and a general status message
@@ -545,7 +546,7 @@ script "js_volume_cost_mapping", type:"javascript" do
         service: volume['service'],
         savings: parseFloat(monthly_savings).toFixed(3),
         savingsCurrency: cur,
-        lookbackPeriod: param_unattached_days
+        lookbackPeriod: param_unused_days
       })
     })
 
@@ -577,7 +578,7 @@ policy "pol_azure_unattached_volumes" do
   validate $ds_volume_cost_mapping do
     summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data.instances }} Unused Volumes Found"
     detail_template <<-EOS
-The following {{ len data.instances }} unused volumes, for Account: {{ rs_project_name }} (ID: {{ rs_project_id }}), have exceeded the specified age of: {{ parameters.param_unattached_days }} days old.\n
+The following {{ len data.instances }} unused volumes, for Account: {{ rs_project_name }} (ID: {{ rs_project_id }}), have exceeded the specified age of: {{ parameters.param_unused_days }} days old.\n
 {{data.message}}
 EOS
     escalate $esc_email
