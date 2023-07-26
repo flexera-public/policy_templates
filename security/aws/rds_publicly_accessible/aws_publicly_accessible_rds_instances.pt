@@ -6,7 +6,7 @@ long_description ""
 category "Security"
 severity "high"
 info(
-  version: "3.0",
+  version: "4.0",
   provider: "AWS",
   service: "RDS",
   policy_set: "Public Database Access"
@@ -61,13 +61,21 @@ end
 # Authentication
 ###############################################################################
 
-#authenticate with AWS
+#AUTHENTICATE WITH AWS
 credentials "auth_aws" do
   schemes "aws","aws_sts"
   label "AWS"
   description "Select the AWS Credential from the list"
   tags "provider=aws"
   aws_account_number $param_aws_account_number
+end
+
+#AUTHENTICATE WITH FLEXERA
+credentials "auth_flexera" do
+  schemes "oauth2"
+  label "Flexera"
+  description "Select Flexera One OAuth2 credentials"
+  tags "provider=flexera"
 end
 
 ###############################################################################
@@ -100,6 +108,9 @@ datasource "ds_regions_list" do
     query "Filter.1.Name", "opt-in-status"
     query "Filter.1.Value.1", "opt-in-not-required"
     query "Filter.1.Value.2", "opted-in"
+    # Header X-Meta-Flexera has no affect on datasource query, but is required for Meta Policies
+    # Forces `ds_is_deleted` datasource to run first during policy execution
+    header "Meta-Flexera", val($ds_is_deleted, "path")
   end
   result do
     encoding "xml"
@@ -537,6 +548,11 @@ define sys_log($subject, $detail) do
   end # End if debug is enabled
 end
 
+define skip_error_and_append($subject) do
+  $$errors << "Unexpected error for " + $subject + "\n  " + to_s($_error)
+  $_error_behavior = "skip"
+end
+
 ###############################################################################
 # Meta Policy [alpha]
 # Not intended to be modified or used by policy developers
@@ -626,9 +642,4 @@ script "js_check_deleted", type: "javascript" do
   code <<-EOS
   result = {"path":"/"}
   EOS
-end
-
-define skip_error_and_append($subject) do
-  $$errors << "Unexpected error for " + $subject + "\n  " + to_s($_error)
-  $_error_behavior = "skip"
 end
