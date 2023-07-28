@@ -4,31 +4,31 @@
 
 - Added `VM Age` incident field.
 - Added `Pricing Model` incident field.
-- Added `URL` incident field.
-- Added `Actual Storage Amount` incident field.
-- Added `Actual Storage Amount % Utilization` incident field.
-- Added `New Storage Amount` incident field.
-- Added `New Storage Amount % Utilization` incident field.
-- Added `Actual DTU` incident field.
-- Added `Actual DTU % Utilization` incident field.
-- Added `New DTU` incident field.
-- Added `New DTU % Utilization` incident field.
-- Added `Actual IOPs` incident field.
-- Added `Actual IOPs % Utilization` incident field.
-- Added `New IOPs` incident field.
-- Added `New IOPs % Utilization` incident field.
-- Added `Actual Virtual Memory` incident field.
-- Added `Actual Virtual Memory % Utilization` incident field.
-- Added `New Virtual Memory` incident field.
-- Added `New Virtual Memory % Utilization` incident field.
-- Added `Actual Virtual CPU` incident field.
-- Added `Actual Virtual CPU % Utilization` incident field.
-- Added `New Virtual CPU` incident field.
-- Added `New Virtual CPU % Utilization` incident field.
-- Added `Actual IOThroughput` incident field.
-- Added `Actual IOThroughput  % Utilization` incident field.
-- Added `New IOThroughput` incident field.
-- Added `New IOThroughput  % Utilization` incident field.
+- Added `System Details URL` incident field.
+- Added `Current Size` incident field.
+- Added `Current Size % Utilization` incident field.
+- Added `After Size` incident field.
+- Added `After Size % Utilization` incident field.
+- Added `Current DTU` incident field.
+- Added `Current DTU % Utilization` incident field.
+- Added `After DTU` incident field.
+- Added `After DTU % Utilization` incident field.
+- Added `Current IOPs` incident field.
+- Added `Current IOPs % Utilization` incident field.
+- Added `After IOPs` incident field.
+- Added `After IOPs % Utilization` incident field.
+- Added `Current Virtual Memory` incident field.
+- Added `Current Virtual Memory % Utilization` incident field.
+- Added `After Virtual Memory` incident field.
+- Added `After Virtual Memory % Utilization` incident field.
+- Added `Current Virtual CPU` incident field.
+- Added `Current Virtual CPU % Utilization` incident field.
+- Added `After Virtual CPU` incident field.
+- Added `After Virtual CPU % Utilization` incident field.
+- Added `Current IOThroughput` incident field.
+- Added `Current IOThroughput  % Utilization` incident field.
+- Added `After IOThroughput` incident field.
+- Added `After IOThroughput  % Utilization` incident field.
 
 ## v0.2
 
