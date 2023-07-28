@@ -12,7 +12,7 @@
 - Renamed `Created Time` incident field to `Action Created Time`.
 - Renamed `Unused Days` parameter to `Days Unattached`.
 - Changed internal names of several incident fields to ensure that they are properly scraped for dashboards.
-- Removed hardcoded host on business units path.
+- Turbonomic business units are now retrieved from `Turbonomic API Host endpoint` parameter instead of `sales1.demo.turbonomic.com` host.
 
 ## v0.4
 
