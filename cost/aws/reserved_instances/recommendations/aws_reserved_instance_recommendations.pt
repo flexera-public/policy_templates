@@ -65,7 +65,7 @@ parameter "param_days" do
   category "Reservation Settings"
   label "Look Back Period"
   description "Number of days of prior usage to analyze."
-  default "Last 7 Days"
+  default "Last 30 Days"
   allowed_values "Last 7 Days", "Last 30 Days", "Last 60 Days"
 end
 
@@ -73,16 +73,16 @@ parameter "param_service" do
   type "list"
   category "Reservation Settings"
   label "Service"
-  description "AWS Services for which to scan for RI Recommendations. Leave blank to scan all services."
-  default []
-  allowed_values ["ElastiCache", "Elastic Compute Cloud (EC2)", "Elasticsearch Service (ES)", "Redshift", "Relational Database Service (RDS)"]
+  description "AWS Services to scan for RI Recommendations."
+  default ["ElastiCache", "Elastic Compute Cloud (EC2)", "OpenSearch Service (ES)", "Redshift", "Relational Database Service (RDS)"]
+  allowed_values ["ElastiCache", "Elastic Compute Cloud (EC2)", "OpenSearch Service (ES)", "Redshift", "Relational Database Service (RDS)"]
 end
 
 parameter "param_service_spec" do
   type "string"
   category "Reservation Settings"
-  label "EC2 Specification"
-  description "EC2 RI type. This parameter only matters for EC2 recommendations."
+  label "EC2 Reservation Type"
+  description "The type of reservation recommendations to produce for EC2. Standard reservations are less flexible than convertible ones but provide a higher discount."
   default "Standard"
   allowed_values "Standard", "Convertible"
 end
@@ -101,7 +101,7 @@ parameter "param_term" do
   category "Reservation Settings"
   label "RI Term"
   description "Length of RI term to provide recommendations for."
-  default "Any"
+  default "1 Year"
   allowed_values "Any", "1 Year", "3 Year"
 end
 
@@ -349,7 +349,15 @@ script "js_ri_types", type: "javascript" do
       "Relational Database Service (RDS)"
     ]
   } else {
-    services = param_service
+    services = []
+
+    _.each(param_service, function(service) {
+      if (service == "OpenSearch Service (ES)") {
+        services.push("Elasticsearch Service (ES)")
+      } else {
+        services.push(service)
+      }
+    })
   }
 
   result = _.map(services, function(service) {
@@ -428,7 +436,7 @@ script "js_ri_recommendations", type: "javascript" do
     "Relational Database Service (RDS)": "Amazon Relational Database Service",
     "ElastiCache": "Amazon ElastiCache",
     "Redshift": "Amazon Redshift",
-    "Elasticsearch Service (ES)": "Amazon Elasticsearch Service"
+    "OpenSearch Service (ES)": "Amazon Elasticsearch Service"
   }
 
   term_table = {
