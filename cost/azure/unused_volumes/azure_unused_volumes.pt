@@ -5,7 +5,7 @@ short_description "Checks for unused volumes older than specified number of days
 long_description ""
 severity "low"
 category "Cost"
-default_frequency "daily"
+default_frequency "weekly"
 info(
   version: "6.0",
   provider: "Azure",
@@ -41,7 +41,7 @@ parameter "param_unused_days" do
   label "Days Unused"
   description "The number of days a volume needs to have no activity to be considered unused. This value cannot be set above 90 due to Azure only storing 90 days of log data. If this value is set to 0, all unattached volumes will be considered unused."
   default 30
-  min_value 1
+  min_value 0
   max_value 90
 end
 
@@ -119,7 +119,7 @@ end
 
 credentials "auth_flexera" do
   schemes "oauth2"
-  label "flexera"
+  label "Flexera"
   description "Select Flexera One OAuth2 credentials"
   tags "provider=flexera"
 end
@@ -290,7 +290,7 @@ EOS
 end
 
 datasource "ds_azure_disks" do
-  iterate $ds_filtered_subscriptions
+  iterate $ds_azure_subscriptions_filtered
   request do
     auth $auth_azure
     pagination $pagination_azure
@@ -319,7 +319,7 @@ datasource "ds_azure_disks" do
 end
 
 datasource "ds_azure_disks_tag_filtered" do
-  run_script $js_ip_addresses_tag_filtered, $ds_azure_disks, $param_exclusion_tags
+  run_script $js_azure_disks_tag_filtered, $ds_azure_disks, $param_exclusion_tags
 end
 
 script "js_azure_disks_tag_filtered", type: "javascript" do
@@ -385,7 +385,7 @@ datasource "ds_azure_logs" do
     run_script $js_azure_logs, val(iter_item, "subscriptionID"), val(iter_item, "id"), $param_azure_endpoint
   end
   result do
-    encoding "json" eventTimestamp
+    encoding "json"
     collect jmes_path(response, "value[*]") do
       field "eventTimestamp", jmes_path(col_item, "eventTimestamp")
       field "operationName", jmes_path(col_item, "operationName.localizedValue")
@@ -501,9 +501,9 @@ EOS
 end
 
 datasource "ds_volume_costs" do
-  iterate $ds_filtered_subscriptions
+  iterate $ds_azure_subscriptions_filtered
   request do
-    run_script $js_volume_costs, val(iter_item, "subscriptionID"), $ds_top_level_bcs, rs_org_id, rs_optima_host
+    run_script $js_volume_costs, val(iter_item, "id"), $ds_top_level_bcs, rs_org_id, rs_optima_host
   end
   result do
     encoding "json"
@@ -723,16 +723,17 @@ end
 ###############################################################################
 
 policy "pol_azure_unattached_volumes" do
-  validate $ds_volume_cost_mapping do
-    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data.instances }} Unused Volumes Found"
-    detail_template <<-EOS
-The following {{ len data.instances }} unused volumes, for Account: {{ rs_project_name }} (ID: {{ rs_project_id }}), have exceeded the specified age of: {{ parameters.param_unused_days }} days old.\n
-{{data.message}}
-EOS
+  validate_each $ds_volume_cost_mapping do
+    summary_template "{{ with index data 0 }}{{ .policy_name }}{{ end }}: {{ len data }} Azure Unused Volumes Found"
+    detail_template <<-'EOS'
+    **Potential Monthly Savings:** {{ with index data 0 }}{{ .total_savings }}{{ end }}
+
+    {{ with index data 0 }}{{ .message }}{{ end }}
+    EOS
     escalate $esc_email
     escalate $esc_delete_volumes
-    check logic_or($ds_parent_policy_terminated,    eq(size(val(data, "instances")), 0)    )
-    export "instances" do
+    check logic_or($ds_parent_policy_terminated, eq(val(item, "resourceID"), ""))
+    export do
       resource_level true
       field "accountID" do
         label "Subscription ID"
@@ -740,8 +741,8 @@ EOS
       field "accountName" do
         label "Subscription Name"
       end
-      field "resourceID" do
-        label "Resource ID"
+      field "resourceGroup" do
+        label "Resource Group"
       end
       field "resourceName" do
         label "Resource Name"
@@ -749,15 +750,17 @@ EOS
       field "resourceType" do
         label "Resource Type"
       end
-
+      field "recommendationDetails" do
+        label "Recommendation"
+      end
       field "region" do
         label "Region"
       end
-      field "resourceGroup" do
-        label "Resource Group"
-      end
       field "size" do
         label "Disk Size in GB"
+      end
+      field "timeCreated" do
+        label "Created At"
       end
       field "tags" do
         label "Tags"
@@ -773,6 +776,9 @@ EOS
       end
       field "lookbackPeriod" do
         label "Lookback Period"
+      end
+      field "resourceID" do
+        label "Resource ID"
       end
       field "id" do
         label "Disk Id"
@@ -797,15 +803,18 @@ escalation "esc_delete_volumes" do
   automatic contains($param_automatic_action, "Delete Unused Volumes")
   label "Delete unused volumes"
   description "Delete the unused volumes"
-  run "delete_unused_volumes", data, $param_create_snapshot, $param_log_to_cm_audit_entries, rs_optima_host
+  run "delete_unused_volumes", data, $param_create_snapshot, rs_optima_host
 end
 
 ###############################################################################
 # Cloud Workflow
 ###############################################################################
 
-define delete_unused_volumes($data, $param_create_snapshot,$param_log_to_cm_audit_entries, $$rs_optima_host) return $all_responses do
-  $$debug = $param_log_to_cm_audit_entries == "Yes"
+define delete_unused_volumes($data, $param_create_snapshot, $$rs_optima_host) return $all_responses do
+  # Change "No" to "Yes" to enable CWF debug logging
+  $log_to_cm_audit_entries == "No"
+
+  $$debug = $log_to_cm_audit_entries == "Yes"
   $status_code=''
   $all_responses = []
   foreach $item in $data do
