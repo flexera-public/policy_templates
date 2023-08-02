@@ -6,14 +6,14 @@ Analyzes all configured cloud bill connects and raises an incident for any in an
 
 ## Functional Details
 
-This policy collects all cloud bill connects, checks the state of each bill connect, and compares when the bill was downloaded to the policy execution time. If there is an error, or the processing time exceeds 24 hours for any cloud bill connects, an incident will be raised.
+This policy collects all cloud bill connects, checks the state of each bill connect, and compares when the bill was downloaded to the policy execution time. If there is an error, or the processing time exceeds a user-specified number of hours for any cloud bill connects, an incident will be raised.
 
 ## Input Parameters
 
 This policy has the following input parameters required when launching the policy.
 
 - *Email Addresses* - A list of email addresses to notify if bill processing errors are found.
-- *Hours Processing* - Number of hours between downloading and processing complete to be reported.
+- *Processing Time (Hours)* - Amount of time (hours) to consider a bill connect in an error state if it has failed to complete processing of a bill.
 
 ## Policy Actions
 
