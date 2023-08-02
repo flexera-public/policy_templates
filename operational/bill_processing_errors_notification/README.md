@@ -2,31 +2,38 @@
 
 ## What it does
 
-Collects all bill connects and raises an incident for any in an error state.
+Analyzes all configured cloud bill connects and raises an incident for any in an error state.
 
 ## Functional Details
 
-This policy collects all bill connects, checks the state of each bill connect, compares when the bill was downloaded versus the policy execution time. If there is an error or the processing time exceeds 24 hours, it will raise an incident
+This policy collects all cloud bill connects, checks the state of each bill connect, and compares when the bill was downloaded to the policy execution time. If there is an error, or the processing time exceeds 24 hours for any cloud bill connects, an incident will be raised.
 
 ## Input Parameters
 
 This policy has the following input parameters required when launching the policy.
 
-- *Email addresses of the recipients you wish to notify* - A list of email addresses to notify
-- *Hours Processing* - Number of hours between downloading and processing complete to be reported
+- *Email Addresses* - A list of email addresses to notify if bill processing errors are found.
+- *Hours Processing* - Number of hours between downloading and processing complete to be reported.
 
 ## Policy Actions
 
-The following policy actions are taken on any resources found to be out of compliance.
+The following policy actions are taken on any resources found to be out of compliance:
 
 - Send an email report
 
-## Required Permissions
+## Prerequisites
 
-This policy requires permissions to access Flexera Applied Policies resources.  Before applying this policy add the following roles to the user applying the policy.  The roles should be applied to all Accounts where the policy will run or the Organization. For more information on modifying roles visit the [Access Management](https://docs.flexera.com/flexera/EN/Administration/flexeraroles.htm#accessmanagement_1179969751_1147018)
+This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for authenticating to datasources -- in order to apply this policy you must have a Credential registered in the system that is compatible with this policy. If there are no Credentials listed when you apply the policy, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy. The information below should be consulted when creating the credential(s).
 
-- View policies
-- Manage Organization
+### Credential configuration
+
+For administrators [creating and managing credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) to use with this policy, the following information is needed:
+
+- [**Flexera Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) (*provider=flexera*) which has the following roles:
+  - View Policies
+  - Manage Organization
+
+The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) page in the docs has detailed instructions for setting up Credentials for the most common providers.
 
 ## Supported Clouds
 
