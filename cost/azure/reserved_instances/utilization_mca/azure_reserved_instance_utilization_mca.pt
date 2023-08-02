@@ -76,39 +76,6 @@ end
 # Datasources & Scripts
 ###############################################################################
 
-datasource "ds_billing_accounts" do
-  request do
-    auth $auth_azure
-    verb "GET"
-    host $param_azure_endpoint
-    path "/providers/Microsoft.Billing/billingAccounts"
-    query "api-version", "2019-10-01-preview"
-  end
-  result do
-    collect jq(response, '.value[]?') do
-      field "name", jq(col_item, ".name")
-    end
-  end
-end
-
-datasource "ds_billing_profiles" do
-  iterate $ds_billing_accounts
-  request do
-    auth $auth_azure
-    verb "GET"
-    host $param_azure_endpoint
-    path join(["/providers/Microsoft.Billing/billingAccounts/", val(iter_item, "name") , "/billingProfiles"])
-    query "api-version", "2019-10-01-preview"
-  end
-  result do
-    collect jq(response, '.value[]?') do
-      field "id", jq(col_item, ".id")
-      field "name", jq(col_item, ".name")
-      field "properties", jq(col_item, ".properties")
-    end
-  end
-end
-
 datasource "ds_revervation_all" do
   request do
     auth $auth_azure
@@ -158,7 +125,7 @@ script "js_get_reservations_below_utilization", type: "javascript" do
     
         if (utilizationValue < param_utilization) {
             reservation.reservationOrderId = reservation.id.replace("/providers/microsoft.capacity/reservationOrders/", "").replace("/reservations/" + reservation.reservationId, "");
-            reservation.utilizationDays = grain + " days";
+            reservation.lookBackPeriod = grain + " days";
             reservation.utilizationPercentage = utilizationValue;
     
             result.push(reservation);
@@ -173,7 +140,7 @@ end
 
 policy "pol_azure_active_reserved_instances" do
   validate $ds_reservations_below_utilization do
-    summary_template "Example of MCA"
+    summary_template "{{ len data }} Azure Reserved Instances below {{ parameters.param_utilization }}% of utilization - {{ parameters.param_lookback_period }}"
     escalate $esc_email
     check false
     export do
@@ -216,8 +183,8 @@ policy "pol_azure_active_reserved_instances" do
       field "billingPlan" do
         label "Reservation billing plan"
       end
-      field "utilizationDays" do
-        label "Utilization days"
+      field "lookBackPeriod" do
+        label "Look Back Period"
       end
       field "utilizationPercentage" do
         label "Utilization percentage"
