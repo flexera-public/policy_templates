@@ -21,6 +21,7 @@ info(
 parameter "param_turbonomic_endpoint" do
   type "string"
   label "Turbonomic endpoint"
+  default "sales1.demo.turbonomic.com"
 end
 
 parameter "param_provider" do
@@ -38,6 +39,7 @@ parameter "param_auth_cookie" do
   label "Authorization Cookie"
   no_echo true
   description "Valid authorization cookie."
+  default "JSESSIONID=node01kq0n8igbutki1j24rinvoby3f7401.node0"
 end
 
 parameter "param_email" do
@@ -83,6 +85,11 @@ datasource "ds_get_turbonomic_recommendations" do
       field "size", jmes_path(col_item, "virtualDisks[0].stats")
       field "savings", jmes_path(col_item, "stats[0].value")
       field "savingsCurrency", jmes_path(col_item, "stats[0].units")
+      field "uuid", jmes_path(col_item, "target.uuid")
+      field "lastVm", jmes_path(col_item, "target.aspects.virtualDisksAspect.virtualDisks[0].lastAttachedVm")
+      field "actionState", jmes_path(col_item, "actionState")
+      field "disruptiveness", jmes_path(col_item, "executionCharacteristics.disruptiveness")
+      field "reversibility", jmes_path(col_item, "executionCharacteristics.reversibility")
     end
   end
 end
@@ -102,7 +109,7 @@ datasource "ds_get_business_units" do
 end
 
 datasource "ds_filtered_turbonomic_recommendations" do
-  run_script $js_filtered_turbonomic_recommendations, $ds_get_turbonomic_recommendations, $ds_get_business_units, $param_provider
+  run_script $js_filtered_turbonomic_recommendations, $ds_get_turbonomic_recommendations, $ds_get_business_units, $param_provider, $param_turbonomic_endpoint
 end
 
 ###############################################################################
@@ -170,7 +177,7 @@ end
 
 script "js_filtered_turbonomic_recommendations", type: "javascript" do
   result "result"
-  parameters "ds_get_turbonomic_recommendations", "ds_get_business_units", "param_provider"
+  parameters "ds_get_turbonomic_recommendations", "ds_get_business_units", "param_provider", "param_turbonomic_host"
   code <<-EOS
     instances = []
     monthlySavings = 0.0
@@ -239,6 +246,7 @@ script "js_filtered_turbonomic_recommendations", type: "javascript" do
         }
         volume.savings = (Math.round(volume.savings * 730 * 1000) / 1000)
         monthlySavings = monthlySavings + volume.savings
+        volume.url = param_turbonomic_host + "/app/index.html#/view/main/action/" + volume.uuid
         instances.push(volume)
       }
     })
@@ -254,12 +262,177 @@ script "js_filtered_turbonomic_recommendations", type: "javascript" do
   EOS
 end
 
+datasource "ds_filtered_recommendations" do
+  run_script $js_only_recommendations, $ds_filtered_turbonomic_recommendations
+end
+
+script "js_only_recommendations", type: "javascript" do
+  parameters "arg"
+  result "results"
+  code <<-EOS
+    results = arg.instances
+  EOS
+end
+
+datasource "ds_get_statistics" do
+  iterate $ds_filtered_recommendations
+  request do
+    run_script $js_get_statistics, $param_turbonomic_endpoint, $param_auth_cookie, iter_item
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "[*]") do
+      field "epoch", jmes_path(col_item, "epoch")
+      field "statistics", jmes_path(col_item, "statistics")
+      field "uuid", val(iter_item, "uuid")
+    end
+  end
+end
+
+
+script "js_get_statistics", type: "javascript" do
+  result "request"
+  parameters "turbonomic_endpoint", "auth_cookie", "instance"
+  code <<-EOS
+    var startDate = new Date(Date.now())
+    var endDate = new Date(Date.now() + (9*60*60*1000))
+    request = {
+      verb: "POST",
+      host: turbonomic_endpoint,
+      path: "/api/v3/stats/" + instance.uuid
+      body_fields: {
+        "statistics":[
+          {
+            "name":"StorageAccess",
+            "groupBy":["key","percentile"]
+          },
+          {
+            "name":"StorageAmount",
+            "groupBy":["key"]
+          },
+          {
+            "name":"IOThroughput",
+            "groupBy":["key","percentile"]
+          }
+        ],
+        "startDate": startDate.getTime(),
+        "endDate": endDate.getTime()     
+      },
+      headers: {
+        "Content-Type": "application/json"
+        "Cookie": auth_cookie
+      }
+    }
+  EOS
+end
+
+datasource "ds_filtered_statistics" do
+  run_script $js_filtered_statistics, $ds_get_statistics, $ds_filtered_recommendations
+end
+
+script "js_filtered_statistics", type: "javascript" do
+  result "result"
+  parameters "ds_get_statistics", "ds_filtered_recommendations"
+  code <<-EOS
+  instances = []
+  _.each(ds_filtered_recommendations, function (instance, index) {
+    _.each(ds_get_statistics, function (stats) {
+      if (instance.uuid == stats.uuid) {
+        if (stats.epoch == "CURRENT") {
+          _.each(stats.statistics, function(statistic) {
+            if (statistic.name == "StorageAccess"){
+              _.each(statistic.filters, function(filter){
+                if (filter.value == "sold") {
+                  ds_filtered_recommendations[index].currentIopsCapacity = statistic.capacity.total
+                  _.each(statistic.histUtilizations, function(histUtilization) {
+                    if (histUtilization.type == "percentile") {
+                      ds_filtered_recommendations[index].currentIopsUtilization = (histUtilization.usage*100/histUtilization.capacity).toFixed(2)
+                    }
+                  })
+                }
+              })         
+            }
+            if (statistic.name == "StorageAmount"){
+              _.each(statistic.filters, function(filter){
+                if (filter.value == "sold") {
+                  ds_filtered_recommendations[index].currentSizeCapacity = statistic.capacity.total/1024
+                  _.each(statistic.histUtilizations, function(histUtilization) {
+                    if (histUtilization.type == "percentile") {
+                      ds_filtered_recommendations[index].currentSizeUtilization = (histUtilization.usage*100/histUtilization.capacity).toFixed(2)
+                    }
+                  })
+                }
+              })         
+            }
+            if (statistic.name == "IOThroughput"){
+              _.each(statistic.filters, function(filter){
+                if (filter.value == "sold") {
+                  ds_filtered_recommendations[index].currentThroughputCapacity = statistic.capacity.total*0.000125
+                  _.each(statistic.histUtilizations, function(histUtilization) {
+                    if (histUtilization.type == "percentile") {
+                      ds_filtered_recommendations[index].currentThroughputUtilization = (histUtilization.usage*100/histUtilization.capacity).toFixed(2)
+                    }
+                  })
+                }
+              })         
+            }
+          })
+        }
+        if (stats.epoch == "PROJECTED") {
+          _.each(stats.statistics, function(statistic) {
+            if (statistic.name == "StorageAccess"){
+              _.each(statistic.filters, function(filter){
+                if (filter.value == "sold") {
+                  ds_filtered_recommendations[index].afterIopsCapacity = statistic.capacity.total
+                  _.each(statistic.histUtilizations, function(histUtilization) {
+                    if (histUtilization.type == "percentile") {
+                      ds_filtered_recommendations[index].afterIopsUtilization = (histUtilization.usage*100/histUtilization.capacity).toFixed(2)
+                    }
+                  })
+                }
+              })         
+            }
+            if (statistic.name == "StorageAmount"){
+              _.each(statistic.filters, function(filter){
+                if (filter.value == "sold") {
+                  ds_filtered_recommendations[index].afterSizeCapacity = statistic.capacity.total/1024
+                  _.each(statistic.histUtilizations, function(histUtilization) {
+                    if (histUtilization.type == "percentile") {
+                      ds_filtered_recommendations[index].afterSizeUtilization = (histUtilization.usage*100/histUtilization.capacity).toFixed(2)
+                    }
+                  })
+                }
+              })         
+            }
+            if (statistic.name == "IOThroughput"){
+              _.each(statistic.filters, function(filter){
+                if (filter.value == "sold") {
+                  ds_filtered_recommendations[index].afterThroughputCapacity = statistic.capacity.total*0.000125
+                  _.each(statistic.histUtilizations, function(histUtilization) {
+                    if (histUtilization.type == "percentile") {
+                      ds_filtered_recommendations[index].afterThroughputUtilization = (histUtilization.usage*100/histUtilization.capacity).toFixed(2)
+                    }
+                  })
+                }
+              })         
+            }
+          })
+        }
+      }
+    })
+  })
+  result = {
+    'instances': ds_filtered_recommendations
+  }
+  EOS
+end
+
 ###############################################################################
 # Policy
 ###############################################################################
 
 policy "pol_turbonomic_rightsize_volumes" do
-  validate $ds_filtered_turbonomic_recommendations do
+  validate $ds_filtered_statistics do
     summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data.instances }} Turbonomic Virtual Volumes to Rightsize found"
     detail_template <<-EOS
       ## Turbonomic Rightsize Virtual Volumes Recommendations
@@ -310,10 +483,65 @@ policy "pol_turbonomic_rightsize_volumes" do
       field "createdTime" do
         label "Created Time"
       end
+      field "uuid" do
+        label "UUID"
+      end
+      field "lastVm" do
+        label "Last VM"
+      end
+      field "actionState" do
+        label "Action State"
+      end
+      field "disruptiveness" do
+        label "Disruptiveness"
+      end
+      field "reversibility" do
+        label "Reversibility"
+      end
+      field "currentIopsCapacity" do
+        label "Current Iops Capacity"
+      end
+      field "afterIopsCapacity" do
+        label "After Iops Capacity"
+      end
+      field "currentIopsUtilization" do
+        label "Current Iops Utilization"
+      end
+      field "afterIopsUtilization" do
+        label "After Iops Utilization"
+      end
+      field "currentSizeCapacity" do
+        label "Current Size Capacity"
+      end
+      field "afterSizeCapacity" do
+        label "After Size Capacity"
+      end
+      field "currentSizeUtilization" do
+        label "Current Size Utilization"
+      end
+      field "afterSizeUtilization" do
+        label "After Size Utilization"
+      end
+      field "currentThroughputCapacity" do
+        label "Current Throughput Capacity"
+      end
+      field "afterThroughputCapacity" do
+        label "After Throughput Capacity"
+      end
+      field "currentThroughputUtilization" do
+        label "Current Throughput Utilization"
+      end
+      field "afterThroughputUtilization" do
+        label "After Throughput Utilization"
+      end
+      field "url" do
+        label "System Details URL"
+      end
     end
     escalate $esc_email
   end
 end
+
 
 ###############################################################################
 # Escalations
