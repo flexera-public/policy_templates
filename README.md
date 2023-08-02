@@ -425,6 +425,10 @@ These templates can generate savings estimates for your environment.
 
 #### Flexera
 
+- CCO
+
+  - [Bill Processing Error Notification](./operational/bill_processing_errors_notification)
+
 - FNMS
 
   - [Schedule FlexNet Manager Report](./operational/fnms/schedule_fnms_reports)
@@ -432,7 +436,6 @@ These templates can generate savings estimates for your environment.
 #### Flexera Cloud Management
 
 - [Applied Policy Error Notification](./operational/applied_policy_error_notification)
-- [Bill Processing Error Notification](./operational/bill_processing_errors_notification)
 
 #### Flexera ITAM
 
@@ -650,9 +653,9 @@ These templates can generate savings estimates for your environment.
   Oracle: 1
   Azure: 76
   Azure China: 1
-  Flexera: 5
+  Flexera: 6
   AWS: 77
-  Flexera Cloud Management: 4
+  Flexera Cloud Management: 3
   ServiceNow: 1
   Microsoft: 1
   Okta: 1
@@ -665,7 +668,7 @@ These templates can generate savings estimates for your environment.
   Storage: 20
   Compute: 34
   SQL: 15
-  '': 64
+  '': 63
   Kubernetes: 2
   Common Bill Ingestion: 1
   N/A: 1
@@ -682,6 +685,7 @@ These templates can generate savings estimates for your environment.
   Office 365: 1
   Tags: 2
   AKS: 3
+  CCO: 1
   Lambda: 1
   FNMS: 1
   IAM: 19
