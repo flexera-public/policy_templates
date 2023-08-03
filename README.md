@@ -411,11 +411,11 @@ These templates can generate savings estimates for your environment.
 
   - [AKS Node Pools Without Autoscaling](./operational/azure/aks_nodepools_without_autoscaling)
   - [AKS Node Pools Without Zero Autoscaling](./operational/azure/aks_nodepools_without_zero_autoscaling)
-  - [Azure Migrate Integration](./operational/azure/azure_migrate)
 
 - Compute
 
   - [Azure Long Running Instances](./operational/azure/azure_long_running_instances)
+  - [Azure Migrate Integration](./operational/azure/azure_migrate)
   - [Azure VMs Not Using Managed Disks](./operational/azure/vms_without_managed_disks)
   - [Expiring Azure Certificates](./operational/azure/azure_certificates)
 
@@ -638,120 +638,120 @@ These templates can generate savings estimates for your environment.
 :total_count: 242
 :optimization_count: 44
 :categories:
-  Cost: 99
-  SaaS Management: 13
-  Operational: 23
   Compliance: 33
   Security: 74
+  SaaS Management: 13
+  Cost: 99
+  Operational: 23
 :providers:
-  Google: 13
+  GitHub: 7
+  AWS: 77
   GCE: 8
-  GCP: 1
+  Google: 13
   Flexera Optima: 26
+  Flexera Cloud Management: 3
+  Flexera: 6
+  Flexera ITAM: 5
+  Flexera FNMS: 1
+  Azure: 76
+  Microsoft: 1
+  Flexera SaaS Manager: 9
+  ServiceNow: 1
+  Okta: 1
+  GCP: 1
+  Oracle: 1
   '': 1
   Kubecost: 2
-  Oracle: 1
-  Azure: 76
   Azure China: 1
-  Flexera: 6
-  AWS: 77
-  Flexera Cloud Management: 3
-  ServiceNow: 1
-  Microsoft: 1
-  Okta: 1
-  Flexera SaaS Manager: 9
-  Flexera ITAM: 5
   Flexera RISC: 2
-  GitHub: 7
-  Flexera FNMS: 1
 :services:
-  Storage: 20
-  Compute: 34
-  SQL: 15
   '': 63
-  Kubernetes: 2
-  Common Bill Ingestion: 1
-  N/A: 1
-  All: 3
-  Blob Store: 1
-  Storage Accounts: 2
-  RDS: 6
-  EC2: 13
-  S3: 9
-  EBS: 3
-  Cost Explorer: 1
-  ELB: 4
-  Usage Discount: 8
-  Office 365: 1
-  Tags: 2
-  AKS: 3
-  CCO: 1
-  Lambda: 1
-  FNMS: 1
-  IAM: 19
-  Policy: 1
-  Identity: 1
   ECS: 1
+  EC2: 13
+  IAM: 19
   Org: 1
+  Compute: 35
+  Identity: 1
+  Policy: 1
+  S3: 9
+  CloudTrail: 7
+  ELB: 4
+  RDS: 6
+  KMS: 1
+  DBS: 1
+  EBS: 3
+  Config: 1
+  VPC: 1
+  Storage: 20
+  Storage Accounts: 2
+  Security: 3
+  SQL: 15
   PostgreSQL: 4
   Network Security Group: 2
   MySQL: 2
-  Security: 3
-  compute: 1
   App Service: 1
-  Config: 1
-  DBS: 1
-  VPC: 1
-  CloudTrail: 7
-  KMS: 1
+  compute: 1
+  Office 365: 1
+  All: 3
+  Cost Explorer: 1
+  Common Bill Ingestion: 1
+  Kubernetes: 2
+  Usage Discount: 8
+  Blob Store: 1
+  N/A: 1
+  Tags: 2
+  Lambda: 1
+  CCO: 1
+  FNMS: 1
+  AKS: 2
 :policy_sets:
-  Old Snapshots: 3
-  Unused IP Addresses: 3
-  Idle Compute Instances: 4
-  Rightsize Database Services: 1
+  '': 84
+  Untagged resources: 1
+  Instances not running FlexNet Inventory Agent: 2
+  Long Stopped Instances: 3
+  Disallowed Regions: 2
+  Unlabeled Resources: 1
+  ITAM: 4
+  Untagged Resources: 1
+  CIS: 61
+  Public Database Access: 2
+  AWS Config: 1
+  Open Buckets: 2
+  Storage Security: 1
+  N/A: 3
+  Forecasting: 4
   Rightsize Compute Instances: 6
-  Native Recommendations: 1
+  Inefficient Instance Usage: 2
+  Unused IP Addresses: 3
+  GP3 Volumes: 1
   Reserved Instances: 3
+  Inefficient Disk Usage: 1
   Schedule Instance: 3
   Unused Database Services: 3
-  Committed Use Discount: 1
-  '': 85
-  Object Store Optimization: 3
   Unused Volumes: 6
-  Forecasting: 4
+  Object Store Optimization: 3
+  RightSize Database Services: 2
+  Savings Plans: 2
+  Savings Plan Utilization: 1
+  Idle Compute Instances: 4
+  Old Snapshots: 3
+  Rightsize Database Services: 1
+  Native Recommendations: 1
+  Committed Use Discount: 1
+  Common Bill Ingestion: 1
   Rightsize Containers: 1
   Rightsize Clusters: 1
-  Common Bill Ingestion: 1
-  Savings Plans: 2
-  Inefficient Instance Usage: 2
-  RightSize Database Services: 2
-  Common Bill Ingest: 1
-  N/A: 3
-  Lifecycle Management: 1
-  Inefficient Disk Usage: 1
-  GP3 Volumes: 1
-  Savings Plan Utilization: 1
-  Rightsize Volumes: 3
   Reserved Instance: 2
   Allocate VMs: 3
   Rightsize Database Instances: 3
-  Schedule Flexera ITAM Report: 1
+  Rightsize Volumes: 3
+  Lifecycle Management: 1
+  Common Bill Ingest: 1
   Tag Cardinality: 2
-  Long Running Instances: 2
-  Database Services: 1
+  Long Running Instances: 3
+  Schedule Flexera ITAM Report: 1
   Schedule Report: 1
-  Long Stopped Instances: 3
-  Unlabeled Resources: 1
-  Untagged Resources: 1
-  Instances not running FlexNet Inventory Agent: 2
-  Disallowed Regions: 2
-  Untagged resources: 1
-  ITAM: 4
-  CIS: 61
-  Public Database Access: 2
-  Open Buckets: 2
-  Storage Security: 1
-  AWS Config: 1
+  Database Services: 1
 -->
 <!-- End Policy Template Stats -->
 
