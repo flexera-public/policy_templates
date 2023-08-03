@@ -82,9 +82,10 @@ datasource "ds_get_turbonomic_recommendations" do
       field "createdTime", jmes_path(col_item, "createTime")
       field "savings", jmes_path(col_item, "stats[0].value")
       field "savingsCurrency", jmes_path(col_item, "stats[0].units")
-      field "pricingModel", jmes_path(col_item, "risk.reasonCommodities[0]")
+      field "pricingModel", jmes_path(col_item, "risk.reasonCommodities")
       field "uuid", jmes_path(col_item, "target.uuid")
       field "actionID", jmes_path(col_item, "actionID")
+      field "className", jmes_path(col_item, "target.className")
     end
   end
 end
@@ -281,11 +282,12 @@ datasource "ds_get_projected_statistics" do
     collect jmes_path(response,"[-1]") do
       field "uuid", val(iter_item, "uuid")
       field "size", jmes_path(col_item, "statistics[?name == 'StorageAmount'].[ capacity.total, value][0]")
-      field "iops", jmes_path(col_item, "statistics[?name == 'StorageAccess'].[ capacity.total, value][0]")
-      field "vmem", jmes_path(col_item, "statistics[?name == 'VMem'].[ capacity.total, value][0]")
-      field "vcpu", jmes_path(col_item, "statistics[?name == 'VCPU'].[ capacity.total, value][0]")
-      field "iOThroughput", jmes_path(col_item, "statistics[?name == 'IOThroughput'].[ capacity.total, value][0]")
-      field "dtu", jmes_path(col_item, "statistics[?name == 'DTU'].[ capacity.total, value][0]")
+      field "iops", jmes_path(col_item, "statistics[?name == 'StorageAccess'].[histUtilizations[?type == 'percentile'].[capacity,usage][]][][]")
+      field "vmem", jmes_path(col_item, "statistics[?name == 'VMem'].[histUtilizations[?type == 'percentile'].[capacity,usage][]][][]")
+      field "vcpu", jmes_path(col_item, "statistics[?name == 'VCPU'].[histUtilizations[?type == 'percentile'].[capacity,usage][]][][]")
+      field "iOThroughput", jmes_path(col_item, "statistics[?name == 'IOThroughput'].[histUtilizations[?type == 'percentile'].[capacity,usage][]][][]")
+      field "connection", jmes_path(col_item, "statistics[?name == 'Connection'].[ capacity.total][0]")
+      field "dtu", jmes_path(col_item, "statistics[?name == 'DTU'].[histUtilizations[?type == 'percentile'].[capacity,usage][]][][]")
     end
   end
 end
@@ -300,11 +302,12 @@ datasource "ds_get_current_statistics" do
     collect jmes_path(response,"[-2]") do
       field "uuid", val(iter_item, "uuid")
       field "size", jmes_path(col_item, "statistics[?name == 'StorageAmount'].[ capacity.total, value][-1]")
-      field "iops", jmes_path(col_item, "statistics[?name == 'StorageAccess'].[ capacity.total, value][-1]")
-      field "vmem", jmes_path(col_item, "statistics[?name == 'VMem'].[ capacity.total, value][-1]")
-      field "vcpu", jmes_path(col_item, "statistics[?name == 'VCPU'].[ capacity.total, value][-1]")
-      field "iOThroughput", jmes_path(col_item, "statistics[?name == 'IOThroughput'].[ capacity.total, value][-1]")
-      field "dtu", jmes_path(col_item, "statistics[?name == 'DTU'].[ capacity.total, value][-1]")
+      field "iops", jmes_path(col_item, "statistics[?name == 'StorageAccess'].[histUtilizations[?type == 'percentile'].[capacity,usage][]][][]")
+      field "vmem", jmes_path(col_item, "statistics[?name == 'VMem'].[histUtilizations[?type == 'percentile'].[capacity,usage][]][][]")
+      field "vcpu", jmes_path(col_item, "statistics[?name == 'VCPU'].[histUtilizations[?type == 'percentile'].[capacity,usage][]][][]")
+      field "iOThroughput", jmes_path(col_item, "statistics[?name == 'IOThroughput'].[histUtilizations[?type == 'percentile'].[capacity,usage][]][][]")
+      field "connection", jmes_path(col_item, "statistics[?name == 'Connection'].[ capacity.total][0]")
+      field "dtu", jmes_path(col_item, "statistics[?name == 'DTU'].[histUtilizations[?type == 'percentile'].[capacity,usage][]][][]")
     end
   end
 end
@@ -318,11 +321,13 @@ script "js_get_projected_statistics", type: "javascript" do
     pastDay = new Date(Date.now() + nineHours)
     body_fields = {}
 
-    if (instance.pricingModel == "DTU"){
+    if (instance.className = "DatabaseServer"){
+      body_fields = {"statistics":[{"name":"VCPU","groupBy":["key","percentile"]},{"name":"VMem","groupBy":["key","percentile"]},{"name":"IOThroughput","groupBy":["key","percentile"]},{"name":"DBCacheHitRate","groupBy":["key","percentile"]},{"name":"VStorage","groupBy":["key", "percentile"]},{"name":"StorageAccess","groupBy":["key","percentile"]},{"name":"StorageAmount","groupBy":["key"]},{"name":"Connection","groupBy":["key"]}],"startDate":nowDay.getTime(),"endDate":pastDay.getTime()}
+    }
+    if (_.contains("DTU", instance.pricingModel)){
       body_fields = {"statistics":[{"name":"DTU","groupBy":["key","percentile"]},{"name":"StorageAmount","groupBy":["key"]}],"startDate":nowDay.getTime(),"endDate":pastDay.getTime()}
     }
-
-    if (instance.pricingModel == "StorageAmount"){
+    if (_.contains("StorageAmount", instance.pricingModel)){
       body_fields = {"statistics":[{"name":"VCPU","groupBy":["key","percentile"]},{"name":"VMem","groupBy":["key","percentile"]},{"name":"StorageAccess","groupBy":["key","percentile"]},{"name":"IOThroughput","groupBy":["key","percentile"]},{"name":"StorageAmount","groupBy":["key"]}],"startDate":nowDay.getTime(),"endDate":pastDay.getTime()}
     }
 
@@ -350,34 +355,52 @@ script "js_combined_data", type: "javascript" do
     _.each(ds_get_projected_statistics, function (projectedStatistic) {
       _.each(ds_get_turbonomic_recommendations.instances, function (db, index) {
           if (db.uuid === projectedStatistic.uuid) {
-            db.size = (projectedStatistic.size[0]/1024) + " GB"
-            db.diskUtilization = ((projectedStatistic.size[1]*100)/projectedStatistic.size[0]).toFixed(2) + " %"
-            db.sizenow = (ds_get_current_statistics[index].size[0]/1024) + " GB"
-            db.sizeutil = ((ds_get_current_statistics[index].size[1]*100)/ds_get_current_statistics[index].size[0]).toFixed(2) + " %"
-            if (db.pricingModel == "DTU"){
-              db.dtu = projectedStatistic.dtu[0]
-              db.dtuafter = ((projectedStatistic.dtu[1]*100)/projectedStatistic.dtu[0]).toFixed(2) + " %"
-              db.dtunow = ds_get_current_statistics[index].dtu[0]
-              db.dtuutilnow = ((ds_get_current_statistics[index].dtu[1]*100)/ds_get_current_statistics[index].dtu[0]).toFixed(2) + " %"
-            }
-            if (db.pricingModel == "StorageAmount"){
-              db.iops = projectedStatistic.iops[0] + " IOPS"
-              db.iopsutil = ((projectedStatistic.iops[1]*100)/projectedStatistic.iops[0]).toFixed(2) + " %"
-              db.vmem = (projectedStatistic.vmem[0]/1048576).toFixed(2) + " GB"
-              db.vmemutil = ((projectedStatistic.vmem[1]*100)/projectedStatistic.vmem[0]).toFixed(2) + " %"
-              db.vcpu = (projectedStatistic.vcpu[0]/1000).toFixed(2) + " GHz"
-              db.vcpuutil = ((projectedStatistic.vcpu[1]*100)/projectedStatistic.vcpu[0]).toFixed(2) + " %"
-              db.iOThroughput = (projectedStatistic.iOThroughput[0]*0.000125).toFixed(2) + " MB/s"
-              db.iOThroughpututil = ((projectedStatistic.iOThroughput[1]*100)/projectedStatistic.iOThroughput[0]).toFixed(2) + " %"
+            db.size = (projectedStatistic.size[0]/1024)
+            db.diskUtilization = ((projectedStatistic.size[1]*100)/projectedStatistic.size[0]).toFixed(2)
+            db.sizenow = (ds_get_current_statistics[index].size[0]/1024)
+            db.sizeutil = ((ds_get_current_statistics[index].size[1]*100)/ds_get_current_statistics[index].size[0]).toFixed(2)
 
-              db.iopsnow = ds_get_current_statistics[index].iops[0] + " IOPS"
-              db.iopsutilnow = ((ds_get_current_statistics[index].iops[1]*100)/ds_get_current_statistics[index].iops[0]).toFixed(2) + " %"
-              db.vmemnow = (ds_get_current_statistics[index].vmem[0]/1048576).toFixed(2) + " GB"
-              db.vmemutilnow = ((ds_get_current_statistics[index].vmem[1]*100)/ds_get_current_statistics[index].vmem[0]).toFixed(2) + " %"
-              db.vcpunow = (ds_get_current_statistics[index].vcpu[0]/1000).toFixed(2) + " GHz"
-              db.vcpuutilnow = ((ds_get_current_statistics[index].vcpu[1]*100)/ds_get_current_statistics[index].vcpu[0]).toFixed(2) + " %"
-              db.iOThroughputnow = (ds_get_current_statistics[index].iOThroughput[0]*0.000125).toFixed(2) + " MB/s"
-              db.iOThroughpututilnow = ((ds_get_current_statistics[index].iOThroughput[1]*100)/ds_get_current_statistics[index].iOThroughput[0]).toFixed(2) + " %"
+            if (_.contains(db.pricingModel, "DTU")){
+              db.dtu = projectedStatistic.dtu[0]
+              db.dtuafter = ((projectedStatistic.dtu[1]*100)/projectedStatistic.dtu[0]).toFixed(2)
+              db.dtunow = ds_get_current_statistics[index].dtu[0]
+              db.dtuutilnow = ((ds_get_current_statistics[index].dtu[1]*100)/ds_get_current_statistics[index].dtu[0]).toFixed(2)
+            }
+
+            if (_.contains(db.pricingModel, "StorageAmount")){
+              db.iops = projectedStatistic.iops[0]
+              db.iopsutil = ((projectedStatistic.iops[1]*100)/projectedStatistic.iops[0]).toFixed(2)
+              db.vmem = (projectedStatistic.vmem[0]/1048576).toFixed(2)
+              db.vmemutil = ((projectedStatistic.vmem[1]*100)/projectedStatistic.vmem[0]).toFixed(2)
+              db.vcpu = (projectedStatistic.vcpu[0]/1000).toFixed(2)
+              db.vcpuutil = ((projectedStatistic.vcpu[1]*100)/projectedStatistic.vcpu[0]).toFixed(2)
+              db.iOThroughput = (projectedStatistic.iOThroughput[0]*0.000125).toFixed(2)
+              db.iOThroughpututil = ((projectedStatistic.iOThroughput[1]*100)/projectedStatistic.iOThroughput[0]).toFixed(2)
+              db.iopsnow = ds_get_current_statistics[index].iops[0]
+              db.iopsutilnow = ((ds_get_current_statistics[index].iops[1]*100)/ds_get_current_statistics[index].iops[0]).toFixed(2)
+              db.vmemnow = (ds_get_current_statistics[index].vmem[0]/1048576).toFixed(2)
+              db.vmemutilnow = ((ds_get_current_statistics[index].vmem[1]*100)/ds_get_current_statistics[index].vmem[0]).toFixed(2)
+              db.vcpunow = (ds_get_current_statistics[index].vcpu[0]/1000).toFixed(2)
+              db.vcpuutilnow = ((ds_get_current_statistics[index].vcpu[1]*100)/ds_get_current_statistics[index].vcpu[0]).toFixed(2)
+              db.iOThroughputnow = (ds_get_current_statistics[index].iOThroughput[0]*0.000125).toFixed(2)
+              db.iOThroughpututilnow = ((ds_get_current_statistics[index].iOThroughput[1]*100)/ds_get_current_statistics[index].iOThroughput[0]).toFixed(2)
+            }
+
+            if (db.className == "DatabaseServer") {
+              db.connectionNow = projectedStatistic.connection[0]
+              db.connectionAfter = ds_get_current_statistics[index].connection[0]
+              db.iops = projectedStatistic.iops[0]
+              db.iopsutil = ((projectedStatistic.iops[1]*100)/projectedStatistic.iops[0]).toFixed(2)
+              db.vmem = (projectedStatistic.vmem[0]/1048576).toFixed(2)
+              db.vmemutil = ((projectedStatistic.vmem[1]*100)/projectedStatistic.vmem[0]).toFixed(2)
+              db.vcpu = (projectedStatistic.vcpu[0]/1000).toFixed(2)
+              db.vcpuutil = ((projectedStatistic.vcpu[1]*100)/projectedStatistic.vcpu[0]).toFixed(2)
+              db.iopsnow = ds_get_current_statistics[index].iops[0]
+              db.iopsutilnow = ((ds_get_current_statistics[index].iops[1]*100)/ds_get_current_statistics[index].iops[0]).toFixed(2)
+              db.vmemnow = (ds_get_current_statistics[index].vmem[0]/1048576).toFixed(2)
+              db.vmemutilnow = ((ds_get_current_statistics[index].vmem[1]*100)/ds_get_current_statistics[index].vmem[0]).toFixed(2)
+              db.vcpunow = (ds_get_current_statistics[index].vcpu[0]/1000).toFixed(2)
+              db.vcpuutilnow = ((ds_get_current_statistics[index].vcpu[1]*100)/ds_get_current_statistics[index].vcpu[0]).toFixed(2)
             }
           }
       })
@@ -457,16 +480,16 @@ policy "pol_turbonomic_rightsize_databases" do
         label "System Details URL"
       end
       field "sizenow" do
-        label "Current Size"
+        label "Current GB Size"
       end
       field "sizeutil" do
-        label "Current Size % Utilization"
+        label "Current GB Size % Utilization"
       end
       field "size" do
-        label "After Size"
+        label "After GB Size"
       end
       field "diskUtilization" do
-        label "After Size % Utilization"
+        label "After GB Size % Utilization"
       end
       field "dtunow" do
         label "Current DTU"
@@ -493,40 +516,46 @@ policy "pol_turbonomic_rightsize_databases" do
         label "After IOPs % Utilization"
       end
       field "vmemnow" do
-        label "Current Virtual Memory"
+        label "Current GB Virtual Memory"
       end
       field "vmemutilnow" do
-        label "Current Virtual Memory % Utilization"
+        label "Current GB Virtual Memory % Utilization"
       end
       field "vmem" do
-        label "After Virtual Memory"
+        label "After GB Virtual Memory"
       end
       field "vmemutil" do
-        label "After Virtual Memory % Utilization"
+        label "After GB Virtual Memory % Utilization"
       end
       field "vcpunow" do
-        label "Current Virtual CPU"
+        label "Current GHz Virtual CPU"
       end
       field "vcpuutilnow" do
-        label "Current Virtual CPU % Utilization"
+        label "Current GHz Virtual CPU % Utilization"
       end
       field "vcpu" do
-        label "After Virtual CPU"
+        label "After GHz Virtual CPU"
       end
       field "vcpuutil" do
-        label "After Virtual CPU % Utilization"
+        label "After GHz Virtual CPU % Utilization"
       end
       field "iOThroughputnow" do
-        label "Current IOThroughput"
+        label "Current MB/s IOThroughput"
       end
       field "iOThroughpututilnow" do
-        label "Current IOThroughput  % Utilization"
+        label "Current MB/s IOThroughput % Utilization"
       end
       field "iOThroughput" do
-        label "After IOThroughput"
+        label "After MB/s IOThroughput"
       end
       field "iOThroughpututil" do
-        label "After IOThroughput  % Utilization"
+        label "After MB/s IOThroughput % Utilization"
+      end
+      field "connectionNow" do
+        label "Current Connections"
+      end
+      field "connectionAfter" do
+        label "After Connections"
       end
     end
     escalate $esc_email
