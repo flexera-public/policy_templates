@@ -6,7 +6,7 @@ severity "low"
 category "Cost"
 default_frequency "daily"
 info(
-  version: "0.2",
+  version: "0.3",
   source: "Turbonomic",
   service: "Usage Discount",
   provider: "AWS",
@@ -21,7 +21,6 @@ info(
 parameter "param_turbonomic_endpoint" do
   type "string"
   label "Turbonomic endpoint"
-  default "sales1.demo.turbonomic.com"
 end
 
 parameter "param_provider" do
@@ -39,7 +38,6 @@ parameter "param_auth_cookie" do
   label "Authorization Cookie"
   no_echo true
   description "Valid authorization cookie."
-  default "JSESSIONID=node01kq0n8igbutki1j24rinvoby3f7401.node0"
 end
 
 parameter "param_email" do
@@ -82,10 +80,10 @@ datasource "ds_get_turbonomic_recommendations" do
       field "details", jmes_path(col_item, "details")
       field "tags", jmes_path(col_item, "target.tags")
       field "createdTime", jmes_path(col_item, "createTime")
-      field "size", jmes_path(col_item, "virtualDisks[0].stats")
       field "savings", jmes_path(col_item, "stats[0].value")
       field "savingsCurrency", jmes_path(col_item, "stats[0].units")
       field "uuid", jmes_path(col_item, "target.uuid")
+      field "urlUUID", jmes_path(col_item, "uuid")
       field "attachedVm", jmes_path(col_item, "virtualDisks[0].attachedVirtualMachine.displayName")
       field "actionState", jmes_path(col_item, "actionState")
       field "disruptiveness", jmes_path(col_item, "executionCharacteristics.disruptiveness")
@@ -110,6 +108,25 @@ end
 
 datasource "ds_filtered_turbonomic_recommendations" do
   run_script $js_filtered_turbonomic_recommendations, $ds_get_turbonomic_recommendations, $ds_get_business_units, $param_provider, $param_turbonomic_endpoint
+end
+
+datasource "ds_get_stats" do
+  iterate $ds_filtered_turbonomic_recommendations
+  request do
+    run_script $js_get_stats, $param_turbonomic_endpoint, $param_auth_cookie, iter_item
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "[*]") do
+      field "epoch", jmes_path(col_item, "epoch")
+      field "statistics", jmes_path(col_item, "statistics")
+      field "uuid", val(iter_item, "uuid")
+    end
+  end
+end
+
+datasource "ds_filtered_stats" do
+  run_script $js_filtered_stats, $ds_get_stats, $ds_filtered_turbonomic_recommendations
 end
 
 ###############################################################################
@@ -181,23 +198,6 @@ script "js_filtered_turbonomic_recommendations", type: "javascript" do
   code <<-EOS
     instances = []
     monthlySavings = 0.0
-    function formatNumber(number, separator) {
-      var numString = number.toString()
-      var values = numString.split(".")
-      var result = ''
-      while (values[0].length > 3) {
-        var chunk = values[0].substr(-3)
-        values[0] = values[0].substr(0, values[0].length - 3)
-        result = separator + chunk + result
-      }
-      if (values[0].length > 0) {
-        result = values[0] + result
-      }
-      if (values[1] == undefined) {
-        return result
-      }
-      return result + "." + values[1]
-    }
     _.each(ds_get_business_units, function (businessUnit) {
       _.each(ds_get_turbonomic_recommendations, function (volume, index) {
         if (volume.businessUUID === businessUnit.uuid) {
@@ -220,12 +220,6 @@ script "js_filtered_turbonomic_recommendations", type: "javascript" do
         } else {
           volume.savingsCurrency = "$"
         }
-        _.each(volume.size, function (stat) {
-          if (stat.name === "StorageAmount") {
-            volume.size = stat.capacity.total + " " + stat.units
-            return
-          }
-        })
         tags = []
         if (typeof volume.tags === "undefined" || volume.tags === null) {
           volume.tags = tags
@@ -246,51 +240,15 @@ script "js_filtered_turbonomic_recommendations", type: "javascript" do
         }
         volume.savings = (Math.round(volume.savings * 730 * 1000) / 1000)
         monthlySavings = monthlySavings + volume.savings
-        volume.url = param_turbonomic_host + "/app/index.html#/view/main/action/" + volume.uuid
+        volume.url = param_turbonomic_host + "/app/index.html#/view/main/action/" + volume.urlUUID
         instances.push(volume)
       }
     })
-    message = ""
-    if (instances.length != 0) {
-      pretty_savings = instances[0].savingsCurrency + ' ' + formatNumber(monthlySavings.toFixed(2), ",")
-      message = "The total estimated monthly savings are " + pretty_savings + '.'
-    }
-    result = {
-      'instances': instances,
-      'message': message
-    }
+    result = instances
   EOS
 end
 
-datasource "ds_filtered_recommendations" do
-  run_script $js_only_recommendations, $ds_filtered_turbonomic_recommendations
-end
-
-script "js_only_recommendations", type: "javascript" do
-  parameters "arg"
-  result "results"
-  code <<-EOS
-    results = arg.instances
-  EOS
-end
-
-datasource "ds_get_statistics" do
-  iterate $ds_filtered_recommendations
-  request do
-    run_script $js_get_statistics, $param_turbonomic_endpoint, $param_auth_cookie, iter_item
-  end
-  result do
-    encoding "json"
-    collect jmes_path(response, "[*]") do
-      field "epoch", jmes_path(col_item, "epoch")
-      field "statistics", jmes_path(col_item, "statistics")
-      field "uuid", val(iter_item, "uuid")
-    end
-  end
-end
-
-
-script "js_get_statistics", type: "javascript" do
+script "js_get_stats", type: "javascript" do
   result "request"
   parameters "turbonomic_endpoint", "auth_cookie", "instance"
   code <<-EOS
@@ -326,27 +284,41 @@ script "js_get_statistics", type: "javascript" do
   EOS
 end
 
-datasource "ds_filtered_statistics" do
-  run_script $js_filtered_statistics, $ds_get_statistics, $ds_filtered_recommendations
-end
-
-script "js_filtered_statistics", type: "javascript" do
+script "js_filtered_stats", type: "javascript" do
   result "result"
-  parameters "ds_get_statistics", "ds_filtered_recommendations"
+  parameters "ds_get_stats", "ds_filtered_turbonomic_recommendations"
   code <<-EOS
-  instances = []
-  _.each(ds_filtered_recommendations, function (instance, index) {
-    _.each(ds_get_statistics, function (stats) {
+  monthlySavings = 0.0
+  function formatNumber(number, separator) {
+    var numString = number.toString()
+    var values = numString.split(".")
+    var result = ''
+    while (values[0].length > 3) {
+      var chunk = values[0].substr(-3)
+      values[0] = values[0].substr(0, values[0].length - 3)
+      result = separator + chunk + result
+    }
+    if (values[0].length > 0) {
+      result = values[0] + result
+    }
+    if (values[1] == undefined) {
+      return result
+    }
+    return result + "." + values[1]
+  }
+  _.each(ds_filtered_turbonomic_recommendations, function (instance, index) {
+    monthlySavings = monthlySavings + instance.savings
+    _.each(ds_get_stats, function (stats) {
       if (instance.uuid == stats.uuid) {
         if (stats.epoch == "CURRENT") {
           _.each(stats.statistics, function(statistic) {
             if (statistic.name == "StorageAccess"){
               _.each(statistic.filters, function(filter){
                 if (filter.value == "sold") {
-                  ds_filtered_recommendations[index].currentIopsCapacity = statistic.capacity.total
+                  ds_filtered_turbonomic_recommendations[index].currentIopsCapacity = statistic.capacity.total
                   _.each(statistic.histUtilizations, function(histUtilization) {
                     if (histUtilization.type == "percentile") {
-                      ds_filtered_recommendations[index].currentIopsUtilization = (histUtilization.usage*100/histUtilization.capacity).toFixed(2)
+                      ds_filtered_turbonomic_recommendations[index].currentIopsUtilization = (histUtilization.usage*100/histUtilization.capacity).toFixed(2)
                     }
                   })
                 }
@@ -355,10 +327,10 @@ script "js_filtered_statistics", type: "javascript" do
             if (statistic.name == "StorageAmount"){
               _.each(statistic.filters, function(filter){
                 if (filter.value == "sold") {
-                  ds_filtered_recommendations[index].currentSizeCapacity = statistic.capacity.total/1024
+                  ds_filtered_turbonomic_recommendations[index].currentSizeCapacity = statistic.capacity.total/1024
                   _.each(statistic.histUtilizations, function(histUtilization) {
                     if (histUtilization.type == "percentile") {
-                      ds_filtered_recommendations[index].currentSizeUtilization = (histUtilization.usage*100/histUtilization.capacity).toFixed(2)
+                      ds_filtered_turbonomic_recommendations[index].currentSizeUtilization = (histUtilization.usage*100/histUtilization.capacity).toFixed(2)
                     }
                   })
                 }
@@ -367,10 +339,10 @@ script "js_filtered_statistics", type: "javascript" do
             if (statistic.name == "IOThroughput"){
               _.each(statistic.filters, function(filter){
                 if (filter.value == "sold") {
-                  ds_filtered_recommendations[index].currentThroughputCapacity = statistic.capacity.total*0.000125
+                  ds_filtered_turbonomic_recommendations[index].currentThroughputCapacity = Math.floor(statistic.capacity.total*0.000125)
                   _.each(statistic.histUtilizations, function(histUtilization) {
                     if (histUtilization.type == "percentile") {
-                      ds_filtered_recommendations[index].currentThroughputUtilization = (histUtilization.usage*100/histUtilization.capacity).toFixed(2)
+                      ds_filtered_turbonomic_recommendations[index].currentThroughputUtilization = (histUtilization.usage*100/histUtilization.capacity).toFixed(2)
                     }
                   })
                 }
@@ -383,10 +355,10 @@ script "js_filtered_statistics", type: "javascript" do
             if (statistic.name == "StorageAccess"){
               _.each(statistic.filters, function(filter){
                 if (filter.value == "sold") {
-                  ds_filtered_recommendations[index].afterIopsCapacity = statistic.capacity.total
+                  ds_filtered_turbonomic_recommendations[index].afterIopsCapacity = statistic.capacity.total
                   _.each(statistic.histUtilizations, function(histUtilization) {
                     if (histUtilization.type == "percentile") {
-                      ds_filtered_recommendations[index].afterIopsUtilization = (histUtilization.usage*100/histUtilization.capacity).toFixed(2)
+                      ds_filtered_turbonomic_recommendations[index].afterIopsUtilization = (histUtilization.usage*100/histUtilization.capacity).toFixed(2)
                     }
                   })
                 }
@@ -395,10 +367,10 @@ script "js_filtered_statistics", type: "javascript" do
             if (statistic.name == "StorageAmount"){
               _.each(statistic.filters, function(filter){
                 if (filter.value == "sold") {
-                  ds_filtered_recommendations[index].afterSizeCapacity = statistic.capacity.total/1024
+                  ds_filtered_turbonomic_recommendations[index].afterSizeCapacity = statistic.capacity.total/1024
                   _.each(statistic.histUtilizations, function(histUtilization) {
                     if (histUtilization.type == "percentile") {
-                      ds_filtered_recommendations[index].afterSizeUtilization = (histUtilization.usage*100/histUtilization.capacity).toFixed(2)
+                      ds_filtered_turbonomic_recommendations[index].afterSizeUtilization = (histUtilization.usage*100/histUtilization.capacity).toFixed(2)
                     }
                   })
                 }
@@ -407,10 +379,10 @@ script "js_filtered_statistics", type: "javascript" do
             if (statistic.name == "IOThroughput"){
               _.each(statistic.filters, function(filter){
                 if (filter.value == "sold") {
-                  ds_filtered_recommendations[index].afterThroughputCapacity = statistic.capacity.total*0.000125
+                  ds_filtered_turbonomic_recommendations[index].afterThroughputCapacity = Math.floor(statistic.capacity.total*0.000125)
                   _.each(statistic.histUtilizations, function(histUtilization) {
                     if (histUtilization.type == "percentile") {
-                      ds_filtered_recommendations[index].afterThroughputUtilization = (histUtilization.usage*100/histUtilization.capacity).toFixed(2)
+                      ds_filtered_turbonomic_recommendations[index].afterThroughputUtilization = (histUtilization.usage*100/histUtilization.capacity).toFixed(2)
                     }
                   })
                 }
@@ -421,8 +393,14 @@ script "js_filtered_statistics", type: "javascript" do
       }
     })
   })
+  message = ""
+  if (ds_filtered_turbonomic_recommendations.length != 0) {
+    pretty_savings = ds_filtered_turbonomic_recommendations[0].savingsCurrency + ' ' + formatNumber(monthlySavings.toFixed(2), ",")
+    message = "The total estimated monthly savings are " + pretty_savings + '.'
+  }
   result = {
-    'instances': ds_filtered_recommendations
+    'instances': ds_filtered_turbonomic_recommendations,
+    'message': message
   }
   EOS
 end
@@ -432,7 +410,7 @@ end
 ###############################################################################
 
 policy "pol_turbonomic_rightsize_volumes" do
-  validate $ds_filtered_statistics do
+  validate $ds_filtered_stats do
     summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data.instances }} Turbonomic Virtual Volumes to Rightsize found"
     detail_template <<-EOS
       ## Turbonomic Rightsize Virtual Volumes Recommendations
@@ -483,9 +461,6 @@ policy "pol_turbonomic_rightsize_volumes" do
       field "createdTime" do
         label "Created Time"
       end
-      field "uuid" do
-        label "UUID"
-      end
       field "attachedVm" do
         label "Attached VM"
       end
@@ -498,41 +473,53 @@ policy "pol_turbonomic_rightsize_volumes" do
       field "reversibility" do
         label "Reversibility"
       end
-      field "currentIopsCapacity" do
-        label "Current Iops Capacity"
+      field "iops" do
+        label "Current IOPS Capacity"
+        path "currentIopsCapacity"
       end
-      field "afterIopsCapacity" do
-        label "After Iops Capacity"
+      field "newIops" do
+        label "After IOPS Capacity"
+        path "afterIopsCapacity"
       end
-      field "currentIopsUtilization" do
-        label "Current Iops Utilization"
+      field "iopsUtilization" do
+        label "Current IOPS Utilization (%)"
+        path "currentIopsUtilization"
       end
-      field "afterIopsUtilization" do
-        label "After Iops Utilization"
+      field "newIopsUtilization" do
+        label "After IOPS Utilization (%)"
+        path "afterIopsUtilization"
       end
-      field "currentSizeCapacity" do
-        label "Current Size Capacity"
+      field "size" do
+        label "Current Size Capacity (GB)"
+        path "currentSizeCapacity"
       end
-      field "afterSizeCapacity" do
-        label "After Size Capacity"
+      field "newSize" do
+        label "After Size Capacity (GB)"
+        path "afterSizeCapacity"
       end
-      field "currentSizeUtilization" do
-        label "Current Size Utilization"
+      field "sizeUtilization" do
+        label "Current Size Utilization (%)"
+        path "currentSizeUtilization"
       end
-      field "afterSizeUtilization" do
-        label "After Size Utilization"
+      field "newSizeUtilization" do
+        label "After Size Utilization (%)"
+        path "afterSizeUtilization"
       end
-      field "currentThroughputCapacity" do
-        label "Current Throughput Capacity"
+      field "throughput" do
+        label "Current Throughput Capacity (MB/S)"
+        path "currentThroughputCapacity"
       end
-      field "afterThroughputCapacity" do
-        label "After Throughput Capacity"
+      field "newThroughput" do
+        label "After Throughput Capacity (MB/S)"
+        path "afterThroughputCapacity"
       end
-      field "currentThroughputUtilization" do
-        label "Current Throughput Utilization"
+      field "throughputUtilization" do
+        label "Current Throughput Utilization (%)"
+        path "currentThroughputUtilization"
       end
-      field "afterThroughputUtilization" do
-        label "After Throughput Utilization"
+      field "newThroughputUtilization" do
+        label "After Throughput Utilization (%)"
+        path "afterThroughputUtilization"
       end
       field "url" do
         label "System Details URL"
@@ -541,7 +528,6 @@ policy "pol_turbonomic_rightsize_volumes" do
     escalate $esc_email
   end
 end
-
 
 ###############################################################################
 # Escalations
