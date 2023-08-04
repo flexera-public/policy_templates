@@ -35,7 +35,7 @@ This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Auto
 {
   "id": "/subscriptions/{{subscriptionId}}/providers/Microsoft.Authorization/roleDefinitions/{{roleDefinitionId}}",
   "properties": {
-    "roleName": "Nia Savings Plan Recommendations v2",
+    "roleName": "Savings Plan Recommendations",
     "description": "",
     "assignableScopes": [
       "/subscriptions/{{subscriptionId}}"
