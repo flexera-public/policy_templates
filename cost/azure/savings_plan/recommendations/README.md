@@ -24,19 +24,55 @@ The following policy actions are taken on any resources found to be out of compl
 
 ## Prerequisites
 
-This policy uses [credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm)
-for connecting to the cloud -- in order to apply this policy, you must have a credential registered in the system that is compatible with this policy. If there are no
-credentials listed when you apply the policy, please contact your cloud admin, and ask them to register a credential that is compatible with this policy. The information below should be consulted when creating the credential.
+This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for authenticating to datasources -- in order to apply this policy you must have a Credential registered in the system that is compatible with this policy. If there are no Credentials listed when you apply the policy, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy. The information below should be consulted when creating the credential(s).
 
-### Credential configuration
+- [**Azure Resource Manager Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_109256743_1124668) (*provider=azure_rm*) which has the following permissions:
+  - `Microsoft.CostManagement/*/read`*
 
-For administrators [creating and managing credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) to use with this policy, the following information is needed:
+\* Only `Microsoft.CostManagement/benefitRecommendations/read` is actually needed but this cannot be added in isolation via the Azure Portal. It is recommended that you add the role and then set all other permissions to NotAction as shown in the below JSON example:
 
-Provider tag value to match this policy: `azure_rm`
-
-Required permissions in the provider:
-
-- Microsoft.CostManagement/*/read
+```json
+{
+  "id": "/subscriptions/{{subscriptionId}}/providers/Microsoft.Authorization/roleDefinitions/{{roleDefinitionId}}",
+  "properties": {
+    "roleName": "Nia Savings Plan Recommendations v2",
+    "description": "",
+    "assignableScopes": [
+      "/subscriptions/{{subscriptionId}}"
+    ],
+    "permissions": [
+      {
+        "actions": [
+          "Microsoft.CostManagement/*/read"
+        ],
+        "notActions": [
+          "Microsoft.CostManagement/alerts/read",
+          "Microsoft.CostManagement/budgets/read",
+          "Microsoft.CostManagement/cloudConnectors/read",
+          "Microsoft.CostManagement/dimensions/read",
+          "Microsoft.CostManagement/exports/read",
+          "Microsoft.CostManagement/externalBillingAccounts/read",
+          "Microsoft.CostManagement/externalBillingAccounts/dimensions/read",
+          "Microsoft.CostManagement/externalBillingAccounts/query/read",
+          "Microsoft.CostManagement/externalBillingAccounts/externalSubscriptions/read",
+          "Microsoft.CostManagement/externalBillingAccounts/forecast/read",
+          "Microsoft.CostManagement/externalSubscriptions/read",
+          "Microsoft.CostManagement/externalSubscriptions/dimensions/read",
+          "Microsoft.CostManagement/externalSubscriptions/query/read",
+          "Microsoft.CostManagement/externalSubscriptions/forecast/read",
+          "Microsoft.CostManagement/forecast/read",
+          "Microsoft.CostManagement/operations/read",
+          "Microsoft.CostManagement/query/read",
+          "Microsoft.CostManagement/reports/read",
+          "Microsoft.CostManagement/views/read"
+        ],
+        "dataActions": [],
+        "notDataActions": []
+      }
+    ]
+  }
+}
+```
 
 ## Supported Clouds
 
