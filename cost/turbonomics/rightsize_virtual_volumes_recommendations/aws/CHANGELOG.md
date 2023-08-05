@@ -6,18 +6,18 @@
 - Added `Action State` incident field.
 - Added `Disruptiveness` incident field.
 - Added `Reversibility` incident field.
-- Added `Current IOPS Capacity` incident field.
-- Added `After IOPS Capacity` incident field.
-- Added `Current IOPS Utilization (%)` incident field.
-- Added `After IOPS Utilization (%)` incident field.
-- Added `Current Size Capacity (GB)` incident field.
-- Added `After Size Capacity (GB)` incident field.
-- Added `Current Size Utilization (%)` incident field.
-- Added `After Size Utilization (%)` incident field.
-- Added `Current Throughput Capacity (MB/S)` incident field.
-- Added `After Throughput Capacity (MB/S)` incident field.
-- Added `Current Throughput Utilization (%)` incident field.
-- Added `After Throughput Utilization (%)` incident field.
+- Added `IOPS Capacity` incident field.
+- Added `New IOPS Capacity` incident field.
+- Added `IOPS Utilization (%)` incident field.
+- Added `New IOPS Utilization (%)` incident field.
+- Added `Storage (GB)` incident field.
+- Added `New Storage (GB)` incident field.
+- Added `Storage Utilization (%)` incident field.
+- Added `New Storage Utilization (%)` incident field.
+- Added `Throughput Capacity (MB/S)` incident field.
+- Added `New Throughput Capacity (MB/S)` incident field.
+- Added `Throughput Utilization (%)` incident field.
+- Added `New Throughput Utilization (%)` incident field.
 - Added `System Details URL` incident field.
 
 ## v0.2
