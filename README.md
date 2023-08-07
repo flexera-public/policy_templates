@@ -32,11 +32,11 @@ These templates can generate savings estimates for your environment.
 - [AWS Idle Compute Instances](./cost/aws/idle_compute_instances)
 - [AWS Old Snapshots](./cost/aws/old_snapshots)
 - [AWS Reserved Instances Recommendations](./cost/aws/reserved_instances/recommendations)
-- [AWS Rightsize Compute Instances](./cost/aws/rightsize_compute_instances)
 - [AWS Rightsize EBS Volumes](./cost/aws/rightsize_ebs_volumes)
+- [AWS Rightsize EC2 Instances](./cost/aws/rightsize_ec2_instances)
 - [AWS Savings Plan Recommendations](./cost/aws/savings_plan/recommendations)
 - [AWS Unused IP Addresses](./cost/aws/unused_ip_addresses)
-- [AWS Unused RDS Instance](./cost/aws/unused_rds)
+- [AWS Unused RDS Instances](./cost/aws/unused_rds)
 - [AWS Unused Volumes](./cost/aws/unused_volumes)
 - [Turbonomic Allocate Virtual Machine Recommendations AWS](./cost/turbonomics/allocate_virtual_machines_recommendations/aws)
 - [Turbonomic Buy Reserved Instances Recommendations AWS](./cost/turbonomics/buy_reserved_instances_recommendations/aws)
@@ -184,7 +184,7 @@ These templates can generate savings estimates for your environment.
 
 - Compute
 
-  - [AWS Rightsize Compute Instances](./cost/aws/rightsize_compute_instances)
+  - [AWS Rightsize EC2 Instances](./cost/aws/rightsize_ec2_instances)
   - [Turbonomic Allocate Virtual Machine Recommendations AWS](./cost/turbonomics/allocate_virtual_machines_recommendations/aws)
   - [Turbonomic Rightsize Virtual Machines Recommendations AWS](./cost/turbonomics/scale_virtual_machines_recommendations/aws)
 
@@ -216,7 +216,7 @@ These templates can generate savings estimates for your environment.
 
   - [AWS RDS Instances](./cost/aws/rds_instance_license_info)
   - [AWS Rightsize RDS Instances](./cost/aws/rds_instance_cloudwatch_utilization)
-  - [AWS Unused RDS Instance](./cost/aws/unused_rds)
+  - [AWS Unused RDS Instances](./cost/aws/unused_rds)
 
 - S3
 
@@ -250,6 +250,7 @@ These templates can generate savings estimates for your environment.
   - [Azure Inefficient Instance Utilization using Log Analytics](./cost/azure/instances_log_analytics_utilization)
   - [Azure Reserved Instances Recommendations](./cost/azure/reserved_instances/recommendations)
   - [Azure Reserved Instances Utilization](./cost/azure/reserved_instances/utilization)
+  - [Azure Reserved Instances Utilization MCA](./cost/azure/reserved_instances/utilization_mca)
   - [Azure Rightsize Compute Instances](./cost/azure/rightsize_compute_instances)
   - [Azure Savings Plan Recommendations](./cost/azure/savings_plan/recommendations)
   - [Azure Schedule Instance](./cost/azure/schedule_instance)
@@ -635,13 +636,13 @@ These templates can generate savings estimates for your environment.
 <!-- Begin Policy Template Stats -->
 <!--
 ---
-:total_count: 242
+:total_count: 243
 :optimization_count: 44
 :categories:
   Compliance: 33
   Security: 74
   SaaS Management: 13
-  Cost: 99
+  Cost: 100
   Operational: 23
 :providers:
   GitHub: 7
@@ -653,7 +654,7 @@ These templates can generate savings estimates for your environment.
   Flexera: 6
   Flexera ITAM: 5
   Flexera FNMS: 1
-  Azure: 76
+  Azure: 77
   Microsoft: 1
   Flexera SaaS Manager: 9
   ServiceNow: 1
@@ -670,7 +671,7 @@ These templates can generate savings estimates for your environment.
   EC2: 13
   IAM: 19
   Org: 1
-  Compute: 35
+  Compute: 36
   Identity: 1
   Policy: 1
   S3: 9
@@ -705,7 +706,7 @@ These templates can generate savings estimates for your environment.
   FNMS: 1
   AKS: 2
 :policy_sets:
-  '': 84
+  '': 85
   Untagged resources: 1
   Instances not running FlexNet Inventory Agent: 2
   Long Stopped Instances: 3
@@ -720,9 +721,9 @@ These templates can generate savings estimates for your environment.
   Storage Security: 1
   N/A: 3
   Forecasting: 4
-  Rightsize Compute Instances: 6
   Inefficient Instance Usage: 2
   Unused IP Addresses: 3
+  Rightsize Compute Instances: 6
   GP3 Volumes: 1
   Reserved Instances: 3
   Inefficient Disk Usage: 1
