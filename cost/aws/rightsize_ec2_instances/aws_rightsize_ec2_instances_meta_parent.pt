@@ -1,14 +1,14 @@
-name "AWS Rightsize Compute Instances Meta Parent"
+name "AWS Rightsize EC2 Instances Meta Parent"
 rs_pt_ver 20180301
 type "policy"
-short_description "Applies and manages \"child\" [AWS Rightsize Compute Instances](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/rightsize_compute_instances) Policies."
+short_description "Applies and manages \"child\" [AWS Rightsize EC2 Instances](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/rightsize_ec2_instances) Policies."
 severity "low"
 category "Cost"
 tenancy "single"
 default_frequency "15 minutes"
 info(
   provider: "AWS",
-  version: "3.4", # This version of the Meta Parent Policy Template should match the version of the Child Policy Template as it appears in the Catalog for best reliability
+  version: "4.0", # This version of the Meta Parent Policy Template should match the version of the Child Policy Template as it appears in the Catalog for best reliability
   publish: "false"
 )
 
@@ -56,113 +56,124 @@ parameter "param_policy_schedule" do
 end
 
 ## Child Policy Parameters
-parameter "param_021_allowed_regions_allow_or_deny" do
+parameter "param_min_savings" do
+  type "number"
+  category "Policy Settings"
+  label "Minimum Savings Threshold"
+  description "Minimum potential savings required to generate a recommendation"
+  min_value 0
+  default 0
+end
+
+parameter "param_exclusion_tags" do
+  type "list"
+  category "Filters"
+  label "Exclusion Tags (Key:Value)"
+  description "Cloud native tags to ignore instances that you don't want to consider for downsizing or termination. Format: Key:Value"
+  allowed_pattern /(^$)|([\w]?)+\:([\w]?)+/
+  default []
+end
+
+parameter "param_regions_allow_or_deny" do
   type "string"
+  category "Filters"
   label "Allow/Deny Regions"
   description "Allow or Deny entered regions. See the README for more details"
   allowed_values "Allow", "Deny"
   default "Allow"
 end
 
-parameter "param_02_allowed_regions" do
+parameter "param_regions_list" do
   type "list"
-  label "Regions"
+  category "Filters"
+  label "Allow/Deny Regions List"
   allowed_pattern /^([a-zA-Z-_]+-[a-zA-Z0-9-_]+-[0-9-_]+,*|)+$/
   description "A list of allowed or denied regions. See the README for more details"
   default []
 end
 
-parameter "param_03_idle_threshold_cpu_value" do
+parameter "param_stats_idle_threshold_cpu_value" do
   type "number"
+  category "Statistics"
   label "Idle Instance CPU Threshold (%)"
   description "The CPU threshold at which to consider an instance to be 'idle' and therefore be flagged for termination. Set to -1 to ignore CPU utilization"
-  default 5
   min_value -1
   max_value 100
+  default 5
 end
 
-parameter "param_04_idle_threshold_mem_value" do
+parameter "param_stats_idle_threshold_mem_value" do
   type "number"
+  category "Statistics"
   label "Idle Instance Memory Threshold (%)"
   description "The Memory threshold at which to consider an instance to be 'idle' and therefore be flagged for termination. Set to -1 to ignore memory utilization"
+  min_value -1
+  max_value 100
   default 5
-  min_value -1
-  max_value 100
 end
 
-parameter "param_05_underutil_threshold_cpu_value" do
+parameter "param_stats_underutil_threshold_cpu_value" do
   type "number"
-  label "Underutilized Instance CPU Threshold (%)" # 'Inefficient' or 'Underutilized' as correct terminology?
+  category "Statistics"
+  label "Underutilized Instance CPU Threshold (%)"
   description "The CPU threshold at which to consider an instance to be 'underutilized' and therefore be flagged for downsizing. Set to -1 to ignore CPU utilization"
-  default 40
   min_value -1
   max_value 100
+  default 40
 end
 
-parameter "param_06_underutil_threshold_mem_value" do
+parameter "param_stats_underutil_threshold_mem_value" do
   type "number"
+  category "Statistics"
   label "Underutilized Instance Memory Threshold (%)"
   description "The Memory threshold at which to consider an instance to be 'underutilized' and therefore be flagged for downsizing. Set to -1 to ignore memory utilization"
-  default 40
   min_value -1
   max_value 100
+  default 40
 end
 
-parameter "param_07_check_both" do
+parameter "param_stats_check_both" do
   type "string"
+  category "Statistics"
   label "Idle/Utilized for both CPU/Memory or either"
   description "Set whether an instance should be considered idle and/or underutilized only if both CPU and memory are under the thresholds or if either CPU or memory are under. Note: this parameter is only valid when at least one Memory Utilization threshold and one CPU Utilization threshold is NOT set to -1"
-  default "Either CPU or Memory"
   allowed_values "Both CPU and Memory", "Either CPU or Memory"
+  default "Either CPU or Memory"
 end
 
-parameter "param_08_threshold_statistic" do
+parameter "param_stats_threshold" do
   type "string"
+  category "Statistics"
   label "Threshold Statistic"
-  description "Statistic to use for the metric threshold"
+  description "Statistic to use when determining if an instance is idle/underutilized"
+  allowed_values "Average", "Maximum", "p99", "p95", "p90"
   default "Average"
-  allowed_values "Average", "p99", "p95", "p90"
 end
 
-parameter "param_09_exclusion_tag_key" do
-  category "User Inputs"
-  label "Exclusion Tag Key:Value"
-  description "Cloud native tag to ignore instances that you don't want to consider for downsizing or termination. Format: Key:Value"
-  type "string"
-  allowed_pattern /(^$)|([\w]?)+\:([\w]?)+/
-  default ""
-end
-
-parameter "param_10_api_wait" do
+parameter "param_stats_lookback" do
   type "number"
-  label "CloudWatch API Wait Time"
-  description "Amount of time to wait between CloudWatch API requests to avoid throttling (seconds)"
-  default 5
+  category "Statistics"
+  label "Statistic Lookback Period"
+  description "How many days back to look at CPU and/or memory data for instances. This value cannot be set higher than 90 because AWS does not retain metrics for longer than 90 days."
+  default 30
   min_value 1
-  max_value 60
+  max_value 90
 end
 
-parameter "param_11_automatic_action" do
+parameter "param_automatic_action" do
   type "list"
+  category "Actions"
   label "Automatic Actions"
   description "When this value is set, this policy will automatically take the selected action(s)"
-  allowed_values ["Terminate Instances"]
+  allowed_values ["Downsize Instances", "Terminate Instances"]
   default []
-end
-
-parameter "param_12_log_to_cm_audit_entries" do
-  type "string"
-  label "Log to CM Audit Entries"
-  description "Boolean for whether or not to log any debugging information from actions to CM Audit Entries, this should be left set to No on Flexera EU"
-  default "No"
-  allowed_values "Yes", "No"
 end
 
 ###############################################################################
 # Authentication
 ###############################################################################
 credentials "auth_aws" do
-  schemes "aws","aws_sts"
+  schemes "aws", "aws_sts"
   label "AWS"
   description "Select the AWS Credential from the list"
   tags "provider=aws"
@@ -171,7 +182,7 @@ end
 
 credentials "auth_flexera" do
   schemes "oauth2"
-  label "flexera"
+  label "Flexera"
   description "Select Flexera One OAuth2 credentials"
   tags "provider=flexera"
 end
@@ -267,7 +278,7 @@ datasource "ds_child_policy_information" do
   result do
     encoding "json"
     # Select the published policy that is published by "support@flexera.com" and matches the name of the child policy template
-    collect jq(response, '.items[] | select(.name == "AWS Rightsize Compute Instances" and .created_by.email == "support@flexera.com")' ) do
+    collect jq(response, '.items[] | select(.name == "AWS Rightsize EC2 Instances" and .created_by.email == "support@flexera.com")' ) do
       field "name", jmes_path(col_item, "name")
       field "href", jmes_path(col_item, "href")
       field "short_description", jmes_path(col_item, "short_description")
@@ -765,19 +776,19 @@ datasource "ds_child_incident_details" do
   end
 end
 
-datasource "ds_underutilized_instances_combined_incidents" do
-  run_script $js_ds_underutilized_instances_combined_incidents, $ds_child_incident_details
+datasource "ds_underutil_instances_combined_incidents" do
+  run_script $js_ds_underutil_instances_combined_incidents, $ds_child_incident_details
 end
 
-script "js_ds_underutilized_instances_combined_incidents", type: "javascript" do
+script "js_ds_underutil_instances_combined_incidents", type: "javascript" do
   parameters "ds_child_incident_details"
   result "result"
   code <<-EOS
   result = []
   _.each(ds_child_incident_details, function(incident) {
     s = incident["summary"];
-    // If the incident summary contains "AWS underutilized compute instances found" then include it in the filter result
-    if (s.indexOf("AWS underutilized compute instances found") > -1) {
+    // If the incident summary contains "AWS Underutilized EC" then include it in the filter result
+    if (s.indexOf("AWS Underutilized EC") > -1) {
       _.each(incident["violation_data"], function(violation) {
         result.push(violation);
       });
@@ -797,8 +808,8 @@ script "js_ds_idle_instances_combined_incidents", type: "javascript" do
   result = []
   _.each(ds_child_incident_details, function(incident) {
     s = incident["summary"];
-    // If the incident summary contains "AWS idle compute instances found" then include it in the filter result
-    if (s.indexOf("AWS idle compute instances found") > -1) {
+    // If the incident summary contains "with index data" then include it in the filter result
+    if (s.indexOf("with index data") > -1) {
       _.each(incident["violation_data"], function(violation) {
         result.push(violation);
       });
@@ -814,9 +825,9 @@ end
 # Could also just have one incident and use meta_status to determine which escalation happens
 policy "policy_scheduled_report" do
   # Consolidated Incident Check(s)
-    # Consolidated incident for AWS underutilized compute instances found
-  validate $ds_underutilized_instances_combined_incidents do
-    summary_template "Consolidated Incident: {{ len data }} AWS underutilized compute instances found"
+    # Consolidated incident for AWS Underutilized EC
+  validate $ds_underutil_instances_combined_incidents do
+    summary_template "Consolidated Incident: {{ len data }} AWS Underutilized EC"
     escalate $esc_email
     check eq(size(data), 0)
     export do
@@ -830,16 +841,18 @@ policy "policy_scheduled_report" do
       field "resourceID" do
         label "Resource ID"
       end
-      field "resourceType" do
-        # label "Resource Type"
-        label "Instance Size"
-      end
       field "resourceName" do
         label "Resource Name"
       end
-      # field "vmSize" do
-      #   label "Instance Size"
-      # end
+      field "tags" do
+        label "Resource Tags"
+      end
+      field "recommendationDetails" do
+        label "Recommendation"
+      end
+      field "resourceType" do
+        label "Instance Size"
+      end
       field "newResourceType" do
         label "Recommended Instance Size"
       end
@@ -857,9 +870,6 @@ policy "policy_scheduled_report" do
       end
       field "savingsCurrency" do
         label "Savings Currency"
-      end
-      field "privateDnsName" do
-        label "Private DNS Name"
       end
       field "launchTime" do
         label "Launch Time"
@@ -900,17 +910,8 @@ policy "policy_scheduled_report" do
       field "memP90" do
         label "Memory p90"
       end
-      field "tags" do
-        label "Tags"
-      end
-      field "lookbackPeriod" do
-        label "Lookback Period"
-      end
-      field "service" do
-        label "Service"
-      end
-      field "id" do
-        label "ID"
+      field "thresholdType" do
+        label "Threshold Statistic"
       end
       field "threshold" do
         label "CPU Threshold"
@@ -918,15 +919,21 @@ policy "policy_scheduled_report" do
       field "memoryThreshold" do
         label "Memory Threshold"
       end
-      field "thresholdType" do
-        label "Threshold Type"
+      field "lookbackPeriod" do
+        label "Look Back Period (Days)"
+      end
+      field "service" do
+        label "Service"
+      end
+      field "id" do
+        label "ID"
       end
     end
   end
 
-  # Consolidated incident for AWS idle compute instances found
+  # Consolidated incident for with index data
   validate $ds_idle_instances_combined_incidents do
-    summary_template "Consolidated Incident: {{ len data }} AWS idle compute instances found"
+    summary_template "Consolidated Incident: {{ len data }} with index data"
     escalate $esc_email
     check eq(size(data), 0)
     export do
@@ -940,17 +947,17 @@ policy "policy_scheduled_report" do
       field "resourceID" do
         label "Resource ID"
       end
-      field "resourceType" do
-        label "Resource Type"
-      end
       field "resourceName" do
         label "Resource Name"
       end
-      field "vmSize" do
-        label "Instance Size"
+      field "tags" do
+        label "Resource Tags"
       end
-      field "newResourceType" do
-        label "Recommended Instance Size"
+      field "recommendationDetails" do
+        label "Recommendation"
+      end
+      field "resourceType" do
+        label "Instance Size"
       end
       field "region" do
         label "Region"
@@ -966,9 +973,6 @@ policy "policy_scheduled_report" do
       end
       field "savingsCurrency" do
         label "Savings Currency"
-      end
-      field "privateDnsName" do
-        label "Private DNS Name"
       end
       field "launchTime" do
         label "Launch Time"
@@ -1009,17 +1013,8 @@ policy "policy_scheduled_report" do
       field "memP90" do
         label "Memory p90"
       end
-      field "tags" do
-        label "Tags"
-      end
-      field "lookbackPeriod" do
-        label "Lookback Period"
-      end
-      field "service" do
-        label "Service"
-      end
-      field "id" do
-        label "ID"
+      field "thresholdType" do
+        label "Threshold Statistic"
       end
       field "threshold" do
         label "CPU Threshold"
@@ -1027,8 +1022,14 @@ policy "policy_scheduled_report" do
       field "memoryThreshold" do
         label "Memory Threshold"
       end
-      field "thresholdType" do
-        label "Threshold Type"
+      field "lookbackPeriod" do
+        label "Look Back Period (Days)"
+      end
+      field "service" do
+        label "Service"
+      end
+      field "id" do
+        label "ID"
       end
     end
   end
