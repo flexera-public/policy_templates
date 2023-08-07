@@ -19,6 +19,8 @@
 - Added `Throughput Utilization (%)` incident field.
 - Added `New Throughput Utilization (%)` incident field.
 - Added `System Details URL` incident field.
+- Renamed `Created time` incident field to `Action Created time`.
+- Changed internal names of several incident fields to ensure that they are properly scraped for dashboards.
 
 ## v0.2
 
