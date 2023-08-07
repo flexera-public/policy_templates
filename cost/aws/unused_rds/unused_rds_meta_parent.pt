@@ -1,14 +1,14 @@
-name "AWS Unused RDS Instance Meta Parent"
+name "AWS Unused RDS Instances Meta Parent"
 rs_pt_ver 20180301
 type "policy"
-short_description "Applies and manages \"child\" [AWS Unused RDS Instance](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/unused_rds) Policies."
+short_description "Applies and manages \"child\" [AWS Unused RDS Instances](https://github.com/flexera-public/policy_templates/tree/master/cost/aws/unused_rds) Policies."
 severity "low"
 category "Cost"
 tenancy "single"
 default_frequency "15 minutes"
 info(
   provider: "AWS",
-  version: "5.2", # This version of the Meta Parent Policy Template should match the version of the Child Policy Template as it appears in the Catalog for best reliability
+  version: "6.0", # This version of the Meta Parent Policy Template should match the version of the Child Policy Template as it appears in the Catalog for best reliability
   publish: "false"
 )
 
@@ -56,57 +56,73 @@ parameter "param_policy_schedule" do
 end
 
 ## Child Policy Parameters
-parameter "param_allowed_regions_allow_or_deny" do
+parameter "param_unusedtime" do
+  type "number"
+  category "Policy Settings"
+  label "Unused Days"
+  description "The number of days an RDS instance needs to have had no connections to consider it unused."
+  default 30
+  min_value 1
+end
+
+parameter "param_min_savings" do
+  type "number"
+  category "Policy Settings"
+  label "Minimum Savings Threshold"
+  description "Minimum potential savings required to generate a recommendation."
+  min_value 0
+  default 0
+end
+
+parameter "param_regions_allow_or_deny" do
   type "string"
+  category "Filters"
   label "Allow/Deny Regions"
   description "Allow or Deny entered regions. See the README for more details"
   allowed_values "Allow", "Deny"
   default "Allow"
 end
 
-parameter "param_allowed_regions" do
+parameter "param_regions_list" do
   type "list"
-  label "Regions"
+  category "Filters"
+  label "Allow/Deny Regions List"
   allowed_pattern /^([a-zA-Z-_]+-[a-zA-Z0-9-_]+-[0-9-_]+,*|)+$/
   description "A list of allowed or denied regions. See the README for more details"
+  default []
 end
 
-parameter "param_exclusion_tag_key" do
-  label "Exclusion Tag Key:Value"
-  description "AWS tag key to ignore instances. Format: Key:Value"
-  type "string"
+parameter "param_exclusion_tags" do
+  type "list"
+  category "Filters"
+  label "Exclusion Tags (Key:Value)"
+  description "Cloud native tags to ignore instances that you don't want to consider for deletion. Format: Key:Value"
+  allowed_pattern /(^$)|([\w]?)+\:([\w]?)+/
+  default []
 end
 
 parameter "param_automatic_action" do
   type "list"
+  category "Actions"
   label "Automatic Actions"
   description "When this value is set, this policy will automatically take the selected action(s)"
-  allowed_values ["Delete Instances"]
-end
-
-parameter "param_api_wait" do
-  type "number"
-  label "CloudWatch API Wait Time"
-  description "Amount of time to wait between CloudWatch API requests to avoid throttling (seconds)"
-  default 5
-  min_value 1
-  max_value 60
+  allowed_values ["Terminate Instances"]
 end
 
 ###############################################################################
 # Authentication
 ###############################################################################
 credentials "auth_aws" do
-  schemes "aws","aws_sts"
+  schemes "aws", "aws_sts"
   label "AWS"
-  description "Select the AWS Credential from the list."
+  description "Select the AWS Credential from the list"
   tags "provider=aws"
   aws_account_number $param_aws_account_number
 end
 
 credentials "auth_flexera" do
   schemes "oauth2"
-  label "flexera"
+  label "Flexera"
   description "Select Flexera One OAuth2 credentials"
   tags "provider=flexera"
 end
@@ -202,7 +218,7 @@ datasource "ds_child_policy_information" do
   result do
     encoding "json"
     # Select the published policy that is published by "support@flexera.com" and matches the name of the child policy template
-    collect jq(response, '.items[] | select(.name == "AWS Unused RDS Instance" and .created_by.email == "support@flexera.com")' ) do
+    collect jq(response, '.items[] | select(.name == "AWS Unused RDS Instances" and .created_by.email == "support@flexera.com")' ) do
       field "name", jmes_path(col_item, "name")
       field "href", jmes_path(col_item, "href")
       field "short_description", jmes_path(col_item, "short_description")
@@ -711,8 +727,8 @@ script "js_ds_instance_cost_mapping_combined_incidents", type: "javascript" do
   result = []
   _.each(ds_child_incident_details, function(incident) {
     s = incident["summary"];
-    // If the incident summary contains "rows containing AWS RDS Unused Instances" then include it in the filter result
-    if (s.indexOf("rows containing AWS RDS Unused Instances") > -1) {
+    // If the incident summary contains "AWS Unused RDS Instances Found" then include it in the filter result
+    if (s.indexOf("AWS Unused RDS Instances Found") > -1) {
       _.each(incident["violation_data"], function(violation) {
         result.push(violation);
       });
@@ -728,9 +744,9 @@ end
 # Could also just have one incident and use meta_status to determine which escalation happens
 policy "policy_scheduled_report" do
   # Consolidated Incident Check(s)
-    # Consolidated incident for rows containing AWS RDS Unused Instances
+    # Consolidated incident for AWS Unused RDS Instances Found
   validate $ds_instance_cost_mapping_combined_incidents do
-    summary_template "Consolidated Incident: {{ len data }} rows containing AWS RDS Unused Instances"
+    summary_template "Consolidated Incident: {{ len data }} AWS Unused RDS Instances Found"
     escalate $esc_email
     check eq(size(data), 0)
     export do
@@ -741,23 +757,26 @@ policy "policy_scheduled_report" do
       field "accountName" do
         label "Account Name"
       end
-      field "region" do
-        label "Region"
+      field "resourceID" do
+        label "Resource ID"
       end
       field "resourceName" do
         label "Resource Name"
       end
+      field "tags" do
+        label "Resource Tags"
+      end
+      field "region" do
+        label "Region"
+      end
       field "state" do
-        label "Status"
+        label "State"
       end
       field "savings" do
         label "Estimated Monthly Savings"
       end
       field "savingsCurrency" do
         label "Savings Currency"
-      end
-      field "resourceID" do
-        label "Resource Id"
       end
       field "privateDnsName" do
         label "Private DNS Name"
@@ -777,17 +796,14 @@ policy "policy_scheduled_report" do
       field "platform" do
         label "Platform"
       end
-      field "tags" do
-        label "Tags"
+      field "service" do
+        label "Service"
       end
       field "lookbackPeriod" do
-        label "Lookback Period"
+        label "Look Back Period (Days)"
       end
       field "id" do
         label "id"
-      end
-      field "service" do
-        label "Service"
       end
     end
   end
