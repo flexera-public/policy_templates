@@ -2,10 +2,8 @@
 
 ## v3.0
 
-- Added pricing support from azure retail API
-- Updated readme.md file to reflect new functionality
-- Added monthly savings based on pricing files values unitprice and ahubprice
-- Added currency support for savings estimates
+- Added pricing support from Azure retail API
+- Added monthly savings and currency support to the be included in the incidents
 
 ## v2.12
 
