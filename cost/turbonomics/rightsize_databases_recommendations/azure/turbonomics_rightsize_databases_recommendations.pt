@@ -240,8 +240,6 @@ script "js_filtered_turbonomic_recommendations", type: "javascript" do
 
             db.savings = (Math.round(db.savings * 730 * 1000) / 1000)
             monthlySavings = monthlySavings + db.savings
-            instanceCreatedDate = new Date(db.createdTime)
-            db.vmAge = (Math.round(nowDay.getTime() - instanceCreatedDate.getTime()) / (oneDay)).toFixed(0) + " Day(s)"
             db.url = "https://"+ turbonomic_endpoint + "/app/index.html#/view/main/action/" + db.actionID
             instances.push(db)
         }
@@ -320,15 +318,28 @@ script "js_get_projected_statistics", type: "javascript" do
     nowDay = new Date(Date.now())
     pastDay = new Date(Date.now() + nineHours)
     body_fields = {}
-    if (instance.className = "DatabaseServer"){
-      body_fields = {"statistics":[{"name":"VCPU","groupBy":["key","percentile"]},{"name":"VMem","groupBy":["key","percentile"]},{"name":"IOThroughput","groupBy":["key","percentile"]},{"name":"DBCacheHitRate","groupBy":["key","percentile"]},{"name":"VStorage","groupBy":["key", "percentile"]},{"name":"StorageAccess","groupBy":["key","percentile"]},{"name":"StorageAmount","groupBy":["key"]},{"name":"Connection","groupBy":["key"]}],"startDate":nowDay.getTime(),"endDate":pastDay.getTime()}
-    }
-    if (_.contains("DTU", instance.pricingModel)){
+    console.log(instance.className)
+    console.log(instance.pricingModel)
+    console.log("BOdys ")
+    console.log(body_fields)
+
+    //Different Payloads are used for Database : ['DTU'], ['StorageAmount']
+    if (_.contains(instance.pricingModel, "DTU")){
       body_fields = {"statistics":[{"name":"DTU","groupBy":["key","percentile"]},{"name":"StorageAmount","groupBy":["key"]}],"startDate":nowDay.getTime(),"endDate":pastDay.getTime()}
     }
-    if (_.contains("StorageAmount", instance.pricingModel)){
+    if (_.contains(instance.pricingModel, "StorageAmount")){
       body_fields = {"statistics":[{"name":"VCPU","groupBy":["key","percentile"]},{"name":"VMem","groupBy":["key","percentile"]},{"name":"StorageAccess","groupBy":["key","percentile"]},{"name":"IOThroughput","groupBy":["key","percentile"]},{"name":"StorageAmount","groupBy":["key"]}],"startDate":nowDay.getTime(),"endDate":pastDay.getTime()}
     }
+    //Payload for DatabaseServer : ['VCPU', 'StorageAccess', '']
+    if (instance.className = "DatabaseServer"){
+      body_fields = {"statistics":[{"name":"VCPU","groupBy":["key","percentile"]},{"name":"VMem","groupBy":["key","percentile"]},{"name":"IOThroughput","groupBy":["key","percentile"]},{"name":"DBCacheHitRate","groupBy":["key","percentile"]},{"name":"VStorage","groupBy":["key"]},{"name":"StorageAccess","groupBy":["key","percentile"]},{"name":"StorageAmount","groupBy":["key"]},{"name":"Connection","groupBy":["key"]}],"startDate":nowDay.getTime(),"endDate":pastDay.getTime()}
+    }
+
+
+    console.log("END bocyds ")
+    console.log(body_fields)
+
+
     request = {
       verb: "POST",
       host: turbonomic_endpoint,
@@ -350,52 +361,57 @@ script "js_combined_data", type: "javascript" do
   result "result"
   parameters "ds_get_turbonomic_recommendations", "ds_get_projected_statistics", "ds_get_current_statistics"
   code <<-EOS
-    _.each(ds_get_projected_statistics, function (projectedStatistic) {
+    _.each(ds_get_projected_statistics, function (projectedStatistic, ii) {
       _.each(ds_get_turbonomic_recommendations.instances, function (db, index) {
           if (db.uuid === projectedStatistic.uuid) {
-            db.afterSize = (projectedStatistic.size[0]/1024)
-            db.afterSizeUtil = ((projectedStatistic.size[1]*100)/projectedStatistic.size[0]).toFixed(2)
+            db.newSize = (projectedStatistic.size[0]/1024)
+            db.newSizeUtil = ((projectedStatistic.size[1]*100)/projectedStatistic.size[0]).toFixed(2)
             db.size = (ds_get_current_statistics[index].size[0]/1024)
             db.sizeUtil = ((ds_get_current_statistics[index].size[1]*100)/ds_get_current_statistics[index].size[0]).toFixed(2)
             if (_.contains(db.pricingModel, "DTU")){
-              db.afterDtu = projectedStatistic.dtu[0]
-              db.afterDtuUtil = ((projectedStatistic.dtu[1]*100)/projectedStatistic.dtu[0]).toFixed(2)
+              db.newDtu = projectedStatistic.dtu[0]
+              db.newDtuUtil = ((projectedStatistic.dtu[1]*100)/projectedStatistic.dtu[0]).toFixed(2)
               db.dtu = ds_get_current_statistics[index].dtu[0]
-              db.dtuutil = ((ds_get_current_statistics[index].dtu[1]*100)/ds_get_current_statistics[index].dtu[0]).toFixed(2)
+              db.dtuUtil = ((ds_get_current_statistics[index].dtu[1]*100)/ds_get_current_statistics[index].dtu[0]).toFixed(2)
             }
             if (_.contains(db.pricingModel, "StorageAmount")){
-              db.afterIops = projectedStatistic.iops[0]
-              db.afterIopsUtil = ((projectedStatistic.iops[1]*100)/projectedStatistic.iops[0]).toFixed(2)
-              db.afterVmem = (projectedStatistic.vmem[0]/1048576).toFixed(2)
-              db.afterVmemUtil = ((projectedStatistic.vmem[1]*100)/projectedStatistic.vmem[0]).toFixed(2)
-              db.afterVcpu = (projectedStatistic.vcpu[0]/1000).toFixed(2)
-              db.afterVcpuUtil = ((projectedStatistic.vcpu[1]*100)/projectedStatistic.vcpu[0]).toFixed(2)
-              db.afterIOThroughput = (projectedStatistic.iOThroughput[0]*0.000125).toFixed(2)
-              db.afterIOThroughpututil = ((projectedStatistic.iOThroughput[1]*100)/projectedStatistic.iOThroughput[0]).toFixed(2)
+              db.newIops = projectedStatistic.iops[0]
+              db.newIopsP95 = ((projectedStatistic.iops[1]*100)/projectedStatistic.iops[0]).toFixed(2)
+              db.newMem = (projectedStatistic.vmem[0]/1048576).toFixed(2)
+              db.newMemP95 = ((projectedStatistic.vmem[1]*100)/projectedStatistic.vmem[0]).toFixed(2)
+              db.newCpu = (projectedStatistic.vcpu[0]/1000).toFixed(2)
+              db.newCpuP95 = ((projectedStatistic.vcpu[1]*100)/projectedStatistic.vcpu[0]).toFixed(2)
+              db.newThroughput = (projectedStatistic.iOThroughput[0]*0.000125).toFixed(2)
+              db.newThroughputP95 = ((projectedStatistic.iOThroughput[1]*100)/projectedStatistic.iOThroughput[0]).toFixed(2)
               db.iops = ds_get_current_statistics[index].iops[0]
-              db.iopsUtil = ((ds_get_current_statistics[index].iops[1]*100)/ds_get_current_statistics[index].iops[0]).toFixed(2)
-              db.vmem = (ds_get_current_statistics[index].vmem[0]/1048576).toFixed(2)
-              db.vmemUtil = ((ds_get_current_statistics[index].vmem[1]*100)/ds_get_current_statistics[index].vmem[0]).toFixed(2)
-              db.vcpu = (ds_get_current_statistics[index].vcpu[0]/1000).toFixed(2)
-              db.vcpuUtil = ((ds_get_current_statistics[index].vcpu[1]*100)/ds_get_current_statistics[index].vcpu[0]).toFixed(2)
-              db.iOThroughput = (ds_get_current_statistics[index].iOThroughput[0]*0.000125).toFixed(2)
-              db.iOThroughpututil = ((ds_get_current_statistics[index].iOThroughput[1]*100)/ds_get_current_statistics[index].iOThroughput[0]).toFixed(2)
+              db.iopsP95 = ((ds_get_current_statistics[index].iops[1]*100)/ds_get_current_statistics[index].iops[0]).toFixed(2)
+              db.mem = (ds_get_current_statistics[index].vmem[0]/1048576).toFixed(2)
+              db.memP95 = ((ds_get_current_statistics[index].vmem[1]*100)/ds_get_current_statistics[index].vmem[0]).toFixed(2)
+              db.cpu = (ds_get_current_statistics[index].vcpu[0]/1000).toFixed(2)
+              db.cpuP95 = ((ds_get_current_statistics[index].vcpu[1]*100)/ds_get_current_statistics[index].vcpu[0]).toFixed(2)
+              db.throughput = (ds_get_current_statistics[index].iOThroughput[0]*0.000125).toFixed(2)
+              db.throughputP95 = ((ds_get_current_statistics[index].iOThroughput[1]*100)/ds_get_current_statistics[index].iOThroughput[0]).toFixed(2)
             }
             if (db.className == "DatabaseServer") {
-              db.connections = projectedStatistic.connection[0]
-              db.afterConnections = ds_get_current_statistics[index].connection[0]
-              db.afterIops = projectedStatistic.iops[0]
-              db.afterIopsUtil = ((projectedStatistic.iops[1]*100)/projectedStatistic.iops[0]).toFixed(2)
-              db.afterVmem = (projectedStatistic.vmem[0]/1048576).toFixed(2)
-              db.afterVmemUtil = ((projectedStatistic.vmem[1]*100)/projectedStatistic.vmem[0]).toFixed(2)
-              db.afterVcpu = (projectedStatistic.vcpu[0]/1000).toFixed(2)
-              db.afterVcpuUtil = ((projectedStatistic.vcpu[1]*100)/projectedStatistic.vcpu[0]).toFixed(2)
+              if (projectedStatistic.connection == null) {
+                db.connections = ""
+                db.newConnections = ""
+              }else{
+                db.connections = projectedStatistic.connection[0]
+                db.newConnections = ds_get_current_statistics[index].connection[0]
+              }
+              db.newIops = projectedStatistic.iops[0]
+              db.newIopsP95 = ((projectedStatistic.iops[1]*100)/projectedStatistic.iops[0]).toFixed(2)
+              db.newMem = (projectedStatistic.vmem[0]/1048576).toFixed(2)
+              db.newMemP95 = ((projectedStatistic.vmem[1]*100)/projectedStatistic.vmem[0]).toFixed(2)
+              db.newCpu = (projectedStatistic.vcpu[0]/1000).toFixed(2)
+              db.newCpuP95 = ((projectedStatistic.vcpu[1]*100)/projectedStatistic.vcpu[0]).toFixed(2)
               db.iops = ds_get_current_statistics[index].iops[0]
-              db.iopsUtil = ((ds_get_current_statistics[index].iops[1]*100)/ds_get_current_statistics[index].iops[0]).toFixed(2)
-              db.vmem = (ds_get_current_statistics[index].vmem[0]/1048576).toFixed(2)
-              db.vmemUtil = ((ds_get_current_statistics[index].vmem[1]*100)/ds_get_current_statistics[index].vmem[0]).toFixed(2)
-              db.vcpu = (ds_get_current_statistics[index].vcpu[0]/1000).toFixed(2)
-              db.vcpuUtil = ((ds_get_current_statistics[index].vcpu[1]*100)/ds_get_current_statistics[index].vcpu[0]).toFixed(2)
+              db.iopsP95 = ((ds_get_current_statistics[index].iops[1]*100)/ds_get_current_statistics[index].iops[0]).toFixed(2)
+              db.mem = (ds_get_current_statistics[index].vmem[0]/1048576).toFixed(2)
+              db.memP95 = ((ds_get_current_statistics[index].vmem[1]*100)/ds_get_current_statistics[index].vmem[0]).toFixed(2)
+              db.cpu = (ds_get_current_statistics[index].vcpu[0]/1000).toFixed(2)
+              db.cpuP95 = ((ds_get_current_statistics[index].vcpu[1]*100)/ds_get_current_statistics[index].vcpu[0]).toFixed(2)
             }
           }
       })
@@ -413,9 +429,9 @@ end
 
 policy "pol_turbonomic_rightsize_databases" do
   validate $ds_combined_data do
-    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data.instances }} Turbonomic Databases to Rightsize found"
+    summary_template "{{ rs_project_name }} (Account ID: {{ rs_project_id }}): {{ len data.instances }} Turbonomic Azure Databases & Database Servers to Rightsize found"
     detail_template <<-EOS
-      ## Turbonomic Rightsize Databases Recommendations
+      ## Turbonomic Rightsize Databases & Database Servers Azure Recommendations
       {{data.message}}
     EOS
     check eq(size(val(data, "instances")), 0)
@@ -461,94 +477,90 @@ policy "pol_turbonomic_rightsize_databases" do
         label "Cloud Provider"
       end
       field "createdTime" do
-        label "Created Time"
-      end
-      field "vmAge" do
-        label "VM Age"
-      end
-      field "pricingModel" do
-        label "Pricing Model"
+        label "Recommendation Created Time"
       end
       field "url" do
         label "System Details URL"
       end
       field "size" do
-        label "Size (GB)"
+        label "Storage (GB)"
       end
-      field "sizeUtil" do
-        label "Size % Utilization"
+      field "capacityUtil" do
+        label "Storage Utilization (%)"
+        path "sizeUtil"
       end
-      field "afterSize" do
-        label "After Size (GB)"
+      field "newSize" do
+        label "New Storage (GB)"
       end
-      field "afterSizeUtil" do
-        label "After Size % Utilization"
+      field "newCapacityUtil" do
+        label "New Storage Utilization (%)"
+        path "newSizeUtil"
       end
       field "dtu" do
-        label "DTU"
+        label "DTU Capacity"
       end
-      field "dtuutil" do
-        label "DTU % Utilization"
+      field "dtuUtil" do
+        label "DTU Utilization (%)"
       end
-      field "afterDtu" do
-        label "After DTU"
+      field "newDtu" do
+        label "New DTU Capacity"
       end
-      field "afterDtuUtil" do
-        label "After DTU % Utilization"
+      field "newDtuUtil" do
+        label "New DTU Utilization (%)"
       end
       field "iops" do
-        label "IOPs"
+        label "IOPs Capacity"
       end
-      field "iopsUtil" do
-        label "IOPs % Utilization"
+      field "iopsP95" do
+        label "IOPs Utilization (%)"
       end
-      field "afterIops" do
-        label "After IOPs"
+      field "newIops" do
+        label "New IOPs Capacity"
       end
-      field "afterIopsUtil" do
-        label "After IOPs % Utilization"
+      field "newIopsP95" do
+        label "New IOPs Utilization (%)"
       end
-      field "vmem" do
-        label "Virtual Memory (GB)"
+      field "mem" do
+        label "Memory (GB)"
       end
-      field "vmemUtil" do
-        label "Virtual Memory % Utilization"
+      field "memP95" do
+        label "Memory Utilization (%)"
       end
-      field "afterVmem" do
-        label "After Virtual Memory (GB)"
+      field "newMem" do
+        label "New Memory (GB)"
       end
-      field "afterVmemUtil" do
-        label "After Virtual Memory % Utilization"
+      field "newMemP95" do
+        label "New Memory Utilization (%)"
       end
-      field "vcpu" do
-        label "Virtual CPU (GHz)"
+      field "cpu" do
+        label "CPU (GHz)"
       end
-      field "vcpuUtil" do
-        label "Virtual CPU % Utilization"
+      field "cpuP95" do
+        label "CPU Utilization (%)"
       end
-      field "afterVcpu" do
-        label "After Virtual CPU (GHz)"
+      field "newCpu" do
+        label "New CPU (GHz)"
       end
-      field "afterVcpuUtil" do
-        label "After Virtual CPU % Utilization"
+      field "newCpuP95" do
+        label "new CPU Utilization (%)"
       end
-      field "iOThroughput" do
-        label "IOThroughput (MB/s)"
+      field "throughput" do
+        label "Throughput (MB/s)"
       end
-      field "iOThroughpututil" do
-        label "IOThroughput % Utilization"
+      field "throughputP95" do
+        label "Throughput Utilization (%)"
       end
-      field "afterIOThroughput" do
-        label "After IOThroughput (MB/s)"
+      field "newThroughput" do
+        label "New Throughput (MB/s)"
       end
-      field "afterIOThroughpututil" do
-        label "AfterIOThroughput % Utilization"
+      field "newThroughputP95" do
+        label "New Throughput Utilization (%)"
       end
       field "connections" do
         label "Connections"
       end
-      field "afterConnections" do
-        label "After Connections"
+      field "newConnections" do
+        label "New Connections"
       end
     end
     escalate $esc_email
