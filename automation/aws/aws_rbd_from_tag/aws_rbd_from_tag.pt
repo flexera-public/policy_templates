@@ -7,7 +7,7 @@ severity "low"
 category "Cost"
 default_frequency "daily"
 info(
-  version: "1.0",
+  version: "2.0",
   provider: "Flexera",
   service: "Optima",
   policy_set: "Automation",
@@ -35,13 +35,6 @@ end
 # Authentication
 ###############################################################################
 
-credentials "auth_aws" do
-  schemes "aws","aws_sts"
-  label "AWS"
-  description "Select the AWS credential."
-  tags "provider=aws"
-end
-
 credentials "auth_flexera" do
   schemes "oauth2"
   label "flexera"
@@ -66,6 +59,52 @@ end
 # Datasources & Scripts
 ###############################################################################
 
+# Get region-specific Flexera API endpoints
+datasource "ds_flexera_api_hosts" do
+  run_script $js_flexera_api_hosts, rs_optima_host
+end
+
+script "js_flexera_api_hosts", type: "javascript" do
+  parameters "rs_optima_host"
+  result "result"
+  code <<-EOS
+  host_table = {
+    "api.optima.flexeraeng.com": {
+      flexera: "api.flexera.com",
+      fsm: "api.fsm.flexeraeng.com"
+    },
+    "api.optima-eu.flexeraeng.com": {
+      flexera: "api.flexera.eu",
+      fsm: "api.fsm-eu.flexeraeng.com"
+    },
+    "api.optima-au.flexeraeng.com": {
+      flexera: "api.flexera.au",
+      fsm: "api.fsm-au.flexeraeng.com"
+    }
+  }
+
+  result = host_table[rs_optima_host]
+EOS
+end
+
+# Get AWS account info
+datasource "ds_cloud_vendor_accounts" do
+  request do
+    auth $auth_flexera
+    host val($ds_flexera_api_hosts, 'flexera')
+    path join(["/finops-analytics/v1/orgs/", rs_org_id, "/cloud-vendor-accounts"])
+    header "Api-Version", "1.0"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "values[*]") do
+      field "id", jmes_path(col_item, "aws.accountId")
+      field "name", jmes_path(col_item, "name")
+      field "tags", jmes_path(col_item, "tags")
+    end
+  end
+end
+
 datasource "ds_existing_rbds" do
   request do
     auth $auth_flexera
@@ -85,86 +124,8 @@ datasource "ds_existing_rbds" do
   end
 end
 
-datasource "ds_aws_accounts_without_tags" do
-  request do
-    auth $auth_aws
-    pagination $pagination_aws
-    host "organizations.us-east-1.amazonaws.com"
-    path '/'
-    verb "POST"
-    header "User-Agent", "RS Policies"
-    header "X-Amz-Target", "AWSOrganizationsV20161128.ListAccounts"
-    header "Content-Type", "application/x-amz-json-1.1"
-    body "{}"
-  end
-  result do
-    encoding "json"
-    collect jmes_path(response, "Accounts") do
-      field "arn", jmes_path(col_item, "Arn")
-      field "id", jmes_path(col_item, "Id")
-      field "name", jmes_path(col_item, "Name")
-      field "status", jmes_path(col_item, "Status")
-    end
-  end
-end
-
-datasource "ds_aws_accounts_with_tags" do
-  iterate $ds_aws_accounts_without_tags
-  request do
-    auth $auth_aws
-    pagination $pagination_aws
-    host "organizations.us-east-1.amazonaws.com"
-    path '/'
-    verb "POST"
-    header "User-Agent", "RS Policies"
-    header "X-Amz-Target", "AWSOrganizationsV20161128.ListTagsForResource"
-    header "Content-Type", "application/x-amz-json-1.1"
-    body_field "ResourceId", val(iter_item, "id")
-  end
-  result do
-    encoding "json"
-    field "arn", val(iter_item, "arn")
-    field "id", val(iter_item, "id")
-    field "name", val(iter_item, "name")
-    field "status", val(iter_item, "status")
-    field "tags", jmes_path(response, "Tags")
-  end
-end
-
-datasource "ds_aws_accounts" do
-  run_script $js_aws_accounts, $ds_aws_accounts_with_tags
-end
-
-script "js_aws_accounts", type: "javascript" do
-  parameters "ds_aws_accounts_with_tags"
-  result "result"
-  code <<-EOS
-  result = []
-
-  _.each(ds_aws_accounts_with_tags, function(account) {
-    tags = {}
-
-    if (account['tags'] != null && account['tags'] != undefined) {
-      _.each(account['tags'], function(tag) {
-        key = tag['Key'].toLowerCase().trim()
-        value = tag['Value']
-        tags[key] = value
-      })
-    }
-
-    result.push({
-      arn: account['arn'],
-      id: account['id'],
-      name: account['name'],
-      status: account['status'],
-      tags: tags
-    })
-  })
-EOS
-end
-
 datasource "ds_rbds" do
-  run_script $js_rbds, $ds_aws_accounts, $ds_existing_rbds, $param_tag_list, $param_effective_date
+  run_script $js_rbds, $ds_cloud_vendor_accounts, $ds_existing_rbds, $param_tag_list, $param_effective_date
 end
 
 script "js_rbds", type: "javascript" do
@@ -189,18 +150,20 @@ script "js_rbds", type: "javascript" do
     rules = []
 
     _.each(accounts, function(account) {
-      if (account['tags'][tag_key] != undefined && account['tags'][tag_key] != null) {
-        if (account['tags'][tag_key].trim() != '') {
-          rules.push({
-            "condition": {
-              "type": "dimension_equals",
-              "dimension": "vendor_account",
-              "value": account['id']
-            },
-            "value": {
-              "text": account['tags'][tag_key].toLowerCase().trim()
-            }
-          })
+      if (typeof(account['id']) == 'string' && account['id'] != '') {
+        if (account['tags'][tag_key] != undefined && account['tags'][tag_key] != null) {
+          if (account['tags'][tag_key].trim() != '') {
+            rules.push({
+              "condition": {
+                "type": "dimension_equals",
+                "dimension": "vendor_account",
+                "value": account['id']
+              },
+              "value": {
+                "text": account['tags'][tag_key].toLowerCase().trim()
+              }
+            })
+          }
         }
       }
     })

@@ -17,28 +17,6 @@ This policy uses [credentials](https://docs.flexera.com/flexera/EN/Automation/Ma
 
 ### Credential configuration
 
-- [**AWS Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_4184813559_1121575) (*provider=aws*) which has the following permissions:
-  - `organizations:ListAccounts`
-  - `organizations:ListTagsForResource`
-
-  Example IAM Permission Policy:
-
-  ```json
-  {
-      "Version": "2012-10-17",
-      "Statement": [
-          {
-              "Effect": "Allow",
-              "Action": [
-                  "organizations:ListAccounts",
-                  "organizations:ListTagsForResource"
-              ],
-              "Resource": "*"
-          }
-      ]
-  }
-  ```
-
 - [**Flexera Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) (*provider=flexera*) which has the following roles:
   - `common:org:own`
   - `optima:rule_based_dimension`
