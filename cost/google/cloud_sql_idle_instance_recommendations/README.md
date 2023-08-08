@@ -47,10 +47,21 @@ For administrators [creating and managing credentials](https://docs.flexera.com/
 
 Provider tag value to match this policy: `gce`
 
+Required APIs to have enabled in the provider:
+
+- Resource Manager API
+- Cloud SQL Admin API
+- Recommender API
+
 Required permissions in the provider:
 
-- The `resourcemanager.projects.get` permission
-- The `roles/recommender.cloudsqlAdmin` role
+- resourcemanager.projects.get
+- cloudsql.instances.list
+- recommender.cloudsqlIdleInstanceRecommendations.list
+
+Required roles in the provider:
+
+- Cloud SQL Recommender Viewer
 
 ## Supported Clouds
 

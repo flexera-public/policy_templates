@@ -39,6 +39,17 @@ there are no credentials listed when you apply the policy, please contact your
 cloud admin and ask them to register a credential that is compatible with this
 policy. The information below should be consulted when creating the credential.
 
+### Credential configuration
+
+For administrators [creating and managing credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) to use with this policy, the following information is needed:
+
+- [**Azure Resource Manager Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_109256743_1124668) (*provider=azure_rm*) which has the following permissions:
+  - `Microsoft.Compute/virtualMachines/read`
+  - `Microsoft.Compute/virtualMachines/write`
+
+- [**Flexera Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) (*provider=flexera*) which has the following roles:
+  - `billing_center_viewer`
+
 ## Supported Clouds
 
 This policy template supports the following clouds:

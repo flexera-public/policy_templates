@@ -6,17 +6,37 @@ require "json"
 # More info at https://github.com/flexera-public/policy_templates/blob/master/README_META_POLICIES.md
 default_child_policy_template_files = [
   # AWS Policy Templates
+  "../../compliance/aws/instances_without_fnm_agent/aws_instances_not_running_flexnet_inventory_agent.pt",
   "../../cost/aws/idle_compute_instances/idle_compute_instances.pt",
   "../../cost/aws/object_storage_optimization/aws_object_storage_optimization.pt",
   "../../cost/aws/old_snapshots/aws_delete_old_snapshots.pt",
-  "../../cost/aws/rightsize_compute_instances/aws_compute_rightsizing.pt",
+  "../../cost/aws/rightsize_ec2_instances/aws_rightsize_ec2_instances.pt",
   "../../cost/aws/rightsize_ebs_volumes/aws_volumes_rightsizing.pt",
   "../../cost/aws/unused_ip_addresses/aws_unused_ip_addresses.pt",
   "../../cost/aws/unused_rds/unused_rds.pt",
   "../../cost/aws/unused_volumes/aws_delete_unused_volumes.pt",
+  "../../compliance/aws/long_stopped_instances/aws_long_stopped_instances.pt",
+  "../../operational/aws/lambda_functions_with_high_error_rate/lambda_functions_with_high_error_rate.pt",
+  "../../security/aws/rds_publicly_accessible/aws_publicly_accessible_rds_instances.pt",
   # Azure Policy Templates
+  "../../compliance/azure/instances_without_fnm_agent/azure_instances_not_running_flexnet_inventory_agent.pt",
+  "../../cost/azure/idle_compute_instances/azure_idle_compute_instances.pt",
+  "../../cost/azure/old_snapshots/azure_delete_old_snapshots.pt",
+  "../../cost/azure/rightsize_compute_instances/azure_compute_rightsizing.pt",
+  "../../cost/azure/rightsize_sql_instances/azure_rightsize_sql_instances.pt",
+  "../../cost/azure/unused_ip_addresses/azure_unused_ip_addresses.pt",
+  "../../cost/azure/unused_sql_databases/azure_unused_sql_databases.pt",
   "../../cost/azure/unused_volumes/azure_unused_volumes.pt",
+  "../../cost/azure/hybrid_use_benefit/azure_hybrid_use_benefit.pt",
+  "../../cost/azure/hybrid_use_benefit_linux/ahub_linux.pt",
+  "../../cost/azure/hybrid_use_benefit_sql/ahub_sql.pt",
+  "../../cost/azure/storage_account_lifecycle_management/storage_account_lifecycle_management.pt",
+  "../../operational/azure/azure_certificates/azure_certificates.pt",
+  "../../operational/azure/azure_long_running_instances/azure_long_running_instances.pt",
+  "../../operational/azure/tag_cardinality/azure_tag_cardinality.pt",
+  "../../operational/azure/vms_without_managed_disks/azure_vms_without_managed_disks.pt",
 ]
+
 
 # Compile Meta Parent Policy Definition
 # This function takes a child policy template file path
@@ -40,16 +60,17 @@ def compile_meta_parent_policy(file_path)
   # print("\n###########################\n")
 
   # Get the parameters
-  parameters = pt.scan(/parameter ".*?" do.*?end/m)
+  parameters = pt.scan(/parameter ".*?" do.*?^end/m)
 
   # print("Parameters:\n")
   # print(parameters.join("\n---------\n"))
   # print("\n###########################\n")
 
   # Get the credentials
-  credentials = pt.scan(/credentials ".*?" do.*?end/m)
+  credentials = pt.scan(/credentials ".*?" do.*?^end/m)
 
-
+  # Get resource level
+  resource_level = pt.scan(/^\s*resource_level (true|false)$/)
 
   consolidated_incident_datasource_template = <<~EOL
   datasource "__PLACEHOLDER_FOR_CHILD_POLICY_CONSOLIDATED_INCIDENT_DATASOURCE___combined_incidents" do
@@ -80,7 +101,7 @@ def compile_meta_parent_policy(file_path)
     escalate $esc_email
     check eq(size(data), 0)
     export do
-      resource_level true
+      resource_level __PLACEHOLDER_FOR_CHILD_POLICY_CONSOLIDATED_INCIDENT_RESOURCE_LEVEL__
       __PLACEHOLDER_FOR_CHILD_POLICY_CONSOLIDATED_INCIDENT_FIELDS__
     end
   end
@@ -106,9 +127,10 @@ def compile_meta_parent_policy(file_path)
     fields.each do |field|
       # Remove path from the field output in the meta parent
       field.gsub!(/\n.*?path.*?\n/, "\n")
-      # Lazy way to remove the export do // resource_level true blocks that are not needed.
+      # Lazy way to remove the export do // resource_level true and false blocks that are not needed.
       # A better solution would be a better regex above to capture only the field statements
       field.gsub!(/ *?export.*?do\n *resource_level true\n *field/, "field")
+      field.gsub!(/ *?export.*?do\n *resource_level false\n *field/, "field")
       # Add 6 spaces to the beginning of each field to make it align with the policy.validate.export.<field> in the meta parent
       field = "      " + field
       # print("Field: \n")
@@ -141,6 +163,8 @@ def compile_meta_parent_policy(file_path)
     # Replace the placeholder with the Child Policy Consolidated Incident Datasource Block
     output_ds = output_ds.gsub("__PLACEHOLDER_FOR_CHILD_POLICY_CONSOLIDATED_INCIDENT_DATASOURCE__", datasource_name)
     output_incident = output_incident.gsub("__PLACEHOLDER_FOR_CHILD_POLICY_CONSOLIDATED_INCIDENT_DATASOURCE__", datasource_name)
+    # Replace the placeholder with the Child Policy Consolidated Incident Resource Level
+    output_incident = output_incident.gsub("__PLACEHOLDER_FOR_CHILD_POLICY_CONSOLIDATED_INCIDENT_RESOURCE_LEVEL__", resource_level[0][0])
     # Replace the placeholder with the Child Policy Consolidated Incident Fields Blocks
     output_incident = output_incident.gsub("__PLACEHOLDER_FOR_CHILD_POLICY_CONSOLIDATED_INCIDENT_FIELDS__", fields.join("\n      "))
     # Add the consolidated incident datasource and check blocks to the consolidated incident arrays
@@ -181,7 +205,7 @@ def compile_meta_parent_policy(file_path)
   output_pt_params = []
   parameters.each do |param|
     # Check if the param string container either param_email, param_aws_account_number, or param_subscription_allowed_list
-    param.include?("param_email") || param.include?("param_aws_account_number") || param.include?("param_subscription_allowed_list") ? nil : output_pt_params.push(param)
+    param.include?("param_email") || param.include?("param_aws_account_number") || param.include?("param_subscription_allowed_list") || param.include?("param_subscriptions_list") || param.include?("param_subscriptions_allow_or_deny") ? nil : output_pt_params.push(param)
   end
   # Replace placeholder with the identified output parameter blocks
   output_pt = output_pt.gsub("__PLACEHOLDER_FOR_CHILD_POLICY_PARAMETERS_BLOCKS__", output_pt_params.join("\n\n"))

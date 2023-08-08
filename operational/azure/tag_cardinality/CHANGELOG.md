@@ -1,5 +1,12 @@
 # Changelog
 
+## v3.0
+
+- Added "Subscription Allowed List" parameter to enable Subscription filtering
+- Added logic required for "Meta Policy" use-cases
+- Added parameter for Azure API endpoint to support Azure China
+- Policy now requires a valid Flexera credential to facilitate "Meta Policy" use-cases
+
 ## v2.3
 
 - A list of the unique tag values is now included as a column in the incident
