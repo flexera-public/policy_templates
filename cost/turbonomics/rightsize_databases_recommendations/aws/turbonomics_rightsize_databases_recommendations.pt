@@ -327,7 +327,7 @@ script "js_get_projected_statistics", type: "javascript" do
     }
     //Payload for DatabaseServer : ['VCPU', 'StorageAccess', '']
     if (instance.className = "DatabaseServer"){
-      body_fields = {"statistics":[{"name":"VCPU","groupBy":["key","percentile"]},{"name":"VMem","groupBy":["key","percentile"]},{"name":"IOThroughput","groupBy":["key","percentile"]},{"name":"DBCacheHitRate","groupBy":["key","percentile"]},{"name":"VStorage","groupBy":["key", "percentile"]},{"name":"StorageAccess","groupBy":["key","percentile"]},{"name":"StorageAmount","groupBy":["key"]},{"name":"Connection","groupBy":["key"]}],"startDate":nowDay.getTime(),"endDate":pastDay.getTime()}
+      body_fields = {"statistics":[{"name":"VCPU","groupBy":["key","percentile"]},{"name":"VMem","groupBy":["key","percentile"]},{"name":"IOThroughput","groupBy":["key","percentile"]},{"name":"DBCacheHitRate","groupBy":["key","percentile"]},{"name":"VStorage","groupBy":["key"]},{"name":"StorageAccess","groupBy":["key","percentile"]},{"name":"StorageAmount","groupBy":["key"]},{"name":"Connection","groupBy":["key"]}],"startDate":nowDay.getTime(),"endDate":pastDay.getTime()}
     }
 
     request = {
@@ -351,7 +351,7 @@ script "js_combined_data", type: "javascript" do
   result "result"
   parameters "ds_get_turbonomic_recommendations", "ds_get_projected_statistics", "ds_get_current_statistics"
   code <<-EOS
-    _.each(ds_get_projected_statistics, function (projectedStatistic) {
+    _.each(ds_get_projected_statistics, function (projectedStatistic, ii) {
       _.each(ds_get_turbonomic_recommendations.instances, function (db, index) {
           if (db.uuid === projectedStatistic.uuid) {
             db.newSize = (projectedStatistic.size[0]/1024)
@@ -383,8 +383,13 @@ script "js_combined_data", type: "javascript" do
               db.throughputP95 = ((ds_get_current_statistics[index].iOThroughput[1]*100)/ds_get_current_statistics[index].iOThroughput[0]).toFixed(2)
             }
             if (db.className == "DatabaseServer") {
-              db.connections = projectedStatistic.connection[0]
-              db.newConnections = ds_get_current_statistics[index].connection[0]
+              if (projectedStatistic.connection == null) {
+                db.connections = ""
+                db.newConnections = ""
+              }else{
+                db.connections = projectedStatistic.connection[0]
+                db.newConnections = ds_get_current_statistics[index].connection[0]
+              }
               db.newIops = projectedStatistic.iops[0]
               db.newIopsP95 = ((projectedStatistic.iops[1]*100)/projectedStatistic.iops[0]).toFixed(2)
               db.newMem = (projectedStatistic.vmem[0]/1048576).toFixed(2)
@@ -469,14 +474,16 @@ policy "pol_turbonomic_rightsize_databases" do
       field "size" do
         label "Storage (GB)"
       end
-      field "sizeUtil" do
+      field "capacityUtil" do
         label "Storage Utilization (%)"
+        path "sizeUtil"
       end
       field "newSize" do
         label "New Storage (GB)"
       end
-      field "newSizeUtil" do
+      field "newCapacityUtil" do
         label "New Storage Utilization (%)"
+        path "newSizeUtil"
       end
       field "dtu" do
         label "DTU Capacity"
