@@ -8,7 +8,7 @@ renamed_files = (git.renamed_files.collect{|r| r[:before]})
 # remove list of renamed files to prevent errors on files that don't exist
 changed_files = (git.added_files + git.modified_files - renamed_files)
 has_app_changes = changed_files.select{ |file| file.end_with? "pt" }
-has_new_policy_template = git.added_files.select{ |file| file.end_with? "pt" }
+has_new_policy_template = git.added_files.select{ |file| (file.end_with? "pt") && (! file.end_with? "meta_parent.pt") } # exclude meta_parent.pt -- these are generated from the child policy templates
 md_files = changed_files.select{ |file| file.end_with? "md" }
 
 pp = PolicyParser.new
@@ -127,6 +127,11 @@ md_files.each do |file|
       # MD033 Inline HTML. Required for example snippets.
       # MD034 Bare URL used - Bugged. No bare URLs are actually used in this README.
       mdl = `mdl -r "~MD013","~MD033","~MD034" #{file}`
+  # Exemptions for tools/cloudformation-template/README.md
+  elsif file == '.github/PULL_REQUEST_TEMPLATE.md'
+    # MD002 First header should be a top level header
+    # MD013 Line length
+    mdl = `mdl -r "~MD002","~MD013" #{file}`
   else
     # use .mdlrc rules
     mdl = `mdl #{file}`

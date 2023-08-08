@@ -1,5 +1,19 @@
 # Changelog
 
+## v3.0
+
+- Renamed Subscription List parameter for consistency and accuracy
+- Added logic required for "Meta Policy" use-cases
+- Policy now requires a valid Flexera credential to facilitate "Meta Policy" use-cases
+
+## v2.13
+
+- Added `Lookback Period` incident field.
+- Added `Subscription ID` incident field.
+- Added `Resource Type` incident field.
+- Added `Threshold` incident field.
+- Changed internal names of several incident fields to ensure that they are properly scraped for dashboards.
+
 ## v2.12
 
 - Replaced the term **whitelist** with **allowed list**.

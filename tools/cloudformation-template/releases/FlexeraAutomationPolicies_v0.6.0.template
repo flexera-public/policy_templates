@@ -1,0 +1,931 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: "CloudFormation Stack with IAM Role and IAM Permission Policy used by Flexera Automation. Official Docs: https://docs.flexera.com/"
+
+Metadata:
+  # AWS::CloudFormation::Interface is a metadata key that defines how parameters are grouped and sorted in the AWS CloudFormation console.
+  # https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-cloudformation-interface.html
+  AWS::CloudFormation::Interface:
+    # https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-properties-cloudformation-interface-parametergroup.html
+    ParameterGroups:
+      # ParameterGroup with paramFlexeraOrgId should be first.
+      # paramFlexeraOrgId only param that is actually required (if Org is on app.flexera.com)
+      - Label:
+          default: "Parameters related to your Organization on the Flexera Platform"
+        Parameters:
+          - paramFlexeraOrgId
+          - paramFlexeraZone
+      - Label:
+          default: "Parameters related to the IAM Role that is created"
+        Parameters:
+          - paramRoleName
+          - paramRolePath
+      - Label:
+          default: "Parameters related to Policy Template permissions on the IAM Role that is created"
+        Parameters:
+          #### For each policy template append:
+          # - paramPerms<PolicyTemplateNameNoSpaces>
+          - paramPermsAWSUnusedVolumes
+          - paramPermsAWSUnusedRDS
+          - paramPermsAWSUnusedIPAddresses
+          - paramPermsAWSOldSnapshots
+          - paramPermsAWSIdleComputeInstances
+          - paramPermsAWSRightsizeEC2Instances
+          - paramPermsAWSReservedInstancesRecommendation
+          - paramPermsAWSObjectStorageOptimization
+          - paramPermsAWSExpiringSavingsPlans
+          - paramPermsAWSSavingsPlanRecommendations
+          - paramPermsAWSSavingsPlanUtilization
+          - paramPermsAWSTagCardinalityReport
+          - paramPermsAWSUntaggedResources
+          # End for each policy template
+          - paramPermsAttachExistingPolicies
+    # https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-properties-cloudformation-interface-parameterlabel.html
+    ParameterLabels:
+      paramRoleName:
+        # https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-properties-cloudformation-interface-label.html
+        # The default label that the CloudFormation console uses to name a parameter group or parameter.
+        default: "IAM Role Name"
+      paramRolePath:
+        default: "IAM Role Path"
+      paramFlexeraOrgId:
+        default: "Flexera Organization ID"
+      paramFlexeraZone:
+        default: "Flexera Zone"
+      #### For each policy template append:
+      # paramPerms<PolicyTemplateNameNoSpaces>:
+      #   default: "Permissions for Policy Template: <Policy Template Name>"
+      paramPermsAWSUnusedVolumes:
+        default: "Permissions for Policy Template: AWS Unused Volumes"
+      paramPermsAWSUnusedRDS:
+        default: "Permissions for Policy Template: AWS Unused RDS"
+      paramPermsAWSUnusedIPAddresses:
+        default: "Permissions for Policy Template: AWS Unused IP Addresses"
+      paramPermsAWSOldSnapshots:
+        default: "Permissions for Policy Template: AWS Old Snapshots"
+      paramPermsAWSIdleComputeInstances:
+        default: "Permissions for Policy Template: AWS Idle Compute Instances"
+      paramPermsAWSRightsizeEC2Instances:
+        default: "Permissions for Policy Template: AWS Rightsize EC2 Instances"
+      paramPermsAWSReservedInstancesRecommendation:
+        default: "Permissions for Policy Template: AWS Reserved Instances Recommendation"
+      paramPermsAWSObjectStorageOptimization:
+        default: "Permissions for Policy Template: AWS Object Storage Optimization"
+      paramPermsAWSExpiringSavingsPlans:
+        default: "Permissions for Policy Template: AWS Expiring Savings Plans"
+      paramPermsAWSSavingsPlanRecommendations:
+        default: "Permissions for Policy Template: AWS Savings Plan Recommendations"
+      paramPermsAWSSavingsPlanUtilization:
+        default: "Permissions for Policy Template: AWS Savings Plan Utilization"
+      paramPermsAWSTagCardinalityReport:
+        default: "Permissions for Policy Template: AWS Tag Cardinality Report"
+      paramPermsAWSUntaggedResources:
+        default: "Permissions for Policy Template: AWS Untagged Resources"
+      # End for each policy template
+      paramPermsAttachExistingPolicies:
+        default: "Additional IAM Permission Policies for IAM Role"
+
+Parameters:
+  # ParameterGroup: Parameters related to your Organization on the Flexera Platform
+  paramFlexeraOrgId:
+    Description: >-
+      The Organization ID in Flexera which trust will be granted to use the IAM Role that will be created
+    Type: String
+    AllowedPattern: "[0-9]+"
+    MinLength: 1
+    ConstraintDescription: Organization ID must be provided and match regex [0-9]+
+  paramFlexeraZone:
+    Description: >-
+      The Flexera Zone which trust will be granted to.  The Organization ID should be located in this Flexera Zone.
+    Type: String
+    Default: app.flexera.com
+    AllowedValues:
+      - app.flexera.com
+      - app.flexera.eu
+      - app.flexera.au
+      - app.flexeratest.com
+
+  # ParameterGroup: Parameters for the IAM Role that is created
+  paramRoleName:
+    Description: Name of the the IAM Role that will be created. If you plan to create more than one IAM Role (i.e. one for each Policy Template, or to trust multiple Orgs) you will need to modify this to prevent naming conflict.
+    Type: String
+    Default: FlexeraAutomationAccessRole
+    # IAM Role Name Max Length is 64chars
+    MaxLength: 64
+  paramRolePath:
+    Description: Path for the IAM Role that will be created. Generally does not need to be modified.
+    Type: String
+    Default: /
+
+  # ParameterGroup: Parameters to define Policy Template permissions on the IAM Role that is created
+  #### For each policy template append:
+  # paramPerms<PolicyTemplateNameNoSpaces>:
+  #   Description: 'What permissions should policies using "<Policy Template Name>" Policy Template be granted on the IAM Role that will be created?'
+  #   Type: String
+  #   Default: Read Only
+  #   AllowedValues:
+  #     - No Access
+  #     - Read Only
+  #     - Read and Take Action
+  paramPermsAWSUnusedVolumes:
+    Description: 'What permissions should policies using "AWS Unused Volumes" Policy Template be granted on the IAM Role that will be created?'
+    Type: String
+    Default: Read Only
+    AllowedValues:
+      - No Access
+      - Read Only
+      - Read and Take Action
+  paramPermsAWSUnusedRDS:
+    Description: 'What permissions should policies using "AWS Unused RDS" Policy Template be granted on the IAM Role that will be created?'
+    Type: String
+    Default: Read Only
+    AllowedValues:
+      - No Access
+      - Read Only
+  paramPermsAWSUnusedIPAddresses:
+    Description: 'What permissions should policies using "AWS Unused IP Addresses" Policy Template be granted on the IAM Role that will be created?'
+    Type: String
+    Default: Read Only
+    AllowedValues:
+      - No Access
+      - Read Only
+      - Read and Take Action
+  paramPermsAWSOldSnapshots:
+    Description: 'What permissions should policies using "AWS Old Snapshots" Policy Template be granted on the IAM Role that will be created?'
+    Type: String
+    Default: Read Only
+    AllowedValues:
+      - No Access
+      - Read Only
+      - Read and Take Action
+  paramPermsAWSIdleComputeInstances:
+    Description: 'What permissions should policies using "AWS Idle Compute Instances" Policy Template be granted on the IAM Role that will be created?'
+    Type: String
+    Default: Read Only
+    AllowedValues:
+      - No Access
+      - Read Only
+  paramPermsAWSRightsizeEC2Instances:
+    Description: 'What permissions should policies using "AWS Rightsize EC2 Instances" Policy Template be granted on the IAM Role that will be created?'
+    Type: String
+    Default: Read Only
+    AllowedValues:
+      - No Access
+      - Read Only
+      - Read and Take Action
+  paramPermsAWSReservedInstancesRecommendation:
+    Description: 'What permissions should policies using "AWS Reserved Instances Recommendation" Policy Template be granted on the IAM Role that will be created?'
+    Type: String
+    Default: Read Only
+    AllowedValues:
+      - No Access
+      - Read Only
+      # - Read and Take Action
+  paramPermsAWSObjectStorageOptimization:
+    Description: 'What permissions should policies using "AWS Object Storage Optimization" Policy Template be granted on the IAM Role that will be created?'
+    Type: String
+    Default: Read Only
+    AllowedValues:
+      - No Access
+      - Read Only
+      - Read and Take Action
+  paramPermsAWSExpiringSavingsPlans:
+    Description: 'What permissions should policies using "AWS Expiring Savings Plans" Policy Template be granted on the IAM Role that will be created?'
+    Type: String
+    Default: Read Only
+    AllowedValues:
+      - No Access
+      - Read Only
+      # - Read and Take Action
+  paramPermsAWSSavingsPlanRecommendations:
+    Description: 'What permissions should policies using "AWS Savings Plan Recommendations" Policy Template be granted on the IAM Role that will be created?'
+    Type: String
+    Default: Read Only
+    AllowedValues:
+      - No Access
+      - Read Only
+      # - Read and Take Action
+  paramPermsAWSSavingsPlanUtilization:
+    Description: 'What permissions should policies using "AWS Savings Plan Utilization" Policy Template be granted on the IAM Role that will be created?'
+    Type: String
+    Default: Read Only
+    AllowedValues:
+      - No Access
+      - Read Only
+      # - Read and Take Action
+  paramPermsAWSTagCardinalityReport:
+    Description: 'What permissions should policies using "AWS Tag Cardinality Report" Policy Template be granted on the IAM Role that will be created?'
+    Type: String
+    Default: Read Only
+    AllowedValues:
+      - No Access
+      - Read Only
+      # - Read and Take Action
+  paramPermsAWSUntaggedResources:
+    Description: 'What permissions should policies using "AWS Untagged Resources" Policy Template be granted on the IAM Role that will be created?'
+    Type: String
+    Default: Read Only
+    AllowedValues:
+      - No Access
+      - Read Only
+      - Read and Take Action
+  # End for each policy template
+  paramPermsAttachExistingPolicies:
+    Description: 'Existing IAM Permission Policies to attach to the IAM Role that will be created. Optional, comma separated list of IAM Policy ARNs -- i.e. arn:aws:iam::aws:policy/ReadOnlyAccess'
+    Type: String
+    #  AWS Managed Policy ARN:      arn:aws:iam::aws:policy/ReadOnlyAccess
+    #  Customer Managed Policy ARN: arn:aws:iam::123456789012:policy/CustomPolicy
+    AllowedPattern: '^((arn:aws:iam::(\d{12}|aws)?:policy\/[\w+=,.@-]{1,128})(,)?)*$'
+    ConstraintDescription: 'Malformed IAM Policy ARN.  Must match pattern ^((arn:aws:iam::(\d{12}|aws)?:policy\/[\w+=,.@-]{1,128})(,)?)*$'
+
+Conditions:
+  #### For each policy template append:
+  # CreatePolicy<PolicyTemplateNameNoSpaces>Read: !Not
+  #   - !Equals
+  #     - !Ref paramPerms<PolicyTemplateNameNoSpaces>
+  #     - No Access
+  # CreatePolicy<PolicyTemplateNameNoSpaces>Action: !Equals
+  #   - !Ref paramPerms<PolicyTemplateNameNoSpaces>
+  #   - Read and Take Action
+  CreatePolicyAWSUnusedVolumesRead: !Not
+    - !Equals
+      - !Ref paramPermsAWSUnusedVolumes
+      - No Access
+  CreatePolicyAWSUnusedVolumesAction: !Equals
+    - !Ref paramPermsAWSUnusedVolumes
+    - Read and Take Action
+  CreatePolicyAWSUnusedRDSRead: !Not
+    - !Equals
+      - !Ref paramPermsAWSUnusedRDS
+      - No Access
+  # Policy has no actions currently, commenting out to prevent cfn-lint W8001 Error Condition not used
+  # CreatePolicyAWSUnusedRDSAction: !Equals
+  #   - !Ref paramPermsAWSUnusedRDS
+  #   - Read and Take Action
+  CreatePolicyAWSUnusedIPAddressesRead: !Not
+    - !Equals
+      - !Ref paramPermsAWSUnusedIPAddresses
+      - No Access
+  CreatePolicyAWSUnusedIPAddressesAction: !Equals
+    - !Ref paramPermsAWSUnusedIPAddresses
+    - Read and Take Action
+  CreatePolicyAWSOldSnapshotsRead: !Not
+    - !Equals
+      - !Ref paramPermsAWSOldSnapshots
+      - No Access
+  CreatePolicyAWSOldSnapshotsAction: !Equals
+    - !Ref paramPermsAWSOldSnapshots
+    - Read and Take Action
+  CreatePolicyAWSIdleComputeInstancesRead: !Not
+    - !Equals
+      - !Ref paramPermsAWSIdleComputeInstances
+      - No Access
+  # Policy has no actions currently, commenting out to prevent cfn-lint W8001 Error Condition not used
+  # CreatePolicyAWSIdleComputeInstancesAction: !Equals
+  #   - !Ref paramPermsAWSIdleComputeInstances
+  #   - Read and Take Action
+  CreatePolicyAWSRightsizeEC2InstancesRead: !Not
+    - !Equals
+      - !Ref paramPermsAWSRightsizeEC2Instances
+      - No Access
+  CreatePolicyAWSRightsizeEC2InstancesAction: !Equals
+    - !Ref paramPermsAWSRightsizeEC2Instances
+    - Read and Take Action
+  CreatePolicyAWSReservedInstancesRecommendationRead: !Not
+    - !Equals
+      - !Ref paramPermsAWSReservedInstancesRecommendation
+      - No Access
+  # Policy has no actions currently, commenting out to prevent cfn-lint W8001 Error Condition not used
+  # CreatePolicyAWSReservedInstancesRecommendationAction: !Equals
+  #   - !Ref paramPermsAWSReservedInstancesRecommendation
+  #   - Read and Take Action
+  CreatePolicyAWSObjectStorageOptimizationRead: !Not
+    - !Equals
+      - !Ref paramPermsAWSObjectStorageOptimization
+      - No Access
+  CreatePolicyAWSObjectStorageOptimizationAction: !Equals
+    - !Ref paramPermsAWSObjectStorageOptimization
+    - Read and Take Action
+  CreatePolicyAWSExpiringSavingsPlansRead: !Not
+    - !Equals
+      - !Ref paramPermsAWSExpiringSavingsPlans
+      - No Access
+  # Policy has no actions currently, commenting out to prevent cfn-lint W8001 Error Condition not used
+  # CreatePolicyAWSExpiringSavingsPlansAction: !Equals
+  #   - !Ref paramPermsAWSExpiringSavingsPlans
+  #   - Read and Take Action
+  CreatePolicyAWSSavingsPlanRecommendationsRead: !Not
+    - !Equals
+      - !Ref paramPermsAWSSavingsPlanRecommendations
+      - No Access
+  # Policy has no actions currently, commenting out to prevent cfn-lint W8001 Error Condition not used
+  # CreatePolicyAWSSavingsPlanRecommendationsAction: !Equals
+  #   - !Ref paramPermsAWSSavingsPlanRecommendations
+  #   - Read and Take Action
+  CreatePolicyAWSSavingsPlanUtilizationRead: !Not
+    - !Equals
+      - !Ref paramPermsAWSSavingsPlanUtilization
+      - No Access
+  # Policy has no actions currently, commenting out to prevent cfn-lint W8001 Error Condition not used
+  # CreatePolicyAWSSavingsPlanUtilizationAction: !Equals
+  #   - !Ref paramPermsAWSSavingsPlanUtilization
+  #   - Read and Take Action
+  CreatePolicyAWSTagCardinalityReportRead: !Not
+    - !Equals
+      - !Ref paramPermsAWSTagCardinalityReport
+      - No Access
+  # Policy has no actions currently, commenting out to prevent cfn-lint W8001 Error Condition not used
+  # CreatePolicyAWSTagCardinalityReportAction: !Equals
+  #   - !Ref paramPermsAWSTagCardinalityReport
+  #   - Read and Take Action
+  CreatePolicyAWSUntaggedResourcesRead: !Not
+    - !Equals
+      - !Ref paramPermsAWSUntaggedResources
+      - No Access
+  CreatePolicyAWSUntaggedResourcesAction: !Equals
+    - !Ref paramPermsAWSUntaggedResources
+    - Read and Take Action
+  # End for each policy template
+  ValueProvidedparamPermsAttachExistingPolicies: !Not
+    - !Equals
+      - !Ref paramPermsAttachExistingPolicies
+      - ""
+
+Mappings:
+  TrustedRoleMap:
+    app.flexera.com:
+      roleArn: "arn:aws:iam::451234325714:role/production_customer_access"
+    app.flexera.eu:
+      roleArn: "arn:aws:iam::451234325714:role/production_eu_customer_access"
+    app.flexera.au:
+      roleArn: "arn:aws:iam::451234325714:role/production_apac_customer_access"
+    app.flexeratest.com:
+      roleArn: "arn:aws:iam::274571843445:role/staging_customer_access"
+  PermissionMap:
+    # Begin IAM Permissions Map
+    # Expect 2 lists for each Policy Template (read and action)
+    #### For each policy template append:
+    # <PolicyTemplateNameNoSpaces>:
+    #   read:
+    #     - "<IAM Permission>"
+    #   action:
+    #     - "<IAM Permission>"
+    AWSUnusedVolumes:
+      read:
+        - "ec2:DescribeRegions"
+        - "ec2:DescribeVolumes"
+        - "ec2:DescribeSnapshots"
+        - "cloudwatch:GetMetricStatistics"
+        - "cloudwatch:GetMetricData"
+      action:
+        - "ec2:CreateTags"
+        - "ec2:CreateSnapshot"
+        - "ec2:DetachVolume"
+        - "ec2:DeleteVolume"
+    AWSUnusedRDS:
+      read:
+        - "ec2:DescribeRegions"
+        - "cloudwatch:GetMetricStatistics"
+        - "cloudwatch:GetMetricData"
+        - "cloudwatch:ListMetrics"
+      action: []
+    AWSUnusedIPAddresses:
+      read:
+        - "ec2:DescribeRegions"
+        - "ec2:DescribeAddresses"
+        - "pricing:GetProducts"
+      action:
+        - "ec2:ReleaseAddress"
+    AWSOldSnapshots:
+      read:
+        - "ec2:DescribeRegions"
+        - "ec2:DescribeImages"
+        - "ec2:DescribeSnapshots"
+        - "rds:DescribeDBInstances"
+        - "rds:DescribeDBSnapshots"
+        - "rds:DescribeDBClusters"
+        - "rds:DescribeDBClusterSnapshots"
+        - "sts:GetCallerIdentity"
+      action:
+        - "ec2:DeregisterImage"
+        - "ec2:DeleteSnapshot"
+        - "rds:DeleteDBSnapshot"
+        - "rds:DeleteDBClusterSnapshot"
+    AWSIdleComputeInstances:
+      read:
+        - "ec2:DescribeRegions"
+        - "ec2:DescribeInstances"
+        - "ec2:DescribeTags"
+        - "cloudwatch:GetMetricStatistics"
+        - "cloudwatch:GetMetricData"
+        - "cloudwatch:ListMetrics"
+      action: []
+    AWSRightsizeEC2Instances:
+      read:
+        - "ec2:DescribeInstanceStatus"
+        - "ec2:DescribeRegions"
+        - "ec2:DescribeInstances"
+        - "ec2:DescribeTags"
+        - "cloudwatch:GetMetricStatistics"
+        - "cloudwatch:GetMetricData"
+        - "cloudwatch:ListMetrics"
+      action:
+        - "ec2:ModifyInstanceAttribute"
+        - "ec2:StartInstances"
+        - "ec2:StopInstances"
+        - "ec2:TerminateInstances"
+    AWSReservedInstancesRecommendation:
+      read:
+        - "ce:GetReservationPurchaseRecommendation"
+      action: []
+    AWSObjectStorageOptimization:
+      read:
+        - "s3:ListAllMyBuckets"
+        - "s3:GetBucketLocation"
+        - "s3:ListBucket"
+        - "s3:GetObject"
+        - "s3:GetObjectTagging"
+      action:
+        - "s3:PutObject"
+        - "s3:DeleteObject"
+    AWSExpiringSavingsPlans:
+      read:
+        - "savingsplans:DescribeSavingsPlans"
+      action: []
+    AWSSavingsPlanRecommendations:
+      read:
+        - "ce:GetSavingsPlansPurchaseRecommendation"
+      action: []
+    AWSSavingsPlanUtilization:
+      read:
+        - "ce:GetSavingsPlansUtilization"
+      action: []
+    AWSTagCardinalityReport:
+      read:
+        - "tag:GetResources"
+        - "ec2:DescribeRegions"
+        - "organizations:ListAccounts"
+        - "organizations:ListTagsForResource"
+      action: []
+    AWSUntaggedResources:
+      read:
+        - "tag:GetResources"
+        - "ec2:DescribeRegions"
+      action:
+        - "tag:TagResources"
+        - "ec2:CreateTags"
+        - "rds:AddTagsToResource"
+        - "config:TagResource"
+    # End for each policy template
+
+
+Resources:
+  # IAM Role Resource
+  iamRole:
+    Type: "AWS::IAM::Role"
+    Properties:
+      RoleName: !Ref paramRoleName
+      Description: !Join
+        - " "
+        - - "Allows access from Flexera Platform. This IAM Role and the attached permission policies were created and are managed by CloudFormation Stack:"
+          - !Ref AWS::StackId
+      Path: !Ref paramRolePath
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              AWS: !FindInMap
+                - TrustedRoleMap
+                - !Ref paramFlexeraZone
+                - roleArn
+            Action: "sts:AssumeRole"
+            Condition:
+              StringEquals:
+                "sts:ExternalId": !Ref paramFlexeraOrgId
+      # ManagedPolicyArns value is conditional based on input paramPermsAttachExistingPolicies
+      ManagedPolicyArns: !If
+        - ValueProvidedparamPermsAttachExistingPolicies
+        # If value is provided for paramPermsAttachExistingPolicies, split that comma-separated list into a list object
+        - !Split [ ",", !Ref paramPermsAttachExistingPolicies ]
+        # Provide a null value if nothing provided for paramPermsAttachExistingPolicies
+        - !Ref AWS::NoValue
+  # Begin IAM Permission Policy Resources
+  # 1 or 2 Permission Policies per Policy Template (read and action)
+  # Policy create/attachment is conditional based on parameter input for each policy
+  #### For each policy template append:
+  # iamPolicy<PolicyTemplateNameNoSpaces>Read:
+  #   Type: "AWS::IAM::Policy"
+  #   Condition: CreatePolicy<PolicyTemplateNameNoSpaces>Read
+  #   Properties:
+  #     PolicyName: !Join
+  #       - "_"
+  #       - - !Ref paramRoleName
+  #         - <PolicyTemplateNameNoSpaces>ReadPermissionPolicy
+  #     Roles:
+  #       - !Ref iamRole
+  #     PolicyDocument:
+  #       Version: 2012-10-17
+  #       Statement:
+  #         - Effect: Allow
+  #           Action: !FindInMap
+  #             - PermissionMap
+  #             - <PolicyTemplateNameNoSpaces>
+  #             - read
+  #           Resource: "*"
+  # iamPolicy<PolicyTemplateNameNoSpaces>Action:
+  #   Type: "AWS::IAM::Policy"
+  #   Condition: CreatePolicy<PolicyTemplateNameNoSpaces>Action
+  #   Properties:
+  #     PolicyName: !Join
+  #       - "_"
+  #       - - !Ref paramRoleName
+  #         - <PolicyTemplateNameNoSpaces>ActionPermissionPolicy
+  #     Roles:
+  #       - !Ref iamRole
+  #     PolicyDocument:
+  #       Version: 2012-10-17
+  #       Statement:
+  #         - Effect: Allow
+  #           Action: !FindInMap
+  #             - PermissionMap
+  #             - <PolicyTemplateNameNoSpaces>
+  #             - action
+  #           Resource: "*"
+  ## AWS Unused Volumes Permission Policies
+  iamPolicyAWSUnusedVolumesRead:
+    Type: "AWS::IAM::Policy"
+    Condition: CreatePolicyAWSUnusedVolumesRead
+    Properties:
+      PolicyName: !Join
+        - "_"
+        - - !Ref paramRoleName
+          - AWSUnusedVolumesReadPermissionPolicy
+      Roles:
+        - !Ref iamRole
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Action: !FindInMap
+              - PermissionMap
+              - AWSUnusedVolumes
+              - read
+            Resource: "*"
+  iamPolicyAWSUnusedVolumesAction:
+    Type: "AWS::IAM::Policy"
+    Condition: CreatePolicyAWSUnusedVolumesAction
+    Properties:
+      PolicyName: !Join
+        - "_"
+        - - !Ref paramRoleName
+          - AWSUnusedVolumesActionPermissionPolicy
+      Roles:
+        - !Ref iamRole
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Action: !FindInMap
+              - PermissionMap
+              - AWSUnusedVolumes
+              - action
+            Resource: "*"
+  ## AWS Unused RDS Permission Policies
+  iamPolicyAWSUnusedRDSRead:
+    Type: "AWS::IAM::Policy"
+    Condition: CreatePolicyAWSUnusedRDSRead
+    Properties:
+      PolicyName: !Join
+        - "_"
+        - - !Ref paramRoleName
+          - AWSUnusedRDSReadPermissionPolicy
+      Roles:
+        - !Ref iamRole
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Action: !FindInMap
+              - PermissionMap
+              - AWSUnusedRDS
+              - read
+            Resource: "*"
+  iamPolicyAWSUnusedIPAddresses:
+    Type: "AWS::IAM::Policy"
+    Condition: CreatePolicyAWSUnusedIPAddressesRead
+    Properties:
+      PolicyName: !Join
+        - "_"
+        - - !Ref paramRoleName
+          - AWSUnusedIPAddressesReadPermissionPolicy
+      Roles:
+        - !Ref iamRole
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Action: !FindInMap
+              - PermissionMap
+              - AWSUnusedIPAddresses
+              - read
+            Resource: "*"
+  ## AWS Unused IP Addresses Permission Policies
+  iamPolicyAWSUnusedIPAddressesAction:
+    Type: "AWS::IAM::Policy"
+    Condition: CreatePolicyAWSUnusedIPAddressesAction
+    Properties:
+      PolicyName: !Join
+        - "_"
+        - - !Ref paramRoleName
+          - AWSUnusedIPAddressesActionPermissionPolicy
+      Roles:
+        - !Ref iamRole
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Action: !FindInMap
+              - PermissionMap
+              - AWSUnusedIPAddresses
+              - action
+            Resource: "*"
+  ## AWS Old Snapshots Permission Policies
+  iamPolicyAWSOldSnapshots:
+    Type: "AWS::IAM::Policy"
+    Condition: CreatePolicyAWSOldSnapshotsRead
+    Properties:
+      PolicyName: !Join
+        - "_"
+        - - !Ref paramRoleName
+          - AWSOldSnapshotsReadPermissionPolicy
+      Roles:
+        - !Ref iamRole
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Action: !FindInMap
+              - PermissionMap
+              - AWSOldSnapshots
+              - read
+            Resource: "*"
+  iamPolicyAWSOldSnapshotsAction:
+    Type: "AWS::IAM::Policy"
+    Condition: CreatePolicyAWSOldSnapshotsAction
+    Properties:
+      PolicyName: !Join
+        - "_"
+        - - !Ref paramRoleName
+          - AWSOldSnapshotsActionPermissionPolicy
+      Roles:
+        - !Ref iamRole
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Action: !FindInMap
+              - PermissionMap
+              - AWSOldSnapshots
+              - action
+            Resource: "*"
+  ## AWS Idle Compute Instances Permission Policies
+  iamPolicyAWSIdleComputeInstances:
+    Type: "AWS::IAM::Policy"
+    Condition: CreatePolicyAWSIdleComputeInstancesRead
+    Properties:
+      PolicyName: !Join
+        - "_"
+        - - !Ref paramRoleName
+          - AWSIdleComputeInstancesReadPermissionPolicy
+      Roles:
+        - !Ref iamRole
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Action: !FindInMap
+              - PermissionMap
+              - AWSIdleComputeInstances
+              - read
+            Resource: "*"
+  ## AWS Rightsize EC2 Instances Permission Policies
+  iamPolicyAWSRightsizeEC2Instances:
+    Type: "AWS::IAM::Policy"
+    Condition: CreatePolicyAWSRightsizeEC2InstancesRead
+    Properties:
+      PolicyName: !Join
+        - "_"
+        - - !Ref paramRoleName
+          - AWSRightsizeEC2InstancesReadPermissionPolicy
+      Roles:
+        - !Ref iamRole
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Action: !FindInMap
+              - PermissionMap
+              - AWSRightsizeEC2Instances
+              - read
+            Resource: "*"
+  iamPolicyAWSRightsizeEC2InstancesAction:
+    Type: "AWS::IAM::Policy"
+    Condition: CreatePolicyAWSRightsizeEC2InstancesAction
+    Properties:
+      PolicyName: !Join
+        - "_"
+        - - !Ref paramRoleName
+          - AWSRightsizeEC2InstancesActionPermissionPolicy
+      Roles:
+        - !Ref iamRole
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Action: !FindInMap
+              - PermissionMap
+              - AWSRightsizeEC2Instances
+              - action
+            Resource: "*"
+  ## AWS Reserved Instances Recommendation
+  iamPolicyAWSReservedInstancesRecommendation:
+    Type: "AWS::IAM::Policy"
+    Condition: CreatePolicyAWSReservedInstancesRecommendationRead
+    Properties:
+      PolicyName: !Join
+        - "_"
+        - - !Ref paramRoleName
+          - AWSReservedInstancesRecommendationReadPermissionPolicy
+      Roles:
+        - !Ref iamRole
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Action: !FindInMap
+              - PermissionMap
+              - AWSReservedInstancesRecommendation
+              - read
+            Resource: "*"
+  iamPolicyAWSObjectStorageOptimizationRead:
+    Type: "AWS::IAM::Policy"
+    Condition: CreatePolicyAWSObjectStorageOptimizationRead
+    Properties:
+      PolicyName: !Join
+        - "_"
+        - - !Ref paramRoleName
+          - AWSObjectStorageOptimizationReadPermissionPolicy
+      Roles:
+        - !Ref iamRole
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Action: !FindInMap
+              - PermissionMap
+              - AWSObjectStorageOptimization
+              - read
+            Resource: "*"
+  iamPolicyAWSObjectStorageOptimizationAction:
+    Type: "AWS::IAM::Policy"
+    Condition: CreatePolicyAWSObjectStorageOptimizationAction
+    Properties:
+      PolicyName: !Join
+        - "_"
+        - - !Ref paramRoleName
+          - AWSObjectStorageOptimizationActionPermissionPolicy
+      Roles:
+        - !Ref iamRole
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Action: !FindInMap
+              - PermissionMap
+              - AWSObjectStorageOptimization
+              - action
+            Resource: "*"
+  iamPolicyAWSExpiringSavingsPlans:
+    Type: "AWS::IAM::Policy"
+    Condition: CreatePolicyAWSExpiringSavingsPlansRead
+    Properties:
+      PolicyName: !Join
+        - "_"
+        - - !Ref paramRoleName
+          - AWSExpiringSavingsPlansReadPermissionPolicy
+      Roles:
+        - !Ref iamRole
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Action: !FindInMap
+              - PermissionMap
+              - AWSExpiringSavingsPlans
+              - read
+            Resource: "*"
+  iamPolicyAWSSavingsPlanRecommendations:
+    Type: "AWS::IAM::Policy"
+    Condition: CreatePolicyAWSSavingsPlanRecommendationsRead
+    Properties:
+      PolicyName: !Join
+        - "_"
+        - - !Ref paramRoleName
+          - AWSSavingsPlanRecommendationsReadPermissionPolicy
+      Roles:
+        - !Ref iamRole
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Action: !FindInMap
+              - PermissionMap
+              - AWSSavingsPlanRecommendations
+              - read
+            Resource: "*"
+  iamPolicyAWSSavingsPlanUtilization:
+    Type: "AWS::IAM::Policy"
+    Condition: CreatePolicyAWSSavingsPlanUtilizationRead
+    Properties:
+      PolicyName: !Join
+        - "_"
+        - - !Ref paramRoleName
+          - AWSSavingsPlanUtilizationReadPermissionPolicy
+      Roles:
+        - !Ref iamRole
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Action: !FindInMap
+              - PermissionMap
+              - AWSSavingsPlanUtilization
+              - read
+            Resource: "*"
+  iamPolicyAWSTagCardinalityReport:
+    Type: "AWS::IAM::Policy"
+    Condition: CreatePolicyAWSTagCardinalityReportRead
+    Properties:
+      PolicyName: !Join
+        - "_"
+        - - !Ref paramRoleName
+          - AWSTagCardinalityReportReadPermissionPolicy
+      Roles:
+        - !Ref iamRole
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Action: !FindInMap
+              - PermissionMap
+              - AWSTagCardinalityReport
+              - read
+            Resource: "*"
+  iamPolicyAWSUntaggedResourcesRead:
+    Type: "AWS::IAM::Policy"
+    Condition: CreatePolicyAWSUntaggedResourcesRead
+    Properties:
+      PolicyName: !Join
+        - "_"
+        - - !Ref paramRoleName
+          - AWSUntaggedResourcesReadPermissionPolicy
+      Roles:
+        - !Ref iamRole
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Action: !FindInMap
+              - PermissionMap
+              - AWSUntaggedResources
+              - read
+            Resource: "*"
+  iamPolicyAWSUntaggedResourcesAction:
+    Type: "AWS::IAM::Policy"
+    Condition: CreatePolicyAWSUntaggedResourcesAction
+    Properties:
+      PolicyName: !Join
+        - "_"
+        - - !Ref paramRoleName
+          - AWSUntaggedResourcesActionPermissionPolicy
+      Roles:
+        - !Ref iamRole
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Action: !FindInMap
+              - PermissionMap
+              - AWSUntaggedResources
+              - action
+            Resource: "*"
+  # End for each policy template
+
+  # End IAM Permission Policy Resources
+
+Outputs:
+  iamRoleArn:
+    Description: The ARN of the IAM Role that was created
+    Value: !GetAtt
+      - iamRole
+      - Arn

@@ -1,5 +1,14 @@
 # Changelog
 
+## v4.0
+
+- Added logic required for "Meta Policy" use-cases
+- Flexera credential now required to facilitate meta policy use cases.
+
+## v3.0
+
+- Added parameter to enable Allow or Deny filtering by user entered regions
+
 ## v2.5
 
 - Replaced references `github.com/rightscale/policy_templates` and `github.com/flexera/policy_templates` with `github.com/flexera-public/policy_templates`

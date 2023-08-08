@@ -1,5 +1,36 @@
 # Changelog
 
+## v2.11
+
+- Fixed the method used to match recommendations with the SQL instances introduced at v2.6
+
+## v2.10
+
+- Updated policy README file with a deeper explanation of how the GCP recommender works and the roles required to use it.
+
+## v2.9
+
+- Added `Lookback Period In Days` incident field.
+- Added `Platform` incident field.
+
+## v2.8
+
+- Updated policy metadata to facilitate scraping of incidents for Recommendations dashboard
+
+## v2.7
+
+- Fix: Duplicated entries from incident report were removed.
+
+## v2.6
+
+- Modified filters, previously applied in code, now those are applied in request
+- Support for empty "param_regions" value
+- Adding request per minute to prevent quota error and disable sleep 10 seconds for each recommender call
+
+## v2.5
+
+- Changed provider to "Google" from "GCE" to match other Google policies
+
 ## v2.4
 
 - Replaced references `github.com/rightscale/policy_templates` and `github.com/flexera/policy_templates` with `github.com/flexera-public/policy_templates`

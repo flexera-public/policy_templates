@@ -1,5 +1,22 @@
 # Changelog
 
+## v5.0
+
+- Renamed Subscription List parameter for consistency and accuracy
+- Added logic required for "Meta Policy" use-cases
+
+## v4.5
+
+- Added `Size` incident field.
+
+## v4.4
+
+- Updated policy metadata to facilitate scraping of incidents for Recommendations dashboard
+
+## v4.3
+
+- Raised API limit to handle situations where more than 10,000 line items need to be retrieved.
+
 ## v4.2
 
 - Replaced the term **whitelist** with **allowed list**.

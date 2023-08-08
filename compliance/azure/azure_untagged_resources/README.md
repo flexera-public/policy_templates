@@ -5,6 +5,12 @@
 Find all Azure resources missing any of the user provided tags with the option to update the resources with the missing tags.
 Only the resources that support tags are considered.
 
+## Functional Details
+
+- The policy leverages the AWS API to retrieve a list of all taggable resources in an AWS Account
+- Using the 'Tag Keys' parameter, the policy identifies all resources that are missing the tag keys specified by the user.
+- The policy outputs resources missing the specified tag keys as well as resources with the specified tag keys but are missing tag values.
+
 ## Input Parameters
 
 This policy has the following input parameters required when launching the policy.
@@ -12,7 +18,7 @@ This policy has the following input parameters required when launching the polic
 - *Email addresses to notify* - Email addresses of the recipients you wish to notify when new incidents are created
 - *Azure Endpoint* - Azure Endpoint to access resources
 - *Subscription Allowed List* - Allowed Subscriptions, if empty, all subscriptions will be checked
-- *List of tags* - List of tags keys to find resources which are not tagged by given inputs.
+- *Tags Keys* - List of tag keys e.g., 'Environment' to find resources which are not tagged by the given inputs.
 
 ## Policy Actions
 

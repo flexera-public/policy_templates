@@ -11,6 +11,8 @@ This policy has the following input parameters required when launching the polic
 - *Email addresses* - A list of email addresses to notify
 - *Region* - Region to check, it is GCP Region locations
 - *Project ID* - Google Projects to Query. Leave blank to query all projects.
+- *Term* - The committed use discount term.
+- *Recommendation Algorithm* - The algorithm that will be used to generate the CUD recommendations. Recommendations are generated using either one of two algorithms. Stable Usage covers minimum stable usage over time. Optimal is based on overall usage and might cover resources that are not active all the time. See [understanding recommendations](https://cloud.google.com/docs/cuds-recommender).
 
 ## Policy Actions
 
@@ -30,11 +32,22 @@ For administrators [creating and managing credentials](https://docs.flexera.com/
 
 Provider tag value to match this policy: `gce`
 
+Required APIs to have enabled in the provider:
+
+- Resource Manager API
+- Recommender API
+
 Required permissions in the provider:
 
-- The `resourcemanager.projects.get` permission
-- The `roles/recommender.billingAccountCudViewer` role
-- The `roles/recommender.projectCudViewer` role
+- resourcemanager.projects.get
+- billing.resourceCosts.get*
+- billing.accounts.getSpendingInformation*
+
+Required roles in the provider:
+
+- Project Usage Commitment Recommender Viewer
+
+\* Needed for recommendations to reflect custom contract pricing. Otherwise, recommendations will use list pricing.
 
 ## Supported Clouds
 
