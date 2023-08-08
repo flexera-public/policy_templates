@@ -27,23 +27,6 @@ These templates can generate savings estimates for your environment.
 
 #### AWS
 
-<<<<<<< HEAD
-### Automation
-
-#### AWS
-
-- [AWS Rule-Based Dimension From Account Tags](./automation/aws/aws_rbd_from_tag/)
-
-#### Azure
-
-- [Azure Rule-Based Dimension From Subscription Tags](./automation/azure/azure_rbd_from_tag/)
-
-#### Google
-
-- [Google Rule-Based Dimension From Project Labels](./automation/google/google_rbd_from_tag/)
-
-### Cost
-=======
 - [AWS Delete Unused Classic Load Balancers](./cost/aws/elb/clb_unused)
 - [AWS GP3 Upgradeable Volumes](./cost/aws/gp3_volume_upgrade)
 - [AWS Idle Compute Instances](./cost/aws/idle_compute_instances)
@@ -61,7 +44,6 @@ These templates can generate savings estimates for your environment.
 - [Turbonomic Rightsize Databases Recommendations AWS](./cost/turbonomics/rightsize_databases_recommendations/aws)
 - [Turbonomic Rightsize Virtual Machines Recommendations AWS](./cost/turbonomics/scale_virtual_machines_recommendations/aws)
 - [Turbonomic Rightsize Virtual Volumes Recommendations AWS](./cost/turbonomics/rightsize_virtual_volumes_recommendations/aws)
->>>>>>> master
 
 #### Azure
 
