@@ -1,4 +1,4 @@
-# Azure Rule-Based Dimension From Subscription Tags
+# Azure Rule-Based Dimension From Resource Group Tags
 
 ## What it does
 
