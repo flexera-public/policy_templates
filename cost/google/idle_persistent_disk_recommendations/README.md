@@ -34,6 +34,7 @@ This policy has the following input parameters required when launching the polic
 The following policy actions are taken on any resources found to be out of compliance.
 
 - Send an email report
+- Delete volume after an approval
 
 ## Prerequisites
 
@@ -47,10 +48,23 @@ For administrators [creating and managing credentials](https://docs.flexera.com/
 
 Provider tag value to match this policy: `gce`
 
+Required APIs to have enabled in the provider:
+
+- Resource Manager API
+- Compute Engine API
+- Recommender API
+
 Required permissions in the provider:
 
-- The `resourcemanager.projects.get` permission
-- The `roles/recommender.computeAdmin` role
+- resourcemanager.projects.get
+- compute.disks.list
+
+Required roles in the provider:
+
+- Compute Recommender Viewer
+- Compute Recommender Admin*
+
+\* Only required for taking action (deletion); the policy will still function in a read-only capacity without these permissions.
 
 ## Supported Clouds
 

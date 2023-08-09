@@ -1,5 +1,20 @@
 # Changelog
 
+## v7.0
+
+- Several parameters altered to be more descriptive and human-readable
+- Modified and renamed "Deregister Image" parameter to make it more clear and intuitive
+- Removed deprecated "Log to CM Audit Entries" parameter
+- Added ability to only report recommendations that meet a minimum savings threshold
+- Added ability to filter resources by multiple tag key:value pairs
+- Added ability to filter resources by description or service type
+- Added additional context to incident description
+- Normalized incident export to be consistent with other policies
+- Added human-readable recommendation to incident export
+- Added additional fields to incident export to facilitate scraping for dashboards
+- Policy no longer raises new escalations if snapshot age or savings data changed but nothing else has
+- Streamlined code for better readability and faster execution
+
 ## v6.2
 
 - Renamed `volumeSize` incident field to `size`.

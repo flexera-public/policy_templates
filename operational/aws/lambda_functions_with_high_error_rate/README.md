@@ -8,6 +8,43 @@ Checks for lambda functions with errors, and lambda function over the `Error Rat
 
 The policy leverages the AWS ec2 API to examine vpc and flowlog details. When a vpc without flowlogs enabled is detected, an email action is triggered automatically to notify the specified users of the incident.
 
+## Prerequisites
+
+This Policy Template uses [Credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for authenticating to datasources -- in order to apply this policy you must have a Credential registered in the system that is compatible with this policy. If there are no Credentials listed when you apply the policy, please contact your Flexera Org Admin and ask them to register a Credential that is compatible with this policy. The information below should be consulted when creating the credential(s).
+
+- [**AWS Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm#automationadmin_1982464505_1121575) (*provider=aws*) which has the following permissions:
+  - `ec2:DescribeRegions`
+  - `lambda:ListFunctions`
+  - `lambda:ListTags`
+  - `cloudwatch:GetMetricStatistics`
+  - `cloudwatch:ListMetrics`
+
+  Example IAM Permission Policy:
+
+  ```json
+  {
+      "Version": "2012-10-17",
+      "Statement": [
+          {
+              "Effect": "Allow",
+              "Action": [
+                  "ec2:DescribeRegions",
+                  "lambda:ListFunctions",
+                  "lambda:ListTags",
+                  "cloudwatch:GetMetricStatistics",
+                  "cloudwatch:ListMetrics"
+              ],
+              "Resource": "*"
+          }
+      ]
+  }
+  ```
+
+- [**Flexera Credential**](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) (*provider=flexera*) which has the following roles:
+  - `billing_center_viewer`
+
+The [Provider-Specific Credentials](https://docs.flexera.com/flexera/EN/Automation/ProviderCredentials.htm) page in the docs has detailed instructions for setting up Credentials for the most common providers.
+
 ## Input Parameters
 
 - *Allowed/Denied Regions* - Whether to treat regions parameter as allow or deny list.
@@ -20,61 +57,6 @@ The policy leverages the AWS ec2 API to examine vpc and flowlog details. When a 
 ## Policy Actions
 
 - Send an email report
-
-## Prerequisites
-
-This policy uses [credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) for connecting to the cloud -- in order to apply this policy you must have a credential registered in the system that is compatible with this policy. If there are no credentials listed when you apply the policy, please contact your cloud admin and ask them to register a credential that is compatible with this policy. The information below should be consulted when creating the credential.
-
-### Credential configuration
-
-For administrators [creating and managing credentials](https://docs.flexera.com/flexera/EN/Automation/ManagingCredentialsExternal.htm) to use with this policy, the following information is needed:
-
-Provider tag value to match this policy: `aws` , `aws_sts`
-
-Required permissions in the provider:
-
-```json
-{
-  "Version": "2012-10-17",
-  "Statement": [
-    {
-      "Effect": "Allow",
-      "Action": [
-        "cloudwatch:GetMetricStatistics",
-        "cloudwatch:ListMetrics"
-      ],
-      "Resource": "*",
-      "Condition": {
-        "Bool": {
-          "aws:SecureTransport": "true"
-        }
-      }
-    }
-  ]
-}
-```
-
-```json
-{
-  "Version": "2012-10-17",
-  "Statement": [
-    {
-      "Effect": "Allow",
-      "Action": [
-        "lambda:ListFunctions"
-      ],
-      "Resource": "*"
-    },
-    {
-      "Effect": "Allow",
-      "Action": [
-        "ec2:DescribeRegions"
-      ],
-      "Resource": "*"
-    }
-  ]
-}
-```
 
 ## Supported Clouds
 
