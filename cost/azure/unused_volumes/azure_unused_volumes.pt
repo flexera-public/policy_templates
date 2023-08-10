@@ -92,9 +92,8 @@ parameter "param_create_snapshot" do
   type "string"
   category "Actions"
   label "Create Final Snapshot"
-  description "Boolean for whether or not to take a final snapshot before deleting"
-  allowed_values "True", "False"
-  default "True"
+  description "Whether or not to take a final snapshot before deleting"
+  allowed_values "true", "false"
 end
 
 parameter "param_automatic_action" do
@@ -399,11 +398,11 @@ script "js_azure_logs", type: "javascript" do
   result "request"
   code <<-EOS
   end_date = new Date()
-  end_date = end_date.toISOString().split('T')[0] + 'T23:59:59Z'
+  end_date = end_date.toISOString()
 
   start_date = new Date()
   start_date.setDate(start_date.getDate() - 90)
-  start_date = start_date.toISOString().split('T')[0] + 'T00:00:00Z'
+  start_date = start_date.toISOString()
 
   filter = [
     "eventTimestamp ge '", start_date, "' and ",
@@ -423,7 +422,7 @@ script "js_azure_logs", type: "javascript" do
     query_params: {
       'api-version': '2015-04-01',
       '$filter': filter
-      '$select': 'operationName,properties'
+      '$select': 'operationName,properties,eventTimestamp,resourceId'
     }
   }
 EOS
@@ -439,44 +438,50 @@ script "js_unused_volumes", type: "javascript" do
   code <<-EOS
   result = []
 
+  // List of operations to ignore because they don't indicate activity
+  ignore_operations = ["New recommendation is available"]
+
+  filtered_logs = _.reject(ds_azure_logs, function(item) {
+    return _.contains(ignore_operations, item['operationName']) || item['eventTimestamp'] == null
+  })
+
   disk_logs = {}
 
-  _.each(ds_azure_logs, function(item) {
+  _.each(filtered_logs, function(item) {
     id = item['resourceID'].toLowerCase()
     if (disk_logs[id] == undefined) { disk_logs[id] = [] }
     disk_logs[id].push(item)
   })
 
-  most_recent_event = null
-
   _.each(ds_azure_disks_region_filtered, function(disk) {
-    inactive_disk = false
     id = disk['id'].toLowerCase()
+    createdTime = new Date(disk['timeCreated'])
+    lastEvent = null
 
-    if (disk_logs[id] == undefined) {
-      inactive_disk = true
-      last_event = null
-    } else {
+    if (disk_logs[id] != undefined) {
       _.each(disk_logs[id], function(entry) {
         event_time = new Date(entry['eventTimestamp'])
 
-        if (most_recent_event == null) {
-          // code here
+        if (lastEvent == null || event_time > lastEvent) {
+          lastEvent = event_time
         }
       })
     }
 
     expectedDate = new Date()
     expectedDate.setDate(expectedDate.getDate() - parseInt(param_unused_days))
-    createdTime = new Date(disk['timeCreated'])
 
-    if (!active_disk && expectedDate.getTime() >= createdTime.getTime()) {
+    if (lastEvent == null || expectedDate >= lastEvent || param_unused_days == 0) {
       tags = []
 
       if (typeof(disk['tags']) == 'object') {
         _.each(Object.keys(disk['tags']), function(key) {
           tags.push([key, "=", disk['tags'][key]].join(''))
         })
+      }
+
+      if (lastEvent != null) {
+        lastEvent = lastEvent.toISOString()
       }
 
       result.push({
@@ -488,7 +493,8 @@ script "js_unused_volumes", type: "javascript" do
         tags: tags.join(', '),
         state: disk['state'],
         size: disk['size'],
-        timeCreated: disk['timeCreated'],
+        timeCreated: new Date(disk['timeCreated']).toISOString(),
+        lastEvent: lastEvent,
         subscriptionID: disk['subscriptionID'],
         subscriptionName: disk['subscriptionName'],
         service: "Microsoft.Compute",
@@ -656,6 +662,7 @@ script "js_volume_cost_mapping", type:"javascript" do
       size: disk['size'],
       tags: disk['tags'],
       timeCreated: disk['timeCreated'],
+      lastEvent: disk['lastEvent'],
       savings: parseFloat(savings.toFixed(3)),
       savingsCurrency: ds_currency['symbol'],
       recommendationDetails: recommendationDetails,
@@ -678,7 +685,7 @@ script "js_volume_cost_mapping", type:"javascript" do
     ") are unused and are recommended for deletion. "
   ].join('')
 
-  if (param_days_unattached != 0) {
+  if (param_unused_days != 0) {
     day_message = "day"
     if (total_unused_disks.length > 1) { day_message += "s" }
 
@@ -761,6 +768,9 @@ policy "pol_azure_unattached_volumes" do
       end
       field "timeCreated" do
         label "Created At"
+      end
+      field "lastEvent" do
+        label "Most Recent Event"
       end
       field "tags" do
         label "Tags"
