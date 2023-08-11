@@ -2,7 +2,7 @@
 
 ## v0.4
 
-- Added `Recommendation Created Time` incident field.
+- Renamed `Created Time` incident field to `Recommendation Created Time`.
 - Added `System Details URL` incident field.
 - Added `Storage (GB)` incident field.
 - Added `Storage Utilization (%)` incident field.
