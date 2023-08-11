@@ -23,7 +23,7 @@
 - Added `CPU (GHz)` incident field.
 - Added `CPU Utilization (%)` incident field.
 - Added `New CPU (GHz)` incident field.
-- Added `new CPU Utilization (%)` incident field.
+- Added `New CPU Utilization (%)` incident field.
 - Added `Throughput (MB/s)` incident field.
 - Added `Throughput Utilization (%)` incident field.
 - Added `New Throughput (MB/s)` incident field.
