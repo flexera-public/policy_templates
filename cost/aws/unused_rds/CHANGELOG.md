@@ -1,6 +1,10 @@
 # Changelog
 
-## 6.0
+## v6.1
+
+- Added ability to filter resources by tag key alone without regard for tag value
+
+## v6.0
 
 - Added parameter to specify how far back to check instances for activity
 - Several parameters altered to be more descriptive and human-readable
