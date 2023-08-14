@@ -1,5 +1,9 @@
 # Changelog
 
+## v6.1
+
+- Added ability to filter resources by tag key alone without regard for tag value
+
 ## v6.0
 
 - Policy now converts savings from USD to local currency when appropriate
