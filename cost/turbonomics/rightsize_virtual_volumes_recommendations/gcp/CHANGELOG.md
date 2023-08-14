@@ -2,7 +2,7 @@
 
 ## v0.4
 
-- Unpublished policy from catalog since Turbonomic does not support Google provider yet.
+- Unpublished policy from catalog since Turbonomic Rightsize Volumes does not support Google provider yet.
 
 ## v0.3
 
