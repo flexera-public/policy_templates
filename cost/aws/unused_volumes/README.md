@@ -24,7 +24,7 @@ This policy has the following input parameters required when launching the polic
 - *Unused Days* - The number of days a volume has been unused. The days should be greater than zero.
 - *Minimum Savings Threshold* - Minimum potential savings required to generate a recommendation.
 - *Volume Status* - Whether to include attached volumes, unattached, or both in the results.
-- *Exclusion Tags (Key:Value)* - Cloud native tags to ignore instances that you don't want to consider for downsizing or termination. Format: Key:Value
+- *Exclusion Tags (Key:Value)* - Cloud native tags to ignore instances that you don't want to produce recommendations for. Use Key:Value format for specific tag key/value pairs, and Key:\* format to match any resource with a particular key, regardless of value. Examples: env:production, DO_NOT_DELETE:\*
 - *Create Final Snapshot* - Boolean for whether or not to take a final snapshot before deleting
 - *Automatic Actions* - When this value is set, this policy will automatically take the selected action(s).
 
