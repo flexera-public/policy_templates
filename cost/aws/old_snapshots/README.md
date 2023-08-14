@@ -19,7 +19,7 @@ This policy has the following input parameters required when launching the polic
 - *Exclusion Service Types* - Exclude the selected services (EC2 or RDS). If left blank, all services will be analyzed.
 - *Exclusion EC2 Snapshot Description* - Exclude EC2 snapshots with the provided descriptions. If left blank, all EC2 snapshots will be analyzed. This setting has no effect on RDS snapshots.
 - *Exclusion RDS Snapshot Types* - Exclude the selected RDS snapshot types. If left blank, all types will be analyzed. This setting has no effect on EC2 snapshots.
-- *Exclusion Tags (Key:Value)* - Cloud native tags to ignore instances that you don't want to produce recommendations for. Use Key:Value format for specific tag key/value pairs, and Key:* format to match any resource with a particular key, regardless of value.
+- *Exclusion Tags (Key:Value)* - Cloud native tags to ignore instances that you don't want to produce recommendations for. Use Key:Value format for specific tag key/value pairs, and Key:\* format to match any resource with a particular key, regardless of value. Examples: env:production, DO_NOT_DELETE:\*
 - *Minimum Savings Threshold* - Minimum potential savings required to generate a recommendation.
 - *Snapshot Age* - The number of days since the snapshot was created to consider it old.
 - *Include Snapshots with AMI* - Whether or not to produce recommendations for snapshots with an associated registered AMI (Amazon Machine Image).

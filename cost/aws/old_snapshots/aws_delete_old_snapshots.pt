@@ -7,7 +7,7 @@ category "Cost"
 severity "low"
 default_frequency "weekly"
 info(
-  version: "7.0",
+  version: "7.1",
   provider: "AWS",
   service: "Storage",
   policy_set: "Old Snapshots",
@@ -109,8 +109,8 @@ parameter "param_exclusion_tags" do
   type "list"
   category "Filters"
   label "Exclusion Tags (Key:Value)"
-  description "Cloud native tags to ignore instances that you don't want to produce recommendations for. Format: Key:Value"
-  allowed_pattern /(^$)|([\w]?)+\:([\w]?)+/
+  description "Cloud native tags to ignore instances that you don't want to produce recommendations for. Use Key:Value format for specific tag key/value pairs, and Key:* format to match any resource with a particular key, regardless of value. Examples: env:production, DO_NOT_DELETE:*"
+  allowed_pattern /(^$)|[\w]*\:.*/
   default []
 end
 
@@ -568,18 +568,25 @@ script "js_snapshots_combined", type: "javascript" do
 
   result = _.reject(combined, function(snapshot) {
     snapshot_tags = []
+    snapshot_tag_keys = []
 
     if (snapshot['tags'] != null && snapshot['tags'] != undefined) {
       _.each(snapshot['tags'], function(tag) {
         snapshot_tags.push([tag['key'], tag['value']].join(':'))
+        snapshot_tag_keys.push(tag['key'])
       })
     }
 
     exclude_snapshot = false
 
     _.each(param_exclusion_tags, function(exclusion_tag) {
-      if (_.contains(snapshot_tags, exclusion_tag)) {
-        exclude_snapshot = true
+      tag_key = exclusion_tag.split(':')[0]
+      tag_value = exclusion_tag.split(':')[1]
+
+      if (tag_value != '*' && tag_value != undefined) {
+        if (_.contains(snapshot_tags, exclusion_tag)) { exclude_snapshot = true }
+      } else {
+        if (_.contains(snapshot_tag_keys, tag_key)) { exclude_snapshot = true }
       }
     })
 
