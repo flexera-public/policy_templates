@@ -8,7 +8,7 @@ category "Cost"
 default_frequency "daily"
 tenancy "single"
 info(
-  version: "0.2",
+  version: "0.3",
   provider: "Kubecost",
   service: "Kubernetes",
   policy_set: "Rightsize Containers",
@@ -23,6 +23,14 @@ parameter "param_email" do
   label "Email addresses"
   description "Email addresses of the recipients you wish to notify"
   type "list"
+end
+
+parameter "param_recommendations_request_method" do
+  type "string"
+  label "Recommendations request method"
+  description "Choose between requesting the recommendations per cluster or overall"
+  allowed_values "overall", "per cluster"
+  default "overall"
 end
 
 parameter "param_kubecost_host" do
@@ -103,8 +111,9 @@ end
 ###############################################################################
 
 datasource "ds_request_sizing" do
+  iterate $ds_sizing_recommendation_request_list
   request do
-    run_script $js_request_sizing, $param_kubecost_host, $param_cpu_algo, $param_cpu_q, $param_mem_algo, $param_mem_q, $param_window, $param_cpu_util, $param_mem_util
+    run_script $js_get_request_from_iter_item, iter_item
   end
   result do
     encoding "json"
@@ -137,31 +146,83 @@ datasource "ds_get_currency" do
   end
 end
 
-script "js_request_sizing", type: "javascript" do
-  parameters "kubecost_host", "param_cpu_algo", "param_cpu_q", "param_mem_algo", "param_mem_q", "param_window", "param_cpu_util", "param_mem_util"
+datasource "ds_get_clusters" do
+  request do
+    verb "GET"
+    scheme "http"
+    host $param_kubecost_host
+    path "/model/clusterInfoMap"
+  end
+  result do
+    encoding "json"
+    collect jmes_path(response, "data | values(@)") do
+      field "clusterId", jmes_path(col_item, "id")
+    end
+  end
+end
+
+datasource "ds_sizing_recommendation_request_list" do
+  run_script $js_sizing_recommendation_request_list, $param_kubecost_host, $param_recommendations_request_method, $ds_get_clusters, $param_cpu_algo, $param_cpu_q, $param_mem_algo, $param_mem_q, $param_window, $param_cpu_util, $param_mem_util
+end
+
+script "js_get_request_from_iter_item", type: "javascript" do
+  parameters "item"
   result "request"
   code <<-EOS
+  var request = item
+  EOS
+end
 
+script "js_sizing_recommendation_request_list", type: "javascript" do
+  parameters "kubecost_host", "param_recommendations_request_method", "ds_get_clusters", "param_cpu_algo", "param_cpu_q", "param_mem_algo", "param_mem_q", "param_window", "param_cpu_util", "param_mem_util"
+  result "request_list"
+  code <<-EOS
   param_cpu_q = param_cpu_q.toString()
   param_mem_q = param_mem_q.toString()
   param_cpu_util = (param_cpu_util/100).toString()
   param_mem_util = (param_mem_util/100).toString()
 
-  var request = {
-      "verb": "GET",
-      "scheme": "http",
-      "host": kubecost_host,
-      "path": "/model/savings/requestSizingV2",
-      "query_params": {
-        "algorithmCPU": param_cpu_algo,
-        "qCPU": param_cpu_q,
-        "algorithmRAM": param_mem_algo,
-        "qRAM": param_mem_q,
-        "window": param_window,
-        "targetCPUUtilization": param_cpu_util,
-        "targetRAMUtilization": param_mem_util
+  request_list = []
+  if (param_recommendations_request_method === "per cluster") {
+    _.forEach(ds_get_clusters, function (clusterData) {
+      request_list.push(
+        {
+          "verb": "GET",
+          "scheme": "http",
+          "host": kubecost_host,
+          "path": "/model/savings/requestSizingV2",
+          "query_params": {
+            "filter": 'cluster:"' + clusterData.clusterId + '"',
+            "algorithmCPU": param_cpu_algo,
+            "qCPU": param_cpu_q,
+            "algorithmRAM": param_mem_algo,
+            "qRAM": param_mem_q,
+            "window": param_window,
+            "targetCPUUtilization": param_cpu_util,
+            "targetRAMUtilization": param_mem_util
+          }
+        }
+      )
+    })
+  } else {  // Else means: param_recommendations_request_method === "overall"
+    request_list.push(
+      {
+        "verb": "GET",
+        "scheme": "http",
+        "host": kubecost_host,
+        "path": "/model/savings/requestSizingV2",
+        "query_params": {
+          "algorithmCPU": param_cpu_algo,
+          "qCPU": param_cpu_q,
+          "algorithmRAM": param_mem_algo,
+          "qRAM": param_mem_q,
+          "window": param_window,
+          "targetCPUUtilization": param_cpu_util,
+          "targetRAMUtilization": param_mem_util
+        }
       }
-    }
+    )
+  }
   EOS
 end
 
