@@ -2,6 +2,7 @@
 
 ## v0.4
 
+- Unpublished policy from catalog since Turbonomic Rightsize Volumes does not support Google provider yet.
 - Renamed `Created Time` incident field to `Recommendation Created Time`.
 - Added `System Details URL` incident field.
 - Added `Storage (GB)` incident field.
