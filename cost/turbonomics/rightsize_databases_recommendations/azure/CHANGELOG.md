@@ -1,5 +1,7 @@
 # Changelog
 
+- Added request for Turbonomic search API to know what Pricing Model are related to the Database and return Aspects for their stats request.
+
 ## v0.3
 
 - Added `Recommendation Created Time` incident field.
