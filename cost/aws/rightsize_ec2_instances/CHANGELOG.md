@@ -1,5 +1,9 @@
 # Changelog
 
+## v4.1
+
+- Added ability to filter resources by tag key alone without regard for tag value
+
 ## v4.0
 
 - Policy name changed to reference EC2 service directly

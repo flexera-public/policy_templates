@@ -1,5 +1,10 @@
 # Changelog
 
+## v7.1
+
+- Added ability to filter resources by tag key alone without regard for tag value
+- Fixed issue with correctly reading tags from volumes
+
 ## v7.0
 
 - Several parameters altered to be more descriptive and human-readable
