@@ -77,7 +77,6 @@ These templates can generate savings estimates for your environment.
 - [Turbonomic Delete Unattached Volumes Recommendations Google](./cost/turbonomics/delete_unattached_volumes/gcp)
 - [Turbonomic Rightsize Databases Recommendations Google](./cost/turbonomics/rightsize_databases_recommendations/gcp)
 - [Turbonomic Rightsize Virtual Machines Recommendations Google](./cost/turbonomics/scale_virtual_machines_recommendations/gcp)
-- [Turbonomic Rightsize Virtual Volumes Recommendations Google](./cost/turbonomics/rightsize_virtual_volumes_recommendations/gcp)
 
 #### Kubecost
 
@@ -368,7 +367,6 @@ These templates can generate savings estimates for your environment.
 - Usage Discount
 
   - [Turbonomic Rightsize Databases Recommendations Google](./cost/turbonomics/rightsize_databases_recommendations/gcp)
-  - [Turbonomic Rightsize Virtual Volumes Recommendations Google](./cost/turbonomics/rightsize_virtual_volumes_recommendations/gcp)
 
 #### Kubecost
 
@@ -636,19 +634,19 @@ These templates can generate savings estimates for your environment.
 <!-- Begin Policy Template Stats -->
 <!--
 ---
-:total_count: 243
-:optimization_count: 44
+:total_count: 242
+:optimization_count: 43
 :categories:
   Compliance: 33
   Security: 74
   SaaS Management: 13
-  Cost: 100
+  Cost: 99
   Operational: 23
 :providers:
   GitHub: 7
   AWS: 77
   GCE: 8
-  Google: 13
+  Google: 12
   Flexera Optima: 26
   Flexera Cloud Management: 3
   Flexera: 6
@@ -697,7 +695,7 @@ These templates can generate savings estimates for your environment.
   Cost Explorer: 1
   Common Bill Ingestion: 1
   Kubernetes: 2
-  Usage Discount: 8
+  Usage Discount: 7
   Blob Store: 1
   N/A: 1
   Tags: 2
@@ -745,7 +743,7 @@ These templates can generate savings estimates for your environment.
   Reserved Instance: 2
   Allocate VMs: 3
   Rightsize Database Instances: 3
-  Rightsize Volumes: 3
+  Rightsize Volumes: 2
   Lifecycle Management: 1
   Common Bill Ingest: 1
   Tag Cardinality: 2
